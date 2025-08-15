@@ -14,18 +14,18 @@ use perfetto_protos::perfetto::protos::trace_config::buffer_config::FillPolicy;
 use perfetto_protos::perfetto::protos::trace_config::{BufferConfig, DataSource};
 use perfetto_protos::perfetto::protos::{
     ipc_frame, DataSourceConfig, DisableTracingRequest, EnableTracingRequest, FreeBuffersRequest,
-    FtraceConfig, ReadBuffersRequest, ReadBuffersResponse, TraceConfig,
+    FtraceConfig, ReadBuffersRequest, TraceConfig,
 };
 use perfetto_trace_protos::perfetto::protos::frame_timeline_event::{
     ActualDisplayFrameStart, ActualSurfaceFrameStart, Event, ExpectedDisplayFrameStart,
     ExpectedSurfaceFrameStart,
 };
 use perfetto_trace_protos::perfetto::protos::ftrace_event::Event::Print;
-use perfetto_trace_protos::perfetto::protos::{trace_packet, Trace};
-use prost::Message;
+use perfetto_trace_protos::perfetto::protos::trace_packet;
 use starnix_core::task::{CurrentTask, Kernel, LockedAndTask};
 use starnix_core::vfs::FsString;
 use starnix_logging::{log_debug, log_error, log_info, CATEGORY_ATRACE, NAME_PERFETTO_BLOB};
+use starnix_perfetto_trace_decoder::{decode_read_buffers_response, decode_trace, encode_trace};
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::pid_t;
@@ -229,7 +229,7 @@ impl CallbackState {
                             );
                         }
                         if let Some(ipc_frame::Msg::MsgInvokeMethodReply(reply)) = &frame.msg {
-                            if let Ok(response) = ReadBuffersResponse::decode(
+                            if let Ok(response) = decode_read_buffers_response(
                                 reply.reply_proto.as_deref().unwrap_or(&[]),
                             ) {
                                 for slice in &response.slices {
@@ -376,7 +376,7 @@ impl CallbackState {
     }
 
     fn rewrite_pids(&self, protobuf_blob: &Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        let mut proto = Trace::decode(protobuf_blob.as_slice())?;
+        let mut proto = decode_trace(protobuf_blob.as_slice())?;
         for ref mut p in &mut proto.packet {
             if let Some(ref mut data) = p.data {
                 match data {
@@ -431,7 +431,7 @@ impl CallbackState {
                 }
             }
         }
-        Ok(proto.encode_to_vec())
+        Ok(encode_trace(&proto))
     }
 
     fn map_print_event(&self, data: &String) -> String {

@@ -28,9 +28,9 @@ rustc_library("perfetto_consumer") {
     "//src/starnix/lib/perfetto",
     "//src/starnix/lib/perfetto:perfetto_protos",
     "//src/starnix/lib/perfetto:perfetto_trace_protos",
+    "//src/starnix/lib/perfetto/trace_decoder",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:prost",
   ]
 }
