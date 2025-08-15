@@ -383,9 +383,12 @@ class PackageManagerRepo {
   Future<void> cleanup() async {
     await stopServer();
     await ffx(['daemon', 'stop']);
-    await Future.wait([
-      Directory(_repoPath).delete(recursive: true),
-      Directory(_ffxIsolateDir).delete(recursive: true),
-    ]);
+    await Future.wait([_repoPath, _ffxIsolateDir].map((path) async {
+      try {
+        await Directory(path).delete(recursive: true);
+      } on PathNotFoundException {
+        // if the directory does not exist, we don't need to do anything.
+      }
+    }));
   }
 }
