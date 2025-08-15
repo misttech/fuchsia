@@ -467,12 +467,7 @@ TEST_P(DriverRunnerTest, StartSecondDriver_UseProperties) {
       dispatcher(), [](auto args) -> zx::result<FakeDriverIndex::MatchResult> {
         if (args.has_properties() && args.properties()[0].key.get() == "second_node_prop" &&
             args.properties()[0].value.is_int_value() &&
-            args.properties()[0].value.int_value() == 0x2301
-
-            && args.properties()[1].key.get() == bind_fuchsia_platform::DRIVER_FRAMEWORK_VERSION &&
-            args.properties()[1].value.is_int_value() && args.properties()[1].value.int_value() == 2
-
-        ) {
+            args.properties()[0].value.int_value() == 0x2301) {
           return zx::ok(FakeDriverIndex::MatchResult{
               .url = second_driver_url,
           });

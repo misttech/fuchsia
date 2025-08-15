@@ -375,7 +375,7 @@ void BindManagerTestBase::VerifyCompositeNodeExists(bool expected, std::string s
 }
 
 uint32_t BindManagerTestBase::GetOrAddInstanceId(std::string node_name) {
-  if (instance_ids_.find(node_name) != instance_ids_.end()) {
+  if (instance_ids_.contains(node_name)) {
     return instance_ids_[node_name];
   }
 
@@ -394,7 +394,7 @@ TEST_F(BindManagerTestBase, TestAddNode) {
   ASSERT_EQ(1u, test_node_1->properties().size());
   const auto& test_node_1_properties = test_node_1->GetNodeProperties();
   ASSERT_TRUE(test_node_1_properties.has_value());
-  ASSERT_EQ(2u, test_node_1_properties->size());
+  ASSERT_EQ(1u, test_node_1_properties->size());
   const auto& test_node_1_property_1 = test_node_1_properties.value()[0];
   ASSERT_EQ(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, std::string(test_node_1_property_1.key()));
   ASSERT_EQ(static_cast<uint32_t>(0), test_node_1_property_1.value().int_value().value());
@@ -408,7 +408,7 @@ TEST_F(BindManagerTestBase, TestAddNode) {
   ASSERT_EQ(1u, test_node_2->properties().size());
   const auto& test_node_2_properties = test_node_2->GetNodeProperties();
   ASSERT_TRUE(test_node_2_properties.has_value());
-  ASSERT_EQ(2u, test_node_2_properties->size());
+  ASSERT_EQ(1u, test_node_2_properties->size());
   const auto& test_node_2_property_1 = test_node_2_properties.value()[0];
   ASSERT_EQ(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, std::string(test_node_2_property_1.key()));
   ASSERT_EQ(static_cast<uint32_t>(1), test_node_2_property_1.value().int_value().value());

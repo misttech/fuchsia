@@ -55,9 +55,8 @@ You should see something like this:
 Name     : my_node
 Moniker  : dev.my_node
 Driver   : fuchsia-pkg://fuchsia.com/template_driver#meta/template.cm
-2 Properties
-[ 1/  2] : Key "gizmo.example.TEST_NODE_ID"   Value "template"
-[ 2/  2] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+1 Properties
+[ 1/  1] : Key "gizmo.example.TEST_NODE_ID"   Value "template"
 0 Offers
 ```
 

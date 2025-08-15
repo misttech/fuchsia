@@ -88,13 +88,12 @@ This command prints output similar to the following:
 Name     : pt
 Moniker  : dev.sys.platform.pt.acpi._SB_.PCI0.ISA_.RTC_.pt
 Driver   : unbound
-6 Properties
-[ 1/  6] : Key fuchsia.BIND_ACPI_ID           Value 0x000004
-[ 2/  6] : Key "fuchsia.acpi.HID"             Value "PNP0B00"
-[ 3/  6] : Key fuchsia.BIND_PROTOCOL          Value 0x00001e
-[ 4/  6] : Key "fuchsia.driver.compat.Service" Value "fuchsia.driver.compat.Service.ZirconTransport"
-[ 5/  6] : Key "fuchsia.hardware.acpi.Service" Value "fuchsia.hardware.acpi.Service.ZirconTransport"
-[ 6/  6] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+5 Properties
+[ 1/  5] : Key fuchsia.BIND_ACPI_ID           Value 0x000004
+[ 2/  5] : Key "fuchsia.acpi.HID"             Value "PNP0B00"
+[ 3/  5] : Key fuchsia.BIND_PROTOCOL          Value 0x00001e
+[ 4/  5] : Key "fuchsia.driver.compat.Service" Value "fuchsia.driver.compat.Service.ZirconTransport"
+[ 5/  5] : Key "fuchsia.hardware.acpi.Service" Value "fuchsia.hardware.acpi.Service.ZirconTransport"
 2 Offers
 Service: fuchsia.driver.compat.Service
   Source: dev.sys.platform.pt

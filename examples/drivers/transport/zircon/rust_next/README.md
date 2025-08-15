@@ -49,17 +49,15 @@ You should see something like this:
 Name     : zircon_transport_rust_next_parent
 Moniker  : dev.zircon_transport_rust_next_parent
 Driver   : fuchsia-pkg://fuchsia.com/zircon_transport_rust_next#meta/zircon_transport_parent.cm
-2 Properties
-[ 1/  2] : Key "gizmo.example.TEST_NODE_ID"   Value "zircon_transport_rust_next_parent"
-[ 2/  2] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+1 Properties
+[ 1/  1] : Key "gizmo.example.TEST_NODE_ID"   Value "zircon_transport_rust_next_parent"
 0 Offers
 
 Name     : zircon_transport_rust_next_child
 Moniker  : dev.zircon_transport_rust_next_parent.zircon_transport_rust_next_child
 Driver   : fuchsia-pkg://fuchsia.com/zircon_transport_rust_next#meta/zircon_transport_child.cm
-2 Properties
-[ 1/  2] : Key "fuchsia.hardware.i2c.Service" Value "fuchsia.hardware.i2c.Service.ZirconTransport"
-[ 2/  2] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+1 Properties
+[ 1/  1] : Key "fuchsia.hardware.i2c.Service" Value "fuchsia.hardware.i2c.Service.ZirconTransport"
 1 Offers
 Service: fuchsia.hardware.i2c.Service
   Source: dev.zircon_transport_rust_next_parent
@@ -68,9 +66,8 @@ Service: fuchsia.hardware.i2c.Service
 Name     : transport-child
 Moniker  : dev.zircon_transport_rust_next_parent.zircon_transport_rust_next_child.transport-child
 Driver   : unbound
-2 Properties
-[ 1/  2] : Key "fuchsia.test.TEST_CHILD"      Value "rust i2c server"
-[ 2/  2] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+1 Properties
+[ 1/  1] : Key "fuchsia.test.TEST_CHILD"      Value "rust i2c server"
 0 Offers
 ```
 

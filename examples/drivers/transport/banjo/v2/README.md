@@ -47,19 +47,17 @@ You should see something like this:
 Name     : banjo_transport_parent
 Moniker  : dev.banjo_transport_parent
 Driver   : fuchsia-pkg://fuchsia.com/banjo_transport#meta/banjo_transport_parent.cm
-2 Properties
-[ 1/  2] : Key "gizmo.example.TEST_NODE_ID"   Value "banjo_parent"
-[ 2/  2] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+1 Properties
+[ 1/  1] : Key "gizmo.example.TEST_NODE_ID"   Value "banjo_parent"
 0 Offers
 
 Name     : banjo-transport-child
 Moniker  : dev.banjo_transport_parent.banjo-transport-child
 Driver   : fuchsia-pkg://fuchsia.com/banjo_transport#meta/banjo_transport_child.cm
-4 Properties
-[ 1/  4] : Key fuchsia.BIND_PROTOCOL          Value 0x00001c
-[ 2/  4] : Key "gizmo.example.TEST_NODE_ID"   Value "banjo_child"
-[ 3/  4] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
-[ 4/  4] : Key "fuchsia.driver.compat.Service" Value "fuchsia.driver.compat.Service.ZirconTransport"
+3 Properties
+[ 1/  3] : Key fuchsia.BIND_PROTOCOL          Value 0x00001c
+[ 2/  3] : Key "gizmo.example.TEST_NODE_ID"   Value "banjo_child"
+[ 3/  3] : Key "fuchsia.driver.compat.Service" Value "fuchsia.driver.compat.Service.ZirconTransport"
 1 Offers
 Service: fuchsia.driver.compat.Service
   Source: dev.banjo_transport_parent

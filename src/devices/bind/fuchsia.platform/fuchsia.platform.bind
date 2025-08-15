@@ -56,5 +56,3 @@ extend uint fuchsia.BIND_PLATFORM_DEV_PID {
   QEMU = 0x1,
   CROSVM = 0x2,
 };
-
-uint DRIVER_FRAMEWORK_VERSION;

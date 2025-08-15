@@ -73,7 +73,7 @@ TEST_F(BindLibToFidlCodeGenTest, DeviceProperties) {
 
   ASSERT_EQ(devices.size(), 1lu);
   auto& props = devices[0].node_property_list();
-  ASSERT_EQ(static_cast<size_t>(11), props.size());
+  ASSERT_EQ(static_cast<size_t>(10), props.size());
 
   ASSERT_EQ(bind_fuchsia::PROTOCOL, props[0].key.string_value());
   ASSERT_TRUE(props[0].value.is_int_value());
@@ -124,8 +124,4 @@ TEST_F(BindLibToFidlCodeGenTest, DeviceProperties) {
   ASSERT_EQ("fuchsia.driver.compat.Service", props[9].key.string_value());
   ASSERT_TRUE(props[9].value.is_string_value());
   ASSERT_EQ("fuchsia.driver.compat.Service.ZirconTransport", props[9].value.string_value());
-
-  ASSERT_EQ("fuchsia.platform.DRIVER_FRAMEWORK_VERSION", props[10].key.string_value());
-  ASSERT_TRUE(props[10].value.is_int_value());
-  ASSERT_EQ(2u, props[10].value.int_value());
 }

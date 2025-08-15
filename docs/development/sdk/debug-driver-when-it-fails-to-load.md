@@ -180,27 +180,25 @@ $ ffx driver list-devices -v
 Name : I2C2
 Moniker : root.sys.platform.pt.acpi.I2C2
 Driver : None
-6 Properties
-[ 1/ 6] : Key fuchsia.BIND_ACPI_ID Value 0x000034
-[ 2/ 6] : Key fuchsia.BIND_PCI_TOPO Value 0x0000aa
-[ 3/ 6] : Key fuchsia.BIND_ACPI_BUS_TYPE Value 0x000001
-[ 4/ 6] : Key "fuchsia.hardware.acpi.Device" Value true
-[ 5/ 6] : Key fuchsia.BIND_PROTOCOL Value 0x00001e
-[ 6/ 6] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+5 Properties
+[ 1/ 5] : Key fuchsia.BIND_ACPI_ID Value 0x000034
+[ 2/ 5] : Key fuchsia.BIND_PCI_TOPO Value 0x0000aa
+[ 3/ 5] : Key fuchsia.BIND_ACPI_BUS_TYPE Value 0x000001
+[ 4/ 5] : Key "fuchsia.hardware.acpi.Device" Value true
+[ 5/ 5] : Key fuchsia.BIND_PROTOCOL Value 0x00001e
 ...
 Name : 00_15_2
 Moniker : root.sys.platform.pt.pci.00_15_2
 Driver : None
-9 Properties
-[ 1/ 9] : Key fuchsia.BIND_PROTOCOL Value 0x00001f
-[ 2/ 9] : Key fuchsia.BIND_PCI_VID Value 0x008086
-[ 3/ 9] : Key fuchsia.BIND_PCI_DID Value 0x009d62
-[ 4/ 9] : Key fuchsia.BIND_PCI_CLASS Value 0x000011
-[ 5/ 9] : Key fuchsia.BIND_PCI_SUBCLASS Value 0x000080
-[ 6/ 9] : Key fuchsia.BIND_PCI_INTERFACE Value 0x000000
-[ 7/ 9] : Key fuchsia.BIND_PCI_REVISION Value 0x000021
-[ 8/ 9] : Key fuchsia.BIND_PCI_TOPO Value 0x0000aa
-[ 9/ 9] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+8 Properties
+[ 1/ 8] : Key fuchsia.BIND_PROTOCOL Value 0x00001f
+[ 2/ 8] : Key fuchsia.BIND_PCI_VID Value 0x008086
+[ 3/ 8] : Key fuchsia.BIND_PCI_DID Value 0x009d62
+[ 4/ 8] : Key fuchsia.BIND_PCI_CLASS Value 0x000011
+[ 5/ 8] : Key fuchsia.BIND_PCI_SUBCLASS Value 0x000080
+[ 6/ 8] : Key fuchsia.BIND_PCI_INTERFACE Value 0x000000
+[ 7/ 8] : Key fuchsia.BIND_PCI_REVISION Value 0x000021
+[ 8/ 8] : Key fuchsia.BIND_PCI_TOPO Value 0x0000aa
 ...
 ```
 

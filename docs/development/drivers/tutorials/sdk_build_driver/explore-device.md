@@ -130,18 +130,17 @@ The command prints output similar to the following:
 Name     : 0-fidl
 {{ '<strong>' }}Moniker  : root.sys.platform.pt.PCI0.bus.00_06_0_.pci-00_06.0-fidl{{ '</strong>' }}
 Driver   : None
-11 Properties
-[ 1/ 11] : Key fuchsia.BIND_FIDL_PROTOCOL     Value 0x000004
-{{ '<strong>' }}[ 2/ 11] : Key fuchsia.BIND_PCI_VID           Value 0x001234{{ '</strong>' }}
-{{ '<strong>' }}[ 3/ 11] : Key fuchsia.BIND_PCI_DID           Value 0x0011e8{{ '</strong>' }}
-[ 4/ 11] : Key fuchsia.BIND_PCI_CLASS         Value 0x000000
-[ 5/ 11] : Key fuchsia.BIND_PCI_SUBCLASS      Value 0x0000ff
-[ 6/ 11] : Key fuchsia.BIND_PCI_INTERFACE     Value 0x000000
-[ 7/ 11] : Key fuchsia.BIND_PCI_REVISION      Value 0x000010
-[ 8/ 11] : Key fuchsia.BIND_PCI_TOPO          Value 0x000030
-[ 9/ 11] : Key "fuchsia.hardware.pci.Device"  Value true
-[10/ 11] : Key fuchsia.BIND_PROTOCOL          Value 0x000000
-[11/ 11] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+10 Properties
+[ 1/ 10] : Key fuchsia.BIND_FIDL_PROTOCOL     Value 0x000004
+{{ '<strong>' }}[ 2/ 10] : Key fuchsia.BIND_PCI_VID           Value 0x001234{{ '</strong>' }}
+{{ '<strong>' }}[ 3/ 10] : Key fuchsia.BIND_PCI_DID           Value 0x0011e8{{ '</strong>' }}
+[ 4/ 10] : Key fuchsia.BIND_PCI_CLASS         Value 0x000000
+[ 5/ 10] : Key fuchsia.BIND_PCI_SUBCLASS      Value 0x0000ff
+[ 6/ 10] : Key fuchsia.BIND_PCI_INTERFACE     Value 0x000000
+[ 7/ 10] : Key fuchsia.BIND_PCI_REVISION      Value 0x000010
+[ 8/ 10] : Key fuchsia.BIND_PCI_TOPO          Value 0x000030
+[ 9/ 10] : Key "fuchsia.hardware.pci.Device"  Value true
+[10/ 10] : Key fuchsia.BIND_PROTOCOL          Value 0x000000
 ```
 
 Notice that this device does not currently have a driver loaded (the `Driver`

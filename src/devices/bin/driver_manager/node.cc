@@ -729,8 +729,6 @@ std::shared_ptr<BindResultTracker> Node::CreateBindResultTracker() {
 }
 
 void Node::SetNonCompositeProperties(std::vector<fdf::NodeProperty2> properties) {
-  properties.emplace_back(fdf::MakeProperty2(bind_fuchsia_platform::DRIVER_FRAMEWORK_VERSION,
-                                             static_cast<uint32_t>(2)));
   properties_ = fdf::NodePropertyDictionary2{
       fdf::NodePropertyEntry2{{
           .name = "default",

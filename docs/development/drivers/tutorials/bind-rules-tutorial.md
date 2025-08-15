@@ -187,13 +187,12 @@ Say you want to write composite bind rules that contain a node that binds to the
 Name     : I2C2
 Moniker  : root.sys.platform.pt.acpi.I2C2
 Driver   : None
-6 Properties
-[ 1/  6] : Key fuchsia.BIND_ACPI_ID           Value 0x000034
-[ 2/  6] : Key fuchsia.BIND_PCI_TOPO          Value 0x0000aa
-[ 3/  6] : Key fuchsia.BIND_ACPI_BUS_TYPE     Value 0x000001
-[ 4/  6] : Key "fuchsia.hardware.acpi.Device" Value true
-[ 5/  6] : Key fuchsia.BIND_PROTOCOL          Value 0x00001e
-[ 6/  6] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+5 Properties
+[ 1/  5] : Key fuchsia.BIND_ACPI_ID           Value 0x000034
+[ 2/  5] : Key fuchsia.BIND_PCI_TOPO          Value 0x0000aa
+[ 3/  5] : Key fuchsia.BIND_ACPI_BUS_TYPE     Value 0x000001
+[ 4/  5] : Key "fuchsia.hardware.acpi.Device" Value true
+[ 5/  5] : Key fuchsia.BIND_PROTOCOL          Value 0x00001e
 ```
 
 You can then write the following:

@@ -190,8 +190,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   bool IsComposite() const { return type_ == NodeType::kComposite; }
 
   // Exposed for testing.
-  // Set properties to non-composite node properties containing a clone of `properties` and
-  // "DRIVER_FRAMEWORK_VERSION == 2".
+  // Set properties to non-composite node properties containing a clone of `properties`.
   void SetNonCompositeProperties(std::vector<fuchsia_driver_framework::NodeProperty2> properties);
 
   // Evaluates the given rematch_flags against the node. Returns true if rematch should take place,

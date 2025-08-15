@@ -46,9 +46,8 @@ You should see something like this:
 Name     : simple_node_v1
 Moniker  : dev.simple_node
 Driver   : fuchsia-pkg://fuchsia.com/simple_dfv1#meta/simple_dfv1.cm
-2 Properties
+1 Properties
 [ 1/  2] : Key "gizmo.example.TEST_NODE_ID"   Value "simple_driver_v1"
-[ 2/  2] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
 0 Offers
 
 Name     : simple_child
@@ -56,8 +55,7 @@ Moniker  : dev.simple_node_v1.simple_child
 Driver   : unbound
 2 Properties
 [ 1/  2] : Key "fuchsia.test.TEST_CHILD"      Value "simple"
-[ 2/  2] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
-[ 3/  3] : Key "fuchsia.driver.compat.Service" Value "fuchsia.driver.compat.Service.ZirconTransport"
+[ 2/  2] : Key "fuchsia.driver.compat.Service" Value "fuchsia.driver.compat.Service.ZirconTransport"
 1 Offers
 Service: fuchsia.driver.compat.Service
   Source: dev.simple_node_v1

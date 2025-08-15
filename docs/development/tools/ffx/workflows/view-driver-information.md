@@ -340,9 +340,8 @@ $ ffx driver list-devices acpi -v
 Name     : acpi
 Moniker  : dev.sys.platform.pt.acpi
 Driver   : unbound
-2 Properties
-[ 1/  2] : Key fuchsia.BIND_PROTOCOL          Value 0x00001c
-[ 2/  2] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+1 Properties
+[ 1/  1] : Key fuchsia.BIND_PROTOCOL          Value 0x00001c
 1 Offers
 Service: fuchsia.driver.compat.Service
   Source: dev.sys.platform.pt
@@ -351,9 +350,8 @@ Service: fuchsia.driver.compat.Service
 Name     : acpi-_SB_
 Moniker  : dev.sys.platform.pt.acpi.acpi-_SB_
 Driver   : unbound
-2 Properties
-[ 1/  2] : Key fuchsia.BIND_PROTOCOL          Value 0x00001c
-[ 2/  2] : Key "fuchsia.platform.DRIVER_FRAMEWORK_VERSION" Value 0x000002
+1 Properties
+[ 1/  1] : Key fuchsia.BIND_PROTOCOL          Value 0x00001c
 1 Offers
 Service: fuchsia.driver.compat.Service
   Source: dev.sys.platform.pt
