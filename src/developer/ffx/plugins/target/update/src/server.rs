@@ -4,7 +4,7 @@
 
 use ffx_config::EnvironmentContext;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{bug, return_bug, return_user_error, user_error, FfxMain, Result};
+use fho::{bug, return_bug, return_user_error, user_error, Deferred, FfxMain, Result};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_pkg::RepositoryManagerMarker;
 use fidl_fuchsia_pkg_ext::RepositoryRegistrationAliasConflictMode;
@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::process;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{RemoteControlProxyHolder, TargetProxyHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetProxyHolder};
 use timeout::timeout;
 use zx_status::Status;
 
@@ -58,6 +58,7 @@ pub(crate) struct PackageServerTask {
 pub(crate) async fn package_server_task(
     target_proxy_connector: Connector<TargetProxyHolder>,
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
+    host_address: Deferred<HostAddrHolder>,
     context: EnvironmentContext,
     product_bundle: PathBuf,
     repo_port: u16,
@@ -119,6 +120,7 @@ pub(crate) async fn package_server_task(
             context,
             target_proxy_connector: target_proxy_connector.clone(),
             rcs_proxy_connector: connector.clone(),
+            host_address: host_address,
         };
 
         let stdout = LogWriter::new("repo_server stdout");
@@ -465,12 +467,13 @@ mod tests {
     use futures::channel::mpsc;
     use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _};
     use std::sync::{Arc, Mutex};
-    use target_holders::{fake_proxy, FakeInjector, RemoteControlProxyHolder};
+    use target_holders::{fake_proxy, FakeInjector, HostAddrHolder, RemoteControlProxyHolder};
 
     struct FakeTestEnv {
         pub context: EnvironmentContext,
         pub rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
         pub target_proxy_connector: Connector<TargetProxyHolder>,
+        pub host_address: Deferred<HostAddrHolder>,
     }
 
     impl FakeTestEnv {
@@ -501,7 +504,14 @@ mod tests {
                 .expect("Could not make target proxy test connector");
             let rcs_proxy_connector =
                 Connector::try_from_env(&fho_env).await.expect("Could not make RCS test connector");
-            Self { context: test_env.context.clone(), rcs_proxy_connector, target_proxy_connector }
+            let host_address =
+                Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string())));
+            Self {
+                context: test_env.context.clone(),
+                rcs_proxy_connector,
+                target_proxy_connector,
+                host_address,
+            }
         }
     }
 
@@ -681,6 +691,7 @@ mod tests {
         let result = package_server_task(
             fake_env.target_proxy_connector,
             fake_env.rcs_proxy_connector,
+            fake_env.host_address,
             fake_env.context,
             product_bundle,
             0,

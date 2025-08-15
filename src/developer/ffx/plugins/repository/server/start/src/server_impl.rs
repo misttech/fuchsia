@@ -10,6 +10,8 @@ use ffx_command_error::{bug, return_bug, return_user_error, Result};
 use ffx_config::environment::EnvironmentKind;
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::{default_address, default_tunnel_addr, StartCommand};
+use ffx_ssh::parse::HostAddr;
+use fho::Deferred;
 use fuchsia_async as fasync;
 use fuchsia_repo::manager::RepositoryManager;
 use fuchsia_repo::repo_client::RepoClient;
@@ -30,7 +32,7 @@ use std::io::Write;
 use std::sync::Arc;
 use target_connector::Connector;
 use target_errors::FfxTargetError;
-use target_holders::{RemoteControlProxyHolder, TargetProxyHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetProxyHolder};
 use tuf::metadata::RawSignedMetadata;
 
 const REPO_CONNECT_TIMEOUT_CONFIG: &str = "repository.connect_timeout_secs";
@@ -315,6 +317,7 @@ pub async fn serve_impl_validate_args(
 pub async fn serve_impl<W: Write + 'static>(
     target_proxy: Connector<TargetProxyHolder>,
     rcs_proxy: Connector<RemoteControlProxyHolder>,
+    host_address: Deferred<HostAddrHolder>,
     cmd: StartCommand,
     context: EnvironmentContext,
     mut writer: W,
@@ -511,6 +514,8 @@ pub async fn serve_impl<W: Write + 'static>(
         Ok(())
     } else {
         let tunnel_addr = cmd.tunnel_addr.clone().unwrap_or_else(|| default_tunnel_addr());
+        let host_address: Option<HostAddr> = host_address.await?.into();
+        let host_address = host_address.map(|t| t.0);
         let r = target::main_connect_loop(
             &cmd,
             &repo_path,
@@ -520,6 +525,7 @@ pub async fn serve_impl<W: Write + 'static>(
             loop_stop_rx,
             rcs_proxy,
             target_proxy,
+            host_address,
             &mut writer,
             tunnel_addr,
             connection_sink,
@@ -1528,7 +1534,7 @@ mod test {
 
         let (fake_repo, mut fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, mut fake_engine_rx) = FakeEngine::new();
-        let (_, fake_target_proxy, mut fake_target_rx) = FakeTarget::new(None);
+        let (_, fake_target_proxy, _fake_target_rx) = FakeTarget::new(None);
 
         let frc = fake_repo.clone();
         let fec = fake_engine.clone();
@@ -1581,7 +1587,7 @@ mod test {
                 port_path: Some(tmp_port_file.path().to_owned()),
                 tunnel_addr: Some((REPO_LOCALHOST_IPV4_ADDR, DEVICE_PORT).into()),
                 no_device: false,
-                refresh_metadata: refresh_metadata,
+                refresh_metadata,
                 auto_publish: None,
                 background: false,
                 foreground: true,
@@ -1594,6 +1600,7 @@ mod test {
             rcs_proxy_connector: Connector::try_from_env(&env)
                 .await
                 .expect("Could not make RCS test connector"),
+            host_address: Deferred::from_output(Ok(HostAddrHolder::from("1.2.3.4".to_string()))),
         };
 
         let buffers = TestBuffers::default();
@@ -1604,7 +1611,6 @@ mod test {
 
         // Future resolves once repo server communicates with them.
         let _timeout = timeout(time::Duration::from_secs(10), async {
-            let _ = fake_target_rx.next().await.unwrap();
             let _ = fake_repo_rx.next().await.unwrap();
             let _ = fake_engine_rx.next().await.unwrap();
         })
@@ -1693,7 +1699,7 @@ mod test {
         let (fake_engine, mut fake_engine_rx) = FakeEngine::new();
         // Create a target where the second and third knock requests are not answered, triggering the reconnect
         // loops in both the repository serve plugin and the Connect<TargetProxy>.
-        let (_, fake_target_proxy, mut fake_target_rx) = FakeTarget::new(Some(vec![2, 3]));
+        let (_, fake_target_proxy, _fake_target_rx) = FakeTarget::new(Some(vec![2, 3]));
 
         let frc = fake_repo.clone();
         let fec = fake_engine.clone();
@@ -1744,6 +1750,7 @@ mod test {
                     .await
                     .expect("Could not make target proxy test connector"),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
+                Deferred::from_output(Ok(HostAddrHolder::from("1.2.3.4".to_string()))),
                 StartCommand {
                     repository: Some(REPO_NAME.to_string()),
                     trusted_root: None,
@@ -1772,7 +1779,6 @@ mod test {
 
         // Future resolves once repo server communicates with them.
         let _timeout = timeout(time::Duration::from_secs(10), async {
-            let _ = fake_target_rx.next().await.unwrap();
             let _ = fake_repo_rx.next().await.unwrap();
             let _ = fake_engine_rx.next().await.unwrap();
         })
@@ -1914,6 +1920,7 @@ mod test {
                     .await
                     .expect("Could not make target proxy test connector"),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
+                Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
                 StartCommand {
                     repository: Some(REPO_NAME.to_string()),
                     trusted_root: None,
@@ -2089,6 +2096,7 @@ mod test {
                     .await
                     .expect("Could not make target proxy test connector"),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
+                Deferred::from_output(Ok(HostAddrHolder::from("1.2.3.4".to_string()))),
                 StartCommand {
                     repository: None,
                     trusted_root: None,
@@ -2304,6 +2312,7 @@ mod test {
                     .await
                     .expect("Could not make target proxy test connector"),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
+                Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
                 serve_cmd_without_root,
                 test_env.context.clone(),
                 SimpleWriter::new(),
@@ -2324,6 +2333,7 @@ mod test {
                     .await
                     .expect("Could not make target proxy test connector"),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
+                Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
                 serve_cmd_with_root,
                 test_env.context.clone(),
                 writer,

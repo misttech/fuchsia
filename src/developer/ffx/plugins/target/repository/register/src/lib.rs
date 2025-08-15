@@ -4,10 +4,13 @@
 
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
+use ffx_ssh::parse::HostAddr;
 use ffx_target_repository_register_args::RegisterCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{bug, return_user_error, user_error, Error, FfxContext, FfxMain, FfxTool, Result};
-use fidl_fuchsia_developer_ffx::TargetInfo;
+use fho::{
+    bug, return_user_error, user_error, Error, FfxContext, FfxMain, FfxTool, FhoEnvironment,
+    Result, TryFromEnv,
+};
 use fidl_fuchsia_pkg::RepositoryManagerProxy;
 use fidl_fuchsia_pkg_ext::RepositoryTarget;
 use fidl_fuchsia_pkg_rewrite::EngineProxy;
@@ -16,9 +19,7 @@ use pkg::{PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::time::Duration;
-use target_holders::{moniker, TargetProxyHolder};
-use timeout::timeout;
+use target_holders::{moniker, HostAddrHolder};
 
 const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
 
@@ -37,8 +38,8 @@ pub enum CommandStatus {
 pub struct RegisterTool {
     #[command]
     cmd: RegisterCommand,
+    fho_env: FhoEnvironment,
     context: EnvironmentContext,
-    target_proxy: TargetProxyHolder,
     #[with(moniker(REPOSITORY_MANAGER_MONIKER))]
     repo_proxy: RepositoryManagerProxy,
     #[with(moniker(REPOSITORY_MANAGER_MONIKER))]
@@ -145,17 +146,11 @@ impl RegisterTool {
         let repo_host_addr = match &self.cmd.address_override {
             Some(addr_override) => addr_override.to_string(),
             None => {
-                let target_info: TargetInfo =
-                    timeout(Duration::from_secs(2), self.target_proxy.identity())
-                        .await
-                        .bug_context("Timed out getting target identity")?
-                        .bug_context("Failed to get target identity")?;
-
-                match pkg::repo::create_repo_host(
-                    info.address,
-                    target_info.ssh_host_address.as_ref(),
-                )
-                .bug_context("Failed to discover repository host")?
+                let host_addr = HostAddrHolder::try_from_env(&self.fho_env).await?;
+                let host_address: Option<HostAddr> = host_addr.into();
+                let host_address = host_address.map(|t| t.0);
+                match pkg::repo::create_repo_host(info.address, host_address)
+                    .bug_context("Failed to discover repository host")?
                 {
                     RepoHostAddr::Direct(addr) => addr,
                     RepoHostAddr::Tunnel => {
@@ -181,13 +176,24 @@ impl RegisterTool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use addr::TargetAddr;
     use camino::Utf8PathBuf;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_config::ConfigLevel;
-    use ffx_target::TargetProxy;
+    use ffx_target::fho::{target_interface, FhoConnectionBehavior};
     use ffx_writer::{Format, TestBuffers};
-    use fidl_fuchsia_developer_ffx::{SshHostAddrInfo, TargetRequest};
+    use fidl_fuchsia_developer_ffx::{
+        RemoteControlState,
+        SshHostAddrInfo,
+        TargetAddrInfo,
+        TargetInfo,
+        TargetIpAddrInfo,
+        // RemoteControlState, TargetIpAddrInfo,
+        TargetIpPort,
+        TargetProxy,
+        TargetRequest,
+        TargetState,
+    };
+    use fidl_fuchsia_net::{IpAddress, Ipv4Address};
     use fidl_fuchsia_pkg::{MirrorConfig, RepositoryConfig, RepositoryManagerRequest};
     use fidl_fuchsia_pkg_ext::{
         RepositoryConfigBuilder, RepositoryRegistrationAliasConflictMode, RepositoryStorageType,
@@ -195,14 +201,16 @@ mod test {
     use fidl_fuchsia_pkg_rewrite::{
         EditTransactionRequest, EngineRequest, LiteralRule, Rule, RuleIteratorRequest,
     };
+    use fuchsia_async as fasync;
     use fuchsia_repo::repository::RepositorySpec;
     use fuchsia_url::RepositoryUrl;
     use futures::channel::oneshot::{channel, Receiver};
     use futures::TryStreamExt;
     use pkg::ServerMode;
     use std::collections::BTreeSet;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use target_holders::fake_proxy;
+    use std::net::{Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
+    use target_holders::{fake_proxy, FakeInjector};
 
     const REPO_NAME: &str = "some-name";
     const TARGET_NAME: &str = "some-target";
@@ -354,38 +362,6 @@ mod test {
         (repos, receiver)
     }
 
-    fn setup_fake_target_proxy_with(
-        ssh_host_address: Option<SshHostAddrInfo>,
-    ) -> (TargetProxy, Receiver<Result<(), i32>>) {
-        let (sender, receiver) = channel();
-        let mut _sender = Some(sender);
-        let repos = fake_proxy(move |req| match req {
-            TargetRequest::Identity { responder } => {
-                let addr: TargetAddr = TargetAddr::new(
-                    IpAddr::from([0xfe80, 0x0, 0x0, 0x0, 0xdead, 0xbeef, 0xbeef, 0xbeef]),
-                    3,
-                    0,
-                );
-
-                responder
-                    .send(&TargetInfo {
-                        nodename: Some("target-nodename".into()),
-                        addresses: Some(vec![addr.into()]),
-                        ssh_host_address: ssh_host_address.clone(),
-                        age_ms: Some(101),
-                        ..Default::default()
-                    })
-                    .unwrap();
-            }
-            other => panic!("Unexpected request: {:?}", other),
-        });
-        (repos, receiver)
-    }
-
-    fn setup_fake_target_proxy() -> (TargetProxy, Receiver<Result<(), i32>>) {
-        setup_fake_target_proxy_with(Some(SshHostAddrInfo { address: "127.7.7.1".into() }))
-    }
-
     async fn make_server_instance(
         root: &std::path::Path,
         context: &EnvironmentContext,
@@ -419,13 +395,72 @@ mod test {
         .map_err(Into::into)
     }
 
+    fn to_target_info(nodename: String, ssh_host_address: Option<SshHostAddrInfo>) -> TargetInfo {
+        let device_addr = TargetAddrInfo::IpPort(TargetIpPort {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [127, 0, 0, 1] }),
+            scope_id: 0,
+            port: 5,
+        });
+        let device_addr_ip = TargetIpAddrInfo::IpPort(TargetIpPort {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [127, 0, 0, 1] }),
+            scope_id: 0,
+            port: 5,
+        });
+
+        TargetInfo {
+            nodename: Some(nodename),
+            addresses: Some(vec![device_addr]),
+            ssh_address: Some(device_addr_ip),
+            ssh_host_address,
+            age_ms: Some(101),
+            rcs_state: Some(RemoteControlState::Up),
+            target_state: Some(TargetState::Unknown),
+            ..Default::default()
+        }
+    }
+
+    struct FakeTarget;
+
+    impl FakeTarget {
+        fn new(host_address: Option<SshHostAddrInfo>) -> (Self, TargetProxy) {
+            let target_proxy: TargetProxy = fake_proxy(move |req| match req {
+                TargetRequest::Identity { responder, .. } => {
+                    let ssh_host_address = host_address.clone();
+                    fasync::Task::local(async move {
+                        responder
+                            .send(&to_target_info("Foo".to_string(), ssh_host_address))
+                            .unwrap();
+                    })
+                    .detach();
+                }
+                _ => panic!("unexpected request: {:?}", req),
+            });
+            (Self, target_proxy)
+        }
+    }
+
     #[fuchsia::test]
     async fn test_register_standalone() {
         let env = ffx_config::test_init().await.expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+
+        let target_env = target_interface(&fho_env);
+        target_env
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .expect("set_behavior");
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
-        let (target_proxy, _) = setup_fake_target_proxy();
 
         let aliases = vec![String::from("my-alias")];
 
@@ -457,7 +492,7 @@ mod test {
             context: env.context.clone(),
             repo_proxy,
             engine_proxy,
-            target_proxy: target_proxy.into(),
+            fho_env,
         };
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
@@ -468,6 +503,22 @@ mod test {
     #[fuchsia::test]
     async fn test_register_standalone_product_bundle() {
         let env = ffx_config::test_init().await.expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "127.7.7.1".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+
+        let target_env = target_interface(&fho_env);
+        target_env
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .expect("set_behavior");
 
         let expected_config = RepositoryConfig {
             repo_url: Some("fuchsia-pkg://test-repo.fuchsia.com".into()),
@@ -494,7 +545,6 @@ mod test {
 
         let (repo_proxy, _) = setup_fake_repo_proxy(Some(expected_config), false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(Some(expected_rule)).await;
-        let (target_proxy, _) = setup_fake_target_proxy();
 
         let mut aliases = BTreeSet::new();
         aliases.insert("fuchsia.com".into());
@@ -532,7 +582,7 @@ mod test {
             context: env.context.clone(),
             repo_proxy,
             engine_proxy,
-            target_proxy: target_proxy.into(),
+            fho_env,
         };
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
@@ -546,7 +596,23 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_default_repository() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().await.expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+
+        let target_env = target_interface(&fho_env);
+        target_env
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .expect("set_behavior");
 
         let default_repo_name = "default-repo";
         env.context
@@ -567,7 +633,6 @@ mod test {
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
-        let (target_proxy, _) = setup_fake_target_proxy();
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -581,7 +646,7 @@ mod test {
             context: env.context.clone(),
             repo_proxy,
             engine_proxy,
-            target_proxy: target_proxy.into(),
+            fho_env,
         };
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
@@ -592,10 +657,24 @@ mod test {
     #[fuchsia::test]
     async fn test_register_storage_type() {
         let env = ffx_config::test_init().await.expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+        let target_env = target_interface(&fho_env);
+        target_env
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .expect("set_behavior");
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
-        let (target_proxy, _) = setup_fake_target_proxy();
 
         let aliases = vec![String::from("my-alias")];
 
@@ -627,7 +706,7 @@ mod test {
             context: env.context.clone(),
             repo_proxy,
             engine_proxy,
-            target_proxy: target_proxy.into(),
+            fho_env,
         };
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
@@ -638,10 +717,25 @@ mod test {
     #[fuchsia::test]
     async fn test_register_empty_aliases() {
         let env = ffx_config::test_init().await.expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+
+        let target_env = target_interface(&fho_env);
+        target_env
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .expect("set_behavior");
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
-        let (target_proxy, _) = setup_fake_target_proxy();
 
         env.context
             .query(TARGET_DEFAULT_KEY)
@@ -671,7 +765,7 @@ mod test {
             context: env.context.clone(),
             repo_proxy,
             engine_proxy,
-            target_proxy: target_proxy.into(),
+            fho_env,
         };
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
@@ -682,6 +776,22 @@ mod test {
     #[fuchsia::test]
     async fn test_register_returns_error() {
         let env = ffx_config::test_init().await.expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+        let target_env = target_interface(&fho_env);
+        target_env
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .expect("set_behavior");
+
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
@@ -699,7 +809,6 @@ mod test {
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, true).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
-        let (target_proxy, _) = setup_fake_target_proxy();
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -713,7 +822,7 @@ mod test {
             context: env.context.clone(),
             repo_proxy,
             engine_proxy,
-            target_proxy: target_proxy.into(),
+            fho_env,
         };
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
@@ -726,6 +835,22 @@ mod test {
     #[fuchsia::test]
     async fn test_register_returns_error_machine() {
         let env = ffx_config::test_init().await.expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+        let target_env = target_interface(&fho_env);
+        target_env
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .expect("set_behavior");
+
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
@@ -744,7 +869,6 @@ mod test {
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, true).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
-        let (target_proxy, _) = setup_fake_target_proxy();
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -758,7 +882,7 @@ mod test {
             context: env.context.clone(),
             repo_proxy,
             engine_proxy,
-            target_proxy: target_proxy.into(),
+            fho_env,
         };
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
@@ -779,10 +903,25 @@ mod test {
     #[fuchsia::test]
     async fn test_register_machine() {
         let env = ffx_config::test_init().await.expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) =
+            FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+
+        let target_env = target_interface(&fho_env);
+        target_env
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .expect("set_behavior");
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
-        let (target_proxy, _) = setup_fake_target_proxy();
 
         make_server_instance(
             env.isolate_root.path(),
@@ -814,7 +953,7 @@ mod test {
             context: env.context.clone(),
             repo_proxy,
             engine_proxy,
-            target_proxy: target_proxy.into(),
+            fho_env,
         };
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
@@ -835,6 +974,21 @@ mod test {
     #[fuchsia::test]
     async fn test_tunnel_required() {
         let env = ffx_config::test_init().await.expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
+        let (_, fake_target_proxy) = FakeTarget::new(None);
+
+        let fake_injector = FakeInjector {
+            target_factory_closure: Box::new(move || {
+                let fake_target_proxy = fake_target_proxy.clone();
+                Box::pin(async { Ok(fake_target_proxy) })
+            }),
+            ..Default::default()
+        };
+        let target_env = target_interface(&fho_env);
+        target_env
+            .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+            .expect("set_behavior");
+
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
@@ -852,7 +1006,6 @@ mod test {
 
         let (repo_proxy, _) = setup_fake_repo_proxy(None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
-        let (target_proxy, _) = setup_fake_target_proxy_with(None);
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -866,7 +1019,7 @@ mod test {
             context: env.context.clone(),
             repo_proxy,
             engine_proxy,
-            target_proxy: target_proxy.into(),
+            fho_env,
         };
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);
@@ -878,6 +1031,7 @@ mod test {
     #[fuchsia::test]
     async fn test_address_override() {
         let env = ffx_config::test_init().await.expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
@@ -914,7 +1068,6 @@ mod test {
         let (repo_proxy, _) = setup_fake_repo_proxy(Some(expected_config), false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(None).await;
         // A target with no ssh host address would require a tunnel.
-        let (target_proxy, _) = setup_fake_target_proxy_with(None);
         let tool = RegisterTool {
             cmd: RegisterCommand {
                 repository: Some(REPO_NAME.to_string()),
@@ -927,7 +1080,7 @@ mod test {
             context: env.context.clone(),
             repo_proxy,
             engine_proxy,
-            target_proxy: target_proxy.into(),
+            fho_env,
         };
         let buffers = TestBuffers::default();
         let writer = <RegisterTool as FfxMain>::Writer::new_test(None, &buffers);

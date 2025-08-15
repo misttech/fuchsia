@@ -21,7 +21,7 @@ use futures::{pin_mut, select, TryStreamExt};
 use std::path::PathBuf;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{moniker, RemoteControlProxyHolder, TargetProxyHolder};
+use target_holders::{moniker, HostAddrHolder, RemoteControlProxyHolder, TargetProxyHolder};
 use {ffx_update_args as args, fidl_fuchsia_update_installer_ext as installer};
 
 mod server;
@@ -43,6 +43,7 @@ pub struct UpdateTool {
     commit_status_provider_proxy: CommitStatusProviderProxy,
     target_proxy_connector: Connector<TargetProxyHolder>,
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
+    host_address: Deferred<HostAddrHolder>,
 }
 
 fho::embedded_plugin!(UpdateTool);
@@ -93,6 +94,7 @@ impl UpdateTool {
             server::package_server_task(
                 self.target_proxy_connector.clone(),
                 self.rcs_proxy_connector.clone(),
+                self.host_address,
                 self.context.clone(),
                 product_path,
                 repo_port,
@@ -203,6 +205,7 @@ impl UpdateTool {
             server::package_server_task(
                 self.target_proxy_connector.clone(),
                 self.rcs_proxy_connector.clone(),
+                self.host_address,
                 self.context.clone(),
                 product_path,
                 repo_port,
@@ -781,6 +784,7 @@ mod tests {
             rcs_proxy_connector: Connector::try_from_env(&fho_env)
                 .await
                 .expect("Could not make RCS test connector"),
+            host_address: Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
         };
         let buffers = TestBuffers::default();
         let writer = SimpleWriter::new_test(&buffers);
@@ -868,6 +872,7 @@ mod tests {
             rcs_proxy_connector: Connector::try_from_env(&fho_env)
                 .await
                 .expect("Could not make RCS test connector"),
+            host_address: Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
         };
 
         let buffers = TestBuffers::default();

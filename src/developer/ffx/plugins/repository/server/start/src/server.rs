@@ -7,13 +7,13 @@ use crate::ServerStartTool;
 use ffx_command_error::{bug, return_user_error, user_error, FfxContext as _, Result};
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
-use fho::FfxMain;
+use fho::{Deferred, FfxMain};
 use fidl_fuchsia_pkg_ext::{RepositoryRegistrationAliasConflictMode, RepositoryStorageType};
 use pkg::{PkgServerInstanceInfo, PkgServerInstances, ServerMode};
 use std::net::SocketAddr;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{RemoteControlProxyHolder, TargetProxyHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetProxyHolder};
 
 pub(crate) fn to_argv(cmd: &StartCommand) -> Vec<String> {
     let mut argv: Vec<String> = vec![];
@@ -71,6 +71,7 @@ pub async fn run_foreground_server(
     context: EnvironmentContext,
     target_proxy_connector: Connector<TargetProxyHolder>,
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
+    host_addr: Deferred<HostAddrHolder>,
     w: <ServerStartTool as FfxMain>::Writer,
     mode: ServerMode,
 ) -> Result<()> {
@@ -93,6 +94,7 @@ pub async fn run_foreground_server(
     serve_impl(
         target_proxy_connector,
         rcs_proxy_connector,
+        host_addr,
         start_cmd,
         context,
         w.simple_writer(),

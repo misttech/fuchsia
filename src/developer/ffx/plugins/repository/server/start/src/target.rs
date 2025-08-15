@@ -10,7 +10,6 @@ use ffx_command_error::{return_user_error, Result};
 use ffx_repository_server_start_args::StartCommand;
 use ffx_target::knock_target;
 use ffx_target_net::TargetTcpStream;
-use fidl_fuchsia_developer_ffx::TargetInfo;
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_pkg::RepositoryManagerMarker;
 use fidl_fuchsia_pkg_ext::{
@@ -37,11 +36,11 @@ const MAX_CONSECUTIVE_CONNECT_ATTEMPTS: u8 = 10;
 
 async fn connect_to_target(
     target_spec: Option<String>,
-    target_info: TargetInfo,
+    host_address: Option<String>,
     aliases: Vec<String>,
     storage_type: Option<RepositoryStorageType>,
     repo_server_listen_addr: std::net::SocketAddr,
-    connect_timeout: std::time::Duration,
+    connect_timeout: Duration,
     repo_manager: Arc<RepositoryManager>,
     rcs_proxy: &RemoteControlProxy,
     alias_conflict_mode: RepositoryRegistrationAliasConflictMode,
@@ -66,7 +65,7 @@ async fn connect_to_target(
 
     let (repo_host, forwarding_stream) = repo::create_repo_host_and_listener(
         repo_server_listen_addr,
-        target_info.ssh_host_address.as_ref(),
+        host_address,
         &port_forward,
         tunnel_addr,
     )
@@ -110,10 +109,11 @@ async fn inner_connect_loop(
     cmd: &StartCommand,
     repo_path: &Utf8Path,
     server_addr: core::net::SocketAddr,
-    connect_timeout: std::time::Duration,
+    connect_timeout: Duration,
     repo_manager: &Arc<RepositoryManager>,
     rcs_proxy: &Connector<RemoteControlProxyHolder>,
     target_proxy: &Connector<TargetProxyHolder>,
+    host_address: Option<String>,
     writer: &mut impl Write,
     tunnel_addr: core::net::SocketAddr,
     connection_sink: &mut mpsc::UnboundedSender<anyhow::Result<ConnectionStream>>,
@@ -167,14 +167,9 @@ async fn inner_connect_loop(
         );
     }
 
-    let target_info: TargetInfo = timeout(Duration::from_secs(2), target_proxy.identity())
-        .await
-        .context("Timed out getting target identity")?
-        .context("Failed to get target identity")?;
-
     let connection = connect_to_target(
         target_spec_from_rcs_proxy.clone(),
-        target_info,
+        host_address.clone(),
         cmd.alias.clone(),
         cmd.storage_type.clone(),
         server_addr,
@@ -242,11 +237,12 @@ pub(crate) async fn main_connect_loop(
     cmd: &StartCommand,
     repo_path: &Utf8Path,
     server_addr: core::net::SocketAddr,
-    connect_timeout: std::time::Duration,
+    connect_timeout: Duration,
     repo_manager: Arc<RepositoryManager>,
     mut loop_stop_rx: futures::channel::mpsc::Receiver<()>,
     rcs_proxy: Connector<RemoteControlProxyHolder>,
     target_proxy: Connector<TargetProxyHolder>,
+    host_address: Option<String>,
     writer: &mut (impl Write + 'static),
     tunnel_addr: core::net::SocketAddr,
     mut connection_sink: mpsc::UnboundedSender<anyhow::Result<ConnectionStream>>,
@@ -279,6 +275,7 @@ pub(crate) async fn main_connect_loop(
             &repo_manager,
             &rcs_proxy,
             &target_proxy,
+            host_address.clone(),
             writer,
             tunnel_addr,
             &mut connection_sink,

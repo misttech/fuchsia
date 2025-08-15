@@ -5,7 +5,6 @@
 use crate::PkgServerInfo;
 use async_lock::RwLock;
 use ffx_target_net::{SocketProvider, TargetTcpListener};
-use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_pkg::RepositoryManagerProxy;
 use fidl_fuchsia_pkg_ext::{
     MirrorConfigBuilder, RepositoryConfigBuilder, RepositoryError,
@@ -366,7 +365,7 @@ pub enum RepoHostAddr {
 /// the repository.
 pub fn create_repo_host(
     listen_addr: SocketAddr,
-    host_address: Option<&ffx::SshHostAddrInfo>,
+    host_address: Option<String>,
 ) -> Result<RepoHostAddr, RepositoryError> {
     // We need to decide which address the target device should use to reach the
     // repository. If the server is running on a loopback device, then we need
@@ -393,16 +392,16 @@ pub fn create_repo_host(
     // tunnel, or only tunnel if the server is on a loopback address.
 
     // IPv6 addresses can contain a ':', IPv4 cannot.
-    let repo_host = if host_address.address.contains(':') {
-        if let Some(pos) = host_address.address.rfind('%') {
-            let ip = &host_address.address[..pos];
-            let scope_id = &host_address.address[pos + 1..];
+    let repo_host = if host_address.contains(':') {
+        if let Some(pos) = host_address.rfind('%') {
+            let ip = &host_address[..pos];
+            let scope_id = &host_address[pos + 1..];
             format!("[{}%25{}]:{}", ip, scope_id, listen_addr.port())
         } else {
-            format!("[{}]:{}", host_address.address, listen_addr.port())
+            format!("[{}]:{}", host_address, listen_addr.port())
         }
     } else {
-        format!("{}:{}", host_address.address, listen_addr.port())
+        format!("{}:{}", host_address, listen_addr.port())
     };
 
     Ok(RepoHostAddr::Direct(repo_host))
@@ -413,7 +412,7 @@ pub fn create_repo_host(
 /// when needed.
 pub async fn create_repo_host_and_listener(
     listen_addr: SocketAddr,
-    host_address: Option<&ffx::SshHostAddrInfo>,
+    host_address: Option<String>,
     socket_provider: &SocketProvider,
     tunnel_addr: SocketAddr,
 ) -> Result<(String, Option<TargetTcpListener>), RepositoryError> {

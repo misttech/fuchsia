@@ -48,6 +48,12 @@ impl From<Option<ffx_fidl::SshHostAddrInfo>> for HostAddrHolder {
     }
 }
 
+impl From<String> for HostAddrHolder {
+    fn from(value: String) -> Self {
+        HostAddrHolder::from(Some(HostAddr::from(value)))
+    }
+}
+
 #[async_trait(?Send)]
 impl TryFromEnv for HostAddrHolder {
     async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
