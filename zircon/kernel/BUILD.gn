@@ -356,6 +356,7 @@ if (is_kernel) {
       "EXPERIMENTAL_THREAD_SAMPLER_ENABLED=$experimental_thread_sampler_enabled",
       "EXPERIMENTAL_KTRACE_STREAMING_ENABLED=$experimental_ktrace_streaming_enabled",
       "EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED=$experimental_unified_scheduler_enabled",
+      "EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING=$experimental_force_enable_new_wakeup_accounting",
     ]
 
     if (kernel_no_userabi) {

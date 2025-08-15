@@ -199,7 +199,7 @@ static int bootstrap2(void*) {
   // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
   // when unblocking once we solve races higher in the stack.
   dprintf(INFO, "Boot option: New thread wakeup accounting %s\n",
-          gBootOptions->enable_new_wakeup_accounting ? "enabled" : "disabled");
+          Scheduler::EnableNewWakeupAccounting() ? "enabled" : "disabled");
 #endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
   // Initialize the rest of the architecture and platform.

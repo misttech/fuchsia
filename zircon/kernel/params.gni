@@ -128,6 +128,16 @@ declare_args() {
 
   # Use unified bookkeeping for the kernel scheduler.
   experimental_unified_scheduler_enabled = true
+
+  # Force new scheduler wakeup accounting to be enabled, ignoring the boot
+  # option value. This is used to force the feature on at the individual try bot
+  # level, where gn arguments can be set but boot options cannot.
+  #
+  # Ignored if experimental_unified_scheduler_enabled is false.
+  #
+  # TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
+  # when unblocking once we solve races higher in the stack.
+  experimental_force_enable_new_wakeup_accounting = false
 }
 
 declare_args() {

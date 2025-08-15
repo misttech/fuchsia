@@ -74,6 +74,12 @@ constexpr zx_cpu_performance_scale_t ToUserPerformanceScale(SchedProcessingRate 
 // per-CPU state.
 class Scheduler {
  public:
+#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
+  // Returns true if new scheduler wakeup accounting is enabled either by boot
+  // option or gn arg.
+  static bool EnableNewWakeupAccounting();
+#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
+
   // fwd decl of a helper class used to implement various PI operations.  See
   // //zircon/kernel/kernel/scheduler_pi.cc to see how it is used.
   template <typename Op, typename TargetType>

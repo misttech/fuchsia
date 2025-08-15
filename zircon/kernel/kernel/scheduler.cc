@@ -224,6 +224,16 @@ void PreemptReset(cpu_num_t current_cpu, zx_instant_mono_t now, zx_instant_mono_
 
 }  // anonymous namespace
 
+#if EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
+bool Scheduler::EnableNewWakeupAccounting() {
+#if EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING
+  return true;
+#else
+  return gBootOptions->enable_new_wakeup_accounting;
+#endif  // EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING
+}
+#endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
+
 void Scheduler::CountUpdateInTransition() { counter_update_in_transition.Add(1); }
 
 fxt::StringRef<fxt::RefType::kId> Scheduler::ToStringRef(Placement placement) {
@@ -2702,7 +2712,7 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
       // period.
       // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
       // when unblocking once we solve races higher in the stack.
-      if (!gBootOptions->enable_new_wakeup_accounting && placement == Placement::Insertion) {
+      if (!EnableNewWakeupAccounting() && placement == Placement::Insertion) {
         const SchedDuration period = state.effective_period();
         state.start_time_ = now;
         state.finish_time_ = now + period;
@@ -2713,7 +2723,7 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
         // we've adjusted the fair bandwidth.
         // TODO(https://fxbug.dev/322207536): Stop resetting start and finish
         // times when unblocking once we solve races higher in the stack.
-        if (!gBootOptions->enable_new_wakeup_accounting && placement == Placement::Insertion) {
+        if (!EnableNewWakeupAccounting() && placement == Placement::Insertion) {
           const SchedDuration period = state.effective_period();
           state.start_time_ = now;
           state.finish_time_ = now + period;
