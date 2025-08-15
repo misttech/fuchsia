@@ -45,7 +45,7 @@
     <project name="third_party/android.googlesource.com/platform/frameworks/native"
              path="third_party/android/platform/frameworks/native"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/frameworks/native"
-             revision="889aaed858e2c7e8b506d07d52ee38fe7c3e54e2"/>
+             revision="ab3ba72cc3f8ad87f31883e79b17f8c0c80caee2"/>
     <project name="third_party/android.googlesource.com/platform/system/logging"
              path="third_party/android/platform/system/logging"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/logging"
