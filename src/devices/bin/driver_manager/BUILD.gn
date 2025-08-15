@@ -35,23 +35,6 @@ fuchsia_structured_config_values("driver_manager_config_default") {
   }
 }
 
-source_set("inspect") {
-  visibility = [ "*" ]
-  sources = [
-    "inspect.cc",
-    "inspect.h",
-  ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
-    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_cpp",
-    "//sdk/lib/inspect/component/cpp",
-    "//src/lib/ddk",
-    "//src/storage/lib/vfs/cpp",
-    "//zircon/system/ulib/fbl",
-  ]
-  deps = [ "//sdk/lib/inspect/component/cpp" ]
-}
-
 source_set("driver_host_loader_service") {
   visibility = [
     ":*",
@@ -140,7 +123,6 @@ source_set("driver_runner") {
     "//sdk/lib/inspect/component/cpp",
     "//sdk/lib/vfs/cpp",
     "//src/devices/bin/driver_loader",
-    "//src/devices/bin/driver_manager:inspect",
     "//src/devices/bin/driver_manager/devfs",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/lib/ddk",

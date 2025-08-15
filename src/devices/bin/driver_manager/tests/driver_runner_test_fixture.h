@@ -43,7 +43,6 @@ const std::string compat_driver_binary = "driver/compat.so";
 
 using driver_manager::Devfs;
 using driver_manager::DriverRunner;
-using driver_manager::InspectManager;
 
 using OnBindCallback = fit::function<void(std::optional<zx::event>&)>;
 
@@ -105,6 +104,7 @@ struct NodeChecker {
   std::vector<std::string> node_name;
   std::vector<std::string> child_names;
   std::map<std::string, std::string> str_properties;
+  std::map<std::string, std::vector<std::string>> array_str_properties;
 };
 
 struct CreatedChild {
@@ -284,7 +284,6 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
   void TearDown() override { Unbind(); }
 
  protected:
-  InspectManager& inspect() { return inspect_; }
   TestRealm& realm() { return realm_; }
   TestDirectory& driver_dir() { return driver_dir_; }
   TestDriverHost& driver_host() { return driver_host_; }
@@ -401,7 +400,7 @@ class DriverRunnerTestBase : public gtest::TestLoopFixture {
   fidl::ServerBindingGroup<fdh::DriverHost> driver_host_bindings_;
 
   std::optional<Devfs> devfs_;
-  InspectManager inspect_{dispatcher()};
+  inspect::ComponentInspector inspector_{dispatcher(), {}};
   std::optional<FakeDriverIndex> driver_index_;
   std::optional<DriverRunner> driver_runner_;
   std::unique_ptr<driver_loader::Loader> dynamic_linker_;

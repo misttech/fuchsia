@@ -7,6 +7,7 @@
 
 #include <lib/fit/defer.h>
 #include <lib/fit/function.h>
+#include <lib/inspect/cpp/inspector.h>
 
 #include "src/devices/bin/driver_manager/bind/bind_node_set.h"
 #include "src/devices/bin/driver_manager/bind/bind_result_tracker.h"

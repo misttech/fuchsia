@@ -35,27 +35,31 @@ void CheckNode(const inspect::Hierarchy& hierarchy, const NodeChecker& checker) 
   auto node = hierarchy.GetByPath(checker.node_name);
   ASSERT_NE(nullptr, node);
 
-  if (node->children().size() != checker.child_names.size()) {
+  size_t expected_children = checker.child_names.size();
+  if (auto ptr = node->GetByPath({"properties"}); ptr) {
+    expected_children++;
+  }
+  if (node->children().size() != expected_children) {
     printf("Mismatched children\n");
     for (size_t i = 0; i < node->children().size(); i++) {
       printf("Child %ld : %s\n", i, node->children()[i].name().c_str());
     }
-    ASSERT_EQ(node->children().size(), checker.child_names.size());
+    ASSERT_EQ(node->children().size(), expected_children);
   }
 
   for (auto& child : checker.child_names) {
     auto ptr = node->GetByPath({child});
-    if (!ptr) {
-      printf("Failed to find child %s\n", child.c_str());
-    }
-    ASSERT_NE(nullptr, ptr);
+    ASSERT_NE(nullptr, ptr) << "Failed to find child " << child;
   }
 
   for (auto& property : checker.str_properties) {
     auto prop = node->node().get_property<inspect::StringPropertyValue>(property.first);
-    if (!prop) {
-      printf("Failed to find property %s\n", property.first.c_str());
-    }
+    ASSERT_TRUE(prop) << "Failed to find property " << property.first;
+    ASSERT_EQ(property.second, prop->value());
+  }
+  for (auto& property : checker.array_str_properties) {
+    auto prop = node->node().get_property<inspect::StringArrayValue>(property.first);
+    ASSERT_TRUE(prop) << "Failed to find property " << property.first;
     ASSERT_EQ(property.second, prop->value());
   }
 }
@@ -261,7 +265,7 @@ FakeDriverIndex DriverRunnerTestBase::CreateDriverIndex() {
 void DriverRunnerTestBase::SetupDriverRunner(FakeDriverIndex driver_index) {
   driver_index_.emplace(std::move(driver_index));
   driver_runner_.emplace(ConnectToRealm(), ConnectToCapabilityStore(), driver_index_->Connect(),
-                         inspect(), &LoaderFactory, dispatcher(), false,
+                         inspector_, &LoaderFactory, dispatcher(), false,
                          driver_manager::OfferInjector{{
                              .power_inject_offer = false,
                              .power_suspend_enabled = false,
@@ -291,7 +295,7 @@ void DriverRunnerTestBase::SetupDriverRunnerWithDynamicLinker(
   dynamic_linker_ =
       driver_loader::Loader::Create(loader_dispatcher, std::move(load_driver_handler));
   driver_runner_.emplace(
-      ConnectToRealm(), ConnectToCapabilityStore(), driver_index_->Connect(), inspect(),
+      ConnectToRealm(), ConnectToCapabilityStore(), driver_index_->Connect(), inspector_,
       &LoaderFactory, dispatcher(), false,
       driver_manager::OfferInjector{{
           .power_inject_offer = false,

@@ -13,6 +13,8 @@
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fdio.h>
 #include <lib/fdio/io.h>
+#include <lib/inspect/component/cpp/component.h>
+#include <lib/inspect/component/cpp/service.h>
 #include <lib/zx/event.h>
 #include <lib/zx/port.h>
 #include <lib/zx/resource.h>
@@ -86,7 +88,8 @@ int main(int argc, char** argv) {
 
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
   auto outgoing = component::OutgoingDirectory(loop.dispatcher());
-  driver_manager::InspectManager inspect_manager(loop.dispatcher());
+  inspect::ComponentInspector inspector{loop.dispatcher(), {}};
+  inspector.inspector().CreateStatsNode();
 
   // Launch DriverRunner for DFv2 drivers.
   auto realm_result = component::Connect<fuchsia_component::Realm>();
@@ -121,7 +124,7 @@ int main(int argc, char** argv) {
       driver_manager::DriverHostLoaderService::Create(loader_loop.dispatcher(), std::move(lib_fd));
   driver_manager::DriverRunner driver_runner(
       std::move(realm_result.value()), std::move(capability_store_result.value()),
-      std::move(driver_index_result.value()), inspect_manager,
+      std::move(driver_index_result.value()), inspector,
       [loader_service]() -> zx::result<fidl::ClientEnd<fuchsia_ldsvc::Loader>> {
         zx::result client = loader_service->Connect();
         if (client.is_error()) {

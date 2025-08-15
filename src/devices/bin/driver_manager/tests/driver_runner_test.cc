@@ -1344,14 +1344,14 @@ TEST_P(DriverRunnerTest, StartAndInspect) {
                                                     {"driver", root_driver_url},
                                                 }}));
 
-  ASSERT_NO_FATAL_FAILURE(
-      CheckNode(hierarchy, {.node_name = {"node_topology", "dev", "second"},
-                            .child_names = {},
-                            .str_properties = {
-                                {"offers", "fuchsia.package.ProtocolA, fuchsia.package.ProtocolB"},
-                                {"symbols", "symbol-A, symbol-B"},
-                                {"driver", "unbound"},
-                            }}));
+  ASSERT_NO_FATAL_FAILURE(CheckNode(
+      hierarchy, {.node_name = {"node_topology", "dev", "second"},
+                  .child_names = {},
+                  .str_properties = {{"driver", "unbound"}},
+                  .array_str_properties = {
+                      {"offers", {"fuchsia.package.ProtocolA", "fuchsia.package.ProtocolB"}},
+                      {"symbols", {"symbol-A", "symbol-B"}},
+                  }}));
 
   ASSERT_NO_FATAL_FAILURE(CheckNode(hierarchy, {
                                                    .node_name = {"orphan_nodes"},
@@ -1644,28 +1644,22 @@ TEST(CompositeServiceOfferTest, WorkingOfferPrimary) {
 
 TEST(NodeTest, ToCollection) {
   async::Loop loop{&kAsyncLoopConfigNeverAttachToThread};
-  InspectManager inspect(loop.dispatcher());
-  constexpr uint32_t kProtocolId = 0;
-
   constexpr char kGrandparentName[] = "grandparent";
   std::shared_ptr<Node> grandparent = std::make_shared<Node>(
-      kGrandparentName, std::vector<std::weak_ptr<Node>>{}, nullptr, loop.dispatcher(),
-      inspect.CreateDevice(kGrandparentName, kProtocolId));
+      kGrandparentName, std::vector<std::weak_ptr<Node>>{}, nullptr, loop.dispatcher());
 
   constexpr char kParentName[] = "parent";
-  std::shared_ptr<Node> parent =
-      std::make_shared<Node>(kParentName, std::vector<std::weak_ptr<Node>>{grandparent}, nullptr,
-                             loop.dispatcher(), inspect.CreateDevice(kParentName, kProtocolId));
+  std::shared_ptr<Node> parent = std::make_shared<Node>(
+      kParentName, std::vector<std::weak_ptr<Node>>{grandparent}, nullptr, loop.dispatcher());
 
   constexpr char kChild1Name[] = "child1";
-  std::shared_ptr<Node> child1 =
-      std::make_shared<Node>(kChild1Name, std::vector<std::weak_ptr<Node>>{parent}, nullptr,
-                             loop.dispatcher(), inspect.CreateDevice(kChild1Name, kProtocolId));
+  std::shared_ptr<Node> child1 = std::make_shared<Node>(
+      kChild1Name, std::vector<std::weak_ptr<Node>>{parent}, nullptr, loop.dispatcher());
 
   constexpr char kChild2Name[] = "child2";
-  std::shared_ptr<Node> child2 = std::make_shared<Node>(
-      kChild2Name, std::vector<std::weak_ptr<Node>>{parent, child1}, nullptr, loop.dispatcher(),
-      inspect.CreateDevice(kChild2Name, kProtocolId), 0, driver_manager::NodeType::kComposite);
+  std::shared_ptr<Node> child2 =
+      std::make_shared<Node>(kChild2Name, std::vector<std::weak_ptr<Node>>{parent, child1}, nullptr,
+                             loop.dispatcher(), 0, driver_manager::NodeType::kComposite);
 
   // Test parentless
   EXPECT_EQ(ToCollection(*grandparent, fdfw::DriverPackageType::kBoot), Collection::kBoot);

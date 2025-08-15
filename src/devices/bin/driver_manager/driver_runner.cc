@@ -65,21 +65,52 @@ void InspectNode(inspect::Inspector& inspector, InspectStack& stack) {
 
     // Populate root with data from node.
     if (const auto& offers = node->offers(); !offers.empty()) {
-      std::vector<std::string_view> strings;
-      for (const auto& offer : offers) {
-        strings.push_back(offer.service_name);
+      auto array = root->CreateStringArray("offers", offers.size());
+      for (size_t i = 0; i < offers.size(); i++) {
+        array.Set(i, offers[i].service_name);
       }
-      root->RecordString("offers", fxl::JoinStrings(strings, ", "));
+      root->Record(std::move(array));
     }
     if (auto symbols = node->symbols(); !symbols.empty()) {
-      std::vector<std::string_view> strings;
-      for (auto& symbol : symbols) {
-        strings.push_back(symbol.name().value());
+      auto array = root->CreateStringArray("symbols", symbols.size());
+      for (size_t i = 0; i < symbols.size(); i++) {
+        array.Set(i, symbols[i].name().value());
       }
-      root->RecordString("symbols", fxl::JoinStrings(strings, ", "));
+      root->Record(std::move(array));
     }
-    std::string driver_string = node->driver_url();
-    root->RecordString("driver", driver_string);
+    if (auto properties = node->GetNodeProperties(); properties && !properties->empty()) {
+      root->RecordChild("properties", [&](inspect::Node& properties_array) {
+        for (uint32_t i = 0; i < properties->size(); ++i) {
+          properties_array.RecordChild(std::to_string(i), [&](inspect::Node& inspect_property) {
+            auto& property = properties.value()[i];
+            inspect_property.RecordString("key", property.key());
+
+            if (const auto& str_prop = property.value().string_value(); str_prop.has_value()) {
+              inspect_property.RecordString("value", str_prop.value());
+
+            } else if (const auto& int_prop = property.value().int_value(); int_prop.has_value()) {
+              inspect_property.RecordUint("value", int_prop.value());
+
+            } else if (const auto& enum_prop = property.value().enum_value();
+                       enum_prop.has_value()) {
+              inspect_property.RecordString("value", enum_prop.value());
+
+            } else if (const auto& bool_prop = property.value().bool_value();
+                       bool_prop.has_value()) {
+              inspect_property.RecordBool("value", bool_prop.value());
+
+            } else {
+              inspect_property.RecordString("value", "UNKNOWN VALUE TYPE");
+            }
+          });
+        }
+      });
+    }
+
+    root->RecordString("type", node->IsComposite() ? "Composite Device" : "Device");
+    root->RecordString("topological_path", node->MakeTopologicalPath());
+
+    root->RecordString("driver", node->driver_url());
 
     // Push children of this node onto the stack. We do this in reverse order to
     // ensure the children are handled in order, from first to last.
@@ -258,7 +289,7 @@ Collection ToCollection(const Node& node, fdf::DriverPackageType package_type) {
 DriverRunner::DriverRunner(
     fidl::ClientEnd<fcomponent::Realm> realm,
     fidl::ClientEnd<fuchsia_component_sandbox::CapabilityStore> capability_store,
-    fidl::ClientEnd<fdi::DriverIndex> driver_index, InspectManager& inspect,
+    fidl::ClientEnd<fdi::DriverIndex> driver_index, inspect::ComponentInspector& inspect,
     LoaderServiceFactory loader_service_factory, async_dispatcher_t* dispatcher,
     bool enable_test_shutdown_delays, OfferInjector offer_injector,
     std::optional<DynamicLinkerArgs> dynamic_linker_args)
@@ -267,8 +298,7 @@ DriverRunner::DriverRunner(
       loader_service_factory_(std::move(loader_service_factory)),
       dispatcher_(dispatcher),
       root_node_(std::make_shared<Node>(kRootDeviceName, std::vector<std::weak_ptr<Node>>{}, this,
-                                        dispatcher,
-                                        inspect.CreateDevice(std::string(kRootDeviceName), 0))),
+                                        dispatcher)),
       composite_node_spec_manager_(this),
       bind_manager_(this, this, dispatcher),
       runner_(dispatcher, fidl::WireClient(std::move(realm), dispatcher), offer_injector),
@@ -282,7 +312,7 @@ DriverRunner::DriverRunner(
     shutdown_test_delay_rng_ = std::make_shared<std::mt19937>(static_cast<uint32_t>(seed));
   }
 
-  inspect.root_node().RecordLazyNode("driver_runner", [this] { return Inspect(); });
+  inspect.root().RecordLazyNode("driver_runner", [this] { return Inspect(); });
 
   // Pick a non-zero starting id so that folks cannot rely on the driver host process names being
   // stable.

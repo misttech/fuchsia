@@ -22,7 +22,6 @@
 #include "src/devices/bin/driver_manager/controller_allowlist_passthrough.h"
 #include "src/devices/bin/driver_manager/devfs/devfs.h"
 #include "src/devices/bin/driver_manager/driver_host.h"
-#include "src/devices/bin/driver_manager/inspect.h"
 #include "src/devices/bin/driver_manager/node_types.h"
 #include "src/devices/bin/driver_manager/shutdown/node_removal_tracker.h"
 #include "src/devices/bin/driver_manager/shutdown/node_shutdown_coordinator.h"
@@ -116,7 +115,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
              public NodeShutdownBridge {
  public:
   Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents, NodeManager* node_manager,
-       async_dispatcher_t* dispatcher, DeviceInspect inspect, uint32_t primary_index = 0,
+       async_dispatcher_t* dispatcher, uint32_t primary_index = 0,
        NodeType type = NodeType::kNormal);
 
   ~Node() override;
@@ -417,9 +416,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller,
       fidl::ServerEnd<fuchsia_driver_framework::Node> node);
 
-  // Set the inspect data and publish it. This should be called once as the node is being created.
-  void SetAndPublishInspect();
-
   // Creates a passthrough for the associated devfs node that will connect to
   // the device controller of this node if no connector provided, or the connection
   // type is not supported.
@@ -504,9 +500,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   bool owned_by_parent_ = false;
   bool is_composite_parent_ = false;
-
-  // The device's inspect information.
-  DeviceInspect inspect_;
 
   std::unique_ptr<NodeShutdownCoordinator> node_shutdown_coordinator_;
 

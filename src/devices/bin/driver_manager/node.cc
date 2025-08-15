@@ -266,15 +266,14 @@ NodeOffer CreateCompositeOffer(const NodeOffer& offer, std::string_view parents_
 }
 
 Node::Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents,
-           NodeManager* node_manager, async_dispatcher_t* dispatcher, DeviceInspect inspect,
-           uint32_t primary_index, NodeType type)
+           NodeManager* node_manager, async_dispatcher_t* dispatcher, uint32_t primary_index,
+           NodeType type)
     : name_(name),
       type_(type),
       parents_(std::move(parents)),
       primary_index_(primary_index),
       node_manager_(node_manager),
-      dispatcher_(dispatcher),
-      inspect_(std::move(inspect)) {
+      dispatcher_(dispatcher) {
   if (type == NodeType::kNormal) {
     ZX_ASSERT(parents_.size() <= 1);
   }
@@ -312,14 +311,12 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
     LOGF(ERROR, "Primary node freed before use");
     return zx::error(ZX_ERR_INTERNAL);
   }
-  DeviceInspect inspect = primary_node_ptr->inspect_.CreateChild(std::string(node_name), 0);
   std::shared_ptr composite =
       std::make_shared<Node>(node_name, std::move(parents), driver_binder, dispatcher,
-                             std::move(inspect), primary_index, NodeType::kComposite);
+                             primary_index, NodeType::kComposite);
   composite->parents_names_ = std::move(parents_names);
 
   composite->SetCompositeParentProperties(parent_properties);
-  composite->SetAndPublishInspect();
 
   Node* primary = composite->GetPrimaryParent();
   // We know that our device has a parent because we're creating it.
@@ -798,10 +795,8 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
       return fit::as_error(fdf::NodeError::kNameAlreadyExists);
     }
   };
-  DeviceInspect inspect = inspect_.CreateChild(std::string(name), 0);
-  std::shared_ptr child =
-      std::make_shared<Node>(name, std::vector<std::weak_ptr<Node>>{weak_from_this()},
-                             *node_manager_, dispatcher_, std::move(inspect));
+  std::shared_ptr child = std::make_shared<Node>(
+      name, std::vector<std::weak_ptr<Node>>{weak_from_this()}, *node_manager_, dispatcher_);
 
   auto& fdf_offers = args.offers2();
   std::vector<fuchsia_driver_framework::NodeProperty2> properties;
@@ -871,8 +866,6 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
   child->dictionary_ref_ = dictionary_ref_;
 
   child->SetNonCompositeProperties(std::move(properties));
-
-  child->SetAndPublishInspect();
 
   if (auto& symbols = args.symbols(); symbols.has_value()) {
     auto is_valid = ValidateSymbols(symbols.value());
@@ -1490,32 +1483,6 @@ Node::DriverComponent::DriverComponent(
   ZX_ASSERT(component_instance.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr,
                                         nullptr) == ZX_OK);
   component_instance_koid = info.koid;
-}
-
-void Node::SetAndPublishInspect() {
-  constexpr char kDeviceTypeString[] = "Device";
-  constexpr char kCompositeDeviceTypeString[] = "Composite Device";
-
-  cpp20::span<const fdf::NodeProperty2> property_vector;
-  uint32_t protocol_id = 0;
-  if (type_ == NodeType::kNormal) {
-    auto properties = GetNodeProperties();
-    ZX_ASSERT_MSG(properties.has_value(), "Non-composite node \"%s\" missing node properties",
-                  name_.c_str());
-    for (auto& node_property : properties.value()) {
-      if (node_property.key() == bind_fuchsia::PROTOCOL &&
-          node_property.value().int_value().has_value()) {
-        protocol_id = node_property.value().int_value().value();
-      }
-    }
-
-    property_vector = properties.value();
-  }
-
-  inspect_.SetStaticValues(MakeTopologicalPath(), protocol_id,
-                           IsComposite() ? kCompositeDeviceTypeString : kDeviceTypeString,
-                           property_vector,
-                           driver_component_.has_value() ? driver_component_->driver_url : "");
 }
 
 void Node::ConnectToDeviceFidl(ConnectToDeviceFidlRequestView request,

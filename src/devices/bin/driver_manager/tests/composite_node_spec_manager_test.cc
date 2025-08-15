@@ -137,8 +137,7 @@ class CompositeNodeSpecManagerTest : public zxtest::Test {
 
   std::shared_ptr<driver_manager::Node> CreateNode(const char* name) {
     return std::make_shared<driver_manager::Node>(
-        "node", std::vector<std::weak_ptr<driver_manager::Node>>{}, nullptr, loop_.dispatcher(),
-        inspect_.CreateDevice(name, 0));
+        "node", std::vector<std::weak_ptr<driver_manager::Node>>{}, nullptr, loop_.dispatcher());
   }
 
   void VerifyRemoveInvokedForSpec(bool expected, const std::string& name) {
@@ -151,7 +150,6 @@ class CompositeNodeSpecManagerTest : public zxtest::Test {
   std::unordered_map<std::string, FakeCompositeNodeSpec*> specs_;
   FakeDeviceManagerBridge bridge_;
   async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
-  driver_manager::InspectManager inspect_{loop_.dispatcher()};
 };
 
 TEST_F(CompositeNodeSpecManagerTest, TestAddMatchCompositeNodeSpec) {

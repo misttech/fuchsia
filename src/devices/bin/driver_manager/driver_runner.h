@@ -16,6 +16,7 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/fit/function.h>
 #include <lib/fpromise/promise.h>
+#include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
@@ -30,7 +31,6 @@
 #include "src/devices/bin/driver_manager/composite_node_spec/composite_node_spec_manager.h"
 #include "src/devices/bin/driver_manager/driver_host.h"
 #include "src/devices/bin/driver_manager/driver_host_runner.h"
-#include "src/devices/bin/driver_manager/inspect.h"
 #include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/offer_injection.h"
 #include "src/devices/bin/driver_manager/runner.h"
@@ -67,7 +67,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   DriverRunner(fidl::ClientEnd<fuchsia_component::Realm> realm,
                fidl::ClientEnd<fuchsia_component_sandbox::CapabilityStore> capability_store,
                fidl::ClientEnd<fuchsia_driver_index::DriverIndex> driver_index,
-               InspectManager& inspect, LoaderServiceFactory loader_service_factory,
+               inspect::ComponentInspector& inspect, LoaderServiceFactory loader_service_factory,
                async_dispatcher_t* dispatcher, bool enable_test_shutdown_delays,
                OfferInjector offer_injector,
                std::optional<DynamicLinkerArgs> dynamic_linker_args = std::nullopt);
