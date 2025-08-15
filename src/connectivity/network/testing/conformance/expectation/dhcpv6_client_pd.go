@@ -29,6 +29,6 @@ var dhcpv6ClientPDExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlC
 	{6, 1}: Pass,
 	{6, 2}: Pass,
 	{6, 3}: Pass,
-	{7, 1}: Fail,
-	{7, 2}: Fail,
+	{7, 1}: Pass,
+	{7, 2}: Inconclusive,
 }
