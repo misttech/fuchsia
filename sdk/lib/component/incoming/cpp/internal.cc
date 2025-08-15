@@ -110,13 +110,8 @@ zx::result<fidl::ClientEnd<fio::Directory>> OpenDirectoryAt(
 
 zx::result<> CloneRaw(fidl::UnownedClientEnd<fuchsia_unknown::Cloneable>&& cloneable,
                       zx::channel server_end) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
   const fidl::Status result = fidl::WireCall(cloneable)->Clone(
       fidl::ServerEnd<fuchsia_unknown::Cloneable>(std::move(server_end)));
-#else
-  const fidl::Status result = fidl::WireCall(cloneable)->Clone2(
-      fidl::ServerEnd<fuchsia_unknown::Cloneable>(std::move(server_end)));
-#endif
   if (!result.ok()) {
     return zx::error(result.status());
   }
