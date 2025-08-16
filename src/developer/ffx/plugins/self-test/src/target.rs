@@ -13,7 +13,9 @@ pub(crate) async fn test_manual_add_get_ssh_address() -> Result<()> {
 
     let _ = isolate.exec_ffx(&["target", "add", "--nowait", "[::1]:8022"]).await?;
 
-    let out = isolate.exec_ffx(&["--target", "[::1]:8022", "target", "get-ssh-address"]).await?;
+    let out = isolate
+        .exec_ffx(&["--target", "[::1]:8022", "target", "list", "--format", "a", "--no-probe"])
+        .await?;
 
     ensure!(out.stdout.contains("[::1]:8022"), "stdout is unexpected: {:?}", out);
     ensure!(out.stderr.lines().count() == 0, "stderr is unexpected: {:?}", out);
@@ -26,10 +28,17 @@ pub(crate) async fn test_manual_add_get_ssh_address_late_add() -> Result<()> {
     let isolate = new_isolate("target-manual-add-get-ssh-address-late-add").await?;
     isolate.start_daemon().await?;
 
-    let task =
-        isolate.exec_ffx(&["--target", "[::1]:8022", "target", "get-ssh-address", "-t", "10"]);
+    let task = isolate.exec_ffx(&[
+        "--target",
+        "[::1]:8022",
+        "target",
+        "list",
+        "--format",
+        "a",
+        "--no-probe",
+    ]);
 
-    // The get-ssh-address should pick up targets added after it has started, as well as before.
+    // The target-list should pick up targets added after it has started, as well as before.
     fuchsia_async::Timer::new(Duration::from_millis(500)).await;
 
     let _ = isolate.exec_ffx(&["target", "add", "--nowait", "[::1]:8022"]).await?;
@@ -53,7 +62,7 @@ pub mod include_target {
 
     // Check that the addresses match, and that the output includes the port.
     // We'd like to write a test that validates the port that comes back from
-    // get-ssh-address is the _correct_ port, but we can't actually write that,
+    // target-list is the _correct_ port, but we can't actually write that,
     // because we don't necessarily know the port. The "target addr" could
     // simply be specified as an IP address address _without a port_ (e.g. a
     // target of "192.168.42.105"). In that situation, the address is used as a
@@ -73,7 +82,15 @@ pub mod include_target {
         };
 
         let out = isolate
-            .exec_ffx(&["--target", &target_nodeaddr, "target", "get-ssh-address", "-t", "5"])
+            .exec_ffx(&[
+                "--target",
+                &target_nodeaddr,
+                "target",
+                "list",
+                "--format",
+                "a",
+                "--no-probe",
+            ])
             .await?;
 
         let out_addr = out.stdout.trim();

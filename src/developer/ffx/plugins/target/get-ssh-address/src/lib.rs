@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_get_ssh_address_args::GetSshAddressCommand;
 use ffx_writer::SimpleWriter;
-use fho::{FfxMain, FfxTool};
+use fho::{FfxMain, FfxTool, TryFromEnv};
 use fidl_fuchsia_developer_ffx::{
     DaemonError, TargetCollectionProxy, TargetIpAddrInfo, TargetMarker, TargetQuery,
 };
@@ -19,8 +19,21 @@ use target_errors::FfxTargetError;
 use target_holders::daemon_protocol;
 use timeout::timeout;
 
+struct DeprecationNotice;
+#[async_trait(?Send)]
+impl TryFromEnv for DeprecationNotice {
+    async fn try_from_env(_env: &fho::FhoEnvironment) -> fho::Result<Self> {
+        eprintln!("WARNING: The get-ssh-address subtool will be removed on Aug 22, 2025.");
+        eprintln!("WARNING: Use `ffx -t <target> target list --format addresses` instead.");
+        eprintln!("WARNING: Please contact slgrady@google.com for more information.");
+        Ok(DeprecationNotice)
+    }
+}
+
 #[derive(FfxTool)]
 pub struct GetSshAddressTool {
+    // Put the deprecation first, so it runs regardless of any other errors.
+    _deprecation: DeprecationNotice,
     #[command]
     cmd: GetSshAddressCommand,
     #[with(daemon_protocol())]
