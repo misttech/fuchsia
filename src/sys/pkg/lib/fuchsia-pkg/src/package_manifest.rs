@@ -15,7 +15,7 @@ use fuchsia_merkle::from_slice;
 use fuchsia_url::{RepositoryUrl, UnpinnedAbsolutePackageUrl};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs::{self, create_dir_all, File};
+use std::fs::{self, File, create_dir_all};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::str;
@@ -220,7 +220,7 @@ impl PackageManifest {
             Err(fuchsia_archive::Error::PathNotPresent(_)) => {
                 return Err(PackageManifestError::AbiRevision(
                     crate::errors::AbiRevisionError::Missing,
-                ))
+                ));
             }
             Err(e) => return Err(e.into()),
         };
@@ -658,7 +658,7 @@ impl PackageManifestV1 {
                 tempfile::NamedTempFile::new()?
             };
 
-            serde_json::to_writer(&mut tmp, &versioned_manifest)?;
+            serde_json::to_writer_pretty(&mut tmp, &versioned_manifest)?;
             tmp.persist_if_changed(manifest_path)
                 .with_context(|| format!("failed to persist package manifest: {manifest_path}"))?;
 
@@ -794,7 +794,7 @@ mod tests {
     use camino::Utf8PathBuf;
     use fuchsia_url::RelativePackageUrl;
     use pretty_assertions::assert_eq;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use tempfile::{NamedTempFile, TempDir};
 
     const FAKE_ABI_REVISION: version_history::AbiRevision =

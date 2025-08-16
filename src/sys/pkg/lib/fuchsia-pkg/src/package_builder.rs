@@ -7,7 +7,7 @@ use crate::{
     MetaContents, MetaPackage, MetaSubpackages, PackageBuildManifest, PackageManifest, RelativeTo,
     SubpackageEntry,
 };
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use camino::Utf8PathBuf;
 use fuchsia_merkle::Hash;
 use fuchsia_url::RelativePackageUrl;
@@ -543,7 +543,7 @@ impl PackageBuilder {
                     NamedTempFile::new()?
                 };
 
-                serde_json::ser::to_writer(BufWriter::new(&mut tmp), &package_manifest)
+                serde_json::ser::to_writer_pretty(BufWriter::new(&mut tmp), &package_manifest)
                     .with_context(|| {
                         format!("writing package manifest to {}", tmp.path().display())
                     })?;
@@ -1006,9 +1006,9 @@ mod tests {
     fn test_build_rejects_abi_revision() {
         let mut builder = PackageBuilder::new("some_pkg_name", FAKE_ABI_REVISION);
         assert!(builder.add_file_to_far("meta/fuchsia.abi/abi-revision", "some/src/file").is_err());
-        assert!(builder
-            .add_file_as_blob("meta/fuchsia.abi/abi-revision", "some/src/file")
-            .is_err());
+        assert!(
+            builder.add_file_as_blob("meta/fuchsia.abi/abi-revision", "some/src/file").is_err()
+        );
     }
 
     #[test]
@@ -1179,9 +1179,9 @@ mod tests {
         let package_manifest_path2 = PathBuf::from("path2/package_manifest.json");
 
         builder.add_subpackage(&url, package_hash, package_manifest_path).unwrap();
-        assert!(builder
-            .add_subpackage(&url, package_hash2, package_manifest_path2.clone())
-            .is_ok());
+        assert!(
+            builder.add_subpackage(&url, package_hash2, package_manifest_path2.clone()).is_ok()
+        );
         assert!(builder.subpackages.get(&url).unwrap().0 == package_hash2);
         assert!(builder.subpackages.get(&url).unwrap().1 == package_manifest_path2);
     }
