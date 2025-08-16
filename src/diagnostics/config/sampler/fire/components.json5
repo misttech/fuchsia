@@ -599,11 +599,7 @@
         label: "TZ Info Service",
         moniker: "core/time-zone-info-service",
     },
-    {
-        id: 255,
-        label: "Display Coordinator",
-        moniker: "core/ui/display-coordinator-connector",
-    },
+    // 255 was for Display Coordinator
     {
         id: 256,
         label: "Virtual Keyboard",
