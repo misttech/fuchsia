@@ -17,7 +17,7 @@ fn outcome_from_test_status(status: fidl_fuchsia_test::Status) -> Outcome {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 enum ExpectationError {
     Mismatch { got: Outcome, want: Outcome },
     NoExpectationFound,
@@ -93,7 +93,7 @@ impl ExpectationsComparer {
                     "Received multiple results for case {}: {:?}",
                     name,
                     results
-                ))
+                ));
             }
         };
         let fidl_fuchsia_test::Result_ { status, .. } = result;
@@ -123,7 +123,9 @@ impl ExpectationsComparer {
             (original_status, status),
             (fidl_fuchsia_test::Status::Failed, fidl_fuchsia_test::Status::Passed)
         ) {
-            log::info!("{name} failure is expected, so it will be reported to the test runner as having passed.")
+            log::info!(
+                "{name} failure is expected, so it will be reported to the test runner as having passed."
+            )
         } else if matches!(
             (original_status, status),
             (fidl_fuchsia_test::Status::Passed, fidl_fuchsia_test::Status::Passed)
@@ -175,7 +177,7 @@ impl ExpectationsComparer {
         }
 
         let failures = futures::lock::Mutex::new(Vec::new());
-
+        let mut clean_finish = false;
         if !not_skipped.is_empty() {
             let case_stream = {
                 let (listener, listener_request_stream) = fidl::endpoints::create_request_stream();
@@ -190,11 +192,16 @@ impl ExpectationsComparer {
                     )
                     .context("error calling original test component's fuchsia.test/Suite#Run")?;
                 listener_request_stream
+                    // Stop taking in new requests after we see OnFinished.
                     .try_take_while(|request| {
-                        futures::future::ok(!matches!(
-                            request,
-                            fidl_fuchsia_test::RunListenerRequest::OnFinished { control_handle: _ }
-                        ))
+                        clean_finish = clean_finish
+                            || matches!(
+                                request,
+                                fidl_fuchsia_test::RunListenerRequest::OnFinished {
+                                    control_handle: _
+                                }
+                            );
+                        futures::future::ok(!clean_finish)
                     })
                     .map_err(anyhow::Error::new)
                     .and_then(|request| match request {
@@ -242,9 +249,16 @@ impl ExpectationsComparer {
                     .await
                     .context("error handling test case stream")?;
             }
+        } else {
+            // Didn't run anything, this is a clean finish.
+            clean_finish = true;
         }
 
-        listener_proxy.on_finished().context("error calling listener_proxy.on_finished()")?;
+        // Only send OnFinished if we have observed it ourselves, otherwise an
+        // abnormal channel closure can look like a successful test run.
+        if clean_finish {
+            listener_proxy.on_finished().context("error calling listener_proxy.on_finished()")?;
+        }
 
         Ok(failures.into_inner())
     }
@@ -345,4 +359,136 @@ async fn main() {
             futures::future::ready(())
         })
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use assert_matches::assert_matches;
+    use test_case::test_case;
+
+    fn all_pass_comparer() -> ExpectationsComparer {
+        ExpectationsComparer {
+            expectations: ser::Expectations {
+                expectations: vec![ser::Expectation::ExpectPass(ser::Matchers {
+                    matchers: vec![glob::Pattern::new("*").unwrap()],
+                })],
+                cases_to_run: ser::CasesToRun::All,
+            },
+        }
+    }
+
+    fn fake_invocations(
+        count: usize,
+    ) -> impl Iterator<Item = fidl_fuchsia_test::Invocation> + Clone {
+        (0..count).into_iter().map(|i| fidl_fuchsia_test::Invocation {
+            name: Some(format!("tes {i}")),
+            ..Default::default()
+        })
+    }
+
+    fn fake_test_outcomes(
+        listener: &fidl_fuchsia_test::RunListenerProxy,
+        tests: impl IntoIterator<Item = (fidl_fuchsia_test::Invocation, fidl_fuchsia_test::Status)>,
+    ) {
+        for (test, status) in tests {
+            let (case_listener, server_end) = fidl::endpoints::create_proxy();
+            listener
+                .on_test_case_started(&test, Default::default(), server_end)
+                .expect("call on_test_case_started");
+            case_listener
+                .finished(&fidl_fuchsia_test::Result_ {
+                    status: Some(status),
+                    ..Default::default()
+                })
+                .expect("call finished");
+        }
+    }
+
+    async fn collect_test_outcomes(
+        mut listener: fidl_fuchsia_test::RunListenerRequestStream,
+    ) -> (Vec<(fidl_fuchsia_test::Invocation, fidl_fuchsia_test::Status)>, bool) {
+        let mut tests = Vec::new();
+        let mut on_finished = false;
+        while let Some(req) = listener.try_next().await.expect("error") {
+            match req {
+                fidl_fuchsia_test::RunListenerRequest::OnTestCaseStarted {
+                    invocation,
+                    std_handles: _,
+                    listener,
+                    control_handle: _,
+                } => {
+                    let req = listener
+                        .into_stream()
+                        .try_next()
+                        .await
+                        .expect("error")
+                        .expect("listener ended unexpectedly");
+                    match req {
+                        fidl_fuchsia_test::CaseListenerRequest::Finished {
+                            result,
+                            control_handle: _,
+                        } => {
+                            tests.push((
+                                invocation,
+                                result.status.expect("fuchsia.test/Result had no status"),
+                            ));
+                        }
+                    }
+                }
+                fidl_fuchsia_test::RunListenerRequest::OnFinished { control_handle: _ } => {
+                    on_finished = true
+                }
+            }
+        }
+        (tests, on_finished)
+    }
+
+    #[test_case(true; "send_finish")]
+    #[test_case(false; "no_finish")]
+    #[fuchsia::test]
+    async fn issue_on_finish(send_finish: bool) {
+        let comparer = all_pass_comparer();
+        let (suite_proxy, mut suite_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_test::SuiteMarker>();
+        let (listener, listener_request_stream) = fidl::endpoints::create_request_stream();
+
+        let fake_invocations = fake_invocations(1);
+        let run_fut = comparer.handle_suite_run_request(
+            &suite_proxy,
+            fake_invocations.clone().collect(),
+            fidl_fuchsia_test::RunOptions::default(),
+            listener,
+        );
+        let suite_fut = async move {
+            let req = suite_request_stream
+                .try_next()
+                .await
+                .expect("error")
+                .expect("suite request stream closed");
+            let (tests, listener) = assert_matches!(req, fidl_fuchsia_test::SuiteRequest::Run { tests, listener, .. } => (tests, listener));
+            let listener = listener.into_proxy();
+            fake_test_outcomes(
+                &listener,
+                tests.into_iter().map(|t| (t, fidl_fuchsia_test::Status::Passed)),
+            );
+            if send_finish {
+                listener.on_finished().expect("called on finished");
+            }
+        };
+        let listener_fut = collect_test_outcomes(listener_request_stream);
+
+        let (run, (), (tests, finish_observed)) =
+            futures::future::join3(run_fut, suite_fut, listener_fut).await;
+        assert_eq!(run.expect("run error"), vec![]);
+        assert_eq!(
+            tests,
+            fake_invocations
+                .clone()
+                .map(|t| (t, fidl_fuchsia_test::Status::Passed))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(finish_observed, send_finish);
+    }
 }
