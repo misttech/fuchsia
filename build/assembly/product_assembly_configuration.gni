@@ -532,8 +532,6 @@ template("product_assembly_configuration") {
       package_barrier = []
       assembly_package_barrier = []
       config_package_barrier = []
-      driver_package_barrier = []
-      system_image_package_barrier = []
       distribution_entries_barrier = []
     }
   }

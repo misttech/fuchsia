@@ -86,18 +86,6 @@ template("fuchsia_driver_package") {
       }
       deps += [ ":${distribution_manifest_target}" ]
       deps += invoker.driver_components
-      is_driver_package = true
-      metadata = {
-        # Used by the assembled_system() template.
-        driver_package_component_files = [
-          {
-            package_name = package_name
-            distribution_manifest =
-                rebase_path("${distribution_manifest_file}", root_build_dir)
-          },
-        ]
-        driver_package_component_files_barrier = []
-      }
     }
 
     archive_target = target_name + "-archive"

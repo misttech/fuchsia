@@ -287,15 +287,6 @@ template("fuchsia_package") {
       main_target_deps += [ ":$_validate_config_target" ]
     }
 
-    _is_driver_package =
-        defined(invoker.is_driver_package) && invoker.is_driver_package
-    not_needed([ "_is_driver_package" ])
-
-    _is_system_package = false
-    if (defined(invoker.is_system_package)) {
-      _is_system_package = invoker.is_system_package
-    }
-
     _package_target_name = target_name
 
     # Build package (Generates package_manifest.json).
@@ -317,42 +308,14 @@ template("fuchsia_package") {
         if (defined(invoker.metadata)) {
           forward_variables_from(invoker.metadata, "*")
         }
-        if (!_is_system_package && !_is_driver_package) {
-          # Installing a Fuchsia package into another one should not also install
-          # its content to the root install location, which is why this metadata key
-          # is set to an empty list.
-          # An exception to this rule is fuchsia_system_package() instances whose
-          # content must end up in either the system image (handled by
-          # system_image_package_info below) or the boot filesystem (handled through
-          # distribution_manifest()).
-          # Another exception is fuchsia_driver_package(), whose content
-          # has to end up in the boot filesystem if the boot filesystem depends on it.
-          distribution_entries_barrier = []
-        }
 
-        # Used by system_image_fuchsia_packages_list() to allow embedding
-        # the content of this package into the system image, if necessary.
-        #
-        # The schema is the following:
-        #
-        #   label: GN label of this target (used for debugging only).
-        #   fini_manifest: path to FINI manifest listing this package's content.
-        #   system_image_packaged_allowed_in_extra_deps: (optional)
-        #     If defined, this is a fuchsia_system_package() instance, and its
-        #     value determines whether it is allowed in extra dependency trees
-        #     (see fuchsia_system_package() description for details). If undefined,
-        #     this is a regular fuchsia_package().
-        #
-        system_image_package_info = [
-          {
-            label = get_label_info(":$target_name", "label_with_toolchain")
-            fini_manifest = rebase_path(_files.fini_manifest, root_build_dir)
-          },
-        ]
-        system_image_package_barrier = []
+        # Installing a Fuchsia package into another one should not also install
+        # its content to the root install location, which is why this metadata key
+        # is set to an empty list.
+        distribution_entries_barrier = []
+
         component_id_index_barrier = []
 
-        system_image_extra_package_manifest_barrier = []
         test_component_manifest_barrier = []
         if (!defined(test_components_barrier)) {
           # don't produce entries for non-test packages.
@@ -392,12 +355,6 @@ template("fuchsia_package") {
       deps = main_target_deps
       if (defined(invoker.package_deps)) {
         deps += invoker.package_deps
-      }
-      if (_is_driver_package) {
-        metadata = {
-          # Allow exclusion of driver packages by assembly
-          driver_package_barrier = []
-        }
       }
     }
   } else {

@@ -33,7 +33,5 @@ template("fuchsia_system_package") {
                              "testonly",
                              "visibility",
                            ])
-
-    is_system_package = true
   }
 }

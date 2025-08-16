@@ -245,8 +245,6 @@ template("update_package") {
       distribution_entries_barrier = []
       package_barrier = []
       assembly_package_barrier = []
-      system_image_package_barrier = []
-      driver_package_barrier = []
     }
   }
 }
