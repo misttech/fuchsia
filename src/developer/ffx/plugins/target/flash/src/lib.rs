@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use addr::TargetIpAddr;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use discovery::events::TargetEvent;
@@ -16,30 +16,30 @@ use ffx_config::EnvironmentContext;
 use ffx_fastboot::common::from_manifest;
 use ffx_fastboot::util::{Event, UnlockEvent};
 use ffx_fastboot_connection_factory::{
-    tcp_proxy, udp_proxy, usb_proxy, FastbootNetworkConnectionConfig,
+    FastbootNetworkConnectionConfig, tcp_proxy, udp_proxy, usb_proxy,
 };
 use ffx_fastboot_interface::fastboot_interface::UploadProgress;
 use ffx_flash_args::FlashCommand;
 use ffx_flash_manifest::OemFile;
 use ffx_ssh::SshKeyFiles;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
-use fho::{deferred, return_bug, return_user_error, user_error, FfxContext, FfxMain, FfxTool};
+use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error, user_error};
 use fidl::Error;
 use fidl_fuchsia_developer_ffx::TargetState as FidlTargetState;
 use fidl_fuchsia_hardware_power_statecontrol::AdminProxy;
 use fidl_fuchsia_hwinfo::DeviceProxy;
-use futures::{try_join, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, try_join};
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
-use std::io::{stderr, stdin, stdout, Write};
+use std::io::{Write, stderr, stdin, stdout};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::rc::Rc;
 use structured_ui::{Interface, TextUi};
-use target_holders::{moniker, TargetInfoHolder};
+use target_holders::{TargetInfoHolder, moniker};
 use termion::{color, style};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
@@ -222,7 +222,9 @@ fn preflight_checks<W: Write>(cmd: &FlashCommand, mut writer: W) -> Result<()> {
 .map_err(fho::Error::from)?;
     }
     if cmd.manifest_path.is_some() && cmd.manifest.is_some() {
-        ffx_bail!("Error: the manifest must be specified either by positional argument or the --manifest flag")
+        ffx_bail!(
+            "Error: the manifest must be specified either by positional argument or the --manifest flag"
+        )
     }
     Ok(())
 }
@@ -244,7 +246,9 @@ async fn preprocess_flash_cmd(
                 ffx_bail!("Both the SSH key and the SSH OEM Stage flags were set. Only use one.");
             }
             if cmd.skip_authorized_keys {
-                ffx_bail!("Both the SSH key and Skip Uploading Authorized Keys flags were set. Only use one.");
+                ffx_bail!(
+                    "Both the SSH key and Skip Uploading Authorized Keys flags were set. Only use one."
+                );
             }
             cmd.oem_stage.push(OemFile::new(
                 SSH_OEM_COMMAND.to_string(),
@@ -275,7 +279,9 @@ async fn preprocess_flash_cmd(
             } else if cmd.skip_authorized_keys {
                 // We have both skip authorized-keys and the OEM command including
                 // the authorized keys... this is a problem.
-                ffx_bail!("Both the SSH OEM Stage and Skip Uploading Authorized Keys flags were set. Only use one.");
+                ffx_bail!(
+                    "Both the SSH OEM Stage and Skip Uploading Authorized Keys flags were set. Only use one."
+                );
             }
         }
     };
@@ -364,7 +370,7 @@ async fn rediscover_target(
         }
     };
 
-    let stream = disco.discover_devices(filter_target).await?;
+    let stream = disco.discover_devices(filter_target)?;
     let timer = fuchsia_async::Timer::new(std::time::Duration::from_millis(100000)).fuse();
     let found_target_event = async_utils::event::Event::new();
     let found_it = found_target_event.wait().fuse();
@@ -655,7 +661,9 @@ fn handle_fidl_connection_err(e: Error) -> fho::Result<()> {
             if protocol_name == "fuchsia.hardware.power.statecontrol.Admin" {
                 log::info!("Target reboot succeeded.");
             } else {
-                log::info!("Assuming target reboot succeeded. Client received a PEER_CLOSED from '{protocol_name}'");
+                log::info!(
+                    "Assuming target reboot succeeded. Client received a PEER_CLOSED from '{protocol_name}'"
+                );
             }
             log::debug!("{:?}", e);
             Ok(())
@@ -888,15 +896,17 @@ mod test {
         let _env = ffx_config::test_init().await.expect("Failed to initialize test env");
         let buffers = TestBuffers::default();
         let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
-        assert!(preprocess_flash_cmd(
-            &mut writer,
-            &FlashCommand {
-                manifest_path: Some(PathBuf::from("ffx_test_does_not_exist")),
-                ..Default::default()
-            }
+        assert!(
+            preprocess_flash_cmd(
+                &mut writer,
+                &FlashCommand {
+                    manifest_path: Some(PathBuf::from("ffx_test_does_not_exist")),
+                    ..Default::default()
+                }
+            )
+            .await
+            .is_err()
         )
-        .await
-        .is_err())
     }
 
     #[fuchsia::test]
@@ -933,16 +943,18 @@ mod test {
 
         let buffers = TestBuffers::default();
         let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
-        assert!(preprocess_flash_cmd(
-            &mut writer,
-            &FlashCommand {
-                manifest_path: Some(PathBuf::from(tmp_file_name)),
-                authorized_keys: Some("ssh_does_not_exist".to_string()),
-                ..Default::default()
-            },
+        assert!(
+            preprocess_flash_cmd(
+                &mut writer,
+                &FlashCommand {
+                    manifest_path: Some(PathBuf::from(tmp_file_name)),
+                    authorized_keys: Some("ssh_does_not_exist".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .is_err()
         )
-        .await
-        .is_err())
     }
 
     #[fuchsia::test]
@@ -952,15 +964,17 @@ mod test {
         let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
         let buffers = TestBuffers::default();
         let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
-        assert!(preflight_checks(
-            &FlashCommand {
-                manifest: Some(PathBuf::from(tmp_file_name.clone())),
-                manifest_path: Some(PathBuf::from(tmp_file_name)),
-                ..Default::default()
-            },
-            &mut writer
-        )
-        .is_err());
+        assert!(
+            preflight_checks(
+                &FlashCommand {
+                    manifest: Some(PathBuf::from(tmp_file_name.clone())),
+                    manifest_path: Some(PathBuf::from(tmp_file_name)),
+                    ..Default::default()
+                },
+                &mut writer
+            )
+            .is_err()
+        );
     }
 
     #[test]

@@ -23,25 +23,25 @@ use ffx_fastboot::lock::lock;
 use ffx_fastboot::unlock::unlock;
 use ffx_fastboot::util::{Event, UnlockEvent};
 use ffx_fastboot_connection_factory::{
-    tcp_proxy, udp_proxy, usb_proxy, FastbootNetworkConnectionConfig,
+    FastbootNetworkConnectionConfig, tcp_proxy, udp_proxy, usb_proxy,
 };
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgress, Variable};
 use ffx_writer::VerifiedMachineWriter;
-use fho::{deferred, return_bug, return_user_error, user_error, FfxContext, FfxMain, FfxTool};
+use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error, user_error};
 use fidl::Error;
 use fidl_fuchsia_developer_ffx::TargetState as FidlTargetState;
 use fidl_fuchsia_hardware_power_statecontrol::AdminProxy;
 use fidl_fuchsia_hwinfo::DeviceProxy;
-use futures::{try_join, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, try_join};
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::io::{stdin, Write};
+use std::io::{Write, stdin};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::rc::Rc;
-use target_holders::{moniker, TargetInfoHolder};
+use target_holders::{TargetInfoHolder, moniker};
 use termion::{color, style};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
@@ -175,7 +175,7 @@ Reboot the Target to the bootloader and re-run this command."
                     }
                 };
 
-                let stream = disco.discover_devices(filter_target).await?;
+                let stream = disco.discover_devices(filter_target)?;
                 let timer =
                     fuchsia_async::Timer::new(std::time::Duration::from_millis(100000)).fuse();
                 let found_target_event = async_utils::event::Event::new();
@@ -333,7 +333,9 @@ fn handle_fidl_connection_err(e: Error) -> fho::Result<()> {
             if protocol_name == "fuchsia.hardware.power.statecontrol.Admin" {
                 log::info!("Target reboot succeeded.");
             } else {
-                log::info!("Assuming target reboot succeeded. Client received a PEER_CLOSED from '{protocol_name}'");
+                log::info!(
+                    "Assuming target reboot succeeded. Client received a PEER_CLOSED from '{protocol_name}'"
+                );
             }
             log::debug!("{:?}", e);
             Ok(())
@@ -679,23 +681,25 @@ mod test {
         let vbmeta_file_name = vbmeta_file.path().to_string_lossy().to_string();
         let (_, proxy) = setup();
         let mut w = VerifiedMachineWriter::<BootloaderToolMessage>::new(Some(Format::Json));
-        assert!(bootloader_impl(
-            proxy,
-            BootloaderCommand {
-                manifest: None,
-                product: "Fuchsia".to_string(),
-                product_bundle: None,
-                skip_verify: false,
-                subcommand: Boot(BootCommand {
-                    zbi: None,
-                    vbmeta: Some(vbmeta_file_name),
-                    slot: "a".to_string(),
-                }),
-            },
-            &mut w,
-        )
-        .await
-        .is_err());
+        assert!(
+            bootloader_impl(
+                proxy,
+                BootloaderCommand {
+                    manifest: None,
+                    product: "Fuchsia".to_string(),
+                    product_bundle: None,
+                    skip_verify: false,
+                    subcommand: Boot(BootCommand {
+                        zbi: None,
+                        vbmeta: Some(vbmeta_file_name),
+                        slot: "a".to_string(),
+                    }),
+                },
+                &mut w,
+            )
+            .await
+            .is_err()
+        );
     }
 
     #[fuchsia::test]

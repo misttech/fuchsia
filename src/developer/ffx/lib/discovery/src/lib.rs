@@ -7,17 +7,17 @@ pub use crate::events::*;
 use crate::fastboot_file_watcher::FastbootWatcher;
 use anyhow::Result;
 use bitflags::bitflags;
-use futures::channel::mpsc::{unbounded, UnboundedReceiver};
 use futures::Stream;
+use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use manual_targets::watcher::{
-    recommended_watcher as manual_recommended_watcher, ManualTargetEvent, ManualTargetWatcher,
+    ManualTargetEvent, ManualTargetWatcher, recommended_watcher as manual_recommended_watcher,
 };
-use mdns_discovery::{recommended_watcher, MdnsWatcher};
+use mdns_discovery::{MdnsWatcher, recommended_watcher};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 use usb_fastboot_discovery::{
-    recommended_watcher as fastboot_watcher, FastbootEvent, FastbootUsbWatcher,
+    FastbootEvent, FastbootUsbWatcher, recommended_watcher as fastboot_watcher,
 };
 // TODO(colnnelson): Long term it would be nice to have this be pulled into the mDNS library
 // so that it can speak our language. Or even have the mdns library not export FIDL structs
@@ -78,10 +78,7 @@ pub trait TargetEventStream: Stream<Item = TargetEvent> + std::marker::Unpin {}
 impl TargetEventStream for TargetStream {}
 
 pub trait TargetDiscovery<F> {
-    fn discover_devices(
-        &self,
-        filter: F,
-    ) -> impl std::future::Future<Output = Result<impl TargetEventStream>>;
+    fn discover_devices(&self, filter: F) -> Result<impl TargetEventStream>;
 }
 
 pub struct DiscoveryBuilder {
@@ -167,7 +164,7 @@ where
     F: TargetFilter,
 {
     #[allow(refining_impl_trait)]
-    async fn discover_devices(&self, filter: F) -> Result<TargetStream> {
+    fn discover_devices(&self, filter: F) -> Result<TargetStream> {
         let stream = wait_for_devices(
             filter,
             self.emulator_instance_root.clone(),
@@ -344,7 +341,7 @@ pub mod test {
         F: TargetFilter,
     {
         #[allow(refining_impl_trait)]
-        async fn discover_devices(&self, _filter: F) -> Result<TestTargetStream> {
+        fn discover_devices(&self, _filter: F) -> Result<TestTargetStream> {
             Ok(TestTargetStream { events: self.events.clone() })
         }
     }
@@ -412,7 +409,7 @@ pub mod test {
             ]))),
         };
 
-        let stream = disco.discover_devices(|_: &_| true).await?;
+        let stream = disco.discover_devices(|_: &_| true)?;
 
         write_event_stream(&mut writer, stream).await;
 
