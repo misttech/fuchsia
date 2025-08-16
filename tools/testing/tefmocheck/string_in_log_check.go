@@ -511,8 +511,9 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		},
 		// No particular bug, a generic capture for crashes in system_server.
 		&stringInLogCheck{
-			String: "<== BACKTRACE REQUEST: process system_server",
-			Type:   syslogType,
+			String:             "<== BACKTRACE REQUEST: process system_server",
+			Type:               syslogType,
+			SkipAllPassedTests: true,
 		},
 	}
 
