@@ -62,6 +62,7 @@ source_set("common_srcs") {
     "//src/devices/bus/lib/virtio",
     "//src/graphics/display/lib/api-protocols/cpp",
     "//src/graphics/display/lib/api-types/cpp",
+    "//src/graphics/display/lib/edid",
     "//src/graphics/lib/virtio:virtio-spec",
     "//src/lib/fxl",
   ]

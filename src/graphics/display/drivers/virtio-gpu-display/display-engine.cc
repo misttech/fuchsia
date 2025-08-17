@@ -62,6 +62,17 @@ constexpr display::EngineInfo kEngineInfo({
     .is_capture_supported = false,
 });
 
+constexpr display::Mode ToDisplayMode(const display::DisplayTiming& timing) {
+  int32_t active_width = timing.horizontal_active_px;
+  int32_t active_height = timing.vertical_active_lines;
+  int32_t refresh_rate_millihertz = timing.vertical_field_refresh_rate_millihertz();
+  return display::Mode({
+      .active_width = active_width,
+      .active_height = active_height,
+      .refresh_rate_millihertz = refresh_rate_millihertz,
+  });
+}
+
 constexpr auto kSupportedPixelFormats = std::to_array<display::PixelFormat>(
     {display::PixelFormat::kB8G8R8A8, display::PixelFormat::kR8G8B8A8});
 constexpr uint32_t kRefreshRateHz = 30;
@@ -71,19 +82,7 @@ constexpr display::ModeId kDisplayModeId(1);
 }  // namespace
 
 display::EngineInfo DisplayEngine::CompleteCoordinatorConnection() {
-  const display::ModeAndId mode_and_id({
-      .id = kDisplayModeId,
-      .mode = display::Mode({
-          .active_width = static_cast<int32_t>(current_display_.scanout_info.geometry.width),
-          .active_height = static_cast<int32_t>(current_display_.scanout_info.geometry.height),
-          .refresh_rate_millihertz = kRefreshRateHz * 1'000,
-      }),
-  });
-
-  const cpp20::span<const display::ModeAndId> preferred_modes(&mode_and_id, 1);
-  engine_events_.OnDisplayAdded(kDisplayId, preferred_modes, current_display_edid_bytes_,
-                                kSupportedPixelFormats);
-
+  engine_events_.OnDisplayAdded(kDisplayId, modes_, kSupportedPixelFormats);
   return kEngineInfo;
 }
 
@@ -181,6 +180,7 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
   // TODO(https://fxbug.dev/412450577): Remove the single-layer assumption.
   ZX_DEBUG_ASSERT(layers.size() == 1);
 
+  // Only the first mode is supported.
   if (display_mode_id != kDisplayModeId) {
     return display::ConfigCheckResult::kUnsupportedDisplayModes;
   }
@@ -432,13 +432,30 @@ zx_status_t DisplayEngine::Start() {
   }
   current_display_ = *current_display;
 
-  zx::result<fbl::Vector<uint8_t>> display_edid_result =
+  zx::result<fbl::Vector<uint8_t>> display_edid_bytes_result =
       gpu_device_->GetDisplayEdid(current_display->scanout_id);
 
   // EDID support is optional, and the driver can proceed without it.
-  if (display_edid_result.is_ok()) {
-    current_display_edid_bytes_ = std::move(display_edid_result).value();
+  if (display_edid_bytes_result.is_ok()) {
+    fbl::Vector<uint8_t> display_edid_bytes = std::move(display_edid_bytes_result).value();
+    fit::result<const char*, edid::Edid> edid_result = edid::Edid::Create(display_edid_bytes);
+    if (edid_result.is_error()) {
+      fdf::warn("Failed to create Edid instance: {}", edid_result.error_value());
+    } else {
+      edid_ = std::move(edid_result).value();
+    }
   }
+
+  zx::result<fbl::Vector<display::DisplayTiming>> edid_timings_result = DisplayTimingsFromEdid();
+  zx::result<fbl::Vector<display::ModeAndId>> modes_result =
+      edid_timings_result.is_ok() ? DisplayModesFromEdidTimings(edid_timings_result.value())
+                                  : DisplayModesFromScanoutInfo(current_display_.scanout_info);
+  if (modes_result.is_error()) {
+    // Errors have been logged in `DisplayModesFromEdidTimings()` and
+    // `DisplayModesFromScanoutInfo()` functions above.
+    return modes_result.error_value();
+  }
+  modes_ = std::move(modes_result).value();
 
   fdf::info("Found display at ({}, {}) size {}x{}, flags 0x{:08x}",
             current_display_.scanout_info.geometry.x, current_display_.scanout_info.geometry.y,
@@ -481,14 +498,71 @@ zx_status_t DisplayEngine::Init() {
   return ZX_OK;
 }
 
+// static
+zx::result<fbl::Vector<display::ModeAndId>> DisplayEngine::DisplayModesFromEdidTimings(
+    std::span<const display::DisplayTiming> edid_timings) {
+  fbl::Vector<display::ModeAndId> modes;
+  fbl::AllocChecker alloc_checker;
+  modes.reserve(edid_timings.size(), &alloc_checker);
+  if (!alloc_checker.check()) {
+    fdf::error("Failed to allocate memory for display modes");
+    return zx::error(ZX_ERR_NO_MEMORY);
+  }
+  for (uint16_t i = 0; i < edid_timings.size(); ++i) {
+    ZX_DEBUG_ASSERT_MSG(modes.size() < edid_timings.size(),
+                        "The push_back() below was not supposed to allocate memory, but it might");
+    modes.push_back(
+        display::ModeAndId({.id = display::ModeId(i + 1), .mode = ToDisplayMode(edid_timings[i])}),
+        &alloc_checker);
+    ZX_DEBUG_ASSERT_MSG(alloc_checker.check(),
+                        "The push_back() above failed to allocate memory; "
+                        "it was not supposed to allocate at all");
+  }
+  return zx::ok(std::move(modes));
+}
+
+// static
+zx::result<fbl::Vector<display::ModeAndId>> DisplayEngine::DisplayModesFromScanoutInfo(
+    const virtio_abi::ScanoutInfo& scanout_info) {
+  fbl::Vector<display::ModeAndId> modes;
+  fbl::AllocChecker alloc_checker;
+  modes.push_back(display::ModeAndId({
+                      .id = kDisplayModeId,
+                      .mode = display::Mode({
+                          .active_width = static_cast<int32_t>(scanout_info.geometry.width),
+                          .active_height = static_cast<int32_t>(scanout_info.geometry.height),
+                          .refresh_rate_millihertz = kRefreshRateHz * 1'000,
+                      }),
+                  }),
+                  &alloc_checker);
+  if (!alloc_checker.check()) {
+    fdf::error("Failed to allocate memory for display modes");
+    return zx::error(ZX_ERR_NO_MEMORY);
+  }
+  return zx::ok(std::move(modes));
+}
+
+zx::result<fbl::Vector<display::DisplayTiming>> DisplayEngine::DisplayTimingsFromEdid() {
+  if (!edid_.has_value()) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+  zx::result<fbl::Vector<display::DisplayTiming>> edid_timings_result =
+      edid_->GetSupportedDisplayTimings();
+  if (edid_timings_result.is_error()) {
+    fdf::warn("Failed to get supported display timings from EDID: {}",
+              edid_timings_result.status_string());
+  }
+  return edid_timings_result;
+}
+
 void DisplayEngine::LogEdidBytes() {
-  if (current_display_edid_bytes_.is_empty()) {
+  if (!edid_.has_value()) {
     fdf::info("EDID not available");
     return;
   }
 
   if constexpr (ZX_DEBUG_ASSERT_IMPLEMENTED) {
-    std::span<const uint8_t> bytes(current_display_edid_bytes_);
+    std::span<const uint8_t> bytes(edid_->edid_bytes(), edid_->edid_length());
 
     // The virtio-gpu implementation in QEmu 9.2 reports a zero-padded EDID that
     // takes up the maximum buffer size in the virtio-gpu 1.3 specification.
@@ -519,7 +593,7 @@ void DisplayEngine::LogEdidBytes() {
     fdf::info("--- END EDID DATA: {} BYTES; SKIPPED {} ZERO BYTES ---", original_size,
               original_size - bytes.size());
   } else {
-    fdf::info("EDID available, uses {} bytes", current_display_edid_bytes_.size());
+    fdf::info("EDID available, uses {} bytes", edid_->edid_length());
   }
 }
 

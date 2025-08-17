@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include <fbl/condition_variable.h>
 #include <fbl/mutex.h>
@@ -36,6 +37,7 @@
 #include "src/graphics/display/lib/api-types/cpp/image-buffer-usage.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
+#include "src/graphics/display/lib/edid/edid.h"
 #include "src/graphics/lib/virtio/virtio-abi.h"
 
 namespace virtio_display {
@@ -100,12 +102,22 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   ImportedImages* imported_images_for_testing() { return &imported_images_; }
 
  private:
+  static zx::result<fbl::Vector<display::ModeAndId>> DisplayModesFromEdidTimings(
+      std::span<const display::DisplayTiming> edid_timings);
+  static zx::result<fbl::Vector<display::ModeAndId>> DisplayModesFromScanoutInfo(
+      const virtio_abi::ScanoutInfo& scanout_info);
+
   void LogEdidBytes();
+
+  zx::result<fbl::Vector<display::DisplayTiming>> DisplayTimingsFromEdid();
 
   DisplayInfo current_display_;
 
   // Empty if the display does not have EDID information.
-  fbl::Vector<uint8_t> current_display_edid_bytes_;
+  std::optional<edid::Edid> edid_;
+
+  // The element at index `k` must have ModeId `k+1`.
+  fbl::Vector<display::ModeAndId> modes_;
 
   // Flush thread
   void virtio_gpu_flusher();
