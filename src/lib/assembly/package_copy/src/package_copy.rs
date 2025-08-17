@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use assembly_util::{fast_copy, DuplicateKeyError, InsertUniqueExt, MapEntry};
+use assembly_util::{fast_copy, NamedMap};
 use camino::Utf8PathBuf;
 use fuchsia_pkg::{BlobInfo, MetaPackage, PackageManifest, PackageManifestBuilder, SubpackageInfo};
 use std::collections::{BTreeMap, BTreeSet};
@@ -31,8 +31,9 @@ pub struct PackageCopier {
     blobstore: Utf8PathBuf,
 
     /// These are the package manifests that need to be written out to the
-    /// packages dir, keyed by package name.  Duplicates are an error.
-    package_manifests: BTreeMap<String, PackageManifest>,
+    /// packages dir, keyed by package name.  Duplicate keys with different
+    /// values are an error.
+    package_manifests: NamedMap<String, PackageManifest>,
 
     /// These are the subpackage manifests that need to be written out to the
     /// packages dir, keyed by package meta.far merkele.  Duplicates are ignored.
@@ -67,7 +68,7 @@ impl PackageCopier {
             blobstore: blobstore.into(),
 
             // Internal state that items to copy are accumulated in.
-            package_manifests: Default::default(),
+            package_manifests: NamedMap::new("package manifests"),
             subpackage_manifests: Default::default(),
             blobs: Default::default(),
             tracked_inputs: Default::default(),
@@ -102,8 +103,7 @@ impl PackageCopier {
         // Add the manifest to the set of manifests that will need to be written
         // out with new paths as part of the copy operation.
         self.package_manifests
-            .try_insert_unique(MapEntry(manifest.name().to_string(), manifest))
-            .map_err(|e| anyhow::anyhow!("Found a duplicate manifest for package {}", e.key()))?;
+            .try_insert_unique_ignore_duplicates(manifest.name().to_string(), manifest)?;
 
         // Return the path the package will be copied to.
         Ok(copied_path)
@@ -483,5 +483,31 @@ mod tests {
         let result = package_copier.add_package_from_manifest_path(&package_b_path);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_allow_identical_duplicates() {
+        let temp_dir = TempDir::new().unwrap();
+        let working_dir = Utf8PathBuf::try_from(temp_dir.path().to_owned()).unwrap();
+
+        let src_dir = working_dir.join("src");
+        let src_dir_2 = working_dir.join("src_2");
+
+        let (package_a_path, _package_a) =
+            make_package("package", &["file_1"], &[], &src_dir).unwrap();
+
+        let (package_b_path, _package_b) =
+            make_package("package", &["file_1"], &[], &src_dir_2).unwrap();
+
+        let dst_dir = working_dir.join("dst");
+        let packages_dir = dst_dir.join("packages");
+        let subpackages_dir = dst_dir.join("subpackages");
+        let blobstore = dst_dir.join("blobs");
+
+        let mut package_copier = PackageCopier::new(&packages_dir, &subpackages_dir, &blobstore);
+        package_copier.add_package_from_manifest_path(&package_a_path).unwrap();
+        let result = package_copier.add_package_from_manifest_path(&package_b_path);
+
+        assert!(result.is_ok());
     }
 }

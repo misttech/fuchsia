@@ -722,7 +722,7 @@ struct PackageMetadata {
     version: PackageVariant,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, PartialOrd, Ord)]
+#[derive(Clone, Debug, Eq, Deserialize, Serialize, PartialOrd, Ord)]
 pub struct BlobInfo {
     /// Path to the blob file, could be a delivery blob or uncompressed blob depending on
     /// `delivery_blob_type` in the manifest.
@@ -732,6 +732,14 @@ pub struct BlobInfo {
     pub merkle: fuchsia_merkle::Hash,
     /// Uncompressed size of the blob.
     pub size: u64,
+}
+
+// Write a custom PartialEq so that we ignore `source_path`.
+// Blobs are identical if their destination path and merkle are the same.
+impl PartialEq for BlobInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path && self.merkle == other.merkle
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
