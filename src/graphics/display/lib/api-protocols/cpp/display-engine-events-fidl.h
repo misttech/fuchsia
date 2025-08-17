@@ -34,7 +34,7 @@ namespace display {
 class DisplayEngineEventsFidl final : public DisplayEngineEventsInterface {
  public:
   // Maximum size of the `preferred_modes` argument to `OnDisplayAdded`.
-  static constexpr int kMaxPreferredModes = 4;
+  static constexpr int kMaxPreferredModes = 32;
 
   // Maximum size of `pixel_formats` argument to `OnDisplayAdded`.
   static constexpr int kMaxPixelFormats = 4;

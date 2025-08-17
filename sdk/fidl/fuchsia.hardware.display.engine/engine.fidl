@@ -181,7 +181,7 @@ const MAX_COUNT_EDID_BYTES uint32 = 32768;
 
 const MAX_COUNT_DISPLAY_PIXEL_FORMATS uint32 = fuchsia.sysmem2.MAX_COUNT_PIXEL_FORMAT_AND_MODIFIERS;
 
-const MAX_COUNT_DISPLAY_INFO_PREFERRED_MODES uint32 = 4;
+const MAX_COUNT_DISPLAY_INFO_PREFERRED_MODES uint32 = 32;
 
 // TODO(https://fxbug.dev/42150719): Convert RawDisplayInfo to a table, for
 // extensibility. The comments about empty vectors will mention members not
