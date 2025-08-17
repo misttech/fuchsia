@@ -3,18 +3,25 @@
 // found in the LICENSE file.
 
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
+#include <lib/fit/result.h>
 #include <lib/stdcompat/span.h>
+#include <lib/zx/result.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
-#include <numeric>
+#include <cstring>
+#include <string>
+#include <utility>
 
+#include <fbl/vector.h>
 #include <gtest/gtest.h>
 
+#include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/edid-values/edid-values.h"
 #include "src/graphics/display/lib/edid/edid.h"
+#include "src/lib/testing/predicates/status.h"
 
 namespace {
 
@@ -213,6 +220,46 @@ TEST_F(EdidTest, QemuVirtioGpuEdidWithPaddingParsesCorrectly) {
 
   EXPECT_EQ(false, edid.is_hdmi());
   EXPECT_EQ(false, edid.supports_basic_audio());
+}
+
+TEST_F(EdidTest, GetSupportedDisplayTimingsHpZr30w) {
+  fit::result<const char*, edid::Edid> edid_result = edid::Edid::Create(edid::kHpZr30wEdid);
+  ASSERT_TRUE(edid_result.is_ok()) << "EDID parsing failed: " << edid_result.error_value();
+  edid::Edid edid = std::move(edid_result).value();
+
+  zx::result<fbl::Vector<display::DisplayTiming>> supported_display_timings_result =
+      edid.GetSupportedDisplayTimings();
+  ASSERT_OK(supported_display_timings_result);
+
+  fbl::Vector<display::DisplayTiming> supported_display_timings =
+      std::move(supported_display_timings_result).value();
+  ASSERT_EQ(supported_display_timings.size(), 2u);
+
+  display::DisplayTiming timing0 = supported_display_timings[0];
+  EXPECT_EQ(timing0.horizontal_active_px, 2560);
+  EXPECT_EQ(timing0.vertical_active_lines, 1600);
+  EXPECT_EQ(timing0.pixel_clock_frequency_hz, 268'500'000);
+}
+
+TEST_F(EdidTest, GetSupportedDisplayTimingsQemuVirtioGpu) {
+  fit::result<const char*, edid::Edid> edid_result = edid::Edid::Create(edid::kQemuVirtioGpuEdid);
+  ASSERT_TRUE(edid_result.is_ok()) << "EDID parsing failed: " << edid_result.error_value();
+  edid::Edid edid = std::move(edid_result).value();
+
+  zx::result<fbl::Vector<display::DisplayTiming>> supported_display_timings_result =
+      edid.GetSupportedDisplayTimings();
+  ASSERT_OK(supported_display_timings_result);
+
+  fbl::Vector<display::DisplayTiming> supported_display_timings =
+      std::move(supported_display_timings_result).value();
+
+  // 1 Detailed timing + 6 Short video descriptors + 6 supported Standard display timings
+  ASSERT_EQ(supported_display_timings.size(), 13u);
+
+  display::DisplayTiming timing0 = supported_display_timings[0];
+  EXPECT_EQ(timing0.horizontal_active_px, 1280);
+  EXPECT_EQ(timing0.vertical_active_lines, 800);
+  EXPECT_EQ(timing0.pixel_clock_frequency_hz, 107'300'000);
 }
 
 }  // namespace

@@ -6,18 +6,26 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/result.h>
+#include <lib/stdcompat/span.h>
+#include <lib/zx/result.h>
 #include <zircon/assert.h>
+#include <zircon/errors.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <optional>
 #include <sstream>
+#include <string>
+#include <string_view>
+#include <utility>
 
-#include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
-#include <fbl/string_buffer.h>
+#include <fbl/vector.h>
 
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/edid/eisa_vid_lut.h"
@@ -518,9 +526,19 @@ void timing_iterator::Advance() {
       }
       std::optional<display::DisplayTiming> display_timing =
           StandardTimingDescriptorToDisplayTiming(edid_->base_edid(), *desc);
+
+      // A VESA Standard Timing Descriptor may be unsupported. In that case,
+      // we should skip the timing and continue iterating through the standard
+      // timing descriptors list.
       if (display_timing.has_value()) {
         display_timing_ = *display_timing;
+      } else {
+        continue;
       }
+
+      // Early return to update the display timing returned while keeping the
+      // current `state_`. `state_` changes only when all timings have been
+      // iterated through.
       return;
     }
 
@@ -553,6 +571,54 @@ bool Edid::supports_basic_audio() const {
     block_idx++;
   }
   return false;
+}
+
+zx::result<fbl::Vector<display::DisplayTiming>> Edid::GetSupportedDisplayTimings() const {
+  fbl::Vector<display::DisplayTiming> timings;
+
+  size_t max_timing_count = 0;
+  for (auto it = timing_iterator(this); it.is_valid(); ++it) {
+    ++max_timing_count;
+  }
+
+  fbl::AllocChecker alloc_checker;
+  timings.reserve(max_timing_count, &alloc_checker);
+  if (!alloc_checker.check()) {
+    return zx::error(ZX_ERR_NO_MEMORY);
+  }
+
+  // `timing_iterator` outputs display timing parameters in the following order:
+  // - Detailed Timing Descriptors (DTDs) in the base EDID block (block 0)
+  // - DTDs in the CTA-861 extension blocks
+  // - Short Video Descriptors (SVDs) in the CTA-861 extension blocks
+  // - Standard timings in the base EDID block
+  //
+  // VESA E-EDID Standard (Release A, Rev. 2, page 28) specifies that the
+  // preferred timing mode is the first DTD in the base EDID.
+  //
+  // However, CTA-861 (CTA-861-I 7.2.2) specifies that the preferred video
+  // formats are specified by:
+  // - the Video Format Preference Data Block if it exists, or
+  // - the first DTD in the base EDID block and the first SVD in the CTA-861
+  //   extension block.
+  //
+  // Our current implementation only guarantees that the first timing is from
+  // the first DTD, which matches VESA E-EDID's definition of preferred modes,
+  // but doesn't always match the definition from CTA-861.
+  // TODO(https://fxbug.dev/438953308): Comply with CTA-861 on mode preferences.
+  for (auto it = timing_iterator(this); it.is_valid(); ++it) {
+    display::DisplayTiming new_timing = *it;
+    if (std::ranges::find(timings, new_timing) == timings.end()) {
+      ZX_DEBUG_ASSERT_MSG(
+          timings.size() < max_timing_count,
+          "The push_back() below was not supposed to allocate memory, but it might");
+      timings.push_back(*it, &alloc_checker);
+      ZX_DEBUG_ASSERT_MSG(alloc_checker.check(),
+                          "The push_back() above failed to allocate memory; "
+                          "it was not supposed to allocate at all");
+    }
+  }
+  return zx::ok(std::move(timings));
 }
 
 }  // namespace edid

@@ -7,6 +7,7 @@
 
 #include <lib/fit/result.h>
 #include <lib/stdcompat/span.h>
+#include <lib/zx/result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -360,6 +361,11 @@ class Edid {
   // Serial Number Descriptor, defined in the E-EDID standard, Section 3.10.3.2
   // "Display Product Serial Number Descriptor Definition (tag #FFh)".
   std::string GetDisplayProductSerialNumber() const;
+
+  // Returns all the display timing parameters supported by this display device.
+  //
+  // The first display timing is guaranteed to be preferred.
+  zx::result<fbl::Vector<display::DisplayTiming>> GetSupportedDisplayTimings() const;
 
   // Guaranteed to be >= 0 and < 2^16.
   int horizontal_size_mm() const;
