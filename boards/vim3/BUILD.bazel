@@ -153,6 +153,7 @@ _COMMON_PROVIDED_FEATURES = [
     "fuchsia::pmm_checker",
     "fuchsia::real_time_clock",
     "fuchsia::realtek_8211f",
+    "fuchsia::storage_power_management",
     "fuchsia::suspender",
     "fuchsia::suspending_token",
     "fuchsia::usb_host",
