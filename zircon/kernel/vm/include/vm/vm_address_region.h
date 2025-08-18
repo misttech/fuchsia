@@ -283,8 +283,8 @@ class RegionList final {
   using TagType = fbl::DefaultObjectTag;
   using NodeTraits = fbl::DefaultWAVLTreeTraits<PtrType, TagType>;
   using Observer = VmAddressRegionSubtreeState::Observer<T>;
-  using ChildList = fbl::WAVLTree<KeyType, PtrType, KeyTraits, TagType, fbl::SizeOrder::Constant,
-                                  NodeTraits, Observer>;
+  using ChildList =
+      fbl::WAVLTree<KeyType, PtrType, KeyTraits, TagType, fbl::SizeOrder::N, NodeTraits, Observer>;
 
   // Remove *region* from the list, returns the removed region.
   fbl::RefPtr<T> RemoveRegion(T* region) { return regions_.erase(*region); }
@@ -608,7 +608,7 @@ class RegionList final {
 
   typename ChildList::const_iterator cend() const { return regions_.cend(); }
 
-  size_t size() const { return regions_.size(); }
+  size_t size_slow() const { return regions_.size_slow(); }
 
  private:
   // list of memory regions, indexed by base address.

@@ -597,7 +597,7 @@ void VmAddressRegion::DumpLocked(uint depth, bool verbose) const {
          "] sz %#zx ref %d state %d '%s' subregions %zu max_gap %#" PRIx64 " [%#" PRIxPTR
          " %#" PRIxPTR "]\n",
          this, base_, base_ + (size_ - 1), size_, ref_count_debug(), (int)state_, name_,
-         subregions_.size(), max_gap, min_first_byte, max_last_byte);
+         subregions_.size_slow(), max_gap, min_first_byte, max_last_byte);
   for (const auto& child : subregions_) {
     AssertHeld(child.lock_ref());
     child.DumpLocked(depth + 1, verbose);
