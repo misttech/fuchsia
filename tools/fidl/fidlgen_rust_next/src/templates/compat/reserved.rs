@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::ir::Id;
 use crate::templates::is_reserved;
+use fidl_ir::Ident;
 
-pub fn escape_compat(mut name: String, id: &Id) -> String {
-    if is_compat_reserved(id.non_canonical()) {
+pub fn escape_compat(mut name: String, ident: &Ident) -> String {
+    if is_compat_reserved(ident.non_canonical()) {
         name.push('_');
     }
     name

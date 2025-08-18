@@ -6,14 +6,16 @@ use core::num::NonZeroI64;
 
 use serde::Deserialize;
 
-use super::{Attributes, CompIdent, Decl, DeclType, Ident, Type, TypeShape};
+use crate::de::Index;
+
+use crate::{Attributes, CompoundIdentifier, Identifier, Type, TypeShape};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Union {
     #[serde(flatten)]
     pub attributes: Attributes,
     pub members: Vec<UnionMember>,
-    pub name: CompIdent,
+    pub name: CompoundIdentifier,
     pub naming_context: Vec<String>,
     #[serde(rename = "resource")]
     pub is_resource: bool,
@@ -24,34 +26,19 @@ pub struct Union {
     pub shape: TypeShape,
 }
 
-impl Decl for Union {
-    fn decl_type(&self) -> DeclType {
-        DeclType::Union
-    }
+impl Index for Union {
+    type Key = CompoundIdentifier;
 
-    fn name(&self) -> &CompIdent {
+    fn key(&self) -> &Self::Key {
         &self.name
-    }
-
-    fn attributes(&self) -> &Attributes {
-        &self.attributes
-    }
-
-    fn naming_context(&self) -> Option<&[String]> {
-        Some(&self.naming_context)
-    }
-
-    fn type_shape(&self) -> Option<&TypeShape> {
-        Some(&self.shape)
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct UnionMember {
-    #[expect(dead_code)]
     #[serde(flatten)]
     pub attributes: Attributes,
-    pub name: Ident,
+    pub name: Identifier,
     pub ordinal: NonZeroI64,
     #[serde(rename = "type")]
     pub ty: Type,

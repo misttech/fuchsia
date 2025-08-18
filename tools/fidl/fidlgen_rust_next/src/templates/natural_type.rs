@@ -5,7 +5,7 @@
 use core::fmt;
 
 use super::{Context, Contextual};
-use crate::ir::{EndpointRole, InternalSubtype, Type, TypeKind};
+use fidl_ir::{EndpointRole, InternalSubtype, Type, TypeKind};
 
 pub struct NaturalTypeTemplate<'a> {
     context: Context<'a>,

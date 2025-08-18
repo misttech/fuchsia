@@ -4,7 +4,7 @@
 
 use core::fmt;
 
-use crate::ir::{IntType, PrimSubtype};
+use fidl_ir::{IntType, PrimSubtype};
 
 pub struct NaturalPrimTemplate<'a>(pub &'a PrimSubtype);
 

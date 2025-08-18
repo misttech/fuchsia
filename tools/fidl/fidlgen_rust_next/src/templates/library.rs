@@ -4,7 +4,7 @@
 
 use askama::Template;
 
-use crate::ir::{Bits, Const, DeclType, Enum, Protocol, Service, Struct, Table, TypeAlias, Union};
+use fidl_ir::{Bits, Const, DeclType, Enum, Protocol, Service, Struct, Table, TypeAlias, Union};
 
 use super::{
     AliasTemplate, BitsTemplate, CompatTemplate, ConstTemplate, Context, Contextual, Denylist,
@@ -12,12 +12,12 @@ use super::{
 };
 
 #[derive(Template)]
-#[template(path = "schema.askama")]
-pub struct SchemaTemplate<'a> {
+#[template(path = "library.askama")]
+pub struct LibraryTemplate<'a> {
     context: Context<'a>,
 }
 
-impl<'a> SchemaTemplate<'a> {
+impl<'a> LibraryTemplate<'a> {
     pub fn new(context: Context<'a>) -> Self {
         Self { context }
     }
@@ -63,7 +63,7 @@ impl<'a> SchemaTemplate<'a> {
     }
 }
 
-impl<'a> Contextual<'a> for SchemaTemplate<'a> {
+impl<'a> Contextual<'a> for LibraryTemplate<'a> {
     fn context(&self) -> Context<'a> {
         self.context
     }

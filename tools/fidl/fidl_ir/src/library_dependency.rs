@@ -8,15 +8,15 @@ use serde::Deserialize;
 
 use crate::de::Index;
 
-use super::{CompIdent, DeclType, TypeShape};
+use crate::{CompoundIdentifier, DeclType, TypeShape};
 
 #[derive(Debug, Deserialize)]
-pub struct Library {
+pub struct LibraryDependency {
     pub name: String,
-    pub declarations: HashMap<CompIdent, ExternalDeclaration>,
+    pub declarations: HashMap<CompoundIdentifier, ExternalDeclaration>,
 }
 
-impl Index for Library {
+impl Index for LibraryDependency {
     type Key = String;
 
     fn key(&self) -> &Self::Key {
@@ -28,7 +28,6 @@ impl Index for Library {
 pub struct ExternalDeclaration {
     pub kind: DeclType,
     #[serde(rename = "resource", default)]
-    #[expect(dead_code)]
     pub is_resouce: bool,
     #[serde(rename = "type_shape_v2")]
     pub shape: Option<TypeShape>,

@@ -5,9 +5,9 @@
 use askama::Template;
 
 use super::{Context, Contextual};
-use crate::id::IdExt as _;
-use crate::ir::{Const, TypeKind};
+use crate::ident_ext::IdentExt as _;
 use crate::templates::reserved::escape;
+use fidl_ir::{Const, TypeKind};
 
 #[derive(Template)]
 #[template(path = "const.askama", whitespace = "preserve")]

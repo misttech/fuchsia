@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::ir::Id;
+use fidl_ir::Ident;
 
-pub trait IdExt {
+pub trait IdentExt {
     fn split(&self) -> Split<'_>;
 
     fn camel(&self) -> String {
@@ -40,7 +40,7 @@ pub trait IdExt {
     }
 }
 
-impl IdExt for Id {
+impl IdentExt for Ident {
     fn split(&self) -> Split<'_> {
         Split { str: self.non_canonical() }
     }
@@ -88,8 +88,8 @@ impl<'a> Iterator for Split<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::id::IdExt as _;
-    use crate::ir::Id;
+    use crate::ident_ext::IdentExt as _;
+    use fidl_ir::Ident;
 
     const TEST_CASES: &[&str] = &[
         "foo_bar",
@@ -123,7 +123,7 @@ mod tests {
 
         for (case, expected) in TEST_CASES.iter().zip(EXPECTEDS.iter()) {
             assert_eq!(
-                &Id::from_str(case).split().collect::<Vec<_>>(),
+                &Ident::from_str(case).split().collect::<Vec<_>>(),
                 expected,
                 "{case} did not split correctly",
             );
@@ -148,7 +148,7 @@ mod tests {
 
         for (case, expected) in TEST_CASES.iter().zip(EXPECTEDS.iter()) {
             assert_eq!(
-                &Id::from_str(case).snake(),
+                &Ident::from_str(case).snake(),
                 expected,
                 "{case} was not transformed to snake case correctly",
             );
@@ -173,7 +173,7 @@ mod tests {
 
         for (case, expected) in TEST_CASES.iter().zip(EXPECTEDS.iter()) {
             assert_eq!(
-                &Id::from_str(case).camel(),
+                &Ident::from_str(case).camel(),
                 expected,
                 "{case} was not transformed to camel case correctly",
             );
@@ -198,7 +198,7 @@ mod tests {
 
         for (case, expected) in TEST_CASES.iter().zip(EXPECTEDS.iter()) {
             assert_eq!(
-                &Id::from_str(case).screaming_snake(),
+                &Ident::from_str(case).screaming_snake(),
                 expected,
                 "{case} was not transformed to screaming snake case correctly",
             );

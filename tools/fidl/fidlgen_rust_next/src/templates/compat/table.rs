@@ -4,11 +4,11 @@
 
 use askama::Template;
 
-use crate::id::IdExt as _;
-use crate::ir::Table;
+use crate::ident_ext::IdentExt as _;
 use crate::templates::{Context, Contextual, Denylist};
+use fidl_ir::Table;
 
-use super::{filters, CompatTemplate};
+use super::{CompatTemplate, filters};
 
 #[derive(Template)]
 #[template(path = "compat/table.askama")]

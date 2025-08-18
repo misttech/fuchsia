@@ -5,8 +5,9 @@
 use core::fmt;
 
 use super::{Context, Contextual};
-use crate::id::IdExt as _;
-use crate::ir::{Constant, ConstantKind, DeclType, LiteralKind, Type, TypeKind};
+use crate::ident_ext::IdentExt as _;
+use fidl_ir::{Constant, ConstantKind, DeclType, LiteralKind, Type, TypeKind};
+use fidl_ir_util::LibraryExt as _;
 
 pub struct ConstantTemplate<'a> {
     constant: &'a Constant,
@@ -34,7 +35,7 @@ impl fmt::Display for ConstantTemplate<'_> {
                 let item = self.natural_id(comp_id);
 
                 if let Some(member) = member {
-                    let decl_type = self.schema().get_decl_type(comp_id).unwrap();
+                    let decl_type = self.library().get_decl_type(comp_id).unwrap();
                     let member_name = match decl_type {
                         DeclType::Bits => member.screaming_snake(),
                         DeclType::Enum => {

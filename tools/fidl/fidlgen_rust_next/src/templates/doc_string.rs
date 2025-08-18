@@ -4,7 +4,7 @@
 
 use core::fmt;
 
-use crate::ir::Attributes;
+use fidl_ir::Attributes;
 
 pub struct DocStringTemplate<'a> {
     attributes: &'a Attributes,
@@ -18,7 +18,7 @@ impl<'a> DocStringTemplate<'a> {
 
 impl fmt::Display for DocStringTemplate<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(doc) = self.attributes.get("doc") {
+        if let Some(doc) = self.attributes.get_value("doc") {
             write!(f, "#[doc = \"{}\"]", doc.escape_default())?;
         }
 

@@ -6,13 +6,13 @@ use std::collections::BTreeSet;
 
 use askama::Template;
 
-use super::{filters, Context, Contextual};
-use crate::id::IdExt as _;
-use crate::ir::{
-    CompIdent, Protocol, ProtocolMethod, ProtocolMethodKind, ProtocolOpenness, Struct, Type,
-    TypeKind,
-};
+use super::{Context, Contextual, filters};
+use crate::ident_ext::IdentExt as _;
 use crate::templates::reserved::escape;
+use fidl_ir::{
+    CompoundIdentifier, Protocol, ProtocolMethod, ProtocolMethodKind, ProtocolOpenness, Struct,
+    Type, TypeKind,
+};
 
 #[derive(Template)]
 #[template(path = "protocol.askama", whitespace = "preserve")]
@@ -56,8 +56,8 @@ impl<'a> ProtocolTemplate<'a> {
             ProtocolMethodKind::OneWay | ProtocolMethodKind::TwoWay => {
                 if let Some(args) = &method.maybe_request_payload {
                     if let TypeKind::Identifier { identifier, .. } = &args.kind {
-                        return self.schema().struct_declarations.get(identifier).or_else(|| {
-                            self.schema().external_struct_declarations.get(identifier)
+                        return self.library().struct_declarations.get(identifier).or_else(|| {
+                            self.library().external_struct_declarations.get(identifier)
                         });
                     }
                 }
@@ -66,8 +66,8 @@ impl<'a> ProtocolTemplate<'a> {
                 if !method.has_error {
                     if let Some(args) = &method.maybe_response_payload {
                         if let TypeKind::Identifier { identifier, .. } = &args.kind {
-                            return self.schema().struct_declarations.get(identifier).or_else(
-                                || self.schema().external_struct_declarations.get(identifier),
+                            return self.library().struct_declarations.get(identifier).or_else(
+                                || self.library().external_struct_declarations.get(identifier),
                             );
                         }
                     }
@@ -87,10 +87,10 @@ impl<'a> ProtocolTemplate<'a> {
         }
     }
 
-    fn prelude_method_type_idents(&self) -> BTreeSet<CompIdent> {
+    fn prelude_method_type_idents(&self) -> BTreeSet<CompoundIdentifier> {
         let mut result = BTreeSet::new();
 
-        fn get_identifier(ty: &Type) -> Option<CompIdent> {
+        fn get_identifier(ty: &Type) -> Option<CompoundIdentifier> {
             if let Type { kind: TypeKind::Identifier { identifier, .. }, .. } = ty {
                 Some(identifier.clone())
             } else {

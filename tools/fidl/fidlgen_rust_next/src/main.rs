@@ -21,9 +21,7 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 mod config;
-mod de;
-mod id;
-mod ir;
+mod ident_ext;
 mod templates;
 
 use std::fs::File;
@@ -32,10 +30,10 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use argh::FromArgs;
+use fidl_ir::Library;
 
 use self::config::{Config, ResourceBindings};
-use self::ir::Schema;
-use self::templates::render_schema;
+use self::templates::render_library;
 
 /// Generate Rust bindings from FIDL IR
 #[derive(FromArgs)]
@@ -61,7 +59,7 @@ fn main() {
     let args = argh::from_env::<Fidlgen>();
 
     let file = File::open(&args.json).expect("failed to open source JSON IR file");
-    let schema = serde_json::from_reader::<_, Schema>(BufReader::new(file))
+    let library = serde_json::from_reader::<_, Library>(BufReader::new(file))
         .expect("failed to parse source JSON IR");
 
     let config = Config {
@@ -69,7 +67,7 @@ fn main() {
         emit_debug_impls: true,
         resource_bindings: ResourceBindings::default(),
     };
-    let result = render_schema(&schema, &config).expect("failed to emit FIDL bindings");
+    let result = render_library(&library, &config).expect("failed to emit FIDL bindings");
 
     // Manually trim trailing whitespace; rustfmt ICEs on some long lines with trailing whitespace.
     let out = File::create(&args.output_filename).expect("failed to create output file");

@@ -4,11 +4,11 @@
 
 use askama::Template;
 
-use super::{filters, Context, Contextual};
-use crate::id::IdExt as _;
-use crate::ir::{Enum, IntType};
+use super::{Context, Contextual, filters};
+use crate::ident_ext::IdentExt as _;
 use crate::templates::prim::{NaturalIntTemplate, WireIntTemplate};
 use crate::templates::reserved::escape;
+use fidl_ir::{Enum, IntType};
 
 #[derive(Template)]
 #[template(path = "enum.askama", whitespace = "preserve")]

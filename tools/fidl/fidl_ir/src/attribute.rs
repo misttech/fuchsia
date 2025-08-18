@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use super::Constant;
+use crate::Constant;
 use crate::de::Index;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -17,7 +17,7 @@ pub struct Attributes {
 
 impl Attributes {
     /// Get an attribute value, if any.
-    pub fn get(&self, name: &str) -> Option<&str> {
+    pub fn get_value(&self, name: &str) -> Option<&str> {
         Some(self.attributes.get(name)?.args.get("value")?.value.value.as_str())
     }
 }

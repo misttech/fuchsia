@@ -4,36 +4,31 @@
 
 use serde::Deserialize;
 
-use super::{Attributes, CompIdent, Decl, DeclType, Ident, Type};
+use crate::de::Index;
+
+use crate::{Attributes, CompoundIdentifier, Identifier, Type};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Service {
     #[serde(flatten)]
     pub attributes: Attributes,
-    pub name: CompIdent,
+    pub name: CompoundIdentifier,
     pub members: Vec<ServiceMember>,
 }
 
-impl Decl for Service {
-    fn decl_type(&self) -> DeclType {
-        DeclType::Service
-    }
+impl Index for Service {
+    type Key = CompoundIdentifier;
 
-    fn name(&self) -> &CompIdent {
+    fn key(&self) -> &Self::Key {
         &self.name
-    }
-
-    fn attributes(&self) -> &Attributes {
-        &self.attributes
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ServiceMember {
-    #[expect(dead_code)]
     #[serde(flatten)]
     pub attributes: Attributes,
-    pub name: Ident,
+    pub name: Identifier,
     #[serde(rename = "type")]
     pub ty: Type,
 }

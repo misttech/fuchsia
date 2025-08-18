@@ -2,24 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::config::ResourceBindings;
-use crate::ir::{Attributes, CompId, Constant, IntType, PrimSubtype, Schema, Type};
 use crate::Config;
+use crate::config::ResourceBindings;
+use fidl_ir::{Attributes, CompoundIdent, Constant, IntType, Library, PrimSubtype, Type};
 
 use super::{
-    ConstantTemplate, Denylist, DocStringTemplate, IdTemplate, NaturalIntTemplate,
+    CompoundIdentifierTemplate, ConstantTemplate, Denylist, DocStringTemplate, NaturalIntTemplate,
     NaturalPrimTemplate, NaturalTypeTemplate, WireIntTemplate, WirePrimTemplate, WireTypeTemplate,
 };
 
 #[derive(Clone, Copy)]
 pub struct Context<'a> {
-    schema: &'a Schema,
+    library: &'a Library,
     config: &'a Config,
 }
 
 impl<'a> Context<'a> {
-    pub fn new(schema: &'a Schema, config: &'a Config) -> Self {
-        Self { schema, config }
+    pub fn new(library: &'a Library, config: &'a Config) -> Self {
+        Self { library, config }
     }
 }
 
@@ -28,8 +28,8 @@ pub trait Contextual<'a> {
 
     // Helpers
 
-    fn schema(&self) -> &'a Schema {
-        self.context().schema
+    fn library(&self) -> &'a Library {
+        self.context().library
     }
 
     fn resource_bindings(&self) -> &'a ResourceBindings {
@@ -48,16 +48,19 @@ pub trait Contextual<'a> {
         self.context().config.emit_debug_impls
     }
 
-    fn natural_id(&self, id: &'a CompId) -> IdTemplate<'a> {
-        IdTemplate::natural(id, self.context())
+    fn natural_id(&self, compound_ident: &'a CompoundIdent) -> CompoundIdentifierTemplate<'a> {
+        CompoundIdentifierTemplate::natural(compound_ident, self.context())
     }
 
-    fn wire_id(&self, id: &'a CompId) -> IdTemplate<'a> {
-        IdTemplate::wire(id, self.context())
+    fn wire_id(&self, compound_ident: &'a CompoundIdent) -> CompoundIdentifierTemplate<'a> {
+        CompoundIdentifierTemplate::wire(compound_ident, self.context())
     }
 
-    fn wire_optional_id(&self, id: &'a CompId) -> IdTemplate<'a> {
-        IdTemplate::wire_optional(id, self.context())
+    fn wire_optional_id(
+        &self,
+        compound_ident: &'a CompoundIdent,
+    ) -> CompoundIdentifierTemplate<'a> {
+        CompoundIdentifierTemplate::wire_optional(compound_ident, self.context())
     }
 
     fn natural_int(&self, int: &'a IntType) -> NaturalIntTemplate<'a> {
@@ -96,8 +99,8 @@ pub trait Contextual<'a> {
         ConstantTemplate::new(constant, ty, self.context())
     }
 
-    fn rust_next_denylist(&self, ident: &CompId) -> Denylist {
-        Denylist::for_ident(self.context().schema, ident, &["rust_next"])
+    fn rust_next_denylist(&self, ident: &CompoundIdent) -> Denylist {
+        Denylist::for_ident(self.context().library, ident, &["rust_next"])
     }
 }
 

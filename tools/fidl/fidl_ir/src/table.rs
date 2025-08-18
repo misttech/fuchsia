@@ -6,13 +6,15 @@ use core::num::NonZeroI64;
 
 use serde::Deserialize;
 
-use super::{Attributes, CompIdent, Decl, DeclType, Ident, Type, TypeShape};
+use crate::de::Index;
+
+use crate::{Attributes, CompoundIdentifier, Identifier, Type, TypeShape};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Table {
     #[serde(flatten)]
     pub attributes: Attributes,
-    pub name: CompIdent,
+    pub name: CompoundIdentifier,
     pub naming_context: Vec<String>,
     pub members: Vec<TableMember>,
     #[serde(rename = "resource")]
@@ -21,34 +23,19 @@ pub struct Table {
     pub shape: TypeShape,
 }
 
-impl Decl for Table {
-    fn decl_type(&self) -> DeclType {
-        DeclType::Table
-    }
+impl Index for Table {
+    type Key = CompoundIdentifier;
 
-    fn name(&self) -> &CompIdent {
+    fn key(&self) -> &Self::Key {
         &self.name
-    }
-
-    fn attributes(&self) -> &Attributes {
-        &self.attributes
-    }
-
-    fn naming_context(&self) -> Option<&[String]> {
-        Some(&self.naming_context)
-    }
-
-    fn type_shape(&self) -> Option<&TypeShape> {
-        Some(&self.shape)
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TableMember {
-    #[expect(dead_code)]
     #[serde(flatten)]
     pub attributes: Attributes,
-    pub name: Ident,
+    pub name: Identifier,
     #[serde(rename = "type")]
     pub ty: Type,
     pub ordinal: NonZeroI64,

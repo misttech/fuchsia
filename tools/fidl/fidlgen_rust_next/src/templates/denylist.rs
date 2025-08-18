@@ -5,7 +5,8 @@
 use core::any::Any;
 use core::fmt;
 
-use crate::ir::{Attributes, CompId, Decl, Protocol, Schema};
+use fidl_ir::{Attributes, CompoundIdent, Library, Protocol};
+use fidl_ir_util::{Decl, LibraryExt as _};
 
 pub enum Denylist {
     Allowed,
@@ -22,20 +23,20 @@ impl Denylist {
         }
     }
 
-    pub fn for_ident(schema: &Schema, ident: &CompId, bindings: &[&str]) -> Self {
-        let Some(decl) = schema.get_local_decl(ident) else {
+    pub fn for_ident(library: &Library, ident: &CompoundIdent, bindings: &[&str]) -> Self {
+        let Some(decl) = library.get_local_decl(ident) else {
             return Self::Allowed;
         };
 
         let mut result = Self::for_decl(decl, bindings);
 
         if let Some(naming_context) = decl.naming_context() {
-            let mut path = format!("{}/", schema.name);
+            let mut path = format!("{}/", library.name);
 
             for (name, next) in naming_context.iter().zip(naming_context.iter().skip(1)) {
                 path = format!("{path}{name}");
-                let comp_id = CompId::from_str(&path);
-                if let Some(parent_decl) = schema.get_local_decl(comp_id) {
+                let comp_id = CompoundIdent::from_str(&path);
+                if let Some(parent_decl) = library.get_local_decl(comp_id) {
                     if let Some(protocol) = (parent_decl as &dyn Any).downcast_ref::<Protocol>() {
                         if let Some(method) =
                             protocol.methods.iter().find(|m| m.name.non_canonical() == next)
@@ -71,7 +72,7 @@ impl Denylist {
     }
 
     fn for_attributes(attributes: &Attributes, bindings: &[&str]) -> Self {
-        if let Some(denylist) = attributes.get("bindings_denylist") {
+        if let Some(denylist) = attributes.get_value("bindings_denylist") {
             for denied in denylist.split(", ") {
                 if bindings.contains(&denied) {
                     return Self::Denied;

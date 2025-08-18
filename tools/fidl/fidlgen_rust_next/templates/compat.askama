@@ -1,20 +1,20 @@
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.
 pub mod compat {
-    {% for ident in self.schema().declaration_order %}
+    {% for ident in self.library().declaration_order %}
         {% if !matches!(self.rust_or_rust_next_denylist(ident), Denylist::Denied) %}
-            {% match self.schema().declarations[ident] %}
+            {% match self.library().declarations[ident] %}
                 {% when DeclType::Bits %}
-                    {{ self.bits(self.schema().bits_declarations[ident] )}}
+                    {{ self.bits(self.library().bits_declarations[ident] )}}
                 {% when DeclType::Enum %}
-                    {{ self.enm(self.schema().enum_declarations[ident] )}}
+                    {{ self.enm(self.library().enum_declarations[ident] )}}
                 {% when DeclType::Protocol %}
-                    {{ self.protocol(self.schema().protocol_declarations[ident] )}}
+                    {{ self.protocol(self.library().protocol_declarations[ident] )}}
                 {% when DeclType::Struct %}
-                    {{ self.strct(self.schema().struct_declarations[ident] )}}
+                    {{ self.strct(self.library().struct_declarations[ident] )}}
                 {% when DeclType::Table %}
-                    {{ self.table(self.schema().table_declarations[ident] )}}
+                    {{ self.table(self.library().table_declarations[ident] )}}
                 {% when DeclType::Union %}
-                    {{ self.union(self.schema().union_declarations[ident] )}}
+                    {{ self.union(self.library().union_declarations[ident] )}}
                 {% else %}
             {% endmatch %}
         {% endif %}

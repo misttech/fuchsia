@@ -4,41 +4,42 @@
 
 use core::fmt;
 
-use super::{escape, Context, Contextual};
-use crate::id::IdExt;
-use crate::ir::{CompId, DeclType};
+use super::{Context, Contextual, escape};
+use crate::ident_ext::IdentExt;
+use fidl_ir::{CompoundIdent, DeclType};
+use fidl_ir_util::LibraryExt as _;
 
-pub struct IdTemplate<'a> {
+pub struct CompoundIdentifierTemplate<'a> {
     context: Context<'a>,
-    id: &'a CompId,
+    id: &'a CompoundIdent,
     prefix: &'a str,
 }
 
-impl<'a> IdTemplate<'a> {
-    fn new(id: &'a CompId, prefix: &'a str, context: Context<'a>) -> Self {
+impl<'a> CompoundIdentifierTemplate<'a> {
+    fn new(id: &'a CompoundIdent, prefix: &'a str, context: Context<'a>) -> Self {
         Self { context, id, prefix }
     }
 
-    pub fn natural(id: &'a CompId, context: Context<'a>) -> Self {
+    pub fn natural(id: &'a CompoundIdent, context: Context<'a>) -> Self {
         Self::new(id, "", context)
     }
 
-    pub fn wire(id: &'a CompId, context: Context<'a>) -> Self {
+    pub fn wire(id: &'a CompoundIdent, context: Context<'a>) -> Self {
         Self::new(id, "Wire", context)
     }
 
-    pub fn wire_optional(id: &'a CompId, context: Context<'a>) -> Self {
+    pub fn wire_optional(id: &'a CompoundIdent, context: Context<'a>) -> Self {
         Self::new(id, "WireOptional", context)
     }
 }
 
-impl<'a> Contextual<'a> for IdTemplate<'a> {
+impl<'a> Contextual<'a> for CompoundIdentifierTemplate<'a> {
     fn context(&self) -> Context<'a> {
         self.context
     }
 }
 
-impl fmt::Display for IdTemplate<'_> {
+impl fmt::Display for CompoundIdentifierTemplate<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (lib, ty) = self.id.split();
 
@@ -48,7 +49,7 @@ impl fmt::Display for IdTemplate<'_> {
         }
 
         // Crate prefix
-        if lib == self.schema().name {
+        if lib == self.library().name {
             write!(f, "crate::")?;
         } else if lib == "zx" {
             write!(f, "::fidl_next::fuchsia::zx::")?;
@@ -58,7 +59,7 @@ impl fmt::Display for IdTemplate<'_> {
         }
 
         // Type name
-        let base_name = match self.schema().get_decl_type(self.id).unwrap() {
+        let base_name = match self.library().get_decl_type(self.id).unwrap() {
             DeclType::Alias
             | DeclType::Bits
             | DeclType::Enum
@@ -67,7 +68,10 @@ impl fmt::Display for IdTemplate<'_> {
             | DeclType::Union
             | DeclType::Protocol => ty.camel(),
             DeclType::Const => ty.screaming_snake(),
-            DeclType::Resource | DeclType::NewType | DeclType::Overlay | DeclType::Service => {
+            DeclType::ExperimentalResource
+            | DeclType::NewType
+            | DeclType::Overlay
+            | DeclType::Service => {
                 todo!()
             }
         };

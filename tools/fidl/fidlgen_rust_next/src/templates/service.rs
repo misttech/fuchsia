@@ -4,10 +4,10 @@
 
 use askama::Template;
 
-use super::{filters, Context, Contextual};
-use crate::id::IdExt as _;
-use crate::ir::{CompId, Service, ServiceMember, TypeKind};
+use super::{Context, Contextual, filters};
+use crate::ident_ext::IdentExt as _;
 use crate::templates::reserved::escape;
+use fidl_ir::{CompoundIdent, Service, ServiceMember, TypeKind};
 
 #[derive(Template)]
 #[template(path = "service.askama", whitespace = "preserve")]
@@ -43,7 +43,7 @@ impl<'a> ServiceTemplate<'a> {
         format!("{}.{}", library, name.camel())
     }
 
-    fn member_protocol<'m>(&self, member: &'m ServiceMember) -> &'m CompId {
+    fn member_protocol<'m>(&self, member: &'m ServiceMember) -> &'m CompoundIdent {
         let TypeKind::Endpoint { protocol, .. } = &member.ty.kind else {
             panic!("service member type must be an endpoint");
         };

@@ -12,14 +12,14 @@ mod union;
 
 use askama::Template;
 
-use crate::ir::{Bits, CompId, DeclType, Enum, Protocol, Struct, Table, Union};
 use crate::templates::{Context, Contextual, Denylist};
+use fidl_ir::{Bits, CompoundIdent, DeclType, Enum, Protocol, Struct, Table, Union};
 
 use self::bits::*;
-use self::protocol::*;
 use self::r#enum::*;
-use self::r#struct::*;
+use self::protocol::*;
 use self::reserved::*;
+use self::r#struct::*;
 use self::table::*;
 use self::union::*;
 
@@ -33,11 +33,11 @@ pub struct CompatTemplate<'a> {
 
 impl<'a> CompatTemplate<'a> {
     pub fn new(context: Context<'a>) -> Self {
-        Self { context, crate_name: format!("fidl_{}", context.schema().name.replace('.', "_")) }
+        Self { context, crate_name: format!("fidl_{}", context.library().name.replace('.', "_")) }
     }
 
-    fn rust_or_rust_next_denylist(&self, ident: &CompId) -> Denylist {
-        Denylist::for_ident(self.context().schema(), ident, &["rust", "rust_next"])
+    fn rust_or_rust_next_denylist(&self, ident: &CompoundIdent) -> Denylist {
+        Denylist::for_ident(self.context().library(), ident, &["rust", "rust_next"])
     }
 
     fn bits(&self, bits: &'a Bits) -> BitsCompatTemplate<'_> {
@@ -72,25 +72,25 @@ impl<'a> Contextual<'a> for CompatTemplate<'a> {
 }
 
 mod filters {
-    use crate::id::IdExt as _;
-    use crate::ir::Id;
+    use crate::ident_ext::IdentExt as _;
     use crate::templates::compat::escape_compat;
+    use fidl_ir::Ident;
 
     pub use crate::templates::filters::*;
 
-    pub fn escape_compat_snake(id: &Id) -> String {
-        escape_compat(id.snake(), id)
+    pub fn escape_compat_snake(ident: &Ident) -> String {
+        escape_compat(ident.snake(), ident)
     }
 
-    pub fn escape_compat_camel(id: &Id) -> String {
-        escape_compat(id.camel(), id)
+    pub fn escape_compat_camel(ident: &Ident) -> String {
+        escape_compat(ident.camel(), ident)
     }
 
-    pub fn compat_snake(id: &Id, _: &dyn askama::Values) -> askama::Result<String> {
-        Ok(escape_compat_snake(id))
+    pub fn compat_snake(ident: &Ident, _: &dyn askama::Values) -> askama::Result<String> {
+        Ok(escape_compat_snake(ident))
     }
 
-    pub fn compat_camel(id: &Id, _: &dyn askama::Values) -> askama::Result<String> {
-        Ok(escape_compat_camel(id))
+    pub fn compat_camel(ident: &Ident, _: &dyn askama::Values) -> askama::Result<String> {
+        Ok(escape_compat_camel(ident))
     }
 }

@@ -4,12 +4,12 @@
 
 use askama::Template;
 
-use crate::id::IdExt as _;
-use crate::ir::Enum;
+use crate::ident_ext::IdentExt as _;
 use crate::templates::reserved::escape;
 use crate::templates::{Context, Contextual, Denylist};
+use fidl_ir::Enum;
 
-use super::{filters, CompatTemplate};
+use super::{CompatTemplate, filters};
 
 #[derive(Template)]
 #[template(path = "compat/enum.askama")]

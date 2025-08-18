@@ -2,31 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::id::IdExt;
-use crate::ir::Id;
+use crate::ident_ext::IdentExt;
+use fidl_ir::Ident;
 
 use super::reserved::escape;
 
-pub fn escape_camel(id: &Id) -> String {
-    escape(id.camel())
+pub fn escape_camel(ident: &Ident) -> String {
+    escape(ident.camel())
 }
 
-pub fn escape_snake(id: &Id) -> String {
-    escape(id.snake())
+pub fn escape_snake(ident: &Ident) -> String {
+    escape(ident.snake())
 }
 
-pub fn escape_screaming_snake(id: &Id) -> String {
-    escape(id.screaming_snake())
+pub fn escape_screaming_snake(ident: &Ident) -> String {
+    escape(ident.screaming_snake())
 }
 
-pub fn camel(id: &Id, _: &dyn askama::Values) -> askama::Result<String> {
-    Ok(escape_camel(id))
+pub fn camel(ident: &Ident, _: &dyn askama::Values) -> askama::Result<String> {
+    Ok(escape_camel(ident))
 }
 
-pub fn snake(id: &Id, _: &dyn askama::Values) -> askama::Result<String> {
-    Ok(escape_snake(id))
+pub fn snake(ident: &Ident, _: &dyn askama::Values) -> askama::Result<String> {
+    Ok(escape_snake(ident))
 }
 
-pub fn screaming_snake(id: &Id, _: &dyn askama::Values) -> askama::Result<String> {
-    Ok(escape_screaming_snake(id))
+pub fn screaming_snake(ident: &Ident, _: &dyn askama::Values) -> askama::Result<String> {
+    Ok(escape_screaming_snake(ident))
 }

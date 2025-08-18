@@ -4,11 +4,11 @@
 
 use askama::Template;
 
-use crate::id::IdExt as _;
-use crate::ir::Protocol;
-use crate::templates::{escape, Context, Contextual, Denylist};
+use crate::ident_ext::IdentExt as _;
+use crate::templates::{Context, Contextual, Denylist, escape};
+use fidl_ir::Protocol;
 
-use super::{escape_compat, CompatTemplate};
+use super::{CompatTemplate, escape_compat};
 
 #[derive(Template)]
 #[template(path = "compat/protocol.askama")]

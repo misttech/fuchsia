@@ -5,11 +5,11 @@
 use askama::Template;
 
 use super::{Context, Contextual};
-use crate::id::IdExt;
-use crate::ir::TypeAlias;
+use crate::ident_ext::IdentExt;
 use crate::templates::natural_type::NaturalTypeTemplate;
 use crate::templates::reserved::escape;
 use crate::templates::wire_type::WireTypeTemplate;
+use fidl_ir::TypeAlias;
 
 #[derive(Template)]
 #[template(path = "alias.askama", whitespace = "preserve")]

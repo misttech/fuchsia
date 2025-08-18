@@ -4,30 +4,25 @@
 
 use serde::Deserialize;
 
-use super::{Attributes, CompIdent, CompIdentOrMember, Decl, DeclType, Literal, Type};
+use crate::de::Index;
+use crate::{Attributes, CompoundIdentifier, CompoundIdentifierOrMember, Literal, Type};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct Const {
     #[serde(flatten)]
     pub attributes: Attributes,
-    pub name: CompIdent,
+    pub name: CompoundIdentifier,
     #[serde(rename = "type")]
     pub ty: Type,
     pub value: Constant,
 }
 
-impl Decl for Const {
-    fn decl_type(&self) -> DeclType {
-        DeclType::Const
-    }
+impl Index for Const {
+    type Key = CompoundIdentifier;
 
-    fn name(&self) -> &CompIdent {
+    fn key(&self) -> &Self::Key {
         &self.name
-    }
-
-    fn attributes(&self) -> &Attributes {
-        &self.attributes
     }
 }
 
@@ -41,7 +36,7 @@ pub struct Constant {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ConstantKind {
-    Identifier { identifier: CompIdentOrMember },
+    Identifier { identifier: CompoundIdentifierOrMember },
     Literal { literal: Literal },
     BinaryOperator,
 }

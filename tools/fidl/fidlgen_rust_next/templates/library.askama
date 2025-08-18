@@ -8,33 +8,33 @@
     unreachable_code,
 )]
 
-{% for ident in self.schema().declaration_order %}
+{% for ident in self.library().declaration_order %}
     {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) %}
-        {% match self.schema().declarations[ident] %}
+        {% match self.library().declarations[ident] %}
             {% when DeclType::Alias %}
-                {{ self.alias(self.schema().alias_declarations[ident]) }}
+                {{ self.alias(self.library().alias_declarations[ident]) }}
             {% when DeclType::Bits %}
-                {{ self.bits(self.schema().bits_declarations[ident]) }}
+                {{ self.bits(self.library().bits_declarations[ident]) }}
             {% when DeclType::Const %}
-                {{ self.cnst(self.schema().const_declarations[ident]) }}
+                {{ self.cnst(self.library().const_declarations[ident]) }}
             {% when DeclType::Enum %}
-                {{ self.enm(self.schema().enum_declarations[ident]) }}
+                {{ self.enm(self.library().enum_declarations[ident]) }}
             {% when DeclType::Struct %}
-                {{ self.strct(self.schema().struct_declarations[ident]) }}
+                {{ self.strct(self.library().struct_declarations[ident]) }}
             {% when DeclType::Table %}
-                {{ self.table(self.schema().table_declarations[ident]) }}
+                {{ self.table(self.library().table_declarations[ident]) }}
             {% when DeclType::Union %}
-                {% let union_ = self.schema().union_declarations[ident] %}
+                {% let union_ = self.library().union_declarations[ident] %}
                 {% if !union_.is_result %}
                     {{ self.union_(union_) }}
                 {% endif %}
             {% when DeclType::NewType %} {{ todo!("newtypes are not supported yet") }}
             {% when DeclType::Overlay %} {{ todo!("overlays are not supported yet") }}
             {% when DeclType::Protocol %}
-                {{ self.protocol(self.schema().protocol_declarations[ident]) }}
-            {% when DeclType::Resource %}
+                {{ self.protocol(self.library().protocol_declarations[ident]) }}
+            {% when DeclType::ExperimentalResource %}
             {% when DeclType::Service %}
-                {{ self.service(self.schema().service_declarations[ident]) }}
+                {{ self.service(self.library().service_declarations[ident]) }}
         {% endmatch %}
     {% endif %}
 {% endfor %}

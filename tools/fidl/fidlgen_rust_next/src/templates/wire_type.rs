@@ -5,7 +5,8 @@
 use core::fmt;
 
 use super::{Context, Contextual};
-use crate::ir::{DeclType, EndpointRole, InternalSubtype, Type, TypeKind};
+use fidl_ir::{DeclType, EndpointRole, InternalSubtype, Type, TypeKind};
+use fidl_ir_util::LibraryExt as _;
 
 pub struct WireTypeTemplate<'a> {
     context: Context<'a>,
@@ -102,7 +103,7 @@ impl fmt::Display for WireTypeTemplate<'_> {
             TypeKind::Identifier { identifier, nullable, .. } => {
                 let wire_id = self.wire_id(identifier);
 
-                match self.schema().get_decl_type(identifier).unwrap() {
+                match self.library().get_decl_type(identifier).unwrap() {
                     DeclType::Bits | DeclType::Enum => write!(f, "{wire_id}")?,
                     DeclType::Table => write!(f, "{wire_id}<{}>", self.lifetime)?,
                     DeclType::Struct => {
@@ -112,7 +113,7 @@ impl fmt::Display for WireTypeTemplate<'_> {
 
                         write!(f, "{wire_id}")?;
 
-                        if let Some(shape) = self.schema().get_type_shape(identifier) {
+                        if let Some(shape) = self.library().get_type_shape(identifier) {
                             if shape.max_out_of_line != 0 {
                                 write!(f, "<{}>", self.lifetime)?;
                             }
@@ -134,7 +135,7 @@ impl fmt::Display for WireTypeTemplate<'_> {
                             write!(f, "{id}")?;
                         }
                     }
-                    DeclType::Resource => unreachable!(),
+                    DeclType::ExperimentalResource => unreachable!(),
                     _ => unimplemented!(),
                 }
             }

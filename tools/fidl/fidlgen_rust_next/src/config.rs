@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use crate::ir::HandleSubtype;
+use fidl_ir::HandleSubtype;
 
 pub struct Config {
     pub emit_compat: bool,

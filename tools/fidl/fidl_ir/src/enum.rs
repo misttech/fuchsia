@@ -4,14 +4,16 @@
 
 use serde::Deserialize;
 
-use super::{Attributes, CompIdent, Constant, Decl, DeclType, Ident, IntType};
+use crate::de::Index;
+
+use crate::{Attributes, CompoundIdentifier, Constant, Identifier, IntType};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Enum {
     #[serde(flatten)]
     pub attributes: Attributes,
     pub members: Vec<EnumMember>,
-    pub name: CompIdent,
+    pub name: CompoundIdentifier,
     pub naming_context: Vec<String>,
     #[serde(rename = "strict")]
     pub is_strict: bool,
@@ -19,29 +21,18 @@ pub struct Enum {
     pub ty: IntType,
 }
 
-impl Decl for Enum {
-    fn decl_type(&self) -> DeclType {
-        DeclType::Enum
-    }
+impl Index for Enum {
+    type Key = CompoundIdentifier;
 
-    fn name(&self) -> &CompIdent {
+    fn key(&self) -> &Self::Key {
         &self.name
-    }
-
-    fn attributes(&self) -> &Attributes {
-        &self.attributes
-    }
-
-    fn naming_context(&self) -> Option<&[String]> {
-        Some(&self.naming_context)
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct EnumMember {
-    #[expect(dead_code)]
     #[serde(flatten)]
     pub attributes: Attributes,
-    pub name: Ident,
+    pub name: Identifier,
     pub value: Constant,
 }

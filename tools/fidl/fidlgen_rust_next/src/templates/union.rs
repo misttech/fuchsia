@@ -4,10 +4,10 @@
 
 use askama::Template;
 
-use super::{filters, Context, Contextual};
-use crate::id::IdExt as _;
-use crate::ir::Union;
+use super::{Context, Contextual, filters};
+use crate::ident_ext::IdentExt as _;
 use crate::templates::reserved::escape;
+use fidl_ir::Union;
 
 #[derive(Template)]
 #[template(path = "union.askama", whitespace = "preserve")]
