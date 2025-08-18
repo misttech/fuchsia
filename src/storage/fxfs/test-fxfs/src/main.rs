@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
-use fidl::endpoints::{create_proxy, ClientEnd, DiscoverableProtocolMarker, Proxy, ServerEnd};
+// TODO(https://fxbug.dev/439053417): Investigate why the recursion limit was bumped
+// to unblock the toolchain.
+#![recursion_limit = "256"]
+
+use anyhow::{Context, Error, anyhow};
+use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, Proxy, ServerEnd, create_proxy};
 use fidl_fuchsia_fshost::{
     StarnixVolumeProviderMarker, StarnixVolumeProviderRequest, StarnixVolumeProviderRequestStream,
 };
@@ -23,8 +27,8 @@ use fxfs_crypto::Crypt;
 use fxfs_platform::fuchsia::RemoteCrypt;
 use fxfs_platform::volumes_directory::VolumesDirectory;
 use std::sync::{Arc, Weak};
-use storage_device::fake_device::FakeDevice;
 use storage_device::DeviceHolder;
+use storage_device::fake_device::FakeDevice;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
 
