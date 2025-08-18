@@ -80,11 +80,11 @@ struct x86_64_context_switch_frame {
 extern "C" {
 
 #if __has_feature(safe_stack)
-void x86_64_context_switch(vaddr_t* oldsp, vaddr_t newsp, vaddr_t* old_unsafe_sp,
-                           vaddr_t new_unsafe_sp);
+void x86_64_context_switch(vaddr_t* oldsp, vaddr_t newsp, Thread* new_thread,
+                           vaddr_t* old_unsafe_sp, vaddr_t new_unsafe_sp);
 void x86_uspace_entry(const struct iframe_t* iframe, vaddr_t unsafe_sp) __NO_RETURN;
 #else
-void x86_64_context_switch(vaddr_t* oldsp, vaddr_t newsp);
+void x86_64_context_switch(vaddr_t* oldsp, vaddr_t newsp, Thread* new_thread);
 void x86_uspace_entry(const struct iframe_t* iframe) __NO_RETURN;
 #endif
 
