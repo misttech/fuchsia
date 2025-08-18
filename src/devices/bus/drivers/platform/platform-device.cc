@@ -133,10 +133,7 @@ PlatformDevice::PlatformDevice(PlatformBus* bus, inspect::Node inspect_node, fpb
       did_(node.did().value_or(0)),
       instance_id_(node.instance_id().value_or(0)),
       node_(std::move(node)),
-      inspect_node_(std::move(inspect_node)),
-      serial_number_metadata_server_(name_),
-      partition_map_metadata_server_(name_),
-      mac_address_metadata_server_(name_) {}
+      inspect_node_(std::move(inspect_node)) {}
 
 zx::result<PlatformDevice::Mmio> PlatformDevice::GetMmio(uint32_t index) const {
   if (node_.mmio() == std::nullopt || index >= node_.mmio()->size()) {
@@ -372,10 +369,34 @@ zx::result<> PlatformDevice::CreateNode() {
   std::vector offers = {
       fdf::MakeOffer2<fuchsia_hardware_platform_device::Service>(name_),
       fdf::MakeOffer2<fuchsia_driver_compat::Service>(name_),
-      serial_number_metadata_server_.MakeOffer(),
-      partition_map_metadata_server_.MakeOffer(),
-      mac_address_metadata_server_.MakeOffer(),
   };
+  if (serial_number_metadata_server_) {
+    offers.push_back(serial_number_metadata_server_->MakeOffer());
+    if (zx::result result =
+            serial_number_metadata_server_->Serve(*bus()->outgoing(), bus()->dispatcher());
+        result.is_error()) {
+      fdf::error("Failed to serve serial number metadata server: {}", result);
+      return result.take_error();
+    }
+  }
+  if (partition_map_metadata_server_) {
+    offers.push_back(partition_map_metadata_server_->MakeOffer());
+    if (zx::result result =
+            partition_map_metadata_server_->Serve(*bus()->outgoing(), bus()->dispatcher());
+        result.is_error()) {
+      fdf::error("Failed to serve partition map metadata server: {}", result);
+      return result.take_error();
+    }
+  }
+  if (mac_address_metadata_server_) {
+    offers.push_back(mac_address_metadata_server_->MakeOffer());
+    if (zx::result result =
+            mac_address_metadata_server_->Serve(*bus()->outgoing(), bus()->dispatcher());
+        result.is_error()) {
+      fdf::error("Failed to serve mac address metadata server: {}", result);
+      return result.take_error();
+    }
+  }
 
   // Add our offers to the outgoing directory
   {
@@ -390,28 +411,6 @@ zx::result<> PlatformDevice::CreateNode() {
       fdf::warn("Failed to add platform device service: {}", result);
       return result.take_error();
     }
-  }
-
-  // Setup boot metadata servers.
-  if (zx::result result =
-          serial_number_metadata_server_.Serve(*bus()->outgoing(), bus()->dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve serial number metadata server: {}", result);
-    return result.take_error();
-  }
-
-  if (zx::result result =
-          partition_map_metadata_server_.Serve(*bus()->outgoing(), bus()->dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve partition map metadata server: {}", result);
-    return result.take_error();
-  }
-
-  if (zx::result result =
-          mac_address_metadata_server_.Serve(*bus()->outgoing(), bus()->dispatcher());
-      result.is_error()) {
-    fdf::error("Failed to serve mac address metadata server: {}", result);
-    return result.take_error();
   }
 
   auto [client, server] = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
@@ -524,7 +523,9 @@ zx::result<> PlatformDevice::Init() {
       switch (metadata_zbi_type.value()) {
         case ZBI_TYPE_SERIAL_NUMBER: {
           auto metadata = CreateSerialNumberMetadata(data.value());
-          if (zx::result result = serial_number_metadata_server_.SetMetadata(metadata);
+          serial_number_metadata_server_ = std::make_unique<
+              fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>>(name_);
+          if (zx::result result = serial_number_metadata_server_->SetMetadata(metadata);
               result.is_error()) {
             fdf::error("Failed to set metadata for serial number metadata server: {}", result);
             return result.take_error();
@@ -537,7 +538,10 @@ zx::result<> PlatformDevice::Init() {
             fdf::error("Failed to create partition map metadata: {}", metadata);
             return metadata.take_error();
           }
-          if (zx::result result = partition_map_metadata_server_.SetMetadata(metadata.value());
+          partition_map_metadata_server_ =
+              std::make_unique<fdf_metadata::MetadataServer<fuchsia_boot_metadata::PartitionMap>>(
+                  name_);
+          if (zx::result result = partition_map_metadata_server_->SetMetadata(metadata.value());
               result.is_error()) {
             fdf::error("Failed to set metadata for partition map metadata server: {}", result);
             return result.take_error();
@@ -550,7 +554,9 @@ zx::result<> PlatformDevice::Init() {
             fdf::error("Failed to create mac address metadata: {}", metadata);
             return metadata.take_error();
           }
-          if (zx::result result = mac_address_metadata_server_.SetMetadata(metadata.value());
+          mac_address_metadata_server_ = std::make_unique<
+              fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>>(name_);
+          if (zx::result result = mac_address_metadata_server_->SetMetadata(metadata.value());
               result.is_error()) {
             fdf::error("Failed to set metadata for mac address metadata server: {}", result);
             return result.take_error();
