@@ -455,7 +455,7 @@ which is almost certainly a mistake: {}",
         if capability.directory.is_some() && capability.rights.is_none() {
             return Err(Error::validate("\"rights\" should be present with \"directory\""));
         }
-        if let Some(name) = capability.storage.as_ref() {
+        if capability.storage.as_ref().is_some() {
             if capability.from.is_none() {
                 return Err(Error::validate("\"from\" should be present with \"storage\""));
             }
@@ -469,14 +469,6 @@ which is almost certainly a mistake: {}",
             }
             if capability.storage_id.is_none() {
                 return Err(Error::validate("\"storage_id\" should be present with \"storage\""));
-            }
-
-            // The storage capability depends on its backing dir.
-            let target = DependencyNode::Named(name);
-            let source = capability.from.as_ref().unwrap();
-            let names = vec![capability.backing_dir.as_ref().unwrap().as_ref()];
-            for source in self.expand_source_dependencies(names, &source.into()) {
-                self.add_strong_dep(source, target);
             }
         }
         if capability.runner.is_some() && capability.from.is_some() {
@@ -3682,43 +3674,6 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_use_from_child_offer_storage_cycle(
-            json!({
-                "capabilities": [
-                    {
-                        "storage": "data",
-                        "from": "self",
-                        "backing_dir": "blobfs",
-                        "storage_id": "static_instance_id_or_moniker",
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "child",
-                        "url": "#meta/child.cm",
-                    },
-                ],
-                "use": [
-                    {
-                        "protocol": "fuchsia.example.Protocol",
-                        "from": "#child",
-                    },
-                ],
-                "offer": [
-                    {
-                        "storage": "data",
-                        "from": "self",
-                        "to": "#child",
-                    },
-                ],
-            }),
-            Err(Error::Validate {
-                err,
-                ..
-            }) if &err ==
-                "Strong dependency cycles were found. Break the cycle by removing a dependency \
-                or marking an offer as weak. Cycles: {{#child -> self -> #data -> #child}}"
-        ),
 
         // expose
         test_cml_expose(
@@ -5026,47 +4981,6 @@ mod tests {
                 "Strong dependency cycles were found. Break the cycle by removing a \
                 dependency or marking an offer as weak. Cycles: \
                 {{#a -> #b -> #c -> #a}, {#b -> #d -> #b}}"
-        ),
-        test_cml_offer_dependency_cycle_storage(
-            json!({
-                "capabilities": [
-                    {
-                        "storage": "data",
-                        "from": "#backend",
-                        "backing_dir": "blobfs",
-                        "storage_id": "static_instance_id_or_moniker",
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "child",
-                        "url": "#meta/child.cm",
-                    },
-                    {
-                        "name": "backend",
-                        "url": "#meta/backend.cm",
-                    },
-                ],
-                "offer": [
-                    {
-                        "protocol": "fuchsia.example.Protocol",
-                        "from": "#child",
-                        "to": "#backend",
-                    },
-                    {
-                        "storage": "data",
-                        "from": "self",
-                        "to": "#child",
-                    },
-                ],
-            }),
-            Err(Error::Validate {
-                err,
-                ..
-            }) if &err ==
-                "Strong dependency cycles were found. Break the cycle by removing a \
-                dependency or marking an offer as weak. Cycles: \
-                {{#backend -> #data -> #child -> #backend}}"
         ),
         test_cml_offer_weak_dependency_cycle(
             json!({
