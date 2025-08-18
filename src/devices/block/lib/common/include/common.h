@@ -56,6 +56,34 @@ inline zx_status_t CheckFlushValid(const block_read_write& rw, fdf::Logger& logg
   return ZX_OK;
 }
 
+inline uint32_t ReadFromBigEndian24(const uint8_t* ptr) {
+  return ptr[0] << 16 | ptr[1] << 8 | ptr[2];
+}
+
+inline zx_status_t WriteToBigEndian24(uint32_t value, uint8_t* ptr) {
+  if (value > 0xffffff) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  ptr[0] = (value >> 16) & 0xff;
+  ptr[1] = (value >> 8) & 0xff;
+  ptr[2] = value & 0xff;
+  return ZX_OK;
+}
+
+inline uint32_t ReadFromLittleEndian24(const uint8_t* ptr) {
+  return ptr[2] << 16 | ptr[1] << 8 | ptr[0];
+}
+
+inline zx_status_t WriteToLittleEndian24(uint32_t value, uint8_t* ptr) {
+  if (value > 0xffffff) {
+    return ZX_ERR_OUT_OF_RANGE;
+  }
+  ptr[2] = (value >> 16) & 0xff;
+  ptr[1] = (value >> 8) & 0xff;
+  ptr[0] = value & 0xff;
+  return ZX_OK;
+}
+
 }  // namespace block
 
 #endif  // SRC_DEVICES_BLOCK_LIB_COMMON_INCLUDE_COMMON_H_

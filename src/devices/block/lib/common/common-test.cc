@@ -10,13 +10,13 @@
 
 namespace block {
 
-class CommonTest : public zxtest::Test {
+class TestWithLogger : public zxtest::Test {
  public:
  protected:
   fdf_testing::ScopedGlobalLogger logger_;
 };
 
-TEST_F(CommonTest, CheckIoRangeTest) {
+TEST_F(TestWithLogger, CheckIoRangeTest) {
   block_read_write rw;
 
   rw = {
@@ -68,7 +68,7 @@ TEST_F(CommonTest, CheckIoRangeTest) {
   EXPECT_OK(CheckIoRange(rw, 100, logger_.logger()));
 }
 
-TEST_F(CommonTest, CheckIoRangeMaxTransferTest) {
+TEST_F(TestWithLogger, CheckIoRangeMaxTransferTest) {
   block_trim trim;
 
   trim = {
@@ -90,7 +90,7 @@ TEST_F(CommonTest, CheckIoRangeMaxTransferTest) {
   EXPECT_OK(CheckIoRange(trim, 100, 25, logger_.logger()));
 }
 
-TEST_F(CommonTest, CheckFlushValidTest) {
+TEST_F(TestWithLogger, CheckFlushValidTest) {
   block_read_write rw;
 
   rw = {
@@ -132,6 +132,30 @@ TEST_F(CommonTest, CheckFlushValidTest) {
       .offset_vmo = 0,
   };
   EXPECT_OK(CheckFlushValid(rw, logger_.logger()));
+}
+
+TEST(EndianTest, BigEndian24Test) {
+  uint8_t memory[3] = {};
+  EXPECT_OK(WriteToBigEndian24(0x654321, memory));
+  EXPECT_EQ(memory[0], 0x65);  // MSB
+  EXPECT_EQ(memory[1], 0x43);
+  EXPECT_EQ(memory[2], 0x21);  // LSB
+
+  EXPECT_EQ(WriteToBigEndian24(0x1000000, memory), ZX_ERR_OUT_OF_RANGE);
+
+  EXPECT_EQ(ReadFromBigEndian24(memory), 0x654321);
+}
+
+TEST(EndianTest, LittleEndian24Test) {
+  uint8_t memory[3] = {};
+  EXPECT_OK(WriteToLittleEndian24(0x654321, memory));
+  EXPECT_EQ(memory[0], 0x21);  // LSB
+  EXPECT_EQ(memory[1], 0x43);
+  EXPECT_EQ(memory[2], 0x65);  // MSB
+
+  EXPECT_EQ(WriteToLittleEndian24(0x1000000, memory), ZX_ERR_OUT_OF_RANGE);
+
+  EXPECT_EQ(ReadFromLittleEndian24(memory), 0x654321);
 }
 
 }  // namespace block
