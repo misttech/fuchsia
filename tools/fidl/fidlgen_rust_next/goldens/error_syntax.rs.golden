@@ -593,7 +593,12 @@ pub mod example_use_of_error_syntax {
 /// A client handler for the ExampleUseOfErrorSyntax protocol.
 ///
 /// See [`ExampleUseOfErrorSyntax`] for more details.
-pub trait ExampleUseOfErrorSyntaxClientHandler<___T: ::fidl_next::Transport> {}
+pub trait ExampleUseOfErrorSyntaxClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ExampleUseOfErrorSyntax
 where
@@ -621,7 +626,11 @@ where
 /// A server handler for the ExampleUseOfErrorSyntax protocol.
 ///
 /// See [`ExampleUseOfErrorSyntax`] for more details.
-pub trait ExampleUseOfErrorSyntaxServerHandler<___T: ::fidl_next::Transport> {
+pub trait ExampleUseOfErrorSyntaxServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn composed_call_which_may_fail(
         &mut self,
         sender: &::fidl_next::ServerSender<ExampleUseOfErrorSyntax, ___T>,

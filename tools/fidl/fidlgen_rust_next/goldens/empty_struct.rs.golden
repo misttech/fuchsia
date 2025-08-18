@@ -1122,7 +1122,11 @@ pub mod empty_protocol {
 /// A client handler for the EmptyProtocol protocol.
 ///
 /// See [`EmptyProtocol`] for more details.
-pub trait EmptyProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait EmptyProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn receive(
         &mut self,
         sender: &::fidl_next::ClientSender<EmptyProtocol, ___T>,
@@ -1164,7 +1168,11 @@ where
 /// A server handler for the EmptyProtocol protocol.
 ///
 /// See [`EmptyProtocol`] for more details.
-pub trait EmptyProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait EmptyProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn send(
         &mut self,
         sender: &::fidl_next::ServerSender<EmptyProtocol, ___T>,

@@ -11411,7 +11411,11 @@ pub mod protocol {
 /// A client handler for the Protocol protocol.
 ///
 /// See [`Protocol`] for more details.
-pub trait ProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait ProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn event_basic(
         &mut self,
         sender: &::fidl_next::ClientSender<Protocol, ___T>,
@@ -11615,7 +11619,11 @@ where
 /// A server handler for the Protocol protocol.
 ///
 /// See [`Protocol`] for more details.
-pub trait ProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait ProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn one_way_basic(
         &mut self,
         sender: &::fidl_next::ServerSender<Protocol, ___T>,

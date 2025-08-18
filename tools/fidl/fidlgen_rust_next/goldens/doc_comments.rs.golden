@@ -440,7 +440,11 @@ pub mod interface {
 /// A client handler for the Interface protocol.
 ///
 /// See [`Interface`] for more details.
-pub trait InterfaceClientHandler<___T: ::fidl_next::Transport> {
+pub trait InterfaceClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     #[doc = " event comment #1\n\n event comment #3\n"]
     fn on_event(
         &mut self,
@@ -474,7 +478,11 @@ where
 /// A server handler for the Interface protocol.
 ///
 /// See [`Interface`] for more details.
-pub trait InterfaceServerHandler<___T: ::fidl_next::Transport> {
+pub trait InterfaceServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     #[doc = " method comment #1\n\n method comment #3\n"]
     fn method(
         &mut self,

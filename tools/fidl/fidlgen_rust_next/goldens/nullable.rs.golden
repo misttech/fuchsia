@@ -664,7 +664,12 @@ pub mod simple_protocol {
 /// A client handler for the SimpleProtocol protocol.
 ///
 /// See [`SimpleProtocol`] for more details.
-pub trait SimpleProtocolClientHandler<___T: ::fidl_next::Transport> {}
+pub trait SimpleProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for SimpleProtocol
 where
@@ -690,7 +695,11 @@ where
 /// A server handler for the SimpleProtocol protocol.
 ///
 /// See [`SimpleProtocol`] for more details.
-pub trait SimpleProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait SimpleProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn add(
         &mut self,
         sender: &::fidl_next::ServerSender<SimpleProtocol, ___T>,

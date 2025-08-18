@@ -71,7 +71,12 @@ pub mod top {
 /// A client handler for the Top protocol.
 ///
 /// See [`Top`] for more details.
-pub trait TopClientHandler<___T: ::fidl_next::Transport> {}
+pub trait TopClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Top
 where
@@ -97,7 +102,11 @@ where
 /// A server handler for the Top protocol.
 ///
 /// See [`Top`] for more details.
-pub trait TopServerHandler<___T: ::fidl_next::Transport> {
+pub trait TopServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn get_foo(
         &mut self,
         sender: &::fidl_next::ServerSender<Top, ___T>,

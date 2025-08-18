@@ -495,7 +495,12 @@ pub mod two_way {
 /// A client handler for the TwoWay protocol.
 ///
 /// See [`TwoWay`] for more details.
-pub trait TwoWayClientHandler<___T: ::fidl_next::Transport> {}
+pub trait TwoWayClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for TwoWay
 where
@@ -521,7 +526,11 @@ where
 /// A server handler for the TwoWay protocol.
 ///
 /// See [`TwoWay`] for more details.
-pub trait TwoWayServerHandler<___T: ::fidl_next::Transport> {
+pub trait TwoWayServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn add(
         &mut self,
         sender: &::fidl_next::ServerSender<TwoWay, ___T>,

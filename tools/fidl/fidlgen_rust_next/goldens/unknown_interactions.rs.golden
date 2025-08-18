@@ -1943,7 +1943,11 @@ pub mod unknown_interactions_ajar_driver_protocol {
 /// A client handler for the UnknownInteractionsAjarDriverProtocol protocol.
 ///
 /// See [`UnknownInteractionsAjarDriverProtocol`] for more details.
-pub trait UnknownInteractionsAjarDriverProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsAjarDriverProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn on_unknown_interaction(
         &mut self,
         sender: &::fidl_next::ClientSender<UnknownInteractionsAjarDriverProtocol, ___T>,
@@ -2056,7 +2060,11 @@ where
 /// A server handler for the UnknownInteractionsAjarDriverProtocol protocol.
 ///
 /// See [`UnknownInteractionsAjarDriverProtocol`] for more details.
-pub trait UnknownInteractionsAjarDriverProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsAjarDriverProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn strict_one_way(
         &mut self,
         sender: &::fidl_next::ServerSender<UnknownInteractionsAjarDriverProtocol, ___T>,
@@ -6000,7 +6008,11 @@ pub mod unknown_interactions_ajar_protocol {
 /// A client handler for the UnknownInteractionsAjarProtocol protocol.
 ///
 /// See [`UnknownInteractionsAjarProtocol`] for more details.
-pub trait UnknownInteractionsAjarProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsAjarProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn strict_event(
         &mut self,
         sender: &::fidl_next::ClientSender<UnknownInteractionsAjarProtocol, ___T>,
@@ -6159,7 +6171,11 @@ where
 /// A server handler for the UnknownInteractionsAjarProtocol protocol.
 ///
 /// See [`UnknownInteractionsAjarProtocol`] for more details.
-pub trait UnknownInteractionsAjarProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsAjarProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn strict_one_way(
         &mut self,
         sender: &::fidl_next::ServerSender<UnknownInteractionsAjarProtocol, ___T>,
@@ -8266,7 +8282,12 @@ pub mod unknown_interactions_closed_driver_protocol {
 /// A client handler for the UnknownInteractionsClosedDriverProtocol protocol.
 ///
 /// See [`UnknownInteractionsClosedDriverProtocol`] for more details.
-pub trait UnknownInteractionsClosedDriverProtocolClientHandler<___T: ::fidl_next::Transport> {}
+pub trait UnknownInteractionsClosedDriverProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for UnknownInteractionsClosedDriverProtocol
 where
@@ -8368,7 +8389,11 @@ where
 /// A server handler for the UnknownInteractionsClosedDriverProtocol protocol.
 ///
 /// See [`UnknownInteractionsClosedDriverProtocol`] for more details.
-pub trait UnknownInteractionsClosedDriverProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsClosedDriverProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn strict_one_way(
         &mut self,
         sender: &::fidl_next::ServerSender<UnknownInteractionsClosedDriverProtocol, ___T>,
@@ -11370,7 +11395,11 @@ pub mod unknown_interactions_closed_protocol {
 /// A client handler for the UnknownInteractionsClosedProtocol protocol.
 ///
 /// See [`UnknownInteractionsClosedProtocol`] for more details.
-pub trait UnknownInteractionsClosedProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsClosedProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn strict_event(
         &mut self,
         sender: &::fidl_next::ClientSender<UnknownInteractionsClosedProtocol, ___T>,
@@ -11466,7 +11495,11 @@ where
 /// A server handler for the UnknownInteractionsClosedProtocol protocol.
 ///
 /// See [`UnknownInteractionsClosedProtocol`] for more details.
-pub trait UnknownInteractionsClosedProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsClosedProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn strict_one_way(
         &mut self,
         sender: &::fidl_next::ServerSender<UnknownInteractionsClosedProtocol, ___T>,
@@ -15395,7 +15428,11 @@ pub mod unknown_interactions_driver_protocol {
 /// A client handler for the UnknownInteractionsDriverProtocol protocol.
 ///
 /// See [`UnknownInteractionsDriverProtocol`] for more details.
-pub trait UnknownInteractionsDriverProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsDriverProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn on_unknown_interaction(
         &mut self,
         sender: &::fidl_next::ClientSender<UnknownInteractionsDriverProtocol, ___T>,
@@ -15580,7 +15617,11 @@ where
 /// A server handler for the UnknownInteractionsDriverProtocol protocol.
 ///
 /// See [`UnknownInteractionsDriverProtocol`] for more details.
-pub trait UnknownInteractionsDriverProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsDriverProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn strict_one_way(
         &mut self,
         sender: &::fidl_next::ServerSender<UnknownInteractionsDriverProtocol, ___T>,
@@ -21387,7 +21428,11 @@ pub mod unknown_interactions_protocol {
 /// A client handler for the UnknownInteractionsProtocol protocol.
 ///
 /// See [`UnknownInteractionsProtocol`] for more details.
-pub trait UnknownInteractionsProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn strict_event(
         &mut self,
         sender: &::fidl_next::ClientSender<UnknownInteractionsProtocol, ___T>,
@@ -21562,7 +21607,11 @@ where
 /// A server handler for the UnknownInteractionsProtocol protocol.
 ///
 /// See [`UnknownInteractionsProtocol`] for more details.
-pub trait UnknownInteractionsProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait UnknownInteractionsProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn strict_one_way(
         &mut self,
         sender: &::fidl_next::ServerSender<UnknownInteractionsProtocol, ___T>,

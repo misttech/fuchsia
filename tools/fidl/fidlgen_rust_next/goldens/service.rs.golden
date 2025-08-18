@@ -102,7 +102,12 @@ pub mod first_protocol {
 /// A client handler for the FirstProtocol protocol.
 ///
 /// See [`FirstProtocol`] for more details.
-pub trait FirstProtocolClientHandler<___T: ::fidl_next::Transport> {}
+pub trait FirstProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for FirstProtocol
 where
@@ -126,7 +131,11 @@ where
 /// A server handler for the FirstProtocol protocol.
 ///
 /// See [`FirstProtocol`] for more details.
-pub trait FirstProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait FirstProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn method_on_first(
         &mut self,
         sender: &::fidl_next::ServerSender<FirstProtocol, ___T>,
@@ -422,7 +431,12 @@ pub mod second_protocol {
 /// A client handler for the SecondProtocol protocol.
 ///
 /// See [`SecondProtocol`] for more details.
-pub trait SecondProtocolClientHandler<___T: ::fidl_next::Transport> {}
+pub trait SecondProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for SecondProtocol
 where
@@ -446,7 +460,11 @@ where
 /// A server handler for the SecondProtocol protocol.
 ///
 /// See [`SecondProtocol`] for more details.
-pub trait SecondProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait SecondProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn method_on_second(
         &mut self,
         sender: &::fidl_next::ServerSender<SecondProtocol, ___T>,

@@ -1033,7 +1033,12 @@ pub mod allowed {
 /// A client handler for the Allowed protocol.
 ///
 /// See [`Allowed`] for more details.
-pub trait AllowedClientHandler<___T: ::fidl_next::Transport> {}
+pub trait AllowedClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Allowed
 where
@@ -1059,7 +1064,11 @@ where
 /// A server handler for the Allowed protocol.
 ///
 /// See [`Allowed`] for more details.
-pub trait AllowedServerHandler<___T: ::fidl_next::Transport> {
+pub trait AllowedServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn denied(
         &mut self,
         sender: &::fidl_next::ServerSender<Allowed, ___T>,
@@ -1151,7 +1160,12 @@ pub mod contains_allowed {
 /// A client handler for the ContainsAllowed protocol.
 ///
 /// See [`ContainsAllowed`] for more details.
-pub trait ContainsAllowedClientHandler<___T: ::fidl_next::Transport> {}
+pub trait ContainsAllowedClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ContainsAllowed
 where
@@ -1175,7 +1189,12 @@ where
 /// A server handler for the ContainsAllowed protocol.
 ///
 /// See [`ContainsAllowed`] for more details.
-pub trait ContainsAllowedServerHandler<___T: ::fidl_next::Transport> {}
+pub trait ContainsAllowedServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for ContainsAllowed
 where
@@ -2341,7 +2360,12 @@ pub mod denied {
 /// A client handler for the Denied protocol.
 ///
 /// See [`Denied`] for more details.
-pub trait DeniedClientHandler<___T: ::fidl_next::Transport> {}
+pub trait DeniedClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Denied
 where
@@ -2365,7 +2389,11 @@ where
 /// A server handler for the Denied protocol.
 ///
 /// See [`Denied`] for more details.
-pub trait DeniedServerHandler<___T: ::fidl_next::Transport> {
+pub trait DeniedServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn should_never_appear_in_any_binding(
         &mut self,
         sender: &::fidl_next::ServerSender<Denied, ___T>,
@@ -6072,7 +6100,12 @@ pub mod deny_each_binding {
 /// A client handler for the DenyEachBinding protocol.
 ///
 /// See [`DenyEachBinding`] for more details.
-pub trait DenyEachBindingClientHandler<___T: ::fidl_next::Transport> {}
+pub trait DenyEachBindingClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for DenyEachBinding
 where
@@ -6108,7 +6141,11 @@ where
 /// A server handler for the DenyEachBinding protocol.
 ///
 /// See [`DenyEachBinding`] for more details.
-pub trait DenyEachBindingServerHandler<___T: ::fidl_next::Transport> {
+pub trait DenyEachBindingServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn only_deny_cpp(
         &mut self,
         sender: &::fidl_next::ServerSender<DenyEachBinding, ___T>,
@@ -6440,7 +6477,12 @@ pub mod imports_same_name_context {
 /// A client handler for the ImportsSameNameContext protocol.
 ///
 /// See [`ImportsSameNameContext`] for more details.
-pub trait ImportsSameNameContextClientHandler<___T: ::fidl_next::Transport> {}
+pub trait ImportsSameNameContextClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ImportsSameNameContext
 where
@@ -6464,7 +6506,11 @@ where
 /// A server handler for the ImportsSameNameContext protocol.
 ///
 /// See [`ImportsSameNameContext`] for more details.
-pub trait ImportsSameNameContextServerHandler<___T: ::fidl_next::Transport> {
+pub trait ImportsSameNameContextServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn always_denied(
         &mut self,
         sender: &::fidl_next::ServerSender<ImportsSameNameContext, ___T>,
@@ -6947,7 +6993,12 @@ pub mod only_cpp_and_deps {
 /// A client handler for the OnlyCppAndDeps protocol.
 ///
 /// See [`OnlyCppAndDeps`] for more details.
-pub trait OnlyCppAndDepsClientHandler<___T: ::fidl_next::Transport> {}
+pub trait OnlyCppAndDepsClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for OnlyCppAndDeps
 where
@@ -6971,7 +7022,12 @@ where
 /// A server handler for the OnlyCppAndDeps protocol.
 ///
 /// See [`OnlyCppAndDeps`] for more details.
-pub trait OnlyCppAndDepsServerHandler<___T: ::fidl_next::Transport> {}
+pub trait OnlyCppAndDepsServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for OnlyCppAndDeps
 where

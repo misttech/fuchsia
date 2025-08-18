@@ -264,7 +264,12 @@ pub mod parent {
 /// A client handler for the Parent protocol.
 ///
 /// See [`Parent`] for more details.
-pub trait ParentClientHandler<___T: ::fidl_next::Transport> {}
+pub trait ParentClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Parent
 where
@@ -288,7 +293,11 @@ where
 /// A server handler for the Parent protocol.
 ///
 /// See [`Parent`] for more details.
-pub trait ParentServerHandler<___T: ::fidl_next::Transport> {
+pub trait ParentServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn first(
         &mut self,
         sender: &::fidl_next::ServerSender<Parent, ___T>,
@@ -694,7 +703,12 @@ pub mod child {
 /// A client handler for the Child protocol.
 ///
 /// See [`Child`] for more details.
-pub trait ChildClientHandler<___T: ::fidl_next::Transport> {}
+pub trait ChildClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Child
 where
@@ -718,7 +732,11 @@ where
 /// A server handler for the Child protocol.
 ///
 /// See [`Child`] for more details.
-pub trait ChildServerHandler<___T: ::fidl_next::Transport> {
+pub trait ChildServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn first(
         &mut self,
         sender: &::fidl_next::ServerSender<Child, ___T>,

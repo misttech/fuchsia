@@ -456,7 +456,12 @@ pub mod one_way {
 /// A client handler for the OneWay protocol.
 ///
 /// See [`OneWay`] for more details.
-pub trait OneWayClientHandler<___T: ::fidl_next::Transport> {}
+pub trait OneWayClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for OneWay
 where
@@ -480,7 +485,11 @@ where
 /// A server handler for the OneWay protocol.
 ///
 /// See [`OneWay`] for more details.
-pub trait OneWayServerHandler<___T: ::fidl_next::Transport> {
+pub trait OneWayServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn send(
         &mut self,
         sender: &::fidl_next::ServerSender<OneWay, ___T>,

@@ -50,7 +50,12 @@ pub mod another_discoverable_protocol {
 /// A client handler for the AnotherDiscoverableProtocol protocol.
 ///
 /// See [`AnotherDiscoverableProtocol`] for more details.
-pub trait AnotherDiscoverableProtocolClientHandler<___T: ::fidl_next::Transport> {}
+pub trait AnotherDiscoverableProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for AnotherDiscoverableProtocol
 where
@@ -74,7 +79,12 @@ where
 /// A server handler for the AnotherDiscoverableProtocol protocol.
 ///
 /// See [`AnotherDiscoverableProtocol`] for more details.
-pub trait AnotherDiscoverableProtocolServerHandler<___T: ::fidl_next::Transport> {}
+pub trait AnotherDiscoverableProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for AnotherDiscoverableProtocol
 where
@@ -1749,7 +1759,11 @@ pub mod channel_protocol {
 /// A client handler for the ChannelProtocol protocol.
 ///
 /// See [`ChannelProtocol`] for more details.
-pub trait ChannelProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait ChannelProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn event_a(
         &mut self,
         sender: &::fidl_next::ClientSender<ChannelProtocol, ___T>,
@@ -1793,7 +1807,11 @@ where
 /// A server handler for the ChannelProtocol protocol.
 ///
 /// See [`ChannelProtocol`] for more details.
-pub trait ChannelProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait ChannelProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn method_a(
         &mut self,
         sender: &::fidl_next::ServerSender<ChannelProtocol, ___T>,
@@ -1979,7 +1997,12 @@ pub mod discoverable_protocol {
 /// A client handler for the DiscoverableProtocol protocol.
 ///
 /// See [`DiscoverableProtocol`] for more details.
-pub trait DiscoverableProtocolClientHandler<___T: ::fidl_next::Transport> {}
+pub trait DiscoverableProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for DiscoverableProtocol
 where
@@ -2003,7 +2026,11 @@ where
 /// A server handler for the DiscoverableProtocol protocol.
 ///
 /// See [`DiscoverableProtocol`] for more details.
-pub trait DiscoverableProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait DiscoverableProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn method(
         &mut self,
         sender: &::fidl_next::ServerSender<DiscoverableProtocol, ___T>,
@@ -2989,7 +3016,11 @@ pub mod handle_rights_protocol {
 /// A client handler for the HandleRightsProtocol protocol.
 ///
 /// See [`HandleRightsProtocol`] for more details.
-pub trait HandleRightsProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait HandleRightsProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn an_event(
         &mut self,
         sender: &::fidl_next::ClientSender<HandleRightsProtocol, ___T>,
@@ -3031,7 +3062,11 @@ where
 /// A server handler for the HandleRightsProtocol protocol.
 ///
 /// See [`HandleRightsProtocol`] for more details.
-pub trait HandleRightsProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait HandleRightsProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn no_response_method(
         &mut self,
         sender: &::fidl_next::ServerSender<HandleRightsProtocol, ___T>,
@@ -3864,7 +3899,12 @@ pub mod many_parameters {
 /// A client handler for the ManyParameters protocol.
 ///
 /// See [`ManyParameters`] for more details.
-pub trait ManyParametersClientHandler<___T: ::fidl_next::Transport> {}
+pub trait ManyParametersClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ManyParameters
 where
@@ -3888,7 +3928,11 @@ where
 /// A server handler for the ManyParameters protocol.
 ///
 /// See [`ManyParameters`] for more details.
-pub trait ManyParametersServerHandler<___T: ::fidl_next::Transport> {
+pub trait ManyParametersServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn fifteen(
         &mut self,
         sender: &::fidl_next::ServerSender<ManyParameters, ___T>,
@@ -4780,7 +4824,12 @@ pub mod method_with_union {
 /// A client handler for the MethodWithUnion protocol.
 ///
 /// See [`MethodWithUnion`] for more details.
-pub trait MethodWithUnionClientHandler<___T: ::fidl_next::Transport> {}
+pub trait MethodWithUnionClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for MethodWithUnion
 where
@@ -4806,7 +4855,11 @@ where
 /// A server handler for the MethodWithUnion protocol.
 ///
 /// See [`MethodWithUnion`] for more details.
-pub trait MethodWithUnionServerHandler<___T: ::fidl_next::Transport> {
+pub trait MethodWithUnionServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn union_method(
         &mut self,
         sender: &::fidl_next::ServerSender<MethodWithUnion, ___T>,
@@ -4911,7 +4964,12 @@ pub mod platform_server {
 /// A client handler for the PlatformServer protocol.
 ///
 /// See [`PlatformServer`] for more details.
-pub trait PlatformServerClientHandler<___T: ::fidl_next::Transport> {}
+pub trait PlatformServerClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for PlatformServer
 where
@@ -4935,7 +4993,12 @@ where
 /// A server handler for the PlatformServer protocol.
 ///
 /// See [`PlatformServer`] for more details.
-pub trait PlatformServerServerHandler<___T: ::fidl_next::Transport> {}
+pub trait PlatformServerServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for PlatformServer
 where
@@ -6722,7 +6785,11 @@ pub mod with_and_without_request_response {
 /// A client handler for the WithAndWithoutRequestResponse protocol.
 ///
 /// See [`WithAndWithoutRequestResponse`] for more details.
-pub trait WithAndWithoutRequestResponseClientHandler<___T: ::fidl_next::Transport> {
+pub trait WithAndWithoutRequestResponseClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn on_empty_response(
         &mut self,
         sender: &::fidl_next::ClientSender<WithAndWithoutRequestResponse, ___T>,
@@ -6775,7 +6842,11 @@ where
 /// A server handler for the WithAndWithoutRequestResponse protocol.
 ///
 /// See [`WithAndWithoutRequestResponse`] for more details.
-pub trait WithAndWithoutRequestResponseServerHandler<___T: ::fidl_next::Transport> {
+pub trait WithAndWithoutRequestResponseServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn no_request_no_response(
         &mut self,
         sender: &::fidl_next::ServerSender<WithAndWithoutRequestResponse, ___T>,
@@ -7446,7 +7517,12 @@ pub mod with_error_syntax {
 /// A client handler for the WithErrorSyntax protocol.
 ///
 /// See [`WithErrorSyntax`] for more details.
-pub trait WithErrorSyntaxClientHandler<___T: ::fidl_next::Transport> {}
+pub trait WithErrorSyntaxClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithErrorSyntax
 where
@@ -7478,7 +7554,11 @@ where
 /// A server handler for the WithErrorSyntax protocol.
 ///
 /// See [`WithErrorSyntax`] for more details.
-pub trait WithErrorSyntaxServerHandler<___T: ::fidl_next::Transport> {
+pub trait WithErrorSyntaxServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn response_as_struct(
         &mut self,
         sender: &::fidl_next::ServerSender<WithErrorSyntax, ___T>,
@@ -8727,7 +8807,12 @@ pub mod with_protocol_ends {
 /// A client handler for the WithProtocolEnds protocol.
 ///
 /// See [`WithProtocolEnds`] for more details.
-pub trait WithProtocolEndsClientHandler<___T: ::fidl_next::Transport> {}
+pub trait WithProtocolEndsClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for WithProtocolEnds
 where
@@ -8757,7 +8842,11 @@ where
 /// A server handler for the WithProtocolEnds protocol.
 ///
 /// See [`WithProtocolEnds`] for more details.
-pub trait WithProtocolEndsServerHandler<___T: ::fidl_next::Transport> {
+pub trait WithProtocolEndsServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn client_ends(
         &mut self,
         sender: &::fidl_next::ServerSender<WithProtocolEnds, ___T>,

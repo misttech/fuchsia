@@ -171,7 +171,12 @@ pub mod driver_protocol {
 /// A client handler for the DriverProtocol protocol.
 ///
 /// See [`DriverProtocol`] for more details.
-pub trait DriverProtocolClientHandler<___T: ::fidl_next::Transport> {}
+pub trait DriverProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for DriverProtocol
 where
@@ -195,7 +200,12 @@ where
 /// A server handler for the DriverProtocol protocol.
 ///
 /// See [`DriverProtocol`] for more details.
-pub trait DriverProtocolServerHandler<___T: ::fidl_next::Transport> {}
+pub trait DriverProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for DriverProtocol
 where
@@ -672,7 +682,12 @@ pub mod handles_in_protocol {
 /// A client handler for the HandlesInProtocol protocol.
 ///
 /// See [`HandlesInProtocol`] for more details.
-pub trait HandlesInProtocolClientHandler<___T: ::fidl_next::Transport> {}
+pub trait HandlesInProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for HandlesInProtocol
 where
@@ -696,7 +711,11 @@ where
 /// A server handler for the HandlesInProtocol protocol.
 ///
 /// See [`HandlesInProtocol`] for more details.
-pub trait HandlesInProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait HandlesInProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn send_handles(
         &mut self,
         sender: &::fidl_next::ServerSender<HandlesInProtocol, ___T>,

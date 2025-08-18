@@ -451,7 +451,12 @@ pub mod example {
 /// A client handler for the Example protocol.
 ///
 /// See [`Example`] for more details.
-pub trait ExampleClientHandler<___T: ::fidl_next::Transport> {}
+pub trait ExampleClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Example
 where
@@ -477,7 +482,11 @@ where
 /// A server handler for the Example protocol.
 ///
 /// See [`Example`] for more details.
-pub trait ExampleServerHandler<___T: ::fidl_next::Transport> {
+pub trait ExampleServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn foo(
         &mut self,
         sender: &::fidl_next::ServerSender<Example, ___T>,

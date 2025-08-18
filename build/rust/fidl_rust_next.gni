@@ -173,8 +173,12 @@ template("fidl_rust_next") {
 
       configs -= [ "//build/config/rust/lints:allow_unused_results" ]
 
+      features = []
+      if (is_fuchsia) {
+        features += [ "fuchsia" ]
+      }
       if (defined(invoker.contains_drivers) && invoker.contains_drivers) {
-        features = [ "driver" ]
+        features += [ "driver" ]
         deps += [ "//sdk/lib/driver/runtime/rust/fidl" ]
       } else {
         not_needed([ "contains_drivers" ])

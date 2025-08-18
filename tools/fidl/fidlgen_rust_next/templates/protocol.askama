@@ -393,7 +393,12 @@ pub mod {{ module_name }} {
 /// A client handler for the {{ non_canonical_name }} protocol.
 ///
 /// See [`{{ protocol_name }}`] for more details.
-pub trait {{ client_handler_name }}<___T: ::fidl_next::Transport> {
+pub trait {{ client_handler_name }}<
+    #[cfg(not(feature = "fuchsia"))]
+    ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")]
+    ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+> {
     {% for method in protocol.methods %}
         {% if method.kind == ProtocolMethodKind::Event %}
             {% let method_name = filters::escape_snake(method.name) %}
@@ -475,7 +480,12 @@ where
 /// A server handler for the {{ non_canonical_name }} protocol.
 ///
 /// See [`{{ protocol_name }}`] for more details.
-pub trait {{ server_handler_name }}<___T: ::fidl_next::Transport> {
+pub trait {{ server_handler_name }}<
+    #[cfg(not(feature = "fuchsia"))]
+    ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")]
+    ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+> {
     {% for method in protocol.methods %}
         {% let method_name = filters::escape_snake(method.name) %}
         {% let method_type_name = filters::escape_camel(method.name) %}

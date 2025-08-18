@@ -2919,7 +2919,11 @@ pub mod main_protocol {
 /// A client handler for the MainProtocol protocol.
 ///
 /// See [`MainProtocol`] for more details.
-pub trait MainProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait MainProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn on_anon_composed(
         &mut self,
         sender: &::fidl_next::ClientSender<MainProtocol, ___T>,
@@ -3043,7 +3047,11 @@ where
 /// A server handler for the MainProtocol protocol.
 ///
 /// See [`MainProtocol`] for more details.
-pub trait MainProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait MainProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn one_way_anon_composed(
         &mut self,
         sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
@@ -4240,7 +4248,11 @@ pub mod open_protocol {
 /// A client handler for the OpenProtocol protocol.
 ///
 /// See [`OpenProtocol`] for more details.
-pub trait OpenProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait OpenProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn flexible_event(
         &mut self,
         sender: &::fidl_next::ClientSender<OpenProtocol, ___T>,
@@ -4311,7 +4323,11 @@ where
 /// A server handler for the OpenProtocol protocol.
 ///
 /// See [`OpenProtocol`] for more details.
-pub trait OpenProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait OpenProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn flexible_one_way(
         &mut self,
         sender: &::fidl_next::ServerSender<OpenProtocol, ___T>,

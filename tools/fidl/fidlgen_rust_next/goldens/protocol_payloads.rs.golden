@@ -2822,7 +2822,11 @@ pub mod main_protocol {
 /// A client handler for the MainProtocol protocol.
 ///
 /// See [`MainProtocol`] for more details.
-pub trait MainProtocolClientHandler<___T: ::fidl_next::Transport> {
+pub trait MainProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn on_composed(
         &mut self,
         sender: &::fidl_next::ClientSender<MainProtocol, ___T>,
@@ -2926,7 +2930,11 @@ where
 /// A server handler for the MainProtocol protocol.
 ///
 /// See [`MainProtocol`] for more details.
-pub trait MainProtocolServerHandler<___T: ::fidl_next::Transport> {
+pub trait MainProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
     fn one_way_composed(
         &mut self,
         sender: &::fidl_next::ServerSender<MainProtocol, ___T>,
