@@ -259,6 +259,9 @@ impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler> Migration<P, CR> 
             warn!("could not open persistence reader: {e:?}. using defaults");
             Persisted::default()
         });
+
+        info!("Netstack Migration starting with persisted state: {persisted:?}");
+
         let current_boot = persisted.desired_netstack_version();
 
         if current_boot == RollbackNetstackVersion::ForceNetstack2 {
