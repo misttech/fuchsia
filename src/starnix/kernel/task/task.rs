@@ -976,7 +976,7 @@ pub struct Task {
     ///
     /// The group of tasks in a thread group roughly corresponds to the userspace notion of a
     /// process.
-    pub thread_group: Option<OwnedRef<ThreadGroup>>,
+    pub thread_group: OwnedRef<ThreadGroup>,
 
     /// A handle to the underlying Zircon thread object.
     ///
@@ -1055,9 +1055,7 @@ impl Task {
     }
 
     pub fn thread_group(&self) -> &OwnedRef<ThreadGroup> {
-        self.thread_group
-            .as_ref()
-            .expect("thread_group should be always valid until the task is released")
+        &self.thread_group
     }
 
     pub fn has_same_address_space(&self, other: &Self) -> bool {
@@ -1179,7 +1177,7 @@ impl Task {
                 tid,
                 thread_group_key: thread_group_key.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
-                thread_group: Some(thread_group),
+                thread_group,
                 thread: RwLock::new(thread.map(Arc::new)),
                 files,
                 mm,
@@ -1541,7 +1539,7 @@ impl Releasable for Task {
         self.ptrace_disconnect(&pids);
 
         // Release the ThreadGroup.
-        self.thread_group.take().release(&mut pids);
+        OwnedRef::take(&mut self.thread_group).release(&mut pids);
 
         std::mem::drop(pids);
 
