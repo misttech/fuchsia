@@ -2,21 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::target_connector::{
-    FDomainConnection, OvernetConnection, TargetConnection, TargetConnectionError, TargetConnector,
-    BUFFER_SIZE,
-};
 use crate::Resolution;
+use crate::target_connector::{
+    BUFFER_SIZE, FDomainConnection, OvernetConnection, TargetConnection, TargetConnectionError,
+    TargetConnector,
+};
 use anyhow::Result;
 use async_channel::Sender;
 use ffx_command_error::FfxContext as _;
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
-use ffx_ssh::ssh::{build_ssh_command_with_env, SshError};
+use ffx_ssh::ssh::{SshError, build_ssh_command_with_env};
 use fuchsia_async::Task;
 use futures::future::LocalBoxFuture;
 use netext::ScopedSocketAddr;
-use nix::sys::signal::kill;
 use nix::sys::signal::Signal::SIGKILL;
+use nix::sys::signal::kill;
 use nix::sys::wait::waitpid;
 use nix::unistd::Pid;
 use std::fmt::Debug;
@@ -32,8 +32,13 @@ impl From<SshError> for TargetConnectionError {
         match &ssh_err {
             // These errors are considered potentially recoverable, as they can often surface when
             // a device is actively rebooting while trying to reconnect to it.
-            Unknown(_) | Timeout | ConnectionRefused | UnknownNameOrService | NoRouteToHost
-            | NetworkUnreachable => TargetConnectionError::NonFatal(ssh_err.into()),
+            Unknown(_)
+            | Timeout
+            | ConnectionRefused
+            | UnknownNameOrService
+            | NoRouteToHost
+            | NetworkUnreachable
+            | ConnectionClosedByRemoteHost => TargetConnectionError::NonFatal(ssh_err.into()),
             // Note: this error is encountered as a side-effect of trying to `ssh` into a device
             // that is actively rebooting, and a user is invoking `ffx target wait`. The issue here
             // is that the scope ID of the network interface for the device, if it is IPv6
@@ -51,10 +56,9 @@ impl From<SshError> for TargetConnectionError {
             InvalidArgument => TargetConnectionError::NonFatal(ssh_err.into()),
             // These errors are unrecoverable, as they are fundamental errors in an existing
             // configuration.
-            PermissionDenied
-            | KeyVerificationFailure
-            | TargetIncompatible
-            | ConnectionClosedByRemoteHost => TargetConnectionError::Fatal(ssh_err.into()),
+            PermissionDenied | KeyVerificationFailure | TargetIncompatible => {
+                TargetConnectionError::Fatal(ssh_err.into())
+            }
         }
     }
 }
@@ -422,6 +426,6 @@ mod test {
         let err = Timeout;
         assert!(matches!(TargetConnectionError::from(err), TargetConnectionError::NonFatal(_)));
         let err = ConnectionClosedByRemoteHost;
-        assert!(matches!(TargetConnectionError::from(err), TargetConnectionError::Fatal(_)));
+        assert!(matches!(TargetConnectionError::from(err), TargetConnectionError::NonFatal(_)));
     }
 }
