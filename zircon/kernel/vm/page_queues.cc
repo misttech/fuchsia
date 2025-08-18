@@ -683,7 +683,7 @@ void PageQueues::LruThread() {
     while (needs_processing) {
       // With the lock dropped process the target. This is not racy as generations are monotonic, so
       // worst case someone else already processed this generation and this call will be a no-op.
-      ProcessLruQueue(target_gen);
+      ProcessLruQueue(target_gen, ktl::nullopt);
 
       // Take the lock so we can calculate (race free) a target mru-gen.
       Guard<CriticalMutex> guard{&lock_};
@@ -777,7 +777,7 @@ ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolateList() {
   return ktl::nullopt;
 }
 
-void PageQueues::ProcessLruQueue(uint64_t target_gen) {
+void PageQueues::ProcessLruQueue(uint64_t target_gen, ktl::optional<size_t> isolate) {
   // This assertion is <=, and not strictly <, since to evict a some queue X, the target must be
   // X+1. Hence to preserve kNumActiveQueues, we can allow target_gen to become equal to the first
   // active queue, as this will process all the non-active queues. Although we might refresh our
@@ -816,8 +816,10 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen) {
   const bool do_sweeping = (pmm_count_loaned_free_pages() != 0) &&
                            PhysicalPageBorrowingConfig::Get().is_borrowing_on_mru_enabled();
 
+  size_t isolate_remaining = isolate.value_or(SIZE_MAX);
+
   VM_KTRACE_DURATION(2, "ProcessLruQueue");
-  while (true) {
+  while (isolate_remaining > 0) {
     if (loop_iterations++ == max_lru_iterations) {
       KERNEL_OOPS("[pq]: WARNING: %s exceeded expected max LRU loop iterations %" PRIu64 "\n",
                   __FUNCTION__, max_lru_iterations);
@@ -840,7 +842,9 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen) {
       const PageQueue lru_queue = gen_to_queue(lru);
       list_node_t* list = &page_queues_[lru_queue];
 
-      for (uint iterations = 0; !list_is_empty(list) && iterations < kMaxQueueWork; iterations++) {
+      for (uint iterations = 0;
+           !list_is_empty(list) && iterations < kMaxQueueWork && isolate_remaining > 0;
+           iterations++) {
         vm_page_t* page = list_remove_head_type(list, vm_page_t, queue_node);
         PageQueue page_queue = static_cast<PageQueue>(
             page->object.get_page_queue_ref().load(ktl::memory_order_relaxed));
@@ -868,6 +872,7 @@ void PageQueues::ProcessLruQueue(uint64_t target_gen) {
           page_queue_counts_[PageQueueReclaimIsolate].fetch_add(1, ktl::memory_order_relaxed);
           list_add_tail(target_queue, &page->queue_node);
           deferred_list.AddReclaimable(page, this);
+          isolate_remaining--;
         }
       }
       if (list_is_empty(list)) {
@@ -1424,7 +1429,12 @@ ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolate(size_t lowest_que
     if (lru_target > lru_limit) {
       return PeekIsolateList();
     }
-    ProcessLruQueue(lru_target);
+    // Although we only need a single page in the Isolate queue to return for the peek result, under
+    // the assumption that the caller is probably going to peek multiple pages move a few pages for
+    // efficiency.
+    // We do not want to process the entire LRU queue since it could contain tends to hundreds of
+    // thousands of items and so the full processing is left to the LruThread.
+    ProcessLruQueue(lru_target, 16);
   }
 }
 
