@@ -331,8 +331,7 @@ pub(in crate::security) fn socket_accept(
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).lock().current_sid;
     let listening_security_state = listening_socket.file().node().security_state.lock().clone();
-    todo_has_socket_permission(
-        TODO_DENY!("https://fxbug.dev/411396154", "Enforce socket_accept checks."),
+    has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
         current_sid,
