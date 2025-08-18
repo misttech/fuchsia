@@ -319,6 +319,17 @@ struct PhysHandoff {
   // PhysHandoff itself.
   PhysHandoffTemporaryPtr<const PhysVmar> temporary_vmar;
 
+  // TODO(https://fxbug.dev/42164859): Consider possibly replacing
+  // `physmap_base` and `physmap_size` with a temporary pointer the physmap
+  // VMAR in `vmars`.
+
+  // The base virtual address of the physmap.
+  uintptr_t physmap_base = 0;
+
+  // The size of the physmap, calculated as just large enough to cover all
+  // physical RAM.
+  size_t physmap_size = 0;
+
   // The data ZBI.
   PhysVmo zbi;
 

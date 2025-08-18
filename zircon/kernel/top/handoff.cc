@@ -37,6 +37,8 @@
 #include <ktl/enforce.h>
 
 PhysHandoff* gPhysHandoff;
+vaddr_t gPhysmapBase;
+size_t gPhysmapSize;
 
 namespace {
 
@@ -203,6 +205,9 @@ void HandoffFromPhys(PhysHandoff* handoff) {
 
   gKernelPhysicalLoadAddress = gPhysHandoff->kernel_physical_load_address;
   ZX_DEBUG_ASSERT(KernelPhysicalAddressOf<__executable_start>() == gKernelPhysicalLoadAddress);
+
+  gPhysmapBase = gPhysHandoff->physmap_base;
+  gPhysmapSize = gPhysHandoff->physmap_size;
 
   if (gPhysHandoff->reboot_reason) {
     platform_set_hw_reboot_reason(gPhysHandoff->reboot_reason.value());

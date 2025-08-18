@@ -38,8 +38,4 @@ static_assert(PAGE_SIZE == (1UL << PAGE_SIZE_SHIFT), "Page size mismatch!");
 // The maximum cache line seen on any known ARM hardware.
 #define MAX_CACHE_LINE 64
 
-// Map 512GB at the base of the kernel. this is the max that can be mapped with a
-// single level 1 page table using 1GB pages.
-#define ARCH_PHYSMAP_SIZE (1UL << 39)
-
 #endif  // ZIRCON_KERNEL_ARCH_ARM64_INCLUDE_ARCH_DEFINES_H_

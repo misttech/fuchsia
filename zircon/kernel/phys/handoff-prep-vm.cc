@@ -215,7 +215,8 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
 
   // Physmap.
   {
-    PhysVmarPrep prep = PrepareVmarAt("physmap"sv, kArchPhysmapVirtualBase, PhysmapSize());
+    size_t size = PhysmapSize();
+    PhysVmarPrep prep = PrepareVmarAt("physmap"sv, kArchPhysmapVirtualBase, size);
     auto map = [&prep](const memalloc::Range& range) {
       uint64_t aligned_paddr = PageAlignDown(range.addr);
       uint64_t aligned_size = PageAlignUp(range.size + (range.addr - aligned_paddr));
@@ -230,6 +231,9 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
     };
     memalloc::NormalizeRam(pool, map);
     ktl::move(prep).Publish();
+
+    handoff_->physmap_base = kArchPhysmapVirtualBase;
+    handoff_->physmap_size = size;
   }
 
   // The kernel's mapping.

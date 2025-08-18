@@ -43,10 +43,6 @@ constexpr size_t kHeapRightRedzoneSize = 16;
 // Any value in the shadow equal to or above this value is poisoned.
 constexpr uint8_t kAsanSmallestPoisonedValue = 0x08;
 
-// The current implementation of asan only checks accesses within the physmap.
-constexpr vaddr_t kAsanStartAddress = PHYSMAP_BASE;
-constexpr vaddr_t kAsanEndAddress = PHYSMAP_BASE + PHYSMAP_SIZE;
-
 // Returns the address of the shadow byte corresponding to |address|.
 static inline uint8_t* addr2shadow(uintptr_t address) {
   DEBUG_ASSERT_MSG(address >= KERNEL_ASPACE_BASE, "address: 0x%016lx", address);

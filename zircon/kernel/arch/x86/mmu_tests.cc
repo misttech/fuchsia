@@ -139,7 +139,7 @@ static bool x86_test_l1tf_invariant() {
   // address but the present bit not set.
   uint64_t* const pml4 = reinterpret_cast<uint64_t*>(
       X86_PHYS_TO_VIRT(VmAspace::kernel_aspace()->arch_aspace().pt_phys()));
-  for (uintptr_t addr = PHYSMAP_BASE; addr < (PHYSMAP_BASE + PHYSMAP_SIZE);) {
+  for (uintptr_t addr = gPhysmapBase; addr < (gPhysmapBase + gPhysmapSize);) {
     uint64_t pte = 0;
     size_t step = 0;
     bool ok = check_virtual_address_l1tf_invariant(pml4, addr, &pte, &step);
@@ -171,7 +171,7 @@ static bool x86_test_l1tf_invariant() {
 static bool x86_test_physmap_nx() {
   BEGIN_TEST;
 
-  for (uintptr_t addr = PHYSMAP_BASE; addr < (PHYSMAP_BASE + PHYSMAP_SIZE); addr += PAGE_SIZE) {
+  for (uintptr_t addr = gPhysmapBase; addr < (gPhysmapBase + gPhysmapSize); addr += PAGE_SIZE) {
     paddr_t paddr;
     uint mmu_flags;
     zx_status_t status = VmAspace::kernel_aspace()->arch_aspace().Query(addr, &paddr, &mmu_flags);

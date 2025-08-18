@@ -25,8 +25,10 @@ constexpr uint kGuestMmuFlags =
 constexpr uint kContiguousMmuFlags = ARCH_MMU_FLAG_CACHED | ARCH_MMU_FLAG_PERM_READ |
                                      ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_PERM_EXECUTE;
 
-static_assert(PHYSMAP_SIZE % PAGE_SIZE == 0, "Physmap is not a multiple of the page size");
-constexpr size_t kNumPhysmapPages = PHYSMAP_SIZE / PAGE_SIZE;
+size_t NumPhysmapPages() {
+  ZX_DEBUG_ASSERT_MSG(gPhysmapSize % PAGE_SIZE == 0, "Physmap is not a multiple of the page size");
+  return gPhysmapSize / PAGE_SIZE;
+}
 
 }  // namespace
 
@@ -137,8 +139,8 @@ zx::result<> GuestPhysicalAspace::PageFault(zx_gpaddr_t guest_paddr) {
 
 zx::result<GuestPtr> GuestPhysicalAspace::CreateGuestPtr(zx_gpaddr_t guest_paddr, size_t len,
                                                          const char* name) {
-  const zx_gpaddr_t begin = ROUNDDOWN_PAGE_SIZE(guest_paddr);
-  const zx_gpaddr_t end = ROUNDUP_PAGE_SIZE(guest_paddr + len);
+  const zx_gpaddr_t begin = ROUNDDOWN(guest_paddr, PAGE_SIZE);
+  const zx_gpaddr_t end = ROUNDUP(guest_paddr + len, PAGE_SIZE);
   const zx_gpaddr_t mapping_len = end - begin;
   if (begin > end || !InRange(begin, mapping_len, size())) {
     return zx::error(ZX_ERR_INVALID_ARGS);
@@ -209,7 +211,7 @@ zx::result<DirectPhysicalAspace> DirectPhysicalAspace::Create() {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
   zx_status_t status =
-      physical_aspace->arch_aspace().MapContiguous(0, 0, kNumPhysmapPages, kContiguousMmuFlags);
+      physical_aspace->arch_aspace().MapContiguous(0, 0, NumPhysmapPages(), kContiguousMmuFlags);
   if (status != ZX_OK) {
     return zx::error(status);
   }
@@ -221,7 +223,7 @@ zx::result<DirectPhysicalAspace> DirectPhysicalAspace::Create() {
 DirectPhysicalAspace::~DirectPhysicalAspace() {
   if (physical_aspace_ != nullptr) {
     zx_status_t status = physical_aspace_->arch_aspace().Unmap(
-        0, kNumPhysmapPages, ArchVmAspaceInterface::ArchUnmapOptions::Enlarge);
+        0, NumPhysmapPages(), ArchVmAspaceInterface::ArchUnmapOptions::Enlarge);
     DEBUG_ASSERT(status == ZX_OK);
     physical_aspace_->Destroy();
   }
