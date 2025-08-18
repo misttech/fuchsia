@@ -64,10 +64,10 @@ class TestEnv : public fdf_testing::Environment {
     std::vector<fuchsia_buttons::Button> buttons = {
         {{.types = std::move(func_types), .button_config = std::move(func_config)}}};
 
-    fuchsia_buttons::Metadata metadata{
+    fuchsia_buttons::AdcButtonsMetadata metadata{
         {.polling_rate_usec = kPollingRateUsec, .buttons = std::move(buttons)}};
     zx_status_t status =
-        pdev_.AddFidlMetadata(fuchsia_buttons::Metadata::kSerializableName, metadata);
+        pdev_.AddFidlMetadata(fuchsia_buttons::AdcButtonsMetadata::kSerializableName, metadata);
     if (status != ZX_OK) {
       return zx::error(status);
     }

@@ -32,7 +32,7 @@ type Button = table {
 };
 
 @serializable
-type Metadata = table {
+type AdcButtonsMetadata = table {
     /// Polling Rate in usec if exists.
     1: polling_rate_usec uint32;
 

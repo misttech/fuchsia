@@ -21,7 +21,7 @@ struct MetadataValues {
   std::set<fuchsia_input_report::ConsumerControlButton> buttons;
 };
 
-zx::result<MetadataValues> ParseMetadata(const fuchsia_buttons::Metadata& metadata) {
+zx::result<MetadataValues> ParseMetadata(const fuchsia_buttons::AdcButtonsMetadata& metadata) {
   if (!metadata.polling_rate_usec().has_value()) {
     FDF_LOG(ERROR, "Metadata missing `polling_rate_usec` field");
     return zx::error(ZX_ERR_INTERNAL);
@@ -72,7 +72,7 @@ zx::result<> AdcButtons::Start() {
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
   // Get metadata.
-  zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_buttons::Metadata>();
+  zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_buttons::AdcButtonsMetadata>();
   if (metadata_result.is_error()) {
     FDF_LOG(ERROR, "Failed to get metadata: %s", metadata_result.status_string());
     return metadata_result.take_error();

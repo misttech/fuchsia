@@ -17,10 +17,10 @@ namespace vim3_dt {
 zx::result<> Vim3AdcButtonsVisitor::DriverVisit(fdf_devicetree::Node& node,
                                                 const devicetree::PropertyDecoder& decoder) {
   // Add metadata for vim3 adc buttons.
-  return node.name() == "adc-buttons" ? AddAdcButtonMetadata(node) : zx::ok();
+  return node.name() == "adc-buttons" ? AddAdcButtonsMetadata(node) : zx::ok();
 }
 
-zx::result<> Vim3AdcButtonsVisitor::AddAdcButtonMetadata(fdf_devicetree::Node& node) {
+zx::result<> Vim3AdcButtonsVisitor::AddAdcButtonsMetadata(fdf_devicetree::Node& node) {
   auto func_types = std::vector<fuchsia_input_report::ConsumerControlButton>{
       fuchsia_input_report::ConsumerControlButton::kFunction};
   auto func_adc_config =
@@ -38,7 +38,7 @@ zx::result<> Vim3AdcButtonsVisitor::AddAdcButtonMetadata(fdf_devicetree::Node& n
   //
   // TODO(https//fxbug/dev/315366570): Change the driver to use an IRQ instead of polling.
   constexpr uint32_t kPollingPeriodUSec = 20'000;
-  fuchsia_buttons::Metadata metadata{
+  fuchsia_buttons::AdcButtonsMetadata metadata{
       {.polling_rate_usec = kPollingPeriodUSec, .buttons = std::move(buttons)}};
 
   fit::result persisted_metadata = fidl::Persist(metadata);
@@ -49,7 +49,7 @@ zx::result<> Vim3AdcButtonsVisitor::AddAdcButtonMetadata(fdf_devicetree::Node& n
   }
 
   fuchsia_hardware_platform_bus::Metadata adc_buttons_metadata{{
-      .id = fuchsia_buttons::Metadata::kSerializableName,
+      .id = fuchsia_buttons::AdcButtonsMetadata::kSerializableName,
       .data = std::move(persisted_metadata.value()),
   }};
   node.AddMetadata(adc_buttons_metadata);

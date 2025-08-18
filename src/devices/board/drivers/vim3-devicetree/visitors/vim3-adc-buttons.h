@@ -20,7 +20,7 @@ class Vim3AdcButtonsVisitor : public fdf_devicetree::DriverVisitor {
                            const devicetree::PropertyDecoder& decoder) override;
 
  private:
-  zx::result<> AddAdcButtonMetadata(fdf_devicetree::Node& node);
+  zx::result<> AddAdcButtonsMetadata(fdf_devicetree::Node& node);
 };
 
 }  // namespace vim3_dt
