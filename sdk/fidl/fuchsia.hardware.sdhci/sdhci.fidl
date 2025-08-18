@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.hardware.sdhci;
 
+using fuchsia.hardware.sdmmc;
 using zx;
 
 type Quirk = strict bits : uint64 {
@@ -33,6 +34,22 @@ type Quirk = strict bits : uint64 {
     /// split across multiple descriptors.
     USE_DMA_BOUNDARY_ALIGNMENT = 0x20;
     NO_HS400_ENHANCED_STROBE = 0x40;
+    /// These bits correspond to the following fuchsia.hardware.sdmmc.Sdmmc methods:
+    ///   - `SetSignalVoltage()`
+    ///   - `SetBusWidth()`
+    ///   - `SetBusFreq()`
+    ///   - `SetTiming()`
+    ///   - `PerformTuning()`
+    ///
+    /// If the bit for a method is set, it means that the hardware deviates from the SDHCI
+    /// specification, and the SDHCI driver should call `VendorConfigureBus()` or
+    /// `VendorPerformTuning()` to let the vendor driver handle the operation. If the bit is not
+    /// set, the SDHCI will handle the operation as per the specification.
+    VENDOR_SET_SIGNAL_VOLTAGE = 0x80;
+    VENDOR_SET_BUS_WIDTH = 0x100;
+    VENDOR_SET_BUS_FREQ = 0x200;
+    VENDOR_SET_TIMING = 0x400;
+    VENDOR_PERFORM_TUNING = 0x800;
 };
 
 @discoverable
@@ -69,24 +86,25 @@ closed protocol Device {
     /// Platform specific HW reset.
     strict HwReset() -> ();
 
-    /// SDHCI defines two clocks: the clock delivered to the external card ("SD clock") and the
-    /// internal clock (upstream of the SD clock).
-    ///
-    /// `VendorSetBusClock()` always enables the internal clock, and if `frequency_hz` is nonzero,
-    /// enables the SD clock with the given frequency (the SD clock is disabled if `frequency_hz` is
-    /// zero). The driver must wait for all clocks to be stable before returning.
-    ///
-    /// This method is optional. If no vendor-specific clock configuration is needed, `ZX_ERR_STOP`
-    /// should be returned, after which the SDHCI driver will configure the Clock Control register
-    /// as recommended by the SDHCI specification.
-    strict VendorSetBusClock(struct {
-        frequency_hz uint32;
+    /// This method should be used to handle bus configuration on behalf of the SDHCI driver in
+    /// cases where the hardware deviates from the SDHCI specification. See the `Quirk` bits above.
+    strict VendorConfigureBus(flexible union {
+        1: voltage fuchsia.hardware.sdmmc.SdmmcVoltage;
+        2: width fuchsia.hardware.sdmmc.SdmmcBusWidth;
+
+        /// SDHCI defines two clocks: the clock delivered to the external card ("SD clock") and the
+        /// internal clock (upstream of the SD clock).
+        ///
+        /// `VendorConfigureBus()` with `frequency_hz` always enables the internal clock, and if
+        /// `frequency_hz` is nonzero, enables the SD clock with the given frequency (the SD clock
+        /// is disabled if `frequency_hz` is zero). The driver must wait for all clocks to be stable
+        /// before returning.
+        3: frequency_hz uint32;
+        4: timing fuchsia.hardware.sdmmc.SdmmcTiming;
     }) -> () error zx.Status;
 
     /// Perform a vendor-specific tuning sequence. `cmd_idx` is the command that should used to
-    /// receive the tuning pattern from the device. If no vendor-specific tuning sequence is needed,
-    /// `ZX_ERR_STOP` should be returned, after which the SDHCI driver will perform tuning using the
-    /// sequence prescribed by the SDHCI specification.
+    /// receive the tuning pattern from the device.
     strict VendorPerformTuning(struct {
         cmd_idx uint32;
     }) -> () error zx.Status;

@@ -114,8 +114,8 @@ void PciSdhci::HwReset(fdf::Arena& arena, HwResetCompleter::Sync& completer) {
   completer.buffer(arena).Reply();
 }
 
-void PciSdhci::VendorSetBusClock(VendorSetBusClockRequestView request, fdf::Arena& arena,
-                                 VendorSetBusClockCompleter::Sync& completer) {
+void PciSdhci::VendorConfigureBus(VendorConfigureBusRequestView request, fdf::Arena& arena,
+                                  VendorConfigureBusCompleter::Sync& completer) {
   completer.buffer(arena).ReplyError(ZX_ERR_STOP);
 }
 

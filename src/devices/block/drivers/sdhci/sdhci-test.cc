@@ -212,13 +212,13 @@ class FakeSdhci : public fdf::WireServer<fuchsia_hardware_sdhci::Device> {
     completer.buffer(arena).Reply();
   }
 
-  void VendorSetBusClock(VendorSetBusClockRequestView request, fdf::Arena& arena,
-                         VendorSetBusClockCompleter::Sync& completer) override {
-    if (!supports_set_bus_clock_) {
-      completer.buffer(arena).ReplyError(ZX_ERR_STOP);
+  void VendorConfigureBus(VendorConfigureBusRequestView request, fdf::Arena& arena,
+                          VendorConfigureBusCompleter::Sync& completer) override {
+    if (request->is_frequency_hz() && supports_set_bus_clock_) {
+      completer.buffer(arena).ReplySuccess();
       return;
     }
-    completer.buffer(arena).ReplySuccess();
+    completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
 
   void VendorPerformTuning(VendorPerformTuningRequestView request, fdf::Arena& arena,
@@ -670,7 +670,7 @@ TEST_F(SdhciTest, SetBusFreqVendorSpecific) {
   driver_test().RunInEnvironmentTypeContext(
       [&](Environment& env) { env.sdhci().set_supports_set_bus_clock(); });
 
-  ASSERT_OK(StartDriver());
+  ASSERT_OK(StartDriver(fuchsia_hardware_sdhci::Quirk::kVendorSetBusFreq));
 
   auto clock_control = [&]() { return ClockControl::Get().ReadFrom(TestSdhci::mmio_).reg_value(); };
 
@@ -723,7 +723,7 @@ TEST_F(SdhciTest, PerformTuningVendorSpecific) {
   driver_test().RunInEnvironmentTypeContext(
       [&](Environment& env) { env.sdhci().set_supports_perform_tuning(); });
 
-  ASSERT_OK(StartDriver());
+  ASSERT_OK(StartDriver(fuchsia_hardware_sdhci::Quirk::kVendorPerformTuning));
 
   fdf::Arena arena('TEST');
   client_.buffer(arena)->PerformTuning(MMC_SEND_TUNING_BLOCK).ThenExactlyOnce([&](auto& result) {

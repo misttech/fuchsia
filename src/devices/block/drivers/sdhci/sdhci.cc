@@ -804,6 +804,25 @@ void Sdhci::HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) {
 
 void Sdhci::SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& arena,
                              SetSignalVoltageCompleter::Sync& completer) {
+  if (quirks_ & fuchsia_hardware_sdhci::Quirk::kVendorSetSignalVoltage) {
+    auto voltage = fuchsia_hardware_sdhci::wire::DeviceVendorConfigureBusRequest::WithVoltage(
+        request->voltage);
+    fdf::WireUnownedResult result = sdhci_.buffer(arena_)->VendorConfigureBus(voltage);
+    if (!result.ok()) {
+      FDF_LOG(ERROR, "Failed to send VendorConfigureBus request: %s", result.status_string());
+      completer.buffer(arena).ReplyError(result.status());
+      return;
+    }
+    if (result->is_error()) {
+      FDF_LOG(ERROR, "Failed to set signal voltage: %s",
+              zx_status_get_string(result->error_value()));
+      completer.buffer(arena).Reply(result->take_error());
+      return;
+    }
+    completer.buffer(arena).ReplySuccess();
+    return;
+  }
+
   std::lock_guard<std::mutex> lock(mtx_);
 
   // Validate the controller supports the requested voltage
@@ -857,6 +876,24 @@ void Sdhci::SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& ar
 
 void Sdhci::SetBusWidth(SetBusWidthRequestView request, fdf::Arena& arena,
                         SetBusWidthCompleter::Sync& completer) {
+  if (quirks_ & fuchsia_hardware_sdhci::Quirk::kVendorSetBusWidth) {
+    auto width = fuchsia_hardware_sdhci::wire::DeviceVendorConfigureBusRequest::WithWidth(
+        request->bus_width);
+    fdf::WireUnownedResult result = sdhci_.buffer(arena_)->VendorConfigureBus(width);
+    if (!result.ok()) {
+      FDF_LOG(ERROR, "Failed to send VendorConfigureBus request: %s", result.status_string());
+      completer.buffer(arena).ReplyError(result.status());
+      return;
+    }
+    if (result->is_error()) {
+      FDF_LOG(ERROR, "Failed to set bus width: %s", zx_status_get_string(result->error_value()));
+      completer.buffer(arena).Reply(result->take_error());
+      return;
+    }
+    completer.buffer(arena).ReplySuccess();
+    return;
+  }
+
   std::lock_guard<std::mutex> lock(mtx_);
 
   if ((request->bus_width == fuchsia_hardware_sdmmc::SdmmcBusWidth::kEight) &&
@@ -906,17 +943,19 @@ void Sdhci::SetBusFreq(SetBusFreqRequestView request, fdf::Arena& arena,
 }
 
 zx_status_t Sdhci::SetBusClock(uint32_t frequency_hz) {
-  fdf::WireUnownedResult result = sdhci_.buffer(arena_)->VendorSetBusClock(frequency_hz);
-  if (!result.ok()) {
-    FDF_LOG(ERROR, "Failed to send VendorSetBusClock request: %s", result.status_string());
-    return result.status();
-  }
-  if (result->is_ok()) {
+  if (quirks_ & fuchsia_hardware_sdhci::Quirk::kVendorSetBusFreq) {
+    auto request = fuchsia_hardware_sdhci::wire::DeviceVendorConfigureBusRequest::WithFrequencyHz(
+        frequency_hz);
+    fdf::WireUnownedResult result = sdhci_.buffer(arena_)->VendorConfigureBus(request);
+    if (!result.ok()) {
+      FDF_LOG(ERROR, "Failed to send VendorConfigureBus request: %s", result.status_string());
+      return result.status();
+    }
+    if (result->is_error()) {
+      FDF_LOG(ERROR, "Failed to set bus clock: %s", zx_status_get_string(result->error_value()));
+      return result->error_value();
+    }
     return ZX_OK;
-  }
-  if (result->error_value() != ZX_ERR_STOP) {
-    FDF_LOG(ERROR, "Failed to set bus clock: %s", zx_status_get_string(result->error_value()));
-    return result->error_value();
   }
 
   // Turn off the SD clock before messing with the clock rate.
@@ -947,6 +986,24 @@ zx_status_t Sdhci::SetBusClock(uint32_t frequency_hz) {
 
 void Sdhci::SetTiming(SetTimingRequestView request, fdf::Arena& arena,
                       SetTimingCompleter::Sync& completer) {
+  if (quirks_ & fuchsia_hardware_sdhci::Quirk::kVendorSetTiming) {
+    auto timing =
+        fuchsia_hardware_sdhci::wire::DeviceVendorConfigureBusRequest::WithTiming(request->timing);
+    fdf::WireUnownedResult result = sdhci_.buffer(arena_)->VendorConfigureBus(timing);
+    if (!result.ok()) {
+      FDF_LOG(ERROR, "Failed to send VendorConfigureBus request: %s", result.status_string());
+      completer.buffer(arena).ReplyError(result.status());
+      return;
+    }
+    if (result->is_error()) {
+      FDF_LOG(ERROR, "Failed to set timing: %s", zx_status_get_string(result->error_value()));
+      completer.buffer(arena).Reply(result->take_error());
+      return;
+    }
+    completer.buffer(arena).ReplySuccess();
+    return;
+  }
+
   std::lock_guard<std::mutex> lock(mtx_);
 
   auto ctrl1 = HostControl1::Get().ReadFrom(&*regs_mmio_buffer_);
@@ -1007,7 +1064,7 @@ void Sdhci::HwReset(fdf::Arena& arena, HwResetCompleter::Sync& completer) {
   completer.buffer(arena).ReplySuccess();
 }
 
-zx_status_t Sdhci::PerformVendorTuningIfNeeded(uint32_t cmd_idx) {
+zx_status_t Sdhci::PerformVendorTuning(uint32_t cmd_idx) {
   // Stop waiting on the interrupt, as the controller driver may need to use it for sending tuning
   // commands. Operations on the interrupt handler object must happen on the dispatcher it is
   // waiting on.
@@ -1038,21 +1095,19 @@ zx_status_t Sdhci::PerformVendorTuningIfNeeded(uint32_t cmd_idx) {
     FDF_LOG(ERROR, "Failed to send VendorPerformTuning request: %s", result.status_string());
     return result.status();
   }
-  if (result->is_ok()) {
-    return ZX_OK;
-  }
-  if (result->error_value() != ZX_ERR_STOP) {
+  if (result->is_error()) {
     FDF_LOG(ERROR, "Failed to perform tuning: %s", zx_status_get_string(result->error_value()));
+    return result->error_value();
   }
-  return result->error_value();
+  return ZX_OK;
 }
 
 void Sdhci::PerformTuning(PerformTuningRequestView request, fdf::Arena& arena,
                           PerformTuningCompleter::Sync& completer) {
   FDF_LOG(DEBUG, "sdhci: perform tuning");
 
-  if (zx_status_t status = PerformVendorTuningIfNeeded(request->cmd_idx); status != ZX_ERR_STOP) {
-    completer.buffer(arena).Reply(zx::make_result(status));
+  if (quirks_ & fuchsia_hardware_sdhci::Quirk::kVendorPerformTuning) {
+    completer.buffer(arena).Reply(zx::make_result(PerformVendorTuning(request->cmd_idx)));
     return;
   }
 

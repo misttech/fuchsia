@@ -243,7 +243,7 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
 
   zx_status_t SetBusClock(uint32_t frequency_hz);
 
-  zx_status_t PerformVendorTuningIfNeeded(uint32_t cmd_idx);
+  zx_status_t PerformVendorTuning(uint32_t cmd_idx);
 
   zx::interrupt irq_;
   async::IrqMethod<Sdhci, &Sdhci::HandleIrq> irq_handler_;
