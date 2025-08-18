@@ -6,7 +6,7 @@
 #     fx update-rustc-third-party
 ###############################################################################
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
 
@@ -20,19 +20,23 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "macro_rules_attribute",
+    package_name = "macro_rules_attribute-proc_macro",
     package_url = "https://github.com/danielhenrymantilla/macro_rules_attribute-rs",
-    package_version = "0.1.3",
+    package_version = "0.2.2",
 )
 
 license(
     name = "license",
-    license_kinds = ["@rules_license//licenses/spdx:MIT"],
+    license_kinds = [
+        "@rules_license//licenses/spdx:Apache-2.0",
+        "@rules_license//licenses/spdx:MIT",
+        "@rules_license//licenses/spdx:Zlib",
+    ],
     license_text = "LICENSE-APACHE",
 )
 
-rust_library(
-    name = "macro_rules_attribute",
+rust_proc_macro(
+    name = "macro_rules_attribute_proc_macro",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -49,21 +53,14 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
-    crate_features = [
-        "default",
-    ],
-    crate_root = "src/lib.rs",
+    crate_root = "mod.rs",
     edition = "2018",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor/macro_rules_attribute-proc_macro-0.1.3:macro_rules_attribute_proc_macro",
-        "//third_party/rust_crates/vendor/paste-1.0.15:paste",
-    ],
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=macro_rules_attribute",
+        "crate-name=macro_rules_attribute-proc_macro",
         "manual",
         "noclippy",
         "norustfmt",
@@ -76,5 +73,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.1.3",
+    version = "0.2.2",
 )
