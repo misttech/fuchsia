@@ -232,7 +232,7 @@ build_api_module("api") {
     ":delivery_blob_config",
     ":detailed_size_checker_data",
     ":exported_files",
-    ":fidl_python_dirs",
+    ":extra_python_dirs",
     ":fuzzers",
     ":generated_sources",
     ":gerrit_size_report",
@@ -822,9 +822,12 @@ build_api_module("generated_sources") {
 # these locations for type definitions to support code completion.
 #
 # Type: list(path relative to $root_build_dir)
-build_api_module("fidl_python_dirs") {
+build_api_module("extra_python_dirs") {
   testonly = true
-  data_keys = [ "fidl_python_output" ]
+  data_keys = [
+    "fidl_python_output",
+    "extra_python_dirs",
+  ]
   deps = [
     ":host",
     ":tests",
@@ -1438,13 +1441,13 @@ action("python_ide_integration") {
   # the real build directory path so that each file path is relative to the final symlink location.
   check_for_output_dir_leaks = false
 
-  deps = [ ":fidl_python_dirs" ]
+  deps = [ ":extra_python_dirs" ]
 
   inputs = [ "//pyrightconfig.json" ] + get_target_outputs(deps[0])
   outputs = [ "$root_build_dir/pyrightconfig.base.json" ]
 
   args = [
-    "--fidl_python_paths_file",
+    "--extra_python_paths_file",
     rebase_path(inputs[1], root_build_dir),
     "--output_file",
     rebase_path(outputs[0], root_build_dir),

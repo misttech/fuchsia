@@ -14,16 +14,16 @@ import sys
 
 @dataclasses.dataclass
 class Args:
-    fidl_python_paths_file: str
+    extra_python_paths_file: str
     output_file: str
     build_directory_path: str
     top_level_pyright_file: str
 
 
 def main(args: Args) -> int:
-    if not os.path.isfile(args.fidl_python_paths_file):
+    if not os.path.isfile(args.extra_python_paths_file):
         print(
-            f"FIDL paths file '{args.fidl_python_paths_file}' does not exist."
+            f"Python paths file '{args.extra_python_paths_file}' does not exist."
         )
         return 1
 
@@ -33,16 +33,19 @@ def main(args: Args) -> int:
 
     paths: set[str] = set()
 
-    with open(args.fidl_python_paths_file, "r") as input_file:
+    with open(args.extra_python_paths_file, "r") as input_file:
         input = json.load(input_file)
         if not isinstance(input, list):
             print(
-                f"Input file {args.fidl_python_paths_file} must contain a list."
+                f"Input file {args.extra_python_paths_file} must contain a list."
             )
             return 1
         # FIDL paths are relative to the build directory, so we need to prepend that path.
         paths.update(
-            [os.path.join(args.build_directory_path, path) for path in input],
+            [
+                os.path.normpath(os.path.join(args.build_directory_path, path))
+                for path in input
+            ],
         )
 
     with open(args.top_level_pyright_file, "r") as input_file:
@@ -73,7 +76,7 @@ def get_args() -> Args:
     )
 
     parser.add_argument(
-        "--fidl_python_paths_file",
+        "--extra_python_paths_file",
         type=str,
         required=True,
         help="Path to read fidl binding file paths from, which must be a JSON file containing a list of strings.",

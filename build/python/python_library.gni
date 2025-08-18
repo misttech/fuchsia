@@ -149,6 +149,15 @@ template("python_library") {
         },
       ]
 
+      # List sources outside of //out as additional source roots for Python IDE tooling.
+      #
+      # The main case where sources inside //out are needed is for fidling, which is handled
+      # by fidl_python_output metadata keys in the FIDL build rules.
+      if (string_replace(source_root, "//out", "") == source_root) {
+        # Get the directory where the source_root exists.
+        extra_python_dirs = [ rebase_path(source_root + "/..", root_build_dir) ]
+      }
+
       # Collect library_info from any libraries that are needed.
       library_info_barrier = library_deps
     }
