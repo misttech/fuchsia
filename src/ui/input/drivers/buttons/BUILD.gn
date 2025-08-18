@@ -55,11 +55,14 @@ source_set("common") {
   configs += [ "//build/config:all_source" ]
   sources = [
     "buttons-device.cc",
+    "buttons-device.h",
     "buttons.cc",
+    "buttons.h",
   ]
 
   public_deps = [
     ":buttons-config",
+    "//sdk/fidl/fuchsia.buttons:fuchsia.buttons_cpp",
     "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
@@ -67,11 +70,15 @@ source_set("common") {
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
+    "//sdk/lib/driver/platform-device/cpp",
     "//sdk/lib/driver/power/cpp",
+    "//sdk/lib/input_report_reader",
     "//src/devices/lib/driver:driver_runtime",
+    "//src/lib/ddk:ddk-metadata-headers",
     "//src/lib/ddk:ddk_metadata",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/inspect",
+    "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/zx",
   ]
@@ -83,6 +90,7 @@ test("buttons-test") {
   sources = [ "buttons-test.cc" ]
   deps = [
     ":common",
+    "//sdk/lib/driver/fake-platform-device/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/gpio/testing/fake-gpio",
     "//src/lib/fxl/test:gtest_main",

@@ -4,157 +4,93 @@
 
 #include "buttons.h"
 
+#include <fidl/fuchsia.buttons/cpp/fidl.h>
 #include <fidl/fuchsia.driver.compat/cpp/wire.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/platform-device/cpp/pdev.h>
 
 #include <fbl/alloc_checker.h>
 
 namespace buttons {
 
-namespace {
-
-struct MetadataConfig {
-  fbl::Array<buttons_button_config_t> buttons;
-  fbl::Array<buttons_gpio_config_t> gpios;
-};
-
-zx::result<MetadataConfig> ParseMetadata(
-    const fidl::VectorView<::fuchsia_driver_compat::wire::Metadata>& metadata) {
-  MetadataConfig metadata_config;
-  fbl::AllocChecker ac;
-
-  for (const auto& m : metadata) {
-    if (m.type == DEVICE_METADATA_BUTTONS_BUTTONS) {
-      size_t size;
-      auto status = m.data.get_prop_content_size(&size);
-      if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to get_prop_content_size: %s", zx_status_get_string(status));
-        return zx::error(status);
-      }
-      if (size % sizeof(buttons_button_config_t)) {
-        FDF_LOG(ERROR, "Bad button metadata size: %zu", size);
-        return zx::error(ZX_ERR_BAD_STATE);
-      }
-      size_t n_buttons = size / sizeof(buttons_button_config_t);
-      auto buttons = fbl::MakeArray<buttons_button_config_t>(&ac, n_buttons);
-      if (!ac.check()) {
-        return zx::error(ZX_ERR_NO_MEMORY);
-      }
-      status = m.data.read(&buttons[0], 0, size);
-      if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to read button metadata: %s", zx_status_get_string(status));
-        return zx::error(status);
-      }
-      metadata_config.buttons = std::move(buttons);
-    } else if (m.type == DEVICE_METADATA_BUTTONS_GPIOS) {
-      size_t size;
-      auto status = m.data.get_prop_content_size(&size);
-      if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to get_prop_content_size: %s", zx_status_get_string(status));
-        return zx::error(status);
-      }
-      if (size % sizeof(buttons_gpio_config_t)) {
-        FDF_LOG(ERROR, "Bad GPIO metadata size: %zu", size);
-        return zx::error(ZX_ERR_BAD_STATE);
-      }
-      size_t n_gpios = size / sizeof(buttons_gpio_config_t);
-      auto gpios = fbl::MakeArray<buttons_gpio_config_t>(&ac, n_gpios);
-      if (!ac.check()) {
-        return zx::error(ZX_ERR_NO_MEMORY);
-      }
-      status = m.data.read(&gpios[0], 0, size);
-      if (status != ZX_OK) {
-        FDF_LOG(ERROR, "Failed to read GPIO metadata: %s", zx_status_get_string(status));
-        return zx::error(status);
-      }
-      metadata_config.gpios = std::move(gpios);
-    }
-  }
-  if (metadata_config.buttons.empty() || metadata_config.gpios.empty()) {
-    FDF_LOG(ERROR, "Failed to get metadata, %zu buttons and %zu GPIO found",
-            metadata_config.buttons.size(), metadata_config.gpios.size());
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-
-  return zx::ok(std::move(metadata_config));
-}
-
-}  // namespace
-
 zx::result<> Buttons::Start() {
-  // Get metadata.
-  zx::result compat_result = incoming()->Connect<fuchsia_driver_compat::Service::Device>();
-  if (compat_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to open compat service: %s", compat_result.status_string());
-    return compat_result.take_error();
+  zx::result pdev_client_end =
+      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+  if (pdev_client_end.is_error()) {
+    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
+    return pdev_client_end.take_error();
   }
-  auto compat = fidl::WireSyncClient(std::move(compat_result.value()));
-  if (!compat.is_valid()) {
-    FDF_LOG(ERROR, "Failed to get compat acccess");
-    return zx::error(ZX_ERR_NO_RESOURCES);
-  }
-  auto metadata = compat->GetMetadata();
-  if (!metadata.ok()) {
-    FDF_LOG(ERROR, "Failed to send GetMetadata request: %s", metadata.FormatDescription().data());
-    return zx::error(metadata.status());
-  }
-  if (metadata->is_error()) {
-    FDF_LOG(ERROR, "Failed to GetMetadata: %s", zx_status_get_string(metadata->error_value()));
-    return metadata->take_error();
-  }
-  auto metadata_config = ParseMetadata(metadata.value()->metadata);
-  if (metadata_config.is_error()) {
-    FDF_LOG(ERROR, "Failed to ParseMetadata: %s",
-            zx_status_get_string(metadata_config.error_value()));
-    return metadata_config.take_error();
-  }
+  fdf::PDev pdev{std::move(pdev_client_end.value())};
 
-  // Prepare gpios array.
-  fbl::AllocChecker ac;
-  auto gpios = fbl::Array(new (&ac) ButtonsDevice::Gpio[metadata_config->gpios.size()],
-                          metadata_config->gpios.size());
-  if (!ac.check()) {
-    return zx::error(ZX_ERR_NO_MEMORY);
+  zx::result buttons_metadata_result = pdev.GetFidlMetadata<fuchsia_buttons::GpioButtonsMetadata>();
+  if (buttons_metadata_result.is_error()) {
+    FDF_LOG(ERROR, "Failed to get buttons metadata: %s", buttons_metadata_result.status_string());
+    return buttons_metadata_result.take_error();
   }
+  fuchsia_buttons::GpioButtonsMetadata& buttons_metadata = buttons_metadata_result.value();
 
-  for (uint32_t i = 0; i < metadata_config->gpios.size(); ++i) {
+  if (!buttons_metadata.buttons().has_value()) {
+    FDF_LOG(ERROR, "Metadata missing buttons");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  std::vector<fuchsia_buttons::GpioButtonConfig> buttons =
+      std::move(buttons_metadata.buttons().value());
+
+  zx::result gpio_metadata =
+      compat::GetMetadataArray<buttons_gpio_config_t>(incoming(), DEVICE_METADATA_BUTTONS_GPIOS);
+  if (gpio_metadata.is_error()) {
+    FDF_LOG(ERROR, "Failed to get gpio metadata: %s", gpio_metadata.status_string());
+    return gpio_metadata.take_error();
+  }
+  std::vector gpio_configs = std::move(gpio_metadata.value());
+  std::vector<ButtonsDevice::Gpio> gpios;
+  gpios.reserve(gpio_configs.size());
+
+  for (size_t i = 0; i < gpio_configs.size(); ++i) {
     const char* name;
-    switch (metadata_config->buttons[i].id) {
-      case BUTTONS_ID_VOLUME_UP:
+    const auto& button = buttons[i];
+    if (!button.id().has_value()) {
+      FDF_LOG(ERROR, "Button %zu missing id", i);
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+    const fuchsia_buttons::GpioButtonId& button_id = button.id().value();
+    switch (button_id) {
+      case fuchsia_buttons::GpioButtonId::kVolumeUp:
         name = "volume-up";
         break;
-      case BUTTONS_ID_VOLUME_DOWN:
+      case fuchsia_buttons::GpioButtonId::kVolumeDown:
         name = "volume-down";
         break;
-      case BUTTONS_ID_FDR:
+      case fuchsia_buttons::GpioButtonId::kFdr:
         name = "volume-both";
         break;
-      case BUTTONS_ID_MIC_MUTE:
-      case BUTTONS_ID_MIC_AND_CAM_MUTE:
+      case fuchsia_buttons::GpioButtonId::kMicMute:
+      case fuchsia_buttons::GpioButtonId::kMicAndCamMute:
         name = "mic-privacy";
         break;
-      case BUTTONS_ID_CAM_MUTE:
+      case fuchsia_buttons::GpioButtonId::kCamMute:
         name = "cam-mute";
         break;
-      case BUTTONS_ID_POWER:
+      case fuchsia_buttons::GpioButtonId::kPower:
         name = "power";
         break;
-      case BUTTONS_ID_PLAY_PAUSE:
+      case fuchsia_buttons::GpioButtonId::kPlayPause:
         name = "play-pause";
         break;
-      case BUTTONS_ID_KEY_A:
+      case fuchsia_buttons::GpioButtonId::kKeyA:
         name = "key-a";
         break;
-      case BUTTONS_ID_KEY_M:
+      case fuchsia_buttons::GpioButtonId::kKeyM:
         name = "key-m";
         break;
-      case BUTTONS_ID_FUNCTION:
+      case fuchsia_buttons::GpioButtonId::kFunction:
         name = "function";
         break;
       default:
-        FDF_LOG(ERROR, "Unknown Button id: %d", metadata_config->buttons[i].id);
+        FDF_LOG(ERROR, "Button %zu has unknown id: %" PRIu32, i, static_cast<uint32_t>(button_id));
         return zx::error(ZX_ERR_NOT_SUPPORTED);
     };
     zx::result gpio_client = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(name);
@@ -162,8 +98,8 @@ zx::result<> Buttons::Start() {
       FDF_LOG(ERROR, "Connect to GPIO %s failed: %s", name, gpio_client.status_string());
       return gpio_client.take_error();
     }
-    gpios[i].client.Bind(std::move(gpio_client.value()));
-    gpios[i].config = metadata_config->gpios[i];
+    gpios.emplace_back(ButtonsDevice::Gpio{
+        .client{std::move(gpio_client.value())}, .irq{}, .config = gpio_configs[i]});
   }
 
   fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag_client;
@@ -179,8 +115,8 @@ zx::result<> Buttons::Start() {
     }
   }
 
-  device_ = std::make_unique<buttons::ButtonsDevice>(
-      dispatcher(), std::move(metadata_config->buttons), std::move(gpios), std::move(sag_client));
+  device_ = std::make_unique<buttons::ButtonsDevice>(dispatcher(), std::move(buttons),
+                                                     std::move(gpios), std::move(sag_client));
 
   auto result = outgoing()->component().AddUnmanagedProtocol<fuchsia_input_report::InputDevice>(
       input_report_bindings_.CreateHandler(device_.get(), dispatcher(),

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.buttons/cpp/fidl.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
@@ -22,7 +23,6 @@
 #include <soc/aml-s905d2/s905d2-hw.h>
 
 #include "astro-gpios.h"
-#include "lib/fidl/cpp/wire_natural_conversions.h"
 #include "lib/fidl_driver/cpp/wire_messaging_declarations.h"
 #include "src/devices/board/drivers/astro/astro.h"
 
@@ -30,12 +30,6 @@ namespace astro {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
 // clang-format off
-static const buttons_button_config_t buttons[] = {
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_VOLUME_UP,   0, 0, 0},
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_VOLUME_DOWN, 1, 0, 0},
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_FDR,         2, 0, 0},
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_MIC_MUTE,    3, 0, 0},
-};
 // No need for internal pull, external pull-ups used.
 static const buttons_gpio_config_t gpios[] = {
     {BUTTONS_GPIO_TYPE_INTERRUPT, BUTTONS_GPIO_FLAG_INVERTED, {}},
@@ -46,6 +40,40 @@ static const buttons_gpio_config_t gpios[] = {
 // clang-format on
 
 zx_status_t Astro::ButtonsInit() {
+  static const fuchsia_buttons::GpioButtonConfig kVolumeUp({
+      .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+      .gpio_a_index = 0,
+      .id = fuchsia_buttons::GpioButtonId::kVolumeUp,
+  });
+
+  static const fuchsia_buttons::GpioButtonConfig kVolumeDown({
+      .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+      .gpio_a_index = 1,
+      .id = fuchsia_buttons::GpioButtonId::kVolumeDown,
+  });
+
+  static const fuchsia_buttons::GpioButtonConfig kFdr({
+      .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+      .gpio_a_index = 2,
+      .id = fuchsia_buttons::GpioButtonId::kFdr,
+  });
+
+  static const fuchsia_buttons::GpioButtonConfig kMicMute({
+      .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+      .gpio_a_index = 3,
+      .id = fuchsia_buttons::GpioButtonId::kMicMute,
+  });
+
+  static const fuchsia_buttons::GpioButtonsMetadata kMetadata(
+      {.buttons = std::vector{kVolumeUp, kVolumeDown, kFdr, kMicMute}});
+
+  fit::result persisted_metadata = fidl::Persist(kMetadata);
+  if (!persisted_metadata.is_ok()) {
+    zxlogf(ERROR, "Failed to persist pin metadata: %s",
+           persisted_metadata.error_value().FormatDescription().c_str());
+    return persisted_metadata.error_value().status();
+  }
+
   auto button_pin = [](uint32_t pin, fuchsia_hardware_pin::Pull pull) {
     return fuchsia_hardware_pinimpl::InitStep::WithCall({{
         .pin = pin,
@@ -64,21 +92,21 @@ zx_status_t Astro::ButtonsInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena buttons_arena('BTTN');
 
-  fpbus::Node dev = {{.name = "astro-buttons",
-                      .vid = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC,
-                      .pid = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC,
-                      .did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_BUTTONS,
-                      .metadata = std::vector<fpbus::Metadata>{
-                          {{.id = std::to_string(DEVICE_METADATA_BUTTONS_BUTTONS),
-                            .data = std::vector<uint8_t>(
-                                reinterpret_cast<const uint8_t*>(&buttons),
-                                reinterpret_cast<const uint8_t*>(&buttons) + sizeof(buttons))}},
-                          {{.id = std::to_string(DEVICE_METADATA_BUTTONS_GPIOS),
-                            .data = std::vector<uint8_t>(
-                                reinterpret_cast<const uint8_t*>(&gpios),
-                                reinterpret_cast<const uint8_t*>(&gpios) + sizeof(gpios))}}
+  fpbus::Node dev({.name = "astro-buttons",
+                   .vid = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC,
+                   .pid = bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC,
+                   .did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_BUTTONS,
+                   .metadata = std::vector<fpbus::Metadata>{
+                       {{
+                           .id = fuchsia_buttons::GpioButtonsMetadata::kSerializableName,
+                           .data = std::move(persisted_metadata.value()),
+                       }},
+                       {{.id = std::to_string(DEVICE_METADATA_BUTTONS_GPIOS),
+                         .data = std::vector<uint8_t>(
+                             reinterpret_cast<const uint8_t*>(&gpios),
+                             reinterpret_cast<const uint8_t*>(&gpios) + sizeof(gpios))}}
 
-                      }}};
+                   }});
 
   const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = {
       fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),

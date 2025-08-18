@@ -11,7 +11,6 @@
 #include <lib/hid/gt92xx.h>
 #include <lib/mock-i2c/mock-i2c-gtest.h>
 
-#include <ddk/metadata/buttons.h>
 #include <gtest/gtest.h>
 
 #include "src/devices/gpio/testing/fake-gpio/fake-gpio.h"

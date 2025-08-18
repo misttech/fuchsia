@@ -5,6 +5,7 @@
 #ifndef SRC_UI_INPUT_DRIVERS_BUTTONS_BUTTONS_DEVICE_H_
 #define SRC_UI_INPUT_DRIVERS_BUTTONS_BUTTONS_DEVICE_H_
 
+#include <fidl/fuchsia.buttons/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <fidl/fuchsia.power.system/cpp/wire.h>
@@ -45,7 +46,8 @@ class ButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevice>
   };
 
   explicit ButtonsDevice(async_dispatcher_t* dispatcher,
-                         fbl::Array<buttons_button_config_t> buttons, fbl::Array<Gpio> gpios,
+                         std::vector<fuchsia_buttons::GpioButtonConfig> buttons,
+                         std::vector<Gpio> gpios,
                          fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag_client);
   void Notify(size_t button_index);
   void ShutDown();
@@ -80,13 +82,13 @@ class ButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevice>
 
   int Thread();
   zx_status_t Init();
-  zx::result<bool> ReconfigurePolarity(uint32_t idx, uint64_t int_port);
-  zx_status_t ConfigureInterrupt(uint32_t idx, uint64_t int_port);
+  zx::result<bool> ReconfigurePolarity(size_t idx, uint64_t int_port);
+  zx_status_t ConfigureInterrupt(size_t idx, uint64_t int_port);
   zx::result<bool> MatrixScan(uint32_t row, uint32_t col, zx_duration_t delay);
 
   struct ButtonsInputReport {
     zx::time event_time = zx::time(ZX_TIME_INFINITE_PAST);
-    std::array<bool, BUTTONS_ID_MAX> buttons = {};
+    std::array<bool, fuchsia_buttons::kMaxGpioButtonIdOrd> buttons = {};
 
     void ToFidlInputReport(
         fidl::WireTableBuilder<::fuchsia_input_report::wire::InputReport>& input_report,
@@ -112,8 +114,8 @@ class ButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevice>
   thrd_t thread_;
   libsync::Completion thread_started_;
   input_report_reader::InputReportReaderManager<ButtonsInputReport> readers_;
-  fbl::Array<buttons_button_config_t> buttons_;
-  fbl::Array<Gpio> gpios_;
+  std::vector<fuchsia_buttons::GpioButtonConfig> buttons_;
+  std::vector<Gpio> gpios_;
 
   struct debounce_state {
     bool enqueued;

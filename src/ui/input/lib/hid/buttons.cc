@@ -5,8 +5,6 @@
 #include <lib/hid/buttons.h>
 #include <lib/hid/descriptor.h>
 
-#include <ddk/metadata/buttons.h>
-
 // clang-format off
 static const uint8_t buttons_report_desc[] = {
     HID_USAGE_PAGE(0x0C), // Consumer
@@ -49,32 +47,34 @@ size_t get_buttons_report_desc(const uint8_t** buf) {
   return sizeof(buttons_report_desc);
 }
 
-void fill_button_in_report(uint8_t id, bool value, buttons_input_rpt_t* rpt) {
+void fill_button_in_report(fuchsia_buttons::GpioButtonId id, bool value, buttons_input_rpt_t* rpt) {
   switch (id) {
-    case BUTTONS_ID_VOLUME_UP:
+    case fuchsia_buttons::GpioButtonId::kVolumeUp:
       if (value) {
         rpt->volume_up = 1;
       }
       break;
-    case BUTTONS_ID_VOLUME_DOWN:
+    case fuchsia_buttons::GpioButtonId::kVolumeDown:
       if (value) {
         rpt->volume_down = 1;
       }
       break;
-    case BUTTONS_ID_FDR:
+    case fuchsia_buttons::GpioButtonId::kFdr:
       if (value) {
         rpt->reset = 1;
       }
       break;
-    case BUTTONS_ID_MIC_MUTE:
+    case fuchsia_buttons::GpioButtonId::kMicMute:
       rpt->mute = value;
       break;
-    case BUTTONS_ID_CAM_MUTE:
+    case fuchsia_buttons::GpioButtonId::kCamMute:
       rpt->camera_access_disabled = value;
       break;
-    case BUTTONS_ID_MIC_AND_CAM_MUTE:
+    case fuchsia_buttons::GpioButtonId::kMicAndCamMute:
       rpt->camera_access_disabled = value;
       rpt->mute = value;
+      break;
+    default:
       break;
   }
 }

@@ -9,7 +9,7 @@ using fuchsia.hardware.gpio;
 using fuchsia.platform;
 using fuchsia.devicetree;
 
-primary node "platform-device" {
+primary node "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "fuchsia,gpio-buttons" {
     true;
   } else {

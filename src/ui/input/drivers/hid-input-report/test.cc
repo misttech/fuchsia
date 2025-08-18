@@ -12,7 +12,6 @@
 #include <lib/hid/paradise.h>
 #include <lib/hid/usages.h>
 
-#include <ddk/metadata/buttons.h>
 #include <gtest/gtest.h>
 #include <sdk/lib/inspect/testing/cpp/inspect.h>
 #include <src/lib/testing/predicates/status.h>
@@ -672,9 +671,9 @@ TEST_F(HidDevTest, ConsumerControlTest) {
   // Create another report.
   struct buttons_input_rpt report = {};
   report.rpt_id = BUTTONS_RPT_ID_INPUT;
-  fill_button_in_report(BUTTONS_ID_VOLUME_UP, true, &report);
-  fill_button_in_report(BUTTONS_ID_FDR, true, &report);
-  fill_button_in_report(BUTTONS_ID_MIC_MUTE, true, &report);
+  fill_button_in_report(fuchsia_buttons::GpioButtonId::kVolumeUp, true, &report);
+  fill_button_in_report(fuchsia_buttons::GpioButtonId::kFdr, true, &report);
+  fill_button_in_report(fuchsia_buttons::GpioButtonId::kMicMute, true, &report);
 
   SendReport(ToBinaryVector(report));
 
@@ -757,9 +756,9 @@ TEST_F(HidDevTest, ConsumerControlTwoClientsTest) {
   // Create another report.
   struct buttons_input_rpt report = {};
   report.rpt_id = BUTTONS_RPT_ID_INPUT;
-  fill_button_in_report(BUTTONS_ID_VOLUME_UP, true, &report);
-  fill_button_in_report(BUTTONS_ID_FDR, true, &report);
-  fill_button_in_report(BUTTONS_ID_MIC_MUTE, true, &report);
+  fill_button_in_report(fuchsia_buttons::GpioButtonId::kVolumeUp, true, &report);
+  fill_button_in_report(fuchsia_buttons::GpioButtonId::kFdr, true, &report);
+  fill_button_in_report(fuchsia_buttons::GpioButtonId::kMicMute, true, &report);
 
   SendReport(std::vector<uint8_t>(reinterpret_cast<uint8_t*>(&report),
                                   reinterpret_cast<uint8_t*>(&report) + sizeof(report)));

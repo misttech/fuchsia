@@ -1,6 +1,6 @@
 [
     {
-        "node": "platform-device",
+        "node": "pdev",
         "tests": [
             {
                 "name": "Match devicetree",

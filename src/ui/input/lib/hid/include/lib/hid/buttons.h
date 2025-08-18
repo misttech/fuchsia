@@ -5,6 +5,7 @@
 #ifndef SRC_UI_INPUT_LIB_HID_INCLUDE_LIB_HID_BUTTONS_H_
 #define SRC_UI_INPUT_LIB_HID_INCLUDE_LIB_HID_BUTTONS_H_
 
+#include <fidl/fuchsia.buttons/cpp/fidl.h>
 #include <zircon/types.h>
 
 __BEGIN_CDECLS
@@ -39,7 +40,7 @@ typedef struct buttons_input_rpt {
 } __PACKED buttons_input_rpt_t;
 
 size_t get_buttons_report_desc(const uint8_t** buf);
-void fill_button_in_report(uint8_t id, bool value, buttons_input_rpt_t* rpt);
+void fill_button_in_report(fuchsia_buttons::GpioButtonId id, bool value, buttons_input_rpt_t* rpt);
 
 __END_CDECLS
 

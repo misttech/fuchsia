@@ -32,7 +32,7 @@ source_set("hid") {
     "atlas-touchpad.c",
     "bma253.c",
     "boot.c",
-    "buttons.c",
+    "buttons.cc",
     "egalax.c",
     "eyoyo.c",
     "gt92xx.c",
@@ -48,7 +48,10 @@ source_set("hid") {
     "//src/lib/ddk:ddk-metadata-headers",
     "//src/lib/ddktl",
   ]
-  public_deps = [ ":headers" ]
+  public_deps = [
+    ":headers",
+    "//sdk/fidl/fuchsia.buttons:fuchsia.buttons_cpp",
+  ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]

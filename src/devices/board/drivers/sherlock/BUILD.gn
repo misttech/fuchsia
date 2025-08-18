@@ -67,6 +67,7 @@ template("sherlock_driver") {
 
     deps = [
       "//sdk/banjo/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_banjo_cpp",
+      "//sdk/fidl/fuchsia.buttons:fuchsia.buttons_cpp",
       "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_bindlib_cpp",
       "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_cpp",
       "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib_cpp",

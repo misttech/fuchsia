@@ -8,7 +8,6 @@
 #include <variant>
 #include <vector>
 
-#include <ddk/metadata/buttons.h>
 #include <zxtest/zxtest.h>
 
 #include "src/ui/input/lib/hid-input-report/consumer_control.h"
@@ -51,9 +50,9 @@ TEST(ConsumerControlTest, HidButtonsTest) {
   // Test a report parses correctly.
   struct buttons_input_rpt report = {};
   report.rpt_id = BUTTONS_RPT_ID_INPUT;
-  fill_button_in_report(BUTTONS_ID_VOLUME_UP, true, &report);
-  fill_button_in_report(BUTTONS_ID_FDR, true, &report);
-  fill_button_in_report(BUTTONS_ID_MIC_MUTE, true, &report);
+  fill_button_in_report(fuchsia_buttons::GpioButtonId::kVolumeUp, true, &report);
+  fill_button_in_report(fuchsia_buttons::GpioButtonId::kFdr, true, &report);
+  fill_button_in_report(fuchsia_buttons::GpioButtonId::kMicMute, true, &report);
 
   hid_input_report::TestReportAllocator report_allocator;
   fuchsia_input_report::wire::InputReport input_report(report_allocator);

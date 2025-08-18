@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.power.system/cpp/test_base.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <set>
@@ -18,19 +19,34 @@
 #include "src/lib/testing/predicates/status.h"
 
 namespace {
-static const buttons_button_config_t buttons_direct[] = {
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_VOLUME_UP, 0, 0, 0},
-};
+
+const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsDirect = {{{
+    .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+    .gpio_a_index = 0,
+    .id = fuchsia_buttons::GpioButtonId::kVolumeUp,
+}}};
 
 static const buttons_gpio_config_t gpios_direct[] = {{BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}}};
 
 static const buttons_gpio_config_t gpios_wakeable[] = {
     {BUTTONS_GPIO_TYPE_INTERRUPT, BUTTONS_GPIO_FLAG_WAKE_VECTOR, {}}};
 
-static const buttons_button_config_t buttons_multiple[] = {
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_VOLUME_UP, 0, 0, 0},
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_MIC_MUTE, 1, 0, 0},
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_CAM_MUTE, 2, 0, 0},
+const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsMultiple = {
+    {{
+        .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+        .gpio_a_index = 0,
+        .id = fuchsia_buttons::GpioButtonId::kVolumeUp,
+    }},
+    {{
+        .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+        .gpio_a_index = 1,
+        .id = fuchsia_buttons::GpioButtonId::kMicMute,
+    }},
+    {{
+        .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+        .gpio_a_index = 2,
+        .id = fuchsia_buttons::GpioButtonId::kCamMute,
+    }},
 };
 
 static const buttons_gpio_config_t gpios_multiple[] = {
@@ -45,11 +61,35 @@ static const buttons_gpio_config_t gpios_multiple_one_polled[] = {
     {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
 };
 
-static const buttons_button_config_t buttons_matrix[] = {
-    {BUTTONS_TYPE_MATRIX, BUTTONS_ID_VOLUME_UP, 0, 2, 0},
-    {BUTTONS_TYPE_MATRIX, BUTTONS_ID_KEY_A, 1, 2, 0},
-    {BUTTONS_TYPE_MATRIX, BUTTONS_ID_KEY_M, 0, 3, 0},
-    {BUTTONS_TYPE_MATRIX, BUTTONS_ID_PLAY_PAUSE, 1, 3, 0},
+const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsMatrix = {
+    {{
+        .type = fuchsia_buttons::GpioButtonType::WithMatrix({{
+            .gpio_b_index = 2,
+        }}),
+        .gpio_a_index = 0,
+        .id = fuchsia_buttons::GpioButtonId::kVolumeUp,
+    }},
+    {{
+        .type = fuchsia_buttons::GpioButtonType::WithMatrix({{
+            .gpio_b_index = 2,
+        }}),
+        .gpio_a_index = 1,
+        .id = fuchsia_buttons::GpioButtonId::kKeyA,
+    }},
+    {{
+        .type = fuchsia_buttons::GpioButtonType::WithMatrix({{
+            .gpio_b_index = 3,
+        }}),
+        .gpio_a_index = 0,
+        .id = fuchsia_buttons::GpioButtonId::kKeyM,
+    }},
+    {{
+        .type = fuchsia_buttons::GpioButtonType::WithMatrix({{
+            .gpio_b_index = 3,
+        }}),
+        .gpio_a_index = 1,
+        .id = fuchsia_buttons::GpioButtonId::kPlayPause,
+    }},
 };
 
 static const buttons_gpio_config_t gpios_matrix[] = {
@@ -59,10 +99,22 @@ static const buttons_gpio_config_t gpios_matrix[] = {
     {BUTTONS_GPIO_TYPE_MATRIX_OUTPUT, 0, {.matrix = {0}}},
 };
 
-static const buttons_button_config_t buttons_duplicate[] = {
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_VOLUME_UP, 0, 0, 0},
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_VOLUME_DOWN, 1, 0, 0},
-    {BUTTONS_TYPE_DIRECT, BUTTONS_ID_FDR, 2, 0, 0},
+const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsDuplicate = {
+    {{
+        .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+        .gpio_a_index = 0,
+        .id = fuchsia_buttons::GpioButtonId::kVolumeUp,
+    }},
+    {{
+        .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+        .gpio_a_index = 1,
+        .id = fuchsia_buttons::GpioButtonId::kVolumeDown,
+    }},
+    {{
+        .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
+        .gpio_a_index = 2,
+        .id = fuchsia_buttons::GpioButtonId::kFdr,
+    }},
 };
 
 static const buttons_gpio_config_t gpios_duplicate[] = {
@@ -199,6 +251,14 @@ class ButtonsTestEnvironment : public fdf_testing::Environment {
       fake_gpio_servers_[i].SetDefaultReadResponse(zx::ok(uint8_t{0u}));
     }
 
+    {
+      zx::result result = to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+          pdev_.GetInstanceHandler(fdf::Dispatcher::GetCurrent()->async_dispatcher()), "pdev");
+      if (result.is_error()) {
+        return result.take_error();
+      }
+    }
+
     // Serve fake sag.
     if (serve_sag_) {
       return to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_system::ActivityGovernor>(
@@ -212,36 +272,36 @@ class ButtonsTestEnvironment : public fdf_testing::Environment {
     serve_sag_ = serve_sag;
 
     // Serve metadata.
-    cpp20::span<const buttons_button_config_t> buttons;
+    std::vector<fuchsia_buttons::GpioButtonConfig> buttons;
     switch (metadata_version) {
       case kMetadataSingleButtonDirect: {
         buttons_names_ = {"volume-up"};
-        buttons = {buttons_direct, std::size(buttons_direct)};
+        buttons = kButtonsDirect;
         gpios_ = {gpios_direct, std::size(gpios_direct)};
       } break;
       case kMetadataWakeable: {
         buttons_names_ = {"volume-up"};
-        buttons = {buttons_direct, std::size(buttons_direct)};
+        buttons = kButtonsDirect;
         gpios_ = {gpios_wakeable, std::size(gpios_wakeable)};
       } break;
       case kMetadataMultiple: {
         buttons_names_ = {"volume-up", "mic-privacy", "cam-mute"};
-        buttons = {buttons_multiple, std::size(buttons_multiple)};
+        buttons = kButtonsMultiple;
         gpios_ = {gpios_multiple, std::size(gpios_multiple)};
       } break;
       case kMetadataDuplicate: {
         buttons_names_ = {"volume-up", "volume-down", "volume-both"};
-        buttons = {buttons_duplicate, std::size(buttons_duplicate)};
+        buttons = kButtonsDuplicate;
         gpios_ = {gpios_duplicate, std::size(gpios_duplicate)};
       } break;
       case kMetadataMatrix: {
         buttons_names_ = {"volume-up", "key-a", "key-m", "play-pause"};
-        buttons = {buttons_matrix, std::size(buttons_matrix)};
+        buttons = kButtonsMatrix;
         gpios_ = {gpios_matrix, std::size(gpios_matrix)};
       } break;
       case kMetadataPolled: {
         buttons_names_ = {"volume-up", "mic-privacy", "cam-mute"};
-        buttons = {buttons_multiple, std::size(buttons_multiple)};
+        buttons = kButtonsMultiple;
         gpios_ = {gpios_multiple_one_polled, std::size(gpios_multiple_one_polled)};
       } break;
       default:
@@ -251,9 +311,10 @@ class ButtonsTestEnvironment : public fdf_testing::Environment {
     status =
         device_server_.AddMetadata(DEVICE_METADATA_BUTTONS_GPIOS, &gpios_[0], gpios_.size_bytes());
     ASSERT_OK(status);
-    status = device_server_.AddMetadata(DEVICE_METADATA_BUTTONS_BUTTONS, &buttons[0],
-                                        buttons.size_bytes());
-    ASSERT_OK(status);
+
+    const fuchsia_buttons::GpioButtonsMetadata metadata({.buttons = buttons});
+    ASSERT_OK(
+        pdev_.AddFidlMetadata(fuchsia_buttons::GpioButtonsMetadata::kSerializableName, metadata));
   }
 
   void SetGpioReadResponse(size_t gpio_index, uint8_t read_data) {
@@ -279,7 +340,9 @@ class ButtonsTestEnvironment : public fdf_testing::Environment {
  private:
   compat::DeviceServer device_server_;
   std::vector<std::string> buttons_names_;
+  // Must be of static lifetime.
   cpp20::span<const buttons_gpio_config_t> gpios_;
+  fdf_fake::FakePDev pdev_;
   bool serve_sag_;
 };
 
