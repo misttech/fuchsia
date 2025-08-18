@@ -235,17 +235,19 @@ function fx-fail-if-main-pb-is-not-set {
   mapfile -t values < <(fx-command-run jq -r \
     '.main_pb_label // "",
      .use_bazel_images_only // "",
-     .bazel_product_bundle_target // ""' \
+     .bazel_product_bundle_full // "",
+     .bazel_product_bundle_prefix // ""' \
     "${FUCHSIA_BUILD_DIR}/args.json")
 
   # Pull the args out of the array and into their own variables.
-  local main_pb_label use_bazel_images_only bazel_product_bundle_target
+  local main_pb_label use_bazel_images_only bazel_product_bundle_full bazel_product_bundle_prefix
   main_pb_label="${values[0]}"
   use_bazel_images_only="${values[1]}"
-  bazel_product_bundle_target="${values[2]}"
+  bazel_product_bundle_full="${values[2]}"
+  bazel_product_bundle_prefix="${values[3]}"
 
   # Fail if this is a multi-product build and main_pb_label is not set.
-  if [[ "${use_bazel_images_only}" == "true" && -z "${bazel_product_bundle_target}" && -z "${main_pb_label}" ]]; then
+  if [[ "${use_bazel_images_only}" == "true" && -z "${bazel_product_bundle_full}" && -z "${bazel_product_bundle_prefix}" && -z "${main_pb_label}" ]]; then
     fx-error "The 'main_pb_label' GN argument is not set. Please set it with: fx set-main-pb <name>"
     exit 1
   fi
