@@ -1,11 +1,5 @@
 [
     {
-        "kind": "const",
-        "name": "fuchsia.hardware.pty/DEVICE_PROTOCOL_NAME",
-        "type": "string",
-        "value": "fuchsia.hardware.pty/Device"
-    },
-    {
         "kind": "protocol/member",
         "name": "fuchsia.hardware.pty/Device.Clone",
         "strictness": "strict",

@@ -38,8 +38,8 @@ const EVENT_WINDOW_SIZE uint32 = 8;
 /// All events
 const EVENT_MASK uint32 = 15;
 
-// TODO(https://fxbug.dev/42056856): Mark this as removed at NEXT once all remaining references in
-// zxio have been migrated to the discoverable protocol name.
+/// Legacy protocol name. Use the generated discoverable protocol name instead.
+@available(removed=NEXT)
 const DEVICE_PROTOCOL_NAME string = "fuchsia.hardware.pty/Device";
 
 @discoverable
