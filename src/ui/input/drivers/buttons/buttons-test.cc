@@ -26,10 +26,14 @@ const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsDirect = {{{
     .id = fuchsia_buttons::GpioButtonId::kVolumeUp,
 }}};
 
-static const buttons_gpio_config_t gpios_direct[] = {{BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}}};
+const std::vector<fuchsia_buttons::GpioConfig> kGpiosDirect = {
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
+};
 
-static const buttons_gpio_config_t gpios_wakeable[] = {
-    {BUTTONS_GPIO_TYPE_INTERRUPT, BUTTONS_GPIO_FLAG_WAKE_VECTOR, {}}};
+const std::vector<fuchsia_buttons::GpioConfig> kGpiosWakeable = {
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
+      .flags = fuchsia_buttons::GpioFlag::kWakeVector}},
+};
 
 const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsMultiple = {
     {{
@@ -49,16 +53,17 @@ const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsMultiple = {
     }},
 };
 
-static const buttons_gpio_config_t gpios_multiple[] = {
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
+const std::vector<fuchsia_buttons::GpioConfig> kGpiosMultiple = {
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
 };
 
-static const buttons_gpio_config_t gpios_multiple_one_polled[] = {
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
-    {BUTTONS_GPIO_TYPE_POLL, 0, {.poll = {zx::msec(20).get()}}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
+const std::vector<fuchsia_buttons::GpioConfig> kGpiosMultipleOnePolled = {
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
+    {{.type = fuchsia_buttons::GpioType::WithPoll({{.period = zx::msec(20).get()}}),
+      .flags = {{}}}},
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
 };
 
 const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsMatrix = {
@@ -92,11 +97,11 @@ const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsMatrix = {
     }},
 };
 
-static const buttons_gpio_config_t gpios_matrix[] = {
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
-    {BUTTONS_GPIO_TYPE_MATRIX_OUTPUT, 0, {.matrix = {0}}},
-    {BUTTONS_GPIO_TYPE_MATRIX_OUTPUT, 0, {.matrix = {0}}},
+const std::vector<fuchsia_buttons::GpioConfig> kGpiosMatrix = {
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
+    {{.type = fuchsia_buttons::GpioType::WithMatrixOutput({{.output_value = 0}}), .flags = {{}}}},
+    {{.type = fuchsia_buttons::GpioType::WithMatrixOutput({{.output_value = 0}}), .flags = {{}}}},
 };
 
 const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsDuplicate = {
@@ -117,11 +122,12 @@ const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsDuplicate = {
     }},
 };
 
-static const buttons_gpio_config_t gpios_duplicate[] = {
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
+const std::vector<fuchsia_buttons::GpioConfig> kGpiosDuplicate = {
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
+    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
 };
+
 }  // namespace
 
 namespace buttons {
@@ -229,13 +235,9 @@ class FakeSystemActivityGovernor
 class ButtonsTestEnvironment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
-    device_server_.Initialize(component::kDefaultInstance);
-    device_server_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), &to_driver_vfs);
-
     // Serve fake GPIO servers.
-    size_t n_gpios = gpios_.size_bytes() / sizeof(buttons_gpio_config_t);
-    EXPECT_LE(n_gpios, kMaxGpioServers);
-    for (size_t i = 0; i < n_gpios; ++i) {
+    EXPECT_LE(gpios_.size(), kMaxGpioServers);
+    for (size_t i = 0; i < gpios_.size(); ++i) {
       EXPECT_OK(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL,
                                       &fake_gpio_interrupts_[i]));
       zx::interrupt interrupt;
@@ -277,42 +279,40 @@ class ButtonsTestEnvironment : public fdf_testing::Environment {
       case kMetadataSingleButtonDirect: {
         buttons_names_ = {"volume-up"};
         buttons = kButtonsDirect;
-        gpios_ = {gpios_direct, std::size(gpios_direct)};
+        gpios_ = std::span(kGpiosDirect);
       } break;
       case kMetadataWakeable: {
         buttons_names_ = {"volume-up"};
         buttons = kButtonsDirect;
-        gpios_ = {gpios_wakeable, std::size(gpios_wakeable)};
+        gpios_ = std::span(kGpiosWakeable);
       } break;
       case kMetadataMultiple: {
         buttons_names_ = {"volume-up", "mic-privacy", "cam-mute"};
         buttons = kButtonsMultiple;
-        gpios_ = {gpios_multiple, std::size(gpios_multiple)};
+        gpios_ = std::span(kGpiosMultiple);
       } break;
       case kMetadataDuplicate: {
         buttons_names_ = {"volume-up", "volume-down", "volume-both"};
         buttons = kButtonsDuplicate;
-        gpios_ = {gpios_duplicate, std::size(gpios_duplicate)};
+        gpios_ = std::span(kGpiosDuplicate);
       } break;
       case kMetadataMatrix: {
         buttons_names_ = {"volume-up", "key-a", "key-m", "play-pause"};
         buttons = kButtonsMatrix;
-        gpios_ = {gpios_matrix, std::size(gpios_matrix)};
+        gpios_ = std::span(kGpiosMatrix);
       } break;
       case kMetadataPolled: {
         buttons_names_ = {"volume-up", "mic-privacy", "cam-mute"};
         buttons = kButtonsMultiple;
-        gpios_ = {gpios_multiple_one_polled, std::size(gpios_multiple_one_polled)};
+        gpios_ = std::span(kGpiosMultipleOnePolled);
       } break;
       default:
         ASSERT_TRUE(0);
     }
-    zx_status_t status;
-    status =
-        device_server_.AddMetadata(DEVICE_METADATA_BUTTONS_GPIOS, &gpios_[0], gpios_.size_bytes());
-    ASSERT_OK(status);
 
-    const fuchsia_buttons::GpioButtonsMetadata metadata({.buttons = buttons});
+    std::vector<fuchsia_buttons::GpioConfig> gpios(gpios_.begin(), gpios_.end());
+    const fuchsia_buttons::GpioButtonsMetadata metadata{
+        {.buttons = buttons, .gpios = std::move(gpios)}};
     ASSERT_OK(
         pdev_.AddFidlMetadata(fuchsia_buttons::GpioButtonsMetadata::kSerializableName, metadata));
   }
@@ -338,10 +338,9 @@ class ButtonsTestEnvironment : public fdf_testing::Environment {
   FakeSystemActivityGovernor fake_sag_;
 
  private:
-  compat::DeviceServer device_server_;
   std::vector<std::string> buttons_names_;
   // Must be of static lifetime.
-  cpp20::span<const buttons_gpio_config_t> gpios_;
+  cpp20::span<const fuchsia_buttons::GpioConfig> gpios_;
   fdf_fake::FakePDev pdev_;
   bool serve_sag_;
 };
@@ -650,25 +649,37 @@ TEST_P(ParameterizedButtonsTest, MatrixButtonPush) {
 
   driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
     auto gpio_2_states = env.fake_gpio_servers_[2].GetStateLog();
+    const fuchsia_buttons::GpioConfig& gpio_2 = kGpiosMatrix[2];
+    ASSERT_TRUE(gpio_2.type().has_value());
+    ASSERT_TRUE(gpio_2.type()->matrix_output().has_value());
+    const fuchsia_buttons::MatrixOutputGpio& gpio_2_matrix = gpio_2.type()->matrix_output().value();
+    ASSERT_TRUE(gpio_2_matrix.output_value().has_value());
+    const uint8_t gpio_2_matrix_output_value = gpio_2_matrix.output_value().value();
     ASSERT_GE(gpio_2_states.size(), 4U);
     ASSERT_EQ(fake_gpio::ReadSubState{},
               (gpio_2_states.end() - 4)->sub_state);  // Float column.
-    ASSERT_EQ(fake_gpio::WriteSubState{.value = gpios_matrix[2].matrix.output_value},
+    ASSERT_EQ(fake_gpio::WriteSubState{.value = gpio_2_matrix_output_value},
               (gpio_2_states.end() - 3)->sub_state);  // Restore column.
     ASSERT_EQ(fake_gpio::ReadSubState{},
               (gpio_2_states.end() - 2)->sub_state);  // Float column.
-    ASSERT_EQ(fake_gpio::WriteSubState{.value = gpios_matrix[2].matrix.output_value},
+    ASSERT_EQ(fake_gpio::WriteSubState{.value = gpio_2_matrix_output_value},
               (gpio_2_states.end() - 1)->sub_state);  // Restore column.
 
     auto gpio_3_states = env.fake_gpio_servers_[3].GetStateLog();
+    const fuchsia_buttons::GpioConfig& gpio_3 = kGpiosMatrix[2];
+    ASSERT_TRUE(gpio_3.type().has_value());
+    ASSERT_TRUE(gpio_3.type()->matrix_output().has_value());
+    const fuchsia_buttons::MatrixOutputGpio& gpio_3_matrix = gpio_3.type()->matrix_output().value();
+    ASSERT_TRUE(gpio_3_matrix.output_value().has_value());
+    const uint8_t gpio_3_matrix_output_value = gpio_3_matrix.output_value().value();
     ASSERT_GE(gpio_3_states.size(), 4U);
     ASSERT_EQ(fake_gpio::ReadSubState{},
               (gpio_3_states.end() - 4)->sub_state);  // Float column.
-    ASSERT_EQ(fake_gpio::WriteSubState{.value = gpios_matrix[3].matrix.output_value},
+    ASSERT_EQ(fake_gpio::WriteSubState{.value = gpio_3_matrix_output_value},
               (gpio_3_states.end() - 3)->sub_state);  // Restore column.
     ASSERT_EQ(fake_gpio::ReadSubState{},
               (gpio_3_states.end() - 2)->sub_state);  // Float column.
-    ASSERT_EQ(fake_gpio::WriteSubState{.value = gpios_matrix[3].matrix.output_value},
+    ASSERT_EQ(fake_gpio::WriteSubState{.value = gpio_3_matrix_output_value},
               (gpio_3_states.end() - 1)->sub_state);  // Restore column.
   });
 }

@@ -25,29 +25,26 @@ zx::result<> Buttons::Start() {
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
-  zx::result buttons_metadata_result = pdev.GetFidlMetadata<fuchsia_buttons::GpioButtonsMetadata>();
-  if (buttons_metadata_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to get buttons metadata: %s", buttons_metadata_result.status_string());
-    return buttons_metadata_result.take_error();
+  zx::result metadata_result = pdev.GetFidlMetadata<fuchsia_buttons::GpioButtonsMetadata>();
+  if (metadata_result.is_error()) {
+    FDF_LOG(ERROR, "Failed to get metadata: %s", metadata_result.status_string());
+    return metadata_result.take_error();
   }
-  fuchsia_buttons::GpioButtonsMetadata& buttons_metadata = buttons_metadata_result.value();
+  fuchsia_buttons::GpioButtonsMetadata& metadata = metadata_result.value();
 
-  if (!buttons_metadata.buttons().has_value()) {
+  if (!metadata.gpios().has_value()) {
+    FDF_LOG(ERROR, "Metadata missing gpios");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  const std::span<const fuchsia_buttons::GpioConfig>& gpio_configs = metadata.gpios().value();
+  std::vector<ButtonsDevice::Gpio> gpios;
+  gpios.reserve(gpio_configs.size());
+
+  if (!metadata.buttons().has_value()) {
     FDF_LOG(ERROR, "Metadata missing buttons");
     return zx::error(ZX_ERR_INTERNAL);
   }
-  std::vector<fuchsia_buttons::GpioButtonConfig> buttons =
-      std::move(buttons_metadata.buttons().value());
-
-  zx::result gpio_metadata =
-      compat::GetMetadataArray<buttons_gpio_config_t>(incoming(), DEVICE_METADATA_BUTTONS_GPIOS);
-  if (gpio_metadata.is_error()) {
-    FDF_LOG(ERROR, "Failed to get gpio metadata: %s", gpio_metadata.status_string());
-    return gpio_metadata.take_error();
-  }
-  std::vector gpio_configs = std::move(gpio_metadata.value());
-  std::vector<ButtonsDevice::Gpio> gpios;
-  gpios.reserve(gpio_configs.size());
+  std::vector<fuchsia_buttons::GpioButtonConfig> buttons = std::move(metadata.buttons().value());
 
   for (size_t i = 0; i < gpio_configs.size(); ++i) {
     const char* name;

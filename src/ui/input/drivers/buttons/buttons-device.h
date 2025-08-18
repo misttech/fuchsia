@@ -21,7 +21,6 @@
 #include <zircon/syscalls-next.h>
 #include <zircon/threads.h>
 
-#include <ddk/metadata/buttons.h>
 #include <fbl/array.h>
 
 namespace buttons {
@@ -42,7 +41,7 @@ class ButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevice>
   struct Gpio {
     fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> client;
     zx::interrupt irq;
-    buttons_gpio_config_t config;
+    fuchsia_buttons::GpioConfig config;
   };
 
   explicit ButtonsDevice(async_dispatcher_t* dispatcher,

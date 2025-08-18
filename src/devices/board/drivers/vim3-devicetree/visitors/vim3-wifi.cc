@@ -15,7 +15,6 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/sdio/cpp/bind.h>
 #include <bind/fuchsia/sdio/cpp/bind.h>
-#include <ddk/metadata/buttons.h>
 
 #include "src/devices/lib/broadcom/commands.h"
 

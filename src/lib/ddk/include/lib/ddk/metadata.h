@@ -29,9 +29,6 @@ static_assert(DEVICE_METADATA_PARTITION_MAP == ZBI_TYPE_DRV_PARTITION_MAP, "");
 #define DEVICE_METADATA_BOARD_PRIVATE 0x524F426D  // mBOR
 static_assert(DEVICE_METADATA_BOARD_PRIVATE == ZBI_TYPE_DRV_BOARD_PRIVATE, "");
 
-// list of buttons_gpio_config_t
-#define DEVICE_METADATA_BUTTONS_GPIOS 0x474E5442  // BTNG
-
 // type: display::PanelType (defined in //src/graphics/display/lib/
 // device-protocol-display/include/lib/device-protocol/display-panel.h)
 #define DEVICE_METADATA_DISPLAY_PANEL_TYPE 0x43505344  // DSPC

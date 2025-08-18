@@ -76,7 +76,6 @@ fuchsia_cc_driver(
     deps = [
         "//src/devices/lib/broadcom",
         "//src/devices/lib/broadcom/fuchsia.wlan.broadcom:fuchsia.wlan.broadcom_cpp",
-        "//src/lib/ddk:ddk_buttons_metadata",
         "//src/lib/ddk:ddk_metadata",
         "@fuchsia_sdk//bind/fuchsia.adc:fuchsia.adc_cc",
         "@fuchsia_sdk//bind/fuchsia.broadcom.platform.sdio:fuchsia.broadcom.platform.sdio_cc",

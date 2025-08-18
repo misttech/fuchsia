@@ -17,7 +17,6 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <ddk/metadata/buttons.h>
 #include <ddktl/device.h>
 #include <soc/aml-s905d2/s905d2-gpio.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
@@ -28,16 +27,6 @@
 
 namespace astro {
 namespace fpbus = fuchsia_hardware_platform_bus;
-
-// clang-format off
-// No need for internal pull, external pull-ups used.
-static const buttons_gpio_config_t gpios[] = {
-    {BUTTONS_GPIO_TYPE_INTERRUPT, BUTTONS_GPIO_FLAG_INVERTED, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, BUTTONS_GPIO_FLAG_INVERTED, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, BUTTONS_GPIO_FLAG_INVERTED, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0                         , {}},
-};
-// clang-format on
 
 zx_status_t Astro::ButtonsInit() {
   static const fuchsia_buttons::GpioButtonConfig kVolumeUp({
@@ -64,8 +53,19 @@ zx_status_t Astro::ButtonsInit() {
       .id = fuchsia_buttons::GpioButtonId::kMicMute,
   });
 
+  // No need for internal pull, external pull-ups used.
+  static const std::vector<fuchsia_buttons::GpioConfig> kGpioConfigs = {
+      {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
+        .flags = fuchsia_buttons::GpioFlag::kInverted}},
+      {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
+        .flags = fuchsia_buttons::GpioFlag::kInverted}},
+      {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
+        .flags = fuchsia_buttons::GpioFlag::kInverted}},
+      {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
+        .flags = fuchsia_buttons::GpioFlag{0}}}};
+
   static const fuchsia_buttons::GpioButtonsMetadata kMetadata(
-      {.buttons = std::vector{kVolumeUp, kVolumeDown, kFdr, kMicMute}});
+      {.buttons = std::vector{kVolumeUp, kVolumeDown, kFdr, kMicMute}, .gpios = kGpioConfigs});
 
   fit::result persisted_metadata = fidl::Persist(kMetadata);
   if (!persisted_metadata.is_ok()) {
@@ -101,11 +101,6 @@ zx_status_t Astro::ButtonsInit() {
                            .id = fuchsia_buttons::GpioButtonsMetadata::kSerializableName,
                            .data = std::move(persisted_metadata.value()),
                        }},
-                       {{.id = std::to_string(DEVICE_METADATA_BUTTONS_GPIOS),
-                         .data = std::vector<uint8_t>(
-                             reinterpret_cast<const uint8_t*>(&gpios),
-                             reinterpret_cast<const uint8_t*>(&gpios) + sizeof(gpios))}}
-
                    }});
 
   const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = {

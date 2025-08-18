@@ -18,7 +18,6 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <ddk/metadata/buttons.h>
 #include <ddktl/device.h>
 #include <soc/aml-t931/t931-gpio.h>
 #include <soc/aml-t931/t931-hw.h>
@@ -29,14 +28,6 @@
 
 namespace sherlock {
 namespace fpbus = fuchsia_hardware_platform_bus;
-
-// No need for internal pull, external pull-ups used.
-static const buttons_gpio_config_t gpios[] = {
-    {BUTTONS_GPIO_TYPE_INTERRUPT, BUTTONS_GPIO_FLAG_INVERTED, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, BUTTONS_GPIO_FLAG_INVERTED, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, BUTTONS_GPIO_FLAG_INVERTED, {}},
-    {BUTTONS_GPIO_TYPE_INTERRUPT, 0, {}},
-};
 
 zx_status_t Sherlock::ButtonsInit() {
   static const fuchsia_buttons::GpioButtonConfig kVolumeUp(
@@ -59,8 +50,20 @@ zx_status_t Sherlock::ButtonsInit() {
        .gpio_a_index = 3,
        .id = fuchsia_buttons::GpioButtonId::kMicAndCamMute});
 
+  // No need for internal pull, external pull-ups used.
+  static const std::vector<fuchsia_buttons::GpioConfig> kGpioConfigs = {
+      {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
+        .flags = fuchsia_buttons::GpioFlag::kInverted}},
+      {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
+        .flags = fuchsia_buttons::GpioFlag::kInverted}},
+      {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
+        .flags = fuchsia_buttons::GpioFlag::kInverted}},
+      {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
+        .flags = fuchsia_buttons::GpioFlag{0}}}};
+
   static const fuchsia_buttons::GpioButtonsMetadata kMetadata(
-      {.buttons = std::vector{kVolumeUp, kVolumeDown, kFdr, kMicAndCamMute}});
+      {.buttons = std::vector{kVolumeUp, kVolumeDown, kFdr, kMicAndCamMute},
+       .gpios = kGpioConfigs});
 
   fit::result persisted_metadata = fidl::Persist(kMetadata);
   if (!persisted_metadata.is_ok()) {
@@ -87,19 +90,14 @@ zx_status_t Sherlock::ButtonsInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena buttons_arena('BTTN');
 
-  fpbus::Node dev(
-      {.name = "sherlock-buttons",
-       .vid = PDEV_VID_GENERIC,
-       .pid = PDEV_PID_GENERIC,
-       .did = PDEV_DID_BUTTONS,
-       .metadata = std::vector<fpbus::Metadata>{
-           {{
-               .id = fuchsia_buttons::GpioButtonsMetadata::kSerializableName,
-               .data = std::move(persisted_metadata.value()),
-           }},
-           {{.id = std::to_string(DEVICE_METADATA_BUTTONS_GPIOS),
-             .data = std::vector(reinterpret_cast<const uint8_t*>(&gpios),
-                                 reinterpret_cast<const uint8_t*>(&gpios) + sizeof(gpios))}}}});
+  fpbus::Node dev({.name = "sherlock-buttons",
+                   .vid = PDEV_VID_GENERIC,
+                   .pid = PDEV_PID_GENERIC,
+                   .did = PDEV_DID_BUTTONS,
+                   .metadata = std::vector<fpbus::Metadata>{{{
+                       .id = fuchsia_buttons::GpioButtonsMetadata::kSerializableName,
+                       .data = std::move(persisted_metadata.value()),
+                   }}}});
 
   const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = {
       fdf::MakeAcceptBindRule2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),

@@ -141,7 +141,12 @@ int ButtonsDevice::Thread() {
     if (packet.key >= kPortKeyInterruptStart &&
         packet.key < (kPortKeyInterruptStart + buttons_.size())) {
       uint32_t type = static_cast<uint32_t>(packet.key - kPortKeyInterruptStart);
-      if (gpios_[type].config.type == BUTTONS_GPIO_TYPE_INTERRUPT) {
+      const std::optional<fuchsia_buttons::GpioType>& gpio_type = gpios_[type].config.type();
+      if (!gpio_type.has_value()) {
+        FDF_LOG(ERROR, "Config for gpio %" PRIu32 " missing type", type);
+        return thrd_error;
+      }
+      if (gpio_type.value().Which() == fuchsia_buttons::GpioType::Tag::kInterrupt) {
         const zx::duration kLeaseTimeout = zx::msec(100);
         wake_lease_.HandleInterrupt(kLeaseTimeout);
 
@@ -172,7 +177,12 @@ int ButtonsDevice::Thread() {
 
     if (packet.key == kPortKeyPollTimer) {
       for (size_t i = 0; i < gpios_.size(); i++) {
-        if (gpios_[i].config.type != BUTTONS_GPIO_TYPE_POLL) {
+        const std::optional<fuchsia_buttons::GpioType>& gpio_type = gpios_[i].config.type();
+        if (!gpio_type.has_value()) {
+          FDF_LOG(ERROR, "Config for gpio %zu missing type", i);
+          return thrd_error;
+        }
+        if (gpio_type.value().Which() != fuchsia_buttons::GpioType::Tag::kPoll) {
           continue;
         }
 
@@ -276,9 +286,20 @@ zx::result<bool> ButtonsDevice::MatrixScan(uint32_t row, uint32_t col, zx_durati
   }
 
   {
+    const std::optional<fuchsia_buttons::GpioType>& type = gpio_col.config.type();
+    if (!type.has_value()) {
+      FDF_LOG(ERROR, "Gpio config missing type");
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+    const std::optional<uint8_t> output_value =
+        gpio_col.config.type()->matrix_output()->output_value();
+    if (!output_value.has_value()) {
+      FDF_LOG(ERROR, "Gpio config missing output value");
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
     fidl::WireResult result = gpio_col.client->SetBufferMode(
-        gpio_col.config.matrix.output_value ? fuchsia_hardware_gpio::BufferMode::kOutputHigh
-                                            : fuchsia_hardware_gpio::BufferMode::kOutputLow);
+        output_value.value() ? fuchsia_hardware_gpio::BufferMode::kOutputHigh
+                             : fuchsia_hardware_gpio::BufferMode::kOutputLow);
     if (!result.ok()) {
       FDF_LOG(ERROR, "Failed to send SetBufferMode request to gpio %u: %s", col,
               result.status_string());
@@ -355,7 +376,12 @@ zx::result<ButtonsDevice::ButtonsInputReport> ButtonsDevice::GetInputReportInter
         return zx::error(ZX_ERR_INTERNAL);
     }
 
-    if (gpios_[i].config.flags & BUTTONS_GPIO_FLAG_INVERTED) {
+    const std::optional<fuchsia_buttons::GpioFlag>& flags = gpios_[i].config.flags();
+    if (!flags.has_value()) {
+      FDF_LOG(ERROR, "Config for gpio %zu missing flags", i);
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+    if (flags.value() & fuchsia_buttons::GpioFlag::kInverted) {
       new_value = !new_value;
     }
 
@@ -498,7 +524,12 @@ zx_status_t ButtonsDevice::ConfigureInterrupt(size_t idx, uint64_t int_port) {
   }
 
   fuchsia_hardware_gpio::InterruptOptions interrupt_options = {};
-  if (gpio.config.flags & BUTTONS_GPIO_FLAG_WAKE_VECTOR) {
+  const auto& flags = gpio.config.flags();
+  if (!flags.has_value()) {
+    FDF_LOG(ERROR, "Config for gpio %zu missing flags", idx);
+    return ZX_ERR_BAD_STATE;
+  }
+  if (flags.value() & fuchsia_buttons::GpioFlag::kWakeVector) {
     interrupt_options |= fuchsia_hardware_gpio::InterruptOptions::kWakeable;
   }
 
@@ -596,29 +627,43 @@ zx_status_t ButtonsDevice::Init() {
         return ZX_ERR_INTERNAL;
       }
       const Gpio& gpio_b = gpios_[gpio_b_index];
-      if (gpio_b.config.type != BUTTONS_GPIO_TYPE_MATRIX_OUTPUT) {
-        FDF_LOG(ERROR, "Config for matrix gpio B has invalid type %u", gpio_b.config.type);
+      if (!gpio_b.config.type().has_value()) {
+        FDF_LOG(ERROR, "Config for gpio %u missing period", gpio_b_index);
+        return ZX_ERR_INTERNAL;
+      }
+      const fuchsia_buttons::GpioType& gpio_b_type = gpio_b.config.type().value();
+      if (gpio_b_type.Which() != fuchsia_buttons::GpioType::Tag::kMatrixOutput) {
+        FDF_LOG(ERROR, "Config for matrix gpio B has invalid type %u", gpio_b_type.Which());
         return ZX_ERR_INTERNAL;
       }
     }
     const Gpio& gpio_a = gpios_[gpio_a_index];
-    const uint8_t gpio_a_type = gpio_a.config.type;
-    switch (gpio_a_type) {
-      case BUTTONS_GPIO_TYPE_INTERRUPT:
+    if (!gpio_a.config.type().has_value()) {
+      FDF_LOG(ERROR, "Config for gpio %u missing type", gpio_a_index);
+      return ZX_ERR_INTERNAL;
+    }
+    const fuchsia_buttons::GpioType& gpio_a_type = gpio_a.config.type().value();
+    switch (gpio_a_type.Which()) {
+      case fuchsia_buttons::GpioType::Tag::kInterrupt:
         break;
-      case BUTTONS_GPIO_TYPE_POLL: {
-        const auto button_poll_period = zx::duration(gpios_[gpio_a_index].config.poll.period);
-        if (poll_period_ == zx::duration::infinite()) {
-          poll_period_ = button_poll_period;
+      case fuchsia_buttons::GpioType::Tag::kPoll: {
+        const fuchsia_buttons::PollGpio& poll = gpio_a_type.poll().value();
+        if (!poll.period().has_value()) {
+          FDF_LOG(ERROR, "Config for gpio %u missing period", gpio_a_index);
+          return ZX_ERR_INTERNAL;
         }
-        if (button_poll_period != poll_period_) {
+        const zx::duration poll_period = zx::duration(poll.period().value());
+        if (poll_period_ == zx::duration::infinite()) {
+          poll_period_ = poll_period;
+        }
+        if (poll_period != poll_period_) {
           FDF_LOG(ERROR, "GPIOs must have the same poll period");
           return ZX_ERR_INTERNAL;
         }
         break;
       }
       default:
-        FDF_LOG(ERROR, "Config for gpio %u has invalid type %d", gpio_a_index, gpio_a_type);
+        FDF_LOG(ERROR, "Config for gpio %u has invalid type %d", gpio_a_index, gpio_a_type.Which());
         return ZX_ERR_INTERNAL;
     }
     if (!button.id().has_value()) {
@@ -634,51 +679,71 @@ zx_status_t ButtonsDevice::Init() {
   // Setup.
   for (size_t i = 0; i < gpios_.size(); ++i) {
     const Gpio& gpio = gpios_[i];
+    if (!gpio.config.type().has_value()) {
+      FDF_LOG(ERROR, "Config for gpio %zu missing type", i);
+      return ZX_ERR_BAD_STATE;
+    }
 
-    if (gpio.config.type == BUTTONS_GPIO_TYPE_MATRIX_OUTPUT) {
-      fidl::WireResult result = gpio.client->SetBufferMode(
-          gpio.config.matrix.output_value ? fuchsia_hardware_gpio::BufferMode::kOutputHigh
+    const fuchsia_buttons::GpioType& gpio_type = gpio.config.type().value();
+    switch (gpio_type.Which()) {
+      case fuchsia_buttons::GpioType::Tag::kMatrixOutput: {
+        const fuchsia_buttons::MatrixOutputGpio& matrix = gpio_type.matrix_output().value();
+        if (!matrix.output_value().has_value()) {
+          FDF_LOG(ERROR, "Config for gpio %zu missing output value", i);
+          return ZX_ERR_BAD_STATE;
+        }
+        const fidl::WireResult result = gpio.client->SetBufferMode(
+            matrix.output_value().value() ? fuchsia_hardware_gpio::BufferMode::kOutputHigh
                                           : fuchsia_hardware_gpio::BufferMode::kOutputLow);
-      if (!result.ok()) {
-        FDF_LOG(ERROR, "Failed to send SetBufferMode request to gpio %zu: %s", i,
-                result.status_string());
-        return result.status();
+        if (!result.ok()) {
+          FDF_LOG(ERROR, "Failed to send SetBufferMode request to gpio %zu: %s", i,
+                  result.status_string());
+          return result.status();
+        }
+        if (result->is_error()) {
+          FDF_LOG(ERROR, "Failed to configure gpio %zu to output: %s", i,
+                  zx_status_get_string(result->error_value()));
+          return ZX_ERR_NOT_SUPPORTED;
+        }
+        break;
       }
-      if (result->is_error()) {
-        FDF_LOG(ERROR, "Failed to configure gpio %zu to output: %s", i,
-                zx_status_get_string(result->error_value()));
-        return ZX_ERR_NOT_SUPPORTED;
+      case fuchsia_buttons::GpioType::Tag::kInterrupt: {
+        const fidl::WireResult result =
+            gpio.client->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kInput);
+        if (!result.ok()) {
+          FDF_LOG(ERROR, "Failed to send SetBufferMode request to gpio %zu: %s", i,
+                  result.status_string());
+          return result.status();
+        }
+        if (result->is_error()) {
+          FDF_LOG(ERROR, "Failed to configure gpio %zu to input: %s", i,
+                  zx_status_get_string(result->error_value()));
+          return ZX_ERR_NOT_SUPPORTED;
+        }
+        status = ConfigureInterrupt(i, kPortKeyInterruptStart + i);
+        if (status != ZX_OK) {
+          return status;
+        }
+        break;
       }
-    } else if (gpio.config.type == BUTTONS_GPIO_TYPE_INTERRUPT) {
-      fidl::WireResult result =
-          gpio.client->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kInput);
-      if (!result.ok()) {
-        FDF_LOG(ERROR, "Failed to send SetBufferMode request to gpio %zu: %s", i,
-                result.status_string());
-        return result.status();
+      case fuchsia_buttons::GpioType::Tag::kPoll: {
+        const fidl::WireResult result =
+            gpio.client->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kInput);
+        if (!result.ok()) {
+          FDF_LOG(ERROR, "Failed to send SetBufferMode request to gpio %zu: %s", i,
+                  result.status_string());
+          return result.status();
+        }
+        if (result->is_error()) {
+          FDF_LOG(ERROR, "Failed to configure gpio %zu to input: %s", i,
+                  zx_status_get_string(result->error_value()));
+          return ZX_ERR_NOT_SUPPORTED;
+        }
+        break;
       }
-      if (result->is_error()) {
-        FDF_LOG(ERROR, "Failed to configure gpio %zu to input: %s", i,
-                zx_status_get_string(result->error_value()));
-        return ZX_ERR_NOT_SUPPORTED;
-      }
-      status = ConfigureInterrupt(i, kPortKeyInterruptStart + i);
-      if (status != ZX_OK) {
-        return status;
-      }
-    } else if (gpio.config.type == BUTTONS_GPIO_TYPE_POLL) {
-      fidl::WireResult result =
-          gpio.client->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kInput);
-      if (!result.ok()) {
-        FDF_LOG(ERROR, "Failed to send SetBufferMode request to gpio %zu: %s", i,
-                result.status_string());
-        return result.status();
-      }
-      if (result->is_error()) {
-        FDF_LOG(ERROR, "Failed to configure gpio %zu to input: %s", i,
-                zx_status_get_string(result->error_value()));
-        return ZX_ERR_NOT_SUPPORTED;
-      }
+      default:
+        FDF_LOG(ERROR, "Config for gpio %zu has unknown type %d", i, gpio_type.Which());
+        break;
     }
   }
 

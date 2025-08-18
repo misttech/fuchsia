@@ -361,7 +361,6 @@ static_library("ddk") {
 
 library_headers("ddk-metadata-headers") {
   headers = [
-    "ddk/metadata/buttons.h",
     "ddk/metadata/camera.h",
     "ddk/metadata/display.h",
     "ddk/metadata/test.h",
