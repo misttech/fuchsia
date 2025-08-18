@@ -352,6 +352,7 @@ open protocol Listener {
 
 /// Notifier for [`Listener`].
 @available(added=HEAD)
+@discoverable
 closed protocol Notifier {
     /// Notify is called when the software update checker has completed its
     /// post-boot check (with or without error) and is not trying to reboot.
