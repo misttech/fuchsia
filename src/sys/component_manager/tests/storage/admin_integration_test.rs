@@ -16,7 +16,7 @@ use futures::sink::SinkExt;
 use futures::{Future, FutureExt, StreamExt, TryStreamExt};
 use maplit::hashset;
 use std::collections::HashSet;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync};
+use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Returns a new mock that writes a file and terminates. The future indicates when writing the file has completed.
 fn new_data_user_mock<T: Into<String>, U: Into<String>>(
@@ -58,10 +58,10 @@ fn new_data_user_mock<T: Into<String>, U: Into<String>>(
 
 /// Collect the set of component instances that use the `data` storage capability.
 async fn collect_storage_user_monikers<T: AsRef<str>>(
-    admin: &fsys::StorageAdminProxy,
+    admin: &fcomponent::StorageAdminProxy,
     realm_moniker: T,
 ) -> HashSet<String> {
-    let (it_proxy, it_server) = create_proxy::<fsys::StorageIteratorMarker>();
+    let (it_proxy, it_server) = create_proxy::<fcomponent::StorageIteratorMarker>();
     admin
         .list_storage_in_realm(realm_moniker.as_ref(), it_server)
         .await
@@ -100,7 +100,7 @@ async fn single_storage_user() {
     let instance_moniker = format!("{}:{}", DEFAULT_COLLECTION_NAME, instance.root.child_name());
     let storage_user_moniker = format!("{}/storage-user", &instance_moniker);
 
-    let storage_admin = connect_to_protocol::<fsys::StorageAdminMarker>().unwrap();
+    let storage_admin = connect_to_protocol::<fcomponent::StorageAdminMarker>().unwrap();
     let storage_users = collect_storage_user_monikers(&storage_admin, instance_moniker).await;
     assert_eq!(
         storage_users,
@@ -164,7 +164,7 @@ async fn multiple_storage_users() {
         .map(|mock_idx| format!("{}/storage-user-{:?}", &instance_moniker, mock_idx))
         .collect();
 
-    let storage_admin = connect_to_protocol::<fsys::StorageAdminMarker>().unwrap();
+    let storage_admin = connect_to_protocol::<fcomponent::StorageAdminMarker>().unwrap();
     let storage_users = collect_storage_user_monikers(&storage_admin, instance_moniker).await;
     assert_eq!(storage_users, expected_storage_users);
 }
@@ -191,7 +191,7 @@ async fn destroyed_storage_user() {
 
     done_signal.await;
 
-    let storage_admin = connect_to_protocol::<fsys::StorageAdminMarker>().unwrap();
+    let storage_admin = connect_to_protocol::<fcomponent::StorageAdminMarker>().unwrap();
     let storage_users = collect_storage_user_monikers(&storage_admin, &instance_moniker).await;
     assert_eq!(
         storage_users,

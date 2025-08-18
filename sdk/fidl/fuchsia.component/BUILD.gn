@@ -19,6 +19,7 @@ fidl("fuchsia.component") {
     "namespace.fidl",
     "overview.fidl",
     "realm.fidl",
+    "storage_admin.fidl",
     "types.fidl",
   ]
   public_deps = [

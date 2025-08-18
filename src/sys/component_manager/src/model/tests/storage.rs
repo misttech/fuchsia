@@ -30,8 +30,8 @@ use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path as VfsPath;
 use vfs::ToObjectRequest;
 use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
-    fuchsia_sync as fsync,
+    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
+    fidl_fuchsia_io as fio, fuchsia_sync as fsync,
 };
 
 #[fuchsia::test]
@@ -793,7 +793,7 @@ async fn storage_persistence_moniker_path() {
                 )
                 .offer(
                     OfferBuilder::protocol()
-                        .name("fuchsia.sys2.StorageAdmin")
+                        .name("fuchsia.component.StorageAdmin")
                         .source(OfferSource::Capability("data".parse().unwrap()))
                         .target_static_child("b"),
                 )
@@ -808,7 +808,7 @@ async fn storage_persistence_moniker_path() {
                         .source(UseSource::Framework)
                         .name("fuchsia.component.Realm"),
                 )
-                .use_(UseBuilder::protocol().name("fuchsia.sys2.StorageAdmin"))
+                .use_(UseBuilder::protocol().name("fuchsia.component.StorageAdmin"))
                 .use_(UseBuilder::storage().name("data").path("/data"))
                 .offer(
                     OfferBuilder::storage()
@@ -880,8 +880,10 @@ async fn storage_persistence_moniker_path() {
     // check that the file can be destroyed by storage admin
     let namespace = test.bind_and_get_namespace(["b"].try_into().unwrap()).await;
     let storage_admin_proxy = capability_util::connect_to_svc_in_namespace::<
-        fsys::StorageAdminMarker,
-    >(&namespace, &"/svc/fuchsia.sys2.StorageAdmin".parse().unwrap())
+        fcomponent::StorageAdminMarker,
+    >(
+        &namespace, &"/svc/fuchsia.component.StorageAdmin".parse().unwrap()
+    )
     .await;
     let _ = storage_admin_proxy
         // StorageAdmin::DeleteComponentStorage tolerates both regular old monikers and instanced
@@ -941,7 +943,7 @@ async fn storage_persistence_instance_id_path() {
                 )
                 .offer(
                     OfferBuilder::protocol()
-                        .name("fuchsia.sys2.StorageAdmin")
+                        .name("fuchsia.component.StorageAdmin")
                         .source(OfferSource::Capability("data".parse().unwrap()))
                         .target_static_child("b"),
                 )
@@ -956,7 +958,7 @@ async fn storage_persistence_instance_id_path() {
                         .source(UseSource::Framework)
                         .name("fuchsia.component.Realm"),
                 )
-                .use_(UseBuilder::protocol().name("fuchsia.sys2.StorageAdmin"))
+                .use_(UseBuilder::protocol().name("fuchsia.component.StorageAdmin"))
                 .use_(UseBuilder::storage().name("data").path("/data"))
                 .offer(
                     OfferBuilder::storage()
@@ -1032,8 +1034,10 @@ async fn storage_persistence_instance_id_path() {
     // destroy the persistent storage with a storage admin request
     let namespace = test.bind_and_get_namespace(["b"].try_into().unwrap()).await;
     let storage_admin_proxy = capability_util::connect_to_svc_in_namespace::<
-        fsys::StorageAdminMarker,
-    >(&namespace, &"/svc/fuchsia.sys2.StorageAdmin".parse().unwrap())
+        fcomponent::StorageAdminMarker,
+    >(
+        &namespace, &"/svc/fuchsia.component.StorageAdmin".parse().unwrap()
+    )
     .await;
     let _ = storage_admin_proxy.delete_component_storage("./b/persistent_coll:c").await.unwrap();
 

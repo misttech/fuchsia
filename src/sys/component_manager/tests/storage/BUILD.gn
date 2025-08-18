@@ -24,8 +24,8 @@ rustc_test("storage_admin_integration_test_bin") {
   edition = "2021"
   source_root = "admin_integration_test.rs"
   deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
@@ -45,8 +45,8 @@ rustc_binary("storage_realm_admin_bin") {
   edition = "2021"
   source_root = "storage_realm_admin.rs"
   deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
@@ -64,6 +64,7 @@ rustc_binary("storage_realm_coll_bin") {
   edition = "2021"
   source_root = "storage_realm_coll.rs"
   deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

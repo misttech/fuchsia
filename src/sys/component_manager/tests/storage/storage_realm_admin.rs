@@ -8,14 +8,14 @@ use fuchsia_component::client::connect_to_protocol;
 use futures::TryStreamExt;
 use maplit::hashset;
 use std::collections::HashSet;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys};
+use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio};
 
 #[fuchsia::main]
 async fn main() {
     // This must be the component ID for `storage_user_with_instance_id`
     // in `component_id_index_for_debug.json5`.
     let component_storage_id = "30f79a42f42300a635c8e04f92002e992368a4947199244554cdb5ec0c023be0";
-    assert_eq!(component_storage_id.len(), fsys::MAX_STORAGE_ID_LENGTH as usize);
+    assert_eq!(component_storage_id.len(), fcomponent::MAX_STORAGE_ID_LENGTH as usize);
 
     // Wait for storage_user to stop, ensuring the storage contains the written file.
     let mut event_stream = EventStream::open().await.unwrap();
@@ -25,7 +25,7 @@ async fn main() {
         .await
         .unwrap();
 
-    let storage_admin = connect_to_protocol::<fsys::StorageAdminMarker>().unwrap();
+    let storage_admin = connect_to_protocol::<fcomponent::StorageAdminMarker>().unwrap();
 
     // Open the storage by ID.
     let (node_client_end, node_server) = create_endpoints::<fio::NodeMarker>();

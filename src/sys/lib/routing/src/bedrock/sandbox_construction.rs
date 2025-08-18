@@ -36,7 +36,10 @@ use sandbox::{
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, LazyLock};
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_sys2 as fsys};
+use {
+    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
+    fidl_fuchsia_sys2 as fsys,
+};
 
 lazy_static! {
     static ref NAMESPACE: Name = "namespace".parse().unwrap();
@@ -1208,7 +1211,10 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
                 moniker,
                 capability_name.as_str().to_string(),
             );
-            if source_path.iter_segments().join("/") == fsys::StorageAdminMarker::PROTOCOL_NAME {
+            if source_path.iter_segments().join("/") == fsys::StorageAdminMarker::PROTOCOL_NAME
+                || source_path.iter_segments().join("/")
+                    == fcomponent::StorageAdminMarker::PROTOCOL_NAME
+            {
                 capability_sourced_capabilities_dict.get_router_or_not_found(&capability_name, err)
             } else {
                 Router::<T>::new_error(err)
@@ -1389,7 +1395,10 @@ fn extend_dict_with_offer<T, C: ComponentInstanceInterface + 'static>(
                 &component.moniker(),
                 capability_name.as_str().to_string(),
             );
-            if source_path.iter_segments().join("/") == fsys::StorageAdminMarker::PROTOCOL_NAME {
+            if source_path.iter_segments().join("/") == fsys::StorageAdminMarker::PROTOCOL_NAME
+                || source_path.iter_segments().join("/")
+                    == fcomponent::StorageAdminMarker::PROTOCOL_NAME
+            {
                 capability_sourced_capabilities_dict.get_router_or_not_found(&capability_name, err)
             } else {
                 Router::<T>::new_error(err)
@@ -1547,7 +1556,10 @@ fn extend_dict_with_expose<T, C: ComponentInstanceInterface + 'static>(
                 &component.moniker(),
                 capability_name.as_str().to_string(),
             );
-            if source_path.iter_segments().join("/") == fsys::StorageAdminMarker::PROTOCOL_NAME {
+            if source_path.iter_segments().join("/") == fsys::StorageAdminMarker::PROTOCOL_NAME
+                || source_path.iter_segments().join("/")
+                    == fcomponent::StorageAdminMarker::PROTOCOL_NAME
+            {
                 capability_sourced_capabilities_dict
                     .clone()
                     .get_router_or_not_found::<T>(&capability_name, err)

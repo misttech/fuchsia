@@ -46,8 +46,7 @@ use vfs::execution_scope::ExecutionScope;
 use vfs::ToObjectRequest;
 use {
     fidl_fidl_examples_routing_echo as echo, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
-    fuchsia_inspect as inspect,
+    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, fuchsia_inspect as inspect,
 };
 
 #[cfg(feature = "src_model_tests")]
@@ -803,9 +802,9 @@ impl RoutingTestModel for RoutingTest {
             }
             CheckUse::StorageAdmin { storage_relation, storage_subdir, expected_res } => {
                 let storage_admin_proxy =
-                    capability_util::connect_to_svc_in_namespace::<fsys::StorageAdminMarker>(
+                    capability_util::connect_to_svc_in_namespace::<fcomponent::StorageAdminMarker>(
                         &namespace,
-                        &"/svc/fuchsia.sys2.StorageAdmin".parse().unwrap(),
+                        &"/svc/fuchsia.component.StorageAdmin".parse().unwrap(),
                     )
                     .await;
                 let (storage_proxy, server_end) = create_proxy();

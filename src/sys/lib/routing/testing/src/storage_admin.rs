@@ -53,7 +53,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                     )
                     .offer(
                         OfferBuilder::protocol()
-                            .name("fuchsia.sys2.StorageAdmin")
+                            .name("fuchsia.component.StorageAdmin")
                             .source(OfferSource::Capability("data".parse().unwrap()))
                             .target_static_child("c"),
                     )
@@ -70,7 +70,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
             (
                 "c",
                 ComponentDeclBuilder::new()
-                    .use_(UseBuilder::protocol().name("fuchsia.sys2.StorageAdmin"))
+                    .use_(UseBuilder::protocol().name("fuchsia.component.StorageAdmin"))
                     .build(),
             ),
         ];
@@ -132,7 +132,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                     )
                     .offer(
                         OfferBuilder::protocol()
-                            .name("fuchsia.sys2.StorageAdmin")
+                            .name("fuchsia.component.StorageAdmin")
                             .source(OfferSource::Capability("storage".parse().unwrap()))
                             .target_static_child("c"),
                     )
@@ -142,7 +142,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
             (
                 "c",
                 ComponentDeclBuilder::new()
-                    .use_(UseBuilder::protocol().name("fuchsia.sys2.StorageAdmin"))
+                    .use_(UseBuilder::protocol().name("fuchsia.component.StorageAdmin"))
                     .build(),
             ),
         ];
@@ -178,7 +178,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                 ComponentDeclBuilder::new()
                     .offer(
                         OfferBuilder::protocol()
-                            .name("fuchsia.sys2.StorageAdmin")
+                            .name("fuchsia.component.StorageAdmin")
                             .source_static_child("c")
                             .target_static_child("b"),
                     )
@@ -189,7 +189,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
             (
                 "b",
                 ComponentDeclBuilder::new()
-                    .use_(UseBuilder::protocol().name("fuchsia.sys2.StorageAdmin"))
+                    .use_(UseBuilder::protocol().name("fuchsia.component.StorageAdmin"))
                     .build(),
             ),
             (
@@ -215,7 +215,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                     )
                     .expose(
                         ExposeBuilder::protocol()
-                            .name("fuchsia.sys2.StorageAdmin")
+                            .name("fuchsia.component.StorageAdmin")
                             .source(ExposeSource::Capability("data".parse().unwrap())),
                     )
                     .child_default("d")
@@ -269,7 +269,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                     .use_(
                         UseBuilder::protocol()
                             .source(UseSource::Capability("data".parse().unwrap()))
-                            .name("fuchsia.sys2.StorageAdmin"),
+                            .name("fuchsia.component.StorageAdmin"),
                     )
                     .child_default("b")
                     .child_default("c")
@@ -345,7 +345,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                     .use_(
                         UseBuilder::protocol()
                             .source(UseSource::Capability("unrelated.protocol".parse().unwrap()))
-                            .name("fuchsia.sys2.StorageAdmin"),
+                            .name("fuchsia.component.StorageAdmin"),
                     )
                     .child_default("b")
                     .build(),
@@ -400,7 +400,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                     )
                     .offer(
                         OfferBuilder::protocol()
-                            .name("fuchsia.sys2.StorageAdmin")
+                            .name("fuchsia.component.StorageAdmin")
                             .source(OfferSource::Capability("unrelated.protocol".parse().unwrap()))
                             .target_static_child("b"),
                     )
@@ -410,7 +410,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
             (
                 "b",
                 ComponentDeclBuilder::new()
-                    .use_(UseBuilder::protocol().name("fuchsia.sys2.StorageAdmin"))
+                    .use_(UseBuilder::protocol().name("fuchsia.component.StorageAdmin"))
                     .build(),
             ),
         ];
@@ -447,7 +447,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                 ComponentDeclBuilder::new()
                     .offer(
                         OfferBuilder::protocol()
-                            .name("fuchsia.sys2.StorageAdmin")
+                            .name("fuchsia.component.StorageAdmin")
                             .source_static_child("c")
                             .target_static_child("b"),
                     )
@@ -458,7 +458,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
             (
                 "b",
                 ComponentDeclBuilder::new()
-                    .use_(UseBuilder::protocol().name("fuchsia.sys2.StorageAdmin"))
+                    .use_(UseBuilder::protocol().name("fuchsia.component.StorageAdmin"))
                     .build(),
             ),
             (
@@ -486,7 +486,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                             .target_static_child("d"),
                     )
                     .expose(
-                        ExposeBuilder::protocol().name("fuchsia.sys2.StorageAdmin").source(
+                        ExposeBuilder::protocol().name("fuchsia.component.StorageAdmin").source(
                             ExposeSource::Capability("unrelated.protocol".parse().unwrap()),
                         ),
                     )
@@ -551,7 +551,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                         UseBuilder::protocol()
                             .source(UseSource::Capability("unrelated.protocol".parse().unwrap()))
                             .name("unrelated.protocol")
-                            .path("/svc/fuchsia.sys2.StorageAdmin"),
+                            .path("/svc/fuchsia.component.StorageAdmin"),
                     )
                     .child_default("b")
                     .build(),
@@ -603,7 +603,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                     .offer(
                         OfferBuilder::protocol()
                             .name("unrelated.protocol")
-                            .target_name("fuchsia.sys2.StorageAdmin")
+                            .target_name("fuchsia.component.StorageAdmin")
                             .source(OfferSource::Capability("data".parse().unwrap()))
                             .target_static_child("b"),
                     )
@@ -613,7 +613,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
             (
                 "b",
                 ComponentDeclBuilder::new()
-                    .use_(UseBuilder::protocol().name("fuchsia.sys2.StorageAdmin"))
+                    .use_(UseBuilder::protocol().name("fuchsia.component.StorageAdmin"))
                     .build(),
             ),
         ];
@@ -649,7 +649,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                 ComponentDeclBuilder::new()
                     .offer(
                         OfferBuilder::protocol()
-                            .name("fuchsia.sys2.StorageAdmin")
+                            .name("fuchsia.component.StorageAdmin")
                             .source_static_child("c")
                             .target_static_child("b"),
                     )
@@ -660,7 +660,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
             (
                 "b",
                 ComponentDeclBuilder::new()
-                    .use_(UseBuilder::protocol().name("fuchsia.sys2.StorageAdmin"))
+                    .use_(UseBuilder::protocol().name("fuchsia.component.StorageAdmin"))
                     .build(),
             ),
             (
@@ -687,7 +687,7 @@ impl<T: RoutingTestModelBuilder> CommonStorageAdminTest<T> {
                     .expose(
                         ExposeBuilder::protocol()
                             .name("unrelated.protocol")
-                            .target_name("fuchsia.sys2.StorageAdmin")
+                            .target_name("fuchsia.component.StorageAdmin")
                             .source(ExposeSource::Capability("data".parse().unwrap())),
                     )
                     .child_default("d")

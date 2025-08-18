@@ -322,7 +322,10 @@ rustc_test("src_model_tests") {
   source_root = "src/main.rs"
   rustflags = [ "--cfg=feature=\"src_model_tests\"" ]
   configs += configs_to_add
-  test_deps += [ "//src/lib/diagnostics/hierarchy/rust" ]
+  test_deps += [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+    "//src/lib/diagnostics/hierarchy/rust",
+  ]
   assert_no_deps += [
     # For tracing support, :bin_with_tracing is required
     "//src/lib/trace/rust:trace-provider",
