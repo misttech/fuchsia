@@ -237,6 +237,36 @@ fn format_target_state(state: &TargetState) -> String {
     }
 }
 
+fn notify_for_discovery_sources<N>(
+    ctx: &EnvironmentContext,
+    sources: DiscoverySources,
+    notifier: &mut N,
+) -> anyhow::Result<()>
+where
+    N: Notifier + Sized,
+{
+    if sources.contains(DiscoverySources::EMULATOR) {
+        // This isn't an option as it's intended to be part of the default config.
+        let emu_instance_root: PathBuf = ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR)?;
+        notifier.info(format!("Searching for emulators at {}", emu_instance_root.display()))?;
+    }
+    if sources.contains(DiscoverySources::FASTBOOT_FILE) {
+        let fastboot_file_path: Option<PathBuf> =
+            ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+        // Note: there are no tests covering the `None` case because this is built into the default
+        // config, and despite `no_environment` being set in the config we're still resolving this
+        // to $HOME/.fastboot/devices even if nothing is set in our test environment.
+        match fastboot_file_path {
+            Some(p) => notifier.info(format!("Checking fastboot file at {}", p.display()))?,
+            None => notifier.info(format!(
+                "No fastboot file set in the config under {}",
+                fastboot_file_discovery::FASTBOOT_FILE_PATH
+            ))?,
+        }
+    }
+    Ok(())
+}
+
 impl<N, R> Check for ResolveTarget<'_, N, R>
 where
     N: Notifier + Sized,
@@ -300,14 +330,8 @@ where
         // mDNS, as we already have the IP address.
         Box::pin(async {
             let sources = sources_from_query(&input);
-            if sources.contains(DiscoverySources::EMULATOR) {
-                // This isn't an option as it's intended to be part of the default config.
-                let emu_instance_root: PathBuf =
-                    self.ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR)?;
-                notifier
-                    .info(format!("Searching for emulators at {}", emu_instance_root.display()))?;
-            }
             // There should be some kind of error here if the device resolves to an empty array.
+            notify_for_discovery_sources(self.ctx, sources, notifier)?;
             let resolver = R::with_sources(sources);
             let mut targets = resolver.resolve_target_query(input, self.ctx).await?;
             if targets.is_empty() {
@@ -625,7 +649,7 @@ mod test {
     #[fuchsia::test]
     async fn test_resolve_target_success() {
         let _guard = MOCK_HANDLES_LOCK.lock().unwrap();
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_env().build().await.unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let handle = TargetHandle {
             node_name: Some("test-node".to_string()),
@@ -646,7 +670,7 @@ mod test {
         {
             *MOCK_HANDLES.lock().unwrap() = vec![];
         }
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_env().build().await.unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let mut check = ResolveTarget::<_, MockResolver>::new(&env.context);
         let res = check.check(TargetInfoQuery::First, &mut notifier).await;
@@ -656,7 +680,7 @@ mod test {
     #[fuchsia::test]
     async fn test_resolve_target_too_many_devices_found() {
         let _guard = MOCK_HANDLES_LOCK.lock().unwrap();
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_env().build().await.unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let handle1 = TargetHandle {
             node_name: Some("test-node-1".to_string()),
@@ -808,7 +832,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_connect_ssh() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_env().build().await.unwrap();
         let m = MockSshConnectorProvider::with_res(Ok(MockConnector::with_results([Ok(
             TargetConnection::FDomain(FDomainConnection::invalid()),
         )])));
@@ -825,7 +849,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_connect_ssh_failures() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_env().build().await.unwrap();
         let m = MockSshConnectorProvider::<MockConnector>::with_res(Err(anyhow::anyhow!(
             "Couldn't get a connector for some reason"
         )));
@@ -842,7 +866,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_connect_ssh_failures_connector_fails() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_env().build().await.unwrap();
         // TODO(b/425474866): This should result in a check where we can see that the connection
         // failed multiple times albeit non-fatally.
         let mock_connector = MockConnector::with_results([
@@ -1040,5 +1064,61 @@ mod test {
             format_target_state(&state),
             "in product state (addrs: [192.168.1.1], serial: \"1234\")"
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_notify_for_discovery_sources_emulator() {
+        let env = ffx_config::test_env()
+            .runtime_config(emulator_instance::EMU_INSTANCE_ROOT_DIR, "/tmp/emu-test-path")
+            .build()
+            .await
+            .unwrap();
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let sources = DiscoverySources::EMULATOR;
+        notify_for_discovery_sources(&env.context, sources, &mut notifier).unwrap();
+        let output: String = notifier.into();
+        assert!(output.contains("Searching for emulators at /tmp/emu-test-path"));
+        assert!(!output.contains("fastboot"));
+    }
+
+    #[fuchsia::test]
+    async fn test_notify_for_discovery_sources_fastboot_file_set() {
+        let env = ffx_config::test_env()
+            .runtime_config(fastboot_file_discovery::FASTBOOT_FILE_PATH, "/tmp/fastboot-test.json")
+            .build()
+            .await
+            .unwrap();
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let sources = DiscoverySources::FASTBOOT_FILE;
+        notify_for_discovery_sources(&env.context, sources, &mut notifier).unwrap();
+        let output: String = notifier.into();
+        assert!(output.contains("Checking fastboot file at /tmp/fastboot-test.json"));
+        assert!(!output.contains("emulators"));
+    }
+
+    #[fuchsia::test]
+    async fn test_notify_for_discovery_sources_both() {
+        let env = ffx_config::test_env()
+            .runtime_config(emulator_instance::EMU_INSTANCE_ROOT_DIR, "/tmp/emu-test-path")
+            .runtime_config(fastboot_file_discovery::FASTBOOT_FILE_PATH, "/tmp/fastboot-test.json")
+            .build()
+            .await
+            .unwrap();
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let sources = DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
+        notify_for_discovery_sources(&env.context, sources, &mut notifier).unwrap();
+        let output: String = notifier.into();
+        assert!(output.contains("Searching for emulators at /tmp/emu-test-path"));
+        assert!(output.contains("Checking fastboot file at /tmp/fastboot-test.json"));
+    }
+
+    #[fuchsia::test]
+    async fn test_notify_for_discovery_sources_none() {
+        let env = ffx_config::test_env().build().await.unwrap();
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let sources = DiscoverySources::MANUAL;
+        notify_for_discovery_sources(&env.context, sources, &mut notifier).unwrap();
+        let output: String = notifier.into();
+        assert!(output.is_empty());
     }
 }
