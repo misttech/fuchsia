@@ -85,10 +85,7 @@ impl ServerPty {
 
         let Self { proxy } = self;
         let (client_end, server_end) = fidl::endpoints::create_endpoints();
-        #[cfg(fuchsia_api_level_at_least = "26")]
         let () = proxy.clone(server_end)?;
-        #[cfg(not(fuchsia_api_level_at_least = "26"))]
-        let () = proxy.clone2(server_end)?;
         let file: File = fdio::create_fd(client_end.into())
             .context("failed to create FD from server PTY")?
             .into();
@@ -219,9 +216,11 @@ mod tests {
         let process = spawn_pty().await?;
 
         let info = process.process_info().unwrap();
-        assert!(ProcessInfoFlags::from_bits(info.flags)
-            .unwrap()
-            .contains(zx::ProcessInfoFlags::STARTED));
+        assert!(
+            ProcessInfoFlags::from_bits(info.flags)
+                .unwrap()
+                .contains(zx::ProcessInfoFlags::STARTED)
+        );
 
         Ok(())
     }
