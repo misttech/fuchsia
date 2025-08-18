@@ -28,7 +28,7 @@ use starnix_uapi::AT_PLATFORM;
 use starnix_uapi::{
     errno, error, from_status_like_fdio, AT_BASE, AT_CLKTCK, AT_EGID, AT_ENTRY, AT_EUID, AT_EXECFN,
     AT_GID, AT_HWCAP, AT_NULL, AT_PAGESZ, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM, AT_SECURE,
-    AT_SYSINFO_EHDR, AT_UID,
+    AT_SYSINFO_EHDR, AT_UID, ENODEV,
 };
 use std::ffi::{CStr, CString};
 use std::mem::size_of;
@@ -388,7 +388,13 @@ fn resolve_executable_impl(
         return error!(ELOOP);
     }
     let memory =
-        file.get_memory(locked, current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)?;
+        file.get_memory(locked, current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC).map_err(|e| {
+            if e.code.error_code() == ENODEV {
+                errno!(ENOEXEC)
+            } else {
+                e
+            }
+        })?;
     let header = match memory.read_to_array::<u8, HASH_BANG_SIZE>(0) {
         Ok(header) => Ok(header),
         Err(zx::Status::OUT_OF_RANGE) => {
@@ -534,7 +540,13 @@ fn resolve_elf(
             current_task,
             None,
             ProtectionFlags::READ | ProtectionFlags::EXEC,
-        )?;
+        ).map_err(|e| {
+            if e.code.error_code() == ENODEV {
+                errno!(ENOEXEC)
+            } else {
+                e
+            }
+        })?;
         let interp_file =
             interp_file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
         Some(ResolvedInterpElf { file: interp_file, memory: interp_memory })

@@ -1360,6 +1360,13 @@ void TestAccess(const std::string& path) {
   ASSERT_EQ(access(path.c_str(), R_OK), 0) << strerror(errno);
 }
 
+void TestExec(const std::string& path) {
+  int ret = execl(path.c_str(), path.c_str(), NULL);
+  ASSERT_EQ(ret, -1);
+  // Access check passes but we don't exec because there is no memory for this file.
+  EXPECT_EQ(errno, ENOEXEC);
+}
+
 void TestStat(const std::string& path) {
   struct stat s;
   ASSERT_EQ(stat(path.c_str(), &s), 0) << strerror(errno);
@@ -1462,6 +1469,16 @@ INSTANTIATE_TEST_SUITE_P(FuseServerPermissionCheck, FuseServerPermissionCheck,
                                  .expected_lookup_count = 1,
                                  .expected_access_count = 1,
                                  .expected_non_root_getattr_count = 0,
+                             },
+                             PermissionCheckTestCase{
+                                 .want_init_flags = 0,
+                                 .file_type = S_IFREG,
+                                 .fn = TestExec,
+                                 .expected_lookup_count = test_helper::IsStarnix() ? 1u : 2u,
+                                 // Importantly, we don't do any access checks during exec.
+                                 .expected_access_count = 0,
+                                 .expected_non_root_getattr_count = test_helper::IsStarnix() ? 1u
+                                                                                             : 2u,
                              },
                              PermissionCheckTestCase{
                                  .want_init_flags = 0,
@@ -1883,6 +1900,24 @@ INSTANTIATE_TEST_SUITE_P(FuseDirPermissionCheck, FuseDirPermissionCheck,
                                  .perms = 0,
                                  .expect_open = false,
                              }));
+
+TEST_F(FuseServerTest, ExecAccessDenied) {
+  std::shared_ptr<FuseServer> server(new FuseServer(0));
+  FileSystem& fs = server->fs();
+  std::shared_ptr<Directory> dir = fs.AddDirAtRoot("dir");
+  auto file = fs.AddFileAt(dir, "node");
+  ASSERT_TRUE(file);
+  file->SetPermissions(S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+  ASSERT_TRUE(Mount(server));
+  server->WaitForInit();
+
+  std::string path = GetMountDir() + "/dir/node";
+  InThreadWithoutCapDacOverride([&]() {
+    int ret = execl(path.c_str(), path.c_str(), nullptr);
+    EXPECT_EQ(ret, -1);
+    EXPECT_EQ(errno, EACCES);
+  });
+}
 
 struct MkPermissionCheckTestCase {
   uint32_t want_init_flags;

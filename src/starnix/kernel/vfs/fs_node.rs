@@ -579,11 +579,12 @@ impl FallocMode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CheckAccessReason {
     Access,
     Chdir,
     Chroot,
+    Exec,
     ChangeTimestamps { now: bool },
     InternalPermissionChecks,
 }

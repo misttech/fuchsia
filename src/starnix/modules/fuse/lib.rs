@@ -1209,6 +1209,16 @@ impl FsNodeOps for FuseNode {
                     error!(EINVAL)
                 }
             }
+            CheckAccessReason::Exec => {
+                self.default_check_access_with_valid_node_attributes(
+                    locked,
+                    node,
+                    current_task,
+                    access,
+                    reason,
+                    info,
+                )
+            }
             CheckAccessReason::ChangeTimestamps { .. }
             | CheckAccessReason::InternalPermissionChecks => {
                 // Per FUSE's mount options, the kernel does not check file access

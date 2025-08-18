@@ -1015,7 +1015,7 @@ impl CurrentTask {
             locked,
             self,
             Access::EXEC,
-            CheckAccessReason::InternalPermissionChecks,
+            CheckAccessReason::Exec,
         )?;
 
         let elf_security_state = security::check_exec_access(self, executable.node())?;
