@@ -29,10 +29,7 @@ from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
 from core_testing.ies import read_ssid
 from fuchsia_controller_py.wrappers import asyncmethod
-from honeydew.affordances.connectivity.wlan.utils.types import (
-    MacAddress,
-    QueryIfaceResponse,
-)
+from honeydew.affordances.connectivity.wlan.utils.types import MacAddress
 from mobly import signals, test_runner
 from mobly.asserts import (
     abort_class_if,
@@ -328,6 +325,8 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                     )
                 case SecurityMode.WPA:
                     protocol = fidl_security.Protocol.WPA1
+                    if origin_ap_security_config.password is None:
+                        raise signals.TestError("Password is required for WPA.")
                     credentials = fidl_security.Credentials(
                         wpa=fidl_security.WpaCredentials(
                             passphrase=list(
@@ -339,6 +338,10 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                     )
                 case SecurityMode.WPA2 | SecurityMode.WPA_WPA2:
                     protocol = fidl_security.Protocol.WPA2_PERSONAL
+                    if origin_ap_security_config.password is None:
+                        raise signals.TestError(
+                            "Password is required for WPA2/WPA_WPA2."
+                        )
                     credentials = fidl_security.Credentials(
                         wpa=fidl_security.WpaCredentials(
                             passphrase=list(
@@ -350,6 +353,10 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                     )
                 case SecurityMode.WPA3 | SecurityMode.WPA2_WPA3:
                     protocol = fidl_security.Protocol.WPA3_PERSONAL
+                    if origin_ap_security_config.password is None:
+                        raise signals.TestError(
+                            "Password is required for WPA3/WPA2_WPA3."
+                        )
                     credentials = fidl_security.Credentials(
                         wpa=fidl_security.WpaCredentials(
                             passphrase=list(
@@ -390,16 +397,16 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                     f"Timed out after {CONNECT_WAIT_TIME_SECONDS} seconds awaiting a connect result"
                 )
 
-            assert_equal(
-                next_txn,
-                fidl_sme.ConnectTransactionOnConnectResultRequest(
-                    result=fidl_sme.ConnectResult(
-                        code=fidl_ieee80211.StatusCode.SUCCESS,
-                        is_credential_rejected=False,
-                        is_reconnect=False,
-                    )
-                ),
-            )
+            if next_txn != fidl_sme.ConnectTransactionOnConnectResultRequest(
+                result=fidl_sme.ConnectResult(
+                    code=fidl_ieee80211.StatusCode.SUCCESS,
+                    is_credential_rejected=False,
+                    is_reconnect=False,
+                )
+            ):
+                raise signals.TestError(f"Failed to connect to initial AP.")
+
+            logger.info(f"Connect result: success.")
             if not txn_queue.empty():
                 raise signals.TestError(
                     "Unexpectedly received additional callback messages after connect result."
@@ -539,8 +546,9 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                 raise RuntimeError(
                     f"DeviceMonitor.QueryIface() error: {e}"
                 ) from e
-            resp = QueryIfaceResponse.from_fidl(query_iface_response.resp)
-            mac_addr = MacAddress.from_bytes(bytes(resp.sta_addr))
+            mac_addr = MacAddress.from_bytes(
+                bytes(query_iface_response.resp.sta_addr)
+            )
             return str(mac_addr)
         raise RuntimeError("Interface id is not set.")
 
