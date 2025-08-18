@@ -15,7 +15,6 @@ open protocol Control {
     flexible Start(resource struct {
         element_name string:fuchsia.power.broker.MAX_ELEMENT_NAME_LEN;
         initial_current_level fuchsia.power.broker.PowerLevel;
-        required_level_client client_end:fuchsia.power.broker.RequiredLevel;
-        current_level_client client_end:fuchsia.power.broker.CurrentLevel;
+        element_runner server_end:fuchsia.power.broker.ElementRunner;
     }) -> () error StartPowerElementError;
 };

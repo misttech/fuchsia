@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error, Result};
-use fidl::endpoints::{ClientEnd, Proxy, ServerEnd};
+use anyhow::{Context, Error, Result, anyhow};
+use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy};
 use fidl_test_powerelementrunner::ControlMarker;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_dir_root};
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
 use log::{error, info, warn};
-use power_broker_client::PowerElementContext;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::future::Future;
@@ -35,16 +34,10 @@ async fn lease(lessor: &fbroker::LessorProxy, level: u8) -> Result<fbroker::Leas
     Ok(lease_control)
 }
 
-/// This struct does not wrap a PowerElementContext because the required_level and current_level
-/// proxies need to be converted to client ends. This struct temporarily stores the client ends
-/// after the power element is created. Then, after the realm builder finishes adding all the child
-/// components, the client ends are taken and sent to the designated component for the power element
-/// to run on.
 struct PowerElement {
     element_control: fbroker::ElementControlProxy,
     lessor: fbroker::LessorProxy,
-    required_level: RefCell<Option<ClientEnd<fbroker::RequiredLevelMarker>>>,
-    current_level: RefCell<Option<ClientEnd<fbroker::CurrentLevelMarker>>>,
+    element_runner: RefCell<Option<ServerEnd<fbroker::ElementRunnerMarker>>>,
     assertive_dependency_token: fbroker::DependencyToken,
     opportunistic_dependency_token: fbroker::DependencyToken,
     initial_level: fbroker::PowerLevel,
@@ -61,23 +54,43 @@ impl PowerElement {
         initial_current_level: fbroker::PowerLevel,
         dependencies: Vec<fbroker::LevelDependency>,
     ) -> Result<Self> {
-        let power_element_context =
-            PowerElementContext::builder(topology, element_name, valid_levels)
-                .initial_current_level(initial_current_level)
-                .dependencies(dependencies)
-                .build()
-                .await?;
+        let (lessor_proxy, lessor_server_end) = create_proxy::<fbroker::LessorMarker>();
+        let (element_control_proxy, element_control_server_end) =
+            create_proxy::<fbroker::ElementControlMarker>();
+        let (element_runner_client, element_runner_server) =
+            create_endpoints::<fbroker::ElementRunnerMarker>();
 
-        let assertive_dependency_token =
-            power_element_context.assertive_dependency_token().expect("token not registered");
-        let opportunistic_dependency_token =
-            power_element_context.opportunistic_dependency_token().expect("token not registered");
+        topology
+            .add_element(fbroker::ElementSchema {
+                element_name: Some(element_name.into()),
+                initial_current_level: Some(initial_current_level),
+                valid_levels: Some(valid_levels.to_vec()),
+                dependencies: Some(dependencies),
+                lessor_channel: Some(lessor_server_end),
+                element_control: Some(element_control_server_end),
+                element_runner: Some(element_runner_client),
+                ..Default::default()
+            })
+            .await?
+            .map_err(|d| anyhow!("{d:?}"))?;
 
-        // Destructure PowerElementContext and convert current_level and required_level proxies to
-        // client ends. `into_client_end` will only succeed if there are no active clones of the
-        // proxy.
-        let PowerElementContext { element_control, lessor, required_level, current_level, .. } =
-            power_element_context;
+        let assertive_dependency_token = fbroker::DependencyToken::create();
+        element_control_proxy
+            .register_dependency_token(
+                assertive_dependency_token.duplicate_handle(Rights::SAME_RIGHTS)?,
+                fbroker::DependencyType::Assertive,
+            )
+            .await?
+            .map_err(|e| anyhow!("register assertive dependency token failed: {e:?}"))?;
+
+        let opportunistic_dependency_token = fbroker::DependencyToken::create();
+        element_control_proxy
+            .register_dependency_token(
+                opportunistic_dependency_token.duplicate_handle(Rights::SAME_RIGHTS)?,
+                fbroker::DependencyType::Opportunistic,
+            )
+            .await?
+            .map_err(|e| anyhow!("register opportunistic dependency token failed: {e:?}"))?;
 
         let (component_controller, controller_server_end) = fidl::endpoints::create_proxy();
         let _ = realm
@@ -97,10 +110,9 @@ impl PowerElement {
             .await?;
 
         Ok(Self {
-            element_control,
-            lessor,
-            required_level: RefCell::new(Some(required_level.into_client_end().unwrap())),
-            current_level: RefCell::new(Some(current_level.into_client_end().unwrap())),
+            element_control: element_control_proxy,
+            lessor: lessor_proxy,
+            element_runner: RefCell::new(Some(element_runner_server)),
             assertive_dependency_token,
             opportunistic_dependency_token,
             initial_level: initial_current_level,
@@ -120,13 +132,8 @@ impl PowerTopology {
             .map_err(|err| anyhow!("Failed to run power elements, no realm connection {}", err))?;
 
         for (element_name, element) in self.elements.borrow().iter() {
-            let current_level = element
-                .current_level
-                .borrow_mut()
-                .take()
-                .ok_or_else(|| anyhow!("Element ({element_name}) not added"))?;
-            let required_level = element
-                .required_level
+            let element_runner = element
+                .element_runner
                 .borrow_mut()
                 .take()
                 .ok_or_else(|| anyhow!("Element ({element_name}) not added"))?;
@@ -148,9 +155,8 @@ impl PowerTopology {
 
             let proxy = connect_to_protocol_at_dir_root::<ControlMarker>(&element_exposed_dir)?;
 
-            if let Err(_) = proxy
-                .start(&element_name, initial_current_level, required_level, current_level)
-                .await?
+            if let Err(_) =
+                proxy.start(&element_name, initial_current_level, element_runner).await?
             {
                 error!(element_name:%; "Failed to run power element");
                 return Err(anyhow!("Failed to run power element: {}", element_name));

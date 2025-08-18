@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use fidl::endpoints::ClientEnd;
 use fidl_test_powerelementrunner::{ControlRequest, ControlRequestStream, ControlStartResult};
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
@@ -27,16 +26,11 @@ async fn serve_power_element_runner(mut stream: ControlRequestStream) {
                 ControlRequest::Start {
                     initial_current_level,
                     element_name,
-                    required_level_client,
-                    current_level_client,
+                    element_runner,
                     responder,
                 } => {
-                    let result = run_power_element(
-                        initial_current_level,
-                        element_name,
-                        required_level_client,
-                        current_level_client,
-                    );
+                    let result =
+                        run_power_element(initial_current_level, element_name, element_runner);
                     responder.send(result)?;
                 }
                 ControlRequest::_UnknownMethod { .. } => unimplemented!(),
@@ -55,59 +49,56 @@ async fn serve_power_element_runner(mut stream: ControlRequestStream) {
 fn run_power_element(
     initial_current_level: u8,
     element_name: String,
-    required_level_client: ClientEnd<fbroker::RequiredLevelMarker>,
-    current_level_client: ClientEnd<fbroker::CurrentLevelMarker>,
+    element_runner: fidl::endpoints::ServerEnd<fbroker::ElementRunnerMarker>,
 ) -> ControlStartResult {
-    let current_level_proxy = current_level_client.into_proxy();
-    let required_level_proxy = required_level_client.into_proxy();
+    let mut stream = element_runner.into_stream();
     fasync::Task::local(async move {
         let mut last_required_level = initial_current_level;
 
-        loop {
+        log::debug!(
+            element_name:?,
+            last_required_level:?;
+            "run_power_element: waiting for new level"
+        );
+        while let Some(request) = {
             log::debug!(
                 element_name:?,
                 last_required_level:?;
                 "run_power_element: waiting for new level"
             );
-            match required_level_proxy.watch().await {
-                Ok(Ok(required_level)) => {
+            stream.try_next().await.expect("run_power_element: ElementRunner stream failed")
+        } {
+            match request {
+                fbroker::ElementRunnerRequest::SetLevel { level, responder } => {
                     log::debug!(
                         element_name:?,
-                        required_level:?,
+                        level:?,
                         last_required_level:?;
-                        "run_power_element: new level requested"
+                        "run_power_element: SetLevel received"
                     );
                     fuchsia_trace::counter!(
-                        c"power-broker", c"required_level.watch.return", 0,
-                        &element_name => required_level as u32
+                        c"power-broker", c"element_runner.set_level.update", 0,
+                        &element_name => level as u32
                     );
-                    if required_level == last_required_level {
+                    if level == last_required_level {
                         log::debug!(
                             element_name:?,
-                            required_level:?,
+                            level:?,
                             last_required_level:?;
-                            "run_power_element: required level has not changed, skipping."
+                            "run_power_element: required level has not changed"
                         );
-                        continue;
                     }
 
-                    fuchsia_trace::counter!(
-                        c"power-broker", c"current_level.update.call", 0,
-                        &element_name => required_level as u32
-                    );
-                    let res = current_level_proxy.update(required_level).await;
-                    if let Err(error) = res {
-                        log::warn!(error:?; "update_fn: updating current level failed");
+                    if let Err(e) = responder.send() {
+                        error!(
+                            "run_power_element: failed to send SetLevel response for {}: {:?}",
+                            element_name, e
+                        );
                     }
-                    last_required_level = required_level;
+                    last_required_level = level;
                 }
-                error => {
-                    log::warn!(
-                        element_name:?,
-                        error:?;
-                        "run_power_element: watch_required_level failed"
-                    );
-                    break;
+                fbroker::ElementRunnerRequest::_UnknownMethod { ordinal, .. } => {
+                    error!(element_name:?, ordinal:?; "run_power_element: Unknown ElementRunnerRequest method");
                 }
             }
         }

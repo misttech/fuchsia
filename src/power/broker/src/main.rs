@@ -475,7 +475,7 @@ impl ElementRunnerHandler {
                         match required_level {
                             Some(Some(required_level)) => {
                                 if let Err(err) = element_runner.set_level(required_level.level).await {
-                                    log::error!("ElementRunnerHandler: set_level error: {:?}", err);
+                                    log::warn!("ElementRunnerHandler: set_level error: {:?}", err);
                                 } else {
                                     broker.borrow_mut().update_current_level(&element_id, required_level);
                                 }
