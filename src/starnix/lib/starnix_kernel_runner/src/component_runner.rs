@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{run_component_features, MountAction};
-use anyhow::{anyhow, bail, Context, Error};
-use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
+use crate::{MountAction, run_component_features};
+use anyhow::{Context, Error, anyhow, bail};
 use fidl::AsyncChannel;
+use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
 use fidl_fuchsia_component_runner::{
     ComponentControllerMarker, ComponentControllerRequest, ComponentControllerRequestStream,
     ComponentStartInfo,
@@ -14,11 +14,11 @@ use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt};
 use rand::distr::Alphanumeric;
-use rand::{rng, Rng};
-use serde::de::Error as _;
+use rand::{Rng, rng};
 use serde::Deserialize;
+use serde::de::Error as _;
 use starnix_core::execution::{create_init_child_process, execute_task_with_prerun_result};
-use starnix_core::fs::fuchsia::{create_file_from_handle, RemoteFs, SyslogFile};
+use starnix_core::fs::fuchsia::{RemoteFs, SyslogFile, create_file_from_handle};
 use starnix_core::task::{CurrentTask, ExitStatus, Task};
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::{
@@ -31,7 +31,7 @@ use starnix_types::ownership::WeakRef;
 use starnix_uapi::auth::{Capabilities, Credentials};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errno;
-use starnix_uapi::errors::{Errno, EEXIST, ENOTDIR};
+use starnix_uapi::errors::{EEXIST, ENOTDIR, Errno};
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;

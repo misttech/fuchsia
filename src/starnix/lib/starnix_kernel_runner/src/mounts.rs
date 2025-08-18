@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Error};
+use anyhow::{Error, anyhow, bail};
 use fidl_fuchsia_io as fio;
-use starnix_core::fs::fuchsia::{create_remotefs_filesystem, RemoteBundle};
+use starnix_core::fs::fuchsia::{RemoteBundle, create_remotefs_filesystem};
 use starnix_core::fs::tmpfs::TmpFs;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::MountParams;

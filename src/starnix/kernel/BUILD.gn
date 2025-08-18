@@ -4,13 +4,9 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
-import("//build/rust/rustc_macro.gni")
-import("//build/rust/rustc_test.gni")
-import("//build/toolchain/concurrent_jobs.gni")
 import("//src/starnix/build/args.gni")
 import("//src/starnix/kernel/starnix.gni")
 import("//src/starnix/lib/gzip/gzip.gni")
-import("//src/storage/fshost/generated_fshost_config.gni")
 
 group("kernel") {
   deps = [ ":starnix_kernel_package" ]
@@ -22,7 +18,6 @@ group("tests") {
   deps = [
     ":starnix-tests",
     ":starnix_kernel_bin-tests",
-    ":starnix_kernel_runner-tests",
   ]
 }
 
@@ -41,7 +36,6 @@ rustc_binary("starnix_kernel_bin") {
   deps = [
     ":android_5.10_kernel_config",
     ":starnix_core",
-    ":starnix_kernel_runner",
     ":starnix_kernel_structured_config",
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
     "//sdk/fidl/fuchsia.memory.attribution:fuchsia.memory.attribution_rust",
@@ -58,6 +52,7 @@ rustc_binary("starnix_kernel_bin") {
     "//src/lib/trace/rust:trace",
     "//src/lib/trace/rust:trace-provider",
     "//src/starnix/lib/extended_pstate:lib",
+    "//src/starnix/lib/starnix_kernel_runner",
     "//src/starnix/lib/starnix_logging",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-lock",
@@ -507,93 +502,6 @@ rustc_library("starnix_core") {
   test_vars = _concurrent_jobs.vars
 }
 
-rustc_library("starnix_kernel_runner") {
-  name = "starnix_kernel_runner"
-  edition = "2021"
-  version = "0.1.0"
-  with_unit_tests = true
-  source_root = "runner/lib.rs"
-
-  # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
-  exclude_toolchain_tags = [
-    "asan",
-    "hwasan",
-  ]
-
-  sources = [
-    "runner/component_runner.rs",
-    "runner/container.rs",
-    "runner/features.rs",
-    "runner/lib.rs",
-    "runner/mounts.rs",
-    "runner/serve_protocols.rs",
-  ]
-
-  deps = [
-    ":starnix_container_structured_config",
-    ":starnix_core",
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
-    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
-    "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
-    "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
-    "//sdk/fidl/fuchsia.memory.attribution:fuchsia.memory.attribution_rust",
-    "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
-    "//sdk/fidl/fuchsia.starnix.container:fuchsia.starnix.container_rust",
-    "//sdk/fidl/fuchsia.time.external:fuchsia.time.external_rust",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
-    "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
-    "//sdk/fidl/fuchsia.ui.policy:fuchsia.ui.policy_rust",
-    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
-    "//sdk/rust/zx",
-    "//src/lib/diagnostics/inspect/contrib/rust",
-    "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-runtime",
-    "//src/lib/ui/fuchsia-scenic",
-    "//src/performance/memory/attribution/server",
-    "//src/starnix/lib/bootreason",
-    "//src/starnix/lib/devicetree",
-    "//src/starnix/lib/features:starnix_features",
-    "//src/starnix/lib/starnix_logging",
-    "//src/starnix/lib/starnix_sync",
-    "//src/starnix/lib/starnix_types",
-    "//src/starnix/lib/starnix_uapi",
-    "//src/starnix/modules",
-    "//src/starnix/modules/ashmem",
-    "//src/starnix/modules/fastrpc",
-    "//src/starnix/modules/framebuffer",
-    "//src/starnix/modules/gpu",
-    "//src/starnix/modules/gralloc",
-    "//src/starnix/modules/hvdcp_opti:hvdcp_opti_module",
-    "//src/starnix/modules/input",
-    "//src/starnix/modules/kgsl",
-    "//src/starnix/modules/layeredfs",
-    "//src/starnix/modules/magma",
-    "//src/starnix/modules/nanohub",
-    "//src/starnix/modules/overlayfs",
-    "//src/starnix/modules/perfetto_consumer",
-    "//src/starnix/modules/perfetto_producer",
-    "//src/starnix/modules/thermal",
-    "//src/starnix/modules/touch_power_policy",
-    "//src/sys/lib/fuchsia-zbi",
-    "//src/sys/lib/runner",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:bstr",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:rand",
-    "//third_party/rust_crates:serde",
-  ]
-
-  test_deps = [ "//src/lib/fuchsia" ]
-
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
-}
-
 static_library("restricted_trampoline") {
   sources = [ "execution/trampoline_${current_cpu}.S" ]
 }
@@ -757,16 +665,4 @@ fuchsia_unittest_package("starnix-tests") {
 fuchsia_unittest_package("starnix_kernel_bin-tests") {
   deps = [ ":starnix_kernel_bin_test" ]
   manifest = "meta/starnix_kernel_bin_tests.cml"
-}
-
-fuchsia_unittest_package("starnix_kernel_runner-tests") {
-  deps = [ ":starnix_kernel_runner_test" ]
-  manifest = "meta/starnix_kernel_runner_tests.cml"
-  test_specs = {
-    log_settings = {
-      # Tests exercise failure cases, so ERROR logs are expected.
-      max_severity = "ERROR"
-    }
-  }
-  test_type = "starnix"
 }

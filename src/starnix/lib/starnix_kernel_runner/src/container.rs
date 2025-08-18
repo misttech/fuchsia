@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use crate::{
-    expose_root, parse_features, parse_numbered_handles, run_container_features,
-    serve_component_runner, serve_container_controller, serve_graphical_presenter, Features,
-    MountAction,
+    Features, MountAction, expose_root, parse_features, parse_numbered_handles,
+    run_container_features, serve_component_runner, serve_container_controller,
+    serve_graphical_presenter,
 };
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{Context, Error, anyhow, bail};
 use bootreason::get_android_bootreason;
 use bstr::{BString, ByteSlice};
 use devicetree::parser::parse_devicetree;
@@ -35,15 +35,15 @@ use starnix_core::time::utc::update_utc_clock;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::{FileSystemOptions, FsContext, LookupContext, Namespace, WhatToMount};
 use starnix_logging::{
-    log_debug, log_error, log_info, log_warn, trace_duration, CATEGORY_STARNIX,
-    NAME_CREATE_CONTAINER,
+    CATEGORY_STARNIX, NAME_CREATE_CONTAINER, log_debug, log_error, log_info, log_warn,
+    trace_duration,
 };
 use starnix_modules::{init_common_devices, register_common_file_systems};
 use starnix_modules_layeredfs::LayeredFs;
 use starnix_modules_magma::get_magma_params;
 use starnix_modules_overlayfs::OverlayStack;
 use starnix_sync::{Locked, Unlocked};
-use starnix_uapi::errors::{SourceContext, ENOENT};
+use starnix_uapi::errors::{ENOENT, SourceContext};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::{errno, tid_t};
@@ -1061,11 +1061,11 @@ mod test {
     use futures::{SinkExt, StreamExt};
     use starnix_core::testing::create_kernel_task_and_unlocked;
     use starnix_core::vfs::FdNumber;
+    use starnix_uapi::CLONE_FS;
     use starnix_uapi::file_mode::{AccessCheck, FileMode};
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::signals::SIGCHLD;
     use starnix_uapi::vfs::ResolveFlags;
-    use starnix_uapi::CLONE_FS;
 
     #[test]
     fn test_parse_cmdline() {

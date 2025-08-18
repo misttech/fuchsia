@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::ContainerStartInfo;
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
 use starnix_core::device::android::bootloader_message_store::android_bootloader_message_store_init;
 use starnix_core::device::remote_block_device::remote_block_device_init;
@@ -20,8 +20,8 @@ use starnix_modules_gralloc::gralloc_device_init;
 use starnix_modules_hvdcp_opti::hvdcp_opti_init;
 use starnix_modules_input::uinput::register_uinput_device;
 use starnix_modules_input::{
-    new_input_relay, EventProxyMode, InputDevice, DEFAULT_KEYBOARD_DEVICE_ID,
-    DEFAULT_MOUSE_DEVICE_ID, DEFAULT_TOUCH_DEVICE_ID,
+    DEFAULT_KEYBOARD_DEVICE_ID, DEFAULT_MOUSE_DEVICE_ID, DEFAULT_TOUCH_DEVICE_ID, EventProxyMode,
+    InputDevice, new_input_relay,
 };
 use starnix_modules_kgsl::kgsl_device_init;
 use starnix_modules_magma::magma_device_init;
@@ -293,14 +293,16 @@ pub fn parse_features(
                 if components.len() != 2 {
                     return Err(e);
                 }
-                let width: u32 = components[0].parse().map_err(|_| anyhow!("Invalid aspect ratio width"))?;
-                let height: u32 = components[1].parse().map_err(|_| anyhow!("Invalid aspect ratio height"))?;
+                let width: u32 =
+                    components[0].parse().map_err(|_| anyhow!("Invalid aspect ratio width"))?;
+                let height: u32 =
+                    components[1].parse().map_err(|_| anyhow!("Invalid aspect ratio height"))?;
                 features.aspect_ratio = Some(AspectRatio { width, height });
             }
             (Feature::AspectRatio, None) => {
                 return Err(anyhow!(
                     "Aspect ratio feature must contain the aspect ratio in the format: aspect_ratio:w:h"
-                ))
+                ));
             }
             (Feature::Container, _) => features.container = true,
             (Feature::CustomArtifacts, _) => features.custom_artifacts = true,
@@ -308,22 +310,30 @@ pub fn parse_features(
             (Feature::Framebuffer, _) => features.framebuffer = true,
             (Feature::Gralloc, _) => features.gralloc = true,
             (Feature::Kgsl, _) => features.kgsl = true,
-            (Feature::Magma, _) => if features.magma_supported_vendors.is_none() {
-                const VENDOR_ARM: u16 = 0x13B5;
-                const VENDOR_INTEL: u16 = 0x8086;
-                features.magma_supported_vendors = Some(vec![VENDOR_ARM, VENDOR_INTEL])
-            },
+            (Feature::Magma, _) => {
+                if features.magma_supported_vendors.is_none() {
+                    const VENDOR_ARM: u16 = 0x13B5;
+                    const VENDOR_INTEL: u16 = 0x8086;
+                    features.magma_supported_vendors = Some(vec![VENDOR_ARM, VENDOR_INTEL])
+                }
+            }
             (Feature::MagmaSupportedVendors, Some(arg)) => {
                 features.magma_supported_vendors = Some(
                     arg.split(',')
                         .map(|s| {
-                            let err = anyhow!("Feature format must be: magma_supported_vendors:0x1234[,0xabcd]");
+                            let err = anyhow!(
+                                "Feature format must be: magma_supported_vendors:0x1234[,0xabcd]"
+                            );
                             let trimmed = s.trim_start_matches("0x");
                             u16::from_str_radix(trimmed, 16).map_err(|_| err)
-                        }).collect::<Result<Vec<u16>, Error>>()?);
-            },
+                        })
+                        .collect::<Result<Vec<u16>, Error>>()?,
+                );
+            }
             (Feature::MagmaSupportedVendors, None) => {
-                return Err(anyhow!("Feature format must be: magma_supported_vendors:0x1234[,0xabcd]"))
+                return Err(anyhow!(
+                    "Feature format must be: magma_supported_vendors:0x1234[,0xabcd]"
+                ));
             }
             (Feature::Nanohub, _) => features.nanohub = true,
             (Feature::Fastrpc, _) => features.fastrpc = true,
@@ -331,7 +341,9 @@ pub fn parse_features(
             (Feature::NetworkManager, _) => features.network_manager = true,
             (Feature::Gfxstream, _) => features.gfxstream = true,
             (Feature::Bpf, Some(version)) => features.kernel.bpf_v2 = version == "v2",
-            (Feature::Bpf, None) => return Err(anyhow!("bpf feature must have an argument (e.g. \"bpf:v2\")")),
+            (Feature::Bpf, None) => {
+                return Err(anyhow!("bpf feature must have an argument (e.g. \"bpf:v2\")"));
+            }
             (Feature::EnableSuid, _) => features.kernel.enable_suid = true,
             (Feature::IoUring, _) => features.kernel.io_uring = true,
             (Feature::ErrorOnFailedReboot, _) => features.kernel.error_on_failed_reboot = true,
@@ -358,11 +370,11 @@ pub fn parse_features(
             }
             (Feature::SelinuxTestSuite, _) => features.kernel.selinux_test_suite = true,
             (Feature::TestData, _) => features.test_data = true,
-            (Feature::Thermal, Some(arg)) =>
-                features.thermal = Some(
-                    arg.split(',').map(String::from).collect::<Vec<String>>()),
+            (Feature::Thermal, Some(arg)) => {
+                features.thermal = Some(arg.split(',').map(String::from).collect::<Vec<String>>())
+            }
             (Feature::Thermal, None) => {
-                return Err(anyhow!("thermal feature must have an argument"))
+                return Err(anyhow!("thermal feature must have an argument"));
             }
             (Feature::HvdcpOpti, _) => features.hvdcp_opti = true,
         };
