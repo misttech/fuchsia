@@ -41,7 +41,8 @@ type SdmmcTiming = strict enum : uint8 {
     SDR50 = 7;
     SDR104 = 8;
     DDR50 = 9;
-    MAX = 10;
+    HS400_ENHANCED_STROBE = 10;
+    MAX = 11;
 };
 
 type SdmmcBuffer = strict resource union {
@@ -94,6 +95,7 @@ type SdmmcHostCap = strict bits : uint64 {
     DDR50 = 0x40;
     /// The host does not require tuning for SDR50.
     NO_TUNING_SDR50 = 0x80;
+    HS400_ENHANCED_STROBE = 0x100;
 };
 
 type SdmmcHostPrefs = strict bits : uint64 {

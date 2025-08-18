@@ -92,7 +92,9 @@ void PciSdhci::GetBaseClock(fdf::Arena& arena, GetBaseClockCompleter::Sync& comp
 }
 
 void PciSdhci::GetQuirks(fdf::Arena& arena, GetQuirksCompleter::Sync& completer) {
-  completer.buffer(arena).Reply(fuchsia_hardware_sdhci::Quirk::kStripResponseCrcPreserveOrder, 0);
+  completer.buffer(arena).Reply(fuchsia_hardware_sdhci::Quirk::kStripResponseCrcPreserveOrder |
+                                    fuchsia_hardware_sdhci::Quirk::kNoHs400EnhancedStrobe,
+                                0);
 }
 
 void PciSdhci::HwReset(fdf::Arena& arena, HwResetCompleter::Sync& completer) {

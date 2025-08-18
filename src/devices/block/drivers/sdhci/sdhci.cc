@@ -1221,6 +1221,9 @@ zx_status_t Sdhci::Init() {
   if (!tuning_for_sdr50) {
     info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kNoTuningSdr50;
   }
+  if (!(quirks_ & fuchsia_hardware_sdhci::Quirk::kNoHs400EnhancedStrobe)) {
+    info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kHs400EnhancedStrobe;
+  }
   info_.caps |= fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12;
 
   // allocate and setup DMA descriptor

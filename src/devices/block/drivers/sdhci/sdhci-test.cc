@@ -408,11 +408,13 @@ TEST_F(SdhciTest, HostInfo) {
   client_.buffer(arena)->HostInfo().ThenExactlyOnce([](auto& result) {
     ASSERT_TRUE(result.ok());
     ASSERT_TRUE(result->is_ok());
-    EXPECT_EQ(result->value()->info.caps, fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8 |
-                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330 |
-                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
-                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50 |
-                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr104);
+    EXPECT_EQ(result->value()->info.caps,
+              fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr104 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kHs400EnhancedStrobe);
   });
   driver_test().runtime().RunUntilIdle();
 
@@ -438,12 +440,14 @@ TEST_F(SdhciTest, HostInfoNoDma) {
   client_.buffer(arena)->HostInfo().ThenExactlyOnce([](auto& result) {
     ASSERT_TRUE(result.ok());
     ASSERT_TRUE(result->is_ok());
-    EXPECT_EQ(result->value()->info.caps, fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8 |
-                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330 |
-                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
-                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kDdr50 |
-                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50 |
-                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kNoTuningSdr50);
+    EXPECT_EQ(result->value()->info.caps,
+              fuchsia_hardware_sdmmc::SdmmcHostCap::kBusWidth8 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kVoltage330 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kDdr50 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kSdr50 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kNoTuningSdr50 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kHs400EnhancedStrobe);
   });
   driver_test().runtime().RunUntilIdle();
 
@@ -462,8 +466,10 @@ TEST_F(SdhciTest, HostInfoNoTuning) {
   client_.buffer(arena)->HostInfo().ThenExactlyOnce([](auto& result) {
     ASSERT_TRUE(result.ok());
     ASSERT_TRUE(result->is_ok());
-    EXPECT_EQ(result->value()->info.caps, fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
-                                              fuchsia_hardware_sdmmc::SdmmcHostCap::kNoTuningSdr50);
+    EXPECT_EQ(result->value()->info.caps,
+              fuchsia_hardware_sdmmc::SdmmcHostCap::kAutoCmd12 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kNoTuningSdr50 |
+                  fuchsia_hardware_sdmmc::SdmmcHostCap::kHs400EnhancedStrobe);
   });
   driver_test().runtime().RunUntilIdle();
 

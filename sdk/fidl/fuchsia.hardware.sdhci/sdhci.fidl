@@ -32,6 +32,7 @@ type Quirk = strict bits : uint64 {
     /// example, a boundary alignment of 0x10000 will cause buffers crossing 64K boundaries to be
     /// split across multiple descriptors.
     USE_DMA_BOUNDARY_ALIGNMENT = 0x20;
+    NO_HS400_ENHANCED_STROBE = 0x40;
 };
 
 @discoverable
