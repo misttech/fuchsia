@@ -131,6 +131,7 @@ pub fn serve_telemetry(
     // Inspect nodes to hold time series and metadata for other nodes
     const METADATA_NODE_NAME: &str = "metadata";
     let inspect_metadata_node = inspect_node.create_child(METADATA_NODE_NAME);
+    let inspect_metadata_path = format!("{inspect_path}/{METADATA_NODE_NAME}");
     let inspect_time_series_node = inspect_node.create_child("time_series");
     let driver_specific_time_series_node = inspect_time_series_node.create_child("driver_specific");
     let driver_counters_time_series_node =
@@ -149,7 +150,7 @@ pub fn serve_telemetry(
         cobalt_proxy.clone(),
         &inspect_node,
         &inspect_metadata_node,
-        &format!("{inspect_path}/{METADATA_NODE_NAME}"),
+        &inspect_metadata_path,
         persistence_req_sender,
         &time_matrix_client,
     );
@@ -165,6 +166,8 @@ pub fn serve_telemetry(
         processors::client_iface_counters::ClientIfaceCountersLogger::new(
             cobalt_proxy,
             monitor_svc_proxy,
+            &inspect_metadata_node,
+            &inspect_metadata_path,
             &time_matrix_client,
             driver_counters_time_series_client,
             driver_gauges_time_series_client,

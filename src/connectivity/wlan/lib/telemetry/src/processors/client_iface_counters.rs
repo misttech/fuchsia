@@ -4,9 +4,11 @@
 
 use crate::util::cobalt_logger::log_cobalt_batch;
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
-use fidl_fuchsia_wlan_stats as fidl_stats;
 use fuchsia_async::{self as fasync, TimeoutExt};
+use fuchsia_inspect_contrib::nodes::LruCacheNode;
+use fuchsia_inspect_derive::{InspectNode, Unit};
 use futures::lock::Mutex;
+use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_stats as fidl_stats};
 
 use log::{error, warn};
 use std::collections::HashMap;
@@ -14,15 +16,17 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use windowed_stats::experimental::clock::Timed;
 use windowed_stats::experimental::series::interpolation::{Constant, LastSample};
+use windowed_stats::experimental::series::metadata::BitSetNode;
 use windowed_stats::experimental::series::statistic::{
-    ArithmeticMean, Last, LatchMax, Max, Min, Sum,
+    ArithmeticMean, Last, LatchMax, Max, Min, PostAggregation, Sum, Union,
 };
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
 use windowed_stats::experimental::serve::{InspectSender, InspectedTimeMatrix};
 use wlan_legacy_metrics_registry as metrics;
 
-// Include a timeout on stats calls so that if the driver deadlocks, telemtry doesn't get stuck.
+// Include a timeout on stats calls so that if the driver deadlocks, telemetry doesn't get stuck.
 const GET_IFACE_STATS_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
+const GET_SIGNAL_REPORT_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
 
 #[derive(Debug)]
 enum IfaceState {
@@ -37,7 +41,9 @@ pub struct ClientIfaceCountersLogger<S> {
     iface_state: Arc<Mutex<IfaceState>>,
     cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
     monitor_svc_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
+    inspect_metadata_node: Mutex<InspectMetadataNode>,
     time_series_stats: IfaceCountersTimeSeries,
+    signal_time_series: SignalTimeSeries,
     driver_counters_time_matrix_client: S,
     driver_counters_time_series: Arc<Mutex<CountersTimeSeriesMap>>,
     driver_gauges_time_matrix_client: S,
@@ -50,6 +56,8 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
     pub fn new(
         cobalt_proxy: fidl_fuchsia_metrics::MetricEventLoggerProxy,
         monitor_svc_proxy: fidl_fuchsia_wlan_device_service::DeviceMonitorProxy,
+        inspect_metadata_node: &InspectNode,
+        inspect_metadata_path: &str,
         time_matrix_client: &S,
         driver_counters_time_matrix_client: S,
         driver_gauges_time_matrix_client: S,
@@ -58,7 +66,9 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
             iface_state: Arc::new(Mutex::new(IfaceState::NotAvailable)),
             cobalt_proxy,
             monitor_svc_proxy,
+            inspect_metadata_node: Mutex::new(InspectMetadataNode::new(inspect_metadata_node)),
             time_series_stats: IfaceCountersTimeSeries::new(time_matrix_client),
+            signal_time_series: SignalTimeSeries::new(time_matrix_client, inspect_metadata_path),
             driver_counters_time_matrix_client,
             driver_counters_time_series: Arc::new(Mutex::new(HashMap::new())),
             driver_gauges_time_matrix_client,
@@ -185,6 +195,21 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
                             warn!("Failed to get interface stats: {:?}", error);
                         }
                     }
+
+                    match telemetry_proxy
+                        .get_signal_report()
+                        .on_timeout(GET_SIGNAL_REPORT_TIMEOUT, || {
+                            Ok(Err(zx::Status::TIMED_OUT.into_raw()))
+                        })
+                        .await
+                    {
+                        Ok(Ok(report)) => {
+                            self.log_signal_report_inspect(&report).await;
+                        }
+                        error => {
+                            warn!("Failed to get signal report: {:?}", error);
+                        }
+                    }
                 }
             }
         }
@@ -236,6 +261,30 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
             }
         }
         *prev_connection_stats = stats.connection_stats;
+    }
+
+    async fn log_signal_report_inspect(&self, report: &fidl_stats::SignalReport) {
+        if let Some(report) = &report.connection_signal_report {
+            if let Some(channel) = report.channel {
+                let channel = InspectWlanChannel::from(channel);
+                let channel_id =
+                    self.inspect_metadata_node.lock().await.wlan_channels.insert(channel) as u64;
+                self.signal_time_series
+                    .wlan_channels
+                    .fold_or_log_error(Timed::now(1 << channel_id));
+            }
+            if let Some(tx_rate_500kbps) = report.tx_rate_500kbps {
+                self.signal_time_series
+                    .tx_rate_500kbps
+                    .fold_or_log_error(Timed::now(tx_rate_500kbps as u64));
+            }
+            if let Some(rssi) = report.rssi_dbm {
+                self.signal_time_series.rssi.fold_or_log_error(Timed::now(rssi as i64));
+            }
+            if let Some(snr) = report.snr_db {
+                self.signal_time_series.snr.fold_or_log_error(Timed::now(snr as i64));
+            }
+        }
     }
 }
 
@@ -487,11 +536,99 @@ impl IfaceCountersTimeSeries {
     }
 }
 
+#[derive(Debug, Clone)]
+struct SignalTimeSeries {
+    wlan_channels: InspectedTimeMatrix<u64>,
+    tx_rate_500kbps: InspectedTimeMatrix<u64>,
+    rssi: InspectedTimeMatrix<i64>,
+    snr: InspectedTimeMatrix<i64>,
+}
+
+impl SignalTimeSeries {
+    pub fn new<S: InspectSender>(client: &S, inspect_metadata_path: &str) -> Self {
+        let wlan_channels = client.inspect_time_matrix_with_metadata(
+            "wlan_channels",
+            TimeMatrix::<Union<u64>, LastSample>::new(
+                SamplingProfile::highly_granular(),
+                LastSample::or(0),
+            ),
+            BitSetNode::from_path(format!(
+                "{}/{}",
+                inspect_metadata_path,
+                InspectMetadataNode::WLAN_CHANNELS,
+            )),
+        );
+        let tx_rate_500kbps = client.inspect_time_matrix(
+            "tx_rate_500kbps",
+            TimeMatrix::<_, Constant>::with_statistic(
+                SamplingProfile::default(),
+                Constant::default(),
+                PostAggregation::<ArithmeticMean<u64>, _>::from_transform(|aggregation: f32| {
+                    aggregation.ceil() as u64
+                }),
+            ),
+        );
+        let rssi = client.inspect_time_matrix(
+            "rssi",
+            TimeMatrix::<_, Constant>::with_statistic(
+                SamplingProfile::default(),
+                Constant::default(),
+                PostAggregation::<ArithmeticMean<i64>, _>::from_transform(|aggregation: f32| {
+                    aggregation.ceil() as i64
+                }),
+            ),
+        );
+        let snr = client.inspect_time_matrix(
+            "snr",
+            TimeMatrix::<_, Constant>::with_statistic(
+                SamplingProfile::default(),
+                Constant::default(),
+                PostAggregation::<ArithmeticMean<i64>, _>::from_transform(|aggregation: f32| {
+                    aggregation.ceil() as i64
+                }),
+            ),
+        );
+        Self { wlan_channels, tx_rate_500kbps, rssi, snr }
+    }
+}
+
+#[derive(PartialEq, Eq, Unit, Hash)]
+struct InspectWlanChannel {
+    primary: u8,
+    cbw: String,
+    secondary80: u8,
+}
+
+impl From<fidl_ieee80211::WlanChannel> for InspectWlanChannel {
+    fn from(channel: fidl_ieee80211::WlanChannel) -> Self {
+        Self {
+            primary: channel.primary,
+            cbw: format!("{:?}", channel.cbw),
+            secondary80: channel.secondary80,
+        }
+    }
+}
+
+struct InspectMetadataNode {
+    wlan_channels: LruCacheNode<InspectWlanChannel>,
+}
+
+impl InspectMetadataNode {
+    const WLAN_CHANNELS: &'static str = "wlan_channels";
+    const WLAN_CHANNELS_ID_LIMIT: usize = 32;
+
+    fn new(inspect_node: &InspectNode) -> Self {
+        let wlan_channels = inspect_node.create_child(Self::WLAN_CHANNELS);
+        Self { wlan_channels: LruCacheNode::new(wlan_channels, Self::WLAN_CHANNELS_ID_LIMIT) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testing::*;
     use assert_matches::assert_matches;
+    use diagnostics_assertions::{assert_data_tree, AnyNumericProperty};
     use futures::TryStreamExt;
     use std::pin::pin;
     use std::task::Poll;
@@ -508,6 +645,8 @@ mod tests {
         let logger = ClientIfaceCountersLogger::new(
             test_helper.cobalt_proxy.clone(),
             test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
             driver_counters_mock_matrix_client.clone(),
             driver_gauges_mock_matrix_client.clone(),
@@ -549,6 +688,8 @@ mod tests {
         let logger = ClientIfaceCountersLogger::new(
             test_helper.cobalt_proxy.clone(),
             test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
             driver_counters_mock_matrix_client.clone(),
             driver_gauges_mock_matrix_client.clone(),
@@ -572,6 +713,11 @@ mod tests {
         };
         assert_eq!(
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
+            Poll::Pending,
+        );
+        let signal_report = Default::default();
+        assert_eq!(
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -602,6 +748,8 @@ mod tests {
         let logger = ClientIfaceCountersLogger::new(
             test_helper.cobalt_proxy.clone(),
             test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
             driver_counters_mock_matrix_client.clone(),
             driver_gauges_mock_matrix_client.clone(),
@@ -659,6 +807,11 @@ mod tests {
         };
         assert_eq!(
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
+            Poll::Pending,
+        );
+        let signal_report = Default::default();
+        assert_eq!(
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -692,6 +845,8 @@ mod tests {
         let logger = ClientIfaceCountersLogger::new(
             test_helper.cobalt_proxy.clone(),
             test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
             driver_counters_mock_matrix_client.clone(),
             driver_gauges_mock_matrix_client.clone(),
@@ -758,6 +913,11 @@ mod tests {
         };
         assert_eq!(
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
+            Poll::Pending
+        );
+        let signal_report = Default::default();
+        assert_eq!(
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -793,6 +953,98 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_handle_periodic_telemetry_signal_report() {
+        let mut test_helper = setup_test();
+        let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
+        let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
+        let logger = ClientIfaceCountersLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+            driver_counters_mock_matrix_client.clone(),
+            driver_gauges_mock_matrix_client.clone(),
+        );
+
+        let mut handle_iface_created_fut = pin!(logger.handle_iface_created(IFACE_ID));
+        assert_eq!(
+            test_helper.run_and_handle_get_sme_telemetry(&mut handle_iface_created_fut),
+            Poll::Pending
+        );
+
+        let telemetry_support = Default::default();
+        assert_eq!(
+            test_helper.run_and_respond_query_telemetry_support(
+                &mut handle_iface_created_fut,
+                Ok(&telemetry_support)
+            ),
+            Poll::Ready(())
+        );
+
+        let mut test_fut = pin!(logger.handle_periodic_telemetry());
+        let iface_stats = Default::default();
+        assert_eq!(
+            test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
+            Poll::Pending
+        );
+        let signal_report = fidl_stats::SignalReport {
+            connection_signal_report: Some(fidl_stats::ConnectionSignalReport {
+                channel: Some(fidl_ieee80211::WlanChannel {
+                    primary: 6,
+                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                    secondary80: 0,
+                }),
+                tx_rate_500kbps: Some(11),
+                rssi_dbm: Some(-40),
+                snr_db: Some(25),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
+            Poll::Ready(())
+        );
+
+        let mut time_matrix_calls = test_helper.mock_time_matrix_client.fold_buffered_samples();
+        assert_eq!(
+            &time_matrix_calls.drain::<u64>("wlan_channels")[..],
+            &[TimeMatrixCall::Fold(Timed::now(1 << 0))] // 0 is the ID of the WLAN channel
+        );
+        assert_eq!(
+            &time_matrix_calls.drain::<u64>("tx_rate_500kbps")[..],
+            &[TimeMatrixCall::Fold(Timed::now(11))]
+        );
+        assert_eq!(
+            &time_matrix_calls.drain::<i64>("rssi")[..],
+            &[TimeMatrixCall::Fold(Timed::now(-40))]
+        );
+        assert_eq!(
+            &time_matrix_calls.drain::<i64>("snr")[..],
+            &[TimeMatrixCall::Fold(Timed::now(25))]
+        );
+
+        let tree = test_helper.get_inspect_data_tree();
+        assert_data_tree!(@executor test_helper.exec, tree, root: contains {
+            test_stats: contains {
+                metadata: contains {
+                    wlan_channels: contains {
+                        "0": {
+                            "@time": AnyNumericProperty,
+                            "data": contains {
+                                primary: 6u64,
+                                cbw: "Cbw20",
+                                secondary80: 0u64,
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
     fn test_handle_periodic_telemetry_cobalt() {
         let mut test_helper = setup_test();
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
@@ -800,6 +1052,8 @@ mod tests {
         let logger = ClientIfaceCountersLogger::new(
             test_helper.cobalt_proxy.clone(),
             test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
             driver_counters_mock_matrix_client.clone(),
             driver_gauges_mock_matrix_client.clone(),
@@ -823,6 +1077,11 @@ mod tests {
         };
         assert_eq!(
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
+            Poll::Pending
+        );
+        let signal_report = Default::default();
+        assert_eq!(
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -850,8 +1109,10 @@ mod tests {
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
             Poll::Pending
         );
+        assert_eq!(test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut), Poll::Pending);
+        let signal_report: fidl_fuchsia_wlan_stats::SignalReport = Default::default();
         assert_eq!(
-            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -874,6 +1135,8 @@ mod tests {
         let logger = ClientIfaceCountersLogger::new(
             test_helper.cobalt_proxy.clone(),
             test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
             driver_counters_mock_matrix_client.clone(),
             driver_gauges_mock_matrix_client.clone(),
@@ -897,6 +1160,11 @@ mod tests {
         };
         assert_eq!(
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
+            Poll::Pending
+        );
+        let signal_report = Default::default();
+        assert_eq!(
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -922,6 +1190,11 @@ mod tests {
         };
         assert_eq!(
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
+            Poll::Pending
+        );
+        let signal_report = Default::default();
+        assert_eq!(
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -951,8 +1224,10 @@ mod tests {
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
             Poll::Pending
         );
+        assert_eq!(test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut), Poll::Pending);
+        let signal_report = Default::default();
         assert_eq!(
-            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -975,6 +1250,8 @@ mod tests {
         let logger = ClientIfaceCountersLogger::new(
             test_helper.cobalt_proxy.clone(),
             test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
             driver_counters_mock_matrix_client.clone(),
             driver_gauges_mock_matrix_client.clone(),
@@ -998,6 +1275,11 @@ mod tests {
         };
         assert_eq!(
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
+            Poll::Pending
+        );
+        let signal_report = Default::default();
+        assert_eq!(
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -1024,6 +1306,11 @@ mod tests {
         };
         assert_eq!(
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
+            Poll::Pending
+        );
+        let signal_report = Default::default();
+        assert_eq!(
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -1053,8 +1340,10 @@ mod tests {
             test_helper.run_and_respond_iface_stats_req(&mut test_fut, Ok(&iface_stats)),
             Poll::Pending
         );
+        assert_eq!(test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut), Poll::Pending);
+        let signal_report = Default::default();
         assert_eq!(
-            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            test_helper.run_and_respond_get_signal_report(&mut test_fut, Ok(&signal_report)),
             Poll::Ready(())
         );
 
@@ -1206,6 +1495,8 @@ mod tests {
         let logger = ClientIfaceCountersLogger::new(
             test_helper.cobalt_proxy.clone(),
             test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
             &test_helper.mock_time_matrix_client,
             driver_counters_mock_matrix_client.clone(),
             driver_gauges_mock_matrix_client.clone(),

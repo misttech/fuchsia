@@ -208,6 +208,38 @@ impl TestHelper {
         self.exec.run_until_stalled(test_fut)
     }
 
+    pub fn run_and_respond_get_signal_report<T>(
+        &mut self,
+        test_fut: &mut (impl Future<Output = T> + Unpin),
+        signal_report: Result<&fidl_fuchsia_wlan_stats::SignalReport, i32>,
+    ) -> Poll<T> {
+        let result = self.exec.run_until_stalled(test_fut);
+        let telemetry_svc_stream = match &mut self.telemetry_svc_stream {
+            Some(telemetry_svc_stream) if !telemetry_svc_stream.is_terminated() => {
+                telemetry_svc_stream
+            }
+            _ => return result,
+        };
+
+        let mut telemetry_svc_req_fut = pin!(telemetry_svc_stream.try_next());
+        let request = match self.exec.run_until_stalled(&mut telemetry_svc_req_fut) {
+            Poll::Ready(Ok(Some(request))) => request,
+            _ => return result,
+        };
+
+        match request {
+            fidl_fuchsia_wlan_sme::TelemetryRequest::GetSignalReport { responder } => {
+                responder
+                    .send(signal_report)
+                    .expect("expect sending GetSignalReport response to succeed");
+            }
+            _ => {
+                panic!("unexpected request: {request:?}");
+            }
+        }
+        self.exec.run_until_stalled(test_fut)
+    }
+
     pub fn get_logged_metrics(&self, metric_id: u32) -> Vec<MetricEvent> {
         self.cobalt_events.iter().filter(|ev| ev.metric_id == metric_id).cloned().collect()
     }
