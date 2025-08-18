@@ -403,6 +403,26 @@ async fn diff_and_log_connection_stats_cobalt(
     prev: &fidl_stats::ConnectionStats,
     current: &fidl_stats::ConnectionStats,
 ) {
+    // Early return if the counters have dropped. This indicates that the counters have reset
+    // due to reasons like PHY reset. Counters being reset due to re-connection is already
+    // handled outside this function.
+    match (current.rx_unicast_total, prev.rx_unicast_total) {
+        (Some(current), Some(prev)) if current < prev => return,
+        _ => (),
+    }
+    match (current.rx_unicast_drop, prev.rx_unicast_drop) {
+        (Some(current), Some(prev)) if current < prev => return,
+        _ => (),
+    }
+    match (current.tx_total, prev.tx_total) {
+        (Some(current), Some(prev)) if current < prev => return,
+        _ => (),
+    }
+    match (current.tx_drop, prev.tx_drop) {
+        (Some(current), Some(prev)) if current < prev => return,
+        _ => (),
+    }
+
     diff_and_log_rx_cobalt(cobalt_proxy, prev, current).await;
     diff_and_log_tx_cobalt(cobalt_proxy, prev, current).await;
 }
@@ -425,8 +445,14 @@ async fn diff_and_log_rx_cobalt(
             _ => return,
         };
 
-    let rx_total = current_rx_unicast_total - prev_rx_unicast_total;
-    let rx_drop = current_rx_unicast_drop - prev_rx_unicast_drop;
+    let rx_total = match current_rx_unicast_total.checked_sub(prev_rx_unicast_total) {
+        Some(diff) => diff,
+        _ => return,
+    };
+    let rx_drop = match current_rx_unicast_drop.checked_sub(prev_rx_unicast_drop) {
+        Some(diff) => diff,
+        _ => return,
+    };
     let rx_drop_rate = if rx_total > 0 { rx_drop as f64 / rx_total as f64 } else { 0f64 };
 
     metric_events.push(MetricEvent {
@@ -459,8 +485,14 @@ async fn diff_and_log_tx_cobalt(
         _ => return,
     };
 
-    let tx_total = current_tx_total - prev_tx_total;
-    let tx_drop = current_tx_drop - prev_tx_drop;
+    let tx_total = match current_tx_total.checked_sub(prev_tx_total) {
+        Some(diff) => diff,
+        _ => return,
+    };
+    let tx_drop = match current_tx_drop.checked_sub(prev_tx_drop) {
+        Some(diff) => diff,
+        _ => return,
+    };
     let tx_drop_rate = if tx_total > 0 { tx_drop as f64 / tx_total as f64 } else { 0f64 };
 
     metric_events.push(MetricEvent {
@@ -1485,6 +1517,61 @@ mod tests {
         );
         let metrics = test_helper.get_logged_metrics(metrics::BAD_TX_RATE_METRIC_ID);
         assert!(metrics.is_empty())
+    }
+
+    #[test_case(
+        fidl_stats::ConnectionStats {
+            rx_unicast_total: Some(100),
+            rx_unicast_drop: Some(5),
+            tx_total: Some(100),
+            tx_drop: Some(5),
+            ..Default::default()
+        },
+        fidl_stats::ConnectionStats {
+            rx_unicast_total: Some(10),
+            rx_unicast_drop: Some(1),
+            tx_total: Some(100),
+            tx_drop: Some(5),
+            ..Default::default()
+        };
+        "rx regressed"
+    )]
+    #[test_case(
+        fidl_stats::ConnectionStats {
+            tx_total: Some(100),
+            tx_drop: Some(5),
+            rx_unicast_total: Some(100),
+            rx_unicast_drop: Some(5),
+            ..Default::default()
+        },
+        fidl_stats::ConnectionStats {
+            tx_total: Some(10),
+            tx_drop: Some(1),
+            rx_unicast_total: Some(100),
+            rx_unicast_drop: Some(5),
+            ..Default::default()
+        };
+        "tx regressed"
+    )]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_diff_and_log_connection_stats_cobalt_counters_reset(
+        prev_stats: fidl_stats::ConnectionStats,
+        current_stats: fidl_stats::ConnectionStats,
+    ) {
+        let mut test_helper = setup_test();
+        let cobalt_proxy = test_helper.cobalt_proxy.clone();
+        let mut test_fut =
+            pin!(diff_and_log_connection_stats_cobalt(&cobalt_proxy, &prev_stats, &current_stats));
+        // Verify no crash
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+        // Verify neither RX nor TX metrics are logged
+        let metrics = test_helper.get_logged_metrics(metrics::BAD_RX_RATE_METRIC_ID);
+        assert!(metrics.is_empty());
+        let metrics = test_helper.get_logged_metrics(metrics::BAD_TX_RATE_METRIC_ID);
+        assert!(metrics.is_empty());
     }
 
     #[fuchsia::test]
