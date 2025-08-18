@@ -54,10 +54,10 @@ if (is_host) {
 
     deps = [
       "//src/devices/lib/bind:lib",
-      "//src/devices/lib/fidl-ir:lib",
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:serde_json",
       "//third_party/rust_crates:structopt",
+      "//tools/fidl/fidl_ir",
     ]
 
     test_deps = [ ":ir_importer" ]

@@ -8,11 +8,11 @@ mod cpp_generator;
 mod generate;
 mod rust_generator;
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use bind::compiler::{self, CompiledBindRules};
 use bind::debugger::offline_debugger;
 use bind::test;
-use fidl_ir_lib::fidl::*;
+use fidl_ir::*;
 use std::fmt::Write;
 use std::fs::File;
 use std::io::prelude::*;
@@ -309,32 +309,25 @@ fn handle_compile(
 }
 
 /// Converts the name of a protocol to a bind library enum for its transport method.
-fn convert_to_bind_library_enum(
-    identifier: &CompoundIdentifier,
-    prefix: &String,
-) -> Result<String, Error> {
-    let enum_name = identifier
-        .0
-        .strip_prefix(format!("{}/", prefix).as_str())
-        .ok_or_else(|| anyhow!("Failed to strip library name from CompoundIdentifier."))?;
-    let result = format!(include_str!("templates/bind_lib_enum.template"), enum_name = enum_name,);
+fn convert_to_bind_library_enum(compound_ident: &CompoundIdent) -> Result<String, Error> {
+    let enum_name = compound_ident.decl_name();
+    let result = format!(
+        include_str!("templates/bind_lib_enum.template"),
+        enum_name = enum_name.non_canonical(),
+    );
     Ok(result)
 }
 
 fn generate_bind_library(input: &str) -> Result<String, Error> {
-    let in_fidl_ir: FidlIr = serde_json::from_str(input)?;
+    let in_fidl_library: Library = serde_json::from_str(input)?;
 
-    // Use the FIDL library name as the bind library name.
-    let library_name = in_fidl_ir.get_library_name();
-
-    let bind_lib_content = in_fidl_ir
-        .declarations
-        .0
+    let bind_lib_content = in_fidl_library
+        .declaration_order
         .iter()
-        .filter(|entry| {
-            matches!(entry.1, Declaration::Protocol) || matches!(entry.1, Declaration::Service)
+        .filter(|comp_id| {
+            matches!(in_fidl_library.declarations[*comp_id], DeclType::Protocol | DeclType::Service)
         })
-        .map(|entry| convert_to_bind_library_enum(entry.0, &library_name))
+        .map(|comp_id| convert_to_bind_library_enum(comp_id))
         .collect::<Result<Vec<String>, _>>()?
         .join("\n");
 
@@ -343,7 +336,7 @@ fn generate_bind_library(input: &str) -> Result<String, Error> {
     output
         .write_fmt(format_args!(
             include_str!("templates/bind_lib.template"),
-            library_name = library_name,
+            library_name = in_fidl_library.name,
             bind_lib_content = bind_lib_content,
         ))
         .context("Failed to format output")?;
