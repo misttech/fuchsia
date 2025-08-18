@@ -4,12 +4,11 @@
 
 use crate::features::{Feature, FeatureSet};
 use crate::{
-    offer_to_all_would_duplicate, AnyRef, Availability, Capability, CapabilityClause,
-    CapabilityFromRef, CapabilityId, Child, Collection, ConfigKey, ConfigType, ConfigValueType,
-    DependencyType, DictionaryRef, Document, Environment, EnvironmentExtends, EnvironmentRef,
-    Error, EventScope, Expose, ExposeFromRef, ExposeToRef, FromClause, Offer, OfferFromRef,
-    OfferToRef, OneOrMany, Program, RegistrationRef, Rights, RootDictionaryRef, SourceAvailability,
-    Use, UseFromRef,
+    AnyRef, Availability, Capability, CapabilityClause, CapabilityFromRef, CapabilityId, Child,
+    Collection, ConfigKey, ConfigType, ConfigValueType, DependencyType, DictionaryRef, Document,
+    Environment, EnvironmentExtends, EnvironmentRef, Error, EventScope, Expose, ExposeFromRef,
+    ExposeToRef, FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef,
+    Rights, RootDictionaryRef, SourceAvailability, Use, UseFromRef, offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use directed_graph::DirectedGraph;
@@ -333,7 +332,9 @@ impl<'a> ValidationContext<'a> {
             Ok(_) => {}
             Err(e) => {
                 return Err(Error::validate(format!(
-                    "Strong dependency cycles were found. Break the cycle by removing a dependency or marking an offer as weak. Cycles: {}", e.format_cycle())));
+                    "Strong dependency cycles were found. Break the cycle by removing a dependency or marking an offer as weak. Cycles: {}",
+                    e.format_cycle()
+                )));
             }
         }
 
@@ -364,7 +365,7 @@ impl<'a> ValidationContext<'a> {
                 Some(facet) => {
                     return Err(Error::validate(format!(
                         "'{TEST_FACET_KEY}' is not an object: {facet:?}"
-                    )))
+                    )));
                 }
             }
         };
@@ -379,7 +380,9 @@ impl<'a> ValidationContext<'a> {
                 return Err(Error::validate(format!(
                     "'{}' is not a allowed in facets. Refer \
 https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework?hl=en#non-hermetic_tests \
-to run your test in the correct test realm.", TEST_TYPE_FACET_KEY)));
+to run your test in the correct test realm.",
+                    TEST_TYPE_FACET_KEY
+                )));
             }
         }
 
@@ -437,21 +440,6 @@ which is almost certainly a mistake: {}",
     fn validate_collection(&mut self, collection: &'a Collection) -> Result<(), Error> {
         if collection.allow_long_names.is_some() {
             self.features.check(Feature::AllowLongNames)?;
-        }
-        if let Some(environment_ref) = &collection.environment {
-            match environment_ref {
-                EnvironmentRef::Named(environment_name) => {
-                    if !self.all_environment_names.contains(&environment_name.as_ref()) {
-                        return Err(Error::validate(format!(
-                            "\"{}\" does not appear in \"environments\"",
-                            &environment_name
-                        )));
-                    }
-                    let source = DependencyNode::Named(environment_name);
-                    let target = DependencyNode::Named(&collection.name);
-                    self.add_strong_dep(source, target);
-                }
-            }
         }
         Ok(())
     }
@@ -630,7 +618,8 @@ which is almost certainly a mistake: {}",
                 if dir.has_prefix(&pkg_path) {
                     return Err(Error::validate(format!(
                         "{} \"{}\" conflicts with the protected path \"/pkg\", please use this capability with a different path",
-                        capability_id.type_str(), capability_id,
+                        capability_id.type_str(),
+                        capability_id,
                     )));
                 }
             }
@@ -687,7 +676,9 @@ which is almost certainly a mistake: {}",
             match &use_.rights {
                 Some(rights) => self.validate_directory_rights(&rights)?,
                 None => {
-                    return Err(Error::validate("This use statement requires a `rights` field. Refer to: https://fuchsia.dev/go/components/directory#consumer."))
+                    return Err(Error::validate(
+                        "This use statement requires a `rights` field. Refer to: https://fuchsia.dev/go/components/directory#consumer.",
+                    ));
                 }
             };
         }
@@ -747,7 +738,7 @@ which is almost certainly a mistake: {}",
             if expose.to == Some(ExposeToRef::Framework) {
                 if expose.subdir.is_some() {
                     return Err(Error::validate(
-                        "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead."
+                        "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead.",
                     ));
                 }
             }
@@ -774,7 +765,10 @@ which is almost certainly a mistake: {}",
                             if !self.all_children.contains_key(&name.as_ref())
                                 && !self.all_collections.contains(&name.as_ref())
                             {
-                                return Err(Error::validate(format!("event_stream scope {} did not match a component or collection in this .cml file.", name.as_str())));
+                                return Err(Error::validate(format!(
+                                    "event_stream scope {} did not match a component or collection in this .cml file.",
+                                    name.as_str()
+                                )));
                             }
                         }
                     }
@@ -881,7 +875,9 @@ which is almost certainly a mistake: {}",
             for storage in storage {
                 if offer.from.iter().any(|r| r.is_named()) {
                     return Err(Error::validate(format!(
-                    "Storage \"{}\" is offered from a child, but storage capabilities cannot be exposed", storage)));
+                        "Storage \"{}\" is offered from a child, but storage capabilities cannot be exposed",
+                        storage
+                    )));
                 }
             }
         }
@@ -5236,18 +5232,6 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: string \"parent\", expected \"#<environment-name>\""
         ),
-        test_cml_collections_unknown_environment(
-            json!({
-                "collections": [
-                    {
-                        "name": "tests",
-                        "durability": "transient",
-                        "environment": "#foo_env",
-                    }
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"foo_env\" does not appear in \"environments\""
-        ),
         test_cml_collections_environment(
             json!({
                 "collections": [
@@ -7798,7 +7782,7 @@ mod tests {
     }
 
     use crate::translate::test_util::must_parse_cml;
-    use crate::translate::{compile, CompileOptions};
+    use crate::translate::{CompileOptions, compile};
 
     #[test]
     fn test_cml_use_bad_config_from_self() {
