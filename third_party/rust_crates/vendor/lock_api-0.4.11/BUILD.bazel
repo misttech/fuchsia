@@ -56,6 +56,7 @@ rust_library(
     crate_features = [
         "atomic_usize",
         "default",
+        "serde",
     ],
     crate_root = "src/lib.rs",
     edition = "2018",
@@ -81,6 +82,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/lock_api-0.4.11:build_script_build",
         "//third_party/rust_crates/vendor/scopeguard-1.2.0:scopeguard",
+        "//third_party/rust_crates/vendor/serde-1.0.204:serde",
     ],
 )
 
@@ -106,6 +108,7 @@ cargo_build_script(
     crate_features = [
         "atomic_usize",
         "default",
+        "serde",
     ],
     crate_name = "build_script_build",
     crate_root = "build.rs",
