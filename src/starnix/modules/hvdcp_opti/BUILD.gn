@@ -32,7 +32,7 @@ rustc_library("hvdcp_opti_module") {
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/starnix/kernel:starnix_core",
-    "//src/starnix/kernel:starnix_logging",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",

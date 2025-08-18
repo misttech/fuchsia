@@ -62,7 +62,7 @@ rustc_library("nanohub") {
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
     "//src/starnix/kernel:starnix_core",
-    "//src/starnix/kernel:starnix_logging",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",

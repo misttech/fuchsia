@@ -23,7 +23,7 @@ rustc_library("gralloc") {
     "//sdk/fidl/fuchsia.starnix.gralloc:fuchsia.starnix.gralloc_rust",
     "//sdk/rust/zx",
     "//src/starnix/kernel:starnix_core",
-    "//src/starnix/kernel:starnix_logging",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",

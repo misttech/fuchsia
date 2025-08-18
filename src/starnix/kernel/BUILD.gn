@@ -23,7 +23,6 @@ group("tests") {
     ":starnix-tests",
     ":starnix_kernel_bin-tests",
     ":starnix_kernel_runner-tests",
-    ":starnix_logging-tests",
   ]
 }
 
@@ -44,7 +43,6 @@ rustc_binary("starnix_kernel_bin") {
     ":starnix_core",
     ":starnix_kernel_runner",
     ":starnix_kernel_structured_config",
-    ":starnix_logging",
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
     "//sdk/fidl/fuchsia.memory.attribution:fuchsia.memory.attribution_rust",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
@@ -60,6 +58,7 @@ rustc_binary("starnix_kernel_bin") {
     "//src/lib/trace/rust:trace",
     "//src/lib/trace/rust:trace-provider",
     "//src/starnix/lib/extended_pstate:lib",
+    "//src/starnix/lib/starnix_logging",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-lock",
     "//third_party/rust_crates:futures",
@@ -311,7 +310,6 @@ rustc_library("starnix_core") {
 
   deps = [
     ":restricted_trampoline",
-    ":starnix_logging",
     ":vdso_data($bionic_linux_toolchain)",
     "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_rust",
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
@@ -381,6 +379,7 @@ rustc_library("starnix_core") {
     "//src/starnix/lib/split_enum_storage",
     "//src/starnix/lib/starnix_ext",
     "//src/starnix/lib/starnix_lifecycle",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_stack",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
@@ -532,7 +531,6 @@ rustc_library("starnix_kernel_runner") {
   deps = [
     ":starnix_container_structured_config",
     ":starnix_core",
-    ":starnix_logging",
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
@@ -560,6 +558,7 @@ rustc_library("starnix_kernel_runner") {
     "//src/starnix/lib/bootreason",
     "//src/starnix/lib/devicetree",
     "//src/starnix/lib/features:starnix_features",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
@@ -590,57 +589,6 @@ rustc_library("starnix_kernel_runner") {
   ]
 
   test_deps = [ "//src/lib/fuchsia" ]
-
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
-}
-
-rustc_library("starnix_logging") {
-  name = "starnix_logging"
-  edition = "2021"
-  version = "0.1.0"
-  with_unit_tests = true
-  source_root = "logging/lib.rs"
-
-  sources = [
-    "logging/core_dump_list.rs",
-    "logging/lib.rs",
-    "logging/logging.rs",
-    "logging/not_found.rs",
-    "logging/stubs.rs",
-    "logging/trace.rs",
-  ]
-
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/diagnostics/inspect/contrib/rust",
-    "//src/lib/diagnostics/inspect/contrib/stubs:inspect_stubs",
-    "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/fuchsia-runtime",
-    "//src/lib/trace/rust:trace",
-    "//src/starnix/lib/starnix_sync",
-    "//src/starnix/lib/starnix_uapi",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:bstr",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:log",
-    "//third_party/rust_crates:regex",
-  ]
-
-  test_deps = [ "//third_party/rust_crates:pretty_assertions" ]
-
-  features = []
-  if (starnix_disable_logging) {
-    features += [ "disable_logging" ]
-  }
-  if (starnix_enable_tracing) {
-    features += [ "tracing" ]
-  }
-  if (starnix_enable_tracing_firehose) {
-    features += [ "tracing_firehose" ]
-  }
-  if (starnix_enable_trace_and_debug_logs_in_release) {
-    features += [ "trace_and_debug_logs_in_release" ]
-  }
 
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]
 }
@@ -820,8 +768,4 @@ fuchsia_unittest_package("starnix_kernel_runner-tests") {
     }
   }
   test_type = "starnix"
-}
-
-fuchsia_unittest_package("starnix_logging-tests") {
-  deps = [ ":starnix_logging_test" ]
 }

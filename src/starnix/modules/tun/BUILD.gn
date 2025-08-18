@@ -25,7 +25,7 @@ rustc_library("tun") {
     "//src/lib/fuchsia-component",
     "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
     "//src/starnix/kernel:starnix_core",
-    "//src/starnix/kernel:starnix_logging",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",

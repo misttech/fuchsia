@@ -54,7 +54,7 @@ rustc_library("procfs") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/starnix/kernel:starnix_core",
-    "//src/starnix/kernel:starnix_logging",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",

@@ -40,7 +40,7 @@ rustc_library("kernel_manager") {
     "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace",
     "//src/starnix/kernel:starnix_core",
-    "//src/starnix/kernel:starnix_logging",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
     "//src/storage/lib/vfs/rust:vfs",

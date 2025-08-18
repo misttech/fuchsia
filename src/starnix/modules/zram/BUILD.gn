@@ -18,7 +18,7 @@ rustc_library("zram") {
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
     "//sdk/rust/zx",
     "//src/starnix/kernel:starnix_core",
-    "//src/starnix/kernel:starnix_logging",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
   ]
