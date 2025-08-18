@@ -280,8 +280,7 @@ impl Listen {
             //   incoming control or data (combined with SYN) will be processed
             //   in the SYN-RECEIVED state, but processing of SYN and ACK should
             //   not be repeated.
-            // Note: We don't support data being tranmistted in this state, so
-            // there is no need to store these the RCV and SND variables.
+
             let rcv_wnd_scale = buffer_sizes.rwnd().scale();
             // RFC 7323 Section 2.2:
             //  The window field in a segment where the SYN bit is set (i.e., a
@@ -318,6 +317,13 @@ impl Listen {
                     rcv_wnd_scale,
                     snd_wnd_scale: options.window_scale(),
                     sack_permitted,
+                    rcv: RecvParams {
+                        ack: seq + 1,
+                        // We advertised an unscaled window, now
+                        // set up the rcv state accordingly.
+                        wnd_scale: WindowScale::default(),
+                        wnd: rwnd << WindowScale::default(),
+                    },
                 },
             );
         }
@@ -554,6 +560,13 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                     rcv_wnd_scale,
                                     snd_wnd_scale: options.window_scale(),
                                     sack_permitted,
+                                    rcv: RecvParams {
+                                        ack: seg_seq + 1,
+                                        // We advertised an unscaled window, now
+                                        // set up the rcv state accordingly.
+                                        wnd_scale: WindowScale::default(),
+                                        wnd: rwnd << WindowScale::default(),
+                                    },
                                 },
                             )
                         } else {
@@ -606,6 +619,15 @@ pub struct SynRcvd<I, ActiveOpen> {
     rcv_wnd_scale: WindowScale,
     snd_wnd_scale: Option<WindowScale>,
     sack_permitted: bool,
+    // Parameters used to receive packets.
+    //
+    // Note, the window scaling here differs from `rcv_wnd_scale`. That is
+    // because of RFC 7323 section 2.2:
+    //   The window field in a segment where the SYN bit is
+    //   (i.e., a <SYN> or <SYN,ACK>) MUST NOT be scaled.
+    // Put another way, we've advertised an unscaled window, and should only
+    // accept segments within that unscaled window.
+    rcv: RecvParams,
 }
 
 impl<I: Instant, R: ReceiveBuffer, S: SendBuffer, ActiveOpen> From<SynRcvd<I, Infallible>>
@@ -623,6 +645,7 @@ impl<I: Instant, R: ReceiveBuffer, S: SendBuffer, ActiveOpen> From<SynRcvd<I, In
             rcv_wnd_scale,
             snd_wnd_scale,
             sack_permitted,
+            rcv,
         }: SynRcvd<I, Infallible>,
     ) -> Self {
         match simultaneous_open {
@@ -637,6 +660,7 @@ impl<I: Instant, R: ReceiveBuffer, S: SendBuffer, ActiveOpen> From<SynRcvd<I, In
                 rcv_wnd_scale,
                 snd_wnd_scale,
                 sack_permitted,
+                rcv,
             }),
         }
     }
@@ -1122,8 +1146,7 @@ impl<'a, I: Instant, R: ReceiveBuffer> RecvSegmentArgumentsProvider for &'a mut 
     }
 }
 
-/// Cached parameters for states that no longer have a full receive state
-/// machine.
+/// Cached parameters for states that do not have a full receive state machine.
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub(super) struct RecvParams {
@@ -2319,6 +2342,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                     rcv_wnd_scale,
                                     snd_wnd_scale,
                                     sack_permitted,
+                                    rcv,
                                 },
                             ) => {
                                 match simultaneous_open {
@@ -2337,6 +2361,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                                     rcv_wnd_scale,
                                                     snd_wnd_scale,
                                                     sack_permitted,
+                                                    rcv,
                                                 }),
                                             ),
                                             NewlyClosed::No
@@ -2403,30 +2428,17 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 }
                 State::SynRcvd(SynRcvd {
                     iss,
-                    irs,
+                    irs: _,
                     timestamp: _,
                     retrans_timer: _,
                     simultaneous_open: _,
-                    buffer_sizes,
+                    buffer_sizes: _,
                     smss: _,
                     rcv_wnd_scale: _,
                     snd_wnd_scale: _,
                     sack_permitted: _,
-                }) => {
-                    // RFC 7323 Section 2.2:
-                    //  The window field in a segment where the SYN bit is set
-                    //  (i.e., a <SYN> or <SYN,ACK>) MUST NOT be scaled.
-                    let advertised = buffer_sizes.rwnd_unscaled();
-                    (
-                        CalculatedRecvParams::from_params(RecvParams {
-                            ack: *irs + 1,
-                            wnd: advertised << WindowScale::default(),
-                            wnd_scale: WindowScale::default(),
-                        }),
-                        *iss + 1,
-                        false,
-                    )
-                }
+                    rcv,
+                }) => (CalculatedRecvParams::from_params(rcv.clone()), *iss + 1, false),
                 State::Established(Established { rcv, snd }) => {
                     (CalculatedRecvParams::from_recv(rcv.get_mut()), snd.max, false)
                 }
@@ -2560,6 +2572,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         rcv_wnd_scale,
                         snd_wnd_scale,
                         sack_permitted,
+                        rcv: _,
                     }) => {
                         // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-72):
                         //    if the ACK bit is on
@@ -3096,6 +3109,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 rcv_wnd_scale,
                 snd_wnd_scale,
                 sack_permitted: _,
+                rcv: _,
             }) => (retrans_timer.at <= now).then(|| {
                 *timestamp = None;
                 retrans_timer.backoff(now);
@@ -3175,6 +3189,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 rcv_wnd_scale: _,
                 snd_wnd_scale: _,
                 sack_permitted: _,
+                rcv: _,
             }) => retrans_timer.timed_out(now),
 
             State::Closed(_) | State::Listen(_) | State::TimeWait(_) => false,
@@ -3273,6 +3288,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 rcv_wnd_scale,
                 snd_wnd_scale,
                 sack_permitted,
+                rcv: _,
             }) => {
                 // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-60):
                 //   SYN-RECEIVED STATE
@@ -3446,6 +3462,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 rcv_wnd_scale: _,
                 snd_wnd_scale: _,
                 sack_permitted: _,
+                rcv: _,
             }) => {
                 // When we're in SynRcvd we already sent out SYN-ACK with iss,
                 // so a RST must have iss+1.
@@ -3564,6 +3581,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 rcv_wnd_scale: _,
                 snd_wnd_scale: _,
                 sack_permitted: _,
+                rcv: _,
             })
             | State::SynSent(SynSent {
                 iss,
@@ -3896,6 +3914,11 @@ mod test {
                 rcv_wnd_scale: WindowScale::default(),
                 snd_wnd_scale: Some(WindowScale::default()),
                 sack_permitted: SACK_PERMITTED,
+                rcv: RecvParams {
+                    ack: TEST_IRS + 1,
+                    wnd: WindowSize::DEFAULT,
+                    wnd_scale: WindowScale::default(),
+                },
             })
         }
     }
@@ -4038,6 +4061,11 @@ mod test {
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: false,
+            rcv: RecvParams {
+                ack: TEST_ISS + 1,
+                wnd: WindowSize::DEFAULT,
+                wnd_scale: WindowScale::default(),
+            }
         }
     ); "SYN only")]
     #[test_case(
@@ -4112,6 +4140,11 @@ mod test {
                 sack_permitted: false,
                 rcv_wnd_scale: WindowScale::default(),
                 snd_wnd_scale: Some(WindowScale::default()),
+                rcv: RecvParams {
+                    ack: TEST_ISS + 1,
+                    wnd: WindowSize::DEFAULT,
+                    wnd_scale: WindowScale::default(),
+                }
             }); "accept syn")]
     fn segment_arrives_when_listen(
         incoming: Segment<()>,
@@ -4611,6 +4644,11 @@ mod test {
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted,
+            rcv: RecvParams {
+                ack: active_iss + 1,
+                wnd: WindowSize::DEFAULT,
+                wnd_scale: WindowScale::default(),
+            },
         });
         clock.sleep(RTT / 2);
 
@@ -4793,6 +4831,11 @@ mod test {
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
+            rcv: RecvParams {
+                ack: ISS_2 + 1,
+                wnd: WindowSize::DEFAULT,
+                wnd_scale: WindowScale::default(),
+            },
         });
         assert_matches!(state2, State::SynRcvd(ref syn_rcvd) if syn_rcvd == &SynRcvd {
             iss: ISS_2,
@@ -4810,6 +4853,11 @@ mod test {
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
+            rcv: RecvParams {
+                ack: ISS_1 + 1,
+                wnd: WindowSize::DEFAULT,
+                wnd_scale: WindowScale::default(),
+            },
         });
 
         clock.sleep(RTT);
@@ -5406,6 +5454,11 @@ mod test {
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
+            rcv: RecvParams {
+                ack: TEST_IRS + 1,
+                wnd: WindowSize::DEFAULT,
+                wnd_scale: WindowScale::default(),
+            },
         });
         assert_eq!(
             state.close(
@@ -5828,6 +5881,11 @@ mod test {
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
+            rcv: RecvParams {
+                ack: TEST_IRS + 1,
+                wnd: WindowSize::DEFAULT,
+                wnd_scale: WindowScale::default(),
+            },
         }),
         Segment::syn_ack(TEST_IRS, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX),
         HandshakeOptions { window_scale: Some(WindowScale::default()), ..Default::default() }) =>
@@ -6861,6 +6919,11 @@ mod test {
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
+            rcv: RecvParams {
+                ack: TEST_IRS + 1,
+                wnd: WindowSize::DEFAULT,
+                wnd_scale: WindowScale::default(),
+            },
         })
     => DEFAULT_MAX_SYNACK_RETRIES.get(); "syn_rcvd")]
     fn handshake_timeout(mut state: State<FakeInstant, RingBuffer, RingBuffer, ()>) -> u8 {
@@ -6988,6 +7051,11 @@ mod test {
         let counters = FakeTcpCounters::default();
         let buffer_sizes = BufferSizes { send: 0, receive: receive_buf_size };
         let rcv_wnd_scale = buffer_sizes.rwnd().scale();
+        let rcv = RecvParams {
+            ack: TEST_IRS + 1,
+            wnd_scale: WindowScale::default(),
+            wnd: buffer_sizes.rwnd_unscaled() << WindowScale::default(),
+        };
         let mut syn_rcvd: State<_, RingBuffer, RingBuffer, ()> = State::SynRcvd(SynRcvd {
             iss: TEST_ISS,
             irs: TEST_IRS,
@@ -7004,6 +7072,7 @@ mod test {
             rcv_wnd_scale,
             snd_wnd_scale: WindowScale::new(1),
             sack_permitted: SACK_PERMITTED,
+            rcv,
         });
 
         assert_eq!(
@@ -7621,6 +7690,11 @@ mod test {
             rcv_wnd_scale: WindowScale::new(0).unwrap(),
             snd_wnd_scale: WindowScale::new(0),
             sack_permitted: SACK_PERMITTED,
+            rcv: RecvParams{
+                ack: TEST_IRS + 1,
+                wnd: WindowSize::DEFAULT,
+                wnd_scale: WindowScale::default(),
+            }
         }) => NewlyClosed::No; "non-closed to non-closed")]
     fn transition_to_state(
         mut old_state: State<FakeInstant, RingBuffer, RingBuffer, ()>,
