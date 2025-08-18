@@ -28,7 +28,7 @@
       "optionality": "optional",
       "long": "--background",
       "short": null,
-      "description": "run server as a background process. This is mutually exclusive with --daemon and --foreground.",
+      "description": "run server as a background process. This is mutually exclusive with --foreground.",
       "hidden": false
     },
     {
@@ -36,7 +36,7 @@
       "optionality": "optional",
       "long": "--foreground",
       "short": null,
-      "description": "run server as a foreground process.  This is the default mode. This is mutually exclusive with --daemon and --background.",
+      "description": "run server as a foreground process.  This is the default mode. This is mutually exclusive with --background.",
       "hidden": false
     },
     {

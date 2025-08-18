@@ -37,7 +37,6 @@ use tuf::metadata::RawSignedMetadata;
 
 const REPO_CONNECT_TIMEOUT_CONFIG: &str = "repository.connect_timeout_secs";
 const DEFAULT_CONNECTION_TIMEOUT_SECS: u64 = 120;
-pub(crate) const REPO_BACKGROUND_FEATURE_FLAG: &str = "repository.server.enabled";
 const REPO_PATH_RELATIVE_TO_BUILD_DIR: &str = "amber-files";
 const CONFIG_KEY_DEFAULT_REPOSITORY: &str = "repository.default";
 

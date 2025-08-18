@@ -21,14 +21,13 @@ pub struct StartCommand {
     #[argh(option)]
     pub address: Option<SocketAddr>,
 
-    /// run server as a background process. This is mutually
-    /// exclusive with --daemon and --foreground.
+    /// run server as a background process. This is mutually exclusive with
+    /// --foreground.
     #[argh(switch)]
     pub background: bool,
 
-    /// run server as a foreground process.  This is the
-    /// default mode. This is mutually
-    /// exclusive with --daemon and --background.
+    /// run server as a foreground process.  This is the default mode. This is
+    /// mutually exclusive with --background.
     #[argh(switch)]
     pub foreground: bool,
 

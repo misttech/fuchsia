@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::server_impl::{get_repo_base_name, serve_impl, REPO_BACKGROUND_FEATURE_FLAG};
+use crate::server_impl::{get_repo_base_name, serve_impl};
 use crate::ServerStartTool;
-use ffx_command_error::{bug, return_user_error, user_error, FfxContext as _, Result};
+use ffx_command_error::{bug, user_error, Result};
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
 use fho::{Deferred, FfxMain};
@@ -75,22 +75,6 @@ pub async fn run_foreground_server(
     w: <ServerStartTool as FfxMain>::Writer,
     mode: ServerMode,
 ) -> Result<()> {
-    /* This check is specific to the `ffx repository serve` command and should be ignored
-        if the entry point is `ffx repository server start`.
-    */
-    // TODO(b/389735589): Remove the daemon based repo server.
-    let bg: bool =
-        context.get(REPO_BACKGROUND_FEATURE_FLAG).bug_context("checking for daemon server flag")?;
-    if bg {
-        return_user_error!(
-            r#"The ffx setting '{}' and the foreground server are mutually incompatible.
-    Please disable background serving by running the following commands:
-    $ ffx config remove repository.server.enabled
-    $ ffx doctor --restart-daemon"#,
-            REPO_BACKGROUND_FEATURE_FLAG,
-        );
-    }
-
     serve_impl(
         target_proxy_connector,
         rcs_proxy_connector,
