@@ -271,7 +271,11 @@ pub enum AbortAndDetachResult {
 
 impl<'a> AtomicFutureHandle<'a> {
     /// Create a new `AtomicFuture`.
-    pub fn new<F: Future + Send + 'a>(scope: Option<ScopeHandle>, id: usize, future: F) -> Self
+    pub(crate) fn new<F: Future + Send + 'a>(
+        scope: Option<ScopeHandle>,
+        id: usize,
+        future: F,
+    ) -> Self
     where
         F::Output: Send + 'a,
     {
@@ -284,7 +288,7 @@ impl<'a> AtomicFutureHandle<'a> {
     /// # Safety
     ///
     /// The caller must uphold the Send requirements.
-    pub unsafe fn new_local<F: Future + 'a>(
+    pub(crate) unsafe fn new_local<F: Future + 'a>(
         scope: Option<ScopeHandle>,
         id: usize,
         future: F,
@@ -327,7 +331,7 @@ impl<'a> AtomicFutureHandle<'a> {
     ///
     /// `try_poll` ensures that the future is polled at least once more
     /// unless it has already finished.
-    pub fn try_poll(&self, cx: &mut Context<'_>) -> AttemptPollResult {
+    pub(crate) fn try_poll(&self, cx: &mut Context<'_>) -> AttemptPollResult {
         let meta = self.meta();
         let has_active_guard = loop {
             // Attempt to acquire sole responsibility for polling the future (by clearing the
@@ -443,7 +447,7 @@ impl<'a> AtomicFutureHandle<'a> {
     /// This doesn't check the current state, so this must only be called if it is known that there
     /// is no concurrent access. This also does *not* include any memory barriers before dropping
     /// the future.
-    pub unsafe fn drop_future_unchecked(&self) {
+    pub(crate) unsafe fn drop_future_unchecked(&self) {
         // Set the state first in case we panic when we drop.
         let meta = self.meta();
         let old = meta.state.fetch_or(DONE | RESULT_TAKEN, Relaxed);
@@ -456,7 +460,7 @@ impl<'a> AtomicFutureHandle<'a> {
 
     /// Drops the future if it is not currently being polled. Returns success if the future was
     /// dropped or was already dropped.
-    pub fn try_drop(&self) -> Result<(), ()> {
+    pub(crate) fn try_drop(&self) -> Result<(), ()> {
         let old = self.meta().state.fetch_and(!INACTIVE, Acquire);
         if old & DONE != 0 {
             Ok(())
@@ -473,12 +477,12 @@ impl<'a> AtomicFutureHandle<'a> {
 
     /// Aborts the task. Returns true if the task needs to be added to a run queue.
     #[must_use]
-    pub fn abort(&self) -> bool {
+    pub(crate) fn abort(&self) -> bool {
         self.meta().state.fetch_or(ABORTED | READY, Relaxed) & (INACTIVE | READY | DONE) == INACTIVE
     }
 
     /// Marks the task as detached.
-    pub fn detach(&self) {
+    pub(crate) fn detach(&self) {
         let meta = self.meta();
         let old = meta.state.fetch_or(DETACHED, Relaxed);
 
@@ -496,7 +500,7 @@ impl<'a> AtomicFutureHandle<'a> {
     /// Marks the task as aborted and detached (for when the caller isn't interested in waiting
     /// for the cancellation to be finished). Returns true if the task should be added to a run
     /// queue.
-    pub fn abort_and_detach(&self) -> AbortAndDetachResult {
+    pub(crate) fn abort_and_detach(&self) -> AbortAndDetachResult {
         let meta = self.meta();
         let old_state = meta.state.fetch_or(ABORTED | DETACHED | READY, Relaxed);
         if old_state & DONE != 0 {
@@ -517,7 +521,7 @@ impl<'a> AtomicFutureHandle<'a> {
     }
 
     /// Returns true if the task is detached.
-    pub fn is_detached(&self) -> bool {
+    pub(crate) fn is_detached(&self) -> bool {
         self.meta().state.load(Relaxed) & DETACHED != 0
     }
 
@@ -526,7 +530,7 @@ impl<'a> AtomicFutureHandle<'a> {
     /// # Safety
     ///
     /// The caller must guarantee that `R` is the correct type.
-    pub unsafe fn take_result<R>(&self) -> Option<R> {
+    pub(crate) unsafe fn take_result<R>(&self) -> Option<R> {
         // This needs to be Acquire ordering to synchronize with the polling thread.
         let meta = self.meta();
         if meta.state.load(Relaxed) & (DONE | RESULT_TAKEN) == DONE
@@ -541,7 +545,7 @@ impl<'a> AtomicFutureHandle<'a> {
 
 impl AtomicFutureHandle<'static> {
     /// Returns a waker for the future.
-    pub fn waker(&self) -> BorrowedWaker<'_> {
+    pub(crate) fn waker(&self) -> BorrowedWaker<'_> {
         static BORROWED_WAKER_VTABLE: RawWakerVTable =
             RawWakerVTable::new(waker_clone, waker_wake_by_ref, waker_wake_by_ref, waker_noop);
         static WAKER_VTABLE: RawWakerVTable =
@@ -596,7 +600,7 @@ impl AtomicFutureHandle<'static> {
     }
 
     /// Wakes the future.
-    pub fn wake(&self) {
+    pub(crate) fn wake(&self) {
         // SAFETY: The lifetime on `AtomicFutureHandle` is 'static.
         unsafe {
             self.meta().wake();
@@ -609,7 +613,7 @@ impl AtomicFutureHandle<'static> {
     /// NOTE: `Scope::release_cancel_guard` can be called *before* this function returns because the
     /// task can be polled on another thread. For this reason, the caller either needs to hold a
     /// lock, or it should preemptively take the guard.
-    pub fn wake_with_active_guard(&self) -> bool {
+    pub(crate) fn wake_with_active_guard(&self) -> bool {
         // SAFETY: The lifetime on `AtomicFutureHandle` is 'static.
         unsafe { self.meta().wake_with_active_guard() }
     }

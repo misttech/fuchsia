@@ -4,8 +4,8 @@
 
 //! Pluggable instrumentation for the async executor.
 
-use crate::runtime::fuchsia::executor::atomic_future::AtomicFutureHandle;
 use crate::ScopeHandle;
+pub use crate::runtime::fuchsia::executor::atomic_future::AtomicFutureHandle;
 use std::any::Any;
 
 /// A trait for instrumenting futures.
@@ -55,7 +55,7 @@ pub trait TaskInstrument: Send + Sync + 'static {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{yield_now, Scope, ScopeHandle, SendExecutorBuilder};
+    use crate::{Scope, ScopeHandle, SendExecutorBuilder, yield_now};
     use std::any::Any;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
