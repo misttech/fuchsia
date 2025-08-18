@@ -71,6 +71,23 @@ ffx component start /core/ffx-laboratory:calculator-example-rust
 ffx component start /core/ffx-laboratory:calculator-example-rust/client
 ```
 
+### Rust (new)
+
+Same as above. To run these components together add `calculator-example-rust-next`
+to the ffx-laboratory:
+
+```
+ffx component create /core/ffx-laboratory:calculator-example-rust-next \
+    fuchsia-pkg://fuchsia.com/calculator-example-rust-next#meta/calculator_realm.cm
+```
+
+and then start the component:
+
+```
+ffx component start /core/ffx-laboratory:calculator-example-rust-next
+ffx component start /core/ffx-laboratory:calculator-example-rust-next/client
+```
+
 ### C++
 
 Between, [client][client-cpp], [server][server-cpp], [fidl][fidl-component], and
@@ -157,6 +174,27 @@ emu start`) and are serving packages (ex: `fx serve`) then run the following:
 
 ```
 fx test calculator-server-rust-unittests
+```
+
+### Rust (new)
+
+**Client**
+
+To run the client tests, ensure you have an available Fuchsia target (ex: `ffx
+emu start`) and are serving packages (ex: `fx serve`) then run the
+following:
+
+```
+fx test calculator-client-rust-next-unittests
+```
+
+**Server**
+
+To run the server tests, ensure you have an available Fuchsia target (ex: `ffx
+emu start`) and are serving packages (ex: `fx serve`) then run the following:
+
+```
+fx test calculator-server-rust-next-unittests
 ```
 
 ### C++

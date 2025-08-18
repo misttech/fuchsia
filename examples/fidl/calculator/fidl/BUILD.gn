@@ -8,4 +8,6 @@ fidl("calculator") {
   name = "fuchsia.examples.calculator"
 
   sources = [ "calculator.test.fidl" ]
+
+  enable_rust_next = true
 }

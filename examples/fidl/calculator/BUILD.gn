@@ -9,6 +9,7 @@ group("all") {
   deps = [
     ":calculator-example-cpp",
     ":calculator-example-rust",
+    ":calculator-example-rust-next",
   ]
 }
 
@@ -36,6 +37,15 @@ fuchsia_package("calculator-example-rust") {
   ]
 }
 
+fuchsia_package("calculator-example-rust-next") {
+  deps = [
+    ":calculator_realm",
+    ":input",
+    "//examples/fidl/calculator/rust_next/client:component",
+    "//examples/fidl/calculator/rust_next/server:component",
+  ]
+}
+
 fuchsia_package("calculator-example-cpp") {
   deps = [
     ":calculator_realm",
@@ -50,5 +60,6 @@ group("hermetic_tests") {
   deps = [
     "cpp:hermetic_tests",
     "rust:hermetic_tests",
+    "rust_next:hermetic_tests",
   ]
 }
