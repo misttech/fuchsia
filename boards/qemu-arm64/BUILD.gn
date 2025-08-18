@@ -11,6 +11,7 @@ board_configuration("qemu-arm64") {
   provided_features = [
     "fuchsia::driver_framework_v2_support",
     "fuchsia::real_time_clock",
+    "fuchsia::usb_host",
   ]
   if (qemu_arm64_enable_user_pci) {
     provided_features += [ "fuchsia::bus_pci" ]

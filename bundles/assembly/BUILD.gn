@@ -238,10 +238,6 @@ assembly_input_bundle("bootstrap") {
 
   boot_driver_packages = [
     {
-      package_target = "//src/connectivity/bluetooth/hci/transport/usb:package"
-      driver_components = [ "meta/bt-transport-usb.cm" ]
-    },
-    {
       package_target = "//src/connectivity/ethernet/drivers/asix-88179:package"
       driver_components = [ "meta/asix-88179.cm" ]
     },
@@ -252,10 +248,6 @@ assembly_input_bundle("bootstrap") {
     {
       package_target = "//src/connectivity/ethernet/drivers/ethernet/netdevice-migration:package"
       driver_components = [ "meta/netdevice-migration.cm" ]
-    },
-    {
-      package_target = "//src/connectivity/ethernet/drivers/usb-cdc-ecm:package"
-      driver_components = [ "meta/usb-cdc-ecm.cm" ]
     },
     {
       package_target =
@@ -275,10 +267,6 @@ assembly_input_bundle("bootstrap") {
       driver_components = [ "meta/sdmmc.cm" ]
     },
     {
-      package_target = "//src/devices/block/drivers/usb-mass-storage:package"
-      driver_components = [ "meta/usb-mass-storage.cm" ]
-    },
-    {
       package_target = "//src/devices/clock/drivers/clock:package"
       driver_components = [ "meta/clock.cm" ]
     },
@@ -289,10 +277,6 @@ assembly_input_bundle("bootstrap") {
     {
       package_target = "//src/devices/i2c/drivers/i2c:package"
       driver_components = [ "meta/i2c.cm" ]
-    },
-    {
-      package_target = "//src/devices/ml/drivers/usb-harriet:package"
-      driver_components = [ "meta/usb-harriet.cm" ]
     },
     {
       package_target = "//src/devices/power/drivers/power:package"
@@ -307,32 +291,12 @@ assembly_input_bundle("bootstrap") {
       driver_components = [ "meta/ftdi.cm" ]
     },
     {
-      package_target = "//src/devices/serial/drivers/usb-cdc-acm:package"
-      driver_components = [ "meta/usb-cdc-acm.cm" ]
-    },
-    {
       package_target = "//src/devices/spi/drivers/spi:package"
       driver_components = [ "meta/spi.cm" ]
     },
     {
-      package_target = "//src/devices/usb/drivers/usb-bus:package"
-      driver_components = [ "meta/usb-bus.cm" ]
-    },
-    {
-      package_target = "//src/devices/usb/drivers/usb-composite:package"
-      driver_components = [ "meta/usb-composite.cm" ]
-    },
-    {
-      package_target = "//src/devices/usb/drivers/usb-hub:package"
-      driver_components = [ "meta/usb-hub.cm" ]
-    },
-    {
       package_target = "//src/graphics/display/drivers/coordinator:package"
       driver_components = [ "meta/display-coordinator.cm" ]
-    },
-    {
-      package_target = "//src/media/audio/drivers/usb-audio:package"
-      driver_components = [ "meta/usb-audio.cm" ]
     },
     {
       package_target = "//src/ui/input/drivers/hid:package"
@@ -347,15 +311,8 @@ assembly_input_bundle("bootstrap") {
       driver_components = [ "meta/hid-input-report.cm" ]
     },
     {
-      package_target = "//src/ui/input/drivers/usb-hid:package"
-      driver_components = [ "meta/usb-hid.cm" ]
-    },
-
-    # TODO(https://fxbug.dev/42082105): Carve out usb-peripheral-stack drivers for specific products/boards.
-    {
-      package_target =
-          "//src/connectivity/ethernet/drivers/rndis-function:package"
-      driver_components = [ "meta/rndis-function.cm" ]
+      package_target = "//src/devices/registers/drivers/registers:package"
+      driver_components = [ "meta/registers.cm" ]
     },
     {
       package_target =
@@ -363,24 +320,69 @@ assembly_input_bundle("bootstrap") {
       driver_components = [ "meta/usb-cdc-function.cm" ]
     },
     {
-      package_target = "//src/devices/block/drivers/ums-function:package"
-      driver_components = [ "meta/ums-function.cm" ]
-    },
-    {
       package_target = "//src/devices/usb/drivers/usb-peripheral:package"
       driver_components = [ "meta/usb-peripheral.cm" ]
     },
     {
-      package_target = "//src/devices/registers/drivers/registers:package"
-      driver_components = [ "meta/registers.cm" ]
+      package_target = "//src/devices/usb/drivers/usb-bus:package"
+      driver_components = [ "meta/usb-bus.cm" ]
     },
   ]
 }
 
 assembly_input_bundle("usb_host_drivers") {
+  boot_driver_packages = [
+    {
+      package_target = "//src/connectivity/bluetooth/hci/transport/usb:package"
+      driver_components = [ "meta/bt-transport-usb.cm" ]
+    },
+    {
+      package_target = "//src/devices/block/drivers/usb-mass-storage:package"
+      driver_components = [ "meta/usb-mass-storage.cm" ]
+    },
+    {
+      package_target = "//src/connectivity/ethernet/drivers/usb-cdc-ecm:package"
+      driver_components = [ "meta/usb-cdc-ecm.cm" ]
+    },
+    {
+      package_target = "//src/devices/ml/drivers/usb-harriet:package"
+      driver_components = [ "meta/usb-harriet.cm" ]
+    },
+    {
+      package_target = "//src/devices/serial/drivers/usb-cdc-acm:package"
+      driver_components = [ "meta/usb-cdc-acm.cm" ]
+    },
+    {
+      package_target = "//src/devices/usb/drivers/usb-composite:package"
+      driver_components = [ "meta/usb-composite.cm" ]
+    },
+    {
+      package_target = "//src/devices/usb/drivers/usb-hub:package"
+      driver_components = [ "meta/usb-hub.cm" ]
+    },
+    {
+      package_target = "//src/media/audio/drivers/usb-audio:package"
+      driver_components = [ "meta/usb-audio.cm" ]
+    },
+    {
+      package_target = "//src/ui/input/drivers/usb-hid:package"
+      driver_components = [ "meta/usb-hid.cm" ]
+    },
+  ]
 }
 
 assembly_input_bundle("usb_peripheral_drivers") {
+  boot_driver_packages = [
+    {
+      package_target =
+          "//src/connectivity/ethernet/drivers/rndis-function:package"
+      driver_components = [ "meta/rndis-function.cm" ]
+    },
+    {
+      package_target = "//src/devices/block/drivers/ums-function:package"
+      driver_components = [ "meta/ums-function.cm" ]
+    },
+  ]
 }
 
 # The most-common, most-basic, AIB that is included in all userdebug and eng
