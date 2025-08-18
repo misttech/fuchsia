@@ -28,8 +28,8 @@ impl WakeSource {
         Self { handle: counter.into_handle(), name, signals: zx::Signals::COUNTER_POSITIVE }
     }
 
-    pub fn from_handle(handle: zx::Handle, name: String) -> Self {
-        Self { handle, name, signals: zx::Signals::COUNTER_POSITIVE }
+    pub fn from_handle(handle: zx::Handle, name: String, signals: zx::Signals) -> Self {
+        Self { handle, name, signals }
     }
 
     fn as_wait_item(&self) -> zx::WaitItem<'_> {

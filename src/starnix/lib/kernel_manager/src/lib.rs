@@ -8,7 +8,7 @@ pub mod proxy;
 pub mod suspend;
 
 use crate::pager::run_pager;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy, ServerEnd};
 use fidl::{HandleBased, Peered};
 use fuchsia_component::client as fclient;
@@ -21,7 +21,7 @@ use rand::Rng;
 use std::future::Future;
 use std::sync::Arc;
 use suspend::{
-    suspend_container, SuspendContext, WakeSource, WakeSources, ASLEEP_SIGNAL, AWAKE_SIGNAL,
+    ASLEEP_SIGNAL, AWAKE_SIGNAL, SuspendContext, WakeSource, WakeSources, suspend_container,
 };
 use zx::AsHandleRef;
 use {
@@ -273,15 +273,19 @@ pub async fn serve_starnix_manager(
                     container_job: Some(_container_job),
                     name: Some(name),
                     handle: Some(handle),
+                    signals: Some(signals),
                     ..
                 } = payload
                 else {
                     continue;
                 };
-
                 suspend_context.wake_sources.lock().insert(
                     handle.get_koid().unwrap(),
-                    WakeSource::from_handle(handle, name.clone()),
+                    WakeSource::from_handle(
+                        handle,
+                        name.clone(),
+                        zx::Signals::from_bits_truncate(signals),
+                    ),
                 );
             }
             fstarnixrunner::ManagerRequest::CreatePager { payload, .. } => {
