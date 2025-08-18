@@ -20,6 +20,12 @@
             availability: "same_as_target",
         },
         {
+            service: "fuchsia.hardware.rpmb.Service",
+            from: "parent",
+            to: "#tee_manager",
+            availability: "same_as_target",
+        },
+        {
             dictionary: "tee_session",
             from: "#tee_manager",
             to: "#session-manager",
