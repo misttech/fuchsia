@@ -328,11 +328,17 @@ impl<Reference: Timeline, Output: Timeline> From<sys::zx_clock_transformation_t>
     }
 }
 
-/// Apply affine transformation to convert the reference time "r" to the synthetic time
-/// "c". All values are widened to i128 before calculations and the end result is converted back to
-/// a i64. If "c" is a larger number than would fit in an i64, the result saturates when cast to
-/// i64.
+// Apply affine transformation to convert the reference time "r" to the
+// synthetic time "c".
+//
+// All values are widened to i128 before calculations and the end result is
+// converted back to a i64. If "c" is a larger number than would fit in an i64,
+// the result saturates when cast to i64.
+//
+// # Panics
+// If `r_rate` is zero, this function will panic.
 fn transform_clock(r: i64, r_offset: i64, c_offset: i64, r_rate: u32, c_rate: u32) -> i64 {
+    assert!(r_rate != 0, "r_rate may not be zero");
     let r = r as i128;
     let r_offset = r_offset as i128;
     let c_offset = c_offset as i128;
@@ -342,10 +348,18 @@ fn transform_clock(r: i64, r_offset: i64, c_offset: i64, r_rate: u32, c_rate: u3
     c.try_into().unwrap_or_else(|_| if c.is_positive() { i64::MAX } else { i64::MIN })
 }
 
-/// [Clock transformations](https://fuchsia.dev/fuchsia-src/concepts/kernel/clock_transformations)
-/// can be applied to convert a time from a reference time to a synthetic time. The inverse
-/// transformation can be applied to convert a synthetic time back to the reference time.
+/// [Clock
+/// transformations](https://fuchsia.dev/fuchsia-src/concepts/kernel/clock_transformations)
+/// can be applied to convert a time from a reference time to a synthetic time.
+///
+/// The inverse transformation can be applied to convert a synthetic time back
+/// to the reference time.
 impl<Reference: Timeline + Copy, Output: Timeline + Copy> ClockTransformation<Reference, Output> {
+    /// Apply the transformation to convert a time from the reference timeline
+    /// to the output timeline.
+    ///
+    /// # Panics
+    /// If the reference clock rate is zero, this function will panic.
     pub fn apply(&self, time: Instant<Reference>) -> Instant<Output> {
         let c = transform_clock(
             time.into_nanos(),
@@ -358,6 +372,11 @@ impl<Reference: Timeline + Copy, Output: Timeline + Copy> ClockTransformation<Re
         Instant::from_nanos(c)
     }
 
+    /// Apply the transformation to convert a time from the output timeline
+    /// to the reference timeline.
+    ///
+    /// # Panics
+    /// If the output clock rate is zero, this function will panic.
     pub fn apply_inverse(&self, time: Instant<Output>) -> Instant<Reference> {
         let r = transform_clock(
             time.into_nanos(),
