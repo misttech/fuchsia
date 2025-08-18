@@ -5,7 +5,7 @@
 use crate::security;
 use crate::task::{CurrentTask, EventHandler, WaitCallback, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::OutputBuffer;
-use diagnostics_data::{Data, Logs, LogsData, Severity};
+use diagnostics_data::{Data, Logs, LogsData, Severity, unapply_mono_to_boot_offset};
 use diagnostics_message::from_extended_record;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fuchsia_component::client::connect_to_protocol_sync;
@@ -22,6 +22,9 @@ use std::sync::atomic::Ordering;
 use std::sync::{mpsc, Arc, OnceLock};
 
 const BUFFER_SIZE: i32 = 1_049_000;
+
+const NANOS_PER_SECOND: i64 = 1_000_000_000;
+const MICROS_PER_NANOSECOND: i64 = 1_000;
 
 #[derive(Default)]
 pub struct Syslog {
@@ -499,10 +502,17 @@ fn format_log(data: Data<Logs>) -> Result<Option<Vec<u8>>, io::Error> {
             Severity::Fatal => (KmsgLevel::Critical as u8, None),
         },
     };
-    let time = zx::BootDuration::from_nanos(data.metadata.timestamp.into_nanos());
+
+    // TODO(https://fxbug.dev/433724019): this isn't correct strictly speaking, but will be in most
+    // cases. We unapply the *current* offset and in the case where suspension happened between
+    // when the log message was generated and when Starnix is forwarding the log message, this will
+    // be different from the *actual* offset prior to suspension.
+    let time = unapply_mono_to_boot_offset(data.metadata.timestamp);
+    let time_nanos = time.into_nanos();
+    let time_secs = time_nanos / NANOS_PER_SECOND;
+    // Microsecond-level precision fractional time.
+    let time_fract = (time_nanos % NANOS_PER_SECOND) / MICROS_PER_NANOSECOND;
     let component_name = data.component_name();
-    let time_secs = time.into_seconds();
-    let time_fract = time.into_micros() % 1_000_000;
     write!(&mut result, "<{level}>[{time_secs:05}.{time_fract:06}] {component_name}",)?;
 
     match data.metadata.pid {

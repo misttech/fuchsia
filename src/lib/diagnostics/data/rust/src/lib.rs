@@ -221,9 +221,24 @@ where
 #[cfg(target_os = "fuchsia")]
 mod zircon {
     pub type Timestamp = zx::BootInstant;
+
+    /// De-applies the mono-to-boot offset on this timestamp.
+    ///
+    /// This works only if called soon after `self` is produced, otherwise
+    /// the timestamp will be placed further back in time.
+    pub fn unapply_mono_to_boot_offset(timestamp: Timestamp) -> zx::MonotonicInstant {
+        let mono_now = zx::MonotonicInstant::get();
+        let boot_now = zx::BootInstant::get();
+
+        let mono_to_boot_offset_nanos = boot_now.into_nanos() - mono_now.into_nanos();
+        zx::MonotonicInstant::from_nanos(timestamp.into_nanos() - mono_to_boot_offset_nanos)
+    }
 }
+
 #[cfg(target_os = "fuchsia")]
 pub use zircon::Timestamp;
+#[cfg(target_os = "fuchsia")]
+pub use zircon::unapply_mono_to_boot_offset;
 
 #[cfg(not(target_os = "fuchsia"))]
 mod host {
