@@ -102,7 +102,7 @@ def dts_compile(args: argparse.Namespace, extra_dtc_args: list[str]) -> bool:
     )
 
     if command.returncode or command.stderr:
-        print("%s" % "\r\n\t".join(command.args), file=sys.stderr)
+        print("%s" % " \\ \r\n  ".join(command.args), file=sys.stderr)
         print_dtc_stderr(command.stderr)
         return True
 
