@@ -419,6 +419,80 @@ macro_rules! add_functions {
             self.dir.add_entry_impl(name, remote_dir(proxy), false).expect("Unable to add entry");
             self
         }
+
+        /// Adds a FIDL protocol to the directory.
+        ///
+        /// The FIDL protocol will be hosted at the name provided by the
+        /// `Discoverable` annotation in the FIDL source.
+        pub fn add_fidl_next_protocol<P, H>(&mut self, handler: H) -> &mut Self
+        where
+            P: ::fidl_next::Protocol<zx::Channel>
+                + ::fidl_next::Discoverable
+                + ::fidl_next::DispatchServerMessage<H, zx::Channel>,
+            H: Clone + Send + Sync + 'static,
+        {
+            self.dir
+                .add_entry_impl(
+                    String::from(P::PROTOCOL_NAME).try_into().expect("Invalid path"),
+                    endpoint(move |_, channel| {
+                        let handler = handler.clone();
+                        fasync::Task::spawn(async move {
+                            // TODO: logging?
+                            let server_end = ::fidl_next::ServerEnd::<P, zx::Channel>::from_untyped(
+                                channel.into_zx_channel(),
+                            );
+                            ::fidl_next::Server::new(server_end)
+                                .run(handler)
+                                .await
+                                .expect("Protocol service was terminated ");
+                        })
+                        .detach();
+                    }),
+                    false,
+                )
+                .expect("Unable to add entry");
+            self
+        }
+
+        /// Adds a FIDL service to the directory.
+        ///
+        /// The FIDL service will be hosted at the name provided by the
+        /// `Discoverable` annotation in the FIDL source.
+        pub fn add_fidl_next_service_instance<S, H>(
+            &mut self,
+            instance_name: impl Into<String>,
+            handler: H,
+        ) -> &mut Self
+        where
+            S: ::fidl_next::DiscoverableService
+                + ::fidl_next::DispatchServiceHandler<H, zx::Channel>
+                + 'static,
+            H: Send + Sync + 'static,
+        {
+            // Create the service directory, with an instance subdirectory
+            let mut dir = self.dir(S::SERVICE_NAME);
+            let mut dir = dir.dir(instance_name);
+
+            let handler = std::sync::Arc::new(
+                ::fidl_next::ServiceHandlerAdapter::<S, H>::from_untyped(handler),
+            );
+
+            // Attach member protocols under the instance directory
+            for member_name in S::MEMBER_NAMES {
+                let handler = handler.clone();
+                dir.add_entry_at(
+                    *member_name,
+                    endpoint(move |_, channel| {
+                        ::fidl_next::protocol::ServiceHandler::on_connection(
+                            &*handler,
+                            member_name,
+                            channel.into_zx_channel(),
+                        );
+                    }),
+                );
+            }
+            self
+        }
     };
 }
 

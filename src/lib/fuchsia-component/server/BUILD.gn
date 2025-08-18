@@ -17,6 +17,7 @@ rustc_library("server") {
     "//src/lib/detect-stall",
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component/client",
     "//src/lib/fuchsia-runtime",

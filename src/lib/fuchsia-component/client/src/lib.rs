@@ -6,7 +6,9 @@
 
 #![deny(missing_docs)]
 
-use anyhow::{format_err, Context as _, Error};
+pub mod fidl_next;
+
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints::{
     DiscoverableProtocolMarker, FromClient, MemberOpener, ProtocolMarker, ServiceMarker,
     ServiceProxy,
@@ -14,7 +16,7 @@ use fidl::endpoints::{
 use fidl_fuchsia_component::{RealmMarker, RealmProxy};
 use fidl_fuchsia_component_decl::ChildRef;
 use fidl_fuchsia_io as fio;
-use fuchsia_component_directory::{open_directory_async, AsRefDirectory};
+use fuchsia_component_directory::{AsRefDirectory, open_directory_async};
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::stream::FusedStream;
 use futures::{Stream, StreamExt};
@@ -192,8 +194,8 @@ pub fn clone_namespace_svc() -> Result<fio::DirectoryProxy, Error> {
 
 /// Return a FIDL protocol connector at the default service directory in the
 /// application's root namespace.
-pub fn new_protocol_connector<P: DiscoverableProtocolMarker>(
-) -> Result<ProtocolConnector<fio::DirectoryProxy, P>, Error> {
+pub fn new_protocol_connector<P: DiscoverableProtocolMarker>()
+-> Result<ProtocolConnector<fio::DirectoryProxy, P>, Error> {
     new_protocol_connector_at::<P>(SVC_DIR)
 }
 
@@ -252,8 +254,8 @@ pub fn connect_to_protocol<P: DiscoverableProtocolMarker>() -> Result<P::Proxy, 
 /// Note: while this function returns a synchronous thread-blocking proxy it does not block until
 /// the connection is complete. The proxy must be used to discover whether the connection was
 /// successful.
-pub fn connect_to_protocol_sync<P: DiscoverableProtocolMarker>(
-) -> Result<P::SynchronousProxy, Error> {
+pub fn connect_to_protocol_sync<P: DiscoverableProtocolMarker>()
+-> Result<P::SynchronousProxy, Error> {
     connect_to_protocol_sync_at::<P>(SVC_DIR)
 }
 
@@ -675,7 +677,7 @@ mod tests {
         ProtocolAMarker, ProtocolAProxy, ProtocolBMarker, ProtocolBProxy, ServiceMarker,
     };
     use fuchsia_async::{self as fasync};
-    use futures::{future, TryStreamExt};
+    use futures::{TryStreamExt, future};
     use vfs::directory::simple::Simple;
     use vfs::file::vmo::read_only;
     use vfs::pseudo_directory;

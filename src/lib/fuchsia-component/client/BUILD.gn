@@ -18,6 +18,7 @@ rustc_library("client") {
     "//sdk/rust/zx",
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-component/directory",
     "//src/lib/fuchsia-fs",
     "//third_party/rust_crates:anyhow",
@@ -32,7 +33,10 @@ rustc_library("client") {
     "//third_party/rust_crates:assert_matches",
   ]
 
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/fidl_next.rs",
+    "src/lib.rs",
+  ]
 }
 
 fuchsia_unittest_package("fuchsia-component-client-unittests") {

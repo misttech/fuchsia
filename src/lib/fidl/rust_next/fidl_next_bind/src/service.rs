@@ -68,6 +68,12 @@ pub struct ServiceHandlerAdapter<S, H> {
     _service: PhantomData<S>,
 }
 
+impl<S, H: Clone> Clone for ServiceHandlerAdapter<S, H> {
+    fn clone(&self) -> Self {
+        Self { handler: self.handler.clone(), _service: PhantomData }
+    }
+}
+
 unsafe impl<S, H> Send for ServiceHandlerAdapter<S, H> where H: Send {}
 unsafe impl<S, H> Sync for ServiceHandlerAdapter<S, H> where H: Sync {}
 

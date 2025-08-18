@@ -7,9 +7,9 @@ use core::mem::MaybeUninit;
 use core::{concat, stringify};
 
 use fidl_next_codec::{
-    munge, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption,
+    Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption,
     EncodeOptionRef, EncodeRef, FromWire, FromWireOption, FromWireOptionRef, FromWireRef, Slot,
-    Wire,
+    Wire, munge,
 };
 
 macro_rules! endpoint {
@@ -30,6 +30,10 @@ macro_rules! endpoint {
             transport: T,
             _protocol: PhantomData<P>,
         }
+
+        unsafe impl<P, T: Send> Send for $name<P, T> {}
+
+        unsafe impl<P, T: Sync> Sync for $name<P, T> {}
 
         // SAFETY:
         // - `$name::Decoded<'de>` wraps a `T::Decoded<'de>`. Because `T: Wire`, `T::Decoded<'de>`
