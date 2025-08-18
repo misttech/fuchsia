@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use anyhow::anyhow;
-use fidl::endpoints::Proxy;
 use fidl::MessageBufEtc;
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_io as fio;
-use futures::future::{poll_fn, Either};
 use futures::FutureExt;
+use futures::future::{Either, poll_fn};
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::pin::pin;
@@ -16,8 +16,8 @@ use std::task::{Poll, Waker};
 
 use crate::error::{Result, RuntimeError};
 use crate::interpreter::{
-    canonicalize_path, Exception, FSError, IOError, Interpreter, InterpreterInner, MessageError,
-    SymlinkPolicy,
+    Exception, FSError, IOError, Interpreter, InterpreterInner, LibraryProtocolNameExt as _,
+    MessageError, SymlinkPolicy, canonicalize_path,
 };
 use crate::value::{
     InUseHandle, Invocable, PlaygroundValue, ReplayableIterator, ReplayableIteratorCursor, Value,
@@ -100,8 +100,8 @@ impl Interpreter {
                         return Err(anyhow!("read takes at most one argument"));
                     }
 
-                    if let Ok(client) =
-                        value.try_client_channel(inner.lib_namespace(), "fuchsia.io/File")
+                    if let Ok(client) = value
+                        .try_client_channel(inner.lib_namespace(), &fio::FileMarker::library_name())
                     {
                         let proxy = fio::FileProxy::from_channel(
                             fuchsia_async::Channel::from_channel(client),
@@ -593,7 +593,7 @@ mod test {
             .with_fidl()
             .with_standard_test_dirs()
             .check_async(|value| async move {
-                assert!(value.is_client("fuchsia.io/Directory"));
+                assert!(value.is_client(&fio::DirectoryMarker::library_name()));
                 let Value::ClientEnd(endpoint, _) = value else {
                     panic!();
                 };
@@ -858,16 +858,18 @@ mod test {
                             .await
                             .unwrap();
                         assert!(matches!(res, Value::Null));
-                        assert!(responder_clone
-                            .invoke(
-                                vec![Value::Object(vec![(
-                                    "response".to_owned(),
-                                    Value::String(value),
-                                )])],
-                                None,
-                            )
-                            .await
-                            .is_err());
+                        assert!(
+                            responder_clone
+                                .invoke(
+                                    vec![Value::Object(vec![(
+                                        "response".to_owned(),
+                                        Value::String(value),
+                                    )])],
+                                    None,
+                                )
+                                .await
+                                .is_err()
+                        );
 
                         assert!(requests.next().await.unwrap().is_none());
                     },
@@ -900,13 +902,18 @@ mod test {
                 };
 
                 let responder_clone = responder.clone();
-                assert!(responder_clone
-                    .invoke(
-                        vec![Value::Object(vec![("response".to_owned(), Value::String(value),)])],
-                        None,
-                    )
-                    .await
-                    .is_err());
+                assert!(
+                    responder_clone
+                        .invoke(
+                            vec![Value::Object(vec![(
+                                "response".to_owned(),
+                                Value::String(value),
+                            )])],
+                            None,
+                        )
+                        .await
+                        .is_err()
+                );
             })
             .await
     }

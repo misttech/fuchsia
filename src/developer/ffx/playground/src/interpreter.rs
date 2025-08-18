@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use fancy_regex::Regex;
-use fidl::endpoints::Proxy;
-use fidl_codec::{library as lib, Value as FidlValue};
+use fidl::HandleBased as _;
+use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
+use fidl_codec::{Value as FidlValue, library as lib};
 use fidl_fuchsia_io as fio;
-use futures::channel::mpsc::{unbounded as unbounded_channel, UnboundedSender};
-use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
+use futures::channel::mpsc::{UnboundedSender, unbounded as unbounded_channel};
+use futures::channel::oneshot::{Sender as OneshotSender, channel as oneshot_channel};
 use futures::future::BoxFuture;
 use futures::{Future, FutureExt, Stream, StreamExt};
 use std::collections::HashMap;
@@ -448,24 +449,16 @@ impl InterpreterInner {
             ("options".to_owned(), FidlValue::Object(options)),
             (
                 "object".to_owned(),
-                FidlValue::ServerEnd(server.into_channel(), fio::NODE_PROTOCOL_NAME.to_owned()),
+                FidlValue::Handle(server.into_handle(), fidl::ObjectType::CHANNEL),
             ),
         ]);
 
-        let (bytes, mut handles) = fidl_codec::encode_request(
-            self.lib_namespace(),
-            0,
-            fio::DIRECTORY_PROTOCOL_NAME,
-            "Open",
-            request,
-        )
-        .map_err(|e| {
-            MessageError::EncodeRequestFailed(
-                fio::DIRECTORY_PROTOCOL_NAME.to_owned(),
-                "Open".to_owned(),
-                Arc::new(e),
-            )
-        })?;
+        let library_name = fio::DirectoryMarker::library_name();
+        let (bytes, mut handles) =
+            fidl_codec::encode_request(self.lib_namespace(), 0, &library_name, "Open", request)
+                .map_err(|e| {
+                    MessageError::EncodeRequestFailed(library_name, "Open".to_owned(), Arc::new(e))
+                })?;
         fs_root.write_channel_etc(&bytes, &mut handles)?;
         Ok(node)
     }
@@ -507,7 +500,7 @@ impl InterpreterInner {
         if !fs_root
             .get_client_protocol()
             .ok()
-            .map(|x| self.lib_namespace().inherits(&x, fio::DIRECTORY_PROTOCOL_NAME))
+            .map(|x| self.lib_namespace().inherits(&x, &fio::DirectoryMarker::library_name()))
             .unwrap_or(false)
         {
             return Err(FSError::FSRootNotDirectory.into());
@@ -529,7 +522,7 @@ impl InterpreterInner {
 
             let attributes = match event {
                 fio::NodeEvent::OnOpen_ { .. } => {
-                    return Err(FSError::UnexpectedOnOpenEvent(path.to_owned()).into())
+                    return Err(FSError::UnexpectedOnOpenEvent(path.to_owned()).into());
                 }
                 fio::NodeEvent::OnRepresentation { payload } => match payload {
                     #[cfg(fuchsia_api_level_at_least = "27")]
@@ -546,7 +539,7 @@ impl InterpreterInner {
                         path.to_owned(),
                         ordinal,
                     )
-                    .into())
+                    .into());
                 }
             };
 
@@ -651,7 +644,7 @@ impl InterpreterInner {
 
         let (proto, node) = if protocols.contains(fio::NodeProtocolKinds::DIRECTORY) {
             (
-                fio::DIRECTORY_PROTOCOL_NAME.to_owned(),
+                fio::DirectoryMarker::library_name(),
                 self.send_open_request(
                     &fs_root,
                     &path,
@@ -663,7 +656,7 @@ impl InterpreterInner {
             )
         } else if protocols.contains(fio::NodeProtocolKinds::FILE) {
             (
-                fio::FILE_PROTOCOL_NAME.to_owned(),
+                fio::FileMarker::library_name(),
                 self.send_open_request(
                     &fs_root,
                     &path,
@@ -674,23 +667,22 @@ impl InterpreterInner {
         } else if protocols.contains(fio::NodeProtocolKinds::SYMLINK) {
             unreachable!("path_info was supposed to traverse symlinks but didn't!");
         } else if protocols.contains(fio::NodeProtocolKinds::CONNECTOR) {
-            let end = path.rfind('/').expect("Canonicalized path wasn't absolute!");
-
-            let name = &path[end + 1..];
+            let last_slash = path.rfind('/').expect("Canonicalized path wasn't absolute!");
+            let name = &path[last_slash + 1..];
             if name.starts_with("fuchsia.") {
-                let mut ret = name.to_owned();
-                let dot = ret.rfind('.').unwrap();
-                ret.replace_range(dot..dot + 1, "/");
-                (ret, self.send_open_request(&fs_root, &path, fio::Flags::PROTOCOL_SERVICE, None)?)
+                (
+                    protocol_to_library_name(name),
+                    self.send_open_request(&fs_root, &path, fio::Flags::PROTOCOL_SERVICE, None)?,
+                )
             } else {
                 (
-                    fio::NODE_PROTOCOL_NAME.to_owned(),
+                    fio::NodeMarker::library_name(),
                     self.send_open_request(&fs_root, &path, fio::Flags::PROTOCOL_NODE, None)?,
                 )
             }
         } else {
             (
-                fio::NODE_PROTOCOL_NAME.to_owned(),
+                fio::NodeMarker::library_name(),
                 self.send_open_request(&fs_root, &path, fio::Flags::PROTOCOL_NODE, None)?,
             )
         };
@@ -719,7 +711,8 @@ impl Interpreter {
     ) -> (Self, impl Future<Output = ()>) {
         let (task_sender, task_receiver) = unbounded_channel();
 
-        let fs_root = Value::ClientEnd(fs_root.into_channel(), "fuchsia.io/Directory".to_owned());
+        let fs_root =
+            Value::ClientEnd(fs_root.into_channel(), fio::DirectoryMarker::library_name());
         let mut global_variables = GlobalVariables::default();
         global_variables.define("fs_root".to_owned(), Ok(fs_root), Mutability::Mutable);
         global_variables.define(
@@ -769,7 +762,7 @@ impl Interpreter {
         async move {
             let file = self.open(path.clone()).await?;
             let file = file
-                .try_client_channel(self.inner.lib_namespace(), "fuchsia.io/File")
+                .try_client_channel(self.inner.lib_namespace(), &fio::FileMarker::library_name())
                 .map_err(|_| FSError::ImportNotFile(path.clone()))?;
             let file = fidl_fuchsia_io::FileProxy::from_channel(
                 fuchsia_async::Channel::from_channel(file),
@@ -1060,8 +1053,10 @@ impl Interpreter {
                         (file, prefix, filter)
                     };
 
-                    let dir =
-                        file.try_client_channel(self.inner.lib_namespace(), "fuchsia.io/Directory");
+                    let dir = file.try_client_channel(
+                        self.inner.lib_namespace(),
+                        &fio::DirectoryMarker::library_name(),
+                    );
 
                     if let Ok(dir) = dir {
                         let dir = fio::DirectoryProxy::from_channel(
@@ -1172,6 +1167,27 @@ pub fn canonicalize_path_dont_check_pwd(path: String, pwd: &str) -> String {
     }
 
     path.to_string()
+}
+
+/// Convert discoverable protocol name (e.g. fuchsia.fshost.Admin) to the library name used by
+/// fidlcodec (e.g. fuchsia.fshost/Admin).
+pub fn protocol_to_library_name(protocol: &str) -> String {
+    let mut library_name = protocol.to_owned();
+    let final_dot = library_name.rfind('.').unwrap();
+    library_name.replace_range(final_dot..final_dot + 1, "/");
+    library_name
+}
+
+/// Extension trait that adds equivalent library name to a discoverable protocol marker.
+pub trait LibraryProtocolNameExt {
+    /// The equivalent library name (e.g. fuchsia.fshost/Admin) for use with fidlcodec.
+    fn library_name() -> String;
+}
+
+impl<P: DiscoverableProtocolMarker> LibraryProtocolNameExt for P {
+    fn library_name() -> String {
+        protocol_to_library_name(P::PROTOCOL_NAME)
+    }
 }
 
 #[cfg(test)]
