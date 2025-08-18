@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::Scheduler;
+use crate::scheduler;
 use anyhow::{format_err, Error};
 use fidl::endpoints;
 use fidl_fuchsia_diagnostics_persist::{
@@ -10,19 +10,15 @@ use fidl_fuchsia_diagnostics_persist::{
 };
 use futures::{StreamExt, TryStreamExt};
 use log::*;
-use persistence_config::{ServiceName, Tag};
-use std::collections::HashSet;
+use persistence_config::ServiceName;
 use std::sync::Arc;
 use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
 
 pub struct PersistServerData {
     // Service name that this persist server is hosting.
     service_name: ServiceName,
-    // Mapping from a string tag to an archive reader
-    // configured to fetch a specific set of selectors.
-    tags: HashSet<Tag>,
     // Scheduler that will handle the persist requests
-    scheduler: Scheduler,
+    scheduler: scheduler::Scheduler,
 }
 
 /// PersistServer handles all requests for a single persistence service.
@@ -32,13 +28,11 @@ impl PersistServer {
     /// Spawn a task to handle requests from components through a dynamic dictionary.
     pub fn spawn(
         service_name: ServiceName,
-        tags: Vec<Tag>,
-        scheduler: Scheduler,
+        scheduler: scheduler::Scheduler,
         scope: &fasync::Scope,
         requests: fsandbox::ReceiverRequestStream,
     ) {
-        let tags = HashSet::from_iter(tags);
-        let data = Arc::new(PersistServerData { service_name, tags, scheduler });
+        let data = Arc::new(PersistServerData { service_name, scheduler });
 
         let scope_handle = scope.to_handle();
         scope.spawn(Self::accept_connections(data, requests, scope_handle));
@@ -77,27 +71,32 @@ impl PersistServer {
             let request =
                 request.map_err(|e| format_err!("error handling persistence request: {e:?}"))?;
 
+            debug!("Received {request:?}");
+
             match request {
                 DataPersistenceRequest::Persist { tag, responder, .. } => {
-                    let response = if let Ok(tag) = Tag::new(tag) {
-                        if data.tags.contains(&tag) {
-                            data.scheduler.schedule(&data.service_name, vec![tag]);
-                            PersistResult::Queued
-                        } else {
-                            PersistResult::BadName
+                    let response = match data.scheduler.schedule(&data.service_name, [tag]).pop() {
+                        Some(Ok(())) => PersistResult::Queued,
+                        Some(Err(e)) => e.into(),
+                        None => {
+                            error!("Failed to retrieve a response from scheduler");
+                            PersistResult::InternalError
                         }
-                    } else {
-                        PersistResult::BadName
                     };
                     responder.send(response).map_err(|err| {
                         format_err!("Failed to respond {:?} to client: {}", response, err)
                     })?;
                 }
                 DataPersistenceRequest::PersistTags { tags, responder, .. } => {
-                    let (response, tags) = validate_tags(&data.tags, &tags);
-                    if !tags.is_empty() {
-                        data.scheduler.schedule(&data.service_name, tags);
-                    }
+                    let response: Vec<PersistResult> = data
+                        .scheduler
+                        .schedule(&data.service_name, tags)
+                        .into_iter()
+                        .map(|res| match res {
+                            Ok(()) => PersistResult::Queued,
+                            Err(e) => e.into(),
+                        })
+                        .collect();
                     responder.send(&response).map_err(|err| {
                         format_err!("Failed to respond {:?} to client: {}", response, err)
                     })?;
@@ -106,24 +105,4 @@ impl PersistServer {
         }
         Ok(())
     }
-}
-
-fn validate_tags(service_tags: &HashSet<Tag>, tags: &[String]) -> (Vec<PersistResult>, Vec<Tag>) {
-    let mut response = vec![];
-    let mut good_tags = vec![];
-    for tag in tags.iter() {
-        if let Ok(tag) = Tag::new(tag.to_string()) {
-            if service_tags.contains(&tag) {
-                response.push(PersistResult::Queued);
-                good_tags.push(tag);
-            } else {
-                response.push(PersistResult::BadName);
-                warn!("Tag '{}' was requested but is not configured", tag);
-            }
-        } else {
-            response.push(PersistResult::BadName);
-            warn!("Tag '{}' was requested but is not a valid tag string", tag);
-        }
-    }
-    (response, good_tags)
 }

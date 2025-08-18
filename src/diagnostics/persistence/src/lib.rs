@@ -11,9 +11,8 @@ mod inspect_server;
 mod persist_server;
 mod scheduler;
 
-use anyhow::{bail, format_err, Context, Error};
+use anyhow::{format_err, Context, Error};
 use argh::FromArgs;
-use fetcher::Fetcher;
 use fidl::endpoints;
 use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
@@ -41,35 +40,19 @@ pub const PUBLISHED_TIME_KEY: &str = "published";
 #[argh(subcommand, name = "persistence")]
 pub struct CommandLine {}
 
-// on_error logs any errors from `value` and then returns a Result.
-// value must return a Result; error_message must contain one {} to put the error in.
-macro_rules! on_error {
-    ($value:expr, $error_message:expr) => {
-        $value.or_else(|e| {
-            let message = format!($error_message, e);
-            warn!("{}", message);
-            bail!("{}", message)
-        })
-    };
-}
-
 pub async fn main(_args: CommandLine) -> Result<(), Error> {
     info!("Starting Diagnostics Persistence Service service");
     let mut health = component::health();
-    let config =
-        on_error!(persistence_config::load_configuration_files(), "Error loading configs: {}")?;
+    let config = persistence_config::load_configuration_files().context("Error loading configs")?;
     let inspector = component::inspector();
     let _inspect_server_task =
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
 
     file_handler::forget_old_data(&config);
 
-    // Create the Inspect fetcher
-    let (fetch_requester, _fetcher_task) =
-        on_error!(Fetcher::new(&config), "Error initializing fetcher: {}")?;
-
     let scope = fasync::Scope::new();
-    let scheduler = Scheduler::new(scope.to_handle(), fetch_requester, &config);
+    let scheduler =
+        Scheduler::new(scope.to_handle(), &config).context("Error creating scheduler")?;
 
     // Add a persistence fidl service for each service defined in the config files.
     let scope = fasync::Scope::new();
@@ -158,7 +141,7 @@ async fn spawn_persist_services(
     // Register each service with the exposed CFv2 dynamic dictionary.
     let mut service_scopes = Vec::with_capacity(config.len());
 
-    for (service_name, tags) in config {
+    for service_name in config.keys() {
         let connector_id = id_gen.next();
         let (receiver, receiver_stream) =
             endpoints::create_request_stream::<fsandbox::ReceiverMarker>();
@@ -190,7 +173,6 @@ async fn spawn_persist_services(
         let service_scope = scope.new_child_with_name(service_name.clone());
         PersistServer::spawn(
             service_name.clone(),
-            tags.keys().cloned().collect(),
             scheduler.clone(),
             &service_scope,
             receiver_stream,
