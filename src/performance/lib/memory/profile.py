@@ -5,7 +5,7 @@
 
 import fnmatch
 import json
-from typing import Any, Mapping, MutableSequence, cast
+from typing import Any, Mapping, MutableMapping, MutableSequence, cast
 
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from trace_processing import trace_metrics, trace_model
@@ -31,31 +31,28 @@ class _MemoryProfileMetrics(trace_metrics.MetricsProcessor):
 
     def __init__(
         self,
-        principal_groups: Mapping[str, str],
-        component_profile: Any,
+        structured: MutableSequence[trace_metrics.TestCaseResult],
+        freeform: MutableMapping[str, trace_metrics.JSON],
     ):
-        self._principal_groups = principal_groups
-        self._component_profile = component_profile
+        self.structured = structured
+        self.freeform = freeform
+        if len(self.freeform) != 1:
+            raise ValueError
 
     def process_metrics(
         self, model: trace_model.Model
     ) -> MutableSequence[trace_metrics.TestCaseResult]:
-        return process_component_profile(
-            self._principal_groups, self._component_profile
-        )
+        return self.structured
 
     def process_freeform_metrics(
         self, model: trace_model.Model
     ) -> tuple[str, JSON]:
-        return (
-            "memory_profile",
-            _simplify_digest(self._component_profile),
-        )
+        return next(iter(self.freeform.items()))
 
 
 def capture(
-    dut: FuchsiaDevice, principal_groups: Mapping[str, str]
-) -> trace_metrics.MetricsProcessor:
+    dut: FuchsiaDevice, principal_groups: Mapping[str, str] | None = None
+) -> _MemoryProfileMetrics:
     """Captures kernel and user space memory metrics using `ffx profile memory`.
 
     Args:
@@ -64,8 +61,6 @@ def capture(
         that selects the principals by name. A metric labelled
         "Memory/Principal/{group_name}/PrivatePopulated" is returned for each
         item.
-      process_groups: The process groupings for which to report total memory
-        usage metrics that will be tracked for regressions.
 
     Returns:
       MemoryProfileMetrics instance containing two sets of memory
@@ -89,7 +84,12 @@ def capture(
         )
     )
 
-    return _MemoryProfileMetrics(principal_groups, component_profile)
+    return _MemoryProfileMetrics(
+        process_component_profile(principal_groups, component_profile),
+        {
+            "memory_profile": _simplify_digest(component_profile),
+        },
+    )
 
 
 def process_component_profile(

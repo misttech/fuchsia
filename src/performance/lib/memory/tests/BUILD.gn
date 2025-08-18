@@ -9,9 +9,9 @@ if (is_host) {
     main_source = "profile_test.py"
     libraries = [ "//src/performance/lib/memory" ]
   }
+}
 
-  group("tests") {
-    testonly = true
-    public_deps = [ ":profile_test($host_toolchain)" ]
-  }
+group("tests") {
+  testonly = true
+  public_deps = [ ":profile_test($host_toolchain)" ]
 }
