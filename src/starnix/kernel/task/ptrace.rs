@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::arch::execution::new_syscall_from_state;
 use crate::arch::LongPtr;
+use crate::arch::execution::new_syscall_from_state;
 use crate::mm::{DumpPolicy, IOVecPtr, MemoryAccessor, MemoryAccessorExt};
 use crate::security;
 use crate::signals::syscalls::WaitingOptions;
 use crate::signals::{
-    send_signal_first, send_standard_signal, SignalDetail, SignalInfo, SignalInfoHeader,
-    SignalSource, SI_HEADER_SIZE,
+    SI_HEADER_SIZE, SignalDetail, SignalInfo, SignalInfoHeader, SignalSource, send_signal_first,
+    send_standard_signal,
 };
 use crate::task::waiter::WaitQueue;
 use crate::task::{
@@ -20,36 +20,36 @@ use crate::vfs::pseudo::simple_file::parse_unsigned_file;
 use bitflags::bitflags;
 use starnix_logging::track_stub;
 use starnix_sync::{LockBefore, Locked, MmDumpable, ThreadGroupLimits, Unlocked};
-use starnix_syscalls::decls::SyscallDecl;
 use starnix_syscalls::SyscallResult;
+use starnix_syscalls::decls::SyscallDecl;
 use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, TempRef, WeakRef};
 use starnix_uapi::auth::{CAP_SYS_PTRACE, PTRACE_MODE_ATTACH_REALCREDS};
 use starnix_uapi::elf::ElfNoteType;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::signals::{SigSet, Signal, UncheckedSignal, SIGKILL, SIGSTOP, SIGTRAP};
+use starnix_uapi::signals::{SIGKILL, SIGSTOP, SIGTRAP, SigSet, Signal, UncheckedSignal};
 #[allow(unused_imports)]
 use starnix_uapi::user_address::ArchSpecific;
 use starnix_uapi::user_address::{MultiArchUserRef, UserAddress, UserRef};
 use starnix_uapi::{
-    clone_args, errno, error, pid_t, ptrace_syscall_info, tid_t, uapi, PTRACE_CONT, PTRACE_DETACH,
-    PTRACE_EVENT_CLONE, PTRACE_EVENT_EXEC, PTRACE_EVENT_EXIT, PTRACE_EVENT_FORK,
-    PTRACE_EVENT_SECCOMP, PTRACE_EVENT_STOP, PTRACE_EVENT_VFORK, PTRACE_EVENT_VFORK_DONE,
-    PTRACE_GETEVENTMSG, PTRACE_GETREGSET, PTRACE_GETSIGINFO, PTRACE_GETSIGMASK,
-    PTRACE_GET_SYSCALL_INFO, PTRACE_INTERRUPT, PTRACE_KILL, PTRACE_LISTEN, PTRACE_O_EXITKILL,
-    PTRACE_O_TRACECLONE, PTRACE_O_TRACEEXEC, PTRACE_O_TRACEEXIT, PTRACE_O_TRACEFORK,
-    PTRACE_O_TRACESYSGOOD, PTRACE_O_TRACEVFORK, PTRACE_O_TRACEVFORKDONE, PTRACE_PEEKDATA,
-    PTRACE_PEEKTEXT, PTRACE_PEEKUSR, PTRACE_POKEDATA, PTRACE_POKETEXT, PTRACE_POKEUSR,
-    PTRACE_SETOPTIONS, PTRACE_SETSIGINFO, PTRACE_SETSIGMASK, PTRACE_SYSCALL,
+    PTRACE_CONT, PTRACE_DETACH, PTRACE_EVENT_CLONE, PTRACE_EVENT_EXEC, PTRACE_EVENT_EXIT,
+    PTRACE_EVENT_FORK, PTRACE_EVENT_SECCOMP, PTRACE_EVENT_STOP, PTRACE_EVENT_VFORK,
+    PTRACE_EVENT_VFORK_DONE, PTRACE_GET_SYSCALL_INFO, PTRACE_GETEVENTMSG, PTRACE_GETREGSET,
+    PTRACE_GETSIGINFO, PTRACE_GETSIGMASK, PTRACE_INTERRUPT, PTRACE_KILL, PTRACE_LISTEN,
+    PTRACE_O_EXITKILL, PTRACE_O_TRACECLONE, PTRACE_O_TRACEEXEC, PTRACE_O_TRACEEXIT,
+    PTRACE_O_TRACEFORK, PTRACE_O_TRACESYSGOOD, PTRACE_O_TRACEVFORK, PTRACE_O_TRACEVFORKDONE,
+    PTRACE_PEEKDATA, PTRACE_PEEKTEXT, PTRACE_PEEKUSR, PTRACE_POKEDATA, PTRACE_POKETEXT,
+    PTRACE_POKEUSR, PTRACE_SETOPTIONS, PTRACE_SETSIGINFO, PTRACE_SETSIGMASK, PTRACE_SYSCALL,
     PTRACE_SYSCALL_INFO_ENTRY, PTRACE_SYSCALL_INFO_EXIT, PTRACE_SYSCALL_INFO_NONE, SI_MAX_SIZE,
+    clone_args, errno, error, pid_t, ptrace_syscall_info, tid_t, uapi,
 };
 
 use std::collections::BTreeMap;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use zerocopy::FromBytes;
 
 #[cfg(any(target_arch = "x86_64"))]
-use starnix_uapi::{user, PTRACE_GETREGS};
+use starnix_uapi::{PTRACE_GETREGS, user};
 
 type UserRegsStructPtr =
     MultiArchUserRef<starnix_uapi::user_regs_struct, starnix_uapi::arch32::user_regs_struct>;
@@ -239,8 +239,8 @@ pub struct PtraceState {
 }
 
 impl PtraceState {
-    pub fn new(pid: pid_t, attach_type: PtraceAttachType, options: PtraceOptions) -> Self {
-        PtraceState {
+    pub fn new(pid: pid_t, attach_type: PtraceAttachType, options: PtraceOptions) -> Box<Self> {
+        Box::new(PtraceState {
             core_state: PtraceCoreState {
                 pid,
                 attach_type,
@@ -253,7 +253,7 @@ impl PtraceState {
             event_data: None,
             stop_status: PtraceStatus::default(),
             last_syscall_was_error: false,
-        }
+        })
     }
 
     pub fn get_pid(&self) -> pid_t {
@@ -1421,16 +1421,18 @@ mod tests {
             error!(EPERM)
         );
 
-        assert!(sys_prctl(
-            locked,
-            &mut tracee,
-            PR_SET_PTRACER,
-            tracer.thread_group().leader as u64,
-            0,
-            0,
-            0
-        )
-        .is_ok());
+        assert!(
+            sys_prctl(
+                locked,
+                &mut tracee,
+                PR_SET_PTRACER,
+                tracer.thread_group().leader as u64,
+                0,
+                0,
+                0
+            )
+            .is_ok()
+        );
 
         let mut not_tracer = create_task(locked, &kernel, "not-tracer");
         assert_eq!(
@@ -1444,14 +1446,16 @@ mod tests {
             error!(EPERM)
         );
 
-        assert!(ptrace_attach(
-            locked,
-            &mut tracer,
-            tracee.as_ref().task.tid,
-            PtraceAttachType::Attach,
-            UserAddress::NULL,
-        )
-        .is_ok());
+        assert!(
+            ptrace_attach(
+                locked,
+                &mut tracer,
+                tracee.as_ref().task.tid,
+                PtraceAttachType::Attach,
+                UserAddress::NULL,
+            )
+            .is_ok()
+        );
     }
 
     #[::fuchsia::test]
@@ -1472,16 +1476,20 @@ mod tests {
             error!(EPERM)
         );
 
-        assert!(sys_prctl(locked, &mut tracee, PR_SET_PTRACER, PR_SET_PTRACER_ANY as u64, 0, 0, 0)
-            .is_ok());
+        assert!(
+            sys_prctl(locked, &mut tracee, PR_SET_PTRACER, PR_SET_PTRACER_ANY as u64, 0, 0, 0)
+                .is_ok()
+        );
 
-        assert!(ptrace_attach(
-            locked,
-            &mut tracer,
-            tracee.as_ref().task.tid,
-            PtraceAttachType::Attach,
-            UserAddress::NULL,
-        )
-        .is_ok());
+        assert!(
+            ptrace_attach(
+                locked,
+                &mut tracer,
+                tracee.as_ref().task.tid,
+                PtraceAttachType::Attach,
+                UserAddress::NULL,
+            )
+            .is_ok()
+        );
     }
 }

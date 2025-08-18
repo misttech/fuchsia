@@ -29,18 +29,18 @@ use starnix_types::ownership::{
 use starnix_types::stats::TaskTimeStats;
 use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::signals::{sigaltstack_contains_pointer, SigSet, Signal};
+use starnix_uapi::signals::{SigSet, Signal, sigaltstack_contains_pointer};
 use starnix_uapi::user_address::{ArchSpecific, MappingMultiArchUserRef, UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    errno, error, from_status_like_fdio, pid_t, sigaction_t, sigaltstack, tid_t, uapi,
-    CLD_CONTINUED, CLD_DUMPED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, FUTEX_BITSET_MATCH_ANY,
+    CLD_CONTINUED, CLD_DUMPED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, FUTEX_BITSET_MATCH_ANY, errno,
+    error, from_status_like_fdio, pid_t, sigaction_t, sigaltstack, tid_t, uapi,
 };
 use std::collections::VecDeque;
 use std::ffi::CString;
 use std::mem::MaybeUninit;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::{cmp, fmt};
 use zx::{
     AsHandleRef, Signals, Task as _, {self as zx},
@@ -444,7 +444,7 @@ pub struct TaskMutableState {
 
     /// Information that a tracer needs to communicate with this process, if it
     /// is being traced.
-    pub ptrace: Option<PtraceState>,
+    pub ptrace: Option<Box<PtraceState>>,
 
     /// Information that a tracer needs to inspect this process.
     pub captured_thread_state: Option<Box<CapturedThreadState>>,
@@ -485,7 +485,7 @@ impl TaskMutableState {
     }
 
     pub fn ptrace_on_signal_consume(&mut self) -> bool {
-        self.ptrace.as_mut().is_some_and(|ptrace: &mut PtraceState| {
+        self.ptrace.as_mut().is_some_and(|ptrace: &mut Box<PtraceState>| {
             if ptrace.stop_status.is_continuing() {
                 ptrace.stop_status = PtraceStatus::Default;
                 false
@@ -689,7 +689,7 @@ impl TaskMutableState<Base = Task> {
         }
     }
 
-    pub fn set_ptrace(&mut self, tracer: Option<PtraceState>) -> Result<(), Errno> {
+    pub fn set_ptrace(&mut self, tracer: Option<Box<PtraceState>>) -> Result<(), Errno> {
         if tracer.is_some() && self.ptrace.is_some() {
             return error!(EPERM);
         }
@@ -1663,10 +1663,10 @@ impl cmp::Eq for Task {}
 mod test {
     use super::*;
     use crate::testing::*;
-    use starnix_uapi::auth::{Capabilities, CAP_SYS_ADMIN};
+    use starnix_uapi::auth::{CAP_SYS_ADMIN, Capabilities};
     use starnix_uapi::resource_limits::Resource;
     use starnix_uapi::signals::SIGCHLD;
-    use starnix_uapi::{rlimit, CLONE_SIGHAND, CLONE_THREAD, CLONE_VM};
+    use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM, rlimit};
 
     #[::fuchsia::test]
     async fn test_tid_allocation() {
