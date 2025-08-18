@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod netlink_ioctl;
 #[allow(clippy::module_inception)]
 mod socket;
 mod socket_backed_by_zxio;
@@ -16,6 +17,7 @@ mod socket_vsock;
 pub mod iptables_utils;
 pub mod syscalls;
 
+pub use netlink_ioctl::IfReqPtr;
 pub use socket::*;
 pub use socket_backed_by_zxio::*;
 pub use socket_file::*;

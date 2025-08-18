@@ -286,6 +286,7 @@ rustc_library("starnix_core") {
     "vfs/rw_queue.rs",
     "vfs/socket/iptables_utils.rs",
     "vfs/socket/mod.rs",
+    "vfs/socket/netlink_ioctl.rs",
     "vfs/socket/socket.rs",
     "vfs/socket/socket_backed_by_zxio.rs",
     "vfs/socket/socket_file.rs",
