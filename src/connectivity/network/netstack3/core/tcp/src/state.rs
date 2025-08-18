@@ -1539,33 +1539,32 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                 }
             }
 
-            let seg = rcv.make_segment(|ack, wnd, mut sack_blocks| {
-                let bytes_to_send = match sack_blocks.as_option() {
-                    // We may have to trim bytes_to_send.
-                    Some(option) => {
-                        // Unwrap here is okay, we're building this option from
-                        // `SackBlocks` which encodes the SACK block option
-                        // limit within it.
+            let seg = rcv.make_segment(|ack, wnd, sack_blocks| {
+                let (bytes_to_send, options) = {
+                    let mut options = SegmentOptions { sack_blocks };
+                    let mut bytes_to_send = bytes_to_send;
+                    // We may have to trim bytes_to_send to account for options.
+                    if !options.is_empty() {
+                        // Unwrap here is okay. The options contained within
+                        // `SegmentOptions` have a fixed size limit.
                         let options_len = u32::try_from(
-                            packet_formats::tcp::aligned_options_length(core::iter::once(option)),
+                            packet_formats::tcp::aligned_options_length(options.iter()),
                         )
                         .unwrap();
                         if options_len < mss {
-                            bytes_to_send.min(mss - options_len)
+                            bytes_to_send = bytes_to_send.min(mss - options_len)
                         } else {
                             // NB: we don't encode a minimum Mss in types. To
                             // prevent the state machine from possibly blocking
-                            // completely here just drop sack blocks.
+                            // completely here just drop all options.
                             //
                             // TODO(https://fxbug.dev/383355972): We might be
                             // able to get around this if we have guarantees
                             // over minimum MTU and, hence, Mss.
-                            sack_blocks.clear();
-                            bytes_to_send
+                            options = SegmentOptions { sack_blocks: SackBlocks::EMPTY }
                         }
                     }
-                    // No further trimming necessary.
-                    None => bytes_to_send,
+                    (bytes_to_send, options)
                 };
 
                 // From https://datatracker.ietf.org/doc/html/rfc9293#section-3.9.1.2:
@@ -1594,7 +1593,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                         ack: Some(ack),
                         control: has_fin.then_some(Control::FIN),
                         wnd,
-                        options: Options::Segment(SegmentOptions { sack_blocks }),
+                        options: Options::Segment(options),
                         push,
                     },
                     readable.slice(0..bytes_to_send),

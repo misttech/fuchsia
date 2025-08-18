@@ -15,8 +15,8 @@ use core::ops::Range;
 use arrayvec::ArrayVec;
 use log::info;
 use net_types::ip::IpAddress;
-use packet::records::options::OptionSequenceBuilder;
 use packet::InnerSerializer;
+use packet::records::options::OptionSequenceBuilder;
 use packet_formats::tcp::options::{TcpOption, TcpSackBlock};
 use packet_formats::tcp::{TcpSegment, TcpSegmentBuilder, TcpSegmentBuilderWithOptions};
 use thiserror::Error;
@@ -250,6 +250,12 @@ impl SegmentOptions {
     pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
         let Self { sack_blocks } = self;
         sack_blocks.as_option().into_iter()
+    }
+
+    /// Returns true if there are no options present.
+    pub fn is_empty(&self) -> bool {
+        let Self { sack_blocks } = self;
+        sack_blocks.is_empty()
     }
 }
 
