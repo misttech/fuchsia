@@ -933,6 +933,7 @@ pub mod test_utils {
         power_state: Arc<Mutex<bool>>,
         mock_create_client_iface_result: Result<u16, Error>,
         mock_destroy_client_iface_result: Result<(), Error>,
+        iface_id: Arc<Mutex<u16>>,
     }
 
     impl TestIfaceManager {
@@ -944,6 +945,7 @@ pub mod test_utils {
                 power_state: Arc::new(Mutex::new(true)),
                 mock_create_client_iface_result: Ok(FAKE_IFACE_RESPONSE.id),
                 mock_destroy_client_iface_result: Ok(()),
+                iface_id: Arc::new(Mutex::new(FAKE_IFACE_RESPONSE.id)),
             }
         }
 
@@ -955,6 +957,7 @@ pub mod test_utils {
                 power_state: Arc::new(Mutex::new(true)),
                 mock_create_client_iface_result: Ok(FAKE_IFACE_RESPONSE.id),
                 mock_destroy_client_iface_result: Ok(()),
+                iface_id: Arc::new(Mutex::new(FAKE_IFACE_RESPONSE.id)),
             }
         }
 
@@ -972,6 +975,7 @@ pub mod test_utils {
                     power_state: Arc::new(Mutex::new(true)),
                     mock_create_client_iface_result: Ok(FAKE_IFACE_RESPONSE.id),
                     mock_destroy_client_iface_result: Ok(()),
+                    iface_id: Arc::new(Mutex::new(FAKE_IFACE_RESPONSE.id)),
                 },
                 sender,
             )
@@ -1004,6 +1008,10 @@ pub mod test_utils {
                 ..self
             }
         }
+
+        pub fn set_iface_id(&self, new_id: u16) {
+            *self.iface_id.lock() = new_id;
+        }
     }
 
     #[async_trait]
@@ -1018,7 +1026,7 @@ pub mod test_utils {
         fn list_ifaces(&self) -> Vec<u16> {
             self.calls.lock().push(IfaceManagerCall::ListIfaces);
             if self.client_iface.lock().is_some() {
-                vec![FAKE_IFACE_RESPONSE.id]
+                vec![*self.iface_id.lock()]
             } else {
                 vec![]
             }
@@ -1040,7 +1048,7 @@ pub mod test_utils {
             iface_id: u16,
         ) -> Result<fidl_device_service::QueryIfaceResponse, Error> {
             self.calls.lock().push(IfaceManagerCall::QueryIface(iface_id));
-            if self.client_iface.lock().is_some() && iface_id == FAKE_IFACE_RESPONSE.id {
+            if self.client_iface.lock().is_some() && iface_id == *self.iface_id.lock() {
                 Ok(FAKE_IFACE_RESPONSE)
             } else {
                 Err(format_err!("Unexpected query for iface id {}", iface_id))
@@ -1063,7 +1071,7 @@ pub mod test_utils {
 
         async fn get_client_iface(&self, iface_id: u16) -> Result<Arc<TestClientIface>, Error> {
             self.calls.lock().push(IfaceManagerCall::GetClientIface(iface_id));
-            if iface_id == FAKE_IFACE_RESPONSE.id {
+            if iface_id == *self.iface_id.lock() {
                 match self.client_iface.lock().as_ref() {
                     Some(iface) => Ok(Arc::clone(iface)),
                     None => Err(format_err!("Unexpected get_client_iface when no client exists")),

@@ -684,40 +684,89 @@ async fn handle_client_connect_transactions<C: ClientIface>(
     }
 }
 
-async fn handle_supplicant_sta_network_request<C: ClientIface>(
+async fn get_iface_and_log<I: IfaceManager>(
+    label: &str,
+    iface_manager: Arc<I>,
+    iface_name: &str,
+) -> Result<(Arc<I::Client>, u16), Error> {
+    // TODO(b/299349496): Fetch the iface by name.
+    let ifaces = iface_manager.list_ifaces();
+    if ifaces.is_empty() {
+        warn!("{} -- no iface available to serve {}", label, iface_name);
+        bail!("no iface available");
+    } else {
+        match iface_manager.get_client_iface(ifaces[0]).await {
+            Ok(iface) => {
+                info!("{} ({}, iface {})", label, iface_name, ifaces[0]);
+                Ok((iface, ifaces[0]))
+            }
+            Err(e) => {
+                error!("{} -- failed to get client iface: {}", label, e);
+                bail!("failed to get client iface: {}", e);
+            }
+        }
+    }
+}
+
+async fn handle_supplicant_sta_network_request<I: IfaceManager>(
     telemetry_sender: TelemetrySender,
     req: fidl_wlanix::SupplicantStaNetworkRequest,
     sta_network_state: Arc<Mutex<SupplicantStaNetworkState>>,
     sta_iface_state: Arc<Mutex<SupplicantStaIfaceState>>,
     state: Arc<Mutex<WifiState>>,
-    iface: Arc<C>,
-    iface_id: u16,
+    iface_manager: Arc<I>,
+    iface_name: String,
 ) -> Result<(), Error> {
     match req {
         fidl_wlanix::SupplicantStaNetworkRequest::SetBssid { payload, .. } => {
-            info!("fidl_wlanix::SupplicantStaNetworkRequest::SetBssid");
+            let _ = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaNetworkRequest::SetBssid",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             if let Some(bssid) = payload.bssid {
                 sta_network_state.lock().bssid.replace(Bssid::from(bssid));
             }
         }
         fidl_wlanix::SupplicantStaNetworkRequest::ClearBssid { .. } => {
-            info!("fidl_wlanix::SupplicantStaNetworkRequest::ClearBssid");
+            let _ = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaNetworkRequest::ClearBssid",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             sta_network_state.lock().bssid.take();
         }
         fidl_wlanix::SupplicantStaNetworkRequest::SetSsid { payload, .. } => {
-            info!("fidl_wlanix::SupplicantStaNetworkRequest::SetSsid");
+            let _ = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaNetworkRequest::SetSsid",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             if let Some(ssid) = payload.ssid {
                 sta_network_state.lock().ssid.replace(ssid);
             }
         }
         fidl_wlanix::SupplicantStaNetworkRequest::SetPskPassphrase { payload, .. } => {
-            info!("fidl_wlanix::SupplicantStaNetworkRequest::SetPskPassphrase");
+            let _ = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaNetworkRequest::SetPskPassphrase",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             if let Some(passphrase) = payload.passphrase {
                 sta_network_state.lock().credential = Credential::Password(passphrase);
             }
         }
         fidl_wlanix::SupplicantStaNetworkRequest::SetWepKey { payload, .. } => {
-            info!("fidl_wlanix::SupplicantStaNetworkRequest::SetWepKey");
+            let _ = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaNetworkRequest::SetWepKey",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             let mut sta_network_state = sta_network_state.lock();
             let key = payload.key.ok_or_else(|| format_err!("SetWepKey's key is None"))?;
             let index =
@@ -741,7 +790,12 @@ async fn handle_supplicant_sta_network_request<C: ClientIface>(
             }
         }
         fidl_wlanix::SupplicantStaNetworkRequest::SetWepTxKeyIdx { payload, .. } => {
-            info!("fidl_wlanix::SupplicantStaNetworkRequest::SetWepTxKeyIdx");
+            let _ = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaNetworkRequest::SetWepTxKeyIdx",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             let index = payload.key_idx.ok_or_else(|| format_err!("WEP key index is None"))?;
             let mut sta_network = sta_network_state.lock();
 
@@ -761,7 +815,12 @@ async fn handle_supplicant_sta_network_request<C: ClientIface>(
             }
         }
         fidl_wlanix::SupplicantStaNetworkRequest::Select { responder } => {
-            info!("fidl_wlanix::SupplicantStaNetworkRequest::Select");
+            let (iface, iface_id) = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaNetworkRequest::Select",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             let (ssid, credential, bssid) = {
                 let state = sta_network_state.lock();
                 let credential = state.credential.clone();
@@ -882,13 +941,13 @@ async fn handle_supplicant_sta_network_request<C: ClientIface>(
     Ok(())
 }
 
-async fn serve_supplicant_sta_network<C: ClientIface>(
+async fn serve_supplicant_sta_network<I: IfaceManager>(
     telemetry_sender: TelemetrySender,
     reqs: fidl_wlanix::SupplicantStaNetworkRequestStream,
     sta_iface_state: Arc<Mutex<SupplicantStaIfaceState>>,
     state: Arc<Mutex<WifiState>>,
-    iface: Arc<C>,
-    iface_id: u16,
+    iface_manager: Arc<I>,
+    iface_name: String,
 ) {
     let sta_network_state = Arc::new(Mutex::new(SupplicantStaNetworkState::default()));
     reqs.for_each_concurrent(None, |req| async {
@@ -900,8 +959,8 @@ async fn serve_supplicant_sta_network<C: ClientIface>(
                     Arc::clone(&sta_network_state),
                     Arc::clone(&sta_iface_state),
                     Arc::clone(&state),
-                    Arc::clone(&iface),
-                    iface_id,
+                    Arc::clone(&iface_manager),
+                    iface_name.clone(),
                 )
                 .await
                 {
@@ -916,17 +975,22 @@ async fn serve_supplicant_sta_network<C: ClientIface>(
     .await;
 }
 
-async fn handle_supplicant_sta_iface_request<C: ClientIface>(
+async fn handle_supplicant_sta_iface_request<I: IfaceManager>(
     telemetry_sender: TelemetrySender,
     req: fidl_wlanix::SupplicantStaIfaceRequest,
     sta_iface_state: Arc<Mutex<SupplicantStaIfaceState>>,
     state: Arc<Mutex<WifiState>>,
-    iface: Arc<C>,
-    iface_id: u16,
+    iface_manager: Arc<I>,
+    iface_name: String,
 ) -> Result<(), Error> {
     match req {
         fidl_wlanix::SupplicantStaIfaceRequest::RegisterCallback { payload, .. } => {
-            info!("fidl_wlanix::SupplicantStaIfaceRequest::RegisterCallback");
+            let _ = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaIfaceRequest::RegisterCallback",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             if let Some(callback) = payload.callback {
                 if sta_iface_state.lock().callback.replace(callback.into_proxy()).is_some() {
                     warn!("Replaced a SupplicantStaIfaceCallbackProxy when there's one existing");
@@ -936,7 +1000,12 @@ async fn handle_supplicant_sta_iface_request<C: ClientIface>(
             }
         }
         fidl_wlanix::SupplicantStaIfaceRequest::AddNetwork { payload, .. } => {
-            info!("fidl_wlanix::SupplicantStaIfaceRequest::AddNetwork");
+            let _ = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaIfaceRequest::AddNetwork",
+                Arc::clone(&iface_manager),
+                &iface_name,
+            )
+            .await?;
             if let Some(supplicant_sta_network) = payload.network {
                 let supplicant_sta_network_stream = supplicant_sta_network.into_stream();
                 // TODO(https://fxbug.dev/316035436): Should we return NetworkAdded event?
@@ -945,14 +1014,19 @@ async fn handle_supplicant_sta_iface_request<C: ClientIface>(
                     supplicant_sta_network_stream,
                     sta_iface_state,
                     state,
-                    iface,
-                    iface_id,
+                    iface_manager,
+                    iface_name,
                 )
                 .await;
             }
         }
         fidl_wlanix::SupplicantStaIfaceRequest::Disconnect { responder } => {
-            info!("fidl_wlanix::SupplicantStaIfaceRequest::Disconnect");
+            let (iface, _) = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaIfaceRequest::Disconnect",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             if let Err(e) = iface.disconnect().await {
                 warn!("iface.disconnect() error: {}", e);
             }
@@ -961,7 +1035,12 @@ async fn handle_supplicant_sta_iface_request<C: ClientIface>(
             }
         }
         fidl_wlanix::SupplicantStaIfaceRequest::GetMacAddress { responder } => {
-            info!("fidl_wlanix::WifiStaIfaceRequest::GetMacAddress");
+            let (iface, iface_id) = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaIfaceRequest::GetMacAddress",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             let result = match iface.query().await {
                 Ok(response) => Ok(fidl_wlanix::SupplicantStaIfaceGetMacAddressResponse {
                     mac_addr: Some(response.sta_addr),
@@ -976,7 +1055,12 @@ async fn handle_supplicant_sta_iface_request<C: ClientIface>(
             responder.send(result).context("send GetMacAddress response")?;
         }
         fidl_wlanix::SupplicantStaIfaceRequest::SetPowerSave { payload, responder } => {
-            info!("fidl_wlanix::SupplicantStaIfaceRequest::SetPowerSave");
+            let (iface, _) = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaIfaceRequest::SetPowerSave",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             match payload.enable {
                 Some(enable) => match iface.set_power_save_mode(enable).await {
                     Ok(()) => info!("Set power save mode to {}", enable),
@@ -989,7 +1073,12 @@ async fn handle_supplicant_sta_iface_request<C: ClientIface>(
             }
         }
         fidl_wlanix::SupplicantStaIfaceRequest::SetSuspendModeEnabled { payload, responder } => {
-            info!("fidl_wlanix::SupplicantStaIfaceRequest::SetSuspendModeEnabled");
+            let (iface, _) = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaIfaceRequest::SetSuspendModeEnabled",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             match payload.enable {
                 Some(enable) => match iface.set_suspend_mode(enable).await {
                     Ok(()) => info!("Set suspend mode to {}", enable),
@@ -1002,7 +1091,12 @@ async fn handle_supplicant_sta_iface_request<C: ClientIface>(
             }
         }
         fidl_wlanix::SupplicantStaIfaceRequest::SetStaCountryCode { payload, responder } => {
-            info!("fidl_wlanix::SupplicantStaIfaceRequest::SetStaCountryCode");
+            let (iface, _) = get_iface_and_log(
+                "fidl_wlanix::SupplicantStaIfaceRequest::SetStaCountryCode",
+                iface_manager,
+                &iface_name,
+            )
+            .await?;
             let result = match payload.code {
                 Some(code) => iface.set_country(code).await.map_err(|e| {
                     error!("Failed to set country code {:?} for iface: {}", code, e);
@@ -1022,12 +1116,12 @@ async fn handle_supplicant_sta_iface_request<C: ClientIface>(
     Ok(())
 }
 
-async fn serve_supplicant_sta_iface<C: ClientIface>(
+async fn serve_supplicant_sta_iface<I: IfaceManager>(
     telemetry_sender: TelemetrySender,
     reqs: fidl_wlanix::SupplicantStaIfaceRequestStream,
     state: Arc<Mutex<WifiState>>,
-    iface: Arc<C>,
-    iface_id: u16,
+    iface_manager: Arc<I>,
+    iface_name: String,
 ) {
     let sta_iface_state = Arc::new(Mutex::new(SupplicantStaIfaceState { callback: None }));
     reqs.for_each_concurrent(None, |req| async {
@@ -1038,8 +1132,8 @@ async fn serve_supplicant_sta_iface<C: ClientIface>(
                     req,
                     Arc::clone(&sta_iface_state),
                     Arc::clone(&state),
-                    Arc::clone(&iface),
-                    iface_id,
+                    Arc::clone(&iface_manager),
+                    iface_name.clone(),
                 )
                 .await
                 {
@@ -1063,6 +1157,10 @@ async fn handle_supplicant_request<I: IfaceManager>(
     match req {
         fidl_wlanix::SupplicantRequest::AddStaInterface { payload, .. } => {
             info!("fidl_wlanix::SupplicantRequest::AddStaInterface");
+            let iface_name = match payload.iface_name {
+                Some(name) => name,
+                None => bail!("No iface name in AddStaInterface"),
+            };
             // TODO(b/299349496): Check that the iface name matches the request.
             if let Some(supplicant_sta_iface) = payload.iface {
                 let ifaces = iface_manager.list_ifaces();
@@ -1070,14 +1168,14 @@ async fn handle_supplicant_request<I: IfaceManager>(
                     bail!("AddStaInterface but no interfaces exist.");
                 } else {
                     info!("AddStaInterface: serving iface {}", ifaces[0]);
-                    let client_iface = iface_manager.get_client_iface(ifaces[0]).await?;
+                    let _client_iface = iface_manager.get_client_iface(ifaces[0]).await?;
                     let supplicant_sta_iface_stream = supplicant_sta_iface.into_stream();
                     serve_supplicant_sta_iface(
                         telemetry_sender,
                         supplicant_sta_iface_stream,
                         state,
-                        client_iface,
-                        ifaces[0],
+                        Arc::clone(&iface_manager),
+                        iface_name.clone(),
                     )
                     .await;
                 }
@@ -2520,6 +2618,28 @@ mod tests {
     fn test_supplicant_sta_iface_get_mac_address() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
 
+        let mut get_mac_address_fut = test_helper.supplicant_sta_iface_proxy.get_mac_address();
+        assert_matches!(
+            test_helper.exec.run_until_stalled(&mut get_mac_address_fut),
+            Poll::Pending
+        );
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        assert_matches!(&iface_calls.lock()[0], ClientIfaceCall::Query);
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut get_mac_address_fut),
+            Poll::Ready(Ok(Ok(response))) => response);
+        assert_eq!(response.mac_addr.unwrap(), [13u8, 37, 13, 37, 13, 37]);
+    }
+
+    #[test]
+    fn test_supplicant_sta_iface_get_mac_address_after_iface_restart() {
+        let (mut test_helper, mut test_fut) = setup_supplicant_test();
+
+        // Increment the iface id to simulate an iface restart.
+        test_helper.iface_manager.set_iface_id(1234);
+
+        // Under the hood we pick up the new iface seamlessly.
         let mut get_mac_address_fut = test_helper.supplicant_sta_iface_proxy.get_mac_address();
         assert_matches!(
             test_helper.exec.run_until_stalled(&mut get_mac_address_fut),
