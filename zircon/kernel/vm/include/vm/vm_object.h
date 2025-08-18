@@ -719,8 +719,8 @@ class VmObject : public fbl::ContainableBaseClasses<
   using KeyTraits = fbl::DefaultKeyedObjectTraits<
       MappingTreeTraits::Key, typename fbl::internal::ContainerPtrTraits<VmMapping*>::ValueType>;
   using MappingTree = fbl::WAVLTree<MappingTreeTraits::Key, VmMapping*, KeyTraits,
-                                    fbl::DefaultObjectTag, fbl::SizeOrder::Constant,
-                                    MappingTreeTraits, VmMappingSubtreeState::Observer<VmMapping>>;
+                                    fbl::DefaultObjectTag, fbl::SizeOrder::N, MappingTreeTraits,
+                                    VmMappingSubtreeState::Observer<VmMapping>>;
 
  protected:
   enum class VMOType : bool {
