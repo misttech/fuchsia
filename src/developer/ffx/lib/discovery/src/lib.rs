@@ -100,15 +100,22 @@ impl DiscoveryBuilder {
         self
     }
 
-    pub fn with_emulator_instance_root(mut self, emulator_instance_root: PathBuf) -> Self {
-        self.emulator_instance_root = Some(emulator_instance_root);
-        self.sources.insert(DiscoverySources::EMULATOR);
+    pub fn with_emulator_instance_root(mut self, emulator_instance_root: Option<PathBuf>) -> Self {
+        if emulator_instance_root.is_some() {
+            self.emulator_instance_root = emulator_instance_root;
+            self.sources.insert(DiscoverySources::EMULATOR);
+        }
         self
     }
 
-    pub fn with_fastboot_devices_file_path(mut self, fastboot_devices_file_path: PathBuf) -> Self {
-        self.fastboot_devices_file_path = Some(fastboot_devices_file_path);
-        self.sources.insert(DiscoverySources::FASTBOOT_FILE);
+    pub fn with_fastboot_devices_file_path(
+        mut self,
+        fastboot_devices_file_path: Option<PathBuf>,
+    ) -> Self {
+        if fastboot_devices_file_path.is_some() {
+            self.fastboot_devices_file_path = fastboot_devices_file_path;
+            self.sources.insert(DiscoverySources::FASTBOOT_FILE);
+        }
         self
     }
 
@@ -194,7 +201,7 @@ impl Default for DiscoverySources {
     }
 }
 
-pub fn wait_for_devices<F>(
+fn wait_for_devices<F>(
     filter: F,
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
@@ -459,7 +466,9 @@ pub mod test {
     fn test_discovery_builder_with_root() -> Result<()> {
         let discovery = Discovery::builder()
             .set_source(DiscoverySources::MANUAL)
-            .with_emulator_instance_root(PathBuf::from_str("/tmp").expect("tmp is a valid path"))
+            .with_emulator_instance_root(Some(
+                PathBuf::from_str("/tmp").expect("tmp is a valid path"),
+            ))
             .build();
 
         assert_eq!(discovery.notify_added, true);

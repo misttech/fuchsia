@@ -14,7 +14,8 @@ use argh::FromArgs;
 use camino::Utf8PathBuf;
 use chrono::Local;
 use discovery::{
-    wait_for_devices, DiscoverySources, FastbootConnectionState, TargetEvent, TargetState,
+    DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetDiscovery, TargetEvent,
+    TargetState,
 };
 use futures::{Stream, StreamExt};
 use log::LevelFilter;
@@ -207,14 +208,12 @@ async fn update_main(_args: SubCommandUpdate) -> Result<(), FunnelError> {
 
 async fn list_targets_main(args: SubCommandListTargets) -> Result<(), FunnelError> {
     // Only want added events
-    let mut device_stream = wait_for_devices(
-        |_: &_| true,
-        None,
-        None,
-        true,
-        true,
-        DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT,
-    )?;
+    let discovery = DiscoveryBuilder::default()
+        .notify_added(true)
+        .notify_removed(true)
+        .set_source(DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT)
+        .build();
+    let mut device_stream = discovery.discover_devices(|_: &_| true)?;
 
     let mut stdout = io::stdout().lock();
 
@@ -240,14 +239,12 @@ async fn funnel_main(args: SubCommandHost) -> Result<(), FunnelError> {
     let wait_duration = Duration::from_secs(args.wait_for_target_time);
 
     // Only want added events
-    let device_stream = wait_for_devices(
-        |_: &_| true,
-        None,
-        None,
-        true,
-        false,
-        DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT,
-    )?;
+    let discovery = DiscoveryBuilder::default()
+        .notify_added(true)
+        .notify_removed(false)
+        .set_source(DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT)
+        .build();
+    let device_stream = discovery.discover_devices(|_: &_| true)?;
 
     let mut stdout = io::stdout().lock();
     let targets = discover_target_events(&mut stdout, device_stream, wait_duration).await?;
@@ -376,7 +373,10 @@ where
                     TargetState::Fastboot(fb_state) => {
                         match fb_state.connection_state {
                             FastbootConnectionState::Usb => {
-                                log::warn!("Discovered Target {} in Fastboot USB mode. It cannot be used with `funnel`. Skipping", fb_state.serial_number);
+                                log::warn!(
+                                    "Discovered Target {} in Fastboot USB mode. It cannot be used with `funnel`. Skipping",
+                                    fb_state.serial_number
+                                );
                                 writeln!(w, "Discovered Target {} in Fastboot over USB mode, which funnel does not support.", fb_state.serial_number).context("writing to stdout")?;
                             }
                             FastbootConnectionState::Tcp(tcp_state) => {
@@ -390,12 +390,17 @@ where
                                 );
                             }
                             FastbootConnectionState::Udp(udp_state) => {
-                                log::warn!("Discovered Target at address: {:?} in Fastboot Over UDP mode, which funnel does not support.", udp_state);
+                                log::warn!(
+                                    "Discovered Target at address: {:?} in Fastboot Over UDP mode, which funnel does not support.",
+                                    udp_state
+                                );
                             }
                         }
                     }
                     TargetState::Zedboot => {
-                        log::warn!("Discovered Target in Zedboot mode. It cannot be used with `funnel`. Skipping.");
+                        log::warn!(
+                            "Discovered Target in Zedboot mode. It cannot be used with `funnel`. Skipping."
+                        );
                         writeln!(
                             w,
                             "Discovered Target in Zedboot mode, which funnel does not support."
@@ -413,7 +418,9 @@ where
 
     match timeout(wait_time, task).await {
         Ok(_) => {
-            log::warn!("Got an okay result from the discover target loop.... this shouldnt happen we should always timeout.")
+            log::warn!(
+                "Got an okay result from the discover target loop.... this shouldnt happen we should always timeout."
+            )
         }
         Err(_) => {
             log::trace!("Timeout reached");

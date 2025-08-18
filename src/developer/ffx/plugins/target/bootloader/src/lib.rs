@@ -148,8 +148,8 @@ Reboot the Target to the bootloader and re-run this command."
                     .map_err(|e| user_error!("Unable to get config value: {:#?}", e))?;
                 let disco = DiscoveryBuilder::default()
                     .notify_removed(false)
-                    .with_emulator_instance_root(emulator_instance_root)
-                    .with_fastboot_devices_file_path(fastboot_file_path)
+                    .with_emulator_instance_root(Some(emulator_instance_root))
+                    .with_fastboot_devices_file_path(Some(fastboot_file_path))
                     .build();
 
                 #[derive(Clone)]

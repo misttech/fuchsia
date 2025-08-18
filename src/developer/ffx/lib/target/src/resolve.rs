@@ -2,33 +2,33 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use discovery::desc::Description;
 use discovery::query::TargetInfoQuery;
 use discovery::{
-    DiscoverySources, FastbootConnectionState, TargetEvent, TargetHandle, TargetState,
+    DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetDiscovery, TargetEvent,
+    TargetHandle, TargetState,
 };
-use ffx_command_error::{user_error, NonFatalError};
+use ffx_command_error::{NonFatalError, user_error};
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
 use fidl_fuchsia_developer_ffx::{self as ffx};
 use fidl_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
 use fuchsia_async::TimeoutExt;
-use futures::future::{join_all, LocalBoxFuture};
-use futures::{pin_mut, FutureExt, StreamExt};
+use futures::future::{LocalBoxFuture, join_all};
+use futures::{FutureExt, StreamExt, pin_mut};
 use itertools::Itertools;
 use netext::{IsLocalAddr, ScopedSocketAddr};
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 use target_errors::FfxTargetError;
 
 use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
-use crate::{get_target_specifier, UNSPECIFIED_TARGET_NAME};
+use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
 const CONFIG_LOCAL_DISCOVERY_TIMEOUT: &str = "discovery.timeout";
@@ -47,9 +47,11 @@ pub async fn maybe_locally_resolve_target_spec(
     if crate::is_discovery_enabled(env_context).await {
         Ok(target_spec.clone())
     } else {
-        log::warn!("crate::is_discovery_enabled is false - using local target resolution. is_usb_discovery_disabled is {}, is_mdns_discovery_disabled is {}",
-        ffx_config::is_usb_discovery_disabled(env_context),
-        ffx_config::is_mdns_discovery_disabled(env_context));
+        log::warn!(
+            "crate::is_discovery_enabled is false - using local target resolution. is_usb_discovery_disabled is {}, is_mdns_discovery_disabled is {}",
+            ffx_config::is_usb_discovery_disabled(env_context),
+            ffx_config::is_mdns_discovery_disabled(env_context)
+        );
 
         locally_resolve_target_spec(target_spec, &DefaultTargetResolver::default(), env_context)
             .await
@@ -318,19 +320,21 @@ fn get_discovery_stream_with_sources(
         let description = handle_to_description(handle);
         query_clone.match_description(&description)
     };
-    let emu_instance_root: PathBuf = ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR)?;
-    let fastboot_file_path: Option<PathBuf> =
-        ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
+    // Note that if there is an error getting these two config options, they
+    // will simply be ignored. The alternative is to throw an error, which,
+    // e.g. will cause ffx-strict to fail under certain circumstances if either
+    // default config option is not overriden.
+    let emu_instance_root = ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR).ok();
+    let fastboot_file_path = ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
     let discovery_delay = ctx.get(CONFIG_LOCAL_DISCOVERY_TIMEOUT).unwrap_or(2000);
     let delay = Duration::from_millis(discovery_delay);
-    let stream = discovery::wait_for_devices(
-        filter,
-        Some(emu_instance_root),
-        fastboot_file_path,
-        true,
-        false,
-        sources,
-    )?;
+    let discovery = DiscoveryBuilder::default()
+        .with_source(sources)
+        .with_fastboot_devices_file_path(fastboot_file_path)
+        .with_emulator_instance_root(emu_instance_root)
+        .notify_added(true)
+        .build();
+    let stream = discovery.discover_devices(filter)?;
 
     // This is tricky. We want the stream to complete immediately if we find
     // a target whose name/serial matches the query exactly. Otherwise, run

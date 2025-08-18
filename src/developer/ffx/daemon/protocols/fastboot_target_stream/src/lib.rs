@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use discovery::{
-    wait_for_devices, DiscoverySources, FastbootConnectionState, TargetEvent, TargetState,
+    DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetDiscovery, TargetEvent,
+    TargetState,
 };
 use ffx::TargetIpAddrInfo;
 use ffx_config::{get, is_usb_discovery_disabled};
@@ -66,14 +67,13 @@ impl FidlProtocol for FastbootTargetStreamProtocol {
             loop {
                 let fastboot_file_path: Option<PathBuf> =
                     get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
-                let mut device_stream = wait_for_devices(
-                    |_: &_| true,
-                    None,
-                    fastboot_file_path,
-                    true,
-                    true,
-                    DiscoverySources::USB_FASTBOOT | DiscoverySources::FASTBOOT_FILE,
-                )?;
+                let discovery = DiscoveryBuilder::default()
+                    .with_fastboot_devices_file_path(fastboot_file_path)
+                    .notify_added(true)
+                    .notify_removed(true)
+                    .set_source(DiscoverySources::USB_FASTBOOT | DiscoverySources::FASTBOOT_FILE)
+                    .build();
+                let mut device_stream = discovery.discover_devices(|_: &_| true)?;
                 while let Some(event) = device_stream.next().await {
                         match event {
                             TargetEvent::Added(e) => match e.state {

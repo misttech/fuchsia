@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use discovery::{
-    wait_for_devices, DiscoverySources, FastbootConnectionState, TargetEvent, TargetFilter,
-    TargetState,
+    DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetDiscovery, TargetEvent,
+    TargetFilter, TargetState,
 };
 use ffx_fastboot_interface::interface_factory::InterfaceFactoryError;
 use futures::StreamExt;
@@ -20,14 +20,12 @@ where
     F: TargetFilter,
     U: FnMut(FastbootConnectionState) -> Result<(), InterfaceFactoryError>,
 {
-    let mut device_stream = wait_for_devices(
-        filter,
-        None,
-        fastboot_file_path.clone(),
-        true,
-        false,
-        DiscoverySources::MDNS | DiscoverySources::MANUAL | DiscoverySources::FASTBOOT_FILE,
-    )?;
+    let discovery = DiscoveryBuilder::default()
+        .notify_added(true)
+        .set_source(DiscoverySources::MDNS | DiscoverySources::MANUAL)
+        .with_fastboot_devices_file_path(fastboot_file_path.clone())
+        .build();
+    let mut device_stream = discovery.discover_devices(filter)?;
 
     if let Some(event) = device_stream.next().await {
         // This is the first event that matches our filter.
@@ -35,11 +33,19 @@ where
         // the target is at with the new address discovered
         match event {
             TargetEvent::Removed(_) => {
-                return Err(InterfaceFactoryError::RediscoverTargetError(format!("When rediscovering target: {}, expected a target Added event but got a Removed event", target_name)))
+                return Err(InterfaceFactoryError::RediscoverTargetError(format!(
+                    "When rediscovering target: {}, expected a target Added event but got a Removed event",
+                    target_name
+                )));
             }
             TargetEvent::Added(handle) => match handle.state {
                 TargetState::Fastboot(ts) => cb(ts.connection_state)?,
-                state @ _ => return Err(InterfaceFactoryError::RediscoverTargetNotInFastboot(target_name.to_string(), state.to_string())),
+                state @ _ => {
+                    return Err(InterfaceFactoryError::RediscoverTargetNotInFastboot(
+                        target_name.to_string(),
+                        state.to_string(),
+                    ));
+                }
             },
         }
         return Ok(());
