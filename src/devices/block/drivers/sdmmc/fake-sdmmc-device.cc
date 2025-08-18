@@ -432,6 +432,9 @@ void FakeSdmmcDevice::SetTiming(SetTimingRequestView request, fdf::Arena& arena,
     case fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHs400:
       timing = SDMMC_TIMING_HS400;
       break;
+    case fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHs400EnhancedStrobe:
+      timing = SDMMC_TIMING_HS400_ENHANCED_STROBE;
+      break;
     default:
       timing = SDMMC_TIMING_MAX;
       break;

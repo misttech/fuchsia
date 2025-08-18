@@ -223,6 +223,7 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   bool MmcSupportsHsDdr() TA_REQ(worker_lock_);
   bool MmcSupportsHs200() TA_REQ(worker_lock_);
   bool MmcSupportsHs400() TA_REQ(worker_lock_);
+  bool MmcSupportsHs400EnhancedStrobe() TA_REQ(worker_lock_);
   void MmcSetInspectProperties() TA_REQ(worker_lock_) TA_REQ(queue_lock_);
 
   void BlockComplete(sdmmc::BlockOperation& txn, zx_status_t status);

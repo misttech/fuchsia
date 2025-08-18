@@ -1613,6 +1613,43 @@ TEST_P(SdmmcBlockDeviceTest, ProbeHs400) {
   EXPECT_EQ(sdmmc_.timing(), SDMMC_TIMING_HS400);
 }
 
+TEST_P(SdmmcBlockDeviceTest, ProbeHs400EnhancedStrobe) {
+  sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
+    out_data[MMC_EXT_CSD_DEVICE_TYPE] = 0b0101'0110;  // Card supports HS200/400, HS/DDR.
+    out_data[MMC_EXT_CSD_STROBE_SUPPORT] = MMC_EXT_CSD_STROBE_SUPPORT_ENHANCED_STROBE;
+  });
+
+  sdmmc_.set_host_info({
+      .caps = SDMMC_HOST_CAP_HS400_ENHANCED_STROBE,
+      .max_transfer_size = fuchsia_hardware_sdmmc::wire::kMaxTransferUnbounded,
+      .max_buffer_regions = 8,
+  });
+
+  uint32_t bus_width = MMC_EXT_CSD_BUS_WIDTH_1;
+  uint32_t timing = MMC_EXT_CSD_HS_TIMING_LEGACY;
+  sdmmc_.set_command_callback(MMC_SWITCH, [&](const sdmmc_req_t& req) {
+    const uint32_t index = (req.arg >> 16) & 0xff;
+    const uint32_t value = (req.arg >> 8) & 0xff;
+    switch (index) {
+      case MMC_EXT_CSD_HS_TIMING:
+        timing = value;
+        break;
+      case MMC_EXT_CSD_BUS_WIDTH:
+        bus_width = value;
+        break;
+      default:
+        break;
+    }
+  });
+
+  EXPECT_OK(StartDriverForMmc());
+
+  EXPECT_EQ(sdmmc_.timing(), SDMMC_TIMING_HS400_ENHANCED_STROBE);
+  EXPECT_EQ(sdmmc_.bus_freq(), 200'000'000);
+  EXPECT_EQ(timing, MMC_EXT_CSD_HS_TIMING_HS400);
+  EXPECT_EQ(bus_width, MMC_EXT_CSD_BUS_WIDTH_ENHANCED_STROBE | MMC_EXT_CSD_BUS_WIDTH_8_DDR);
+}
+
 TEST_P(SdmmcBlockDeviceTest, FallBackToHsIfTuningFails) {
   sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
     out_data[MMC_EXT_CSD_DEVICE_TYPE] = 0b0101'0110;  // Card supports HS200/400, HS/DDR.

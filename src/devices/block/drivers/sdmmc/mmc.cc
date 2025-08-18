@@ -193,6 +193,7 @@ zx_status_t SdmmcBlockDevice::MmcSwitchTiming(sdmmc_timing_t new_timing) {
       ext_csd_timing = MMC_EXT_CSD_HS_TIMING_HS200;
       break;
     case SDMMC_TIMING_HS400:
+    case SDMMC_TIMING_HS400_ENHANCED_STROBE:
       ext_csd_timing = MMC_EXT_CSD_HS_TIMING_HS400;
       break;
     default:
@@ -288,6 +289,10 @@ bool SdmmcBlockDevice::MmcSupportsHs400() {
   uint8_t device_type = raw_ext_csd_[MMC_EXT_CSD_DEVICE_TYPE];
   // Only support HS400 @ 1.8V
   return (device_type & (1 << 6));
+}
+
+bool SdmmcBlockDevice::MmcSupportsHs400EnhancedStrobe() {
+  return raw_ext_csd_[MMC_EXT_CSD_STROBE_SUPPORT] & MMC_EXT_CSD_STROBE_SUPPORT_ENHANCED_STROBE;
 }
 
 // TODO(427683908): We may be able to skip some of these steps during device re-initialization.
@@ -482,6 +487,28 @@ zx_status_t SdmmcBlockDevice::MmcConfigureBus() {
     return status;
   }
 
+  if (MmcSupportsHs400() && MmcSupportsHs400EnhancedStrobe() &&
+      sdmmc_->host_info().caps & SDMMC_HOST_CAP_HS400_ENHANCED_STROBE) {
+    if (zx_status_t status = MmcSwitchTiming(SDMMC_TIMING_HS); status != ZX_OK) {
+      return status;
+    }
+
+    if (zx_status_t status = MmcSwitchFreq(kFreq52MHz); status != ZX_OK) {
+      return status;
+    }
+
+    const uint8_t bus_width = MMC_EXT_CSD_BUS_WIDTH_8_DDR | MMC_EXT_CSD_BUS_WIDTH_ENHANCED_STROBE;
+    if (zx_status_t status = MmcSetBusWidth(SDMMC_BUS_WIDTH_EIGHT, bus_width); status != ZX_OK) {
+      return status;
+    }
+
+    if (zx_status_t status = MmcSwitchTiming(SDMMC_TIMING_HS400_ENHANCED_STROBE); status != ZX_OK) {
+      return status;
+    }
+
+    return MmcSwitchFreq(kFreq200MHz);
+  }
+
   MmcSelectBusWidth();
 
   const fuchsia_hardware_sdmmc::SdmmcHostPrefs speed_capabilities =
@@ -613,6 +640,9 @@ void SdmmcBlockDevice::MmcSetInspectProperties() {
       break;
     case SDMMC_TIMING_DDR50:
       timing_string = "DDR50";
+      break;
+    case SDMMC_TIMING_HS400_ENHANCED_STROBE:
+      timing_string = "HS400-ES";
       break;
     default:
       FDF_LOGL(ERROR, logger(), "Unexpected timing enum: %u", timing_);

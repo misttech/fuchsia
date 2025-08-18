@@ -904,6 +904,9 @@ zx_status_t SdmmcDevice::SetTiming(sdmmc_timing_t timing) {
     case SDMMC_TIMING_DDR50:
       wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kDdr50;
       break;
+    case SDMMC_TIMING_HS400_ENHANCED_STROBE:
+      wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kHs400EnhancedStrobe;
+      break;
     case SDMMC_TIMING_MAX:
       wire_timing = fuchsia_hardware_sdmmc::wire::SdmmcTiming::kMax;
       break;
