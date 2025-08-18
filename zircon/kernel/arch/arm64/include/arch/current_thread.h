@@ -42,7 +42,10 @@ static inline Thread* arch_get_current_thread() {
 }
 
 static inline void arch_set_current_thread(Thread* t) {
-  __arm_wsr64("tpidr_el1", (uint64_t)&t->arch().thread_pointer_location);
+  // m(*t) to prevent compiler reordering across the setting, ensuring all
+  // previous stores to `t` (e.g., initialization) have completed before
+  // installation.
+  __asm__ volatile("msr tpidr_el1, %0" : : "r"(&t->arch().thread_pointer_location), "m"(*t) :);
 }
 
 #endif  // ZIRCON_KERNEL_ARCH_ARM64_INCLUDE_ARCH_CURRENT_THREAD_H_
