@@ -99,7 +99,8 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent) {
   static const std::vector<std::string> kRegulatorNames = {
       {"regulator-core"},
       {"regulator-vdd18"},
-      {"regulator-vdd33"},
+      // TODO(411688327): Manage the VDD33 regulator.
+      // {"regulator-vdd33"},
   };
 
   std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients;
@@ -200,7 +201,8 @@ zx::result<> QualcommExtension::VoteVoltage(bool on) {
   const static std::unordered_map<std::string, uint32_t> kVoltages{
       {"regulator-core", 904000},
       {"regulator-vdd18", 1800000},
-      {"regulator-vdd33", 3080000},
+      // TODO(411688327): Manage the VDD33 regulator.
+      // {"regulator-vdd33", 3080000},
   };
   // clang-format on
 
