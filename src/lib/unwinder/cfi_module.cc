@@ -383,7 +383,7 @@ Error CfiModule::PrepareToStep(const Registers& current, DwarfCie& cie) {
   // program being unwound.
   if (auto debug_frame_err = SearchDebugFrame(pc, cie, fde); debug_frame_err.has_err()) {
     if (auto eh_frame_err = SearchEhFrame(pc, cie, fde); eh_frame_err.has_err()) {
-      return Error(debug_frame_err.msg() + ";" + eh_frame_err.msg());
+      return Error(debug_frame_err.msg() + "; " + eh_frame_err.msg());
     }
   }
 
