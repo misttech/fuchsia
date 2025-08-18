@@ -190,7 +190,7 @@
     <project name="third_party/go"
              remote="https://fuchsia.googlesource.com/third_party/go"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="ae8a62a711a8656bbca4cb693d8b49eae89b2db2"
+             revision="7e15c8ec44dd59b52a775981599224a300b2975f"
              path="third_party/go"/>
     <project name="third_party/github.com/intel/intel-linux-processor-microcode-data-files"
              path="third_party/github.com/intel/intel-linux-processor-microcode-data-files"
