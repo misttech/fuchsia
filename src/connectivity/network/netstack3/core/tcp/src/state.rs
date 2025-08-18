@@ -9,7 +9,7 @@
 
 use core::convert::{Infallible, TryFrom as _};
 use core::fmt::Debug;
-use core::num::{NonZeroU32, NonZeroU8, NonZeroUsize, TryFromIntError};
+use core::num::{NonZeroU8, NonZeroU32, NonZeroUsize, TryFromIntError};
 use core::ops::{Deref, DerefMut};
 use core::time::Duration;
 
@@ -21,7 +21,7 @@ use netstack3_base::{
     ResetOptions, SackBlocks, Segment, SegmentHeader, SegmentOptions, SeqNum, UnscaledWindowSize,
     WindowScale, WindowSize,
 };
-use netstack3_trace::{trace_instant, TraceResourceId};
+use netstack3_trace::{TraceResourceId, trace_instant};
 use packet_formats::utils::NonZeroDuration;
 use replace_with::{replace_with, replace_with_and};
 
@@ -1141,6 +1141,7 @@ impl<'a, I: Instant, R: ReceiveBuffer> RecvSegmentArgumentsProvider for &'a mut 
     fn take_rcv_segment_args(self) -> (SeqNum, UnscaledWindowSize, SackBlocks) {
         let WindowSizeCalculation { rcv_nxt, window_size, threshold: _ } =
             self.calculate_window_size();
+        // A segment was produced, update the receiver with last info.
         self.last_window_update = (rcv_nxt, window_size);
         (rcv_nxt, window_size >> self.wnd_scale, self.sack_blocks())
     }
@@ -1155,17 +1156,16 @@ pub(super) struct RecvParams {
     pub(super) wnd: WindowSize,
 }
 
-impl<'a> RecvSegmentArgumentsProvider for &'a RecvParams {
+impl<'a> RecvSegmentArgumentsProvider for &'a mut RecvParams {
     fn take_rcv_segment_args(self) -> (SeqNum, UnscaledWindowSize, SackBlocks) {
         (self.ack, self.wnd >> self.wnd_scale, SackBlocks::default())
     }
 }
 
-/// Equivalent to an enum of [`Recv`] and [`RecvParams`] but with a cached
-/// window calculation.
-struct CalculatedRecvParams<'a, I, R> {
-    params: RecvParams,
-    recv: Option<&'a mut Recv<I, R>>,
+/// Abstracts over [`Recv`] and [`RecvParams`] with a cached window calculation.
+enum CalculatedRecvParams<'a, I, R> {
+    Recv { backing_state: &'a mut Recv<I, R>, cached_window: WindowSizeCalculation },
+    RecvParams { backing_state: &'a mut RecvParams },
 }
 
 impl<'a, I, R> CalculatedRecvParams<'a, I, R> {
@@ -1173,29 +1173,50 @@ impl<'a, I, R> CalculatedRecvParams<'a, I, R> {
     ///
     /// Note: do not use [`Recv::to_params`] to instantiate this, prefer
     /// [`CalculatedRecvParams::from_recv`] instead.
-    fn from_params(params: RecvParams) -> Self {
-        Self { params, recv: None }
+    fn from_params(params: &'a mut RecvParams) -> Self {
+        Self::RecvParams { backing_state: params }
     }
 
     fn nxt(&self) -> SeqNum {
-        self.params.ack
+        match self {
+            Self::Recv { backing_state: _, cached_window } => cached_window.rcv_nxt,
+            Self::RecvParams { backing_state } => backing_state.ack,
+        }
     }
 
     fn wnd(&self) -> WindowSize {
-        self.params.wnd
+        match self {
+            Self::Recv { backing_state: _, cached_window } => cached_window.window_size,
+            Self::RecvParams { backing_state } => backing_state.wnd,
+        }
+    }
+}
+
+impl<'a, I: Instant, R: ReceiveBuffer> CalculatedRecvParams<'a, I, R> {
+    fn reset_quickacks(&mut self) {
+        match self {
+            CalculatedRecvParams::Recv { backing_state, cached_window: _ } => {
+                backing_state.reset_quickacks();
+            }
+            CalculatedRecvParams::RecvParams { backing_state: _ } => {}
+        }
     }
 }
 
 impl<'a, I, R> RecvSegmentArgumentsProvider for CalculatedRecvParams<'a, I, R> {
     fn take_rcv_segment_args(self) -> (SeqNum, UnscaledWindowSize, SackBlocks) {
-        let Self { params, recv } = self;
-        let RecvParams { ack, wnd_scale, wnd } = params;
-        let sack_blocks = if let Some(recv) = recv {
-            // A segment was produced, update the receiver with last info.
-            recv.last_window_update = (ack, wnd);
-            recv.sack_blocks()
-        } else {
-            SackBlocks::default()
+        let (ack, wnd, wnd_scale, sack_blocks) = match self {
+            Self::Recv {
+                backing_state,
+                cached_window: WindowSizeCalculation { rcv_nxt, window_size, threshold: _ },
+            } => {
+                // A segment was produced, update the receiver with last info.
+                backing_state.last_window_update = (rcv_nxt, window_size);
+                (rcv_nxt, window_size, backing_state.wnd_scale, backing_state.sack_blocks())
+            }
+            Self::RecvParams { backing_state: RecvParams { ack, wnd_scale, wnd } } => {
+                (*ack, *wnd, *wnd_scale, SackBlocks::default())
+            }
         };
         (ack, wnd >> wnd_scale, sack_blocks)
     }
@@ -1203,10 +1224,8 @@ impl<'a, I, R> RecvSegmentArgumentsProvider for CalculatedRecvParams<'a, I, R> {
 
 impl<'a, I: Instant, R: ReceiveBuffer> CalculatedRecvParams<'a, I, R> {
     fn from_recv(recv: &'a mut Recv<I, R>) -> Self {
-        let WindowSizeCalculation { rcv_nxt: ack, window_size: wnd, threshold: _ } =
-            recv.calculate_window_size();
-        let wnd_scale = recv.wnd_scale;
-        Self { params: RecvParams { ack, wnd_scale, wnd }, recv: Some(recv) }
+        let cached_window = recv.calculate_window_size();
+        Self::Recv { backing_state: recv, cached_window }
     }
 }
 
@@ -2424,7 +2443,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             (None, NewlyClosed::Yes)
                         }
                         SynSentOnSegmentDisposition::Ignore => (None, NewlyClosed::No),
-                    }
+                    };
                 }
                 State::SynRcvd(SynRcvd {
                     iss,
@@ -2438,16 +2457,16 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                     snd_wnd_scale: _,
                     sack_permitted: _,
                     rcv,
-                }) => (CalculatedRecvParams::from_params(rcv.clone()), *iss + 1, false),
+                }) => (CalculatedRecvParams::from_params(rcv), *iss + 1, false),
                 State::Established(Established { rcv, snd }) => {
                     (CalculatedRecvParams::from_recv(rcv.get_mut()), snd.max, false)
                 }
                 State::CloseWait(CloseWait { snd, closed_rcv }) => {
-                    (CalculatedRecvParams::from_params(closed_rcv.clone()), snd.max, true)
+                    (CalculatedRecvParams::from_params(closed_rcv), snd.max, true)
                 }
                 State::LastAck(LastAck { snd, closed_rcv })
                 | State::Closing(Closing { snd, closed_rcv }) => {
-                    (CalculatedRecvParams::from_params(closed_rcv.clone()), snd.max, true)
+                    (CalculatedRecvParams::from_params(closed_rcv), snd.max, true)
                 }
                 State::FinWait1(FinWait1 { rcv, snd }) => {
                     let closed = rcv.buffer.is_closed();
@@ -2458,7 +2477,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                     (CalculatedRecvParams::from_recv(rcv), *last_seq, closed)
                 }
                 State::TimeWait(TimeWait { last_seq, expiry: _, closed_rcv }) => {
-                    (CalculatedRecvParams::from_params(closed_rcv.clone()), *last_seq, true)
+                    (CalculatedRecvParams::from_params(closed_rcv), *last_seq, true)
                 }
             };
 
@@ -2496,11 +2515,9 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                     let segment = if is_rst {
                         None
                     } else {
-                        if let Some(recv) = rcv.recv.as_mut() {
-                            // Enter quickacks when we receive a segment out of
-                            // the window.
-                            recv.reset_quickacks();
-                        }
+                        // Enter quickacks when we receive a segment out of
+                        // the window.
+                        rcv.reset_quickacks();
                         Some(rcv.make_ack(snd_max))
                     };
 
@@ -2681,7 +2698,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             seg_wnd,
                             seg_options.sack_blocks(),
                             pure_ack,
-                            &*closed_rcv,
+                            closed_rcv,
                             now,
                             options,
                         );
@@ -2701,7 +2718,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             seg_wnd,
                             seg_options.sack_blocks(),
                             pure_ack,
-                            &*closed_rcv,
+                            closed_rcv,
                             now,
                             options,
                         );
@@ -2762,18 +2779,24 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                     State::Closing(Closing { snd, closed_rcv }) => {
                         let BufferLimits { len, capacity: _ } = snd.buffer.limits();
                         let fin_seq = snd.una + len + 1;
-                        let (ack, segment_acked_data) = snd.process_ack(
-                            id,
-                            counters,
-                            seg_seq,
-                            seg_ack,
-                            seg_wnd,
-                            seg_options.sack_blocks(),
-                            pure_ack,
-                            &*closed_rcv,
-                            now,
-                            options,
-                        );
+                        let (ack, segment_acked_data) = {
+                            // NB: The compiler gets confused about "reborrow
+                            // coercion". Add a type annotation to help it. See
+                            // https://github.com/rust-lang/rust/issues/35919.
+                            let closed_rcv: &mut RecvParams = closed_rcv;
+                            snd.process_ack(
+                                id,
+                                counters,
+                                seg_seq,
+                                seg_ack,
+                                seg_wnd,
+                                seg_options.sack_blocks(),
+                                pure_ack,
+                                closed_rcv,
+                                now,
+                                options,
+                            )
+                        };
                         data_acked = segment_acked_data;
                         if let Some(ack) = ack {
                             data_acked = segment_acked_data;
@@ -2941,7 +2964,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                     State::Established(Established { snd, rcv }) => {
                         // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-75):
                         //   Enter the CLOSE-WAIT state.
-                        let params = rcv.handle_fin();
+                        let mut params = rcv.handle_fin();
                         let segment = params.make_ack(snd_max);
                         let closewait =
                             CloseWait { snd: snd.to_ref().to_takeable(), closed_rcv: params };
@@ -2962,7 +2985,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         None
                     }
                     State::FinWait1(FinWait1 { snd, rcv }) => {
-                        let params = rcv.handle_fin();
+                        let mut params = rcv.handle_fin();
                         let segment = params.make_ack(snd_max);
                         let closing = Closing { snd: snd.to_ref().take(), closed_rcv: params };
                         assert_eq!(
@@ -2972,7 +2995,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         Some(segment)
                     }
                     State::FinWait2(FinWait2 { last_seq, rcv, timeout_at: _ }) => {
-                        let params = rcv.handle_fin();
+                        let mut params = rcv.handle_fin();
                         let segment = params.make_ack(snd_max);
                         let timewait = TimeWait {
                             last_seq: *last_seq,
@@ -3128,11 +3151,11 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 poll_rcv_then_snd(id, counters, snd, rcv, limit, now, socket_options)
             }
             State::CloseWait(CloseWait { snd, closed_rcv }) => {
-                snd.poll_send(id, counters, &*closed_rcv, limit, now, socket_options)
+                snd.poll_send(id, counters, closed_rcv, limit, now, socket_options)
             }
             State::LastAck(LastAck { snd, closed_rcv })
             | State::Closing(Closing { snd, closed_rcv }) => {
-                snd.poll_send(id, counters, &*closed_rcv, limit, now, socket_options)
+                snd.poll_send(id, counters, closed_rcv, limit, now, socket_options)
             }
             State::FinWait1(FinWait1 { snd, rcv }) => {
                 poll_rcv_then_snd(id, counters, snd, rcv, limit, now, socket_options)
@@ -3683,11 +3706,11 @@ mod test {
 
     use super::*;
     use crate::internal::base::DEFAULT_FIN_WAIT2_TIMEOUT;
-    use crate::internal::buffer::testutil::{InfiniteSendBuffer, RepeatingSendBuffer, RingBuffer};
     use crate::internal::buffer::Buffer;
+    use crate::internal::buffer::testutil::{InfiniteSendBuffer, RepeatingSendBuffer, RingBuffer};
     use crate::internal::congestion::DUP_ACK_THRESHOLD;
-    use crate::internal::counters::testutil::CounterExpectations;
     use crate::internal::counters::TcpCountersWithSocketInner;
+    use crate::internal::counters::testutil::CounterExpectations;
     use crate::internal::testutil::{
         DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE, DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE_USIZE,
     };
@@ -6193,7 +6216,7 @@ mod test {
                 .poll_send(
                     &FakeStateMachineDebugId::default(),
                     &counters.refs(),
-                    &RecvParams {
+                    &mut RecvParams {
                         ack: TEST_ISS,
                         wnd: WindowSize::DEFAULT,
                         wnd_scale: WindowScale::ZERO,
@@ -7099,7 +7122,7 @@ mod test {
             snd.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                &RecvParams {
+                &mut RecvParams {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
@@ -7257,7 +7280,7 @@ mod test {
             snd.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                &RecvParams {
+                &mut RecvParams {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
@@ -7283,7 +7306,7 @@ mod test {
                 UnscaledWindowSize::from(0),
                 &SackBlocks::EMPTY,
                 true,
-                &RecvParams {
+                &mut RecvParams {
                     ack: TEST_IRS + 1,
                     wnd_scale: WindowScale::default(),
                     wnd: WindowSize::DEFAULT,
@@ -7300,7 +7323,7 @@ mod test {
             snd.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                &RecvParams {
+                &mut RecvParams {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
@@ -7328,7 +7351,7 @@ mod test {
             snd.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                &RecvParams {
+                &mut RecvParams {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
@@ -7357,7 +7380,7 @@ mod test {
                     UnscaledWindowSize::from(3),
                     &SackBlocks::EMPTY,
                     true,
-                    &RecvParams {
+                    &mut RecvParams {
                         ack: TEST_IRS + 1,
                         wnd_scale: WindowScale::default(),
                         wnd: WindowSize::DEFAULT,
@@ -7378,7 +7401,7 @@ mod test {
                     UnscaledWindowSize::from(0),
                     &SackBlocks::EMPTY,
                     true,
-                    &RecvParams {
+                    &mut RecvParams {
                         ack: TEST_IRS + 1,
                         wnd_scale: WindowScale::default(),
                         wnd: WindowSize::DEFAULT,
@@ -7400,7 +7423,7 @@ mod test {
                     UnscaledWindowSize::from(3),
                     &SackBlocks::EMPTY,
                     true,
-                    &RecvParams {
+                    &mut RecvParams {
                         ack: TEST_IRS + 1,
                         wnd_scale: WindowScale::default(),
                         wnd: WindowSize::DEFAULT,
@@ -7417,7 +7440,7 @@ mod test {
             snd.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                &RecvParams {
+                &mut RecvParams {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
@@ -7441,7 +7464,7 @@ mod test {
             snd.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                &RecvParams {
+                &mut RecvParams {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
@@ -7485,7 +7508,7 @@ mod test {
             snd.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                &RecvParams {
+                &mut RecvParams {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
@@ -7522,7 +7545,7 @@ mod test {
                 UnscaledWindowSize::from(0),
                 &SackBlocks::EMPTY,
                 true,
-                &RecvParams {
+                &mut RecvParams {
                     ack: TEST_IRS + 1,
                     wnd_scale: WindowScale::default(),
                     wnd: WindowSize::DEFAULT,
@@ -7539,7 +7562,7 @@ mod test {
             snd.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                &RecvParams {
+                &mut RecvParams {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
