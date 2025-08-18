@@ -253,12 +253,6 @@
         "name": "fuchsia.posix.socket.packet/RecvPacketInfo"
     },
     {
-        "kind": "const",
-        "name": "fuchsia.posix.socket.packet/SOCKET_PROTOCOL_NAME",
-        "type": "string",
-        "value": "fuchsia.posix.socket.packet/Socket"
-    },
-    {
         "kind": "table/member",
         "name": "fuchsia.posix.socket.packet/SendControlData.socket",
         "ordinal": "1",

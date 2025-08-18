@@ -118,8 +118,8 @@ type PacketInfo = struct {
     addr HardwareAddress;
 };
 
-// TODO(https://fxbug.dev/42056856): Mark this as removed at NEXT once all remaining references in
-// zxio have been migrated to the discoverable protocol name.
+/// Legacy protocol name. Use the generated discoverable protocol name instead.
+@available(removed=NEXT)
 const SOCKET_PROTOCOL_NAME string = "fuchsia.posix.socket.packet/Socket";
 
 /// A packet socket.

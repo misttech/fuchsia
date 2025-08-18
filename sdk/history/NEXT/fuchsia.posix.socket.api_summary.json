@@ -2574,12 +2574,6 @@
         "type": "uint32"
     },
     {
-        "kind": "const",
-        "name": "fuchsia.posix.socket/DATAGRAM_SOCKET_PROTOCOL_NAME",
-        "type": "string",
-        "value": "fuchsia.posix.socket/DatagramSocket"
-    },
-    {
         "kind": "protocol/member",
         "name": "fuchsia.posix.socket/DatagramSocket.AddIpMembership",
         "strictness": "strict",
@@ -4150,18 +4144,6 @@
         "name": "fuchsia.posix.socket/SIGNAL_STREAM_INCOMING",
         "type": "uint32",
         "value": "16777216"
-    },
-    {
-        "kind": "const",
-        "name": "fuchsia.posix.socket/STREAM_SOCKET_PROTOCOL_NAME",
-        "type": "string",
-        "value": "fuchsia.posix.socket/StreamSocket"
-    },
-    {
-        "kind": "const",
-        "name": "fuchsia.posix.socket/SYNCHRONOUS_DATAGRAM_SOCKET_PROTOCOL_NAME",
-        "type": "string",
-        "value": "fuchsia.posix.socket/SynchronousDatagramSocket"
     },
     {
         "kind": "bits/member",

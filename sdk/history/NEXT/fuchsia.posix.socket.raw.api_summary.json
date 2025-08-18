@@ -91,12 +91,6 @@
         "resourceness": "resource"
     },
     {
-        "kind": "const",
-        "name": "fuchsia.posix.socket.raw/SOCKET_PROTOCOL_NAME",
-        "type": "string",
-        "value": "fuchsia.posix.socket.raw/Socket"
-    },
-    {
         "kind": "protocol/member",
         "name": "fuchsia.posix.socket.raw/Socket.AddIpMembership",
         "strictness": "strict",
