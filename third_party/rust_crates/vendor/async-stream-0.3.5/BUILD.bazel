@@ -74,7 +74,7 @@ rust_library(
     }),
     version = "0.3.5",
     deps = [
-        "//third_party/rust_crates/vendor/futures-core-0.3.30:futures_core",
+        "//third_party/rust_crates/vendor/futures-core-0.3.31:futures_core",
         "//third_party/rust_crates/vendor/pin-project-lite-0.2.13:pin_project_lite",
     ],
 )

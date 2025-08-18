@@ -991,38 +991,38 @@ alias(
 )
 
 alias(
-    name = "futures-0.3.30",
-    actual = "//third_party/rust_crates/vendor/futures-0.3.30:futures",
+    name = "futures-0.3.31",
+    actual = "//third_party/rust_crates/vendor/futures-0.3.31:futures",
     tags = ["manual"],
 )
 
 alias(
     name = "futures",
-    actual = "//third_party/rust_crates/vendor/futures-0.3.30:futures",
+    actual = "//third_party/rust_crates/vendor/futures-0.3.31:futures",
     tags = ["manual"],
 )
 
 alias(
-    name = "futures-executor-0.3.30",
-    actual = "//third_party/rust_crates/vendor/futures-executor-0.3.30:futures_executor",
+    name = "futures-executor-0.3.31",
+    actual = "//third_party/rust_crates/vendor/futures-executor-0.3.31:futures_executor",
     tags = ["manual"],
 )
 
 alias(
     name = "futures-executor",
-    actual = "//third_party/rust_crates/vendor/futures-executor-0.3.30:futures_executor",
+    actual = "//third_party/rust_crates/vendor/futures-executor-0.3.31:futures_executor",
     tags = ["manual"],
 )
 
 alias(
-    name = "futures-io-0.3.30",
-    actual = "//third_party/rust_crates/vendor/futures-io-0.3.30:futures_io",
+    name = "futures-io-0.3.31",
+    actual = "//third_party/rust_crates/vendor/futures-io-0.3.31:futures_io",
     tags = ["manual"],
 )
 
 alias(
     name = "futures-io",
-    actual = "//third_party/rust_crates/vendor/futures-io-0.3.30:futures_io",
+    actual = "//third_party/rust_crates/vendor/futures-io-0.3.31:futures_io",
     tags = ["manual"],
 )
 
@@ -1039,26 +1039,26 @@ alias(
 )
 
 alias(
-    name = "futures-test-0.3.30",
-    actual = "//third_party/rust_crates/vendor/futures-test-0.3.30:futures_test",
+    name = "futures-test-0.3.31",
+    actual = "//third_party/rust_crates/vendor/futures-test-0.3.31:futures_test",
     tags = ["manual"],
 )
 
 alias(
     name = "futures-test",
-    actual = "//third_party/rust_crates/vendor/futures-test-0.3.30:futures_test",
+    actual = "//third_party/rust_crates/vendor/futures-test-0.3.31:futures_test",
     tags = ["manual"],
 )
 
 alias(
-    name = "futures-util-0.3.30",
-    actual = "//third_party/rust_crates/vendor/futures-util-0.3.30:futures_util",
+    name = "futures-util-0.3.31",
+    actual = "//third_party/rust_crates/vendor/futures-util-0.3.31:futures_util",
     tags = ["manual"],
 )
 
 alias(
     name = "futures-util",
-    actual = "//third_party/rust_crates/vendor/futures-util-0.3.30:futures_util",
+    actual = "//third_party/rust_crates/vendor/futures-util-0.3.31:futures_util",
     tags = ["manual"],
 )
 

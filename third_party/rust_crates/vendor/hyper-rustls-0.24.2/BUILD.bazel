@@ -87,7 +87,7 @@ rust_library(
     }),
     version = "0.24.2",
     deps = [
-        "//third_party/rust_crates/vendor/futures-util-0.3.30:futures_util",
+        "//third_party/rust_crates/vendor/futures-util-0.3.31:futures_util",
         "//third_party/rust_crates/vendor/http-0.2.4:http",
         "//third_party/rust_crates/vendor/hyper-0.14.19:hyper",
         "//third_party/rust_crates/vendor/rustls-0.21.12:rustls",

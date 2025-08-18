@@ -8,4 +8,4 @@ license = "BSD-2-Clause"
 thiserror = "2.0.11"
 lazy_static = "1.4"
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
-futures = "=0.3.30"
+futures = "=0.3.31"

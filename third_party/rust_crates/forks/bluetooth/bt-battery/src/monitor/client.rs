@@ -105,13 +105,16 @@ pub struct BatteryMonitorClient<T: GattTypes> {
     /// connection to the peer.
     _client: T::Client,
     /// GATT client interface for interacting with the peer's battery service.
+    #[allow(unused)]
     gatt_client: T::PeerService,
     /// GATT Handles associated with the peer's one or more Battery Level
     /// characteristics. The first `Handle` in this list is expected to be
     /// the "primary" one.
     // TODO(b/335259516): Save Handles for optional characteristics that are discovered.
+    #[allow(unused)]
     battery_level_handles: Vec<Handle>,
     /// The current battery level reported by the peer's battery server.
+    #[allow(unused)]
     battery_level: BatteryLevel,
     /// Collection of streams containing notifications from the peer's battery
     /// characteristics.

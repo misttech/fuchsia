@@ -50,7 +50,7 @@ crate_paths=rust/bt-*
 declare -A external_crate_versions=(
   [assert_matches]="\"1.5.0\""
   [bitfield]="\"0.14.0\""
-  [futures]="\"=0.3.30\""
+  [futures]="\"=0.3.31\""
   [lazy_static]="\"1.4\""
   [log]="{ version = \"0.4.22\", features = [ \"kv\", \"std\" ] }"
   [parking_lot]="\"0.12.0\""

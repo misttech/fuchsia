@@ -202,7 +202,7 @@ mod tests {
         let uuid = Uuid::from_u16(0x180d);
         assert_eq!(
             uuid::Uuid::parse_str("0000180d-0000-1000-8000-00805f9b34fb").unwrap(),
-            uuid.into()
+            uuid::Uuid::from(uuid),
         );
         // Should shorten the UUID16s
         assert_eq!("0x180d", uuid.to_string());
@@ -215,7 +215,7 @@ mod tests {
         let uuid = Uuid::from_u32(0xC0DECAFE);
         assert_eq!(
             uuid::Uuid::parse_str("c0decafe-0000-1000-8000-00805f9b34fb").unwrap(),
-            uuid.into()
+            uuid::Uuid::from(uuid),
         );
         // Should shorten the UUID16s
         assert_eq!("0xc0decafe", uuid.to_string());

@@ -113,12 +113,12 @@ flyweights = { version = "0.1.5", features = ["json_schema", "serde"] }
 foreign-types = "0.3.1"
 foreign-types-shared = "0.1.0"
 fragile = "=1.0.0"
-futures = "=0.3.30"
-futures-executor = "=0.3.30"
-futures-io = "=0.3.30"
+futures = "=0.3.31"
+futures-executor = "=0.3.31"
+futures-io = "=0.3.31"
 futures-lite = "1.11.3"
-futures-test = "=0.3.30"
-futures-util = "=0.3.30"
+futures-test = "=0.3.31"
+futures-util = "=0.3.31"
 getrandom = { version = "0.3.3", default-features = false, features = ["std"] }
 glob = "0.3.2"
 gpt = "3.0.0"
@@ -589,20 +589,20 @@ visibility = [":*"]
 [gn.package.fuchsia-cprng."0.1.1"]
 existing_gn_target = "//src/lib/fuchsia-cprng"
 
-[gn.package.futures-channel."0.3.30"]
+[gn.package.futures-channel."0.3.31"]
 env_vars = [ "CARGO_PKG_NAME=futures-channel" ]
 
-[gn.package.futures-core."0.3.30"]
+[gn.package.futures-core."0.3.31"]
 env_vars = [ "CARGO_PKG_NAME=futures-core" ]
 
-[gn.package.futures-macro."0.3.30"]
+[gn.package.futures-macro."0.3.31"]
 env_vars = [ "CARGO_PKG_NAME=futures-macro" ]
 rustflags = [ "--cfg=fn_like_proc_macro" ]
 
-[gn.package.futures-task."0.3.30"]
+[gn.package.futures-task."0.3.31"]
 env_vars = [ "CARGO_PKG_NAME=futures-task" ]
 
-[gn.package.futures-util."0.3.30"]
+[gn.package.futures-util."0.3.31"]
 env_vars = [ "CARGO_PKG_NAME=futures-util" ]
 rustflags = [ "--cfg=fn_like_proc_macro" ]
 

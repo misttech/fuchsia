@@ -11,7 +11,7 @@ bt-gatt = { path = "../bt-gatt" }
 bt-common = { path = "../bt-common" }
 
 ### Others
-futures = "=0.3.30"
+futures = "=0.3.31"
 
 [dev-dependencies]
 pretty_assertions = "1.2.1"

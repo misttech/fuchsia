@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use futures::stream::FusedStream;
+use bt_gatt::pii::GetPeerAddr;
 use futures::Stream;
+use futures::stream::FusedStream;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -31,6 +32,9 @@ pub enum Error {
 
     #[error("Broadcast source with peer id ({0}) does not exist")]
     DoesNotExist(PeerId),
+
+    #[error("Failed to lookup address for peer id ({0}): {1:?}")]
+    AddressLookupError(PeerId, bt_gatt::types::Error),
 
     #[error("Packet error: {0}")]
     PacketError(#[from] PacketError),
@@ -86,19 +90,29 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
     ///
     /// * `broadcast_source_pid` - peer id of the braodcast source that's to be
     ///   added to this scan delegator peer
+    /// * `address_lookup` - An implementation of [`GetPeerAddr`] that will
+    ///   be used to look up the peer's address.
     /// * `pa_sync` - pa sync mode the peer should attempt to be in
     /// * `bis_sync` - desired BIG to BIS synchronization information. If the
     ///   set is empty, no preference value is used for all the BIGs
     pub async fn add_broadcast_source(
         &mut self,
         source_peer_id: PeerId,
+        address_lookup: &impl GetPeerAddr,
         pa_sync: PaSync,
         bis_sync: BigToBisSync,
     ) -> Result<(), Error> {
-        let broadcast_source = self
+        let mut broadcast_source = self
             .broadcast_sources
             .get_by_peer_id(&source_peer_id)
             .ok_or(Error::DoesNotExist(source_peer_id))?;
+
+        let (broadcast_addr, broadcast_addr_type) = address_lookup
+            .get_peer_address(source_peer_id)
+            .await
+            .map_err(|err| Error::AddressLookupError(source_peer_id, err))?;
+        broadcast_source.with_address(broadcast_addr).with_address_type(broadcast_addr_type);
+
         if !broadcast_source.into_add_source() {
             return Err(Error::NotEnoughInfo(source_peer_id));
         }
@@ -175,12 +189,13 @@ pub(crate) mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
-    use futures::{pin_mut, FutureExt};
+    use bt_gatt::pii::StaticPeerAddr;
+    use futures::{FutureExt, pin_mut};
     use std::collections::HashSet;
     use std::task::Poll;
 
     use bt_common::core::{AddressType, AdvertisingSetId};
-    use bt_gatt::test_utils::{FakeClient, FakePeerService, FakeTypes};
+    use bt_gatt::test_utils::{FakeClient, FakeGetPeerAddr, FakePeerService, FakeTypes};
     use bt_gatt::types::{
         AttributePermissions, CharacteristicProperties, CharacteristicProperty, Handle,
     };
@@ -260,33 +275,50 @@ pub(crate) mod tests {
         {
             let fut = peer.add_broadcast_source(
                 PeerId(1001),
+                &FakeGetPeerAddr,
                 PaSync::SyncPastUnavailable,
                 HashSet::new(),
             );
             pin_mut!(fut);
             let polled = fut.poll_unpin(&mut noop_cx);
-            assert_matches!(polled, Poll::Ready(Err(_)));
+            assert_matches!(polled, Poll::Ready(Err(Error::DoesNotExist(_))));
         }
 
         let _ = broadcast_source.merge_broadcast_source_data(
             &PeerId(1001),
             &BroadcastSource::default()
-                .with_address([1, 2, 3, 4, 5, 6])
-                .with_address_type(AddressType::Public)
                 .with_advertising_sid(AdvertisingSetId(1))
                 .with_broadcast_id(BroadcastId::try_from(1001).unwrap()),
         );
 
-        // Should fail because not enough information.
+        // Should fail because peer address couldn't be looked up.
         {
+            let address_lookup =
+                StaticPeerAddr::new_for_peer(PeerId(1002), [1, 2, 3, 4, 5, 6], AddressType::Public);
             let fut = peer.add_broadcast_source(
                 PeerId(1001),
+                &address_lookup,
                 PaSync::SyncPastUnavailable,
                 HashSet::new(),
             );
             pin_mut!(fut);
             let polled = fut.poll_unpin(&mut noop_cx);
-            assert_matches!(polled, Poll::Ready(Err(_)));
+            assert_matches!(polled, Poll::Ready(Err(Error::AddressLookupError(_, _))));
+        }
+
+        // Should fail because not enough information.
+        {
+            let address_lookup =
+                StaticPeerAddr::new_for_peer(PeerId(1001), [1, 2, 3, 4, 5, 6], AddressType::Public);
+            let fut = peer.add_broadcast_source(
+                PeerId(1001),
+                &address_lookup,
+                PaSync::SyncPastUnavailable,
+                HashSet::new(),
+            );
+            pin_mut!(fut);
+            let polled = fut.poll_unpin(&mut noop_cx);
+            assert_matches!(polled, Poll::Ready(Err(Error::NotEnoughInfo(_))));
         }
     }
 }

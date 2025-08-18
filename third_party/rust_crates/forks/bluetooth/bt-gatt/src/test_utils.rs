@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use bt_common::core::{Address, AddressType};
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 use futures::future::{ready, Ready};
 use futures::Stream;
@@ -14,8 +15,9 @@ use bt_common::{PeerId, Uuid};
 
 use crate::central::ScanResult;
 use crate::client::CharacteristicNotification;
+use crate::pii::GetPeerAddr;
 use crate::server::{self, LocalService, ReadResponder, ServiceDefinition, WriteResponder};
-use crate::{types::*, GattTypes, ServerTypes};
+use crate::{GattTypes, ServerTypes, types::*};
 
 #[derive(Default)]
 struct FakePeerServiceInner {
@@ -253,6 +255,26 @@ impl Stream for ScannedResultStream {
             // Never wake up, as if we never find another result
             Poll::Pending
         }
+    }
+}
+
+/// Implements a fake [`GetPeerAddr`] that just converts the peer_id into a
+/// public [`Address`] based on the given peer_id.
+pub struct FakeGetPeerAddr;
+
+impl GetPeerAddr for FakeGetPeerAddr {
+    async fn get_peer_address(&self, peer_id: PeerId) -> Result<(Address, AddressType)> {
+        Ok((
+            [
+                peer_id.0 as u8,
+                ((peer_id.0 >> 8) & 0xff) as u8,
+                ((peer_id.0 >> 16) & 0xff) as u8,
+                ((peer_id.0 >> 24) & 0xff) as u8,
+                ((peer_id.0 >> 32) & 0xff) as u8,
+                ((peer_id.0 >> 48) & 0xff) as u8,
+            ],
+            AddressType::Public,
+        ))
     }
 }
 

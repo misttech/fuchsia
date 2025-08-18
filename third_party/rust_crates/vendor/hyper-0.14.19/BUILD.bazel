@@ -79,9 +79,9 @@ rust_library(
     version = "0.14.19",
     deps = [
         "//third_party/rust_crates/vendor/bytes-1.10.1:bytes",
-        "//third_party/rust_crates/vendor/futures-channel-0.3.30:futures_channel",
-        "//third_party/rust_crates/vendor/futures-core-0.3.30:futures_core",
-        "//third_party/rust_crates/vendor/futures-util-0.3.30:futures_util",
+        "//third_party/rust_crates/vendor/futures-channel-0.3.31:futures_channel",
+        "//third_party/rust_crates/vendor/futures-core-0.3.31:futures_core",
+        "//third_party/rust_crates/vendor/futures-util-0.3.31:futures_util",
         "//third_party/rust_crates/vendor/http-0.2.4:http",
         "//third_party/rust_crates/vendor/http-body-0.4.4:http_body",
         "//third_party/rust_crates/vendor/httparse-1.9.4:httparse",

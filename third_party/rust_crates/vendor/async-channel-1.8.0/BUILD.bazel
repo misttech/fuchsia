@@ -76,6 +76,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/concurrent-queue-2.5.0:concurrent_queue",
         "//third_party/rust_crates/vendor/event-listener-2.5.1:event_listener",
-        "//third_party/rust_crates/vendor/futures-core-0.3.30:futures_core",
+        "//third_party/rust_crates/vendor/futures-core-0.3.31:futures_core",
     ],
 )

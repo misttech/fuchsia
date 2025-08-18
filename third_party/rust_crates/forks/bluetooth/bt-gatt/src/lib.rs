@@ -14,6 +14,8 @@ pub use client::Client;
 pub mod central;
 pub use central::Central;
 
+pub mod pii;
+
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
