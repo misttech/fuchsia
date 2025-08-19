@@ -383,7 +383,8 @@ pub(in crate::security) fn check_exec_access(
                 new_sid,
                 ProcessPermission::Ptrace,
                 audit_context,
-            )?;
+            )
+            .map_err(|_| errno!(EPERM))?;
         }
     }
     Ok(ResolvedElfState { sid: Some(new_sid) })
