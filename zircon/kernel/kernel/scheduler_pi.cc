@@ -455,6 +455,15 @@ class JoinNodeToPiGraphOp
     DEBUG_ASSERT(upstream_ep().IsDeadline());
     DEBUG_ASSERT(target_new_ep.IsDeadline());
 
+    // Verify the start/finish times of the upstream node have the required
+    // relationship.
+    // TODO(https://fxbug.dev/439598192): Start time == finish time when
+    // blocking.
+    DEBUG_ASSERT_MSG(GetStartTime(upstream_) < GetFinishTime(upstream_),
+                     "start_time=%" PRId64 " finish_time=%" PRId64 " deadline_ns=%" PRId64,
+                     GetStartTime(upstream_).raw_value(), GetFinishTime(upstream_).raw_value(),
+                     upstream_ep().deadline().deadline_ns.raw_value());
+
     if (target_old_ep.IsFair()) {
       // If the target_ has just now become deadline, we can simply transfer the
       // dynamic deadline parameters from upstream to the target_.
@@ -476,6 +485,15 @@ class JoinNodeToPiGraphOp
 
       GetFinishTime(target_) = ktl::min(GetFinishTime(target_), GetFinishTime(upstream_));
       GetStartTime(target_) = GetFinishTime(target_) - target_new_ep.deadline().deadline_ns;
+
+      // Verify the start/finish times of the target node have the required
+      // relationship.
+      // TODO(https://fxbug.dev/439598192): Start time == finish time when
+      // blocking.
+      DEBUG_ASSERT_MSG(GetStartTime(target_) < GetFinishTime(target_),
+                       "start_time=%" PRId64 " finish_time=%" PRId64 " deadline_ns=%" PRId64,
+                       GetStartTime(target_).raw_value(), GetFinishTime(target_).raw_value(),
+                       target_new_ep.deadline().deadline_ns.raw_value());
 
       // TODO(eieio): If a period is expired, the full bandwidth contribution of
       // the respective task is available to the target and downstream, if any.
