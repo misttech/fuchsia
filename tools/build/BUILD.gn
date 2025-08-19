@@ -21,6 +21,7 @@ group("tests") {
 
   deps = [
     ":build_tests",
+    ":tools",  # build-only
     "fx-set:tests",
     "ninjago:tests",
   ]

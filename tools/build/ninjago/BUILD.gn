@@ -2,14 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-group("tests") {
-  testonly = true
+if (is_host) {
+  group("tests") {
+    testonly = true
 
-  deps = [
-    "buildstats:buildstats_tests($host_toolchain)",
-    "chrometrace:chrometrace_test($host_toolchain)",
-    "clangtrace:clangtrace_test($host_toolchain)",
-    "ninjacommand:ninjacommand_tests($host_toolchain)",
-    "rbetrace:rbetrace_test($host_toolchain)",
-  ]
+    deps = [
+      "buildstats:buildstats_tests",
+      "chrometrace:chrometrace_test",
+      "clangtrace:clangtrace_test",
+      "ninjacommand:ninjacommand_tests",
+      "rbetrace:rbetrace_test",
+    ]
+  }
 }
