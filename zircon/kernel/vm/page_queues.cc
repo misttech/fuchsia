@@ -133,21 +133,21 @@ class LruIsolate {
         }
         VmCowReclaimResult reclaimed = backlink.cow->ReclaimPage(
             backlink.page, backlink.offset, VmCowPages::EvictionAction::FollowHint, compressor);
-        uint64_t num_pages = reclaimed.num_pages;
-        if (num_pages > 0) {
-          switch (reclaimed.type) {
-            case VmCowReclaimResult::Type::EvictLoaned:
-            case VmCowReclaimResult::Type::EvictNonLoaned:
-              pq_lru_pages_evicted.Add(num_pages);
-              break;
-            case VmCowReclaimResult::Type::Discard:
-              pq_lru_pages_discarded.Add(num_pages);
-              break;
-            case VmCowReclaimResult::Type::Compress:
-              pq_lru_pages_compressed.Add(num_pages);
-              break;
-            case VmCowReclaimResult::Type::None:
-              break;
+        if (reclaimed.is_ok()) {
+          uint64_t num_pages = reclaimed.value().num_pages;
+          if (num_pages > 0) {
+            switch (reclaimed.value().type) {
+              case VmCowReclaimSuccess::Type::EvictLoaned:
+              case VmCowReclaimSuccess::Type::EvictNonLoaned:
+                pq_lru_pages_evicted.Add(num_pages);
+                break;
+              case VmCowReclaimSuccess::Type::Discard:
+                pq_lru_pages_discarded.Add(num_pages);
+                break;
+              case VmCowReclaimSuccess::Type::Compress:
+                pq_lru_pages_compressed.Add(num_pages);
+                break;
+            }
           }
         }
       }

@@ -6823,12 +6823,12 @@ void VmCowPages::FinishTransitionToUncachedLocked() {
 }
 
 template <typename T>
-bool VmCowPages::CanReclaimPageLocked(vm_page_t* page, T actual) {
+ktl::optional<VmCowReclaimFailure> VmCowPages::CannotReclaimPageLocked(vm_page_t* page, T actual) {
   // Check this page is still a part of this VMO. After this any failures should mark the page as
   // accessed to prevent the page from remaining a reclamation candidate.
   if (!actual || !actual->IsPage() || actual->Page() != page) {
     vm_reclaim_incorrect_page.Add(1);
-    return false;
+    return VmCowReclaimFailure::IncorrectPage;
   }
   // Pinned pages could be in use by DMA so we cannot safely reclaim them.
   if (page->object.pin_count != 0) {
@@ -6836,9 +6836,9 @@ bool VmCowPages::CanReclaimPageLocked(vm_page_t* page, T actual) {
     DEBUG_ASSERT(!page->is_loaned());
     pmm_page_queues()->MarkAccessed(page);
     vm_reclaim_pinned.Add(1);
-    return false;
+    return VmCowReclaimFailure::Other;
   }
-  return true;
+  return ktl::nullopt;
 }
 
 VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t offset,
@@ -6851,8 +6851,8 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
   Guard<CriticalMutex> guard{AssertOrderedLock, lock(), lock_order()};
 
   const VmPageOrMarker* page_or_marker = page_list_.Lookup(offset);
-  if (!CanReclaimPageLocked(page, page_or_marker)) {
-    return VmCowReclaimResult{};
+  if (auto reason = CannotReclaimPageLocked(page, page_or_marker)) {
+    return fit::error(reason.value());
   }
   // Since CanReclaimPageLocked() succeeded, we know that this page is owned by us at the provided
   // offset. So it should be safe to call MarkAccessed() on the page if reclamation fails, provided
@@ -6862,7 +6862,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
   if (high_priority_count_ != 0 && (eviction_action != EvictionAction::Require)) {
     pmm_page_queues()->MarkAccessed(page);
     vm_reclaim_high_priority.Add(1);
-    return VmCowReclaimResult{};
+    return fit::error(VmCowReclaimFailure::Other);
   }
   DEBUG_ASSERT(is_page_dirty_tracked(page));
 
@@ -6872,7 +6872,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
     DEBUG_ASSERT(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
     DEBUG_ASSERT(!page->is_loaned());
     vm_reclaim_dirty.Add(1);
-    return VmCowReclaimResult{};
+    return fit::error(VmCowReclaimFailure::Other);
   }
 
   // Do not evict if the |always_need| hint is set, unless we are told to ignore the eviction hint.
@@ -6890,7 +6890,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
     // Pages in the queue are considered for eviction pre-OOM, but ignored otherwise.
     pmm_page_queues()->MarkAccessed(page);
     vm_reclaim_always_need_skipped.Add(1);
-    return VmCowReclaimResult{};
+    return fit::error(VmCowReclaimFailure::Other);
   }
 
   // Remove any mappings to this page before we remove it.
@@ -6903,7 +6903,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
   // queues.
   if ((old_queue != new_queue) && (eviction_action != EvictionAction::Require)) {
     vm_reclaim_evict_accessed.Add(1);
-    return VmCowReclaimResult{};
+    return fit::error(VmCowReclaimFailure::EvictAccessed);
   }
 
   char vmo_name[ZX_MAX_NAME_LEN] __UNINITIALIZED = "\0";
@@ -6928,9 +6928,9 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
   reclamation_event_count_++;
   VMO_VALIDATION_ASSERT(DebugValidateHierarchyLocked());
   VMO_FRUGAL_VALIDATION_ASSERT(DebugValidateVmoPageBorrowingLocked());
-  return VmCowReclaimResult{.type = loaned ? VmCowReclaimResult::Type::EvictLoaned
-                                           : VmCowReclaimResult::Type::EvictNonLoaned,
-                            .num_pages = 1};
+  return fit::ok(VmCowReclaimSuccess{.type = loaned ? VmCowReclaimSuccess::Type::EvictLoaned
+                                                    : VmCowReclaimSuccess::Type::EvictNonLoaned,
+                                     .num_pages = 1});
 }
 
 VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64_t offset,
@@ -6949,8 +6949,8 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
     // Use a sub-scope as the page_or_marker will become invalid as we will drop the lock later.
     {
       VmPageOrMarkerRef page_or_marker = page_list_.LookupMutable(offset);
-      if (!CanReclaimPageLocked(page, page_or_marker)) {
-        return VmCowReclaimResult{};
+      if (auto reason = CannotReclaimPageLocked(page, page_or_marker)) {
+        return fit::error(reason.value());
       }
       // Since CanReclaimPageLocked() succeeded, we know that this page is owned by us at the
       // provided offset. So it should be safe to call MarkAccessed() on the page if reclamation
@@ -6962,18 +6962,16 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
         // To avoid this page remaining in the reclamation list we simulate an access.
         pmm_page_queues()->MarkAccessed(page);
         vm_reclaim_uncached.Add(1);
-        return VmCowReclaimResult{};
+        return fit::error(VmCowReclaimFailure::Other);
       }
 
       // Not allowed to reclaim if high priority.
       if (high_priority_count_ != 0) {
         pmm_page_queues()->MarkAccessed(page);
         vm_reclaim_high_priority.Add(1);
-        return VmCowReclaimResult{};
+        return fit::error(VmCowReclaimFailure::Other);
       }
-
       DEBUG_ASSERT(!page->is_loaned());
-
       // Perform the unmap of the page on our mappings while we hold the lock. This removes all
       // possible writable mappings, although our children could still have read-only mappings.
       // These read-only mappings will be dealt with later, for now the page will at least be
@@ -6988,7 +6986,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
       // page queues.
       if (old_queue != new_queue) {
         vm_reclaim_compress_accessed.Add(1);
-        return VmCowReclaimResult{};
+        return fit::error(VmCowReclaimFailure::CompressAccessed);
       }
 
       // Start compression of the page by swapping the page list to contain the temporary reference.
@@ -7006,6 +7004,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
     // remaining range updates and the compression step.
   }
   compressor->Compress();
+  bool compression_failed = false;
 
   {
     Guard<CriticalMutex> guard{AssertOrderedLock, lock(), lock_order()};
@@ -7055,6 +7054,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
         // Page stays owned by the VMO.
         vm_reclaim_compress_fail.Add(1);
         page = nullptr;
+        compression_failed = true;
       } else {
         ASSERT(ktl::holds_alternative<VmCompressor::ZeroTag>(compression_result));
         old_ref = slot->ReleaseReference();
@@ -7105,8 +7105,11 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
     page = nullptr;
   }
 
-  return reclaimed ? VmCowReclaimResult{.type = VmCowReclaimResult::Type::Compress, .num_pages = 1}
-                   : VmCowReclaimResult{};
+  if (compression_failed) {
+    return fit::error(VmCowReclaimFailure::CompressFailed);
+  }
+  return fit::ok(VmCowReclaimSuccess{.type = VmCowReclaimSuccess::Type::Compress,
+                                     .num_pages = reclaimed ? 1u : 0u});
 }
 
 VmCowReclaimResult VmCowPages::ReclaimPage(vm_page_t* page, uint64_t offset,
@@ -7127,10 +7130,11 @@ VmCowReclaimResult VmCowPages::ReclaimPage(vm_page_t* page, uint64_t offset,
     // trigger a discard with it.
     auto result = ReclaimDiscardable(page, offset);
     if (result.is_ok()) {
-      return VmCowReclaimResult{.type = VmCowReclaimResult::Type::Discard, .num_pages = *result};
+      return fit::ok(
+          VmCowReclaimSuccess{.type = VmCowReclaimSuccess::Type::Discard, .num_pages = *result});
     }
     vm_reclaim_discardable_failed.Add(1);
-    return VmCowReclaimResult{};
+    return fit::error(VmCowReclaimFailure::Other);
   }
 
   // Keep a count as having no reclamation strategy is probably a sign of miss-configuration.
@@ -7144,10 +7148,10 @@ VmCowReclaimResult VmCowPages::ReclaimPage(vm_page_t* page, uint64_t offset,
   Guard<CriticalMutex> guard{lock()};
   const VmPageOrMarker* page_or_marker = page_list_.Lookup(offset);
   if (!page_or_marker || !page_or_marker->IsPage() || page_or_marker->Page() != page) {
-    return VmCowReclaimResult{};
+    return fit::error(VmCowReclaimFailure::IncorrectPage);
   }
   pmm_page_queues()->MarkAccessed(page);
-  return VmCowReclaimResult{};
+  return fit::error(VmCowReclaimFailure::Other);
 }
 
 zx_status_t VmCowPages::ReplacePagesWithNonLoanedLocked(VmCowRange range, DeferredOps& deferred,
@@ -7887,7 +7891,7 @@ zx::result<uint64_t> VmCowPages::ReclaimDiscardable(vm_page_t* page, uint64_t of
   Guard<CriticalMutex> guard{AssertOrderedLock, lock(), lock_order()};
 
   const VmPageOrMarker* page_or_marker = page_list_.Lookup(offset);
-  if (!CanReclaimPageLocked(page, page_or_marker)) {
+  if (CannotReclaimPageLocked(page, page_or_marker)) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
   // Since CanReclaimPageLocked() succeeded, we know that this page is owned by us at the provided

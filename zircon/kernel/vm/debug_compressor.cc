@@ -82,13 +82,13 @@ void VmDebugCompressor::CompressThread() {
     for (Entry entry = Pop(); entry.cow; entry = Pop()) {
       status = instance.get().Arm();
       ASSERT(status == ZX_OK);
-      if (uint64_t count =
-              entry.cow
-                  ->ReclaimPage(entry.page, entry.offset, VmCowPages::EvictionAction::IgnoreHint,
-                                &instance.get())
-                  .num_pages;
-          count > 0) {
-        pq_compress_debug_random_compression.Add(count);
+      VmCowReclaimResult reclaimed = entry.cow->ReclaimPage(
+          entry.page, entry.offset, VmCowPages::EvictionAction::IgnoreHint, &instance.get());
+      if (reclaimed.is_ok()) {
+        uint64_t count = reclaimed.value().num_pages;
+        if (count > 0) {
+          pq_compress_debug_random_compression.Add(count);
+        }
       }
     }
   } while (true);

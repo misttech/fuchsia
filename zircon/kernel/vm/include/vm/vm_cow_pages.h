@@ -101,9 +101,8 @@ struct VmCowRange {
 };
 
 // Result of attempting to reclaim a single page. See VmCowPages::ReclaimPage for more details.
-struct VmCowReclaimResult {
+struct VmCowReclaimSuccess {
   enum class Type : uint8_t {
-    None,
     EvictNonLoaned,
     EvictLoaned,
     Discard,
@@ -111,6 +110,14 @@ struct VmCowReclaimResult {
   } type;
   uint64_t num_pages = 0;
 };
+enum class VmCowReclaimFailure : uint8_t {
+  EvictAccessed,
+  CompressAccessed,
+  CompressFailed,
+  IncorrectPage,
+  Other,
+};
+using VmCowReclaimResult = fit::result<VmCowReclaimFailure, VmCowReclaimSuccess>;
 
 class ScopedPageFreedList;
 
@@ -651,7 +658,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // |eviction_action| hints indicates whether the |always_need| eviction hint should be respected
   // or ignored. Require will force eviction.
   //
-  // The actual number of pages reclaimed is returned.
+  // The actual number of pages reclaimed is returned if successful, or a failure reason if not.
+  // VmCowReclaimResult is an alias for fit::result<VmCowReclaimFailure, VmCowReclaimSuccess>.
   VmCowReclaimResult ReclaimPage(vm_page_t* page, uint64_t offset, EvictionAction eviction_action,
                                  VmCompressor* compressor);
 
@@ -660,7 +668,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // the result of a page list Lookup or LookupMutable, allowing it to check if the page is still
   // up to date and owned by this VMO.
   template <typename T>
-  bool CanReclaimPageLocked(vm_page_t* page, T actual) TA_REQ(lock());
+  ktl::optional<VmCowReclaimFailure> CannotReclaimPageLocked(vm_page_t* page, T actual)
+      TA_REQ(lock());
 
   // If any pages in the specified range are loaned pages, replaces them with non-loaned pages
   // (which requires providing a |page_request|). The specified range should be fully committed

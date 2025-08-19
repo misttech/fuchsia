@@ -73,22 +73,22 @@ ktl::optional<ktl::pair<Evictor::EvictedPageCounts, const vm_page_t*>> ReclaimFr
                                                               hint_action, compression_instance);
 
     Evictor::EvictedPageCounts evicted_counts = {};
-    uint64_t num_pages = reclaimed.num_pages;
-    switch (reclaimed.type) {
-      case VmCowReclaimResult::Type::EvictLoaned:
-        evicted_counts.pager_backed_loaned = num_pages;
-        break;
-      case VmCowReclaimResult::Type::EvictNonLoaned:
-        evicted_counts.pager_backed = num_pages;
-        break;
-      case VmCowReclaimResult::Type::Discard:
-        evicted_counts.discardable = num_pages;
-        break;
-      case VmCowReclaimResult::Type::Compress:
-        evicted_counts.compressed = num_pages;
-        break;
-      case VmCowReclaimResult::Type::None:
-        break;
+    if (reclaimed.is_ok()) {
+      uint64_t num_pages = reclaimed.value().num_pages;
+      switch (reclaimed.value().type) {
+        case VmCowReclaimSuccess::Type::EvictLoaned:
+          evicted_counts.pager_backed_loaned = num_pages;
+          break;
+        case VmCowReclaimSuccess::Type::EvictNonLoaned:
+          evicted_counts.pager_backed = num_pages;
+          break;
+        case VmCowReclaimSuccess::Type::Discard:
+          evicted_counts.discardable = num_pages;
+          break;
+        case VmCowReclaimSuccess::Type::Compress:
+          evicted_counts.compressed = num_pages;
+          break;
+      }
     }
     return ktl::make_pair(evicted_counts, backlink->page);
   }
