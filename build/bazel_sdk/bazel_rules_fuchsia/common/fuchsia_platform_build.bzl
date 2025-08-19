@@ -237,11 +237,24 @@ build_config = struct(
     else:
         exec_properties = {}
 
+    # Create symlinks used to locate host prebuilts without an explicit
+    # fuchsia_host_tag in their path, making the top-level MODULE.bazel easier
+    # to write.
+    prebuilt_host_subdirs = ["go", "rust", "llvm", "python3"]
+    prebuilt_host_tools = ["ninja", "gn", "buildifier"]
+    prebuilt_bin_host_tools = ["jq"]  # Tools that live in an additional "bin" subdirectory.
+
+    exported_files_list = ["host_prebuilts/{}".format(tool) for tool in prebuilt_host_tools + prebuilt_bin_host_tools]
+
     # TODO: invoke `create_rbe_exec_properties_dict` to validate keys
     # https://github.com/bazelbuild/bazel-toolchains/blob/master/rules/exec_properties/README.md
     build_bazel_content = '''# Auto-generated DO NOT EDIT
 
 """A host platform() with optional support for remote builds."""
+
+exports_files(
+    {exported_files}
+)
 
 platform(
     name = "host",
@@ -252,17 +265,12 @@ platform(
     exec_properties = {exec_properties_str},
 )
 '''.format(
+        exported_files = repr(exported_files_list),
         host_os_constraint = host_os_constraint,
         host_cpu_constraint = host_cpu_constraint,
         exec_properties_str = _get_formatted_starlark_dict(exec_properties, "    "),
     )
     repo_ctx.file("BUILD.bazel", build_bazel_content)
-
-    # Create symlinks used to locate host prebuilts without an explicit
-    # fuchsia_host_tag in their path, making the top-level MODULE.bazel easier
-    # to write.
-    prebuilt_host_subdirs = ["go", "rust", "llvm", "python3"]
-    prebuilt_host_tools = ["ninja", "gn", "buildifier"]
 
     # In case users set a custom clang prefix in GN, respect that config.
     # LINT.IfChange
@@ -287,6 +295,8 @@ platform(
         repo_ctx.symlink("{}/prebuilt/third_party/{}/{}".format(repo_ctx.workspace_root, subdir, host_tag), "host_prebuilts/{}".format(subdir))
     for tool in prebuilt_host_tools:
         repo_ctx.symlink("{}/prebuilt/third_party/{}/{}/{}".format(repo_ctx.workspace_root, tool, host_tag, tool), "host_prebuilts/{}".format(tool))
+    for tool in prebuilt_bin_host_tools:
+        repo_ctx.symlink("{}/prebuilt/third_party/{}/{}/bin/{}".format(repo_ctx.workspace_root, tool, host_tag, tool), "host_prebuilts/{}".format(tool))
 
 fuchsia_build_config_repository = repository_rule(
     implementation = _fuchsia_build_config_repository_impl,
