@@ -878,6 +878,14 @@
 
                 // xattr_test
                 "XattrTest.SecurityCapacityXattr",
+
+                // TODO(https://fxbug.dev/404199474): Fix and re-enable
+                "PtyTest.PacketModeWriteMasterToReplica",
+                "PtyTest.PacketModeWriteReplicaToMaster",
+                "PtyTest.PacketModeFailsOnReplica",
+
+                // TODO(https://fxbug.dev/437995606): Investigate and re-enable
+                "ExecTest.ReadProcMemAfterExecFromChild",
             ],
         },
         {
@@ -1173,11 +1181,6 @@
                 // TODO(https://fxbug.dev/397205797): Fix and re-enable
                 "ExecTest.Setpgid",
 
-                // TODO(https://fxbug.dev/404199474): Fix and re-enable
-                "PtyTest.PacketModeWriteMasterToReplica",
-                "PtyTest.PacketModeWriteReplicaToMaster",
-                "PtyTest.PacketModeFailsOnReplica",
-
                 // TODO(https://fxbug.dev/414851239): Fix and re-enable
                 "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.DualStackV6AnyCloseAndBindAgain/UDP",
                 "AllFamilies/SocketMultiProtocolInetLoopbackIsolatedTest.DualStackV6AnyBindAgain/UDP",
@@ -1186,11 +1189,8 @@
                 // TODO(https://fxbug.dev/429143932): Investigate and re-enable
                 "PreadvTest.MMConcurrencyStress",
 
-                // TODO(https://fxbug.dev/437995606): Investigate and re-enable
-                "ExecTest.ReadProcMemAfterExecFromChild",
-
                 // TODO(https://fxbug.dev/439576932): Investigate and re-enable, seems to be timing out.
-                "PtraceTest.ExecvePtraceLockStress"
+                "PtraceTest.ExecvePtraceLockStress",
             ],
         },
     ],
