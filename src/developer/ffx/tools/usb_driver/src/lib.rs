@@ -29,6 +29,11 @@ pub struct UsbDriverCommand {
     #[argh(option)]
     /// directory where log file should be placed
     log_dir: Option<String>,
+
+    #[argh(option)]
+    /// only allow this driver daemon to see the device with the given serial
+    /// number
+    serial: Option<String>,
 }
 // [END command_struct]
 
@@ -79,7 +84,7 @@ async fn implementation(
             return Ok(ExitStatus::from_raw(0));
         }
         ffx_command::HelpState::ReturnHelp { command, output, code } => {
-            return Err(fho::Error::Help { command, output, code })
+            return Err(fho::Error::Help { command, output, code });
         }
         ffx_command::HelpState::None => (),
     }
@@ -206,6 +211,9 @@ async fn implementation(
         }
     }
 
-    usb_driver_impl::HostDriver::run(socket_path, log_id).await;
+    if let Some(serial) = &command.serial {
+        log::info!("Only interacting with devices with serial {serial}");
+    }
+    usb_driver_impl::HostDriver::run(socket_path, log_id, command.serial).await;
     Ok(ExitStatus::from_raw(0))
 }

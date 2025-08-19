@@ -6,7 +6,7 @@ use fidl_fuchsia_ffx_usb__common::{
     self as usb_fidl, control_ordinals, ffx_usb_ordinals, list_devices_ordinals,
 };
 use futures::channel::mpsc;
-use futures::future::{select, Either, LocalBoxFuture};
+use futures::future::{Either, LocalBoxFuture, select};
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, SinkExt, StreamExt};
 use std::collections::hash_map::Entry;
@@ -15,7 +15,7 @@ use std::future::Future;
 use std::io::ErrorKind;
 use std::num::NonZero;
 use std::path::PathBuf;
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -240,7 +240,7 @@ pub struct HostDriver {
 
 impl HostDriver {
     /// Create a new [`HostDriver`] and listen for users at the given socket path.
-    pub async fn run(socket_path: PathBuf, log_id: u64) {
+    pub async fn run(socket_path: PathBuf, log_id: u64, serial: Option<String>) {
         let listener = match remove_and_bind_socket(&socket_path).await {
             Ok(l) => l,
             Err(e) => {
@@ -252,7 +252,7 @@ impl HostDriver {
         let (sender, receiver) = mpsc::channel(1);
 
         HostDriver::run_with_driver_and_listener(
-            UsbVsockHost::new([] as [&str; 0], true, sender),
+            UsbVsockHost::new([] as [&str; 0], true, sender, serial.into_iter().collect()),
             receiver,
             listener,
             log_id,

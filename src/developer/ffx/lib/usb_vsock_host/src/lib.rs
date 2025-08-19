@@ -8,7 +8,7 @@ use bind_fuchsia_google_platform_usb::{
 use bind_fuchsia_usb::BIND_USB_CLASS_VENDOR_SPECIFIC;
 use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
-use futures::future::{select, AbortHandle, Abortable, Either};
+use futures::future::{AbortHandle, Abortable, Either, select};
 use futures::{AsyncRead, AsyncWrite, FutureExt, SinkExt, Stream, StreamExt};
 use std::collections::HashMap;
 use std::iter::IntoIterator;
@@ -19,8 +19,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use thiserror::Error;
 use usb_vsock::{
-    Address, Header, Packet, PacketType, ProtocolVersion, ReadyConnect, UsbPacketBuilder,
-    VsockPacketIterator, CID_ANY, CID_HOST, CID_LOOPBACK,
+    Address, CID_ANY, CID_HOST, CID_LOOPBACK, Header, Packet, PacketType, ProtocolVersion,
+    ReadyConnect, UsbPacketBuilder, VsockPacketIterator,
 };
 
 /// How long to wait for the USB protocol to synchronize.
@@ -36,9 +36,11 @@ const RANDOM_PORT_RANGE: std::ops::Range<u32> = 32768..u32::MAX;
 /// How many URBs to allocate for each device we communicate with.
 const URB_POOL_SIZE: usize = 32;
 
-/// Watches the usb devfs for new devices.
+/// Watches the usb devfs for new devices. If `allow_serials` is non-empty, only
+/// devices with a serial number in the list will be detected.
 async fn listen_for_usb_devices<S: AsyncRead + AsyncWrite + Send + 'static>(
     host: Weak<UsbVsockHost<S>>,
+    allow_serials: Vec<String>,
 ) -> Result<(), usb_rs::Error> {
     log::info!("Listening for USB devices");
     let mut stream = usb_rs::wait_for_devices(true, false)?;
@@ -51,6 +53,12 @@ async fn listen_for_usb_devices<S: AsyncRead + AsyncWrite + Send + 'static>(
             log::debug!("USB listening task observed host disappeared");
             return Ok(());
         };
+
+        if !allow_serials.is_empty()
+            && allow_serials.iter().all(|x| Some(x) != device.serial().as_ref())
+        {
+            continue;
+        }
 
         host.add_device(device);
     }
@@ -568,11 +576,13 @@ impl<S> std::fmt::Debug for UsbVsockHost<S> {
 }
 
 impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
-    /// Create a new USB VSOCK host.
+    /// Create a new USB VSOCK host.  If `allow_serials` is non-empty, only
+    /// devices with a serial number in the list will be detected.
     pub fn new(
         paths: impl IntoIterator<Item: AsRef<Path>>,
         discover: bool,
         events: mpsc::Sender<UsbVsockHostEvent>,
+        allow_serials: Vec<String>,
     ) -> Arc<Self> {
         let (tx, rx) = futures::channel::oneshot::channel();
         let ret = Arc::new_cyclic(|weak_self| {
@@ -591,7 +601,7 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
                 ret.scope.spawn(async move {
                     // Make sure we're out of Arc::new_cyclic before this future gets polled.
                     let _ = rx.await;
-                    if let Err(e) = listen_for_usb_devices(weak_self).await {
+                    if let Err(e) = listen_for_usb_devices(weak_self, allow_serials).await {
                         log::warn!(error:? = e; "USB listening encountered an unexpected error");
                     }
                 });
@@ -1489,9 +1499,13 @@ mod test {
 
         let mut listener = host.listen(1234, Some(cid.try_into().unwrap())).unwrap();
 
-        assert!(listener
-            .poll_next_unpin(&mut std::task::Context::from_waker(futures::task::noop_waker_ref()))
-            .is_pending());
+        assert!(
+            listener
+                .poll_next_unpin(&mut std::task::Context::from_waker(
+                    futures::task::noop_waker_ref()
+                ))
+                .is_pending()
+        );
         host.remove_device(cid);
         std::mem::drop(connection);
         let Err(ListenError::NotFound(got_cid)) = host.listen(5678, Some(cid.try_into().unwrap()))

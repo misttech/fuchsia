@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use crate::overnet::host_pipe::{
-    spawn, HostPipeChildBuilder, HostPipeChildDefaultBuilder, LogBuffer,
+    HostPipeChildBuilder, HostPipeChildDefaultBuilder, LogBuffer, spawn,
 };
 #[cfg(not(target_os = "macos"))]
 use crate::overnet::usb::spawn_usb;
 use crate::overnet::vsock::spawn_vsock;
 use crate::{FASTBOOT_MAX_AGE, MDNS_MAX_AGE, ZEDBOOT_MAX_AGE};
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use compat_info::{CompatibilityInfo, CompatibilityState};
@@ -30,7 +30,7 @@ use fuchsia_async::Task;
 use futures::channel;
 use netext::IsLocalAddr;
 use rand::random;
-use rcs::{knock_rcs, RcsConnection};
+use rcs::{RcsConnection, knock_rcs};
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashSet};
@@ -44,7 +44,7 @@ use std::sync::Arc;
 #[cfg(not(target_os = "macos"))]
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use usb_fastboot_discovery::{open_interface_with_serial, Interface};
+use usb_fastboot_discovery::{Interface, open_interface_with_serial};
 #[cfg(not(target_os = "macos"))]
 use usb_vsock_host::UsbVsockHost;
 
@@ -369,15 +369,20 @@ impl Target {
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn init_usb_vsock_host(
-    ) -> Option<channel::mpsc::Receiver<usb_vsock_host::UsbVsockHostEvent>> {
+    pub fn init_usb_vsock_host()
+    -> Option<channel::mpsc::Receiver<usb_vsock_host::UsbVsockHostEvent>> {
         if ffx_config::get(CONFIG_ENABLE_USB).unwrap_or(false) {
             let (sender, receiver) = channel::mpsc::channel(1);
 
             if USB_VSOCK_HOST
                 .lock()
                 .unwrap()
-                .replace(UsbVsockHost::new(Vec::<std::path::PathBuf>::new(), true, sender))
+                .replace(UsbVsockHost::new(
+                    Vec::<std::path::PathBuf>::new(),
+                    true,
+                    sender,
+                    Vec::new(),
+                ))
                 .is_some()
             {
                 log::warn!("Re-initializing USB VSock host");
@@ -1281,8 +1286,8 @@ impl Target {
                     RemoteOvernetIdState::Pending(ref mut waiters) => waiters.push(sender),
                     RemoteOvernetIdState::Ready(roid) => {
                         log::debug!(
-                        "Got request for host pipe overnet id for an already-running host-pipe -- sending back {roid:?}",
-                    );
+                            "Got request for host pipe overnet id for an already-running host-pipe -- sending back {roid:?}",
+                        );
                         let _ = sender.send(*roid);
                     }
                 }
