@@ -922,5 +922,11 @@ func infraToolLogChecks() []FailureModeCheck {
 			AttributeToTest: true,
 			AddTag:          true,
 		},
+		// For https://fxbug.dev/439064347
+		&stringInLogCheck{
+			String:             "timed out waiting for boot to complete",
+			Type:               swarmingOutputType,
+			SkipAllPassedTests: true,
+		},
 	}
 }
