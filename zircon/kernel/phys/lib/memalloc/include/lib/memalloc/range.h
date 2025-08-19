@@ -86,6 +86,9 @@ enum class Type : uint64_t {
   // The kernel's boot shadow call stack, if supported.
   kBootShadowCallStack,
 
+  // The kernel's boot unsafe stack, if safe stack is supported.
+  kBootUnsafeStack,
+
   // The intermediate kernel memory image used to trampoline into the same image
   // loaded at a fixed address (i.e., as used by TrampolineBoot).
   kTrampolineStagingKernel,

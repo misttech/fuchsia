@@ -245,15 +245,16 @@ void HandoffPrep::ArchDoHandoff(ZirconAbi abi, const ArchPatchInfo& patch_info) 
       "mov x29, xzr\n"
       "mov x30, xzr\n"
 
-      // TODO(https://fxbug.dev/42164859): Set the thread pointer.
       "mov sp, %[sp]\n"
       "mov x18, %[shadow_call_sp]\n"
+      "msr tpidr_el1, %[tp]\n"
 
       "mov x0, %[handoff]\n"
       "br %[entry]"
       :                                                    //
       : [entry] "r"(kernel_.entry()),                      //
         [handoff] "r"(handoff_),                           //
+        [tp] "r"(abi.thread_abi_pointer),                  //
         [sp] "r"(abi.machine_stack_top),                   //
         [shadow_call_sp] "r"(abi.shadow_call_stack_base),  //
         "m"(*handoff_)  // Ensures no store to the handoff can be regarded as dead

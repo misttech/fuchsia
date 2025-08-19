@@ -85,16 +85,6 @@ handoff_paddr           .req x21
   dsb sy
   isb
 
-  // Set the thread pointer early so compiler-generated references
-  // to the stack-guard and unsafe-sp slots work.  This is not a
-  // real 'struct thread' yet, just a pointer to (past, actually)
-  // the two slots used by the ABI known to the compiler.  This avoids
-  // having to compile-time disable safe-stack and stack-protector
-  // code generation features for all the C code in the bootstrap
-  // path, which (unlike on x86, e.g.) is enough to get annoying.
-  adr_global tmp, .Lboot_cpu_fake_thread_pointer_location
-  msr tpidr_el1, tmp
-
   // set the per cpu pointer for cpu 0
   adr_global percpu_ptr, arm64_percpu_array
 
@@ -106,12 +96,6 @@ handoff_paddr           .req x21
   bl lk_main
   b .
 .end_function
-
-.object boot_cpu_fake_arch_thread, bss, local, align=8
-  .quad 0 // Location of stack guard
-  .quad 0 // unsafe_sp ABI, but SafeStack is never used in arm64 kernel code.
-.Lboot_cpu_fake_thread_pointer_location:
-.end_object
 
 // This symbol is used by gdb python to know the base of the kernel module
 .label KERNEL_BASE_ADDRESS, global, value=KERNEL_BASE

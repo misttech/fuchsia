@@ -52,13 +52,6 @@ static bool use_monitor = false;
 
 extern struct idt _idt;
 
-#if __has_feature(safe_stack)
-static uint8_t unsafe_kstack[PAGE_SIZE] __ALIGNED(16);
-#define unsafe_kstack_end (&unsafe_kstack[sizeof(unsafe_kstack)])
-#else
-#define unsafe_kstack_end nullptr
-#endif
-
 // Holds an array of MwaitMonitor objects used to signal that a CPU is about-to-enter or
 // should-wake-from the idle thread.
 MwaitMonitorArray gMwaitMonitorArray;
@@ -84,8 +77,10 @@ struct x86_percpu bp_percpu = {
     .direct = &bp_percpu,
     .current_thread = {},
 
+    // Set in early boot code, copying over the values set in physboot.
     .stack_guard = {},
-    .kernel_unsafe_sp = (uintptr_t)unsafe_kstack_end,
+    .kernel_unsafe_sp = {},
+
     .saved_user_sp = {},
 
     .blocking_disallowed = {},

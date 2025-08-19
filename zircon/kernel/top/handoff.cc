@@ -49,6 +49,9 @@ constexpr ZirconAbiSpec kZirconAbiSpec{
 #if __has_feature(shadow_call_stack)
     .shadow_call_stack = kShadowCallStack,
 #endif
+#if __has_feature(safe_stack)
+    .unsafe_stack = kUnsafeStack,
+#endif
 };
 
 // The mechanism to convey the ABI specification to physboot: we encode it as

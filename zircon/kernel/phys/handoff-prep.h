@@ -104,11 +104,10 @@ class HandoffPrep {
   void PublishExtraVmo(PhysVmo&& vmo);
 
  private:
-  // TODO(https://fxbug.dev/42164859): Populate with prepared elements of C++
-  // ABI set-up (e.g., mapped stacks).
   struct ZirconAbi {
     uintptr_t machine_stack_top = 0;
     uintptr_t shadow_call_stack_base = 0;
+    uintptr_t thread_abi_pointer = 0;
   };
 
   // Comprises a list in scratch memory of the pending VM objects so they can

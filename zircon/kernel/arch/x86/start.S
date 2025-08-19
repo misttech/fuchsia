@@ -116,10 +116,16 @@
   rep stosq
 #endif  // __has_feature(address_sanitizer)
 
-  // Set %gs.base to &bp_percpu.  It's statically initialized
-  // with kernel_unsafe_sp set, so after this it's safe to call
-  // into C code that might use safe-stack and/or stack-protector.
+  // Before setting %gs.base to &bp_percpu, copy over the unsafe stack pointer
+  // and stack guard set by physboot (off the current %gs.base). The structure
+  // is otherwise statically initialized.
   lea bp_percpu(%rip), %rax
+  mov %gs:ZX_TLS_UNSAFE_SP_OFFSET, %rdx
+  mov %gs:ZX_TLS_STACK_GUARD_OFFSET, %rcx
+  mov %rdx, ZX_TLS_UNSAFE_SP_OFFSET(%rax)
+  mov %rcx, ZX_TLS_STACK_GUARD_OFFSET(%rax)
+
+  // Now set %gs.base to &bp_percpu (still held by %rax).
   mov %rax, %rdx
   shr $32, %rdx
   mov $X86_MSR_IA32_GS_BASE, %ecx

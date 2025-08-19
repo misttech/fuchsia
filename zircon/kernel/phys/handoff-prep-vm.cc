@@ -7,8 +7,10 @@
 #include <lib/arch/paging.h>
 #include <lib/elfldltl/machine.h>
 #include <lib/memalloc/range.h>
+#include <zircon/tls.h>
 
 #include <fbl/algorithm.h>
+#include <ktl/algorithm.h>
 #include <ktl/bit.h>
 #include <ktl/iterator.h>
 #include <ktl/string_view.h>
@@ -263,15 +265,43 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
 
   // Kernel ABI
   {
+    // Machine stack.
     ktl::span machine_stack =
         PublishStackVmar(abi_spec_.machine_stack, memalloc::Type::kBootMachineStack);
     abi.machine_stack_top = elfldltl::AbiTraits<>::InitialStackPointer(
         reinterpret_cast<uintptr_t>(machine_stack.data()), machine_stack.size_bytes());
 
+    // Shadow call stack.
     if (abi_spec_.shadow_call_stack.size_bytes > 0) {
       ktl::span shadow_call_stack =
           PublishStackVmar(abi_spec_.shadow_call_stack, memalloc::Type::kBootShadowCallStack);
       abi.shadow_call_stack_base = reinterpret_cast<uintptr_t>(shadow_call_stack.data());
+    }
+
+    // Thread ABI pointer.
+    //
+    // Static assertions of ArchTempThreadAbi fields respecting expected
+    // ZX_TLS_*_OFFSETs done in <phys/arch/arch-handoff.h>.
+    PhysHandoffTemporaryPtr<const ArchTempThreadAbi> handoff_thread_abi;
+    fbl::AllocChecker ac;
+    ArchTempThreadAbi* thread_abi = New(handoff_thread_abi, ac);
+    ZX_ASSERT(ac.check());
+    abi.thread_abi_pointer = reinterpret_cast<uintptr_t>(thread_abi->tp());
+
+    // We expect the kernel properly set the stack guard, the value we set here
+    // only being a debugging convenience until that time.
+    //
+    // TODO(https://fxbug.dev/42098994): But this ought to be set properly here
+    // once physboot has access to a source of randomness.
+    thread_abi->stack_guard = 0xdeadbeeffeedface;
+
+    // Unsafe stack.
+    if (abi_spec_.unsafe_stack.size_bytes > 0) {
+      ktl::span unsafe_stack =
+          PublishStackVmar(abi_spec_.unsafe_stack, memalloc::Type::kBootUnsafeStack);
+      uintptr_t unsafe_stack_top =
+          reinterpret_cast<uintptr_t>(unsafe_stack.data()) + unsafe_stack.size_bytes();
+      thread_abi->unsafe_stack_pointer = unsafe_stack_top;
     }
   }
 

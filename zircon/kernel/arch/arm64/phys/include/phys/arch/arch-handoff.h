@@ -13,11 +13,26 @@
 #include <lib/arch/arm64/smccc.h>
 #include <lib/boot-options/arm64.h>
 #include <lib/zbi-format/driver-config.h>
+#include <zircon/tls.h>
 
 #include <optional>
 #include <variant>
 
 #include <phys/handoff-ptr.h>
+
+// The minimal memory region needed to encapsulate the C++ compiler thread ABI.
+struct ArchTempThreadAbi {
+  constexpr const void* tp() const { return static_cast<const void*>(this + 1); }
+
+  uint64_t stack_guard = 0;
+  uint64_t unsafe_stack_pointer = 0;
+};
+
+static_assert(sizeof(ArchTempThreadAbi) + ZX_TLS_STACK_GUARD_OFFSET ==
+              offsetof(ArchTempThreadAbi, stack_guard));
+
+static_assert(sizeof(ArchTempThreadAbi) + ZX_TLS_UNSAFE_SP_OFFSET ==
+              offsetof(ArchTempThreadAbi, unsafe_stack_pointer));
 
 struct ArchPatchInfo {
   Arm64AlternateVbar alternate_vbar = Arm64AlternateVbar::kNone;

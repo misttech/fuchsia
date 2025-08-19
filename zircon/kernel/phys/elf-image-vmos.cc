@@ -8,7 +8,6 @@
 
 #include <ktl/string_view.h>
 #include <phys/elf-image.h>
-#include <phys/handoff.h>
 #include <phys/symbolize.h>
 
 #include <ktl/enforce.h>
