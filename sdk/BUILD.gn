@@ -294,8 +294,8 @@ sdk_final_manifest_golden("final_fuchsia_idk_manifest_golden") {
 }
 
 if (!is_host) {
-  # Generates a "final" IDK archive, including prebuilt binaries for
-  # several target_cpu architectures on all Supported API levels.
+  # Generates a "final" IDK archive that only includes prebuilt binaries for
+  # the target CPU architecture and API level `HEAD`.
   final_fuchsia_idk_for_cpus_and_levels("final_fuchsia_idk_head_only") {
     output_name = "fuchsia_idk_head_only"
     target_cpus = [ target_cpu ]
