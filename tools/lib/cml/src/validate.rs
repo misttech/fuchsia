@@ -581,17 +581,6 @@ which is almost certainly a mistake: {}",
             }
         }
 
-        if let Some(source) = use_.from.as_ref() {
-            for source in self.expand_source_dependencies(use_.names(), &source.into()) {
-                let target = DependencyNode::Self_;
-                if use_.dependency.as_ref().unwrap_or(&DependencyType::Strong)
-                    == &DependencyType::Strong
-                {
-                    self.add_strong_dep(source, target);
-                }
-            }
-        }
-
         // Disallow multiple capability ids of the same name.
         let capability_ids = CapabilityId::from_use(use_)?;
         for capability_id in capability_ids {
@@ -3545,36 +3534,6 @@ mod tests {
                 ]
             }),
             Err(Error::Validate { err, .. }) if &err == "\"availability\" cannot be used with \"event_stream\""
-        ),
-        test_cml_use_from_child_offer_cycle_strong(
-            json!({
-                "capabilities": [
-                    { "protocol": ["fuchsia.example.Protocol"] },
-                ],
-                "children": [
-                    {
-                        "name": "child",
-                        "url": "fuchsia-pkg://fuchsia.com/child#meta/child.cm",
-                    },
-                ],
-                "use": [
-                    {
-                        "protocol": "fuchsia.child.Protocol",
-                        "from": "#child",
-                    },
-                ],
-                "offer": [
-                    {
-                        "protocol": "fuchsia.example.Protocol",
-                        "from": "self",
-                        "to": [ "#child" ],
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. })
-                if &err == "Strong dependency cycles were found. Break the cycle by removing a \
-                            dependency or marking an offer as weak. Cycles: \
-                            {{#child -> self -> #child}}"
         ),
         test_cml_use_from_parent_weak(
             json!({
@@ -7598,48 +7557,6 @@ mod tests {
             }) if &err ==
                 "Strong dependency cycles were found. Break the cycle by removing a \
                 dependency or marking an offer as weak. Cycles: {{#a -> #b -> #dict -> #a}}"
-        ),
-        test_cml_use_dependency_cycle_with_dictionary(
-            json!({
-                "capabilities": [
-                    {
-                        "protocol": "1",
-                    },
-                    {
-                        "dictionary": "dict",
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "a",
-                        "url": "#meta/a.cm",
-                    },
-                ],
-                "use": [
-                    {
-                        "protocol": "2",
-                        "from": "#a",
-                    },
-                ],
-                "offer": [
-                    {
-                        "dictionary": "dict",
-                        "from": "self",
-                        "to": "#a",
-                    },
-                    {
-                        "protocol": "1",
-                        "from": "self",
-                        "to": "self/dict",
-                    },
-                ],
-            }),
-            Err(Error::Validate {
-                err,
-                ..
-            }) if &err ==
-                "Strong dependency cycles were found. Break the cycle by removing a \
-                dependency or marking an offer as weak. Cycles: {{#a -> self -> #dict -> #a}}"
         ),
     }}
 
