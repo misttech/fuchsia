@@ -469,8 +469,14 @@ which is almost certainly a mistake: {}",
             return Err(Error::validate("\"path\" should be present with \"resolver\""));
         }
 
-        if capability.dictionary.as_ref().is_some() && capability.path.is_some() {
-            self.features.check(Feature::DynamicDictionaries)?;
+        if let Some(name) = capability.dictionary.as_ref() {
+            if capability.path.is_some() {
+                self.features.check(Feature::DynamicDictionaries)?;
+                // If `path` is set that means the dictionary is provided by the program,
+                // which implies a dependency from `self` to the dictionary declaration.
+                let target = DependencyNode::Named(name);
+                self.add_strong_dep(DependencyNode::Self_, target);
+            }
         }
         if capability.delivery.is_some() {
             self.features.check(Feature::DeliveryType)?;
