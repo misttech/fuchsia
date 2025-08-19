@@ -433,8 +433,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       const fuchsia_driver_framework::NodePropertyDictionary2& parent_properties);
 
   // Update `properties_dict_` to identify the contents of `properties_`.
-  void SynchronizePropertiesDict();
-
   void StartDriverWithDynamicLinker(
       DriverHost::DriverLoadArgs load_args, DriverHost::DriverStartArgs start_args,
       std::string_view url,
@@ -464,13 +462,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Contains the properties of the node or its parents if the node is a composite or legacy
   // composite node. "default" entry refers to the node's properties if the node is a
   // non-composite. "default" entry refers to the primary parent node's properties if the node is a
-  // composite. All referenced data is owned by `arena_`. Make sure to call
-  // `Node::SynchronizePropertiesDict()` when modified.
+  // composite.
   fuchsia_driver_framework::NodePropertyDictionary2 properties_;
-
-  // Maps the node properties of the entries of `properties_` by their name.
-  std::unordered_map<std::string, cpp20::span<const fuchsia_driver_framework::NodeProperty2>>
-      properties_dict_;
 
   std::optional<fuchsia_driver_framework::BusInfo> bus_info_;
 

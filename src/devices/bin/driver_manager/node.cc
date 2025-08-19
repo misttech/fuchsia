@@ -732,7 +732,6 @@ void Node::SetNonCompositeProperties(std::vector<fdf::NodeProperty2> properties)
           .properties = std::move(properties),
       }},
   };
-  SynchronizePropertiesDict();
 }
 
 void Node::SetCompositeParentProperties(const fdf::NodePropertyDictionary2& parent_properties) {
@@ -746,14 +745,6 @@ void Node::SetCompositeParentProperties(const fdf::NodePropertyDictionary2& pare
   }});
 
   properties_ = std::move(properties);
-  SynchronizePropertiesDict();
-}
-
-void Node::SynchronizePropertiesDict() {
-  properties_dict_.clear();
-  for (const auto& entry : properties_) {
-    properties_dict_[entry.name()] = entry.properties();
-  }
 }
 
 std::vector<fdf::BusInfo> Node::GetBusTopology() const {
@@ -1456,11 +1447,12 @@ void Node::on_fidl_error(fidl::UnbindInfo info) {
 
 std::optional<std::span<const fdf::NodeProperty2>> Node::GetNodeProperties(
     std::string_view parent_name) const {
-  auto it = properties_dict_.find(std::string(parent_name));
-  if (it == properties_dict_.end()) {
-    return std::nullopt;
+  for (const auto& entry : properties_) {
+    if (entry.name() == parent_name) {
+      return entry.properties();
+    }
   }
-  return {it->second};
+  return std::nullopt;
 }
 
 Node::DriverComponent::DriverComponent(
