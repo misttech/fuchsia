@@ -38,7 +38,7 @@ ash = { version = "0.37.0", features = ["linked"], default-features = false }
 assert_matches = "1.5.0"
 async-channel = "1.8.0"
 async-lock = "2.3"
-async-ringbuf  = "0.3.1"
+async-ringbuf = "0.3.4"
 async-stream = "0.3.5"
 async-trait = "0.1.88"
 base64 = "0.22.1"
@@ -392,6 +392,8 @@ miow = { path = "empty/miow" }
 ntapi = { path = "empty/ntapi" }
 output_vt100 = { path = "empty/output_vt100" }
 pkg-config = { path = "empty/pkg-config" }
+portable-atomic = { path = "empty/portable-atomic" }
+portable-atomic-util = { path = "empty/portable-atomic-util" }
 r-efi = { path = "empty/r-efi" }
 redox_syscall = { path = "empty/redox_syscall" }
 rustversion = { path = "empty/rustversion" }
