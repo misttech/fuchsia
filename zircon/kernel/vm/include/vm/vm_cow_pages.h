@@ -117,7 +117,6 @@ enum class VmCowReclaimFailure : uint8_t {
   IncorrectPage,
   Other,
 };
-using VmCowReclaimResult = fit::result<VmCowReclaimFailure, VmCowReclaimSuccess>;
 
 class ScopedPageFreedList;
 

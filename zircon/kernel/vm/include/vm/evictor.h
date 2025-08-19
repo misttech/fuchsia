@@ -23,6 +23,11 @@ namespace vm_unittest {
 class TestPmmNode;
 }
 
+// Forward declarations. Defined in vm/vm_cow_pages.h.
+struct VmCowReclaimSuccess;
+enum class VmCowReclaimFailure : uint8_t;
+using VmCowReclaimResult = fit::result<VmCowReclaimFailure, VmCowReclaimSuccess>;
+
 // Implements page evictor logic to free pages belonging to a PmmNode under memory pressure.
 // Eviction in this context is both direct eviction of pager backed memory and discardable VMO
 // memory, as well as by performing compression.
@@ -143,11 +148,11 @@ class Evictor {
   Thread *DebugGetEvictorThread() { return eviction_thread_; }
 
  private:
-  // Private constructor for test code to specify custom methods to fake the reclamation.
-  using ReclaimFunction = fit::inline_function<ktl::optional<EvictedPageCounts>(
+  using ReclaimFunction = fit::inline_function<ktl::optional<VmCowReclaimResult>(
       VmCompression *compression, EvictionLevel eviction_level)>;
   using FreePagesFunction = fit::inline_function<uint64_t()>;
 
+  // Private constructor for test code to specify custom methods to fake the reclamation.
   Evictor(ReclaimFunction reclaim_function, FreePagesFunction free_pages_function);
 
   // Helpers for testing.
@@ -196,7 +201,7 @@ class Evictor {
   // instance.
   // The page that reclamation was attempted on is also returned for debug purposes. This is only
   // populated for a real reclamation, not a fake one from a test instance.
-  ktl::optional<ktl::pair<EvictedPageCounts, const vm_page_t *>> EvictPageQueuesHelper(
+  ktl::optional<ktl::pair<VmCowReclaimResult, const vm_page_t *>> EvictPageQueuesHelper(
       VmCompression *compression, EvictionLevel eviction_level) const;
 
   // Target for eviction.

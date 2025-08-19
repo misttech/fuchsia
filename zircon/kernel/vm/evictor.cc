@@ -40,7 +40,7 @@ inline void CheckedIncrement(uint64_t* a, uint64_t b) {
   *a = result;
 }
 
-ktl::optional<ktl::pair<Evictor::EvictedPageCounts, const vm_page_t*>> ReclaimFromGlobalPageQueues(
+ktl::optional<ktl::pair<VmCowReclaimResult, const vm_page_t*>> ReclaimFromGlobalPageQueues(
     VmCompression* compression, Evictor::EvictionLevel eviction_level) {
   // Avoid evicting from the newest queue to prevent thrashing.
   const size_t lowest_evict_queue = eviction_level == Evictor::EvictionLevel::IncludeNewest
@@ -71,35 +71,28 @@ ktl::optional<ktl::pair<Evictor::EvictedPageCounts, const vm_page_t*>> ReclaimFr
 
     VmCowReclaimResult reclaimed = backlink->cow->ReclaimPage(backlink->page, backlink->offset,
                                                               hint_action, compression_instance);
-
-    Evictor::EvictedPageCounts evicted_counts = {};
-    if (reclaimed.is_ok()) {
-      uint64_t num_pages = reclaimed.value().num_pages;
-      switch (reclaimed.value().type) {
-        case VmCowReclaimSuccess::Type::EvictLoaned:
-          evicted_counts.pager_backed_loaned = num_pages;
-          break;
-        case VmCowReclaimSuccess::Type::EvictNonLoaned:
-          evicted_counts.pager_backed = num_pages;
-          break;
-        case VmCowReclaimSuccess::Type::Discard:
-          evicted_counts.discardable = num_pages;
-          break;
-        case VmCowReclaimSuccess::Type::Compress:
-          evicted_counts.compressed = num_pages;
-          break;
-      }
-    }
-    return ktl::make_pair(evicted_counts, backlink->page);
+    return ktl::make_pair(reclaimed, backlink->page);
   }
   return ktl::nullopt;
 }
 
-struct ReclaimFailures {
+struct ReclaimFailureStats {
   static constexpr uint64_t kComparisonBase = 1000;
   uint64_t consecutive_reclaim_failures = 0;
   uint64_t failures_to_compare = kComparisonBase;
+
   uint64_t prev_page_evictions = 0;
+  const vm_page_t* prev_evicted_page = nullptr;
+  bool printed_same_page_oops = false;
+
+  struct FailureReasons {
+    uint64_t compress_failed = 0;
+    uint64_t compress_accessed = 0;
+    uint64_t evict_accessed = 0;
+    uint64_t incorrect_page = 0;
+    uint64_t other = 0;
+  };
+  FailureReasons failure_reasons = {};
 
   void Update(bool reclaim_failed) {
     if (reclaim_failed) {
@@ -107,10 +100,11 @@ struct ReclaimFailures {
     } else {
       consecutive_reclaim_failures = 0;
       failures_to_compare = kComparisonBase;
+      failure_reasons = {};
     }
   }
 
-  bool ShouldPrint() {
+  bool ShouldPrintLivelock() {
     if (consecutive_reclaim_failures == failures_to_compare) {
       // Wait for longer before logging the next time to avoid spamming in an actual livelock.
       // Multiply checking for overflow.
@@ -121,7 +115,67 @@ struct ReclaimFailures {
     }
     return false;
   }
+
+  bool CheckForSamePage(const vm_page_t* evicted_page) {
+    if (likely(evicted_page != prev_evicted_page)) {
+      prev_evicted_page = evicted_page;
+      return false;
+    }
+    prev_page_evictions++;
+    // Print the OOPS only once per eviction attempt to prevent log spam.
+    if (!printed_same_page_oops) {
+      printed_same_page_oops = true;
+      return true;
+    }
+    return false;
+  }
 };
+
+void DiagnoseReclamationFailure(ktl::pair<VmCowReclaimResult, const vm_page_t*>* reclaimed,
+                                ReclaimFailureStats* failure_stats, bool has_test_reclaim) {
+  bool reclaim_failed = false;
+  if (reclaimed->first.is_error()) {
+    reclaim_failed = true;
+    switch (reclaimed->first.error_value()) {
+      case VmCowReclaimFailure::CompressFailed:
+        failure_stats->failure_reasons.compress_failed++;
+        break;
+      case VmCowReclaimFailure::CompressAccessed:
+        failure_stats->failure_reasons.compress_accessed++;
+        break;
+      case VmCowReclaimFailure::EvictAccessed:
+        failure_stats->failure_reasons.evict_accessed++;
+        break;
+      case VmCowReclaimFailure::IncorrectPage:
+        failure_stats->failure_reasons.incorrect_page++;
+        break;
+      case VmCowReclaimFailure::Other:
+        failure_stats->failure_reasons.other++;
+        break;
+    }
+  }
+
+  // Evicting the same page twice in a row indicates a potential bug in reclamation.
+  // Ignore the test reclaim path which might not even evict an actual page.
+  const vm_page_t* evicted_page = reclaimed->second;
+  if (!has_test_reclaim && unlikely(failure_stats->CheckForSamePage(evicted_page))) {
+    printf("WARNING: Evictor reclaiming the same page again %p\n", evicted_page);
+  }
+
+  // If we've looped many times without being able to reclaim anything, make some noise.
+  failure_stats->Update(reclaim_failed);
+  if (unlikely(failure_stats->ShouldPrintLivelock())) {
+    printf(
+        "WARNING: Evictor failed %zu reclaims in a row (%zu for prev page), possible livelock\n"
+        "compress_failed %zu compress_accessed %zu evict_accessed %zu incorrect_page %zu other %zu\n",
+        failure_stats->consecutive_reclaim_failures, failure_stats->prev_page_evictions,
+        failure_stats->failure_reasons.compress_failed,
+        failure_stats->failure_reasons.compress_accessed,
+        failure_stats->failure_reasons.evict_accessed,
+        failure_stats->failure_reasons.incorrect_page, failure_stats->failure_reasons.other);
+    pmm_page_queues()->Dump();
+  }
+}
 
 }  // namespace
 
@@ -395,9 +449,7 @@ Evictor::EvictedPageCounts Evictor::EvictPageQueues(uint64_t target_pages,
     compression = Pmm::Node().GetPageCompression();
   }
 
-  ReclaimFailures reclaim_failures;
-  const vm_page_t* prev_evicted_page = nullptr;
-  bool printed_same_page_oops = false;
+  ReclaimFailureStats failure_stats;
   // Evict until we've counted enough pages to hit the target_pages. Explicitly do not consider
   // pager_backed_loaned towards our total, as loaned pages do not go to the free memory pool.
   while (counts.pager_backed + counts.compressed + counts.discardable < target_pages) {
@@ -409,30 +461,27 @@ Evictor::EvictedPageCounts Evictor::EvictPageQueues(uint64_t target_pages,
       break;
     }
 
-    EvictedPageCounts reclaimed_counts = reclaimed->first;
-    const vm_page_t* evicted_page = reclaimed->second;
-    // Evicting the same page twice in a row indicates a potential bug in reclamation.
-    // Ignore the test reclaim path which might not even evict an actual page.
-    if (unlikely(!test_reclaim_function_ && evicted_page == prev_evicted_page)) {
-      // Print the OOPS only once per eviction attempt to prevent log spam.
-      if (!printed_same_page_oops) {
-        printf("WARNING: Evictor reclaiming the same page again %p\n", evicted_page);
-        printed_same_page_oops = true;
+    // Check for any reclamation failures and print diagnostic logs if needed.
+    DiagnoseReclamationFailure(&reclaimed.value(), &failure_stats, !!test_reclaim_function_);
+
+    VmCowReclaimResult reclaimed_result = reclaimed->first;
+    if (reclaimed_result.is_ok()) {
+      uint64_t num_pages = reclaimed_result.value().num_pages;
+      switch (reclaimed_result.value().type) {
+        case VmCowReclaimSuccess::Type::EvictLoaned:
+          counts.pager_backed_loaned += num_pages;
+          break;
+        case VmCowReclaimSuccess::Type::EvictNonLoaned:
+          counts.pager_backed += num_pages;
+          break;
+        case VmCowReclaimSuccess::Type::Discard:
+          counts.discardable += num_pages;
+          break;
+        case VmCowReclaimSuccess::Type::Compress:
+          counts.compressed += num_pages;
+          break;
       }
-      reclaim_failures.prev_page_evictions++;
     }
-    prev_evicted_page = evicted_page;
-
-    // If we've looped many times without being able to reclaim anything, make some noise.
-    reclaim_failures.Update(reclaimed_counts.total() == 0);
-    if (unlikely(reclaim_failures.ShouldPrint())) {
-      printf(
-          "WARNING: Evictor failed %zu reclaims in a row (%zu for prev page), possible livelock\n",
-          reclaim_failures.consecutive_reclaim_failures, reclaim_failures.prev_page_evictions);
-      pmm_page_queues()->Dump();
-    }
-
-    counts += reclaimed_counts;
   }
 
   pager_backed_pages_evicted.Add(counts.pager_backed + counts.pager_backed_loaned);
@@ -462,8 +511,8 @@ uint64_t Evictor::CountFreePages() const {
   return pmm_count_free_pages();
 }
 
-ktl::optional<ktl::pair<Evictor::EvictedPageCounts, const vm_page_t*>>
-Evictor::EvictPageQueuesHelper(VmCompression* compression, EvictionLevel eviction_level) const {
+ktl::optional<ktl::pair<VmCowReclaimResult, const vm_page_t*>> Evictor::EvictPageQueuesHelper(
+    VmCompression* compression, EvictionLevel eviction_level) const {
   if (unlikely(test_reclaim_function_)) {
     auto test_ret_val = test_reclaim_function_(compression, eviction_level);
     if (test_ret_val.has_value()) {

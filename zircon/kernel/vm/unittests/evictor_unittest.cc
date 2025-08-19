@@ -45,8 +45,8 @@ class TestPmmNode {
   void UncapEvictions() { max_evictions_ = UINT64_MAX; }
 
  private:
-  ktl::optional<Evictor::EvictedPageCounts> TestReclaim(VmCompression* compression,
-                                                        Evictor::EvictionLevel eviction_level) {
+  ktl::optional<VmCowReclaimResult> TestReclaim(VmCompression* compression,
+                                                Evictor::EvictionLevel eviction_level) {
     if (total_evictions_ >= max_evictions_) {
       return ktl::nullopt;
     }
@@ -56,15 +56,17 @@ class TestPmmNode {
       // that need it.
       free_pages_ += 10;
       total_evictions_ += 10;
-      return Evictor::EvictedPageCounts{
-          .discardable = 10,
-      };
+      return fit::ok(VmCowReclaimSuccess{
+          .type = VmCowReclaimSuccess::Type::Discard,
+          .num_pages = 10,
+      });
     }
     free_pages_++;
     total_evictions_++;
-    return Evictor::EvictedPageCounts{
-        .pager_backed = 1,
-    };
+    return fit::ok(VmCowReclaimSuccess{
+        .type = VmCowReclaimSuccess::Type::EvictNonLoaned,
+        .num_pages = 1,
+    });
   }
 
   uint64_t free_pages_ = 0;
