@@ -26,7 +26,11 @@ bool g_is_logging_initialized = false;
 // Intentionally leaked on shutdown to ensure there are no destructor ordering problems.
 zx_handle_t log_socket;
 #else
-fbl::NoDestructor<fuchsia_logging::Logger> global_logger;
+// This is a static function so there are no ordering issues on initialization of `global_logger`.
+fuchsia_logging::Logger& GetGlobalLogger() {
+  static fbl::NoDestructor<fuchsia_logging::Logger> global_logger;
+  return *global_logger;
+}
 #endif
 
 }  // namespace
@@ -35,7 +39,7 @@ bool PlatformLoggerProvider::IsInitialized() {
 #if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   return g_is_logging_initialized;
 #else
-  return global_logger->IsValid();
+  return GetGlobalLogger().IsValid();
 #endif
 }
 
@@ -68,7 +72,7 @@ bool PlatformLoggerProvider::Initialize(std::unique_ptr<PlatformHandle> channel)
       logger.is_error()) {
     return false;
   } else {
-    *global_logger = *std::move(logger);
+    GetGlobalLogger() = *std::move(logger);
   }
 #endif
   return true;
@@ -125,7 +129,7 @@ void PlatformLogger::LogVa(LogLevel level, const char* file, int line, const cha
   log_buffer.FlushRecord();
 #else
   log_buffer.BeginRecord(get_severity(level), file_str, line, fmt_string, 0, pid, tid);
-  [[maybe_unused]] auto result = global_logger->FlushBuffer(log_buffer);
+  [[maybe_unused]] auto result = GetGlobalLogger().FlushBuffer(log_buffer);
 #endif
 }
 
