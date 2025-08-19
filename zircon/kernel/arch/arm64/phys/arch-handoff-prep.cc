@@ -220,6 +220,11 @@ void HandoffPrep::ArchSummarizeMiscZbiItem(const zbi_header_t& header,
           // Ignore the payload and just use the presence of this node.
           arch_handoff.moonflower_power_driver = true;
           break;
+        case ZBI_KERNEL_DRIVER_QCOM_RNG:
+          arch_handoff.qcom_rng_driver =
+              *reinterpret_cast<const zbi_dcfg_qcom_rng_t*>(payload.data());
+          SaveForMexec(header, payload);
+          break;
       }
       break;
     }

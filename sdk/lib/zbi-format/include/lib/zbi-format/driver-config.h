@@ -93,6 +93,9 @@ typedef uint32_t zbi_kernel_driver_t;
 // 'EXYU'
 #define ZBI_KERNEL_DRIVER_EXYNOS_USI_UART ((zbi_kernel_driver_t)(0x45585955u))
 
+// `QRNG`
+#define ZBI_KERNEL_DRIVER_QCOM_RNG ((zbi_kernel_driver_t)(0x474E5251u))
+
 // Kernel driver struct that can be used for simple drivers.
 // Used by ZBI_KERNEL_DRIVER_PL011_UART, ZBI_KERNEL_DRIVER_AMLOGIC_UART, and
 // ZBI_KERNEL_DRIVER_GENI_UART, ZBI_KERNEL_DRIVER_I8250_MMIO_UART.
@@ -337,6 +340,18 @@ typedef struct {
   // Spending less time would be inefficient energy-wise.
   uint32_t min_residency_us;
 } zbi_dcfg_arm_psci_cpu_suspend_state_t;
+
+typedef uint32_t zbi_qcom_rng_flags_t;
+
+// The driver has been handed off, configured and initialized.
+#define ZBI_QCOM_RNG_FLAGS_ENABLED ((zbi_qcom_rng_flags_t)(1u << 0))
+
+typedef struct {
+  // Base address of the register banks for the device.
+  uint64_t mmio_phys;
+  zbi_qcom_rng_flags_t flags;
+  uint8_t reserved[4];
+} zbi_dcfg_qcom_rng_t;
 
 #if defined(__cplusplus)
 }

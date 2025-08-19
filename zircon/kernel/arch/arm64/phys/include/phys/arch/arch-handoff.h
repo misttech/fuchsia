@@ -39,6 +39,9 @@ struct ArchPhysHandoff {
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_AMLOGIC_HDCP) payload.
   std::optional<zbi_dcfg_amlogic_hdcp_driver_t> amlogic_hdcp_driver;
 
+  // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_QCOM_RNG) or
+  std::optional<zbi_dcfg_qcom_rng_t> qcom_rng_driver;
+
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_AMLOGIC_RNG_V1) or
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_AMLOGIC_RNG_V2) payload
   std::optional<ZbiAmlogicRng> amlogic_rng_driver;

@@ -82,6 +82,9 @@ type KernelDriver = enum : uint32 {
 
     /// 'EXYU'
     ExynosUsiUart = 0x45585955;
+
+    /// `QRNG`
+    QcomRng = 0x474E5251;
 };
 
 /// Kernel driver struct that can be used for simple drivers.
@@ -316,4 +319,18 @@ type DcfgArmPsciCpuSuspendState = struct {
     /// Minimum time in microseconds, including `entry_latency`, to stay in this low power state.
     /// Spending less time would be inefficient energy-wise.
     min_residency_us uint32;
+};
+
+type QcomRngFlags = bits : uint32 {
+    /// The driver has been handed off, configured and initialized.
+    ENABLED = 1;
+};
+
+type DcfgQcomRng = struct {
+    /// Base address of the register banks for the device.
+    mmio_phys uint64;
+
+    flags QcomRngFlags;
+
+    reserved array<uint8, 4>;
 };
