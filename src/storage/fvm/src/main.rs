@@ -7,7 +7,7 @@ mod mapping;
 mod zxcrypt;
 
 use crate::zxcrypt::Key;
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use block_client::{
     BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient, VmoId, WriteOptions,
 };
@@ -25,7 +25,7 @@ use fidl_fuchsia_fvm::{ResetMarker, ResetRequest, ResetRequestStream};
 use fidl_fuchsia_fxfs::CryptMarker;
 use fidl_fuchsia_hardware_block::BlockMarker;
 use fs_management::filesystem::{BlockConnector, Filesystem};
-use fs_management::format::{detect_disk_format, DiskFormat};
+use fs_management::format::{DiskFormat, detect_disk_format};
 use fs_management::{ComponentType, FSConfig, Options};
 use fuchsia_runtime::HandleType;
 use fuchsia_sync::Mutex;
@@ -44,8 +44,8 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::num::NonZero;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
@@ -672,6 +672,18 @@ impl Fvm {
         Ok(())
     }
 
+    async fn get_info(&self) -> fvolume::VolumeManagerInfo {
+        let inner = self.inner.read().await;
+        let slice_count = self.max_slice(&inner.metadata);
+        fvolume::VolumeManagerInfo {
+            slice_size: inner.metadata.header.slice_size,
+            slice_count: slice_count,
+            assigned_slice_count: inner.assigned_slice_count,
+            maximum_slice_count: slice_count,
+            max_virtual_slice: MAX_SLICE_COUNT,
+        }
+    }
+
     #[cfg(test)]
     async fn find_partition_with_name(&self, name: &str) -> Option<u16> {
         self.inner
@@ -1074,6 +1086,10 @@ impl Component {
                         log::warn!(error:?; "Remove volume failed");
                         map_to_raw_status(error)
                     }))?;
+                }
+                VolumesRequest::GetInfo { responder } => {
+                    log::info!("Get info");
+                    responder.send(Ok(Some(&self.fvm().get_info().await)))?;
                 }
             }
         }
@@ -1663,17 +1679,11 @@ impl Interface for PartitionInterface {
     async fn get_volume_info(
         &self,
     ) -> Result<(fvolume::VolumeManagerInfo, fvolume::VolumeInfo), zx::Status> {
+        let volume_manager_info = self.fvm.get_info().await;
         let inner = self.fvm.inner.read().await;
-        let slice_count = self.fvm.max_slice(&inner.metadata);
         let reserved = if self.key.is_some() { 1 } else { 0 };
         Ok((
-            fvolume::VolumeManagerInfo {
-                slice_size: inner.metadata.header.slice_size,
-                slice_count: slice_count.saturating_sub(reserved),
-                assigned_slice_count: inner.assigned_slice_count.saturating_sub(reserved),
-                maximum_slice_count: slice_count,
-                max_virtual_slice: MAX_SLICE_COUNT.saturating_sub(reserved),
-            },
+            volume_manager_info,
             fvolume::VolumeInfo {
                 partition_slice_count: (inner
                     .metadata
@@ -2027,8 +2037,8 @@ mod tests {
     };
     use fuchsia_fs::directory::{open_directory, readdir};
     use std::collections::HashSet;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use vmo_backed_block_server::{
         InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
     };

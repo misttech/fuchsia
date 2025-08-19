@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fuchsia::debug::{handle_debug_request, FxfsDebug};
+use crate::fuchsia::debug::{FxfsDebug, handle_debug_request};
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::memory_pressure::MemoryPressureMonitor;
 use crate::fuchsia::volumes_directory::VolumesDirectory;
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error, bail};
 use async_trait::async_trait;
 use block_client::{BlockClient as _, RemoteBlockClient};
-use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, RequestStream};
 use fidl::AsHandleRef;
+use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_fs::{AdminMarker, AdminRequest, AdminRequestStream};
 use fidl_fuchsia_fs_startup::{
     CheckOptions, StartOptions, StartupMarker, StartupRequest, StartupRequestStream, VolumesMarker,
@@ -20,17 +20,17 @@ use fidl_fuchsia_fxfs::{DebugMarker, DebugRequestStream};
 use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
 use fs_inspect::{FsInspect, FsInspectTree, InfoData, UsageData};
-use futures::lock::Mutex;
 use futures::TryStreamExt;
-use fxfs::filesystem::{mkfs, FxFilesystem, FxFilesystemBuilder, OpenFxFilesystem, MIN_BLOCK_SIZE};
+use futures::lock::Mutex;
+use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder, MIN_BLOCK_SIZE, OpenFxFilesystem, mkfs};
 use fxfs::log::*;
 use fxfs::object_store::volume::root_volume;
 use fxfs::serialized_types::LATEST_VERSION;
 use fxfs::{fsck, metrics};
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
-use storage_device::block_device::BlockDevice;
 use storage_device::DeviceHolder;
+use storage_device::block_device::BlockDevice;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
@@ -459,6 +459,11 @@ impl Component {
                             |error| warn!(error:?; "Failed to send volume removal response"),
                         );
                 }
+                VolumesRequest::GetInfo { responder } => {
+                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw())).unwrap_or_else(
+                        |error| warn!(error:?; "Failed to send volume removal response"),
+                    )
+                }
             }
         }
     }
@@ -479,7 +484,7 @@ impl Component {
 
 #[cfg(test)]
 mod tests {
-    use super::{new_block_client, Component};
+    use super::{Component, new_block_client};
     use fidl::endpoints::Proxy;
     use fidl_fuchsia_fs::AdminMarker;
     use fidl_fuchsia_fs_startup::{
@@ -491,12 +496,12 @@ mod tests {
     use futures::future::{BoxFuture, FusedFuture, FutureExt};
     use futures::{pin_mut, select};
     use fxfs::filesystem::FxFilesystem;
-    use fxfs::object_store::volume::root_volume;
     use fxfs::object_store::NO_OWNER;
+    use fxfs::object_store::volume::root_volume;
     use std::pin::Pin;
     use std::sync::Arc;
-    use storage_device::block_device::BlockDevice;
     use storage_device::DeviceHolder;
+    use storage_device::block_device::BlockDevice;
     use vmo_backed_block_server::{
         InitialContents, VmoBackedServerOptions, VmoBackedServerTestingExt,
     };
