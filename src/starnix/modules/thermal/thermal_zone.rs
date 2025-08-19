@@ -23,3 +23,9 @@ pub struct ThermalZone {
     pub id: u32,
     pub proxy: Arc<OnceCell<SensorProxy>>,
 }
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct SensorProps {
+    pub name: String,
+    pub device_class: String,
+}

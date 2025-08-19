@@ -13,7 +13,7 @@
         features: [
             // keep-sorted start
             "container",
-            "thermal:fake-trippoint",
+            "thermal:fake-trippoint:trippoint",
 
             // keep-sorted end
         ],

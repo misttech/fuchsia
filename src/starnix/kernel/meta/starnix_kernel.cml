@@ -71,6 +71,12 @@
             availability: "optional",
         },
         {
+            directory: "dev-temperature",
+            rights: [ "r*" ],
+            path: "/dev/class/temperature",
+            availability: "optional",
+        },
+        {
             directory: "dev-trippoint",
             rights: [ "r*" ],
             path: "/dev/class/trippoint",

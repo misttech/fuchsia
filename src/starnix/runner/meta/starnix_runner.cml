@@ -162,6 +162,11 @@
             to: [ "#kernels" ],
         },
         {
+            directory: "dev-temperature",
+            from: "parent",
+            to: [ "#kernels" ],
+        },
+        {
             directory: "dev-trippoint",
             from: "parent",
             to: [ "#kernels" ],

@@ -168,6 +168,13 @@
         {
             directory: "dev-class",
             from: "parent",
+            as: "dev-temperature",
+            to: [ "#starnix_runner" ],
+            subdir: "temperature",
+        },
+        {
+            directory: "dev-class",
+            from: "parent",
             as: "dev-trippoint",
             to: [ "#starnix_runner" ],
             subdir: "trippoint",

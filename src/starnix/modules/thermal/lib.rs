@@ -7,7 +7,7 @@
 mod family;
 mod thermal_zone;
 
-use crate::thermal_zone::{SensorProxy, ThermalZone};
+use crate::thermal_zone::{SensorProps, SensorProxy, ThermalZone};
 use async_lock::OnceCell;
 use family::ThermalFamily;
 use fidl::endpoints::Proxy;
@@ -31,7 +31,8 @@ use std::sync::Arc;
 use thermal_netlink::celsius_to_millicelsius;
 use zx::MonotonicInstant;
 
-const TEMPERATURE_DRIVER_DIR: &str = "/dev/class/trippoint";
+const DEV_CLASS_DIR: &str = "/dev/class";
+const TEMPERATURE_DEVICE_CLASSES: &[&str] = &["temperature", "trippoint"];
 
 fn build_thermal_zone_directory(
     device: &Device,
@@ -91,92 +92,109 @@ pub fn thermal_device_init(locked: &mut Locked<Unlocked>, kernel: &Kernel, devic
 
     let mut sensor_proxies = HashMap::new();
 
-    for (thermal_zone_id, sensor_name) in devices.into_iter().enumerate() {
+    for (thermal_zone_id, sensor_device) in devices.into_iter().enumerate() {
         let thermal_zone_id = thermal_zone_id as u32;
         let thermal_zone = format!("thermal_zone{}", thermal_zone_id);
         let proxy = Arc::new(OnceCell::new());
         let proxy_clone = proxy.clone();
-        let sensor_name_clone = sensor_name.clone();
+
+        let sensor_props: Vec<_> = sensor_device.split(":").collect();
+        let sensor_name = sensor_props[0].to_owned();
+        let device_class = sensor_props[1].to_owned();
 
         registry.add_numberless_device(
             locked,
             thermal_zone.clone().as_str().into(),
             virtual_thermal_class.clone(),
-            |device, dir| build_thermal_zone_directory(device, proxy, sensor_name, dir),
+            |device, dir| build_thermal_zone_directory(device, proxy, sensor_name.clone(), dir),
         );
 
-        sensor_proxies
-            .insert(sensor_name_clone, ThermalZone { id: thermal_zone_id, proxy: proxy_clone });
+        sensor_proxies.insert(
+            SensorProps { name: sensor_name, device_class },
+            ThermalZone { id: thermal_zone_id, proxy: proxy_clone },
+        );
     }
 
     let (thermal_family, thermal_family_worker) = ThermalFamily::new(sensor_proxies.clone());
     kernel.generic_netlink().add_family(Arc::new(thermal_family));
     kernel.kthreads.spawn_future(thermal_family_worker);
 
-    kernel.kthreads.spawn_future(async move {
+    for device_class in TEMPERATURE_DEVICE_CLASSES {
         // TODO: Move this to expect once test support is enabled
         let dir = match fuchsia_fs::directory::open_in_namespace(
-            TEMPERATURE_DRIVER_DIR,
+            &format!("{}/{}", DEV_CLASS_DIR, device_class),
             fuchsia_fs::PERM_READABLE,
         ) {
             Ok(dir) => dir,
             Err(e) => {
                 log_warn!("Failed to open temperature driver directory: {:}", e);
-                return;
+                continue;
             }
         };
 
-        let mut watcher = match fuchsia_fs::directory::Watcher::new(&dir).await {
-            Ok(watcher) => watcher,
-            Err(e) => {
-                log_warn!("Failed to create directory watcher for temperature device: {:}", e);
-                return;
-            }
-        };
+        let mut sensor_proxies_for_class = sensor_proxies.clone();
+        sensor_proxies_for_class.retain(|props, _| props.device_class == *device_class);
 
-        while !sensor_proxies.is_empty() {
-            if let Ok(Some(watch_msg)) = watcher
-                .try_next()
-                .on_timeout(MonotonicInstant::INFINITE, || Ok(None))
-                .await
-                .map_err(|e| {
-                    log_error!("Error from temperature driver: {:?}", e);
-                })
-            {
-                let filename = watch_msg
-                    .filename
-                    .as_path()
-                    .to_str()
-                    .expect("Failed to convert watch_msg to str");
-                if filename != "." {
-                    if watch_msg.event == fuchsia_fs::directory::WatchEvent::ADD_FILE
-                        || watch_msg.event == fuchsia_fs::directory::WatchEvent::EXISTING
-                    {
-                        let async_proxy = connect_to_named_protocol_at_dir_root::<
-                            ftemperature::DeviceMarker,
-                        >(&dir, &filename)
-                        .expect("connect_to_named_protocol_at_dir_root failed");
+        kernel.kthreads.spawn_future(async move {
+            let mut watcher = match fuchsia_fs::directory::Watcher::new(&dir).await {
+                Ok(watcher) => watcher,
+                Err(e) => {
+                    log_warn!("Failed to create directory watcher for temperature device: {:}", e);
+                    return;
+                }
+            };
 
-                        let sync_proxy = connect_to_named_protocol_at_dir_root::<
-                            ftemperature::DeviceMarker,
-                        >(&dir, &filename)
-                        .expect("connect_to_named_protocol_at_dir_root failed")
-                        .into_client_end()
-                        .expect("Failed to conver proxy to client end")
-                        .into_sync_proxy();
+            while !sensor_proxies_for_class.is_empty() {
+                if let Ok(Some(watch_msg)) = watcher
+                    .try_next()
+                    .on_timeout(MonotonicInstant::INFINITE, || Ok(None))
+                    .await
+                    .map_err(|e| {
+                        log_error!("Error from temperature driver: {:?}", e);
+                    })
+                {
+                    let filename = watch_msg
+                        .filename
+                        .as_path()
+                        .to_str()
+                        .expect("Failed to convert watch_msg to str");
+                    if filename != "." {
+                        if watch_msg.event == fuchsia_fs::directory::WatchEvent::ADD_FILE
+                            || watch_msg.event == fuchsia_fs::directory::WatchEvent::EXISTING
+                        {
+                            let async_proxy = connect_to_named_protocol_at_dir_root::<
+                                ftemperature::DeviceMarker,
+                            >(&dir, &filename)
+                            .expect("connect_to_named_protocol_at_dir_root failed");
 
-                        let name =
-                            async_proxy.get_sensor_name().await.expect("Failed to get sensor name");
+                            let sync_proxy = connect_to_named_protocol_at_dir_root::<
+                                ftemperature::DeviceMarker,
+                            >(&dir, &filename)
+                            .expect("connect_to_named_protocol_at_dir_root failed")
+                            .into_client_end()
+                            .expect("Failed to conver proxy to client end")
+                            .into_sync_proxy();
 
-                        if let Some(ThermalZone { proxy, .. }) = sensor_proxies.remove(&name) {
-                            let _ = proxy
-                                .set(SensorProxy { sync: sync_proxy, asynch: async_proxy })
+                            let sensor_name = async_proxy
+                                .get_sensor_name()
                                 .await
-                                .expect("Proxy already set");
+                                .expect("Failed to get sensor name");
+
+                            if let Some(ThermalZone { proxy, .. }) = sensor_proxies_for_class
+                                .remove(&SensorProps {
+                                    name: sensor_name,
+                                    device_class: device_class.to_string(),
+                                })
+                            {
+                                let _ = proxy
+                                    .set(SensorProxy { sync: sync_proxy, asynch: async_proxy })
+                                    .await
+                                    .expect("Proxy already set");
+                            }
                         }
                     }
                 }
             }
-        }
-    });
+        });
+    }
 }

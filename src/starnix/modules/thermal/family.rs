@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::thermal_zone::ThermalZone;
+use crate::thermal_zone::{SensorProps, ThermalZone};
 use async_trait::async_trait;
 use fuchsia_async as fasync;
 use futures::channel::mpsc::UnboundedSender;
@@ -30,7 +30,7 @@ use thermal_netlink::{
 const SAMPLING_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
 
 async fn run_samplers(
-    sensor_map: HashMap<String, ThermalZone>,
+    sensor_map: HashMap<SensorProps, ThermalZone>,
     sampling_sender: mpmc::Sender<Vec<ThermalAttr>>,
 ) {
     futures::stream::iter(sensor_map.iter())
@@ -83,7 +83,7 @@ impl ThermalFamily {
     /// the Netlink implementation's asynchronous work. The worker will never
     /// complete.
     pub fn new(
-        sensor_map: HashMap<String, ThermalZone>,
+        sensor_map: HashMap<SensorProps, ThermalZone>,
     ) -> (Self, impl Future<Output = ()> + Send) {
         let sampling_sender = mpmc::Sender::default();
         let thermal_netlink_family_worker = run_samplers(sensor_map, sampling_sender.clone());
