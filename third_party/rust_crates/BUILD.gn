@@ -1655,6 +1655,7 @@ rustc_library("anyhow-v1_0_98") {
     "-Cextra-filename=-3b86bffd39327d75",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
+    "--cfg=std_backtrace",
   ]
 
   visibility = [ ":*" ]

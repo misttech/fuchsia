@@ -512,8 +512,11 @@ license_files = ["LICENSE-APACHE"]
 rustflags = [ "--cfg=feature=\\\"folded_multiply\\\"" ]
 
 [gn.package.anyhow."1.0.98"]
-# TODO(https://github.com/rust-lang/rust/pull/99301): uncomment when generic member access is stable
-#rustflags = ["--cfg=backtrace"]
+rustflags = [
+  "--cfg=std_backtrace",
+  # TODO(https://github.com/rust-lang/rust/pull/99301): uncomment when generic member access is stable
+  # "--cfg=error_generic_member_access",
+]
 license_files = ["LICENSE-APACHE"]
 
 [gn.package.arbitrary."1.0.3"]
