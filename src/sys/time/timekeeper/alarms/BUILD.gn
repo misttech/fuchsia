@@ -18,6 +18,7 @@ rustc_library("alarms") {
   sources = [
     "src/emu.rs",
     "src/lib.rs",
+    "src/timers.rs",
   ]
 
   deps = [

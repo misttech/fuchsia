@@ -26,6 +26,7 @@
 //! capability routing.  Refer to capability routing docs for those details.
 
 mod emu;
+mod timers;
 
 use crate::emu::EmulationTimerOps;
 use anyhow::{anyhow, Context, Result};
@@ -41,8 +42,6 @@ use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, warn};
 use scopeguard::defer;
 use std::cell::RefCell;
-use std::cmp;
-use std::collections::{BTreeMap, BinaryHeap, HashSet};
 use std::rc::Rc;
 use std::sync::LazyLock;
 use time_pretty::{format_duration, format_timer, MSEC_IN_NANOS};
@@ -272,44 +271,13 @@ async fn stop_hrtimer(hrtimer: &Box<dyn TimerOps>, timer_config: &TimerConfig) {
 // The default size of the channels created in this module.
 const CHANNEL_SIZE: usize = 100;
 
-trait AlarmResponder: std::fmt::Debug {
-    fn send(
-        &self,
-        alarm_id: &str,
-        result: Result<fidl::EventPair, fta::WakeAlarmsError>,
-    ) -> Option<Result<(), fidl::Error>>;
-}
-
-impl AlarmResponder for RefCell<Option<fta::WakeAlarmsSetAndWaitResponder>> {
-    fn send(
-        &self,
-        _alarm_id: &str,
-        result: Result<fidl::EventPair, fta::WakeAlarmsError>,
-    ) -> Option<Result<(), fidl::Error>> {
-        self.borrow_mut().take().map(|responder| responder.send(result))
-    }
-}
-
-impl AlarmResponder for RefCell<Option<fidl::endpoints::ClientEnd<fta::NotifierMarker>>> {
-    fn send(
-        &self,
-        alarm_id: &str,
-        result: Result<fidl::EventPair, fta::WakeAlarmsError>,
-    ) -> Option<Result<(), fidl::Error>> {
-        self.borrow_mut().take().map(|notifier| match result {
-            Ok(keep_alive) => notifier.into_proxy().notify(alarm_id, keep_alive),
-            Err(e) => notifier.into_proxy().notify_error(alarm_id, e),
-        })
-    }
-}
-
 /// A type handed around between the concurrent loops run by this module.
 #[derive(Debug)]
 enum Cmd {
     /// Request a timer to be started.
     Start {
         /// The unique connection ID.
-        cid: zx::Koid,
+        conn_id: zx::Koid,
         /// A timestamp (presumably in the future), at which to expire the timer.
         deadline: fasync::BootInstant,
         // The API supports several modes. See fuchsia.time.alarms/Wake.fidl.
@@ -323,11 +291,11 @@ enum Cmd {
         /// This is packaged into a Rc... only because both the "happy path"
         /// and the error path must consume the responder.  This allows them
         /// to be consumed, without the responder needing to implement Default.
-        responder: Rc<dyn AlarmResponder>,
+        responder: Rc<dyn timers::Responder>,
     },
     StopById {
         done: zx::Event,
-        timer_id: TimerId,
+        timer_id: timers::Id,
     },
     Alarm {
         expired_deadline: fasync::BootInstant,
@@ -351,12 +319,12 @@ enum Cmd {
 impl std::fmt::Display for Cmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Cmd::Start { cid, deadline, alarm_id, .. } => {
+            Cmd::Start { conn_id, deadline, alarm_id, .. } => {
                 write!(
                     f,
-                    "Start[alarm_id=\"{}\", cid={:?}, deadline={}]",
+                    "Start[alarm_id=\"{}\", conn_id={:?}, deadline={}]",
                     alarm_id,
-                    cid,
+                    conn_id,
                     format_timer((*deadline).into())
                 )
             }
@@ -405,31 +373,31 @@ pub fn get_stream_koid(
 pub async fn serve(timer_loop: Rc<Loop>, requests: fta::WakeAlarmsRequestStream) {
     let timer_loop = timer_loop.clone();
     let timer_loop_send = || timer_loop.get_sender();
-    let (cid, mut requests) = get_stream_koid(requests);
+    let (conn_id, mut requests) = get_stream_koid(requests);
     let mut request_count = 0;
-    debug!("alarms::serve: opened connection: {:?}", cid);
+    debug!("alarms::serve: opened connection: {:?}", conn_id);
     while let Some(maybe_request) = requests.next().await {
         request_count += 1;
-        debug!("alarms::serve: cid: {:?} incoming request: {}", cid, request_count);
+        debug!("alarms::serve: conn_id: {:?} incoming request: {}", conn_id, request_count);
         match maybe_request {
             Ok(request) => {
                 // Should return quickly.
-                handle_request(cid, timer_loop_send(), request).await;
+                handle_request(conn_id, timer_loop_send(), request).await;
             }
             Err(e) => {
                 warn!("alarms::serve: error in request: {:?}", e);
             }
         }
-        debug!("alarms::serve: cid: {:?} done request: {}", cid, request_count);
+        debug!("alarms::serve: conn_id: {:?} done request: {}", conn_id, request_count);
     }
     // Check if connection closure was intentional. It is way too easy to close
     // a FIDL connection inadvertently if doing non-mainstream things with FIDL.
-    warn!("alarms::serve: CLOSED CONNECTION: cid: {:?}", cid);
+    warn!("alarms::serve: CLOSED CONNECTION: conn_id: {:?}", conn_id);
 }
 
-async fn handle_cancel(alarm_id: String, cid: zx::Koid, cmd: &mut mpsc::Sender<Cmd>) {
+async fn handle_cancel(alarm_id: String, conn_id: zx::Koid, cmd: &mut mpsc::Sender<Cmd>) {
     let done = zx::Event::create();
-    let timer_id = TimerId { alarm_id: alarm_id.clone(), cid };
+    let timer_id = timers::Id::new(alarm_id.clone(), conn_id);
     if let Err(e) = cmd.send(Cmd::StopById { timer_id, done: clone_handle(&done) }).await {
         warn!("handle_request: error while trying to cancel: {}: {:?}", alarm_id, e);
     }
@@ -440,11 +408,11 @@ async fn handle_cancel(alarm_id: String, cid: zx::Koid, cmd: &mut mpsc::Sender<C
 /// This function is expected to return quickly.
 ///
 /// # Args
-/// - `cid`: the unique identifier of the connection producing these requests.
+/// - `conn_id`: the unique identifier of the connection producing these requests.
 /// - `cmd`: the outbound queue of commands to deliver to the timer manager.
 /// - `request`: a single inbound Wake FIDL API request.
 async fn handle_request(
-    cid: zx::Koid,
+    conn_id: zx::Koid,
     mut cmd: mpsc::Sender<Cmd>,
     request: fta::WakeAlarmsRequest,
 ) {
@@ -463,14 +431,14 @@ async fn handle_request(
 
             // Alarm is not scheduled yet!
             debug!(
-                "handle_request: scheduling alarm_id: \"{}\"\n\tcid: {:?}\n\tdeadline: {}",
+                "handle_request: scheduling alarm_id: \"{}\"\n\tconn_id: {:?}\n\tdeadline: {}",
                 alarm_id,
-                cid,
+                conn_id,
                 format_timer(deadline.into())
             );
             // Expected to return quickly.
             if let Err(e) = log_long_op!(cmd.send(Cmd::Start {
-                cid,
+                conn_id,
                 deadline: deadline.into(),
                 mode,
                 alarm_id: alarm_id.clone(),
@@ -488,17 +456,17 @@ async fn handle_request(
         fta::WakeAlarmsRequest::Cancel { alarm_id, .. } => {
             // TODO: b/383062441 - make this into an async task so that we wait
             // less to schedule the next alarm.
-            log_long_op!(handle_cancel(alarm_id, cid, &mut cmd));
+            log_long_op!(handle_cancel(alarm_id, conn_id, &mut cmd));
         }
         fta::WakeAlarmsRequest::Set { notifier, deadline, mode, alarm_id, responder } => {
             // Alarm is not scheduled yet!
             debug!(
-                "handle_request: scheduling alarm_id: \"{alarm_id}\"\n\tcid: {cid:?}\n\tdeadline: {}",
+                "handle_request: scheduling alarm_id: \"{alarm_id}\"\n\tconn_id: {conn_id:?}\n\tdeadline: {}",
                 format_timer(deadline.into())
             );
             // Expected to return quickly.
             if let Err(e) = log_long_op!(cmd.send(Cmd::Start {
-                cid,
+                conn_id,
                 deadline: deadline.into(),
                 mode,
                 alarm_id: alarm_id.clone(),
@@ -561,274 +529,6 @@ impl Loop {
     /// the [Loop].
     fn get_sender(&self) -> mpsc::Sender<Cmd> {
         self.snd.clone()
-    }
-}
-
-/// A representation of the state of a single Timer.
-#[derive(Debug)]
-struct TimerNode {
-    /// The deadline at which the timer expires.
-    deadline: fasync::BootInstant,
-    /// The unique alarm ID associated with this timer.
-    alarm_id: String,
-    /// The unique connection ID that this timer belongs to.  Multiple timers
-    /// may share the same `cid`.
-    cid: zx::Koid,
-    /// The responder that is blocked until the timer expires.  Used to notify
-    /// the alarms subsystem client when this alarm expires.
-    responder: Rc<dyn AlarmResponder>,
-}
-
-impl TimerNode {
-    fn new(
-        deadline: fasync::BootInstant,
-        alarm_id: String,
-        cid: zx::Koid,
-        responder: Rc<dyn AlarmResponder>,
-    ) -> Self {
-        Self { deadline, alarm_id, cid, responder }
-    }
-
-    fn get_alarm_id(&self) -> &str {
-        &self.alarm_id[..]
-    }
-
-    fn get_cid(&self) -> &zx::Koid {
-        &self.cid
-    }
-
-    fn get_id(&self) -> TimerId {
-        TimerId { alarm_id: self.alarm_id.clone(), cid: self.cid.clone() }
-    }
-
-    fn get_deadline(&self) -> &fasync::BootInstant {
-        &self.deadline
-    }
-}
-
-impl Drop for TimerNode {
-    // If the TimerNode was evicted without having expired, notify the other
-    // end that the timer has been canceled.
-    fn drop(&mut self) {
-        // If the TimerNode is dropped, notify the client that may have
-        // been waiting. We can not drop a responder, because that kills
-        // the FIDL connection.
-        if let Some(Err(e)) =
-            self.responder.send(&self.alarm_id, Err(fta::WakeAlarmsError::Dropped))
-        {
-            error!("could not drop responder: {:?}", e);
-        }
-    }
-}
-
-/// This and other comparison trait implementation are needed to establish
-/// a total ordering of TimerNodes.
-impl std::cmp::Eq for TimerNode {}
-
-impl std::cmp::PartialEq for TimerNode {
-    fn eq(&self, other: &Self) -> bool {
-        self.deadline == other.deadline && self.alarm_id == other.alarm_id && self.cid == other.cid
-    }
-}
-
-impl std::cmp::PartialOrd for TimerNode {
-    /// Order by deadline first, but timers with same deadline are ordered
-    /// by respective IDs to avoid ordering nondeterminism.
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for TimerNode {
-    /// Compares two [TimerNode]s, by "which is sooner", with a sooner
-    /// deadline being "greater".
-    ///
-    /// Ties are broken by alarm ID, then by connection ID.
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let ordering = other.deadline.cmp(&self.deadline);
-        if ordering == std::cmp::Ordering::Equal {
-            let ordering = self.alarm_id.cmp(&other.alarm_id);
-            if ordering == std::cmp::Ordering::Equal {
-                self.cid.cmp(&other.cid)
-            } else {
-                ordering
-            }
-        } else {
-            ordering
-        }
-    }
-}
-
-/// A full timer identifier.
-#[derive(Debug, PartialEq, Eq, Hash)]
-struct TimerId {
-    /// Connection-unique alarm ID.
-    alarm_id: String,
-    /// Connection identifier, unique per each client connection.
-    cid: zx::Koid,
-}
-
-// Compute a trace ID for a given alarm ID. This identifier is used across
-// processes for tracking the alarm's lifetime.
-fn as_trace_id(alarm_id: &str) -> trace::Id {
-    if let Some(rest) = alarm_id.strip_prefix("starnix:Koid(") {
-        if let Some((koid_str, _)) = rest.split_once(')') {
-            if let Ok(trace_id) = koid_str.parse::<u64>() {
-                return trace_id.into();
-            }
-        }
-    }
-
-    // For now, other components don't have a specific way to get the trace id.
-    0.into()
-}
-
-impl std::fmt::Display for TimerId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TimerId[alarm_id:{},cid:{:?}]", self.alarm_id, self.cid)
-    }
-}
-
-/// Contains all the timers known by the alarms subsystem.
-///
-/// [Timers] can efficiently find a timer with the earliest deadline,
-/// and given a cutoff can expire one timer for which the deadline has
-/// passed.
-struct Timers {
-    timers: BinaryHeap<TimerNode>,
-    timer_ids: HashSet<TimerId>,
-}
-
-impl std::fmt::Display for Timers {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let now = fasync::BootInstant::now();
-        let sorted = self
-            .timers
-            .iter()
-            .map(|n| (n.deadline, n.alarm_id.clone()))
-            .collect::<BTreeMap<_, _>>()
-            .into_iter()
-            .map(|(k, v)| {
-                let remaining = k - now;
-                format!(
-                    "Timeout: {} => timer_id: {}, remaining: {}",
-                    format_timer(k.into()),
-                    v,
-                    format_duration(remaining.into())
-                )
-            })
-            .collect::<Vec<_>>();
-        let joined = sorted.join("\n\t");
-        write!(f, "\n\t{}", joined)
-    }
-}
-
-impl Timers {
-    /// Creates an empty [AllTimers].
-    fn new() -> Self {
-        Self { timers: BinaryHeap::new(), timer_ids: HashSet::new() }
-    }
-
-    /// Adds a [TimerNode] to [Timers].
-    ///
-    /// If the inserted node is identical to an already existing node, then
-    /// nothing is changed.  If the deadline is different, then the timer node
-    /// is replaced.
-    fn push(&mut self, n: TimerNode) {
-        let new_id = n.get_id();
-        if let Some(_) = self.timer_ids.get(&new_id) {
-            // There already is a deadline for this timer, we need to reschedule.
-
-            // The deadline may be pushed out or pulled in, or even be
-            // unchanged.
-            self.timer_ids.insert(new_id);
-            self.timers.retain(|t| t.get_id() != n.get_id());
-            self.timers.push(n);
-        } else {
-            // New timer node.
-            self.timer_ids.insert(new_id);
-            self.timers.push(n);
-        }
-    }
-
-    /// Returns a reference to the stored timer with the earliest deadline.
-    fn peek(&self) -> Option<&TimerNode> {
-        self.timers.peek()
-    }
-
-    /// Returns the deadline of the proximate timer in [Timers].
-    fn peek_deadline(&self) -> Option<fasync::BootInstant> {
-        self.peek().map(|t| t.deadline)
-    }
-
-    fn peek_id(&self) -> Option<TimerId> {
-        self.peek().map(|t| TimerId { alarm_id: t.alarm_id.clone(), cid: t.cid })
-    }
-
-    /// Args:
-    /// - `now` is the current time.
-    /// - `deadline` is the timer deadline to check for expiry.
-    fn expired(now: fasync::BootInstant, deadline: fasync::BootInstant) -> bool {
-        deadline <= now
-    }
-
-    /// Returns true if there are no known timers.
-    fn is_empty(&self) -> bool {
-        let empty1 = self.timers.is_empty();
-        let empty2 = self.timer_ids.is_empty();
-        assert!(empty1 == empty2, "broken invariant: empty1: {} empty2:{}", empty1, empty2);
-        empty1
-    }
-
-    /// Attempts to expire the earliest timer.
-    ///
-    /// If a timer is expired, it is removed from [Timers] and returned to the caller. Note that
-    /// there may be more timers that need expiring at the provided `reference instant`. To drain
-    /// [Timers] of all expired timers, one must repeat the call to this method with the same
-    /// value of `reference_instant` until it returns `None`.
-    ///
-    /// Args:
-    /// - `now`: the time instant to compare the stored timers against.  Timers for
-    ///   which the deadline has been reached or surpassed are eligible for expiry.
-    fn maybe_expire_earliest(&mut self, now: fasync::BootInstant) -> Option<TimerNode> {
-        self.peek_deadline()
-            .map(|d| {
-                if Timers::expired(now, d) {
-                    self.timers.pop().map(|e| {
-                        self.timer_ids.remove(&e.get_id());
-                        e
-                    })
-                } else {
-                    None
-                }
-            })
-            .flatten()
-    }
-
-    /// Removes an alarm by ID.  If the earliest alarm is the alarm to be removed,
-    /// it is returned.
-    fn remove_by_id(&mut self, timer_id: &TimerId) -> Option<TimerNode> {
-        let ret = if let Some(t) = self.peek_id() {
-            if t == *timer_id {
-                self.timers.pop()
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        self.timers.retain(|t| t.alarm_id != timer_id.alarm_id || t.cid != timer_id.cid);
-        self.timer_ids.remove(timer_id);
-        ret
-    }
-
-    /// Returns the number of currently pending timers.
-    fn timer_count(&self) -> usize {
-        let count1 = self.timers.len();
-        let count2 = self.timer_ids.len();
-        assert!(count1 == count2, "broken invariant: count1: {}, count2: {}", count1, count2);
-        count1
     }
 }
 
@@ -1141,7 +841,7 @@ async fn wake_timer_loop(
 ) {
     debug!("wake_timer_loop: started");
 
-    let mut timers = Timers::new();
+    let mut timers = timers::Heap::new();
     let timer_config = get_timer_properties(&timer_proxy).await;
 
     // Keeps the currently executing HrTimer closure.  This is not read from, but
@@ -1199,14 +899,18 @@ async fn wake_timer_loop(
         now_prop.set(now.into_nanos());
         trace::instant!(c"alarms", c"wake_timer_loop", trace::Scope::Process, "now" => now.into_nanos());
         match cmd {
-            Cmd::Start { cid, deadline, mode, alarm_id, responder } => {
+            Cmd::Start { conn_id, deadline, mode, alarm_id, responder } => {
                 trace::duration!(c"alarms", c"Cmd::Start");
-                fuchsia_trace::flow_step!(c"alarms", c"hrtimer_lifecycle", as_trace_id(&alarm_id));
+                fuchsia_trace::flow_step!(
+                    c"alarms",
+                    c"hrtimer_lifecycle",
+                    timers::get_trace_id(&alarm_id)
+                );
                 // NOTE: hold keep_alive until all work is done.
                 debug!(
-                    "wake_timer_loop: START alarm_id: \"{}\", cid: {:?}\n\tdeadline: {}\n\tnow:      {}",
+                    "wake_timer_loop: START alarm_id: \"{}\", conn_id: {:?}\n\tdeadline: {}\n\tnow:      {}",
                     alarm_id,
-                    cid,
+                    conn_id,
                     format_timer(deadline.into()),
                     format_timer(now.into()),
                 );
@@ -1220,12 +924,12 @@ async fn wake_timer_loop(
                     };
                 }
                 deadline_histogram_prop.insert((deadline - now).into_nanos());
-                if Timers::expired(now, deadline) {
+                if timers::Heap::expired(now, deadline) {
                     trace::duration!(c"alarms", c"Cmd::Start:immediate");
                     fuchsia_trace::flow_step!(
                         c"alarms",
                         c"hrtimer_lifecycle",
-                        as_trace_id(&alarm_id)
+                        timers::get_trace_id(&alarm_id)
                     );
                     // A timer set into now or the past expires right away.
                     let (_lease, keep_alive) = zx::EventPair::create();
@@ -1240,11 +944,11 @@ async fn wake_timer_loop(
                         .expect("responder is always present")
                     {
                         error!(
-                            "wake_timer_loop: cid: {cid:?}, alarm: {alarm_id}: could not notify, dropping: {e}",
+                            "wake_timer_loop: conn_id: {conn_id:?}, alarm: {alarm_id}: could not notify, dropping: {e}",
                         );
                     } else {
                         debug!(
-                            "wake_timer_loop: cid: {cid:?}, alarm: {alarm_id}: EXPIRED IMMEDIATELY\n\tdeadline({}) <= now({})",
+                            "wake_timer_loop: conn_id: {conn_id:?}, alarm: {alarm_id}: EXPIRED IMMEDIATELY\n\tdeadline({}) <= now({})",
                             format_timer(deadline.into()),
                             format_timer(now.into()),
                         )
@@ -1254,13 +958,13 @@ async fn wake_timer_loop(
                     fuchsia_trace::flow_step!(
                         c"alarms",
                         c"hrtimer_lifecycle",
-                        as_trace_id(&alarm_id)
+                        timers::get_trace_id(&alarm_id)
                     );
                     // A timer scheduled for the future gets inserted into the timer heap.
                     let was_empty = timers.is_empty();
 
                     let deadline_before = timers.peek_deadline();
-                    timers.push(TimerNode::new(deadline, alarm_id, cid, responder));
+                    timers.push(timers::BootNode::new(deadline, alarm_id, conn_id, responder));
                     let deadline_after = timers.peek_deadline();
 
                     let deadline_changed = is_deadline_changed(deadline_before, deadline_after);
@@ -1286,11 +990,11 @@ async fn wake_timer_loop(
                 }
             }
             Cmd::StopById { timer_id, done } => {
-                trace::duration!(c"alarms", c"Cmd::StopById", "alarm_id" => &timer_id.alarm_id[..]);
+                trace::duration!(c"alarms", c"Cmd::StopById", "alarm_id" => timer_id.alarm());
                 fuchsia_trace::flow_step!(
                     c"alarms",
                     c"hrtimer_lifecycle",
-                    as_trace_id(&timer_id.alarm_id)
+                    timers::get_trace_id(&timer_id.alarm())
                 );
                 debug!("wake_timer_loop: STOP timer: {}", timer_id);
                 let deadline_before = timers.peek_deadline();
@@ -1299,8 +1003,8 @@ async fn wake_timer_loop(
                     let deadline_after = timers.peek_deadline();
 
                     if let Some(res) = timer_node
-                        .responder
-                        .send(&timer_node.alarm_id, Err(fta::WakeAlarmsError::Dropped))
+                        .get_responder()
+                        .send(timer_node.id().alarm(), Err(fta::WakeAlarmsError::Dropped))
                     {
                         // We must reply to the responder to keep the connection open.
                         res.expect("infallible");
@@ -1623,7 +1327,7 @@ async fn schedule_hrtimer(
 /// - `reference_instant`: the time instant used as a reference for alarm notification.
 ///   All timers
 fn notify_all(
-    timers: &mut Timers,
+    timers: &mut timers::Heap,
     lease_prototype: &zx::EventPair,
     reference_instant: fasync::BootInstant,
     unusual_slack_histogram: &finspect::IntExponentialHistogramProperty,
@@ -1635,10 +1339,10 @@ fn notify_all(
         expired += 1;
         // How much later than requested did the notification happen.
         let deadline = *timer_node.get_deadline();
-        let alarm_id = timer_node.get_alarm_id().to_string();
+        let alarm_id = timer_node.id().alarm().to_string();
         trace::duration!(c"alarms", c"notify_all:notified", "alarm_id" => &*alarm_id);
-        fuchsia_trace::flow_step!(c"alarms", c"hrtimer_lifecycle", as_trace_id(&alarm_id));
-        let cid = timer_node.get_cid().clone();
+        fuchsia_trace::flow_step!(c"alarms", c"hrtimer_lifecycle", timers::get_trace_id(&alarm_id));
+        let conn_id = timer_node.id().conn.clone();
         let slack: zx::BootDuration = deadline - now;
         if slack < zx::BootDuration::from_nanos(-LONG_DELAY_NANOS) {
             trace::duration!(c"alarms", c"schedule_hrtimer:unusual_slack", "slack" => slack.into_nanos());
@@ -1654,19 +1358,19 @@ fn notify_all(
         }
         debug!(
             concat!(
-                "wake_alarm_loop: ALARM alarm_id: \"{}\"\n\tdeadline: {},\n\tcid: {:?},\n\t",
+                "wake_alarm_loop: ALARM alarm_id: \"{}\"\n\tdeadline: {},\n\tconn_id: {:?},\n\t",
                 "reference_instant: {},\n\tnow: {},\n\tslack: {}",
             ),
             alarm_id,
             format_timer(deadline.into()),
-            cid,
+            conn_id,
             format_timer(reference_instant.into()),
             format_timer(now.into()),
             format_duration(slack),
         );
         let lease = clone_handle(lease_prototype);
-        trace::instant!(c"alarms", c"notify", trace::Scope::Process, "alarm_id" => &alarm_id[..], "cid" => cid);
-        if let Some(Err(e)) = timer_node.responder.send(&timer_node.alarm_id, Ok(lease)) {
+        trace::instant!(c"alarms", c"notify", trace::Scope::Process, "alarm_id" => &alarm_id[..], "conn_id" => conn_id);
+        if let Some(Err(e)) = timer_node.get_responder().send(timer_node.id().alarm(), Ok(lease)) {
             error!("could not signal responder: {:?}", e);
         }
         trace::instant!(c"alarms", c"notified", trace::Scope::Process);
@@ -2555,68 +2259,5 @@ mod tests {
                 .await,
             Err(fidl::Error::ClientChannelClosed { .. })
         );
-    }
-
-    #[derive(Debug)]
-    struct FakeResponder {}
-
-    impl AlarmResponder for FakeResponder {
-        fn send(
-            &self,
-            _alarm_id: &str,
-            _result: Result<fidl::EventPair, fidl_fuchsia_time_alarms::WakeAlarmsError>,
-        ) -> Option<Result<(), fidl::Error>> {
-            None
-        }
-    }
-
-    // Make sure the first alarm is always one with a greater koid value.
-    #[test_case(
-        "alarm1",
-        fasync::BootInstant::from_nanos(42),
-        "alarm2",
-        fasync::BootInstant::from_nanos(42),
-        std::cmp::Ordering::Less ; "same deadline tie broken by alarm id"
-    )]
-    #[test_case(
-        "alarm1",
-        fasync::BootInstant::from_nanos(42),
-        "alarm2",
-        fasync::BootInstant::from_nanos(43),
-        std::cmp::Ordering::Greater ; "sooner deadline is greater"
-    )]
-    #[test_case(
-        "alarm",
-        fasync::BootInstant::from_nanos(42),
-        "alarm",
-        fasync::BootInstant::from_nanos(42),
-        std::cmp::Ordering::Greater ; "same deadline and alarm id tie broken by connection ID"
-    )]
-    #[test_case(
-        "alarm",
-        fasync::BootInstant::from_nanos(42),
-        "alarm",
-        fasync::BootInstant::from_nanos(43),
-        std::cmp::Ordering::Greater ; "different deadlines, sooner is 'greater'"
-    )]
-    fn test_timer_node_comparison_by_alarm_id(
-        id1: &str,
-        deadline1: fasync::BootInstant,
-        id2: &str,
-        deadline2: fasync::BootInstant,
-        expected: std::cmp::Ordering,
-    ) {
-        let (koid1, koid2) = {
-            let koid1 = zx::Event::create().as_handle_ref().get_koid().unwrap();
-            let koid2 = zx::Event::create().as_handle_ref().get_koid().unwrap();
-            (std::cmp::max(koid1, koid2), std::cmp::min(koid1, koid2))
-        };
-
-        assert_gt!(koid1, koid2);
-
-        let one = TimerNode::new(deadline1, id1.into(), koid1, Rc::new(FakeResponder {}));
-        let other = TimerNode::new(deadline2, id2.into(), koid2, Rc::new(FakeResponder {}));
-
-        assert_eq!(expected, one.cmp(&other), "one={one:?}, other={other:?}");
     }
 }
