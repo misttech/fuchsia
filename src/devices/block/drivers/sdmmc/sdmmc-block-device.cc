@@ -611,24 +611,27 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
     readwrite_metadata_.packed_command_header_data->num_entries =
         safemath::checked_cast<uint8_t>(requests.size());
 
-    // TODO(https://fxbug.dev/42083080): Consider pre-registering the packed command header VMO with
-    // the SDMMC driver to avoid pinning and unpinning for each transfer. Also handle the cache ops
-    // here.
     // Packed write: SET_BLOCK_COUNT (header+data) -> WRITE_MULTIPLE_BLOCK (header+data)
     // Packed read: SET_BLOCK_COUNT (header) -> WRITE_MULTIPLE_BLOCK (header) ->
     //              SET_BLOCK_COUNT (data) -> READ_MULTIPLE_BLOCK (data)
-    int request_index_offset;
+    fuchsia_hardware_sdmmc::wire::SdmmcReq* set_block_count{};
+    fuchsia_hardware_sdmmc::wire::SdmmcReq* rw_multiple_block{};
+    fuchsia_hardware_sdmmc::wire::SdmmcReq* send_ext_csd{};
     if (!is_read) {
-      request_index_offset = 0;
-      reqs.Allocate(arena, 2);
+      reqs.Allocate(arena, 3);
+      set_block_count = &reqs.data()[0];
+      rw_multiple_block = &reqs.data()[1];
+      send_ext_csd = &reqs.data()[2];
     } else {
-      request_index_offset = 2;
-      reqs.Allocate(arena, 4);
+      reqs.Allocate(arena, 5);
+      set_block_count = &reqs.data()[2];
+      rw_multiple_block = &reqs.data()[3];
+      send_ext_csd = &reqs.data()[4];
 
-      auto& set_block_count = reqs[0];
-      set_block_count.cmd_idx = SDMMC_SET_BLOCK_COUNT;
-      set_block_count.cmd_flags = SDMMC_SET_BLOCK_COUNT_FLAGS;
-      set_block_count.arg = MMC_SET_BLOCK_COUNT_PACKED | 1;  // 1 header block.
+      auto& write_set_block_count = reqs[0];
+      write_set_block_count.cmd_idx = SDMMC_SET_BLOCK_COUNT;
+      write_set_block_count.cmd_flags = SDMMC_SET_BLOCK_COUNT_FLAGS;
+      write_set_block_count.arg = MMC_SET_BLOCK_COUNT_PACKED | 1;  // 1 header block.
 
       auto& write_multiple_block = reqs[1];
       write_multiple_block.cmd_idx = SDMMC_WRITE_MULTIPLE_BLOCK;
@@ -636,42 +639,36 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
       write_multiple_block.arg = static_cast<uint32_t>(first_request.device_block_offset());
       write_multiple_block.blocksize = block_info_.block_size;
       write_multiple_block.buffers.Allocate(arena, 1);  // 1 header block.
-      // The first buffer region points to the header (packed read case).
-      auto buffer_region = GetBufferRegion(readwrite_metadata_.packed_command_header_vmo.get(), 0,
-                                           block_info_.block_size, logger());
-      if (buffer_region.is_error()) {
-        return buffer_region.status_value();
-      }
-      write_multiple_block.buffers[0] = *std::move(buffer_region);
+      write_multiple_block.buffers[0] = {
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(kPackedCommandVmoId),
+          .offset = 0,
+          .size = block_info_.block_size,
+      };
     }
 
-    auto& set_block_count = reqs[request_index_offset];
-    set_block_count.cmd_idx = SDMMC_SET_BLOCK_COUNT;
-    set_block_count.cmd_flags = SDMMC_SET_BLOCK_COUNT_FLAGS;
-    set_block_count.arg = MMC_SET_BLOCK_COUNT_PACKED |
-                          (is_read ? total_data_transfer_blocks
-                                   : (total_data_transfer_blocks + 1));  // +1 for header block.
+    set_block_count->cmd_idx = SDMMC_SET_BLOCK_COUNT;
+    set_block_count->cmd_flags = SDMMC_SET_BLOCK_COUNT_FLAGS;
+    set_block_count->arg = MMC_SET_BLOCK_COUNT_PACKED |
+                           (is_read ? total_data_transfer_blocks
+                                    : (total_data_transfer_blocks + 1));  // +1 for header block->
 
-    auto& rw_multiple_block = reqs[request_index_offset + 1];
-    rw_multiple_block.cmd_idx = cmd_idx;
-    rw_multiple_block.cmd_flags = cmd_flags;
-    rw_multiple_block.arg = static_cast<uint32_t>(first_request.device_block_offset());
-    rw_multiple_block.blocksize = block_info_.block_size;
+    rw_multiple_block->cmd_idx = cmd_idx;
+    rw_multiple_block->cmd_flags = cmd_flags;
+    rw_multiple_block->arg = static_cast<uint32_t>(first_request.device_block_offset());
+    rw_multiple_block->blocksize = block_info_.block_size;
 
     int buffer_index_offset;
     if (is_read) {
       buffer_index_offset = 0;
-      rw_multiple_block.buffers.Allocate(arena, requests.size());
+      rw_multiple_block->buffers.Allocate(arena, requests.size());
     } else {
       buffer_index_offset = 1;
-      rw_multiple_block.buffers.Allocate(arena, requests.size() + 1);  // +1 for header block.
-      // The first buffer region points to the header (packed write case).
-      auto buffer_region = GetBufferRegion(readwrite_metadata_.packed_command_header_vmo.get(), 0,
-                                           block_info_.block_size, logger());
-      if (buffer_region.is_error()) {
-        return buffer_region.status_value();
-      }
-      rw_multiple_block.buffers[0] = *std::move(buffer_region);
+      rw_multiple_block->buffers.Allocate(arena, requests.size() + 1);  // +1 for header block.
+      rw_multiple_block->buffers[0] = {
+          .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(kPackedCommandVmoId),
+          .offset = 0,
+          .size = block_info_.block_size,
+      };
     }
 
     // The following buffer regions point to the data.
@@ -687,8 +684,24 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
       if (buffer_region.is_error()) {
         return buffer_region.status_value();
       }
-      rw_multiple_block.buffers[buffer_index_offset + i] = *std::move(buffer_region);
+      rw_multiple_block->buffers[buffer_index_offset + i] = *std::move(buffer_region);
     }
+
+    zx_cache_flush(readwrite_metadata_.packed_command_header_data, block_info_.block_size,
+                   ZX_CACHE_FLUSH_DATA);
+
+    // Packed command errors are reported in EXT_CSD.
+    send_ext_csd->cmd_idx = MMC_SEND_EXT_CSD;
+    send_ext_csd->cmd_flags = MMC_SEND_EXT_CSD_FLAGS;
+    send_ext_csd->arg = 0;
+    send_ext_csd->blocksize = MMC_EXT_CSD_SIZE;
+    send_ext_csd->buffers.Allocate(arena, 1);
+    send_ext_csd->buffers[0] = {
+        .buffer = fuchsia_hardware_sdmmc::wire::SdmmcBuffer::WithVmoId(kPackedCommandVmoId),
+        // Write EXT_CSD to the VMO immediately following the packed command header.
+        .offset = readwrite_metadata_.ext_csd_offset(),
+        .size = readwrite_metadata_.ext_csd.size(),
+    };
   }
 
   for (auto& req : reqs) {
@@ -701,15 +714,16 @@ zx_status_t SdmmcBlockDevice::ReadWriteAttempt(std::vector<Request>& requests,
     return status;
   }
 
-  // Ignore any errors after this point to maintain the old behavior.
-  std::array<uint8_t, MMC_EXT_CSD_SIZE> ext_csd;
-  zx_status_t ext_csd_status = sdmmc_->MmcSendExtCsd(ext_csd);
-  if (ext_csd_status != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Failed to read EXT_CSD after packed command: %s",
-             zx_status_get_string(ext_csd_status));
-  } else if (ext_csd[MMC_EXT_CSD_PACKED_COMMAND_STATUS] != 0) {
-    FDF_LOGL(ERROR, logger(), "Packed command status: 0x%02x Packed failure index: %u",
-             ext_csd[MMC_EXT_CSD_PACKED_COMMAND_STATUS], ext_csd[MMC_EXT_CSD_PACKED_FAILURE_INDEX]);
+  zx_cache_flush(readwrite_metadata_.ext_csd.data(), readwrite_metadata_.ext_csd.size(),
+                 ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
+
+  if (readwrite_metadata_.ext_csd[MMC_EXT_CSD_PACKED_COMMAND_STATUS] != 0) {
+    if (!suppress_error_messages) {
+      FDF_LOGL(ERROR, logger(), "Packed command status: 0x%02x Packed failure index: %u",
+               readwrite_metadata_.ext_csd[MMC_EXT_CSD_PACKED_COMMAND_STATUS],
+               readwrite_metadata_.ext_csd[MMC_EXT_CSD_PACKED_FAILURE_INDEX]);
+    }
+    return ZX_ERR_IO;
   }
   return ZX_OK;
 }
@@ -1388,7 +1402,7 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
       }
       requests_.push_back(request);
       total_bytes_ += bytes;
-      if (requests_.size() >= max_requests_ || total_bytes_ >= max_bytes_) {
+      if (requests_.size() >= max_requests_ || (max_bytes_ > 0 && total_bytes_ >= max_bytes_)) {
         [[maybe_unused]] auto result = Flush();
       }
     }

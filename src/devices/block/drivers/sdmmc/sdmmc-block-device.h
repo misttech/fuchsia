@@ -52,29 +52,39 @@ struct ReadWriteMetadata {
   // This initialization is only required if packed commands are used.
   zx_status_t InitForPackedCommands(uint32_t buffer_region_count, uint32_t block_size) {
     // Skip initialization if we already acquired these resources in a previous call to ProbeMmc().
-    if (packed_command_header_vmo.is_valid() && packed_command_header_mapper.start()) {
+    if (packed_command_vmo.is_valid() && packed_command_mapper.start()) {
       return ZX_OK;
     }
 
     buffer_regions = std::make_unique<sdmmc_buffer_region_t[]>(buffer_region_count);
     memset(buffer_regions.get(), 0, sizeof(sdmmc_buffer_region_t) * buffer_region_count);
 
-    zx_status_t status = zx::vmo::create(block_size, 0, &packed_command_header_vmo);
+    // Create a VMO large enough to hold both the packed command header and EXT_CSD.
+    zx_status_t status = zx::vmo::create(block_size + MMC_EXT_CSD_SIZE, 0, &packed_command_vmo);
     if (status != ZX_OK) {
       FDF_LOGL(ERROR, logger(), "Failed to create packed command header vmo: %s",
                zx_status_get_string(status));
       return status;
     }
 
-    status = packed_command_header_mapper.Map(packed_command_header_vmo);
+    status = packed_command_mapper.Map(packed_command_vmo);
     if (status != ZX_OK) {
       FDF_LOGL(ERROR, logger(), "Failed to map packed command header vmo: %s",
                zx_status_get_string(status));
       return status;
     }
 
-    packed_command_header_data = static_cast<PackedCommand*>(packed_command_header_mapper.start());
+    packed_command_header_data = static_cast<PackedCommand*>(packed_command_mapper.start());
+    ext_csd = {static_cast<uint8_t*>(packed_command_mapper.start()) + block_size, MMC_EXT_CSD_SIZE};
+
+    // Do an initial cache flush of EXT_CSD to put the physical memory in a known state. EXT_CSD
+    // will be read-only after this.
+    zx_cache_flush(ext_csd.data(), ext_csd.size(), ZX_CACHE_FLUSH_DATA);
     return ZX_OK;
+  }
+
+  uint64_t ext_csd_offset() const {
+    return ext_csd.data() - static_cast<uint8_t*>(packed_command_mapper.start());
   }
 
   fdf::Logger& logger();
@@ -84,8 +94,9 @@ struct ReadWriteMetadata {
       std::make_unique<sdmmc_buffer_region_t[]>(1);
 
   // For packed commands, the following are also needed.
-  zx::vmo packed_command_header_vmo;
-  fzl::VmoMapper packed_command_header_mapper;
+  zx::vmo packed_command_vmo;
+  std::span<const uint8_t> ext_csd;
+  fzl::VmoMapper packed_command_mapper;
   PackedCommand* packed_command_header_data;
 
  private:
@@ -181,6 +192,8 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   static constexpr uint16_t kRpmbRequestReadResult = 5;
   static constexpr uint16_t kRpmbRequestWriteConfiguration = 6;
   static constexpr uint16_t kRpmbRequestReadConfiguration = 7;
+
+  static constexpr uint32_t kPackedCommandVmoId = 1;
 
   zx_status_t ProbeSdLocked() TA_REQ(worker_lock_);
   zx_status_t ProbeMmcLocked() TA_REQ(worker_lock_);

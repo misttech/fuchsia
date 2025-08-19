@@ -465,6 +465,30 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
                zx_status_get_string(st));
       return st;
     }
+
+    zx::vmo dup;
+    st = readwrite_metadata_.packed_command_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup);
+    if (st != ZX_OK) {
+      FDF_LOGL(ERROR, logger(), "Failed to duplicate packed command VMO: %s",
+               zx_status_get_string(st));
+      return st;
+    }
+
+    uint64_t vmo_size{};
+    st = dup.get_size(&vmo_size);
+    if (st != ZX_OK) {
+      FDF_LOGL(ERROR, logger(), "Failed to duplicate packed command VMO size: %s",
+               zx_status_get_string(st));
+      return st;
+    }
+
+    st = sdmmc_->RegisterVmo(kPackedCommandVmoId, 0, std::move(dup), 0, vmo_size,
+                             SDMMC_VMO_RIGHT_READ | SDMMC_VMO_RIGHT_WRITE);
+    if (st != ZX_OK) {
+      FDF_LOGL(ERROR, logger(), "Failed to register packed command VMO: %s",
+               zx_status_get_string(st));
+      return st;
+    }
   }
 
   if (metadata_.vccq_off_with_controller_off()) {

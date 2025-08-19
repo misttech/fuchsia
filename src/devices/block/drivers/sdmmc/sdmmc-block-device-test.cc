@@ -2950,6 +2950,162 @@ TEST_P(SdmmcBlockDeviceTest, BlockServerSplitTransfer) {
   });
 }
 
+TEST_P(SdmmcBlockDeviceTest, PackedCommandWriteError) {
+  sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
+    *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
+    out_data[MMC_EXT_CSD_MAX_PACKED_WRITES] = 63;
+    out_data[MMC_EXT_CSD_MAX_PACKED_READS] = 63;
+  });
+
+  ASSERT_OK(StartDriverForMmc(/*speed_capabilities=*/{}, /*supply_power_framework=*/false));
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+
+  runtime_.PerformBlockingWork([&] {
+    auto client = GetRemoteBlockDeviceForBlockServer("user");
+    ASSERT_OK(client);
+
+    storage::Vmoid owned_vmoid;
+    EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+    vmoid_t vmoid = owned_vmoid.TakeId();
+
+    block_fifo_request_t requests[] = {
+        {
+            .command = {.opcode = BLOCK_OPCODE_WRITE},
+            .vmoid = vmoid,
+            .length = 1,
+            .vmo_offset = 0,
+            .dev_offset = 0,
+        },
+        {
+            .command = {.opcode = BLOCK_OPCODE_WRITE},
+            .vmoid = vmoid,
+            .length = 1,
+            .vmo_offset = 1,
+            .dev_offset = 1,
+        },
+    };
+
+    EXPECT_OK(client->FifoTransaction(requests, 2));
+  });
+
+  sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
+    *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
+    out_data[MMC_EXT_CSD_MAX_PACKED_WRITES] = 63;
+    out_data[MMC_EXT_CSD_MAX_PACKED_READS] = 63;
+    // Return an error for packed commands.
+    out_data[MMC_EXT_CSD_PACKED_COMMAND_STATUS] = 1;
+  });
+
+  runtime_.PerformBlockingWork([&] {
+    auto client = GetRemoteBlockDeviceForBlockServer("user");
+    ASSERT_OK(client);
+
+    storage::Vmoid owned_vmoid;
+    EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+    vmoid_t vmoid = owned_vmoid.TakeId();
+
+    block_fifo_request_t requests[] = {
+        {
+            .command = {.opcode = BLOCK_OPCODE_WRITE},
+            .vmoid = vmoid,
+            .length = 1,
+            .vmo_offset = 0,
+            .dev_offset = 0,
+        },
+        {
+            .command = {.opcode = BLOCK_OPCODE_WRITE},
+            .vmoid = vmoid,
+            .length = 1,
+            .vmo_offset = 1,
+            .dev_offset = 1,
+        },
+    };
+
+    // The same packed command should now fail.
+    EXPECT_EQ(client->FifoTransaction(requests, 2), ZX_ERR_IO);
+  });
+}
+
+TEST_P(SdmmcBlockDeviceTest, PackedCommandReadError) {
+  sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
+    *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
+    out_data[MMC_EXT_CSD_MAX_PACKED_WRITES] = 63;
+    out_data[MMC_EXT_CSD_MAX_PACKED_READS] = 63;
+  });
+
+  ASSERT_OK(StartDriverForMmc(/*speed_capabilities=*/{}, /*supply_power_framework=*/false));
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+
+  runtime_.PerformBlockingWork([&] {
+    auto client = GetRemoteBlockDeviceForBlockServer("user");
+    ASSERT_OK(client);
+
+    storage::Vmoid owned_vmoid;
+    EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+    vmoid_t vmoid = owned_vmoid.TakeId();
+
+    block_fifo_request_t requests[] = {
+        {
+            .command = {.opcode = BLOCK_OPCODE_READ},
+            .vmoid = vmoid,
+            .length = 1,
+            .vmo_offset = 0,
+            .dev_offset = 0,
+        },
+        {
+            .command = {.opcode = BLOCK_OPCODE_READ},
+            .vmoid = vmoid,
+            .length = 1,
+            .vmo_offset = 1,
+            .dev_offset = 1,
+        },
+    };
+
+    EXPECT_OK(client->FifoTransaction(requests, 2));
+  });
+
+  sdmmc_.set_command_callback(MMC_SEND_EXT_CSD, [](cpp20::span<uint8_t> out_data) {
+    *reinterpret_cast<uint32_t*>(&out_data[212]) = htole32(FakeSdmmcDevice::kBlockCount);
+    out_data[MMC_EXT_CSD_MAX_PACKED_WRITES] = 63;
+    out_data[MMC_EXT_CSD_MAX_PACKED_READS] = 63;
+    // Return an error for packed commands.
+    out_data[MMC_EXT_CSD_PACKED_COMMAND_STATUS] = 1;
+  });
+
+  runtime_.PerformBlockingWork([&] {
+    auto client = GetRemoteBlockDeviceForBlockServer("user");
+    ASSERT_OK(client);
+
+    storage::Vmoid owned_vmoid;
+    EXPECT_OK(client->BlockAttachVmo(vmo, &owned_vmoid));
+    vmoid_t vmoid = owned_vmoid.TakeId();
+
+    block_fifo_request_t requests[] = {
+        {
+            .command = {.opcode = BLOCK_OPCODE_READ},
+            .vmoid = vmoid,
+            .length = 1,
+            .vmo_offset = 0,
+            .dev_offset = 0,
+        },
+        {
+            .command = {.opcode = BLOCK_OPCODE_READ},
+            .vmoid = vmoid,
+            .length = 1,
+            .vmo_offset = 1,
+            .dev_offset = 1,
+        },
+    };
+
+    // The same packed command should now fail.
+    EXPECT_EQ(client->FifoTransaction(requests, 2), ZX_ERR_IO);
+  });
+}
+
 INSTANTIATE_TEST_SUITE_P(SdmmcProtocolUsingFidlTest, SdmmcBlockDeviceTest, zxtest::Bool());
 
 }  // namespace sdmmc
