@@ -5,7 +5,6 @@
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
-#include <lib/zx/channel.h>
 #include <lib/zx/socket.h>
 
 #include <atomic>
@@ -15,6 +14,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/lib/diagnostics/fake-log-sink/cpp/fake_log_sink.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/scoped_temp_dir.h"
 
@@ -64,14 +64,18 @@ TEST(StructuredLogging, NullSafeStringView) {
 // Test to validate that SetLogSettings and log initialization is thread-safe.
 TEST(StructuredLogging, ThreadInitialization) {
   // TODO(bbosak): Convert to actual stress test.
+  auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
+  FakeLogSink log_sink(Info, std::move(endpoints->server));
+  LogSettingsBuilder().WithLogSink(endpoints->client.TakeChannel().release()).BuildAndInitialize();
   auto start = zx_clock_get_monotonic();
   std::atomic_bool running = true;
   std::thread thread_a([&]() {
     while (running) {
-      zx::channel temp[2];
-      zx::channel::create(0, &temp[0], &temp[1]);
-      LogSettingsBuilder builder;
-      builder.DisableWaitForInitialInterest().WithLogSink(temp[0].release()).BuildAndInitialize();
+      auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
+      FakeLogSink log_sink(Info, std::move(endpoints->server));
+      LogSettingsBuilder()
+          .WithLogSink(endpoints->client.TakeChannel().release())
+          .BuildAndInitialize();
     }
   });
   std::thread thread_b([&]() {
@@ -86,16 +90,17 @@ TEST(StructuredLogging, ThreadInitialization) {
       break;
     }
 
-    zx::channel temp[2];
-    zx::channel::create(0, &temp[0], &temp[1]);
-    LogSettingsBuilder builder;
-    builder.DisableWaitForInitialInterest().WithLogSink(temp[0].release()).BuildAndInitialize();
+    auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
+    FakeLogSink log_sink(Info, std::move(endpoints->server));
+    LogSettingsBuilder()
+        .WithLogSink(endpoints->client.TakeChannel().release())
+        .BuildAndInitialize();
     FX_LOG_KV(WARNING, "test_log", FX_KV("foo", "bar"));
   }
   thread_a.join();
   thread_b.join();
   LogSettingsBuilder builder;
-  builder.DisableWaitForInitialInterest().BuildAndInitialize();
+  builder.BuildAndInitialize();
 }
 
 TEST(StructuredLogging, BackendDirect) {

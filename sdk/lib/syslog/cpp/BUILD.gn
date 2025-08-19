@@ -42,8 +42,6 @@ target(target_type, "cpp") {
 
     sources += [
       "log_settings_internal.h",
-      "logger.cc",
-      "logger.h",
       "logging_backend_fuchsia.cc",
     ]
 
@@ -91,8 +89,6 @@ sdk_shared_library("backend_fuchsia_globals") {
 
   deps = [
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
-    "//sdk/lib/async-default",
-    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/syslog/structured_backend",
     "//src/zircon/lib/zircon",
   ]
@@ -138,6 +134,7 @@ test("logging_cpp_unittests_structured") {
 
   deps = [
     ":cpp",
+    "//src/lib/diagnostics/fake-log-sink/cpp",
     "//src/lib/files",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",

@@ -10,6 +10,9 @@
 #include <lib/zx/result.h>
 
 namespace fuchsia_logging {
+
+class Logger;
+
 namespace internal {
 
 // LogConnection represents a connection to a logger. This will not watch for interest updates.
@@ -34,7 +37,7 @@ class LogConnection {
   zx::result<> FlushBuffer(LogBuffer& buffer) const { return FlushSpan(buffer.EndRecord()); }
 
  private:
-  friend class Logger;
+  friend class fuchsia_logging::Logger;
 
   zx::result<> FlushSpan(cpp20::span<const uint8_t> data) const;
 

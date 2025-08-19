@@ -111,9 +111,6 @@ bool SetLogSettingsFromCommandLine(const fxl::CommandLine& command_line) {
   if (settings.disable_interest_listener) {
     builder.DisableInterestListener();
   }
-  if (!settings.wait_for_initial_interest) {
-    builder.DisableWaitForInitialInterest();
-  }
 #endif
   builder.BuildAndInitialize();
   return true;
@@ -145,9 +142,6 @@ bool SetLogSettingsFromCommandLine(const fxl::CommandLine& command_line,
   }
   if (settings.disable_interest_listener) {
     builder.DisableInterestListener();
-  }
-  if (!settings.wait_for_initial_interest) {
-    builder.DisableWaitForInitialInterest();
   }
 #endif
   builder.BuildAndInitialize();

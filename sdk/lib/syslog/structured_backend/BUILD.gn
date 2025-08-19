@@ -4,6 +4,8 @@
 
 import("//build/cpp/sdk_source_set.gni")
 
+# This is a low dependency syslog library. It has no shared library dependencies (which some
+# clients depend on). Most clients should typically use the syslog/cpp library.
 sdk_source_set("structured_backend") {
   category = "partner"
 
@@ -25,6 +27,9 @@ sdk_source_set("structured_backend") {
     "cpp/log_buffer.h",
     "cpp/log_connection.cc",
     "cpp/log_connection.h",
+    "cpp/logger.cc",
+    "cpp/logger.h",
+    "cpp/raw_log_settings.h",
     "fuchsia_syslog.h",
   ]
 

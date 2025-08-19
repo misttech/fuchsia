@@ -6,32 +6,13 @@
 #define LIB_SYSLOG_CPP_LOGGING_BACKEND_FUCHSIA_GLOBALS_H_
 
 #include <zircon/availability.h>
-#include <zircon/compiler.h>
 #include <zircon/types.h>
 
-namespace fuchsia_logging::internal {
+namespace fuchsia_logging {
 
-// These *must* be ABI stable.
-inline constexpr uint8_t kInterestListenerDisabled = 0;
-inline constexpr uint8_t kInterestListenerEnabledNonBlocking = 1;
-inline constexpr uint8_t kInterestListenerEnabled = 2;
+struct RawLogSettings;
 
-inline constexpr uint8_t kDefaultMinLogLevel = 0x30;  // Default to Info.
-
-// This *must* be ABI stable.
-struct LogSettings {
-  uint8_t min_log_level = kDefaultMinLogLevel;
-  uint8_t interest_listener_behavior = kInterestListenerEnabled;
-  zx_handle_t log_sink = ZX_HANDLE_INVALID;
-  const char** tags = nullptr;
-  size_t tags_count = 0;
-  void* dispatcher = nullptr;
-  void (*severity_change_callback)(uint8_t severity) = nullptr;
-  uint64_t reserved[7] = {};
-};
-
-// Prevent surprises...
-static_assert(sizeof(LogSettings) == 96);
+namespace internal {
 
 // These functions are an internal contract between the Fuchsia logging backend and the logging
 // state shared library. API users should not call these directly, but they need to be exported to
@@ -63,23 +44,14 @@ LogState* FuchsiaLogGetStateLocked();
 class Logger;
 
 // Initializes the global logger. This is safe to call multiple times.
-void FuchsiaLogInitGlobalLogger(const LogSettings*);
+void FuchsiaLogInitGlobalLogger(const RawLogSettings*);
 
 // Returns the global minimum severity. This is separate for performance reasons.
 uint8_t FuchsiaLogGetGlobalMinSeverity();
 
 // Returns the global logger. This will create a logger with default settings if one does not
 // already exist.
-Logger* FuchsiaLogGetGlobalLogger();
-
-// Creates a logger. If `settings` is nullptr, default settings are used.
-zx_status_t FuchsiaLogCreateLogger(const LogSettings* settings, Logger**);
-
-// Destroys a logger.
-void FuchsiaLogDestroyLogger(Logger*);
-
-// Returns the minimum severity associated with the logger.
-uint8_t FuchsiaLogGetMinSeverity(const Logger* logger);
+Logger* FuchsiaLogGetGlobalLogger(RawLogSettings (*get_default_settings)());
 
 // Writes a log record to a logger. The buffer should be in the appropriate diagnostics record
 // format.
@@ -92,6 +64,8 @@ void FuchsiaLogForEachTag(const Logger* logger, void* context,
 #endif
 
 }  // extern "C"
-}  // namespace fuchsia_logging::internal
+
+}  // namespace internal
+}  // namespace fuchsia_logging
 
 #endif  // LIB_SYSLOG_CPP_LOGGING_BACKEND_FUCHSIA_GLOBALS_H_

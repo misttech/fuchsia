@@ -135,8 +135,9 @@ void WriteStructuredLog(fuchsia_logging::LogSeverity severity, const char* file,
     builder.WithFile(file, line);
   }
   if (msg != nullptr) {
-    std::string_view message(msg);
-    builder.WithMsg(message);
+    // NOTE: If you see build errors on this line, it might be because of a Clang issue: fix
+    // previous build errors and then try again.
+    builder.WithMsg(msg);
   }
   auto buffer = builder.Build();
   (buffer.Encode(args), ...);

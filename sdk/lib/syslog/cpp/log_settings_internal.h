@@ -7,31 +7,27 @@
 
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/logging_backend_fuchsia_globals.h>
+#include <lib/syslog/structured_backend/cpp/raw_log_settings.h>
 
 namespace fuchsia_logging::internal {
 
 template <typename T>
-auto WithInternalSettings(const fuchsia_logging::LogSettings& settings, T callback) {
+auto WithRawSettings(const fuchsia_logging::LogSettings& settings, T callback) {
   std::vector<const char*> tags;
   tags.reserve(settings.tags.size());
   for (const std::string& tag : settings.tags) {
     tags.push_back(tag.c_str());
   }
 
-  static_assert(InterestListenerBehavior::Disabled == kInterestListenerDisabled);
-  static_assert(InterestListenerBehavior::EnabledNonBlocking ==
-                kInterestListenerEnabledNonBlocking);
-  static_assert(InterestListenerBehavior::Enabled == kInterestListenerEnabled);
-
-  return callback(LogSettings{
+  RawLogSettings raw_settings{
       .min_log_level = settings.min_log_level,
-      .interest_listener_behavior = settings.interest_listener_config_,
       .log_sink = settings.log_sink,
       .tags = tags.data(),
       .tags_count = settings.tags.size(),
       .dispatcher = settings.single_threaded_dispatcher,
       .severity_change_callback = settings.severity_change_callback,
-  });
+  };
+  return callback(raw_settings);
 }
 
 }  // namespace fuchsia_logging::internal

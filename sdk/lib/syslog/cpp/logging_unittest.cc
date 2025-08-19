@@ -29,8 +29,8 @@
 #include <lib/async/dispatcher.h>
 #include <lib/async/wait.h>
 #include <lib/fpromise/promise.h>
-#include <lib/syslog/cpp/logger.h>
 #include <lib/syslog/structured_backend/cpp/log_connection.h>
+#include <lib/syslog/structured_backend/cpp/logger.h>
 #include <lib/zx/socket.h>
 
 #include <cinttypes>
@@ -482,9 +482,9 @@ TEST(Logger, LocalLogger) {
   static std::condition_variable condition;
   static RawLogSeverity severity = 0;
 
-  auto logger_result = Logger::Create(LogSettings{
-      .single_threaded_dispatcher = loop.dispatcher(),
+  auto logger_result = Logger::Create(RawLogSettings{
       .log_sink = endpoints->client.TakeChannel().release(),
+      .dispatcher = loop.dispatcher(),
       .severity_change_callback =
           +[](RawLogSeverity s) {
             std::unique_lock lock(mutex);
@@ -511,7 +511,7 @@ TEST(Logger, LocalLogger) {
   std::unique_lock lock(mutex);
   condition.wait(lock, [&] { return severity == FUCHSIA_LOG_WARNING; });
 
-  EXPECT_EQ(logger.GetMinimumSeverity(), FUCHSIA_LOG_WARNING);
+  EXPECT_EQ(logger.GetMinSeverity(), FUCHSIA_LOG_WARNING);
 }
 
 #endif

@@ -23,8 +23,13 @@ namespace fuchsia_logging {
 enum InterestListenerBehavior : uint8_t {
   /// Disable interest listening completely
   Disabled = 0,
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   /// Enable the interest listener, but don't wait for an initial interest.
   EnabledNonBlocking = 1,
+#else
+  /// Deprecated: this behaves the same as Enabled and will be removed soon.
+  EnabledNonBlocking = 1,
+#endif
   /// Enable the interest listener, and block logging startup on an initial interest
   Enabled = 2,
 };
@@ -90,10 +95,15 @@ class LogSettingsBuilder {
   /// Disables the interest listener.
   LogSettingsBuilder& DisableInterestListener();
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   /// Disables waiting for the initial interest from Archivist.
   /// The level specified in SetMinLogSeverity or INFO will be used
   /// as the default.
   LogSettingsBuilder& DisableWaitForInitialInterest();
+#else
+  /// Deprecated: this is ignored. This will be removed soon.
+  LogSettingsBuilder& DisableWaitForInitialInterest();
+#endif
 
   /// Configures the interest listener settings.
   LogSettingsBuilder& WithInterestListenerConfiguration(InterestListenerBehavior config);

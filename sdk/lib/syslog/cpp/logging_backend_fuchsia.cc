@@ -16,6 +16,7 @@
 #include <lib/syslog/cpp/log_settings_internal.h>
 #include <lib/syslog/cpp/logging_backend_fuchsia_globals.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
+#include <lib/syslog/structured_backend/cpp/raw_log_settings.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/process.h>
 
@@ -124,6 +125,32 @@ zx_koid_t ProcessSelfKoid() {
 zx_koid_t globalPid = ProcessSelfKoid();
 const char kTagFieldName[] = "tag";
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+
+void FixDefaultSettings(RawLogSettings& settings, bool interest_listener_enabled) {
+  // If now handle is provided, try the incoming namespace.
+  if (settings.log_sink == ZX_HANDLE_INVALID) {
+    auto connect_result = component::Connect<fuchsia_logger::LogSink>();
+    // If there is an error, we leave `log_sink` with ZX_HANDLE_INVALID which will result in a no-op
+    // logger later.
+    if (connect_result.is_ok()) {
+      settings.log_sink = connect_result->TakeChannel().release();
+    }
+  }
+  // If no dispatcher specified, try the default dispatcher.
+  if (!settings.dispatcher && interest_listener_enabled) {
+    settings.dispatcher = async_get_default_dispatcher();
+  }
+}
+
+RawLogSettings GetDefaultSettings() {
+  RawLogSettings settings;
+  FixDefaultSettings(settings, true);
+  return settings;
+}
+
+#endif
+
 void BeginRecordInternal(LogBuffer* buffer, fuchsia_logging::RawLogSeverity severity,
                          std::optional<std::string_view> file_name, unsigned int line,
                          std::optional<std::string_view> msg,
@@ -148,7 +175,8 @@ void BeginRecordInternal(LogBuffer* buffer, fuchsia_logging::RawLogSeverity seve
   }
 #else
   internal::FuchsiaLogForEachTag(
-      internal::FuchsiaLogGetGlobalLogger(), buffer, +[](void* context, const char* tag) {
+      internal::FuchsiaLogGetGlobalLogger(GetDefaultSettings), buffer,
+      +[](void* context, const char* tag) {
         auto buffer = reinterpret_cast<LogBuffer*>(context);
         buffer->WriteKeyValue(kTagFieldName, tag);
       });
@@ -166,8 +194,8 @@ void BeginRecord(LogBuffer* buffer, fuchsia_logging::RawLogSeverity severity,
 #else
     //  We ignore `block_if_full` because we won't be supporting it with IOBuffers which is coming
     //  soon.
-    return internal::FuchsiaLogWrite(internal::FuchsiaLogGetGlobalLogger(), data.data(),
-                                     data.size()) == ZX_OK;
+    return internal::FuchsiaLogWrite(internal::FuchsiaLogGetGlobalLogger(GetDefaultSettings),
+                                     data.data(), data.size()) == ZX_OK;
 #endif
   });
 }
@@ -188,8 +216,11 @@ void SetLogSettings(const fuchsia_logging::LogSettings& settings) {
   GlobalStateLock lock(false);
   internal::LogState::Set(settings, lock);
 #else
-  internal::WithInternalSettings(settings, [](const internal::LogSettings& settings) {
-    FuchsiaLogInitGlobalLogger(&settings);
+  const bool interest_listener_enabled =
+      settings.interest_listener_config_ != InterestListenerBehavior::Disabled;
+  internal::WithRawSettings(settings, [interest_listener_enabled](RawLogSettings& raw_settings) {
+    FixDefaultSettings(raw_settings, interest_listener_enabled);
+    internal::FuchsiaLogInitGlobalLogger(&raw_settings);
   });
 #endif
 }
