@@ -8,6 +8,6 @@
         use_next_vdso: "true",
     },
     use: [
-        { protocol: "fuchsia.system.state.SystemStateTransition" },
+        { protocol: "fuchsia.memory.heapdump.process.Registry" },
     ],
 }

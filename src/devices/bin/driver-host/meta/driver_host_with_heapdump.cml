@@ -7,6 +7,6 @@
         binary: "bin/driver-host-with-heapdump",
     },
     use: [
-        { protocol: "fuchsia.system.state.SystemStateTransition" },
+        { protocol: "fuchsia.memory.heapdump.process.Registry" },
     ],
 }
