@@ -207,12 +207,6 @@
   adr_global x8, boot_thread_pointer
   msr TPIDR_EL1, x8
 
-#if __has_feature(safe_stack)
-  // Reset the unsafe stack pointer in the thread area.
-  adr_global x9, phys_exception_unsafe_stack + BOOT_STACK_SIZE  // Grows down.
-  str x9, [x8, #ZX_TLS_UNSAFE_SP_OFFSET]
-#endif
-
   // We now have complete CFI representing all the general registers so a
   // debugger can unwind through this frame and back to the interrupted code.
   // A normal call into C++ code will permit unwinding back into this frame.

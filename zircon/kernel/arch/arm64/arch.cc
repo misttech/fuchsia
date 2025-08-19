@@ -96,7 +96,7 @@ struct arm64_sp_info {
   // and stack-protector code can work early.  The thread pointer
   // (TPIDR_EL1) points just past arm64_sp_info_t.
   uintptr_t stack_guard;
-  void* unsafe_sp;
+  void* unsafe_sp = nullptr;  // Never actually used in the kernel.
 };
 
 static_assert(sizeof(arm64_sp_info) == 40, "check arm64_get_secondary_sp assembly");
@@ -125,12 +125,7 @@ zx_status_t arm64_create_secondary_stack(cpu_num_t cpu_num, uint64_t mpid) {
 
   // Get the stack pointers.
   void* sp = reinterpret_cast<void*>(stack->top());
-  void* unsafe_sp = nullptr;
   uintptr_t* shadow_call_sp = nullptr;
-#if __has_feature(safe_stack)
-  DEBUG_ASSERT(stack->unsafe_base() != 0);
-  unsafe_sp = reinterpret_cast<void*>(stack->unsafe_top());
-#endif
 #if __has_feature(shadow_call_stack)
   DEBUG_ASSERT(stack->shadow_call_base() != 0);
   // The shadow call stack grows up.
@@ -139,16 +134,12 @@ zx_status_t arm64_create_secondary_stack(cpu_num_t cpu_num, uint64_t mpid) {
 
   // Store it.
   LTRACEF("set mpid 0x%lx sp to %p\n", mpid, sp);
-#if __has_feature(safe_stack)
-  LTRACEF("set mpid 0x%lx unsafe-sp to %p\n", mpid, unsafe_sp);
-#endif
 #if __has_feature(shadow_call_stack)
   LTRACEF("set mpid 0x%lx shadow-call-sp to %p\n", mpid, shadow_call_sp);
 #endif
   arm64_secondary_sp_list[cpu_num - 1].mpid = mpid;
   arm64_secondary_sp_list[cpu_num - 1].sp = sp;
   arm64_secondary_sp_list[cpu_num - 1].stack_guard = Thread::Current::Get()->arch().stack_guard;
-  arm64_secondary_sp_list[cpu_num - 1].unsafe_sp = unsafe_sp;
   arm64_secondary_sp_list[cpu_num - 1].shadow_call_sp = shadow_call_sp;
 
   return ZX_OK;

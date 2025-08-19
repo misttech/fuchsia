@@ -83,15 +83,6 @@
 .Lstack_guard_done:
   sd boot_stack_guard, ZX_TLS_STACK_GUARD_OFFSET(tp)
 
-#if __has_feature(safe_stack)
-#define boot_unsafe_stack_ptr a3
-  lla boot_unsafe_stack_ptr, boot_unsafe_stack + BOOT_STACK_SIZE
-#else
-#define boot_unsafe_stack_ptr zero
-#endif
-
-  sd boot_unsafe_stack_ptr, ZX_TLS_UNSAFE_SP_OFFSET(tp)
-
   lla sp, boot_stack + BOOT_STACK_SIZE
 
 #if __has_feature(shadow_call_stack)

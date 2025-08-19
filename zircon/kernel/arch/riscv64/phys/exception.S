@@ -108,12 +108,6 @@
   // Reset the thread pointer, though nothing should have changed it.
   lla tp, boot_thread_pointer
 
-#if __has_feature(safe_stack)
-  // Reset the unsafe stack pointer in the thread area.
-  lla a0, phys_exception_unsafe_stack + BOOT_STACK_SIZE  // Grows down.
-  sd a0, #ZX_TLS_UNSAFE_SP_OFFSET(tp)
-#endif
-
   // We now have complete CFI representing all the general registers so a
   // debugger can unwind through this frame and back to the interrupted code.
   // A normal call into C++ code will permit unwinding back into this frame.

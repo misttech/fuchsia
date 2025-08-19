@@ -109,21 +109,9 @@ handoff_paddr           .req x21
 
 .object boot_cpu_fake_arch_thread, bss, local, align=8
   .quad 0 // Location of stack guard
-#if __has_feature(safe_stack)
-  .quad .Lboot_cpu_unsafe_kstack_end
-#else
-  .quad 0
-#endif
+  .quad 0 // unsafe_sp ABI, but SafeStack is never used in arm64 kernel code.
 .Lboot_cpu_fake_thread_pointer_location:
 .end_object
-
-#if __has_feature(safe_stack)
-.object boot_cpu_unsafe_kstack, bss, local
-  .skip DEFAULT_STACK_SIZE
-  .balign 16
-.Lboot_cpu_unsafe_kstack_end:
-.end_object
-#endif
 
 // This symbol is used by gdb python to know the base of the kernel module
 .label KERNEL_BASE_ADDRESS, global, value=KERNEL_BASE

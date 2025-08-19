@@ -91,13 +91,6 @@
   eor boot_stack_guard, tp, boot_stack_guard
 .Lstack_guard_done:
 
-#if __has_feature(safe_stack)
-  boot_unsafe_stack_ptr .req x12
-  adr_global boot_unsafe_stack_ptr, boot_unsafe_stack + BOOT_STACK_SIZE
-#else
-  boot_unsafe_stack_ptr .req xzr
-#endif
-
   // Before we set sp, ensure that it's 'linked' to the current SP_ELX and not
   // SP_EL0.
   msr SPSel, #1
@@ -105,7 +98,7 @@
 #if ZX_TLS_STACK_GUARD_OFFSET + 8 != ZX_TLS_UNSAFE_SP_OFFSET
 #error "TLS ABI layout???"
 #endif
-  stp boot_stack_guard, boot_unsafe_stack_ptr, [tp, #ZX_TLS_STACK_GUARD_OFFSET]
+  stp boot_stack_guard, xzr, [tp, #ZX_TLS_STACK_GUARD_OFFSET]
 
   adr_global x12, boot_stack + BOOT_STACK_SIZE
   mov sp, x12

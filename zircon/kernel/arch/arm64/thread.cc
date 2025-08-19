@@ -49,17 +49,13 @@ void arch_thread_initialize(Thread* t, vaddr_t entry_point) {
 
   // set the stack pointer
   t->arch().sp = (vaddr_t)frame;
-#if __has_feature(safe_stack)
-  DEBUG_ASSERT(IS_ROUNDED(t->stack_.unsafe_top(), 16));
-  t->arch().unsafe_sp = t->stack_.unsafe_top();
-#endif
 #if __has_feature(shadow_call_stack)
   // The shadow call stack grows up.
   t->arch().shadow_call_sp = reinterpret_cast<uintptr_t*>(t->stack().shadow_call_base());
 #endif
 }
 
-__NO_SAFESTACK void arch_thread_construct_first(Thread* t) {
+void arch_thread_construct_first(Thread* t) {
   // Propagate the values from the fake arch_thread that the thread
   // pointer points to now (set up in start.S) into the real thread
   // structure being set up now.
@@ -70,18 +66,13 @@ __NO_SAFESTACK void arch_thread_construct_first(Thread* t) {
   // accessor routines because of the NO_STAFESTACK attribute here.
   auto& arch = t->arch();
   arch.stack_guard = fake_arch.stack_guard;
-  arch.unsafe_sp = fake_arch.unsafe_sp;
 
   // make sure the thread saves a copy of the current cpu pointer
   arch.current_percpu_ptr = arm64_read_percpu_ptr();
 
-  // Force the thread pointer immediately to the real struct.  This way
-  // our callers don't have to avoid safe-stack code or risk losing track
-  // of the unsafe_sp value.  The caller's unsafe_sp value is visible at
-  // TPIDR_EL1 + ZX_TLS_UNSAFE_SP_OFFSET as expected, though TPIDR_EL1
-  // happens to have changed.  (We're assuming that the compiler doesn't
-  // decide to cache the TPIDR_EL1 value across this function call, which
-  // would be pointless since it's just one instruction to fetch it afresh.)
+  // Force the thread pointer immediately to the real struct.  If this
+  // function's epilogue checks a stack canary it should read the same guard
+  // value from either thread pointer.
   arch_set_current_thread(t);
 }
 

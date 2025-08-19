@@ -60,11 +60,11 @@ struct arm64_percpu;
 
 struct arch_thread {
   // The compiler (when it's Clang with -mtp=el1) knows the position of these
-  // two fields relative to TPIDR_EL1, which is what
-  // __builtin_thread_pointer() returns.  TPIDR_EL1 points just past these,
-  // i.e. to &abi[1].
+  // two fields relative to TPIDR_EL1, which is what __builtin_thread_pointer()
+  // returns.  The thread_pointer_location pseudo-member marks where TPIDR_EL1
+  // points.
   uintptr_t stack_guard;
-  vaddr_t unsafe_sp;
+  vaddr_t unsafe_sp;  // Never used in the kernel, but the ABI needs the space.
   union {
     char thread_pointer_location;
     vaddr_t sp;

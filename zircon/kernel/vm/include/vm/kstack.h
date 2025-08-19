@@ -63,6 +63,9 @@ class KernelStack {
   Mapping main_map_;
 
 #if __has_feature(safe_stack)
+#ifndef __x86_64__
+#error "SafeStack in kernel supported only for x86; use ShadowCallStack"
+#endif
   Mapping unsafe_map_;
 #endif
 

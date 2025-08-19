@@ -18,10 +18,10 @@
 
 struct arch_thread {
   // The compiler knows the position of these two fields relative to tp, which
-  // is what __builtin_thread_pointer() returns.  i.e. to &abi[1].
-  // tp points just past these.
+  // is what __builtin_thread_pointer() returns.  The thread_pointer_location
+  // pseudo-member marks where tp points.
   uintptr_t stack_guard;
-  vaddr_t unsafe_sp;
+  vaddr_t unsafe_sp;  // Never used in the kernel, but the ABI needs the space.
   union {
     char thread_pointer_location;
     vaddr_t sp;
