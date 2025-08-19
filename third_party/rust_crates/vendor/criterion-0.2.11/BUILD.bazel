@@ -92,6 +92,6 @@ rust_library(
         "//third_party/rust_crates/vendor/rayon-1.10.0:rayon",
         "//third_party/rust_crates/vendor/rayon-core-1.12.1:rayon_core",
         "//third_party/rust_crates/vendor/serde-1.0.204:serde",
-        "//third_party/rust_crates/vendor/serde_json-1.0.128:serde_json",
+        "//third_party/rust_crates/vendor/serde_json-1.0.143:serde_json",
     ],
 )

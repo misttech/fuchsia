@@ -94,7 +94,7 @@ rust_library(
         "//third_party/rust_crates/vendor/pretty_assertions-1.2.1:pretty_assertions",
         "//third_party/rust_crates/vendor/rand-0.8.4:rand",
         "//third_party/rust_crates/vendor/serde-1.0.204:serde",
-        "//third_party/rust_crates/vendor/serde_json-1.0.128:serde_json",
+        "//third_party/rust_crates/vendor/serde_json-1.0.143:serde_json",
         "//third_party/rust_crates/vendor/sha2-0.10.8:sha2",
         "//third_party/rust_crates/vendor/signature-1.6.4:signature",
         "//third_party/rust_crates/vendor/thiserror-2.0.12:thiserror",

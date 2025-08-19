@@ -78,7 +78,7 @@ rust_library(
         "//third_party/rust_crates/vendor/cargo-platform-0.1.2:cargo_platform",
         "//third_party/rust_crates/vendor/semver-1.0.26:semver",
         "//third_party/rust_crates/vendor/serde-1.0.204:serde",
-        "//third_party/rust_crates/vendor/serde_json-1.0.128:serde_json",
+        "//third_party/rust_crates/vendor/serde_json-1.0.143:serde_json",
         "//third_party/rust_crates/vendor/thiserror-1.0.69:thiserror",
     ],
 )
