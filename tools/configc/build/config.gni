@@ -362,62 +362,6 @@ template("cpp_config_client_lib_source") {
   }
 }
 
-# Validate a package's components' configuration (if any).
-#
-# Parameters
-#
-#   package_manifest (path)
-#     Path to the output of the `package_tool_package_build()` template.
-#
-#   deps (optional)
-#   metadata (optional)
-#   testonly (optional)
-#   visibility (optional)
-#     Standard GN meaning.
-template("validate_packaged_config") {
-  assert(defined(invoker.package_manifest), "must provide an input manifest")
-  _package_manifest = invoker.package_manifest
-  _configc_path = "${root_build_dir}/host-tools/configc"
-  _meta_far = get_path_info(_package_manifest, "dir") + "/meta.far"
-  _stamp = "${target_out_dir}/${target_name}.configc.stamp"
-  python_action(target_name) {
-    forward_variables_from(invoker,
-                           [
-                             "deps",
-                             "metadata",
-                             "testonly",
-                             "visibility",
-                             "applicable_licenses",
-                           ])
-    binary_label = "//tools/configc:validate_config_wrapper"
-
-    inputs = [
-      _configc_path,
-      _package_manifest,
-      _meta_far,
-    ]
-    outputs = [ _stamp ]
-
-    # As this action only writes a stamp file, there's no need to run
-    # the check for any output dir leaks in the file.
-    check_for_output_dir_leaks = false
-
-    if (!defined(deps)) {
-      deps = []
-    }
-    deps += [ "//tools/configc:install($host_toolchain)" ]
-
-    args = [
-      "--configc-bin",
-      rebase_path(_configc_path, root_build_dir),
-      "--package",
-      rebase_path(_package_manifest, root_build_dir),
-      "--stamp",
-      rebase_path(_stamp, root_build_dir),
-    ]
-  }
-}
-
 # Dump a component's structured configuration values into human-readable JSON.
 #
 # Parameters

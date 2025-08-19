@@ -2,13 +2,74 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/dist/fini_manifest.gni")
-import("//build/dist/verify_manifest_elf_binaries.gni")
-import("//build/images/args.gni")
+import("//build/config/clang/clang.gni")
+import("//build/config/fuchsia/target_api_level.gni")
+import("//build/dist/distribution_manifest_generated_file.gni")
 import("//build/packages/package_metadata.gni")
-import("//src/sys/pkg/bin/package-tool/package-tool.gni")
-import("//tools/cmc/build/cmc.gni")
-import("//tools/configc/build/config.gni")
+import("//build/rust/config.gni")
+
+# Which tool(s) to use in this process are conditional based on this being a
+# sub-build or normal build.  Sub-builds use prebuilt binaries, whereas the
+# normal build depends on the actual build targets.  For each of the tools
+# used by the `fuchsia_package()` template, we need to calculate the label,
+# path, etc.
+#
+# This logic is taken from `compiled_action()`, and is similar to the logic
+# there, although slightly simplified because we know we will not be opt'ing
+# out of the use of prebuilt tools.
+foreach(tool_info,
+        # This is a list of all input tools
+        [
+          {
+            name = "package-tool"
+            label = "//src/sys/pkg/bin/package-tool(${host_toolchain})"
+          },
+          {
+            name = "configc"
+            label = "//tools/configc(${host_toolchain})"
+          },
+        ]) {
+  tool_desc = {
+  }
+  tool_output_name = get_label_info(tool_info.label, "name")
+  tool_output_dir = get_label_info(tool_info.label, "root_out_dir")
+  host_executable = "$tool_output_dir/$tool_output_name"
+
+  if (host_tools_base_path_override != "") {
+    # Use a prebuilt version of the host tool. Assume the tool is already
+    # built so do not add any dependency to the target.
+    host_executable_rebased = host_tools_base_path_override + "/" +
+                              rebase_path(host_executable, root_build_dir)
+    host_executable =
+        "//" + rebase_path(host_executable_rebased, "//", root_build_dir)
+
+    tool_desc = {
+      name = tool_info.name
+      input = host_executable
+      rebased = host_executable_rebased
+    }
+  } else {
+    # Use the compilation dep for the tool
+    tool_desc = {
+      name = tool_info.name
+      dep = tool_info.label
+      input = host_executable
+      rebased = rebase_path(host_executable, root_build_dir)
+    }
+  }
+
+  # Setup useful variables for each of these tools.  Because we don't have the
+  # ability in GN to reference scope variables by name in L-value contexts, we
+  # need to do this odd bit of logic.
+
+  if (tool_info.name == "package-tool") {
+    # Setup a variable for the description of the package-tool
+    _tools_package_tool = tool_desc
+  } else if (tool_info.name == "configc") {
+    # Setup a variable for the description of the configc tool
+    _tools_configc = tool_desc
+  }
+}
 
 # Defines a Fuchsia package.
 # See: https://fuchsia.dev/fuchsia-src/development/components/build
@@ -159,6 +220,8 @@ import("//tools/configc/build/config.gni")
 #   visibility
 template("fuchsia_package") {
   if (current_toolchain == target_toolchain) {
+    main_target = target_name
+
     package_name = target_name
     if (defined(invoker.package_name)) {
       package_name = invoker.package_name
@@ -169,20 +232,35 @@ template("fuchsia_package") {
       repository = invoker.repository
     }
 
-    _files = {
-      fini_manifest = "$target_out_dir/${target_name}_manifest"
+    verify_elf = !(defined(invoker.disable_elf_binaries_checks) &&
+                   invoker.disable_elf_binaries_checks)
 
-      # LINT.IfChange
-      package_out_dir = "$target_out_dir/$target_name"
-      package_manifest = "$package_out_dir/package_manifest.json"
-
-      # LINT.ThenChange(//build/packages/exported_fuchsia_package_archive.gni)
+    _validate_structured_config = true
+    if (defined(invoker.validate_structured_config)) {
+      _validate_structured_config = invoker.validate_structured_config
     }
 
-    main_target_deps = []
+    _labels = {
+      dist_manifest = "${target_name}.dist"
+      build_target = "${target_name}.pkg"
+    }
+
+    _files = {
+      dist_manifest = "${target_out_dir}/${target_name}.dist"
+      fini_manifest = "${target_out_dir}/${target_name}.manifest"
+
+      # LINT.IfChange
+      package_out_dir = "${target_out_dir}/$target_name"
+      package_manifest = "${package_out_dir}/package_manifest.json"
+
+      # LINT.ThenChange(//build/packages/exported_fuchsia_package_archive.gni)
+
+      blobs_json = "${package_out_dir}/blobs.json"
+      blobs_manifest = "${package_out_dir}/blobs.manifest"
+    }
 
     # Generate the "meta/package" file
-    meta_package_target = "${target_name}_meta_package"
+    meta_package_target = "${target_name}.meta_package"
     generate_meta_package(meta_package_target) {
       forward_variables_from(invoker,
                              [
@@ -193,6 +271,7 @@ template("fuchsia_package") {
       package_name = package_name
     }
 
+    # Generate the subpackages manifest
     if (defined(invoker.subpackages) ||
         defined(invoker.renameable_subpackages) ||
         defined(invoker.test_pkg__subpackages) ||
@@ -226,88 +305,148 @@ template("fuchsia_package") {
       }
 
       # Generate the "meta/fuchsia.pkg/subpackages" file
-      meta_subpackages_target = "${target_name}_meta_subpackages"
+      meta_subpackages_target = "${target_name}.meta_subpackages"
       generate_meta_subpackages(meta_subpackages_target) {
         forward_variables_from(invoker, [ "testonly" ])
         visibility = [ ":*" ]
         subpackages = subpackages_list
       }
+      meta_subpackages_outputs =
+          get_target_outputs(":${meta_subpackages_target}")
+      meta_subpackages_file = meta_subpackages_outputs[0]
     }
 
-    # Generate package .fini manifest
-    package_manifest_target = "${target_name}_manifest"
-    fini_manifest(package_manifest_target) {
+    # Get a JSON manifest of all runtime objects.
+    # Gather metadata about runtime objects.
+    distribution_manifest_generated_file("${_labels.dist_manifest}") {
       forward_variables_from(invoker,
                              [
                                "applicable_licenses",
                                "deps",
                                "testonly",
                              ])
+
+      visibility = [ ":${_labels.build_target}" ]
+
+      # Include the meta/package file in the set of resources to include in the package
       if (!defined(deps)) {
         deps = []
       }
-
       deps += [ ":$meta_package_target" ]
-      visibility = [ ":*" ]
-      outputs = [ _files.fini_manifest ]
+
+      outputs = [ _files.dist_manifest ]
     }
 
-    # Verify ELF binaries
-    verify_elf = !(defined(invoker.disable_elf_binaries_checks) &&
-                   invoker.disable_elf_binaries_checks)
-    if (verify_elf) {
-      package_manifest_verify_target = "${target_name}.verify"
-      verify_manifest_elf_binaries(package_manifest_verify_target) {
-        forward_variables_from(invoker,
-                               [
-                                 "applicable_licenses",
-                                 "testonly",
-                               ])
-        manifest = _files.fini_manifest
-        deps = [ ":$package_manifest_target" ]
-      }
+    metadata_target_name = "${target_name}.metadata"
+    define_package_metadata(metadata_target_name) {
+      package_name = package_name
+      snapshot_entry = "$package_name/0=" +
+                       rebase_path("${_files.blobs_json}", root_build_dir)
+      blob_manifest = _files.blobs_manifest
+      package_output_manifest = _files.package_manifest
     }
 
-    _package_build_target = "${target_name}.pkg"
-    _validate_structured_config = true
-    if (defined(invoker.validate_structured_config)) {
-      _validate_structured_config = invoker.validate_structured_config
-    }
-    if (_validate_structured_config) {
-      _validate_config_target = "${target_name}.validate_config"
-      validate_packaged_config(_validate_config_target) {
-        forward_variables_from(invoker,
-                               [
-                                 "applicable_licenses",
-                                 "testonly",
-                               ])
-        package_manifest = _files.package_manifest
-        deps = [ ":$_package_build_target" ]
-      }
-      main_target_deps += [ ":$_validate_config_target" ]
-    }
-
-    _package_target_name = target_name
-
-    # Build package (Generates package_manifest.json).
-    package_tool_package_build(_package_build_target) {
+    # Call the wrapper script that builds the package
+    action("${_labels.build_target}") {
+      mnemonic = "PACKAGE"
       forward_variables_from(invoker,
                              [
                                "applicable_licenses",
                                "data_deps",
-                               "deps",
                                "testonly",
                                "visibility",
                              ])
-      package_out_dir = _files.package_out_dir
-      manifest = ":$package_manifest_target"
-      if (defined(meta_subpackages_target)) {
-        meta_subpackages = ":$meta_subpackages_target"
+      script = "//build/packages/package_creation_wrapper.py"
+
+      # These are the base deps/inputs/outputs/args for all package creation calls
+      deps = [
+        ":${_labels.dist_manifest}",
+        ":${metadata_target_name}",
+      ]
+      if (defined(_tools_package_tool.dep)) {
+        deps += [ _tools_package_tool.dep ]
       }
+
+      # The invoker deps are added here (as well as to the dist manifest above)
+      # so that barriers specified in invoker.metadata will work correctly.
+      if (defined(invoker.deps)) {
+        deps += invoker.deps
+      }
+      inputs = [
+        # GN metadata on package entries
+        _files.dist_manifest,
+
+        # package tool binary
+        _tools_package_tool.input,
+      ]
+      depfile = "${target_out_dir}/${target_name}.d"
+      outputs = [
+        _files.package_manifest,
+        "${_files.package_out_dir}/meta.far",
+        "${_files.package_out_dir}/blobs.json",
+        "${_files.package_out_dir}/blobs.manifest",
+
+        # Intermediate outputs written
+        _files.fini_manifest,
+        "${_files.package_out_dir}/meta.far.d",
+      ]
+      args = [
+        "--distribution-manifest",
+        rebase_path(_files.dist_manifest, root_build_dir),
+        "--fini-manifest",
+        rebase_path(_files.fini_manifest, root_build_dir),
+        "--package-tool",
+        _tools_package_tool.rebased,
+        "--output-dir",
+        rebase_path(_files.package_out_dir, root_build_dir),
+        "--repository",
+        repository,
+        "--api-level",
+        "${current_build_target_api_level}",
+        "--depfile",
+        rebase_path(depfile, root_build_dir),
+      ]
+
+      if (defined(meta_subpackages_target)) {
+        deps += [ ":${meta_subpackages_target}" ]
+        inputs += [ meta_subpackages_file ]
+        args += [
+          "--subpackages-manifest",
+          rebase_path(meta_subpackages_file, root_build_dir),
+        ]
+      }
+
+      if (verify_elf) {
+        inputs += [
+          "//build/dist/verify_manifest_elf_binaries.py",
+          "//build/dist/distribution_manifest.py",
+          "//build/images/elfinfo.py",
+        ]
+        args += [
+          "--verify-elf-binaries",
+          "--toolchain-lib-dir=${rebased_clang_dir}/lib",
+          "--toolchain-lib-dir=${rebased_rustc_prefix}/lib",
+        ]
+      }
+
+      if (_validate_structured_config) {
+        if (defined(_tools_configc.dep)) {
+          deps += [ _tools_configc.dep ]
+        }
+        inputs += [ _tools_configc.input ]
+        args += [
+          "--validate-structured-config",
+          _tools_configc.rebased,
+        ]
+      }
+
       metadata = {
         if (defined(invoker.metadata)) {
           forward_variables_from(invoker.metadata, "*")
         }
+
+        # Only report this package's metadata (and not say, any subpackage's metadata)
+        package_barrier = [ ":${metadata_target_name}" ]
 
         # Installing a Fuchsia package into another one should not also install
         # its content to the root install location, which is why this metadata key
@@ -324,24 +463,13 @@ template("fuchsia_package") {
         test_component_manifest_program_barrier = []
         expect_includes_barrier = []
       }
-      repository = repository
-      if (!defined(deps)) {
-        deps = []
-      }
-      if (verify_elf) {
-        deps += [ ":$package_manifest_verify_target" ]
-      }
 
       # Ensure that even if the top-level package restricts its visibility,
-      # this package_tool_package_build target is visible to the top-level
-      # package.
+      # this action is visible to the main target group.
       if (defined(visibility)) {
-        visibility += [ ":${_package_target_name}" ]
-        if (_validate_structured_config) {
-          visibility += [ ":${_validate_config_target}" ]
-        }
+        visibility += [ ":${main_target}" ]
       } else {
-        not_needed([ "_package_target_name" ])
+        not_needed([ "main_target" ])
       }
     }
 
@@ -351,10 +479,9 @@ template("fuchsia_package") {
                                "testonly",
                                "visibility",
                              ])
-      public_deps = [ ":$_package_build_target" ]
-      deps = main_target_deps
+      public_deps = [ ":${_labels.build_target}" ]
       if (defined(invoker.package_deps)) {
-        deps += invoker.package_deps
+        deps = invoker.package_deps
       }
     }
   } else {
