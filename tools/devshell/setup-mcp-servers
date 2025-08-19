@@ -1,0 +1,56 @@
+#!/bin/bash
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Registers or removes a set of MCP servers from the gemini extension settings.
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
+fx-config-read
+
+show_help() {
+  cat <<EOF
+Usage: $0 [options]
+
+Options:
+  --project-only  Apply settings to the project only.
+  --uninstall     Uninstall the MCP servers.
+  --help          Show this help message.
+EOF
+}
+
+PROJECT_ONLY=false
+UNINSTALL=false
+for arg in "$@"; do
+  case "$arg" in
+    --project-only)
+      PROJECT_ONLY=true
+      shift
+      ;;
+    --uninstall)
+      UNINSTALL=true
+      shift
+      ;;
+    --help)
+      show_help
+      exit 0
+      ;;
+  esac
+done
+
+if [[ "${PROJECT_ONLY}" == "true" ]]; then
+    SETTINGS_PATH="${FUCHSIA_DIR}/.gemini/settings.json"
+    mkdir -p "$(dirname "${SETTINGS_PATH}")"
+else
+    SETTINGS_PATH="${HOME}/.gemini/settings.json"
+    mkdir -p "$(dirname "${SETTINGS_PATH}")"
+fi
+
+PYTHON_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/python/setup_mcp_servers.py"
+PYTHON_ARGS=("${SETTINGS_PATH}" "${FUCHSIA_DIR}")
+
+if [[ "${UNINSTALL}" == "true" ]]; then
+    PYTHON_ARGS+=("--uninstall")
+fi
+
+"${PYTHON_SCRIPT}" "${PYTHON_ARGS[@]}"
