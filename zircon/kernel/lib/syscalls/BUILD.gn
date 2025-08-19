@@ -42,6 +42,8 @@ source_set("impl") {
     "hypervisor.cc",
     "iob.cc",
     "object.cc",
+    "object_info.cc",
+    "object_property.cc",
     "object_wait.cc",
     "pager.cc",
     "port.cc",
