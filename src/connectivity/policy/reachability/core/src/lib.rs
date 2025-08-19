@@ -333,11 +333,7 @@ struct SystemState {
 
 impl SystemState {
     fn max(self, other: Self) -> Self {
-        if other.state.state > self.state.state {
-            other
-        } else {
-            self
-        }
+        if other.state.state > self.state.state { other } else { self }
     }
 }
 
@@ -457,13 +453,32 @@ impl StateInfo {
         let IpVersions { ipv4: system_ipv4, ipv6: system_ipv6 } = self.per_interface.iter().fold(
             {
                 let IpVersions {
-                    ipv4: Delta { previous: _, current: ipv4 },
-                    ipv6: Delta { previous: _, current: ipv6 },
+                    ipv4: Delta { previous: _, current: curr_ipv4 },
+                    ipv6: Delta { previous: _, current: curr_ipv6 },
                 } = port;
-                IpVersions {
-                    ipv4: SystemState { id, state: ipv4 },
-                    ipv6: SystemState { id, state: ipv6 },
-                }
+                // Prioritize the `previous` system state as the initial `SystemState` when it is
+                // present and holds state for a different interface than the one we're updating.
+                // This prevents the `SystemState` from flipping between interfaces when multiple
+                // interfaces have the same state.
+                let ipv4 = previous_system_ipv4
+                    .map(|prev| {
+                        if prev.id != id {
+                            SystemState { id: prev.id, state: prev.state }
+                        } else {
+                            SystemState { id, state: curr_ipv4 }
+                        }
+                    })
+                    .unwrap_or(SystemState { id, state: curr_ipv4 });
+                let ipv6 = previous_system_ipv6
+                    .map(|prev| {
+                        if prev.id != id {
+                            SystemState { id: prev.id, state: prev.state }
+                        } else {
+                            SystemState { id, state: curr_ipv6 }
+                        }
+                    })
+                    .unwrap_or(SystemState { id, state: curr_ipv6 });
+                IpVersions { ipv4, ipv6 }
             },
             |IpVersions { ipv4: system_ipv4, ipv6: system_ipv6 },
              (&id, &IpVersions { ipv4, ipv6 })| {
@@ -2153,8 +2168,7 @@ mod tests {
                             last_observed: zx::MonotonicInstant::default(),
                         })
                     )]
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .collect::<HashMap<fnet::IpAddress, NeighborState>>()
                 }),
                 ping_internet_addr,
@@ -2183,8 +2197,7 @@ mod tests {
                             last_observed: zx::MonotonicInstant::default(),
                         })
                     )]
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .collect::<HashMap<fnet::IpAddress, NeighborState>>()
                 }),
                 ping_internet_addr,
@@ -2213,8 +2226,7 @@ mod tests {
                             last_observed: zx::MonotonicInstant::default(),
                         })
                     )]
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .collect::<HashMap<fnet::IpAddress, NeighborState>>()
                 }),
                 ping_internet_addr,
@@ -2259,8 +2271,7 @@ mod tests {
                             last_observed: zx::MonotonicInstant::default(),
                         })
                     )]
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .collect::<HashMap<fnet::IpAddress, NeighborState>>()
                 }),
                 ping_internet_addr,
@@ -2341,8 +2352,7 @@ mod tests {
                             last_observed: zx::MonotonicInstant::default(),
                         })
                     )]
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .collect::<HashMap<fnet::IpAddress, NeighborState>>()
                 }),
                 ping_internet_addr,
@@ -2367,8 +2377,7 @@ mod tests {
                             last_observed: zx::MonotonicInstant::default(),
                         })
                     )]
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .collect::<HashMap<fnet::IpAddress, NeighborState>>()
                 }),
                 ping_internet_addr
@@ -2393,8 +2402,7 @@ mod tests {
                             last_observed: zx::MonotonicInstant::default(),
                         })
                     )]
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .collect::<HashMap<fnet::IpAddress, NeighborState>>()
                 }),
                 ping_internet_addr,
@@ -2425,8 +2433,7 @@ mod tests {
                             NeighborState::new(NeighborHealth::Unhealthy { last_healthy: None })
                         )
                     ]
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .collect::<HashMap<fnet::IpAddress, NeighborState>>()
                 }),
                 ping_internet_addr,
@@ -2449,8 +2456,7 @@ mod tests {
                         net1_gateway,
                         NeighborState::new(NeighborHealth::Unhealthy { last_healthy: None })
                     )]
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .collect::<HashMap<fnet::IpAddress, NeighborState>>()
                 }),
                 ping_internet_addr,
@@ -2830,7 +2836,7 @@ mod tests {
             &route_table,
             None,
             FakePing {
-                gateway_addrs: [std_ip!("1.2.3.1"), std_ip!("123::1")].iter().cloned().collect(),
+                gateway_addrs: [std_ip!("1.2.3.1"), std_ip!("123::1")].into_iter().collect(),
                 gateway_response: true,
                 internet_response: false,
             },
@@ -2850,7 +2856,7 @@ mod tests {
             &route_table,
             None,
             FakePing {
-                gateway_addrs: [std_ip!("1.2.3.1"), std_ip!("123::1")].iter().cloned().collect(),
+                gateway_addrs: [std_ip!("1.2.3.1"), std_ip!("123::1")].into_iter().collect(),
                 gateway_response: true,
                 internet_response: true,
             },
@@ -2865,15 +2871,15 @@ mod tests {
         assert_eq!(got, want);
     }
 
+    fn update_delta(port: Delta<StateEvent>, system: Delta<SystemState>) -> StateDelta {
+        StateDelta {
+            port: IpVersions { ipv4: port.clone(), ipv6: port },
+            system: IpVersions { ipv4: system.clone(), ipv6: system },
+        }
+    }
+
     #[test]
     fn test_state_info_update() {
-        fn update_delta(port: Delta<StateEvent>, system: Delta<SystemState>) -> StateDelta {
-            StateDelta {
-                port: IpVersions { ipv4: port.clone(), ipv6: port },
-                system: IpVersions { ipv4: system.clone(), ipv6: system },
-            }
-        }
-
         let if1_local_event = StateEvent::construct(LinkState::Local);
         let if1_local = IpVersions::<StateEvent>::construct(if1_local_event);
         // Post-update the system state should be Local due to interface 1.
@@ -2903,8 +2909,7 @@ mod tests {
         assert_eq!(state.update(ID2, if2_gateway.clone()), want);
         let want_state = StateInfo {
             per_interface: [(ID1, if1_local.clone()), (ID2, if2_gateway.clone())]
-                .iter()
-                .cloned()
+                .into_iter()
                 .collect::<HashMap<_, _>>(),
             system: IpVersions { ipv4: Some(ID2), ipv6: Some(ID2) },
         };
@@ -2924,10 +2929,68 @@ mod tests {
         assert_eq!(state.update(ID2, if2_removed.clone()), want);
         let want_state = StateInfo {
             per_interface: [(ID1, if1_local.clone()), (ID2, if2_removed.clone())]
-                .iter()
-                .cloned()
+                .into_iter()
                 .collect::<HashMap<_, _>>(),
             system: IpVersions { ipv4: Some(ID1), ipv6: Some(ID1) },
+        };
+        assert_eq!(state, want_state);
+    }
+
+    // Regression test against https://fxbug.dev/439597080
+    // Confirm that a new event with the same state as the current system state does not change
+    // the id of the system state value.
+    #[test]
+    fn test_state_info_update_same_link_state() {
+        let if_local_event = StateEvent::construct(LinkState::Local);
+        let if_local = IpVersions::<StateEvent>::construct(if_local_event);
+        // Post-update the system state should be Local due to interface 1.
+        let mut state = StateInfo::default();
+        let want = update_delta(
+            Delta { previous: None, current: if_local_event },
+            Delta { previous: None, current: SystemState { id: ID1, state: if_local_event } },
+        );
+        assert_eq!(state.update(ID1, if_local.clone()), want);
+        let want_state = StateInfo {
+            per_interface: std::iter::once((ID1, if_local.clone())).collect::<HashMap<_, _>>(),
+            system: IpVersions { ipv4: Some(ID1), ipv6: Some(ID1) },
+        };
+        assert_eq!(state, want_state);
+
+        // Post-update the system state should be the same due to the interface 2 having the
+        // same state.
+        let want = update_delta(
+            Delta { previous: None, current: if_local_event },
+            Delta {
+                previous: Some(SystemState { id: ID1, state: if_local_event }),
+                current: SystemState { id: ID1, state: if_local_event },
+            },
+        );
+        assert_eq!(state.update(ID2, if_local.clone()), want);
+        let want_state = StateInfo {
+            per_interface: [(ID1, if_local.clone()), (ID2, if_local.clone())]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
+            system: IpVersions { ipv4: Some(ID1), ipv6: Some(ID1) },
+        };
+        assert_eq!(state, want_state);
+
+        // Post-update the system state should reflect interface 2 having the system state since
+        // interface 1 is now at a strictly worse state.
+        let if_removed_event = StateEvent::construct(LinkState::Removed);
+        let if_removed = IpVersions::<StateEvent>::construct(if_removed_event);
+        let want = update_delta(
+            Delta { previous: Some(if_local_event), current: if_removed_event },
+            Delta {
+                previous: Some(SystemState { id: ID1, state: if_local_event }),
+                current: SystemState { id: ID2, state: if_local_event },
+            },
+        );
+        assert_eq!(state.update(ID1, if_removed.clone()), want);
+        let want_state = StateInfo {
+            per_interface: [(ID1, if_removed.clone()), (ID2, if_local.clone())]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
+            system: IpVersions { ipv4: Some(ID2), ipv6: Some(ID2) },
         };
         assert_eq!(state, want_state);
     }
