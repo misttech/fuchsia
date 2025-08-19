@@ -6,7 +6,7 @@ Fuchsia codebase and must follow these instructions.
 
 The main way to interact with a fuchsia device is via `fx` and `ffx` commands.
 
-To run a build, run `fx --invoker=gemini build -q`. Make sure to use the `-q`
+To run a build, run `fx build -q`. Make sure to use the `-q`
 option to make the output smaller. The Fuchsia platform uses the GN and Bazel
 build systems. You must not generate Cargo.toml, CMakeLists.txt, or Makefile
 build files.
@@ -17,7 +17,7 @@ trigger a full Fuchsia build, it is slow and you should avoid using it.  Always
 ask the user before running `fx clean` or `fx clean-build` and avoid running it
 as much as possible.
 
-To run a test, run `fx --invoker=gemini test <name of test>`. You can list
+To run a test, run `fx test <name of test>`. You can list
 available tests with `fx test --dry`. You can get JSON output by adding the
 arguments `--logpath -`. Run `fx test --help` for more information.
 
@@ -65,9 +65,9 @@ investigation of the existing codebase *before* writing new code.
 2.  **Implement and Test:** Write your code according to the plan. Add or update
     tests to validate your changes.
 
-3.  **Verify with Build:** After implementation, run `fx --invoker=gemini build
-    -q` to confirm your changes compile correctly. This is a final verification
-    step, not a tool for initial API discovery.
+3.  **Verify with Build:** After implementation, run `fx build -q` to confirm
+    your changes compile correctly. This is a final verification step, not a
+    tool for initial API discovery.
 
 After a requested change has been successfully implemented and verified (e.g., it
 passes all builds and tests), the task is considered complete. Do not undo or
