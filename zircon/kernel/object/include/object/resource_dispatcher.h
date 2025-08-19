@@ -11,10 +11,9 @@
 #include <sys/types.h>
 #include <zircon/compiler.h>
 #include <zircon/rights.h>
+#include <zircon/syscalls/object.h>
 #include <zircon/syscalls/resource.h>
 #include <zircon/types.h>
-
-#include <array>
 
 #include <fbl/intrusive_double_list.h>
 #include <fbl/name.h>
@@ -86,6 +85,8 @@ class ResourceDispatcher final
   [[nodiscard]] zx_status_t set_name(const char* name, size_t size) final {
     return name_.set(name, size);
   }
+
+  zx_info_resource_t GetInfo() const;
 
   uint64_t get_base() const { return base_; }
   size_t get_size() const { return size_; }

@@ -163,6 +163,16 @@ uint64_t BusTransactionInitiatorDispatcher::quarantine_count() const {
   return quarantine_.size_slow();
 }
 
+zx_info_bti_t BusTransactionInitiatorDispatcher::GetInfo() const {
+  zx_info_bti_t info = {
+      .minimum_contiguity = minimum_contiguity(),
+      .aspace_size = aspace_size(),
+      .pmo_count = pmo_count(),
+      .quarantine_count = quarantine_count(),
+  };
+  return info;
+}
+
 void BusTransactionInitiatorDispatcher::PrintQuarantineWarningLocked(BtiPageLeakReason reason) {
   uint64_t leaked_pages = 0;
   size_t num_entries = 0;

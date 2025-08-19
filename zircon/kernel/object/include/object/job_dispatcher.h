@@ -22,6 +22,8 @@
 #include <object/job_policy.h>
 #include <object/process_dispatcher.h>
 
+#include "zircon/syscalls/object.h"
+
 class JobNode;
 
 // Job signal that is active when a job has no children (i.e., no child jobs and no child
@@ -179,6 +181,7 @@ class JobDispatcher final
   // This includes runtime for threads that previously ran under those processes, but it does not
   // include runtime for child jobs.
   TaskRuntimeStats GetTaskRuntimeStats() const;
+  zx_info_task_runtime_t GetRuntimeStats() const { return GetTaskRuntimeStats(); }
 
   uint32_t LockOrder() const;
 

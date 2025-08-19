@@ -6,7 +6,6 @@
 
 #include "object/resource_dispatcher.h"
 
-#include <inttypes.h>
 #include <lib/counters.h>
 #include <string.h>
 #include <trace.h>
@@ -300,6 +299,18 @@ zx_status_t ResourceDispatcher::InitializeAllocator(zx_rsrc_kind_t kind, uint64_
   LTRACEF("%s added [%#lx, %zu) size = %#lx to %s allocator: %d\n", kLogTag, base, base + size,
           size, kind_to_string(kind), status);
   return status;
+}
+
+zx_info_resource_t ResourceDispatcher::GetInfo() const {
+  zx_info_resource_t info = {
+      .kind = get_kind(),
+      .flags = get_flags(),
+      .base = get_base(),
+      .size = get_size(),
+  };
+  zx_status_t status = get_name(info.name);
+  DEBUG_ASSERT(status == ZX_OK);
+  return info;
 }
 
 void ResourceDispatcher::DumpResources() {

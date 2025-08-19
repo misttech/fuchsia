@@ -9,6 +9,7 @@
 
 #include <sys/types.h>
 #include <zircon/rights.h>
+#include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
 #include <object/dispatcher.h>
@@ -46,6 +47,8 @@ class VmAddressRegionDispatcher final
   zx_status_t Unmap(vaddr_t base, size_t len, VmAddressRegionOpChildren op_children);
 
   zx_status_t SetMemoryPriority(VmAddressRegion::MemoryPriority priority);
+
+  zx_info_vmar_t GetVmarInfo() const;
 
   const fbl::RefPtr<VmAddressRegion>& vmar() const { return vmar_; }
 

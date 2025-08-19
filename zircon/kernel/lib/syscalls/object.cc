@@ -12,9 +12,11 @@
 #include <lib/stall.h>
 #include <lib/syscalls/forward.h>
 #include <lib/zircon-internal/macros.h>
+#include <lib/zx/result.h>
 #include <platform.h>
 #include <trace.h>
 #include <zircon/errors.h>
+#include <zircon/rights.h>
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls/iob.h>
 #include <zircon/syscalls/object.h>
@@ -22,7 +24,10 @@
 #include <zircon/time.h>
 #include <zircon/types.h>
 
+#include <cstdint>
+
 #include <fbl/alloc_checker.h>
+#include <fbl/array.h>
 #include <fbl/ref_ptr.h>
 #include <kernel/mp.h>
 #include <kernel/scheduler.h>
@@ -50,6 +55,7 @@
 #include <object/vm_object_dispatcher.h>
 #include <vm/compression.h>
 #include <vm/discardable_vmo_tracker.h>
+#include <vm/memory_stats.h>
 #include <vm/pmm.h>
 #include <vm/vm.h>
 
@@ -98,7 +104,7 @@ class SimpleJobEnumerator final : public JobEnumerator {
   bool RecordKoid(zx_koid_t koid) {
     avail_++;
     if (count_ < max_) {
-      // TODO: accumulate batches and do fewer user copies
+      // TODO: accumulate batches and do fewer user copies.
       if (ptr_.copy_array_to_user(&koid, 1, count_) != ZX_OK) {
         return false;
       }
@@ -114,70 +120,6 @@ class SimpleJobEnumerator final : public JobEnumerator {
   size_t count_ = 0;
   size_t avail_ = 0;
 };
-
-template <typename T>
-inline T VmoInfoToVersion(const zx_info_vmo_t& vmo);
-
-template <>
-inline zx_info_vmo_t VmoInfoToVersion(const zx_info_vmo_t& vmo) {
-  return vmo;
-}
-
-template <>
-inline zx_info_vmo_v1_t VmoInfoToVersion(const zx_info_vmo_t& vmo) {
-  zx_info_vmo_v1_t vmo_v1 = {};
-  vmo_v1.koid = vmo.koid;
-  memcpy(vmo_v1.name, vmo.name, sizeof(vmo.name));
-  vmo_v1.size_bytes = vmo.size_bytes;
-  vmo_v1.parent_koid = vmo.parent_koid;
-  vmo_v1.num_children = vmo.num_children;
-  vmo_v1.num_mappings = vmo.num_mappings;
-  vmo_v1.share_count = vmo.share_count;
-  vmo_v1.flags = vmo.flags;
-  vmo_v1.committed_bytes = vmo.committed_bytes;
-  vmo_v1.handle_rights = vmo.handle_rights;
-  vmo_v1.cache_policy = vmo.cache_policy;
-  return vmo_v1;
-}
-
-template <>
-inline zx_info_vmo_v2_t VmoInfoToVersion(const zx_info_vmo_t& vmo) {
-  zx_info_vmo_v2_t vmo_v2 = {};
-  vmo_v2.koid = vmo.koid;
-  memcpy(vmo_v2.name, vmo.name, sizeof(vmo.name));
-  vmo_v2.size_bytes = vmo.size_bytes;
-  vmo_v2.parent_koid = vmo.parent_koid;
-  vmo_v2.num_children = vmo.num_children;
-  vmo_v2.num_mappings = vmo.num_mappings;
-  vmo_v2.share_count = vmo.share_count;
-  vmo_v2.flags = vmo.flags;
-  vmo_v2.committed_bytes = vmo.committed_bytes;
-  vmo_v2.handle_rights = vmo.handle_rights;
-  vmo_v2.cache_policy = vmo.cache_policy;
-  vmo_v2.metadata_bytes = vmo.metadata_bytes;
-  vmo_v2.committed_change_events = vmo.committed_change_events;
-  return vmo_v2;
-}
-
-template <>
-inline zx_info_vmo_v3_t VmoInfoToVersion(const zx_info_vmo_t& vmo) {
-  zx_info_vmo_v3_t vmo_v3 = {};
-  vmo_v3.koid = vmo.koid;
-  memcpy(vmo_v3.name, vmo.name, sizeof(vmo.name));
-  vmo_v3.size_bytes = vmo.size_bytes;
-  vmo_v3.parent_koid = vmo.parent_koid;
-  vmo_v3.num_children = vmo.num_children;
-  vmo_v3.num_mappings = vmo.num_mappings;
-  vmo_v3.share_count = vmo.share_count;
-  vmo_v3.flags = vmo.flags;
-  vmo_v3.committed_bytes = vmo.committed_bytes;
-  vmo_v3.handle_rights = vmo.handle_rights;
-  vmo_v3.cache_policy = vmo.cache_policy;
-  vmo_v3.metadata_bytes = vmo.metadata_bytes;
-  vmo_v3.committed_change_events = vmo.committed_change_events;
-  vmo_v3.populated_bytes = vmo.populated_bytes;
-  return vmo_v3;
-}
 
 // Specialize the VmoInfoWriter to work for any T that is a subset of zx_info_vmo_t. This is
 // currently true for v1 and v2 (v2 being the current version). Being a subset the full
@@ -204,45 +146,6 @@ class SubsetVmoInfoWriter : public VmoInfoWriter {
 };
 
 template <typename T>
-inline T MapsInfoToVersion(const zx_info_maps_t& maps);
-
-template <>
-inline zx_info_maps_t MapsInfoToVersion(const zx_info_maps_t& maps) {
-  return maps;
-}
-
-template <>
-inline zx_info_maps_v1_t MapsInfoToVersion(const zx_info_maps_t& maps) {
-  zx_info_maps_v1_t maps_v1 = {};
-  memcpy(maps_v1.name, maps.name, sizeof(maps.name));
-  maps_v1.base = maps.base;
-  maps_v1.size = maps.size;
-  maps_v1.depth = maps.depth;
-  maps_v1.type = maps.type;
-  maps_v1.u.mapping.mmu_flags = maps.u.mapping.mmu_flags;
-  maps_v1.u.mapping.vmo_koid = maps.u.mapping.vmo_koid;
-  maps_v1.u.mapping.vmo_offset = maps.u.mapping.vmo_offset;
-  maps_v1.u.mapping.committed_pages = maps.u.mapping.committed_bytes >> PAGE_SIZE_SHIFT;
-  return maps_v1;
-}
-
-template <>
-inline zx_info_maps_v2_t MapsInfoToVersion(const zx_info_maps_t& maps) {
-  zx_info_maps_v2_t maps_v2 = {};
-  memcpy(maps_v2.name, maps.name, sizeof(maps.name));
-  maps_v2.base = maps.base;
-  maps_v2.size = maps.size;
-  maps_v2.depth = maps.depth;
-  maps_v2.type = maps.type;
-  maps_v2.u.mapping.mmu_flags = maps.u.mapping.mmu_flags;
-  maps_v2.u.mapping.vmo_koid = maps.u.mapping.vmo_koid;
-  maps_v2.u.mapping.vmo_offset = maps.u.mapping.vmo_offset;
-  maps_v2.u.mapping.committed_pages = maps.u.mapping.committed_bytes >> PAGE_SIZE_SHIFT;
-  maps_v2.u.mapping.populated_pages = maps.u.mapping.populated_bytes >> PAGE_SIZE_SHIFT;
-  return maps_v2;
-}
-
-template <typename T>
 class SubsetVmarMapsInfoWriter : public VmarMapsInfoWriter {
  public:
   SubsetVmarMapsInfoWriter(user_out_ptr<T> out) : out_(out) {}
@@ -264,26 +167,137 @@ class SubsetVmarMapsInfoWriter : public VmarMapsInfoWriter {
   size_t base_offset_ = 0;
 };
 
-// Copies a single record, |src_record|, into the user buffer |dst_buffer| of size
-// |dst_buffer_size|.
-//
-// If the copy succeeds, the value 1 is copied into |user_avail| and |user_actual| (if non-null).
-//
-// If the copy fails because the buffer it too small, |user_avail| and |user_actual| will receive
-// the values 1 and 0 respectively (if non-null).
-template <typename T>
-zx_status_t single_record_result(user_out_ptr<void> dst_buffer, size_t dst_buffer_size,
-                                 user_out_ptr<size_t> user_actual, user_out_ptr<size_t> user_avail,
-                                 const T& src_record) {
-  size_t avail = 1;
-  size_t actual;
-  if (dst_buffer_size >= sizeof(T)) {
-    if (dst_buffer.reinterpret<T>().copy_to_user(src_record) != ZX_OK)
-      return ZX_ERR_INVALID_ARGS;
-    actual = 1;
-  } else {
-    actual = 0;
+// TODO: figure out a better handle to hang this off to and push this copy code into
+// that dispatcher.
+zx_info_cpu_stats_t GetCPUStats(uint32_t cpu_num) {
+  const auto* cpu = &percpu::Get(cpu_num);
+
+  // copy the per cpu stats from the kernel percpu structure
+  // NOTE: it's technically racy to read this without grabbing a lock
+  // but since each field is wordwise any sane architecture will not
+  // return a corrupted value.
+  zx_info_cpu_stats_t stats = {};
+  stats.cpu_number = cpu_num;
+  stats.flags = mp_is_cpu_online(cpu_num) ? ZX_INFO_CPU_STATS_FLAG_ONLINE : 0;
+
+  // account for idle time if a cpu is currently idle
+  {
+    const Thread& idle_power_thread = cpu->idle_power_thread.thread();
+    SingleChainLockGuard guard{IrqSaveOption, idle_power_thread.get_lock(),
+                               CLT_TAG("ZX_INFO_CPU_STATS idle time rollup")};
+    zx_time_t idle_time = cpu->stats.idle_time;
+    const bool is_idle = Scheduler::PeekIsIdle(cpu_num);
+    if (is_idle) {
+      zx_duration_mono_t recent_idle = zx_time_sub_time(
+          current_mono_time(), idle_power_thread.scheduler_state().last_started_running());
+      idle_time = zx_duration_add_duration(idle_time, recent_idle);
+    }
+    stats.idle_time = idle_time;
   }
+
+  stats.reschedules = cpu->stats.reschedules;
+  stats.context_switches = cpu->stats.context_switches;
+  stats.irq_preempts = cpu->stats.irq_preempts;
+  stats.preempts = cpu->stats.preempts;
+  stats.yields = cpu->stats.yields;
+  stats.ints = cpu->stats.interrupts;
+  stats.timer_ints = cpu->stats.timer_ints;
+  stats.timers = cpu->stats.timers;
+  stats.page_faults = cpu->stats.page_faults;
+  stats.exceptions = 0;  // deprecated, use "kcounter" command for now.
+  stats.syscalls = cpu->stats.syscalls;
+  stats.reschedule_ipis = cpu->stats.reschedule_ipis;
+  stats.generic_ipis = cpu->stats.generic_ipis;
+
+  return stats;
+}
+
+zx_info_guest_stats_t GetGuestCPUStats(uint32_t cpu_num) {
+  const auto* cpu = &percpu::Get(cpu_num);
+  zx_info_guest_stats_t stats = {};
+  stats.cpu_number = cpu_num;
+  stats.flags = mp_is_cpu_online(cpu_num) ? ZX_INFO_CPU_STATS_FLAG_ONLINE : 0;
+
+  stats.vm_entries = cpu->gstats.vm_entries;
+  stats.vm_exits = cpu->gstats.vm_exits;
+#ifdef __aarch64__
+  stats.wfi_wfe_instructions = cpu->gstats.wfi_wfe_instructions;
+  stats.system_instructions = cpu->gstats.system_instructions;
+  stats.instruction_aborts = cpu->gstats.instruction_aborts;
+  stats.data_aborts = cpu->gstats.data_aborts;
+  stats.smc_instructions = cpu->gstats.smc_instructions;
+  stats.interrupts = cpu->gstats.interrupts;
+#elif defined(__x86_64__)
+  stats.vmcall_instructions = cpu->gstats.vmcall_instructions;
+  stats.pause_instructions = cpu->gstats.pause_instructions;
+  stats.xsetbv_instructions = cpu->gstats.xsetbv_instructions;
+  stats.ept_violations = cpu->gstats.ept_violations;
+  stats.wrmsr_instructions = cpu->gstats.wrmsr_instructions;
+  stats.rdmsr_instructions = cpu->gstats.rdmsr_instructions;
+  stats.io_instructions = cpu->gstats.io_instructions;
+  stats.control_register_accesses = cpu->gstats.control_register_accesses;
+  stats.hlt_instructions = cpu->gstats.hlt_instructions;
+  stats.cpuid_instructions = cpu->gstats.cpuid_instructions;
+  stats.interrupt_windows = cpu->gstats.interrupt_windows;
+  stats.interrupts = cpu->gstats.interrupts;
+#endif
+  return stats;
+}
+
+zx::result<zx_info_process_handle_stats_t> GetHandleStats(ProcessDispatcher* process) {
+  zx_info_process_handle_stats_t info = {};
+  static_assert(ktl::size(info.handle_count) >= ZX_OBJ_TYPE_UPPER_BOUND,
+                "Need room for each handle type.");
+
+  process->handle_table().ForEachHandle(
+      [&](zx_handle_t handle, zx_rights_t rights, const Dispatcher* dispatcher) {
+        ++info.handle_count[dispatcher->get_type()];
+        return ZX_OK;
+      });
+  return zx::ok(info);
+}
+
+zx::result<fbl::Array<zx_power_domain_info_t>> GetPowerDomainsInfo(size_t max_copy) {
+  // Alternatively clamp `max_copy` to `arch_max_num_cpus()`.
+  size_t power_domain_count = 0;
+  power_management::KernelPowerDomainRegistry::Visit(
+      [&power_domain_count](const auto& power_domain) { ++power_domain_count; });
+
+  // Avoid arbitrary large buffers.
+  max_copy = ktl::min(power_domain_count, max_copy);
+
+  ktl::unique_ptr<zx_power_domain_info_t[]> entries = nullptr;
+  if (max_copy > 0) {
+    fbl::AllocChecker ac;
+    entries = ktl::make_unique<zx_power_domain_info_t[]>(&ac, max_copy);
+    if (!ac.check()) {
+      return zx::error(ZX_ERR_NO_MEMORY);
+    }
+  }
+  // Reset the count, in case we are racing against an update, so we can return somewhat
+  // consistent `avail`.
+  power_domain_count = 0;
+  power_management::KernelPowerDomainRegistry::Visit(
+      [&power_domain_count, &entries, max_copy](const power_management::PowerDomain& domain) {
+        if (power_domain_count < max_copy) {
+          zx_power_domain_info_t& entry = entries[power_domain_count];
+          entry = {
+              .cpus = domain.cpus(),
+              .domain_id = domain.id(),
+              .idle_power_levels = static_cast<uint8_t>(domain.model().idle_levels().size()),
+              .active_power_levels = static_cast<uint8_t>(domain.model().active_levels().size()),
+          };
+        }
+        power_domain_count++;
+      });
+
+  return zx::ok(fbl::Array{entries.release(), power_domain_count});
+}
+
+// Copies to usermode the actual (number of records written) and the avail (number of records
+// available).
+zx_status_t actual_avail_result(size_t actual, size_t avail, user_out_ptr<size_t> user_actual,
+                                user_out_ptr<size_t> user_avail) {
   if (user_actual) {
     zx_status_t status = user_actual.copy_to_user(actual);
     if (status != ZX_OK)
@@ -294,33 +308,328 @@ zx_status_t single_record_result(user_out_ptr<void> dst_buffer, size_t dst_buffe
     if (status != ZX_OK)
       return status;
   }
-  if (actual == 0)
-    return ZX_ERR_BUFFER_TOO_SMALL;
   return ZX_OK;
 }
 
-#if ARCH_X86
-zx_status_t RequireCurrentThread(fbl::RefPtr<Dispatcher> dispatcher) {
-  auto thread_dispatcher = DownCastDispatcher<ThreadDispatcher>(&dispatcher);
-  if (!thread_dispatcher) {
-    return ZX_ERR_WRONG_TYPE;
+// Copies a single record, |src_record|, into the user buffer |dst_buffer| of size
+// |dst_buffer_size|. If the copy succeeds, the value 1 is copied into |user_avail|.
+template <typename T>
+zx_status_t single_record_result(user_out_ptr<void> dst_buffer, size_t dst_buffer_size,
+                                 user_out_ptr<size_t> user_actual, user_out_ptr<size_t> user_avail,
+                                 const T& src_record) {
+  size_t actual = 1;
+  if (dst_buffer_size >= sizeof(T)) {
+    if (dst_buffer.reinterpret<T>().copy_to_user(src_record) != ZX_OK) {
+      return ZX_ERR_INVALID_ARGS;
+    }
+  } else {
+    actual = 0;
   }
-  if (thread_dispatcher.get() != ThreadDispatcher::GetCurrent()) {
-    return ZX_ERR_ACCESS_DENIED;
+  zx_status_t st = actual_avail_result(actual, 1, user_actual, user_avail);
+  if (st != ZX_OK) {
+    return st;
+  }
+  if (actual == 0) {
+    return ZX_ERR_BUFFER_TOO_SMALL;
   }
   return ZX_OK;
 }
-#endif
+
+// Copies to usermode an (fbl) array of results to |dst_buffer| up to |dst_buffer_size|. It uses
+// actual_avail_result() to copy to usermode the available and actual copied records.
+template <typename T>
+zx_status_t multi_record_result(user_out_ptr<void> dst_buffer, size_t dst_buffer_size,
+                                user_out_ptr<size_t> user_actual, user_out_ptr<size_t> user_avail,
+                                const fbl::Array<T>& src_array) {
+  size_t avail = src_array.size();
+  size_t num_space_for = dst_buffer_size / sizeof(T);
+  size_t actual = ktl::min(avail, num_space_for);
+  // Don't try to copy if there are no bytes to copy, as the "is
+  // user space" check may not handle (_buffer == NULL and len == 0).
+  if (actual && dst_buffer.reinterpret<T>().copy_array_to_user(src_array.data(), actual) != ZX_OK) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  return actual_avail_result(actual, avail, user_actual, user_avail);
+}
+
+// Base case for converting a struct from current version to older version based on the |topic|.
+// in this base case there is no older version so the conversion is no-op.
+template <int topic>
+inline auto ConvertInfoVersion(const auto& info) {
+  return info;
+}
+
+// The following are specializations of ConvertInfoVersion.
+template <>
+inline auto ConvertInfoVersion<ZX_INFO_TASK_RUNTIME_V1>(const zx_info_task_runtime_t& info) {
+  zx_info_task_runtime_v1_t info_v1 = {
+      .cpu_time = info.cpu_time,
+      .queue_time = info.queue_time,
+  };
+  return info_v1;
+}
+
+template <>
+auto ConvertInfoVersion<ZX_INFO_VMO_V1>(const zx_info_vmo_t& info) {
+  return VmoInfoToVersion<zx_info_vmo_v1_t>(info);
+}
+
+template <>
+auto ConvertInfoVersion<ZX_INFO_VMO_V2>(const zx_info_vmo_t& info) {
+  return VmoInfoToVersion<zx_info_vmo_v2_t>(info);
+}
+
+template <>
+auto ConvertInfoVersion<ZX_INFO_VMO_V3>(const zx_info_vmo_t& info) {
+  return VmoInfoToVersion<zx_info_vmo_v3_t>(info);
+}
+
+template <>
+auto ConvertInfoVersion<ZX_INFO_KMEM_STATS_V1>(const zx_info_kmem_stats_t& info) {
+  return KernelStatsInfoToVersion<zx_info_kmem_stats_v1_t>(info);
+}
+
+template <>
+auto ConvertInfoVersion<ZX_INFO_KMEM_STATS_EXTENDED>(const zx_info_kmem_stats_t& info) {
+  return KernelStatsInfoToVersion<zx_info_kmem_stats_extended_t>(info);
+}
+
+template <>
+auto ConvertInfoVersion<ZX_INFO_THREAD_EXCEPTION_REPORT_V1>(const zx_exception_report_t& info) {
+  // Current second version is an extension of v1; simply copy over the
+  // earlier header and context.arch fields.
+  zx_exception_report_v1_t v1_report = {};
+  v1_report.header = info.header;
+  memcpy(&v1_report.context, &info.context, sizeof(v1_report.context));
+  return v1_report;
+}
+
+template <>
+auto ConvertInfoVersion<ZX_INFO_TASK_STATS_V1>(const zx_info_task_stats_t& info) {
+  zx_info_task_stats_v1 info_v1 = {
+      .mem_mapped_bytes = info.mem_mapped_bytes,
+      .mem_private_bytes = info.mem_private_bytes,
+      .mem_shared_bytes = info.mem_shared_bytes,
+      .mem_scaled_shared_bytes = info.mem_scaled_shared_bytes,
+  };
+  return info_v1;
+}
+
+zx::result<zx_exception_report_t> GetExceptionReport(ThreadDispatcher* thread) {
+  zx_exception_report_t report = {};
+  auto err = thread->GetExceptionReport(&report);
+  if (err != ZX_OK) {
+    return zx::error(err);
+  }
+  return zx::ok(report);
+}
+
+zx::result<zx_info_thread_stats_t> GetThreadStats(ThreadDispatcher* thread) {
+  zx_info_thread_stats_t info = {};
+  auto err = thread->GetStatsForUserspace(&info);
+  if (err != ZX_OK)
+    return zx::error(err);
+  return zx::ok(info);
+}
+
+zx::result<zx_info_handle_count_t> GetHandleCount(Dispatcher* dispatcher) {
+  zx_info_handle_count_t info{
+      .handle_count = Handle::Count(*dispatcher),
+  };
+  return zx::ok(info);
+}
+
+zx::result<uint64_t> GetClockMappedSize(ClockDispatcher* clock) {
+  // Only mappable clocks have a defined mapped size.
+  if (!clock->is_mappable()) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  return zx::ok(ClockDispatcher::kMappedSize);
+}
+
+zx::result<zx_info_task_stats_t> GetProcessStats(ProcessDispatcher* process) {
+  zx_info_task_stats_t info = {};
+  auto err = process->GetStats(&info);
+  if (err != ZX_OK) {
+    return zx::error(err);
+  }
+  return zx::ok(info);
+}
+
+// The following 6 macros are used to generate implementations of zx_object_get_info for
+// all single (non-array) topics. The macros take the following arguments:
+//
+//  id : the topic you want to generate the code for.
+//  Td : The type of required dispatcher.
+//  bs : The resource-base, the kind is assumed to be ZX_RSRC_KIND_SYSTEM.
+//  mf : The "infailble" member function of Td that returns the information.
+//  Fn : A function-like adapter that must return zx::result<info> for the cases
+//       not covered by |mf|
+//
+//  For all the topics (except the ones using OB_GET_INFO_WR and OB_GET_INFO_SR) the required rights
+//  are ZX_RIGHT_INSPECT.
+//
+// These macros rely on the some helper functions above:
+//
+// 1- template<> auto ConvertInfoVersion<topic>(const& current_info_version)
+//    Used for converting from flavors of info, for example from "current" to V1, or V2
+//    this function takes the current version as argument and returns the older version
+//    selected by |topic|.
+//
+// 2- template<info_version> zx_status_t single_record_result(...)
+//    this function writes to the usermode buffers.
+
+// Vanilla version, takes a member function |mf| with no arguments which unconditionally
+// returns the information.
+#define OB_GET_INFO(id, Td, mf)                                                             \
+  if constexpr (topic == (id)) {                                                            \
+    fbl::RefPtr<Td> disp;                                                                   \
+    zx_status_t status =                                                                    \
+        up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &disp);   \
+    if (status != ZX_OK) {                                                                  \
+      return status;                                                                        \
+    }                                                                                       \
+    auto res = ConvertInfoVersion<id>(disp->mf());                                          \
+    return single_record_result(dst_buffer, dst_buffer_size, user_actual, user_avail, res); \
+  }
+
+// Version that takes a member function |mf| which receives the handle rights and unconditionally
+// returns the information. No rights check performed.
+#define OB_GET_INFO_WR(id, Td, mf)                                                               \
+  if constexpr (topic == (id)) {                                                                 \
+    fbl::RefPtr<Td> disp;                                                                        \
+    zx_rights_t rights;                                                                          \
+    zx_status_t status = up->handle_table().GetDispatcherAndRights(*up, handle, &disp, &rights); \
+    if (status != ZX_OK) {                                                                       \
+      return status;                                                                             \
+    }                                                                                            \
+    auto res = ConvertInfoVersion<id>(disp->mf(rights));                                         \
+    return single_record_result(dst_buffer, dst_buffer_size, user_actual, user_avail, res);      \
+  }
+
+// Version that takes a function-like |Fn| which takes a T* and returns zx::result<I>.
+#define OB_GET_INFO_ZR(id, Td, Fn)                                                          \
+  if constexpr (topic == (id)) {                                                            \
+    fbl::RefPtr<Td> disp;                                                                   \
+    zx_status_t status =                                                                    \
+        up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &disp);   \
+    if (status != ZX_OK) {                                                                  \
+      return status;                                                                        \
+    }                                                                                       \
+    auto zr = Fn((disp.get()));                                                             \
+    if (zr.is_error()) {                                                                    \
+      return zr.error_value();                                                              \
+    }                                                                                       \
+    auto res = ConvertInfoVersion<id>(zr.value());                                          \
+    return single_record_result(dst_buffer, dst_buffer_size, user_actual, user_avail, res); \
+  }
+
+// Version that takes a function |fn| and validates the handle using the base |bs| resource
+// of kind ZX_RSRC_KIND_SYSTEM.
+#define OB_GET_INFO_SR(id, Fn, bs)                                                          \
+  if constexpr (topic == (id)) {                                                            \
+    zx_status_t status = validate_ranged_resource(handle, ZX_RSRC_KIND_SYSTEM, bs, 1);      \
+    if (status != ZX_OK) {                                                                  \
+      return status;                                                                        \
+    }                                                                                       \
+    auto res = ConvertInfoVersion<id>(Fn());                                                \
+    return single_record_result(dst_buffer, dst_buffer_size, user_actual, user_avail, res); \
+  }
+
+// Starts a sequence of object-get-info with the same topic |id|.
+#define OB_GET_INFO_BEGIN(id)                                                               \
+  if constexpr (topic == (id)) {                                                            \
+    {                                                                                       \
+      constexpr int ID = id;                                                                \
+      fbl::RefPtr<Dispatcher> disp;                                                         \
+      zx_status_t status =                                                                  \
+          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &disp); \
+      if (status != ZX_OK) {                                                                \
+        return status;                                                                      \
+      }
+
+// Defines an entry within the OB_GET_INFO_BEGIN block, with |Td| being the required Dispatcher
+// type.
+#define OB_GET_INFO_EL(Td, mf)                                                                \
+  {                                                                                           \
+    auto actual = DownCastDispatcher<Td>(&disp);                                              \
+    if (actual) {                                                                             \
+      auto res = ConvertInfoVersion<ID>(actual->mf());                                        \
+      return single_record_result(dst_buffer, dst_buffer_size, user_actual, user_avail, res); \
+    }                                                                                         \
+  }
+
+// Ends the sequence started by OB_GET_INFO_BEGIN.
+#define OB_GET_INFO_END(id)  \
+  static_assert((id) == ID); \
+  }                          \
+  return ZX_ERR_WRONG_TYPE;  \
+  }
+
+template <int topic>
+zx_status_t object_get_info(ProcessDispatcher* up, zx_handle_t handle,
+                            user_out_ptr<void> dst_buffer, size_t dst_buffer_size,
+                            user_out_ptr<size_t> user_actual, user_out_ptr<size_t> user_avail) {
+  // clang-format off
+  OB_GET_INFO(ZX_INFO_PROCESS, ProcessDispatcher, GetInfo)
+  OB_GET_INFO(ZX_INFO_THREAD, ThreadDispatcher, GetInfoForUserspace)
+  OB_GET_INFO(ZX_INFO_JOB, JobDispatcher, GetInfo)
+  OB_GET_INFO(ZX_INFO_TIMER, TimerDispatcher, GetInfo)
+  OB_GET_INFO(ZX_INFO_SOCKET, SocketDispatcher, GetInfo)
+  OB_GET_INFO(ZX_INFO_STREAM, StreamDispatcher, GetInfo)
+  OB_GET_INFO(ZX_INFO_MSI, MsiDispatcher, GetInfo)
+  OB_GET_INFO(ZX_INFO_VCPU, VcpuDispatcher, GetInfo)
+  OB_GET_INFO(ZX_INFO_IOB, IoBufferDispatcher, GetInfo);
+  OB_GET_INFO(ZX_INFO_INTERRUPT, InterruptDispatcher, GetInfo)
+  OB_GET_INFO(ZX_INFO_VMAR, VmAddressRegionDispatcher, GetVmarInfo)
+  OB_GET_INFO(ZX_INFO_RESOURCE, ResourceDispatcher, GetInfo)
+  OB_GET_INFO(ZX_INFO_BTI, BusTransactionInitiatorDispatcher, GetInfo)
+
+  OB_GET_INFO_ZR(ZX_INFO_HANDLE_COUNT, Dispatcher, GetHandleCount)
+  OB_GET_INFO_ZR(ZX_INFO_THREAD_EXCEPTION_REPORT, ThreadDispatcher, GetExceptionReport)
+  OB_GET_INFO_ZR(ZX_INFO_THREAD_EXCEPTION_REPORT_V1, ThreadDispatcher, GetExceptionReport)
+  OB_GET_INFO_ZR(ZX_INFO_THREAD_STATS, ThreadDispatcher, GetThreadStats)
+  OB_GET_INFO_ZR(ZX_INFO_CLOCK_MAPPED_SIZE, ClockDispatcher, GetClockMappedSize)
+  OB_GET_INFO_ZR(ZX_INFO_TASK_STATS, ProcessDispatcher, GetProcessStats)
+  OB_GET_INFO_ZR(ZX_INFO_TASK_STATS_V1, ProcessDispatcher, GetProcessStats)
+  OB_GET_INFO_ZR(ZX_INFO_PROCESS_HANDLE_STATS, ProcessDispatcher, GetHandleStats)
+
+  OB_GET_INFO_BEGIN(ZX_INFO_TASK_RUNTIME);
+  OB_GET_INFO_EL(JobDispatcher, GetRuntimeStats)
+  OB_GET_INFO_EL(ProcessDispatcher, GetRuntimeStats);
+  OB_GET_INFO_EL(ThreadDispatcher, GetRuntimeStats)
+  OB_GET_INFO_END(ZX_INFO_TASK_RUNTIME)
+
+  OB_GET_INFO_BEGIN(ZX_INFO_TASK_RUNTIME_V1);
+  OB_GET_INFO_EL(JobDispatcher, GetRuntimeStats)
+  OB_GET_INFO_EL(ProcessDispatcher, GetRuntimeStats)
+  OB_GET_INFO_EL(ThreadDispatcher, GetRuntimeStats)
+  OB_GET_INFO_END(ZX_INFO_TASK_RUNTIME_V1)
+
+  OB_GET_INFO_WR(ZX_INFO_HANDLE_BASIC, Dispatcher, GetHandleInfo)
+  OB_GET_INFO_WR(ZX_INFO_VMO, VmObjectDispatcher, GetVmoInfo)
+  OB_GET_INFO_WR(ZX_INFO_VMO_V1, VmObjectDispatcher, GetVmoInfo)
+  OB_GET_INFO_WR(ZX_INFO_VMO_V2, VmObjectDispatcher, GetVmoInfo)
+  OB_GET_INFO_WR(ZX_INFO_VMO_V3, VmObjectDispatcher, GetVmoInfo)
+
+  OB_GET_INFO_SR(ZX_INFO_KMEM_STATS, GetMemoryStats, ZX_RSRC_SYSTEM_INFO_BASE)
+  OB_GET_INFO_SR(ZX_INFO_KMEM_STATS_V1, GetMemoryStats, ZX_RSRC_SYSTEM_INFO_BASE)
+  OB_GET_INFO_SR(ZX_INFO_KMEM_STATS_EXTENDED, GetMemoryStats, ZX_RSRC_SYSTEM_INFO_BASE)
+  OB_GET_INFO_SR(ZX_INFO_KMEM_STATS_COMPRESSION, GetCompressionStats, ZX_RSRC_SYSTEM_INFO_BASE)
+  OB_GET_INFO_SR(ZX_INFO_MEMORY_STALL, GetStallStats, ZX_RSRC_SYSTEM_STALL_BASE)
+  // clang-format on
+  return ZX_ERR_NOT_SUPPORTED;
+}
 
 }  // namespace
 
 // actual is an optional return parameter for the number of records returned
 // avail is an optional return parameter for the number of records available
-
+//
 // Topics which return a fixed number of records will return ZX_ERR_BUFFER_TOO_SMALL
 // if there is not enough buffer space provided.
 // This allows for zx_object_get_info(handle, topic, &info, sizeof(info), NULL, NULL)
-
+//
 // zx_status_t zx_object_get_info
 zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr<void> _buffer,
                                 size_t buffer_size, user_out_ptr<size_t> _actual,
@@ -336,41 +645,12 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
       return up->handle_table().GetDispatcherWithRightsNoPolicyCheck(handle, 0, &generic_dispatcher,
                                                                      nullptr);
     }
-    case ZX_INFO_HANDLE_BASIC: {
-      // TODO(https://fxbug.dev/42105279): Handle forward/backward compatibility issues
-      // with changes to the struct.
+    case ZX_INFO_HANDLE_BASIC:
+      return object_get_info<ZX_INFO_HANDLE_BASIC>(up, handle, _buffer, buffer_size, _actual,
+                                                   _avail);
+    case ZX_INFO_PROCESS:
+      return object_get_info<ZX_INFO_PROCESS>(up, handle, _buffer, buffer_size, _actual, _avail);
 
-      fbl::RefPtr<Dispatcher> dispatcher;
-      zx_rights_t rights;
-      auto status = up->handle_table().GetDispatcherAndRights(*up, handle, &dispatcher, &rights);
-      if (status != ZX_OK)
-        return status;
-
-      // build the info structure
-      zx_info_handle_basic_t info = {
-          .koid = dispatcher->get_koid(),
-          .rights = rights,
-          .type = dispatcher->get_type(),
-          .related_koid = dispatcher->get_related_koid(),
-          .reserved = 0u,
-          .padding1 = {},
-      };
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, info);
-    }
-    case ZX_INFO_PROCESS: {
-      // TODO(https://fxbug.dev/42105279): Handle forward/backward compatibility issues
-      // with changes to the struct.
-
-      // Grab a reference to the dispatcher.
-      fbl::RefPtr<ProcessDispatcher> process;
-      auto error =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &process);
-      if (error != ZX_OK)
-        return error;
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, process->GetInfo());
-    }
     case ZX_INFO_PROCESS_THREADS: {
       // grab a reference to the dispatcher
       fbl::RefPtr<ProcessDispatcher> process;
@@ -378,39 +658,14 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
           up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_ENUMERATE, &process);
       if (error != ZX_OK)
         return error;
-
-      // Getting the list of threads is inherently racy (unless the
-      // caller has already stopped all threads, but that's not our
-      // concern). Still, we promise to either return all threads we know
-      // about at a particular point in time, or notify the caller that
-      // more threads exist than what we computed at that same point in
-      // time.
-
+      // Getting the list of threads is inherently racy (unless the caller has already stopped all
+      // threads.
       fbl::Array<zx_koid_t> threads;
       zx_status_t status = process->GetThreads(&threads);
       if (status != ZX_OK)
         return status;
-      size_t num_threads = threads.size();
-      size_t num_space_for = buffer_size / sizeof(zx_koid_t);
-      size_t num_to_copy = ktl::min(num_threads, num_space_for);
 
-      // Don't try to copy if there are no bytes to copy, as the "is
-      // user space" check may not handle (_buffer == NULL and len == 0).
-      if (num_to_copy && _buffer.reinterpret<zx_koid_t>().copy_array_to_user(
-                             threads.data(), num_to_copy) != ZX_OK) {
-        return ZX_ERR_INVALID_ARGS;
-      }
-      if (_actual) {
-        zx_status_t copy_status = _actual.copy_to_user(num_to_copy);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      if (_avail) {
-        zx_status_t copy_status = _avail.copy_to_user(num_threads);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      return ZX_OK;
+      return multi_record_result(_buffer, buffer_size, _actual, _avail, threads);
     }
     case ZX_INFO_JOB_CHILDREN:
     case ZX_INFO_JOB_PROCESSES: {
@@ -430,140 +685,30 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
         // write to the user pointer.
         return ZX_ERR_INVALID_ARGS;
       }
-      if (_actual) {
-        zx_status_t status = _actual.copy_to_user(sje.get_count());
-        if (status != ZX_OK)
-          return status;
-      }
-      if (_avail) {
-        zx_status_t status = _avail.copy_to_user(sje.get_avail());
-        if (status != ZX_OK)
-          return status;
-      }
-      return ZX_OK;
+      return actual_avail_result(sje.get_count(), sje.get_avail(), _actual, _avail);
     }
-    case ZX_INFO_THREAD: {
-      // TODO(https://fxbug.dev/42105279): Handle forward/backward compatibility issues
-      // with changes to the struct.
-
-      // Grab a reference to the dispatcher.
-      fbl::RefPtr<ThreadDispatcher> thread;
-      auto error =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &thread);
-      if (error != ZX_OK)
-        return error;
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail,
-                                  thread->GetInfoForUserspace());
-    }
+    case ZX_INFO_THREAD:
+      return object_get_info<ZX_INFO_THREAD>(up, handle, _buffer, buffer_size, _actual, _avail);
     case ZX_INFO_THREAD_EXCEPTION_REPORT_V1:
-    case ZX_INFO_THREAD_EXCEPTION_REPORT: {
-      // grab a reference to the dispatcher
-      fbl::RefPtr<ThreadDispatcher> thread;
-      auto error =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &thread);
-      if (error != ZX_OK)
-        return error;
-
-      // build the info structure
-      zx_exception_report_t report = {};
-
-      auto err = thread->GetExceptionReport(&report);
-      if (err != ZX_OK)
-        return err;
-
-      if (topic == ZX_INFO_THREAD_EXCEPTION_REPORT_V1) {
-        // Current second version is an extension of v1; simply copy over the
-        // earlier header and context.arch fields.
-        zx_exception_report_v1_t v1_report = {};
-        v1_report.header = report.header;
-        memcpy(&v1_report.context, &report.context, sizeof(v1_report.context));
-        return single_record_result(_buffer, buffer_size, _actual, _avail, v1_report);
-      }
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, report);
-    }
-    case ZX_INFO_THREAD_STATS: {
-      // TODO(https://fxbug.dev/42105279): Handle forward/backward compatibility issues
-      // with changes to the struct.
-
-      // grab a reference to the dispatcher
-      fbl::RefPtr<ThreadDispatcher> thread;
-      auto error =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &thread);
-      if (error != ZX_OK)
-        return error;
-
-      // build the info structure
-      zx_info_thread_stats_t info = {};
-
-      auto err = thread->GetStatsForUserspace(&info);
-      if (err != ZX_OK)
-        return err;
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, info);
-    }
+      return object_get_info<ZX_INFO_THREAD_EXCEPTION_REPORT_V1>(up, handle, _buffer, buffer_size,
+                                                                 _actual, _avail);
+    case ZX_INFO_THREAD_EXCEPTION_REPORT:
+      return object_get_info<ZX_INFO_THREAD_EXCEPTION_REPORT>(up, handle, _buffer, buffer_size,
+                                                              _actual, _avail);
+    case ZX_INFO_THREAD_STATS:
+      return object_get_info<ZX_INFO_THREAD_STATS>(up, handle, _buffer, buffer_size, _actual,
+                                                   _avail);
     case ZX_INFO_TASK_STATS_V1:
-    case ZX_INFO_TASK_STATS: {
-      // Grab a reference to the dispatcher. Only supports processes for
-      // now, but could support jobs or threads in the future.
-      fbl::RefPtr<ProcessDispatcher> process;
-      auto error =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &process);
-      if (error != ZX_OK) {
-        return error;
-      }
-
-      // Build the info structure.
-      zx_info_task_stats_t info = {};
-
-      auto err = process->GetStats(&info);
-      if (err != ZX_OK) {
-        return err;
-      }
-
-      if (topic == ZX_INFO_TASK_STATS_V1) {
-        zx_info_task_stats_v1 info_v1 = {
-            .mem_mapped_bytes = info.mem_mapped_bytes,
-            .mem_private_bytes = info.mem_private_bytes,
-            .mem_shared_bytes = info.mem_shared_bytes,
-            .mem_scaled_shared_bytes = info.mem_scaled_shared_bytes,
-        };
-        return single_record_result(_buffer, buffer_size, _actual, _avail, info_v1);
-      }
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, info);
-    }
+      return object_get_info<ZX_INFO_TASK_STATS_V1>(up, handle, _buffer, buffer_size, _actual,
+                                                    _avail);
+    case ZX_INFO_TASK_STATS:
+      return object_get_info<ZX_INFO_TASK_STATS>(up, handle, _buffer, buffer_size, _actual, _avail);
+    case ZX_INFO_TASK_RUNTIME:
+      return object_get_info<ZX_INFO_TASK_RUNTIME>(up, handle, _buffer, buffer_size, _actual,
+                                                   _avail);
     case ZX_INFO_TASK_RUNTIME_V1:
-    case ZX_INFO_TASK_RUNTIME: {
-      fbl::RefPtr<Dispatcher> dispatcher;
-      auto err =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &dispatcher);
-      if (err != ZX_OK) {
-        return err;
-      }
-
-      zx_info_task_runtime_t info = {};
-      if (auto thread = DownCastDispatcher<ThreadDispatcher>(&dispatcher)) {
-        info = thread->GetCompensatedTaskRuntimeStats();
-      } else if (auto process = DownCastDispatcher<ProcessDispatcher>(&dispatcher)) {
-        info = process->GetTaskRuntimeStats();
-      } else if (auto job = DownCastDispatcher<JobDispatcher>(&dispatcher)) {
-        info = job->GetTaskRuntimeStats();
-      } else {
-        return ZX_ERR_WRONG_TYPE;
-      }
-
-      if (topic == ZX_INFO_TASK_RUNTIME_V1) {
-        zx_info_task_runtime_v1_t info_v1 = {
-            .cpu_time = info.cpu_time,
-            .queue_time = info.queue_time,
-        };
-        return single_record_result(_buffer, buffer_size, _actual, _avail, info_v1);
-      }
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, info);
-    }
+      return object_get_info<ZX_INFO_TASK_RUNTIME_V1>(up, handle, _buffer, buffer_size, _actual,
+                                                      _avail);
     case ZX_INFO_VMAR_MAPS: {
       fbl::RefPtr<VmAddressRegionDispatcher> vmar;
       zx_status_t status =
@@ -578,18 +723,10 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
       size_t avail_records = 0;
       status =
           GetVmarMaps(vmar->vmar().get(), writer, max_records, &actual_records, &avail_records);
+      if (status != ZX_OK)
+        return status;
 
-      if (_actual) {
-        zx_status_t copy_status = _actual.copy_to_user(actual_records);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      if (_avail) {
-        zx_status_t copy_status = _avail.copy_to_user(avail_records);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      return status;
+      return actual_avail_result(actual_records, avail_records, _actual, _avail);
     }
     case ZX_INFO_PROCESS_MAPS_V1:
     case ZX_INFO_PROCESS_MAPS_V2:
@@ -619,18 +756,8 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
         count = buffer_size / sizeof(zx_info_maps_t);
         status = process->GetAspaceMaps(writer, count, &count, &avail);
       }
-
-      if (_actual) {
-        zx_status_t copy_status = _actual.copy_to_user(count);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      if (_avail) {
-        zx_status_t copy_status = _avail.copy_to_user(avail);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      return status;
+      zx_status_t copy_status = actual_avail_result(count, avail, _actual, _avail);
+      return (copy_status != ZX_OK) ? copy_status : status;
     }
     case ZX_INFO_PROCESS_VMOS_V1:
     case ZX_INFO_PROCESS_VMOS_V2:
@@ -663,62 +790,19 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
         count = buffer_size / sizeof(zx_info_vmo_t);
         status = process->GetVmos(writer, count, &count, &avail);
       }
-
-      if (_actual) {
-        zx_status_t copy_status = _actual.copy_to_user(count);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      if (_avail) {
-        zx_status_t copy_status = _avail.copy_to_user(avail);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      return status;
+      zx_status_t copy_status = actual_avail_result(count, avail, _actual, _avail);
+      return (copy_status != ZX_OK) ? copy_status : status;
     }
+    case ZX_INFO_VMO:
+      return object_get_info<ZX_INFO_VMO>(up, handle, _buffer, buffer_size, _actual, _avail);
     case ZX_INFO_VMO_V1:
+      return object_get_info<ZX_INFO_VMO_V1>(up, handle, _buffer, buffer_size, _actual, _avail);
     case ZX_INFO_VMO_V2:
+      return object_get_info<ZX_INFO_VMO_V2>(up, handle, _buffer, buffer_size, _actual, _avail);
     case ZX_INFO_VMO_V3:
-    case ZX_INFO_VMO: {
-      // lookup the dispatcher from handle
-      fbl::RefPtr<VmObjectDispatcher> vmo;
-      zx_rights_t rights;
-      zx_status_t status = up->handle_table().GetDispatcherAndRights(*up, handle, &vmo, &rights);
-      if (status != ZX_OK)
-        return status;
-      zx_info_vmo_t entry = vmo->GetVmoInfo(rights);
-      if (topic == ZX_INFO_VMO_V1) {
-        zx_info_vmo_v1_t versioned_vmo = VmoInfoToVersion<zx_info_vmo_v1_t>(entry);
-        // The V1 layout is a subset of V2
-        return single_record_result(_buffer, buffer_size, _actual, _avail, versioned_vmo);
-      } else if (topic == ZX_INFO_VMO_V2) {
-        zx_info_vmo_v2_t versioned_vmo = VmoInfoToVersion<zx_info_vmo_v2_t>(entry);
-        // The V2 layout is a subset of V3
-        return single_record_result(_buffer, buffer_size, _actual, _avail, versioned_vmo);
-      } else if (topic == ZX_INFO_VMO_V3) {
-        zx_info_vmo_v3_t versioned_vmo = VmoInfoToVersion<zx_info_vmo_v3_t>(entry);
-        // The V3 layout is a subset of V4
-        return single_record_result(_buffer, buffer_size, _actual, _avail, versioned_vmo);
-      } else {
-        return single_record_result(_buffer, buffer_size, _actual, _avail, entry);
-      }
-    }
-    case ZX_INFO_VMAR: {
-      fbl::RefPtr<VmAddressRegionDispatcher> vmar;
-      zx_status_t status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &vmar);
-      if (status != ZX_OK)
-        return status;
-
-      auto real_vmar = vmar->vmar();
-      zx_info_vmar_t info = {
-          .base = real_vmar->base(),
-          .len = real_vmar->size(),
-      };
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, info);
-    }
-
+      return object_get_info<ZX_INFO_VMO_V3>(up, handle, _buffer, buffer_size, _actual, _avail);
+    case ZX_INFO_VMAR:
+      return object_get_info<ZX_INFO_VMAR>(up, handle, _buffer, buffer_size, _actual, _avail);
     case ZX_INFO_GUEST_STATS: {
       zx_status_t status =
           validate_ranged_resource(handle, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_INFO_BASE, 1);
@@ -728,54 +812,14 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
       size_t num_cpus = arch_max_num_cpus();
       size_t num_space_for = buffer_size / sizeof(zx_info_guest_stats_t);
       size_t num_to_copy = ktl::min(num_cpus, num_space_for);
-
       user_out_ptr<zx_info_guest_stats_t> guest_buf = _buffer.reinterpret<zx_info_guest_stats_t>();
 
       for (unsigned int i = 0; i < static_cast<unsigned int>(num_to_copy); i++) {
-        const auto* cpu = &percpu::Get(i);
-        zx_info_guest_stats_t stats = {};
-        stats.cpu_number = i;
-        stats.flags = mp_is_cpu_online(i) ? ZX_INFO_CPU_STATS_FLAG_ONLINE : 0;
-
-        stats.vm_entries = cpu->gstats.vm_entries;
-        stats.vm_exits = cpu->gstats.vm_exits;
-#ifdef __aarch64__
-        stats.wfi_wfe_instructions = cpu->gstats.wfi_wfe_instructions;
-        stats.system_instructions = cpu->gstats.system_instructions;
-        stats.instruction_aborts = cpu->gstats.instruction_aborts;
-        stats.data_aborts = cpu->gstats.data_aborts;
-        stats.smc_instructions = cpu->gstats.smc_instructions;
-        stats.interrupts = cpu->gstats.interrupts;
-#elif defined(__x86_64__)
-        stats.vmcall_instructions = cpu->gstats.vmcall_instructions;
-        stats.pause_instructions = cpu->gstats.pause_instructions;
-        stats.xsetbv_instructions = cpu->gstats.xsetbv_instructions;
-        stats.ept_violations = cpu->gstats.ept_violations;
-        stats.wrmsr_instructions = cpu->gstats.wrmsr_instructions;
-        stats.rdmsr_instructions = cpu->gstats.rdmsr_instructions;
-        stats.io_instructions = cpu->gstats.io_instructions;
-        stats.control_register_accesses = cpu->gstats.control_register_accesses;
-        stats.hlt_instructions = cpu->gstats.hlt_instructions;
-        stats.cpuid_instructions = cpu->gstats.cpuid_instructions;
-        stats.interrupt_windows = cpu->gstats.interrupt_windows;
-        stats.interrupts = cpu->gstats.interrupts;
-#endif
+        zx_info_guest_stats_t stats = GetGuestCPUStats(i);
         if (guest_buf.copy_array_to_user(&stats, 1, i) != ZX_OK)
           return ZX_ERR_INVALID_ARGS;
       }
-
-      if (_actual) {
-        zx_status_t copy_status = _actual.copy_to_user(num_to_copy);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-
-      if (_avail) {
-        zx_status_t copy_status = _avail.copy_to_user(num_cpus);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      return ZX_OK;
+      return actual_avail_result(num_to_copy, num_cpus, _actual, _avail);
     }
 
     case ZX_INFO_CPU_STATS: {
@@ -784,340 +828,49 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
       if (status != ZX_OK)
         return status;
 
-      // TODO: figure out a better handle to hang this off to and push this copy code into
-      // that dispatcher.
-
       size_t num_cpus = arch_max_num_cpus();
       size_t num_space_for = buffer_size / sizeof(zx_info_cpu_stats_t);
       size_t num_to_copy = ktl::min(num_cpus, num_space_for);
-
       // build an alias to the output buffer that is in units of the cpu stat structure
       user_out_ptr<zx_info_cpu_stats_t> cpu_buf = _buffer.reinterpret<zx_info_cpu_stats_t>();
 
       for (unsigned int i = 0; i < static_cast<unsigned int>(num_to_copy); i++) {
-        const auto* cpu = &percpu::Get(i);
-
-        // copy the per cpu stats from the kernel percpu structure
-        // NOTE: it's technically racy to read this without grabbing a lock
-        // but since each field is wordwise any sane architecture will not
-        // return a corrupted value.
-        zx_info_cpu_stats_t stats = {};
-        stats.cpu_number = i;
-        stats.flags = mp_is_cpu_online(i) ? ZX_INFO_CPU_STATS_FLAG_ONLINE : 0;
-
-        // account for idle time if a cpu is currently idle
-        {
-          const Thread& idle_power_thread = cpu->idle_power_thread.thread();
-          SingleChainLockGuard guard{IrqSaveOption, idle_power_thread.get_lock(),
-                                     CLT_TAG("ZX_INFO_CPU_STATS idle time rollup")};
-          zx_time_t idle_time = cpu->stats.idle_time;
-          const bool is_idle = Scheduler::PeekIsIdle(i);
-          if (is_idle) {
-            zx_duration_mono_t recent_idle = zx_time_sub_time(
-                current_mono_time(), idle_power_thread.scheduler_state().last_started_running());
-            idle_time = zx_duration_add_duration(idle_time, recent_idle);
-          }
-          stats.idle_time = idle_time;
-        }
-
-        stats.reschedules = cpu->stats.reschedules;
-        stats.context_switches = cpu->stats.context_switches;
-        stats.irq_preempts = cpu->stats.irq_preempts;
-        stats.preempts = cpu->stats.preempts;
-        stats.yields = cpu->stats.yields;
-        stats.ints = cpu->stats.interrupts;
-        stats.timer_ints = cpu->stats.timer_ints;
-        stats.timers = cpu->stats.timers;
-        stats.page_faults = cpu->stats.page_faults;
-        stats.exceptions = 0;  // deprecated, use "kcounter" command for now.
-        stats.syscalls = cpu->stats.syscalls;
-        stats.reschedule_ipis = cpu->stats.reschedule_ipis;
-        stats.generic_ipis = cpu->stats.generic_ipis;
-
-        // copy out one at a time
+        zx_info_cpu_stats_t stats = GetCPUStats(i);
         if (cpu_buf.copy_array_to_user(&stats, 1, i) != ZX_OK)
           return ZX_ERR_INVALID_ARGS;
       }
-
-      if (_actual) {
-        zx_status_t copy_status = _actual.copy_to_user(num_to_copy);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      if (_avail) {
-        zx_status_t copy_status = _avail.copy_to_user(num_cpus);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      return ZX_OK;
+      return actual_avail_result(num_to_copy, num_cpus, _actual, _avail);
     }
+
     case ZX_INFO_KMEM_STATS:
+      return object_get_info<ZX_INFO_KMEM_STATS>(up, handle, _buffer, buffer_size, _actual, _avail);
     case ZX_INFO_KMEM_STATS_EXTENDED:
-    case ZX_INFO_KMEM_STATS_V1: {
-      auto status =
-          validate_ranged_resource(handle, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_INFO_BASE, 1);
-      if (status != ZX_OK)
-        return status;
-
-      // TODO: figure out a better handle to hang this off to and push this copy code into
-      // that dispatcher.
-
-      // |get_count| returns an estimate so the sum of the counts may not equal the total.
-      uint64_t state_count[VmPageStateIndex(vm_page_state::COUNT_)] = {};
-      for (uint32_t i = 0; i < VmPageStateIndex(vm_page_state::COUNT_); i++) {
-        state_count[i] = vm_page_t::get_count(vm_page_state(i));
-      }
-
-      uint64_t free_heap_bytes = 0;
-      heap_get_info(nullptr, &free_heap_bytes);
-
-      // Note that this intentionally uses uint64_t instead of
-      // size_t in case we ever have a 32-bit userspace but more
-      // than 4GB physical memory.
-      zx_info_kmem_stats_t stats = {};
-      stats.total_bytes = pmm_count_total_bytes();
-
-      // Holds the sum of bytes in the broken out states. This sum could be less than the total
-      // because we aren't counting all possible states (e.g. vm_page_state::ALLOC). This sum could
-      // be greater than the total because per-state counts are approximate.
-      uint64_t sum_bytes = 0;
-
-      stats.free_bytes = state_count[VmPageStateIndex(vm_page_state::FREE)] * PAGE_SIZE;
-      sum_bytes += stats.free_bytes;
-
-      stats.free_loaned_bytes =
-          state_count[VmPageStateIndex(vm_page_state::FREE_LOANED)] * PAGE_SIZE;
-      sum_bytes += stats.free_loaned_bytes;
-
-      stats.wired_bytes = state_count[VmPageStateIndex(vm_page_state::WIRED)] * PAGE_SIZE;
-      sum_bytes += stats.wired_bytes;
-
-      stats.total_heap_bytes = state_count[VmPageStateIndex(vm_page_state::HEAP)] * PAGE_SIZE;
-      sum_bytes += stats.total_heap_bytes;
-      stats.free_heap_bytes = free_heap_bytes;
-
-      stats.vmo_bytes = state_count[VmPageStateIndex(vm_page_state::OBJECT)] * PAGE_SIZE;
-      sum_bytes += stats.vmo_bytes;
-
-      stats.mmu_overhead_bytes = (state_count[VmPageStateIndex(vm_page_state::MMU)] +
-                                  state_count[VmPageStateIndex(vm_page_state::IOMMU)]) *
-                                 PAGE_SIZE;
-      sum_bytes += stats.mmu_overhead_bytes;
-
-      stats.ipc_bytes = state_count[VmPageStateIndex(vm_page_state::IPC)] * PAGE_SIZE;
-      sum_bytes += stats.ipc_bytes;
-
-      stats.cache_bytes = state_count[VmPageStateIndex(vm_page_state::CACHE)] * PAGE_SIZE;
-      sum_bytes += state_count[VmPageStateIndex(vm_page_state::CACHE)] * PAGE_SIZE;
-
-      stats.slab_bytes = state_count[VmPageStateIndex(vm_page_state::SLAB)] * PAGE_SIZE;
-      sum_bytes += state_count[VmPageStateIndex(vm_page_state::SLAB)] * PAGE_SIZE;
-
-      stats.zram_bytes = state_count[VmPageStateIndex(vm_page_state::ZRAM)] * PAGE_SIZE;
-      sum_bytes += state_count[VmPageStateIndex(vm_page_state::ZRAM)] * PAGE_SIZE;
-
-      // Is there unaccounted memory?
-      if (stats.total_bytes > sum_bytes) {
-        // Everything else gets counted as "other".
-        stats.other_bytes = stats.total_bytes - sum_bytes;
-      } else {
-        // One or more of our per-state counts may have been off. We'll ignore it.
-        stats.other_bytes = 0;
-      }
-
-      PageQueues::ReclaimCounts reclaim_counts = pmm_page_queues()->GetReclaimQueueCounts();
-      PageQueues::Counts queue_counts = pmm_page_queues()->QueueCounts();
-
-      stats.vmo_reclaim_total_bytes = reclaim_counts.total * PAGE_SIZE;
-      stats.vmo_reclaim_newest_bytes = reclaim_counts.newest * PAGE_SIZE;
-      stats.vmo_reclaim_oldest_bytes = reclaim_counts.oldest * PAGE_SIZE;
-      stats.vmo_reclaim_disabled_bytes = queue_counts.high_priority;
-
-      DiscardableVmoTracker::DiscardablePageCounts discardable_counts =
-          DiscardableVmoTracker::DebugDiscardablePageCounts();
-
-      stats.vmo_discardable_locked_bytes = discardable_counts.locked * PAGE_SIZE;
-      stats.vmo_discardable_unlocked_bytes = discardable_counts.unlocked * PAGE_SIZE;
-
-      if (topic == ZX_INFO_KMEM_STATS) {
-        return single_record_result(_buffer, buffer_size, _actual, _avail, stats);
-      }
-      if (topic == ZX_INFO_KMEM_STATS_V1) {
-        zx_info_kmem_stats_v1 stats_v1 = {};
-        stats_v1.total_bytes = stats.total_bytes;
-        stats_v1.free_bytes = stats.free_bytes + stats.free_loaned_bytes;
-        stats_v1.wired_bytes = stats.wired_bytes;
-        stats_v1.total_heap_bytes = stats.total_heap_bytes;
-        stats_v1.free_heap_bytes = stats.free_heap_bytes;
-        stats_v1.vmo_bytes = stats.vmo_bytes;
-        stats_v1.mmu_overhead_bytes = stats.mmu_overhead_bytes;
-        stats_v1.ipc_bytes = stats.ipc_bytes;
-        stats_v1.other_bytes = stats.other_bytes;
-        return single_record_result(_buffer, buffer_size, _actual, _avail, stats_v1);
-      }
-      ASSERT(topic == ZX_INFO_KMEM_STATS_EXTENDED);
-
-      zx_info_kmem_stats_extended_t stats_ext = {};
-      stats_ext.total_bytes = stats.total_bytes;
-      stats_ext.free_bytes = stats.free_bytes + stats.free_loaned_bytes;
-      stats_ext.wired_bytes = stats.wired_bytes;
-      stats_ext.total_heap_bytes = stats.total_heap_bytes;
-      stats_ext.free_heap_bytes = stats.free_heap_bytes;
-      stats_ext.vmo_bytes = stats.vmo_bytes;
-      stats_ext.mmu_overhead_bytes = stats.mmu_overhead_bytes;
-      stats_ext.ipc_bytes = stats.ipc_bytes;
-      stats_ext.other_bytes = stats.other_bytes;
-      stats_ext.vmo_pager_total_bytes = stats.vmo_reclaim_total_bytes;
-      stats_ext.vmo_pager_newest_bytes = stats.vmo_reclaim_newest_bytes;
-      stats_ext.vmo_pager_oldest_bytes = stats.vmo_reclaim_oldest_bytes;
-      stats_ext.vmo_discardable_locked_bytes = stats.vmo_discardable_locked_bytes;
-      stats_ext.vmo_discardable_unlocked_bytes = stats.vmo_discardable_unlocked_bytes;
-      stats_ext.vmo_reclaim_disabled_bytes = stats.vmo_reclaim_disabled_bytes;
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, stats_ext);
-    }
-    case ZX_INFO_KMEM_STATS_COMPRESSION: {
-      auto status =
-          validate_ranged_resource(handle, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_INFO_BASE, 1);
-      if (status != ZX_OK)
-        return status;
-
-      zx_info_kmem_stats_compression_t kstats = {};
-
-      VmCompression* compression = Pmm::Node().GetPageCompression();
-      if (compression) {
-        VmCompression::Stats stats = compression->GetStats();
-        kstats.uncompressed_storage_bytes = stats.memory_usage.uncompressed_content_bytes;
-        kstats.compressed_storage_bytes = stats.memory_usage.compressed_storage_bytes;
-        kstats.compressed_fragmentation_bytes = stats.memory_usage.compressed_storage_bytes -
-                                                stats.memory_usage.compressed_storage_used_bytes;
-        kstats.compression_time = stats.compression_time;
-        kstats.decompression_time = stats.decompression_time;
-        kstats.total_page_compression_attempts = stats.total_page_compression_attempts;
-        kstats.failed_page_compression_attempts = stats.failed_page_compression_attempts;
-        kstats.total_page_decompressions = stats.total_page_decompressions;
-        kstats.compressed_page_evictions = stats.compressed_page_evictions;
-        kstats.eager_page_compressions = PageQueues::GetLruPagesCompressed();
-        Evictor::EvictorStats evictor_stats = Evictor::GetGlobalStats();
-        kstats.memory_pressure_page_compressions = evictor_stats.compression_other;
-        kstats.critical_memory_page_compressions = evictor_stats.compression_oom;
-        kstats.pages_decompressed_unit_ns = ZX_SEC(1);
-        static_assert(8 <= VmCompression::kNumLogBuckets);
-        for (int i = 0; i < 8; i++) {
-          kstats.pages_decompressed_within_log_time[i] =
-              stats.pages_decompressed_within_log_seconds[i];
-        }
-      }
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, kstats);
-    }
-
-    case ZX_INFO_RESOURCE: {
-      // grab a reference to the dispatcher
-      fbl::RefPtr<ResourceDispatcher> resource;
-      zx_status_t status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &resource);
-      if (status != ZX_OK) {
-        return status;
-      }
-
-      // build the info structure
-      zx_info_resource_t info = {};
-      info.kind = resource->get_kind();
-      info.base = resource->get_base();
-      info.size = resource->get_size();
-      info.flags = resource->get_flags();
-      status = resource->get_name(info.name);
-      DEBUG_ASSERT(status == ZX_OK);
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, info);
-    }
-    case ZX_INFO_HANDLE_COUNT: {
-      fbl::RefPtr<Dispatcher> dispatcher;
-      auto status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &dispatcher);
-      if (status != ZX_OK)
-        return status;
-
-      zx_info_handle_count_t info = {.handle_count = Handle::Count(ktl::move(dispatcher))};
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, info);
-    }
-    case ZX_INFO_BTI: {
-      fbl::RefPtr<BusTransactionInitiatorDispatcher> dispatcher;
-      auto status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &dispatcher);
-      if (status != ZX_OK)
-        return status;
-
-      zx_info_bti_t info = {
-          .minimum_contiguity = dispatcher->minimum_contiguity(),
-          .aspace_size = dispatcher->aspace_size(),
-          .pmo_count = dispatcher->pmo_count(),
-          .quarantine_count = dispatcher->quarantine_count(),
-      };
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, info);
-    }
-    case ZX_INFO_PROCESS_HANDLE_STATS: {
-      fbl::RefPtr<ProcessDispatcher> process;
-      auto status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &process);
-      if (status != ZX_OK)
-        return status;
-
-      zx_info_process_handle_stats_t info = {};
-      static_assert(ktl::size(info.handle_count) >= ZX_OBJ_TYPE_UPPER_BOUND,
-                    "Need room for each handle type.");
-
-      process->handle_table().ForEachHandle(
-          [&](zx_handle_t handle, zx_rights_t rights, const Dispatcher* dispatcher) {
-            ++info.handle_count[dispatcher->get_type()];
-            return ZX_OK;
-          });
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, info);
-    }
-
-    case ZX_INFO_SOCKET: {
-      fbl::RefPtr<SocketDispatcher> socket;
-      auto status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &socket);
-      if (status != ZX_OK)
-        return status;
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, socket->GetInfo());
-    }
-
-    case ZX_INFO_JOB: {
-      fbl::RefPtr<JobDispatcher> job;
-      auto error = up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &job);
-      if (error != ZX_OK)
-        return error;
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, job->GetInfo());
-    }
-
-    case ZX_INFO_TIMER: {
-      fbl::RefPtr<TimerDispatcher> timer;
-      auto error =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &timer);
-      if (error != ZX_OK)
-        return error;
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, timer->GetInfo());
-    }
-
-    case ZX_INFO_STREAM: {
-      fbl::RefPtr<StreamDispatcher> stream;
-      zx_status_t status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &stream);
-      if (status != ZX_OK) {
-        return status;
-      }
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, stream->GetInfo());
-    }
+      return object_get_info<ZX_INFO_KMEM_STATS_EXTENDED>(up, handle, _buffer, buffer_size, _actual,
+                                                          _avail);
+    case ZX_INFO_KMEM_STATS_V1:
+      return object_get_info<ZX_INFO_KMEM_STATS_V1>(up, handle, _buffer, buffer_size, _actual,
+                                                    _avail);
+    case ZX_INFO_KMEM_STATS_COMPRESSION:
+      return object_get_info<ZX_INFO_KMEM_STATS_COMPRESSION>(up, handle, _buffer, buffer_size,
+                                                             _actual, _avail);
+    case ZX_INFO_RESOURCE:
+      return object_get_info<ZX_INFO_RESOURCE>(up, handle, _buffer, buffer_size, _actual, _avail);
+    case ZX_INFO_HANDLE_COUNT:
+      return object_get_info<ZX_INFO_HANDLE_COUNT>(up, handle, _buffer, buffer_size, _actual,
+                                                   _avail);
+    case ZX_INFO_BTI:
+      return object_get_info<ZX_INFO_BTI>(up, handle, _buffer, buffer_size, _actual, _avail);
+    case ZX_INFO_PROCESS_HANDLE_STATS:
+      return object_get_info<ZX_INFO_PROCESS_HANDLE_STATS>(up, handle, _buffer, buffer_size,
+                                                           _actual, _avail);
+    case ZX_INFO_SOCKET:
+      return object_get_info<ZX_INFO_SOCKET>(up, handle, _buffer, buffer_size, _actual, _avail);
+    case ZX_INFO_JOB:
+      return object_get_info<ZX_INFO_JOB>(up, handle, _buffer, buffer_size, _actual, _avail);
+    case ZX_INFO_TIMER:
+      return object_get_info<ZX_INFO_TIMER>(up, handle, _buffer, buffer_size, _actual, _avail);
+    case ZX_INFO_STREAM:
+      return object_get_info<ZX_INFO_STREAM>(up, handle, _buffer, buffer_size, _actual, _avail);
 
     case ZX_INFO_HANDLE_TABLE: {
       fbl::RefPtr<ProcessDispatcher> process;
@@ -1131,66 +884,19 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
         // Optimization for callers which call twice, the first time just to know the size.
         return _actual.copy_to_user(static_cast<size_t>(up->handle_table().HandleCount()));
       }
-
       fbl::Array<zx_info_handle_extended_t> handle_info;
       zx_status_t status = process->handle_table().GetHandleInfo(&handle_info);
       if (status != ZX_OK)
         return status;
 
-      size_t num_records = handle_info.size();
-      size_t num_space_for = buffer_size / sizeof(zx_info_handle_extended_t);
-      size_t num_to_copy = ktl::min(num_records, num_space_for);
-
-      // Don't try to copy if there are no bytes to copy, as the "is
-      // user space" check may not handle (_buffer == NULL and len == 0).
-      if (num_to_copy && _buffer.reinterpret<zx_info_handle_extended_t>().copy_array_to_user(
-                             handle_info.data(), num_to_copy) != ZX_OK) {
-        return ZX_ERR_INVALID_ARGS;
-      }
-      if (_actual) {
-        zx_status_t copy_status = _actual.copy_to_user(num_to_copy);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      if (_avail) {
-        zx_status_t copy_status = _avail.copy_to_user(num_records);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      return ZX_OK;
+      return multi_record_result(_buffer, buffer_size, _actual, _avail, handle_info);
     }
-    case ZX_INFO_MSI: {
-      fbl::RefPtr<MsiDispatcher> allocation;
-      zx_status_t status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &allocation);
-      if (status != ZX_OK) {
-        return status;
-      }
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, allocation->GetInfo());
-    }
-
-    case ZX_INFO_VCPU: {
-      fbl::RefPtr<VcpuDispatcher> vcpu;
-      zx_status_t status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &vcpu);
-      if (status != ZX_OK) {
-        return status;
-      }
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, vcpu->GetInfo());
-    }
-
-    case ZX_INFO_IOB: {
-      fbl::RefPtr<IoBufferDispatcher> iob;
-      zx_status_t status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &iob);
-      if (status != ZX_OK) {
-        return status;
-      }
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, iob->GetInfo());
-    }
+    case ZX_INFO_MSI:
+      return object_get_info<ZX_INFO_MSI>(up, handle, _buffer, buffer_size, _actual, _avail);
+    case ZX_INFO_VCPU:
+      return object_get_info<ZX_INFO_VCPU>(up, handle, _buffer, buffer_size, _actual, _avail);
+    case ZX_INFO_IOB:
+      return object_get_info<ZX_INFO_IOB>(up, handle, _buffer, buffer_size, _actual, _avail);
     case ZX_INFO_IOB_REGIONS: {
       fbl::RefPtr<IoBufferDispatcher> iob;
       zx_status_t status =
@@ -1210,18 +916,7 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
           return status;
         }
       }
-
-      if (_actual) {
-        zx_status_t copy_status = _actual.copy_to_user(num_to_copy);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      if (_avail) {
-        zx_status_t copy_status = _avail.copy_to_user(num_regions);
-        if (copy_status != ZX_OK)
-          return copy_status;
-      }
-      return ZX_OK;
+      return actual_avail_result(num_to_copy, num_regions, _actual, _avail);
     }
 
     case ZX_INFO_POWER_DOMAINS: {
@@ -1231,109 +926,40 @@ zx_status_t sys_object_get_info(zx_handle_t handle, uint32_t topic, user_out_ptr
         return res;
       }
       size_t max_copy = buffer_size / sizeof(zx_power_domain_info_t);
-      if (max_copy == 0 && max_copy != buffer_size) {
-        return ZX_ERR_BUFFER_TOO_SMALL;
+      auto result = GetPowerDomainsInfo(max_copy);
+      if (result.is_error()) {
+        return result.error_value();
       }
-
-      // Alternatively clamp `max_copy` to `arch_max_num_cpus()`.
-      size_t power_domain_count = 0;
-      power_management::KernelPowerDomainRegistry::Visit(
-          [&power_domain_count](const auto& power_domain) { ++power_domain_count; });
-
-      // Avoid arbitrary large buffers.
-      max_copy = ktl::min(power_domain_count, max_copy);
-
-      ktl::unique_ptr<zx_power_domain_info_t[]> entries = nullptr;
-      if (max_copy > 0) {
-        fbl::AllocChecker ac;
-        entries = ktl::make_unique<zx_power_domain_info_t[]>(&ac, max_copy);
-        if (!ac.check()) {
-          return ZX_ERR_NO_MEMORY;
-        }
-      }
-
-      // Reset the count, in case we are racing against an update, so we can return somewhat
-      // consistent `avail`.
-      power_domain_count = 0;
-      power_management::KernelPowerDomainRegistry::Visit(
-          [&power_domain_count, &entries, max_copy](const power_management::PowerDomain& domain) {
-            if (power_domain_count < max_copy) {
-              zx_power_domain_info_t& entry = entries[power_domain_count];
-              entry = {
-                  .cpus = domain.cpus(),
-                  .domain_id = domain.id(),
-                  .idle_power_levels = static_cast<uint8_t>(domain.model().idle_levels().size()),
-                  .active_power_levels =
-                      static_cast<uint8_t>(domain.model().active_levels().size()),
-              };
-            }
-            power_domain_count++;
-          });
-      size_t actual = ktl::min(max_copy, power_domain_count);
-      if (zx_status_t res = _actual.copy_to_user(actual); res != ZX_OK) {
-        return res;
-      }
-
-      if (zx_status_t res = _avail.copy_to_user(power_domain_count); res != ZX_OK) {
-        return res;
-      }
-
-      if (max_copy == 0) {
-        return ZX_OK;
-      }
-      return _buffer.reinterpret<zx_power_domain_info_t>().copy_array_to_user(entries.get(),
-                                                                              actual);
+      fbl::Array<zx_power_domain_info_t> entries{ktl::move(result.value())};
+      return multi_record_result(_buffer, buffer_size, _actual, _avail, entries);
     }
 
-    case ZX_INFO_MEMORY_STALL: {
-      if (zx_status_t res =
-              validate_ranged_resource(handle, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_STALL_BASE, 1);
-          res != ZX_OK) {
-        return res;
-      }
-
-      // build the info structure
-      StallAggregator::Stats stats = StallAggregator::GetStallAggregator()->ReadStats();
-      zx_info_memory_stall_t info = {
-          .stall_time_some = stats.stalled_time_some,
-          .stall_time_full = stats.stalled_time_full,
-      };
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, info);
-    }
-
-    case ZX_INFO_CLOCK_MAPPED_SIZE: {
-      fbl::RefPtr<ClockDispatcher> clock;
-      zx_status_t status =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &clock);
-      if (status != ZX_OK) {
-        return status;
-      }
-
-      // Only mappable clocks have a defined mapped size.
-      if (!clock->is_mappable()) {
-        return ZX_ERR_INVALID_ARGS;
-      }
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail,
-                                  ClockDispatcher::kMappedSize);
-    }
-
-    case ZX_INFO_INTERRUPT: {
-      fbl::RefPtr<InterruptDispatcher> interrupt;
-      zx_status_t error =
-          up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_INSPECT, &interrupt);
-      if (error != ZX_OK) {
-        return error;
-      }
-
-      return single_record_result(_buffer, buffer_size, _actual, _avail, interrupt->GetInfo());
-    }
+    case ZX_INFO_MEMORY_STALL:
+      return object_get_info<ZX_INFO_MEMORY_STALL>(up, handle, _buffer, buffer_size, _actual,
+                                                   _avail);
+    case ZX_INFO_CLOCK_MAPPED_SIZE:
+      return object_get_info<ZX_INFO_CLOCK_MAPPED_SIZE>(up, handle, _buffer, buffer_size, _actual,
+                                                        _avail);
+    case ZX_INFO_INTERRUPT:
+      return object_get_info<ZX_INFO_INTERRUPT>(up, handle, _buffer, buffer_size, _actual, _avail);
 
     default:
       return ZX_ERR_NOT_SUPPORTED;
   }
 }
+
+#if ARCH_X86
+static zx_status_t RequireCurrentThread(fbl::RefPtr<Dispatcher> dispatcher) {
+  auto thread_dispatcher = DownCastDispatcher<ThreadDispatcher>(&dispatcher);
+  if (!thread_dispatcher) {
+    return ZX_ERR_WRONG_TYPE;
+  }
+  if (thread_dispatcher.get() != ThreadDispatcher::GetCurrent()) {
+    return ZX_ERR_ACCESS_DENIED;
+  }
+  return ZX_OK;
+}
+#endif
 
 // zx_status_t zx_object_get_property
 zx_status_t sys_object_get_property(zx_handle_t handle_value, uint32_t property,

@@ -11,6 +11,7 @@
 #include <string.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
+#include <zircon/rights.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
@@ -223,6 +224,9 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
   // By the time the result of the function is inspected, the signals may have already
   // changed. Typically should only be used for tests or logging.
   zx_signals_t PollSignals() const TA_EXCL(get_lock());
+
+  // Returns the information for zx_object_get_info(ZX_INFO_HANDLE_BASIC,..).
+  zx_info_handle_basic_t GetHandleInfo(zx_rights_t rights);
 
  protected:
   // At construction, the object is asserting |signals|.

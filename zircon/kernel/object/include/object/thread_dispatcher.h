@@ -12,6 +12,7 @@
 #include <zircon/compiler.h>
 #include <zircon/syscalls/debug.h>
 #include <zircon/syscalls/exception.h>
+#include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
 #include <arch/exception.h>
@@ -176,6 +177,7 @@ class ThreadDispatcher final : public SoloDispatcher<ThreadDispatcher, ZX_DEFAUL
   // Fetch a consistent snapshot of the runtime stats, compensated for unaccumulated runtime in the
   // ready or running state.
   TaskRuntimeStats GetCompensatedTaskRuntimeStats() const;
+  zx_info_task_runtime_t GetRuntimeStats() const { return GetCompensatedTaskRuntimeStats(); }
 
   // For debugger usage.
   zx_status_t ReadState(zx_thread_state_topic_t state_kind, user_out_ptr<void> buffer,

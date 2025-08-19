@@ -204,6 +204,7 @@ class ProcessDispatcher final
 
   // Get the runtime of all threads that previously ran or are currently running under this process.
   TaskRuntimeStats GetTaskRuntimeStats() const TA_EXCL(get_lock());
+  zx_info_task_runtime_t GetRuntimeStats() const { return GetTaskRuntimeStats(); }
 
   zx_status_t GetAspaceMaps(VmarMapsInfoWriter& maps, size_t max, size_t* actual,
                             size_t* available) const;

@@ -229,3 +229,15 @@ zx_signals_t Dispatcher::PollSignals() const {
   Guard<CriticalMutex> guard{get_lock()};
   return GetSignalsStateLocked();
 }
+
+zx_info_handle_basic_t Dispatcher::GetHandleInfo(zx_rights_t rights) {
+  zx_info_handle_basic_t info = {
+      .koid = get_koid(),
+      .rights = rights,
+      .type = get_type(),
+      .related_koid = get_related_koid(),
+      .reserved = 0u,
+      .padding1 = {},
+  };
+  return info;
+}

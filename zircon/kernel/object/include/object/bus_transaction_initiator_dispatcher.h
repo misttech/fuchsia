@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_BUS_TRANSACTION_INITIATOR_DISPATCHER_H_
 
 #include <sys/types.h>
+#include <zircon/syscalls/object.h>
 
 #include <kernel/lockdep.h>
 #include <object/dispatcher.h>
@@ -70,6 +71,9 @@ class BusTransactionInitiatorDispatcher final
 
   // The count of the quarantined pinned memory object tokens.
   uint64_t quarantine_count() const;
+
+  // Returns the information for zx_object_get_inf(ZX_INFO_BTI,..);
+  zx_info_bti_t GetInfo() const;
 
  protected:
   friend PinnedMemoryTokenDispatcher;

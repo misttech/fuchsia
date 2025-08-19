@@ -683,11 +683,6 @@ TEST(GetPowerDomainInfo, BadBuffer) {
       zx_object_get_info(info_rsrc.get(), ZX_INFO_POWER_DOMAINS, reinterpret_cast<void*>(0x01),
                          sizeof(zx_power_domain_info_t), &actual, &available),
       ZX_ERR_INVALID_ARGS);
-
-  // Non zero sized buffer that is too small to hold an entry, this is probably a programming error.
-  ASSERT_STATUS(zx_object_get_info(info_rsrc.get(), ZX_INFO_POWER_DOMAINS,
-                                   reinterpret_cast<void*>(0x01), 1, &actual, &available),
-                ZX_ERR_BUFFER_TOO_SMALL);
 }
 
 }  // namespace

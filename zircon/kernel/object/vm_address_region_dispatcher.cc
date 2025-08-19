@@ -13,6 +13,7 @@
 #include <trace.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
+#include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
 #include <fbl/alloc_checker.h>
@@ -274,6 +275,14 @@ zx_status_t VmAddressRegionDispatcher::SetMemoryPriority(
   canary_.Assert();
 
   return vmar_->SetMemoryPriority(memory_priority);
+}
+
+zx_info_vmar_t VmAddressRegionDispatcher::GetVmarInfo() const {
+  zx_info_vmar_t info = {
+      .base = vmar_->base(),
+      .len = vmar_->size(),
+  };
+  return info;
 }
 
 bool VmAddressRegionDispatcher::is_valid_mapping_protection(uint32_t flags) {
