@@ -90,6 +90,9 @@ class FvmInstance {
   virtual zx::result<std::unique_ptr<BlockConnector>> OpenPartition(
       std::string_view label) const = 0;
 
+  // Destroys the named partition, removing it from this fvm instance.
+  virtual void DestroyPartition(std::string_view label) const = 0;
+
   // Returns the block interface of the underlying ramdisk.
   virtual fidl::UnownedClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const = 0;
 };
@@ -106,6 +109,7 @@ class DriverFvmInstance : public FvmInstance {
   zx::result<std::unique_ptr<BlockConnector>> AllocatePartition(
       const AllocatePartitionRequest& request) const override;
   zx::result<std::unique_ptr<BlockConnector>> OpenPartition(std::string_view label) const override;
+  void DestroyPartition(std::string_view label) const override;
   fidl::UnownedClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const override;
 
   fidl::UnownedClientEnd<fuchsia_device::Controller> GetRamdiskControllerInterface() const;

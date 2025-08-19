@@ -125,6 +125,8 @@ class FvmTest : public zxtest::Test {
     return instance_->AllocatePartition(request);
   }
 
+  void DestroyPartition(std::string_view label) const { instance_->DestroyPartition(label); }
+
  private:
   std::unique_ptr<fvm::DriverFvmInstance> instance_;
 };
@@ -1079,32 +1081,17 @@ TEST_F(FvmTest, TestVPartitionDestroy) {
   CheckWriteReadBlock(sys->as_block(), 0, 1);
 
   // But not after we destroy the blob partition.
-  {
-    const fidl::WireResult result = fidl::WireCall(blob->as_volume())->Destroy();
-    ASSERT_OK(result.status());
-    const fidl::WireResponse response = result.value();
-    ASSERT_OK(response.status);
-  }
+  DestroyPartition(kTestPartBlobName);
   CheckWriteReadBlock(data->as_block(), 0, 1);
   CheckWriteReadBlock(sys->as_block(), 0, 1);
   CheckDeadConnection(blob->as_block().channel());
 
   // Destroy the other two VPartitions.
-  {
-    const fidl::WireResult result = fidl::WireCall(data->as_volume())->Destroy();
-    ASSERT_OK(result.status());
-    const fidl::WireResponse response = result.value();
-    ASSERT_OK(response.status);
-  }
+  DestroyPartition(kTestPartDataName);
   CheckWriteReadBlock(sys->as_block(), 0, 1);
   CheckDeadConnection(data->as_block().channel());
 
-  {
-    const fidl::WireResult result = fidl::WireCall(sys->as_volume())->Destroy();
-    ASSERT_OK(result.status());
-    const fidl::WireResponse response = result.value();
-    ASSERT_OK(response.status);
-  }
+  DestroyPartition(kTestPartSystemName);
   CheckDeadConnection(sys->as_block().channel());
 
   FVMCheckSliceSize(kSliceSize);
@@ -2254,9 +2241,7 @@ TEST_F(FvmTest, TestPreventDuplicateDeviceNames) {
         .name = kTestPartDataName,
     });
     ASSERT_OK(vp_or);
-    auto result = fidl::WireCall(vp_or->as_volume())->Destroy();
-    ASSERT_OK(result.status());
-    ASSERT_OK(result->status);
+    DestroyPartition(kTestPartDataName);
   }
 }
 

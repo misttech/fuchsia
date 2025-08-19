@@ -163,6 +163,14 @@ zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::OpenPartition(
   return DriverBlockConnector::Create(std::move(controller.value()));
 }
 
+void DriverFvmInstance::DestroyPartition(std::string_view label) const {
+  zx::result partition = OpenPartition(label);
+  ASSERT_OK(partition);
+  fidl::WireResult result = fidl::WireCall(partition->as_volume())->Destroy();
+  ASSERT_OK(result.status());
+  ASSERT_OK(result->status);
+}
+
 fidl::UnownedClientEnd<fuchsia_hardware_block::Block> DriverFvmInstance::GetRamdiskPartition()
     const {
   return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(
