@@ -4,6 +4,10 @@
 
 //! fuchsia io conformance testing harness for Fxfs
 
+// TODO(https://fxbug.dev/439053417): Investigate why the recursion limit was bumped
+// to unblock the toolchain.
+#![recursion_limit = "256"]
+
 use anyhow::{Context as _, Error};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io_test::{
