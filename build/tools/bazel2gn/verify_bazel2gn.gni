@@ -26,8 +26,7 @@ template("verify_bazel2gn") {
       "BUILD.gn",
     ]
     outputs = [ "${target_out_dir}/${target_name}.diff" ]
-    tool = "//build/bazel/host:bazel_root_host_tools.bazel2gn"
-    tool_output_name = "bazel2gn"
+    tool = "//build/tools/bazel2gn"
     args = [
       "--bazel_input_path",
       rebase_path("BUILD.bazel", root_build_dir),
