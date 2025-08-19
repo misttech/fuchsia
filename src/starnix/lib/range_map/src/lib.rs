@@ -2110,7 +2110,7 @@ mod test {
         let intersect_end = 4050;
         let mut iter = map.range(intersect_start..intersect_end);
         while let Some((range, _)) = iter.next() {
-            assert!((range.start < intersect_end && range.end > intersect_start));
+            assert!(range.start < intersect_end && range.end > intersect_start);
         }
     }
 
