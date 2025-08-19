@@ -58,7 +58,7 @@ void VgetFaultInjetionAndTest(F2fs &fs, Dir &root_dir, std::string_view name, T 
   }
 }
 
-TEST_F(VnodeTest, Time) {
+TEST_F(VnodeTest, Time) TA_NO_THREAD_SAFETY_ANALYSIS {
   std::string dir_name("test");
   zx::result test_fs_vnode = root_dir_->Create(dir_name, fs::CreationType::kDirectory);
   ASSERT_TRUE(test_fs_vnode.is_ok()) << test_fs_vnode.status_string();

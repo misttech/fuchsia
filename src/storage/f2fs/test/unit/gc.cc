@@ -214,7 +214,7 @@ TEST_F(GcTest, PageColdData) {
   fs_->GetSegmentManager().DisableFgGc();
 
   // Get old block address.
-  zx::result old_addrs_or = file->GetDataBlockAddresses(0, 1, true);
+  zx::result old_addrs_or = file->FindAddresses(0, 1);
   ASSERT_TRUE(old_addrs_or.is_ok());
 
   {
@@ -226,7 +226,7 @@ TEST_F(GcTest, PageColdData) {
   // If kPageColdData flag is not set, allocate its block on warm data segments.
   auto expected = fs_->GetSegmentManager().NextFreeBlkAddr(CursegType::kCursegWarmData);
   ASSERT_EQ(file->Writeback(true, true), 1UL);
-  zx::result new_addrs_or = file->GetDataBlockAddresses(0, 1, true);
+  zx::result new_addrs_or = file->FindAddresses(0, 1);
   ASSERT_TRUE(new_addrs_or.is_ok());
   ASSERT_EQ(expected, new_addrs_or->front());
 
@@ -240,7 +240,7 @@ TEST_F(GcTest, PageColdData) {
   // If kPageColdData flag is set, allocate its block on cold data segments.
   expected = fs_->GetSegmentManager().NextFreeBlkAddr(CursegType::kCursegColdData);
   ASSERT_EQ(file->Writeback(true, true), 1UL);
-  new_addrs_or = file->GetDataBlockAddresses(0, 1, true);
+  new_addrs_or = file->FindAddresses(0, 1);
   ASSERT_TRUE(new_addrs_or.is_ok());
   ASSERT_EQ(new_addrs_or->front(), expected);
   {
@@ -269,7 +269,7 @@ TEST_F(GcTest, OrphanFileGc) {
   fs_->GetSegmentManager().AllocateNewSegments();
   fs_->SyncFs();
 
-  zx::result addrs_or = file->GetDataBlockAddresses(0, 1, true);
+  zx::result addrs_or = file->FindAddresses(0, 1);
   ASSERT_TRUE(addrs_or.is_ok());
 
   // gc target segno
@@ -281,14 +281,14 @@ TEST_F(GcTest, OrphanFileGc) {
 
   // Make file orphan
   FileTester::DeleteChild(root_dir_.get(), "test", false);
-  ASSERT_NE(file->GetBlocks(), 0U);
+  ASSERT_NE(file->GetBlockCount(), 0U);
 
   // Do gc
   ASSERT_EQ(GcTester::DoGarbageCollect(fs_->GetSegmentManager(), target_segno, GcType::kFgGc),
             ZX_OK);
 
   // Check if gc purges the metadata when the victim blocks belong to an orphan
-  ASSERT_EQ(file->GetBlocks(), 0U);
+  ASSERT_EQ(file->GetBlockCount(), 0U);
 
   // Check victim seg is clean
   ASSERT_FALSE(dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirty)].GetOne(target_segno));
@@ -321,7 +321,7 @@ TEST_F(GcTest, ReadVmoDuringGc) {
   fs_->GetSegmentManager().AllocateNewSegments();
   fs_->SyncFs();
 
-  zx::result addrs_or = file->GetDataBlockAddresses(0, 1, true);
+  zx::result addrs_or = file->FindAddresses(0, 1);
   ASSERT_TRUE(addrs_or.is_ok());
 
   // gc target segno

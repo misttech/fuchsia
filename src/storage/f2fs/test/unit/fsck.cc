@@ -385,7 +385,7 @@ TEST(FsckTest, InvalidNatEntry) {
 
     // Find data blkaddr.
     {
-      zx::result addrs_or = root_dir->GetDataBlockAddresses(0, 1, true);
+      zx::result addrs_or = root_dir->FindAddresses(0, 1);
       ASSERT_TRUE(addrs_or.is_ok());
       data_blkaddr = addrs_or->front();
     }
@@ -478,7 +478,7 @@ TEST(FsckTest, InvalidSsaEntry) {
     // Find data blkaddr.
     {
       target_file_ino = file->GetKey();
-      zx::result addrs_or = file->GetDataBlockAddresses(0, 1, true);
+      zx::result addrs_or = file->FindAddresses(0, 1);
       ASSERT_TRUE(addrs_or.is_ok());
       data_blkaddr = addrs_or->front();
     }

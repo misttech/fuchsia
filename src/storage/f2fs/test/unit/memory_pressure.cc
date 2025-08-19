@@ -118,7 +118,7 @@ TEST_F(MemoryPressureTest, AsyncCheckpoint) {
   write_thread.join();
   fsync_thread.join();
   // data blocks + 2 dnode blocks
-  ASSERT_EQ(file->GetBlocks(), kNTry + 2U);
+  ASSERT_EQ(file->GetBlockCount(), kNTry + 2U);
   for (size_t i = 0; i < kNTry; ++i) {
     fbl::RefPtr<fs::Vnode> vn;
     ASSERT_EQ(root_dir_->Lookup("dir_" + std::to_string(i), &vn), ZX_ERR_NOT_FOUND);

@@ -494,10 +494,10 @@ TEST_F(FileTest, OutOfSpace) {
   size_t out;
   // Fill data until it meets ZX_ERR_NO_SPACE
   while (true) {
-    size_t before = file->GetBlocks();
+    size_t before = file->GetBlockCount();
     zx_status_t ret =
         FileTester::Write(file.get(), buf, sizeof(buf), num_blocks * sizeof(buf), &out);
-    size_t after = file->GetBlocks();
+    size_t after = file->GetBlockCount();
     if (ret == ZX_OK) {
       ASSERT_GT(after, before);
       ++num_blocks;
@@ -508,10 +508,11 @@ TEST_F(FileTest, OutOfSpace) {
     break;
   }
   {
-    // The last page we tried shuold be truncated
+    // The last page we tried should be truncated
     fbl::RefPtr<Page> page;
-    ASSERT_EQ(file->FindPage(num_blocks, &page), ZX_ERR_NOT_FOUND);
-    zx::result addr_or = file->GetDataBlockAddresses(num_blocks, 1, true);
+    file->FindPage(num_blocks, &page);
+    ASSERT_TRUE(!page || !page->IsUptodate());
+    zx::result addr_or = file->FindAddresses(num_blocks, 1);
     ASSERT_TRUE(addr_or.is_ok());
     ASSERT_EQ(addr_or->front(), kNullAddr);
   }

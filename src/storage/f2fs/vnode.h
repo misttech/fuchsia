@@ -113,44 +113,51 @@ class VnodeF2fs : public fs::PagedVnode,
       __TA_EXCLUDES(mutex_);
   void OnNoPagedVmoClones() final __TA_REQUIRES(mutex_);
 
-  void ReleasePagedVmo() __TA_EXCLUDES(mutex_);
+  void ReleasePagedVmo() __TA_REQUIRES(mutex_);
 
   virtual zx_status_t InitInodeMetadata() __TA_EXCLUDES(mutex_)
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
   virtual zx_status_t InitInodeMetadataUnsafe() __TA_REQUIRES(mutex_)
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
   zx::result<LockedPage> NewInodePage();
-  zx_status_t RemoveInodePage();
   void UpdateInodePage(LockedPage &inode_page, bool checkpoint = false) __TA_EXCLUDES(mutex_);
+  void UpdateInodePageUnsafe(LockedPage &inode_page, bool update_size = false)
+      __TA_REQUIRES(mutex_);
 
-  void TruncateNode(LockedPage &page);
+  void TruncateNode(LockedPage &page) __TA_REQUIRES(mutex_);
 
-  block_t TruncateDnodeAddrs(LockedPage &dnode, size_t offset, size_t count);
-  zx::result<size_t> TruncateDnode(nid_t nid);
-  zx::result<size_t> TruncateNodes(nid_t start_nid, size_t nofs, size_t ofs, size_t depth);
-  zx_status_t TruncatePartialNodes(const Inode &inode, const size_t (&offset)[4], size_t depth);
-  zx_status_t TruncateInodeBlocks(pgoff_t from);
+  block_t TruncateDnodeAddrs(LockedPage &dnode, size_t offset, size_t count) __TA_REQUIRES(mutex_);
+  zx::result<size_t> TruncateDnode(nid_t nid) __TA_REQUIRES(mutex_);
+  zx::result<size_t> TruncateNodes(nid_t start_nid, size_t nofs, size_t ofs, size_t depth)
+      __TA_REQUIRES(mutex_);
+  zx_status_t TruncatePartialNodes(const Inode &inode, const size_t (&offset)[4], size_t depth)
+      __TA_REQUIRES(mutex_);
+  zx_status_t TruncateInodeBlocks(pgoff_t from) __TA_REQUIRES(mutex_);
 
-  zx_status_t DoTruncate(size_t len) __TA_EXCLUDES(f2fs::GetGlobalLock());
-  zx_status_t TruncateBlocks(uint64_t from) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+  zx_status_t DoTruncate(size_t len) __TA_EXCLUDES(f2fs::GetGlobalLock()) __TA_EXCLUDES(mutex_);
+  zx_status_t TruncateBlocks(uint64_t from) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock())
+      __TA_EXCLUDES(mutex_);
   zx_status_t TruncateHoleUnsafe(pgoff_t pg_start, pgoff_t pg_end, bool evict = true)
-      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
   zx_status_t TruncateHole(pgoff_t pg_start, pgoff_t pg_end, bool evict = true)
-      __TA_EXCLUDES(f2fs::GetGlobalLock());
-  void TruncateToSize() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
-  void Purge() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_EXCLUDES(mutex_);
+  void TruncateToSize() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_EXCLUDES(mutex_);
+  zx_status_t PurgeInodeBlock() __TA_REQUIRES(mutex_);
+  void PurgeDataBlocks() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
+  zx_status_t InvalidateBlocks(size_t from) __TA_REQUIRES(mutex_);
   // Caller ensures that this data page is never allocated.
   zx_status_t GetNewDataPage(pgoff_t index, bool new_i_size, LockedPage *out)
-      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+      __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
 
   zx_status_t ReserveNewBlock(LockedPage &node_page, size_t ofs_in_node);
 
   // It returns block addrs for file data blocks at |indices|. |read_only| is used to determine
   // whether it allocates a new addr if a block of |indices| has not been assigned a valid addr.
-  zx::result<std::vector<block_t>> GetDataBlockAddresses(const std::vector<pgoff_t> &indices,
-                                                         bool read_only = false);
-  zx::result<std::vector<block_t>> GetDataBlockAddresses(pgoff_t index, size_t count,
-                                                         bool read_only = false);
+  zx::result<std::vector<block_t>> GetAddresses(const std::vector<pgoff_t> &indices)
+      __TA_REQUIRES(mutex_);
+  zx::result<std::vector<block_t>> GetAddresses(pgoff_t index, size_t count) __TA_REQUIRES(mutex_);
+  zx::result<std::vector<block_t>> FindAddresses(const std::vector<pgoff_t> &indices);
+  zx::result<std::vector<block_t>> FindAddresses(pgoff_t index, size_t count);
 
   // The maximum depth is four.
   // Offset[0] indicates inode offset.
@@ -210,35 +217,26 @@ class VnodeF2fs : public fs::PagedVnode,
     fs::SharedLock rlock(mutex_);
     return std::string_view(name_).compare(name) == 0;
   }
-  std::string_view GetNameView() __TA_EXCLUDES(mutex_) {
+  const std::string &GetNameView() const __TA_EXCLUDES(mutex_) {
     fs::SharedLock rlock(mutex_);
-    return std::string_view(name_);
+    return GetNameViewUnsafe();
   }
 
-  void IncBlocks(const block_t &nblocks) {
-    if (!nblocks) {
-      return;
-    }
-    SetFlag(InodeInfoFlag::kSyncInode);
-    num_blocks_.fetch_add(nblocks);
+  void AddBlocks(const block_t nblocks) __TA_EXCLUDES(mutex_) {
+    std::lock_guard lock(mutex_);
+    return AddBlocksUnsafe(nblocks);
   }
-  void DecBlocks(const block_t &nblocks) {
-    ZX_DEBUG_ASSERT(nblocks > 0);
-    ZX_DEBUG_ASSERT(num_blocks_ >= nblocks);
-    SetFlag(InodeInfoFlag::kSyncInode);
-    num_blocks_.fetch_sub(nblocks, std::memory_order_release);
+  void RemoveBlocks(const block_t nblocks) __TA_EXCLUDES(mutex_) {
+    std::lock_guard lock(mutex_);
+    return RemoveBlocksUnsafe(nblocks);
   }
-  block_t GetBlocks() const { return num_blocks_.load(std::memory_order_acquire); }
-  void SetBlocks(const uint64_t &blocks) {
-    num_blocks_.store(safemath::checked_cast<block_t>(blocks), std::memory_order_release);
-  }
-  bool HasBlocks() const {
-    block_t xattr_block = xattr_nid_ ? 1 : 0;
-    return (GetBlocks() > xattr_block);
+  block_t GetBlockCount() const __TA_EXCLUDES(mutex_) {
+    fs::SharedLock lock(mutex_);
+    return GetBlockCountUnsafe();
   }
 
   void SetSize(const size_t nbytes);
-  uint64_t GetSize() const;
+  uint64_t GetSize(bool update_checkpointed_size = false) const;
 
   void SetParentNid(const ino_t &pino) { parent_ino_.store(pino, std::memory_order_release); }
   ino_t GetParentNid() const { return parent_ino_.load(std::memory_order_acquire); }
@@ -266,13 +264,11 @@ class VnodeF2fs : public fs::PagedVnode,
   //  - Mark cold files in InodeInfo
   //  - Mark cold node blocks in their node footer
   //  - Mark cold data pages in page cache
-  bool IsColdFile() __TA_EXCLUDES(mutex_);
+  bool IsColdFile();
   void SetColdFile() __TA_EXCLUDES(mutex_);
 
-  void SetAdvise(const FAdvise bit) __TA_REQUIRES(mutex_) {
-    advise_ |= GetMask(1, static_cast<size_t>(bit));
-  }
-  bool IsAdviseSet(const FAdvise bit) __TA_REQUIRES_SHARED(mutex_) {
+  void SetAdvise(const FAdvise bit) { advise_ |= GetMask(1, static_cast<size_t>(bit)); }
+  bool IsAdviseSet(const FAdvise bit) {
     return (GetMask(1, static_cast<size_t>(bit)) & advise_) != 0;
   }
 
@@ -339,14 +335,15 @@ class VnodeF2fs : public fs::PagedVnode,
   zx_status_t InitFileCacheUnsafe(uint64_t nbytes = 0) __TA_REQUIRES(mutex_);
   void CleanupCache();
 
+  // for testing
   zx_status_t SetExtendedAttribute(XattrIndex index, std::string_view name,
-                                   std::span<const uint8_t> value, XattrOption option);
+                                   std::span<const uint8_t> value,
+                                   XattrOption option) TA_NO_THREAD_SAFETY_ANALYSIS;
   zx::result<size_t> GetExtendedAttribute(XattrIndex index, std::string_view name,
-                                          std::span<uint8_t> out);
-
+                                          std::span<uint8_t> out) TA_NO_THREAD_SAFETY_ANALYSIS;
   nid_t XattrNid() const { return xattr_nid_; }
 
-  // for testing
+  void SetBlockCount(const block_t blocks) TA_NO_THREAD_SAFETY_ANALYSIS { num_blocks_ = blocks; }
   FileCache &GetFileCache() { return *file_cache_; }
   void ResetFileCache() { file_cache_->Reset(); }
   ExtentTree &GetExtentTree() { return *extent_tree_; }
@@ -357,7 +354,7 @@ class VnodeF2fs : public fs::PagedVnode,
   }
   void SetDirLevel(const uint8_t level) TA_NO_THREAD_SAFETY_ANALYSIS { dir_level_ = level; }
   template <typename T>
-  const timespec &GetTime() const TA_NO_THREAD_SAFETY_ANALYSIS {
+  const timespec &GetTime() const __TA_REQUIRES_SHARED(mutex_) {
     return time_->Get<T>();
   }
   pgoff_t Writeback(bool is_sync = false, bool is_reclaim = false)
@@ -368,6 +365,22 @@ class VnodeF2fs : public fs::PagedVnode,
   }
 
  protected:
+  const std::string& GetNameViewUnsafe() const __TA_REQUIRES_SHARED(mutex_) { return name_; }
+  void AddBlocksUnsafe(const block_t nblocks) __TA_REQUIRES(mutex_) {
+    if (!nblocks) {
+      return;
+    }
+    SetFlag(InodeInfoFlag::kSyncInode);
+    num_blocks_ += nblocks;
+  }
+  void RemoveBlocksUnsafe(const block_t nblocks) __TA_REQUIRES(mutex_) {
+    ZX_DEBUG_ASSERT(nblocks > 0);
+    ZX_DEBUG_ASSERT(num_blocks_ >= nblocks);
+    SetFlag(InodeInfoFlag::kSyncInode);
+    num_blocks_ -= nblocks;
+  }
+  block_t GetBlockCountUnsafe() const __TA_REQUIRES_SHARED(mutex_) { return num_blocks_; }
+
   void IncrementLinkUnsafe() __TA_REQUIRES(mutex_) { ++nlink_; }
   void ClearLinkCountUnsafe() __TA_REQUIRES(mutex_) { nlink_ = 0; }
   void DecrementLinkUnsafe() __TA_REQUIRES(mutex_) { --nlink_; }
@@ -381,12 +394,10 @@ class VnodeF2fs : public fs::PagedVnode,
                         const zx_status_t err) __TA_EXCLUDES(mutex_);
   void ReportPagerErrorUnsafe(const uint32_t op, const uint64_t offset, const uint64_t length,
                               const zx_status_t err) __TA_REQUIRES_SHARED(mutex_);
-  SuperblockInfo &superblock_info_;
-  std::string name_ __TA_GUARDED(mutex_);
 
   bool NeedToSyncDir() const;
   bool NeedToCheckpoint();
-  bool NeedInodeWrite() const __TA_EXCLUDES(mutex_);
+  bool NeedToLogInode() const;
 
   zx::result<size_t> CreatePagedVmo(uint64_t size) __TA_REQUIRES(mutex_);
   zx_status_t ClonePagedVmo(fuchsia_io::wire::VmoFlags flags, size_t size, zx::vmo *out_vmo)
@@ -397,34 +408,39 @@ class VnodeF2fs : public fs::PagedVnode,
   std::unique_ptr<VmoManager> vmo_manager_;
   std::unique_ptr<FileCache> file_cache_;
 
+  SuperblockInfo &superblock_info_;
+
   uid_t uid_ = 0;
   gid_t gid_ = 0;
   uint32_t generation_ = 0;
-  std::atomic<block_t> num_blocks_ = 0;
+
+  std::string name_ __TA_GUARDED(mutex_);
+  block_t num_blocks_ __TA_GUARDED(mutex_) = 0;
   uint32_t nlink_ __TA_GUARDED(mutex_) = 0;
+  uint64_t current_depth_ __TA_GUARDED(mutex_) = 1;  // use only in directory structure
+
   std::atomic<block_t> dirty_pages_ = 0;  // # of dirty dentry/data pages
   std::atomic<ino_t> parent_ino_ = kNullIno;
   std::array<std::atomic_flag, static_cast<uint8_t>(InodeInfoFlag::kFlagSize)> flags_ = {
       ATOMIC_FLAG_INIT};
   std::condition_variable_any flag_cvar_;
 
-  uint64_t checkpointed_size_ __TA_GUARDED(mutex_) = 0;  // use only in directory structure
-  uint64_t current_depth_ __TA_GUARDED(mutex_) = 1;      // use only in directory structure
-  std::atomic<uint64_t> data_version_ = 0;               // lastest version of data for fsync
-  uint32_t inode_flags_ __TA_GUARDED(mutex_) = 0;        // keep an inode flags for ioctl
-  uint16_t extra_isize_ = 0;                             // extra inode attribute size in bytes
-  uint16_t inline_xattr_size_ = 0;                       // inline xattr size
-  [[maybe_unused]] umode_t acl_mode_ = 0;                // keep file acl mode temporarily
-  uint8_t advise_ __TA_GUARDED(mutex_) = 0;              // use to give file attribute hints
-  uint8_t dir_level_ __TA_GUARDED(mutex_) = 0;           // use for dentry level for large dir
+  uint32_t inode_flags_ = 0;                // keep an inode flags for ioctl
+  std::atomic<uint64_t> data_version_ = 0;  // data version from the most recent fsync
+  uint16_t extra_isize_ = 0;                // extra inode attribute size in bytes
+  uint16_t inline_xattr_size_ = 0;          // inline xattr size
+  [[maybe_unused]] umode_t acl_mode_ = 0;  // keep file acl mode temporarily
+  uint8_t advise_ = 0;                      // use to give file attribute hints
+  uint8_t dir_level_ = 0;                   // use for dentry level for large dir
   // TODO: revisit thread annotation when xattr is available.
   nid_t xattr_nid_ = 0;  // node id that contains xattrs
-  std::optional<Timestamps> time_ __TA_GUARDED(mutex_) = std::nullopt;
+  std::optional<Timestamps> time_ __TA_GUARDED(mutex_) =
+      std::nullopt;
 
   std::unique_ptr<ExtentTree> extent_tree_;
 
   const ino_t ino_ = 0;
-  F2fs *const fs_ = nullptr;
+  F2fs* const fs_ = nullptr;
   umode_t mode_ = 0;
   fs::WatcherContainer watcher_{};
 };

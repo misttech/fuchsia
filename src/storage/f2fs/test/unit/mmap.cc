@@ -293,7 +293,7 @@ TEST_F(MmapTest, AvoidPagedVmoRaceCondition) {
   ASSERT_EQ(test_vnode->HasPagedVmo(), true);
 }
 
-TEST_F(MmapTest, ReleasePagedVmoInVnodeRecycle) {
+TEST_F(MmapTest, ReleasePagedVmoInVnodeRecycle) TA_NO_THREAD_SAFETY_ANALYSIS {
   srand(testing::UnitTest::GetInstance()->random_seed());
 
   uint8_t write_buf[PAGE_SIZE];

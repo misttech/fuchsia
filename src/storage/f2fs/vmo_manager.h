@@ -121,8 +121,10 @@ class VmoManager {
 
   void UpdateSizeUnsafe() __TA_REQUIRES(mutex_);
   void SetContentSize(const size_t nbytes) __TA_EXCLUDES(mutex_);
-  uint64_t GetContentSize(bool round_up = false) __TA_EXCLUDES(mutex_);
+  uint64_t GetContentSize(bool update_checkpointed_size = false, bool round_up = false)
+      __TA_EXCLUDES(mutex_);
   uint64_t GetContentSizeUnsafe(bool round_up) __TA_REQUIRES_SHARED(mutex_);
+  bool SizeIsChanged() __TA_EXCLUDES(mutex_);
 
   void Reset(bool shutdown = false) __TA_EXCLUDES(mutex_);
   bool IsPaged() const { return mode_ == VmoMode::kPaged; }
@@ -149,6 +151,7 @@ class VmoManager {
 
   size_t size_in_blocks_ __TA_GUARDED(mutex_) = 0;
   uint64_t content_size_ __TA_GUARDED(mutex_) = 0;
+  uint64_t checkpointed_size_ __TA_GUARDED(mutex_) = 0;
   const size_t node_size_in_blocks_ = 0;
   const size_t node_size_ = 0;
   // a copy of paged vmo

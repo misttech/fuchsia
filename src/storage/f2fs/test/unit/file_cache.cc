@@ -383,7 +383,7 @@ TEST_F(FileCacheTest, Truncate) TA_NO_THREAD_SAFETY_ANALYSIS {
   // Check if each page has correct flags.
   for (size_t i = 0; i < nblocks; ++i) {
     LockedPage page = GetLockedPage(i);
-    zx::result data_blkaddr = file.GetDataBlockAddresses(i, 1, true);
+    zx::result data_blkaddr = file.FindAddresses(i, 1);
     ASSERT_TRUE(data_blkaddr.is_ok());
     if (i >= start / kPageSize) {
       ASSERT_EQ(page->IsDirty(), false);
@@ -402,7 +402,7 @@ TEST_F(FileCacheTest, Truncate) TA_NO_THREAD_SAFETY_ANALYSIS {
 
   {
     LockedPage page = GetLockedPage(start);
-    zx::result data_blkaddr = file.GetDataBlockAddresses(start, 1, true);
+    zx::result data_blkaddr = file.FindAddresses(start, 1);
     ASSERT_TRUE(data_blkaddr.is_ok());
     // |page| for the hole should be invalidated.
     ASSERT_EQ(page->IsDirty(), false);

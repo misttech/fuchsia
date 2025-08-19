@@ -267,8 +267,11 @@ void F2fs::ScheduleWritebackAndReclaimPages() {
 }
 
 zx_status_t F2fs::SyncFs(bool bShutdown) {
-  // TODO:: Consider !superblock_info_.IsDirty()
   std::lock_guard lock(f2fs::GetGlobalLock());
+  return SyncFsUnsafe(bShutdown);
+}
+zx_status_t F2fs::SyncFsUnsafe(bool bShutdown) {
+  // TODO:: Consider !superblock_info_.IsDirty()
   if (bShutdown) {
     FX_LOGS(INFO) << "prepare for shutdown";
     // Stop listening to memorypressure.
@@ -416,7 +419,7 @@ zx_status_t F2fs::LoadSuper(std::unique_ptr<Superblock> sb) {
   root_vnode_ = std::move(*vnode_or);
 
   // root vnode is corrupted
-  if (!root_vnode_->IsDir() || !root_vnode_->GetBlocks() || !root_vnode_->GetSize()) {
+  if (!root_vnode_->IsDir() || !root_vnode_->GetBlockCount() || !root_vnode_->GetSize()) {
     return ZX_ERR_INTERNAL;
   }
 

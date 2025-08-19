@@ -52,7 +52,6 @@ zx::result<F2fs::FsyncInodeList> F2fs::FindFsyncDnodes() {
   block_t blkaddr = segment_manager_->StartBlock(curseg->segno) + curseg->next_blkoff;
   PageList inode_pages;
   FsyncInodeList inode_list;
-  fs::SharedLock lock(f2fs::GetGlobalLock());
 
   while (true) {
     bool new_entry = false;
@@ -214,7 +213,7 @@ void F2fs::DoRecoverData(VnodeF2fs &vnode, NodePage &page) {
   if (page_or.is_error()) {
     return;
   }
-  vnode.IncBlocks(path_or->num_new_nodes);
+  vnode.AddBlocks(path_or->num_new_nodes);
   LockedPage dnode_page = std::move(*page_or);
   dnode_page.WaitOnWriteback();
 
@@ -233,6 +232,7 @@ void F2fs::DoRecoverData(VnodeF2fs &vnode, NodePage &page) {
     if (src != dest && dest != kNewAddr && dest != kNullAddr) {
       if (src == kNullAddr) {
         ZX_ASSERT(vnode.ReserveNewBlock(dnode_page, offset_in_dnode) == ZX_OK);
+        vnode.AddBlocks(1);
       }
 
       // Check the previous node page having this index
@@ -291,6 +291,7 @@ void F2fs::RecoverData(FsyncInodeList &inode_list) {
 }
 
 void F2fs::RecoverFsyncData() {
+  std::lock_guard lock(f2fs::GetGlobalLock());
   // Step #1: find fsynced inode numbers
   SetOnRecovery();
   if (auto result = FindFsyncDnodes(); result.is_ok()) {
@@ -304,7 +305,7 @@ void F2fs::RecoverFsyncData() {
     RecoverData(inode_list);
     ZX_DEBUG_ASSERT(inode_list.is_empty());
     GetMetaVnode().InvalidatePages(GetSegmentManager().GetMainAreaStartBlock());
-    SyncFs(false);
+    SyncFsUnsafe(false);
   }
   GetMetaVnode().InvalidatePages(GetSegmentManager().GetMainAreaStartBlock());
   ClearOnRecovery();

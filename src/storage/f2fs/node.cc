@@ -334,18 +334,17 @@ zx::result<LockedPage> NodeManager::GetLockedDnodePage(NodePath &node_path, bool
   size_t level = node_path.depth;
   const size_t (&offset)[kMaxNodeBlockLevel] = node_path.offset_in_node;
   const size_t (&noffset)[kMaxNodeBlockLevel] = node_path.node_offset;
-
-  LockedPage node_page;
-  if (zx_status_t err = GetNodePage(node_path.ino, &node_page); err != ZX_OK) {
-    return zx::error(err);
-  }
-
   std::vector<nid_t> new_nids;
   auto truncate_nodes = fit::defer([&] {
     for (const nid_t nid : new_nids) {
       TruncateNode(nid);
     }
   });
+
+  LockedPage node_page;
+  if (zx_status_t err = GetNodePage(node_path.ino, &node_page); err != ZX_OK) {
+    return zx::error(err);
+  }
   LockedPage parent = std::move(node_page);
   for (size_t i = 0; i < level; ++i) {
     nid_t nid = parent.GetPage<NodePage>().GetNid(offset[i]);

@@ -45,7 +45,6 @@ VnodeF2fs::VnodeF2fs(F2fs *fs, ino_t ino, umode_t mode, LockedPage node_page)
   }
 
   SetFlag(InodeInfoFlag::kNewInode);
-  num_blocks_ = 0;
   nlink_ = 1;
   uid_ = getuid();
 
@@ -206,7 +205,7 @@ zx::result<size_t> VnodeF2fs::CreateAndPopulateVmo(zx::vmo &vmo, const size_t of
                                                fs()->GetMemoryStatus(MemoryStatus::kNeedReclaim));
   }
 
-  zx::result addrs = GetDataBlockAddresses(start_block, num_read_blocks, true);
+  zx::result addrs = FindAddresses(start_block, num_read_blocks);
   if (addrs.is_error()) {
     return addrs.take_error();
   }
@@ -290,8 +289,10 @@ void VnodeF2fs::ReportPagerErrorUnsafe(const uint32_t op, const uint64_t offset,
 }
 
 void VnodeF2fs::RecycleNode() TA_NO_THREAD_SAFETY_ANALYSIS {
-  ZX_ASSERT_MSG(open_count() == 0, "RecycleNode[%s:%u]: open_count must be zero (%lu)",
-                GetNameView().data(), GetKey(), open_count());
+  if (open_count()) {
+    FX_LOGS(WARNING) << "RecycleNode[%s:%u]: open_count must be zero (%lu)",
+        GetNameViewUnsafe().data(), GetKey(), open_count();
+  }
   // It is safe to free vnodes that have been already evicted from vnode cache.
   if (!(*this).fbl::WAVLTreeContainable<VnodeF2fs *>::InContainer()) {
     delete this;
@@ -312,7 +313,7 @@ void VnodeF2fs::RecycleNode() TA_NO_THREAD_SAFETY_ANALYSIS {
     // during which any file operations are not allowed.
     if (GetDirtyPageCount()) {
       // It can happen only when CpFlag::kCpErrorFlag is set or with tests.
-      FX_LOGS(WARNING) << "Vnode[" << GetNameView().data() << ":" << GetKey()
+      FX_LOGS(WARNING) << "Vnode[" << GetNameViewUnsafe().data() << ":" << GetKey()
                        << "] is deleted with " << GetDirtyPageCount() << " of dirty pages"
                        << ". CpFlag::kCpErrorFlag is "
                        << (superblock_info_.TestCpFlags(CpFlag::kCpErrorFlag) ? "set."
@@ -326,7 +327,8 @@ void VnodeF2fs::RecycleNode() TA_NO_THREAD_SAFETY_ANALYSIS {
     Deactivate();
   } else {
     // If |this| is an orphan, purge it .
-    Purge();
+    PurgeDataBlocks();
+    PurgeInodeBlock();
     fs()->GetVCache().Evict(this);
     delete this;
   }
@@ -338,7 +340,7 @@ zx::result<fs::VnodeAttributes> VnodeF2fs::GetAttributes() const {
   a.mode = mode_;
   a.id = ino_;
   a.content_size = vmo_manager().GetContentSize();
-  a.storage_size = GetBlocks() * kBlockSize;
+  a.storage_size = GetBlockCountUnsafe() * kBlockSize;
   a.link_count = GetLinkCountUnsafe();
   const auto &atime = GetTime<Timestamps::AccessTime>();
   const auto &btime = GetTime<Timestamps::BirthTime>();
@@ -431,13 +433,16 @@ struct f2fs_iget_args {
 #endif
 
 void VnodeF2fs::UpdateInodePage(LockedPage &inode_page, bool update_size) {
+  std::lock_guard lock(mutex_);
+  UpdateInodePageUnsafe(inode_page, update_size);
+}
+
+void VnodeF2fs::UpdateInodePageUnsafe(LockedPage &inode_page, bool update_size) {
   inode_page.WaitOnWriteback();
   Inode &inode = inode_page->GetAddress<Node>()->i;
-  std::lock_guard lock(mutex_);
-  uint64_t content_size = GetSize();
+  uint64_t content_size = GetSize(update_size);
   if (update_size) {
     ClearFlag(InodeInfoFlag::kSyncInode);
-    checkpointed_size_ = content_size;
   }
   inode.i_size = CpuToLe(content_size);
   inode.i_mode = CpuToLe(GetMode());
@@ -446,7 +451,7 @@ void VnodeF2fs::UpdateInodePage(LockedPage &inode_page, bool update_size) {
   inode.i_gid = CpuToLe(gid_);
   inode.i_links = CpuToLe(GetLinkCountUnsafe());
   // For on-disk i_blocks, we keep counting inode block for backward compatibility.
-  inode.i_blocks = CpuToLe(safemath::CheckAdd<uint64_t>(GetBlocks(), 1).ValueOrDie());
+  inode.i_blocks = CpuToLe(safemath::CheckAdd<uint64_t>(GetBlockCountUnsafe(), 1).ValueOrDie());
 
   if (ExtentCacheAvailable()) {
     auto extent_info = extent_tree_->GetLargestExtent();
@@ -546,40 +551,12 @@ zx_status_t VnodeF2fs::TruncateBlocks(uint64_t from) {
   // Invalidate data pages starting from |free_from|, and purge the addrs of invalidated pages from
   // nodes.
   InvalidatePages(free_from);
-  {
-    auto path_or = GetNodePath(free_from);
-    if (path_or.is_error()) {
-      return path_or.error_value();
-    }
-    auto node_page_or = fs()->GetNodeManager().FindLockedDnodePage(*path_or);
-    if (node_page_or.is_ok()) {
-      size_t ofs_in_node = GetOfsInDnode(*path_or);
-      // If |from| starts from inode or the middle of dnode, purge the addrs in the start dnode.
-      NodePage &node = (*node_page_or).GetPage<NodePage>();
-      if (ofs_in_node || node.IsInode()) {
-        size_t count = 0;
-        if (node.IsInode()) {
-          count = safemath::CheckSub(GetAddrsPerInode(), ofs_in_node).ValueOrDie();
-        } else {
-          count = safemath::CheckSub(kAddrsPerBlock, ofs_in_node).ValueOrDie();
-        }
-        TruncateDnodeAddrs(*node_page_or, ofs_in_node, count);
-        free_from += count;
-      }
-    } else if (node_page_or.error_value() != ZX_ERR_NOT_FOUND) {
-      return node_page_or.error_value();
-    }
-  }
-
-  // Invalidate the rest nodes.
-  if (zx_status_t err = TruncateInodeBlocks(free_from); err != ZX_OK) {
-    return err;
-  }
-  return ZX_OK;
+  std::lock_guard lock(mutex_);
+  return InvalidateBlocks(free_from);
 }
 
 zx_status_t VnodeF2fs::TruncateHole(pgoff_t pg_start, pgoff_t pg_end, bool evict) {
-  fs::SharedLock lock(f2fs::GetGlobalLock());
+  std::lock_guard lock(mutex_);
   return TruncateHoleUnsafe(pg_start, pg_end, evict);
 }
 
@@ -603,7 +580,7 @@ zx_status_t VnodeF2fs::TruncateHoleUnsafe(pgoff_t pg_start, pgoff_t pg_end, bool
       }
       return page_or.error_value();
     }
-    IncBlocks(path_or->num_new_nodes);
+    AddBlocksUnsafe(path_or->num_new_nodes);
     LockedPage dnode_page = std::move(*page_or);
     size_t ofs_in_dnode = GetOfsInDnode(*path_or);
     NodePage &node = dnode_page.GetPage<NodePage>();
@@ -624,28 +601,61 @@ void VnodeF2fs::TruncateToSize() {
 }
 
 void VnodeF2fs::ReleasePagedVmo() {
-  std::lock_guard lock(mutex_);
   if (paged_vmo()) {
     fbl::RefPtr<fs::Vnode> pager_reference = FreePagedVmo();
     ZX_DEBUG_ASSERT(!pager_reference);
   }
 }
 
-void VnodeF2fs::Purge() {
+void VnodeF2fs::PurgeDataBlocks() {
   if (ino_ == superblock_info_.GetNodeIno() || ino_ == superblock_info_.GetMetaIno()) {
     return;
   }
 
-  if (GetLinkCount() || TestFlag(InodeInfoFlag::kBad)) {
+  if (GetLinkCountUnsafe() || TestFlag(InodeInfoFlag::kBad)) {
     return;
   }
 
   SetFlag(InodeInfoFlag::kNoAlloc);
   SetSize(0);
-  if (HasBlocks()) {
-    TruncateToSize();
+
+  block_t base = xattr_nid_ ? 1 : 0;
+  if (GetBlockCountUnsafe() > base && (IsDir() || IsReg() || IsLink())) {
+    InvalidatePages(0);
+    InvalidateBlocks(0);
   }
-  RemoveInodePage();
+}
+
+zx_status_t VnodeF2fs::InvalidateBlocks(size_t from) {
+  {
+    auto path_or = GetNodePath(from);
+    if (path_or.is_error()) {
+      return path_or.error_value();
+    }
+    auto node_page_or = fs()->GetNodeManager().FindLockedDnodePage(*path_or);
+    if (node_page_or.is_ok()) {
+      size_t ofs_in_node = GetOfsInDnode(*path_or);
+      // If |from| starts from inode or the middle of dnode, purge the addrs in the start dnode.
+      NodePage &node = (*node_page_or).GetPage<NodePage>();
+      if (ofs_in_node || node.IsInode()) {
+        size_t count = 0;
+        if (node.IsInode()) {
+          count = safemath::CheckSub(GetAddrsPerInode(), ofs_in_node).ValueOrDie();
+        } else {
+          count = safemath::CheckSub(kAddrsPerBlock, ofs_in_node).ValueOrDie();
+        }
+        TruncateDnodeAddrs(*node_page_or, ofs_in_node, count);
+        from += count;
+      }
+    } else if (node_page_or.error_value() != ZX_ERR_NOT_FOUND) {
+      return node_page_or.error_value();
+    }
+  }
+  // Invalidate the rest nodes.
+  if (zx_status_t err = TruncateInodeBlocks(from); err != ZX_OK) {
+    return err;
+  }
+  return ZX_OK;
 }
 
 zx_status_t VnodeF2fs::InitFileCache(uint64_t nbytes) {
@@ -661,7 +671,6 @@ zx_status_t VnodeF2fs::InitFileCacheUnsafe(uint64_t nbytes) {
   if (file_cache_) {
     return ZX_ERR_ALREADY_EXISTS;
   }
-  checkpointed_size_ = nbytes;
   if (IsReg()) {
     if (auto size_or = CreatePagedVmo(nbytes); size_or.is_ok()) {
       zx_rights_t right = ZX_RIGHTS_BASIC | ZX_RIGHT_MAP | ZX_RIGHTS_PROPERTY | ZX_RIGHT_READ |
@@ -693,7 +702,8 @@ void VnodeF2fs::InitializeFromPage(LockedPage &node_page) {
   nlink_ = LeToCpu(inode.i_links);
   // Don't count the in-memory inode.i_blocks for compatibility with the generic
   // filesystem including linux f2fs.
-  SetBlocks(safemath::CheckSub<uint64_t>(LeToCpu(inode.i_blocks), 1).ValueOrDie());
+  num_blocks_ =
+      safemath::CheckSub(safemath::checked_cast<block_t>(LeToCpu(inode.i_blocks)), 1).ValueOrDie();
   const timespec atime = {static_cast<time_t>(LeToCpu(inode.i_atime)),
                           static_cast<time_t>(LeToCpu(inode.i_atime_nsec))};
   // TODO(b/297201368): As there is no space for creation time, it temporarily considers ctime as
@@ -790,14 +800,13 @@ void VnodeF2fs::SetSize(const size_t nbytes) {
   vmo_manager().SetContentSize(nbytes);
 }
 
-uint64_t VnodeF2fs::GetSize() const {
+uint64_t VnodeF2fs::GetSize(bool update_checkpointed_size) const {
   ZX_ASSERT(vmo_manager_);
-  return vmo_manager().GetContentSize();
+  return vmo_manager().GetContentSize(update_checkpointed_size);
 }
 
-bool VnodeF2fs::NeedInodeWrite() const {
-  fs::SharedLock lock(mutex_);
-  return TestFlag(InodeInfoFlag::kSyncInode) || GetSize() != checkpointed_size_;
+bool VnodeF2fs::NeedToLogInode() const {
+  return TestFlag(InodeInfoFlag::kSyncInode) || vmo_manager().SizeIsChanged();
 }
 
 zx_status_t VnodeF2fs::SyncFile(bool datasync) {
@@ -809,6 +818,7 @@ zx_status_t VnodeF2fs::SyncFile(bool datasync) {
     return ZX_OK;
   }
   if (fs_->GetSegmentManager().HasNotEnoughFreeSecs(0, GetDirtyPageCount()) || NeedToCheckpoint()) {
+    // Disallow filesystem modifications
     std::lock_guard lock(f2fs::GetGlobalLock());
     do {
       uint32_t to_write = std::min(kDefaultBlocksPerSegment, GetDirtyPageCount());
@@ -823,14 +833,16 @@ zx_status_t VnodeF2fs::SyncFile(bool datasync) {
     return ret;
   }
   fs::SharedLock lock(f2fs::GetGlobalLock());
+  // Disallow modifications to this file
+  std::lock_guard file_lock(mutex_);
   WritebackOperation op;
   Writeback(op);
-  if (!datasync || NeedInodeWrite()) {
+  if (!datasync || NeedToLogInode()) {
     LockedPage page;
     if (zx_status_t ret = fs()->GetNodeManager().GetNodePage(ino_, &page); ret != ZX_OK) {
       return ret;
     }
-    UpdateInodePage(page, true);
+    UpdateInodePageUnsafe(page, true);
   }
   fs()->GetNodeManager().FsyncNodePages(Ino());
   if (!GetDirtyPageCount()) {
@@ -917,7 +929,7 @@ void VnodeF2fs::TruncateNode(LockedPage &page) {
     fs_->RemoveFromVnodeSet(VnodeSet::kOrphan, nid);
     superblock_info_.DecValidInodeCount();
   } else {
-    DecBlocks(1);
+    RemoveBlocksUnsafe(1);
     SetDirty();
   }
   page.WaitOnWriteback();
@@ -943,7 +955,7 @@ block_t VnodeF2fs::TruncateDnodeAddrs(LockedPage &dnode, size_t offset, size_t c
   }
   if (nr_free) {
     fs()->GetSuperblockInfo().DecValidBlockCount(nr_free);
-    DecBlocks(nr_free);
+    RemoveBlocksUnsafe(nr_free);
     dnode.SetDirty();
     SetDirty();
   }
@@ -1166,7 +1178,7 @@ zx_status_t VnodeF2fs::TruncateInodeBlocks(pgoff_t from) {
   return ZX_OK;
 }
 
-zx_status_t VnodeF2fs::RemoveInodePage() {
+zx_status_t VnodeF2fs::PurgeInodeBlock() {
   LockedPage ipage;
   if (zx_status_t err = fs()->GetNodeManager().GetNodePage(Ino(), &ipage); err != ZX_OK) {
     return err;
@@ -1180,7 +1192,6 @@ zx_status_t VnodeF2fs::RemoveInodePage() {
     xattr_nid_ = 0;
     TruncateNode(page);
   }
-  ZX_DEBUG_ASSERT(!GetBlocks());
   TruncateNode(ipage);
   return ZX_OK;
 }
@@ -1293,7 +1304,7 @@ void VnodeF2fs::CleanupCache() {
 
 // Set multimedia files as cold files for hot/cold data separation
 void VnodeF2fs::SetColdFile() {
-  std::lock_guard lock(mutex_);
+  fs::SharedLock lock(mutex_);
   const std::vector<std::string> &extension_list = superblock_info_.GetExtensionList();
   for (const auto &extension : extension_list) {
     if (std::string_view(name_).ends_with(std::string_view(extension))) {
@@ -1310,10 +1321,7 @@ void VnodeF2fs::SetColdFile() {
   }
 }
 
-bool VnodeF2fs::IsColdFile() {
-  fs::SharedLock lock(mutex_);
-  return IsAdviseSet(FAdvise::kCold);
-}
+bool VnodeF2fs::IsColdFile() { return IsAdviseSet(FAdvise::kCold); }
 
 zx_status_t VnodeF2fs::SetExtendedAttribute(XattrIndex index, std::string_view name,
                                             std::span<const uint8_t> value, XattrOption option) {
@@ -1384,7 +1392,7 @@ zx_status_t VnodeF2fs::SetExtendedAttribute(XattrIndex index, std::string_view n
     }
     xattr_page = std::move(*page_or);
 
-    IncBlocks(1);
+    AddBlocks(1);
     SetDirty();
   } else if (xattr_nid_ > 0 && xattr_operator.GetEndOffset() <= xattr_block_start_offset) {
     TruncateNode(xattr_page);

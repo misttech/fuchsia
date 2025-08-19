@@ -156,7 +156,6 @@ zx_status_t Dir::ConvertInlineDir() {
   if (dnode_page_or.is_error()) {
     return dnode_page_or.error_value();
   }
-  IncBlocks(path_or->num_new_nodes);
   LockedPage dnode_page = std::move(*dnode_page_or);
   size_t ofs_in_dnode = GetOfsInDnode(*path_or);
   NodePage *ipage = &dnode_page.GetPage<NodePage>();
@@ -166,6 +165,7 @@ zx_status_t Dir::ConvertInlineDir() {
   if (zx_status_t err = ReserveNewBlock(dnode_page, ofs_in_dnode); err != ZX_OK) {
     return err;
   }
+  AddBlocksUnsafe(path_or->num_new_nodes + 1);
 
   page.WaitOnWriteback();
   page.Zero();
@@ -378,7 +378,6 @@ zx_status_t File::ConvertInlineData() {
   if (dnode_page_or.is_error()) {
     return dnode_page_or.error_value();
   }
-  IncBlocks(path_or->num_new_nodes);
   LockedPage dnode_page = std::move(*dnode_page_or);
   size_t ofs_in_dnode = GetOfsInDnode(*path_or);
   NodePage *ipage = &dnode_page.GetPage<NodePage>();
@@ -388,6 +387,7 @@ zx_status_t File::ConvertInlineData() {
   if (zx_status_t err = ReserveNewBlock(dnode_page, ofs_in_dnode); err != ZX_OK) {
     return err;
   }
+  AddBlocks(path_or->num_new_nodes + 1);
 
   if (TestFlag(InodeInfoFlag::kDataExist)) {
     page.WaitOnWriteback();

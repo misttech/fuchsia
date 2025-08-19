@@ -34,13 +34,13 @@ zx_status_t GetLockedDnodePage(VnodeF2fs &vnode, pgoff_t index, LockedPage *out)
   if (page_or.is_ok()) {
     *out = std::move(*page_or);
   }
-  vnode.IncBlocks(path_or->num_new_nodes);
+  vnode.AddBlocks(path_or->num_new_nodes);
   return page_or.status_value();
 }
 
 void FaultInjectToDnodeAndTruncate(NodeManager &node_manager, fbl::RefPtr<VnodeF2fs> &vnode,
                                    pgoff_t page_index, block_t fault_address,
-                                   zx_status_t exception_type) {
+                                   zx_status_t exception_type) TA_NO_THREAD_SAFETY_ANALYSIS {
   ino_t node_id;
   {
     LockedPage dnode_page;
@@ -348,7 +348,7 @@ TEST_F(NodeManagerTest, NodePage) TA_NO_THREAD_SAFETY_ANALYSIS {
   }
   ASSERT_EQ(node_manager.GetFreeNidCount(), free_node_cnt -= 3);
 
-  vnode->SetBlocks(0);
+  vnode->SetBlockCount(0);
 
   ASSERT_EQ(vnode->Close(), ZX_OK);
   vnode.reset();
@@ -443,7 +443,7 @@ TEST_F(NodeManagerTest, NodePageExceptionCase) TA_NO_THREAD_SAFETY_ANALYSIS {
   test_vnode.reset();
   superblock_info.SetValidBlockCount(tmp_total_valid_block_count);
 
-  vnode->SetBlocks(0);
+  vnode->SetBlockCount(0);
 
   // Check MaxNid
   const Superblock &sb_raw = superblock_info.GetSuperblock();
@@ -772,7 +772,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesSinglePage) TA_NO_THREAD_SAFETY_ANA
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), direct_index, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(direct_index, 1);
+    auto block_addresses_or = vnode->GetAddresses(direct_index, 1);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(node_manager.GetFreeNidCount(), free_node_cnt);
@@ -790,7 +790,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesSinglePage) TA_NO_THREAD_SAFETY_ANA
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv1, 1);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv1, 1);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(node_manager.GetFreeNidCount(), free_node_cnt -= 1);
@@ -809,7 +809,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesSinglePage) TA_NO_THREAD_SAFETY_ANA
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv2, 1);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv2, 1);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(node_manager.GetFreeNidCount(), free_node_cnt -= 2);
@@ -827,7 +827,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesSinglePage) TA_NO_THREAD_SAFETY_ANA
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv2 + indirect_blks, 1);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv2 + indirect_blks, 1);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(node_manager.GetFreeNidCount(), free_node_cnt -= 2);
@@ -845,7 +845,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesSinglePage) TA_NO_THREAD_SAFETY_ANA
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv3, 1);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv3, 1);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(node_manager.GetFreeNidCount(), free_node_cnt -= 3);
@@ -855,7 +855,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesSinglePage) TA_NO_THREAD_SAFETY_ANA
     ASSERT_EQ(dnode_page.GetPage<NodePage>().GetBlockAddr(0ULL), block_addresses.front());
   }
 
-  vnode->SetBlocks(0);
+  vnode->SetBlockCount(0);
 
   ASSERT_EQ(vnode->Close(), ZX_OK);
   vnode.reset();
@@ -892,7 +892,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesMultiPage) TA_NO_THREAD_SAFETY_ANAL
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(direct_index, 2);
+    auto block_addresses_or = vnode->GetAddresses(direct_index, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -913,7 +913,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesMultiPage) TA_NO_THREAD_SAFETY_ANAL
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv1, 2);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv1, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -935,7 +935,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesMultiPage) TA_NO_THREAD_SAFETY_ANAL
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv2, 2);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv2, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -956,7 +956,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesMultiPage) TA_NO_THREAD_SAFETY_ANAL
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv2 + indirect_blks, 2);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv2 + indirect_blks, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -977,7 +977,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesMultiPage) TA_NO_THREAD_SAFETY_ANAL
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv3, 2);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv3, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -991,7 +991,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesMultiPage) TA_NO_THREAD_SAFETY_ANAL
     ASSERT_EQ(dnode_page.GetPage<NodePage>().GetBlockAddr(1ULL), block_addresses[1]);
   }
 
-  vnode->SetBlocks(0);
+  vnode->SetBlockCount(0);
 
   ASSERT_EQ(vnode->Close(), ZX_OK);
   vnode.reset();
@@ -1027,7 +1027,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesCrossMultiPage) TA_NO_THREAD_SAFETY
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(kAddrsPerInode - 1, 2);
+    auto block_addresses_or = vnode->GetAddresses(kAddrsPerInode - 1, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -1051,7 +1051,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesCrossMultiPage) TA_NO_THREAD_SAFETY
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv1 + direct_blks - 1, 2);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv1 + direct_blks - 1, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -1073,8 +1073,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesCrossMultiPage) TA_NO_THREAD_SAFETY
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or =
-        vnode->GetDataBlockAddresses(indirect_index_lv1 + direct_blks * 2 - 1, 2);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv1 + direct_blks * 2 - 1, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -1098,7 +1097,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesCrossMultiPage) TA_NO_THREAD_SAFETY
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv2 - 1, 2);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv2 - 1, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -1122,7 +1121,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesCrossMultiPage) TA_NO_THREAD_SAFETY
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
     auto block_addresses_or =
-        vnode->GetDataBlockAddresses(indirect_index_lv2 + indirect_blks + direct_blks - 1, 2);
+        vnode->GetAddresses(indirect_index_lv2 + indirect_blks + direct_blks - 1, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -1150,7 +1149,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesCrossMultiPage) TA_NO_THREAD_SAFETY
     ASSERT_EQ(FileTester::Write(vnode.get(), buf, sizeof(buf), file_offset, &out_actual), ZX_OK);
     ASSERT_EQ(vnode->SyncFile(false), ZX_OK);
 
-    auto block_addresses_or = vnode->GetDataBlockAddresses(indirect_index_lv3 + direct_blks - 1, 2);
+    auto block_addresses_or = vnode->GetAddresses(indirect_index_lv3 + direct_blks - 1, 2);
     ASSERT_TRUE(block_addresses_or.is_ok());
     auto block_addresses = block_addresses_or.value();
     ASSERT_EQ(block_addresses.size(), 2u);
@@ -1166,7 +1165,7 @@ TEST_F(NodeManagerTest, GetDataBlockAddressesCrossMultiPage) TA_NO_THREAD_SAFETY
     ASSERT_EQ(dnode_page.GetPage<NodePage>().GetBlockAddr(0ULL), block_addresses[1]);
   }
 
-  vnode->SetBlocks(0);
+  vnode->SetBlockCount(0);
 
   ASSERT_EQ(vnode->Close(), ZX_OK);
   vnode.reset();

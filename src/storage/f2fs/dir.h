@@ -87,7 +87,7 @@ class Dir : public VnodeF2fs, public fbl::Recyclable<Dir> {
   zx::result<bool> AddInlineEntry(std::string_view name, VnodeF2fs *vnode) __TA_REQUIRES(mutex_)
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
   zx_status_t ConvertInlineDir() __TA_REQUIRES(mutex_) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
-  void UpdateParentMetadata(VnodeF2fs *vnode, unsigned int current_depth) __TA_REQUIRES(mutex_);
+  void UpdateParentMetadata(VnodeF2fs *vnode, uint64_t current_depth) __TA_REQUIRES(mutex_);
   zx_status_t InitInodeMetadata() final __TA_EXCLUDES(mutex_)
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
   zx_status_t MakeEmpty(ino_t parent_ino) __TA_REQUIRES(mutex_)

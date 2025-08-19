@@ -103,6 +103,7 @@ class F2fs final {
   void PutSuper();
   void Sync(SyncCallback closure = nullptr) __TA_EXCLUDES(f2fs::GetGlobalLock());
   zx_status_t SyncFs(bool bShutdown = false) __TA_EXCLUDES(f2fs::GetGlobalLock());
+  zx_status_t SyncFsUnsafe(bool bShutdown = false) __TA_REQUIRES(f2fs::GetGlobalLock());
 
   zx_status_t DoCheckpoint(bool is_umount) __TA_REQUIRES(f2fs::GetGlobalLock());
   zx_status_t WriteCheckpoint(bool is_umount) __TA_EXCLUDES(f2fs::GetGlobalLock());
@@ -139,11 +140,11 @@ class F2fs final {
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
   zx_status_t RecoverInode(VnodeF2fs &vnode, NodePage &node_page)
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
-  zx::result<FsyncInodeList> FindFsyncDnodes();
-  void CheckIndexInPrevNodes(block_t blkaddr);
-  void DoRecoverData(VnodeF2fs &vnode, NodePage &page);
-  void RecoverData(FsyncInodeList &inode_list);
-  void RecoverFsyncData();
+  zx::result<FsyncInodeList> FindFsyncDnodes() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+  void CheckIndexInPrevNodes(block_t blkaddr) __TA_REQUIRES(f2fs::GetGlobalLock());
+  void DoRecoverData(VnodeF2fs &vnode, NodePage &page) __TA_REQUIRES(f2fs::GetGlobalLock());
+  void RecoverData(FsyncInodeList &inode_list) __TA_REQUIRES(f2fs::GetGlobalLock());
+  void RecoverFsyncData() __TA_EXCLUDES(f2fs::GetGlobalLock());
 
   VnodeF2fs &GetNodeVnode() { return *node_vnode_; }
   VnodeF2fs &GetMetaVnode() { return *meta_vnode_; }

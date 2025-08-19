@@ -272,6 +272,11 @@ zx::result<> VmoManager::DirtyPagesUnsafe(fs::PagedVfs &vfs, const size_t start,
   return zx::ok();
 }
 
+bool VmoManager::SizeIsChanged() {
+  std::lock_guard lock(mutex_);
+  return checkpointed_size_ != GetContentSizeUnsafe(false);
+}
+
 void VmoManager::SetContentSize(const size_t nbytes) {
   std::lock_guard lock(mutex_);
   if (mode_ == VmoMode::kPaged) {
@@ -301,9 +306,14 @@ uint64_t VmoManager::GetContentSizeUnsafe(bool round_up) {
   return content_size_;
 }
 
-uint64_t VmoManager::GetContentSize(bool round_up) {
-  fs::SharedLock lock(mutex_);
-  return GetContentSizeUnsafe(round_up);
+uint64_t VmoManager::GetContentSize(bool update_checkpointed_size, bool round_up) {
+  if (!update_checkpointed_size) {
+    fs::SharedLock lock(mutex_);
+    return GetContentSizeUnsafe(round_up);
+  }
+  std::lock_guard lock(mutex_);
+  checkpointed_size_ = GetContentSizeUnsafe(round_up);
+  return checkpointed_size_;
 }
 
 void VmoManager::UpdateSizeUnsafe() {

@@ -40,7 +40,7 @@ class File : public VnodeF2fs, public fbl::Recyclable<File> {
   void VmoRead(uint64_t offset, uint64_t length) final __TA_EXCLUDES(mutex_);
   zx::result<zx::stream> CreateStream(uint32_t stream_options) final;
   block_t GetBlockAddr(LockedPage& page) final;
-  zx_status_t ConvertInlineData();
+  zx_status_t ConvertInlineData() __TA_EXCLUDES(mutex_);
   zx::result<LockedPage> FindGcPage(pgoff_t index) final;
 
  private:

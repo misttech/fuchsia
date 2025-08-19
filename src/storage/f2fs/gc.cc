@@ -342,17 +342,17 @@ zx_status_t SegmentManager::GcDataSegment(const SummaryBlock &sum_blk, unsigned 
     if (vnode_or.is_error()) {
       continue;
     }
-
     const size_t index = start_bidx + ofs_in_node;
-    zx::result page_or = vnode_or->FindGcPage(index);
-    if (page_or.is_error()) {
-      continue;
-    }
     if (!vnode_or->IsValid()) {
       // When victim blocks belong to an orphan, we load and keep the corresponding pages instead of
       // migration. They are available until there is no connection to the orphan or kernel reclaims
       // the pages.
-      vnode_or->TruncateHoleUnsafe(index, index + 1, false);
+      vnode_or->TruncateHole(index, index + 1, false);
+      continue;
+    }
+    // Migrate blocks only when their vnodes are valid.
+    zx::result page_or = vnode_or->FindGcPage(index);
+    if (page_or.is_error()) {
       continue;
     }
     page_or->SetDirty();

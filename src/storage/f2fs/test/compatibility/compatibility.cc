@@ -217,7 +217,7 @@ int FuchsiaTestFile::Fstat(struct stat& file_stat) {
   file_stat.st_ctim.tv_nsec = attr.creation_time % ZX_SEC(1);
   file_stat.st_mtim.tv_sec = attr.modification_time / ZX_SEC(1);
   file_stat.st_mtim.tv_nsec = attr.modification_time % ZX_SEC(1);
-  file_stat.st_blocks = (vnode_->GetBlocks())
+  file_stat.st_blocks = (vnode_->GetBlockCount())
                         << vnode_->fs()->GetSuperblockInfo().GetLogSectorsPerBlock();
 
   return 0;

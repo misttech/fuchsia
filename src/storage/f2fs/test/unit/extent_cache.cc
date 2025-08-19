@@ -109,7 +109,7 @@ TEST_F(ExtentCacheTest, LookupExtentCache) {
   constexpr block_t kTestBlkaddr = 30;
   constexpr uint32_t kTestLen = 10;
 
-  auto block_addresses_or = file_->GetDataBlockAddresses(kTestPgOff, kTestLen, true);
+  auto block_addresses_or = file_->FindAddresses(kTestPgOff, kTestLen);
   ASSERT_TRUE(block_addresses_or.is_ok());
   for (uint32_t i = 0; i < kTestLen; ++i) {
     ASSERT_EQ(block_addresses_or.value()[i], kNullAddr);
@@ -121,7 +121,7 @@ TEST_F(ExtentCacheTest, LookupExtentCache) {
           .InsertExtent(ExtentInfo{.fofs = kTestPgOff, .blk_addr = kTestBlkaddr, .len = kTestLen})
           .is_ok());
 
-  block_addresses_or = file_->GetDataBlockAddresses(kTestPgOff, kTestLen, true);
+  block_addresses_or = file_->FindAddresses(kTestPgOff, kTestLen);
   ASSERT_TRUE(block_addresses_or.is_ok());
   for (uint32_t i = 0; i < kTestLen; ++i) {
     ASSERT_EQ(block_addresses_or.value()[i], kTestBlkaddr + i);
