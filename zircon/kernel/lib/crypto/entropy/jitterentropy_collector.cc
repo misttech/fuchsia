@@ -79,7 +79,7 @@ zx_status_t JitterentropyCollector::GetInstance(Collector** ptr) {
 // factor of 0.1 gives us 0.5 * 0.1 * 1000 = 50 bits of entropy for 1000
 // bytes of random data.
 JitterentropyCollector::JitterentropyCollector(uint8_t* mem, size_t len)
-    : Collector("jitterentropy", /* entropy_per_1000_bytes */ 50) {
+    : Collector("jitterentropy", gBootOptions->jitterentropy_entropy_per_1000_bytes) {
   // TODO(https://fxbug.dev/42105888): optimize default jitterentropy parameters and
   // update them in //zircon/kernel/lib/boot-options/include/lib/boot-options/options.inc.
   const uint32_t bs = gBootOptions->jitterentropy_bs;

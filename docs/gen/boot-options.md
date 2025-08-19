@@ -82,6 +82,8 @@ Sets the "memory block size" parameter for jitterentropy. When jitterentropy is
 performing memory operations (to increase variation in CPU timing), the memory
 will be accessed in blocks of this size.
 
+These defaults should generally not be used, and need to be tuned specifically for each CPU.
+
 ### kernel.jitterentropy.bc=\<uint32_t>
 
 **Default:** `0x200`
@@ -89,6 +91,8 @@ will be accessed in blocks of this size.
 Sets the "memory block count" parameter for jitterentropy. When jitterentropy
 is performing memory operations (to increase variation in CPU timing), this
 controls how many blocks (of size `kernel.jitterentropy.bs`) are accessed.
+
+These defaults should generally not be used, and need to be tuned specifically for each CPU.
 
 ### kernel.jitterentropy.ml=\<uint32_t>
 
@@ -101,6 +105,8 @@ is only used when `kernel.jitterentropy.raw` is true. If the value of this
 parameter is `0` or if `kernel.jitterentropy.raw` is `false`, then
 jitterentropy chooses the number of loops is a random-ish way.
 
+These defaults should generally not be used, and need to be tuned specifically for each CPU.
+
 ### kernel.jitterentropy.ll=\<uint32_t>
 
 **Default:** `0x1`
@@ -112,6 +118,8 @@ parameter is only used when `kernel.jitterentropy.raw` is true. If the value of
 this parameter is `0` or if `kernel.jitterentropy.raw` is `false`, then
 jitterentropy chooses the number of loops is a random-ish way.
 
+These defaults should generally not be used, and need to be tuned specifically for each CPU.
+
 ### kernel.jitterentropy.raw=\<bool>
 
 **Default:** `true`
@@ -121,6 +129,21 @@ unprocessed samples. When false, the raw samples will be processed by
 jitterentropy, producing output data that looks closer to uniformly random. Note
 that even when set to false, the CPRNG will re-process the samples, so the
 processing inside of jitterentropy is somewhat redundant.
+
+### kernel.jitterentropy.entropy_per_1000_bytes=\<uint32_t>
+
+**Default:** `0x32`
+
+Sets the "entropy per 1000 bytes" parameter for jitterentropy. This is an
+estimate of how many bits of entropy are collected for every 1000 bytes of
+output from the collector.
+
+With default parameters (bs=64, bc=512, ml=32, ll=1, raw=true), each byte
+of data contributes approximately 0.5 bit of entropy on astro. A safety
+factor of 0.1 gives us 0.5 * 0.1 * 1000 = 50 bits of entropy for 1000
+bytes of data.
+
+These defaults should generally not be used, and need to be tuned specifically for each CPU.
 
 ### kernel.lockup-detector.critical-section-threshold-ms=\<uint64_t>
 

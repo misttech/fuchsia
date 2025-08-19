@@ -174,6 +174,9 @@ pub enum KernelArg {
 
     /// Sets the "LFSR loops" parameter for jitterentropy.
     JitterentropyLl(u32),
+
+    /// Sets the "entropy per 1000 bytes" parameter for jitterentropy.
+    JitterentropyEntropyPer1000Bytes(u32),
 }
 
 /// Options for zero page scanner configuration.
@@ -300,6 +303,9 @@ impl KernelArg {
             Self::JitterentropyBc(i) => ("kernel.jitterentropy.bc", i.to_string()),
             Self::JitterentropyMl(i) => ("kernel.jitterentropy.ml", i.to_string()),
             Self::JitterentropyLl(i) => ("kernel.jitterentropy.ll", i.to_string()),
+            Self::JitterentropyEntropyPer1000Bytes(i) => {
+                ("kernel.jitterentropy.entropy_per_1000_bytes", i.to_string())
+            }
         };
         (key.to_string(), value)
     }
@@ -343,6 +349,7 @@ impl KernelArg {
             | Self::JitterentropyBc(_)
             | Self::JitterentropyMl(_)
             | Self::JitterentropyLl(_)
+            | Self::JitterentropyEntropyPer1000Bytes(_)
             | Self::PageScannerZeroPageScanCount(_) => {
                 vec![format!("{}=*", key)]
             }

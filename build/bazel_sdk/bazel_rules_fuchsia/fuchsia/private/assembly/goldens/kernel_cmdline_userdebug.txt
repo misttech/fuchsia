@@ -23,6 +23,7 @@
 ?kernel.halt-on-panic=true
 ?kernel.jitterentropy.bc=*
 ?kernel.jitterentropy.bs=*
+?kernel.jitterentropy.entropy_per_1000_bytes=*
 ?kernel.jitterentropy.ll=*
 ?kernel.jitterentropy.ml=*
 ?kernel.memory-limit-mb=*

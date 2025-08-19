@@ -126,6 +126,18 @@ pub struct PlatformKernelConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jitterentropy_ll: Option<u32>,
 
+    /// Sets the "entropy per 1000 bytes" parameter for jitterentropy. This is an
+    /// estimate of how many bits of entropy are collected for every 1000 bytes of
+    /// output from the collector.
+    ///
+    /// The value is calculated as:
+    /// 0.1 (safety factor) * <entropy bit per byte> * 1000
+    ///
+    /// Please tune to specific CPU prior to setting and provide validation data like
+    /// entropy rating to associated CL (similar process to go/fuchsia-jitterentropy-sorrel)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jitterentropy_entropy_per_1000_bytes: Option<u32>,
+
     /// Disable emulation of the previous thread wakeup accounting behavior when
     /// unified bookkeeping is enabled. The previous wakeup behavior makes it
     /// less likely that a newly woken thread will preempt a currently running
