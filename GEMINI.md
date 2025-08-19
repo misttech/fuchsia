@@ -69,6 +69,11 @@ investigation of the existing codebase *before* writing new code.
     -q` to confirm your changes compile correctly. This is a final verification
     step, not a tool for initial API discovery.
 
+After a requested change has been successfully implemented and verified (e.g., it
+passes all builds and tests), the task is considered complete. Do not undo or
+revert these changes unless explicitly instructed to do so by the user, or if the
+changes are found to cause a subsequent, unforeseen error.
+
 For language-specific guidance, see the relevant sections below or in the
 `.gemini/extensions/` directory.
 
