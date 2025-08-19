@@ -39,6 +39,10 @@ type Error = flexible enum : uint32 {
     /// Returned by non-blocking [`QrtrClientConnection.Read`] and
     /// [`QrtrClientConnection.Write`].
     WOULD_BLOCK = 6;
+    /// No resources.
+    NO_RESOURCES = 7;
+    /// Invalid args.
+    INVALID_ARGS = 8;
 };
 
 /// The connection used between a QRTR client and the QRTR driver.
@@ -97,7 +101,7 @@ protocol QrtrClientConnection {
 type ConnectionOptions = table {
     /// Blocking mode
     ///
-    /// Optional. Intepreted as true if absent.
+    /// Optional. Interpreted as true if absent.
     1: blocking bool;
     /// Request to reserve a Port when creating the connection.
     ///
@@ -116,6 +120,9 @@ protocol QrtrConnector {
     /// port. Otherwise, assigns a random port for the connection.
     /// * Errors:
     ///   - `INTERNAL_ERROR`: Unexpected QRTR error.
+    ///   - `INVALID_ARGS`: Invalid arguments in `ConnectionOptions`.
+    ///   - `NO_RESOURCES`: No non-reserved port available.
+    ///   - `ALREADY_BOUND`: Specified port in `ConnectionOptions` is in use.
     flexible GetConnection(resource struct {
         options ConnectionOptions;
         proxy server_end:QrtrClientConnection;
