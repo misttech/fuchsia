@@ -225,8 +225,8 @@ void DevfsDevice::advertise_modified() {
   if (topological_.has_value()) {
     topological_.value().advertise_modified();
   }
-  if (protocol_.has_value()) {
-    protocol_.value().advertise_modified();
+  if (protocol_) {
+    protocol_->advertise_modified();
   }
 }
 
@@ -234,8 +234,8 @@ void DevfsDevice::publish() {
   if (topological_.has_value()) {
     topological_.value().publish();
   }
-  if (protocol_.has_value()) {
-    protocol_.value().publish();
+  if (protocol_) {
+    protocol_->publish();
   }
 }
 
@@ -315,9 +315,9 @@ zx_status_t Devnode::add_child(std::string_view name, std::optional<std::string_
     const ServiceEntry& service_entry = kClassNameToService.at(class_name.value());
     // Add dev/class/<class_name> entry:
     if (service_entry.state & ServiceEntry::kDevfs) {
-      out_child.protocol_node().emplace(devfs_, *devfs_.get_class_entry(class_name.value()), target,
-                                        instance_name.value(), child_path,
-                                        std::string(class_name.value()));
+      out_child.protocol_node() = std::make_unique<Devnode>(
+          devfs_, *devfs_.get_class_entry(class_name.value()), target, instance_name.value(),
+          child_path, std::string(class_name.value()));
     }
     // Add service entry:
     if (service_entry.state & ServiceEntry::kService) {

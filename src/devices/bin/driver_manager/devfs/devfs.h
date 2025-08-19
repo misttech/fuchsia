@@ -193,14 +193,16 @@ class DevfsDevice {
   void publish();
   void unpublish();
 
-  std::optional<Devnode>& protocol_node() { return protocol_; }
   std::optional<Devnode>& topological_node() { return topological_; }
 
  private:
+  friend Devnode;
+  std::unique_ptr<Devnode>& protocol_node() { return protocol_; }
+
   std::optional<Devnode> topological_;
   // TODO(https://fxbug.dev/42062564): These protocol nodes are currently always empty directories.
   // Change this to a pure `RemoteNode` that doesn't expose a directory.
-  std::optional<Devnode> protocol_;
+  std::unique_ptr<Devnode> protocol_;
 };
 
 // Manages the root functionality of devfs.
