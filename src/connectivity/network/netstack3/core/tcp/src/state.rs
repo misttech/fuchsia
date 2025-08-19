@@ -1086,7 +1086,12 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
             // Discard delayed ack timer if any, we're sending out an
             // acknowledgement now.
             self.timer = None;
-            Some(Segment::ack(snd_max, self.nxt(), calculated_window_size >> self.wnd_scale))
+            Some(Segment::ack_with_options(
+                snd_max,
+                self.nxt(),
+                calculated_window_size >> self.wnd_scale,
+                SegmentOptions { sack_blocks: self.sack_blocks() },
+            ))
         } else {
             None
         }
@@ -7726,11 +7731,16 @@ mod test {
         old_state.transition_to_state(&counters.refs(), new_state)
     }
 
-    #[test_case(true, false; "more than mss dequeued")]
-    #[test_case(false, false; "less than mss dequeued")]
-    #[test_case(true, true; "more than mss dequeued and delack")]
-    #[test_case(false, true; "less than mss dequeued and delack")]
-    fn poll_receive_data_dequeued_state(dequeue_more_than_mss: bool, delayed_ack: bool) {
+    #[test_case(true, false, false; "more than mss dequeued")]
+    #[test_case(false, false, false; "less than mss dequeued")]
+    #[test_case(true, true, false; "more than mss dequeued and delack")]
+    #[test_case(false, true, false; "less than mss dequeued and delack")]
+    #[test_case(true, false, true; "more than mss dequeued with sack")]
+    fn poll_receive_data_dequeued_state(
+        dequeue_more_than_mss: bool,
+        delayed_ack: bool,
+        sack: bool,
+    ) {
         // NOTE: Just enough room to hold TEST_BYTES, but will end up below the
         // MSS when full.
         const BUFFER_SIZE: usize = 5;
@@ -7797,12 +7807,33 @@ mod test {
                     }),
                     TEST_BYTES.len()
                 );
+
+                // Verify that if the connection has received segments out of
+                // order, it will include the SackBlocks option in the window
+                // update.
+                let expected_sack_blocks = if sack {
+                    let assembler = assert_matches!(
+                        &mut state.recv_mut().unwrap().buffer,
+                        RecvBufferState::Open { buffer: _, assembler } => assembler
+                    );
+                    let gap_start = TEST_IRS + u32::from(MSS) + 2;
+                    // Setup the assembler with a gap to simulate having
+                    // received data out of order.
+                    assert_eq!(assembler.insert(gap_start..gap_start + 1), 0);
+                    let expected_sack_blocks = assembler.sack_blocks();
+                    assert!(!expected_sack_blocks.is_empty());
+                    expected_sack_blocks
+                } else {
+                    SackBlocks::EMPTY
+                };
+
                 assert_eq!(
                     state.poll_receive_data_dequeued(),
-                    Some(Segment::ack(
+                    Some(Segment::ack_with_options(
                         TEST_ISS + 1,
                         TEST_IRS + 1 + TEST_BYTES.len(),
-                        UnscaledWindowSize::from(BUFFER_SIZE as u16)
+                        UnscaledWindowSize::from(BUFFER_SIZE as u16),
+                        SegmentOptions { sack_blocks: expected_sack_blocks },
                     ))
                 );
                 assert_eq!(

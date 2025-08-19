@@ -626,11 +626,6 @@ impl<P: Payload> Segment<P> {
         seg
     }
 
-    /// Creates an ACK segment.
-    pub fn ack(seq: SeqNum, ack: SeqNum, wnd: UnscaledWindowSize) -> Self {
-        Self::ack_with_options(seq, ack, wnd, SegmentOptions::default())
-    }
-
     /// Creates an ACK segment with options.
     pub fn ack_with_options(
         seq: SeqNum,
@@ -1051,6 +1046,11 @@ mod testutils {
                 },
                 data,
             )
+        }
+
+        /// Creates an ACK segment with empty options.
+        pub fn ack(seq: SeqNum, ack: SeqNum, wnd: UnscaledWindowSize) -> Self {
+            Self::ack_with_options(seq, ack, wnd, SegmentOptions::default())
         }
 
         /// Creates a new FIN segment with the provided data.
