@@ -1833,87 +1833,75 @@ impl Interface for PartitionInterface {
         let inner = self.fvm.inner.upgradable_read().await;
         let mappings = &inner.partition_state[&self.partition_index].mappings;
 
-        // When we're updating the mappings, we might need to update the first and last mapping
-        // in the range and then delete the mappings between.
-        let delete_start;
-        let start_index =
-            match mappings.binary_search_by(|m: &Mapping| m.from.start.cmp(&start_slice)) {
-                Ok(index) => {
-                    delete_start = index;
-                    index
-                }
-                Err(index) if index > 0 => {
-                    delete_start = index;
-                    index - 1
-                }
-                _ => return Err(zx::Status::INVALID_ARGS),
-            };
-
         let mut new_metadata = inner.metadata.clone();
-
-        let mut index = start_index;
-        let mut slice = start_slice;
         let end_slice = start_slice.checked_add(slice_count).ok_or(zx::Status::INVALID_ARGS)?;
-        loop {
-            let mapping = &mappings[index];
-            if mapping.from.start > slice || mapping.from.end <= slice {
-                return Err(zx::Status::INVALID_ARGS);
-            }
-            let offset = slice - mapping.from.start;
-            let start_physical_slice = (mapping.to + offset) as usize;
-            let end = std::cmp::min(mapping.from.end, end_slice);
-            new_metadata.allocations
-                [start_physical_slice..start_physical_slice + (end - slice) as usize]
-                .fill(SliceEntry(0));
-            slice = end;
-            if slice == end_slice {
+        let mut deallocated_count: u64 = 0;
+
+        // Deallocate physical slices.
+        for mapping in mappings.iter() {
+            if mapping.from.start >= end_slice {
                 break;
             }
-            index += 1;
-            if index == mappings.len() {
-                return Err(zx::Status::INVALID_ARGS);
+            let dealloc_start = std::cmp::max(start_slice, mapping.from.start);
+            let dealloc_end = std::cmp::min(end_slice, mapping.from.end);
+
+            if dealloc_end > dealloc_start {
+                let count = dealloc_end - dealloc_start;
+                let offset = dealloc_start - mapping.from.start;
+                let start_physical_slice = (mapping.to + offset) as usize;
+                let end_physical_slice = start_physical_slice + count as usize;
+                new_metadata.allocations[start_physical_slice..end_physical_slice]
+                    .fill(SliceEntry(0));
+                deallocated_count += count;
             }
         }
 
+        if deallocated_count == 0 {
+            return Err(zx::Status::INVALID_ARGS);
+        }
+
+        // Write metadata changes to the device.
         let slices = &mut new_metadata.partitions.get_mut(&self.partition_index).unwrap().slices;
-        *slices = slices.saturating_sub(slice_count as u32);
+        *slices = slices.saturating_sub(deallocated_count as u32);
 
         let mut inner =
             self.fvm.write_new_metadata(inner, new_metadata).await.map_err(map_to_status)?;
 
-        inner.assigned_slice_count = inner.assigned_slice_count.checked_sub(slice_count).unwrap();
+        inner.assigned_slice_count =
+            inner.assigned_slice_count.checked_sub(deallocated_count).unwrap();
 
+        // Update the in-memory mappings.
         let mappings = &mut inner.partition_state.get_mut(&self.partition_index).unwrap().mappings;
-        let delete_end = if mappings[index].from.end == slice { index + 1 } else { index };
-        if delete_end > delete_start {
-            mappings.drain(delete_start..delete_end);
+
+        // Find the range of mappings that overlap with the shrink range.
+        let start_idx = mappings.partition_point(|m| m.from.end <= start_slice);
+        let end_idx = mappings.partition_point(|m| m.from.start < end_slice);
+
+        if start_idx >= end_idx {
+            // This should not be reached if deallocated_count > 0, but as a safeguard:
+            return Ok(());
         }
 
-        // Now adjust the first and last mappings if necessary.
-        if start_index != delete_start {
-            let mapping = &mut mappings[start_index];
-            let end = mapping.from.end;
-            mapping.from.end = start_slice;
-
-            if end > slice {
-                // We need to insert a new mapping to cover the remainder.
-                let new_mapping =
-                    Mapping { from: slice..end, to: mapping.to + (slice - mapping.from.start) };
-                mappings.insert(start_index + 1, new_mapping);
-
-                // This path is for when we're deleting a chunk out of a single mapping.  We don't
-                // want to enter the code path below because that's for the case where there is
-                // more than one mapping involved.
-                return Ok(());
-            }
+        let mut replacements = Vec::new();
+        let first_affected_mapping = &mappings[start_idx];
+        if first_affected_mapping.from.start < start_slice {
+            // The first affected mapping is split. Keep the part before the shrink range.
+            replacements.push(Mapping {
+                from: first_affected_mapping.from.start..start_slice,
+                to: first_affected_mapping.to,
+            });
         }
 
-        if delete_end == index {
-            let mapping = &mut mappings[start_index + 1];
-            let delta = slice - mapping.from.start;
-            mapping.from.start = slice;
-            mapping.to += delta;
+        let last_affected_mapping = &mappings[end_idx - 1];
+        if last_affected_mapping.from.end > end_slice {
+            // The last affected mapping is split. Keep the part after the shrink range.
+            replacements.push(Mapping {
+                from: end_slice..last_affected_mapping.from.end,
+                to: last_affected_mapping.to + (end_slice - last_affected_mapping.from.start),
+            });
         }
+
+        mappings.splice(start_idx..end_idx, replacements);
 
         Ok(())
     }
@@ -2958,6 +2946,58 @@ mod tests {
         assert_eq!(get_counts(&volume_proxy).await, (initial_counts.0 + 4, 6));
 
         final_checks(volume_proxy).await;
+    }
+
+    #[fuchsia::test]
+    async fn test_shrink_with_gaps() {
+        let fixture = Fixture::new(SLICE_SIZE * 23).await;
+
+        // Mount the blobfs partition.
+        let _blobfs_volume_proxy = fixture.mount_volume("blobfs").await;
+
+        // Make a new volume to play with.
+        let volumes_proxy =
+            connect_to_protocol_at_dir_svc::<VolumesMarker>(&fixture.outgoing_dir).unwrap();
+        let (dir_proxy, dir_server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        volumes_proxy
+            .create(
+                "foo",
+                dir_server_end,
+                CreateOptions {
+                    initial_size: Some(SLICE_SIZE * 5),
+                    type_guid: Some([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
+                    ..CreateOptions::default()
+                },
+                MountOptions::default(),
+            )
+            .await
+            .expect("create failed (FIDL)")
+            .expect("create failed");
+
+        let volume_proxy =
+            connect_to_protocol_at_dir_svc::<fvolume::VolumeMarker>(&dir_proxy).unwrap();
+
+        let get_counts = || get_counts(&volume_proxy);
+        let initial_counts = get_counts().await;
+
+        assert_eq!(volume_proxy.extend(5, 5).await.expect("extend failed (FIDL)"), zx::sys::ZX_OK);
+        assert_eq!(get_counts().await, (initial_counts.0 + 5, 10));
+
+        // Shrink past the end succeeds
+        assert_eq!(volume_proxy.shrink(5, 8).await.expect("shrink failed (FIDL)"), zx::sys::ZX_OK);
+        assert_eq!(get_counts().await, (initial_counts.0, 5));
+
+        assert_eq!(volume_proxy.extend(5, 5).await.expect("extend failed (FIDL)"), zx::sys::ZX_OK);
+        assert_eq!(get_counts().await, (initial_counts.0 + 5, 10));
+        assert_eq!(volume_proxy.extend(15, 5).await.expect("extend failed (FIDL)"), zx::sys::ZX_OK);
+        assert_eq!(get_counts().await, (initial_counts.0 + 10, 15));
+
+        // Shrink across a gap succeeds
+        assert_eq!(volume_proxy.shrink(5, 12).await.expect("shrink failed (FIDL)"), zx::sys::ZX_OK);
+        assert_eq!(get_counts().await, (initial_counts.0 + 3, 8));
+        // We can shrink the rest we left at the end
+        assert_eq!(volume_proxy.shrink(15, 5).await.expect("shrink failed (FIDL)"), zx::sys::ZX_OK);
+        assert_eq!(get_counts().await, (initial_counts.0, 5));
     }
 
     #[fuchsia::test]
