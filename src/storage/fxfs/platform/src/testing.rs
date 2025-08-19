@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(https://fxbug.dev/439053417): Investigate why the recursion limit was bumped
+// to unblock the toolchain.
+#![recursion_limit = "256"]
+
 // TODO(https://fxbug.dev/377364505) Remove and fix lints once compiler roll
 // https://fxbug.dev/370540341 lands.
 #[allow(dead_code)]
