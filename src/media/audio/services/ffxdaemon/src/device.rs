@@ -5,15 +5,15 @@
 use crate::error::ControllerError;
 use crate::ring_buffer::{AudioDeviceRingBuffer, HardwareRingBuffer, RingBuffer};
 use crate::wav_socket::WavSocket;
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use async_trait::async_trait;
-use fidl::endpoints::{create_proxy, ServerEnd};
+use fidl::endpoints::{ServerEnd, create_proxy};
 use fuchsia_audio::device::{DevfsSelector, RegistrySelector, Selector};
-use fuchsia_audio::{stop_listener, Format};
+use fuchsia_audio::{Format, stop_listener};
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use futures::lock::Mutex;
 use futures::{AsyncWriteExt, StreamExt};
-use std::collections::{btree_map, BTreeMap};
+use std::collections::{BTreeMap, btree_map};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
@@ -504,7 +504,8 @@ impl Device {
         if producer_bytes + bytes_per_wakeup_interval > bytes_in_rb {
             return Err(ControllerError::new(
                 fac::Error::UnknownFatal,
-                format!("Ring buffer not large enough for driver internal delay and plugin wakeup interval. Ring buffer bytes: {}, bytes_per_wakeup_interval + producer bytes: {}",
+                format!(
+                    "Ring buffer not large enough for driver internal delay and plugin wakeup interval. Ring buffer bytes: {}, bytes_per_wakeup_interval + producer bytes: {}",
                     bytes_in_rb,
                     bytes_per_wakeup_interval + producer_bytes
                 ),
@@ -602,19 +603,19 @@ impl Device {
 
                 next_frame_to_read += available_frames_to_read;
 
+                let remaining_frames: u64 = format
+                    .frames_in_duration(duration.unwrap_or_default())
+                    .saturating_sub(next_frame_to_read);
                 // This will be true until we reach the end of the intended capture duration.
-                let write_all_elapsed_frames = duration.is_none()
-                    || (format.frames_in_duration(duration.unwrap_or_default())
-                        - next_frame_to_read
-                        > available_frames_to_read);
+                let write_all_elapsed_frames =
+                    duration.is_none() || (remaining_frames > available_frames_to_read);
 
                 if write_all_elapsed_frames {
                     socket.0.write_all(&buf[..bytes_to_read as usize]).await?;
                     last_wakeup = now;
                 } else {
-                    let bytes_to_write = (format.frames_in_duration(duration.unwrap_or_default())
-                        - next_frame_to_read) as usize
-                        * format.bytes_per_frame() as usize;
+                    let bytes_to_write =
+                        remaining_frames as usize * format.bytes_per_frame() as usize;
                     socket.0.write_all(&buf[..bytes_to_write]).await?;
                     break;
                 }
