@@ -26,3 +26,14 @@ more information about fidlcat.
 
 1. Add `//src/tests/end_to_end/fidlcat:tests` to your `universe_package_labels` and `fx build`.
 2. Run `fx test --e2e fidlcat_e2e_tests`.
+
+### How to update test recordings
+
+The fidlcat e2e tests rely on two golden recordings: `echo.pb` and `unknown.pb`. The echo recording
+can be recreated by capturing all traffic from `echo_client.cm` and `echo_server.cm` as follows:
+
+1. Run `ffx debug fidl  -c echo_client.cm -c echo_server.cm --to echo.pb`
+2. Run the echo realm: `ffx component run core/ffx-laboratory:echo-realm fuchsia-pkg://fuchsia.com/echo_realm_placeholder#meta/echo_realm.cm`
+3. Update the test cases with `ffx debug fidl --from echo.pb -- --with=top` (and `--with=summary`).
+
+The same process can be used for `unknown.pb`, with the exception that this recording should contain some unknown FIDL messages.

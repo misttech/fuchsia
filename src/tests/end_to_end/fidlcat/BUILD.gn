@@ -103,7 +103,7 @@ if (is_host) {
       "//src/tests/end_to_end/fidlcat/echo_client.pb",
       "//src/tests/end_to_end/fidlcat/echo_client_sync.pb",
       "//src/tests/end_to_end/fidlcat/echo_sync_crash.pb",
-      "//src/tests/end_to_end/fidlcat/snapshot.pb",
+      "//src/tests/end_to_end/fidlcat/unknown.pb",
     ]
 
     outputs =

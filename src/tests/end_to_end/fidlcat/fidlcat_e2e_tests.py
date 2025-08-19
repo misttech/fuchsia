@@ -393,131 +393,78 @@ class FidlcatE2eTests(unittest.TestCase):
         self.assertEqual(
             fidlcat.stdout,
             """\
---------------------------------------------------------------------------------echo_client.cm 1934080: 19 handles
+--------------------------------------------------------------------------------echo_client.cm 38724: 14 handles
 
-  Process:eb13d6eb(proc-self)
+  Process:25ce275f(proc-self)
 
-  startup Thread:72a3d5c3(thread-self)
+  startup Thread:25ce269f(thread-self)
 
-  startup Vmar:7ab3d41f(vmar-root)
+  startup Vmar:21ee277b(vmar-root)
 
-  startup Channel:4eb3d2ab(dir:/svc)
-      21320.052636 write request  fuchsia.io/Directory.DeprecatedOpen(".")
-        -> Channel:fdd3d09f(channel:1)
+  startup Channel:25de241f(dir:/pkg)
 
-  startup Channel:8db3d62f(dir:/pkg)
+  startup Channel:25de25ff(dir:/svc)
+      32.413004 write request  fuchsia.io/Directory.Open(".")
+        -> 252e2acb
 
-  startup Channel:2f53d2bb(directory-request:/)
-      21320.389674 read  request  fuchsia.io/Node.DeprecatedClone
-    closed by zx_handle_close
+  startup Channel:252e2df7(directory-request:/)
 
-  startup Clock:7343d0fb()
+  startup Clock:25de2597()
 
-  startup Socket:1363d7e7(fd:1)
-    closed by zx_handle_close
+  startup Socket:25ae25bf(fd:1)
 
-  startup Socket:0793d49b(fd:2)
-    closed by zx_handle_close
+  startup Socket:25ce25b3(fd:2)
 
-  startup Job:0673d5f7(job-default)
+  startup Job:2efe217f(job-default)
 
-  startup Vmo:6f43c91b(vdso-vmo)
+  startup Vmo:251e264b(vdso-vmo)
 
-  startup Vmo:6c83ca87(stack-vmo)
+  startup Vmo:20ee265f(stack-vmo)
 
-  Port:60a3d6c7(port:0)
-    created by zx_port_create
-    closed by zx_handle_close
+  Channel:25fe2aef(channel:0)
+      32.462118 write request  fuchsia.io/Directory.Open("test.placeholders.Echo")
+        -> 257e2a53
 
-  Timer:4863d187(timer:0)
-    created by zx_timer_create
-    closed by zx_handle_close
+  Channel:24ce2c27()
+    linked to Channel:8b811f73(directory-request:/svc/test.placeholders.Echo) in process echo_server.cm:39310
+      32.512762 write request  test.placeholders/Echo.EchoString
+      33.267383 read  response test.placeholders/Echo.EchoString
 
-  Channel:c633d2db(channel:0)
-    linked to Channel:fdd3d09f(channel:1)
-    created by zx_channel_create
-    closed by Channel:4eb3d2ab(dir:/svc) sending fuchsia.io/Directory.DeprecatedOpen
+--------------------------------------------------------------------------------echo_server.cm 39310: 13 handles
 
-  Channel:fdd3d09f(channel:1)
-    linked to Channel:c633d2db(channel:0)
-    created by zx_channel_create
-      21320.136348 write request  fuchsia.io/Directory.DeprecatedOpen("test.placeholders.Echo")
-        -> Channel:7663d53b(channel:2)
-    closed by zx_handle_close
+  Process:8b11102f(proc-self)
 
-  Channel:7663d53b(channel:2)
-    linked to Channel:7063d25b(channel:3)
-    which is  Channel:60dc2bb3() in process echo_server.cm:1934409
-    created by zx_channel_create
-      21320.157131 write request  test.placeholders/Echo.EchoString
-      21321.018177 read  response test.placeholders/Echo.EchoString
-    closed by zx_handle_close
+  startup Thread:8be11a67(thread-self)
 
-  Channel:7063d25b(channel:3)
-    linked to Channel:7663d53b(channel:2)
-    created by zx_channel_create
-    closed by Channel:fdd3d09f(channel:1) sending fuchsia.io/Directory.DeprecatedOpen
+  startup Vmar:8b111fe7(vmar-root)
 
-  Channel:31c3d79b()
-    created by Channel:2f53d2bb(directory-request:/) receiving fuchsia.io/Node.DeprecatedClone
-    closed by zx_handle_close
+  startup Channel:88b11863(dir:/pkg)
 
---------------------------------------------------------------------------------echo_server.cm 1934409: 18 handles
+  startup Channel:8bf11e73(dir:/svc)
+      33.093308 write request  fuchsia.io/Directory.Open(".")
+        -> 8be11273
 
-  Process:e19c2d4f(proc-self)
+  startup Channel:8bb11d3b(directory-request:/)
+      33.140662 read  request  fuchsia.io/Directory.Open("svc/test.placeholders.Echo")
+        -> Channel:8b811f73(directory-request:/svc/test.placeholders.Echo)
 
-  startup Thread:4a8c356b(thread-self)
+  startup Clock:8b311e27()
 
-  startup Vmar:da0c2e4b(vmar-root)
+  startup Socket:8be11e3b(fd:1)
 
-  startup Channel:5e0c228f(dir:/svc)
-      21320.611044 write request  fuchsia.io/Directory.DeprecatedOpen(".")
-        -> Channel:d75c352b(channel:5)
+  startup Socket:8b011e1f(fd:2)
 
-  startup Channel:c75c3537(dir:/pkg)
+  startup Job:8be1100b(job-default)
 
-  startup Channel:dedc3503(directory-request:/)
-      21320.679108 read  request  fuchsia.io/Node.DeprecatedClone
-      21320.814595 read  request  fuchsia.io/Directory.DeprecatedOpen("svc/test.placeholders.Echo")
-        -> Channel:60dc2bb3()
+  startup Vmo:8bd11947(vdso-vmo)
 
-  startup Clock:8efc2deb()
+  startup Vmo:8bb11fdb(stack-vmo)
 
-  startup Socket:dcbc2b1b(fd:1)
-
-  startup Socket:e3dc2843(fd:2)
-
-  startup Job:d73c2ff7(job-default)
-
-  startup Vmo:d10c3563(vdso-vmo)
-
-  startup Vmo:db8c349f(stack-vmo)
-
-  Port:c2cc378f(port:1)
-    created by zx_port_create
-
-  Timer:90bc2937(timer:1)
-    created by zx_timer_create
-
-  Channel:f2ec2f3b(channel:4)
-    linked to Channel:d75c352b(channel:5)
-    created by zx_channel_create
-    closed by Channel:5e0c228f(dir:/svc) sending fuchsia.io/Directory.DeprecatedOpen
-
-  Channel:d75c352b(channel:5)
-    linked to Channel:f2ec2f3b(channel:4)
-    created by zx_channel_create
-
-  Channel:aa3c2a07()
-    created by Channel:dedc3503(directory-request:/) receiving fuchsia.io/Node.DeprecatedClone
-    closed by zx_handle_close
-
-  Channel:60dc2bb3()
-    linked to Channel:7663d53b(channel:2) in process echo_client.cm:1934080
-    created by Channel:dedc3503(directory-request:/) receiving fuchsia.io/Directory.DeprecatedOpen
-      21320.901025 read  request  test.placeholders/Echo.EchoString
-      21320.992007 write response test.placeholders/Echo.EchoString
-    closed by zx_handle_close
+  Channel:8b811f73(directory-request:/svc/test.placeholders.Echo)
+    linked to Channel:24ce2c27() in process echo_client.cm:38724
+    created by Channel:8bb11d3b(directory-request:/) receiving fuchsia.io/Directory.Open
+      33.192134 read  request  test.placeholders/Echo.EchoString
+      33.241406 write response test.placeholders/Echo.EchoString
 """,
         )
 
@@ -528,46 +475,36 @@ class FidlcatE2eTests(unittest.TestCase):
         self.assertEqual(
             fidlcat.stdout,
             """\
---------------------------------------------------------------------------------echo_client.cm 1934080: 5 events
+--------------------------------------------------------------------------------echo_client.cm 38724: 4 events
   fuchsia.io/Directory: 2 events
-    DeprecatedOpen: 2 events
-      21320.052636 write request  fuchsia.io/Directory.DeprecatedOpen(Channel:4eb3d2ab(dir:/svc), ".")
-        -> Channel:fdd3d09f(channel:1)
-      21320.136348 write request  fuchsia.io/Directory.DeprecatedOpen(Channel:fdd3d09f(channel:1), "test.placeholders.Echo")
-        -> Channel:7663d53b(channel:2)
+    Open: 2 events
+      32.413004 write request  fuchsia.io/Directory.Open(Channel:25de25ff(dir:/svc), ".")
+        -> 252e2acb
+      32.462118 write request  fuchsia.io/Directory.Open(Channel:25fe2aef(channel:0), "test.placeholders.Echo")
+        -> 257e2a53
 
   test.placeholders/Echo: 2 events
     EchoString: 2 events
-      21320.157131 write request  test.placeholders/Echo.EchoString(Channel:7663d53b(channel:2))
-      21321.018177 read  response test.placeholders/Echo.EchoString(Channel:7663d53b(channel:2))
+      32.512762 write request  test.placeholders/Echo.EchoString(Channel:24ce2c27())
+      33.267383 read  response test.placeholders/Echo.EchoString(Channel:24ce2c27())
 
-  fuchsia.io/Node: 1 event
-    DeprecatedClone: 1 event
-      21320.389674 read  request  fuchsia.io/Node.DeprecatedClone(Channel:2f53d2bb(directory-request:/))
-
---------------------------------------------------------------------------------echo_server.cm 1934409: 5 events
+--------------------------------------------------------------------------------echo_server.cm 39310: 4 events
   fuchsia.io/Directory: 2 events
-    DeprecatedOpen: 2 events
-      21320.611044 write request  fuchsia.io/Directory.DeprecatedOpen(Channel:5e0c228f(dir:/svc), ".")
-        -> Channel:d75c352b(channel:5)
-      21320.814595 read  request  fuchsia.io/Directory.DeprecatedOpen(Channel:dedc3503(directory-request:/), "svc/test.placeholders.Echo")
-        -> Channel:60dc2bb3()
+    Open: 2 events
+      33.093308 write request  fuchsia.io/Directory.Open(Channel:8bf11e73(dir:/svc), ".")
+        -> 8be11273
+      33.140662 read  request  fuchsia.io/Directory.Open(Channel:8bb11d3b(directory-request:/), "svc/test.placeholders.Echo")
+        -> Channel:8b811f73(directory-request:/svc/test.placeholders.Echo)
 
   test.placeholders/Echo: 2 events
     EchoString: 2 events
-      21320.901025 read  request  test.placeholders/Echo.EchoString(Channel:60dc2bb3())
-      21320.992007 write response test.placeholders/Echo.EchoString(Channel:60dc2bb3())
-
-  fuchsia.io/Node: 1 event
-    DeprecatedClone: 1 event
-      21320.679108 read  request  fuchsia.io/Node.DeprecatedClone(Channel:dedc3503(directory-request:/))
+      33.192134 read  request  test.placeholders/Echo.EchoString(Channel:8b811f73(directory-request:/svc/test.placeholders.Echo))
+      33.241406 write response test.placeholders/Echo.EchoString(Channel:8b811f73(directory-request:/svc/test.placeholders.Echo))
 """,
         )
 
     def test_with_top_and_unknown_message(self) -> None:
-        fidlcat = Fidlcat(
-            "--with=top", "--from", TEST_DATA_DIR + "/snapshot.pb"
-        )
+        fidlcat = Fidlcat("--with=top", "--from", TEST_DATA_DIR + "/unknown.pb")
         self.assertEqual(fidlcat.wait(), 0, fidlcat.get_diagnose_msg())
 
         self.assertIn(
@@ -579,7 +516,7 @@ class FidlcatE2eTests(unittest.TestCase):
 
     def test_with_messages_and_unknown_message(self) -> None:
         fidlcat = Fidlcat(
-            "--messages=.*x.*", "--from", TEST_DATA_DIR + "/snapshot.pb"
+            "--messages=.*x.*", "--from", TEST_DATA_DIR + "/unknown.pb"
         )
         self.assertEqual(fidlcat.wait(), 0, fidlcat.get_diagnose_msg())
 
