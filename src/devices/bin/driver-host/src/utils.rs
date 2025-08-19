@@ -128,6 +128,11 @@ pub(crate) fn update_process_name(driver_url: &str, driver_count: usize) {
     };
     let name = zx::Name::new_lossy(&name);
     let _ = fuchsia_runtime::process_self().set_name(&name);
+    let _ = zx::Thread::raise_user_exception(
+                zx::RaiseExceptionOptions::TARGET_JOB_DEBUGGER,
+                zx::sys::ZX_EXCP_USER_CODE_PROCESS_NAME_CHANGED,
+                0,
+            );
 }
 
 #[cfg(test)]
