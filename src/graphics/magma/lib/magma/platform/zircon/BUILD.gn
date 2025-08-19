@@ -254,6 +254,7 @@ source_set("logger") {
     "..:thread_header",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
     "//sdk/lib/syslog/structured_backend",
+    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
 }
