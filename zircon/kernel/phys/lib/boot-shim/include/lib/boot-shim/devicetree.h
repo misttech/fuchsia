@@ -1238,6 +1238,31 @@ class ArmDevicetreePsciCpuSuspendItem
   zbi_dcfg_arm_psci_cpu_suspend_state_t* states_ = nullptr;
 };
 
+// QCOM Rng device
+//
+// Note: No binding documentation exists.
+class ArmDevicetreeQcomRngItem
+    : public DevicetreeItemBase<ArmDevicetreePsciCpuSuspendItem, 2>,
+      public SingleOptionalItem<zbi_dcfg_qcom_rng_t, ZBI_TYPE_KERNEL_DRIVER,
+                                ZBI_KERNEL_DRIVER_QCOM_RNG> {
+ public:
+  static constexpr std::string_view kCompatible = "qcom,msm-rng";
+
+  template <typename Shim>
+  void Init(const Shim& shim) {
+    DevicetreeItemBase::Init(shim);
+    mmio_observer_ = &shim.mmio_observer();
+  }
+
+  devicetree::ScanState OnNode(const devicetree::NodePath& path,
+                               const devicetree::PropertyDecoder& decoder);
+
+  devicetree::ScanState OnScan() { return devicetree::ScanState::kDone; }
+
+ private:
+  const DevicetreeBootShimMmioObserver* mmio_observer_ = nullptr;
+};
+
 }  // namespace boot_shim
 
 #endif  // ZIRCON_KERNEL_PHYS_LIB_BOOT_SHIM_INCLUDE_LIB_BOOT_SHIM_DEVICETREE_H_

@@ -29,6 +29,8 @@ dtb_real = [
 dts_synthetic = [
   "synthetic/arm_gic2_no_msi.dts",
   "synthetic/arm_gic3_stride.dts",
+  "synthetic/arm_qcom_rng.dts",
+  "synthetic/arm_qcom_rng_configured.dts",
   "synthetic/arm_gic3_four_stride.dts",
   "synthetic/arm_gic3_subsumed_stride.dts",
   "synthetic/arm_idle_states.dts",
