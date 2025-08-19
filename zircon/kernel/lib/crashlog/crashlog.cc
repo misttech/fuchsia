@@ -139,7 +139,7 @@ size_t crashlog_to_string(ktl::span<char> target, zircon_crash_reason_t reason) 
     ktl::string_view version = VersionString();
     fprintf(&outfile,
             "VERSION\narch: %s\nbuild_id: %.*s\ndso: id=%s base=%#lx "
-            "name=zircon.elf\n\n",
+            "name=vmzircon\n\n",
             arch, static_cast<int>(version.size()), version.data(), elf_build_id_string(),
             crashlog_base_address);
   }

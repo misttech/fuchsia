@@ -26,7 +26,7 @@
 namespace {
 
 constexpr ktl::string_view kSink = "llvm-profile";
-constexpr ktl::string_view kModule = "zircon.elf";
+constexpr ktl::string_view kModule = "vmzircon";
 constexpr ktl::string_view kSufix = "profraw";
 
 // This holds the pinned mapping of the live-updated data.

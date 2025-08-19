@@ -138,7 +138,7 @@ void print_backtrace_version_info(FILE* f) {
   // Log the ELF build ID in the format the symbolizer scripts understand.
   if (gElfBuildIdString[0] != '\0') {
     PrintSymbolizerContext(f);
-    fprintf(f, "dso: id=%s base=%#lx name=physzircon\n", gElfBuildIdString,
+    fprintf(f, "dso: id=%s base=%#lx name=vmzircon\n", gElfBuildIdString,
             reinterpret_cast<uintptr_t>(__executable_start));
   }
 }

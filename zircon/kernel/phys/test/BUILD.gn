@@ -530,7 +530,7 @@ zbi("physboot-zbi-kernel-test-zircon") {
 
 kernel_elf_binary("physboot-hello-world-test") {
   testonly = true
-  output_name = "physzircon"
+  output_name = "vmzircon"
   sources = [ "physboot-hello-world-test.cc" ]
   defines = [
     "HANDOFF_PTR_DEREF=1",

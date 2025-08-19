@@ -39,10 +39,10 @@ constexpr uint64_t kMagic64 = 0xC0BFFFFFFFFFFF64ULL;
 constexpr uint64_t kCountsMagic = 0x0023766f436e6153ULL;  // "SanCov#" (LE)
 
 // The sancov tool matches "<binaryname>" to "<binaryname>.%u.sancov".
-constexpr ktl::string_view kPcVmoName = "data/zircon.elf.1.sancov";
+constexpr ktl::string_view kPcVmoName = "data/vmzircon.1.sancov";
 
 // This follows the sancov PCs file name just for consistency.
-constexpr ktl::string_view kCountsVmoName = "data/zircon.elf.1.sancov-counts";
+constexpr ktl::string_view kCountsVmoName = "data/vmzircon.1.sancov-counts";
 
 // Go back from the return address to the call site.
 // Note this must exactly match the calculation in the sancov tool.

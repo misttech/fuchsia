@@ -174,7 +174,7 @@
 
   // A label to assist gdb's backtracing through kernel exceptions.
   // When gdb sees this as the return address it knows it can fetch
-  // iframe_t from $rsp. See scripts/zircon.elf-gdb.py.
+  // iframe_t from $rsp. See scripts/vmzircon-gdb.py.
 .label interrupt_common_iframe_set_up_for_debugger
 
   // Label exists only so a test can verify the code patching result.

@@ -37,7 +37,7 @@ PhysBootTimes gBootTimes;
 
 namespace {
 
-constexpr ktl::string_view kElfPhysKernel = "physzircon";
+constexpr ktl::string_view kElfPhysKernel = "vmzircon";
 
 void PatchElfKernel(ElfImage& kernel, const ArchPatchInfo& patch_info) {
   auto apply_patch = [&patch_info](

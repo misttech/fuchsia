@@ -506,7 +506,7 @@ if (is_kernel) {
     }
   }
 
-  kernel_elf_binary("physzircon") {
+  kernel_elf_binary("vmzircon") {
     visibility = [ "./*" ]
 
     configs += [ ":kernel.config" ]
@@ -561,11 +561,11 @@ if (is_kernel) {
     }
   }
 
-  physzircon_rspfile = "$target_gen_dir/physzircon.rsp"
-  link_output_rspfile("physzircon.rsp") {
+  vmzircon_rspfile = "$target_gen_dir/vmzircon.rsp"
+  link_output_rspfile("vmzircon.rsp") {
     visibility = [ ":*" ]
-    deps = [ ":physzircon" ]
-    outputs = [ physzircon_rspfile ]
+    deps = [ ":vmzircon" ]
+    outputs = [ vmzircon_rspfile ]
   }
 
   group("test") {
@@ -583,10 +583,10 @@ if (is_kernel) {
     script = "//zircon/kernel/scripts/validate-kernel-symbols.py"
     utils = [ "nm" ]
     deps = [
-      ":physzircon",
-      ":physzircon.rsp",
+      ":vmzircon",
+      ":vmzircon.rsp",
     ]
-    sources = [ physzircon_rspfile ]
+    sources = [ vmzircon_rspfile ]
     depfile = "$target_gen_dir/$target_name.d"
     args = rebase_path(sources + outputs + [ depfile ], root_build_dir)
   }
@@ -594,12 +594,12 @@ if (is_kernel) {
   # Copy gdb extension script file needed for kernel debugging.
   copy("gdb_extension") {
     visibility = [ ":*" ]
-    sources = [ "scripts/zircon.elf-gdb.py" ]
-    outputs = [ "$root_out_dir/zircon.elf-gdb.py" ]
+    sources = [ "scripts/vmzircon-gdb.py" ]
+    outputs = [ "$root_out_dir/vmzircon-gdb.py" ]
   }
 
   kernel_package("zircon") {
-    deps = [ ":physzircon" ]
+    deps = [ ":vmzircon" ]
 
     # Embed userboot, the vDSO, and the version-string.txt file in the package
     # subdirectory.

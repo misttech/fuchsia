@@ -9,7 +9,6 @@
 # TODO(dje): gdb should let us use a better command class than COMMAND_DATA.
 # TODO(dje): Add arm64 support.
 
-from __future__ import absolute_import, division, print_function
 
 import re
 import sys
@@ -29,7 +28,7 @@ _THREAD_MAGIC = 0x74687264
 _BOOT_MAGIC = 0x544F4F42
 _KERNEL_BASE_ADDRESS = "KERNEL_BASE_ADDRESS"
 
-print("Loading zircon.elf-gdb.py ...")
+print("Loading vmzircon-gdb.py ...")
 
 
 def _get_architecture():
@@ -61,7 +60,9 @@ class _ZirconPrefix(gdb.Command):
 
     def __init__(self):
         super(_ZirconPrefix, self).__init__(
-            "%s" % (_ZIRCON_COMMAND_PREFIX), gdb.COMMAND_DATA, prefix=True
+            "%s" % (_ZIRCON_COMMAND_PREFIX),
+            gdb.COMMAND_DATA,
+            prefix=True,
         )
 
 
@@ -70,7 +71,9 @@ class _InfoZircon(gdb.Command):
 
     def __init__(self):
         super(_InfoZircon, self).__init__(
-            "info %s" % (_ZIRCON_COMMAND_PREFIX), gdb.COMMAND_DATA, prefix=True
+            "info %s" % (_ZIRCON_COMMAND_PREFIX),
+            gdb.COMMAND_DATA,
+            prefix=True,
         )
 
 
@@ -79,7 +82,9 @@ class _SetZircon(gdb.Command):
 
     def __init__(self):
         super(_SetZircon, self).__init__(
-            "set %s" % (_ZIRCON_COMMAND_PREFIX), gdb.COMMAND_DATA, prefix=True
+            "set %s" % (_ZIRCON_COMMAND_PREFIX),
+            gdb.COMMAND_DATA,
+            prefix=True,
         )
 
 
@@ -88,7 +93,9 @@ class _ShowZircon(gdb.Command):
 
     def __init__(self):
         super(_ShowZircon, self).__init__(
-            "show %s" % (_ZIRCON_COMMAND_PREFIX), gdb.COMMAND_DATA, prefix=True
+            "show %s" % (_ZIRCON_COMMAND_PREFIX),
+            gdb.COMMAND_DATA,
+            prefix=True,
         )
 
 
@@ -213,7 +220,9 @@ def register_zircon_pretty_printers(obj):
     if obj is None:
         obj = gdb
     gdb.printing.register_pretty_printer(
-        obj, _build_zircon_pretty_printers(), replace=True
+        obj,
+        _build_zircon_pretty_printers(),
+        replace=True,
     )
 
 
@@ -227,7 +236,7 @@ def _get_thread_list():
     t = head["next"]
     count = 0
     max_threads = gdb.parameter(
-        "%s max-info-threads" % (_ZIRCON_COMMAND_PREFIX)
+        "%s max-info-threads" % (_ZIRCON_COMMAND_PREFIX),
     )
     int_type = gdb.lookup_type("int")
     ptr_size = int_type.pointer().sizeof
@@ -267,7 +276,7 @@ def _get_process_list():
     p = head
     count = 0
     max_processes = gdb.parameter(
-        "%s max-info-processes" % (_ZIRCON_COMMAND_PREFIX)
+        "%s max-info-processes" % (_ZIRCON_COMMAND_PREFIX),
     )
     int_type = gdb.lookup_type("int")
     ptr_size = int_type.pointer().sizeof
@@ -306,7 +315,7 @@ def _get_handle_list(process):
     h = head
     count = 0
     max_handles = gdb.parameter(
-        "%s max-info-handles" % (_ZIRCON_COMMAND_PREFIX)
+        "%s max-info-handles" % (_ZIRCON_COMMAND_PREFIX),
     )
     int_type = gdb.lookup_type("int")
     ptr_size = int_type.pointer().sizeof
@@ -346,7 +355,7 @@ def _print_thread_summary(thread, number, tls_entry, user_thread_ptr_t):
     name = str(thread["name"].lazy_string().value()).strip('"')
     print(
         "%3d %5s %#16x %-32s %s"
-        % (number, pid, thread.address, name, thread["state"])
+        % (number, pid, thread.address, name, thread["state"]),
     )
 
 
@@ -359,7 +368,8 @@ class _InfoZirconThreads(gdb.Command):
 
     def __init__(self):
         super(_InfoZirconThreads, self).__init__(
-            "info %s threads" % (_ZIRCON_COMMAND_PREFIX), gdb.COMMAND_USER
+            "info %s threads" % (_ZIRCON_COMMAND_PREFIX),
+            gdb.COMMAND_USER,
         )
 
     def invoke(self, arg, from_tty):
@@ -377,7 +387,7 @@ class _InfoZirconThreads(gdb.Command):
         num = 1
         for thread_ptr in threads:
             gdb.execute(
-                "set $zx_threads[%d] = (Thread*) %u" % (num, thread_ptr)
+                "set $zx_threads[%d] = (Thread*) %u" % (num, thread_ptr),
             )
             num += 1
 
@@ -389,7 +399,7 @@ class _InfoZirconThreads(gdb.Command):
 
         print(
             "%3s %5s %-18s %-32s %s"
-            % ("Num", "Pid", "Thread*", "Name", "State")
+            % ("Num", "Pid", "Thread*", "Name", "State"),
         )
         # Make sure we restore these when we're done.
         try:
@@ -428,7 +438,8 @@ class _InfoZirconProcesses(gdb.Command):
 
     def __init__(self):
         super(_InfoZirconProcesses, self).__init__(
-            "info %s processes" % (_ZIRCON_COMMAND_PREFIX), gdb.COMMAND_USER
+            "info %s processes" % (_ZIRCON_COMMAND_PREFIX),
+            gdb.COMMAND_USER,
         )
 
     def invoke(self, arg, from_tty):
@@ -440,7 +451,7 @@ class _InfoZirconProcesses(gdb.Command):
         # The array is origin-1-indexed. Have a null first entry to KISS.
         gdb.execute(
             "set $zx_processes = (ProcessDispatcher*[%d]) { 0 }"
-            % (num_processes + 1)
+            % (num_processes + 1),
         )
 
         # Populate the array first, before printing the summary, to make sure this
@@ -449,7 +460,7 @@ class _InfoZirconProcesses(gdb.Command):
         for process_ptr in processes:
             gdb.execute(
                 "set $zx_processes[%d] = (ProcessDispatcher*) %u"
-                % (num, process_ptr)
+                % (num, process_ptr),
             )
             num += 1
 
@@ -460,7 +471,7 @@ class _InfoZirconProcesses(gdb.Command):
         gdb.execute("set print symbol off")
 
         print(
-            "%3s %-18s %4s %s" % ("Num", "ProcessDispatcher*", "Pid", "State")
+            "%3s %-18s %4s %s" % ("Num", "ProcessDispatcher*", "Pid", "State"),
         )
         # Make sure we restore these when we're done.
         try:
@@ -484,7 +495,8 @@ def _print_handle_summary(handle, number):
     # TODO(dje): This is a hack to get the underlying type from the vtable.
     # The python API should support this directly.
     dispatcher_text = gdb.execute(
-        "output *(Dispatcher*) %s" % (dispatcher), to_string=True
+        "output *(Dispatcher*) %s" % (dispatcher),
+        to_string=True,
     )
     dispatcher_split_text = dispatcher_text.split(" ", 1)
     if len(dispatcher_split_text) == 2:
@@ -494,7 +506,7 @@ def _print_handle_summary(handle, number):
     dispatcher_text = "(%s*) %s" % (dispatcher_type, dispatcher)
     print(
         "  %3d %-18s %4u %#8x %s"
-        % (number, handle.address, process_id, rights, dispatcher_text)
+        % (number, handle.address, process_id, rights, dispatcher_text),
     )
 
 
@@ -507,7 +519,8 @@ class _InfoZirconHandles(gdb.Command):
 
     def __init__(self):
         super(_InfoZirconHandles, self).__init__(
-            "info %s handles" % (_ZIRCON_COMMAND_PREFIX), gdb.COMMAND_USER
+            "info %s handles" % (_ZIRCON_COMMAND_PREFIX),
+            gdb.COMMAND_USER,
         )
 
     def invoke(self, arg, from_tty):
@@ -528,7 +541,7 @@ class _InfoZirconHandles(gdb.Command):
                 print("Process %u" % (p["id_"]))
                 print(
                     "  %3s %-18s %4s %8s %s"
-                    % ("Num", "Handle*", "Pid", "Rights", "Dispatcher")
+                    % ("Num", "Handle*", "Pid", "Rights", "Dispatcher"),
                 )
 
                 num = 1
@@ -582,7 +595,7 @@ class _Amd64KernelExceptionUnwinder(Unwinder):
     AT_IFRAME_SETUP = "interrupt_common_iframe_set_up_for_debugger"
     INTERRUPT_COMMON = "interrupt_common"
 
-    class FrameId(object):
+    class FrameId:
         def __init__(self, sp, pc):
             self.sp = sp
             self.pc = pc
@@ -611,7 +624,7 @@ class _Amd64KernelExceptionUnwinder(Unwinder):
 
     def __init__(self):
         super(_Amd64KernelExceptionUnwinder, self).__init__(
-            "AMD64 kernel exception unwinder"
+            "AMD64 kernel exception unwinder",
         )
         # We assume uintptr_t is present in the debug info.
         # We *could* use unsigned long, but it's a bit of an obfuscation.
@@ -622,10 +635,10 @@ class _Amd64KernelExceptionUnwinder(Unwinder):
         # We need to know when the pc is at the point where it has called
         # x86_exception_handler.
         self.at_iframe_setup = self.lookup_minsym(
-            _Amd64KernelExceptionUnwinder.AT_IFRAME_SETUP
+            _Amd64KernelExceptionUnwinder.AT_IFRAME_SETUP,
         )
         self.interrupt_common_begin_addr = self.lookup_minsym(
-            _Amd64KernelExceptionUnwinder.INTERRUPT_COMMON
+            _Amd64KernelExceptionUnwinder.INTERRUPT_COMMON,
         )
 
     def is_in_icommon(self, pc):
@@ -645,7 +658,10 @@ class _Amd64KernelExceptionUnwinder(Unwinder):
             # Punt if disabled.
             if not gdb.parameter(
                 "%s %s"
-                % (_ZIRCON_COMMAND_PREFIX, _KERNEL_EXCEPTION_UNWINDER_PARAMETER)
+                % (
+                    _ZIRCON_COMMAND_PREFIX,
+                    _KERNEL_EXCEPTION_UNWINDER_PARAMETER,
+                ),
             ):
                 return None
             # Note: We use rip,rsp here instead of pc,sp to work around bug 20128
@@ -680,7 +696,8 @@ class _Amd64KernelExceptionUnwinder(Unwinder):
             unwind_info.add_saved_register("r15", iframe["r15"])
             # Flags is recorded as 64 bits, but gdb needs to see 32.
             unwind_info.add_saved_register(
-                "eflags", iframe["flags"].cast(self.uint32_t)
+                "eflags",
+                iframe["flags"].cast(self.uint32_t),
             )
             # print "Unwind info:"
             # print unwind_info
@@ -849,7 +866,7 @@ def _offset_symbols_and_breakpoints(kernel_relocated_base=None):
     if executable_start != expected:
         print(
             "Error: Incorrect relocation for __executable_start 0x%x vs 0x%x"
-            % (expected, executable_start)
+            % (expected, executable_start),
         )
         return False
 
@@ -1024,7 +1041,7 @@ def _identify_offset_to_reload(pc):
         print(
             "Failed to find relocation address from scanning.\n"
             "Attempting to find relocation base address at default offset of 0x%08x (tgt %016x)"
-            % (default_offset, target)
+            % (default_offset, target),
         )
         value = _read_pointer(target)
         expected = base_address + default_offset
@@ -1035,7 +1052,7 @@ def _identify_offset_to_reload(pc):
 
         print(
             "Found it!  Kernel appears to have been relocated to 0x%016x"
-            % (value,)
+            % (value,),
         )
 
     return _offset_symbols_and_breakpoints(target)
@@ -1083,17 +1100,17 @@ def _install():
     register_zircon_pretty_printers(current_objfile)
     if current_objfile is not None and _is_x86_64():
         gdb.unwinder.register_unwinder(
-            current_objfile, _Amd64KernelExceptionUnwinder(), True
+            current_objfile,
+            _Amd64KernelExceptionUnwinder(),
+            True,
         )
         print(
-            "Zircon extensions installed for {}".format(
-                current_objfile.filename
-            )
+            f"Zircon extensions installed for {current_objfile.filename}",
         )
 
     if not _is_x86_64() and not _is_arm64():
         print(
-            "Warning: Unsupported architecture, KASLR support will be experimental"
+            "Warning: Unsupported architecture, KASLR support will be experimental",
         )
     gdb.events.stop.connect(_KASLR_stop_event)
 
