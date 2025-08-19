@@ -15,7 +15,9 @@
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <zxtest/zxtest.h>
 
+#include "src/storage/lib/block_server/fake_server.h"
 #include "src/storage/lib/fs_management/cpp/fvm.h"
+#include "src/storage/lib/fs_management/cpp/mount.h"
 
 namespace fvm {
 
@@ -203,6 +205,158 @@ zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::OpenPartitionNoWa
 
 std::string DriverFvmInstance::GetFvmPath() const {
   return std::string(ramdisk_get_path(ramdisk_)) + "/fvm";
+}
+
+class ComponentBlockConnector : public BlockConnector {
+ public:
+  ~ComponentBlockConnector() = default;
+
+  static std::unique_ptr<BlockConnector> Create(const fs_management::MountedVolume* volume) {
+    auto connector = std::make_unique<ComponentBlockConnector>();
+    connector->volume_ = volume;
+    fidl::ServerEnd server_end =
+        fidl::Endpoints<fuchsia_io::Directory>::Create(&connector->svc_dir_);
+    EXPECT_TRUE(fidl::WireCall(connector->volume_->ExportRoot())
+                    ->Open("svc", fuchsia_io::kPermReadable, {}, server_end.TakeChannel())
+                    .ok());
+    connector->partition_ = fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>(
+        connector->connect_block().TakeChannel());
+    return std::move(connector);
+  }
+
+  fidl::ClientEnd<fuchsia_hardware_block::Block> connect_block() const override {
+    zx::result volume = component::ConnectAt<fuchsia_hardware_block_volume::Volume>(svc_dir_);
+    EXPECT_OK(volume);
+    return fidl::ClientEnd<fuchsia_hardware_block::Block>(volume->TakeChannel());
+  }
+
+  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> as_block() const override {
+    return fidl::UnownedClientEnd<fuchsia_hardware_block::Block>(partition_.channel().borrow());
+  }
+
+  fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> as_volume() const override {
+    return partition_.borrow();
+  }
+
+ private:
+  const fs_management::MountedVolume* volume_;
+  fidl::ClientEnd<fuchsia_io::Directory> svc_dir_;
+  fidl::ClientEnd<fuchsia_hardware_block_volume::Volume> partition_;
+};
+
+class ComponentFvmInstance : public FvmInstance {
+ public:
+  void SetUp() override {}
+
+  void TearDown() override {}
+
+  void CreateRamdisk(uint64_t block_size, uint64_t block_count) override {
+    // This will also cause the destructor to run for any previous device.
+    device_ = std::make_unique<block_server::FakeServer>(block_server::PartitionInfo{
+        .block_count = block_count,
+        .block_size = static_cast<uint32_t>(block_size),
+        .max_transfer_size = 524288,
+    });
+    auto [block_client, block_server] =
+        fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+    block_ = fidl::ClientEnd<fuchsia_hardware_block::Block>(block_client.TakeChannel());
+    device_->Serve(std::move(block_server));
+  }
+
+  void CreateFvm(uint64_t block_size, uint64_t block_count, uint64_t slice_size) override {
+    CreateRamdisk(block_size, block_count);
+    ASSERT_OK(fs_management::FvmInitPreallocated(GetRamdiskPartition(), block_count * block_size,
+                                                 block_count * block_size, slice_size));
+    slice_size_ = slice_size;
+    StartFvm();
+  }
+
+  void StartFvm() override {
+    ASSERT_TRUE(device_);
+    auto [block_client, block_server] =
+        fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
+    device_->Serve(std::move(block_server));
+    zx::result fs = fs_management::MountMultiVolume(
+        fidl::ClientEnd<fuchsia_hardware_block::Block>(block_client.TakeChannel()), component_, {});
+    ASSERT_OK(fs);
+    fvm_ = std::make_unique<fs_management::StartedMultiVolumeFilesystem>(std::move(*fs));
+  }
+
+  void RestartFvm() override {
+    if (fvm_) {
+      ASSERT_OK(fvm_->Unmount());
+      ASSERT_OK(component_.DestroyChild());
+      fvm_ = {};
+    }
+    StartFvm();
+  }
+
+  fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() const override {
+    zx::result volumes =
+        component::ConnectAt<fuchsia_fs_startup::Volumes>(fvm_->ServiceDirectory());
+    EXPECT_OK(volumes);
+    fidl::WireResult info = fidl::WireCall(*volumes)->GetInfo();
+    EXPECT_TRUE(info.ok());
+    EXPECT_TRUE(info->is_ok());
+    return *info.value()->info;
+  }
+
+  zx::result<std::unique_ptr<BlockConnector>> AllocatePartition(
+      const AllocatePartitionRequest& request) const override {
+    EXPECT_TRUE(fvm_);
+    fidl::Array<uint8_t, 16> type_guid = fidl::Array<uint8_t, 16>{1, 2, 3, 4};
+    memcpy(type_guid.data(), request.type.bytes(), 16);
+    fidl::Arena arena;
+    zx::result volume = fvm_->CreateVolume(request.name,
+                                           fuchsia_fs_startup::wire::CreateOptions::Builder(arena)
+                                               .type_guid(type_guid)
+                                               .initial_size(request.slice_count * slice_size_)
+                                               .Build(),
+                                           {});
+    if (volume.is_error()) {
+      return volume.take_error();
+    }
+    return zx::ok(ComponentBlockConnector::Create(volume.value()));
+  }
+
+  zx::result<std::unique_ptr<BlockConnector>> OpenPartition(std::string_view label) const override {
+    EXPECT_TRUE(fvm_);
+    std::string name = std::string(label);
+    const fs_management::MountedVolume* volume = fvm_->GetVolume(name);
+    if (volume == nullptr) {
+      zx::result opened_volume = fvm_->OpenVolume(name, {});
+      if (opened_volume.is_error()) {
+        return opened_volume.take_error();
+      }
+      volume = opened_volume.value();
+    }
+    return zx::ok(ComponentBlockConnector::Create(volume));
+  }
+
+  void DestroyPartition(std::string_view label) const override {
+    ASSERT_OK(fvm_->RemoveVolume(label));
+  }
+
+  fidl::UnownedClientEnd<fuchsia_hardware_block::Block> GetRamdiskPartition() const override {
+    return block_.borrow();
+  }
+
+ private:
+  std::unique_ptr<block_server::FakeServer> device_;
+  fidl::ClientEnd<fuchsia_hardware_block::Block> block_;
+  fs_management::FsComponent component_ =
+      fs_management::FsComponent::FromDiskFormat(fs_management::kDiskFormatFvm);
+  std::unique_ptr<fs_management::StartedMultiVolumeFilesystem> fvm_;
+  uint64_t slice_size_;
+};
+
+std::unique_ptr<FvmInstance> CreateFvmInstance(FvmImplementation impl) {
+  switch (impl) {
+    case FvmImplementation::kDriver:
+      return std::make_unique<DriverFvmInstance>();
+    case FvmImplementation::kComponent:
+      return std::make_unique<ComponentFvmInstance>();
+  }
 }
 
 }  // namespace fvm

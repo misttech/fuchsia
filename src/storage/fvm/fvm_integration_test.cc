@@ -81,18 +81,14 @@ size_t UsableSlicesCount(size_t disk_size, size_t slice_size) {
       .GetAllocationTableUsedEntryCount();
 }
 
-class FvmTest : public zxtest::Test {
+class FvmTest : public zxtest::TestWithParam<fvm::FvmImplementation> {
  protected:
   void SetUp() override {
-    instance_ = std::make_unique<fvm::DriverFvmInstance>();
+    instance_ = fvm::CreateFvmInstance(GetParam());
     instance_->SetUp();
   }
 
-  const fbl::unique_fd& devfs_root_fd() const { return instance_->devfs_root(); }
-
   void TearDown() override { instance_->TearDown(); }
-
-  std::string fvm_path() const { return instance_->GetFvmPath(); }
 
   fidl::UnownedClientEnd<fuchsia_hardware_block::Block> ramdisk_block_interface() const {
     return instance_->GetRamdiskPartition();
@@ -128,7 +124,7 @@ class FvmTest : public zxtest::Test {
   void DestroyPartition(std::string_view label) const { instance_->DestroyPartition(label); }
 
  private:
-  std::unique_ptr<fvm::DriverFvmInstance> instance_;
+  std::unique_ptr<fvm::FvmInstance> instance_;
 };
 
 void FvmTest::FVMCheckSliceSize(size_t expected_slice_size) const {
@@ -392,7 +388,7 @@ void CheckDeadConnection(const zx::unowned_channel& chan) {
 /////////////////////// Actual tests:
 
 // Test initializing the FVM on a partition that is smaller than a slice
-TEST_F(FvmTest, TestTooSmall) {
+TEST_P(FvmTest, TestTooSmall) {
   uint64_t block_size = 512;
   uint64_t block_count = (1 << 15);
 
@@ -403,7 +399,7 @@ TEST_F(FvmTest, TestTooSmall) {
 }
 
 // Test initializing the FVM on a large partition, with metadata size > the max transfer size
-TEST_F(FvmTest, TestLarge) {
+TEST_P(FvmTest, TestLarge) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount{UINT64_C(8) * (1 << 20)};
   CreateRamdisk(kBlockSize, kBlockCount);
@@ -426,7 +422,7 @@ TEST_F(FvmTest, TestLarge) {
 }
 
 // Load and unload an empty FVM
-TEST_F(FvmTest, TestEmpty) {
+TEST_P(FvmTest, TestEmpty) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -436,7 +432,7 @@ TEST_F(FvmTest, TestEmpty) {
 }
 
 // Test allocating a single partition
-TEST_F(FvmTest, TestAllocateOne) {
+TEST_P(FvmTest, TestAllocateOne) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -474,7 +470,7 @@ TEST_F(FvmTest, TestAllocateOne) {
 }
 
 // Test Reading and writing with RemoteBlockDevice helpers
-TEST_F(FvmTest, TestReadWriteSingle) {
+TEST_P(FvmTest, TestReadWriteSingle) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -499,7 +495,7 @@ TEST_F(FvmTest, TestReadWriteSingle) {
 }
 
 // Test allocating a collection of partitions
-TEST_F(FvmTest, TestAllocateMany) {
+TEST_P(FvmTest, TestAllocateMany) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -543,7 +539,7 @@ TEST_F(FvmTest, TestAllocateMany) {
 }
 
 // Test allocating additional slices to a vpartition.
-TEST_F(FvmTest, TestVPartitionExtend) {
+TEST_P(FvmTest, TestVPartitionExtend) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -678,7 +674,7 @@ TEST_F(FvmTest, TestVPartitionExtend) {
 }
 
 // Test allocating very sparse VPartition
-TEST_F(FvmTest, TestVPartitionExtendSparse) {
+TEST_P(FvmTest, TestVPartitionExtendSparse) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -746,7 +742,7 @@ TEST_F(FvmTest, TestVPartitionExtendSparse) {
 }
 
 // Test removing slices from a VPartition.
-TEST_F(FvmTest, TestVPartitionShrink) {
+TEST_P(FvmTest, TestVPartitionShrink) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -902,7 +898,7 @@ TEST_F(FvmTest, TestVPartitionShrink) {
 }
 
 // Test splitting a contiguous slice extent into multiple parts
-TEST_F(FvmTest, TestVPartitionSplit) {
+TEST_P(FvmTest, TestVPartitionSplit) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -1044,7 +1040,7 @@ TEST_F(FvmTest, TestVPartitionSplit) {
 }
 
 // Test removing VPartitions within an FVM
-TEST_F(FvmTest, TestVPartitionDestroy) {
+TEST_P(FvmTest, TestVPartitionDestroy) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -1097,7 +1093,7 @@ TEST_F(FvmTest, TestVPartitionDestroy) {
   FVMCheckSliceSize(kSliceSize);
 }
 
-TEST_F(FvmTest, TestVPartitionQuery) {
+TEST_P(FvmTest, TestVPartitionQuery) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -1206,7 +1202,7 @@ TEST_F(FvmTest, TestVPartitionQuery) {
 }
 
 // Test allocating and accessing slices which are allocated contiguously.
-TEST_F(FvmTest, TestSliceAccessContiguous) {
+TEST_P(FvmTest, TestSliceAccessContiguous) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -1269,7 +1265,7 @@ TEST_F(FvmTest, TestSliceAccessContiguous) {
 }
 
 // Test allocating and accessing multiple (3+) slices at once.
-TEST_F(FvmTest, TestSliceAccessMany) {
+TEST_P(FvmTest, TestSliceAccessMany) {
   // The size of a slice must be carefully constructed for this test
   // so that we can hold multiple slices in memory without worrying
   // about hitting resource limits.
@@ -1349,7 +1345,7 @@ TEST_F(FvmTest, TestSliceAccessMany) {
 // Test allocating and accessing slices which are allocated
 // virtually contiguously (they appear sequential to the client) but are
 // actually noncontiguous on the FVM partition.
-TEST_F(FvmTest, TestSliceAccessNonContiguousPhysical) {
+TEST_P(FvmTest, TestSliceAccessNonContiguousPhysical) {
   constexpr uint64_t kBlockSize{512};
   constexpr uint64_t kBlockCount{1 << 16};
   constexpr uint64_t kSliceSize{kBlockSize * 64};
@@ -1487,7 +1483,7 @@ TEST_F(FvmTest, TestSliceAccessNonContiguousPhysical) {
 
 // Test allocating and accessing slices which are
 // allocated noncontiguously from the client's perspective.
-TEST_F(FvmTest, TestSliceAccessNonContiguousVirtual) {
+TEST_P(FvmTest, TestSliceAccessNonContiguousVirtual) {
   constexpr uint64_t kBlockSize{512};
   constexpr uint64_t kBlockCount{1 << 20};
   constexpr uint64_t kSliceSize{UINT64_C(64) * (1 << 20)};
@@ -1574,7 +1570,7 @@ TEST_F(FvmTest, TestSliceAccessNonContiguousVirtual) {
 }
 
 // Test that the FVM driver actually persists updates.
-TEST_F(FvmTest, TestPersistenceSimple) {
+TEST_P(FvmTest, TestPersistenceSimple) {
   constexpr uint64_t kBlockSize{512};
   constexpr uint64_t kBlockCount{1 << 20};
   constexpr uint64_t kSliceSize{UINT64_C(64) * (1 << 20)};
@@ -1852,7 +1848,7 @@ void CorruptMountHelper(const fvm::BlockConnector& connector, fs_management::Dis
   }
 }
 
-TEST_F(FvmTest, TestCorruptMount) {
+TEST_P(FvmTest, TestCorruptMount) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -1895,7 +1891,7 @@ TEST_F(FvmTest, TestCorruptMount) {
 }
 
 // Test that the FVM driver can mount filesystems.
-TEST_F(FvmTest, TestMounting) {
+TEST_P(FvmTest, TestMounting) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -1946,7 +1942,7 @@ TEST_F(FvmTest, TestMounting) {
 }
 
 // Test that FVM-aware filesystem can be reformatted.
-TEST_F(FvmTest, TestMkfs) {
+TEST_P(FvmTest, TestMkfs) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -2020,7 +2016,7 @@ TEST_F(FvmTest, TestMkfs) {
 
 // Test that the FVM can recover when one copy of
 // metadata becomes corrupt.
-TEST_F(FvmTest, TestCorruptionOk) {
+TEST_P(FvmTest, TestCorruptionOk) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -2088,7 +2084,7 @@ TEST_F(FvmTest, TestCorruptionOk) {
   FVMCheckSliceSize(kSliceSize);
 }
 
-TEST_F(FvmTest, TestCorruptionRegression) {
+TEST_P(FvmTest, TestCorruptionRegression) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -2153,7 +2149,7 @@ TEST_F(FvmTest, TestCorruptionRegression) {
   FVMCheckSliceSize(kSliceSize);
 }
 
-TEST_F(FvmTest, TestCorruptionUnrecoverable) {
+TEST_P(FvmTest, TestCorruptionUnrecoverable) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -2211,7 +2207,7 @@ TEST_F(FvmTest, TestCorruptionUnrecoverable) {
 }
 
 // Tests the FVM checker against a just-initialized FVM.
-TEST_F(FvmTest, TestCheckNewFVM) {
+TEST_P(FvmTest, TestCheckNewFVM) {
   CreateFVM(512, 1 << 20, 64LU * (1 << 20));
   fidl::UnownedClientEnd device = ramdisk_block_interface();
   const fidl::WireResult result = fidl::WireCall(device)->GetInfo();
@@ -2223,7 +2219,7 @@ TEST_F(FvmTest, TestCheckNewFVM) {
   ASSERT_TRUE(checker.Validate());
 }
 
-TEST_F(FvmTest, TestPreventDuplicateDeviceNames) {
+TEST_P(FvmTest, TestPreventDuplicateDeviceNames) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 1 << 16;
   constexpr uint64_t kSliceSize = 64 * kBlockSize;
@@ -2244,5 +2240,17 @@ TEST_F(FvmTest, TestPreventDuplicateDeviceNames) {
     DestroyPartition(kTestPartDataName);
   }
 }
+
+INSTANTIATE_TEST_SUITE_P(FvmTest, FvmTest,
+                         zxtest::Values(fvm::FvmImplementation::kDriver,
+                                        fvm::FvmImplementation::kComponent),
+                         [](const auto& info) {
+                           switch (info.param) {
+                             case fvm::FvmImplementation::kDriver:
+                               return "Driver";
+                             case fvm::FvmImplementation::kComponent:
+                               return "Component";
+                           }
+                         });
 
 }  // namespace

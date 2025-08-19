@@ -214,6 +214,15 @@ zx::result<MountedVolume*> StartedMultiVolumeFilesystem::CreateVolume(
   return zx::ok(&iter->second);
 }
 
+__EXPORT zx::result<> StartedMultiVolumeFilesystem::RemoveVolume(std::string_view name) {
+  auto volume = volumes_.find(name);
+  if (volume != volumes_.end()) {
+    // We might not have the volume recorded here but if we do we need to remove it.
+    volumes_.erase(volume);
+  }
+  return fs_management::RemoveVolume(exposed_dir_, name);
+}
+
 __EXPORT zx::result<> StartedMultiVolumeFilesystem::CheckVolume(
     std::string_view volume_name, fidl::ClientEnd<fuchsia_fxfs::Crypt> crypt_client) {
   return fs_management::CheckVolume(exposed_dir_, volume_name, std::move(crypt_client));

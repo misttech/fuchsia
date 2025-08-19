@@ -20,6 +20,8 @@
 
 namespace fvm {
 
+enum class FvmImplementation : uint8_t { kDriver, kComponent };
+
 constexpr char kFvmDriverLib[] = "fvm.cm";
 
 constexpr uuid::Uuid kTestUniqueGuid1 = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -125,6 +127,8 @@ class DriverFvmInstance : public FvmInstance {
   fbl::unique_fd devfs_root_;
   ramdisk_client_t* ramdisk_ = nullptr;
 };
+
+std::unique_ptr<FvmInstance> CreateFvmInstance(FvmImplementation impl);
 
 }  // namespace fvm
 

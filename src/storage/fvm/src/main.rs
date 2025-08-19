@@ -62,8 +62,10 @@ static MAGIC: u64 = 0x54524150204d5646;
 // I/O at a smaller size than this (it will pass along the block size from the underlying device).
 const BLOCK_SIZE: u64 = 8192;
 
-// This is the maximum slice count which means the maximum slice offset is one less than this.
-const MAX_SLICE_COUNT: u64 = u32::MAX as u64;
+// This is the maximum slice count which means the maximum slice offset is one less than this. Even
+// though the format seems like it would support more than this, the legacy driver had this as the
+// max so we will continue to as well.
+const MAX_SLICE_COUNT: u64 = 1u64 << 31;
 
 #[repr(C)]
 #[derive(Clone, Copy, KnownLayout, FromBytes, IntoBytes, Immutable)]
@@ -348,12 +350,11 @@ impl Fvm {
     pub async fn open(client: RemoteBlockClient) -> Result<Self, Error> {
         ensure!(BLOCK_SIZE as u32 % client.block_size() == 0, zx::Status::NOT_SUPPORTED);
 
-        let mut metadata = Vec::new();
-        {
+        let (slot, metadata) = {
             let mut header_block = AlignedMem::<Header>::new(BLOCK_SIZE as usize);
             client.read_at(MutableBufferSlice::Memory(&mut header_block), 0).await?;
 
-            metadata.push(Metadata::read(&header_block, &client, 0).await);
+            let metadata_a = Metadata::read(&header_block, &client, 0).await;
 
             let (header, _) = Header::ref_from_prefix(&header_block)
                 .map_err(|_| anyhow!("Block size too small"))?;
@@ -361,13 +362,13 @@ impl Fvm {
             let secondary_offset = header.offset_for_slot(1);
             client.read_at(MutableBufferSlice::Memory(&mut header_block), secondary_offset).await?;
 
-            metadata.push(Metadata::read(&header_block, &client, secondary_offset).await);
-        }
+            let metadata_b = Metadata::read(&header_block, &client, secondary_offset).await;
 
-        let (slot, metadata) = Self::pick_metadata(metadata).ok_or_else(|| {
-            warn!("No valid metadata");
-            anyhow!("No valid metadata")
-        })?;
+            Self::pick_metadata(metadata_a, metadata_b).ok_or_else(|| {
+                warn!("No valid metadata");
+                anyhow!("No valid metadata")
+            })?
+        };
 
         // Build the mappings.
         let mut partition_state = HashMap::<u16, PartitionState>::new();
@@ -449,19 +450,31 @@ impl Fvm {
     }
 
     fn pick_metadata(
-        metadata: impl IntoIterator<Item = Result<Metadata, Error>>,
+        metadata_a: Result<Metadata, Error>,
+        metadata_b: Result<Metadata, Error>,
     ) -> Option<(usize, Metadata)> {
-        metadata
-            .into_iter()
-            .enumerate()
-            .filter_map(|(index, metadata)| match metadata {
-                Ok(metadata) => Some((index, metadata)),
-                Err(error) => {
-                    warn!(error:?; "Bad metadata {index}");
-                    None
+        match (metadata_a, metadata_b) {
+            (Ok(metadata_a), Ok(metadata_b)) => {
+                if metadata_a.header.generation >= metadata_b.header.generation {
+                    Some((0, metadata_a))
+                } else {
+                    Some((1, metadata_b))
                 }
-            })
-            .max_by_key(|(_index, metadata)| metadata.header.generation)
+            }
+            (Ok(metadata_a), Err(error)) => {
+                warn!(error:?; "Bad metadata in slot 1, using slot 0");
+                Some((0, metadata_a))
+            }
+            (Err(error), Ok(metadata_b)) => {
+                warn!(error:?; "Bad metadata in slot 0, using slot 1");
+                Some((1, metadata_b))
+            }
+            (Err(error_a), Err(error_b)) => {
+                warn!(error_a:?; "Bad metadata in slot 0");
+                warn!(error_b:?; "Bad metadata in slot 1");
+                None
+            }
+        }
     }
 
     async fn do_io(

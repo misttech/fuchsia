@@ -201,6 +201,9 @@ class __EXPORT StartedMultiVolumeFilesystem {
   zx::result<> CheckVolume(std::string_view name,
                            fidl::ClientEnd<fuchsia_fxfs::Crypt> crypt_client);
 
+  // Removes a volume.
+  zx::result<> RemoveVolume(std::string_view name);
+
   // Returns whether the given volume name exists.
   bool HasVolume(std::string_view name);
 

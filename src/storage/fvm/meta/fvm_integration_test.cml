@@ -17,4 +17,12 @@
             protocol: [ "fuchsia.process.Launcher" ],
         },
     ],
+    offer: [
+        {
+            protocol: "fuchsia.scheduler.RoleManager",
+            from: "void",
+            to: "#fs-collection",
+            availability: "optional",
+        },
+    ],
 }

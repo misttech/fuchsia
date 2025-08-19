@@ -46,6 +46,9 @@ __EXPORT zx::result<> CheckVolume(fidl::UnownedClientEnd<fuchsia_io::Directory> 
                                   std::string_view name,
                                   fidl::ClientEnd<fuchsia_fxfs::Crypt> crypt_client = {});
 
+__EXPORT zx::result<> RemoveVolume(fidl::UnownedClientEnd<fuchsia_io::Directory> exposed_dir,
+                                   std::string_view name);
+
 // Checks if |name| exists in the filesystem instance.
 //
 // Currently this is only supported for Fxfs.

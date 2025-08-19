@@ -111,6 +111,21 @@ __EXPORT zx::result<> CheckVolume(fidl::UnownedClientEnd<fuchsia_io::Directory> 
   return zx::ok();
 }
 
+__EXPORT zx::result<> RemoveVolume(fidl::UnownedClientEnd<fuchsia_io::Directory> exposed_dir,
+                                   std::string_view name) {
+  auto client = component::ConnectAt<fuchsia_fs_startup::Volumes>(exposed_dir);
+  if (client.is_error())
+    return client.take_error();
+
+  auto result = fidl::WireCall(*client)->Remove(fidl::StringView::FromExternal(name));
+  if (!result.ok())
+    return zx::error(result.error().status());
+  if (result->is_error())
+    return result->take_error();
+
+  return zx::ok();
+}
+
 __EXPORT bool HasVolume(fidl::UnownedClientEnd<fuchsia_io::Directory> exposed_dir,
                         std::string_view name) {
   std::string path = "volumes/" + std::string(name);
