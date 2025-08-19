@@ -377,16 +377,14 @@ Node::~Node() {
     completer.Reply(zx::error(ZX_ERR_CANCELED));
   }
 
-  if (pending_bind_completer_.has_value()) {
-    pending_bind_completer_.value()(zx::error(ZX_ERR_CANCELED));
-    pending_bind_completer_.reset();
+  if (pending_bind_completer_) {
+    pending_bind_completer_(zx::error(ZX_ERR_CANCELED));
   }
 
-  if (composite_rebind_completer_.has_value() && composite_rebind_completer_.value()) {
+  if (composite_rebind_completer_) {
     LOGF(WARNING, "Unable to rebind node %s since it deallocated before completing shutdown",
          MakeComponentMoniker().c_str());
-    composite_rebind_completer_.value()(zx::error(ZX_ERR_CANCELED));
-    composite_rebind_completer_.reset();
+    composite_rebind_completer_(zx::error(ZX_ERR_CANCELED));
   }
 }
 
@@ -485,10 +483,8 @@ void Node::CompleteBind(zx::result<> result) {
     OnBind();
   }
 
-  auto completer = std::move(pending_bind_completer_);
-  pending_bind_completer_.reset();
-  if (completer.has_value()) {
-    completer.value()(result);
+  if (pending_bind_completer_) {
+    pending_bind_completer_(result);
   }
 
   GetNodeShutdownCoordinator().CheckNodeState();
@@ -573,10 +569,8 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
     remove_complete_callback_();
   }
 
-  if (shutdown_intent() == ShutdownIntent::kRebindComposite && composite_rebind_completer_ &&
-      composite_rebind_completer_.value()) {
-    composite_rebind_completer_.value()(zx::ok());
-    composite_rebind_completer_.reset();
+  if (shutdown_intent() == ShutdownIntent::kRebindComposite && composite_rebind_completer_) {
+    composite_rebind_completer_(zx::ok());
   }
 }
 
@@ -667,7 +661,7 @@ void Node::QuarantineNode() {
 // removal.
 void Node::RestartNodeWithRematch(std::optional<std::string> restart_driver_url_suffix,
                                   fit::callback<void(zx::result<>)> completer) {
-  if (pending_bind_completer_.has_value()) {
+  if (pending_bind_completer_) {
     completer(zx::error(ZX_ERR_ALREADY_EXISTS));
     return;
   }
@@ -684,7 +678,7 @@ void Node::RestartNodeWithRematch() {
 // TODO(https://fxbug.dev/42082343): Handle the case in which this function is called during node
 // removal.
 void Node::RemoveCompositeNodeForRebind(fit::callback<void(zx::result<>)> completer) {
-  if (composite_rebind_completer_.has_value()) {
+  if (composite_rebind_completer_) {
     completer(zx::error(ZX_ERR_ALREADY_EXISTS));
     return;
   }
@@ -1133,7 +1127,7 @@ void Node::BindHelper(bool force_rebind, std::optional<std::string> driver_url_s
     return;
   }
 
-  if (pending_bind_completer_.has_value()) {
+  if (pending_bind_completer_) {
     on_bind_complete(ZX_ERR_ALREADY_EXISTS);
     return;
   }

@@ -497,10 +497,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   fit::nullable<DriverHost*> driver_host_;
 
   // An outstanding rebind request.
-  std::optional<fit::callback<void(zx::result<>)>> pending_bind_completer_;
+  fit::callback<void(zx::result<>)> pending_bind_completer_;
 
   // Set by RemoveCompositeNodeForRebind(). Invoked when the node finished shutting down.
-  std::optional<fit::callback<void(zx::result<>)>> composite_rebind_completer_;
+  fit::callback<void(zx::result<>)> composite_rebind_completer_;
 
   std::optional<std::string> restart_driver_url_suffix_;
 
