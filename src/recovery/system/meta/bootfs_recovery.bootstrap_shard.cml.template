@@ -18,11 +18,10 @@
             from: "#fshost",
             to: "#bootfs_recovery",
             source_availability: "unknown",
+            dependency: "weak",
         },
         {
-            protocol: [
-                "fuchsia.boot.WriteOnlyLog",
-            ],
+            protocol: [ "fuchsia.boot.WriteOnlyLog" ],
             from: "parent",
             to: "#bootfs_recovery",
         },
@@ -30,6 +29,12 @@
             dictionary: "diagnostics",
             from: "self",
             to: "#bootfs_recovery",
+        },
+        {
+            protocol: [ "fuchsia.fshost.fxfsprovisioner.FxfsProvisioner" ],
+            from: "#bootfs_recovery",
+            to: "#fshost",
+            source_availability: "unknown",
         },
     ]
 }
