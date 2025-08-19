@@ -166,12 +166,35 @@ if (is_host) {
     depfile = _depfile
   }
 
+  group("tool_paths") {
+    visibility = [ "//:tool_paths" ]
+    deps = [
+      ":tool_paths.llvm-profdata-rust",
+      ":tool_paths.rustdoc-link",
+    ]
+  }
+
+  # This target adds a "rustdoc-link" tool to be consumed by the infra doc builder.
+  group("tool_paths.rustdoc-link") {
+    metadata = {
+      tool_paths = [
+        {
+          cpu = host_cpu
+          label = get_label_info(":$target_name", "label_with_toolchain")
+          name = "rustdoc-link"
+          os = host_os
+          path = rebase_path("//tools/contrib/lib/rust/rustdoc-link.py",
+                             root_build_dir)
+        },
+      ]
+    }
+  }
+
   # This target adds llvm-profdata for the rust toolchain to tool_paths.json.
   # Since this tool has the same name as the clang counterpart, we need to
   # append -rust to the name to differentiate them. It also needs to be built
   # in the host_toolchain in order for the tool path to be correct.
   group("tool_paths.llvm-profdata-rust") {
-    visibility = [ "//:tool_paths" ]
     deps = [ ":make_toolchain_host_binaries" ]
     metadata = {
       tool_paths = [
