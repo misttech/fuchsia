@@ -8,7 +8,9 @@
 #include <limits.h>
 #include <sched.h>
 #include <strings.h>
+#include <sys/fsuid.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <sys/select.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
@@ -1173,4 +1175,84 @@ TEST_F(CloneAndExecTest, ExecUnsharesCloneFs) {
   });
 
   ASSERT_TRUE(helper.WaitForChildren());
+}
+
+class DumpableTest : public ::testing::Test {
+ protected:
+  void SetUp() {
+    if (!test_helper::HasSysAdmin()) {
+      GTEST_SKIP() << "test requires root privileges";
+    }
+
+    FILE* fp = fopen("/proc/sys/fs/suid_dumpable", "r");
+    EXPECT_NE(fp, nullptr);
+    // TODO(https://fxbug.dev/322874210): EXPECT that the read succeeds, do not
+    // hard-code a value.
+    if (fscanf(fp, "%d", &dumpable_default_) != 1) {
+      dumpable_default_ = 0;
+    }
+
+    fclose(fp);
+  }
+  int dumpable_default_ = -1;
+};
+
+TEST_F(DumpableTest, DumpablePersistsAcrossFork) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(prctl(PR_SET_DUMPABLE, 1));
+
+    pid_t child_pid = SAFE_SYSCALL(fork());
+    if (child_pid == 0) {
+      EXPECT_EQ(prctl(PR_GET_DUMPABLE), 1);
+      exit(testing::Test::HasFailure());
+    }
+
+    int status;
+    SAFE_SYSCALL(waitpid(child_pid, &status, 0));
+    EXPECT_TRUE(WIFEXITED(status));
+    EXPECT_EQ(WEXITSTATUS(status), 0);
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(DumpableTest, DumpableDropsOnUserChange) {
+  for (size_t combination = 0b00000000; combination <= 0b11111111; combination++) {
+    uid_t ruid, euid, suid, fuid;
+    gid_t rgid, egid, sgid, fgid;
+
+    ruid = (combination & 0b00000001) ? kUser1Uid : 0;
+    euid = (combination & 0b00000010) ? kUser1Uid : 0;
+    suid = (combination & 0b00000100) ? kUser1Uid : 0;
+    fuid = (combination & 0b00001000) ? kUser1Uid : 0;
+    rgid = (combination & 0b00010000) ? kUser1Gid : 0;
+    egid = (combination & 0b00100000) ? kUser1Gid : 0;
+    sgid = (combination & 0b01000000) ? kUser1Gid : 0;
+    fgid = (combination & 0b10000000) ? kUser1Gid : 0;
+
+    bool expected_change =
+        (euid == kUser1Uid || egid == kUser1Gid || fuid == kUser1Uid || fgid == kUser1Gid);
+
+    test_helper::ForkHelper helper;
+    helper.RunInForkedProcess([&] {
+      SCOPED_TRACE(fxl::StringPrintf("resfsuid: (%d, %d, %d, %d) resfsgid: (%d, %d, %d, %d)", ruid,
+                                     euid, suid, fuid, rgid, egid, sgid, fgid));
+      SAFE_SYSCALL(prctl(PR_SET_DUMPABLE, 1));
+
+      SAFE_SYSCALL(setresgid(rgid, egid, sgid));
+      SAFE_SYSCALL(setfsgid(fgid));
+      SAFE_SYSCALL(setfsuid(fuid));
+      SAFE_SYSCALL(setresuid(ruid, euid, suid));
+
+      int dumpable = prctl(PR_GET_DUMPABLE);
+      if (expected_change) {
+        EXPECT_EQ(dumpable, dumpable_default_);
+      } else {
+        EXPECT_EQ(dumpable, 1);
+      }
+    });
+
+    EXPECT_TRUE(helper.WaitForChildren());
+  }
 }

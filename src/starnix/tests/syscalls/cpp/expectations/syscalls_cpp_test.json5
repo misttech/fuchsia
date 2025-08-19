@@ -112,6 +112,9 @@
 
                 // TODO(https://fxbug.dev/423010702)
                 "Task.KillZombieEPERM",
+
+                // TODO(https://fxbug.dev/439058791)
+                "DumpableTest.DumpableDropsOnUserChange",
             ],
         },
         {
