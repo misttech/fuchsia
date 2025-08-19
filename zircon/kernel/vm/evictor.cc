@@ -133,7 +133,7 @@ struct ReclaimFailureStats {
 
 void DiagnoseReclamationFailure(ktl::pair<VmCowReclaimResult, const vm_page_t*>* reclaimed,
                                 ReclaimFailureStats* failure_stats, bool has_test_reclaim) {
-  bool reclaim_failed = false;
+  bool reclaim_failed = false, was_incorrect_page = false;
   if (reclaimed->first.is_error()) {
     reclaim_failed = true;
     switch (reclaimed->first.error_value()) {
@@ -148,6 +148,7 @@ void DiagnoseReclamationFailure(ktl::pair<VmCowReclaimResult, const vm_page_t*>*
         break;
       case VmCowReclaimFailure::IncorrectPage:
         failure_stats->failure_reasons.incorrect_page++;
+        was_incorrect_page = true;
         break;
       case VmCowReclaimFailure::Other:
         failure_stats->failure_reasons.other++;
@@ -155,11 +156,15 @@ void DiagnoseReclamationFailure(ktl::pair<VmCowReclaimResult, const vm_page_t*>*
     }
   }
 
-  // Evicting the same page twice in a row indicates a potential bug in reclamation.
-  // Ignore the test reclaim path which might not even evict an actual page.
+  // Evicting the same page twice in a row indicates a potential bug in reclamation, unless:
+  // * We're in the IncorrectPage failure case, since that indicates a race in page ownership, and
+  //   we can't expect the VmCowPages to have moved a page it does not own out of the way. Every
+  //   other failure case should have moved the page out of the way (by calling MarkAccessed).
+  // * This is the test reclaim path, which might not even evict an actual page.
   const vm_page_t* evicted_page = reclaimed->second;
-  if (!has_test_reclaim && unlikely(failure_stats->CheckForSamePage(evicted_page))) {
-    printf("WARNING: Evictor reclaiming the same page again %p\n", evicted_page);
+  if (!was_incorrect_page && !has_test_reclaim &&
+      unlikely(failure_stats->CheckForSamePage(evicted_page))) {
+    KERNEL_OOPS("WARNING: Evictor reclaiming the same page again %p\n", evicted_page);
   }
 
   // If we've looped many times without being able to reclaim anything, make some noise.
