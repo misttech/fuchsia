@@ -227,13 +227,19 @@ zx_status_t riscv64_create_secondary_stack(cpu_num_t cpu_num, vaddr_t* sp) {
     return status;
   }
 
+  constexpr int kSizeOfUint64 = static_cast<int>(sizeof(uint64_t));
+
   // Store cpu_num on the main stack.
   uint64_t* stack_top = reinterpret_cast<uint64_t*>(stack->top());
-  stack_top[-1] = cpu_num;
+  stack_top[SECONDARY_STACK_HART_ID_OFFSET / kSizeOfUint64] = cpu_num;
+
+  uintptr_t tp =
+      reinterpret_cast<uintptr_t>(&_init_thread[cpu_num - 1].arch().thread_pointer_location);
+  stack_top[SECONDARY_STACK_TP_OFFSET / kSizeOfUint64] = tp;
 
   // Store the shadow call stack base on the stack
 #if __has_feature(shadow_call_stack)
-  stack_top[-2] = stack->shadow_call_base();
+  stack_top[SECONDARY_STACK_SHADOW_CALL_SP_OFFSET / kSizeOfUint64] = stack->shadow_call_base();
 #endif
 
   // Return the stack pointer to our caller.

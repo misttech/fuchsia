@@ -9,6 +9,14 @@
 
 #define PERCPU_IN_RESTRICTED_MODE 24
 
+// We pass the data needed to secondary bootstrap on the secondary stack. These
+// are their offsets.
+#define SECONDARY_STACK_HART_ID_OFFSET -8
+#define SECONDARY_STACK_TP_OFFSET -16
+#if __has_feature(shadow_call_stack)
+#define SECONDARY_STACK_SHADOW_CALL_SP_OFFSET -24
+#endif
+
 #ifndef __ASSEMBLER__
 
 #include <align.h>

@@ -60,7 +60,29 @@ void arch_thread_initialize(Thread* t, vaddr_t entry_point) {
   frame->tp = reinterpret_cast<uintptr_t>(&t->arch().thread_pointer_location);
 }
 
-void arch_thread_construct_first(Thread* t) { arch_set_current_thread(t); }
+__NO_SAFESTACK void arch_thread_construct_first(Thread* t) {
+  // In the case of the boot CPU, `initial` doesn't actually point to real
+  // memory yet; in the case of secondaries though, `initial` will already
+  // be `t` and set at the thread pointer (during riscv64_secondary_start()).
+  Thread* initial = arch_get_current_thread();
+  if (initial == t) {
+    return;
+  }
+
+  // In the case of the boot CPU, physboot handed off a temporary region of
+  // memory covering the subset of `arch_thread` dealing in the thread ABI. So
+  // `fake_thread` is indeed fake, but accessing its `stack_guard` and
+  // `unsafe_sp` members is kosher.
+  const arch_thread& fake_arch = initial->arch();
+
+  // Copy over the thread ABI values from the temporary region into the first
+  // thread.
+  auto& arch = t->arch();
+  arch.stack_guard = fake_arch.stack_guard;
+  arch.unsafe_sp = fake_arch.unsafe_sp;
+
+  arch_set_current_thread(t);
+}
 
 void arch_setup_uspace_iframe(iframe_t* iframe, uintptr_t pc, uintptr_t sp, uintptr_t arg1,
                               uintptr_t arg2) {

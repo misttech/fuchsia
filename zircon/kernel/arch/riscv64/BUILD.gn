@@ -41,9 +41,6 @@ if (toolchain_base_environment == "kernel") {
         # regardless of the compiler's default.
         "-fno-sanitize=safe-stack",
         "-fsanitize=shadow-call-stack",
-
-        # TODO-rvbringup: add support for stack protector logic
-        "-fno-stack-protector",
       ]
     }
 

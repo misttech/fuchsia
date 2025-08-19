@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <arch/riscv64/mmu.h>
+#include <arch/riscv64/mp.h>
 #include <arch/riscv64.h>
 #include <arch/defines.h>
 #include <lib/arch/asm.h>
@@ -49,12 +50,15 @@
   // the stack pointer for this hart
   mv      sp, a1
 
-  // Read  the cpu number off of the stack
-  ld      a1, -8(sp)
+  // Read the cpu number off of the stack.
+  ld      a1, SECONDARY_STACK_HART_ID_OFFSET(sp)
+
+  // Read the thread pointer off of the stack.
+  ld      tp, SECONDARY_STACK_TP_OFFSET(sp)
 
   // Set up the shadow call stack
 #if __has_feature(shadow_call_stack)
-  ld      shadow_call_sp, -16(sp)
+  ld      shadow_call_sp, SECONDARY_STACK_SHADOW_CALL_SP_OFFSET(sp)
 #endif
 
   // The identity mapping is still there, we can jump to C.
