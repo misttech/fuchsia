@@ -29,10 +29,13 @@ import("libc_headers.gni")
 # the next build with update_goldens=true will update the JSON file in the
 # sources; that will necessitate another build to pick up the new lists and
 # generate the headers correctly so that the sysroot can be updated.
+# LINT.IfChange
 llvm_libc_generated_headers = [
   "fenv.h",
   "malloc.h",
 ]
+
+# LINT.ThenChange(//build/bazel/fuchsia_idk/generate_repository.py:sysroot_generated_headers)
 
 # The generated headers go here, where libc_headers.gni looks for them.
 gen_dir = libc_headers.llvm_libc_gen_dir
