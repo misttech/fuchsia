@@ -6,14 +6,53 @@
 #### CATEGORY=Build
 ### Run Ninja to build Fuchsia
 
-## usage: fx build [options] [LABELS_OR_TARGETS]... [-- NINJA_OPTIONS...]
+## usage: fx build [options] [LABELS_OR_TARGETS]... [-- EXTRA_OPTIONS...]
 ##
-## Builds a set of GN or Ninja targets after performing a few correctness checks for
-## the Fuchsia build. Ninja-specific options must be provided after a -- specifier.
+## Builds a set of targets after performing a few correctness checks for
+## the Fuchsia build. Ninja or Bazel specific options must be provided after
+## a -- specifier.
 ##
-## LABELS_OR_TARGETS is a list of Ninja target path, GN labels (beginning with //)
-## or `--toolchain=NAME` options or related aliases (see below). For example, the
-## following lines are equivalent ways to ask for the host `zbi` tool to be built:
+## There are three ways to build targets with this command:
+##
+## - The "GN build mode", which is the default, to build GN or Ninja artifacts
+##   by specifying their labels or output paths, respectively, and using
+##   a few options specific to this mode (e.g. --toolchain=TOOLCHAIN).
+##
+## - The "Bazel build mode", which is enabled by using Bazel target labels
+##   that begin with @ (e.g. @//src:foo), and Bazel-specific options
+##   (e.g. "--config=NAME").
+##
+## - The "Fint build mode", which is enabled by using --fint-params-path=FILE
+##   to point to a fint textproto file describing the build configuration.
+##   No other GN or Bazel related arguments are allowed in this mode.
+##
+## Trying to mix Bazel or GN/Ninja related labels or options is not supported
+## and an error message will be printed detailing the issue if this happens.
+##
+## Some options (e.g. --host) can be used in both modes.
+##
+## If no Bazel labels or option is used, the build mode defaults to GN, which
+## is useful to run Ninja tools, e.g. `fx build -- -t <tool> <tool-options>`.
+##
+## LABELS_OR_TARGETS is a list whose items can be:
+##
+##  - GN labels (beginning with //, e.g. //src/foo or //src/foo:bar)
+##
+##  - Ninja output paths (e.g. host_x64/fidlc) though this use is deprecated
+##    and will print a warning.
+##
+##  - Bazel labels (beginning with @, e.g. @//src/foo or @//src/foo:bar)
+##
+## Currently only host targets in the Bazel graph that do not depend on GN build
+## artifacts are supported. For example, one of:
+##
+##    fx build --host @//build/bazel/host_tests/cc_tests:static_test
+##    fx build --config=host @//build/bazel/host_tests/cc_tests:static_test
+##
+## Otherwise, LABELS_OR_TARGETS is a list of Ninja target paths, GN labels
+## (beginning with //) or `--toolchain=NAME` options or related aliases (see below).
+## For example, the following lines are equivalent ways to ask for the host `zbi`
+## tool to be built with Ninja:
 ##
 ##    fx build --host //zircon/tools/zbi
 ##    fx build --host //zircon/tools/zbi:zbi
@@ -30,16 +69,22 @@
 ##
 ##   --no-checks              Disable consistency checks (for fx development only).
 ##
+##   --log=LOGFILE
 ##   --log LOGFILE            Print debug information to LOGFILE. Please attach
 ##                            the resulting file when reporting bugs.
 ##
+##   --fint-params-path=PATH
 ##   --fint-params-path PATH  Path to a fint params file used by an infra
 ##                            builder. This is useful for reproducing the exact
 ##                            set of targets built by the infrastructure.
 ##                            All other options listed below are ignored in this mode.
 ##
 ##   --toolchain=TOOLCHAIN    Specify the current GN toolchain suffix to use for
-##                            GN labels that appear after this option.
+##                            GN labels that appear after this option. It is an error
+##                            to use this with any Bazel target label or option.
+##
+##   --config=NAME            Specify a Bazel --config argument. It is an error to use
+##                            this with any GN target label or Ninja output path argument.
 ##
 ##   -j <count>               Specify an explicit max job count for both Ninja
 ##                            and Bazel.
@@ -54,16 +99,24 @@
 ##                            to build. This does *not* enable Ninja --verbose flag,
 ##                            use '-- --verbose' to do that.
 ##
-##   --host                   Alias for --toolchain=host
-##   --default                Alias for --toolchain=default
-##   --fuchsia                Alias for --toolchain=fuchsia
-##   --fidl                   Alias for --toolchain=fidl
+##   --host                   When building with Ninja, an alias for --toolchain=host.
+##                            When building with Bazel, an alias for --config=host
 ##
-##   -- [ARGS...]             Pass all following arguments directly to Ninja.
+##   --default                Alias for --toolchain=default
+##                            (incompatible with Bazel build mode)
+##
+##   --fuchsia                Alias for --toolchain=fuchsia
+##                            (incompatible with Bazel build mode)
+##
+##   --fidl                   Alias for --toolchain=fidl
+##                            (incompatible with Bazel build mode)
+##
+##   -- [ARGS...]             Pass all following arguments directly to Ninja or
+##                            Bazel.
 ##
 ##   --help-toolchains        Print list of valid TOOLCHAIN values.
 ##
-## Run `fx build -h` to see Ninja argument details.
+## Run `fx build -- -h` to see Ninja argument details.
 
 declare -r start_time="${EPOCHREALTIME/./}"
 
@@ -77,6 +130,8 @@ source "${_script_dir}/lib/vars.sh" || exit 1
 # shellcheck source=/dev/null
 source "${_script_dir}/lib/build_api_client.sh" || exit $?
 fx-config-read
+# shellcheck source=/dev/null
+source "${_script_dir}/lib/bazel_utils.sh" || exit $?
 
 # shellcheck source=/dev/null
 source "${_script_dir}/lib/metrics.sh" || exit $?
@@ -110,55 +165,203 @@ function get-ninja-log-timestamp {
   fi
 }
 
+# Validate the command-line arguments to determine whether this is used
+# to build Bazel targets, or GN / Ninja ones.
+#
+# On failure, this prints a human-friendly error message detailing the incompatible
+# arguments, then return 1
+#
+# On success, this sets the global FX_BUILD_MODE variable to either "gn", "bazel",
+# "fint" or an empty string if the mode could not be determined.
+#
+# $1+: command-line arguments
+function validate_build_args {
+  local gn_options=() gn_labels=() bazel_options=() bazel_targets=()
+  local gn_args=()   # gn labels and options, in invocation order.
+  local has_fint_params_path
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --config=*)  # A Bazel --config=NAME option
+        if [[ "${#gn_labels[@]}" -gt 0 ]]; then
+          fx-error "Bazel option $1 cannot be used with GN labels or Ninja paths: ${gn_labels[*]}"
+          return 1
+        elif [[ "${#gn_options[@]}" -gt 0 ]]; then
+          fx-error "Bazel option $1 cannot be used with GN/Ninja options: ${gn_options[*]}"
+          return 1
+        fi
+        bazel_options+=("$1")
+        ;;
+      @*)  # A Bazel target label.
+        if [[ "${#gn_labels[@]}" -gt 0 ]]; then
+          fx-error "Bazel target $1 cannot be used with GN labels or Ninja paths: ${gn_labels[*]}"
+          return 1
+        elif [[ "${#gn_options[@]}" -gt 0 ]]; then
+          fx-error "Bazel target $1 cannot be used with GN/Ninja options: ${gn_options[*]}"
+          return 1
+        fi
+        bazel_targets+=("$1")
+        ;;
+      --host)
+        # This is compatible with both Bazel and GN invocations so ignore it here.
+        gn_args+=("$1")
+        ;;
+      --toolchain=*|--fuchsia|--default|--fidl)  # GN specific options.
+        if [[ "${#bazel_targets[@]}" -gt 0 ]]; then
+          fx-error "GN option $1 cannot be used with Bazel targets: ${bazel_targets[*]}"
+          return 1
+        fi
+        if [[ "${#bazel_options[@]}" -gt 0 ]]; then
+          fx-error "GN option $1 cannot be used with Bazel options: ${bazel_options[*]}"
+          return 1
+        fi
+        gn_options+=("$1")
+        gn_args+=("$1")
+        ;;
+      --)  # Stop parsing after the --
+        shift
+        break
+        ;;
+      --fint-params-path|--log|-j)  # Options taking an argument
+        if [[ -z "$2" ]]; then
+          fx-error "Missing $1 argument, see --help."
+          return 1
+        fi
+        if [[ "$1" == "--fint-params-path" ]]; then
+          has_fint_params_path=true
+        fi
+        shift
+        ;;
+      --fint-params-path=*)
+        has_fint_params_path=true
+        ;;
+      -*)  # Ignore any other option here.
+        ;;
+      //*) # A GN label
+        if [[ "${#bazel_targets[@]}" -gt 0 ]]; then
+          fx-error "GN label $1 cannot be used with Bazel targets: ${bazel_targets[*]}"
+          return 1
+        fi
+        if [[ "${#bazel_options[@]}" -gt 0 ]]; then
+          fx-error "GN label $1 cannot be used with Bazel options: ${bazel_options[*]}"
+          return 1
+        fi
+        gn_labels+=("$1")
+        gn_args+=("$1")
+        ;;
+      *)  # Assume this is a Ninja path
+        if [[ "${#bazel_targets[@]}" -gt 0 ]]; then
+          fx-error "Ninja path $1 cannot be used with Bazel targets: ${bazel_targets[*]}"
+          return 1
+        fi
+        if [[ "${#bazel_options[@]}" -gt 0 ]]; then
+          fx-error "Ninja path $1 cannot be used with Bazel options: ${bazel_options[*]}"
+          return 1
+        fi
+        gn_labels+=("$1")  # Not really a label, but good enough for validation.
+        gn_args+=("$1")
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -n "${has_fint_params_path}" ]]; then
+    if [[ "${#bazel_targets[@]}" -gt 0 || "${#bazel_options[@]}" -gt 0 || "${#gn_args[@]}" -gt 0 ]]; then
+      fx-error "It's invalid to specify Bazel or GN arguments along with --fint-params-path."
+      return 1
+    elif [[ "$*" ]]; then
+      fx-error "It's invalid to specify extra Ninja flags along with --fint-params-path."
+      return 1
+    fi
+    FX_BUILD_MODE="fint"
+  elif [[ "${#bazel_targets[@]}" -gt 0 || "${#bazel_options[@]}" -gt 0 ]]; then
+    FX_BUILD_MODE="bazel"
+  elif [[ "${#gn_labels[@]}" -gt 0 || "${#gn_options[@]}" -gt 0 ]]; then
+    FX_BUILD_MODE="gn"
+    # A common mistake is to place a toolchain option after the GN label, thinking it
+    # applies to all labels. For example `fx build //src:foo --host` instead of
+    # `fx build --host //src:foo`.
+    #
+    # The latter builds //src:foo for the host, but the former builds //src:foo for Fuchsia,
+    # then ignores the --host option. This results in confusing build error messages
+    # (see https://fxbug.dev/328421720), so detect this here and make trailing toolchain
+    # options an error with an explicit message.
+    local last_gn_arg="${gn_args[-1]}"
+    if [[ "${last_gn_arg}" =~ --.* ]]; then
+      fx-error "Toolchain option ${last_gn_arg} must be followed by at least one GN label"
+      return 1
+    fi
+  else
+    FX_BUILD_MODE=""
+  fi
+}
+
+# Abort script with an error if FX_BUILD_MODE is not "bazel"
+function assert_build_mode {
+  if [[ "$FX_BUILD_MODE" != "$1" ]]; then
+    fx-fatal "Internal validation error (expected $1 build mode, got $FX_BUILD_MODE)! Please contact the Fuchsia build team!"
+  fi
+}
+
 function main {
-  local switches=() fuchsia_targets=() fx_gen_switches=() ninja_switches=()
+  local gn_targets=() extra_switches=() bazel_targets=() fx_gen_switches=()
   local log_file is_logging fint_params_path
   local no_checks
   local verbose
   local quiet
   local skip_auth_check=0
   local concurrency=0
+  local has_bazel_host_flag
 
   # When tracing, increase verbosity.
   if [[ -o xtrace ]]; then
     verbose="true"
   fi
 
+  validate_build_args "$@" || return 1
+
+  # If the build mode could not be determined, set it to "gn" for
+  # now, as this is the most common case, and this allows using
+  # Ninja tools with invocations like `fx build -- -t deps ninja_target_path`
+  # which is very useful to debug weird build issues.
+  if [[ -z "$FX_BUILD_MODE" ]]; then
+    FX_BUILD_MODE="gn"
+  fi
+
+  # As a special case, set FX_BUILD_DEBUG_VALIDATION=1 in the
+  # environment to exit the script immediately when validation passed.
+  if [[ "${FX_BUILD_DEBUG_VALIDATION}" == "1" ]]; then
+    echo "FX_BUILD_MODE ${FX_BUILD_MODE}"
+    return 0
+  fi
+
   is_logging=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --log=*)
+        log_file="${1#--*=}"
+        ;;
       --log)
-        switches+=("$1")
         if [[ $# -lt 2 ]]; then
-          fx-command-help
+          fx-error "Missing --log argument, see --help."
           return 1
         fi
         log_file="$2"
-        if [[ -f "${log_file}" ]]; then
-          fx-error "File \"${log_file}\" exists."
-          return 1
-        fi
-       # if ! touch "${log_file}"; then
-       #   fx-error "Cannot create logfile \"${log_file}\""
-       #   return 1
-       # fi
-        is_logging=true
         shift
         ;;
       --fint-params-path)
-        switches+=("$1")
-        if [[ $# -lt 2 ]]; then
-          fx-command-help
-          return 1
-        fi
+        assert_build_mode "fint"
         fint_params_path="$2"
         shift
         ;;
+      --fint-params-path=*)
+        assert_build_mode "fint"
+        fint_params_path="${1#--*=}"
+        ;;
       # Use -- as a separator for command-line options for Ninja.
-      # Anything that follows that goes directly into ninja_switches and the loop exits.
+      # Anything that follows that goes directly into extra_switches and the loop exits.
       --)
         shift
-        ninja_switches+=("$@")
+        extra_switches+=("$@")
         break
         ;;
 
@@ -183,13 +386,13 @@ function main {
       # pass them to Bazel. See https://fxbug.dev/351623259
       -j)
         concurrency="$2"
-        ninja_switches+=("$1" "$2")
+        extra_switches+=("$1" "$2")
         shift
         ;;
 
       -j*)
         concurrency="${1#-j}"
-        ninja_switches+=("$1")
+        extra_switches+=("$1")
         ;;
 
       -h|--help)
@@ -202,51 +405,88 @@ function main {
         exit 1
         ;;
 
+      # When building GN targets, --host is an alias for --toolchain=host
+      # When building Bazel targets, --host is an alias for --config=host
+      --host)
+          if [[ "${FX_BUILD_MODE}" == "bazel" ]]; then
+            extra_switches+=(
+                # Force a host build configuration.
+                --config=host
+                # Prevent any existing @gn_targets definitions from being visible.
+                --override_repository=gn_targets="${FUCHSIA_DIR}"/build/bazel/local_repositories/empty
+            )
+          else
+            assert_build_mode "gn"
+            gn_targets+=("$1")
+          fi
+          ;;
+
+      --config=*)
+        assert_build_mode "bazel"
+        if [[ "$1" == "--config=host" ]]; then
+          has_bazel_host_flag=true
+        fi
+        extra_switches+=("$1")
+        ;;
+
       # The following options are used to specify GN toolchain for future
       # labels that appear on the command line.
-      --host|--fidl|--default|--fuchsia|--toolchain=*)
-        fuchsia_targets+=("$1")
+      --fidl|--default|--fuchsia|--toolchain=*)
+        assert_build_mode "gn"
+        gn_targets+=("$1")
         ;;
 
       -*)
         fx-error "Unsupported option $1, see 'fx help build' for details."
         exit 1
         ;;
-      *)
-        fuchsia_targets+=("$1")
+      @*)
+        assert_build_mode "bazel"
+        bazel_targets+=("$1")
+        ;;
+      *)  # Assume this is a Ninja path.
+        assert_build_mode "gn"
+        gn_targets+=("$1")
         ;;
     esac
     shift
   done
 
+  if [[ -n "${log_file}" ]]; then
+    if [[ -f "${log_file}" ]]; then
+      fx-error "File \"${log_file}\" exists."
+      return 1
+    fi
+    is_logging=true
+  fi
+
   if [[ -n "${quiet}" ]]; then
     fx_gen_switches+=("--quiet")
-    ninja_switches+=("--quiet")
+    case "${FX_BUILD_MODE}" in
+      bazel)
+        extra_switches+=("--config=quiet")
+        ;;
+      gn)
+        extra_switches+=("--quiet")
+        ;;
+    esac
     export FX_BUILD_QUIET=1
   fi
 
   # Set no_checks=true when running a Ninja tool or printing the Ninja help.
-  for arg in "${ninja_switches[@]}"; do
-    case "${arg}" in
-      -h|--help|-t*)
-        no_checks=true
-        break
-    esac
-  done
+  if [[ "${#gn_targets[@]}" -gt 0 ]]; then
+    for arg in "${extra_switches[@]}"; do
+      case "${arg}" in
+        -h|--help|-t*)
+          no_checks=true
+          break
+      esac
+    done
+  fi
 
   if [[ "${HOST_OS}" == "mac" ]]; then
     fx-error "Building Fuchsia on macOS is NOT SUPPORTED and will be removed soon."
     fx-error "Please see http://go/local-platform-support-prd for details."
-  fi
-
-  if [[ -n "${fint_params_path}" ]]; then
-    if [[ ${#ninja_switches[@]} -gt 0 ]]; then
-      fx-error "It's invalid to specify extra Ninja flags along with --fint-params-path."
-      exit 1
-    elif [[ ${#fuchsia_targets[@]} -gt 0 ]]; then
-      fx-error "It's invalid to specify targets along with --fint-params-path."
-      exit 1
-    fi
   fi
 
   if [[ "${is_logging}" = true ]]; then
@@ -283,6 +523,7 @@ function main {
     # like a plausible possibility.
     local -r landmines=("$PREBUILT_GN"
                         "$FUCHSIA_DIR/tools/devshell/build"
+                        "$FUCHSIA_DIR/tools/devshell/lib/bazel_utils.sh"
                         "$FUCHSIA_DIR/tools/devshell/lib/vars.sh"
                         "${FUCHSIA_BUILD_DIR}/args.gn"
                       )
@@ -344,43 +585,50 @@ function main {
 
   local status
 
-  if [[ "${is_logging}" = true ]]; then
-    local tool="ninja"
-    if [ -n "${fint_params_path}" ]; then
-      tool="fint build"
-    fi
-    echo -e "\\n------ RUNNING ${tool} ------"
+  if [[ "${is_logging}" == true ]]; then
+    echo -e "\\n------ RUNNING ${FX_BUILD_MODE} ------"
   fi
 
-  # A flag indicating whether a Ninja tool is invoked, instead of a build action.
-  local run_ninja_build=true
-  for opt in "${ninja_switches[@]}"; do
-    case "${opt}" in
-      -n|--dry-run|-t*)
-        run_ninja_build=
-        ;;
-    esac
-  done
-
-
-  # LINT.IfChange
-  # A file that is only created when the build succeeds.
-  local last_build_success_stamp="${FUCHSIA_BUILD_DIR}/last_ninja_build_success.stamp"
-  # LINT.ThenChange(//tools/integration/fint/build.go)
+  # A flag indicating whether a Ninja build is needed, as opposed to
+  # running a tool, or in dry-run mode.
+  local run_ninja_build=
+  if [[ "${FX_BUILD_MODE}" == "bazel" ]]; then
+    # For now, only support host Bazel targets. Supporting Fuchsia targets requires
+    # ensuring that all GN build artifacts they use as input are already built, which
+    # is not implemented yet.
+    if [[ -z "${has_bazel_host_flag}" ]]; then
+      fx-error "Only host Bazel target labels are supported for now, please use --host flag."
+      exit 1
+    fi
+  elif [[ "${FX_BUILD_MODE}" == "gn" ]]; then
+    run_ninja_build=true
+    for opt in "${extra_switches[@]}"; do
+      case "${opt}" in
+        -n|--dry-run|-t*)
+          run_ninja_build=
+          ;;
+      esac
+    done
+  fi
 
   if [[ -n "${run_ninja_build}" ]]; then
+    # LINT.IfChange
+    # A file that is only created when the build succeeds.
+    local last_build_success_stamp="${FUCHSIA_BUILD_DIR}/last_ninja_build_success.stamp"
+    # LINT.ThenChange(//tools/integration/fint/build.go)
+
     rm -f "${last_build_success_stamp}"
+
+    local -i is_no_op=0
+    local -i is_clean_build=0
+    local -i ninja_log_timestamp_before
+    ninja_log_timestamp_before="$(get-ninja-log-timestamp)"
+    if (( ninja_log_timestamp_before < 0 )); then
+      is_clean_build=1
+    fi
   fi
 
-  local -i is_no_op=0
-  local -i is_clean_build=0
-  local -i ninja_log_timestamp_before
-  ninja_log_timestamp_before="$(get-ninja-log-timestamp)"
-  if (( ninja_log_timestamp_before < 0 )); then
-    is_clean_build=1
-  fi
-
-  if [ -n "${fint_params_path}" ]; then
+  if [[ "${FX_BUILD_MODE}" == "fint" ]]; then
     readonly fint="${FX_CACHE_DIR}/fint"
     "$FUCHSIA_DIR/tools/integration/bootstrap.sh" -o "$fint" || exit $?
 
@@ -410,28 +658,37 @@ checkout_dir: \"${FUCHSIA_DIR}\"
 build_dir: \"${FUCHSIA_BUILD_DIR}\"
 job_count: $concurrency
 ")
+    status=$?
+    exit-with-message
+  fi
+
+  # When using any remote build services, do a quick authentication
+  # check before starting the build.
+  if [[ "$skip_auth_check" == 0 ]]; then
+    fx-command-run rbe preflight
+  fi
+
+  if [[ "${FX_BUILD_MODE}" == "bazel" ]]; then
+      # Invoke Bazel through fx-run-bazel to ensure a consistent environment and RBE wrapper
+      # script, compared with the case where Bazel is called from Ninja.
+      local bazel_build_args=(
+        # Prevent any existing @gn_targets definitions from being visible.
+        --override_repository=gn_targets="${FUCHSIA_DIR}"/build/bazel/local_repositories/empty
+        # Extra Bazel arguments can be passed after --
+        "${extra_switches[@]}"
+        # The target labels or patterns
+        "${bazel_targets[@]}"
+      )
+      (fx-run-bazel "${is_logging}" "$(fx-get-bazel)" build "${bazel_build_args[@]}")
+      status=$?
+
+      # Note: for now, these build events are not tracked as this feature is still experimental.
   else
-    if [[ "${#fuchsia_targets[@]}" -gt 0 ]]; then
-      # A common mistake is to place a toolchain option after the GN label, thinking it
-      # applies to all labels. For example `fx build //src:foo --host` instead of
-      # `fx build --host //src:foo`.
-      #
-      # The latter builds //src:foo for the host, but the former builds //src:foo for Fuchsia,
-      # then ignores the --host option. This results in confusing build error messages
-      # (see https://fxbug.dev/328421720), so detect this here and make trailing toolchain
-      # options an error with an explicit message.
-      local last_index=$((${#fuchsia_targets[@]} - 1))
-      local last_fuchsia_target="${fuchsia_targets[${last_index}]}"
-      if [[ "${last_fuchsia_target}" =~ --.* ]]; then
-        fx-error "Toolchain option ${last_fuchsia_target} must be followed by at least one GN label"
-        exit 1
-      fi
-      # TODO(https://fxbug.dev/328316506): Remove --allow-unknown once GN is fixed.
+    if [[ "${#gn_targets[@]}" -gt 0 ]]; then
       local -a gn_labels  # define variable to quiet shellcheck
-      fx-command-stdout-to-array gn_labels fx-build-api-client fx_build_args_to_labels --allow-targets --args "${fuchsia_targets[@]}"
+      fx-command-stdout-to-array gn_labels fx-build-api-client fx_build_args_to_labels --allow-targets --args "${gn_targets[@]}"
 
       # Convert GN labels to Ninja targets now.
-      # TODO(https://fxbug.dev/328316506): Remove --allow-unknown once GN is fixed.
       local -a ninja_targets  # define variable to quiet shellcheck
       fx-command-stdout-to-array ninja_targets fx-build-api-client gn_label_to_ninja_paths --allow-unknown "${gn_labels[@]}"
 
@@ -445,7 +702,7 @@ job_count: $concurrency
         echo "Building Ninja target(s): ${ninja_targets[*]}"
       fi
     else
-      ninja_targets=("${fuchsia_targets[@]}")
+      ninja_targets=("${gn_targets[@]}")
     fi
 
     if [[ -n "${run_ninja_build}" ]]; then
@@ -470,36 +727,29 @@ job_count: $concurrency
         if [[ -n "${verbose}" ]]; then
           echo "Ninja jobserver mode is enabled."
         fi
-        ninja_switches+=(--jobserver)
-      fi
-
-      # When using any remote build services, do a quick authentication
-      # check before starting the build.
-      if [[ "$skip_auth_check" == 0 ]]; then
-        fx-command-run rbe preflight
+        extra_switches+=(--jobserver)
       fi
     fi
 
     (fx-run-ninja "${is_logging}" "$PREBUILT_NINJA" -C "${FUCHSIA_BUILD_DIR}" \
-      "${ninja_switches[@]}" "${ninja_targets[@]}")
+      "${extra_switches[@]}" "${ninja_targets[@]}")
 
+    status=$?
+    local -i ninja_log_timestamp_after
+    ninja_log_timestamp_after="$(get-ninja-log-timestamp)"
+    if [[ "${ninja_log_timestamp_before}" == "${ninja_log_timestamp_after}" ]]; then
+      is_no_op=1
+    fi
+
+    "${PREBUILT_PYTHON3}" "$FUCHSIA_DIR/tools/devshell/contrib/lib/count-ninja-actions.py" --validate-ninja-log-version || exit $?
+
+    if [[ "${status}" == 0 && -n "${run_ninja_build}" ]]; then
+      touch "${last_build_success_stamp}"
+    fi
+
+    declare -r end_time="${EPOCHREALTIME/./}"
+    track-build-event "${start_time}" "${end_time}" "${status}" "${extra_switches[*]}" "${ninja_targets[*]}" "${FUCHSIA_BUILD_DIR}" "${is_no_op}" "${is_clean_build}" "${quiet}"&
   fi
-
-  status=$?
-  local -i ninja_log_timestamp_after
-  ninja_log_timestamp_after="$(get-ninja-log-timestamp)"
-  if [[ "${ninja_log_timestamp_before}" == "${ninja_log_timestamp_after}" ]]; then
-    is_no_op=1
-  fi
-
-  "${PREBUILT_PYTHON3}" "$FUCHSIA_DIR/tools/devshell/contrib/lib/count-ninja-actions.py" --validate-ninja-log-version || exit $?
-
-  if [[ "${status}" == 0 && -n "${run_ninja_build}" ]]; then
-    touch "${last_build_success_stamp}"
-  fi
-
-  declare -r end_time="${EPOCHREALTIME/./}"
-  track-build-event "${start_time}" "${end_time}" "${status}" "${ninja_switches[*]}" "${switches[*]}" "${fuchsia_targets[*]}" "${FUCHSIA_BUILD_DIR}" "${is_no_op}" "${is_clean_build}" "${quiet}"&
   exit-with-message
 }
 

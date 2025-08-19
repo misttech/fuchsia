@@ -221,6 +221,18 @@ function fx-error {
   fi
 }
 
+# fx-fatal prints a line to stderr with a red FATAL: prefix then aborts the current script.
+# Only use this for important assertion failures, and provide user-actionable instructions
+# in the error message when that happens!
+function fx-fatal {
+  if fx-is-stderr-tty; then
+    echo -e >&2 "\033[1;31mFATAL:\033[0m $*"
+  else
+    echo -e >&2 "FATAL: $*"
+  fi
+  exit 1
+}
+
 function fx-gn {
   "${PREBUILT_GN}" "$@"
 }
@@ -1283,6 +1295,19 @@ function fx-run-ninja {
   fi
 
   fx-run-build-command "${print_full_cmd}" "ninja" "${cmd}" "${args[@]}"
+}
+
+# Run a Bazel build command after setting up the environment and prepending
+# optional wrappers for RBE and profiling to it.
+# Arguments:
+#    print_full_cmd   if true, prints the full ninja command line before
+#                     executing it
+#    ninja command    the ninja command itself. This can be used both to run
+#                     ninja directly or to run a wrapper script around ninja.
+function fx-run-bazel {
+  local print_full_cmd="$1"
+  shift
+  fx-run-build-command "${print_full_cmd}" bazel "$@"
 }
 
 function fx-get-image {

@@ -41,5 +41,5 @@ fx-update-bazel-workspace () {
 fx-bazel () {
   local opt
   fx-update-bazel-workspace
-  fx-run-build-command "" "bazel" "$(fx-get-bazel)" "$@"
+  fx-run-bazel "" "$(fx-get-bazel)" "$@"
 }
