@@ -109,7 +109,7 @@ pub struct BroadcastAudioScanServiceClient<T: bt_gatt::GattTypes> {
     broadcast_sources: Arc<Mutex<KnownBroadcastSources>>,
     /// Keeps track of the broadcast codes that were sent to the remote BASS
     /// server.
-    broadcast_codes: HashMap<SourceId, [u8; 16]>,
+    broadcast_codes: Arc<Mutex<HashMap<SourceId, [u8; 16]>>>,
     // GATT notification streams for BRS characteristic value changes.
     notification_streams: Option<
         SelectAll<BoxStream<'static, Result<CharacteristicNotification, bt_gatt::types::Error>>>,
@@ -123,7 +123,7 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
             gatt_client,
             audio_scan_control_point,
             broadcast_sources: Default::default(),
-            broadcast_codes: HashMap::new(),
+            broadcast_codes: Arc::new(Mutex::new(HashMap::new())),
             notification_streams: Some(SelectAll::new()),
         }
     }
@@ -152,7 +152,7 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
             gatt_client,
             audio_scan_control_point: bascp_handle,
             broadcast_sources: Arc::new(Mutex::new(KnownBroadcastSources::new(brs_chars))),
-            broadcast_codes: HashMap::new(),
+            broadcast_codes: Arc::new(Mutex::new(HashMap::new())),
             notification_streams: None,
         };
         c.register_notifications();
@@ -266,21 +266,21 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
     /// broadcast sources on behalf of it. If the scan delegator that serves
     /// the BASS server is collocated with a broadcast sink, this may or may
     /// not change the scanning behaviour of the the broadcast sink.
-    pub async fn remote_scan_started(&mut self) -> Result<(), Error> {
+    pub async fn remote_scan_started(&self) -> Result<(), Error> {
         let op = RemoteScanStartedOperation;
         self.write_to_bascp(op).await
     }
 
     /// Indicates to the remote BASS server that we have stopped scanning for
     /// broadcast sources on behalf of it.
-    pub async fn remote_scan_stopped(&mut self) -> Result<(), Error> {
+    pub async fn remote_scan_stopped(&self) -> Result<(), Error> {
         let op = RemoteScanStoppedOperation;
         self.write_to_bascp(op).await
     }
 
     /// Provides the BASS server with information regarding a Broadcast Source.
     pub async fn add_broadcast_source(
-        &mut self,
+        &self,
         broadcast_id: BroadcastId,
         address_type: AddressType,
         advertiser_address: [u8; ADDRESS_BYTE_SIZE],
@@ -317,7 +317,7 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
     /// * `metadata_map` - map of updated metadata for BIGs. If a mapping does
     ///   not exist for a BIG, that BIG's metadata is not updated
     pub async fn modify_broadcast_source(
-        &mut self,
+        &self,
         broadcast_id: BroadcastId,
         pa_sync: PaSync,
         pa_interval: Option<PaInterval>,
@@ -372,10 +372,7 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
         self.write_to_bascp(op).await
     }
 
-    pub async fn remove_broadcast_source(
-        &mut self,
-        broadcast_id: BroadcastId,
-    ) -> Result<(), Error> {
+    pub async fn remove_broadcast_source(&self, broadcast_id: BroadcastId) -> Result<(), Error> {
         let source_id = self.get_source_id(&broadcast_id)?;
 
         let op = RemoveSourceOperation::new(source_id);
@@ -384,7 +381,7 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
 
     /// Sets the broadcast code for a particular broadcast stream.
     pub async fn set_broadcast_code(
-        &mut self,
+        &self,
         broadcast_id: BroadcastId,
         broadcast_code: [u8; 16],
     ) -> Result<(), Error> {
@@ -394,7 +391,7 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
         self.write_to_bascp(op).await?;
 
         // Save the broadcast code we sent.
-        self.broadcast_codes.insert(source_id, broadcast_code);
+        self.broadcast_codes.lock().insert(source_id, broadcast_code);
         Ok(())
     }
 
@@ -715,7 +712,7 @@ mod tests {
 
     #[test]
     fn remote_scan_started() {
-        let (mut client, mut fake_peer_service) = setup_client();
+        let (client, mut fake_peer_service) = setup_client();
 
         fake_peer_service.expect_characteristic_value(&AUDIO_SCAN_CONTROL_POINT_HANDLE, vec![0x01]);
 
@@ -728,7 +725,7 @@ mod tests {
 
     #[test]
     fn remote_scan_stopped() {
-        let (mut client, mut fake_peer_service) = setup_client();
+        let (client, mut fake_peer_service) = setup_client();
 
         fake_peer_service.expect_characteristic_value(&AUDIO_SCAN_CONTROL_POINT_HANDLE, vec![0x00]);
 
@@ -741,7 +738,7 @@ mod tests {
 
     #[test]
     fn add_broadcast_source() {
-        let (mut client, mut fake_peer_service) = setup_client();
+        let (client, mut fake_peer_service) = setup_client();
 
         fake_peer_service.expect_characteristic_value(
             &AUDIO_SCAN_CONTROL_POINT_HANDLE,
@@ -768,7 +765,7 @@ mod tests {
 
     #[test]
     fn modify_broadcast_source() {
-        let (mut client, mut fake_peer_service) = setup_client();
+        let (client, mut fake_peer_service) = setup_client();
 
         // Manually update the broadcast source tracker for testing purposes.
         // In practice, this would have been updated from BRS value change notification.
@@ -810,7 +807,7 @@ mod tests {
 
     #[test]
     fn modify_broadcast_source_updates_groups() {
-        let (mut client, mut fake_peer_service) = setup_client();
+        let (client, mut fake_peer_service) = setup_client();
 
         // Manually update the broadcast source tracker for testing purposes.
         // In practice, this would have been updated from BRS value change notification.
@@ -862,7 +859,7 @@ mod tests {
 
     #[test]
     fn modify_broadcast_source_fail() {
-        let (mut client, _fake_peer_service) = setup_client();
+        let (client, _fake_peer_service) = setup_client();
 
         let mut noop_cx = futures::task::Context::from_waker(futures::task::noop_waker_ref());
         // Broadcast source wasn't previously added.
@@ -880,7 +877,7 @@ mod tests {
 
     #[test]
     fn remove_broadcast_source() {
-        let (mut client, mut fake_peer_service) = setup_client();
+        let (client, mut fake_peer_service) = setup_client();
         let bid = BroadcastId::try_from(0x11).expect("should not fail");
 
         // Manually update the broadcast source tracker for testing purposes.
@@ -912,7 +909,7 @@ mod tests {
 
     #[test]
     fn remove_broadcast_source_fail() {
-        let (mut client, _fake_peer_service) = setup_client();
+        let (client, _fake_peer_service) = setup_client();
 
         let mut noop_cx = futures::task::Context::from_waker(futures::task::noop_waker_ref());
         // Broadcast source wasn't previously added.
@@ -924,7 +921,7 @@ mod tests {
 
     #[test]
     fn set_broadcast_code() {
-        let (mut client, mut fake_peer_service) = setup_client();
+        let (client, mut fake_peer_service) = setup_client();
 
         // Manually update the broadcast source tracker for testing purposes.
         // In practice, this would have been updated from BRS value change notification.
@@ -957,7 +954,7 @@ mod tests {
 
     #[test]
     fn set_broadcast_code_fails() {
-        let (mut client, _) = setup_client();
+        let (client, _) = setup_client();
 
         let mut noop_cx = futures::task::Context::from_waker(futures::task::noop_waker_ref());
         let set_code_fut =

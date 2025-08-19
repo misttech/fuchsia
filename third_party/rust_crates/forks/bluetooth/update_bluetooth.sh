@@ -3,6 +3,39 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# The main Cargo.toml is at third_party/rust_crates/Cargo.toml. This script is at
+# third_party/rust_crates/forks/bluetooth/update_bluetooth.sh.
+main_cargo_toml_path=$(realpath "$(dirname "${BASH_SOURCE[0]}")"/../../Cargo.toml)
+
+if [ ! -f "$main_cargo_toml_path" ]; then
+    echo "Error: Could not find main Cargo.toml at $main_cargo_toml_path"
+    exit 1
+fi
+
+# Extract all dependency sections from the main Cargo.toml.
+# This looks for any line that ends with .dependencies]
+deps_sections=$(awk '/^\[.*dependencies\]/{p=1;next} /^\[/{p=0} p' "$main_cargo_toml_path")
+
+declare -A external_crate_versions
+declare -A fuchsia_versions
+while IFS= read -r line; do
+  # Trim leading whitespace and skip empty lines or comments
+  line=$(echo "$line" | sed -e 's/^[ \t]*//' -e 's/[ \t]*#.*$//')
+  if [[ -z "$line" || "$line" =~ ^bt- ]]; then
+    continue
+  fi
+  crate_name=$(echo "$line" | cut -d'=' -f1 | tr -d ' "')
+  external_crate_versions[$crate_name]="$line"
+
+  # Extract the version number, handling formats like `version = "1.2.3"` and `= "1.2.3"` or `"1.2.3"`
+  version=$(echo "$line" | sed -n 's/.*version\s*=\s*"\([^"]*\)".*/\1/p')
+  if [ -z "$version" ]; then
+    version=$(echo "$line" | sed -n 's/.*=\s*["=]*\([0-9.]\+\).*/\1/p')
+  fi
+  fuchsia_versions[$crate_name]="$version"
+done <<< "$deps_sections"
+
+
 export TMP_CHECKOUT=$(mktemp -d)
 
 if [[ $# -ne 1 || $1 == "--help" ]]; then
@@ -25,6 +58,38 @@ git fetch https://bluetooth.googlesource.com/bluetooth $git_ref
 git sparse-checkout set --no-cone /rust LICENSE
 git checkout --quiet FETCH_HEAD -- .
 
+declare -A bluetooth_versions
+declare -A mismatched_crates
+bluetooth_workspace_cargo_toml="$TMP_CHECKOUT/rust/Cargo.toml"
+
+if [ -f "$bluetooth_workspace_cargo_toml" ]; then
+    bluetooth_deps_section=$(awk '/^\[workspace\.dependencies\]/{p=1;next} /^\[/{p=0} p' "$bluetooth_workspace_cargo_toml")
+    while IFS= read -r line; do
+      line=$(echo "$line" | sed -e 's/^[ \t]*//' -e 's/[ \t]*#.*$//')
+      if [[ -z "$line" ]]; then
+        continue
+      fi
+      crate_name=$(echo "$line" | cut -d'=' -f1 | tr -d ' "')
+      # Extract the version number, handling formats like `version = "1.2.3"` and `= "1.2.3"` or `"1.2.3"`
+      version=$(echo "$line" | sed -n 's/.*version\s*=\s*"\([^"]*\)".*/\1/p')
+      if [ -z "$version" ]; then
+        version=$(echo "$line" | sed -n 's/.*=\s*["=]*\([0-9.]\+\).*/\1/p')
+      fi
+      bluetooth_versions[$crate_name]="$version"
+    done <<< "$bluetooth_deps_section"
+
+    for crate_name in "${!fuchsia_versions[@]}"; do
+      fuchsia_version=${fuchsia_versions[$crate_name]}
+      bluetooth_version=${bluetooth_versions[$crate_name]}
+
+      if [[ -n "$bluetooth_version" && "$fuchsia_version" != "$bluetooth_version" ]]; then
+        mismatched_crates[$crate_name]=1
+      fi
+    done
+else
+    echo "Warning: Could not find bluetooth workspace Cargo.toml at $bluetooth_workspace_cargo_toml. Skipping version check."
+fi
+
 licenses_to_solidify=$(find rust -name LICENSE);
 
 for target in $licenses_to_solidify
@@ -46,40 +111,56 @@ done
 
 crate_paths=rust/bt-*
 
-# Crate versions come from Cargo.toml
-declare -A external_crate_versions=(
-  [assert_matches]="\"1.5.0\""
-  [bitfield]="\"0.14.0\""
-  [futures]="\"=0.3.31\""
-  [lazy_static]="\"1.4\""
-  [log]="{ version = \"0.4.22\", features = [ \"kv\", \"std\" ] }"
-  [parking_lot]="\"0.12.0\""
-  [pretty_assertions]="\"1.2.1\""
-  [thiserror]="\"2.0.11\""
-  [uuid]="{ version = \"1.1.2\", features = [\"serde\", \"v4\"] }"
-)
-
 for crate in ${crate_paths[@]}
 do
   sed -i -e 's/edition.workspace = true/edition = "2021"/' $crate/Cargo.toml
   sed -i -e 's/license.workspace = true/license = "BSD-2-Clause"/' $crate/Cargo.toml
-  sed -i -e 's/license.workspace = true/license = "BSD-2-Clause"/' $crate/Cargo.toml
+
+  # Handle internal crates (including dev-dependencies) by replacing workspace = true
+  # with a relative path.
   for internal_crate_name in $crate_paths
   do
     crate_name=${internal_crate_name#"rust/"}
-    sed -i -e "s/$crate_name.workspace = true/$crate_name = { path = \"..\/$crate_name\" }/" $crate/Cargo.toml
+    # For dependencies like: `bt-foo.workspace = true`
+    sed -i -e "s/$crate_name.workspace = true/$crate_name = { path = \"..\\/$crate_name\" }/" $crate/Cargo.toml
+    # For dependencies like: `bt-foo = { workspace = true, ... }`
+    sed -i -e "s/$crate_name = { workspace = true, /$crate_name = { path = \"..\\/$crate_name\", /" $crate/Cargo.toml
   done
+
+  # Handle external crates by replacing workspace = true with the full version string.
   for external_crate_name in "${!external_crate_versions[@]}"
   do
-    sed -i -e "s/$external_crate_name.workspace = true/$external_crate_name = ${external_crate_versions[$external_crate_name]}/" $crate/Cargo.toml
+    full_def=${external_crate_versions[$external_crate_name]}
+    # Use | as a separator to avoid issues with special characters in the replacement string.
+    sed -i -e "s|$external_crate_name.workspace = true|$full_def|" "$crate/Cargo.toml"
   done
-  # bt-gatt also has a dev-dependency we need to update
-  sed -i -e "s/bt-gatt = { workspace = true, /bt-gatt = { path = \"..\/bt-gatt\", /" $crate/Cargo.toml
 done
 
 rm -r $bluetooth_mirror_dir
 mkdir $bluetooth_mirror_dir
 cp -rv rust/* $bluetooth_mirror_dir/
 
+if [ ${#mismatched_crates[@]} -ne 0 ]; then
+  echo ""
+  echo -e "\033[0;33m" # Yellow color for warning
+  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  echo "WARNING: Bluetooth crate dependency versions are out of sync with Fuchsia."
+  echo "Please update the versions in the bluetooth repository's rust/Cargo.toml to match."
+  echo ""
+  echo "The following crates have mismatched versions:"
+  for crate_name in "${!mismatched_crates[@]}"; do
+    echo "  - $crate_name (Fuchsia: ${fuchsia_versions[$crate_name]}, Bluetooth: ${bluetooth_versions[$crate_name]})"
+  done
+  echo ""
+  echo "Update rust/Cargo.toml in the bluetooth repository with these lines:"
+  for crate_name in "${!mismatched_crates[@]}"; do
+    echo "    ${external_crate_versions[$crate_name]}"
+  done
+  echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  echo -e "\033[0m" # Reset color
+fi
 
+echo ""
+echo -e "\033[0;32mRun \`fx update-rustc-third-party\` to complete crate update.\033[0m"
+echo ""
 echo "Done"

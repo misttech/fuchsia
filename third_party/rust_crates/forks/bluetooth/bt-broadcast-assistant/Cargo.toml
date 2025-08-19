@@ -4,15 +4,21 @@ version = "0.0.1"
 edition = "2021"
 license = "BSD-2-Clause"
 
+[features]
+default = []
+debug = []
+
 [dependencies]
 bt-bap = { path = "../bt-bap" }
 bt-bass = { path = "../bt-bass" }
 bt-common = { path = "../bt-common" }
 bt-gatt = { path = "../bt-gatt" }
 futures = "=0.3.31"
+num = { version = "0.4.3", features = ["rand"] }
 parking_lot = "0.12.0"
-thiserror = "2.0.11"
+thiserror = "2.0.12"
 
 [dev-dependencies]
 assert_matches = "1.5.0"
-bt-bass = { workspace = true, features = ["test-utils"] }
+bt-bass = { path = "../bt-bass", features = ["test-utils"] }
+bt-broadcast-assistant = { path = "../bt-broadcast-assistant", features = ["debug"] }

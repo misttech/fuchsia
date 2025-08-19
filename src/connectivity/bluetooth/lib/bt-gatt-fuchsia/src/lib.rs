@@ -4,9 +4,9 @@
 
 use bt_common::{PeerId, Uuid};
 use bt_gatt::*;
+use fidl::EventPair;
 use fidl::client::QueryResponseFut;
 use fidl::endpoints::RequestStream;
-use fidl::EventPair;
 use fidl_gatt2::{
     LocalServiceControlHandle, LocalServiceRequestStream, ServerPublishServiceResult,
     ValueChangedParameters,
@@ -26,6 +26,8 @@ use {
 
 #[cfg(test)]
 mod test;
+
+pub mod pii;
 
 pub struct FuchsiaTypes {}
 
@@ -69,7 +71,7 @@ impl Central {
     }
 }
 
-fn to_fidl_peer_id(id: &PeerId) -> fidl_fuchsia_bluetooth::PeerId {
+pub(crate) fn to_fidl_peer_id(id: &PeerId) -> fidl_fuchsia_bluetooth::PeerId {
     fidl_fuchsia_bluetooth::PeerId { value: id.0 }
 }
 
@@ -1117,7 +1119,7 @@ impl Stream for IndicateConfirmationStream {
                     Some(peer_id) => {
                         return Poll::Ready(Some(Ok(
                             bt_gatt::server::ConfirmationEvent::create_ack(peer_id),
-                        )))
+                        )));
                     }
                 }
             };

@@ -13,6 +13,7 @@ rustc_library("bt-gatt-fuchsia") {
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
     "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_rust",
     "//sdk/fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_rust",
+    "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
     "//sdk/rust/zx",
     "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
     "//src/lib/fidl/rust/fidl",
@@ -28,6 +29,7 @@ rustc_library("bt-gatt-fuchsia") {
 
   sources = [
     "src/lib.rs",
+    "src/pii.rs",
     "src/test.rs",
   ]
 

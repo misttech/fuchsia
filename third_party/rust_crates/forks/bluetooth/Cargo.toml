@@ -25,6 +25,7 @@ bitfield = "0.14.0"
 futures = "=0.3.31"
 lazy_static = "1.4"
 log = { version = "0.4.22", features = [ "kv", "std" ] }
+num = "0.4.0" # 0.4.0 in Fuchsia
 parking_lot = "0.12.0"
 pretty_assertions = "1.2.1"
 thiserror = "2.0.11"

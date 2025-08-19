@@ -12,10 +12,14 @@ use bt_bap::types::BroadcastId;
 use bt_bass::client::error::Error as BassClientError;
 use bt_bass::client::event::Event as BassEvent;
 use bt_bass::client::{BigToBisSync, BroadcastAudioScanServiceClient};
+#[cfg(any(test, feature = "debug"))]
+use bt_bass::types::BroadcastReceiveState;
 use bt_bass::types::PaSync;
 use bt_common::core::PaInterval;
 use bt_common::packet_encoding::Error as PacketError;
 use bt_common::PeerId;
+#[cfg(any(test, feature = "debug"))]
+use bt_gatt::types::Handle;
 
 use crate::assistant::DiscoveredBroadcastSources;
 
@@ -77,7 +81,7 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
 
     /// Send broadcast code for a particular broadcast.
     pub async fn send_broadcast_code(
-        &mut self,
+        &self,
         broadcast_id: BroadcastId,
         broadcast_code: [u8; 16],
     ) -> Result<(), Error> {
@@ -96,7 +100,7 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
     /// * `bis_sync` - desired BIG to BIS synchronization information. If the
     ///   set is empty, no preference value is used for all the BIGs
     pub async fn add_broadcast_source(
-        &mut self,
+        &self,
         source_peer_id: PeerId,
         address_lookup: &impl GetPeerAddr,
         pa_sync: PaSync,
@@ -141,7 +145,7 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
     ///   in.
     /// * `bis_sync` - desired BIG to BIS synchronization information
     pub async fn update_broadcast_source_sync(
-        &mut self,
+        &self,
         broadcast_id: BroadcastId,
         pa_sync: PaSync,
         bis_sync: BigToBisSync,
@@ -164,23 +168,27 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
     ///
     /// * `broadcast_id` - broadcast id of the braodcast source that's to be
     ///   removed from the scan delegator
-    pub async fn remove_broadcast_source(
-        &mut self,
-        broadcast_id: BroadcastId,
-    ) -> Result<(), Error> {
+    pub async fn remove_broadcast_source(&self, broadcast_id: BroadcastId) -> Result<(), Error> {
         self.bass.remove_broadcast_source(broadcast_id).await.map_err(Into::into)
     }
 
     /// Sends a command to inform the scan delegator peer that we have
     /// started scanning for broadcast sources on behalf of it.
-    pub async fn inform_remote_scan_started(&mut self) -> Result<(), Error> {
+    pub async fn inform_remote_scan_started(&self) -> Result<(), Error> {
         self.bass.remote_scan_started().await.map_err(Into::into)
     }
 
     /// Sends a command to inform the scan delegator peer that we have
     /// stopped scanning for broadcast sources on behalf of it.
-    pub async fn inform_remote_scan_stopped(&mut self) -> Result<(), Error> {
+    pub async fn inform_remote_scan_stopped(&self) -> Result<(), Error> {
         self.bass.remote_scan_stopped().await.map_err(Into::into)
+    }
+
+    /// Returns a list of BRS characteristics' latest values the scan delegator
+    /// has received.
+    #[cfg(any(test, feature = "debug"))]
+    pub fn get_broadcast_receive_states(&self) -> Vec<(Handle, BroadcastReceiveState)> {
+        self.bass.known_broadcast_sources()
     }
 }
 
@@ -267,7 +275,7 @@ pub(crate) mod tests {
 
     #[test]
     fn add_broadcast_source_fail() {
-        let (mut peer, _peer_service, broadcast_source) = setup();
+        let (peer, _peer_service, broadcast_source) = setup();
 
         let mut noop_cx = futures::task::Context::from_waker(futures::task::noop_waker_ref());
 

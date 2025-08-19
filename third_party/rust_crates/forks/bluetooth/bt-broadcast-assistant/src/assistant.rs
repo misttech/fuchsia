@@ -143,7 +143,7 @@ impl<T: bt_gatt::GattTypes + 'static> BroadcastAssistant<T> {
         self.central.scan(&vec![Filter::HasServiceData(BROADCAST_AUDIO_SCAN_SERVICE).into()])
     }
 
-    pub async fn connect_to_scan_delegator(&mut self, peer_id: PeerId) -> Result<Peer<T>, Error>
+    pub async fn connect_to_scan_delegator(&self, peer_id: PeerId) -> Result<Peer<T>, Error>
     where
         <T as bt_gatt::GattTypes>::NotificationStream: std::marker::Send,
     {
@@ -164,6 +164,91 @@ impl<T: bt_gatt::GattTypes + 'static> BroadcastAssistant<T> {
             return Ok(connected_peer);
         }
         Err(Error::ConnectionFailure(peer_id, BROADCAST_AUDIO_SCAN_SERVICE))
+    }
+
+    // Manually adds broadcast source information for debugging purposes.
+    #[cfg(any(test, feature = "debug"))]
+    pub fn force_discover_broadcast_source(
+        &self,
+        peer_id: PeerId,
+        address: [u8; 6],
+        raw_address_type: u8,
+        raw_advertising_sid: u8,
+    ) -> Result<BroadcastSource, Error> {
+        use bt_common::core::{AddressType, AdvertisingSetId};
+        let broadcast_source = BroadcastSource {
+            address: Some(address),
+            address_type: Some(
+                AddressType::try_from(raw_address_type)
+                    .map_err(|e| Error::Generic(e.to_string()))?,
+            ),
+            advertising_sid: Some(AdvertisingSetId(raw_advertising_sid)),
+            broadcast_id: None,
+            pa_interval: None,
+            endpoint: None,
+        };
+
+        Ok(self.broadcast_sources.merge_broadcast_source_data(&peer_id, &broadcast_source).0)
+    }
+
+    // Manually adds broadcast source information for debugging purposes.
+    #[cfg(any(test, feature = "debug"))]
+    pub fn force_discover_broadcast_source_metadata(
+        &self,
+        peer_id: PeerId,
+        raw_metadata: Vec<Vec<u8>>,
+    ) -> Result<BroadcastSource, Error> {
+        use bt_bap::types::{BroadcastAudioSourceEndpoint, BroadcastIsochronousGroup};
+        use bt_common::core::ltv::LtValue;
+        use bt_common::core::CodecId;
+        use bt_common::generic_audio::metadata_ltv::Metadata;
+
+        let mut big = Vec::new();
+        for bytes in raw_metadata {
+            let metadata = {
+                if bytes.len() > 0 {
+                    let (decoded_metadata, consumed_len) = Metadata::decode_all(bytes.as_slice());
+                    if consumed_len != bytes.len() {
+                        return Err(Error::Generic("Metadata length is not valid".to_string()));
+                    }
+                    decoded_metadata.into_iter().filter_map(Result::ok).collect()
+                } else {
+                    vec![]
+                }
+            };
+
+            let group = BroadcastIsochronousGroup {
+                codec_id: CodecId::Assigned(bt_common::core::CodingFormat::ALawLog), // mock.
+                codec_specific_configs: vec![],
+                metadata,
+                bis: vec![],
+            };
+            big.push(group);
+        }
+
+        let endpoint = BroadcastAudioSourceEndpoint { presentation_delay_ms: 0, big };
+
+        let broadcast_source = BroadcastSource {
+            address: None,
+            address_type: None,
+            advertising_sid: None,
+            broadcast_id: None,
+            pa_interval: None,
+            endpoint: Some(endpoint),
+        };
+
+        Ok(self.broadcast_sources.merge_broadcast_source_data(&peer_id, &broadcast_source).0)
+    }
+
+    // Gets the broadcast sources currently known by the broadcast
+    // assistant.
+    pub fn known_broadcast_sources(&self) -> std::collections::HashMap<PeerId, BroadcastSource> {
+        let lock = self.broadcast_sources.0.lock();
+        let mut m = HashMap::new();
+        for (pid, source) in lock.iter() {
+            m.insert(*pid, source.clone());
+        }
+        m
     }
 }
 
@@ -255,7 +340,7 @@ mod tests {
         client.add_service(BROADCAST_AUDIO_SCAN_SERVICE, true, service.clone());
 
         let mut noop_cx = futures::task::Context::from_waker(futures::task::noop_waker_ref());
-        let mut assistant = BroadcastAssistant::<FakeTypes>::new(central);
+        let assistant = BroadcastAssistant::<FakeTypes>::new(central);
         let conn_fut = assistant.connect_to_scan_delegator(PeerId(1004));
         pin_mut!(conn_fut);
         let polled = conn_fut.poll_unpin(&mut noop_cx);

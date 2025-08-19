@@ -4,4 +4,5 @@
 
 pub mod assistant;
 pub use assistant::BroadcastAssistant;
+pub mod debug;
 pub mod types;
