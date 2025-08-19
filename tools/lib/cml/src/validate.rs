@@ -6,9 +6,9 @@ use crate::features::{Feature, FeatureSet};
 use crate::{
     AnyRef, Availability, Capability, CapabilityClause, CapabilityFromRef, CapabilityId, Child,
     Collection, ConfigKey, ConfigType, ConfigValueType, DependencyType, DictionaryRef, Document,
-    Environment, EnvironmentExtends, EnvironmentRef, Error, EventScope, Expose, ExposeFromRef,
-    ExposeToRef, FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef,
-    Rights, RootDictionaryRef, SourceAvailability, Use, UseFromRef, offer_to_all_would_duplicate,
+    Environment, EnvironmentExtends, Error, EventScope, Expose, ExposeFromRef, ExposeToRef,
+    FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef, Rights,
+    RootDictionaryRef, SourceAvailability, Use, UseFromRef, offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use directed_graph::DirectedGraph;
@@ -419,21 +419,6 @@ which is almost certainly a mistake: {}",
             }
         }
 
-        if let Some(environment_ref) = &child.environment {
-            match environment_ref {
-                EnvironmentRef::Named(environment_name) => {
-                    if !self.all_environment_names.contains(&environment_name.as_ref()) {
-                        return Err(Error::validate(format!(
-                            "\"{}\" does not appear in \"environments\"",
-                            &environment_name
-                        )));
-                    }
-                    let source = DependencyNode::Named(environment_name);
-                    let target = DependencyNode::Named(&child.name);
-                    self.add_strong_dep(source, target);
-                }
-            }
-        }
         Ok(())
     }
 
@@ -5058,18 +5043,6 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: string \"parent\", expected \"#<environment-name>\""
         ),
-        test_cml_children_unknown_environment(
-            json!({
-                "children": [
-                    {
-                        "name": "logger",
-                        "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm",
-                        "environment": "#foo_env",
-                    }
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err == "\"foo_env\" does not appear in \"environments\""
-        ),
         test_cml_children_environment(
             json!({
                 "children": [
@@ -5745,34 +5718,6 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"elf\" runner source \"#missing_child\" does not appear in \"children\""
         ),
-        test_cml_environment_with_runner_cycle(
-            json!({
-                "environments": [
-                    {
-                        "name": "my_env",
-                        "extends": "realm",
-                        "runners": [
-                            {
-                                "runner": "elf",
-                                "from": "#child",
-                                "as": "my-elf",
-                            }
-                        ]
-                    }
-                ],
-                "children": [
-                    {
-                        "name": "child",
-                        "url": "fuchsia-pkg://child",
-                        "environment": "#my_env",
-                    }
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err ==
-                    "Strong dependency cycles were found. Break the cycle by removing a \
-                    dependency or marking an offer as weak. Cycles: \
-                    {{#child -> #my_env -> #child}}"
-        ),
         test_cml_environment_with_resolvers(
             json!({
                 "environments": [
@@ -5849,74 +5794,6 @@ mod tests {
                 ]
             }),
             Err(Error::Validate { err, .. }) if &err == "\"pkg_resolver\" resolver source \"#missing_child\" does not appear in \"children\""
-        ),
-        test_cml_environment_with_resolver_cycle(
-            json!({
-                "environments": [
-                    {
-                        "name": "my_env",
-                        "extends": "realm",
-                        "resolvers": [
-                            {
-                                "resolver": "pkg_resolver",
-                                "from": "#child",
-                                "scheme": "fuchsia-pkg",
-                            }
-                        ]
-                    }
-                ],
-                "children": [
-                    {
-                        "name": "child",
-                        "url": "fuchsia-pkg://child",
-                        "environment": "#my_env",
-                    }
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err ==
-                    "Strong dependency cycles were found. Break the cycle by removing a \
-                    dependency or marking an offer as weak. \
-                    Cycles: {{#child -> #my_env -> #child}}"
-        ),
-        test_cml_environment_with_cycle_multiple_components(
-            json!({
-                "environments": [
-                    {
-                        "name": "my_env",
-                        "extends": "realm",
-                        "resolvers": [
-                            {
-                                "resolver": "pkg_resolver",
-                                "from": "#b",
-                                "scheme": "fuchsia-pkg",
-                            }
-                        ]
-                    }
-                ],
-                "children": [
-                    {
-                        "name": "a",
-                        "url": "fuchsia-pkg://a",
-                        "environment": "#my_env",
-                    },
-                    {
-                        "name": "b",
-                        "url": "fuchsia-pkg://b",
-                    }
-                ],
-                "offer": [
-                    {
-                        "protocol": "fuchsia.logger.Log",
-                        "from": "#a",
-                        "to": [ "#b" ],
-                        "dependency": "strong"
-                    },
-                ]
-            }),
-            Err(Error::Validate { err, .. }) if &err ==
-                "Strong dependency cycles were found. Break the cycle by removing a dependency \
-                or marking an offer as weak. \
-                Cycles: {{#a -> #b -> #my_env -> #a}}"
         ),
 
         // facets
