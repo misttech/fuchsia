@@ -7,20 +7,20 @@
 
 use ::gcs::client::{Client, ProgressResponse};
 use anyhow::{Context, Result};
-use ffx_config::sdk::{in_tree_sdk_version, SdkVersion};
 use ffx_config::EnvironmentContext;
+use ffx_config::sdk::{SdkVersion, in_tree_sdk_version};
 use ffx_product_list_args::ListCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
-use fho::{bug, return_user_error, FfxMain, FfxTool};
+use fho::{FfxMain, FfxTool, bug, return_user_error};
 use gcs::gs_url::split_gs_url;
 use lazy_static::lazy_static;
 use maplit::hashmap;
 use omaha_client::version::Version;
-use pbms::{list_from_gcs, string_from_url, AuthFlowChoice};
+use pbms::{AuthFlowChoice, list_from_gcs, string_from_url};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{stderr, stdin, stdout, Write};
+use std::io::{Write, stderr, stdin, stdout};
 use std::str::FromStr;
 use structured_ui::{Notice, Presentation};
 
@@ -132,7 +132,8 @@ where
                 }
                 SdkVersion::Unknown => {
                     return_user_error!(
-                        "Unable to determine SDK version. Please specify the version through '--version'")
+                        "Unable to determine SDK version. Please specify the version through '--version'"
+                    )
                 }
             }
         }

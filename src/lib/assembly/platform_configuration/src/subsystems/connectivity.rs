@@ -155,7 +155,9 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 }
                 (false, NetstackVersion::Netstack2) => {
                     if connectivity_config.network.netstack_thread_count.is_some() {
-                        anyhow::bail!("netstack_thread_count only affects Netstack3, but Netstack2 was selected");
+                        anyhow::bail!(
+                            "netstack_thread_count only affects Netstack3, but Netstack2 was selected"
+                        );
                     }
 
                     builder.platform_bundle("netstack2");

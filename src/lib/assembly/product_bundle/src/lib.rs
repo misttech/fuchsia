@@ -11,7 +11,7 @@ mod product_bundle;
 mod product_bundle_builder;
 mod v2;
 
-pub use product_bundle::{get_repositories, LoadedProductBundle, ProductBundle};
+pub use product_bundle::{LoadedProductBundle, ProductBundle, get_repositories};
 pub use product_bundle_builder::ProductBundleBuilder;
 pub use v2::{ProductBundleV2, Repository, Type};
 

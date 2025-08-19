@@ -19,7 +19,7 @@
 //! to ensure that the directory remains portable (can be moved, zipped, tarred,
 //! downloaded on another machine).
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use assembled_system::Image;
 use assembly_partitions_config::PartitionsConfig;
 use assembly_release_info::ProductBundleReleaseInfo;
@@ -271,7 +271,10 @@ impl ProductBundleV2 {
         let res = self.canonicalize_paths_with(product_bundle_dir, &mut canonicalizer);
 
         if !canonicalizer.not_supported.borrow().is_empty() {
-            log::warn!("Warning: Missing artifacts. The following functionality will not work correctly: {:#?}", canonicalizer.not_supported);
+            log::warn!(
+                "Warning: Missing artifacts. The following functionality will not work correctly: {:#?}",
+                canonicalizer.not_supported
+            );
         }
         res
     }

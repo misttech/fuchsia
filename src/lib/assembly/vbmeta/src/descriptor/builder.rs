@@ -4,7 +4,7 @@
 
 use zerocopy::byteorder::big_endian::{U32 as BigEndianU32, U64 as BigEndianU64};
 
-use super::{HashDescriptor, HashDescriptorHeader, Salt, ALGORITHM, HASH_DESCRIPTOR_TAG};
+use super::{ALGORITHM, HASH_DESCRIPTOR_TAG, HashDescriptor, HashDescriptorHeader, Salt};
 
 /// A builder for `HashDescriptor` that is able to more flexibly create a HashDescriptor. This
 /// can create HashDescriptors with omitted fields (e.g. one that has a name and size, but no

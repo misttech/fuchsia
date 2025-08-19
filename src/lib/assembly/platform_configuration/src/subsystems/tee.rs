@@ -4,7 +4,8 @@
 
 use crate::subsystems::prelude::*;
 use crate::util;
-use anyhow::{anyhow, bail, Context as _};
+use anyhow::{Context as _, anyhow, bail};
+use assembly_config_schema::BoardConfig;
 use assembly_config_schema::platform_settings::session_config::PlatformSessionConfig;
 use assembly_config_schema::product_config::{
     CompiledComponentDefinition, CompiledPackageDefinition,
@@ -12,7 +13,6 @@ use assembly_config_schema::product_config::{
 use assembly_config_schema::product_settings::{
     GlobalPlatformTee, GlobalPlatformTeeClient, ProprietaryTee, Tee,
 };
-use assembly_config_schema::BoardConfig;
 use assembly_constants::{BlobfsCompiledPackageDestination, CompiledPackageDestination, FileEntry};
 use fuchsia_url::AbsoluteComponentUrl;
 use std::io::Write as _;
@@ -30,7 +30,9 @@ impl DefineSubsystemConfiguration<(&Tee, &Vec<GlobalPlatformTeeClient>, &Platfor
             get_global_platform_tee_trusted_app_guids(context.board_config)?;
         let (tee, transitional_tee_clients, session) = *product_config;
         if tee != &Tee::Undefined && !transitional_tee_clients.is_empty() {
-            bail!("Conflicting TEE configuration: product configuration may contain `tee` or `tee_clients`, but not both");
+            bail!(
+                "Conflicting TEE configuration: product configuration may contain `tee` or `tee_clients`, but not both"
+            );
         }
 
         match tee {
@@ -363,7 +365,9 @@ fn get_global_platform_tee_trusted_app_guids(
     if !board_config.global_platform_tee_trusted_app_guids.is_empty()
         && !board_config.tee_trusted_app_guids.is_empty()
     {
-        bail!("Cannot set both `global_platform_tee_trusted_app_guids` and deprecated `tee_trusted_app_guids`");
+        bail!(
+            "Cannot set both `global_platform_tee_trusted_app_guids` and deprecated `tee_trusted_app_guids`"
+        );
     }
 
     Ok(if board_config.tee_trusted_app_guids.is_empty() {
@@ -395,10 +399,10 @@ fn define_proprietary_tee_configuration(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::subsystems::ConfigurationBuilderImpl;
     use crate::CompletedConfiguration;
-    use assembly_config_schema::product_settings::{TeeClientConfigData, TeeClientFeatures};
+    use crate::subsystems::ConfigurationBuilderImpl;
     use assembly_config_schema::BoardConfig;
+    use assembly_config_schema::product_settings::{TeeClientConfigData, TeeClientFeatures};
     use assembly_images_config::BoardFilesystemConfig;
     use camino::{Utf8Path, Utf8PathBuf};
     use std::collections::BTreeMap;
@@ -411,10 +415,9 @@ mod tests {
             provided_features: vec![],
             input_bundles: Default::default(),
             filesystems: BoardFilesystemConfig::default(),
-            global_platform_tee_trusted_app_guids: vec![uuid::Uuid::parse_str(
-                "9105f952-86db-4808-bc0e-8a4172e11843",
-            )
-            .unwrap()],
+            global_platform_tee_trusted_app_guids: vec![
+                uuid::Uuid::parse_str("9105f952-86db-4808-bc0e-8a4172e11843").unwrap(),
+            ],
             ..Default::default()
         });
 
@@ -424,10 +427,9 @@ mod tests {
             provided_features: vec![],
             input_bundles: Default::default(),
             filesystems: BoardFilesystemConfig::default(),
-            tee_trusted_app_guids: vec![uuid::Uuid::parse_str(
-                "9105f952-86db-4808-bc0e-8a4172e11843",
-            )
-            .unwrap()],
+            tee_trusted_app_guids: vec![
+                uuid::Uuid::parse_str("9105f952-86db-4808-bc0e-8a4172e11843").unwrap(),
+            ],
             ..Default::default()
         });
 
@@ -437,12 +439,11 @@ mod tests {
         provided_features: vec![],
         input_bundles: Default::default(),
         filesystems: BoardFilesystemConfig::default(),
-        global_platform_tee_trusted_app_guids: vec![uuid::Uuid::parse_str(
-            "9105f952-86db-4808-bc0e-8a4172e11843",
-        )
-        .unwrap()],
+        global_platform_tee_trusted_app_guids: vec![
+            uuid::Uuid::parse_str("9105f952-86db-4808-bc0e-8a4172e11843").unwrap(),
+        ],
         tee_trusted_app_guids: vec![
-            uuid::Uuid::parse_str("9105f952-86db-4808-bc0e-8a4172e11843").unwrap()
+            uuid::Uuid::parse_str("9105f952-86db-4808-bc0e-8a4172e11843").unwrap(),
         ],
         ..Default::default()
     });

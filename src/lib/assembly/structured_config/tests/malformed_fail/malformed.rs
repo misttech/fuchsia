@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use assembly_structured_config::{validate_component, ValidationError};
+use assembly_structured_config::{ValidationError, validate_component};
 use fuchsia_archive::Utf8Reader;
 use std::io::Cursor;
 

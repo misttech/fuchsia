@@ -4,7 +4,7 @@
 
 use crate::operations::size_check::breakdown::{SizeBreakdown, SizeResult};
 use crate::operations::size_check::visualization::generate_visualization;
-use anyhow::{format_err, Context, Result};
+use anyhow::{Context, Result, format_err};
 use assembled_system::{AssembledSystem, BlobfsContents, Image};
 use camino::{Utf8Path, Utf8PathBuf};
 use ffx_assembly_args::{AuthMode, ProductSizeCheckArgs};
@@ -123,7 +123,9 @@ pub async fn verify_product_budgets(args: ProductSizeCheckArgs) -> Result<bool> 
             max_contents_size.unwrap(), // Value is always present when budget is exceeded.
         );
         if !args.verbose {
-            println!("Run with --verbose to view the size breakdown of all packages and blobs, or run `fx size-check` in-tree.");
+            println!(
+                "Run with --verbose to view the size breakdown of all packages and blobs, or run `fx size-check` in-tree."
+            );
         }
     }
 
@@ -131,7 +133,7 @@ pub async fn verify_product_budgets(args: ProductSizeCheckArgs) -> Result<bool> 
 }
 
 async fn get_gcs_client_with_auth(auth_mode: AuthMode) -> Result<Client> {
-    use pbms::{handle_new_access_token, AuthFlowChoice};
+    use pbms::{AuthFlowChoice, handle_new_access_token};
 
     let mut input = std::io::stdin();
     let mut output = std::io::stdout();

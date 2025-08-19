@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{common, ExtractProductPackageArgs, HybridProductArgs, ProductArgs};
+use crate::{ExtractProductPackageArgs, HybridProductArgs, ProductArgs, common};
 
 use anyhow::{Context, Result};
 use assembly_config_schema::ProductConfig;
@@ -117,7 +117,7 @@ mod tests {
     use std::fs;
     use std::fs::File;
     use std::io::Write;
-    use tempfile::{tempdir, NamedTempFile};
+    use tempfile::{NamedTempFile, tempdir};
     use version_history::AbiRevision;
 
     const FAKE_ABI_REVISION: AbiRevision = AbiRevision::from_u64(0x5836508c2defac54);

@@ -14,7 +14,7 @@ use crate::load_config::{
 };
 use crate::unique_release_info::UniqueReleaseInfoVector;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use assembly_config_schema::{BoardConfig, BoardInputBundleSet, ProductConfig};
 use assembly_container::AssemblyContainer;
 use assembly_platform_artifacts::PlatformArtifacts;

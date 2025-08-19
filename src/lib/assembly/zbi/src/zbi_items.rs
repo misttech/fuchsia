@@ -4,7 +4,7 @@
 
 //! These are structures for creating the binary data for ZBI Items.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use zerocopy::{Immutable, IntoBytes};
 
 // LINT.IfChange

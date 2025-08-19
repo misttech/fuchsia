@@ -7,7 +7,7 @@
 use assembly_validate_util::PkgNamespace;
 use camino::Utf8PathBuf;
 use cm_rust::{FidlIntoNative, NativeIntoFidl};
-use fidl::{unpersist, Persistable};
+use fidl::{Persistable, unpersist};
 use fuchsia_pkg::{PackageBuilder, PackageManifest, RelativeTo};
 use std::collections::BTreeMap;
 use std::fmt::Debug;

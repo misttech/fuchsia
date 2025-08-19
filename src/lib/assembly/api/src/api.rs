@@ -47,8 +47,8 @@ pub fn assemble(args: ProductArgs) -> Result<CreateSystemOutputs> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assembly_tool::testing::FakeToolProvider;
     use assembly_tool::ToolCommandLog;
+    use assembly_tool::testing::FakeToolProvider;
     use camino::Utf8PathBuf;
     use serde_json::json;
 

@@ -6,7 +6,7 @@
 
 use crate::v2::{Canonicalizer, ProductBundleV2, Type};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_repo::repository::FileSystemRepository;
 use sdk_metadata::{VirtualDevice, VirtualDeviceManifest, VirtualDeviceV1};

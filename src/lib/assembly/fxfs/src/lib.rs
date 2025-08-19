@@ -8,4 +8,4 @@
 
 mod fxfs;
 
-pub use fxfs::{read_blobs_json, FxfsBuilder};
+pub use fxfs::{FxfsBuilder, read_blobs_json};

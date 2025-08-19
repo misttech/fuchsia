@@ -11,12 +11,12 @@ use assembly_container::AssemblyContainer;
 use assembly_partitions_config::{PartitionsConfig, Slot as PartitionSlot};
 use assembly_sdk::SdkToolProvider;
 use assembly_tool::ToolProvider;
-use ffx_config::sdk::{in_tree_sdk_version, SdkVersion};
 use ffx_config::EnvironmentContext;
+use ffx_config::sdk::{SdkVersion, in_tree_sdk_version};
 use ffx_flash_manifest::FlashManifestVersion;
 use ffx_product_create_old_args::CreateCommand;
 use ffx_writer::SimpleWriter;
-use fho::{return_bug, FfxMain, FfxTool};
+use fho::{FfxMain, FfxTool, return_bug};
 use product_bundle::ProductBundleBuilder;
 use sdk_metadata::VirtualDevice;
 use std::fs::File;
@@ -136,7 +136,7 @@ mod test {
     use super::*;
     use assembled_system::Image;
     use assembly_release_info::{ProductBundleReleaseInfo, SystemReleaseInfo};
-    use assembly_tool::testing::{blobfs_side_effect, FakeToolProvider};
+    use assembly_tool::testing::{FakeToolProvider, blobfs_side_effect};
     use camino::{Utf8Path, Utf8PathBuf};
     use fuchsia_repo::test_utils;
     use product_bundle::{ProductBundle, ProductBundleV2, Repository};
@@ -314,29 +314,31 @@ mod test {
 
         let tool_provider = Box::new(FakeToolProvider::new_with_side_effect(blobfs_side_effect));
 
-        assert!(pb_create_with_sdk_version(
-            CreateCommand {
-                product_name: String::default(),
-                product_version: String::default(),
-                partitions: Some(partitions_dir),
-                system_a: Some(system_dir.clone()),
-                system_b: None,
-                system_r: Some(system_dir.clone()),
-                tuf_keys: None,
-                update_package_version_file: None,
-                update_package_epoch: None,
-                virtual_device: vec![],
-                recommended_device: None,
-                out_dir: pb_dir.clone(),
-                delivery_blob_type: None,
-                with_deprecated_flash_manifest: false,
-                gerrit_size_report: None,
-            },
-            /*sdk_version=*/ "",
-            tool_provider,
-        )
-        .await
-        .is_err());
+        assert!(
+            pb_create_with_sdk_version(
+                CreateCommand {
+                    product_name: String::default(),
+                    product_version: String::default(),
+                    partitions: Some(partitions_dir),
+                    system_a: Some(system_dir.clone()),
+                    system_b: None,
+                    system_r: Some(system_dir.clone()),
+                    tuf_keys: None,
+                    update_package_version_file: None,
+                    update_package_epoch: None,
+                    virtual_device: vec![],
+                    recommended_device: None,
+                    out_dir: pb_dir.clone(),
+                    delivery_blob_type: None,
+                    with_deprecated_flash_manifest: false,
+                    gerrit_size_report: None,
+                },
+                /*sdk_version=*/ "",
+                tool_provider,
+            )
+            .await
+            .is_err()
+        );
     }
 
     #[fuchsia::test]

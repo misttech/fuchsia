@@ -4,7 +4,7 @@
 
 use crate::common::DomainConfigDirectoryBuilder;
 use crate::subsystems::prelude::*;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use assembly_component_id_index::{ComponentIdIndexBuilder, Index};
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
 use assembly_config_schema::platform_settings::diagnostics_config::{
@@ -410,7 +410,7 @@ mod tests {
     use camino::Utf8PathBuf;
     use sampler_config::runtime::MetricConfig;
     use sampler_config::{CustomerId, EventCode, MetricId, MetricType, ProjectId};
-    use serde_json::{json, Number, Value};
+    use serde_json::{Number, Value, json};
     use std::fs::File;
     use tempfile::TempDir;
 
@@ -714,15 +714,17 @@ mod tests {
             ..Default::default()
         };
         let mut builder = ConfigurationBuilderImpl::default();
-        assert!(DiagnosticsSubsystem::define_configuration(
-            &context,
-            &DiagnosticsSubsystemConfig {
-                diagnostics: &diagnostics,
-                storage: &StorageConfig::default()
-            },
-            &mut builder
-        )
-        .is_ok());
+        assert!(
+            DiagnosticsSubsystem::define_configuration(
+                &context,
+                &DiagnosticsSubsystemConfig {
+                    diagnostics: &diagnostics,
+                    storage: &StorageConfig::default()
+                },
+                &mut builder
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -752,15 +754,17 @@ mod tests {
             ..Default::default()
         };
         let mut builder = ConfigurationBuilderImpl::default();
-        assert!(DiagnosticsSubsystem::define_configuration(
-            &context,
-            &DiagnosticsSubsystemConfig {
-                diagnostics: &diagnostics,
-                storage: &StorageConfig::default()
-            },
-            &mut builder
-        )
-        .is_err());
+        assert!(
+            DiagnosticsSubsystem::define_configuration(
+                &context,
+                &DiagnosticsSubsystemConfig {
+                    diagnostics: &diagnostics,
+                    storage: &StorageConfig::default()
+                },
+                &mut builder
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -885,21 +889,21 @@ mod tests {
         )
         .expect("defined config");
         let config = builder.build();
-        let project_configs: Vec<ProjectConfig> = match config.configuration_capabilities
-            ["fuchsia.diagnostics.sampler.ProjectConfigs"]
-            .value()
-        {
-            Value::Array(data) => data
-                .into_iter()
-                .map(|value| match value {
-                    serde_json::Value::String(value) => {
-                        serde_json::from_str(&value).expect("valid json")
-                    }
-                    other => panic!("must be an array of strings, got: {other:?}"),
-                })
-                .collect(),
-            other => panic!("got unexpected project configs: {other:?}"),
-        };
+        let project_configs: Vec<ProjectConfig> =
+            match config.configuration_capabilities["fuchsia.diagnostics.sampler.ProjectConfigs"]
+                .value()
+            {
+                Value::Array(data) => data
+                    .into_iter()
+                    .map(|value| match value {
+                        serde_json::Value::String(value) => {
+                            serde_json::from_str(&value).expect("valid json")
+                        }
+                        other => panic!("must be an array of strings, got: {other:?}"),
+                    })
+                    .collect(),
+                other => panic!("got unexpected project configs: {other:?}"),
+            };
         assert_eq!(
             project_configs,
             vec![

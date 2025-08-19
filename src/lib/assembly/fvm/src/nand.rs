@@ -85,8 +85,8 @@ impl NandFvmBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assembly_tool::testing::FakeToolProvider;
     use assembly_tool::ToolProvider;
+    use assembly_tool::testing::FakeToolProvider;
 
     #[test]
     fn nand_args() {

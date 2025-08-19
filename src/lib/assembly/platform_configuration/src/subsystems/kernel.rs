@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use assembly_config_schema::board_config::SerialMode;
 use assembly_config_schema::platform_settings::kernel_config::{
     MemoryReclamationStrategy, OOMBehavior, OOMRebootTimeout, PagetableEvictionPolicy,
@@ -102,7 +102,9 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
         if context.board_config.provides_feature("fuchsia::pmm_checker")
             && context.board_config.provides_feature("fuchsia::pmm_checker_auto")
         {
-            anyhow::bail!("Board provides conflicting features of 'fuchsia::pmm_checker' and 'fuchsia::pmm_checker_auto'");
+            anyhow::bail!(
+                "Board provides conflicting features of 'fuchsia::pmm_checker' and 'fuchsia::pmm_checker_auto'"
+            );
         }
         if context.board_config.provides_feature("fuchsia::pmm_checker")
             && context.build_type == &BuildType::Eng
@@ -254,9 +256,9 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::CompletedConfiguration;
     use crate::subsystems::kernel::KernelSubsystem;
     use crate::subsystems::{ConfigurationBuilderImpl, ConfigurationContext, FeatureSetLevel};
-    use crate::CompletedConfiguration;
     use assembly_config_schema::{BoardConfig, BoardProvidedConfig, BuildType};
     use camino::Utf8PathBuf;
     use std::fs;

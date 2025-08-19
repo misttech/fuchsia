@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::unique_release_info::{
-    from_board_release_info, from_product_release_info, from_release_info, UniqueReleaseInfo,
+    UniqueReleaseInfo, from_board_release_info, from_product_release_info, from_release_info,
 };
 
 use assembly_config_schema::{BoardConfig, BoardInputBundleSet, ProductConfig};

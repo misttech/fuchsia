@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use assembly_util::{impl_path_type_marker, PathTypeMarker, TypedPathBuf};
+use assembly_util::{PathTypeMarker, TypedPathBuf, impl_path_type_marker};
 use schemars::JsonSchema;
 
 /// The marker trait for paths within a package

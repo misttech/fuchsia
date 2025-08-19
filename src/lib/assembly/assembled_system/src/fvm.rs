@@ -328,8 +328,8 @@ impl<'a> MultiFvmBuilder<'a> {
 mod tests {
     use super::MultiFvmBuilder;
 
-    use crate::base_package::BasePackage;
     use crate::AssembledSystem;
+    use crate::base_package::BasePackage;
 
     use assembly_images_config::{
         BlobFS, BlobfsLayout, EmptyData, FvmFilesystem, FvmOutput, NandFvm, Reserved, SparseFvm,

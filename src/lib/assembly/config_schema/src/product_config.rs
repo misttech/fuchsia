@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::platform_settings::PlatformSettings;
 use crate::PackageDetails;
+use crate::platform_settings::PlatformSettings;
 use anyhow::Result;
 use assembly_constants::{CompiledPackageDestination, FileEntry};
-use assembly_container::{assembly_container, AssemblyContainer, WalkPaths};
+use assembly_container::{AssemblyContainer, WalkPaths, assembly_container};
 use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
 use assembly_package_utils::PackageInternalPathBuf;
 use camino::Utf8PathBuf;

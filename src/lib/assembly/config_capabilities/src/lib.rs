@@ -14,6 +14,6 @@
 mod config_capabilities;
 
 pub use crate::config_capabilities::{
-    build_config_capability_package, CapabilityNamedMap, Config, ConfigNestedValueType,
-    ConfigValueType,
+    CapabilityNamedMap, Config, ConfigNestedValueType, ConfigValueType,
+    build_config_capability_package,
 };

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
-use anyhow::{anyhow, ensure, Context};
+use anyhow::{Context, anyhow, ensure};
 use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::sysmem_config::{
     BoardSysmemConfig, MemorySize, PlatformSysmemConfig,

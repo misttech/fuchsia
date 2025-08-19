@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{Partition, PartitionsConfig, RecoveryStyle, Slot};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use assembled_system::Image;
 use assembly_util::write_json_file;
 use camino::Utf8PathBuf;
@@ -123,7 +123,10 @@ impl PartitionImageMapper {
                     if let Slot::R = slot {
                         // Recovery should not include a separate FVM, because it is embedded into the
                         // ZBI as a ramdisk.
-                        log::debug!("Skipping image at path: {} as recovery should not include a separate FVM", path.clone());
+                        log::debug!(
+                            "Skipping image at path: {} as recovery should not include a separate FVM",
+                            path.clone()
+                        );
                         continue;
                     } else {
                         let image_type = ImageType::FVM;
@@ -135,7 +138,10 @@ impl PartitionImageMapper {
                     if let Slot::R = slot {
                         // Recovery should not include a separate FVM, because it is embedded into the
                         // ZBI as a ramdisk.
-                        log::debug!("Skipping image at path: {} as recovery should not include a separate FVM", path.clone());
+                        log::debug!(
+                            "Skipping image at path: {} as recovery should not include a separate FVM",
+                            path.clone()
+                        );
                         continue;
                     } else {
                         let image_type = ImageType::Fxfs;
@@ -155,7 +161,11 @@ impl PartitionImageMapper {
                         let new_digest = try_digest(path)
                             .with_context(|| format!("Hashing new dtbo: {}", path))?;
                         if existing_digest != new_digest {
-                            bail!("Two different dtbo images were mapped to the same partition\nprevious: {}\nnew: {}", &existing, &path);
+                            bail!(
+                                "Two different dtbo images were mapped to the same partition\nprevious: {}\nnew: {}",
+                                &existing,
+                                &path
+                            );
                         }
                     }
                 }

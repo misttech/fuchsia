@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use assembly_components::ComponentBuilder;
+use assembly_config_schema::PackageSet;
 use assembly_config_schema::product_config::{
     CompiledComponentDefinition, CompiledPackageDefinition,
 };
-use assembly_config_schema::PackageSet;
 use assembly_constants::FileEntry;
 use assembly_tool::Tool;
 use assembly_util::{DuplicateKeyError, InsertUniqueExt, MapEntry};
@@ -70,7 +70,9 @@ impl CompiledPackageBuilder {
         match self.bootfs_package {
             Some(existing_value) => {
                 if entry.bootfs_package != existing_value {
-                    bail!("CompiledPackageDefinitions are inconsistent about if '{name}' is a bootfs package.");
+                    bail!(
+                        "CompiledPackageDefinitions are inconsistent about if '{name}' is a bootfs package."
+                    );
                 }
             }
             None => self.bootfs_package = Some(entry.bootfs_package),
@@ -90,7 +92,9 @@ impl CompiledPackageBuilder {
             if let Some(existing_path) =
                 self.includes_dir.replace(bundle_dir.as_ref().join("compiled_packages/include"))
             {
-                bail!("There can be only one AIB that provides a cml includes dir for a package, it was already set to: {existing_path}");
+                bail!(
+                    "There can be only one AIB that provides a cml includes dir for a package, it was already set to: {existing_path}"
+                );
             }
         }
 
@@ -204,8 +208,8 @@ mod tests {
     use super::*;
     use assembly_constants::CompiledPackageDestination;
     use assembly_constants::TestCompiledPackageDestination::ForTest;
-    use assembly_tool::testing::FakeToolProvider;
     use assembly_tool::ToolProvider;
+    use assembly_tool::testing::FakeToolProvider;
     use fuchsia_archive::Utf8Reader;
     use fuchsia_pkg::PackageManifest;
     use std::fs::File;

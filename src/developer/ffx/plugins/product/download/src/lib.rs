@@ -7,7 +7,7 @@
 //! - acquire related data files, such as disk partition images (data)
 
 use ::gcs::client::{Client, ProgressResponse, ProgressState};
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use async_fs::rename;
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
@@ -16,8 +16,8 @@ use ffx_product::{CommandStatus, MachineOutput, MachineUi};
 use ffx_product_download_args::DownloadCommand;
 use ffx_product_list::pb_list_impl;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{bug, return_user_error, FfxMain, FfxTool};
-use pbms::{make_way_for_output, transfer_download, AuthFlowChoice};
+use fho::{FfxMain, FfxTool, bug, return_user_error};
+use pbms::{AuthFlowChoice, make_way_for_output, transfer_download};
 use std::io::{stdin, stdout};
 use std::path::Path;
 
@@ -212,7 +212,8 @@ pub async fn preprocess_cmd<I: structured_ui::Interface>(
     if products.len() != 1 {
         return_user_error!(
             "Expected a single product entry while trying to download a product by name, found {} {:?}",
-            products.len(), products
+            products.len(),
+            products
         );
     }
 
@@ -225,8 +226,8 @@ pub async fn preprocess_cmd<I: structured_ui::Interface>(
 mod test {
     use super::*;
     use ffx_config::{ConfigLevel, TestEnv};
-    use fuchsia_hyper_test_support::handler::{ForPath, StaticResponse};
     use fuchsia_hyper_test_support::TestServer;
+    use fuchsia_hyper_test_support::handler::{ForPath, StaticResponse};
     use std::fs::File;
     use std::io::Write;
     use std::path::Path;

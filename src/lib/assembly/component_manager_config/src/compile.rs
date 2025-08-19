@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use argh::FromArgs;
-use cm_types::{symmetrical_enums, Name, Path, Url};
+use cm_types::{Name, Path, Url, symmetrical_enums};
 use cml::error::{Error, Location};
 use cml::translate::CompileOptions;
 use fidl::persist;

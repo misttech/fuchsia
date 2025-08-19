@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{DuplicateKeyError, InsertUniqueExt, MapEntry};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::Serialize;
 use std::collections::BTreeMap;
 

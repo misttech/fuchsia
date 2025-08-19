@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base_package::BasePackage;
 use crate::BlobfsContents;
+use crate::base_package::BasePackage;
 
 use anyhow::{Context, Result};
 use assembly_blobfs::BlobFSBuilder;

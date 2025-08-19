@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use assembly_config_capabilities::CapabilityNamedMap;
 use assembly_config_schema::developer_overrides::DeveloperOnlyOptions;
 use assembly_config_schema::product_config::CompiledPackageDefinition;
@@ -11,7 +11,7 @@ use serde::Serialize;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
-use assembly_config_schema::platform_settings::icu_config::{ICUMap, Revision, ICU_CONFIG_INFO};
+use assembly_config_schema::platform_settings::icu_config::{ICU_CONFIG_INFO, ICUMap, Revision};
 use assembly_config_schema::{BoardConfig, BuildType, ICUConfig};
 use assembly_constants::{
     BootfsDestination, CompiledPackageDestination, FileEntry, KernelArg, PackageSetDestination,
@@ -1119,18 +1119,24 @@ mod tests {
         let cat = write_temp_file("cat", "cat");
         let diz = write_temp_file("diz", "diz");
 
-        assert!(builder
-            .package("foo")
-            .config_data(FileEntry { destination: "bar".into(), source: baz })
-            .is_ok());
-        assert!(builder
-            .package("foo")
-            .config_data(FileEntry { destination: "cat".into(), source: cat.clone() })
-            .is_ok());
-        assert!(builder
-            .package("foo")
-            .config_data(FileEntry { destination: "cat".into(), source: diz })
-            .is_err());
+        assert!(
+            builder
+                .package("foo")
+                .config_data(FileEntry { destination: "bar".into(), source: baz })
+                .is_ok()
+        );
+        assert!(
+            builder
+                .package("foo")
+                .config_data(FileEntry { destination: "cat".into(), source: cat.clone() })
+                .is_ok()
+        );
+        assert!(
+            builder
+                .package("foo")
+                .config_data(FileEntry { destination: "cat".into(), source: diz })
+                .is_err()
+        );
     }
 
     #[test]

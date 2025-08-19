@@ -4,7 +4,7 @@
 
 mod assembly;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use assembly::Assembly;
 use assembly_artifact_cache::ArtifactCache;
 use assembly_tool::PlatformToolProvider;

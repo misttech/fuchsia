@@ -5,7 +5,7 @@
 use crate::base_package::BasePackage;
 use crate::{AssembledSystem, Image};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use assembly_constants::BootfsDestination;
 use assembly_images_config::Zbi;
 use assembly_package_list::{PackageList, WritablePackageList};
@@ -189,8 +189,8 @@ pub fn vendor_sign_zbi(
 mod tests {
     use super::{construct_zbi, vendor_sign_zbi};
 
-    use crate::base_package::BasePackage;
     use crate::AssembledSystem;
+    use crate::base_package::BasePackage;
 
     use assembly_constants::BootfsDestination;
     use assembly_file_relative_path::FileRelativePathBuf;

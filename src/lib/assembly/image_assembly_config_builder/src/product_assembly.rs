@@ -4,7 +4,7 @@
 
 use crate::image_assembly_config_builder::{ImageAssemblyConfigBuilder, ValidationMode};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use assembly_config_schema::developer_overrides::{DeveloperOnlyOptions, DeveloperOverrides};
 use assembly_config_schema::{BoardConfig, BoardInputBundle, FeatureSetLevel, ProductConfig};
 use assembly_platform_artifacts::PlatformArtifacts;
@@ -295,7 +295,9 @@ impl ProductAssembly {
                     // these are the only valid feature set levels for adding these files.
                 }
                 _ => {
-                    bail!("bootfs files can only be added to the 'empty', 'embeddable', or 'bootstrap' feature set levels");
+                    bail!(
+                        "bootfs files can only be added to the 'empty', 'embeddable', or 'bootstrap' feature set levels"
+                    );
                 }
             }
         }

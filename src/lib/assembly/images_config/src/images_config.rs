@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{board_filesystem_config as bfc, product_filesystem_config as pfc};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use bfc::{PostProcessingScript, VBMetaDescriptor, ZbiCompression};
 use camino::Utf8PathBuf;
 use pfc::BlobfsLayout;

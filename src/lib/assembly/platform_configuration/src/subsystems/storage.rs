@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
-use anyhow::{bail, ensure, Context};
+use anyhow::{Context, bail, ensure};
 use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::development_support_config::StorageToolsConfig;
 use assembly_config_schema::platform_settings::recovery_config::RecoveryConfig;

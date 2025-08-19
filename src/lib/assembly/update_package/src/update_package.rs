@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use ::update_package::{ImageMetadata, ImagePackagesManifest};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use assembled_system::{AssembledSystem, Image};
 use assembly_blob_size::BlobSizeCalculator;
 use assembly_images_config::BlobfsLayout;
@@ -468,7 +468,7 @@ mod tests {
     use assembly_partitions_config::{BootloaderPartition, Partition, Slot as PartitionSlot};
     use assembly_release_info::SystemReleaseInfo;
 
-    use assembly_tool::testing::{blobfs_side_effect, FakeToolProvider};
+    use assembly_tool::testing::{FakeToolProvider, blobfs_side_effect};
     use assembly_util::write_json_file;
     use fuchsia_archive::Utf8Reader;
     use fuchsia_hash::HASH_SIZE;
@@ -477,7 +477,7 @@ mod tests {
     use std::fs::File;
     use std::io::{BufReader, Write};
     use std::str::FromStr;
-    use tempfile::{tempdir, NamedTempFile};
+    use tempfile::{NamedTempFile, tempdir};
     use update_package::images::{self, AssetType, VersionedImagePackagesManifest};
 
     #[test]

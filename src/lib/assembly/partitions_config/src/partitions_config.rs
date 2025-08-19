@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
-use assembly_container::{assembly_container, AssemblyContainer, FileType, WalkPaths};
+use anyhow::{Context, Result, bail};
+use assembly_container::{AssemblyContainer, FileType, WalkPaths, assembly_container};
 use camino::Utf8PathBuf;
 use ring::digest;
 use serde::{Deserialize, Serialize};

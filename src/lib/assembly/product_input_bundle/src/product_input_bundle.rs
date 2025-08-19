@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use assembly_container::{assembly_container, AssemblyContainer, FileType, WalkPaths, WalkPathsFn};
+use assembly_container::{AssemblyContainer, FileType, WalkPaths, WalkPathsFn, assembly_container};
 use assembly_package_utils::PackageManifestPathBuf;
 use assembly_release_info::ReleaseInfo;
 use camino::{Utf8Path, Utf8PathBuf};

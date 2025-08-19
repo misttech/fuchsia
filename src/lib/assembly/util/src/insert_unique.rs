@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::collections::{btree_map, BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, btree_map};
 
 /// Extension trait for inserting into a collection, while validating that no
 /// duplicate values (or keys, in the case of a Map) are being inserted.
@@ -361,7 +361,13 @@ mod tests {
 
         let error = result.unwrap_err();
         let error_display_string = format!("{}", error);
-        assert_eq!(error_display_string, format!("duplicate key: '{}', found while inserting value: '{}', the previous value was: '{}'", "first_key", "second_value", "first_value"));
+        assert_eq!(
+            error_display_string,
+            format!(
+                "duplicate key: '{}', found while inserting value: '{}', the previous value was: '{}'",
+                "first_key", "second_value", "first_value"
+            )
+        );
     }
 
     #[test]

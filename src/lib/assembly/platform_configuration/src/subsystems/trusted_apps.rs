@@ -9,8 +9,8 @@ use assembly_config_schema::product_settings::TrustedAppType::{BinderRPC, Global
 use assembly_constants::{BootfsPackageDestination, PackageSetDestination};
 use assembly_images_config::FilesystemImageMode;
 use fuchsia_tee_manager_config::TAConfig;
-use fuchsia_url::boot_url::BootUrl;
 use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::boot_url::BootUrl;
 
 pub(crate) struct TrustedAppsSubsystem;
 impl DefineSubsystemConfiguration<(&Vec<ProductTrustedApp>, FilesystemImageMode)>
@@ -61,8 +61,8 @@ impl DefineSubsystemConfiguration<(&Vec<ProductTrustedApp>, FilesystemImageMode)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::subsystems::ConfigurationBuilderImpl;
     use crate::FileOrContents;
+    use crate::subsystems::ConfigurationBuilderImpl;
 
     #[test]
     fn test_convert_component_urls_to_boot_urls() {

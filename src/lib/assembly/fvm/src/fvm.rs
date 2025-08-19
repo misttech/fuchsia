@@ -217,8 +217,8 @@ impl FvmBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assembly_tool::testing::FakeToolProvider;
     use assembly_tool::ToolProvider;
+    use assembly_tool::testing::FakeToolProvider;
 
     fn default_standard() -> FvmType {
         FvmType::Standard { resize_image_file_to_fit: false, truncate_to_length: None }

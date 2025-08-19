@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow};
 use assembly_constants::BootfsDestination;
 use assembly_tool::Tool;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -313,8 +313,8 @@ impl ZbiBuilder {
 mod tests {
     use super::*;
 
-    use assembly_tool::testing::FakeToolProvider;
     use assembly_tool::ToolProvider;
+    use assembly_tool::testing::FakeToolProvider;
 
     #[test]
     fn bootfs_manifest_additional_boot_args_only() {
@@ -383,9 +383,17 @@ mod tests {
         let tools = FakeToolProvider::default();
         let zbi_tool = tools.get_tool("zbi").unwrap();
         let builder = ZbiBuilder::new(zbi_tool);
-        assert!(builder
-            .build_zbi_args("bootfs", Some("bootargs"), None::<String>, None::<String>, "output")
-            .is_err());
+        assert!(
+            builder
+                .build_zbi_args(
+                    "bootfs",
+                    Some("bootargs"),
+                    None::<String>,
+                    None::<String>,
+                    "output"
+                )
+                .is_err()
+        );
     }
 
     #[test]

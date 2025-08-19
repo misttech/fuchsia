@@ -234,10 +234,12 @@ mod test {
             ForensicsSubsystem::define_configuration(&context, &forensics_config, &mut builder);
 
         assert!(result.is_ok());
-        assert!(builder
-            .build()
-            .core_shards
-            .contains(&"flash_ts_feedback_id.core_shard.cml.template.rendered.cml".into()));
+        assert!(
+            builder
+                .build()
+                .core_shards
+                .contains(&"flash_ts_feedback_id.core_shard.cml.template.rendered.cml".into())
+        );
     }
 
     #[test]
@@ -270,9 +272,11 @@ mod test {
             ForensicsSubsystem::define_configuration(&context, &forensics_config, &mut builder);
 
         assert!(result.is_ok());
-        assert!(builder
-            .build()
-            .core_shards
-            .contains(&"sysinfo_feedback_id.core_shard.cml.template.rendered.cml".into()));
+        assert!(
+            builder
+                .build()
+                .core_shards
+                .contains(&"sysinfo_feedback_id.core_shard.cml.template.rendered.cml".into())
+        );
     }
 }

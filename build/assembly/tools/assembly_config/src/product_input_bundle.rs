@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{common, ProductInputBundleArgs};
+use crate::{ProductInputBundleArgs, common};
 
 use anyhow::Result;
 use assembly_container::AssemblyContainer;

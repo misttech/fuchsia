@@ -5,7 +5,7 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, DataEnum, DeriveInput, FieldsNamed, FieldsUnnamed};
+use syn::{DataEnum, DeriveInput, FieldsNamed, FieldsUnnamed, parse_macro_input};
 
 #[proc_macro_derive(SupportsFileRelativePaths, attributes(file_relative_paths))]
 pub fn supports_file_relative_paths_derive(

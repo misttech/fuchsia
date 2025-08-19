@@ -7,12 +7,12 @@
 
 use ffx_config::EnvironmentContext;
 use ffx_product::{CommandStatus, MachineOutput, MachineUi};
-use ffx_product_list::{pb_list_impl, ProductBundle};
+use ffx_product_list::{ProductBundle, pb_list_impl};
 use ffx_product_lookup_args::LookupCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{bug, return_user_error, FfxMain, FfxTool, Result};
+use fho::{FfxMain, FfxTool, Result, bug, return_user_error};
 use pbms::AuthFlowChoice;
-use std::io::{stdin, stdout, Write};
+use std::io::{Write, stdin, stdout};
 
 #[derive(FfxTool)]
 pub struct PbLookupTool {

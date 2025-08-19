@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::operations::size_check::common::{PackageBlobSizeInfo, PackageSizeInfo};
-use anyhow::{anyhow, format_err, Context, Result};
+use anyhow::{Context, Result, anyhow, format_err};
 use assembly_blob_size::BlobSizeCalculator;
 use assembly_sdk::SdkToolProvider;
 use assembly_tool::ToolProvider;
@@ -307,7 +307,7 @@ fn count_blobs(
                         blob.package_path,
                         blob.path,
                         blob.hash
-                    ))
+                    ));
                 }
             }
         }
@@ -402,8 +402,8 @@ fn to_json_output(
 #[allow(clippy::box_default)]
 mod tests {
     use crate::operations::size_check::package::{
-        compute_budget_results, verify_budgets_with_tools, BlobInstance, BlobJsonEntry,
-        BudgetBlobs, BudgetConfig, BudgetResult, PackageBlobSizeInfo, PackageSizeInfo,
+        BlobInstance, BlobJsonEntry, BudgetBlobs, BudgetConfig, BudgetResult, PackageBlobSizeInfo,
+        PackageSizeInfo, compute_budget_results, verify_budgets_with_tools,
     };
     use anyhow::Result;
     use assembly_images_config::BlobfsLayout;
@@ -584,7 +584,10 @@ mod tests {
             },
             Box::new(FakeToolProvider::default()),
         );
-        assert_failed(res, "Two blobs with same hash 0e56473237b6b2ce39358c11a0fbd2f89902f246d966898d7d787c9025124d51 but different sizes");
+        assert_failed(
+            res,
+            "Two blobs with same hash 0e56473237b6b2ce39358c11a0fbd2f89902f246d966898d7d787c9025124d51 but different sizes",
+        );
     }
 
     #[test]

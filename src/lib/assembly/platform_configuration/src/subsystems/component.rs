@@ -10,7 +10,7 @@ use assembly_config_schema::platform_settings::starnix_config::PlatformStarnixCo
 use assembly_config_schema::product_settings::ComponentPolicyConfig;
 use assembly_constants::{BootfsDestination, FileEntry};
 use camino::Utf8PathBuf;
-use component_manager_config::{compile, Args, InjectedBundle, InjectedUse, InjectedUseProtocol};
+use component_manager_config::{Args, InjectedBundle, InjectedUse, InjectedUseProtocol, compile};
 use std::fs::File;
 use std::path::PathBuf;
 

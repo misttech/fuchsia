@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use assembly_container::{WalkPaths, WalkPathsFn};
 use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
 use camino::Utf8PathBuf;
@@ -75,11 +75,7 @@ pub enum GptMode {
 impl GptMode {
     /// Whether GPT-formatted block devices are supported.
     pub fn enabled(&self) -> bool {
-        if let Self::Disabled = self {
-            false
-        } else {
-            true
-        }
+        if let Self::Disabled = self { false } else { true }
     }
 }
 
@@ -179,11 +175,7 @@ impl TryFrom<&str> for ZbiCompression {
             "zstd" => Some(Self::ZStd),
             "zstd.max" => Some(Self::ZStdMax),
             _ => value.strip_prefix("zstd.").and_then(|v| v.parse::<u8>().ok()).and_then(|level| {
-                if level >= 4 && level <= 21 {
-                    Some(Self::ZStdLevel(level))
-                } else {
-                    None
-                }
+                if level >= 4 && level <= 21 { Some(Self::ZStdLevel(level)) } else { None }
             }),
         };
         level.ok_or_else(||  anyhow!("Not a valid zstd compression level, must be 'none', 'zstd', 'zstd.max', or 'zstd.<N> where 4 <= N <= 21: {}", value))

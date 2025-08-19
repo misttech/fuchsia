@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use assembly_file_relative_path::{FileRelativePathBuf, SupportsFileRelativePaths};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::product_config::{CompiledPackageDefinition, ShellCommands};
 use crate::PackageDetails;
+use crate::product_config::{CompiledPackageDefinition, ShellCommands};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 pub enum FeedbackBuildTypeConfig {

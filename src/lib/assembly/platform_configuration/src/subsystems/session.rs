@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::session_config::PlatformSessionConfig;
 use assembly_config_schema::platform_settings::swd_config::SwdConfig;

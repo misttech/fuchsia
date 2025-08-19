@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use camino::Utf8PathBuf;
 
 use std::fs;
@@ -151,25 +151,29 @@ mod tests {
         let version: Option<String> = Some("version_string".to_string());
         let version_file: Option<Utf8PathBuf> =
             Some(Utf8Path::from_path(file.path()).unwrap().into());
-        assert!(get_string_or_file_content(
-            &version,
-            &version_file,
-            "unversioned",
-            "version and version_file cannot both be supplied",
-        )
-        .is_err());
+        assert!(
+            get_string_or_file_content(
+                &version,
+                &version_file,
+                "unversioned",
+                "version and version_file cannot both be supplied",
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_version_file_missing() {
         let version: Option<String> = None;
         let version_file: Option<Utf8PathBuf> = Some(Utf8PathBuf::new());
-        assert!(get_string_or_file_content(
-            &version,
-            &version_file,
-            "unversioned",
-            "version and version_file cannot both be supplied",
-        )
-        .is_err());
+        assert!(
+            get_string_or_file_content(
+                &version,
+                &version_file,
+                "unversioned",
+                "version and version_file cannot both be supplied",
+            )
+            .is_err()
+        );
     }
 }

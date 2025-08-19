@@ -4,8 +4,8 @@
 
 use assembly_container::WalkPaths;
 use camino::Utf8PathBuf;
-use fuchsia_url::boot_url::BootUrl;
 use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::boot_url::BootUrl;
 use moniker::Moniker;
 use schemars::JsonSchema;
 use serde::de::Error;

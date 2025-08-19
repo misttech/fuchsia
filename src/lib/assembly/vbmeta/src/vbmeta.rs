@@ -4,7 +4,7 @@
 
 use crate::descriptor::HashDescriptor;
 use crate::header::Header;
-use crate::key::{Key, SignFailure, SIGNATURE_SIZE};
+use crate::key::{Key, SIGNATURE_SIZE, SignFailure};
 
 use ring::digest;
 use zerocopy::IntoBytes;
@@ -137,8 +137,8 @@ fn generate_auth_data(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::descriptor::builder::RawHashDescriptorBuilder;
     use crate::descriptor::Salt;
+    use crate::descriptor::builder::RawHashDescriptorBuilder;
     use crate::test;
 
     use zerocopy::Ref;

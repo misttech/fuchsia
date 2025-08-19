@@ -4,8 +4,8 @@
 
 use crate::subsystems::prelude::*;
 use anyhow::bail;
-use assembly_config_schema::platform_settings::paravirtualization_config::PlatformParavirtualizationConfig;
 use assembly_config_schema::FeatureControl;
+use assembly_config_schema::platform_settings::paravirtualization_config::PlatformParavirtualizationConfig;
 
 pub(crate) struct ParavirtualizationSubsystem;
 
@@ -20,16 +20,20 @@ impl DefineSubsystemConfiguration<PlatformParavirtualizationConfig>
         let enabled = &virtualization_config.enabled;
         let supported = context.board_config.provides_feature("fuchsia::paravirtualization");
         match (enabled, supported) {
-            (FeatureControl::Required, false) => bail!("Product requires paravirtualization, but board doesn't provide feature: fuchsia::paravirtualization"),
+            (FeatureControl::Required, false) => bail!(
+                "Product requires paravirtualization, but board doesn't provide feature: fuchsia::paravirtualization"
+            ),
             (FeatureControl::Disabled, true) => (),
             (FeatureControl::Disabled, false) => (),
             (FeatureControl::Allowed, false) => (),
             (FeatureControl::Allowed, true) | (FeatureControl::Required, true) => {
                 match context.feature_set_level {
-                    FeatureSetLevel::Embeddable | FeatureSetLevel::Bootstrap =>
-                builder.platform_bundle("vsock_service_bootstrap"),
-                    FeatureSetLevel::Utility | FeatureSetLevel::Standard =>
-                        builder.platform_bundle("vsock_service"),
+                    FeatureSetLevel::Embeddable | FeatureSetLevel::Bootstrap => {
+                        builder.platform_bundle("vsock_service_bootstrap")
+                    }
+                    FeatureSetLevel::Utility | FeatureSetLevel::Standard => {
+                        builder.platform_bundle("vsock_service")
+                    }
                 };
             }
         }

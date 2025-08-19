@@ -4,14 +4,14 @@
 
 use crate::base_package::construct_base_package;
 use crate::fvm::construct_fvm;
-use crate::fxfs::{construct_fxfs, ConstructedFxfs};
+use crate::fxfs::{ConstructedFxfs, construct_fxfs};
 use crate::image::Image;
 use crate::{vbmeta, zbi};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use assembly_constants::PackageDestination;
 use assembly_container::{
-    assembly_container, AssemblyContainer, DirectoryPathBuf, FileType, WalkPaths,
+    AssemblyContainer, DirectoryPathBuf, FileType, WalkPaths, assembly_container,
 };
 use assembly_images_config::{FilesystemImageMode, Fvm, Fxfs, VBMeta, Zbi};
 use assembly_release_info::SystemReleaseInfo;

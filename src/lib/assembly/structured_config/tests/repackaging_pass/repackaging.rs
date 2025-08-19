@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use assembly_structured_config::{validate_component, Repackager, ValidationError};
-use assembly_validate_package::{validate_package, PackageValidationError};
+use assembly_structured_config::{Repackager, ValidationError, validate_component};
+use assembly_validate_package::{PackageValidationError, validate_package};
 use camino::Utf8Path;
 use fuchsia_archive::Utf8Reader;
 use fuchsia_pkg::{BlobInfo, PackageManifest};

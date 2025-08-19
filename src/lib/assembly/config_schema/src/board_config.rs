@@ -6,12 +6,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::BuildType;
 use crate::common::{PackageDetails, PackagedDriverDetails};
 use crate::platform_settings::sysmem_config::BoardSysmemConfig;
-use crate::BuildType;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use assembly_constants::Arm64DebugDapSoc;
-use assembly_container::{assembly_container, AssemblyContainer, DirectoryPathBuf, WalkPaths};
+use assembly_container::{AssemblyContainer, DirectoryPathBuf, WalkPaths, assembly_container};
 use assembly_images_config::BoardFilesystemConfig;
 use assembly_release_info::{BoardReleaseInfo, ReleaseInfo};
 use camino::Utf8PathBuf;

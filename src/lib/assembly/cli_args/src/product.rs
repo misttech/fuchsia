@@ -131,7 +131,10 @@ impl FromStr for PackageValidationHandling {
         match s.as_ref() {
             "warning" => Ok(PackageValidationHandling::Warning),
             "error" => Ok(PackageValidationHandling::Error),
-            _ => Err(format!("Unknown handling for package validation, valid values are 'warning' and 'error' (the default): {}", s))
+            _ => Err(format!(
+                "Unknown handling for package validation, valid values are 'warning' and 'error' (the default): {}",
+                s
+            )),
         }
     }
 }

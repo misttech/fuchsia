@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use assembly_config_schema::developer_overrides::DeveloperOnlyOptions;
 use assembly_config_schema::platform_settings::PlatformSettings;
 use assembly_config_schema::product_settings::ProductSettings;
@@ -259,7 +259,9 @@ fn configure_subsystems(
             builder,
         )?;
     } else if platform.example_config != ExampleConfig::default() {
-        bail!("Config options were set for the example subsystem, but the example is not enabled to be configured.");
+        bail!(
+            "Config options were set for the example subsystem, but the example is not enabled to be configured."
+        );
     }
 
     // The real platform subsystems

@@ -5,13 +5,13 @@
 use crate::product_bundle::ProductBundle;
 use crate::v2::{ProductBundleV2, Repository};
 
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, ensure};
 use assembled_system::{AssembledSystem, BlobfsContents, Image, PackagesMetadata};
 use assembly_container::AssemblyContainer;
 use assembly_partitions_config::{PartitionImageMapper, PartitionsConfig, Slot as PartitionSlot};
 use assembly_release_info::ProductBundleReleaseInfo;
 use assembly_tool::ToolProvider;
-use assembly_update_package::{write_ota_manifest, Slot, UpdatePackage, UpdatePackageBuilder};
+use assembly_update_package::{Slot, UpdatePackage, UpdatePackageBuilder, write_ota_manifest};
 use assembly_update_packages_manifest::UpdatePackagesManifest;
 use camino::{Utf8Path, Utf8PathBuf};
 use delivery_blob::DeliveryBlobType;
@@ -624,7 +624,7 @@ mod test {
     use assembly_container::{AssemblyContainer, DirectoryPathBuf};
     use assembly_partitions_config::{Partition, PartitionsConfig, Slot};
     use assembly_release_info::{ProductBundleReleaseInfo, SystemReleaseInfo};
-    use assembly_tool::testing::{blobfs_side_effect, FakeToolProvider};
+    use assembly_tool::testing::{FakeToolProvider, blobfs_side_effect};
     use camino::{Utf8Path, Utf8PathBuf};
     use fuchsia_repo::test_utils;
     use pretty_assertions::assert_eq;

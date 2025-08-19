@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{common, BoardInputBundleArgs};
+use crate::{BoardInputBundleArgs, common};
 
 use anyhow::{Context, Result};
 use assembly_config_schema::{

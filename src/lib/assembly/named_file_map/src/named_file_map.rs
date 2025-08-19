@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use assembly_constants::{BootfsDestination, Destination, FileEntry};
 use assembly_util::{BTreeMapDuplicateKeyError, InsertUniqueExt, MapEntry, NamedMap};
 use camino::Utf8PathBuf;

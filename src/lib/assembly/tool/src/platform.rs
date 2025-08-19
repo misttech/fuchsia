@@ -4,7 +4,7 @@
 
 use crate::{Tool, ToolCommand, ToolCommandLog, ToolProvider};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use camino::Utf8PathBuf;
 use std::path::PathBuf;
 use std::process::Command;

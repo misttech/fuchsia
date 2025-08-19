@@ -5,7 +5,7 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, DataEnum, DeriveInput, FieldsNamed};
+use syn::{DataEnum, DeriveInput, FieldsNamed, parse_macro_input};
 
 #[proc_macro_attribute]
 pub fn assembly_container(

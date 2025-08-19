@@ -98,9 +98,9 @@ fn sign<FSP: FilesystemProvider>(
 mod tests {
     use super::{construct_vbmeta, sign};
 
+    use crate::AssembledSystem;
     use crate::vbmeta::{Key, Salt};
     use crate::vfs::mock::MockFilesystemProvider;
-    use crate::AssembledSystem;
 
     use assembly_images_config::VBMeta;
     use assembly_release_info::SystemReleaseInfo;

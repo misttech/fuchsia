@@ -5,7 +5,7 @@
 //! FFX plugin for examining product bundles, which are distributable containers for a product's
 //! images and packages, and can be used to emulate, flash, or update a product.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use ffx_product_show_args::ShowCommand;
 use ffx_writer::{SimpleWriter, ToolIO as _};

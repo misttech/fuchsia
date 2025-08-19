@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base_package::BasePackage;
 use crate::BlobfsContents;
+use crate::base_package::BasePackage;
 
 use anyhow::{Context, Result};
 use assembly_fxfs::FxfsBuilder;
@@ -79,10 +79,10 @@ pub async fn construct_fxfs(
 
 #[cfg(test)]
 mod tests {
-    use super::{construct_fxfs, ConstructedFxfs};
+    use super::{ConstructedFxfs, construct_fxfs};
 
-    use crate::base_package::construct_base_package;
     use crate::AssembledSystem;
+    use crate::base_package::construct_base_package;
 
     use assembly_images_config::Fxfs;
     use assembly_release_info::SystemReleaseInfo;

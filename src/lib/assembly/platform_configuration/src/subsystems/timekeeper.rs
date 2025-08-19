@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::subsystems::prelude::*;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
 use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::timekeeper_config::TimekeeperConfig;

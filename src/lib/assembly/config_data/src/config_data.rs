@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use assembly_constants::PackageDestination;
 use assembly_util::{DuplicateKeyError, InsertUniqueExt, MapEntry, NamedMap};
 use camino::{Utf8Path, Utf8PathBuf};

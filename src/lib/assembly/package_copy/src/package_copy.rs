@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use assembly_util::{fast_copy, NamedMap};
+use assembly_util::{NamedMap, fast_copy};
 use camino::Utf8PathBuf;
 use fuchsia_pkg::{BlobInfo, MetaPackage, PackageManifest, PackageManifestBuilder, SubpackageInfo};
 use std::collections::{BTreeMap, BTreeSet};

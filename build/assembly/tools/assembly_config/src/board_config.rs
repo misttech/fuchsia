@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{common, BoardArgs, HybridBoardArgs};
+use crate::{BoardArgs, HybridBoardArgs, common};
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use assembly_config_schema::{BoardConfig, BoardInputBundleSet};
 use assembly_container::{AssemblyContainer, DirectoryPathBuf};
 use assembly_partitions_config::PartitionsConfig;
@@ -163,7 +163,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::fs::File;
     use std::io::Write;
-    use tempfile::{tempdir, NamedTempFile};
+    use tempfile::{NamedTempFile, tempdir};
 
     #[test]
     fn test_new_board() {

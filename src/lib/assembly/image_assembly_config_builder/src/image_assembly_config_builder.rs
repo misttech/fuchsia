@@ -4,7 +4,7 @@
 
 use crate::compiled_package::CompiledPackageBuilder;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use assembly_config_data::ConfigDataBuilder;
 use assembly_config_schema::board_config::{BoardInputBundle, HardwareInfo};
 use assembly_config_schema::common::PackagedDriverDetails;
@@ -39,7 +39,7 @@ use assembly_structured_config::Repackager;
 use assembly_tool::ToolProvider;
 use assembly_util as util;
 use assembly_util::{DuplicateKeyError, InsertAllUniqueExt, InsertUniqueExt, NamedMap};
-use assembly_validate_package::{validate_component, validate_package, PackageValidationError};
+use assembly_validate_package::{PackageValidationError, validate_component, validate_package};
 use assembly_validate_util::{BootfsContents, PkgNamespace};
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_pkg::PackageManifest;
@@ -459,7 +459,10 @@ impl ImageAssemblyConfigBuilder {
             }),
             HardwareInfo { name: _, vendor_id: None, product_id: None, revision: None } => None,
             _ => {
-                bail!("If any of 'vendor_id', 'product_id', or 'revision' are set, all must be provided: {:?}", &board_config.hardware_info);
+                bail!(
+                    "If any of 'vendor_id', 'product_id', or 'revision' are set, all must be provided: {:?}",
+                    &board_config.hardware_info
+                );
             }
         };
         Ok(())
@@ -545,7 +548,9 @@ impl ImageAssemblyConfigBuilder {
             self.developer_only_options
         {
             if self.image_mode == FilesystemImageMode::NoImage {
-                bail!("all_packages_in_base cannot be enabled for products without a filesystem (image_mode = no_image)");
+                bail!(
+                    "all_packages_in_base cannot be enabled for products without a filesystem (image_mode = no_image)"
+                );
             }
             if self.build_type == BuildType::User {
                 bail!("all_packages_in_base cannot be enabled for user products");
@@ -994,9 +999,9 @@ impl ImageAssemblyConfigBuilder {
                         .with_context(|| format!("building repackaged {package}"))?;
                     let (_, new_entry) =
                         PackageEntry::parse_from(PackageOrigin::AIB, entry.package_set, new_path)
-                            .with_context(|| {
-                            "Parsing new package manifest for repackaged package: {package}"
-                        })?;
+                            .with_context(
+                            || "Parsing new package manifest for repackaged package: {package}",
+                        )?;
 
                     // Re-add the package now that it's been repackaged.
                     packages.try_insert_unique(destination, new_entry).with_context(|| {
@@ -1455,11 +1460,7 @@ fn validate_bootfs(bootfs_files: &[FileEntry<String>]) -> Result<(), BootfsValid
             errors.insert(path, e);
         }
     }
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(BootfsValidationError::InvalidComponents(errors))
-    }
+    if errors.is_empty() { Ok(()) } else { Err(BootfsValidationError::InvalidComponents(errors)) }
 }
 
 /// Collection of all package validation failures within a product.
@@ -1534,8 +1535,8 @@ mod tests {
     use assembly_platform_configuration::ComponentConfigs;
     use assembly_release_info::SystemReleaseInfo;
     use assembly_test_util::generate_test_manifest;
-    use assembly_tool::testing::FakeToolProvider;
     use assembly_tool::ToolCommandLog;
+    use assembly_tool::testing::FakeToolProvider;
     use fuchsia_pkg::{BlobInfo, MetaPackage, PackageBuilder, PackageManifestBuilder};
     use image_assembly_config::PartialKernelConfig;
     use serde_json::json;
@@ -2223,20 +2224,22 @@ mod tests {
         );
 
         let bundle2 = AssemblyInputBundle {
-            packages_to_compile: vec![CompiledPackageDefinition {
-                name: CompiledPackageDestination::Test(ForTest),
-                components: vec![CompiledComponentDefinition {
-                    component_name: "component2".into(),
-                    shards: vec![FileRelativePathBuf::FileRelative(
-                        "compiled_packages/for_test/component2/shard1".into(),
-                    )],
-                }],
-                contents: Default::default(),
-                includes: Default::default(),
-                bootfs_package: Default::default(),
-            }
-            .resolve_paths_from_dir(&bundle2_path)
-            .unwrap()],
+            packages_to_compile: vec![
+                CompiledPackageDefinition {
+                    name: CompiledPackageDestination::Test(ForTest),
+                    components: vec![CompiledComponentDefinition {
+                        component_name: "component2".into(),
+                        shards: vec![FileRelativePathBuf::FileRelative(
+                            "compiled_packages/for_test/component2/shard1".into(),
+                        )],
+                    }],
+                    contents: Default::default(),
+                    includes: Default::default(),
+                    bootfs_package: Default::default(),
+                }
+                .resolve_paths_from_dir(&bundle2_path)
+                .unwrap(),
+            ],
             ..Default::default()
         };
 
