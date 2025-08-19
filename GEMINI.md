@@ -77,6 +77,31 @@ changes are found to cause a subsequent, unforeseen error.
 For language-specific guidance, see the relevant sections below or in the
 `.gemini/extensions/` directory.
 
+### Coordinate-Based Tool Usage (`hover`, `definition`, etc.)
+
+To prevent errors from using incorrect or "hallucinated" line and
+column numbers, you **must** follow this procedure before using any
+tool that requires coordinates:
+
+1.  **Identify Anchor:** Identify a unique string of text (an
+    "anchor") at the precise location of the symbol you want to
+    investigate. This could be a variable name, function signature,
+    etc.
+
+2.  **Find Line Number:** Use a text-search tool that returns line
+    numbers, such as `grep -n`, to find the exact line number of
+    your anchor in the target file.
+    *   **Command:** `grep -n "your_unique_anchor" /path/to/file`
+
+3.  **Calculate Column Number:** Read the single line of code returned
+    by the search tool. Calculate the column number by finding the
+    starting character position of your anchor within that line.
+
+4.  **Execute Tool:** You may now call the coordinate-based tool
+    (`hover`, `definition`, `references`, `rename_symbol`) using the
+    file path, the line number from the search tool, and the column
+    number you just calculated.
+
 ### C++ Development
 
 When working with C++ (`.cc`, `.h`, `.cpp`), you must use the language server
