@@ -260,7 +260,7 @@ impl TreeBuilder {
     // Helper function for building a tree with a default inode generator. Use if you don't
     // care about directory inode values.
     pub fn build(self) -> Arc<Simple> {
-        let mut generator = |_| -> u64 { fio::INO_UNKNOWN };
+        let mut generator = |_: &str| -> u64 { fio::INO_UNKNOWN };
         self.build_with_inode_generator(&mut generator)
     }
 
@@ -268,16 +268,16 @@ impl TreeBuilder {
     /// [`crate::directory::helper::DirectlyMutable::add_entry()`] at their respective locations.
     /// The tree itself is built using [`crate::directory::immutable::Simple`]
     /// nodes, and the top level is a directory.
-    pub fn build_with_inode_generator(
-        self,
-        get_inode: &mut impl FnMut(String) -> u64,
-    ) -> Arc<Simple> {
+    pub fn build_with_inode_generator<F>(self, get_inode: &mut F) -> Arc<Simple>
+    where
+        F: for<'a> FnMut(&'a str) -> u64,
+    {
         match self {
             TreeBuilder::Directory(mut entries) => {
-                let res = Simple::new_with_inode(get_inode(".".to_string()));
+                let res = Simple::new_with_inode(get_inode("."));
                 for (name, child) in entries.drain() {
-                    res.clone()
-                        .add_entry(&name, child.build_dyn(name.clone(), get_inode))
+                    let child = child.build_dyn(&name, get_inode);
+                    res.add_entry(name, child)
                         .map_err(|status| format!("Status: {}", status))
                         .expect(
                             "Internal error.  We have already checked all the entry names. \
@@ -292,17 +292,16 @@ impl TreeBuilder {
         }
     }
 
-    fn build_dyn(
-        self,
-        dir: String,
-        get_inode: &mut impl FnMut(String) -> u64,
-    ) -> Arc<dyn DirectoryEntry> {
+    fn build_dyn<F>(self, dir: &str, get_inode: &mut F) -> Arc<dyn DirectoryEntry>
+    where
+        F: for<'a> FnMut(&'a str) -> u64,
+    {
         match self {
             TreeBuilder::Directory(mut entries) => {
                 let res = Simple::new_with_inode(get_inode(dir));
                 for (name, child) in entries.drain() {
-                    res.clone()
-                        .add_entry(&name, child.build_dyn(name.clone(), get_inode))
+                    let child = child.build_dyn(&name, get_inode);
+                    res.add_entry(name, child)
                         .map_err(|status| format!("Status: {}", status))
                         .expect(
                             "Internal error.  We have already checked all the entry names. \
@@ -408,8 +407,8 @@ mod tests {
         tree.add_entry(&["a", "b", "file"], file::read_only(b"A content")).unwrap();
         tree.add_entry(&["a", "c", "file"], file::read_only(b"B content")).unwrap();
 
-        let mut get_inode = |name: String| -> u64 {
-            match &name[..] {
+        let mut get_inode = |name: &str| -> u64 {
+            match name {
                 "a" => 1,
                 "b" => 2,
                 "c" => 3,
