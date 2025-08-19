@@ -86,7 +86,7 @@ void VmDebugCompressor::CompressThread() {
               entry.cow
                   ->ReclaimPage(entry.page, entry.offset, VmCowPages::EvictionAction::IgnoreHint,
                                 &instance.get())
-                  .Total();
+                  .num_pages;
           count > 0) {
         pq_compress_debug_random_compression.Add(count);
       }

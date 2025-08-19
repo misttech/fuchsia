@@ -100,6 +100,18 @@ struct VmCowRange {
   bool IsBoundedBy(uint64_t max) const;
 };
 
+// Result of attempting to reclaim a single page. See VmCowPages::ReclaimPage for more details.
+struct VmCowReclaimResult {
+  enum class Type : uint8_t {
+    None,
+    EvictNonLoaned,
+    EvictLoaned,
+    Discard,
+    Compress,
+  } type;
+  uint64_t num_pages = 0;
+};
+
 class ScopedPageFreedList;
 
 // Implements a copy-on-write hierarchy of pages in a VmPageList.
@@ -640,16 +652,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // or ignored. Require will force eviction.
   //
   // The actual number of pages reclaimed is returned.
-  struct ReclaimCounts {
-    uint64_t evicted_non_loaned = 0;
-    uint64_t evicted_loaned = 0;
-    uint64_t discarded = 0;
-    uint64_t compressed = 0;
-
-    uint64_t Total() const { return compressed + discarded + evicted_non_loaned + evicted_loaned; }
-  };
-  ReclaimCounts ReclaimPage(vm_page_t* page, uint64_t offset, EvictionAction eviction_action,
-                            VmCompressor* compressor);
+  VmCowReclaimResult ReclaimPage(vm_page_t* page, uint64_t offset, EvictionAction eviction_action,
+                                 VmCompressor* compressor);
 
   // Helper for reclamation functions to perform common checks for whether or not reclamation should
   // proceed. It takes two parameters, one being the original requested page and the other being
@@ -777,8 +781,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // requirements on updating any reclamation lists. Exposed for the physical page provider to
   // reclaim loaned pages.
   // Is also used as an internal helper by ReclaimPage.
-  VmCowPages::ReclaimCounts ReclaimPageForEviction(vm_page_t* page, uint64_t offset,
-                                                   EvictionAction eviction_action);
+  VmCowReclaimResult ReclaimPageForEviction(vm_page_t* page, uint64_t offset,
+                                            EvictionAction eviction_action);
 
   // Potentially transitions from Alive->Dead if the cow pages is unreachable (i.e. has no
   // paged_ref_ and no children). Used by the VmObjectPaged when it unlinks the paged_ref_, but
@@ -1481,8 +1485,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // Internal helper for performing reclamation via compression on an anonymous VMO. Assumes that
   // the provided |compressor| is not-null.
-  ReclaimCounts ReclaimPageForCompression(vm_page_t* page, uint64_t offset,
-                                          VmCompressor* compressor);
+  VmCowReclaimResult ReclaimPageForCompression(vm_page_t* page, uint64_t offset,
+                                               VmCompressor* compressor);
 
   // Internal helper for performing reclamation against a discardable VMO. If any discarding happens
   // the number of pages is returned. The passed in |page| must be the first page in the discardable

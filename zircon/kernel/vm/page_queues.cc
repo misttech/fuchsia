@@ -131,12 +131,24 @@ class LruIsolate {
             continue;
           }
         }
-        if (VmCowPages::ReclaimCounts count = backlink.cow->ReclaimPage(
-                backlink.page, backlink.offset, VmCowPages::EvictionAction::FollowHint, compressor);
-            count.Total() > 0) {
-          pq_lru_pages_evicted.Add(count.evicted_non_loaned + count.evicted_loaned);
-          pq_lru_pages_discarded.Add(count.discarded);
-          pq_lru_pages_compressed.Add(count.compressed);
+        VmCowReclaimResult reclaimed = backlink.cow->ReclaimPage(
+            backlink.page, backlink.offset, VmCowPages::EvictionAction::FollowHint, compressor);
+        uint64_t num_pages = reclaimed.num_pages;
+        if (num_pages > 0) {
+          switch (reclaimed.type) {
+            case VmCowReclaimResult::Type::EvictLoaned:
+            case VmCowReclaimResult::Type::EvictNonLoaned:
+              pq_lru_pages_evicted.Add(num_pages);
+              break;
+            case VmCowReclaimResult::Type::Discard:
+              pq_lru_pages_discarded.Add(num_pages);
+              break;
+            case VmCowReclaimResult::Type::Compress:
+              pq_lru_pages_compressed.Add(num_pages);
+              break;
+            case VmCowReclaimResult::Type::None:
+              break;
+          }
         }
       }
     }
