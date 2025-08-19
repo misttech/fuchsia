@@ -308,10 +308,13 @@ void ShutdownManager::SystemExecute() {
     }
     return;
   }
-  LOGF(INFO, "Executing powerctl.");
+
+  LOGF(INFO, "Flushing logs.");
   if (log_flush_.is_valid()) {
     std::ignore = fidl::WireCall(log_flush_)->WaitUntilFlushed();
   }
+
+  LOGF(INFO, "Executing powerctl.");
   switch (shutdown_system_state) {
     case SystemPowerState::kReboot:
       status = zx_system_powerctl(power_resource_.get(), ZX_SYSTEM_POWERCTL_REBOOT, nullptr);
