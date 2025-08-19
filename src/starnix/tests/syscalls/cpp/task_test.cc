@@ -1102,9 +1102,8 @@ class CloneAndExecTest : public ::testing::Test {
   }
 
   static std::string GetCurrentWorkingDirectory() {
-    std::string cwd;
-    cwd.reserve(PATH_MAX + 1);
-    if (getcwd(cwd.data(), cwd.capacity()) == nullptr) {
+    std::string cwd = get_current_dir_name();
+    if (cwd.empty()) {
       _exit(EXIT_FAILURE);
     }
     return cwd;
@@ -1154,7 +1153,7 @@ TEST_F(CloneAndExecTest, ExecUnsharesCloneFiles) {
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
-TEST_F(CloneAndExecTest, ExecUnsharesCloneFs) {
+TEST_F(CloneAndExecTest, ExecDoesNotUnshareCloneFs) {
   // Fork into a subprocess from which to `clone(CLONE_FS)`, to avoid breaking the main test
   // process if things go awry.
   test_helper::ForkHelper helper;
@@ -1168,8 +1167,52 @@ TEST_F(CloneAndExecTest, ExecUnsharesCloneFs) {
     std::vector<std::string> args{"set_cwd", new_cwd.path()};
     CloneAndExec(CLONE_FS, args);
 
-    // Verify that this process' current working directory has not changed.
-    EXPECT_EQ(original_cwd, GetCurrentWorkingDirectory());
+    // Verify that this process' current working directory has changed.
+    EXPECT_EQ(new_cwd.path(), GetCurrentWorkingDirectory());
+
+    _exit(testing::Test::HasFailure());
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(CloneAndExecTest, ChildWithCloneFsCanChangeCwd) {
+  // Fork into a subprocess from which to `clone(CLONE_FS)`, to avoid breaking the main test
+  // process.
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    // The child process will change its current working directory from the original value.
+    std::string original_cwd = GetCurrentWorkingDirectory();
+
+    // Create a temporary directory to use as the new CWD.
+    test_helper::ScopedTempDir new_cwd;
+
+    // Fork the child with CLONE_FS.
+    int child_pid = static_cast<int>(
+        SAFE_SYSCALL(syscall(SYS_clone, CLONE_FS | SIGCHLD, nullptr, nullptr, nullptr, nullptr)));
+
+    if (child_pid == 0) {
+      // This is the child process, so change the current working directory.
+      if (chdir(new_cwd.path().c_str()) != 0) {
+        fprintf(stderr, "Failed to chdir to %s: %d (%s)\n", new_cwd.path().c_str(), errno,
+                strerror(errno));
+        exit(EXIT_FAILURE);
+      }
+      _exit(0);
+    }
+
+    // This is the parent process. Wait for the child process to complete, then check whether the
+    // current working directory has changed.
+    int wstatus = 0;
+    SAFE_SYSCALL(waitpid(child_pid, &wstatus, 0));
+    if (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != 0) {
+      ADD_FAILURE() << "wait_status: WIFEXITED(wstatus) = " << WIFEXITED(wstatus)
+                    << ", WEXITSTATUS(wstatus) = " << WEXITSTATUS(wstatus)
+                    << ", WTERMSIG(wstatus) = " << WTERMSIG(wstatus);
+    }
+
+    // Verify that this process' current working directory has changed.
+    EXPECT_NE(original_cwd, GetCurrentWorkingDirectory());
 
     _exit(testing::Test::HasFailure());
   });
