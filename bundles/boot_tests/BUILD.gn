@@ -10,6 +10,9 @@ group("boot_tests") {
 
   # only define boot_tests if a board is defined.
   if (has_board) {
-    deps = [ "//bundles/bringup:boot_tests" ]
+    deps = [
+      "//bundles/bringup:boot_tests",
+      "//bundles/microfuchsia:boot_tests",
+    ]
   }
 }
