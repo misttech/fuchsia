@@ -25,7 +25,7 @@
 
 namespace {
 
-using fdf_power::testing::FakeActivityGovernorListener;
+using fdf_power::testing::FakeSuspendBlocker;
 using fdf_power::testing::FidlBoundServer;
 using fuchsia_power_broker::DependencyToken;
 using fuchsia_power_broker::DependencyType;
@@ -39,8 +39,8 @@ using fuchsia_power_broker::LevelDependency;
 using fuchsia_power_broker::Topology;
 using fuchsia_power_broker::wire::BinaryPowerLevel;
 using fuchsia_power_system::ActivityGovernor;
-using fuchsia_power_system::ActivityGovernorListener;
 using fuchsia_power_system::ApplicationActivityLevel;
+using fuchsia_power_system::SuspendBlocker;
 
 class WakeLeaseIntegrationTest : public gtest::RealLoopFixture {
  protected:
@@ -120,18 +120,19 @@ TEST_F(WakeLeaseIntegrationTest, DISABLED_WakeLeaseBlocksSuspend) {
   RunLoopUntil([&lease_completed]() { return lease_completed; });
   EXPECT_TRUE(lease_completed);
 
-  // Register a Listener on System Activity Governor to check for suspend callbacks.
-  auto endpoints = fidl::CreateEndpoints<ActivityGovernorListener>().value();
-  FidlBoundServer<FakeActivityGovernorListener> listener(dispatcher(), std::move(endpoints.server));
-  bool register_listener_completed = false;
+  // Register a suspend blocker on System Activity Governor to check for suspend callbacks.
+  auto endpoints = fidl::CreateEndpoints<SuspendBlocker>().value();
+  FidlBoundServer<FakeSuspendBlocker> suspend_blocker(dispatcher(), std::move(endpoints.server));
+  bool register_blocker_completed = false;
   activity_governor
-      ->RegisterListener({{.listener = std::make_optional(std::move(endpoints.client))}})
-      .Then([&register_listener_completed](auto& result) { register_listener_completed = true; });
-  RunLoopUntil([&register_listener_completed]() { return register_listener_completed; });
-  EXPECT_TRUE(register_listener_completed);
-  ASSERT_FALSE(listener.SuspendStarted());
+      ->RegisterSuspendBlocker(
+          {{.suspend_blocker = std::make_optional(std::move(endpoints.client))}})
+      .Then([&register_blocker_completed](auto& result) { register_blocker_completed = true; });
+  RunLoopUntil([&register_blocker_completed]() { return register_blocker_completed; });
+  EXPECT_TRUE(register_blocker_completed);
+  ASSERT_FALSE(suspend_blocker.SuspendStarted());
 
-  // Take a wake lease and check that OnSuspend doesn't get called.
+  // Take a wake lease and check that BeforeSuspend doesn't get called.
   std::unique_ptr<examples::power::WakeLease> wake_lease;
   bool take_wake_lease_completed = false;
   async::Executor executor(dispatcher());
@@ -139,7 +140,7 @@ TEST_F(WakeLeaseIntegrationTest, DISABLED_WakeLeaseBlocksSuspend) {
       examples::power::WakeLease::Take(activity_governor, "test-wake-lease")
           .then([&](fpromise::result<examples::power::WakeLease, examples::power::Error>& result) {
             EXPECT_FALSE(result.is_error()) << result.error();
-            ASSERT_FALSE(listener.SuspendStarted());
+            ASSERT_FALSE(suspend_blocker.SuspendStarted());
 
             wake_lease = std::make_unique<examples::power::WakeLease>(result.take_value());
             take_wake_lease_completed = true;
@@ -154,13 +155,13 @@ TEST_F(WakeLeaseIntegrationTest, DISABLED_WakeLeaseBlocksSuspend) {
   activity_lease_control.reset();
   EXPECT_OK(activity_lessor.UnbindMaybeGetEndpoint());
   RunLoopUntilIdle();
-  ASSERT_FALSE(listener.SuspendStarted());
+  ASSERT_FALSE(suspend_blocker.SuspendStarted());
 
   // Drop the wake lease and observe OnSuspend callback.
   wake_lease.reset();
   EXPECT_FALSE(wake_lease);
-  RunLoopUntil([&listener]() { return listener.SuspendStarted(); });
-  ASSERT_TRUE(listener.SuspendStarted());
+  RunLoopUntil([&suspend_blocker]() { return suspend_blocker.SuspendStarted(); });
+  ASSERT_TRUE(suspend_blocker.SuspendStarted());
 }
 
 }  // namespace

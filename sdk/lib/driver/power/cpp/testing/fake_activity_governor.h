@@ -17,8 +17,8 @@
 namespace fdf_power::testing {
 
 using fuchsia_power_system::ActivityGovernor;
-using fuchsia_power_system::ActivityGovernorListener;
 using fuchsia_power_system::LeaseToken;
+using fuchsia_power_system::SuspendBlocker;
 
 class FakeActivityGovernor : public FidlTestBaseDefault<ActivityGovernor> {
  public:
@@ -62,20 +62,20 @@ class FakeActivityGovernor : public FidlTestBaseDefault<ActivityGovernor> {
   std::unordered_map<zx_handle_t, LeaseToken> active_wake_leases_;
 };
 
-class FakeActivityGovernorListener : public FidlTestBaseDefault<ActivityGovernorListener> {
+class FakeSuspendBlocker : public FidlTestBaseDefault<SuspendBlocker> {
  public:
-  FakeActivityGovernorListener() = default;
+  FakeSuspendBlocker() = default;
 
   bool SuspendStarted() const { return suspend_started_; }
 
  private:
-  void OnSuspendStarted(OnSuspendStartedCompleter::Sync& completer) override {
+  void BeforeSuspend(BeforeSuspendCompleter::Sync& completer) override {
     suspend_started_ = true;
     completer.Reply();
   }
 
   // These completers must also reply for expected operation.
-  void OnResume(OnResumeCompleter::Sync& completer) override { completer.Reply(); }
+  void AfterResume(AfterResumeCompleter::Sync& completer) override { completer.Reply(); }
 
   bool suspend_started_ = false;
 };

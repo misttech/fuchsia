@@ -6,11 +6,11 @@ implemented in `lib`, continue to the [Strategy details](#strategy-details)
 section.
 
 ## Strategy details
-This example demonstrates a way to manage leases with the goal of minimizing
-the number of leases taken. This works by not taking a lease until there is a
-callback to an ActivityGovernorListener indicating the system is suspending.
-With this strategy only the server takes wake leases, which it passes to the
-client at appropriate times. This is called "optimistic lease management".
+This example demonstrates a way to manage leases with the goal of minimizing the
+number of leases taken. This works by not taking a lease until there is a
+callback to a SuspendBlocker indicating the system is suspending. With this
+strategy only the server takes wake leases, which it passes to the client at
+appropriate times. This is called "optimistic lease management".
 
 In this example the domain [protocol](fidl/power.fidl) between the client and
 the server is very simple. The client makes a request to the server to receive

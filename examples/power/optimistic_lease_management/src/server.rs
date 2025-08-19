@@ -48,16 +48,18 @@ async fn send_messages(
         panic!("socket should not be closed!");
     }
 
-    // Create a listener so we know when we suspend/resume
-    let (client, server) =
-        fidl::endpoints::create_endpoints::<fsag::ActivityGovernorListenerMarker>();
+    // Create a suspend blocker so we know when we suspend/resume
+    let (client, server) = fidl::endpoints::create_endpoints::<fsag::SuspendBlockerMarker>();
 
-    sag.register_listener(fsag::ActivityGovernorRegisterListenerRequest {
-        listener: Some(client),
-        ..Default::default()
-    })
-    .await
-    .expect("error registering listener");
+    let registration_lease = sag
+        .register_suspend_blocker(fsag::ActivityGovernorRegisterSuspendBlockerRequest {
+            suspend_blocker: Some(client),
+            name: Some("olm_server".into()),
+            ..Default::default()
+        })
+        .await
+        .expect("error registering suspend blocker");
+    drop(registration_lease);
 
     let msg = "hello, world";
 
@@ -345,7 +347,7 @@ pub enum EventType {
 async fn wait_for_event<'b, 'c>(
     send_timer: &'b mut SendTimer,
     mut next_request: &'c mut Pin<
-        Box<futures::stream::Next<'c, Box<fsag::ActivityGovernorListenerRequestStream>>>,
+        Box<futures::stream::Next<'c, Box<fsag::SuspendBlockerRequestStream>>>,
     >,
 ) -> Option<EventType> {
     if send_timer.timer.is_none() {
@@ -358,47 +360,43 @@ async fn wait_for_event<'b, 'c>(
         match future::select(&mut *next_request, send_timer.timer.take().unwrap()).await {
             // If this is a suspend/resume callback, update our internal state
             // to control whether we send messages to the client or not.
-            Either::Left((listener_event, unexpired_timer)) => {
+            Either::Left((suspend_event, unexpired_timer)) => {
                 send_timer.timer = Some(unexpired_timer);
-                match listener_event {
-                    Some(Ok(
-                        fidl_fuchsia_power_system::ActivityGovernorListenerRequest::OnResume {
-                            responder,
-                        },
-                    )) => {
+                match suspend_event {
+                    Some(Ok(fidl_fuchsia_power_system::SuspendBlockerRequest::AfterResume {
+                        responder,
+                    })) => {
                         info!("resumed!");
                         send_timer.is_suspended = false;
                         let _ = responder.send();
                     }
-                    Some(Ok(
-                        fidl_fuchsia_power_system::ActivityGovernorListenerRequest::OnSuspendStarted {
-                            responder,
-                        },
-                    )) => {
+                    Some(Ok(fidl_fuchsia_power_system::SuspendBlockerRequest::BeforeSuspend {
+                        responder,
+                    })) => {
                         info!("suspended!");
                         send_timer.first_suspend = true;
                         send_timer.is_suspended = true;
                         let _ = responder.send();
-                    },
-                    Some(Ok(fsag::ActivityGovernorListenerRequest::_UnknownMethod { .. })) => {
+                    }
+                    Some(Ok(fsag::SuspendBlockerRequest::_UnknownMethod { .. })) => {
                         warn!("unknown method!");
                     }
                     Some(Err(e)) => {
                         if e.is_closed() {
-                            warn!("listener channel closed, exiting");
+                            warn!("suspend blocker channel closed, exiting");
                             return None;
                         }
                     }
                     None => {
-                        warn!("listener channel closed, exiting");
+                        warn!("suspend blocker channel closed, exiting");
                         return None;
                     }
                 }
 
                 return Some(EventType::StreamEvent);
             }
-            Either::Right((_, sag_listener)) => {
-                next_request = sag_listener;
+            Either::Right((_, suspend_blocker)) => {
+                next_request = suspend_blocker;
                 // Try setting the next timer.
                 if let None = send_timer.set_next_timer() {
                     return None;

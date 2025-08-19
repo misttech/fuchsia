@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use async_trait::async_trait;
-use futures::lock::Mutex;
 use futures::StreamExt;
+use futures::lock::Mutex;
 use log::warn;
 use std::sync::Arc;
 use {
@@ -271,30 +271,33 @@ impl SequenceServer {
 
     /// Watch the suspend/resume state of the system and
     async fn watch_system_state(&self) -> Result<(), fidl::Error> {
-        let (client, server) =
-            fidl::endpoints::create_endpoints::<fsag::ActivityGovernorListenerMarker>();
+        let (client, server) = fidl::endpoints::create_endpoints::<fsag::SuspendBlockerMarker>();
 
-        self.sag
-            .register_listener(fsag::ActivityGovernorRegisterListenerRequest {
-                listener: Some(client),
+        let registration_lease = self
+            .sag
+            .register_suspend_blocker(fsag::ActivityGovernorRegisterSuspendBlockerRequest {
+                suspend_blocker: Some(client),
+                name: Some("suspend_watcher".into()),
                 ..Default::default()
             })
-            .await?;
+            .await?
+            .expect("error registering suspend blocker");
+        drop(registration_lease);
 
         let mut request_stream = server.into_stream();
         while let Some(req) = request_stream.next().await {
             match req {
-                Ok(fsag::ActivityGovernorListenerRequest::OnSuspendStarted { responder }) => {
+                Ok(fsag::SuspendBlockerRequest::BeforeSuspend { responder }) => {
                     ftrace::instant!(crate::TRACE_CATEGORY, c"suspended", ftrace::Scope::Process);
                     self.baton_sender.lock().await.suspended();
                     let _ = responder.send();
                 }
-                Ok(fsag::ActivityGovernorListenerRequest::OnResume { responder }) => {
+                Ok(fsag::SuspendBlockerRequest::AfterResume { responder }) => {
                     ftrace::instant!(crate::TRACE_CATEGORY, c"resumed", ftrace::Scope::Process);
                     self.baton_sender.lock().await.resumed();
                     let _ = responder.send();
                 }
-                Ok(fsag::ActivityGovernorListenerRequest::_UnknownMethod { .. }) => {
+                Ok(fsag::SuspendBlockerRequest::_UnknownMethod { .. }) => {
                     warn!("unrecognized listener method, ignoring");
                 }
                 Err(_) => {

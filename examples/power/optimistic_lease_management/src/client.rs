@@ -31,8 +31,8 @@ async fn receive_messages(
             break;
         }
 
-        // Maybe use ActivityGovernorListener to only do work while we're
-        // resumed to simulate actual suspension.
+        // Maybe use SuspendBlocker to only do work while we're resumed to simulate actual
+        // suspension.
         let signal = r.unwrap();
         if signal.contains(zx::Signals::SOCKET_READABLE) {
             // Socket is readable, so read should succeed

@@ -14,22 +14,22 @@ use {
     fuchsia_async as fasync, power_broker_client as pbclient,
 };
 
-struct ActivityGovernorListener {
-    on_suspend_sender: mpsc::UnboundedSender<()>,
+struct SuspendBlocker {
+    before_suspend_sender: mpsc::UnboundedSender<()>,
 }
 
-impl ActivityGovernorListener {
-    async fn run(&self, stream: fsystem::ActivityGovernorListenerRequestStream) -> Result<()> {
-        let on_suspend_sender = self.on_suspend_sender.clone();
+impl SuspendBlocker {
+    async fn run(&self, stream: fsystem::SuspendBlockerRequestStream) -> Result<()> {
+        let before_suspend_sender = self.before_suspend_sender.clone();
         stream
             .map(|request| request.context("failed request"))
             .try_for_each(|request| async {
                 match request {
-                    fsystem::ActivityGovernorListenerRequest::OnResume { responder } => {
+                    fsystem::SuspendBlockerRequest::AfterResume { responder } => {
                         responder.send().context("send failed")
                     }
-                    fsystem::ActivityGovernorListenerRequest::OnSuspendStarted { responder } => {
-                        assert!(on_suspend_sender.unbounded_send(()).is_ok());
+                    fsystem::SuspendBlockerRequest::BeforeSuspend { responder } => {
+                        assert!(before_suspend_sender.unbounded_send(()).is_ok());
                         responder.send().context("send failed")
                     }
                     _ => unreachable!(),
@@ -65,33 +65,43 @@ async fn wake_lease_blocks_system_suspend_until_release() -> Result<()> {
     let activity_lease = lease_helper.create_lease_and_wait_until_satisfied().await?;
     let _ = boot_control.set_boot_complete().await?;
 
-    // Register a Listener on System Activity Governor to check for suspend callbacks.
-    let (client, stream) = create_request_stream::<fsystem::ActivityGovernorListenerMarker>();
-    let (on_suspend_sender, mut on_suspend_receiver) = mpsc::unbounded();
+    // Create and take a wake lease, ensuring the system doesn't suspend.
+    let wake_lease = WakeLease::take(&sag, "test-wake-lease".to_string()).await?;
+
+    // Register a suspend blocker on System Activity Governor to check for suspend callbacks.
+    let (client, stream) = create_request_stream::<fsystem::SuspendBlockerMarker>();
+    let (before_suspend_sender, mut before_suspend_receiver) = mpsc::unbounded();
     fasync::Task::local(async move {
-        let listener = ActivityGovernorListener { on_suspend_sender };
-        listener.run(stream).await.expect("ActivityGovernorListener server completion");
-        unreachable!(); // Listener should run for the entire test.
+        let suspend_blocker = SuspendBlocker { before_suspend_sender };
+        suspend_blocker.run(stream).await.expect("SuspendBlocker server completion");
+        unreachable!(); // Suspend blocker should run for the entire test.
     })
     .detach();
-    sag.register_listener(fsystem::ActivityGovernorRegisterListenerRequest {
-        listener: Some(client),
-        ..Default::default()
-    })
-    .await?;
 
-    // Create and take a wake lease, ensuring the system doesn't suspend.
-    let wake_lease = WakeLease::take(sag, "test-wake-lease".to_string()).await?;
-    assert!(on_suspend_receiver.try_next().is_err()); // OnSuspend not called yet.
+    // The RegisterSuspendBlocker call returns another wake lease. Functionally, we could replace
+    // the `wake_lease` from above with the one that's obtained here, but we want this example to
+    // clearly demonstrate that the token returned by TakeWakeLease will block suspension.
+    {
+        let _registration_lease = sag
+            .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+                suspend_blocker: Some(client),
+                name: Some("test_suspend_blocker".into()),
+                ..Default::default()
+            })
+            .await?
+            .expect("error registering suspend blocker");
+    }
+
+    assert!(before_suspend_receiver.try_next().is_err()); // OnSuspend not called yet.
 
     // Closing the ApplicationActivity lease shouldn't cause the system to suspend as long as
     // the wake lease is active.
     drop(activity_lease);
-    assert!(on_suspend_receiver.try_next().is_err()); // OnSuspend not called yet.
+    assert!(before_suspend_receiver.try_next().is_err()); // OnSuspend not called yet.
 
     // Release the wake lease and observe a suspend callback within a timeout.
     drop(wake_lease);
-    on_suspend_receiver.next().await; // OnSuspend called.
+    before_suspend_receiver.next().await; // OnSuspend called.
 
     Ok(())
 }

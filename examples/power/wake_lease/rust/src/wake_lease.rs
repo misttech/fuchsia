@@ -11,7 +11,7 @@ pub struct WakeLease {
 
 impl WakeLease {
     pub async fn take(
-        activity_governor: fsystem::ActivityGovernorProxy,
+        activity_governor: &fsystem::ActivityGovernorProxy,
         name: String,
     ) -> Result<Self> {
         let _token = activity_governor.take_wake_lease(&name).await?;
@@ -82,7 +82,7 @@ mod tests {
         .detach();
 
         // Create and acquire a wake lease.
-        let wake_lease = WakeLease::take(client, "example_wake_lease".to_string()).await?;
+        let wake_lease = WakeLease::take(&client, "example_wake_lease".to_string()).await?;
 
         // Check that the server was notified about the acquired wake lease.
         assert!(wake_lease_active_rx.next().await.expect("server wake lease call"));
