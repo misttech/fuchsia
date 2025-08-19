@@ -112,7 +112,7 @@ const char* ObjectTypeToString(zx_obj_type_t type) {
       return "interrupt";
     case ZX_OBJ_TYPE_PCI_DEVICE:
       return "pci-device";
-    case ZX_OBJ_TYPE_LOG:
+    case ZX_OBJ_TYPE_DEBUGLOG:
       return "log";
     case ZX_OBJ_TYPE_SOCKET:
       return "socket";
@@ -146,6 +146,18 @@ const char* ObjectTypeToString(zx_obj_type_t type) {
       return "pager";
     case ZX_OBJ_TYPE_EXCEPTION:
       return "exception";
+    case ZX_OBJ_TYPE_CLOCK:
+      return "clock";
+    case ZX_OBJ_TYPE_STREAM:
+      return "stream";
+    case ZX_OBJ_TYPE_MSI:
+      return "msi";
+    case ZX_OBJ_TYPE_IOB:
+      return "iob";
+    case ZX_OBJ_TYPE_COUNTER:
+      return "counter";
+    case ZX_OBJ_TYPE_IOB_SHARED_REGION:
+      return "iob-shared-region";
     default:
       return "???";
   }
