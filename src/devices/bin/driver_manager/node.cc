@@ -725,24 +725,104 @@ std::shared_ptr<BindResultTracker> Node::CreateBindResultTracker() {
       });
 }
 
-void Node::SetNonCompositeProperties(std::vector<fdf::NodeProperty2> properties) {
-  properties_ = fdf::NodePropertyDictionary2{
-      fdf::NodePropertyEntry2{{
+std::vector<Node::Property> Node::ToProperty(std::span<const fdf::NodeProperty2> properties) {
+  std::vector<Property> node_properties;
+  node_properties.reserve(properties.size());
+  std::ranges::transform(properties, std::back_inserter(node_properties), [](const auto& property) {
+    if (const auto& val = property.value().string_value(); val) {
+      return Property{
+          .key = property.key(),
+          .value = val.value(),
+      };
+    }
+    if (const auto& val = property.value().bool_value(); val) {
+      return Property{
+          .key = property.key(),
+          .value = val.value(),
+      };
+    }
+    if (const auto& val = property.value().int_value(); val) {
+      return Property{
+          .key = property.key(),
+          .value = val.value(),
+      };
+    }
+    if (const auto& val = property.value().enum_value(); val) {
+      return Property{
+          .key = property.key(),
+          .value = EnumValue{.value = val.value()},
+      };
+    }
+    return Property{
+        .key = property.key(),
+        .value = std::monostate(),
+    };
+  });
+  return node_properties;
+}
+
+std::vector<fdf::NodeProperty2> Node::PropertyToFidl(std::span<const Property> properties) {
+  std::vector<fdf::NodeProperty2> node_properties;
+  node_properties.reserve(properties.size());
+  std::ranges::transform(properties, std::back_inserter(node_properties), [](const auto& property) {
+    if (const auto* val = std::get_if<std::string>(&property.value); val) {
+      return fdf::NodeProperty2{{
+          .key = property.key,
+          .value = fdf::NodePropertyValue::WithStringValue(*val),
+      }};
+    }
+    if (const auto* val = std::get_if<bool>(&property.value); val) {
+      return fdf::NodeProperty2{{
+          .key = property.key,
+          .value = fdf::NodePropertyValue::WithBoolValue(*val),
+      }};
+    }
+    if (const auto* val = std::get_if<uint32_t>(&property.value); val) {
+      return fdf::NodeProperty2{{
+          .key = property.key,
+          .value = fdf::NodePropertyValue::WithIntValue(*val),
+      }};
+    }
+    if (const auto* val = std::get_if<EnumValue>(&property.value); val) {
+      return fdf::NodeProperty2{{
+          .key = property.key,
+          .value = fdf::NodePropertyValue::WithEnumValue(val->value),
+      }};
+    }
+    return fdf::NodeProperty2{{
+        .key = property.key,
+        .value = fdf::NodePropertyValue::WithStringValue("UNKNOWN"),
+    }};
+  });
+
+  return node_properties;
+}
+
+void Node::SetNonCompositeProperties(std::span<const fdf::NodeProperty2> properties) {
+  properties_ = std::vector<PropertiesEntry>{
+      PropertiesEntry{
           .name = "default",
-          .properties = std::move(properties),
-      }},
+          .properties = ToProperty(properties),
+      },
   };
 }
 
 void Node::SetCompositeParentProperties(const fdf::NodePropertyDictionary2& parent_properties) {
-  fdf::NodePropertyDictionary2 properties = parent_properties;
+  std::vector<PropertiesEntry> properties;
+  properties.reserve(parent_properties.size() + 1);
+  std::ranges::transform(parent_properties, std::back_inserter(properties), [](const auto& entry) {
+    return PropertiesEntry{
+        .name = entry.name(),
+        .properties = ToProperty(entry.properties()),
+    };
+  });
 
   ZX_ASSERT(primary_index_ < parents_.size());
   const auto& default_node_properties = parent_properties[primary_index_].properties();
-  properties.emplace_back(fdf::NodePropertyEntry2{{
+  properties.emplace_back(PropertiesEntry{
       .name = "default",
-      .properties = default_node_properties,
-  }});
+      .properties = ToProperty(default_node_properties),
+  });
 
   properties_ = std::move(properties);
 }
@@ -856,7 +936,7 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
   // Copy the dictionary of a parent node down to the child.
   child->dictionary_ref_ = dictionary_ref_;
 
-  child->SetNonCompositeProperties(std::move(properties));
+  child->SetNonCompositeProperties(properties);
 
   if (auto& symbols = args.symbols(); symbols.has_value()) {
     auto is_valid = ValidateSymbols(symbols.value());
@@ -1167,7 +1247,7 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
   natural_offers.reserve(offers_.size());
   std::ranges::transform(offers_, std::back_inserter(natural_offers), ToFidl);
   auto offers = fidl::ToWire(arena, natural_offers);
-  auto properties = fidl::ToWire(arena, properties_);
+  auto properties = fidl::ToWire(arena, GetNodePropertyDict());
 
   if (colocate) {
     // Whether dynamic linking is enabled for a driver host is determined by the first driver in the
@@ -1445,14 +1525,26 @@ void Node::on_fidl_error(fidl::UnbindInfo info) {
   Remove(RemovalSet::kAll, nullptr);
 }
 
-std::optional<std::span<const fdf::NodeProperty2>> Node::GetNodeProperties(
+std::optional<std::vector<fdf::NodeProperty2>> Node::GetNodeProperties(
     std::string_view parent_name) const {
   for (const auto& entry : properties_) {
-    if (entry.name() == parent_name) {
-      return entry.properties();
+    if (entry.name == parent_name) {
+      return PropertyToFidl(entry.properties);
     }
   }
   return std::nullopt;
+}
+
+fdf::NodePropertyDictionary2 Node::GetNodePropertyDict() const {
+  fdf::NodePropertyDictionary2 dict;
+  dict.reserve(properties_.size());
+  std::ranges::transform(properties_, std::back_inserter(dict), [this](const auto& entry) {
+    return fdf::NodePropertyEntry2{{
+        .name = entry.name,
+        .properties = std::move(GetNodeProperties(entry.name).value()),
+    }};
+  });
+  return dict;
 }
 
 Node::DriverComponent::DriverComponent(

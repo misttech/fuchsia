@@ -190,7 +190,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   // Exposed for testing.
   // Set properties to non-composite node properties containing a clone of `properties`.
-  void SetNonCompositeProperties(std::vector<fuchsia_driver_framework::NodeProperty2> properties);
+  void SetNonCompositeProperties(
+      std::span<const fuchsia_driver_framework::NodeProperty2> properties);
 
   // Evaluates the given rematch_flags against the node. Returns true if rematch should take place,
   // false otherwise. Rematching is done based on the node type and url both matching:
@@ -263,16 +264,16 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   // Returns the node properties of the node and its parents if the node is a composite node.
   // See `properties_` property for more info.
-  const fuchsia_driver_framework::NodePropertyDictionary2& properties() const {
-    return properties_;
-  }
+  size_t properties_size() const { return properties_.size(); }
 
   // Returns the node properties of the node or the node's parent if the node is a composite node.
   // Returns std::nullopt if the node is a non-composite and `parent_name` is not "default".
   // Returns std::nullopt if the parent node cannot be found.
   // See `properties_` property for more info.
-  std::optional<std::span<const fuchsia_driver_framework::NodeProperty2>> GetNodeProperties(
+  std::optional<std::vector<fuchsia_driver_framework::NodeProperty2>> GetNodeProperties(
       std::string_view parent_name = "default") const;
+
+  fuchsia_driver_framework::NodePropertyDictionary2 GetNodePropertyDict() const;
 
   void SetDictionaryRef(std::optional<uint64_t> dictionary_ref) {
     dictionary_ref_ = dictionary_ref;
@@ -333,6 +334,21 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     zx_koid_t component_instance_koid = 0;
 
     DriverState state = DriverState::kBinding;
+  };
+
+  struct EnumValue {
+    std::string value;
+  };
+  using PropertyValue = std::variant<std::monostate, uint32_t, std::string, bool, EnumValue>;
+
+  struct Property {
+    std::string key;
+    PropertyValue value;
+  };
+
+  struct PropertiesEntry {
+    std::string name;
+    std::vector<Property> properties;
   };
 
   // fidl::WireServer<fuchsia_device::Controller>
@@ -427,6 +443,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   zx_status_t ConnectControllerInterface(fidl::ServerEnd<fuchsia_device::Controller> server_end);
   zx_status_t ConnectDeviceInterface(zx::channel channel);
 
+  static std::vector<Property> ToProperty(
+      std::span<const fuchsia_driver_framework::NodeProperty2> properties);
+  static std::vector<fuchsia_driver_framework::NodeProperty2> PropertyToFidl(
+      std::span<const Property> properties);
+
   // Set properties to composite node properties containing a clone of the node properties of
   // `parents_`.
   void SetCompositeParentProperties(
@@ -459,11 +480,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   std::vector<NodeOffer> offers_;
   std::vector<fuchsia_driver_framework::NodeSymbol> symbols_;
 
-  // Contains the properties of the node or its parents if the node is a composite or legacy
-  // composite node. "default" entry refers to the node's properties if the node is a
-  // non-composite. "default" entry refers to the primary parent node's properties if the node is a
+  // Contains the properties of the node or its parents if the node is a composite.
+  // "default" entry refers to the node's properties if the node is a non-composite.
+  // "default" entry refers to the primary parent node's properties if the node is a
   // composite.
-  fuchsia_driver_framework::NodePropertyDictionary2 properties_;
+  std::vector<PropertiesEntry> properties_;
 
   std::optional<fuchsia_driver_framework::BusInfo> bus_info_;
 
