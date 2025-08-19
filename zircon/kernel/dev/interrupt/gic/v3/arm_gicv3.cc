@@ -373,6 +373,13 @@ zx_status_t gic_get_interrupt_config(interrupt_vector_t vector, interrupt_trigge
 
 zx_status_t gic_set_affinity(interrupt_vector_t vector, cpu_mask_t mask) {
   LTRACEF("vector %u, mask %#x\n", vector, mask);
+
+  // Don't complain if we are asked to set affinity for the boot CPU, this is
+  // what we always do by default.
+  if (mask == cpu_num_to_mask(BOOT_CPU_ID)) {
+    return ZX_OK;
+  }
+
   return ZX_ERR_NOT_SUPPORTED;
 }
 
