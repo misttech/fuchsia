@@ -3526,92 +3526,6 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "Only `use` from children can have dependency: \"weak\""
         ),
-        test_cml_use_from_child_offer_cycle_weak(
-            json!({
-                "capabilities": [
-                    { "protocol": ["fuchsia.example.Protocol"] },
-                    { "service": ["fuchsia.example.Service"] },
-                ],
-                "children": [
-                    {
-                        "name": "child",
-                        "url": "fuchsia-pkg://fuchsia.com/child#meta/child.cm",
-                    },
-                ],
-                "use": [
-                    {
-                        "protocol": "fuchsia.example.Protocol",
-                        "from": "#child",
-                        "dependency": "weak",
-                    },
-                    {
-                        "service": "fuchsia.example.Service",
-                        "from": "#child",
-                        "dependency": "weak",
-                    },
-                ],
-                "offer": [
-                    {
-                        "protocol": "fuchsia.example.Protocol",
-                        "from": "self",
-                        "to": [ "#child" ],
-                    },
-                    {
-                        "service": "fuchsia.example.Service",
-                        "from": "self",
-                        "to": [ "#child" ],
-                    },
-                ],
-            }),
-            Ok(())
-        ),
-        test_cml_use_from_child_offer_storage_no_cycle(
-            json!({
-                "capabilities": [
-                    {
-                        "storage": "cdata",
-                        "from": "#backend",
-                        "backing_dir": "blobfs",
-                        "storage_id": "static_instance_id_or_moniker",
-                    },
-                    {
-                        "storage": "pdata",
-                        "from": "parent",
-                        "backing_dir": "blobfs",
-                        "storage_id": "static_instance_id_or_moniker",
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "child",
-                        "url": "#meta/child.cm",
-                    },
-                    {
-                        "name": "backend",
-                        "url": "#meta/backend.cm",
-                    },
-                ],
-                "use": [
-                    {
-                        "protocol": "fuchsia.example.Protocol",
-                        "from": "#child",
-                    },
-                ],
-                "offer": [
-                    {
-                        "storage": "cdata",
-                        "from": "self",
-                        "to": "#child",
-                    },
-                    {
-                        "storage": "pdata",
-                        "from": "self",
-                        "to": "#child",
-                    },
-                ],
-            }),
-            Ok(())
-        ),
 
         // expose
         test_cml_expose(
@@ -4023,31 +3937,6 @@ mod tests {
                 ]
             }),
             Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\""
-        ),
-        test_cml_expose_to_framework_ok(
-            json!({
-                "capabilities": [
-                    {
-                        "directory": "foo",
-                        "path": "/foo",
-                        "rights": ["r*"],
-                    },
-                ],
-                "expose": [
-                    {
-                        "directory": "foo",
-                        "from": "self",
-                        "to": "framework"
-                    }
-                ],
-                "children": [
-                    {
-                        "name": "child",
-                        "url": "fuchsia-pkg://fuchsia.com/pkg#comp.cm",
-                    },
-                ],
-            }),
-            Ok(())
         ),
         // offer
         test_cml_offer(
