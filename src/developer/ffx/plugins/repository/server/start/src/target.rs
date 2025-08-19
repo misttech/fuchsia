@@ -4,11 +4,12 @@
 
 //! Target related functions used by the repository server.
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use camino::Utf8Path;
-use ffx_command_error::{return_user_error, Result};
+use ffx_command_error::{Result, return_user_error};
+use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
-use ffx_target::knock_target;
+use ffx_target::{RcsKnocker, TargetInfoQuery};
 use ffx_target_net::TargetTcpStream;
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_pkg::RepositoryManagerMarker;
@@ -19,7 +20,7 @@ use fidl_fuchsia_pkg_rewrite::EngineMarker;
 use fuchsia_repo::manager::RepositoryManager;
 use fuchsia_repo::server::ConnectionStream;
 use futures::channel::mpsc;
-use futures::{pin_mut, select, FutureExt, SinkExt, Stream, StreamExt};
+use futures::{FutureExt, SinkExt, Stream, StreamExt, pin_mut, select};
 use pkg::repo;
 use std::collections::BTreeSet;
 use std::io::Write;
@@ -27,7 +28,7 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{RemoteControlProxyHolder, TargetProxyHolder};
+use target_holders::RemoteControlProxyHolder;
 use timeout::timeout;
 
 const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
@@ -106,13 +107,15 @@ async fn connect_to_target(
 }
 
 async fn inner_connect_loop(
+    ctx: &EnvironmentContext,
     cmd: &StartCommand,
     repo_path: &Utf8Path,
     server_addr: core::net::SocketAddr,
     connect_timeout: Duration,
     repo_manager: &Arc<RepositoryManager>,
+    target_spec: &TargetInfoQuery,
     rcs_proxy: &Connector<RemoteControlProxyHolder>,
-    target_proxy: &Connector<TargetProxyHolder>,
+    knocker: &impl RcsKnocker,
     host_address: Option<String>,
     writer: &mut impl Write,
     tunnel_addr: core::net::SocketAddr,
@@ -143,29 +146,6 @@ async fn inner_connect_loop(
             fho::return_user_error!("Timeout connecting to rcs: {}", e);
         }
     };
-    let mut target_spec_from_target_proxy: Option<String> = None;
-    let target_proxy = target_proxy
-        .try_connect(|target, _err| {
-            log::info!(
-                "Target proxy: Waiting for target '{}' to return",
-                match target {
-                    Some(s) => s,
-                    _ => "None",
-                }
-            );
-            target_spec_from_target_proxy = target.clone();
-            Ok(())
-        })
-        .await?;
-
-    // This catches an edge case where the environment is not populated consistently.
-    if target_spec_from_rcs_proxy != target_spec_from_target_proxy {
-        fho::return_user_error!(
-            "RCS and target proxies do not match: '{:?}', '{:?}'",
-            target_spec_from_rcs_proxy,
-            target_spec_from_target_proxy,
-        );
-    }
 
     let connection = connect_to_target(
         target_spec_from_rcs_proxy.clone(),
@@ -196,29 +176,36 @@ async fn inner_connect_loop(
             }
             log::info!("{}", s);
 
-            let mut timer_knock = pin!(async {
-                loop {
-                    fuchsia_async::Timer::new(std::time::Duration::from_secs(10)).await;
-                    match knock_target(&target_proxy).await {
-                        Ok(()) => {
-                            // Nothing to do, continue checking connection
-                        }
-                        Err(e) => {
-                            let s = format!("Connection to target lost, retrying. Error: {}", e);
-                            if let Err(e) = writeln!(writer, "{}", s) {
-                                log::error!("Failed to write to output: {:?}", e);
+            let mut timer_knock = pin!(
+                async {
+                    loop {
+                        fuchsia_async::Timer::new(std::time::Duration::from_secs(10)).await;
+                        match knocker.knock_rcs(target_spec, ctx).await {
+                            Ok(()) => {
+                                // Nothing to do, continue checking connection
                             }
-                            log::warn!("{}", s);
-                            break;
+                            Err(e) => {
+                                let s =
+                                    format!("Connection to target lost, retrying. Error: {}", e);
+                                if let Err(e) = writeln!(writer, "{}", s) {
+                                    log::error!("Failed to write to output: {:?}", e);
+                                }
+                                log::warn!("{}", s);
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            .fuse());
-            let mut proxy_drive = pin!(proxy_stream
-                .map(|t| Ok(t.map(ConnectionStream::TargetTcp)))
-                .forward(connection_sink.sink_map_err(|e| anyhow!("connection sink error: {e:?}")),)
-                .fuse());
+                .fuse()
+            );
+            let mut proxy_drive = pin!(
+                proxy_stream
+                    .map(|t| Ok(t.map(ConnectionStream::TargetTcp)))
+                    .forward(
+                        connection_sink.sink_map_err(|e| anyhow!("connection sink error: {e:?}")),
+                    )
+                    .fuse()
+            );
             select! {
                 () = timer_knock => {},
                 r = proxy_drive => {
@@ -234,14 +221,16 @@ async fn inner_connect_loop(
 }
 
 pub(crate) async fn main_connect_loop(
+    ctx: &EnvironmentContext,
     cmd: &StartCommand,
     repo_path: &Utf8Path,
     server_addr: core::net::SocketAddr,
     connect_timeout: Duration,
     repo_manager: Arc<RepositoryManager>,
     mut loop_stop_rx: futures::channel::mpsc::Receiver<()>,
+    target_spec: &TargetInfoQuery,
     rcs_proxy: Connector<RemoteControlProxyHolder>,
-    target_proxy: Connector<TargetProxyHolder>,
+    knocker: impl RcsKnocker,
     host_address: Option<String>,
     writer: &mut (impl Write + 'static),
     tunnel_addr: core::net::SocketAddr,
@@ -268,13 +257,15 @@ pub(crate) async fn main_connect_loop(
         .fuse();
 
         let connect = inner_connect_loop(
+            ctx,
             cmd,
             repo_path,
             server_addr,
             connect_timeout,
             &repo_manager,
+            target_spec,
             &rcs_proxy,
-            &target_proxy,
+            &knocker,
             host_address.clone(),
             writer,
             tunnel_addr,

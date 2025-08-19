@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::server_impl::{get_repo_base_name, serve_impl};
 use crate::ServerStartTool;
-use ffx_command_error::{bug, user_error, Result};
+use crate::server_impl::{get_repo_base_name, serve_impl};
+use ffx_command_error::{Result, bug, user_error};
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
 use fho::{Deferred, FfxMain};
@@ -13,7 +13,7 @@ use pkg::{PkgServerInstanceInfo, PkgServerInstances, ServerMode};
 use std::net::SocketAddr;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetProxyHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
 
 pub(crate) fn to_argv(cmd: &StartCommand) -> Vec<String> {
     let mut argv: Vec<String> = vec![];
@@ -69,21 +69,21 @@ pub(crate) fn to_argv(cmd: &StartCommand) -> Vec<String> {
 pub async fn run_foreground_server(
     start_cmd: StartCommand,
     context: EnvironmentContext,
-    target_proxy_connector: Connector<TargetProxyHolder>,
+    target_spec: Deferred<TargetInfoQueryHolder>,
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     host_addr: Deferred<HostAddrHolder>,
     w: <ServerStartTool as FfxMain>::Writer,
     mode: ServerMode,
 ) -> Result<()> {
-    serve_impl(
-        target_proxy_connector,
+    Box::pin(serve_impl(
+        target_spec,
         rcs_proxy_connector,
         host_addr,
         start_cmd,
         context,
         w.simple_writer(),
         mode,
-    )
+    ))
     .await
 }
 

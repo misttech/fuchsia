@@ -7,16 +7,16 @@ use daemonize::daemonize;
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{bug, user_error, Deferred, FfxMain, FfxTool, Result};
-use pkg::config::DEFAULT_REPO_NAME;
+use fho::{Deferred, FfxMain, FfxTool, Result, bug, user_error};
 use pkg::ServerMode;
+use pkg::config::DEFAULT_REPO_NAME;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::io::Write as _;
 use std::net::SocketAddr;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetProxyHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
 
 mod server;
 mod server_impl;
@@ -47,7 +47,7 @@ pub struct ServerStartTool {
     #[command]
     pub cmd: StartCommand,
     pub context: EnvironmentContext,
-    pub target_proxy_connector: Connector<TargetProxyHolder>,
+    pub target_spec: Deferred<TargetInfoQueryHolder>,
     pub rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     pub host_address: Deferred<HostAddrHolder>,
 }
@@ -72,7 +72,7 @@ impl FfxMain for ServerStartTool {
                     return Box::pin(server::run_foreground_server(
                         self.cmd,
                         self.context,
-                        self.target_proxy_connector,
+                        self.target_spec,
                         self.rcs_proxy_connector,
                         self.host_address,
                         writer,

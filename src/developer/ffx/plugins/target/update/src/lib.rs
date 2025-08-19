@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_update_args::ForceInstall;
 use ffx_writer::SimpleWriter;
-use fho::{bug, deferred, return_user_error, Deferred, FfxContext, FfxMain, FfxTool, Result};
+use fho::{Deferred, FfxContext, FfxMain, FfxTool, Result, bug, deferred, return_user_error};
 use fidl::Signals;
 use fidl_fuchsia_update::{
     CheckOptions, CommitStatusProviderProxy, Initiator, ManagerProxy, MonitorMarker,
@@ -17,11 +17,11 @@ use fidl_fuchsia_update_ext::State;
 use fidl_fuchsia_update_installer::{self as finstaller, InstallerProxy};
 use fuchsia_async::Timer;
 use futures::future::{FusedFuture as _, FutureExt as _};
-use futures::{pin_mut, select, TryStreamExt};
+use futures::{TryStreamExt, pin_mut, select};
 use std::path::PathBuf;
 use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{moniker, HostAddrHolder, RemoteControlProxyHolder, TargetProxyHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder, moniker};
 use {ffx_update_args as args, fidl_fuchsia_update_installer_ext as installer};
 
 mod server;
@@ -41,7 +41,7 @@ pub struct UpdateTool {
     installer_proxy: Deferred<InstallerProxy>,
     #[with(moniker("/core/system-update"))]
     commit_status_provider_proxy: CommitStatusProviderProxy,
-    target_proxy_connector: Connector<TargetProxyHolder>,
+    target_spec: Deferred<TargetInfoQueryHolder>,
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     host_address: Deferred<HostAddrHolder>,
 }
@@ -92,7 +92,7 @@ impl UpdateTool {
                 Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context.clone())?;
             let repo_port: u16 = cmd.product_bundle_port()?.try_into().unwrap();
             server::package_server_task(
-                self.target_proxy_connector.clone(),
+                self.target_spec,
                 self.rcs_proxy_connector.clone(),
                 self.host_address,
                 self.context.clone(),
@@ -203,7 +203,7 @@ impl UpdateTool {
 
             let repo_port: u16 = cmd.product_bundle_port()?.try_into().unwrap();
             server::package_server_task(
-                self.target_proxy_connector.clone(),
+                self.target_spec,
                 self.rcs_proxy_connector.clone(),
                 self.host_address,
                 self.context.clone(),
@@ -602,8 +602,8 @@ async fn handle_wait_for_commit(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use ffx_target::TargetInfoQuery;
     use ffx_target::fho::FhoConnectionBehavior;
-    use ffx_target::TargetProxy;
     use ffx_update_args::Update;
     use ffx_writer::TestBuffers;
     use fho::{FhoEnvironment, TryFromEnv};
@@ -615,7 +615,7 @@ mod tests {
     use futures::prelude::*;
     use mock_installer::MockUpdateInstallerService;
     use std::sync::Arc;
-    use target_holders::{fake_async_proxy, fake_proxy, FakeInjector};
+    use target_holders::{FakeInjector, fake_async_proxy, fake_proxy};
 
     async fn perform_channel_control_test<V, O>(
         argument: args::channel::Command,
@@ -732,8 +732,6 @@ mod tests {
             fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
         let fake_commit_status_provider_proxy =
             fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
-        let fake_target_proxy: TargetProxy =
-            fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
         let fake_rcs_proxy: RemoteControlProxy =
             fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
         let fake_update_manager_proxy = fake_proxy(move |req| {
@@ -749,10 +747,6 @@ mod tests {
             remote_factory_closure: Box::new(move || {
                 let value = fake_rcs_proxy.clone();
                 Box::pin(async move { Ok(value) })
-            }),
-            target_factory_closure: Box::new(move || {
-                let value = fake_target_proxy.clone();
-                Box::pin(async { Ok(value) })
             }),
             ..Default::default()
         };
@@ -778,9 +772,9 @@ mod tests {
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: fake_installer_proxy,
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            target_proxy_connector: Connector::try_from_env(&fho_env)
-                .await
-                .expect("Could not make target proxy test connector"),
+            target_spec: Deferred::from_output(Ok(TargetInfoQueryHolder::from(
+                TargetInfoQuery::from("1.1.1.1".to_string()),
+            ))),
             rcs_proxy_connector: Connector::try_from_env(&fho_env)
                 .await
                 .expect("Could not make RCS test connector"),
@@ -836,8 +830,6 @@ mod tests {
             fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
         let fake_commit_status_provider_proxy =
             fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
-        let fake_target_proxy: TargetProxy =
-            fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
         let fake_rcs_proxy: RemoteControlProxy =
             fake_proxy(move |req| panic!("Unexpected request: {:?}", req));
 
@@ -845,10 +837,6 @@ mod tests {
             remote_factory_closure: Box::new(move || {
                 let value = fake_rcs_proxy.clone();
                 Box::pin(async move { Ok(value) })
-            }),
-            target_factory_closure: Box::new(move || {
-                let value = fake_target_proxy.clone();
-                Box::pin(async { Ok(value) })
             }),
             ..Default::default()
         };
@@ -866,9 +854,9 @@ mod tests {
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            target_proxy_connector: Connector::try_from_env(&fho_env)
-                .await
-                .expect("Could not make target proxy test connector"),
+            target_spec: Deferred::from_output(Ok(TargetInfoQueryHolder::from(
+                TargetInfoQuery::from("1.1.1.1".to_string()),
+            ))),
             rcs_proxy_connector: Connector::try_from_env(&fho_env)
                 .await
                 .expect("Could not make RCS test connector"),
@@ -882,14 +870,17 @@ mod tests {
         let (stdout, stderr) = buffers.into_strings();
 
         assert_eq!(stderr, "");
-        assert_eq!(stdout, "Installing an update.\n\
+        assert_eq!(
+            stdout,
+            "Installing an update.\n\
         Progress reporting is based on the fraction of packages resolved, so if one package is much\n\
         larger than the others, then the reported progress could appear to stall near the end.\n\
         Until the update process is improved to have more granular reporting, try using\
         \n    ffx inspect show 'core/pkg-resolver'\n\
             for more detail on the progress of update-related downloads.\n\n\n\
             Starting install\n0.0 0/? Preparing\n0.0 0/1000 Fetching\n\
-            50.0 500/1000 Staging\n100.0 1000/1000 Waiting to Reboot\n\n");
+            50.0 500/1000 Staging\n100.0 1000/1000 Waiting to Reboot\n\n"
+        );
     }
 
     struct TestCommitObserver {

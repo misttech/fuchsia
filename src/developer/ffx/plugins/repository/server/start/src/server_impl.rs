@@ -3,14 +3,15 @@
 // found in the LICENSE file.
 
 use crate::target;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use camino::{Utf8Path, Utf8PathBuf};
 use errors::FfxError;
-use ffx_command_error::{bug, return_bug, return_user_error, Result};
-use ffx_config::environment::EnvironmentKind;
+use ffx_command_error::{Result, bug, return_bug, return_user_error};
 use ffx_config::EnvironmentContext;
-use ffx_repository_server_start_args::{default_address, default_tunnel_addr, StartCommand};
+use ffx_config::environment::EnvironmentKind;
+use ffx_repository_server_start_args::{StartCommand, default_address, default_tunnel_addr};
 use ffx_ssh::parse::HostAddr;
+use ffx_target::LocalRcsKnockerImpl;
 use fho::Deferred;
 use fuchsia_async as fasync;
 use fuchsia_repo::manager::RepositoryManager;
@@ -19,10 +20,10 @@ use fuchsia_repo::repository::{PmRepository, RepoProvider};
 use fuchsia_repo::server::RepositoryServer;
 use futures::executor::block_on;
 use futures::{SinkExt, StreamExt};
-use package_tool::{cmd_repo_publish, RepoPublishCommand};
+use package_tool::{RepoPublishCommand, cmd_repo_publish};
 use pkg::config::DEFAULT_REPO_NAME;
 use pkg::{
-    write_instance_info, PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances, ServerMode,
+    PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances, ServerMode, write_instance_info,
 };
 use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
@@ -32,7 +33,7 @@ use std::io::Write;
 use std::sync::Arc;
 use target_connector::Connector;
 use target_errors::FfxTargetError;
-use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetProxyHolder};
+use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
 use tuf::metadata::RawSignedMetadata;
 
 const REPO_CONNECT_TIMEOUT_CONFIG: &str = "repository.connect_timeout_secs";
@@ -144,8 +145,8 @@ pub async fn serve_impl_validate_args(
         let res = rcs_proxy_connector
             .try_connect(|target, err| {
                 log::info!(
-            "Validating RCS proxy: Waiting for target '{target:?}' to return error: {err:?}"
-        );
+                    "Validating RCS proxy: Waiting for target '{target:?}' to return error: {err:?}"
+                );
                 if target.is_none() {
                     return Err(Into::<errors::FfxError>::into(FfxTargetError::OpenTargetError {
                         err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
@@ -182,7 +183,9 @@ pub async fn serve_impl_validate_args(
                         _ => (),
                     };
                 } else {
-                    log::warn!("Expected error to be downcasted to FfxError but wasn't. Maybe the Error structure changed? {e:?}");
+                    log::warn!(
+                        "Expected error to be downcasted to FfxError but wasn't. Maybe the Error structure changed? {e:?}"
+                    );
                 }
             }
             _ => (),
@@ -213,7 +216,9 @@ pub async fn serve_impl_validate_args(
                     pb_repo_name_paths
                         .push((format!("{repo_base_name}.{first_alias}"), product_bundle.clone()));
                 } else {
-                    return_bug!("Invalid repository configuration in the product bundle {product_bundle}. No aliases defined for a repository");
+                    return_bug!(
+                        "Invalid repository configuration in the product bundle {product_bundle}. No aliases defined for a repository"
+                    );
                 }
             }
             pb_repo_name_paths
@@ -273,19 +278,25 @@ pub async fn serve_impl_validate_args(
             // which is the path to the product bundle
             if let Some(pb_path) = &cmd.product_bundle {
                 if *pb_path != duplicate.repo_path_display() {
-                    return_user_error!("Repository address conflict. \
+                    return_user_error!(
+                        "Repository address conflict. \
                 Cannot start a server named {repo_name} serving {repo_path:?}. \
                 Repository server  \"{}\" is already running on {addr} serving a different path: {}\n\
                 Use `ffx  repository server list` to list running servers",
-                 duplicate.name, duplicate.repo_path_display());
+                        duplicate.name,
+                        duplicate.repo_path_display()
+                    );
                 }
             } else {
                 if repo_name != duplicate.name {
-                    return_user_error!("Repository address conflict. \
+                    return_user_error!(
+                        "Repository address conflict. \
                 Cannot start a server named {repo_name} serving {repo_path:?}. \
                 Repository server  \"{}\" is already running on {addr} serving a different path: {}\n\
                 Use `ffx  repository server list` to list running servers",
-                 duplicate.name, duplicate.repo_path_display());
+                        duplicate.name,
+                        duplicate.repo_path_display()
+                    );
                 }
             }
             if already_running_instance.is_none() {
@@ -296,14 +307,14 @@ pub async fn serve_impl_validate_args(
         if let Some(duplicate) = duplicate {
             if addr != duplicate.address {
                 return_user_error!(
-                "Repository name conflict. \
+                    "Repository name conflict. \
             Cannot start a server named {repo_name} serving {repo_path:?}. \
             Repository server  \"{dupe_name}\" is already running on {dupe_addr} serving a different path: {dupe_path}\n\
             Use `ffx  repository server list` to list running servers",
-                dupe_name=duplicate.name,
-                dupe_addr=duplicate.address,
-                dupe_path=duplicate.repo_path_display()
-            );
+                    dupe_name = duplicate.name,
+                    dupe_addr = duplicate.address,
+                    dupe_path = duplicate.repo_path_display()
+                );
             }
             if already_running_instance.is_none() {
                 already_running_instance = Some(duplicate.clone());
@@ -314,7 +325,7 @@ pub async fn serve_impl_validate_args(
 }
 
 pub async fn serve_impl<W: Write + 'static>(
-    target_proxy: Connector<TargetProxyHolder>,
+    target_spec: Deferred<TargetInfoQueryHolder>,
     rcs_proxy: Connector<RemoteControlProxyHolder>,
     host_address: Deferred<HostAddrHolder>,
     cmd: StartCommand,
@@ -515,15 +526,19 @@ pub async fn serve_impl<W: Write + 'static>(
         let tunnel_addr = cmd.tunnel_addr.clone().unwrap_or_else(|| default_tunnel_addr());
         let host_address: Option<HostAddr> = host_address.await?.into();
         let host_address = host_address.map(|t| t.0);
+        let knocker = LocalRcsKnockerImpl {};
+        let target_spec = target_spec.await?;
         let r = target::main_connect_loop(
+            &context,
             &cmd,
             &repo_path,
             server_addr,
             connect_timeout,
             repo_manager,
             loop_stop_rx,
+            &target_spec,
             rcs_proxy,
-            target_proxy,
+            knocker,
             host_address,
             &mut writer,
             tunnel_addr,
@@ -549,13 +564,14 @@ mod test {
     use super::*;
     use crate::ServerStartTool;
     use assert_matches::assert_matches;
+    use discovery::query::TargetInfoQuery;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_config::{ConfigLevel, TestEnv};
-    use ffx_target::fho::{target_interface, FhoConnectionBehavior};
     use ffx_target::TargetProxy;
+    use ffx_target::fho::{FhoConnectionBehavior, target_interface};
     use ffx_target_net_testutil::FakeNetstack;
     use ffx_writer::{Format, SimpleWriter, TestBuffer, TestBuffers};
-    use fho::{user_error, FfxMain, FhoEnvironment, TryFromEnv};
+    use fho::{FfxMain, FhoEnvironment, TryFromEnv, user_error};
     use fidl::endpoints::DiscoverableProtocolMarker;
     use fidl_fuchsia_developer_ffx::{
         RemoteControlState, SshHostAddrInfo, TargetAddrInfo, TargetInfo, TargetIpAddrInfo,
@@ -580,13 +596,13 @@ mod test {
     use fuchsia_repo::repo_keys::RepoKeys;
     use fuchsia_repo::repository::HttpRepository;
     use fuchsia_repo::test_utils;
-    use futures::channel::mpsc;
     use futures::TryStreamExt;
+    use futures::channel::mpsc;
     use std::collections::BTreeSet;
     use std::sync::Mutex;
     use std::time;
     use target_connector::Connector;
-    use target_holders::{fake_proxy, FakeInjector};
+    use target_holders::{FakeInjector, fake_proxy};
     use test_case::test_case;
     use timeout::timeout;
     use tuf::crypto::Ed25519PrivateKey;
@@ -1321,82 +1337,92 @@ mod test {
 
         let test_cases: Vec<(StartCommand, Result<Option<PkgServerInfo>>)> = vec![
             (
-         StartCommand {
-            repository: Some("another-name".into()),
-            trusted_root: None,
-            address: Some((REPO_LOCALHOST_IPV4_ADDR, REPO_PORT).into()),
-            repo_path: Some(Utf8PathBuf::from_path_buf(repo_path.clone()).expect("utf8 repo_path")),
-            product_bundle: None,
-            alias: vec![],
-            storage_type: None,
-            alias_conflict_mode: RepositoryRegistrationAliasConflictMode::ErrorOut,
-            port_path: None,
-            tunnel_addr: None,
-            no_device: false,
-            refresh_metadata: false,
-            auto_publish: None,
-            background: false,
-            foreground: true,
-            disconnected: false,
-        },
-            Err(user_error!("Repository address conflict. \
+                StartCommand {
+                    repository: Some("another-name".into()),
+                    trusted_root: None,
+                    address: Some((REPO_LOCALHOST_IPV4_ADDR, REPO_PORT).into()),
+                    repo_path: Some(
+                        Utf8PathBuf::from_path_buf(repo_path.clone()).expect("utf8 repo_path"),
+                    ),
+                    product_bundle: None,
+                    alias: vec![],
+                    storage_type: None,
+                    alias_conflict_mode: RepositoryRegistrationAliasConflictMode::ErrorOut,
+                    port_path: None,
+                    tunnel_addr: None,
+                    no_device: false,
+                    refresh_metadata: false,
+                    auto_publish: None,
+                    background: false,
+                    foreground: true,
+                    disconnected: false,
+                },
+                Err(user_error!(
+                    "Repository address conflict. \
             Cannot start a server named another-name serving {repo_path:?}. \
             Repository server  \"{name}\" is already running on {addr} serving a different path: {dupe_path}\n\
             Use `ffx  repository server list` to list running servers",
-             addr=server_info.address, name=server_info.name, dupe_path=server_info.repo_path_display()))
-    ),
-    (
-        StartCommand {
-           repository: Some(instance_name.into()),
-           trusted_root: None,
-           address: Some((REPO_LOCALHOST_IPV4_ADDR, REPO_PORT).into()),
-           repo_path: Some(Utf8PathBuf::from_path_buf(repo_path.clone()).expect("utf8 repo_path")),
-           product_bundle: None,
-           alias: vec![],
-           storage_type: None,
-           alias_conflict_mode: RepositoryRegistrationAliasConflictMode::ErrorOut,
-           port_path: None,
-           tunnel_addr: None,
-           no_device: false,
-           refresh_metadata: false,
-           auto_publish: None,
-           background: false,
-           foreground: true,
-           disconnected: false,
-       },
-           Ok(Some(server_info.clone()))
-   ),
-   (
-    StartCommand {
-       repository: Some(instance_name.into()),
-       trusted_root: None,
-       address: Some((REPO_LOCALHOST_IPV4_ADDR, 8888).into()),
-       repo_path: Some(Utf8PathBuf::from_path_buf(repo_path.clone()).expect("utf8 repo_path")),
-       product_bundle: None,
-       alias: vec![],
-       storage_type: None,
-       alias_conflict_mode: RepositoryRegistrationAliasConflictMode::ErrorOut,
-       port_path: None,
-       tunnel_addr: None,
-       no_device: false,
-       refresh_metadata: false,
-       auto_publish: None,
-       background: false,
-       foreground: true,
-       disconnected: false,
-   },
-       Err(user_error!(
-        "Repository name conflict. \
+                    addr = server_info.address,
+                    name = server_info.name,
+                    dupe_path = server_info.repo_path_display()
+                )),
+            ),
+            (
+                StartCommand {
+                    repository: Some(instance_name.into()),
+                    trusted_root: None,
+                    address: Some((REPO_LOCALHOST_IPV4_ADDR, REPO_PORT).into()),
+                    repo_path: Some(
+                        Utf8PathBuf::from_path_buf(repo_path.clone()).expect("utf8 repo_path"),
+                    ),
+                    product_bundle: None,
+                    alias: vec![],
+                    storage_type: None,
+                    alias_conflict_mode: RepositoryRegistrationAliasConflictMode::ErrorOut,
+                    port_path: None,
+                    tunnel_addr: None,
+                    no_device: false,
+                    refresh_metadata: false,
+                    auto_publish: None,
+                    background: false,
+                    foreground: true,
+                    disconnected: false,
+                },
+                Ok(Some(server_info.clone())),
+            ),
+            (
+                StartCommand {
+                    repository: Some(instance_name.into()),
+                    trusted_root: None,
+                    address: Some((REPO_LOCALHOST_IPV4_ADDR, 8888).into()),
+                    repo_path: Some(
+                        Utf8PathBuf::from_path_buf(repo_path.clone()).expect("utf8 repo_path"),
+                    ),
+                    product_bundle: None,
+                    alias: vec![],
+                    storage_type: None,
+                    alias_conflict_mode: RepositoryRegistrationAliasConflictMode::ErrorOut,
+                    port_path: None,
+                    tunnel_addr: None,
+                    no_device: false,
+                    refresh_metadata: false,
+                    auto_publish: None,
+                    background: false,
+                    foreground: true,
+                    disconnected: false,
+                },
+                Err(user_error!(
+                    "Repository name conflict. \
     Cannot start a server named {name} serving {repo_path:?}. \
     Repository server  \"{dupe_name}\" is already running on {addr} serving a different path: {dupe_path}\n\
     Use `ffx  repository server list` to list running servers",
-        name=instance_name,
-        dupe_name=instance_name,
-        addr=server_info.address,
-        dupe_path=server_info.repo_path_display()
-       ))
-   )
-    ];
+                    name = instance_name,
+                    dupe_name = instance_name,
+                    addr = server_info.address,
+                    dupe_path = server_info.repo_path_display()
+                )),
+            ),
+        ];
 
         let rcs_proxy_connector = make_fake_rcs_proxy_connector(&env).await;
 
@@ -1593,13 +1619,13 @@ mod test {
                 disconnected: false,
             },
             context: env.environment_context().clone(),
-            target_proxy_connector: Connector::try_from_env(&env)
-                .await
-                .expect("Could not make target proxy test connector"),
             rcs_proxy_connector: Connector::try_from_env(&env)
                 .await
                 .expect("Could not make RCS test connector"),
             host_address: Deferred::from_output(Ok(HostAddrHolder::from("1.2.3.4".to_string()))),
+            target_spec: Deferred::from_output(Ok(TargetInfoQueryHolder::from(
+                TargetInfoQuery::from("".to_string()),
+            ))),
         };
 
         let buffers = TestBuffers::default();
@@ -1698,7 +1724,6 @@ mod test {
         let (fake_engine, mut fake_engine_rx) = FakeEngine::new();
         // Create a target where the second and third knock requests are not answered, triggering the reconnect
         // loops in both the repository serve plugin and the Connect<TargetProxy>.
-        let (_, fake_target_proxy, _fake_target_rx) = FakeTarget::new(Some(vec![2, 3]));
 
         let frc = fake_repo.clone();
         let fec = fake_engine.clone();
@@ -1710,10 +1735,6 @@ mod test {
                 let fake_engine = fec.clone();
                 let fake_netstack = fake_netstack.clone();
                 Box::pin(async move { Ok(FakeRcs::new(fake_repo, fake_engine, fake_netstack)) })
-            }),
-            target_factory_closure: Box::new(move || {
-                let fake_target_proxy = fake_target_proxy.clone();
-                Box::pin(async { Ok(fake_target_proxy) })
             }),
             ..Default::default()
         };
@@ -1744,10 +1765,10 @@ mod test {
             let tmp_repo_path = Utf8Path::from_path(tmp_repo.path()).unwrap();
             test_utils::make_empty_pm_repo_dir(tmp_repo_path);
 
-            serve_impl(
-                Connector::try_from_env(&env)
-                    .await
-                    .expect("Could not make target proxy test connector"),
+            Box::pin(serve_impl(
+                Deferred::from_output(Ok(TargetInfoQueryHolder::from(TargetInfoQuery::from(
+                    "".to_string(),
+                )))),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
                 Deferred::from_output(Ok(HostAddrHolder::from("1.2.3.4".to_string()))),
                 StartCommand {
@@ -1771,7 +1792,7 @@ mod test {
                 env.environment_context().clone(),
                 writer,
                 ServerMode::Foreground,
-            )
+            ))
             .await
             .unwrap()
         });
@@ -1913,11 +1934,10 @@ mod test {
             let tmp_repo = tempfile::tempdir().unwrap();
             let tmp_repo_path = Utf8Path::from_path(tmp_repo.path()).unwrap();
             test_utils::make_empty_pm_repo_dir(tmp_repo_path);
-
-            serve_impl(
-                Connector::try_from_env(&env)
-                    .await
-                    .expect("Could not make target proxy test connector"),
+            Box::pin(serve_impl(
+                Deferred::from_output(Ok(TargetInfoQueryHolder::from(TargetInfoQuery::from(
+                    "".to_string(),
+                )))),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
                 Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
                 StartCommand {
@@ -1941,7 +1961,7 @@ mod test {
                 env.environment_context().clone(),
                 writer,
                 ServerMode::Foreground,
-            )
+            ))
             .await
             .unwrap()
         });
@@ -2090,10 +2110,10 @@ mod test {
 
         // Run main in background
         let _task = fasync::Task::local(async move {
-            serve_impl(
-                Connector::try_from_env(&env)
-                    .await
-                    .expect("Could not make target proxy test connector"),
+            Box::pin(serve_impl(
+                Deferred::from_output(Ok(TargetInfoQueryHolder::from(TargetInfoQuery::from(
+                    "".to_string(),
+                )))),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
                 Deferred::from_output(Ok(HostAddrHolder::from("1.2.3.4".to_string()))),
                 StartCommand {
@@ -2117,7 +2137,7 @@ mod test {
                 test_env.context.clone(),
                 writer,
                 ServerMode::Foreground,
-            )
+            ))
             .await
             .unwrap()
         });
@@ -2306,17 +2326,17 @@ mod test {
         // Serving the repo should error out since it does not find root.json and
         // and can't initialize root of trust 1.root.json.
         assert_eq!(
-            serve_impl(
-                Connector::try_from_env(&env)
-                    .await
-                    .expect("Could not make target proxy test connector"),
+            Box::pin(serve_impl(
+                Deferred::from_output(Ok(TargetInfoQueryHolder::from(TargetInfoQuery::from(
+                    "127.0.1.1".to_string()
+                )))),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
                 Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
                 serve_cmd_without_root,
                 test_env.context.clone(),
                 SimpleWriter::new(),
                 ServerMode::Foreground
-            )
+            ))
             .await
             .is_err(),
             true
@@ -2327,17 +2347,17 @@ mod test {
 
         // Run main in background
         let _task = fasync::Task::local(async move {
-            serve_impl(
-                Connector::try_from_env(&env)
-                    .await
-                    .expect("Could not make target proxy test connector"),
+            Box::pin(serve_impl(
+                Deferred::from_output(Ok(TargetInfoQueryHolder::from(TargetInfoQuery::from(
+                    "127.0.1.1".to_string(),
+                )))),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
                 Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
                 serve_cmd_with_root,
                 test_env.context.clone(),
                 writer,
                 ServerMode::Foreground,
-            )
+            ))
             .await
             .unwrap()
         });

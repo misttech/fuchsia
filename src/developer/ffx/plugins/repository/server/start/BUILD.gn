@@ -67,6 +67,7 @@ ffx_plugin("ffx_repository_server_start") {
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
     "//src/developer/ffx/config:lib",
+    "//src/developer/ffx/lib/discovery:lib",
     "//src/developer/ffx/lib/pkg:empty-repo-keys",
     "//src/developer/ffx/lib/pkg:empty-repo-metadata",
     "//src/developer/ffx/lib/target:lib",
