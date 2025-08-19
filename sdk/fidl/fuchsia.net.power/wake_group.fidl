@@ -22,11 +22,11 @@ closed protocol WakeGroup {
     /// with this wake group.
     ///
     /// Note that the client is required to "arm" this hanging get by calling
-    /// `Suspending` in order to ensure a response. Once the `WaitForData` call
-    /// has returned, the next call to the method will hang until `Suspending`
-    /// has been called again *and* new data has arrived. In other words,
-    /// `Suspending` re-arms the hanging get and should be called when a
-    /// response is required in order to be woken up.
+    /// `Arm` in order to ensure a response. Once the `WaitForData` call has
+    /// returned, the next call to the method will hang until `Arm` has been
+    /// called again *and* new data has arrived. In other words, `Arm` re-arms
+    /// the hanging get and should be called when a response is required in
+    /// order to be woken up.
     ///
     /// If the caller is responsible for keeping the system awake while handling
     /// the incoming data, the netstack will delegate (baton-pass) a lease to
@@ -55,7 +55,7 @@ closed protocol WakeGroup {
     /// pending `WaitForData` call.
     ///
     /// In other words, calling this method "re-arms" the hanging get.
-    strict Suspending() -> ();
+    strict Arm() -> ();
 };
 
 const MAX_NAME_LEN uint8 = 255;
