@@ -256,7 +256,8 @@ type NodeAttributes2 = struct {
     };
 };
 
-// TODO(https://fxbug.dev/42056856): Use a generated constant.
+// Legacy protocol identifier. Use generated discoverable protocol name instead.
+@available(removed=NEXT)
 const NODE_PROTOCOL_NAME string = "fuchsia.io/Node";
 
 /// The fields of 'attributes' which are used to update the Node are indicated

@@ -72,10 +72,10 @@ void NodeConnection::Close(CloseCompleter::Sync& completer) {
 }
 
 void NodeConnection::Query(QueryCompleter::Sync& completer) {
-  std::string_view protocol = fio::kNodeProtocolName;
+  const std::string_view kProtocolName = fidl::DiscoverableProtocolName<fio::Node>;
   // TODO(https://fxbug.dev/42052765): avoid the const cast.
-  uint8_t* data = reinterpret_cast<uint8_t*>(const_cast<char*>(protocol.data()));
-  completer.Reply(fidl::VectorView<uint8_t>::FromExternal(data, protocol.size()));
+  uint8_t* data = reinterpret_cast<uint8_t*>(const_cast<char*>(kProtocolName.data()));
+  completer.Reply(fidl::VectorView<uint8_t>::FromExternal(data, kProtocolName.size()));
 }
 
 void NodeConnection::Sync(SyncCompleter::Sync& completer) {

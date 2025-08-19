@@ -12,7 +12,8 @@ type DirectoryInfo = table {
     1: attributes NodeAttributes2;
 };
 
-// TODO(https://fxbug.dev/42056856): Use a generated constant.
+// Legacy protocol identifier. Use generated discoverable protocol name instead.
+@available(removed=NEXT)
 const DIRECTORY_PROTOCOL_NAME string = "fuchsia.io/Directory";
 
 /// Flags used to specify how a node should be opened. Note that ranges of bits are reserved

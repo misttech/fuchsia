@@ -64,7 +64,8 @@ type FileInfo = resource table {
     4: attributes NodeAttributes2;
 };
 
-// TODO(https://fxbug.dev/42056856): Use a generated constant.
+// Legacy protocol identifier. Use generated discoverable protocol name instead.
+@available(removed=NEXT)
 const FILE_PROTOCOL_NAME string = "fuchsia.io/File";
 
 /// A [`Node`] which contains a sequence of bytes of definite length.

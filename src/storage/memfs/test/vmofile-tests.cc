@@ -141,7 +141,7 @@ TEST(VmofileTests, ReadOnly) {
     const fidl::WireResponse response = result.value();
     const std::span data = response.protocol.get();
     const std::string_view protocol{reinterpret_cast<const char*>(data.data()), data.size_bytes()};
-    ASSERT_EQ(protocol, fio::wire::kFileProtocolName);
+    ASSERT_EQ(protocol, std::string_view{fidl::DiscoverableProtocolName<fuchsia_io::File>});
   }
 
   {
@@ -226,7 +226,7 @@ TEST(VmofileTests, Executable) {
     const fidl::WireResponse response = result.value();
     const std::span data = response.protocol.get();
     const std::string_view protocol{reinterpret_cast<const char*>(data.data()), data.size_bytes()};
-    ASSERT_EQ(protocol, fio::wire::kFileProtocolName);
+    ASSERT_EQ(protocol, std::string_view{fidl::DiscoverableProtocolName<fuchsia_io::File>});
   }
 
   shutdown_vfs(std::move(vfs));

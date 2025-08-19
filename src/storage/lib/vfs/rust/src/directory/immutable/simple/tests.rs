@@ -18,10 +18,11 @@ use crate::{
     assert_write,
 };
 use assert_matches::assert_matches;
+use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::directory::{
-    open_directory, open_directory_async, open_file, open_file_async, WatchEvent, WatchMessage,
-    Watcher,
+    WatchEvent, WatchMessage, Watcher, open_directory, open_directory_async, open_file,
+    open_file_async,
 };
 use fuchsia_sync::Mutex;
 use futures::StreamExt as _;
@@ -107,7 +108,7 @@ async fn empty_directory_with_custom_inode_get_attr() {
 async fn empty_directory_describe() {
     let dir = Simple::new();
     let root = serve(dir, fio::PERM_READABLE);
-    assert_query!(root, fio::DIRECTORY_PROTOCOL_NAME);
+    assert_query!(root, fio::DirectoryMarker::PROTOCOL_NAME);
     assert_close!(root);
 }
 

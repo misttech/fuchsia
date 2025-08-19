@@ -414,7 +414,7 @@ class SyncNodeServer : public zxio_tests::CloseOnlyNodeServer {
 
 class SyncDirectoryServer : public SyncNodeServer {
   void Query(QueryCompleter::Sync& completer) final {
-    const std::string_view kProtocol = fuchsia_io::wire::kDirectoryProtocolName;
+    const std::string_view kProtocol = fidl::DiscoverableProtocolName<fuchsia_io::Directory>;
     // TODO(https://fxbug.dev/42052765): avoid the const cast.
     uint8_t* data = reinterpret_cast<uint8_t*>(const_cast<char*>(kProtocol.data()));
     completer.Reply(fidl::VectorView<uint8_t>::FromExternal(data, kProtocol.size()));
@@ -462,7 +462,7 @@ TEST_F(CreateDirectoryWithRepresentationTest, Directory) {
 class TestFileServerWithDescribe : public zxio_tests::TestReadFileServer {
  protected:
   void Query(QueryCompleter::Sync& completer) final {
-    const std::string_view kProtocol = fuchsia_io::wire::kFileProtocolName;
+    const std::string_view kProtocol = fidl::DiscoverableProtocolName<fuchsia_io::File>;
     // TODO(https://fxbug.dev/42052765): avoid the const cast.
     uint8_t* data = reinterpret_cast<uint8_t*>(const_cast<char*>(kProtocol.data()));
     completer.Reply(fidl::VectorView<uint8_t>::FromExternal(data, kProtocol.size()));

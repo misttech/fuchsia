@@ -11,12 +11,12 @@ use crate::common::{
 use crate::execution_scope::ExecutionScope;
 use crate::name::parse_name;
 use crate::node::Node;
-use crate::object_request::{run_synchronous_future_or_spawn, ConnectionCreator, Representation};
+use crate::object_request::{ConnectionCreator, Representation, run_synchronous_future_or_spawn};
 use crate::request_handler::{RequestHandler, RequestListener};
 use crate::{ObjectRequest, ObjectRequestRef, ProtocolsExt, ToObjectRequest};
-use fidl::endpoints::{ControlHandle as _, Responder, ServerEnd};
+use fidl::endpoints::{ControlHandle as _, DiscoverableProtocolMarker as _, Responder, ServerEnd};
 use fidl_fuchsia_io as fio;
-use std::future::{ready, Future};
+use std::future::{Future, ready};
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -210,7 +210,7 @@ impl<T: Symlink> Connection<T> {
                 responder.send(Status::ACCESS_DENIED.into_raw())?;
             }
             fio::SymlinkRequest::Query { responder } => {
-                responder.send(fio::SYMLINK_PROTOCOL_NAME.as_bytes())?;
+                responder.send(fio::SymlinkMarker::PROTOCOL_NAME.as_bytes())?;
             }
             fio::SymlinkRequest::QueryFilesystem { responder } => {
                 match self.symlink.query_filesystem() {
@@ -399,9 +399,9 @@ mod tests {
     use crate::directory::entry::{EntryInfo, GetEntryInfo};
     use crate::execution_scope::ExecutionScope;
     use crate::node::Node;
-    use crate::{immutable_attributes, ToObjectRequest};
+    use crate::{ToObjectRequest, immutable_attributes};
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, ServerEnd};
+    use fidl::endpoints::{ServerEnd, create_proxy};
     use fidl_fuchsia_io as fio;
     use fuchsia_sync::Mutex;
     use futures::StreamExt;

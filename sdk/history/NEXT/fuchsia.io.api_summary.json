@@ -102,12 +102,6 @@
         "resourceness": "resource"
     },
     {
-        "kind": "const",
-        "name": "fuchsia.io/DIRECTORY_PROTOCOL_NAME",
-        "type": "string",
-        "value": "fuchsia.io/Directory"
-    },
-    {
         "kind": "protocol/member",
         "name": "fuchsia.io/Directory.AdvisoryLock",
         "strictness": "strict",
@@ -732,12 +726,6 @@
         "name": "fuchsia.io/ExtendedAttributeValue",
         "strictness": "flexible",
         "resourceness": "resource"
-    },
-    {
-        "kind": "const",
-        "name": "fuchsia.io/FILE_PROTOCOL_NAME",
-        "type": "string",
-        "value": "fuchsia.io/File"
     },
     {
         "kind": "protocol/member",
@@ -1597,12 +1585,6 @@
     {
         "kind": "table",
         "name": "fuchsia.io/MutableNodeAttributes"
-    },
-    {
-        "kind": "const",
-        "name": "fuchsia.io/NODE_PROTOCOL_NAME",
-        "type": "string",
-        "value": "fuchsia.io/Node"
     },
     {
         "kind": "protocol/member",
@@ -2475,12 +2457,6 @@
         "name": "fuchsia.io/Representation",
         "strictness": "flexible",
         "resourceness": "resource"
-    },
-    {
-        "kind": "const",
-        "name": "fuchsia.io/SYMLINK_PROTOCOL_NAME",
-        "type": "string",
-        "value": "fuchsia.io/Symlink"
     },
     {
         "kind": "enum/member",

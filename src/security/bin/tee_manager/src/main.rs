@@ -10,7 +10,7 @@ mod provider_server;
 
 use crate::config::Config;
 use crate::device_server::{serve_application_passthrough, serve_device_info_passthrough};
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_hardware_tee::{DeviceConnectorMarker, DeviceConnectorProxy};
 use fidl_fuchsia_tee::{self as fuchsia_tee, DeviceInfoMarker};
@@ -144,7 +144,7 @@ fn uuid_to_fuchsia_tee_uuid(uuid: &Uuid) -> fuchsia_tee::Uuid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::{endpoints, Error, HandleBased as _};
+    use fidl::{Error, HandleBased as _, endpoints};
     use fidl_fuchsia_hardware_tee::DeviceConnectorRequest;
     use fidl_fuchsia_tee::ApplicationMarker;
     use fidl_fuchsia_tee_manager::ProviderProxy;
@@ -184,7 +184,10 @@ mod tests {
     }
 
     async fn assert_is_valid_storage(storage_proxy: &fio::DirectoryProxy) {
-        assert_eq!(storage_proxy.query().await.unwrap(), fio::DIRECTORY_PROTOCOL_NAME.as_bytes());
+        assert_eq!(
+            storage_proxy.query().await.unwrap(),
+            fio::DirectoryMarker::PROTOCOL_NAME.as_bytes()
+        );
     }
 
     #[fasync::run_singlethreaded(test)]

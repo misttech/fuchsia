@@ -12,13 +12,13 @@ use crate::file::{File, FileIo, FileOptions, RawFileIoConnection, SyncMode};
 use crate::name::parse_name;
 use crate::node::OpenNode;
 use crate::object_request::{
-    run_synchronous_future_or_spawn, ConnectionCreator, ObjectRequest, Representation,
+    ConnectionCreator, ObjectRequest, Representation, run_synchronous_future_or_spawn,
 };
 use crate::protocols::ToFileOptions;
 use crate::request_handler::{RequestHandler, RequestListener};
 use crate::{ObjectRequestRef, ProtocolsExt, ToObjectRequest};
 use anyhow::Error;
-use fidl::endpoints::ServerEnd;
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_io as fio;
 use static_assertions::assert_eq_size;
 use std::convert::TryInto as _;
@@ -32,7 +32,7 @@ use zx_status::Status;
 #[cfg(target_os = "fuchsia")]
 use {
     crate::file::common::get_backing_memory_validate_flags,
-    crate::temp_clone::{unblock, TempClonable},
+    crate::temp_clone::{TempClonable, unblock},
     std::io::SeekFrom,
     zx::{self as zx, HandleBased},
 };
@@ -827,7 +827,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::Query { responder } => {
                 trace::duration!(c"storage", c"File::Query");
-                responder.send(fio::FILE_PROTOCOL_NAME.as_bytes())?;
+                responder.send(fio::FileMarker::PROTOCOL_NAME.as_bytes())?;
             }
             fio::FileRequest::QueryFilesystem { responder } => {
                 trace::duration!(c"storage", c"File::QueryFilesystem");
@@ -1486,7 +1486,7 @@ mod tests {
     async fn test_query() {
         let env = init_mock_file(Box::new(always_succeed_callback), fio::PERM_READABLE);
         let protocol = env.proxy.query().await.unwrap();
-        assert_eq!(protocol, fio::FILE_PROTOCOL_NAME.as_bytes());
+        assert_eq!(protocol, fio::FileMarker::PROTOCOL_NAME.as_bytes());
     }
 
     #[fuchsia::test]

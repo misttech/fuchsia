@@ -191,7 +191,7 @@ TEST(Service, OpenAsNode) {
   const fidl::WireResponse response = result.value();
   const std::span data = response.protocol.get();
   const std::string_view protocol{reinterpret_cast<const char*>(data.data()), data.size_bytes()};
-  ASSERT_EQ(protocol, fio::wire::kNodeProtocolName);
+  ASSERT_EQ(protocol, std::string_view{fidl::DiscoverableProtocolName<fuchsia_io::Node>});
 
   loop.Shutdown();
 }

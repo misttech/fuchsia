@@ -88,10 +88,10 @@ void FileConnection::Close(CloseCompleter::Sync& completer) {
 }
 
 void FileConnection::Query(QueryCompleter::Sync& completer) {
-  std::string_view protocol = fio::kFileProtocolName;
+  const std::string_view kProtocolName = fidl::DiscoverableProtocolName<fio::File>;
   // TODO(https://fxbug.dev/42052765): avoid the const cast.
-  uint8_t* data = reinterpret_cast<uint8_t*>(const_cast<char*>(protocol.data()));
-  completer.Reply(fidl::VectorView<uint8_t>::FromExternal(data, protocol.size()));
+  uint8_t* data = reinterpret_cast<uint8_t*>(const_cast<char*>(kProtocolName.data()));
+  completer.Reply(fidl::VectorView<uint8_t>::FromExternal(data, kProtocolName.size()));
 }
 
 zx_status_t FileConnection::WithNodeInfoDeprecated(

@@ -8,6 +8,7 @@
 //! the discoverable name for the protocol that was negotiated for that connection. This is distinct
 //! from the underlying object type (see `fuchsia.io/Node.GetAttributes`).
 
+use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_io as fio;
 use io_conformance_util::test_harness::TestHarness;
 use io_conformance_util::*;
@@ -22,13 +23,13 @@ async fn directory_query() {
             .await
             .unwrap();
         let protocol = dir.query().await.expect("query failed");
-        assert_eq!(std::str::from_utf8(&protocol), Ok(fio::DIRECTORY_PROTOCOL_NAME));
+        assert_eq!(std::str::from_utf8(&protocol), Ok(fio::DirectoryMarker::PROTOCOL_NAME));
     }
     {
         let node =
             dir.open_node::<fio::NodeMarker>(".", fio::Flags::PROTOCOL_NODE, None).await.unwrap();
         let protocol = node.query().await.expect("query failed");
-        assert_eq!(std::str::from_utf8(&protocol), Ok(fio::NODE_PROTOCOL_NAME));
+        assert_eq!(std::str::from_utf8(&protocol), Ok(fio::NodeMarker::PROTOCOL_NAME));
     }
 }
 
@@ -43,7 +44,7 @@ async fn file_query() {
             .await
             .unwrap();
         let protocol = file.query().await.expect("query failed");
-        assert_eq!(std::str::from_utf8(&protocol), Ok(fio::FILE_PROTOCOL_NAME));
+        assert_eq!(std::str::from_utf8(&protocol), Ok(fio::FileMarker::PROTOCOL_NAME));
     }
     {
         let node = dir
@@ -51,6 +52,6 @@ async fn file_query() {
             .await
             .unwrap();
         let protocol = node.query().await.expect("query failed");
-        assert_eq!(std::str::from_utf8(&protocol), Ok(fio::NODE_PROTOCOL_NAME));
+        assert_eq!(std::str::from_utf8(&protocol), Ok(fio::NodeMarker::PROTOCOL_NAME));
     }
 }

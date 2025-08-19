@@ -6,11 +6,12 @@ use crate::common::{inherit_rights_for_clone, send_on_open_with_error};
 use crate::directory::common::check_child_connection_flags;
 use crate::directory::entry_container::{Directory, DirectoryWatcher};
 use crate::directory::traversal_position::TraversalPosition;
-use crate::directory::{read_dirents, DirectoryOptions};
-use crate::execution_scope::{yield_to_executor, ExecutionScope};
+use crate::directory::{DirectoryOptions, read_dirents};
+use crate::execution_scope::{ExecutionScope, yield_to_executor};
 use crate::node::OpenNode;
 use crate::object_request::Representation;
 use crate::path::Path;
+use fidl::endpoints::DiscoverableProtocolMarker as _;
 
 use anyhow::Error;
 use fidl::endpoints::ServerEnd;
@@ -244,7 +245,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 responder.send(status.into_raw())?;
             }
             fio::DirectoryRequest::Query { responder } => {
-                let () = responder.send(fio::DIRECTORY_PROTOCOL_NAME.as_bytes())?;
+                let () = responder.send(fio::DirectoryMarker::PROTOCOL_NAME.as_bytes())?;
             }
             fio::DirectoryRequest::QueryFilesystem { responder } => {
                 trace::duration!(c"storage", c"Directory::QueryFilesystem");

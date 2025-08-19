@@ -114,12 +114,15 @@ zx::result<zxio_object_type_t> zxio_get_object_type(
   if (type != ZXIO_OBJECT_TYPE_NONE) {
     return zx::ok(type);
   }
+  // Legacy protocol names used before all zxio protocols were marked as @discoverable.
+  // Servers now report the discoverable names, but some prebuilt components at previous API levels
+  // still return these legacy constants. These can be removed when they are rebuilt.
   // TODO(https://fxbug.dev/42056856): We can remove the checks for legacy protocol name constants
   // once all prebuilt servers are using the latest SDK.
-  if (protocol == std::string_view{fio::wire::kFileProtocolName}) {
+  if (protocol == std::string_view{"fuchsia.io/File"}) {
     return zx::ok(ZXIO_OBJECT_TYPE_FILE);
   }
-  if (protocol == std::string_view{fio::wire::kDirectoryProtocolName}) {
+  if (protocol == std::string_view{"fuchsia.io/Directory"}) {
     return zx::ok(ZXIO_OBJECT_TYPE_DIR);
   }
   return zx::ok(ZXIO_OBJECT_TYPE_NONE);

@@ -218,7 +218,7 @@ pub(crate) async fn verify_node_describe_event(
         }
         fio::NodeEvent::OnRepresentation { .. } => {}
         fio::NodeEvent::_UnknownEvent { ordinal, .. } => {
-            return Err(OpenError::UnknownEvent { ordinal })
+            return Err(OpenError::UnknownEvent { ordinal });
         }
     }
 
@@ -244,7 +244,7 @@ pub(crate) async fn verify_directory_describe_event(
             })?;
         }
         fio::DirectoryEvent::_UnknownEvent { ordinal, .. } => {
-            return Err(OpenError::UnknownEvent { ordinal })
+            return Err(OpenError::UnknownEvent { ordinal });
         }
     }
 
@@ -268,7 +268,7 @@ pub(crate) async fn verify_file_describe_event(
                 .map_err(|actual| OpenError::UnexpectedNodeKind { expected: Kind::File, actual })?;
         }
         fio::FileEvent::_UnknownEvent { ordinal, .. } => {
-            return Err(OpenError::UnknownEvent { ordinal })
+            return Err(OpenError::UnknownEvent { ordinal });
         }
     }
 
@@ -314,6 +314,7 @@ where
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use fidl::endpoints::DiscoverableProtocolMarker as _;
     use fuchsia_async as fasync;
 
     // open_in_namespace
@@ -322,11 +323,11 @@ mod tests {
     async fn open_in_namespace_opens_real_node() {
         let file_node = open_in_namespace("/pkg/data/file", fio::PERM_READABLE).unwrap();
         let protocol = file_node.query().await.unwrap();
-        assert_eq!(protocol, fio::FILE_PROTOCOL_NAME.as_bytes());
+        assert_eq!(protocol, fio::FileMarker::PROTOCOL_NAME.as_bytes());
 
         let dir_node = open_in_namespace("/pkg/data", fio::PERM_READABLE).unwrap();
         let protocol = dir_node.query().await.unwrap();
-        assert_eq!(protocol, fio::DIRECTORY_PROTOCOL_NAME.as_bytes());
+        assert_eq!(protocol, fio::DirectoryMarker::PROTOCOL_NAME.as_bytes());
     }
 
     #[fasync::run_singlethreaded(test)]

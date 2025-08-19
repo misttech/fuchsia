@@ -4,20 +4,20 @@
 
 //! Implementation of a (limited) node connection.
 
-use crate::common::{inherit_rights_for_clone, IntoAny};
+use crate::common::{IntoAny, inherit_rights_for_clone};
 use crate::directory::entry::GetEntryInfo;
 use crate::directory::entry_container::MutableDirectory;
 use crate::execution_scope::ExecutionScope;
 use crate::name::Name;
-use crate::object_request::{run_synchronous_future_or_spawn, ConnectionCreator, Representation};
+use crate::object_request::{ConnectionCreator, Representation, run_synchronous_future_or_spawn};
 use crate::protocols::ToNodeOptions;
 use crate::request_handler::{RequestHandler, RequestListener};
 use crate::{ObjectRequest, ObjectRequestRef, ToObjectRequest};
 use anyhow::Error;
-use fidl::endpoints::ServerEnd;
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_io as fio;
 use libc::{S_IRUSR, S_IWUSR};
-use std::future::{ready, Future};
+use std::future::{Future, ready};
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -245,7 +245,7 @@ impl<N: Node> Connection<N> {
                 responder.send(Status::BAD_HANDLE.into_raw())?;
             }
             fio::NodeRequest::Query { responder } => {
-                responder.send(fio::NODE_PROTOCOL_NAME.as_bytes())?;
+                responder.send(fio::NodeMarker::PROTOCOL_NAME.as_bytes())?;
             }
             fio::NodeRequest::QueryFilesystem { responder } => {
                 responder.send(Status::NOT_SUPPORTED.into_raw(), None)?;

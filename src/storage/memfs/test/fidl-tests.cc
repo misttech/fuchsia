@@ -61,7 +61,7 @@ TEST(FidlTests, TestFidlBasic) {
     const fidl::WireResponse response = result.value();
     const std::span data = response.protocol.get();
     const std::string_view protocol{reinterpret_cast<const char*>(data.data()), data.size_bytes()};
-    ASSERT_EQ(protocol, fio::wire::kFileProtocolName);
+    ASSERT_EQ(protocol, std::string_view{fidl::DiscoverableProtocolName<fuchsia_io::File>});
   }
   const fidl::WireResult describe_result = fidl::WireCall(client)->Describe();
   ASSERT_OK(describe_result.status());

@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{dirs_to_test, PackageSource};
-use anyhow::{anyhow, Context as _, Error};
-use fidl::endpoints::Proxy as _;
+use crate::{PackageSource, dirs_to_test};
+use anyhow::{Context as _, Error, anyhow};
 use fidl::AsHandleRef as _;
+use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _};
 use fidl_fuchsia_io as fio;
 
 #[fuchsia::test]
@@ -239,7 +239,7 @@ async fn assert_query_directory(package_root: &fio::DirectoryProxy, path: &str) 
 
         if let Err(e) = verify_query_directory(node, flag).await {
             panic!(
-                "failed to verify describe. path: {path:?}, flag: {flag:?}, \
+                "failed to verify query. path: {path:?}, flag: {flag:?}, \
                     error: {e:#}",
             );
         }
@@ -248,16 +248,15 @@ async fn assert_query_directory(package_root: &fio::DirectoryProxy, path: &str) 
 
 async fn verify_query_directory(node: fio::NodeProxy, flag: fio::Flags) -> Result<(), Error> {
     let protocol = String::from_utf8(node.query().await.context("failed to call query")?).unwrap();
-    let expected = if flag.intersects(fio::Flags::PROTOCOL_NODE) {
-        crate::NODE_PROTOCOL_NAMES
+    let expected_protocol = if flag.intersects(fio::Flags::PROTOCOL_NODE) {
+        fio::NodeMarker::PROTOCOL_NAME
     } else {
-        crate::DIRECTORY_PROTOCOL_NAMES
+        fio::DirectoryMarker::PROTOCOL_NAME
     };
-    if expected.contains(&protocol.as_str()) {
-        Ok(())
-    } else {
-        Err(anyhow!("wrong protocol returned: {:?}", protocol))
+    if protocol != expected_protocol {
+        return Err(anyhow!("wrong protocol returned: {:?}", protocol));
     }
+    Ok(())
 }
 
 async fn assert_describe_file(package_root: &fio::DirectoryProxy, path: &str) {
@@ -274,13 +273,15 @@ async fn assert_describe_file(package_root: &fio::DirectoryProxy, path: &str) {
 
 async fn verify_describe_file(node: fio::NodeProxy, flag: fio::Flags) -> Result<(), Error> {
     let protocol = String::from_utf8(node.query().await.context("failed to call query")?).unwrap();
-    if flag.intersects(fio::Flags::PROTOCOL_NODE) {
-        if crate::NODE_PROTOCOL_NAMES.contains(&protocol.as_str()) {
-            Ok(())
-        } else {
-            Err(anyhow!("wrong protocol returned: {:?}", protocol))
-        }
-    } else if crate::FILE_PROTOCOL_NAMES.contains(&protocol.as_str()) {
+    let expected_protocol = if flag.intersects(fio::Flags::PROTOCOL_NODE) {
+        fio::NodeMarker::PROTOCOL_NAME
+    } else {
+        fio::FileMarker::PROTOCOL_NAME
+    };
+    if protocol != expected_protocol {
+        return Err(anyhow!("wrong protocol returned: {:?}", protocol));
+    }
+    if protocol == fio::FileMarker::PROTOCOL_NAME {
         let fio::FileInfo { observer, .. } = fio::FileProxy::new(node.into_channel().unwrap())
             .describe()
             .await
@@ -294,10 +295,8 @@ async fn verify_describe_file(node: fio::NodeProxy, flag: fio::Flags) -> Result<
                 .context("FILE_SIGNAL_READABLE not set")?;
         }
         // TODO(https://fxbug.dev/327633753): Check for stream support.
-        Ok(())
-    } else {
-        Err(anyhow!("wrong protocol returned: {:?}", protocol))
     }
+    Ok(())
 }
 
 async fn assert_describe_meta_file(package_root: &fio::DirectoryProxy, path: &str) {
