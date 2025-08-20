@@ -31,7 +31,7 @@ class LogConnection {
   LogConnection& operator=(LogConnection&&) = default;
 
   zx::socket& socket() { return socket_; }
-  bool is_valid() const { return socket_.is_valid(); }
+  bool IsValid() const { return socket_.is_valid(); }
 
   // Flushes the LogBuffer to the connection.
   zx::result<> FlushBuffer(LogBuffer& buffer) const { return FlushSpan(buffer.EndRecord()); }
@@ -46,12 +46,6 @@ class LogConnection {
 };
 
 }  // namespace internal
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
-
-using LogConnection = internal::LogConnection;
-
-#endif
 
 }  // namespace fuchsia_logging
 

@@ -391,10 +391,10 @@ TEST(LogConnection, Basic) {
   auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
   FakeLogSink log_sink(FUCHSIA_LOG_INFO, std::move(endpoints->server));
 
-  auto connection = LogConnection::Create(std::move(endpoints->client));
+  auto connection = internal::LogConnection::Create(std::move(endpoints->client));
   ASSERT_EQ(connection.status_value(), ZX_OK);
 
-  ASSERT_TRUE(connection->is_valid());
+  ASSERT_TRUE(connection->IsValid());
 
   LogBuffer buffer;
   buffer.BeginRecord(FUCHSIA_LOG_INFO, {}, {}, "foo", 1, 2, 3);
@@ -411,10 +411,10 @@ TEST(LogConnection, BlockIfFull) {
   auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
   FakeLogSink log_sink(FUCHSIA_LOG_INFO, std::move(endpoints->server));
 
-  auto connection = LogConnection::Create(std::move(endpoints->client));
+  auto connection = internal::LogConnection::Create(std::move(endpoints->client));
   ASSERT_EQ(connection.status_value(), ZX_OK);
 
-  ASSERT_TRUE(connection->is_valid());
+  ASSERT_TRUE(connection->IsValid());
 
   // Keep logging and we should eventually get ZX_ERR_SHOULD_WAIT.
   LogBuffer buffer;
@@ -432,7 +432,7 @@ TEST(LogConnection, BlockIfFull) {
 
   zx::socket socket;
   ASSERT_EQ(connection->socket().duplicate(ZX_RIGHT_SAME_RIGHTS, &socket), ZX_OK);
-  LogConnection connection2(std::move(socket), {.block_if_full = true});
+  internal::LogConnection connection2(std::move(socket), {.block_if_full = true});
 
   std::thread thread([&] {
     // Delay reading the message to make it more likely that we block when flushing the buffer.
@@ -454,7 +454,7 @@ TEST(LogConnection, EncodingError) {
   zx::socket client, server;
   ASSERT_EQ(zx::socket::create(0, &client, &server), ZX_OK);
 
-  LogConnection connection(std::move(client), {});
+  internal::LogConnection connection(std::move(client), {});
   LogBuffer buffer;
   std::string message;
   message.resize(sizeof internal::LogBufferData::data, 'a');
