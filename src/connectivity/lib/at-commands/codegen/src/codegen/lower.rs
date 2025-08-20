@@ -263,6 +263,7 @@ fn codegen_encode_possibly_option<W: io::Write>(
     name: &str,
     arg_vec_name: &str,
     typ: &PossiblyOptionType,
+    in_list: bool,
 ) -> Result {
     match typ {
         PossiblyOptionType::PrimitiveType(typ) => {
@@ -275,18 +276,26 @@ fn codegen_encode_possibly_option<W: io::Write>(
             let primitive_name = format!("{}_primitive", name);
             write_indented!(sink, indent, "match {} {{\n", name)?;
             {
-                write_indented!(sink, indent, "None => {{\n",)?;
-                let indent = indent + TABSTOP;
-                {
+                // If we're generating a list of possibly optional values, push an empty string,
+                // giving something like 1,,2.
+                if in_list {
+                    write_indented!(sink, indent, "None => {{\n",)?;
                     let indent = indent + TABSTOP;
-                    write_indented!(
-                        sink,
-                        indent + TABSTOP,
-                        "{}.push(lowlevel::Argument::PrimitiveArgument(String::new()));\n",
-                        arg_vec_name
-                    )?;
+                    {
+                        let indent = indent + TABSTOP;
+                        write_indented!(
+                            sink,
+                            indent + TABSTOP,
+                            "{}.push(lowlevel::Argument::PrimitiveArgument(String::new()));\n",
+                            arg_vec_name
+                        )?;
+                    }
+                    write_indented!(sink, indent, "}}\n")?;
+                // If not in a list, we're at the end of a sequence of arguments, so don't push a
+                // value, meaning there won't be a trailing comma.
+                } else {
+                    write_indented!(sink, indent, "None => {{}}\n",)?;
                 }
-                write_indented!(sink, indent, "}}\n")?;
                 write_indented!(sink, indent, "Some({}) => {{\n", unwrapped_name)?;
                 {
                     let indent = indent + TABSTOP;
@@ -365,7 +374,14 @@ fn codegen_encode_list<W: io::Write>(
     // Increment indent
     {
         let indent = indent + TABSTOP;
-        codegen_encode_possibly_option(sink, indent + TABSTOP, &element_name, arg_vec_name, typ)?;
+        codegen_encode_possibly_option(
+            sink,
+            indent + TABSTOP,
+            &element_name,
+            arg_vec_name,
+            typ,
+            /* in_list */ true,
+        )?;
     }
     write_indented!(sink, indent, "}}   \n")?;
 
@@ -381,7 +397,14 @@ fn codegen_argument_vec_encoding<W: io::Write>(
     for arg in arg_vec {
         match &arg.typ {
             Type::PossiblyOptionType(typ) => {
-                codegen_encode_possibly_option(sink, indent, &arg.name, arg_vec_name, typ)?;
+                codegen_encode_possibly_option(
+                    sink,
+                    indent,
+                    &arg.name,
+                    arg_vec_name,
+                    typ,
+                    /* in_list */ false,
+                )?;
             }
             Type::ListType(typ) => {
                 codegen_encode_list(sink, indent, &arg.name, typ, arg_vec_name)?;

@@ -455,12 +455,11 @@ fn exec_optional_absent() {
                 delimiter: Some(String::from("=")),
                 arguments: lowlevel::Arguments::ArgumentList(vec![
                     lowlevel::Argument::PrimitiveArgument(String::from("1")),
-                    lowlevel::Argument::PrimitiveArgument(String::from("")),
                 ]),
                 terminator: None,
             },
         },
-        cr_terminate("AT+TESTIO=1,"),
+        cr_terminate("AT+TESTIO=1"),
     )
 }
 

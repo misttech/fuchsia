@@ -412,12 +412,86 @@ fn args_optional_absent() {
                 delimiter: Some(String::from(":")),
                 arguments: lowlevel::Arguments::ArgumentList(vec![
                     lowlevel::Argument::PrimitiveArgument(String::from("1")),
-                    lowlevel::Argument::PrimitiveArgument(String::from("")),
                 ]),
                 terminator: None,
             },
         },
-        cr_lf_delimit("+TESTIO: 1,"),
+        cr_lf_delimit("+TESTIO: 1"),
+    )
+}
+
+// Extension response with two optional args present
+#[test]
+fn two_args_optional_both_present() {
+    test_roundtrips(
+        highlevel::Response::Success(highlevel::Success::Testioo {
+            field1: 1,
+            field2: Some(2),
+            field3: Some(String::from("a")),
+        }),
+        lowlevel::Response::Success {
+            name: String::from("TESTIOO"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from(":")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("1")),
+                    lowlevel::Argument::PrimitiveArgument(String::from("2")),
+                    lowlevel::Argument::PrimitiveArgument(String::from("a")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_lf_delimit("+TESTIOO: 1,2,a"),
+    )
+}
+
+// Extension response with one out of two optional args present
+#[test]
+fn two_args_optional_one_present() {
+    test_roundtrips(
+        highlevel::Response::Success(highlevel::Success::Testioo {
+            field1: 1,
+            field2: Some(2),
+            field3: None,
+        }),
+        lowlevel::Response::Success {
+            name: String::from("TESTIOO"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from(":")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("1")),
+                    lowlevel::Argument::PrimitiveArgument(String::from("2")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_lf_delimit("+TESTIOO: 1,2"),
+    )
+}
+
+// Extension response with two optional args absent
+#[test]
+fn two_args_optional_absent() {
+    test_roundtrips(
+        highlevel::Response::Success(highlevel::Success::Testioo {
+            field1: 1,
+            field2: None,
+            field3: None,
+        }),
+        lowlevel::Response::Success {
+            name: String::from("TESTIOO"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from(":")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("1")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_lf_delimit("+TESTIOO: 1"),
     )
 }
 

@@ -124,8 +124,8 @@ pub fn build_clcc_response(call: Call) -> Option<at::Response> {
         status,
         mode: 0,
         mpty: 0,
-        ty: call.number.type_(),
-        number: call.number.into(),
+        ty: Some(call.number.type_()),
+        number: Some(call.number.into()),
     }))
 }
 

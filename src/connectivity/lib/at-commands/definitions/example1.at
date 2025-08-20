@@ -109,6 +109,7 @@ response { +TESTSIC: field1: String, field2: Integer,}
 
 # Option type arguments
 response { +TESTIO: field1: Integer, field2: Option<Integer> }
+response { +TESTIOO: field1: Integer, field2: Option<Integer>, field3: Option<String> }
 
 # List type arguments
 response { +TESTL: field: List<Integer> }
