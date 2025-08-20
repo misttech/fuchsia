@@ -1055,9 +1055,11 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // If |additional_pages| was non-zero, then the maximum number of pages that will be mapped is
   // |additional_pages + 1|. Otherwise the maximum number of pages that will be mapped is
   // kPageFaultMaxOptimisticPages.
+  // Takes ownership of, and release, the aspace lock.
   ktl::pair<zx_status_t, uint32_t> PageFaultLocked(vaddr_t va, uint pf_flags,
                                                    size_t additional_pages,
-                                                   MultiPageRequest* page_request) TA_REQ(lock());
+                                                   Guard<CriticalMutex>::Adoptable&& aspace_lock,
+                                                   MultiPageRequest* page_request);
 
   // Apis intended for use by VmObject
 

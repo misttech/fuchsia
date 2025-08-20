@@ -1856,18 +1856,18 @@ static bool vm_mapping_page_fault_range_test() {
     // request we must directly call the PageFaultLocked method instead of the VmAspace fault.
     {
       const vaddr_t base = paged_mapping->base();
-      Guard<CriticalMutex> guard{paged_mapping->mapping()->lock()};
-      MultiPageRequest page_request;
       ktl::pair<zx_status_t, uint32_t> result;
-      // Although the first page is supplied to paged_vmo, attempting to map it could still fail due
-      // to either it being deduped to a marker, or it being a loaned page and needing to be
-      // swapped. Both of these cases require an allocation, which could need to wait. This wait
-      // request should only be due to the pmm random delayed allocations, and so we can just ignore
-      // it and try again.
       size_t retry_count = 0;
       do {
+        Guard<CriticalMutex> guard{paged_mapping->mapping()->lock()};
+        MultiPageRequest page_request;
+        // Although the first page is supplied to paged_vmo, attempting to map it could still fail
+        // due to either it being deduped to a marker, or it being a loaned page and needing to be
+        // swapped. Both of these cases require an allocation, which could need to wait. This wait
+        // request should only be due to the pmm random delayed allocations, and so we can just
+        // ignore it and try again.
         result = paged_mapping->mapping()->PageFaultLocked(base, kWriteFlags, kTestPages - 1,
-                                                           &page_request);
+                                                           guard.take(), &page_request);
         page_request.CancelRequests();
         retry_count++;
       } while (result.first == ZX_ERR_SHOULD_WAIT && result.second == 0 && retry_count < 100);

@@ -518,15 +518,14 @@ void VmMapping::AspaceDebugUnpinLockedObject(uint64_t offset, uint64_t len) cons
 
 namespace {
 
-// Helper class for batching installing mappings into the arch aspace. The mappings aspace and
-// object lock must be held over the entirety of the lifetime of this object, without ever being
-// released.
+// Helper class for batching installing mappings into the arch aspace. The mappings object lock must
+// be held over the entirety of the lifetime of this object, without ever being released.
 template <size_t NumPages>
 class VmMappingCoalescer {
  public:
   VmMappingCoalescer(VmMapping* mapping, vaddr_t base, uint mmu_flags,
                      ArchVmAspace::ExistingEntryAction existing_entry_action)
-      TA_REQ(mapping->lock()) TA_REQ(mapping->object_lock());
+      TA_REQ(mapping->object_lock());
   ~VmMappingCoalescer();
 
   // Add a page to the mapping run.
@@ -887,9 +886,9 @@ zx_status_t VmMapping::DestroyLockedObject(bool unmap) {
   return ZX_OK;
 }
 
-ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(vaddr_t va, const uint pf_flags,
-                                                            const size_t additional_pages,
-                                                            MultiPageRequest* page_request) {
+ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(
+    vaddr_t va, const uint pf_flags, const size_t additional_pages,
+    Guard<CriticalMutex>::Adoptable&& aspace_lock, MultiPageRequest* page_request) {
   VM_KTRACE_DURATION(
       2, "VmMapping::PageFault",
       ("user_id", KTRACE_ANNOTATED_VALUE(AssertHeld(lock_ref()), object_->user_id())),
@@ -897,6 +896,8 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(vaddr_t va, const ui
   canary_.Assert();
 
   DEBUG_ASSERT(IS_PAGE_ROUNDED(va));
+
+  Guard<CriticalMutex> aspace_guard{AdoptLock, lock(), ktl::move(aspace_lock)};
 
   // Fault batch size when num_pages > 1.
   static constexpr uint64_t kBatchPages = 16;
@@ -987,6 +988,11 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(vaddr_t va, const ui
     Guard<CriticalMutex> guard{AssertOrderedAliasedLock, paged->lock(), object_->lock(),
                                paged->lock_order()};
 
+    // Now that we hold the object lock we no longer need the aspace lock. This is because all the
+    // properties of the mapping that we rely on require *both* locks to modify, so as long as we
+    // hold at least one of the locks we know that nothing can change from beneath us.
+    aspace_guard.Release();
+
     // If fault-beyond-stream-size is set, throw exception on memory accesses past the page
     // containing the user defined stream size.
     const uint64_t vmo_size = (flags_ & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE)
@@ -1033,7 +1039,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(vaddr_t va, const ui
 
       // We looked up in order to write. Mark as modified. Only need to do this once.
       if (write && offset == 0) {
-        object_->mark_modified_locked();
+        paged->mark_modified_locked();
       }
 
       // If we read faulted, and lookup didn't say that this is always writable, then we map or

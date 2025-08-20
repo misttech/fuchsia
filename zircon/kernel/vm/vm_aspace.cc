@@ -630,7 +630,7 @@ zx_status_t VmAspace::PageFaultInternal(vaddr_t va, uint flags, size_t additiona
       DEBUG_ASSERT(last_fault_);
       AssertHeld(last_fault_->lock_ref());
       auto [fault_status, count] =
-          last_fault_->PageFaultLocked(va, flags, additional_pages, &page_request);
+          last_fault_->PageFaultLocked(va, flags, additional_pages, guard.take(), &page_request);
       status = fault_status;
       mapped = count;
     }
