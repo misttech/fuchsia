@@ -135,7 +135,7 @@ mod tests {
         assert_eq!(ATraceEvent::parse("E|1636"), Some(ATraceEvent::End { pid: 1636 }),);
         assert_eq!(
             ATraceEvent::parse("I|1636|instant_name"),
-            Some(ATraceEvent::Instant { name: "instant_name" }),
+            Some(ATraceEvent::Instant { pid: 1636, name: "instant_name" }),
         );
 
         assert_eq!(ATraceEvent::parse("E|"), Some(ATraceEvent::End { pid: 0 }));
@@ -143,19 +143,20 @@ mod tests {
 
         assert_eq!(
             ATraceEvent::parse("S|1636|async_name|123"),
-            Some(ATraceEvent::AsyncBegin { name: "async_name", correlation_id: 123 }),
+            Some(ATraceEvent::AsyncBegin { pid: 1636, name: "async_name", correlation_id: 123 }),
         );
         assert_eq!(
             ATraceEvent::parse("F|1636|async_name|123"),
-            Some(ATraceEvent::AsyncEnd { name: "async_name", correlation_id: 123 }),
+            Some(ATraceEvent::AsyncEnd { pid: 1636, name: "async_name", correlation_id: 123 }),
         );
         assert_eq!(
             ATraceEvent::parse("C|1636|counter_name|123"),
-            Some(ATraceEvent::Counter { name: "counter_name", value: 123 }),
+            Some(ATraceEvent::Counter { pid: 1636, name: "counter_name", value: 123 }),
         );
         assert_eq!(
             ATraceEvent::parse("G|1636|a track|async_name|123"),
             Some(ATraceEvent::AsyncTrackBegin {
+                pid: 1636,
                 track_name: "a track",
                 name: "async_name",
                 cookie: 123
@@ -163,11 +164,11 @@ mod tests {
         );
         assert_eq!(
             ATraceEvent::parse("H|1636|a track|123"),
-            Some(ATraceEvent::AsyncTrackEnd { track_name: "a track", cookie: 123 }),
+            Some(ATraceEvent::AsyncTrackEnd { pid: 1636, track_name: "a track", cookie: 123 }),
         );
         assert_eq!(
             ATraceEvent::parse("N|1636|a track|instant_name"),
-            Some(ATraceEvent::Track { track_name: "a track", name: "instant_name" }),
+            Some(ATraceEvent::Track { pid: 1636, track_name: "a track", name: "instant_name" }),
         );
     }
 }

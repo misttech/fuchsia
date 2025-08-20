@@ -15,6 +15,7 @@ group("tests") {
     "layeredfs:tests",
     "loop:tests",
     "nanohub:tests",
+    "perfetto_consumer:tests",
     "selinuxfs:tests",
     "tracefs:tests",
   ]
