@@ -1412,8 +1412,11 @@ void DeviceInterface::CopySessionData(const Session& owner, const RxFrameInfo& f
   }
 }
 
-void DeviceInterface::ListenSessionData(const Session& owner,
-                                        cpp20::span<const uint16_t> descriptors) {
+// TODO(https://fxbug.dev/440082820): Enable thread safety analysis when the underlying issue is
+// resolved.
+// TODO(https://fxbug.dev/371574128): Delete this function when we remove LISTEN sessions.
+void DeviceInterface::ListenSessionData(
+    const Session& owner, cpp20::span<const uint16_t> descriptors) __TA_NO_THREAD_SAFETY_ANALYSIS {
   if (!has_listen_sessions_.load(std::memory_order_relaxed)) {
     // Avoid walking through sessions and acquiring Rx lock if we know no listen sessions are
     // attached.
