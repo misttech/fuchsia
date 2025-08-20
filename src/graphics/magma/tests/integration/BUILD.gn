@@ -118,6 +118,7 @@ source_set("test_magma_source") {
       "//src/graphics/magma/lib/magma/platform:logger",
       "//src/graphics/magma/lib/magma/platform:logger_provider_header",
       "//src/graphics/magma/lib/magma/platform:trace_provider",
+      "//src/lib/diagnostics/fake-log-sink/cpp",
     ]
   }
 }
@@ -155,6 +156,7 @@ source_set("test_magma_source_hermetic") {
       "//src/graphics/magma/lib/magma/platform:logger",
       "//src/graphics/magma/lib/magma/platform:logger_provider_header",
       "//src/graphics/magma/lib/magma/platform:trace_provider",
+      "//src/lib/diagnostics/fake-log-sink/cpp",
     ]
   }
 }

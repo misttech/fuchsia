@@ -33,6 +33,9 @@
 #include <zircon/availability.h>
 
 #include <filesystem>
+
+#include "src/lib/diagnostics/fake-log-sink/cpp/fake_log_sink.h"
+
 #endif
 
 #if defined(__linux__)
@@ -93,32 +96,6 @@ class FakeTraceRegistry : public fidl::WireServer<fuchsia_tracing_provider::Regi
   void RegisterProviderSynchronously(
       RegisterProviderSynchronouslyRequestView request,
       RegisterProviderSynchronouslyCompleter::Sync& _completer) override {}
-
- private:
-  async::Loop& loop_;
-};
-
-class FakeLogSink : public fidl::WireServer<fuchsia_logger::LogSink> {
- public:
-  explicit FakeLogSink(async::Loop& loop) : loop_(loop) {}
-
-  void WaitForInterestChange(WaitForInterestChangeCompleter::Sync& completer) override {
-    fprintf(stderr, "Unexpected WaitForInterestChange\n");
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  void ConnectStructured(ConnectStructuredRequestView request,
-                         ConnectStructuredCompleter::Sync& _completer) override {
-    loop_.Quit();
-  }
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_logger::LogSink> metadata,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {
-    fprintf(stderr, "Unexpected method\n");
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
-  }
-#endif
 
  private:
   async::Loop& loop_;
@@ -1180,14 +1157,9 @@ class TestConnection {
   void LoggingInitFake() {
 #if defined(__Fuchsia__)
     auto endpoints = fidl::Endpoints<fuchsia_logger::LogSink>::Create();
-    async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-    FakeLogSink logsink(loop);
-
-    fidl::BindServer(loop.dispatcher(), std::move(endpoints.server), &logsink);
+    fake_log_sink_.emplace(fuchsia_logging::Info, std::move(endpoints.server));
 
     EXPECT_EQ(MAGMA_STATUS_OK, magma_initialize_logging(endpoints.client.TakeChannel().release()));
-    // The loop runs until Connect is received.
-    loop.Run();
 #else
     int handle = -1;
     EXPECT_EQ(MAGMA_STATUS_OK, magma_initialize_logging(handle));
@@ -1449,6 +1421,7 @@ class TestConnection {
   magma_connection_t connection_ = 0;
 #ifdef __Fuchsia__
   fidl::WireSyncClient<fuchsia_gpu_magma_test::VendorHelper> vendor_helper_;
+  std::optional<fuchsia_logging::FakeLogSink> fake_log_sink_;
 #endif
 };
 
