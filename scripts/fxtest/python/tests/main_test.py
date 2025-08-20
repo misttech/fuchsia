@@ -1183,6 +1183,115 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                     f"Did not find substring, output was:\n{output.getvalue()}",
                 )
 
+    async def test_print_failed_tests(self) -> None:
+        """Test that failed-tests prints out the failed tests"""
+        env = environment.ExecutionEnvironment.initialize_from_args(
+            args.parse_args([])
+        )
+        assert env.log_file
+        # Create a sample log with 2 failed tests and one passing test
+        recorder = event.EventRecorder()
+        recorder.emit_init()
+
+        # Simulate one test suite
+        test_id = recorder.emit_test_suite_started("foo", hermetic=False)
+        recorder.emit_test_suite_ended(
+            test_id,
+            event.TestSuiteStatus.FAILED,
+            message=None,
+        )
+
+        test_2 = recorder.emit_test_suite_started(
+            "//other:test2", hermetic=True
+        )
+        test_3 = recorder.emit_test_suite_started(
+            "//other:test3", hermetic=True
+        )
+
+        recorder.emit_test_suite_ended(
+            test_2, event.TestSuiteStatus.PASSED, message=None
+        )
+        recorder.emit_test_suite_ended(
+            test_3, event.TestSuiteStatus.FAILED_TO_START, message=None
+        )
+        recorder.emit_end()
+
+        with gzip.open(env.log_file, "wt") as out_file:
+            async for e in recorder.iter():
+                json.dump(e.to_dict(), out_file)  # type:ignore[attr-defined]
+                print("", file=out_file)
+
+        def assert_print_failed_tests_output(
+            return_code: int, output: str
+        ) -> None:
+            self.assertEqual(return_code, 0, f"Content was:\n{output}")
+            self.assertIsNotNone(
+                re.search(
+                    r"The following tests failed in the previous run:",
+                    output,
+                    re.MULTILINE,
+                ),
+                f"Did not find header substring, content was:\n{output}",
+            )
+            self.assertIsNotNone(
+                re.search(r"\* fx test foo", output, re.MULTILINE),
+                f"Did not find test 1 substring, content was:\n{output}",
+            )
+            self.assertIsNotNone(
+                re.search(r"\* fx test //other:test3", output, re.MULTILINE),
+                f"Did not find test 3 substring, content was:\n{output}",
+            )
+
+        # Test finding most recent log file.
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            return_code = main.do_print_failed(args.parse_args([]))
+            assert_print_failed_tests_output(return_code, output.getvalue())
+
+    async def test_print_failed_tests_no_failures(self) -> None:
+        """Test that failed-tests prints no failed tests"""
+
+        env = environment.ExecutionEnvironment.initialize_from_args(
+            args.parse_args([])
+        )
+        assert env.log_file
+        # Create a sample log with 2 failed tests and one passing test
+        recorder = event.EventRecorder()
+        recorder.emit_init()
+
+        # Simulate one test suite
+        test_id = recorder.emit_test_suite_started("foo", hermetic=False)
+        recorder.emit_test_suite_ended(
+            test_id,
+            event.TestSuiteStatus.PASSED,
+            message=None,
+        )
+        recorder.emit_end()
+
+        with gzip.open(env.log_file, "wt") as out_file:
+            async for e in recorder.iter():
+                json.dump(e.to_dict(), out_file)  # type:ignore[attr-defined]
+                print("", file=out_file)
+
+        def assert_print_failed_tests_output(
+            return_code: int, output: str
+        ) -> None:
+            self.assertEqual(return_code, 0, f"Content was:\n{output}")
+            self.assertIsNotNone(
+                re.search(
+                    r"The previous run had no failed tests",
+                    output,
+                    re.MULTILINE,
+                ),
+                f"Did not find substring, content was:\n{output}",
+            )
+
+        # Test finding most recent log file.
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            return_code = main.do_print_failed(args.parse_args([]))
+            assert_print_failed_tests_output(return_code, output.getvalue())
+
     @mock.patch("main.termout.is_valid", return_value=False)
     async def test_log_to_stdout(self, _termout_mock: mock.Mock) -> None:
         """Test that we can log everything to stdout, and it parses as JSON lines"""

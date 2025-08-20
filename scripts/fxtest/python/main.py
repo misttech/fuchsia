@@ -21,6 +21,7 @@ import tempfile
 import textwrap
 import time
 import typing
+from typing import List
 
 import async_utils.command as command
 import async_utils.signals as signals
@@ -207,6 +208,8 @@ def do_process_previous(flags: args.Flags) -> int:
         )
         print(env.get_most_recent_log())
         return 0
+    elif flags.previous is args.PrevOption.FAILED_TESTS:
+        return do_print_failed(flags)
     elif flags.previous is args.PrevOption.ARTIFACT_PATH:
         env = environment.ExecutionEnvironment.initialize_from_args(
             flags, create_log_file=False
@@ -273,6 +276,46 @@ def do_print_logs(flags: args.Flags) -> int:
         return 0
     else:
         return 1
+
+
+def do_print_failed(flags: args.Flags) -> int:
+    env = environment.ExecutionEnvironment.initialize_from_args(
+        flags, create_log_file=False
+    )
+    log_source = log.LogSource.from_env(env)
+
+    suite_names: dict[event.Id, str] = {}
+    failed_test_events: List[event.Event] = []
+
+    for element in log_source.read_log():
+        if (log_event := element.log_event) is None:
+            continue
+        if (payload := log_event.payload) is None:
+            continue
+
+        if (e := payload.test_suite_started) is not None and log_event.id:
+            suite_names[log_event.id] = e.name
+
+        if (
+            payload.test_suite_ended is not None
+            and payload.test_suite_ended.status != event.TestSuiteStatus.PASSED
+        ):
+            failed_test_events.append(log_event)
+
+    if len(failed_test_events) == 0:
+        print(
+            statusinfo.green(
+                "The previous run had no failed tests", style=flags.style
+            )
+        )
+    else:
+        print("The following tests failed in the previous run:")
+        for log_event in failed_test_events:
+            if log_event.id and log_event.id in suite_names:
+                name = suite_names[log_event.id]
+                print(statusinfo.green(f" * fx test {name}", style=flags.style))
+
+    return 0
 
 
 async def do_replay_log(

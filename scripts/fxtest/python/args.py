@@ -24,6 +24,7 @@ class PrevOption(enum.StrEnum):
     PATH = "path"
     REPLAY = "replay"
     ARTIFACT_PATH = "artifact-path"
+    FAILED_TESTS = "failed-tests"
     HELP = "help"
 
     def help(self) -> str:
@@ -43,6 +44,8 @@ class PrevOption(enum.StrEnum):
             return "Replay the previous run, using new display options."
         elif self is PrevOption.ARTIFACT_PATH:
             return "Print the path where artifacts were stored in the previous run."
+        elif self is PrevOption.FAILED_TESTS:
+            return "Print the previously failed tests and how to run them."
         elif self is PrevOption.HELP:
             return "Print this help output."
         else:
