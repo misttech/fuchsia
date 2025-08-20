@@ -822,7 +822,7 @@ void* __sanitizer_before_thread_create_hook(thrd_t thread, bool /*detached*/, co
   // task on its destructor.
   zx_handle_t task = thrd_get_zx_handle(thread);
   zx_status_t status =
-      zx_task_suspend_token(task, SuspendedThreadTest::gSuspendToken->reset_and_get_address());
+      zx_task_suspend(task, SuspendedThreadTest::gSuspendToken->reset_and_get_address());
   ZX_ASSERT(status == ZX_OK && "Failed to suspend new thread.");
   return SuspendedThreadTest::gSuspendToken;
 }

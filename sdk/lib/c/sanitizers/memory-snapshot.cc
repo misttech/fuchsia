@@ -53,7 +53,7 @@ class PrimeSyscallsBeforeTakingLocks {
     zx_object_get_child(_zx_process_self(), ZX_KOID_INVALID, 0, &invalid);
     zx_object_get_info(_zx_process_self(), 0, nullptr, 0, nullptr, nullptr);
     zx_object_wait_one(_zx_process_self(), 0, 0, nullptr);
-    zx_task_suspend_token(_zx_process_self(), &invalid);
+    zx_task_suspend(_zx_process_self(), &invalid);
     zx_thread_read_state(zxr_thread_get_handle(&__pthread_self()->zxr_thread), 0, nullptr, 0);
     zx_handle_t vmo = ZX_HANDLE_INVALID;
     zx_vmo_create(0, 0, &vmo);

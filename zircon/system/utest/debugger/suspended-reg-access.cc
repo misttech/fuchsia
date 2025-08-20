@@ -173,7 +173,7 @@ TEST(SuspendedTests, SuspendedRegAccessTest) {
   uint64_t test_reg = 0;
   while (true) {
     zx_nanosleep(zx_deadline_after(ZX_USEC(1)));
-    ASSERT_EQ(zx_task_suspend_token(thread, &suspend_token), ZX_OK);
+    ASSERT_EQ(zx_task_suspend(thread, &suspend_token), ZX_OK);
     ASSERT_NO_FATAL_FAILURE(wait_thread_state(self_proc, thread, port, ZX_THREAD_SUSPENDED));
 
     read_inferior_gregs(thread, &regs);
@@ -348,7 +348,7 @@ void suspended_in_syscall_reg_access_worker(bool do_channel_call) {
   EXPECT_EQ(zx_port_create(0, &port), ZX_OK);
 
   zx_handle_t token;
-  ASSERT_EQ(zx_task_suspend_token(thread, &token), ZX_OK);
+  ASSERT_EQ(zx_task_suspend(thread, &token), ZX_OK);
   ASSERT_NO_FATAL_FAILURE(wait_thread_state(self_proc, thread, port, ZX_THREAD_SUSPENDED));
 
   zx_thread_state_general_regs_t regs;
@@ -496,7 +496,7 @@ void suspended_in_exception_handler(inferior_data_t* data, const zx_port_packet_
 
         // Suspend the thread before fixing the segv to verify register
         // access works while the thread is in an exception and suspended.
-        ASSERT_EQ(zx_task_suspend_token(suspend_data->thread_handle, &suspend_data->suspend_token),
+        ASSERT_EQ(zx_task_suspend(suspend_data->thread_handle, &suspend_data->suspend_token),
                   ZX_OK);
 
         // Waiting for the thread to suspend doesn't work here as the

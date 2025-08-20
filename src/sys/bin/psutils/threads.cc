@@ -170,7 +170,7 @@ void dump_all_threads(uint64_t pid, zx_handle_t process, FILE* out) {
     }
 
     zx_handle_t suspend_token = ZX_HANDLE_INVALID;
-    status = zx_task_suspend_token(thread, &suspend_token);
+    status = zx_task_suspend(thread, &suspend_token);
     if (status != ZX_OK) {
       print_zx_error(status, "unable to suspend thread, skipping");
       zx_handle_close(thread);

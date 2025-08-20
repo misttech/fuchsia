@@ -35,7 +35,7 @@ class task : public object<T> {
   zx_status_t suspend(suspend_token* result) const ZX_AVAILABLE_SINCE(7) {
     // Assume |result| must refer to a different container than |this|, due
     // to strict aliasing.
-    return zx_task_suspend_token(object<T>::get(), result->reset_and_get_address());
+    return zx_task_suspend(object<T>::get(), result->reset_and_get_address());
   }
 
   zx_status_t create_exception_channel(uint32_t options, object<channel>* channel) const

@@ -60,7 +60,7 @@ static bool get_thread_info(zx_handle_t thread, zx_info_thread_t* info) {
 // Suspend the given thread and block until it reaches the suspended state. The suspend token
 // is written to the output parameter.
 static void suspend_thread_synchronous(zx_handle_t thread, zx_handle_t* suspend_token) {
-  ASSERT_EQ(zx_task_suspend_token(thread, suspend_token), ZX_OK);
+  ASSERT_EQ(zx_task_suspend(thread, suspend_token), ZX_OK);
 
   zx_signals_t observed = 0u;
   ASSERT_EQ(zx_object_wait_one(thread, ZX_THREAD_SUSPENDED, ZX_TIME_INFINITE, &observed), ZX_OK);
@@ -563,7 +563,7 @@ TEST_F(Threads, ResumeSuspended) {
   wait_thread_blocked(thread_h, ZX_THREAD_STATE_BLOCKED_WAIT_ONE);
 
   zx_handle_t suspend_token = ZX_HANDLE_INVALID;
-  ASSERT_EQ(zx_task_suspend_token(thread_h, &suspend_token), ZX_OK);
+  ASSERT_EQ(zx_task_suspend(thread_h, &suspend_token), ZX_OK);
   ASSERT_EQ(zx_handle_close(suspend_token), ZX_OK);
 
   // The thread should still be blocked on the event when it wakes up.
@@ -622,7 +622,7 @@ TEST_F(Threads, SuspendSleeping) {
 
   // Suspend the thread.
   zx_handle_t suspend_token = ZX_HANDLE_INVALID;
-  zx_status_t status = zx_task_suspend_token(thread_h, &suspend_token);
+  zx_status_t status = zx_task_suspend(thread_h, &suspend_token);
   if (status != ZX_OK) {
     ASSERT_EQ(status, ZX_ERR_BAD_STATE);
     // This might happen if the thread exits before we tried suspending it
@@ -712,7 +712,7 @@ TEST_F(Threads, SuspendPortCall) {
   wait_thread_blocked(thread_h, ZX_THREAD_STATE_BLOCKED_PORT);
 
   zx_handle_t suspend_token = ZX_HANDLE_INVALID;
-  ASSERT_EQ(zx_task_suspend_token(thread_h, &suspend_token), ZX_OK);
+  ASSERT_EQ(zx_task_suspend(thread_h, &suspend_token), ZX_OK);
 
   zx_port_packet_t packet1 = {100ull, ZX_PKT_TYPE_USER, 0u, {}};
   zx_port_packet_t packet2 = {300ull, ZX_PKT_TYPE_USER, 0u, {}};
@@ -752,7 +752,7 @@ TEST_F(Threads, SuspendStopsThread) {
 
   // Suspend the thread and wait for the suspend to happen.
   zx_handle_t suspend_token = ZX_HANDLE_INVALID;
-  ASSERT_EQ(zx_task_suspend_token(thread_h, &suspend_token), ZX_OK);
+  ASSERT_EQ(zx_task_suspend(thread_h, &suspend_token), ZX_OK);
   ASSERT_EQ(zx_object_wait_one(thread_h, ZX_THREAD_SUSPENDED, ZX_TIME_INFINITE, nullptr), ZX_OK);
 
   // Clobber the value, wait, and "check" that the thread didn't reset the value.
@@ -807,9 +807,9 @@ TEST_F(Threads, SuspendMultiple) {
   // suspends don't escape out of exception handling, unlike blocking
   // syscalls where suspend will escape out of them.
   zx_handle_t suspend_token1 = ZX_HANDLE_INVALID;
-  ASSERT_EQ(zx_task_suspend_token(thread_h, &suspend_token1), ZX_OK);
+  ASSERT_EQ(zx_task_suspend(thread_h, &suspend_token1), ZX_OK);
   zx_handle_t suspend_token2 = ZX_HANDLE_INVALID;
-  ASSERT_EQ(zx_task_suspend_token(thread_h, &suspend_token2), ZX_OK);
+  ASSERT_EQ(zx_task_suspend(thread_h, &suspend_token2), ZX_OK);
 
   // Resume one token, it should remain blocked.
   ASSERT_EQ(zx_handle_close(suspend_token1), ZX_OK);
@@ -1074,7 +1074,7 @@ static void TestSuspendWaitAsyncSignalDeliveryWorker(zx_handle_t stack_vmar) {
   // Check that suspend/resume while blocked in a syscall results in
   // the expected behavior and is visible via async wait.
   suspend_token = ZX_HANDLE_INVALID;
-  ASSERT_EQ(zx_task_suspend_token(thread_h, &suspend_token), ZX_OK);
+  ASSERT_EQ(zx_task_suspend(thread_h, &suspend_token), ZX_OK);
   port_wait_for_signal(port, thread_h, zx_deadline_after(ZX_SEC(180)), ZX_THREAD_SUSPENDED,
                        &packet);
   ASSERT_EQ(packet.signal.observed & run_susp_mask, ZX_THREAD_SUSPENDED);
