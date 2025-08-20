@@ -127,7 +127,10 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
 
         // Determine what result we want from this command.
         let result = match (cmd.stage, cmd.out) {
-            (true, _) => CreateResult::Stage,
+            (true, Some(_)) => {
+                anyhow::bail!("--stage and --out cannot be used together.")
+            }
+            (true, None) => CreateResult::Stage,
             (false, Some(out)) => CreateResult::Out(out),
             (false, None) => CreateResult::Default,
         };
