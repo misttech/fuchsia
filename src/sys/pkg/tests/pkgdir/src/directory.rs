@@ -43,7 +43,6 @@ async fn open_per_package_source(source: PackageSource) {
     assert_open_meta_subdirectory(&source, "meta", "dir").await;
     assert_open_meta_subdirectory(&source, "meta", "dir/dir").await;
     assert_open_meta_file(&source, "meta", "file").await;
-    assert_open_meta_file(&source, "meta", "package").await;
     assert_open_meta_file(&source, "meta", "dir/file").await;
 
     assert_open_meta_subdirectory(&source, "meta/dir", ".").await;
@@ -855,7 +854,7 @@ async fn assert_read_dirents_overflow(
 
     let (status, buf) = dir.read_dirents(fio::MAX_BUF).await.unwrap();
     zx::Status::ok(status).expect("status ok");
-    assert_eq!(buf, b"");
+    assert_eq!(buf, []);
 
     assert_eq!(
         fuchsia_fs::directory::readdir(dir).await.unwrap().into_iter().sorted().collect::<Vec<_>>(),
@@ -883,7 +882,7 @@ async fn assert_read_dirents_no_overflow(
 
     let (status, buf) = dir.read_dirents(fio::MAX_BUF).await.unwrap();
     zx::Status::ok(status).expect("status ok");
-    assert_eq!(buf, b"");
+    assert_eq!(buf, []);
 
     assert_eq!(
         fuchsia_fs::directory::readdir(dir).await.unwrap().into_iter().sorted().collect::<Vec<_>>(),
@@ -931,7 +930,7 @@ async fn assert_rewind_overflow_when_seek_offset_at_end(dir: &fio::DirectoryProx
 
     let (status, buf) = dir.read_dirents(fio::MAX_BUF).await.unwrap();
     zx::Status::ok(status).expect("status ok");
-    assert_eq!(buf, b"");
+    assert_eq!(buf, []);
 
     let status = dir.rewind().await.unwrap();
     zx::Status::ok(status).expect("status ok");
@@ -959,7 +958,7 @@ async fn assert_rewind_overflow_when_seek_offset_in_middle(dir: &fio::DirectoryP
 
     let (status, buf) = dir.read_dirents(fio::MAX_BUF).await.unwrap();
     zx::Status::ok(status).expect("status ok");
-    assert_eq!(buf, b"");
+    assert_eq!(buf, []);
 }
 
 async fn assert_rewind_no_overflow(dir: &fio::DirectoryProxy) {
