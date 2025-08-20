@@ -10,7 +10,7 @@ use fuchsia_trace as ftrace;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::{mpsc, oneshot};
 use futures::executor::block_on;
-use futures::{select, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, select};
 use log::warn;
 use selectors::FastError;
 use std::collections::HashSet;
@@ -261,10 +261,18 @@ impl SerialWriter {
 
             // Consider `component_name` as a tag. A log viewer will be presented
             // the component name just as any tag.
-            let name = log.component_name();
+            let component_name = log.component_name();
 
-            if self.denied_tags.contains(name.as_ref()) {
+            if self.denied_tags.contains(component_name.as_ref()) {
                 return;
+            }
+
+            // This may be a dynamic collection, split into parts, and try and match each part
+            // to the tags.
+            for name in component_name.split(":") {
+                if self.denied_tags.contains(name) {
+                    return;
+                }
             }
         }
 
@@ -343,8 +351,8 @@ impl Barrier {
 #[cfg(test)]
 mod tests {
     use fuchsia_async::{self as fasync};
-    use futures::channel::mpsc::{self, unbounded};
     use futures::SinkExt;
+    use futures::channel::mpsc::{self, unbounded};
 
     use super::*;
     use crate::identity::ComponentIdentity;
@@ -584,11 +592,30 @@ mod tests {
             ExtendedMoniker::parse_str("./bootstrap/bar").unwrap(),
             "fuchsia-pkg://bootstrap-bar",
         )));
+        let denied_collection = repo.get_log_container(Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./bootstrap/denied-collection:foo-bar").unwrap(),
+            "fuchsia-pkg://bootstrap-denied-collection:foo-bar",
+        )));
         let bootstrap_denied_component_container =
             repo.get_log_container(Arc::new(ComponentIdentity::new(
                 ExtendedMoniker::parse_str("./bootstrap/denied_component").unwrap(),
                 "fuchsia-pkg://bootstrap-denied_component",
             )));
+        let denied_collection_instance = repo.get_log_container(Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./bootstrap/collection:denied-foo-bar").unwrap(),
+            "fuchsia-pkg://bootstrap-collection:denied-foo-bar",
+        )));
+
+        let denied_collection_and_instance =
+            repo.get_log_container(Arc::new(ComponentIdentity::new(
+                ExtendedMoniker::parse_str("./bootstrap/collection:denied-foo-bar").unwrap(),
+                "fuchsia-pkg://bootstrap-collection:denied-foo-bar",
+            )));
+
+        let collection_and_instance = repo.get_log_container(Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./bootstrap/collection:foo-bar").unwrap(),
+            "fuchsia-pkg://bootstrap-collection:foo-bar",
+        )));
 
         let core_foo_container = repo.get_log_container(Arc::new(ComponentIdentity::new(
             ExtendedMoniker::parse_str("./core/foo").unwrap(),
@@ -605,13 +632,36 @@ mod tests {
             zx::BootInstant::from_nanos(1),
         ));
         core_baz_container.ingest_message(make_message("c", None, zx::BootInstant::from_nanos(2)));
+        denied_collection.ingest_message(make_message("d", None, zx::BootInstant::from_nanos(2)));
+        denied_collection_instance.ingest_message(make_message(
+            "e",
+            None,
+            zx::BootInstant::from_nanos(2),
+        ));
+        denied_collection_and_instance.ingest_message(make_message(
+            "f",
+            None,
+            zx::BootInstant::from_nanos(2),
+        ));
+        collection_and_instance.ingest_message(make_message(
+            "g",
+            None,
+            zx::BootInstant::from_nanos(2),
+        ));
+
         let (sink, rcv) = TestSink::new();
 
         let (_freeze_sender, freeze_receiver) = unbounded();
         let (_flush_sender, flush_receiver) = unbounded();
         let _serial_task = fasync::Task::spawn(launch_serial(
             &["bootstrap/**", "/core/foo"],
-            &["denied_tag", "denied_component"],
+            &[
+                "denied_tag",
+                "denied_component",
+                "denied-collection",
+                "denied-foo-bar",
+                "collection:denied-foo-bar",
+            ],
             Arc::clone(&repo),
             sink,
             freeze_receiver,
@@ -629,7 +679,7 @@ mod tests {
             zx::BootInstant::from_nanos(3),
         ));
         core_foo_container.ingest_message(make_message("c", None, zx::BootInstant::from_nanos(4)));
-        let received: Vec<_> = rcv.take(2).collect().await;
+        let received: Vec<_> = rcv.take(3).collect().await;
 
         // We must see the logs emitted before we installed the serial listener and after. We must
         // not see the log from /core/baz and we must not see the log from bootstrap/bar with tag
@@ -638,6 +688,7 @@ mod tests {
             received,
             vec![
                 "[00000.000] 00001:00002> [foo] DEBUG: a\n",
+                "[00000.000] 00001:00002> [collection:foo-bar] DEBUG: g\n",
                 "[00000.000] 00001:00002> [foo] DEBUG: c\n"
             ]
         );
