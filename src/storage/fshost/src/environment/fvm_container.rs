@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use super::{Container, Filesystem, FilesystemLauncher};
-use crate::device::constants::DATA_TYPE_GUID;
+use crate::device::constants::{DATA_TYPE_GUID, DEFAULT_F2FS_MIN_BYTES};
 use anyhow::{Context as _, Error};
 use async_trait::async_trait;
 use crypt_policy::get_policy;
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
 use fidl_fuchsia_fvm::ResetMarker;
 use fs_management::filesystem::{ServingMultiVolumeFilesystem, ServingVolume};
+use fs_management::format::DiskFormat;
 use fs_management::format::constants::{
     BLOBFS_PARTITION_LABEL, DATA_PARTITION_LABEL, LEGACY_DATA_PARTITION_LABEL,
 };
@@ -51,17 +52,13 @@ impl Container for FvmContainer {
                     _ => return None,
                 }
             }
-            if found_blobfs && data_label.is_some() {
-                data_label
-            } else {
-                None
-            }
+            if found_blobfs && data_label.is_some() { data_label } else { None }
         }
 
         if let Some(data_label) = find_data_volume(self.get_volumes().await?) {
             match self.check_and_mount_data(&data_label, launcher).await {
                 Ok(data_volume) => {
-                    return Ok(Filesystem::ServingVolumeInMultiVolume(None, data_volume))
+                    return Ok(Filesystem::ServingVolumeInMultiVolume(None, data_volume));
                 }
                 Err(error) => match error.root_cause().downcast_ref::<zx::Status>() {
                     Some(status) if status == &zx::Status::WRONG_TYPE => {
@@ -88,11 +85,21 @@ impl Container for FvmContainer {
         self.remove_all_non_blob_volumes().await?;
 
         let uri = format!("#meta/{}.cm", launcher.config.data_filesystem_format);
+        let initial_size =
+            matches!(launcher.config.data_filesystem_format.as_str().into(), DiskFormat::F2fs)
+                .then(|| {
+                    std::cmp::max(launcher.config.data_max_bytes, DEFAULT_F2FS_MIN_BYTES)
+                        .next_multiple_of(launcher.config.fvm_slice_size)
+                });
         let create_volume = |crypt| async {
             self.0
                 .create_volume(
                     DATA_PARTITION_LABEL,
-                    CreateOptions { type_guid: Some(DATA_TYPE_GUID), ..CreateOptions::default() },
+                    CreateOptions {
+                        initial_size,
+                        type_guid: Some(DATA_TYPE_GUID),
+                        ..CreateOptions::default()
+                    },
                     MountOptions { crypt, uri: Some(uri), ..Default::default() },
                 )
                 .await

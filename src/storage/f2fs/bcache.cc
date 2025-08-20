@@ -73,7 +73,7 @@ zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
         max_allowable = fbl::round_down(max_allowable, slices_per_segment);
 
         if (slice_count > max_allowable || slice_count < kMinVolumeSize / slice_size) {
-          FX_LOGS(WARNING) << "reset slice_count to " << max_allowable;
+          FX_LOGS(WARNING) << "reset slice_count to " << max_allowable << " from " << slice_count;
           slice_count = max_allowable;
         }
 
