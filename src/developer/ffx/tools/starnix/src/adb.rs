@@ -9,11 +9,11 @@ use emulator_instance::EMU_INSTANCE_ROOT_DIR;
 use ffx_config::EnvironmentContext;
 use ffx_emulator_config::ShowDetail;
 use ffx_emulator_engines::EngineBuilder;
-use fho::{bug, return_bug, FfxContext, Result};
+use fho::{FfxContext, Result, bug, return_bug, return_user_error};
 use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
+use futures::FutureExt;
 use futures::io::AsyncReadExt;
 use futures::stream::StreamExt;
-use futures::FutureExt;
 use log::info;
 use netext::{MultithreadedTokioAsyncWrapper, TcpListenerStream, TokioAsyncReadExt};
 use schemars::JsonSchema;
@@ -24,8 +24,8 @@ use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener as SyncTcpListener};
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use target_connector::Connector;
 use target_holders::{RemoteControlProxyHolder, TargetProxyHolder};
@@ -99,6 +99,22 @@ impl StarnixAdbCommand {
 #[argh(subcommand, name = "connect")]
 struct AdbConnectArgs {}
 
+fn run_adb_connect(adb_path: &str, adb_address: &SocketAddr) -> Result<String> {
+    let mut adb_cmd = Command::new(adb_path);
+    adb_cmd.arg("connect").arg(adb_address.to_string());
+    info!("running `{adb_cmd:?}`");
+
+    let connect_res = adb_cmd.output().bug_context("running adb connect")?;
+    let stdout = String::from_utf8_lossy(&connect_res.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&connect_res.stderr).into_owned();
+
+    if !connect_res.status.success() {
+        return_bug!("Couldn't run adb connect. stdout={stdout} stderr={stderr}");
+    }
+
+    Ok(stdout + &stderr)
+}
+
 impl AdbConnectArgs {
     async fn run_connect(
         self,
@@ -117,11 +133,7 @@ impl AdbConnectArgs {
         let ssh_address: TargetIpAddr = addr_info.into();
         let ssh_address: SocketAddr = ssh_address.into();
 
-        let adb_port = if ssh_address.port() == 22 || ssh_address.port() == 8022 {
-            // This only covers `--net tap` emulators, physical devices with CDC ethernet, and
-            // funnel. funnel also forwards adb to local 5555, so it's fine to use the default.
-            ADB_DEFAULT_PORT
-        } else {
+        if ssh_address.port() != 22 && ssh_address.port() != 8022 {
             // If the device doesn't have a standard SSH port, it's likely an emulator
             // instance with user networking. Look up the instance and get its host port mapping
             // to find the port we need.
@@ -130,32 +142,53 @@ impl AdbConnectArgs {
                 .nodename
                 .ok_or(bug!("could not read nodename from device"))
                 .bug_context("getting target name")?;
-            get_emu_host_adb_port(context, &nodename)
+            let adb_port = get_emu_host_adb_port(context, &nodename)
                 .await
-                .bug_context("Finding host adb port for user networking emulator")?
-        };
-
-        let mut adb_address = ssh_address.clone();
-        adb_address.set_port(adb_port);
-
-        let mut adb_cmd = Command::new(adb);
-        adb_cmd.arg("connect").arg(adb_address.to_string());
-        info!("running `{adb_cmd:?}`");
-
-        let connect_res = adb_cmd.output().bug_context("running adb connect")?;
-        if !connect_res.status.success() {
-            let stdout = String::from_utf8_lossy(&connect_res.stdout);
-            let stderr = String::from_utf8_lossy(&connect_res.stderr);
-            return_bug!("Couldn't run adb connect. stdout={stdout} stderr={stderr}");
+                .bug_context("Finding host adb port for user networking emulator")?;
+            let mut adb_address = ssh_address.clone();
+            adb_address.set_port(adb_port);
+            run_adb_connect(&adb, &adb_address)?;
+            return Ok(ConnectOutput { serial_number: adb_address.to_string() });
         }
 
-        Ok(ConnectOutput { serial_number: adb_address })
+        // Try to connect directly. This will work if adbd is already reachable.
+        // This only covers `--net tap` emulators, physical devices with CDC ethernet, and
+        // funnel. funnel also forwards adb to local 5555, so it's fine to use the default port.
+        let mut direct_connect_addr = ssh_address.clone();
+        direct_connect_addr.set_port(ADB_DEFAULT_PORT);
+        let output = run_adb_connect(&adb, &direct_connect_addr)?;
+        // Note: failed to authenticate occurs if adb can connect but adb is running in secure
+        // mode. A developer will either need to accept the adb connection on their device or
+        // authenticate against a pre-installed key by the ADB_VENDOR_KEYS environment variable.
+        if output.contains("connected to") // also covers "already connected to"
+            || output.contains("failed to authenticate to")
+        {
+            return Ok(ConnectOutput { serial_number: direct_connect_addr.to_string() });
+        }
+
+        // Try to connect to the default ADB TCP port. This is set by a property, usually one of
+        // `service.adb.listen_addrs`, `service.adb.tcp.port`, or `persist.adb.tcp.port`. Starnix
+        // test builds use the ADB default of 5555.
+        let forward_addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, ADB_DEFAULT_PORT);
+        let output = run_adb_connect(&adb, &forward_addr.into())?;
+        if output.contains("connected to") // also covers "already connected to"
+            || output.contains("failed to authenticate to")
+        {
+            return Ok(ConnectOutput { serial_number: forward_addr.to_string() });
+        }
+        return_user_error!(
+            "adb could not connect: {output}\n\
+            If ffx is connected, try setting up port forwarding first with \
+            `ffx forward '5555=>5555'` followed by `adb connect localhost:5555` in a separate \
+            terminal.\n\
+            Your connection's \"serial number\" will be 'localhost:5555'."
+        );
     }
 }
 
 #[derive(Debug, JsonSchema, Serialize)]
 pub struct ConnectOutput {
-    serial_number: SocketAddr,
+    serial_number: String,
 }
 
 impl std::fmt::Display for ConnectOutput {
@@ -298,7 +331,9 @@ impl AdbProxyArgs {
                 match adb_command.status() {
                     Ok(_) => {}
                     Err(io_err) if io_err.kind() == ErrorKind::NotFound => {
-                        panic!("Could not find adb binary named `{adb_path}`. If your adb is not in your $PATH, use the --adb flag to specify where to find it.");
+                        panic!(
+                            "Could not find adb binary named `{adb_path}`. If your adb is not in your $PATH, use the --adb flag to specify where to find it."
+                        );
                     }
                     Err(io_err) => {
                         panic!("Failed to run `${adb_command:?}`: {io_err:?}");
