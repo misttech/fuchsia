@@ -183,8 +183,9 @@ if (is_host) {
           label = get_label_info(":$target_name", "label_with_toolchain")
           name = "rustdoc-link"
           os = host_os
-          path = rebase_path("//tools/contrib/lib/rust/rustdoc-link.py",
-                             root_build_dir)
+          path =
+              rebase_path("//tools/devshell/contrib/lib/rust/rustdoc-link.py",
+                          root_build_dir)
         },
       ]
     }

@@ -5,6 +5,7 @@ group("rustdoc-link") {
   testonly = true
   deps = [
     "//build/rust/tests/rustdoc-link/basic-hierarchy",
+    "//build/rust/tests/rustdoc-link/presence_in_tool_paths_json",
 
     # Test for the --dry-run flag.
     "//build/rust/tests/rustdoc-link/basic-dry-run",
