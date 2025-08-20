@@ -10,7 +10,6 @@
 #include <lib/ddk/driver.h>
 #include <lib/fdio/directory.h>
 #include <lib/fidl/coding.h>
-#include <lib/fidl/cpp/message_part.h>
 #include <lib/fidl/txn_header.h>
 #include <lib/zx/channel.h>
 #include <stdio.h>
