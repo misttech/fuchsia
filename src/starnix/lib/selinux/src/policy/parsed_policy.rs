@@ -297,7 +297,8 @@ impl ParsedPolicy {
                     XPERMS_TYPE_IOCTL_PREFIXES => {
                         xperms.xperms_bitmap.contains(ioctl_prefix).then_some(&XpermsBitmap::ALL)
                     }
-                    _ => unreachable!("invalid xperms_type in validated ExtendedPermissions"),
+                    // TODO("https://fxbug.dev/440068604") - handle nlmsg xperms type.
+                    _ => None,
                 };
                 let Some(xperms_bitmap) = bitmap_if_prefix_matches else {
                     continue;

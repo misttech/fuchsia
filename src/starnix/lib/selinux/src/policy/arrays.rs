@@ -397,9 +397,8 @@ impl Validate for AccessVectorRule {
             if !(xperms_type == XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES
                 || xperms_type == XPERMS_TYPE_IOCTL_PREFIXES)
             {
-                return Err(
-                    ValidateError::InvalidExtendedPermissionsType { type_: xperms_type }.into()
-                );
+                // TODO("https://fxbug.dev/440068604") - allow nlmsg xperms type.
+                return Ok(());
             }
         }
         Ok(())
