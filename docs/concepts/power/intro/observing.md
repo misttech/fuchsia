@@ -36,11 +36,11 @@ If the high priority application exits, the low priority application's
 dependency is no longer fulfilled, which we depict here with a grey, dashed
 line instead of a black dashed line.
 
-Note: The ActivityGovernorListener talked about in
-["Taking action on system suspend or resume"][taking_action] has similar
-effects as opportunistic dependencies and in fact the same behavior as an
-ActivityGovernorListener can be achieved by creating an element with an
-opportunistic dependency on ExecutionState's Suspending power level.
+Note: The SuspendBlocker talked about in ["Taking action on system suspend or
+resume"][taking_action] has similar effects as opportunistic dependencies and in
+fact the same behavior as an SuspendBlocker can be achieved by creating an
+element with an opportunistic dependency on ExecutionState's Suspending power
+level.
 
 The type of dependency (ie. opportunistic vs assertive) has **no impact on
 ordering of level activation/deactivation**. The dependency type _only_ affects
