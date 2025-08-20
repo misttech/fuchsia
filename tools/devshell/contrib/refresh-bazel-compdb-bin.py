@@ -56,7 +56,7 @@ _REGEX_PATH_PATTERNS = [
     # Fidl libraries defined in Bazel in the SDK
     (
         re.compile(
-            ".*bazel-out.*\/bin\/sdk\/fidl\/.*\/_virtual_includes\/(?P<name>.*)_cpp"
+            ".*bazel-out.*\/bin\/sdk\/fidl\/.*\/_virtual_includes\/(?P<name>.*(?<!_bindlib))_cpp"
         ),
         lambda m: "-Ifidling/gen/sdk/fidl/{fidl_lib}/{fidl_lib}/cpp".format(
             fidl_lib=m["name"]
@@ -65,9 +65,27 @@ _REGEX_PATH_PATTERNS = [
     # Fidl libraries defined in Bazel in vendor repos.
     (
         re.compile(
-            ".*bazel-out.*\/bin\/vendor\/(?P<path>.*)\/fidl\/.*\/_virtual_includes\/(?P<name>.*)_cpp"
+            ".*bazel-out.*\/bin\/vendor\/(?P<path>.*)\/fidl\/.*\/_virtual_includes\/(?P<name>.*(?<!_bindlib))_cpp"
         ),
         lambda m: "-Ifidling/gen/vendor/{vendor_path}/fidl/{fidl_lib}/{fidl_lib}/cpp".format(
+            vendor_path=m["path"], fidl_lib=m["name"]
+        ),
+    ),
+    # Fidl bind libraries defined in Bazel in the SDK
+    (
+        re.compile(
+            ".*bazel-out.*\/bin\/sdk\/fidl\/.*\/_virtual_includes\/(?P<name>.*)_bindlib_cpp"
+        ),
+        lambda m: "-Igen/sdk/fidl/{fidl_lib}/{fidl_lib}_bindlib/bind_cpp".format(
+            fidl_lib=m["name"]
+        ),
+    ),
+    # Fidl bind libraries defined in Bazel in vendor repos.
+    (
+        re.compile(
+            ".*bazel-out.*\/bin\/vendor\/(?P<path>.*)\/fidl\/.*\/_virtual_includes\/(?P<name>.*)_bindlib_cpp"
+        ),
+        lambda m: "-Igen/vendor/{vendor_path}/fidl/{fidl_lib}/{fidl_lib}_bindlib/bind_cpp".format(
             vendor_path=m["path"], fidl_lib=m["name"]
         ),
     ),
