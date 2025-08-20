@@ -106,11 +106,11 @@ rust_library(
         "//third_party/rust_crates/vendor/const-oid-0.9.6:const_oid",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/flagset-0.4.6:flagset",  # aarch64-unknown-fuchsia
+            "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",  # aarch64-unknown-fuchsia
             "//third_party/rust_crates/vendor/pem-rfc7468-0.7.0:pem_rfc7468",  # aarch64-unknown-fuchsia
         ],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/flagset-0.4.6:flagset",  # x86_64-unknown-fuchsia
+            "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",  # x86_64-unknown-fuchsia
             "//third_party/rust_crates/vendor/pem-rfc7468-0.7.0:pem_rfc7468",  # x86_64-unknown-fuchsia
         ],
         "//conditions:default": [],

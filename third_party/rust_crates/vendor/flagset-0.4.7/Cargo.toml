@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.65"
 name = "flagset"
-version = "0.4.6"
+version = "0.4.7"
 authors = ["Nathaniel McCallum <nathaniel@profian.com>"]
 description = "Data types and a macro for generating enumeration-based bit flags"
 homepage = "https://github.com/enarx/flagset"

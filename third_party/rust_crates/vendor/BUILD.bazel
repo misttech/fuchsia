@@ -895,14 +895,14 @@ alias(
 )
 
 alias(
-    name = "flagset-0.4.6",
-    actual = "//third_party/rust_crates/vendor/flagset-0.4.6:flagset",
+    name = "flagset-0.4.7",
+    actual = "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",
     tags = ["manual"],
 )
 
 alias(
     name = "flagset",
-    actual = "//third_party/rust_crates/vendor/flagset-0.4.6:flagset",
+    actual = "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",
     tags = ["manual"],
 )
 

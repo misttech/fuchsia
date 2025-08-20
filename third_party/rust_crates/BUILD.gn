@@ -315,7 +315,7 @@ group("fatfs") {
 
 if (current_os == "fuchsia") {
   group("flagset") {
-    public_deps = [ ":flagset-v0_4_6" ]
+    public_deps = [ ":flagset-v0_4_7" ]
   }
 }
 
@@ -5201,7 +5201,7 @@ rustc_library("der-v0_7_9") {
   deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":const-oid-v0_9_6" ]
   deps += [ ":der_derive-v0_7_3($host_toolchain)" ]
-  deps += [ ":flagset-v0_4_6" ]
+  deps += [ ":flagset-v0_4_7" ]
   deps += [ ":pem-rfc7468-v0_7_0" ]
 
   rustenv = []
@@ -6367,15 +6367,15 @@ rustc_library("fixedbitset-v0_4_2") {
   applicable_licenses = [ ":fixedbitset-v0_4_2.license" ]
 }
 
-license("flagset-v0_4_6.license") {
+license("flagset-v0_4_7.license") {
   public_package_name = "flagset"
-  license_files = [ "//third_party/rust_crates/vendor/flagset-0.4.6/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/flagset-0.4.7/LICENSE" ]
 }
 
-rustc_library("flagset-v0_4_6") {
+rustc_library("flagset-v0_4_7") {
   crate_name = "flagset"
-  source_root = "//third_party/rust_crates/vendor/flagset-0.4.6/src/lib.rs"
-  output_name = "flagset-9ae1eeaa447b469f"
+  source_root = "//third_party/rust_crates/vendor/flagset-0.4.7/src/lib.rs"
+  output_name = "flagset-a85e6bcc9fb5c243"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -6387,13 +6387,13 @@ rustc_library("flagset-v0_4_6") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9ae1eeaa447b469f",
-    "-Cextra-filename=-9ae1eeaa447b469f",
+    "-Cmetadata=a85e6bcc9fb5c243",
+    "-Cextra-filename=-a85e6bcc9fb5c243",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":flagset-v0_4_6.license" ]
+  applicable_licenses = [ ":flagset-v0_4_7.license" ]
 }
 
 license("flate2-v1_1_1.license") {
