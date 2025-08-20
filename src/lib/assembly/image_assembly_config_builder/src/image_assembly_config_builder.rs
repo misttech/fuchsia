@@ -203,9 +203,12 @@ impl ImageAssemblyConfigBuilder {
 
         // Add packages specified by the developer
         for package_details in packages {
-            let set = self.map_package_set(&package_details.set, /*is_platform=*/ true)?;
-            self.add_package_from_path(package_details.package, PackageOrigin::Developer, &set)
-                .context("Adding developer-specified package")?;
+            self.add_package_from_path(
+                package_details.package,
+                PackageOrigin::Developer,
+                &package_details.set,
+            )
+            .context("Adding developer-specified package")?;
         }
 
         for compiled_package_def in packages_to_compile {
@@ -528,16 +531,20 @@ impl ImageAssemblyConfigBuilder {
         path: impl AsRef<Utf8Path>,
         origin: PackageOrigin,
         to_package_set: &PackageSet,
-    ) -> Result<()> {
+    ) -> Result<PackageSet> {
+        let is_platform = matches!(origin, PackageOrigin::AIB);
+        let mapped_package_set = self.map_package_set(to_package_set, is_platform)?;
+
         // Create PackageEntry
-        let (d, package_entry) = PackageEntry::parse_from(origin, to_package_set.clone(), &path)?;
+        let (d, package_entry) =
+            PackageEntry::parse_from(origin, mapped_package_set.clone(), &path)?;
 
         // Now store the package and its destination.
         self.packages
             .try_insert_unique(d, package_entry)
             .with_context(|| format!("Adding packages to {to_package_set}"))?;
 
-        Ok(())
+        Ok(mapped_package_set)
     }
 
     /// Remap the package sets based on the build type (for the flexible set)
@@ -605,8 +612,7 @@ impl ImageAssemblyConfigBuilder {
         for entry in packages {
             let manifest_path: Utf8PathBuf =
                 entry.package.clone().resolve_from_dir(&bundle_path)?.into();
-            let set = self.map_package_set(&entry.set, /*is_platform=*/ true)?;
-            self.add_package_from_path(manifest_path, PackageOrigin::AIB, &set)?;
+            self.add_package_from_path(manifest_path, PackageOrigin::AIB, &entry.set)?;
         }
 
         Ok(())
@@ -643,7 +649,6 @@ impl ImageAssemblyConfigBuilder {
         entries: BTreeMap<String, ProductPackageDetails>,
         to_package_set: PackageSet,
     ) -> Result<()> {
-        let to_package_set = self.map_package_set(&to_package_set, /*is_platform=*/ false)?;
         for entry in entries.into_values() {
             // Load the PackageManifest from the given path, in order to get the
             // package name.
@@ -651,10 +656,14 @@ impl ImageAssemblyConfigBuilder {
                 .with_context(|| format!("parsing {} as a package manifest", &entry.manifest))?;
 
             // Add the package to the set of packages in the assembly.
-            self.add_package_from_path(entry.manifest, PackageOrigin::Product, &to_package_set)?;
+            let mapped_to_package_set = self.add_package_from_path(
+                entry.manifest,
+                PackageOrigin::Product,
+                &to_package_set,
+            )?;
 
             // Config data cannot be added for packages destinated to bootfs.
-            if to_package_set == PackageSet::Bootfs && !entry.config_data.is_empty() {
+            if mapped_to_package_set == PackageSet::Bootfs && !entry.config_data.is_empty() {
                 bail!(
                     "Config data cannot be added to {} because it is destined for bootfs",
                     manifest.name()
