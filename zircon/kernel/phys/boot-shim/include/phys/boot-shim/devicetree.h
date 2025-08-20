@@ -77,6 +77,7 @@ using Arm64StandardBootShimItems =
                                      boot_shim::ArmDevicetreeTimerItem,                   //
                                      boot_shim::ArmDevicetreeTimerMmioItem,               //
                                      boot_shim::ArmDevicetreePsciItem,                    //
+                                     boot_shim::ArmDevicetreeQcomRngItem,                 //
                                      boot_shim::ArmDevicetreePsciCpuSuspendItem           //
                                      >;
 
