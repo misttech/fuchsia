@@ -1,16 +1,16 @@
 {
-  "fileFiltering": {
-    "respectGitIgnore": true,
-    "enableRecursiveFileSearch": false
-  },
-  "excludeTools": [
-    "search_file_content"
-  ],
-  "includeDirectories": [
-    "local",
-    "vendor/google"
-  ],
-  "loadMemoryFromIncludeDirectories": true,
-  "toolDiscoveryCommand": ".gemini/discover_tools.sh",
-  "toolCallCommand": ".gemini/call_tool.sh"
+    "fileFiltering": {
+        "respectGitIgnore": true,
+        "enableRecursiveFileSearch": false
+    },
+    "excludeTools": [
+        "search_file_content"
+    ],
+    "includeDirectories": [
+        "local",
+        "vendor/google"
+    ],
+    "loadMemoryFromIncludeDirectories": true,
+    "toolDiscoveryCommand": ".gemini/call_tool.py discover",
+    "toolCallCommand": ".gemini/call_tool.py"
 }
