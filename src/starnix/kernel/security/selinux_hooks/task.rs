@@ -580,10 +580,10 @@ pub(in crate::security) fn task_get_context(
     Ok(security_server.sid_to_security_context(sid).unwrap_or_default())
 }
 
-fn permission_from_capability(capabilities: starnix_uapi::auth::Capabilities) -> KernelPermission {
+fn permission_from_capability(capability: starnix_uapi::auth::Capabilities) -> KernelPermission {
     // TODO: https://fxbug.dev/297313673 - CapClass::CapUserns will play a role here if-and-after
     // user namespaces are implemented in Starnix.
-    match capabilities {
+    match capability {
         // Mappings of capabilities to SELinux "cap" class permissions.
         starnix_uapi::auth::CAP_AUDIT_CONTROL => {
             CommonCapPermission::AuditControl.for_class(CapClass::Capability)
@@ -696,7 +696,7 @@ fn permission_from_capability(capabilities: starnix_uapi::auth::Capabilities) ->
         }
 
         _ => {
-            panic!("Unrecognized capabilities \"{:?}\" passed to check_capable!", capabilities)
+            panic!("Unrecognized capabilities \"{:?}\" passed to check_capable!", capability)
         }
     }
 }
@@ -704,10 +704,10 @@ fn permission_from_capability(capabilities: starnix_uapi::auth::Capabilities) ->
 pub(in crate::security) fn is_task_capable_noaudit(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
-    capabilities: starnix_uapi::auth::Capabilities,
+    capability: starnix_uapi::auth::Capabilities,
 ) -> bool {
     let sid = current_task_state(current_task).lock().current_sid;
-    let permission = permission_from_capability(capabilities);
+    let permission = permission_from_capability(capability);
     is_internal_operation(current_task)
         || permission_check.has_permission(sid, sid, permission).permit
 }
@@ -715,16 +715,16 @@ pub(in crate::security) fn is_task_capable_noaudit(
 pub(in crate::security) fn check_task_capable(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
-    capabilities: starnix_uapi::auth::Capabilities,
+    capability: starnix_uapi::auth::Capabilities,
 ) -> Result<(), Errno> {
     let sid = current_task_state(current_task).lock().current_sid;
 
     // TODO: https://fxbug.dev/401196505 - Use "kernel act as" to eliminate this.
-    if sid == InitialSid::Kernel.into() && capabilities == CAP_DAC_OVERRIDE {
+    if sid == InitialSid::Kernel.into() && capability == CAP_DAC_OVERRIDE {
         return Ok(());
     }
 
-    let permission = permission_from_capability(capabilities);
+    let permission = permission_from_capability(capability);
     check_self_permission(&permission_check, current_task, sid, permission, current_task.into())
 }
 
