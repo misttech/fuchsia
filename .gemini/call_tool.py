@@ -27,7 +27,7 @@ class GitLsFiles:
                     "files": {
                         "type": "ARRAY",
                         "items": {"type": "STRING"},
-                        "description": "The regular expression (regex) to search for. Defaults to all files",
+                        "description": "The shell glob to search for. Defaults to all files",
                     },
                     "path": {
                         "type": "STRING",
