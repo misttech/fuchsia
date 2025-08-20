@@ -384,10 +384,6 @@ class PmmNode {
   list_node phys_handoff_vmo_list_ TA_GUARDED(lock_) = LIST_INITIAL_VALUE(phys_handoff_vmo_list_);
 
   // The pages intended to be permanently reserved.
-  //
-  // TODO(https://fxbug.dev/42164859): Well, this list also currently includes
-  // pages we're guaranteed to unwire (e.g., the vDSO and userboot). But that
-  // soon won't be the case.
   list_node permanently_reserved_list_ TA_GUARDED(lock_) =
       LIST_INITIAL_VALUE(permanently_reserved_list_);
 

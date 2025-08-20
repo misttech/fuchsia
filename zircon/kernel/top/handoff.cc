@@ -42,8 +42,6 @@ size_t gPhysmapSize;
 
 namespace {
 
-// TODO(https://fxbug.dev/42164859): Populate with sizes and alignments
-// relating to C++ ABI set-up (e.g., stack sizes).
 constexpr ZirconAbiSpec kZirconAbiSpec{
     .machine_stack = kMachineStack,
 #if __has_feature(shadow_call_stack)

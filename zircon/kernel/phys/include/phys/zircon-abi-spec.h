@@ -16,9 +16,6 @@
 //
 // The expectation is that structure will be recorded as an ELF note in the
 // kernel to be loaded and parsed during hand-off preparation.
-//
-// TODO(https://fxbug.dev/42164859): Sizes and alignments relating to C++ ABI
-// set-up (e.g., stack sizes).
 struct ZirconAbiSpec {
   struct Stack {
     template <size_t PageSize>

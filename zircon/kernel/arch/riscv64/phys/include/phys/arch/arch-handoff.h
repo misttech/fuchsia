@@ -55,13 +55,8 @@ struct ArchPhysHandoff {
   std::optional<zbi_dcfg_riscv_generic_timer_driver_t> generic_timer_driver;
 };
 
-// TODO(https://fxbug.dev/42164859): This is an arbitrary address in the upper half of
-// sv39.  It must match what the kernel's page-table bootstrapping actually
-// uses as the virtual address of the kernel load image.
 inline constexpr uint64_t kArchHandoffVirtualAddress = 0xffffffff00000000;  // -4GB
 
-// TODO(https://fxbug.dev/42164859): Make this constant the source of truth
-// for the physmap in the kernel.
 inline constexpr uint64_t kArchPhysmapVirtualBase = 0xffff'ffc0'0000'0000;
 
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_
