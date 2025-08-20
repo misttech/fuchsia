@@ -17,9 +17,12 @@ import sys
 class GitLsFiles:
     """Lists files in a git repository."""
 
-    def discover():
+    def name(self):
+        return "git_ls_files"
+
+    def discover(self):
         return {
-            "name": "git_ls_files",
+            "name": self.name(),
             "description": "Custom implementation: List files in a git repository directory using `git ls-files` and returns the exact output.",
             "parameters": {
                 "type": "OBJECT",
@@ -38,7 +41,7 @@ class GitLsFiles:
             },
         }
 
-    def run(args):
+    def run(self, args):
         search_path = args.get("path", ".")
         files = args.get("files", [])
         try:
@@ -49,15 +52,18 @@ class GitLsFiles:
             ).decode("utf-8")
         except subprocess.CalledProcessError as e:
             output = e.output.decode("utf-8")
-        print(json.dumps({"output": output}))
+        return output
 
 
 class JiriGrep:
     """Searches for a pattern across all repositories."""
 
-    def discover():
+    def name(self):
+        return "jiri_grep"
+
+    def discover(self):
         return {
-            "name": "jiri_grep",
+            "name": self.name(),
             "description": "Custom implementation: Searches for a regular expression pattern across all repositories using `jiri grep` and returns the exact output.",
             "parameters": {
                 "type": "OBJECT",
@@ -75,7 +81,7 @@ class JiriGrep:
             },
         }
 
-    def run(args):
+    def run(self, args):
         pattern = args.get("pattern")
         search_path = args.get("path", ".")
         try:
@@ -85,24 +91,30 @@ class JiriGrep:
             ).decode("utf-8")
         except subprocess.CalledProcessError as e:
             output = e.output.decode("utf-8")
-        print(json.dumps({"output": output}))
+        return output
+
+
+def print_json_output(output):
+    print(json.dumps({"output": output}))
 
 
 def main():
     """Main function."""
+    # Add your new tool here!
+    tools_list = [GitLsFiles(), JiriGrep()]
+    tools = {tool.name(): tool for tool in tools_list}
+
     tool_name = sys.argv[1]
     if tool_name == "discover":
-        print(json.dumps([GitLsFiles.discover(), JiriGrep.discover()]))
+        print(json.dumps([tool.discover() for tool in tools.values()]))
         return
 
-    args_json = sys.stdin.read()
-    args = json.loads(args_json)
-    if tool_name == "git_ls_files":
-        GitLsFiles(args)
-    elif tool_name == "jiri_grep":
-        JiriGrep.run(args)
+    if tool_name in tools:
+        args_json = sys.stdin.read()
+        args = json.loads(args_json)
+        print_json_output(tools[tool_name].run(args))
     else:
-        print(json.dumps({"output": f"Error: Unknown tool name '{tool_name}'"}))
+        print_json_output(f"Error: Unknown tool name '{tool_name}'")
         sys.exit(1)
 
 
