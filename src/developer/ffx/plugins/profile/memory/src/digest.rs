@@ -225,7 +225,7 @@ pub mod raw {
 /// Types and utilities to produce and manipulate processed summaries
 /// suitable for user-facing consumption.
 pub mod processed {
-    use crate::bucket::{compute_buckets, Bucket};
+    use crate::bucket::{Bucket, compute_buckets};
     use crate::digest::{processed, raw};
     use serde::Serialize;
 
@@ -444,11 +444,7 @@ pub mod processed {
                 }
                 processes.retain(|process| !process.vmos.is_empty());
             }
-            if bucketize {
-                (Some(buckets), total_undigested)
-            } else {
-                (None, total_undigested)
-            }
+            if bucketize { (Some(buckets), total_undigested) } else { (None, total_undigested) }
         } else {
             (None, None)
         };
@@ -470,6 +466,13 @@ pub mod processed {
                         process_to_charged_vmos.entry(process.koid).or_default().insert(*vmo_koid);
                         if let Some(processed::Vmo { parent_koid, .. }) = koid_to_vmo.get(&vmo_koid)
                         {
+                            if *vmo_koid == *parent_koid {
+                                eprintln!(
+                                    "[stderr] Process {:?} refers (directly or indirectly) to a VMO which is its own parent {}",
+                                    process.koid, vmo_koid
+                                );
+                                break;
+                            }
                             vmo_koid = parent_koid;
                         } else {
                             // If we reach this branch, it means that the report
@@ -481,8 +484,8 @@ pub mod processed {
                             // using an atomic view of the system, so some
                             // inconsistencies like this are expected.
                             eprintln!(
-                              "[stderr] Process {:?} refers (directly or indirectly) to unknown VMO {}",
-                              process.koid, vmo_koid
+                                "[stderr] Process {:?} refers (directly or indirectly) to unknown VMO {}",
+                                process.koid, vmo_koid
                             );
                             break;
                         }
