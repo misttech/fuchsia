@@ -7,8 +7,8 @@ use std::marker::PhantomData;
 use fidl::endpoints::{ServiceMarker, ServiceRequest};
 use fidl_fuchsia_component_decl::{NameMapping, OfferService};
 use fidl_fuchsia_driver_framework::Offer;
-use fuchsia_component::server::{FidlServiceMember, ServiceFs, ServiceObjTrait};
 use fuchsia_component::DEFAULT_SERVICE_INSTANCE;
+use fuchsia_component::server::{FidlServiceMember, ServiceFs, ServiceObjTrait};
 
 /// A builder for creating [`Offer`]-compatible values for [`crate::NodeBuilder::add_offer`] that
 /// service a zircon fidl service.
@@ -41,6 +41,20 @@ impl<S> ZirconServiceOffer<S> {
         Self { service_name, instances, _p: PhantomData }
     }
 
+    /// Builds an offer for a zircon transport service based on the [`DiscoverableService`] for `S`.
+    ///
+    /// If the compiler can't deduce the type of `S` (which may be the case if you're not using the
+    /// `add_` methods to add to a [`ServiceFs`] at the same time), you can use
+    /// [`Self::new_marker_next`] to make it explicit.
+    pub fn new_next() -> Self
+    where
+        S: fidl_next::DiscoverableService,
+    {
+        let service_name = S::SERVICE_NAME.to_owned();
+        let instances = vec![];
+        Self { service_name, instances, _p: PhantomData }
+    }
+
     /// Builds an offer for a zircon transport service based on the given [`ServiceMarker`].
     ///
     /// This is mostly useful if the compiler can't derive the type of `S` on its own.
@@ -51,6 +65,16 @@ impl<S> ZirconServiceOffer<S> {
         let service_name = S::SERVICE_NAME.to_owned();
         let instances = vec![];
         Self { service_name, instances, _p: PhantomData }
+    }
+
+    /// Builds an offer for a zircon transport service based on the [`DiscoverableService`].
+    ///
+    /// This is mostly useful if the compiler can't derive the type of `S` on its own.
+    pub fn new_marker_next(_marker: S) -> Self
+    where
+        S: fidl_next::DiscoverableService,
+    {
+        Self::new_next()
     }
 
     /// Adds the given service instance to this offer and to the [`ServiceFs`] passed in, using the
@@ -76,6 +100,28 @@ impl<S> ZirconServiceOffer<S> {
 
     /// Adds the given service instance to this offer and to the [`ServiceFs`] passed in, using the
     /// generator function `f`. The type of the service will be derived from the result of the
+    /// generator function and it will be added with the name `name` which will be mapped to the
+    /// default instance name to child components ([`DEFAULT_SERVICE_INSTANCE`]).
+    pub fn add_default_named_next<H, O>(
+        self,
+        fs: &mut ServiceFs<O>,
+        name: impl Into<String>,
+        handler: H,
+    ) -> Self
+    where
+        O: ServiceObjTrait,
+        S: fidl_next::DiscoverableService
+            + fidl_next::DispatchServiceHandler<H, zx::Channel>
+            + 'static,
+        H: Send + Sync + 'static,
+    {
+        let name = name.into();
+        fs.dir("svc").add_fidl_next_service_instance::<S, _>(name.clone(), handler);
+        self.named_default_instance(name)
+    }
+
+    /// Adds the given service instance to this offer and to the [`ServiceFs`] passed in, using the
+    /// generator function `f`. The type of the service will be derived from the result of the
     /// generator function and it will be added with the name `name`.
     pub fn add_named<O: ServiceObjTrait, F, SR>(
         self,
@@ -91,6 +137,27 @@ impl<S> ZirconServiceOffer<S> {
     {
         let name = name.into();
         fs.dir("svc").add_fidl_service_instance(name.clone(), f);
+        self.named_instance(name)
+    }
+
+    /// Adds the given service instance to this offer and to the [`ServiceFs`] passed in, using the
+    /// generator function `f`. The type of the service will be derived from the result of the
+    /// generator function and it will be added with the name `name`.
+    pub fn add_named_next<H, O>(
+        self,
+        fs: &mut ServiceFs<O>,
+        name: impl Into<String>,
+        handler: H,
+    ) -> Self
+    where
+        O: ServiceObjTrait,
+        S: fidl_next::DiscoverableService
+            + fidl_next::DispatchServiceHandler<H, zx::Channel>
+            + 'static,
+        H: Send + Sync + 'static,
+    {
+        let name = name.into();
+        fs.dir("svc").add_fidl_next_service_instance::<S, _>(name.clone(), handler);
         self.named_instance(name)
     }
 

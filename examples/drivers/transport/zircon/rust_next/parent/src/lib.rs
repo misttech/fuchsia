@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(dkoloski): port to new bindings
-
 use fdf_component::{
-    driver_register, Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer,
+    Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer, driver_register,
 };
-use fidl_fuchsia_hardware_i2c as i2c;
+use fidl_next::{Request, Responder, Server, ServerEnd, ServerSender};
+use fidl_next_fuchsia_hardware_i2c as i2c;
+use fuchsia_async::{Scope, ScopeHandle};
 use fuchsia_component::server::ServiceFs;
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt as _;
 use log::info;
 use zx::Status;
 
@@ -19,20 +19,60 @@ struct ZirconParentDriver {
     /// The [`NodeProxy`] is our handle to the node we bound to. We need to keep this handle
     /// open to keep the node around.
     node: Node,
+    /// The scope for the driver.
+    scope: Scope,
 }
 
 // This creates the exported driver registration structures that allow the driver host to
 // find and run the start and stop methods on our `ZirconParentDriver`.
 driver_register!(ZirconParentDriver);
 
-async fn i2c_server(mut service: i2c::DeviceRequestStream) {
-    use i2c::DeviceRequest::*;
-    while let Some(req) = service.try_next().await.unwrap() {
-        match req {
-            Transfer { responder, .. } => responder.send(Ok(&[vec![0x1u8, 0x2, 0x3]])),
-            GetName { responder } => responder.send(Ok("rust i2c server")),
-        }
-        .unwrap();
+struct DeviceServer;
+
+impl i2c::DeviceServerHandler<fidl_next::fuchsia::zx::Channel> for DeviceServer {
+    async fn transfer(
+        &mut self,
+        sender: &ServerSender<i2c::Device>,
+        _: Request<i2c::device::Transfer>,
+        responder: Responder<i2c::device::Transfer>,
+    ) {
+        responder
+            .respond(
+                sender,
+                Ok::<_, i32>(i2c::DeviceTransferResponse {
+                    read_data: vec![vec![0x1u8, 0x2, 0x3]],
+                }),
+            )
+            .unwrap()
+            .await
+            .unwrap();
+    }
+
+    async fn get_name(
+        &mut self,
+        sender: &ServerSender<i2c::Device>,
+        responder: Responder<i2c::device::GetName>,
+    ) {
+        responder
+            .respond(
+                sender,
+                Ok::<_, i32>(i2c::DeviceGetNameResponse { name: "rust i2c server".to_string() }),
+            )
+            .unwrap()
+            .await
+            .unwrap();
+    }
+}
+
+struct Service {
+    scope: ScopeHandle,
+}
+
+impl i2c::ServiceHandler<fidl_next::fuchsia::zx::Channel> for Service {
+    fn device(&self, server_end: ServerEnd<i2c::Device>) {
+        self.scope.spawn(async move {
+            Server::new(server_end).run(DeviceServer).await.unwrap();
+        });
     }
 }
 
@@ -40,19 +80,17 @@ impl Driver for ZirconParentDriver {
     const NAME: &str = "zircon_parent_rust_next_driver";
 
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
-        info!("Binding node client. Every driver needs to do this for the driver to be considered loaded.");
+        info!(
+            "Binding node client. Every driver needs to do this for the driver to be considered loaded."
+        );
         let node = context.take_node()?;
+
+        let scope = Scope::new();
 
         info!("Offering an i2c service in the outgoing directory");
         let mut outgoing = ServiceFs::new();
-        let offer = ZirconServiceOffer::new()
-            .add_default_named(&mut outgoing, "default", |i| {
-                // Since we're only acting on one kind of service here, we just unwrap it and that's
-                // the type of our handler. If you were handling more services, you would usually
-                // wrap it in an enum containing one discriminant per protocol handled.
-                let i2c::ServiceRequest::Device(service) = i;
-                service
-            })
+        let offer = ZirconServiceOffer::<i2c::Service>::new_next()
+            .add_default_named_next(&mut outgoing, "default", Service { scope: scope.to_handle() })
             .build();
 
         info!("Creating child node with a service offer");
@@ -62,12 +100,9 @@ impl Driver for ZirconParentDriver {
 
         context.serve_outgoing(&mut outgoing)?;
 
-        fuchsia_async::Task::spawn(async move {
-            outgoing.for_each_concurrent(None, i2c_server).await;
-        })
-        .detach();
+        scope.spawn(outgoing.collect());
 
-        Ok(Self { node })
+        Ok(Self { node, scope })
     }
 
     async fn stop(&self) {

@@ -22,14 +22,14 @@ fuchsia_rust_driver("driver") {
   output_name = "zircon_transport_rust_next_parent"
   sources = [ "src/lib.rs" ]
   deps = [
-    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
-    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
-    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_next",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust_next",
+    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust_next",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/runtime/rust",
     "//sdk/rust/zx",
     "//src/devices/bind/fuchsia.test:fuchsia.test_rust",
-    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:futures",
