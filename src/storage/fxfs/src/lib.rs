@@ -10,6 +10,10 @@
 //! Where possible, Fxfs code tries to be target agnostic.
 //! Fuchsia specific bindings are primarily found under [server].
 
+// TODO(https://fxbug.dev/439053417): Investigate why the recursion limit was bumped
+// to unblock the toolchain.
+#![recursion_limit = "256"]
+
 pub mod checksum;
 pub mod drop_event;
 
