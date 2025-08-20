@@ -12,10 +12,9 @@ type Metadata = table {
 };
 
 closed protocol MetadataSender {
-    // /Use `fdf_metadata::MetadataServer::SetMetadata()` and
-    /// `fdf_metadata::MetadataServer::Serve()` to serve |metadata| to the driver's outgoing
-    /// directory and offer the metadata to the driver's future child nodes using
-    /// `fdf_metadata::MetadataServer::CreateOffers()`
+    // Use `fdf_metadata::MetadataServer::Serve()` to serve |metadata| to the driver's outgoing
+    // directory and offer the metadata to the driver's future child nodes using
+    // `fdf_metadata::MetadataServer::CreateOffers()`
     strict ServeMetadata(struct {
         metadata Metadata;
     }) -> () error zx.Status;

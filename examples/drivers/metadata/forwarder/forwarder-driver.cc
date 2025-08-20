@@ -21,13 +21,9 @@ class ForwarderDriver final : public fdf::DriverBase {
       : DriverBase("forwarder", std::move(start_args), std::move(driver_dispatcher)) {}
 
   zx::result<> Start() override {
-    if (zx::result result = metadata_server_.ForwardMetadata(incoming()); result.is_error()) {
-      fdf::error("Failed to forward metadata: {}", result);
-      return result.take_error();
-    }
-
     // Serve the metadata to the driver's child nodes.
-    if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
+    zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+    if (result.is_error()) {
       fdf::error("Failed to serve metadata: {}", result);
       return result.take_error();
     }
@@ -37,7 +33,11 @@ class ForwarderDriver final : public fdf::DriverBase {
                           bind_fuchsia_examples_metadata::CHILD_TYPE_RETRIEVER)};
 
     // Offer the metadata service to the child node.
-    std::vector offers = {metadata_server_.MakeOffer()};
+    std::vector<fuchsia_driver_framework::Offer> offers;
+    std::optional metadata_offer = metadata_server_.CreateOffer();
+    if (metadata_offer.has_value()) {
+      offers.push_back(metadata_offer.value());
+    }
 
     zx::result child = AddChild("forwarder", kProperties, offers);
     if (child.is_error()) {

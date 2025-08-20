@@ -15,7 +15,7 @@ devices named `metadata_{num}` (with `{num}` being a number) that the
 ### metadata_forwarder
 The `metadata_forwarder` driver's purpose is to retrieve metadata from its
 parent driver and forward the metadata to its child device using
-`ddk::MetadataServer::ForwardMetadata()`. It will create a child device that the
+`ddk::MetadataServer::ForwardAndServe()`. It will create a child device that the
 `metadata_retriever` driver can bind to.
 
 ### metadata_retriever

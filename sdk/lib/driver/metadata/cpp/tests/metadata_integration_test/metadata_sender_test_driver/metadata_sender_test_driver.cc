@@ -26,13 +26,8 @@ zx::result<> MetadataSenderTestDriver::Start() {
 void MetadataSenderTestDriver::ServeMetadata(ServeMetadataRequest& request,
                                              ServeMetadataCompleter::Sync& completer) {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  if (zx::result result = metadata_server_.SetMetadata(request.metadata()); result.is_error()) {
-    fdf::error("Failed to set metadata: {}", result);
-    completer.Reply(fit::error(result.error_value()));
-    return;
-  }
-
-  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
+  zx::result result = metadata_server_.Serve(*outgoing(), dispatcher(), request.metadata());
+  if (result.is_error()) {
     fdf::error("Failed to serve metadata: {}", result);
     completer.Reply(fit::error(result.error_value()));
     return;
@@ -92,7 +87,10 @@ zx_status_t MetadataSenderTestDriver::AddChildNode(
   std::vector<fuchsia_driver_framework::Offer> offers;
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (offer_metadata_to_child_nodes_) {
-    offers.emplace_back(metadata_server_.MakeOffer());
+    std::optional metadata_offer = metadata_server_.CreateOffer();
+    if (metadata_offer.has_value()) {
+      offers.push_back(metadata_offer.value());
+    }
   }
 #endif
   zx::result result = AddChild(node_name, node_properties, offers);

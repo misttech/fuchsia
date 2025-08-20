@@ -43,14 +43,9 @@ class SenderDriver final : public fdf::DriverBase,
       return;
     }
 
-    if (zx::result result = metadata_server_.SetMetadata(request.metadata()); result.is_error()) {
+    zx::result result = metadata_server_.Serve(*outgoing(), dispatcher(), request.metadata());
+    if (result.is_error()) {
       fdf::error("Failed to set metadata: {}", result);
-      completer.Reply(result.take_error());
-      return;
-    }
-
-    if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
-      fdf::error("Failed to serve metadata: {}", result);
       completer.Reply(result.take_error());
       return;
     }
@@ -60,7 +55,11 @@ class SenderDriver final : public fdf::DriverBase,
                           bind_fuchsia_examples_metadata::CHILD_TYPE_FORWARDER)};
 
     // Offer the metadata service to the child node.
-    std::vector offers = {metadata_server_.MakeOffer()};
+    std::vector<fuchsia_driver_framework::Offer> offers;
+    std::optional metadata_offer = metadata_server_.CreateOffer();
+    if (metadata_offer.has_value()) {
+      offers.push_back(metadata_offer.value());
+    }
 
     zx::result child = AddChild("sender", kProperties, offers);
     if (child.is_error()) {

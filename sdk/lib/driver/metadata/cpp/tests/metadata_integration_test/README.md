@@ -27,6 +27,6 @@ manifest and `medatata_retriever_no_use` which does not.
 
 ### metadata_forwarder
 The `metadata_forwarder`'s purpose is forward metadata using
-`fdf_metadata::MetadataServer::ForwardMetadata()`. The `metadata_forwarder`
+`fdf_metadata::MetadataServer::ForwardAndServe()`. The `metadata_forwarder`
 driver will create a child node that the `metadata_retriever_use` driver can
 bind to.

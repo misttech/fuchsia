@@ -69,7 +69,8 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
       std::string instance_name = component::OutgoingDirectory::kDefaultServiceInstance)
       : instance_name_(std::move(instance_name)) {}
 
-  // Set the metadata to be served to |metadata|. |metadata| must be persistable.
+  // Deprecated. Do not use. Use `Serve()` instead.
+  // TODO(b/439047765): Remove once no longer used.
   zx::result<> SetMetadata(const FidlType& metadata) {
     static_assert(fidl::IsFidlType<FidlType>::value, "|FidlType| must be a FIDL domain object.");
     static_assert(!fidl::IsResource<FidlType>::value,
@@ -86,9 +87,8 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
     return zx::ok();
   }
 
-  // Retrieves persisted metadata from |pdev| associated with the metadata ID
-  // `|FidlType|::kSerializableName`. Assumes that the metadata from the platform device is a
-  // persisted |FidlType|. Returns false if the metadata was not found. Returns true if otherwise.
+  // Deprecated. Do not use. Use `ForwardAndServe()` instead.
+  // TODO(b/439047765): Remove once no longer used.
   zx::result<bool> SetMetadataFromPDevIfExists(
       fidl::UnownedClientEnd<fuchsia_hardware_platform_device::Device> pdev) {
     fidl::WireResult result = fidl::WireCall(pdev)->GetMetadata(
@@ -111,28 +111,21 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
     return zx::ok(true);
   }
 
-  // See
-  // `SetMetadataFromPDevIfExists(fidl::UnownedClientEnd<fuchsia_hardware_platform_device::Device>)`
-  // for more details.
+  // Deprecated. Do not use. Use `ForwardAndServe()` instead.
+  // TODO(b/439047765): Remove once no longer used.
   zx::result<bool> SetMetadataFromPDevIfExists(
       fidl::ClientEnd<fuchsia_hardware_platform_device::Device>& pdev) {
     return SetMetadataFromPDevIfExists(pdev.borrow());
   }
 
-  // See
-  // `SetMetadataFromPDevIfExists(fidl::UnownedClientEnd<fuchsia_hardware_platform_device::Device>)`
-  // for more details.
+  // Deprecated. Do not use. Use `ForwardAndServe()` instead.
+  // TODO(b/439047765): Remove once no longer used.
   zx::result<bool> SetMetadataFromPDevIfExists(fdf::PDev& pdev) {
     return SetMetadataFromPDevIfExists(pdev.borrow());
   }
 
-  // Sets the metadata to be served to the metadata found in |incoming|.
-  //
-  // If the metadata found in |incoming| changes after this function has been called then those
-  // changes will not be reflected in the metadata to be served.
-  //
-  // Make sure that the component manifest specifies that is uses the `FidlType::kSerializableName`
-  // FIDL service.
+  // Deprecated. Do not use. Use `ForwardAndServe()` instead.
+  // TODO(b/439047765): Remove once no longer used.
   zx::result<> ForwardMetadata(
       const std::shared_ptr<fdf::Namespace>& incoming,
       std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
@@ -166,9 +159,8 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
     return zx::ok();
   }
 
-  // Similar to `ForwardMetadata()` except that it will return false if it fails to connect to the
-  // incoming metadata server or if the incoming metadata server does not have metadata to provide.
-  // Returns true otherwise.
+  // Deprecated. Do not use. Use `ForwardAndServe()` instead.
+  // TODO(b/439047765): Remove once no longer used.
   zx::result<bool> ForwardMetadataIfExists(
       const std::shared_ptr<fdf::Namespace>& incoming,
       std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
@@ -213,12 +205,14 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
     return zx::ok(true);
   }
 
+  // Deprecated. Do not use. Use non-deprecated overloads of `Serve()` instead.
+  // TODO(b/439047765): Remove once no longer used.
   zx::result<> Serve(fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher) {
     return Serve(outgoing.component(), dispatcher);
   }
 
-  // Serves the fuchsia.driver.metadata/Service service to |outgoing| under the service name
-  // `|FidlType|::kSerializableName` and instance name `MetadataServer::instance_name_`.
+  // Deprecated. Do not use. Use non-deprecated overloads of `Serve()` instead.
+  // TODO(b/439047765): Remove once no longer used.
   zx::result<> Serve(component::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher) {
     fuchsia_driver_metadata::Service::InstanceHandler handler{
         {.metadata = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure)}};
@@ -231,19 +225,163 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
     return zx::ok();
   }
 
-  // Creates an offer for this `MetadataServer` instance's fuchsia.driver.metadata/Service
-  // service.
+  // Retrieves |FidlType| from |pdev| and serves it to |outgoing|. If the metadata was unable to be
+  // retrieved then nothing is served. Returns true if the metadata was retrieved and false
+  // otherwise.
+  zx::result<bool> ForwardAndServe(
+      fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
+      fidl::UnownedClientEnd<fuchsia_hardware_platform_device::Device> pdev) {
+    fidl::WireResult result = fidl::WireCall(pdev)->GetMetadata(
+        fidl::StringView::FromExternal(FidlType::kSerializableName));
+    if (!result.ok()) {
+      fdf::debug("Failed to send GetMetadata request: {}", result.status_string());
+      return zx::ok(false);
+    }
+    if (result->is_error()) {
+      fdf::debug("Failed to get metadata: {}", zx_status_get_string(result->error_value()));
+      return zx::ok(false);
+    }
+    const auto persisted_metadata = result.value()->metadata.get();
+    persisted_metadata_.emplace();
+    persisted_metadata_->assign(persisted_metadata.begin(), persisted_metadata.end());
+
+    if (zx::result result = AddService(outgoing, dispatcher); result.is_error()) {
+      return result.take_error();
+    }
+
+    return zx::ok(true);
+  }
+
+  zx::result<bool> ForwardAndServe(
+      fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
+      fidl::ClientEnd<fuchsia_hardware_platform_device::Device>& pdev) {
+    return ForwardAndServe(outgoing, dispatcher, pdev.borrow());
+  }
+
+  zx::result<bool> ForwardAndServe(fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
+                                   fdf::PDev& pdev) {
+    return ForwardAndServe(outgoing, dispatcher, pdev.borrow());
+  }
+
+  // Retrieves |FidlType| from |instance_name| in |incoming| and serves it to |outgoing|. If the
+  // metadata was unable to be retrieved then nothing is served. Returns true if the metadata was
+  // retrieved and false otherwise.
+  zx::result<bool> ForwardAndServe(
+      fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
+      fidl::UnownedClientEnd<fuchsia_io::Directory> incoming,
+      std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
+    fidl::WireSyncClient<fuchsia_driver_metadata::Metadata> client{};
+    {
+      zx::result result =
+          ConnectToMetadataProtocol(incoming, FidlType::kSerializableName, instance_name);
+      if (result.is_error()) {
+        fdf::error("Failed to connect to metadata server: {}", result);
+        return zx::ok(false);
+      }
+      client.Bind(std::move(result.value()));
+    }
+
+    {
+      fidl::WireResult<fuchsia_driver_metadata::Metadata::GetPersistedMetadata> result =
+          client->GetPersistedMetadata();
+      if (!result.ok()) {
+        fdf::debug("Failed to send GetPersistedMetadata request: {}", result.status_string());
+        return zx::ok(false);
+      }
+      if (result->is_error()) {
+        fdf::debug("Failed to get persisted metadata: {}",
+                   zx_status_get_string(result->error_value()));
+        return zx::ok(false);
+      }
+      cpp20::span<uint8_t> persisted_metadata = result.value()->persisted_metadata.get();
+      std::vector<uint8_t> copy;
+      copy.insert(copy.begin(), persisted_metadata.begin(), persisted_metadata.end());
+      persisted_metadata_.emplace(std::move(copy));
+    }
+
+    if (zx::result result = AddService(outgoing, dispatcher); result.is_error()) {
+      return result.take_error();
+    }
+
+    return zx::ok(true);
+  }
+
+  zx::result<bool> ForwardAndServe(
+      fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
+      const std::shared_ptr<fdf::Namespace>& incoming,
+      std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
+    return ForwardAndServe(outgoing, dispatcher, incoming->svc_dir(), instance_name);
+  }
+
+  // Serves the fuchsia.driver.metadata/Service service to |outgoing| under the service name
+  // `|FidlType|::kSerializableName` and instance name `MetadataServer::instance_name_`. |metadata|
+  // is the metadata to be served.
+  zx::result<> Serve(fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
+                     const FidlType& metadata) {
+    static_assert(fidl::IsFidlType<FidlType>::value, "|FidlType| must be a FIDL domain object.");
+    static_assert(!fidl::IsResource<FidlType>::value,
+                  "|FidlType| cannot be a resource type. Resources cannot be persisted.");
+
+    fit::result persisted_metadata = fidl::Persist(metadata);
+    if (persisted_metadata.is_error()) {
+      fdf::error("Failed to persist metadata: {}",
+                 persisted_metadata.error_value().FormatDescription());
+      return zx::error(persisted_metadata.error_value().status());
+    }
+    persisted_metadata_.emplace(std::move(persisted_metadata.value()));
+
+    return AddService(outgoing, dispatcher);
+  }
+
+  // Deprecated. Do not use. Use `CreateOffer()` instead.
+  // TODO(b/439047765): Remove once no longer used.
   fuchsia_driver_framework::Offer MakeOffer() {
     return fuchsia_driver_framework::Offer::WithZirconTransport(
         fdf::MakeOffer(FidlType::kSerializableName, instance_name_));
   }
 
+  // Deprecated. Do not use. Use `CreateOffer()` instead.
+  // TODO(b/439047765): Remove once no longer used.
   fuchsia_driver_framework::wire::Offer MakeOffer(fidl::AnyArena& arena) {
     return fuchsia_driver_framework::wire::Offer::WithZirconTransport(
         arena, fdf::MakeOffer(arena, FidlType::kSerializableName, instance_name_));
   }
 
+  // Creates an offer for this `MetadataServer` instance's fuchsia.driver.metadata/Service
+  // service. Returns an std::nullopt if the metadata server is not serving metadata.
+  std::optional<fuchsia_driver_framework::Offer> CreateOffer() {
+    if (!persisted_metadata_.has_value()) {
+      return std::nullopt;
+    }
+    return fuchsia_driver_framework::Offer::WithZirconTransport(
+        fdf::MakeOffer(FidlType::kSerializableName, instance_name_));
+  }
+
+  // Creates an offer for this `MetadataServer` instance's fuchsia.driver.metadata/Service
+  // service. Returns an std::nullopt if the metadata server is not serving metadata.
+  std::optional<fuchsia_driver_framework::wire::Offer> CreateOffer(fidl::AnyArena& arena) {
+    if (!persisted_metadata_.has_value()) {
+      return std::nullopt;
+    }
+    return fuchsia_driver_framework::wire::Offer::WithZirconTransport(
+        arena, fdf::MakeOffer(arena, FidlType::kSerializableName, instance_name_));
+  }
+
  private:
+  zx::result<> AddService(fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher) {
+    fuchsia_driver_metadata::Service::InstanceHandler handler(
+        {.metadata = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure)});
+
+    zx::result result = outgoing.component().AddService(
+        std::move(handler), FidlType::kSerializableName, instance_name_);
+    if (result.is_error()) {
+      fdf::error("Failed to add service: {}", result);
+      return result.take_error();
+    }
+
+    return zx::ok();
+  }
+
   // fuchsia.driver.metadata/Metadata protocol implementation.
   void GetPersistedMetadata(GetPersistedMetadataCompleter::Sync& completer) override {
     if (!persisted_metadata_.has_value()) {

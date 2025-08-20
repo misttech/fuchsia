@@ -3,269 +3,218 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.test/cpp/fidl.h>
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/scoped_global_logger.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 
-#include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/lib/testing/predicates/status.h"
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 
 namespace fdf_metadata::test {
 
-class MetadataServerTest : public gtest::TestLoopFixture {
- protected:
-  void StartPlatformDevice() {
-    ASSERT_FALSE(pdev_.has_value()) << "Platform device already started";
-    ASSERT_OK(pdev_loop_.StartThread("pdev"));
-    pdev_.emplace(pdev_loop_.dispatcher(), std::in_place);
-    auto [client, server] = fidl::Endpoints<fuchsia_hardware_platform_device::Device>::Create();
-    pdev_->SyncCall(&fdf_fake::FakePDev::Connect, std::move(server));
-    pdev_client_.emplace(std::move(client));
+class FakeDriver : public fdf::DriverBase {
+ public:
+  static DriverRegistration GetDriverRegistration() {
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<FakeDriver>::initialize,
+                                          fdf_internal::DriverServer<FakeDriver>::destroy);
   }
 
-  void SetPlatformDeviceMetadata(fuchsia_hardware_test::Metadata metadata) {
-    std::string metadata_id{fuchsia_hardware_test::Metadata::kSerializableName};
-    pdev_->SyncCall(&fdf_fake::FakePDev::AddFidlMetadata<fuchsia_hardware_test::Metadata>,
-                    metadata_id, std::move(metadata));
+  FakeDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : fdf::DriverBase("fake", std::move(start_args), std::move(driver_dispatcher)) {}
+
+  zx::result<> Start() override { return zx::ok(); }
+
+  void Serve(const fuchsia_hardware_test::Metadata& metadata) {
+    ASSERT_OK(metadata_server_.Serve(*outgoing(), dispatcher(), metadata));
   }
 
-  fidl::ClientEnd<fuchsia_hardware_platform_device::Device> TakePDevClient() {
-    return std::move(pdev_client_).value();
+  void ForwardAndServe(bool expected_is_serving) {
+    zx::result is_serving = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+    ASSERT_OK(is_serving);
+    ASSERT_EQ(is_serving.value(), expected_is_serving);
   }
 
-  void AssertHasMetadata(
-      const fuchsia_hardware_test::Metadata& expected_metadata,
-      fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata>& metadata_server) {
-    auto [client, server] = fidl::Endpoints<fuchsia_driver_metadata::Metadata>::Create();
-    fidl::ServerBinding binding{dispatcher(), std::move(server), &metadata_server,
-                                fidl::kIgnoreBindingClosure};
-    fidl::Client metadata_server_client(std::move(client), dispatcher());
-    metadata_server_client->GetPersistedMetadata().Then(
-        [expected_metadata](
-            fidl::Result<fuchsia_driver_metadata::Metadata::GetPersistedMetadata>& response) {
-          ASSERT_TRUE(response.is_ok());
-          fit::result persisted_metadata =
-              fidl::Unpersist<fuchsia_hardware_test::Metadata>(response->persisted_metadata());
-          ASSERT_TRUE(persisted_metadata.is_ok());
-          ASSERT_EQ(persisted_metadata.value(), expected_metadata);
-        });
-    RunLoopUntilIdle();
+  void ForwardAndServeFromPDev(bool expected_is_serving) {
+    zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+    ASSERT_OK(pdev);
+    zx::result is_serving =
+        metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev.value());
+    ASSERT_OK(is_serving);
+    ASSERT_EQ(is_serving.value(), expected_is_serving);
+  }
+
+  std::optional<fuchsia_driver_framework::Offer> CreateOffer() {
+    return metadata_server_.CreateOffer();
   }
 
  private:
-  async::Loop pdev_loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
-  std::optional<async_patterns::TestDispatcherBound<fdf_fake::FakePDev>> pdev_;
-  std::optional<fidl::ClientEnd<fuchsia_hardware_platform_device::Device>> pdev_client_;
+  fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server_;
 };
 
-// Verify that the metadata server can retrieve metadata from a platform device if the metadata
-// exists.
-TEST_F(MetadataServerTest, GetPDevMetadata) {
-  const fuchsia_hardware_test::Metadata kMetadata{{.test_property = "test value"}};
-
-  StartPlatformDevice();
-  SetPlatformDeviceMetadata(kMetadata);
-  fidl::ClientEnd pdev_client = TakePDevClient();
-
-  // Verify that the metadata server can retrieve platform device metadata using a platform device
-  // FIDL client.
-  {
-    fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server;
-    zx::result result = metadata_server.SetMetadataFromPDevIfExists(pdev_client);
-    ASSERT_OK(result);
-    ASSERT_TRUE(result.value());
-    AssertHasMetadata(kMetadata, metadata_server);
+class TestEnvironment : public fdf_testing::Environment {
+ public:
+  void InitPdev(const fuchsia_hardware_test::Metadata& metadata) {
+    ASSERT_FALSE(pdev_.has_value());
+    fdf_fake::FakePDev& pdev = pdev_.emplace();
+    pdev.AddFidlMetadata(fuchsia_hardware_test::Metadata::kSerializableName, metadata);
   }
 
-  // Verify that the metadata server can retrieve platform device metadata using a `fdf::PDev`
-  // instance.
-  {
-    fdf::PDev pdev{std::move(pdev_client)};
-    fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server;
-    zx::result result = metadata_server.SetMetadataFromPDevIfExists(pdev);
-    ASSERT_OK(result);
-    ASSERT_TRUE(result.value());
-    AssertHasMetadata(kMetadata, metadata_server);
-  }
-}
-
-// Verify that `MetadataServer::SetMetadataFromPDevIfExists()` returns false if the platform device
-// does not have metadata.
-TEST_F(MetadataServerTest, GetNonExistentPDevMetadata) {
-  StartPlatformDevice();
-  fidl::ClientEnd pdev_client = TakePDevClient();
-
-  // Verify `MetadataServer::SetMetadataFromPDevIfExists()` returns false if the platform device
-  // does not have metadata.
-  {
-    fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server;
-    zx::result result = metadata_server.SetMetadataFromPDevIfExists(pdev_client);
-    ASSERT_OK(result);
-    ASSERT_FALSE(result.value());
+  void InitMetadataServer(fuchsia_hardware_test::Metadata metadata) {
+    ASSERT_FALSE(metadata_.has_value());
+    metadata_.emplace(std::move(metadata));
   }
 
-  // Verify `MetadataServer::SetMetadataFromPDevIfExists()` using a `fdf::PDev` instance returns
-  // false if the platform device does not have metadata.
-  {
-    fdf::PDev pdev{std::move(pdev_client)};
-    fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server;
-    zx::result result = metadata_server.SetMetadataFromPDevIfExists(pdev);
-    ASSERT_OK(result);
-    ASSERT_FALSE(result.value());
-  }
-}
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 
-class ForwardMetadataTest : public gtest::TestLoopFixture {
- protected:
-  void InitIncomingNamespace(bool start_metadata_server) {
-    if (start_metadata_server) {
-      incoming_namespace_.SyncCall(&IncomingNamespace::StartMetadataServer);
+    if (pdev_.has_value()) {
+      zx::result result = to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+          pdev_.value().GetInstanceHandler(dispatcher));
+      if (result.is_error()) {
+        return result.take_error();
+      }
     }
 
-    auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-    incoming_namespace_.SyncCall(&IncomingNamespace::Serve, std::move(server));
+    if (metadata_.has_value()) {
+      zx::result result = metadata_server_.Serve(to_driver_vfs, dispatcher, metadata_.value());
+      if (result.is_error()) {
+        return result.take_error();
+      }
+    }
 
-    std::vector<fuchsia_component_runner::ComponentNamespaceEntry> namespace_entries;
-    namespace_entries.emplace_back(fuchsia_component_runner::ComponentNamespaceEntry{
-        {.path = "/", .directory = std::move(client)}});
-    zx::result incoming = fdf::Namespace::Create(namespace_entries);
-    ASSERT_OK(incoming);
-    incoming_ = std::make_shared<fdf::Namespace>(std::move(incoming.value()));
-  }
-
-  void SetIncomingMetadata(fuchsia_hardware_test::Metadata metadata) {
-    incoming_namespace_.SyncCall(&IncomingNamespace::SetMetadata, std::move(metadata));
-  }
-
-  const std::shared_ptr<fdf::Namespace>& incoming() { return incoming_; }
-
-  void AssertHasMetadata(
-      const fuchsia_hardware_test::Metadata& expected_metadata,
-      fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata>& metadata_server) {
-    auto [client, server] = fidl::Endpoints<fuchsia_driver_metadata::Metadata>::Create();
-    fidl::ServerBinding binding{dispatcher(), std::move(server), &metadata_server,
-                                fidl::kIgnoreBindingClosure};
-    fidl::Client metadata_server_client{std::move(client), dispatcher()};
-    metadata_server_client->GetPersistedMetadata().Then(
-        [expected_metadata](
-            fidl::Result<fuchsia_driver_metadata::Metadata::GetPersistedMetadata>& response) {
-          ASSERT_TRUE(response.is_ok());
-          fit::result persisted_metadata =
-              fidl::Unpersist<fuchsia_hardware_test::Metadata>(response->persisted_metadata());
-          ASSERT_TRUE(persisted_metadata.is_ok());
-          ASSERT_EQ(persisted_metadata.value(), expected_metadata);
-        });
-    RunLoopUntilIdle();
-  }
-
-  void AssertDoesNotHaveMetadata(
-      fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata>& metadata_server) {
-    auto [client, server] = fidl::Endpoints<fuchsia_driver_metadata::Metadata>::Create();
-    fidl::ServerBinding binding{dispatcher(), std::move(server), &metadata_server,
-                                fidl::kIgnoreBindingClosure};
-    fidl::Client metadata_server_client{std::move(client), dispatcher()};
-    metadata_server_client->GetPersistedMetadata().Then(
-        [](fidl::Result<fuchsia_driver_metadata::Metadata::GetPersistedMetadata>& response) {
-          ASSERT_TRUE(response.is_error());
-          ASSERT_TRUE(response.error_value().is_domain_error());
-          ASSERT_EQ(response.error_value().domain_error(), ZX_ERR_NOT_FOUND);
-        });
-    RunLoopUntilIdle();
+    return zx::ok();
   }
 
  private:
-  class IncomingNamespace {
-   public:
-    void Serve(fidl::ServerEnd<fuchsia_io::Directory> server) {
-      ASSERT_OK(outgoing_.Serve(std::move(server)));
-    }
-
-    void SetMetadata(const fuchsia_hardware_test::Metadata& metadata) {
-      ASSERT_TRUE(metadata_server_.has_value());
-      ASSERT_OK(metadata_server_->SetMetadata(metadata));
-    }
-
-    void StartMetadataServer() {
-      ASSERT_FALSE(metadata_server_.has_value());
-      metadata_server_.emplace();
-      ASSERT_OK(
-          metadata_server_->Serve(outgoing_, fdf::Dispatcher::GetCurrent()->async_dispatcher()));
-    }
-
-   private:
-    std::optional<MetadataServer<fuchsia_hardware_test::Metadata>> metadata_server_;
-    fdf::OutgoingDirectory outgoing_;
-  };
-
-  fdf_testing::DriverRuntime runtime_;
-  fdf::UnownedSynchronizedDispatcher background_driver_dispatcher_ =
-      runtime_.StartBackgroundDispatcher();
-  async_patterns::TestDispatcherBound<IncomingNamespace> incoming_namespace_{
-      background_driver_dispatcher_->async_dispatcher(), std::in_place};
-  std::shared_ptr<fdf::Namespace> incoming_;
-
-  // Sets the global logger instance which is needed by `fdf_metadata::MetadataServer` in order to
-  // make log statements.
-  fdf_testing::ScopedGlobalLogger logger_;
+  std::optional<fdf_fake::FakePDev> pdev_;
+  fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server_;
+  std::optional<fuchsia_hardware_test::Metadata> metadata_;
 };
 
-// Verify that the metadata server can forward metadata using
-// `fdf_metadata::MetadataServer::ForwardMetadata()`.
-TEST_F(ForwardMetadataTest, ForwardMetadata) {
-  const fuchsia_hardware_test::Metadata kMetadata{{.test_property = "test value"}};
+class FixtureConfig final {
+ public:
+  using DriverType = FakeDriver;
+  using EnvironmentType = TestEnvironment;
+};
 
-  InitIncomingNamespace(true);
-  SetIncomingMetadata(kMetadata);
+class MetadataServerTest : public ::testing::Test {
+ public:
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
 
-  fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server;
-  ASSERT_OK(metadata_server.ForwardMetadata(incoming()));
-  AssertHasMetadata(kMetadata, metadata_server);
+ protected:
+  void InitPdev(const fuchsia_hardware_test::Metadata& metadata) {
+    driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) { env.InitPdev(metadata); });
+  }
+
+  void InitParentMetadataServer(fuchsia_hardware_test::Metadata metadata) {
+    driver_test_.RunInEnvironmentTypeContext(
+        [metadata = std::move(metadata)](TestEnvironment& env) {
+          env.InitMetadataServer(std::move(metadata));
+        });
+  }
+
+  void StartDriver() { ASSERT_OK(driver_test_.StartDriver()); }
+
+  fdf_testing::BackgroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
+
+ private:
+  fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
+};
+
+// Verify `MetadataServer::Serve()` serves metadata.
+TEST_F(MetadataServerTest, ServeMetadata) {
+  static const fuchsia_hardware_test::Metadata kMetadata({.test_property = "test value"});
+
+  StartDriver();
+  driver_test().RunInDriverContext([](FakeDriver& driver) {
+    driver.Serve(kMetadata);
+
+    // Verify `MetadataServer::CreateOffer()` creates an offer.
+    ASSERT_TRUE(driver.CreateOffer().has_value());
+  });
+
+  zx::result metadata = fdf_metadata::GetMetadataIfExists<fuchsia_hardware_test::Metadata>(
+      driver_test().ConnectToDriverSvcDir());
+  ASSERT_OK(metadata);
+  ASSERT_EQ(metadata.value(), kMetadata);
 }
 
-// Verify that the metadata server can forward existing metadata using
-// `fdf_metadata::MetadataServer::ForwardMetadataIfExists()`.
-TEST_F(ForwardMetadataTest, ForwardExistingMetadata) {
-  const fuchsia_hardware_test::Metadata kMetadata{{.test_property = "test value"}};
+// Verify `MetadataServer::ForwardAndServe()` can retrieve metadata from a metadata server found in
+// its incoming namespace and serve it.
+TEST_F(MetadataServerTest, ForwardMetadata) {
+  static const fuchsia_hardware_test::Metadata kMetadata({.test_property = "test value"});
 
-  InitIncomingNamespace(true);
-  SetIncomingMetadata(kMetadata);
+  InitParentMetadataServer(kMetadata);
+  StartDriver();
+  driver_test().RunInDriverContext([](FakeDriver& driver) {
+    driver.ForwardAndServe(true);
 
-  fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server;
-  zx::result result = metadata_server.ForwardMetadataIfExists(incoming());
-  ASSERT_OK(result);
-  ASSERT_TRUE(result.value());
-  AssertHasMetadata(kMetadata, metadata_server);
+    // Verify `MetadataServer::CreateOffer()` creates an offer.
+    ASSERT_TRUE(driver.CreateOffer().has_value());
+  });
+
+  zx::result metadata = fdf_metadata::GetMetadataIfExists<fuchsia_hardware_test::Metadata>(
+      driver_test().ConnectToDriverSvcDir());
+  ASSERT_OK(metadata);
+  ASSERT_EQ(metadata.value(), kMetadata);
 }
 
-// Verify that `fdf_metadata::MetadataServer::ForwardMetadataIfExists()` returns false if the
-// incoming metadata server does not have metadata.
-TEST_F(ForwardMetadataTest, ForwardNonExistentMetadata) {
-  InitIncomingNamespace(true);
+// Verify `MetadataServer::ForwardAndServe()` does not serve any metadata if it fails to retrieve
+// metadata from a given platform device.
+TEST_F(MetadataServerTest, ForwardNonExistentMetadata) {
+  StartDriver();
+  driver_test().RunInDriverContext([](FakeDriver& driver) {
+    driver.ForwardAndServe(false);
 
-  fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server;
-  zx::result result = metadata_server.ForwardMetadataIfExists(incoming());
-  ASSERT_OK(result);
-  ASSERT_FALSE(result.value());
-  AssertDoesNotHaveMetadata(metadata_server);
+    // Verify `MetadataServer::CreateOffer()` does not create an offer.
+    ASSERT_FALSE(driver.CreateOffer().has_value());
+  });
+
+  zx::result metadata = fdf_metadata::GetMetadataIfExists<fuchsia_hardware_test::Metadata>(
+      driver_test().ConnectToDriverSvcDir());
+  ASSERT_OK(metadata);
+  ASSERT_FALSE(metadata.value().has_value());
 }
 
-// Verify that `fdf_metadata::MetadataServer::ForwardMetadataIfExists()` returns false if the
-// incoming metadata server does not exist.
-TEST_F(ForwardMetadataTest, ForwardNonExistentMetadataServer) {
-  InitIncomingNamespace(false);
+// Verify `MetadataServer::ForwardAndServe()` can retrieve metadata from a given platform device and
+// serve it.
+TEST_F(MetadataServerTest, ForwardPDevMetadata) {
+  static const fuchsia_hardware_test::Metadata kMetadata({.test_property = "test value"});
 
-  fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server;
-  zx::result result = metadata_server.ForwardMetadataIfExists(incoming());
-  ASSERT_OK(result);
-  ASSERT_FALSE(result.value());
-  AssertDoesNotHaveMetadata(metadata_server);
+  InitPdev(kMetadata);
+  StartDriver();
+  driver_test().RunInDriverContext([](FakeDriver& driver) {
+    driver.ForwardAndServeFromPDev(true);
+
+    // Verify `MetadataServer::CreateOffer()` creates an offer.
+    ASSERT_TRUE(driver.CreateOffer().has_value());
+  });
+
+  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_hardware_test::Metadata>(
+      driver_test().ConnectToDriverSvcDir());
+  ASSERT_OK(metadata);
+  ASSERT_EQ(metadata.value(), kMetadata);
+}
+
+// Verify `MetadataServer::ForwardAndServe()` does not serve any metadata if it fails to retrieve
+// metadata from a given platform device.
+TEST_F(MetadataServerTest, ForwardNonExistentPDevMetadata) {
+  StartDriver();
+  driver_test().RunInDriverContext([](FakeDriver& driver) {
+    driver.ForwardAndServeFromPDev(false);
+
+    // Verify `MetadataServer::CreateOffer()` does not create an offer.
+    ASSERT_FALSE(driver.CreateOffer().has_value());
+  });
+
+  zx::result metadata = fdf_metadata::GetMetadataIfExists<fuchsia_hardware_test::Metadata>(
+      driver_test().ConnectToDriverSvcDir());
+  ASSERT_OK(metadata);
+  ASSERT_FALSE(metadata.value().has_value());
 }
 
 }  // namespace fdf_metadata::test

@@ -102,12 +102,9 @@ fuchsia_driver_component("component") {
 In order for this driver to send metadata to its child drivers, it will need to
 create an instance of the
 [fdf_metadata::MetadataServer](/sdk/lib/driver/metadata/cpp/metadata_server.h)
-class, set the metadata by calling its
-`fdf_metadata::MetadataServer::SetMetadata()` method, serve the
-metadata to the driver's outgoing directory by calling its
-`fdf_metadata::MetadataServer::Serve()` method, and pass the metadata
-server's offer created by `fdf_metadata::MetadataServer::MakeOffer()` to the
-child node:
+class, call `fdf_metadata::MetadataServer::Serve()` in order to serve the
+metadata, and pass the metadata server's offer created by
+`fdf_metadata::MetadataServer::CreateOffer()` to the child node:
 
 ```cpp
 {% verbatim %}
@@ -120,16 +117,21 @@ child node:
 class Sender : public fdf::DriverBase {
  public:
   zx::result<> Start() override {
-    // Set the metadata to be served.
-    fuchsia_examples_metadata::Metadata metadata{{.test_property = "test value"}};
-    ZX_ASSERT(metadata_server_.SetMetadata(std::move(metadata)).is_ok());
-
     // Serve the metadata to the driver's outgoing directory.
-    ZX_ASSERT(metadata_server_.Serve(*outgoing(), dispatcher()).is_ok());
+    fuchsia_examples_metadata::Metadata metadata({.test_property = "test value"});
+    ZX_ASSERT(metadata_server_.Serve(*outgoing(), dispatcher(), metadata).is_ok());
+
+    std::vector<fuchsia_driver_framework::Offer> offers;
+
+    std::optional<fuchsia_driver_framework::Offer> metadata_offer =
+      metadata_server.CreateOffer();
+
+    // The metadata server should create an offer because it is serving
+    // metadata.
+    ZX_ASSERT(metadata_offer.has_value());
 
     // The metadata server's offer must be provided to the child node.
-    std::vector<fuchsia_driver_framework::Offer> offers{
-      metadata_server_.MakeOffer()};
+    offers.push_back(metadata_offer);
 
     zx::result child = AddChild("child", {}, offers);
     if (child.is_error()) {
@@ -146,11 +148,8 @@ class Sender : public fdf::DriverBase {
 {% endverbatim %}
 ```
 
-`fdf_metadata::MetadataServer::SetMetadata()` can be called multiple times,
-before or after `fdf_metadata::MetadataServer::Serve()`, and the metadata server
-will serve the latest metadata instance. A child driver will fail to retrieve
-the metadata if `fdf_metadata::MetadataServer::SetMetadata()` has not been
-called before it attempts to retrieve the metadata.
+`fdf_metadata::MetadataServer::Serve()` may be called multiple times and the
+metadata server will serve the latest metadata instance.
 
 The `driver` build target will need to be updated to include the metadata
 library and the FIDL library that defines the metadata type:
@@ -406,12 +405,14 @@ fuchsia_driver_component("component") {
 In order for the driver to forward metadata from its parent driver to its child
 drivers, it will need to create an instance of the
 [fdf_metadata::MetadataServer](/sdk/lib/driver/metadata/cpp/metadata_server.h)
-class, set the metadata by calling its
-`fdf_metadata::MetadataServer::ForwardMetadata()` method, serve the
-metadata to the driver's outgoing directory by calling its
-`fdf_metadata::MetadataServer::Serve()` method, and pass the metadata server's
-offer created by `fdf_metadata::MetadataServer::MakeOffer()` to the child node:
+class, call `fdf_metadata::MetadataServer::ForwardAndServe()` in order to
+retrieve the metadata from its parent and serve it to the driver's outgoing
+directory, and pass the metadata server's offer created by
+`fdf_metadata::MetadataServer::CreateOffer()` to the child node.
 
+`fdf_metadata::MetadataServer::ForwardAndServe()` will not return an error if it
+is unable to retrieve metadata from its parent. Instead, it will return
+`zx::ok(false)` and not serve anything.
 ```cpp
 // Defines the fuchsia.examples.metadata types in C++.
 #include <fidl/fuchsia.examples.metadata/cpp/fidl.h>
@@ -422,15 +423,25 @@ offer created by `fdf_metadata::MetadataServer::MakeOffer()` to the child node:
 class Forwarder : public fdf::DriverBase {
  public:
   zx::result<> Start() override {
-    // Set metadata using the driver's parent driver metadata.
-    ZX_ASSERT(metadata_server_.ForwardMetadata(incoming()),is_ok());
+    // Retrieve the metadata from the driver's parent and serve it to the
+    // driver's outgoing directory.
+    zx::result is_serving = metadata_server_.ForwardAndServe(
+      *outgoing(),
+      dispatcher(),
+      incoming()).is_ok();
+    ZX_ASSERT(is_serving.is_ok());
 
-    // Serve the metadata to the driver's outgoing directory.
-    ZX_ASSERT(metadata_server_.Serve(*outgoing(), dispatcher()).is_ok());
+    std::vector<fuchsia_driver_framework::Offer> offers;
+    std::optional<fuchsia_driver_framework::Offer> metadata_offer =
+      metadata_server_.CreateOffer();
 
-    // The metadata server's offer must be provided to the child node.
-    std::vector<fuchsia_driver_framework::Offer> offers{
-      metadata_server_.MakeOffer()};
+    // The metadata server may not be serving metadata if the driver failed to
+    // retrieve it from the driver's parent. In that case, the metadata server
+    // will not have an offer.
+    if (metadata_offer.has_value()) {
+      // The metadata server's offer must be provided to the child node.
+      offers.push_back(metadata_offer.value());
+    }
 
     zx::result child = AddChild("child", {}, offers);
     if (child.is_error()) {
@@ -446,10 +457,10 @@ class Forwarder : public fdf::DriverBase {
 };
 ```
 
-It should be noted that `fdf_metadata::MetadataServer::ForwardMetadata()` does
+It should be noted that `fdf_metadata::MetadataServer::ForwardAndServe()` does
 not check if the parent driver has changed what metadata it provides after
-`fdf_metadata::MetadataServer::ForwardMetadata()` has been called. The driver
-will have to call `fdf_metadata::MetadataServer::ForwardMetadata()` again in
+`fdf_metadata::MetadataServer::ForwardAndServe()` has been called. The driver
+will have to call `fdf_metadata::MetadataServer::ForwardAndServe()` again in
 order to incorporate the change.
 
 The `driver` build target will need to be updated to depend on the metadata

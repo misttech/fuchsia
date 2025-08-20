@@ -13,7 +13,7 @@
 
 namespace fdf_metadata::test {
 
-// This driver's purpose is to forward metadata using `fdf::MetadataServer::ForwardMetadata()`.
+// This driver's purpose is to forward metadata using `fdf::MetadataServer::ForwardAndServe()`.
 class MetadataForwarderTestDriver : public fdf::DriverBase {
  public:
   static constexpr std::string_view kDriverName = "forwarder";

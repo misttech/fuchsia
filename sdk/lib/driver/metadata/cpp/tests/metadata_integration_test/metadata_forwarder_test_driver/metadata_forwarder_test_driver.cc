@@ -13,12 +13,9 @@ namespace fdf_metadata::test {
 
 zx::result<> MetadataForwarderTestDriver::Start() {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  if (zx::result result = metadata_server_.ForwardMetadata(incoming()); result.is_error()) {
-    fdf::error("Failed to forward metadata: {}", result);
-    return result.take_error();
-  }
-  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
-    fdf::error("Failed to serve metadata: {}", result);
+  zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+  if (result.is_error()) {
+    fdf::error("Failed to forward and serve metadata: {}", result);
     return result.take_error();
   }
 #else
@@ -33,7 +30,10 @@ zx::result<> MetadataForwarderTestDriver::Start() {
 
   std::vector<fuchsia_driver_framework::Offer> offers;
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  offers.emplace_back(metadata_server_.MakeOffer());
+  std::optional metadata_offer = metadata_server_.CreateOffer();
+  if (metadata_offer.has_value()) {
+    offers.push_back(metadata_offer.value());
+  }
 #endif
   zx::result child = AddChild(kChildNodeName, kNodeProperties, std::move(offers));
   if (child.is_error()) {
