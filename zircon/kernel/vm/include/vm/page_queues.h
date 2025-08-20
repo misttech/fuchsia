@@ -81,17 +81,6 @@ class PageQueues {
   // aging.
   static constexpr uint64_t kDefaultActiveRatioMultiplier = 0;
 
-  // When holding the PageQueue lock, and performing an operation on an
-  // arbitrary number of pages, the "max batch size" controls the maximum number
-  // of number of pages for which the lock will be held before letting it go and
-  // allowing other operations to proceed.
-  //
-  // For example, if someone is calling RemoveArrayIntoList, with a list of 200
-  // pages to release, the lock will be obtained and dropped a total of 4 times,
-  // removing batches of 64 pages for the first 3 iterations, and finally a
-  // batch of 8 pages for the final iteration.
-  static inline constexpr size_t kMaxBatchSize = 64;
-
   PageQueues();
   ~PageQueues();
 
@@ -165,7 +154,7 @@ class PageQueues {
   // highly discouraged as the underlying lock is a CriticalMutex which disables preemption.
   // Preferably *Array variations should be used, but this provides a higher performance mechanism
   // when needed.
-  Lock<SpinLock>* get_lock() TA_RET_CAP(list_lock_) { return &list_lock_; }
+  Lock<CriticalMutex>* get_lock() TA_RET_CAP(list_lock_) { return &list_lock_; }
 
   // Used to identify the reason that aging is triggered, mostly for debugging and informational
   // purposes.
@@ -540,12 +529,27 @@ class PageQueues {
   // taking the lock.
   void MarkAccessedMaybeIsolate(vm_page_t* page);
 
+  // When holding the PageQueue lock, and performing an operation on an arbitrary number of pages,
+  // the "operation batch size" controls the number of pages for which the lock will be held before
+  // checking for contention and potentially releasing the lock if contended, allowing other
+  // operations to proceed.
+  static constexpr size_t kOpBatchSize = 64;
+
+  // Helper that checks if iterations is at a multiple of the kOpBatchSize, and if so whether or not
+  // the lock is presently contested and hence should be yielded.
+  bool BatchOpShouldDropLock(size_t iterations) const {
+    if ((iterations % kOpBatchSize) == 0) {
+      return list_lock_.lock().IsContested();
+    }
+    return false;
+  }
+
   // The list_lock_ is used to protect the linked lists queues as these cannot be implemented with
   // atomics. A few related members are also protected with this lock, such as the isolate_cursor.
   // The purpose of this separate spinlock, compared to the general lock_, is so that latency
   // sensitive operations, such as adding / removing pages, that only need to modify the list, can
   // happen without false contention with other page queues operations.
-  DECLARE_SPINLOCK(PageQueues) mutable list_lock_;
+  DECLARE_CRITICAL_MUTEX(PageQueues) mutable list_lock_;
 
   // General lock used to protect all logic and members that are not part of critical latency
   // sensitive operations.

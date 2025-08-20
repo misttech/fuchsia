@@ -382,10 +382,9 @@ class BatchPQUpdateBacklink {
   }
 
  private:
-  // Align the batch size here with the overall PageQueues batch size.
-  // We measured no performance gains from using larger values and this value should be as small as
-  // is reasonable due to this object being stack allocated.
-  static constexpr size_t kMaxPages = PageQueues::kMaxBatchSize;
+  // Batch size is selected to balance performance and size of the object that gets allocated on the
+  // stack.
+  static constexpr size_t kMaxPages = 64;
 
   VmCowPages* object_ = nullptr;
 
