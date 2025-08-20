@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 use crate::AddressFamily;
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
 const TC_HEADER_LEN: usize = 20;
 

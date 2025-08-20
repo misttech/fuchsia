@@ -2,12 +2,12 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::neighbour::flags::NeighbourFlags;
 use crate::neighbour::{
     NeighbourAttribute, NeighbourHeader, NeighbourMessage, NeighbourMessageBuffer, NeighbourState,
 };
 use crate::route::RouteType;
-use crate::AddressFamily;
 
 // wireshark capture(netlink message header removed) of nlmon against command:
 //   ip -f bridge neighbour show

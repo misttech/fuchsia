@@ -28,11 +28,11 @@ use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error, mode};
 
+use crate::DirectoryNodes;
 use crate::events::EventsFile;
 use crate::freeze::FreezeFile;
 use crate::kill::KillFile;
 use crate::procs::ControlGroupNode;
-use crate::DirectoryNodes;
 
 const CONTROLLERS_FILE: &str = "cgroup.controllers";
 const PROCS_FILE: &str = "cgroup.procs";

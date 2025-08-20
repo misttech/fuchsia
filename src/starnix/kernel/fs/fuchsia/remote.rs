@@ -2,31 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::fs::fuchsia::RemoteUnixDomainSocket;
 use crate::fs::fuchsia::remote_volume::RemoteVolume;
 use crate::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
-use crate::fs::fuchsia::RemoteUnixDomainSocket;
 use crate::mm::memory::MemoryObject;
 use crate::mm::{ProtectionFlags, VMEX_RESOURCE};
 use crate::security;
 use crate::task::{CurrentTask, EncryptionKeyId, Kernel};
-use crate::vfs::buffers::{with_iovec_segments, InputBuffer, OutputBuffer};
+use crate::vfs::buffers::{InputBuffer, OutputBuffer, with_iovec_segments};
 use crate::vfs::fsverity::FsVerityState;
 use crate::vfs::socket::{Socket, SocketFile, ZxioBackedSocket};
 use crate::vfs::{
-    default_ioctl, default_seek, fileops_impl_directory, fileops_impl_nonseekable,
-    fileops_impl_noop_sync, fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink,
-    fs_node_impl_xattr_delegate, Anon, AppendLockGuard, CacheConfig, CacheMode, DirectoryEntryType,
+    Anon, AppendLockGuard, CacheConfig, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType,
     DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle,
     FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    SeekTarget, SymlinkTarget, XattrOp, XattrStorage, DEFAULT_BYTES_PER_BLOCK,
+    SeekTarget, SymlinkTarget, XattrOp, XattrStorage, default_ioctl, default_seek,
+    fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
+    fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
 use bstr::{BString, ByteSlice};
-use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl::AsHandleRef;
+use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fuchsia_runtime::UtcInstant;
 use linux_uapi::SYNC_IOC_MAGIC;
 use once_cell::sync::OnceCell;
-use starnix_logging::{impossible_error, log_warn, trace_duration, CATEGORY_STARNIX_MM};
+use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_warn, trace_duration};
 use starnix_sync::{
     FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
     Unlocked,
@@ -45,16 +45,15 @@ use starnix_uapi::{
 use std::mem::MaybeUninit;
 use std::sync::Arc;
 use syncio::zxio::{
-    zxio_node_attr, ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_NODE_PROTOCOL_FILE,
-    ZXIO_NODE_PROTOCOL_SYMLINK, ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET, ZXIO_OBJECT_TYPE_DIR,
-    ZXIO_OBJECT_TYPE_FILE, ZXIO_OBJECT_TYPE_NONE, ZXIO_OBJECT_TYPE_PACKET_SOCKET,
-    ZXIO_OBJECT_TYPE_RAW_SOCKET, ZXIO_OBJECT_TYPE_STREAM_SOCKET,
-    ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET,
+    ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_NODE_PROTOCOL_FILE, ZXIO_NODE_PROTOCOL_SYMLINK,
+    ZXIO_OBJECT_TYPE_DATAGRAM_SOCKET, ZXIO_OBJECT_TYPE_DIR, ZXIO_OBJECT_TYPE_FILE,
+    ZXIO_OBJECT_TYPE_NONE, ZXIO_OBJECT_TYPE_PACKET_SOCKET, ZXIO_OBJECT_TYPE_RAW_SOCKET,
+    ZXIO_OBJECT_TYPE_STREAM_SOCKET, ZXIO_OBJECT_TYPE_SYNCHRONOUS_DATAGRAM_SOCKET, zxio_node_attr,
 };
 use syncio::{
-    zxio_fsverity_descriptor_t, zxio_node_attr_has_t, zxio_node_attributes_t, AllocateMode,
-    DirentIterator, SelinuxContextAttr, XattrSetMode, Zxio, ZxioDirent, ZxioOpenOptions,
-    ZXIO_ROOT_HASH_LENGTH,
+    AllocateMode, DirentIterator, SelinuxContextAttr, XattrSetMode, ZXIO_ROOT_HASH_LENGTH, Zxio,
+    ZxioDirent, ZxioOpenOptions, zxio_fsverity_descriptor_t, zxio_node_attr_has_t,
+    zxio_node_attributes_t,
 };
 use zx::{Counter, HandleBased};
 use {
@@ -1731,7 +1730,7 @@ mod test {
     use fxfs_testing::{TestFixture, TestFixtureOptions};
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::errors::EINVAL;
-    use starnix_uapi::file_mode::{mode, AccessCheck};
+    use starnix_uapi::file_mode::{AccessCheck, mode};
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
     use zx::HandleBased;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};

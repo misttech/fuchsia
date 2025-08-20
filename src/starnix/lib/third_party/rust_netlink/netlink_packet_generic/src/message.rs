@@ -112,11 +112,7 @@ where
     /// [`NetlinkMessage::finalize()`].
     pub fn family_id(&self) -> u16 {
         let static_id = self.payload.family_id();
-        if static_id == 0 {
-            self.resolved_family_id
-        } else {
-            static_id
-        }
+        if static_id == 0 { self.resolved_family_id } else { static_id }
     }
 }
 

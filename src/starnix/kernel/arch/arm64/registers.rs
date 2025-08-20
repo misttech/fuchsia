@@ -151,11 +151,7 @@ impl RegisterState {
 
     /// Returns the register that contains the syscall number.
     pub fn syscall_register(&self) -> u64 {
-        if self.is_arch32() {
-            self.real_registers.r[7]
-        } else {
-            self.real_registers.r[8]
-        }
+        if self.is_arch32() { self.real_registers.r[7] } else { self.real_registers.r[8] }
     }
 
     /// Resets the register that contains the application status flags.

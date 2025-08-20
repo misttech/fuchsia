@@ -7,9 +7,9 @@
 /// is sometimes referred to as Switch Port Analyzer (SPAN) and is
 /// commonly used to analyze and/or debug flows.
 use netlink_packet_utils::{
+    DecodeError,
     nla::{DefaultNla, Nla, NlaBuffer},
     traits::{Emitable, Parseable},
-    DecodeError,
 };
 
 use super::{TcActionGeneric, TcActionGenericBuffer};

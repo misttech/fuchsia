@@ -3,12 +3,12 @@
 use netlink_packet_utils::traits::{Emitable, Parseable};
 use std::convert::TryFrom as _;
 
+use super::NeighbourDiscoveryUserOptionError;
 use super::buffer::{
-    NeighbourDiscoveryUserOptionMessageBuffer, NEIGHBOUR_DISCOVERY_USER_OPTION_HEADER_LEN,
+    NEIGHBOUR_DISCOVERY_USER_OPTION_HEADER_LEN, NeighbourDiscoveryUserOptionMessageBuffer,
 };
 use super::header::NeighbourDiscoveryUserOptionHeader;
 use super::nla::Nla;
-use super::NeighbourDiscoveryUserOptionError;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]

@@ -12,7 +12,7 @@
 //! that would otherwise be used by the compiler for padding. Callers then interact with the enum
 //! "field" through generated accessors.
 
-pub use split_enum_storage_macro::{container, SplitStorage};
+pub use split_enum_storage_macro::{SplitStorage, container};
 
 /// A trait for enums which can be decomposed into a separate discriminant and data payload.
 ///

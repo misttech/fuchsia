@@ -3,12 +3,12 @@
 use netlink_packet_utils::nla::NlaBuffer;
 use netlink_packet_utils::{Emitable, ParseableParametrized};
 
+use crate::AddressFamily;
 use crate::link::{
     LinkAttribute, LinkVfInfo, VfInfo, VfInfoBroadcast, VfInfoLinkState, VfInfoMac, VfInfoRate,
     VfInfoRssQueryEn, VfInfoSpoofCheck, VfInfoTrust, VfInfoTxRate, VfInfoVlan, VfLinkState,
     VfStats, VfVlan, VfVlanInfo, VlanProtocol,
 };
-use crate::AddressFamily;
 
 // Wireshark capture of nlmon on a PF NIC with 2 SR-IOV VF enabled.
 // Only the IFLA_VFINFO_LIST included.

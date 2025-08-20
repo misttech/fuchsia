@@ -3,13 +3,13 @@
 use netlink_packet_utils::nla::DefaultNla;
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
     AfSpecInet, AfSpecInet6, AfSpecUnspec, Inet6CacheInfo, Inet6DevConf, Inet6IfaceFlags,
     InetDevConf, InfoData, InfoKind, InfoVxlan, LinkAttribute, LinkHeader, LinkInfo, LinkLayerType,
     LinkMessage, LinkMessageBuffer, LinkXdp, Map, State, Stats, Stats64, XdpAttached,
 };
-use crate::AddressFamily;
 
 #[test]
 fn test_parsing_link_vxlan() {

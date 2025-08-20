@@ -12,7 +12,7 @@ use starnix_uapi::user_address::{
     UserCString, UserRef,
 };
 use starnix_uapi::user_value::UserValue;
-use starnix_uapi::{errno, error, uapi, PATH_MAX, UIO_MAXIOV};
+use starnix_uapi::{PATH_MAX, UIO_MAXIOV, errno, error, uapi};
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use usercopy::slice_to_maybe_uninit_mut;
@@ -576,11 +576,7 @@ pub trait MemoryAccessorExt: MemoryAccessor {
         addr: UserCString,
         buffer: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a FsStr, Errno> {
-        if addr.is_null() {
-            Ok(Default::default())
-        } else {
-            self.read_c_string(addr, buffer)
-        }
+        if addr.is_null() { Ok(Default::default()) } else { self.read_c_string(addr, buffer) }
     }
 
     fn write_object<T: IntoBytes + Immutable>(

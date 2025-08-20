@@ -11,8 +11,8 @@ use starnix_logging::track_stub;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
-    errno, error, fsverity_descriptor, fsverity_enable_arg, fsverity_read_metadata_arg,
-    FS_VERITY_HASH_ALG_SHA256, FS_VERITY_HASH_ALG_SHA512,
+    FS_VERITY_HASH_ALG_SHA256, FS_VERITY_HASH_ALG_SHA512, errno, error, fsverity_descriptor,
+    fsverity_enable_arg, fsverity_read_metadata_arg,
 };
 use zerocopy::IntoBytes;
 
@@ -134,13 +134,13 @@ pub mod ioctl {
     use crate::mm::{MemoryAccessor, MemoryAccessorExt};
     use crate::task::CurrentTask;
     use crate::vfs::fsverity::{
-        fsverity_descriptor_from_enable_arg, fsverity_enable_arg, fsverity_measurement,
-        fsverity_read_metadata_arg, FsVerityState, HashAlgorithm, MetadataType,
+        FsVerityState, HashAlgorithm, MetadataType, fsverity_descriptor_from_enable_arg,
+        fsverity_enable_arg, fsverity_measurement, fsverity_read_metadata_arg,
     };
     use crate::vfs::{FileObject, FileWriteGuardMode};
     use num_traits::FromPrimitive;
     use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
-    use starnix_syscalls::{SyscallResult, SUCCESS};
+    use starnix_syscalls::{SUCCESS, SyscallResult};
     use starnix_uapi::errors::Errno;
     use starnix_uapi::user_address::{UserAddress, UserRef};
     use starnix_uapi::{errno, error, uapi};

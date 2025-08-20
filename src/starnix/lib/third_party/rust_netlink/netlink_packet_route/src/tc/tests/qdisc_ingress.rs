@@ -2,11 +2,11 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::tc::{
     TcAttribute, TcHandle, TcHeader, TcMessage, TcMessageBuffer, TcStats, TcStats2, TcStatsBasic,
     TcStatsQueue,
 };
-use crate::AddressFamily;
 
 // Setup:
 //      ip link add veth1 type veth peer veth1.peer

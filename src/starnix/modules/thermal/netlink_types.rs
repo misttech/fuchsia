@@ -4,10 +4,10 @@
 
 use anyhow::Context;
 use linux_uapi::{
+    THERMAL_GENL_FAMILY_NAME, THERMAL_GENL_VERSION,
     thermal_genl_attr_THERMAL_GENL_ATTR_TZ_ID as THERMAL_GENL_ATTR_TZ_ID,
     thermal_genl_attr_THERMAL_GENL_ATTR_TZ_TEMP as THERMAL_GENL_ATTR_TZ_TEMP,
     thermal_genl_sampling_THERMAL_GENL_SAMPLING_TEMP as THERMAL_GENL_SAMPLING_TEMP,
-    THERMAL_GENL_FAMILY_NAME, THERMAL_GENL_VERSION,
 };
 use netlink_packet_generic::{GenlFamily, GenlHeader};
 use netlink_packet_utils::byteorder::{ByteOrder, NativeEndian};

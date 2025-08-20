@@ -5,15 +5,15 @@
 use assert_matches::assert_matches;
 use common::EXPECTED_TEMP_C;
 use linux_uapi::{THERMAL_GENL_EVENT_GROUP_NAME, THERMAL_GENL_SAMPLING_GROUP_NAME};
-use netlink_packet_core::{NetlinkMessage, NetlinkPayload, NLM_F_REQUEST};
+use netlink_packet_core::{NLM_F_REQUEST, NetlinkMessage, NetlinkPayload};
+use netlink_packet_generic::GenlMessage;
 use netlink_packet_generic::ctrl::nlas::{GenlCtrlAttrs, McastGrpAttrs};
 use netlink_packet_generic::ctrl::{GenlCtrl, GenlCtrlCmd};
-use netlink_packet_generic::GenlMessage;
 use nix::sys::socket;
 use std::collections::{HashMap, HashSet};
 use std::os::fd::{AsFd, AsRawFd};
 use std::time::{Duration, Instant};
-use thermal_netlink::{celsius_to_millicelsius, GenlThermalCmd, GenlThermalPayload, ThermalAttr};
+use thermal_netlink::{GenlThermalCmd, GenlThermalPayload, ThermalAttr, celsius_to_millicelsius};
 
 fn main() {
     println!("started");
@@ -84,11 +84,7 @@ fn check_nlctrl_is_available() {
                 .iter()
                 .find_map(
                     |nla| {
-                        if let GenlCtrlAttrs::FamilyId(id) = nla {
-                            Some(*id)
-                        } else {
-                            None
-                        }
+                        if let GenlCtrlAttrs::FamilyId(id) = nla { Some(*id) } else { None }
                     },
                 )
                 .expect("Cannot find FamilyId attribute");

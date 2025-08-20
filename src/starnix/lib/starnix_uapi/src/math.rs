@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::errors::{errno, Errno};
+use super::errors::{Errno, errno};
 
 pub fn round_up_to_increment<N, M>(size: N, increment: M) -> Result<N, Errno>
 where

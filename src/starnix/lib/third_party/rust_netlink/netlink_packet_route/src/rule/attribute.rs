@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-use crate::ip::{emit_ip_addr, ip_addr_len, parse_ip_addr, IpProtocol};
+use crate::ip::{IpProtocol, emit_ip_addr, ip_addr_len, parse_ip_addr};
 use crate::route::{RouteProtocol, RouteRealm};
 use crate::rule::{RuleError, RulePortRange, RuleUidRange};
 use netlink_packet_utils::byteorder::{ByteOrder, NativeEndian};
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
-use netlink_packet_utils::parsers::{parse_string, parse_u32, parse_u8};
+use netlink_packet_utils::parsers::{parse_string, parse_u8, parse_u32};
 use netlink_packet_utils::{Emitable, Parseable};
 use std::net::IpAddr;
 

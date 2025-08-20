@@ -10,8 +10,8 @@ use crate::task::{
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, FileHandle, FileObject,
-    FileObjectState, FileOps,
+    Anon, FileHandle, FileObject, FileObjectState, FileOps, fileops_impl_nonseekable,
+    fileops_impl_noop_sync,
 };
 use starnix_logging::log_warn;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
@@ -19,7 +19,7 @@ use starnix_types::time::{duration_from_timespec, timespec_from_duration, timesp
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
-use starnix_uapi::{error, itimerspec, TFD_TIMER_ABSTIME};
+use starnix_uapi::{TFD_TIMER_ABSTIME, error, itimerspec};
 use std::sync::{Arc, Weak};
 use zerocopy::IntoBytes;
 use zx::{self as zx, HandleRef};
@@ -213,11 +213,7 @@ impl FileOps for TimerFile {
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
         // The expected error seems to vary depending on the open flags..
-        if file.flags().contains(OpenFlags::NONBLOCK) {
-            error!(EINVAL)
-        } else {
-            error!(ESPIPE)
-        }
+        if file.flags().contains(OpenFlags::NONBLOCK) { error!(EINVAL) } else { error!(ESPIPE) }
     }
 
     fn read(

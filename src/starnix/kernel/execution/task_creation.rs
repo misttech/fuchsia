@@ -19,7 +19,7 @@ use starnix_types::release_on_error;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::resource_limits::Resource;
-use starnix_uapi::signals::{Signal, SIGCHLD};
+use starnix_uapi::signals::{SIGCHLD, Signal};
 use starnix_uapi::{errno, error, from_status_like_fdio, pid_t, rlimit};
 use std::ffi::CString;
 use std::sync::Arc;

@@ -8,10 +8,10 @@ use crate::mm::memory_accessor::{MemoryAccessor, TaskMemoryAccessor};
 #[cfg(feature = "alternate_anon_allocs")]
 use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
-    read_to_array, FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, Mapping,
-    MappingBacking, MappingFlags, MappingName, MlockMapping, MlockPinFlavor, MlockShadowProcess,
-    PrivateFutexKey, ProtectionFlags, UserFault, VmsplicePayload, VmsplicePayloadSegment,
-    VMEX_RESOURCE,
+    FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, Mapping, MappingBacking,
+    MappingFlags, MappingName, MlockMapping, MlockPinFlavor, MlockShadowProcess, PrivateFutexKey,
+    ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload, VmsplicePayloadSegment,
+    read_to_array,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -21,16 +21,16 @@ use crate::vfs::pseudo::dynamic_file::{
     DynamicFile, DynamicFileBuf, DynamicFileSource, SequenceFileSource,
 };
 use crate::vfs::{FsNodeOps, FsString, NamespaceNode};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use bitflags::bitflags;
 use cfg_if::cfg_if;
 use flyweights::FlyByteStr;
-use fuchsia_inspect_contrib::{profile_duration, ProfileDuration};
+use fuchsia_inspect_contrib::{ProfileDuration, profile_duration};
 use linux_uapi::BUS_ADRERR;
 use range_map::RangeMap;
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::{
-    impossible_error, log_warn, trace_duration, track_stub, CATEGORY_STARNIX_MM,
+    CATEGORY_STARNIX_MM, impossible_error, log_warn, trace_duration, track_stub,
 };
 use starnix_sync::{
     LockBefore, Locked, MmDumpable, OrderedMutex, RwLock, RwLockWriteGuard, ThreadGroupLimits,
@@ -53,11 +53,11 @@ use starnix_uapi::restricted_aspace::{
 use starnix_uapi::signals::{SIGBUS, SIGSEGV};
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
 use starnix_uapi::{
-    errno, error, MADV_COLD, MADV_COLLAPSE, MADV_DODUMP, MADV_DOFORK, MADV_DONTDUMP, MADV_DONTFORK,
+    MADV_COLD, MADV_COLLAPSE, MADV_DODUMP, MADV_DOFORK, MADV_DONTDUMP, MADV_DONTFORK,
     MADV_DONTNEED, MADV_DONTNEED_LOCKED, MADV_FREE, MADV_HUGEPAGE, MADV_HWPOISON, MADV_KEEPONFORK,
     MADV_MERGEABLE, MADV_NOHUGEPAGE, MADV_NORMAL, MADV_PAGEOUT, MADV_POPULATE_READ, MADV_RANDOM,
     MADV_REMOVE, MADV_SEQUENTIAL, MADV_SOFT_OFFLINE, MADV_UNMERGEABLE, MADV_WILLNEED,
-    MADV_WIPEONFORK, MREMAP_DONTUNMAP, MREMAP_FIXED, MREMAP_MAYMOVE, SI_KERNEL,
+    MADV_WIPEONFORK, MREMAP_DONTUNMAP, MREMAP_FIXED, MREMAP_MAYMOVE, SI_KERNEL, errno, error,
 };
 use std::collections::HashMap;
 use std::mem::MaybeUninit;
@@ -1693,11 +1693,7 @@ impl MemoryManagerState {
             self.mappings.insert(range, mapping);
         }
 
-        if failed_to_lock {
-            error!(ENOMEM)
-        } else {
-            Ok(())
-        }
+        if failed_to_lock { error!(ENOMEM) } else { Ok(()) }
     }
 
     pub fn munlock(
@@ -2058,11 +2054,7 @@ impl MemoryManagerState {
             bytes_written = next_offset;
         }
 
-        if bytes_written != bytes.len() {
-            error!(EFAULT)
-        } else {
-            Ok(bytes.len())
-        }
+        if bytes_written != bytes.len() { error!(EFAULT) } else { Ok(bytes.len()) }
     }
 
     /// Writes the provided bytes to `addr`.
@@ -2111,11 +2103,7 @@ impl MemoryManagerState {
             bytes_written = next_offset;
         }
 
-        if !bytes.is_empty() && bytes_written == 0 {
-            error!(EFAULT)
-        } else {
-            Ok(bytes.len())
-        }
+        if !bytes.is_empty() && bytes_written == 0 { error!(EFAULT) } else { Ok(bytes.len()) }
     }
 
     fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
@@ -2129,11 +2117,7 @@ impl MemoryManagerState {
             bytes_written = next_offset;
         }
 
-        if length != bytes_written {
-            error!(EFAULT)
-        } else {
-            Ok(length)
-        }
+        if length != bytes_written { error!(EFAULT) } else { Ok(length) }
     }
 
     fn zero_mapping(
@@ -2316,11 +2300,7 @@ impl MemoryManager {
         if let Some(usercopy) = usercopy() {
             profile_duration!("UsercopyRead");
             let (read_bytes, unread_bytes) = usercopy.copyin(addr.ptr(), bytes);
-            if unread_bytes.is_empty() {
-                Ok(read_bytes)
-            } else {
-                error!(EFAULT)
-            }
+            if unread_bytes.is_empty() { Ok(read_bytes) } else { error!(EFAULT) }
         } else {
             self.syscall_read_memory(addr, bytes)
         }
@@ -2431,11 +2411,7 @@ impl MemoryManager {
         if let Some(usercopy) = usercopy() {
             profile_duration!("UsercopyWritePartial");
             let num_copied = usercopy.copyout(bytes, addr.ptr());
-            if num_copied == 0 && !bytes.is_empty() {
-                error!(EFAULT)
-            } else {
-                Ok(num_copied)
-            }
+            if num_copied == 0 && !bytes.is_empty() { error!(EFAULT) } else { Ok(num_copied) }
         } else {
             self.syscall_write_memory_partial(addr, bytes)
         }
@@ -2478,11 +2454,7 @@ impl MemoryManager {
 
         if let Some(usercopy) = usercopy() {
             profile_duration!("UsercopyZero");
-            if usercopy.zero(addr.ptr(), length) == length {
-                Ok(length)
-            } else {
-                error!(EFAULT)
-            }
+            if usercopy.zero(addr.ptr(), length) == length { Ok(length) } else { error!(EFAULT) }
         } else {
             self.syscall_zero(addr, length)
         }
@@ -3635,11 +3607,7 @@ impl MemoryManager {
     ) -> Result<Option<flyweights::FlyByteStr>, Errno> {
         let state = self.state.read();
         let (_, mapping) = state.mappings.get(addr).ok_or_else(|| errno!(EFAULT))?;
-        if let MappingName::Vma(name) = mapping.name() {
-            Ok(Some(name.clone()))
-        } else {
-            Ok(None)
-        }
+        if let MappingName::Vma(name) = mapping.name() { Ok(Some(name.clone())) } else { Ok(None) }
     }
 
     #[cfg(test)]
@@ -4167,8 +4135,8 @@ mod tests {
     use starnix_sync::{FileOpsCore, LockEqualOrBefore};
     use starnix_uapi::user_address::{UserCString, UserRef};
     use starnix_uapi::{
-        MAP_ANONYMOUS, MAP_FIXED, MAP_GROWSDOWN, MAP_PRIVATE, PROT_NONE, PROT_READ, PR_SET_VMA,
-        PR_SET_VMA_ANON_NAME,
+        MAP_ANONYMOUS, MAP_FIXED, MAP_GROWSDOWN, MAP_PRIVATE, PR_SET_VMA, PR_SET_VMA_ANON_NAME,
+        PROT_NONE, PROT_READ,
     };
     use std::ffi::CString;
     use zerocopy::{FromBytes, Immutable, KnownLayout};
@@ -5440,21 +5408,23 @@ mod tests {
         let vmo_clone = vmo.clone();
 
         // Create a thread to service the port where we will receive pager requests.
-        let thread = std::thread::spawn(move || loop {
-            let packet = port_clone.wait(zx::MonotonicInstant::INFINITE).expect("wait failed");
-            match packet.contents() {
-                zx::PacketContents::Pager(contents) => {
-                    if contents.command() == ZX_PAGER_VMO_READ {
-                        let range = contents.range();
-                        let source_vmo =
-                            zx::Vmo::create(range.end - range.start).expect("create failed");
-                        pager_clone
-                            .supply_pages(&vmo_clone, range, &source_vmo, 0)
-                            .expect("supply_pages failed");
+        let thread = std::thread::spawn(move || {
+            loop {
+                let packet = port_clone.wait(zx::MonotonicInstant::INFINITE).expect("wait failed");
+                match packet.contents() {
+                    zx::PacketContents::Pager(contents) => {
+                        if contents.command() == ZX_PAGER_VMO_READ {
+                            let range = contents.range();
+                            let source_vmo =
+                                zx::Vmo::create(range.end - range.start).expect("create failed");
+                            pager_clone
+                                .supply_pages(&vmo_clone, range, &source_vmo, 0)
+                                .expect("supply_pages failed");
+                        }
                     }
+                    zx::PacketContents::User(_) => break,
+                    _ => {}
                 }
-                zx::PacketContents::User(_) => break,
-                _ => {}
             }
         });
 

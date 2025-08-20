@@ -58,11 +58,7 @@ pub(crate) fn parse_ip_addr(raw: &[u8]) -> Result<IpAddr, DecodeError> {
 }
 
 pub(crate) fn ip_addr_len(addr: &IpAddr) -> usize {
-    if addr.is_ipv4() {
-        IPV4_ADDR_LEN
-    } else {
-        IPV6_ADDR_LEN
-    }
+    if addr.is_ipv4() { IPV4_ADDR_LEN } else { IPV6_ADDR_LEN }
 }
 
 pub(crate) fn emit_ip_addr(addr: &IpAddr, buffer: &mut [u8]) {

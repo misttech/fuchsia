@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Context;
 use netlink_packet_utils::nla::{NlaBuffer, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
-use netlink_packet_utils::{buffer, DecodeError};
+use netlink_packet_utils::{DecodeError, buffer};
 use smallvec::SmallVec;
 
 use crate::inet::nlas::Nla;

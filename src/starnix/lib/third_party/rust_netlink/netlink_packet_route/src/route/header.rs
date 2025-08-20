@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
 use super::super::AddressFamily;
-use super::flags::RouteFlags;
 use super::RouteError;
+use super::flags::RouteFlags;
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
 const ROUTE_HEADER_LEN: usize = 12;
 
@@ -244,11 +244,7 @@ impl Default for RouteProtocol {
 impl Parseable<[u8]> for RouteProtocol {
     type Error = RouteError;
     fn parse(buf: &[u8]) -> Result<Self, RouteError> {
-        if buf.len() == 1 {
-            Ok(Self::from(buf[0]))
-        } else {
-            Err(RouteError::ParseRouteProtocol)
-        }
+        if buf.len() == 1 { Ok(Self::from(buf[0])) } else { Err(RouteError::ParseRouteProtocol) }
     }
 }
 

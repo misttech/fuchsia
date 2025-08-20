@@ -11,13 +11,13 @@ use crate::vfs::socket::{
     SocketType,
 };
 use crate::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, DowncastedFile, FileHandle, FileObject,
-    FileObjectState, FileOps, FsNodeInfo,
+    Anon, DowncastedFile, FileHandle, FileObject, FileObjectState, FileOps, FsNodeInfo,
+    fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SyscallArg, SyscallResult};
 use starnix_uapi::error;
-use starnix_uapi::errors::{errno, Errno};
+use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;

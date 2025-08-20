@@ -2,10 +2,10 @@
 
 use anyhow::Context;
 use byteorder::{ByteOrder, NativeEndian};
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
 use netlink_packet_utils::parsers::parse_u16;
 use netlink_packet_utils::traits::Parseable;
-use netlink_packet_utils::DecodeError;
 
 const IFLA_IPVLAN_MODE: u16 = 1;
 const IFLA_IPVLAN_FLAGS: u16 = 2;

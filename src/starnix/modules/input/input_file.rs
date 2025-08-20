@@ -7,18 +7,18 @@ use starnix_core::fileops_impl_nonseekable;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
-use starnix_core::vfs::{fileops_impl_noop_sync, CloseFreeSafe, FileObject, FileOps};
+use starnix_core::vfs::{CloseFreeSafe, FileObject, FileOps, fileops_impl_noop_sync};
 use starnix_logging::{log_info, trace_duration, trace_flow_begin, trace_flow_end, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::time::duration_from_timeval;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    errno, error, uapi, ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_SLOT,
-    ABS_MT_TRACKING_ID, BTN_MISC, BTN_TOUCH, FF_CNT, INPUT_PROP_CNT, INPUT_PROP_DIRECT, KEY_CNT,
-    KEY_POWER, KEY_SLEEP, KEY_VOLUMEDOWN, LED_CNT, MSC_CNT, REL_CNT, REL_WHEEL, SW_CNT,
+    ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_SLOT, ABS_MT_TRACKING_ID, BTN_MISC,
+    BTN_TOUCH, FF_CNT, INPUT_PROP_CNT, INPUT_PROP_DIRECT, KEY_CNT, KEY_POWER, KEY_SLEEP,
+    KEY_VOLUMEDOWN, LED_CNT, MSC_CNT, REL_CNT, REL_WHEEL, SW_CNT, errno, error, uapi,
 };
 use std::collections::VecDeque;
 use std::sync::Arc;

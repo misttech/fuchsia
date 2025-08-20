@@ -4,12 +4,12 @@
 
 use super::parser::PolicyCursor;
 use super::{
-    array_type, array_type_validate_deref_both, Array, Counted, Parse, PolicyValidationContext,
-    Validate, ValidateArray,
+    Array, Counted, Parse, PolicyValidationContext, Validate, ValidateArray, array_type,
+    array_type_validate_deref_both,
 };
 use crate::policy::error::{ParseError, ValidateError};
 
-use zerocopy::{little_endian as le, FromBytes, Immutable, KnownLayout, Unaligned};
+use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
 pub(super) const SELINUX_MAGIC: u32 = 0xf97cff8c;
 

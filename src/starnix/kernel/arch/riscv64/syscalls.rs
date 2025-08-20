@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::syscalls::do_clone;
 use crate::task::CurrentTask;
+use crate::task::syscalls::do_clone;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::{UserAddress, UserRef};
-use starnix_uapi::{clone_args, tid_t, CSIGNAL};
+use starnix_uapi::{CSIGNAL, clone_args, tid_t};
 
 use starnix_sync::{Locked, Unlocked};
 

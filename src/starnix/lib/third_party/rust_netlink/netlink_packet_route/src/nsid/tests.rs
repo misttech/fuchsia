@@ -2,8 +2,8 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
-use crate::nsid::{NsidAttribute, NsidHeader, NsidMessage, NsidMessageBuffer};
 use crate::AddressFamily;
+use crate::nsid::{NsidAttribute, NsidHeader, NsidMessage, NsidMessageBuffer};
 
 // Setup
 //      ip netns add abc

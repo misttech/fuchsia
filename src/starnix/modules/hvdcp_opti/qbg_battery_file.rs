@@ -7,12 +7,12 @@ use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync, FileObject, FileOps,
-    NamespaceNode,
+    FileObject, FileOps, NamespaceNode, fileops_impl_dataless, fileops_impl_nonseekable,
+    fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;

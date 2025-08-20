@@ -34,11 +34,7 @@ impl<T: Copy + Eq + IntoBytes + FromBytes + Immutable> UserValue<T> {
 impl<T: Copy + PartialOrd> UserValue<T> {
     /// Returns the value that the user provided if the value is in the given range.
     pub fn validate(&self, range: Range<T>) -> Option<T> {
-        if range.contains(&self.0) {
-            Some(self.0)
-        } else {
-            None
-        }
+        if range.contains(&self.0) { Some(self.0) } else { None }
     }
 }
 

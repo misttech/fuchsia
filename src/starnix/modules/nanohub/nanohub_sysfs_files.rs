@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::sysfs::{try_get, SysfsError, SysfsOps};
+use crate::sysfs::{SysfsError, SysfsOps, try_get};
 use crate::{sysfs_errno, sysfs_error};
 use starnix_logging::log_error;
 use starnix_uapi::errno;
@@ -148,11 +148,7 @@ trait FromBit {
 impl FromBit for fnanohub::PinState {
     /// Construct an ISP pin state from an integer encoding.
     fn from_bit(bit: u8) -> Self {
-        if bit == 0 {
-            fnanohub::PinState::Low
-        } else {
-            fnanohub::PinState::High
-        }
+        if bit == 0 { fnanohub::PinState::Low } else { fnanohub::PinState::High }
     }
 }
 

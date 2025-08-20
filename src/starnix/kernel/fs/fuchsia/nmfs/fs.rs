@@ -333,7 +333,7 @@ impl From<&NetworkMessage> for fnp_socketproxy::Network {
 }
 
 mod addr_list {
-    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
     pub fn serialize<S, Addr>(addr: &Vec<Addr>, serializer: S) -> Result<S::Ok, S::Error>
     where

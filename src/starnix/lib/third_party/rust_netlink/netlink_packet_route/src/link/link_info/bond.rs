@@ -5,10 +5,10 @@ use std::ops::Deref;
 
 use anyhow::Context;
 use byteorder::{ByteOrder, NativeEndian};
-use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
-use netlink_packet_utils::parsers::{parse_ip, parse_mac, parse_u16, parse_u32, parse_u8};
-use netlink_packet_utils::traits::{Emitable, Parseable};
 use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
+use netlink_packet_utils::parsers::{parse_ip, parse_mac, parse_u8, parse_u16, parse_u32};
+use netlink_packet_utils::traits::{Emitable, Parseable};
 
 const IFLA_BOND_AD_INFO_AGGREGATOR: u16 = 1;
 const IFLA_BOND_AD_INFO_NUM_PORTS: u16 = 2;
@@ -230,11 +230,7 @@ impl From<&Vec<Ipv6Addr>> for BondIpAddrNlaList {
 
 impl Nla for BondIpAddrNla {
     fn value_len(&self) -> usize {
-        if self.addr.is_ipv4() {
-            4
-        } else {
-            16
-        }
+        if self.addr.is_ipv4() { 4 } else { 16 }
     }
     fn emit_value(&self, buffer: &mut [u8]) {
         match self.addr {

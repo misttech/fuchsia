@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::task::CurrentTask;
+use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
-use crate::vfs::FsNodeOps;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 

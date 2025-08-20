@@ -5,11 +5,7 @@
 use crate::{arch_translate_data, check_arch_independent_layout, translate_data};
 
 fn saturating_u64_to_u32(v: u64) -> u32 {
-    if v > u32::max_value().into() {
-        u32::max_value()
-    } else {
-        v as u32
-    }
+    if v > u32::max_value().into() { u32::max_value() } else { v as u32 }
 }
 
 fn saturating_i64_to_i32(v: i64) -> i32 {

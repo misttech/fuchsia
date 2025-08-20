@@ -9,8 +9,8 @@ use crate::task::CurrentTask;
 use fuchsia_inspect_contrib::profile_duration;
 use paste::paste;
 use starnix_sync::{Locked, Unlocked};
-use starnix_syscalls::decls::Syscall;
 use starnix_syscalls::SyscallResult;
+use starnix_syscalls::decls::Syscall;
 use starnix_uapi::errors::Errno;
 #[allow(unused_imports)]
 use starnix_uapi::user_address::ArchSpecific;

@@ -5,13 +5,13 @@ use std::str::FromStr;
 
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::route::flags::RouteFlags;
 use crate::route::{
     MplsLabel, RouteAddress, RouteAttribute, RouteCacheInfo, RouteHeader, RouteLwEnCapType,
     RouteLwTunnelEncap, RouteMessage, RouteMessageBuffer, RouteMplsIpTunnel,
     RouteMplsTtlPropagation, RoutePreference, RouteProtocol, RouteScope, RouteType,
 };
-use crate::AddressFamily;
 
 // Setup:
 //      ip link add dummy1 type dummy

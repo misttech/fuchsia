@@ -50,11 +50,7 @@ impl ProtectionFlags {
 
     pub fn from_access_bits(prot: u32) -> Option<Self> {
         if let Some(flags) = ProtectionFlags::from_bits(prot) {
-            if flags.contains(Self::ACCESS_FLAGS.complement()) {
-                None
-            } else {
-                Some(flags)
-            }
+            if flags.contains(Self::ACCESS_FLAGS.complement()) { None } else { Some(flags) }
         } else {
             None
         }

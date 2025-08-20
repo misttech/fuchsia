@@ -10,7 +10,7 @@ use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect::{ArrayProperty, NumericProperty, StringArrayProperty, UintProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
@@ -193,7 +193,9 @@ impl SuspendResumeManager {
             }
             Err(e) => {
                 if e.is_closed() {
-                    log_warn!("Failed to send the fuchsia.session.power/Handoff.Take request. Assuming no Handoff protocol exists and moving on...");
+                    log_warn!(
+                        "Failed to send the fuchsia.session.power/Handoff.Take request. Assuming no Handoff protocol exists and moving on..."
+                    );
                 } else {
                     return Err(e).context("Handoff::Take");
                 }

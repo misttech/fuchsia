@@ -5,11 +5,11 @@
 #[cfg(test)]
 mod tests {
     use linux_uapi::{
-        dm_ioctl, DM_ACTIVE_PRESENT_FLAG, DM_BUFFER_FULL_FLAG, DM_DEV_CREATE, DM_DEV_REMOVE,
-        DM_DEV_STATUS, DM_DEV_SUSPEND, DM_INACTIVE_PRESENT_FLAG, DM_LIST_DEVICES, DM_LIST_VERSIONS,
+        DM_ACTIVE_PRESENT_FLAG, DM_BUFFER_FULL_FLAG, DM_DEV_CREATE, DM_DEV_REMOVE, DM_DEV_STATUS,
+        DM_DEV_SUSPEND, DM_INACTIVE_PRESENT_FLAG, DM_LIST_DEVICES, DM_LIST_VERSIONS,
         DM_MAX_TYPE_NAME, DM_NAME_LEN, DM_READONLY_FLAG, DM_STATUS_TABLE_FLAG, DM_SUSPEND_FLAG,
         DM_TABLE_LOAD, DM_TABLE_STATUS, DM_UEVENT_GENERATED_FLAG, DM_UUID_LEN, DM_VERSION_MAJOR,
-        DM_VERSION_MINOR, DM_VERSION_PATCHLEVEL, LOOP_CONFIGURE, LOOP_CTL_GET_FREE,
+        DM_VERSION_MINOR, DM_VERSION_PATCHLEVEL, LOOP_CONFIGURE, LOOP_CTL_GET_FREE, dm_ioctl,
     };
     use serial_test::serial;
     use std::collections::HashSet;
@@ -131,7 +131,8 @@ mod tests {
 
         let parameter_string = format!(
             "1 {LOOP_MAJOR}:{image_device_num} {LOOP_MAJOR}:{hashtree_device_num} {DATA_BLOCK_SIZE} {HASH_BLOCK_SIZE} {:?} 0 sha256 {root_hash} ffffffffffffffff 1 ignore_zero_blocks",
-                image_size / DATA_BLOCK_SIZE);
+            image_size / DATA_BLOCK_SIZE
+        );
         let target_type_cstr = std::ffi::CString::new("verity").unwrap();
         let target_type = target_type_cstr
             .as_bytes_with_nul()
@@ -224,7 +225,9 @@ mod tests {
 
         let parameter_string = format!(
             "1 {LOOP_MAJOR}:{device_num} {LOOP_MAJOR}:{device_num} {DATA_BLOCK_SIZE} {HASH_BLOCK_SIZE} {:?} {:?} sha256 {root_hash} ffffffffffffffff 1 ignore_zero_blocks",
-                image_size / DATA_BLOCK_SIZE, image_size / HASH_BLOCK_SIZE);
+            image_size / DATA_BLOCK_SIZE,
+            image_size / HASH_BLOCK_SIZE
+        );
         let target_type_cstr = std::ffi::CString::new("verity").unwrap();
         let target_type = target_type_cstr
             .as_bytes_with_nul()

@@ -7,8 +7,8 @@ use super::signalfd::SignalFd;
 use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::signals::{
-    restore_from_signal_handler, send_signal, SignalDetail, SignalInfo, SignalInfoHeader,
-    SignalSource, SI_HEADER_SIZE,
+    SI_HEADER_SIZE, SignalDetail, SignalInfo, SignalInfoHeader, SignalSource,
+    restore_from_signal_handler, send_signal,
 };
 use crate::task::{
     CurrentTask, PidTable, ProcessEntryRef, ProcessSelector, Task, TaskMutableState, ThreadGroup,
@@ -24,15 +24,15 @@ use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_types::ownership::{OwnedRef, TempRef};
 use starnix_types::time::{duration_from_timespec, timeval_from_duration};
-use starnix_uapi::errors::{Errno, ErrnoResultExt, EINTR, ETIMEDOUT};
+use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno, ErrnoResultExt};
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::signals::{SigSet, Signal, UncheckedSignal, UNBLOCKABLE_SIGNALS};
+use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal};
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{
-    errno, error, pid_t, rusage, sigaltstack, P_ALL, P_PGID, P_PID, P_PIDFD, SFD_CLOEXEC,
-    SFD_NONBLOCK, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, SI_MAX_SIZE, SI_TKILL, SS_AUTODISARM,
-    SS_DISABLE, SS_ONSTACK, WCONTINUED, WEXITED, WNOHANG, WNOWAIT, WSTOPPED, WUNTRACED, __WALL,
-    __WCLONE,
+    __WALL, __WCLONE, P_ALL, P_PGID, P_PID, P_PIDFD, SFD_CLOEXEC, SFD_NONBLOCK, SI_MAX_SIZE,
+    SI_TKILL, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, SS_AUTODISARM, SS_DISABLE, SS_ONSTACK,
+    WCONTINUED, WEXITED, WNOHANG, WNOWAIT, WSTOPPED, WUNTRACED, errno, error, pid_t, rusage,
+    sigaltstack,
 };
 use static_assertions::const_assert_eq;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -652,11 +652,7 @@ where
         }
     }
 
-    if sent_signal {
-        Ok(())
-    } else {
-        Err(last_error.unwrap_or_else(|| errno!(ESRCH)))
-    }
+    if sent_signal { Ok(()) } else { Err(last_error.unwrap_or_else(|| errno!(ESRCH))) }
 }
 
 /// The generic options for both waitid and wait4.
@@ -962,7 +958,7 @@ mod tests {
         SIGCHLD, SIGHUP, SIGINT, SIGIO, SIGKILL, SIGRTMIN, SIGSEGV, SIGSTOP, SIGTERM, SIGTRAP,
         SIGUSR1,
     };
-    use starnix_uapi::{sigaction_t, uaddr, uid_t, SI_QUEUE, SI_USER};
+    use starnix_uapi::{SI_QUEUE, SI_USER, sigaction_t, uaddr, uid_t};
     use zerocopy::IntoBytes;
 
     #[cfg(target_arch = "x86_64")]
@@ -1829,13 +1825,10 @@ mod tests {
     async fn test_echild_when_no_zombie() {
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
         // Send the signal to the task.
-        assert!(sys_kill(
-            locked,
-            &current_task,
-            current_task.get_pid(),
-            UncheckedSignal::from(SIGCHLD)
-        )
-        .is_ok());
+        assert!(
+            sys_kill(locked, &current_task, current_task.get_pid(), UncheckedSignal::from(SIGCHLD))
+                .is_ok()
+        );
         // Verify that ECHILD is returned because there is no zombie process and no children to
         // block waiting for.
         assert_eq!(

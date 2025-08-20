@@ -8,7 +8,7 @@ use fidl_fuchsia_component::{CreateChildArgs, RealmProxy};
 use fidl_fuchsia_component_decl::{Child, CollectionRef, StartupMode};
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams, RealmInstance};
 use log::info;
-use remotevol_fuchsia_test_util::{wait_for_starnix_volume_to_be_mounted, PROGRAM_COLLECTION};
+use remotevol_fuchsia_test_util::{PROGRAM_COLLECTION, wait_for_starnix_volume_to_be_mounted};
 
 /// This test ensures that stat-ing a file with its encrypted name after the file has been unlocked
 /// should fail. Rebooting Starnix allows us to lock the file we're stat-ing. That way, we can also

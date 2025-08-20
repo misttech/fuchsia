@@ -8,7 +8,7 @@ use crate::task::{CurrentTask, Timeline, TimerWakeup};
 use starnix_sync::Mutex;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SIGALRM;
-use starnix_uapi::{error, itimerspec, uapi, TIMER_ABSTIME};
+use starnix_uapi::{TIMER_ABSTIME, error, itimerspec, uapi};
 use std::collections::HashMap;
 
 static_assertions::const_assert!(

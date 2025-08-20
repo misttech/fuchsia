@@ -6,21 +6,21 @@
 
 use crate::mm::memory::MemoryObject;
 use crate::mm::{
-    read_to_object_as_bytes, DesiredAddress, IOVecPtr, MappingName, MappingOptions, ProtectionFlags,
+    DesiredAddress, IOVecPtr, MappingName, MappingOptions, ProtectionFlags, read_to_object_as_bytes,
 };
 use crate::task::CurrentTask;
-use crate::vfs::socket::syscalls::{sys_recvfrom, sys_recvmsg, sys_sendmsg, sys_sendto, MsgHdrPtr};
+use crate::vfs::socket::syscalls::{MsgHdrPtr, sys_recvfrom, sys_recvmsg, sys_sendmsg, sys_sendto};
 use crate::vfs::syscalls::{
     sys_pread64, sys_preadv2, sys_pwrite64, sys_pwritev2, sys_read, sys_write,
 };
 use crate::vfs::{
-    fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, FdNumber,
-    FileHandle, FileObject, FileOps, NamespaceNode,
+    Anon, FdNumber, FileHandle, FileObject, FileOps, NamespaceNode, fileops_impl_dataless,
+    fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use bitflags::bitflags;
 use starnix_logging::{set_zx_name, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffers;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::Access;
@@ -28,20 +28,20 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, UserAddress, UserRef};
 use starnix_uapi::user_value::UserValue;
 use starnix_uapi::{
-    errno, error, io_cqring_offsets, io_sqring_offsets, io_uring_cqe, io_uring_op,
-    io_uring_op_IORING_OP_ACCEPT, io_uring_op_IORING_OP_ASYNC_CANCEL, io_uring_op_IORING_OP_CLOSE,
-    io_uring_op_IORING_OP_CONNECT, io_uring_op_IORING_OP_EPOLL_CTL, io_uring_op_IORING_OP_FADVISE,
+    IORING_FEAT_SINGLE_MMAP, IORING_OFF_CQ_RING, IORING_OFF_SQ_RING, IORING_OFF_SQES, errno, error,
+    io_cqring_offsets, io_sqring_offsets, io_uring_cqe, io_uring_op, io_uring_op_IORING_OP_ACCEPT,
+    io_uring_op_IORING_OP_ASYNC_CANCEL, io_uring_op_IORING_OP_CLOSE, io_uring_op_IORING_OP_CONNECT,
+    io_uring_op_IORING_OP_EPOLL_CTL, io_uring_op_IORING_OP_FADVISE,
     io_uring_op_IORING_OP_FALLOCATE, io_uring_op_IORING_OP_FILES_UPDATE,
     io_uring_op_IORING_OP_FSYNC, io_uring_op_IORING_OP_LINK_TIMEOUT, io_uring_op_IORING_OP_MADVISE,
     io_uring_op_IORING_OP_NOP, io_uring_op_IORING_OP_OPENAT, io_uring_op_IORING_OP_OPENAT2,
     io_uring_op_IORING_OP_POLL_ADD, io_uring_op_IORING_OP_POLL_REMOVE, io_uring_op_IORING_OP_READ,
-    io_uring_op_IORING_OP_READV, io_uring_op_IORING_OP_READ_FIXED, io_uring_op_IORING_OP_RECV,
+    io_uring_op_IORING_OP_READ_FIXED, io_uring_op_IORING_OP_READV, io_uring_op_IORING_OP_RECV,
     io_uring_op_IORING_OP_RECVMSG, io_uring_op_IORING_OP_SEND, io_uring_op_IORING_OP_SENDMSG,
     io_uring_op_IORING_OP_STATX, io_uring_op_IORING_OP_SYNC_FILE_RANGE,
     io_uring_op_IORING_OP_TIMEOUT, io_uring_op_IORING_OP_TIMEOUT_REMOVE,
-    io_uring_op_IORING_OP_WRITE, io_uring_op_IORING_OP_WRITEV, io_uring_op_IORING_OP_WRITE_FIXED,
-    io_uring_params, io_uring_sqe, off_t, socklen_t, uapi, IORING_FEAT_SINGLE_MMAP,
-    IORING_OFF_CQ_RING, IORING_OFF_SQES, IORING_OFF_SQ_RING,
+    io_uring_op_IORING_OP_WRITE, io_uring_op_IORING_OP_WRITE_FIXED, io_uring_op_IORING_OP_WRITEV,
+    io_uring_params, io_uring_sqe, off_t, socklen_t, uapi,
 };
 use std::sync::Arc;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -713,11 +713,7 @@ impl IoUringFileObject {
             return error!(EFAULT);
         }
         let buffer = buffers.get(index).ok_or_else(|| errno!(EINVAL))?;
-        if !buffer.contains(entry.address(), entry.length()) {
-            error!(EFAULT)
-        } else {
-            Ok(())
-        }
+        if !buffer.contains(entry.address(), entry.length()) { error!(EFAULT) } else { Ok(()) }
     }
 
     fn execute(

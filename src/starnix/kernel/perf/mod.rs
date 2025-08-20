@@ -6,19 +6,19 @@ use anyhow::Context;
 use fuchsia_component::client::connect_to_protocol;
 use {fidl_fuchsia_cpu_profiler as profiler, fuchsia_async};
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use starnix_logging::{log_info, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked, RwLock, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arch32::{
-    perf_event_type_PERF_RECORD_SAMPLE, PERF_EVENT_IOC_DISABLE, PERF_EVENT_IOC_ENABLE,
-    PERF_EVENT_IOC_ID, PERF_EVENT_IOC_MODIFY_ATTRIBUTES, PERF_EVENT_IOC_PAUSE_OUTPUT,
-    PERF_EVENT_IOC_PERIOD, PERF_EVENT_IOC_QUERY_BPF, PERF_EVENT_IOC_REFRESH, PERF_EVENT_IOC_RESET,
-    PERF_EVENT_IOC_SET_BPF, PERF_EVENT_IOC_SET_FILTER, PERF_EVENT_IOC_SET_OUTPUT,
-    PERF_RECORD_MISC_USER,
+    PERF_EVENT_IOC_DISABLE, PERF_EVENT_IOC_ENABLE, PERF_EVENT_IOC_ID,
+    PERF_EVENT_IOC_MODIFY_ATTRIBUTES, PERF_EVENT_IOC_PAUSE_OUTPUT, PERF_EVENT_IOC_PERIOD,
+    PERF_EVENT_IOC_QUERY_BPF, PERF_EVENT_IOC_REFRESH, PERF_EVENT_IOC_RESET, PERF_EVENT_IOC_SET_BPF,
+    PERF_EVENT_IOC_SET_FILTER, PERF_EVENT_IOC_SET_OUTPUT, PERF_RECORD_MISC_USER,
+    perf_event_type_PERF_RECORD_SAMPLE,
 };
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;

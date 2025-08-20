@@ -5,33 +5,33 @@
 #![recursion_limit = "256"]
 
 use bitflags::bitflags;
-use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::device::DeviceMode;
-use starnix_core::fs::sysfs::{build_block_device_directory, BlockDeviceInfo};
+use starnix_core::device::kobject::{Device, DeviceMetadata};
+use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use starnix_core::mm::memory::MemoryObject;
-use starnix_core::mm::{MemoryAccessorExt, ProtectionFlags, PAGE_SIZE};
+use starnix_core::mm::{MemoryAccessorExt, PAGE_SIZE, ProtectionFlags};
 use starnix_core::task::{CurrentTask, Kernel, KernelOrTask};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
-    default_ioctl, fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekable,
-    fileops_impl_seekless, Buffer, FdNumber, FileHandle, FileObject, FileOps, FsString,
-    InputBufferCallback, NamespaceNode, PeekBufferSegmentsCallback,
+    Buffer, FdNumber, FileHandle, FileObject, FileOps, FsString, InputBufferCallback,
+    NamespaceNode, PeekBufferSegmentsCallback, default_ioctl, fileops_impl_dataless,
+    fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_seekless,
 };
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::device_type::{DeviceType, LOOP_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{
-    __kernel_old_dev_t, errno, error, loop_info, loop_info64, uapi, BLKFLSBUF, BLKGETSIZE,
-    BLKGETSIZE64, LOOP_CHANGE_FD, LOOP_CLR_FD, LOOP_CONFIGURE, LOOP_CTL_ADD, LOOP_CTL_GET_FREE,
-    LOOP_CTL_REMOVE, LOOP_GET_STATUS, LOOP_GET_STATUS64, LOOP_SET_BLOCK_SIZE, LOOP_SET_CAPACITY,
-    LOOP_SET_DIRECT_IO, LOOP_SET_FD, LOOP_SET_STATUS, LOOP_SET_STATUS64, LO_FLAGS_AUTOCLEAR,
-    LO_FLAGS_DIRECT_IO, LO_FLAGS_PARTSCAN, LO_FLAGS_READ_ONLY, LO_KEY_SIZE,
+    __kernel_old_dev_t, BLKFLSBUF, BLKGETSIZE, BLKGETSIZE64, LO_FLAGS_AUTOCLEAR,
+    LO_FLAGS_DIRECT_IO, LO_FLAGS_PARTSCAN, LO_FLAGS_READ_ONLY, LO_KEY_SIZE, LOOP_CHANGE_FD,
+    LOOP_CLR_FD, LOOP_CONFIGURE, LOOP_CTL_ADD, LOOP_CTL_GET_FREE, LOOP_CTL_REMOVE, LOOP_GET_STATUS,
+    LOOP_GET_STATUS64, LOOP_SET_BLOCK_SIZE, LOOP_SET_CAPACITY, LOOP_SET_DIRECT_IO, LOOP_SET_FD,
+    LOOP_SET_STATUS, LOOP_SET_STATUS64, errno, error, loop_info, loop_info64, uapi,
 };
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::sync::Arc;
@@ -85,11 +85,7 @@ impl Default for LoopDeviceState {
 
 impl LoopDeviceState {
     fn check_bound(&self) -> Result<(), Errno> {
-        if self.backing_file.is_none() {
-            error!(ENXIO)
-        } else {
-            Ok(())
-        }
+        if self.backing_file.is_none() { error!(ENXIO) } else { Ok(()) }
     }
 
     fn set_backing_file(
@@ -411,11 +407,7 @@ impl FileOps for LoopDeviceFile {
     }
 
     fn sync(&self, _file: &FileObject, current_task: &CurrentTask) -> Result<(), Errno> {
-        if let Some(f) = self.device.backing_file() {
-            f.sync(current_task)
-        } else {
-            Ok(())
-        }
+        if let Some(f) = self.device.backing_file() { f.sync(current_task) } else { Ok(()) }
     }
 
     fn ioctl(

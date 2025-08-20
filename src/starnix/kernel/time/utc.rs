@@ -4,7 +4,7 @@
 
 use crate::vdso::vdso_loader::MemoryMappedVvar;
 use fuchsia_runtime::{
-    zx_utc_reference_get, UtcClock as UtcClockHandle, UtcClockTransform, UtcInstant,
+    UtcClock as UtcClockHandle, UtcClockTransform, UtcInstant, zx_utc_reference_get,
 };
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::Mutex;

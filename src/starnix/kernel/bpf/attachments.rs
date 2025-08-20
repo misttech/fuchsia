@@ -6,26 +6,26 @@
 #![allow(non_upper_case_globals)]
 
 use crate::bpf::context::EbpfRunContextImpl;
-use crate::bpf::fs::{get_bpf_object, BpfHandle};
+use crate::bpf::fs::{BpfHandle, get_bpf_object};
 use crate::bpf::program::ProgramHandle;
 use crate::mm::PAGE_SIZE;
 use crate::task::CurrentTask;
+use crate::vfs::FdNumber;
 use crate::vfs::socket::{
     SockOptValue, SocketDomain, SocketProtocol, SocketType, ZxioBackedSocket,
 };
-use crate::vfs::FdNumber;
 use ebpf::{EbpfProgram, EbpfProgramContext, ProgramArgument, Type};
 use ebpf_api::{
-    AttachType, PinnedMap, ProgramType, SocketCookieContext, BPF_SOCK_ADDR_TYPE, BPF_SOCK_TYPE,
+    AttachType, BPF_SOCK_ADDR_TYPE, BPF_SOCK_TYPE, PinnedMap, ProgramType, SocketCookieContext,
 };
 use fidl_fuchsia_net_filter as fnet_filter;
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{EbpfStateLock, FileOpsCore, Locked, OrderedRwLock, Unlocked};
-use starnix_syscalls::{SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_uapi::errors::{Errno, ErrnoCode};
 use starnix_uapi::{
-    bpf_attr__bindgen_ty_6, bpf_sock, bpf_sock_addr, errno, error, CGROUP2_SUPER_MAGIC,
+    CGROUP2_SUPER_MAGIC, bpf_attr__bindgen_ty_6, bpf_sock, bpf_sock_addr, errno, error,
 };
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, OnceLock};

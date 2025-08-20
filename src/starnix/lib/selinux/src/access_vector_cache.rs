@@ -757,8 +757,8 @@ mod testing {
     use crate::SecurityId;
 
     use std::num::NonZeroU32;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::LazyLock;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     /// SID to use where any value will do.
     pub(super) static A_TEST_SID: LazyLock<SecurityId> = LazyLock::new(unique_sid);
@@ -782,8 +782,8 @@ mod testing {
 mod tests {
     use super::testing::*;
     use super::*;
-    use crate::policy::{AccessVector, XpermsBitmap};
     use crate::KernelClass;
+    use crate::policy::{AccessVector, XpermsBitmap};
 
     use std::sync::atomic::AtomicUsize;
 
@@ -1068,12 +1068,12 @@ mod tests {
 mod starnix_tests {
     use super::testing::*;
     use super::*;
-    use crate::policy::testing::{ACCESS_VECTOR_0001, ACCESS_VECTOR_0010};
-    use crate::policy::AccessVector;
     use crate::KernelClass;
+    use crate::policy::AccessVector;
+    use crate::policy::testing::{ACCESS_VECTOR_0001, ACCESS_VECTOR_0010};
 
     use rand::distr::Uniform;
-    use rand::{rng, Rng as _};
+    use rand::{Rng as _, rng};
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::AtomicU32;
     use std::thread::spawn;

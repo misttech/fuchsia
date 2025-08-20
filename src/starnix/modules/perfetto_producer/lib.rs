@@ -13,10 +13,10 @@ use perfetto_protos::perfetto::protos::{
     RegisterDataSourceRequest, RegisterDataSourceResponse, TrackEventDescriptor,
 };
 use starnix_core::task::{CurrentTask, Kernel};
-use starnix_core::vfs::socket::{
-    resolve_unix_socket_address, SocketDomain, SocketFile, SocketPeer, SocketProtocol, SocketType,
-};
 use starnix_core::vfs::FsString;
+use starnix_core::vfs::socket::{
+    SocketDomain, SocketFile, SocketPeer, SocketProtocol, SocketType, resolve_unix_socket_address,
+};
 use starnix_logging::{log_error, log_info, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::open_flags::OpenFlags;

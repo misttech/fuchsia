@@ -3,6 +3,7 @@
 use netlink_packet_utils::nla::{DefaultNla, NlaBuffer};
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::link::af_spec::VecAfSpecBridge;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
@@ -12,7 +13,6 @@ use crate::link::{
     LinkHeader, LinkInfo, LinkLayerType, LinkMessage, LinkMessageBuffer, LinkXdp, Map, State,
     Stats, Stats64, XdpAttached,
 };
-use crate::AddressFamily;
 
 #[test]
 fn test_parse_link_bridge_no_extention_mask() {

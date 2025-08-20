@@ -5,18 +5,18 @@
 use crate::device::terminal::{Terminal, TerminalController};
 use crate::mutable_state::{state_accessor, state_implementation};
 use crate::security;
-use crate::signals::syscalls::{read_siginfo, WaitingOptions};
+use crate::signals::syscalls::{WaitingOptions, read_siginfo};
 use crate::signals::{
-    action_for_signal, send_standard_signal, DeliveryAction, QueuedSignals, SignalActions,
-    SignalDetail, SignalInfo,
+    DeliveryAction, QueuedSignals, SignalActions, SignalDetail, SignalInfo, action_for_signal,
+    send_standard_signal,
 };
 use crate::task::interval_timer::IntervalTimerHandle;
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
-    ptrace_detach, AtomicStopState, ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable,
-    ProcessGroup, PtraceAllowedPtracers, PtraceEvent, PtraceOptions, PtraceStatus, Session,
-    StopState, Task, TaskFlags, TaskMutableState, TaskPersistentInfo, TimerTable, TypedWaitQueue,
-    ZombiePtraces,
+    AtomicStopState, ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable, ProcessGroup,
+    PtraceAllowedPtracers, PtraceEvent, PtraceOptions, PtraceStatus, Session, StopState, Task,
+    TaskFlags, TaskMutableState, TaskPersistentInfo, TimerTable, TypedWaitQueue, ZombiePtraces,
+    ptrace_detach,
 };
 use itertools::Itertools;
 use macro_rules_attribute::apply;
@@ -28,22 +28,22 @@ use starnix_sync::{
 use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef, WeakRefKey};
 use starnix_types::stats::TaskTimeStats;
 use starnix_types::time::{itimerspec_from_itimerval, timeval_from_duration};
-use starnix_uapi::auth::{Credentials, CAP_SYS_ADMIN, CAP_SYS_RESOURCE};
+use starnix_uapi::auth::{CAP_SYS_ADMIN, CAP_SYS_RESOURCE, Credentials};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::personality::PersonalityFlags;
 use starnix_uapi::resource_limits::{Resource, ResourceLimits};
 use starnix_uapi::signals::{
-    Signal, UncheckedSignal, SIGCHLD, SIGCONT, SIGHUP, SIGKILL, SIGTERM, SIGTTOU,
+    SIGCHLD, SIGCONT, SIGHUP, SIGKILL, SIGTERM, SIGTTOU, Signal, UncheckedSignal,
 };
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
-    errno, error, itimerval, pid_t, rlimit, tid_t, uid_t, ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL,
-    SIG_IGN, SI_TKILL, SI_USER,
+    ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL, SI_TKILL, SI_USER, SIG_IGN, errno, error, itimerval,
+    pid_t, rlimit, tid_t, uid_t,
 };
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use zx::{AsHandleRef, Koid, Status};
 
 /// A weak reference to a thread group that can be used in set and maps.
@@ -317,15 +317,17 @@ impl Drop for ThreadGroup {
         let state = self.mutable_state.get_mut();
         assert!(state.tasks.is_empty());
         assert!(state.children.is_empty());
-        assert!(state
-            .parent
-            .as_ref()
-            .and_then(|p| p.0.upgrade().as_ref().map(|p| p
-                .read()
-                .children
-                .get(&self.leader)
-                .is_none()))
-            .unwrap_or(true));
+        assert!(
+            state
+                .parent
+                .as_ref()
+                .and_then(|p| p.0.upgrade().as_ref().map(|p| p
+                    .read()
+                    .children
+                    .get(&self.leader)
+                    .is_none()))
+                .unwrap_or(true)
+        );
     }
 }
 
@@ -2153,10 +2155,12 @@ mod test {
             child_task.thread_group().read().process_group.session.leader,
             child_task.get_pid()
         );
-        assert!(!old_process_group
-            .read(locked)
-            .thread_groups()
-            .contains(&OwnedRef::temp(child_task.thread_group())));
+        assert!(
+            !old_process_group
+                .read(locked)
+                .thread_groups()
+                .contains(&OwnedRef::temp(child_task.thread_group()))
+        );
     }
 
     #[::fuchsia::test]
@@ -2243,10 +2247,12 @@ mod test {
             Ok(())
         );
         assert_eq!(child_task2.thread_group().read().process_group.leader, child_task1.tid);
-        assert!(!old_process_group
-            .read(locked)
-            .thread_groups()
-            .contains(&OwnedRef::temp(child_task2.thread_group())));
+        assert!(
+            !old_process_group
+                .read(locked)
+                .thread_groups()
+                .contains(&OwnedRef::temp(child_task2.thread_group()))
+        );
     }
 
     #[::fuchsia::test]

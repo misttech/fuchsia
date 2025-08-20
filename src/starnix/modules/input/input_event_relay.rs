@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::{
-    parse_fidl_keyboard_event_to_linux_input_event, parse_fidl_media_button_event,
-    parse_fidl_touch_button_event, FuchsiaTouchEventToLinuxTouchEventConverter, InputDeviceStatus,
-    InputFile, LinuxEventWithTraceId,
+    FuchsiaTouchEventToLinuxTouchEventConverter, InputDeviceStatus, InputFile,
+    LinuxEventWithTraceId, parse_fidl_keyboard_event_to_linux_input_event,
+    parse_fidl_media_button_event, parse_fidl_touch_button_event,
 };
 use fidl::endpoints::{ClientEnd, RequestStream};
 use fidl_fuchsia_ui_input::TouchDeviceInfo;
@@ -18,10 +18,10 @@ use fidl_fuchsia_ui_pointer::{
     TouchPointerSample, TouchResponse as FidlTouchResponse, TouchResponseType,
     {self as fuipointer},
 };
-use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use futures::StreamExt as _;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot::{self, Sender};
 use futures::executor::block_on;
-use futures::StreamExt as _;
 use starnix_core::power::{create_proxy_for_wake_events_counter, mark_proxy_message_handled};
 use starnix_core::task::{Kernel, LockedAndTask};
 use starnix_logging::{
@@ -489,7 +489,10 @@ impl InputEventsRelay {
                     0 => (0u64, 1u64, 0u64),
                     len => {
                         if len % 2 == 1 {
-                            log_warn!("unexpectedly received {} events: there should always be an even number of non-empty events.", len);
+                            log_warn!(
+                                "unexpectedly received {} events: there should always be an even number of non-empty events.",
+                                len
+                            );
                         }
                         (1u64, 0u64, len as u64)
                     }
@@ -568,7 +571,10 @@ impl InputEventsRelay {
             0 => (0u64, 1u64, 0u64),
             len => {
                 if len % 2 == 1 {
-                    log_warn!("unexpectedly received {} events: there should always be an even number of non-empty events.", len);
+                    log_warn!(
+                        "unexpectedly received {} events: there should always be an even number of non-empty events.",
+                        len
+                    );
                 }
                 (1u64, 0u64, len as u64)
             }
@@ -1057,7 +1063,7 @@ mod test {
     use starnix_core::vfs::{FileHandle, FileObject, VecOutputBuffer};
     use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
     use starnix_types::time::timeval_from_time;
-    use starnix_uapi::errors::{Errno, EAGAIN};
+    use starnix_uapi::errors::{EAGAIN, Errno};
     use starnix_uapi::input_id;
     use starnix_uapi::open_flags::OpenFlags;
     use zerocopy::FromBytes as _;

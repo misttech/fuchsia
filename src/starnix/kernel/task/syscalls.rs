@@ -7,10 +7,10 @@ use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use crate::security;
 use crate::signals::syscalls::RUsagePtr;
 use crate::task::{
-    max_priority_for_sched_policy, min_priority_for_sched_policy, ptrace_attach, ptrace_dispatch,
-    ptrace_traceme, CurrentTask, ExitStatus, NormalPriority, PtraceAllowedPtracers,
+    CurrentTask, ExitStatus, NormalPriority, PR_SET_PTRACER_ANY, PtraceAllowedPtracers,
     PtraceAttachType, PtraceOptions, SchedulingPolicy, SeccompAction, SeccompStateValue,
-    SyslogAccess, Task, ThreadGroup, PR_SET_PTRACER_ANY,
+    SyslogAccess, Task, ThreadGroup, max_priority_for_sched_policy, min_priority_for_sched_policy,
+    ptrace_attach, ptrace_dispatch, ptrace_traceme,
 };
 use crate::vfs::{
     FdNumber, FileHandle, MountNamespaceFile, PidFdFileObject, UserBuffersOutputBuffer,
@@ -22,10 +22,10 @@ use starnix_syscalls::SyscallResult;
 use starnix_types::ownership::WeakRef;
 use starnix_types::time::timeval_from_duration;
 use starnix_uapi::auth::{
-    Capabilities, SecureBits, CAP_SETGID, CAP_SETPCAP, CAP_SETUID, CAP_SYS_ADMIN, CAP_SYS_NICE,
-    CAP_SYS_RESOURCE, CAP_SYS_TTY_CONFIG, PTRACE_MODE_READ_REALCREDS,
+    CAP_SETGID, CAP_SETPCAP, CAP_SETUID, CAP_SYS_ADMIN, CAP_SYS_NICE, CAP_SYS_RESOURCE,
+    CAP_SYS_TTY_CONFIG, Capabilities, PTRACE_MODE_READ_REALCREDS, SecureBits,
 };
-use starnix_uapi::errors::{Errno, ENAMETOOLONG};
+use starnix_uapi::errors::{ENAMETOOLONG, Errno};
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::kcmp::KcmpResource;
 use starnix_uapi::open_flags::OpenFlags;
@@ -38,21 +38,22 @@ use starnix_uapi::user_address::{
 };
 use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{
-    __user_cap_data_struct, __user_cap_header_struct, c_char, c_int, clone_args, errno, error,
-    gid_t, pid_t, rlimit, rusage, sched_param, sock_filter, uapi, uid_t, AT_EMPTY_PATH,
-    AT_SYMLINK_NOFOLLOW, BPF_MAXINSNS, CLONE_ARGS_SIZE_VER0, CLONE_ARGS_SIZE_VER1,
-    CLONE_ARGS_SIZE_VER2, CLONE_FILES, CLONE_FS, CLONE_NEWNS, CLONE_NEWUTS, CLONE_SETTLS,
-    CLONE_VFORK, NGROUPS_MAX, PRIO_PROCESS, PR_CAPBSET_DROP, PR_CAPBSET_READ, PR_CAP_AMBIENT,
+    __user_cap_data_struct, __user_cap_header_struct, _LINUX_CAPABILITY_VERSION_1,
+    _LINUX_CAPABILITY_VERSION_2, _LINUX_CAPABILITY_VERSION_3, AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW,
+    BPF_MAXINSNS, CLONE_ARGS_SIZE_VER0, CLONE_ARGS_SIZE_VER1, CLONE_ARGS_SIZE_VER2, CLONE_FILES,
+    CLONE_FS, CLONE_NEWNS, CLONE_NEWUTS, CLONE_SETTLS, CLONE_VFORK, NGROUPS_MAX, PR_CAP_AMBIENT,
     PR_CAP_AMBIENT_CLEAR_ALL, PR_CAP_AMBIENT_IS_SET, PR_CAP_AMBIENT_LOWER, PR_CAP_AMBIENT_RAISE,
-    PR_GET_CHILD_SUBREAPER, PR_GET_DUMPABLE, PR_GET_KEEPCAPS, PR_GET_NAME, PR_GET_NO_NEW_PRIVS,
-    PR_GET_SECCOMP, PR_GET_SECUREBITS, PR_SET_CHILD_SUBREAPER, PR_SET_DUMPABLE, PR_SET_KEEPCAPS,
-    PR_SET_NAME, PR_SET_NO_NEW_PRIVS, PR_SET_PDEATHSIG, PR_SET_PTRACER, PR_SET_SECCOMP,
-    PR_SET_SECUREBITS, PR_SET_TIMERSLACK, PR_SET_VMA, PR_SET_VMA_ANON_NAME, PTRACE_ATTACH,
-    PTRACE_SEIZE, PTRACE_TRACEME, RUSAGE_CHILDREN, SCHED_RESET_ON_FORK, SECCOMP_FILTER_FLAG_LOG,
+    PR_CAPBSET_DROP, PR_CAPBSET_READ, PR_GET_CHILD_SUBREAPER, PR_GET_DUMPABLE, PR_GET_KEEPCAPS,
+    PR_GET_NAME, PR_GET_NO_NEW_PRIVS, PR_GET_SECCOMP, PR_GET_SECUREBITS, PR_SET_CHILD_SUBREAPER,
+    PR_SET_DUMPABLE, PR_SET_KEEPCAPS, PR_SET_NAME, PR_SET_NO_NEW_PRIVS, PR_SET_PDEATHSIG,
+    PR_SET_PTRACER, PR_SET_SECCOMP, PR_SET_SECUREBITS, PR_SET_TIMERSLACK, PR_SET_VMA,
+    PR_SET_VMA_ANON_NAME, PRIO_PROCESS, PTRACE_ATTACH, PTRACE_SEIZE, PTRACE_TRACEME,
+    RUSAGE_CHILDREN, SCHED_RESET_ON_FORK, SECCOMP_FILTER_FLAG_LOG,
     SECCOMP_FILTER_FLAG_NEW_LISTENER, SECCOMP_FILTER_FLAG_SPEC_ALLOW, SECCOMP_FILTER_FLAG_TSYNC,
     SECCOMP_FILTER_FLAG_TSYNC_ESRCH, SECCOMP_GET_ACTION_AVAIL, SECCOMP_GET_NOTIF_SIZES,
     SECCOMP_MODE_FILTER, SECCOMP_MODE_STRICT, SECCOMP_SET_MODE_FILTER, SECCOMP_SET_MODE_STRICT,
-    _LINUX_CAPABILITY_VERSION_1, _LINUX_CAPABILITY_VERSION_2, _LINUX_CAPABILITY_VERSION_3,
+    c_char, c_int, clone_args, errno, error, gid_t, pid_t, rlimit, rusage, sched_param,
+    sock_filter, uapi, uid_t,
 };
 use static_assertions::const_assert;
 use std::cmp;
@@ -171,13 +172,9 @@ fn read_c_string_vector(
         if user_string.is_null() {
             break;
         }
-        let string = mm.read_c_string_to_vec(user_string, elem_limit).map_err(|e| {
-            if e.code == ENAMETOOLONG {
-                errno!(E2BIG)
-            } else {
-                e
-            }
-        })?;
+        let string = mm
+            .read_c_string_to_vec(user_string, elem_limit)
+            .map_err(|e| if e.code == ENAMETOOLONG { errno!(E2BIG) } else { e })?;
         let cstring = CString::new(string).map_err(|_| errno!(EINVAL))?;
         vec_size =
             vec_size.checked_add(cstring.as_bytes_with_nul().len()).ok_or_else(|| errno!(E2BIG))?;
@@ -376,11 +373,7 @@ pub fn sys_getppid(
 }
 
 fn get_task_or_current(current_task: &CurrentTask, pid: pid_t) -> WeakRef<Task> {
-    if pid == 0 {
-        current_task.weak_task()
-    } else {
-        current_task.get_task(pid)
-    }
+    if pid == 0 { current_task.weak_task() } else { current_task.get_task(pid) }
 }
 
 pub fn sys_getsid(
@@ -1008,11 +1001,7 @@ pub fn sys_prctl(
                 let name = UserCString::new(current_task, UserAddress::from(arg5));
                 let name = current_task.read_c_string_to_vec(name, 256).map_err(|e| {
                     // An overly long name produces EINVAL and not ENAMETOOLONG in Linux 5.15.
-                    if e.code == ENAMETOOLONG {
-                        errno!(EINVAL)
-                    } else {
-                        e
-                    }
+                    if e.code == ENAMETOOLONG { errno!(EINVAL) } else { e }
                 })?;
                 // Some characters are forbidden in VMA names.
                 if name.iter().any(|b| {
@@ -1530,7 +1519,16 @@ pub fn sys_capset(
     // Permission checks. Copied out of TLPI section 39.7.
     let mut creds = current_task.current_creds();
     {
-        log_trace!("Capabilities({{permitted={:?} from {:?}, effective={:?} from {:?}, inheritable={:?} from {:?}}}, bounding={:?})", new_permitted, creds.cap_permitted, new_effective, creds.cap_effective, new_inheritable, creds.cap_inheritable, creds.cap_bounding);
+        log_trace!(
+            "Capabilities({{permitted={:?} from {:?}, effective={:?} from {:?}, inheritable={:?} from {:?}}}, bounding={:?})",
+            new_permitted,
+            creds.cap_permitted,
+            new_effective,
+            creds.cap_effective,
+            new_inheritable,
+            creds.cap_inheritable,
+            creds.cap_bounding
+        );
         if !creds.cap_inheritable.union(creds.cap_permitted).contains(new_inheritable) {
             security::check_task_capable(current_task, CAP_SETPCAP)?;
         }

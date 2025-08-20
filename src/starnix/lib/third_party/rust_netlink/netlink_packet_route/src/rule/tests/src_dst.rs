@@ -5,10 +5,10 @@ use std::str::FromStr;
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::route::RouteProtocol;
 use crate::rule::flags::RuleFlags;
 use crate::rule::{RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleMessageBuffer};
-use crate::AddressFamily;
 
 // Setup:
 //      ip rule add priority 1000 from 192.0.2.1 to 203.0.113.1 blackhole

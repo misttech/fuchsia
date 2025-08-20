@@ -2,10 +2,10 @@
 
 use anyhow::Context;
 use byteorder::{ByteOrder, NativeEndian};
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
 use netlink_packet_utils::parsers::{parse_i32, parse_mac, parse_u16, parse_u32};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
 const IFLA_MACVLAN_MODE: u16 = 1;
 const IFLA_MACVLAN_FLAGS: u16 = 2;

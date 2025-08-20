@@ -7,7 +7,7 @@ use std::os::fd::RawFd;
 use anyhow::Context;
 use byteorder::{ByteOrder, NativeEndian};
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
-use netlink_packet_utils::parsers::{parse_i32, parse_u32, parse_u8};
+use netlink_packet_utils::parsers::{parse_i32, parse_u8, parse_u32};
 use netlink_packet_utils::{DecodeError, Parseable};
 
 const IFLA_XDP_FD: u32 = 1;

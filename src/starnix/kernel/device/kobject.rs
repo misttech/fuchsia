@@ -7,8 +7,8 @@ use crate::task::CurrentTask;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::simple_directory::SimpleDirectory;
 use crate::vfs::{
-    fileops_impl_noop_sync, fileops_impl_seekable, fs_node_impl_not_dir, FileObject, FileOps,
-    FsNode, FsNodeOps, FsString, PathBuilder,
+    FileObject, FileOps, FsNode, FsNodeOps, FsString, PathBuilder, fileops_impl_noop_sync,
+    fileops_impl_seekable, fs_node_impl_not_dir,
 };
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, Locked};

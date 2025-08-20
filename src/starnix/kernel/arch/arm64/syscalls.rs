@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::syscalls::do_clone;
 use crate::task::CurrentTask;
-use crate::vfs::syscalls::sys_renameat2;
+use crate::task::syscalls::do_clone;
 use crate::vfs::FdNumber;
+use crate::vfs::syscalls::sys_renameat2;
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::{UserAddress, UserCString, UserRef};
-use starnix_uapi::{clone_args, tid_t, CSIGNAL};
+use starnix_uapi::{CSIGNAL, clone_args, tid_t};
 
 /// The parameter order for `clone` varies by architecture.
 pub fn sys_clone(
@@ -52,15 +52,15 @@ pub fn sys_renameat(
 // Syscalls for arch32 usage
 #[cfg(feature = "arch32")]
 mod arch32 {
-    use crate::task::syscalls::do_clone;
     use crate::task::CurrentTask;
+    use crate::task::syscalls::do_clone;
     use linux_uapi::clone_args;
     use starnix_logging::track_stub;
     use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::errors::Errno;
     use starnix_uapi::signals::SIGCHLD;
     use starnix_uapi::user_address::UserAddress;
-    use starnix_uapi::{tid_t, CLONE_VFORK, CLONE_VM};
+    use starnix_uapi::{CLONE_VFORK, CLONE_VM, tid_t};
 
     #[allow(non_snake_case)]
     pub fn sys_arch32_ARM_set_tls(

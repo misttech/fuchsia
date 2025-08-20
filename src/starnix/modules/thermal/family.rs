@@ -11,10 +11,10 @@ use linux_uapi::{
     NLM_F_CAPPED, THERMAL_GENL_EVENT_GROUP_NAME, THERMAL_GENL_FAMILY_NAME,
     THERMAL_GENL_SAMPLING_GROUP_NAME,
 };
-use netlink::messaging::Sender;
 use netlink::NETLINK_LOG_TAG;
+use netlink::messaging::Sender;
 use netlink_packet_core::{
-    ErrorMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload, NETLINK_HEADER_LEN,
+    ErrorMessage, NETLINK_HEADER_LEN, NetlinkHeader, NetlinkMessage, NetlinkPayload,
 };
 use netlink_packet_generic::GenlMessage;
 use netlink_packet_utils::traits::Emitable;
@@ -24,7 +24,7 @@ use starnix_uapi::EOPNOTSUPP;
 use std::collections::HashMap;
 use std::num::NonZero;
 use thermal_netlink::{
-    celsius_to_millicelsius, GenlThermal, GenlThermalCmd, GenlThermalPayload, ThermalAttr,
+    GenlThermal, GenlThermalCmd, GenlThermalPayload, ThermalAttr, celsius_to_millicelsius,
 };
 
 const SAMPLING_DELAY: std::time::Duration = std::time::Duration::from_secs(2);

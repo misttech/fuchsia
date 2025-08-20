@@ -7,14 +7,13 @@ use crate::mm::memory::MemoryObject;
 use crate::mm::{ProtectionFlags, VMEX_RESOURCE};
 use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, Waiter};
 use crate::vfs::{
-    default_seek, emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync,
+    CacheConfig, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink, FileObject,
+    FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
+    FsNodeInfo, FsNodeOps, FsStr, FsString, InputBuffer, OutputBuffer, SeekTarget, SymlinkTarget,
+    ValueOrSize, default_seek, emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync,
     fileops_impl_seekable, fs_node_impl_dir_readonly, fs_node_impl_not_dir, fs_node_impl_symlink,
-    CacheConfig, CacheMode, DirectoryEntryType, DirentSink, FileObject, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
-    FsNodeOps, FsStr, FsString, InputBuffer, OutputBuffer, SeekTarget, SymlinkTarget, ValueOrSize,
-    DEFAULT_BYTES_PER_BLOCK,
 };
-use anyhow::{anyhow, ensure, Error};
+use anyhow::{Error, anyhow, ensure};
 use ext4_metadata::{Metadata, Node, NodeInfo};
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;

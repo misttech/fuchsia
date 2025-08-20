@@ -12,16 +12,16 @@ use starnix_uapi::iptables_flags::{
     XtTcpInverseFlags, XtUdpInverseFlags,
 };
 use starnix_uapi::{
-    c_char, c_int, c_uchar, c_uint, in6_addr, in_addr, ip6t_entry, ip6t_ip6, ip6t_replace,
-    ipt_entry, ipt_ip, ipt_replace, nf_ip_hook_priorities_NF_IP_PRI_FILTER,
+    IPPROTO_ICMP, IPPROTO_ICMPV6, IPPROTO_IP, IPPROTO_TCP, IPPROTO_UDP, IPT_RETURN, NF_ACCEPT,
+    NF_DROP, NF_IP_FORWARD, NF_IP_LOCAL_IN, NF_IP_LOCAL_OUT, NF_IP_NUMHOOKS, NF_IP_POST_ROUTING,
+    NF_IP_PRE_ROUTING, NF_QUEUE, c_char, c_int, c_uchar, c_uint, in_addr, in6_addr, ip6t_entry,
+    ip6t_ip6, ip6t_replace, ipt_entry, ipt_ip, ipt_replace, nf_ip_hook_priorities_NF_IP_PRI_FILTER,
     nf_ip_hook_priorities_NF_IP_PRI_MANGLE, nf_ip_hook_priorities_NF_IP_PRI_NAT_DST,
     nf_ip_hook_priorities_NF_IP_PRI_NAT_SRC, nf_ip_hook_priorities_NF_IP_PRI_RAW,
     nf_nat_ipv4_multi_range_compat, nf_nat_range,
     xt_entry_match__bindgen_ty_1__bindgen_ty_1 as xt_entry_match,
     xt_entry_target__bindgen_ty_1__bindgen_ty_1 as xt_entry_target, xt_mark_tginfo2, xt_tcp,
-    xt_tproxy_target_info_v1, xt_udp, IPPROTO_ICMP, IPPROTO_ICMPV6, IPPROTO_IP, IPPROTO_TCP,
-    IPPROTO_UDP, IPT_RETURN, NF_ACCEPT, NF_DROP, NF_IP_FORWARD, NF_IP_LOCAL_IN, NF_IP_LOCAL_OUT,
-    NF_IP_NUMHOOKS, NF_IP_POST_ROUTING, NF_IP_PRE_ROUTING, NF_QUEUE,
+    xt_tproxy_target_info_v1, xt_udp,
 };
 use std::any::type_name;
 use std::collections::{HashMap, HashSet};
@@ -656,11 +656,7 @@ impl IptReplaceParser {
 
     fn get_next_bytes(&self, offset: usize) -> Option<&[u8]> {
         let new_pos = self.parse_pos + offset;
-        if new_pos > self.bytes.len() {
-            None
-        } else {
-            Some(&self.bytes[self.parse_pos..new_pos])
-        }
+        if new_pos > self.bytes.len() { None } else { Some(&self.bytes[self.parse_pos..new_pos]) }
     }
 
     // Parse `bytes` starting from `parse_pos` as type T, without advancing `parse_pos`.
@@ -1887,8 +1883,8 @@ mod tests {
     use itertools::Itertools;
     use net_declare::{fidl_ip, fidl_subnet};
     use starnix_uapi::{
-        c_char, in6_addr__bindgen_ty_1, in_addr, ipt_entry, ipt_ip, ipt_replace, xt_tcp, xt_udp,
-        IP6T_F_PROTO, IPT_INV_SRCIP, XT_TCP_INV_DSTPT,
+        IP6T_F_PROTO, IPT_INV_SRCIP, XT_TCP_INV_DSTPT, c_char, in_addr, in6_addr__bindgen_ty_1,
+        ipt_entry, ipt_ip, ipt_replace, xt_tcp, xt_udp,
     };
     use test_case::test_case;
     use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext};

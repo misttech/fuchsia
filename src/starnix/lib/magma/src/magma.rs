@@ -412,7 +412,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = "\n \\brief Waits for at least one of the given items to meet a condition. Does not reset any\n        semaphores. When MAGMA_STATUS_OK is returned, results are returned in the items array.\n        MAGMA_STATUS_TIMED_OUT is returned if no conditions are met before the given timeout\n        expires. If the notification channel handle is included in the item list, and the magma\n        connection is closed, then MAGMA_STATUS_CONNECTION_LOST is returned.\n \\param items Array of poll items. Type should be either MAGMA_POLL_TYPE_SEMAPHORE or\n        MAGMA_POLL_TYPE_HANDLE. Condition may be set to MAGMA_POLL_CONDITION_SIGNALED OR\n        MAGMA_POLL_CONDITION_READABLE. If condition is 0 the item is ignored. Item results are\n        set to the condition that was satisfied, otherwise 0. If the same item is given twice the\n        behavior is undefined.\n \\param count Number of poll items in the array.\n \\param timeout_ns Time in ns to wait before returning MAGMA_STATUS_TIMED_OUT.\n"]
     pub fn magma_poll(items: *mut magma_poll_item_t, count: u32, timeout_ns: u64)
-        -> magma_status_t;
+    -> magma_status_t;
 }
 unsafe extern "C" {
     #[doc = "\n \\brief Initializes tracing. This should be called on Fuchsia; on other platforms it's not needed\n        and will just close the given handle.\n \\param channel An open connection to a tracing provider.\n"]

@@ -5,7 +5,7 @@
 use crate::mm::debugger::notify_debugger_of_module_list;
 use crate::mm::{
     DesiredAddress, FutexKey, IOVecPtr, MappingName, MappingOptions, MemoryAccessorExt,
-    MremapFlags, PrivateFutexKey, ProtectionFlags, SharedFutexKey, PAGE_SIZE,
+    MremapFlags, PAGE_SIZE, PrivateFutexKey, ProtectionFlags, SharedFutexKey,
 };
 use crate::security;
 use crate::syscalls::time::TimeSpecPtr;
@@ -16,23 +16,23 @@ use crate::vfs::{FdFlags, FdNumber, UserFaultFile};
 use fuchsia_inspect_contrib::profile_duration;
 use fuchsia_runtime::UtcTimeline;
 use linux_uapi::MLOCK_ONFAULT;
-use starnix_logging::{log_trace, trace_duration, track_stub, CATEGORY_STARNIX_MM};
+use starnix_logging::{CATEGORY_STARNIX_MM, log_trace, trace_duration, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::SyscallArg;
 use starnix_types::time::{duration_from_timespec, time_from_timespec, timespec_from_time};
 use starnix_uapi::auth::{CAP_SYS_PTRACE, PTRACE_MODE_ATTACH_REALCREDS};
-use starnix_uapi::errors::{Errno, EINTR};
+use starnix_uapi::errors::{EINTR, Errno};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::user_value::UserValue;
 use starnix_uapi::{
-    errno, error, robust_list_head, tid_t, uapi, FUTEX_BITSET_MATCH_ANY, FUTEX_CLOCK_REALTIME,
-    FUTEX_CMD_MASK, FUTEX_CMP_REQUEUE, FUTEX_CMP_REQUEUE_PI, FUTEX_LOCK_PI, FUTEX_LOCK_PI2,
-    FUTEX_PRIVATE_FLAG, FUTEX_REQUEUE, FUTEX_TRYLOCK_PI, FUTEX_UNLOCK_PI, FUTEX_WAIT,
-    FUTEX_WAIT_BITSET, FUTEX_WAIT_REQUEUE_PI, FUTEX_WAKE, FUTEX_WAKE_BITSET, FUTEX_WAKE_OP,
-    MAP_ANONYMOUS, MAP_DENYWRITE, MAP_FIXED, MAP_FIXED_NOREPLACE, MAP_GROWSDOWN, MAP_LOCKED,
-    MAP_NORESERVE, MAP_POPULATE, MAP_PRIVATE, MAP_SHARED, MAP_SHARED_VALIDATE, MAP_STACK,
-    MS_INVALIDATE, O_CLOEXEC, O_NONBLOCK, PROT_EXEC, UFFD_USER_MODE_ONLY,
+    FUTEX_BITSET_MATCH_ANY, FUTEX_CLOCK_REALTIME, FUTEX_CMD_MASK, FUTEX_CMP_REQUEUE,
+    FUTEX_CMP_REQUEUE_PI, FUTEX_LOCK_PI, FUTEX_LOCK_PI2, FUTEX_PRIVATE_FLAG, FUTEX_REQUEUE,
+    FUTEX_TRYLOCK_PI, FUTEX_UNLOCK_PI, FUTEX_WAIT, FUTEX_WAIT_BITSET, FUTEX_WAIT_REQUEUE_PI,
+    FUTEX_WAKE, FUTEX_WAKE_BITSET, FUTEX_WAKE_OP, MAP_ANONYMOUS, MAP_DENYWRITE, MAP_FIXED,
+    MAP_FIXED_NOREPLACE, MAP_GROWSDOWN, MAP_LOCKED, MAP_NORESERVE, MAP_POPULATE, MAP_PRIVATE,
+    MAP_SHARED, MAP_SHARED_VALIDATE, MAP_STACK, MS_INVALIDATE, O_CLOEXEC, O_NONBLOCK, PROT_EXEC,
+    UFFD_USER_MODE_ONLY, errno, error, robust_list_head, tid_t, uapi,
 };
 use std::ops::Deref as _;
 use zx;
@@ -773,8 +773,8 @@ pub fn sys_mincore(
 // Syscalls for arch32 usage
 #[cfg(feature = "arch32")]
 mod arch32 {
-    use crate::mm::syscalls::{sys_mmap, UserAddress};
     use crate::mm::PAGE_SIZE;
+    use crate::mm::syscalls::{UserAddress, sys_mmap};
     use crate::task::{CurrentTask, RobustListHeadPtr};
     use crate::vfs::FdNumber;
     use starnix_sync::{Locked, Unlocked};
@@ -1026,9 +1026,11 @@ mod tests {
 
         // Verify that the second page is still readable.
         assert_eq!(current_task.read_memory_to_array::<5>(mapped_address), error!(EFAULT));
-        assert!(current_task
-            .read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE + 1u64)).unwrap())
-            .is_ok());
+        assert!(
+            current_task
+                .read_memory_to_array::<5>((mapped_address + (*PAGE_SIZE + 1u64)).unwrap())
+                .is_ok()
+        );
     }
 
     /// Unmap the middle page of a mapping.
@@ -1054,9 +1056,11 @@ mod tests {
             current_task.read_memory_to_vec((mapped_address + *PAGE_SIZE).unwrap(), 5),
             error!(EFAULT)
         );
-        assert!(current_task
-            .read_memory_to_vec((mapped_address + (*PAGE_SIZE * 2)).unwrap(), 5)
-            .is_ok());
+        assert!(
+            current_task
+                .read_memory_to_vec((mapped_address + (*PAGE_SIZE * 2)).unwrap(), 5)
+                .is_ok()
+        );
     }
 
     /// Unmap a range of pages that includes disjoint mappings.

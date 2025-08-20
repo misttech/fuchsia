@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::signals::{send_signal, SignalDetail, SignalEvent, SignalEventNotify, SignalInfo};
+use crate::signals::{SignalDetail, SignalEvent, SignalEventNotify, SignalInfo, send_signal};
 use crate::task::{
     CurrentTask, GenericDuration, HrTimer, HrTimerHandle, Kernel, TargetTime, ThreadGroup,
     Timeline, TimerId, TimerWakeup,
@@ -18,7 +18,7 @@ use starnix_sync::Mutex;
 use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_types::time::{duration_from_timespec, timespec_from_duration};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{itimerspec, SI_TIMER};
+use starnix_uapi::{SI_TIMER, itimerspec};
 use std::fmt::Debug;
 use std::sync::Arc;
 

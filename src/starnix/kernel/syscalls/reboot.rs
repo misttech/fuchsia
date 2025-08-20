@@ -15,8 +15,8 @@ use starnix_uapi::auth::CAP_SYS_BOOT;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::{UserAddress, UserCString};
 use starnix_uapi::{
-    errno, error, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_MAGIC2A,
-    LINUX_REBOOT_MAGIC2B, LINUX_REBOOT_MAGIC2C,
+    LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_MAGIC2A, LINUX_REBOOT_MAGIC2B,
+    LINUX_REBOOT_MAGIC2C, errno, error,
 };
 use {fidl_fuchsia_hardware_power_statecontrol as fpower, fidl_fuchsia_recovery as frecovery};
 
@@ -92,7 +92,7 @@ pub fn sys_reboot(
                     return panic_or_error(
                         current_task.kernel(),
                         errno!(EINVAL, format!("Failed to power off, status: {e}")),
-                    )
+                    );
                 }
             }
             Ok(())
@@ -130,7 +130,7 @@ pub fn sys_reboot(
                                                 EINVAL,
                                                 format!("Failed to reboot for FDR, status: {e}")
                                             ),
-                                        )
+                                        );
                                     }
                                 }
                             }
@@ -186,13 +186,13 @@ pub fn sys_reboot(
                             EINVAL,
                             format!("Failed to reboot, status: {}", zx::Status::from_raw(e))
                         ),
-                    )
+                    );
                 }
                 Err(e) => {
                     return panic_or_error(
                         current_task.kernel(),
                         errno!(EINVAL, format!("Failed to reboot, FIDL error: {e}")),
-                    )
+                    );
                 }
             }
             Ok(())

@@ -218,8 +218,8 @@ impl<'a> EbpfBufferPtr<'a> {
 mod test {
     use super::*;
     use fuchsia_runtime::vmar_root_self;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Barrier;
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::thread;
 
     #[test]

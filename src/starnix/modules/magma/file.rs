@@ -10,13 +10,16 @@ use crate::ffi::{
     release_connection,
 };
 use crate::image_file::{ImageFile, ImageInfo};
-use crate::magma::{read_control_and_response, read_magma_command_and_type, StarnixPollItem};
+use crate::magma::{StarnixPollItem, read_control_and_response, read_magma_command_and_type};
 
 use magma::{
-    magma_buffer_clean_cache, magma_buffer_get_cache_policy, magma_buffer_get_info,
-    magma_buffer_id_t, magma_buffer_info_t, magma_buffer_set_cache_policy, magma_buffer_set_name,
-    magma_buffer_t, magma_cache_operation_t, magma_cache_policy_t, magma_connection_create_buffer,
-    magma_connection_create_context, magma_connection_create_context2, magma_connection_get_error,
+    MAGMA_CACHE_POLICY_CACHED, MAGMA_IMPORT_SEMAPHORE_ONE_SHOT, MAGMA_POLL_CONDITION_SIGNALED,
+    MAGMA_POLL_TYPE_SEMAPHORE, MAGMA_PRIORITY_MEDIUM, MAGMA_STATUS_INVALID_ARGS,
+    MAGMA_STATUS_MEMORY_ERROR, MAGMA_STATUS_OK, MAGMA_STATUS_TIMED_OUT, magma_buffer_clean_cache,
+    magma_buffer_get_cache_policy, magma_buffer_get_info, magma_buffer_id_t, magma_buffer_info_t,
+    magma_buffer_set_cache_policy, magma_buffer_set_name, magma_buffer_t, magma_cache_operation_t,
+    magma_cache_policy_t, magma_connection_create_buffer, magma_connection_create_context,
+    magma_connection_create_context2, magma_connection_get_error,
     magma_connection_get_notification_channel_handle, magma_connection_import_buffer,
     magma_connection_map_buffer, magma_connection_perform_buffer_op, magma_connection_release,
     magma_connection_release_buffer, magma_connection_release_context,
@@ -31,9 +34,10 @@ use magma::{
     virtio_magma_buffer_get_info_resp_t, virtio_magma_buffer_set_cache_policy_ctrl_t,
     virtio_magma_buffer_set_cache_policy_resp_t, virtio_magma_buffer_set_name_ctrl_t,
     virtio_magma_buffer_set_name_resp_t, virtio_magma_connection_create_buffer_ctrl_t,
-    virtio_magma_connection_create_buffer_resp_t, virtio_magma_connection_create_context2_ctrl_t,
-    virtio_magma_connection_create_context2_resp_t, virtio_magma_connection_create_context_ctrl_t,
-    virtio_magma_connection_create_context_resp_t, virtio_magma_connection_create_semaphore_ctrl_t,
+    virtio_magma_connection_create_buffer_resp_t, virtio_magma_connection_create_context_ctrl_t,
+    virtio_magma_connection_create_context_resp_t, virtio_magma_connection_create_context2_ctrl_t,
+    virtio_magma_connection_create_context2_resp_t,
+    virtio_magma_connection_create_semaphore_ctrl_t,
     virtio_magma_connection_create_semaphore_resp_t,
     virtio_magma_connection_execute_command_ctrl_t, virtio_magma_connection_execute_command_resp_t,
     virtio_magma_connection_execute_immediate_commands_ctrl_t,
@@ -126,24 +130,21 @@ use magma::{
     virtio_magma_semaphore_export_resp_t, virtio_magma_semaphore_reset_ctrl_t,
     virtio_magma_semaphore_reset_resp_t, virtio_magma_semaphore_signal_ctrl_t,
     virtio_magma_semaphore_signal_resp_t, virtmagma_buffer_set_name_wrapper,
-    MAGMA_CACHE_POLICY_CACHED, MAGMA_IMPORT_SEMAPHORE_ONE_SHOT, MAGMA_POLL_CONDITION_SIGNALED,
-    MAGMA_POLL_TYPE_SEMAPHORE, MAGMA_PRIORITY_MEDIUM, MAGMA_STATUS_INVALID_ARGS,
-    MAGMA_STATUS_MEMORY_ERROR, MAGMA_STATUS_OK, MAGMA_STATUS_TIMED_OUT,
 };
 use starnix_core::fileops_impl_nonseekable;
-use starnix_core::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
 use starnix_core::fs::fuchsia::RemoteFileObject;
+use starnix_core::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessorExt, ProtectionFlags};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
-    fileops_impl_noop_sync, Anon, FdFlags, FdNumber, FileObject, FileOps, FsNode, MemoryRegularFile,
+    Anon, FdFlags, FdNumber, FileObject, FileOps, FsNode, MemoryRegularFile, fileops_impl_noop_sync,
 };
 use starnix_lifecycle::AtomicU64Counter;
 use starnix_logging::{impossible_error, log_error, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;

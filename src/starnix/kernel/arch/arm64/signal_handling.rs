@@ -10,23 +10,19 @@ use starnix_logging::{log_debug, track_stub};
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::math::round_down_to_increment;
-use starnix_uapi::signals::{SigSet, SIGBUS, SIGSEGV};
+use starnix_uapi::signals::{SIGBUS, SIGSEGV, SigSet};
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
 use starnix_uapi::{
-    _aarch64_ctx, errno, error, esr_context, fpsimd_context, sigaction_t, sigaltstack, uapi,
-    ESR_MAGIC, EXTRA_MAGIC, FPSIMD_MAGIC,
+    _aarch64_ctx, ESR_MAGIC, EXTRA_MAGIC, FPSIMD_MAGIC, errno, error, esr_context, fpsimd_context,
+    sigaction_t, sigaltstack, uapi,
 };
-use zerocopy::{transmute_ref, FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, transmute_ref};
 
 /// The size of the red zone.
 pub const RED_ZONE_SIZE: u64 = 0;
 
 const fn max_const(i1: usize, i2: usize) -> usize {
-    if i2 > i1 {
-        i2
-    } else {
-        i1
-    }
+    if i2 > i1 { i2 } else { i1 }
 }
 
 /// Maximum size between the siginfo struct for 32 and 64 bits.

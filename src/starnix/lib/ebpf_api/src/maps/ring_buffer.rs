@@ -15,8 +15,8 @@ use static_assertions::const_assert;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use zx::AsHandleRef;
 
 // Signal used on ring buffer VMOs to indicate that the buffer has

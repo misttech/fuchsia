@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use starnix_stack::clean_stack;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// A blocking object that can either be notified normally or interrupted
 ///

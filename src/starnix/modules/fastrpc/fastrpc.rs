@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::canonicalize_ioctl_request;
-use crate::dma_heap::{dma_heap_device_register, Alloc};
+use crate::dma_heap::{Alloc, dma_heap_device_register};
 use bitfield::bitfield;
 use bstr::ByteSlice;
 use fidl_fuchsia_hardware_qualcomm_fastrpc as frpc;
@@ -12,14 +12,14 @@ use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, ProtectionFlags};
 use starnix_core::task::{CurrentTask, ThreadGroupKey};
 use starnix_core::vfs::{
-    default_ioctl, Anon, FdFlags, FdNumber, FileObject, FileObjectState, FileOps, NamespaceNode,
+    Anon, FdFlags, FdNumber, FileObject, FileObjectState, FileOps, NamespaceNode, default_ioctl,
 };
 use starnix_core::{
     fileops_impl_dataless, fileops_impl_memory, fileops_impl_noop_sync, fileops_impl_seekless,
 };
 use starnix_logging::{log_debug, log_error, log_warn};
 use starnix_sync::{FastrpcInnerState, FileOpsCore, Locked, OrderedMutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::{Errno, ErrnoCode};
@@ -969,7 +969,7 @@ pub mod tests {
     };
     use linux_uapi::{remote_buf, uaddr};
     use starnix_core::mm::ProtectionFlags;
-    use starnix_core::testing::{map_memory, spawn_kernel_and_run, UserMemoryWriter};
+    use starnix_core::testing::{UserMemoryWriter, map_memory, spawn_kernel_and_run};
     use starnix_sync::OrderedMutex;
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::user_address::UserAddress;

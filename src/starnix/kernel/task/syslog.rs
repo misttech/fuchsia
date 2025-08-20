@@ -12,14 +12,14 @@ use fuchsia_component::client::connect_to_protocol_sync;
 use serde::Deserialize;
 use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_uapi::auth::CAP_SYSLOG;
-use starnix_uapi::errors::{errno, error, Errno, EAGAIN};
+use starnix_uapi::errors::{EAGAIN, Errno, errno, error};
 use starnix_uapi::syslog::SyslogAction;
 use starnix_uapi::vfs::FdEvents;
 use std::cmp;
 use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::sync::atomic::Ordering;
-use std::sync::{mpsc, Arc, OnceLock};
+use std::sync::{Arc, OnceLock, mpsc};
 
 const BUFFER_SIZE: i32 = 1_049_000;
 

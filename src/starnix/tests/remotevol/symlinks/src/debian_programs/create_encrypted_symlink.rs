@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use remotevol_linux_test_util::{
-    add_encryption_key_with_key_bytes, fscrypt_add_key_arg, set_encryption_policy, LINK_FILE_NAME,
-    MASTER_ENCRYPTION_KEY, TARGET_FILE_NAME,
+    LINK_FILE_NAME, MASTER_ENCRYPTION_KEY, TARGET_FILE_NAME, add_encryption_key_with_key_bytes,
+    fscrypt_add_key_arg, set_encryption_policy,
 };
 use zerocopy::FromBytes;
 

@@ -6,13 +6,13 @@
 //! It also serves as an example for creating a generic family.
 
 use self::nlas::*;
+use crate::GenlHeader;
 use crate::constants::*;
 use crate::traits::*;
-use crate::GenlHeader;
 use anyhow::Context;
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::NlasIterator;
 use netlink_packet_utils::traits::*;
-use netlink_packet_utils::DecodeError;
 use std::convert::{TryFrom, TryInto};
 
 /// Netlink attributes for this family

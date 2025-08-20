@@ -11,8 +11,8 @@ use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_logging::{impossible_error, log_debug, log_warn, track_stub};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{
-    errno, error, sched_param, SCHED_BATCH, SCHED_DEADLINE, SCHED_FIFO, SCHED_IDLE, SCHED_NORMAL,
-    SCHED_RESET_ON_FORK, SCHED_RR,
+    SCHED_BATCH, SCHED_DEADLINE, SCHED_FIFO, SCHED_IDLE, SCHED_NORMAL, SCHED_RESET_ON_FORK,
+    SCHED_RR, errno, error, sched_param,
 };
 
 pub struct SchedulerManager {

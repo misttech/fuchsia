@@ -4,8 +4,8 @@
 
 use crate::mm::memory::MemoryObject;
 use crate::mm::{
-    DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryManager, ProtectionFlags,
-    PAGE_SIZE, VMEX_RESOURCE,
+    DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryManager, PAGE_SIZE,
+    ProtectionFlags, VMEX_RESOURCE,
 };
 use crate::security;
 use crate::task::CurrentTask;
@@ -18,17 +18,17 @@ use starnix_types::arch::ArchWidth;
 use starnix_types::math::round_up_to_system_page_size;
 use starnix_types::thread_start_info::ThreadStartInfo;
 use starnix_types::time::SCHEDULER_CLOCK_HZ;
+#[cfg(feature = "arch32")]
+use starnix_uapi::AT_PLATFORM;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
 use starnix_uapi::vfs::ResolveFlags;
-#[cfg(feature = "arch32")]
-use starnix_uapi::AT_PLATFORM;
 use starnix_uapi::{
-    errno, error, from_status_like_fdio, AT_BASE, AT_CLKTCK, AT_EGID, AT_ENTRY, AT_EUID, AT_EXECFN,
-    AT_GID, AT_HWCAP, AT_NULL, AT_PAGESZ, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM, AT_SECURE,
-    AT_SYSINFO_EHDR, AT_UID, ENODEV,
+    AT_BASE, AT_CLKTCK, AT_EGID, AT_ENTRY, AT_EUID, AT_EXECFN, AT_GID, AT_HWCAP, AT_NULL,
+    AT_PAGESZ, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM, AT_SECURE, AT_SYSINFO_EHDR, AT_UID, ENODEV,
+    errno, error, from_status_like_fdio,
 };
 use std::ffi::{CStr, CString};
 use std::mem::size_of;
@@ -387,14 +387,9 @@ fn resolve_executable_impl(
     if recursion_depth > MAX_RECURSION_DEPTH {
         return error!(ELOOP);
     }
-    let memory =
-        file.get_memory(locked, current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC).map_err(|e| {
-            if e.code.error_code() == ENODEV {
-                errno!(ENOEXEC)
-            } else {
-                e
-            }
-        })?;
+    let memory = file
+        .get_memory(locked, current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+        .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
     let header = match memory.read_to_array::<u8, HASH_BANG_SIZE>(0) {
         Ok(header) => Ok(header),
         Err(zx::Status::OUT_OF_RANGE) => {
@@ -535,18 +530,9 @@ fn resolve_elf(
         let interp = CStr::from_bytes_until_nul(&interp).map_err(|_| errno!(EINVAL))?;
         let interp_file =
             current_task.open_file(locked, interp.to_bytes().into(), OpenFlags::RDONLY)?;
-        let interp_memory = interp_file.get_memory(
-            locked,
-            current_task,
-            None,
-            ProtectionFlags::READ | ProtectionFlags::EXEC,
-        ).map_err(|e| {
-            if e.code.error_code() == ENODEV {
-                errno!(ENOEXEC)
-            } else {
-                e
-            }
-        })?;
+        let interp_memory = interp_file
+            .get_memory(locked, current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+            .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
         let interp_file =
             interp_file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
         Some(ResolvedInterpElf { file: interp_file, memory: interp_memory })

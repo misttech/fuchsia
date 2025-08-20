@@ -8,9 +8,9 @@ use super::iio_file::{
 };
 use super::qbg_battery_file::create_battery_profile_device;
 use super::qbg_file::create_qbg_device;
-use super::utils::{connect_to_device, ReadWriteBytesFile};
-use starnix_core::device::kobject::DeviceMetadata;
+use super::utils::{ReadWriteBytesFile, connect_to_device};
 use starnix_core::device::DeviceMode;
+use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::CurrentTask;
 use starnix_logging::log_warn;
@@ -29,9 +29,9 @@ where
         Err(e) => {
             // hvdcp_opti only supported on Sorrel. Let it fail.
             log_warn!(
-            "Could not connect to hvdcp_opti server {}. This is expected on everything but Sorrel.",
-            e
-        );
+                "Could not connect to hvdcp_opti server {}. This is expected on everything but Sorrel.",
+                e
+            );
             return Ok(());
         }
     };

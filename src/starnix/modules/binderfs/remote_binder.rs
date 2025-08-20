@@ -5,32 +5,32 @@
 use crate::{BinderDevice, BinderDriver, RemoteBinderConnection};
 use anyhow::{Context, Error};
 use derivative::Derivative;
-use fidl::endpoints::{ClientEnd, ControlHandle, RequestStream, ServerEnd};
 use fidl::AsHandleRef;
+use fidl::endpoints::{ClientEnd, ControlHandle, RequestStream, ServerEnd};
 use futures::channel::oneshot;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::task::Poll;
-use futures::{pin_mut, select, Future, Stream, StreamExt, TryStreamExt};
+use futures::{Future, Stream, StreamExt, TryStreamExt, pin_mut, select};
 use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{DesiredAddress, MappingOptions, MemoryAccessorExt, ProtectionFlags};
-use starnix_core::power::{mark_proxy_message_handled, LockSource};
+use starnix_core::power::{LockSource, mark_proxy_message_handled};
 use starnix_core::task::{CurrentTask, Kernel, LockedAndTask, ThreadGroup, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, FileObject, FileObjectState, FileOps,
-    FsString, NamespaceNode,
+    FileObject, FileObjectState, FileOps, FsString, NamespaceNode, fileops_impl_nonseekable,
+    fileops_impl_noop_sync,
 };
 use starnix_lifecycle::DropWaiter;
 use starnix_logging::{
-    log_error, log_warn, trace_duration, trace_flow_begin, trace_flow_end, trace_flow_step,
-    CATEGORY_STARNIX,
+    CATEGORY_STARNIX, log_error, log_warn, trace_duration, trace_flow_begin, trace_flow_end,
+    trace_flow_step,
 };
 use starnix_sync::{FileOpsCore, Locked, Mutex, MutexGuard, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::ownership::{OwnedRef, WeakRef};
 use starnix_uapi::device_type::DeviceType;
-use starnix_uapi::errors::{Errno, ErrnoCode, EAGAIN, EINTR};
+use starnix_uapi::errors::{EAGAIN, EINTR, Errno, ErrnoCode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserCStringPtr, UserRef};
 use starnix_uapi::vfs::FdEvents;
@@ -1172,10 +1172,10 @@ async fn select_first<O>(f1: impl Future<Output = O>, f2: impl Future<Output = O
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::run_process_accessor;
     use crate::BinderFs;
-    use fidl::endpoints::{create_endpoints, create_proxy, Proxy};
+    use crate::tests::run_process_accessor;
     use fidl::HandleBased;
+    use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
     use rand::distr::{Alphanumeric, SampleString};
     use starnix_core::mm::MemoryAccessor;
     use starnix_core::power::LockSource;
@@ -1206,7 +1206,7 @@ mod tests {
             REMOTE_CONTROLLER_CLIENT.lock().remove(service_name).ok_or_else(|| errno!(ENOENT))
         }
     }
-    use starnix_core::execution::{create_task, TaskInfo};
+    use starnix_core::execution::{TaskInfo, create_task};
     use starnix_core::security;
     use starnix_core::signals::SignalActions;
 
@@ -1574,16 +1574,16 @@ mod tests {
             .unwrap();
 
         // Check that we already have the lock.
-        assert!(!kernel
-            .suspend_resume_manager
-            .add_lock("test", LockSource::ContainerPowerController));
+        assert!(
+            !kernel.suspend_resume_manager.add_lock("test", LockSource::ContainerPowerController)
+        );
 
         // Drop our lock, run the executor, and check that the lock dropped.
         drop(wake_lock);
 
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
-        assert!(kernel
-            .suspend_resume_manager
-            .add_lock("test", LockSource::ContainerPowerController));
+        assert!(
+            kernel.suspend_resume_manager.add_lock("test", LockSource::ContainerPowerController)
+        );
     }
 }

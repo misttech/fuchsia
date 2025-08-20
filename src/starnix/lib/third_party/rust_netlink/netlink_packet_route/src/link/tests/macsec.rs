@@ -2,12 +2,12 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
     InfoData, InfoKind, InfoMacSec, LinkAttribute, LinkHeader, LinkInfo, LinkLayerType,
     LinkMessage, LinkMessageBuffer, MacSecCipherId, MacSecOffload, MacSecValidate,
 };
-use crate::AddressFamily;
 
 #[test]
 fn test_macsec_link_info() {

@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 use anyhow::Context;
 use netlink_packet_utils::nla::{NlaBuffer, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::{buffer, DecodeError};
+use netlink_packet_utils::{DecodeError, buffer};
 use smallvec::SmallVec;
 
 use crate::constants::*;
@@ -79,11 +79,7 @@ impl UnixResponse {
     pub fn peer(&self) -> Option<u32> {
         self.nlas.iter().find_map(
             |nla| {
-                if let Nla::Peer(inode) = nla {
-                    Some(*inode)
-                } else {
-                    None
-                }
+                if let Nla::Peer(inode) = nla { Some(*inode) } else { None }
             },
         )
     }
@@ -103,32 +99,20 @@ impl UnixResponse {
     }
 
     fn mem_info(&self) -> Option<MemInfo> {
-        self.nlas.iter().find_map(|nla| {
-            if let Nla::MemInfo(mem_info) = nla {
-                Some(*mem_info)
-            } else {
-                None
-            }
-        })
+        self.nlas
+            .iter()
+            .find_map(|nla| if let Nla::MemInfo(mem_info) = nla { Some(*mem_info) } else { None })
     }
 
     pub fn shutdown_state(&self) -> Option<u8> {
         self.nlas.iter().find_map(|nla| {
-            if let Nla::Shutdown(shutdown_state) = nla {
-                Some(*shutdown_state)
-            } else {
-                None
-            }
+            if let Nla::Shutdown(shutdown_state) = nla { Some(*shutdown_state) } else { None }
         })
     }
 
     fn receive_queue_length(&self) -> Option<(u32, u32)> {
         self.nlas.iter().find_map(|nla| {
-            if let Nla::ReceiveQueueLength(x, y) = nla {
-                Some((*x, *y))
-            } else {
-                None
-            }
+            if let Nla::ReceiveQueueLength(x, y) = nla { Some((*x, *y)) } else { None }
         })
     }
 

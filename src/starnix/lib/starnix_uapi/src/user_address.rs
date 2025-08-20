@@ -130,11 +130,7 @@ impl TryFrom<UserAddress> for uapi::uaddr32 {
 
 impl range_map::Gap for UserAddress {
     fn measure_gap(&self, other: &Self) -> u64 {
-        if self.0 > other.0 {
-            self.0 - other.0
-        } else {
-            other.0 - self.0
-        }
+        if self.0 > other.0 { self.0 - other.0 } else { other.0 - self.0 }
     }
 }
 
@@ -440,19 +436,11 @@ impl<T, T64: FromBytes, T32: FromBytes> MappingMultiArchUserRef<T, T64, T32> {
     }
 
     pub fn size_of_object_for<A: ArchSpecific>(a: &A) -> usize {
-        if a.is_arch32() {
-            std::mem::size_of::<T32>()
-        } else {
-            std::mem::size_of::<T64>()
-        }
+        if a.is_arch32() { std::mem::size_of::<T32>() } else { std::mem::size_of::<T64>() }
     }
 
     pub fn align_of_object_for<A: ArchSpecific>(a: &A) -> usize {
-        if a.is_arch32() {
-            std::mem::align_of::<T32>()
-        } else {
-            std::mem::align_of::<T64>()
-        }
+        if a.is_arch32() { std::mem::align_of::<T32>() } else { std::mem::align_of::<T64>() }
     }
 
     pub fn next(&self) -> Result<Self, Errno> {
@@ -543,11 +531,7 @@ impl<T, T64, T32> From<uref<T64>> for MappingMultiArchUserRef<T, T64, T32> {
 impl<T, T64, T32> TryFrom<MappingMultiArchUserRef<T, T64, T32>> for uref<T64> {
     type Error = ();
     fn try_from(addr: MappingMultiArchUserRef<T, T64, T32>) -> Result<Self, ()> {
-        if addr.is_arch32() {
-            Err(())
-        } else {
-            Ok(uapi::uaddr::from(addr.addr()).into())
-        }
+        if addr.is_arch32() { Err(()) } else { Ok(uapi::uaddr::from(addr.addr()).into()) }
     }
 }
 
@@ -560,11 +544,7 @@ impl<T, T64, T32> From<crate::uref32<T32>> for MappingMultiArchUserRef<T, T64, T
 impl<T, T64, T32> TryFrom<MappingMultiArchUserRef<T, T64, T32>> for crate::uref32<T32> {
     type Error = ();
     fn try_from(addr: MappingMultiArchUserRef<T, T64, T32>) -> Result<Self, ()> {
-        if addr.is_arch32() {
-            Ok(uapi::uaddr32::try_from(addr.addr())?.into())
-        } else {
-            Err(())
-        }
+        if addr.is_arch32() { Ok(uapi::uaddr32::try_from(addr.addr())?.into()) } else { Err(()) }
     }
 }
 

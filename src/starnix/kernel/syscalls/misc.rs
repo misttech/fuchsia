@@ -11,11 +11,11 @@ use fidl_fuchsia_buildinfo as buildinfo;
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{Locked, Unlocked};
+use starnix_syscalls::{
+    SUCCESS, SyscallResult, for_each_syscall, syscall_number_to_name_literal_callback,
+};
 #[cfg(feature = "arch32")]
 use starnix_syscalls::{for_each_arch32_syscall, syscall_arch32_number_to_name_literal_callback};
-use starnix_syscalls::{
-    for_each_syscall, syscall_number_to_name_literal_callback, SyscallResult, SUCCESS,
-};
 use starnix_types::user_buffer::MAX_RW_COUNT;
 use starnix_uapi::auth::{CAP_SYS_ADMIN, CAP_SYS_MODULE};
 use starnix_uapi::errors::Errno;
@@ -23,7 +23,7 @@ use starnix_uapi::personality::PersonalityFlags;
 use starnix_uapi::user_address::{MultiArchUserRef, UserAddress, UserCString, UserRef};
 use starnix_uapi::version::KERNEL_RELEASE;
 use starnix_uapi::{
-    c_char, errno, error, from_status_like_fdio, uapi, utsname, EFAULT, GRND_NONBLOCK, GRND_RANDOM,
+    EFAULT, GRND_NONBLOCK, GRND_RANDOM, c_char, errno, error, from_status_like_fdio, uapi, utsname,
 };
 
 #[cfg(feature = "arch32")]

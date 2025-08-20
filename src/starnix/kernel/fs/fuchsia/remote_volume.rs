@@ -3,21 +3,21 @@
 // found in the LICENSE file.
 
 use crate::task::LockedAndTask;
-use fidl::endpoints::{create_sync_proxy, DiscoverableProtocolMarker, SynchronousProxy};
+use fidl::endpoints::{DiscoverableProtocolMarker, SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_fshost::StarnixVolumeProviderMarker;
 use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
 use fidl_fuchsia_io as fio;
 use starnix_core::fs::fuchsia::{RemoteFs, RemoteNode};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    derive_wrapping_key, CacheConfig, CacheMode, FileSystem, FileSystemHandle, FileSystemOps,
-    FileSystemOptions, FsNodeHandle, FsStr,
+    CacheConfig, CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions,
+    FsNodeHandle, FsStr, derive_wrapping_key,
 };
 use starnix_logging::{log_error, log_info};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio, statfs};
-use syncio::{zxio_node_attr_has_t, zxio_node_attributes_t, Zxio};
+use syncio::{Zxio, zxio_node_attr_has_t, zxio_node_attributes_t};
 
 const CRYPT_THREAD_ROLE: &str = "fuchsia.starnix.remotevol.crypt";
 // `KEY_FILE_PATH` determines where the volume-wide keys for the Starnix volume will live in the

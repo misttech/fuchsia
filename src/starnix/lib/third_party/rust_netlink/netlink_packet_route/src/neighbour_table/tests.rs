@@ -2,11 +2,11 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::neighbour_table::{
     NeighbourTableAttribute, NeighbourTableConfig, NeighbourTableHeader, NeighbourTableMessage,
     NeighbourTableMessageBuffer, NeighbourTableParameter, NeighbourTableStats,
 };
-use crate::AddressFamily;
 
 // There is no need to do ipv6 test as it is almost identical to ipv4 for
 // neighbour_table.

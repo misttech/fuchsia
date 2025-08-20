@@ -9,7 +9,7 @@ use crate::vfs::{
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{statfs, SOCKFS_MAGIC};
+use starnix_uapi::{SOCKFS_MAGIC, statfs};
 
 /// `SocketFs` is the file system where anonymous socket nodes are created, for example in
 /// `sys_socket`.

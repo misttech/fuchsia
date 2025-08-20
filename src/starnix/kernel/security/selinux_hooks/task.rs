@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::TODO_DENY;
 use crate::security::selinux_hooks::{
+    Auditable, KernelPermission, NO_PERMISSIONS, PermissionCheck, ProcessPermission, TaskAttrs,
     check_permission, check_self_permission, current_task_state, fs_node_effective_sid_and_class,
     fs_node_ensure_class, fs_node_set_label_with_task, has_file_permissions, is_internal_operation,
-    permissions_from_flags, task_consistent_attrs, todo_has_fs_node_permissions, Auditable,
-    KernelPermission, PermissionCheck, ProcessPermission, TaskAttrs, NO_PERMISSIONS,
+    permissions_from_flags, task_consistent_attrs, todo_has_fs_node_permissions,
 };
 use crate::security::{Arc, ProcAttr, ResolvedElfState, SecurityId, SecurityServer};
 use crate::signals::QueuedSignals;
 use crate::task::{CurrentTask, Task, TaskMutableState};
 use crate::vfs::{FsNode, FsStr};
-use crate::TODO_DENY;
 use selinux::{
     Cap2Class, CapClass, CommonCap2Permission, CommonCapPermission, FilePermission, ForClass,
     InitialSid, KernelClass, NullessByteStr, SystemPermission,
@@ -22,10 +22,10 @@ use starnix_types::ownership::TempRef;
 use starnix_uapi::auth::CAP_DAC_OVERRIDE;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::resource_limits::Resource;
-use starnix_uapi::signals::{Signal, SIGCHLD, SIGKILL, SIGSTOP};
+use starnix_uapi::signals::{SIGCHLD, SIGKILL, SIGSTOP, Signal};
 use starnix_uapi::syslog::SyslogAction;
 use starnix_uapi::{
-    errno, error, itimerval, rlimit, timeval, ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL,
+    ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL, errno, error, itimerval, rlimit, timeval,
 };
 
 /// Resets file descriptor state and resource limits that should not be inherited during an `exec`
@@ -972,11 +972,11 @@ mod tests {
     use super::*;
     use crate::security::exec_binprm;
     use crate::security::selinux_hooks::testing::create_test_executable;
-    use crate::security::selinux_hooks::{testing, InitialSid, TaskAttrs};
+    use crate::security::selinux_hooks::{InitialSid, TaskAttrs, testing};
     use crate::signals::SignalInfo;
     use crate::testing::create_task;
-    use starnix_uapi::signals::{SigSet, SIGTERM};
-    use starnix_uapi::{error, CLONE_SIGHAND, CLONE_THREAD, CLONE_VM};
+    use starnix_uapi::signals::{SIGTERM, SigSet};
+    use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM, error};
     use testing::spawn_kernel_with_selinux_hooks_test_policy_and_run;
 
     #[fuchsia::test]
@@ -1057,9 +1057,11 @@ mod tests {
                     .expect("invalid security context");
 
                 let executable_security_context = b"u:object_r:executable_file_trans_t:s0";
-                assert!(security_server
-                    .security_context_to_sid(executable_security_context.into())
-                    .is_ok());
+                assert!(
+                    security_server
+                        .security_context_to_sid(executable_security_context.into())
+                        .is_ok()
+                );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
                 let executable_fs_node = &executable.entry.node;
@@ -1089,9 +1091,11 @@ mod tests {
                     .expect("invalid security context");
 
                 let executable_security_context = b"u:object_r:executable_file_trans_t:s0";
-                assert!(security_server
-                    .security_context_to_sid(executable_security_context.into())
-                    .is_ok());
+                assert!(
+                    security_server
+                        .security_context_to_sid(executable_security_context.into())
+                        .is_ok()
+                );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
                 let executable_fs_node = &executable.entry.node;
@@ -1122,9 +1126,11 @@ mod tests {
 
                 let executable_security_context =
                     b"u:object_r:executable_file_trans_no_entrypoint_t:s0";
-                assert!(security_server
-                    .security_context_to_sid(executable_security_context.into())
-                    .is_ok());
+                assert!(
+                    security_server
+                        .security_context_to_sid(executable_security_context.into())
+                        .is_ok()
+                );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
                 let executable_fs_node = &executable.entry.node;
@@ -1149,9 +1155,11 @@ mod tests {
                     .expect("invalid security context");
 
                 let executable_security_context = b"u:object_r:executable_file_no_trans_t:s0";
-                assert!(security_server
-                    .security_context_to_sid(executable_security_context.into())
-                    .is_ok());
+                assert!(
+                    security_server
+                        .security_context_to_sid(executable_security_context.into())
+                        .is_ok()
+                );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
                 let executable_fs_node = &executable.entry.node;
@@ -1177,9 +1185,11 @@ mod tests {
                     .expect("invalid security context");
 
                 let executable_security_context = b"u:object_r:executable_file_no_trans_t:s0";
-                assert!(security_server
-                    .security_context_to_sid(executable_security_context.into())
-                    .is_ok());
+                assert!(
+                    security_server
+                        .security_context_to_sid(executable_security_context.into())
+                        .is_ok()
+                );
                 let executable =
                     create_test_executable(locked, current_task, executable_security_context);
                 let executable_fs_node = &executable.entry.node;
@@ -1741,7 +1751,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn setcurrent_bounds() {
-        const BINARY_POLICY: &[u8] = include_bytes!("../../../lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy.pp");
+        const BINARY_POLICY: &[u8] = include_bytes!(
+            "../../../lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy.pp"
+        );
         const BOUNDED_CONTEXT: &[u8] = b"test_u:test_r:bounded_t:s0";
         const UNBOUNDED_CONTEXT: &[u8] = b"test_u:test_r:unbounded_t:s0";
 

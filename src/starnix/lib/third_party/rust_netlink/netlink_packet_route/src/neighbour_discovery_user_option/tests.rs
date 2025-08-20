@@ -1,11 +1,11 @@
 use netlink_packet_core::{NetlinkHeader, NetlinkMessage};
 
+use crate::RouteNetlinkMessage;
+use crate::neighbour_discovery_user_option::NeighbourDiscoveryIcmpV6Type;
 use crate::neighbour_discovery_user_option::header::{
     NeighbourDiscoveryIcmpType, NeighbourDiscoveryUserOptionHeader,
 };
 use crate::neighbour_discovery_user_option::nla::Nla;
-use crate::neighbour_discovery_user_option::NeighbourDiscoveryIcmpV6Type;
-use crate::RouteNetlinkMessage;
 
 use super::NeighbourDiscoveryUserOptionMessage;
 

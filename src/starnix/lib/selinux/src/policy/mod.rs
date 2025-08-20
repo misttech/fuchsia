@@ -34,7 +34,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 use symbols::{find_class_by_name, find_common_symbol_by_name_bytes};
 use zerocopy::{
-    little_endian as le, FromBytes, Immutable, KnownLayout, Ref, SplitByteSlice, Unaligned,
+    FromBytes, Immutable, KnownLayout, Ref, SplitByteSlice, Unaligned, little_endian as le,
 };
 
 /// Maximum SELinux policy version supported by this implementation.
@@ -864,7 +864,7 @@ pub(super) mod tests {
     use super::*;
 
     use crate::policy::metadata::HandleUnknown;
-    use crate::policy::{parse_policy_by_value, SecurityContext};
+    use crate::policy::{SecurityContext, parse_policy_by_value};
     use crate::{FileClass, InitialSid, KernelClass};
 
     use serde::Deserialize;
@@ -1095,7 +1095,9 @@ pub(super) mod tests {
 
     #[test]
     fn compute_explicitly_allowed_multiple_attributes() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allow_a_t_a1_attr_class0_perm0_a2_attr_class0_perm1_policy.pp");
+        let policy_bytes = include_bytes!(
+            "../../testdata/micro_policies/allow_a_t_a1_attr_class0_perm0_a2_attr_class0_perm1_policy.pp"
+        );
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 

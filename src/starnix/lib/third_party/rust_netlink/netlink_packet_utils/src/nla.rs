@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-use crate::traits::{Emitable, Parseable};
 use crate::DecodeError;
+use crate::traits::{Emitable, Parseable};
 use byteorder::{ByteOrder, NativeEndian};
 use core::ops::Range;
 use thiserror::Error;

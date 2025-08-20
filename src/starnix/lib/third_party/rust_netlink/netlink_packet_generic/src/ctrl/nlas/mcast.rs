@@ -3,10 +3,10 @@
 use crate::constants::*;
 use anyhow::Context;
 use byteorder::{ByteOrder, NativeEndian};
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{Nla, NlaBuffer};
 use netlink_packet_utils::parsers::*;
 use netlink_packet_utils::traits::*;
-use netlink_packet_utils::DecodeError;
 use std::mem::size_of_val;
 use std::ops::Deref;
 

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 use super::{NeighbourAddress, NeighbourCacheInfo, NeighbourCacheInfoBuffer, NeighbourError};
-use crate::route::RouteProtocol;
 use crate::AddressFamily;
+use crate::route::RouteProtocol;
 use byteorder::{BigEndian, ByteOrder, NativeEndian};
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
 use netlink_packet_utils::parsers::{parse_u16, parse_u16_be, parse_u32};

@@ -8,35 +8,35 @@ use bitflags::bitflags;
 use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions};
 use linux_uapi::DM_UUID_LEN;
 use mundane::hash::{Digest, Hasher, Sha256, Sha512};
-use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::device::DeviceMode;
-use starnix_core::fs::sysfs::{build_block_device_directory, BlockDeviceInfo};
+use starnix_core::device::kobject::{Device, DeviceMetadata};
+use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, ProtectionFlags};
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, VecOutputBuffer};
 use starnix_core::vfs::{
+    FileHandle, FileObject, FileObjectState, FileOps, FsString, NamespaceNode, OutputBuffer,
     default_ioctl, fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekable,
-    fileops_impl_seekless, FileHandle, FileObject, FileObjectState, FileOps, FsString,
-    NamespaceNode, OutputBuffer,
+    fileops_impl_seekless,
 };
 use starnix_ext::map_ext::EntryExt;
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
-use starnix_uapi::device_type::{DeviceType, DEVICE_MAPPER_MAJOR, LOOP_MAJOR};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
+use starnix_uapi::device_type::{DEVICE_MAPPER_MAJOR, DeviceType, LOOP_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserCString, UserRef};
 use starnix_uapi::{
-    errno, error, uapi, DM_ACTIVE_PRESENT_FLAG, DM_BUFFER_FULL_FLAG, DM_DEV_ARM_POLL,
-    DM_DEV_CREATE, DM_DEV_REMOVE, DM_DEV_RENAME, DM_DEV_SET_GEOMETRY, DM_DEV_STATUS,
-    DM_DEV_SUSPEND, DM_DEV_WAIT, DM_GET_TARGET_VERSION, DM_IMA_MEASUREMENT_FLAG,
-    DM_INACTIVE_PRESENT_FLAG, DM_LIST_DEVICES, DM_LIST_VERSIONS, DM_MAX_TYPE_NAME, DM_NAME_LEN,
-    DM_NAME_LIST_FLAG_DOESNT_HAVE_UUID, DM_NAME_LIST_FLAG_HAS_UUID, DM_READONLY_FLAG,
-    DM_REMOVE_ALL, DM_STATUS_TABLE_FLAG, DM_SUSPEND_FLAG, DM_TABLE_CLEAR, DM_TABLE_DEPS,
-    DM_TABLE_LOAD, DM_TABLE_STATUS, DM_TARGET_MSG, DM_UEVENT_GENERATED_FLAG, DM_VERSION,
-    DM_VERSION_MAJOR, DM_VERSION_MINOR, DM_VERSION_PATCHLEVEL,
+    DM_ACTIVE_PRESENT_FLAG, DM_BUFFER_FULL_FLAG, DM_DEV_ARM_POLL, DM_DEV_CREATE, DM_DEV_REMOVE,
+    DM_DEV_RENAME, DM_DEV_SET_GEOMETRY, DM_DEV_STATUS, DM_DEV_SUSPEND, DM_DEV_WAIT,
+    DM_GET_TARGET_VERSION, DM_IMA_MEASUREMENT_FLAG, DM_INACTIVE_PRESENT_FLAG, DM_LIST_DEVICES,
+    DM_LIST_VERSIONS, DM_MAX_TYPE_NAME, DM_NAME_LEN, DM_NAME_LIST_FLAG_DOESNT_HAVE_UUID,
+    DM_NAME_LIST_FLAG_HAS_UUID, DM_READONLY_FLAG, DM_REMOVE_ALL, DM_STATUS_TABLE_FLAG,
+    DM_SUSPEND_FLAG, DM_TABLE_CLEAR, DM_TABLE_DEPS, DM_TABLE_LOAD, DM_TABLE_STATUS, DM_TARGET_MSG,
+    DM_UEVENT_GENERATED_FLAG, DM_VERSION, DM_VERSION_MAJOR, DM_VERSION_MINOR,
+    DM_VERSION_PATCHLEVEL, errno, error, uapi,
 };
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::ops::Sub;
@@ -113,11 +113,7 @@ impl DeviceMapperRegistry {
             let state = device.state.lock();
             state.name == name
         });
-        if let Some((_, device)) = entry {
-            Ok(device.clone())
-        } else {
-            error!(ENODEV)
-        }
+        if let Some((_, device)) = entry { Ok(device.clone()) } else { error!(ENODEV) }
     }
 
     fn get_by_uuid(
@@ -129,11 +125,7 @@ impl DeviceMapperRegistry {
             let state = device.state.lock();
             state.uuid == uuid
         });
-        if let Some((_, device)) = entry {
-            Ok(device.clone())
-        } else {
-            error!(ENODEV)
-        }
+        if let Some((_, device)) = entry { Ok(device.clone()) } else { error!(ENODEV) }
     }
 
     fn get_or_create_by_minor<L>(
@@ -487,11 +479,7 @@ impl DmDeviceState {
     }
 
     fn get_target_count(&self) -> u32 {
-        if let Some(_) = self.active_table {
-            self.target_count
-        } else {
-            0
-        }
+        if let Some(_) = self.active_table { self.target_count } else { 0 }
     }
 
     fn add_flags(&mut self, flags: DeviceMapperFlags) {

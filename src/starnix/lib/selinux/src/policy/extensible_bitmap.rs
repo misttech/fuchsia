@@ -4,14 +4,14 @@
 
 use super::parser::PolicyCursor;
 use super::{
-    array_type, array_type_validate_deref_both, Counted, PolicyValidationContext, Validate,
-    ValidateArray,
+    Counted, PolicyValidationContext, Validate, ValidateArray, array_type,
+    array_type_validate_deref_both,
 };
 use crate::policy::error::ValidateError;
 
 use crate::policy::Array;
 use std::cmp::Ordering;
-use zerocopy::{little_endian as le, FromBytes, Immutable, KnownLayout, Unaligned};
+use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
 /// Maximum number of [`MapItem`] objects in a single [`ExtensibleBitmap`].
 pub(super) const MAX_BITMAP_ITEMS: u32 = 0x40;
@@ -285,10 +285,10 @@ impl ValidateArray<Metadata, MapItem> for ExtensibleBitmap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::policy::Parse;
     use crate::policy::error::ParseError;
     use crate::policy::parser::{PolicyCursor, PolicyData};
     use crate::policy::testing::{as_parse_error, as_validate_error};
-    use crate::policy::Parse;
     use std::borrow::Borrow;
     use std::sync::Arc;
 

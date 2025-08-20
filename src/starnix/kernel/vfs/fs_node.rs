@@ -6,9 +6,9 @@ use crate::device::DeviceMode;
 use crate::mm::PAGE_SIZE;
 use crate::security;
 use crate::security::PermissionFlags;
-use crate::signals::{send_standard_signal, SignalInfo};
+use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::{
-    register_delayed_release, CurrentTask, CurrentTaskAndLocked, EncryptionKeyId, WaitQueue, Waiter,
+    CurrentTask, CurrentTaskAndLocked, EncryptionKeyId, WaitQueue, Waiter, register_delayed_release,
 };
 use crate::time::utc;
 use crate::vfs::fsverity::FsVerityState;
@@ -16,10 +16,10 @@ use crate::vfs::pipe::{Pipe, PipeHandle};
 use crate::vfs::rw_queue::{RwQueue, RwQueueReadGuard};
 use crate::vfs::socket::SocketHandle;
 use crate::vfs::{
-    checked_add_offset_and_length, inotify, DefaultDirEntryOps, DirEntryOps, FileObject,
-    FileObjectState, FileOps, FileSystem, FileSystemHandle, FileWriteGuardState, FsStr, FsString,
-    MountInfo, NamespaceNode, OPathOps, RecordLockCommand, RecordLockOwner, RecordLocks,
-    WeakFileHandle, MAX_LFS_FILESIZE,
+    DefaultDirEntryOps, DirEntryOps, FileObject, FileObjectState, FileOps, FileSystem,
+    FileSystemHandle, FileWriteGuardState, FsStr, FsString, MAX_LFS_FILESIZE, MountInfo,
+    NamespaceNode, OPathOps, RecordLockCommand, RecordLockOwner, RecordLocks, WeakFileHandle,
+    checked_add_offset_and_length, inotify,
 };
 use bitflags::bitflags;
 use fuchsia_runtime::UtcInstant;
@@ -31,14 +31,14 @@ use starnix_sync::{
     RwLock, RwLockReadGuard, Unlocked,
 };
 use starnix_types::ownership::{Releasable, ReleaseGuard};
-use starnix_types::time::{timespec_from_time, NANOS_PER_SECOND};
+use starnix_types::time::{NANOS_PER_SECOND, timespec_from_time};
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::auth::{
-    FsCred, UserAndOrGroupId, CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_DAC_READ_SEARCH, CAP_FOWNER,
-    CAP_FSETID, CAP_MKNOD, CAP_SYS_ADMIN, CAP_SYS_RESOURCE,
+    CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_DAC_READ_SEARCH, CAP_FOWNER, CAP_FSETID, CAP_MKNOD,
+    CAP_SYS_ADMIN, CAP_SYS_RESOURCE, FsCred, UserAndOrGroupId,
 };
 use starnix_uapi::device_type::DeviceType;
-use starnix_uapi::errors::{Errno, EACCES, ENOTSUP};
+use starnix_uapi::errors::{EACCES, ENOTSUP, Errno};
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::mount_flags::MountFlags;
@@ -46,11 +46,11 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::signals::SIGXFSZ;
 use starnix_uapi::{
-    errno, error, fsverity_descriptor, gid_t, ino_t, statx, statx_timestamp, timespec, uapi, uid_t,
     FALLOC_FL_COLLAPSE_RANGE, FALLOC_FL_INSERT_RANGE, FALLOC_FL_KEEP_SIZE, FALLOC_FL_PUNCH_HOLE,
-    FALLOC_FL_UNSHARE_RANGE, FALLOC_FL_ZERO_RANGE, LOCK_EX, LOCK_NB, LOCK_SH, LOCK_UN, STATX_ATIME,
-    STATX_ATTR_VERITY, STATX_BASIC_STATS, STATX_BLOCKS, STATX_CTIME, STATX_GID, STATX_INO,
-    STATX_MTIME, STATX_NLINK, STATX_SIZE, STATX_UID, STATX__RESERVED, XATTR_USER_PREFIX,
+    FALLOC_FL_UNSHARE_RANGE, FALLOC_FL_ZERO_RANGE, LOCK_EX, LOCK_NB, LOCK_SH, LOCK_UN,
+    STATX__RESERVED, STATX_ATIME, STATX_ATTR_VERITY, STATX_BASIC_STATS, STATX_BLOCKS, STATX_CTIME,
+    STATX_GID, STATX_INO, STATX_MTIME, STATX_NLINK, STATX_SIZE, STATX_UID, XATTR_USER_PREFIX,
+    errno, error, fsverity_descriptor, gid_t, ino_t, statx, statx_timestamp, timespec, uapi, uid_t,
 };
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, Weak};
@@ -330,13 +330,8 @@ impl FlockInfo {
         F: Fn(&FileObject) -> bool,
     {
         if !self.locking_handles.is_empty() {
-            self.locking_handles.retain(|w| {
-                if let Some(fh) = w.upgrade() {
-                    predicate(&fh)
-                } else {
-                    false
-                }
-            });
+            self.locking_handles
+                .retain(|w| if let Some(fh) = w.upgrade() { predicate(&fh) } else { false });
             if self.locking_handles.is_empty() {
                 self.locked_exclusive = None;
                 self.wait_queue.notify_all();
@@ -409,11 +404,7 @@ impl FileObject {
                 .iter()
                 .find_map(|w| {
                     w.upgrade().and_then(|fh| {
-                        if std::ptr::eq(&fh as &FileObject, self) {
-                            Some(())
-                        } else {
-                            None
-                        }
+                        if std::ptr::eq(&fh as &FileObject, self) { Some(()) } else { None }
                     })
                 })
                 .is_some();
@@ -1664,11 +1655,7 @@ impl FsNode {
                 .map_err(|e| {
                     // `check_access(..)` returns EACCES when the access rights doesn't match - change
                     // it to EPERM to match Linux standards.
-                    if e == EACCES {
-                        errno!(EPERM)
-                    } else {
-                        e
-                    }
+                    if e == EACCES { errno!(EPERM) } else { e }
                 })?;
             // There are also security issues that may arise when users link to setuid, setgid, or
             // special files.
@@ -2030,11 +2017,7 @@ impl FsNode {
 
     /// Returns the UNIX domain socket bound to this node, if any.
     pub fn bound_socket(&self) -> Option<&SocketHandle> {
-        if let Some(rare_data) = self.rare_data.get() {
-            rare_data.bound_socket.get()
-        } else {
-            None
-        }
+        if let Some(rare_data) = self.rare_data.get() { rare_data.bound_socket.get() } else { None }
     }
 
     /// Register the provided socket as the UNIX domain socket bound to this node.

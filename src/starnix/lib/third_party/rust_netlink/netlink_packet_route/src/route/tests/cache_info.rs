@@ -5,12 +5,12 @@ use std::str::FromStr;
 
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::route::flags::RouteFlags;
 use crate::route::{
     RouteAttribute, RouteCacheInfo, RouteHeader, RouteMessage, RouteMessageBuffer, RouteMetric,
     RoutePreference, RouteProtocol, RouteScope, RouteType,
 };
-use crate::AddressFamily;
 
 #[test]
 // wireshark capture(netlink message header removed) of nlmon against command:

@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use crate::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
+use crate::vfs::FileHandle;
 use crate::vfs::buffers::{AncillaryData, InputBuffer, MessageReadInfo, OutputBuffer};
 use crate::vfs::socket::{
-    AcceptQueue, Socket, SocketAddress, SocketDomain, SocketHandle, SocketMessageFlags, SocketOps,
-    SocketPeer, SocketProtocol, SocketShutdownFlags, SocketType, DEFAULT_LISTEN_BACKLOG,
+    AcceptQueue, DEFAULT_LISTEN_BACKLOG, Socket, SocketAddress, SocketDomain, SocketHandle,
+    SocketMessageFlags, SocketOps, SocketPeer, SocketProtocol, SocketShutdownFlags, SocketType,
 };
-use crate::vfs::FileHandle;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -348,9 +348,9 @@ mod tests {
     use crate::fs::fuchsia::create_fuchsia_pipe;
     use crate::mm::PAGE_SIZE;
     use crate::testing::*;
+    use crate::vfs::EpollFileObject;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::socket::SocketFile;
-    use crate::vfs::EpollFileObject;
 
     use starnix_uapi::vfs::EpollEvent;
     use syncio::Zxio;

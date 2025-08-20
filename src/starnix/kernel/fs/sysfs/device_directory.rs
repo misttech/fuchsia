@@ -7,7 +7,7 @@ use crate::task::CurrentTask;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
-use crate::vfs::{FsNodeOps, DEFAULT_BYTES_PER_BLOCK};
+use crate::vfs::{DEFAULT_BYTES_PER_BLOCK, FsNodeOps};
 use starnix_logging::{bug_ref, track_stub};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;

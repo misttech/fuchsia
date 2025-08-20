@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::task::CurrentTask;
-use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, SimpleFileNode};
 use crate::vfs::FsNodeOps;
+use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, SimpleFileNode};
 use starnix_sync::Mutex;
 use starnix_uapi::auth::Capabilities;
 use starnix_uapi::errors::Errno;

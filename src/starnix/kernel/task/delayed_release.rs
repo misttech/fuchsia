@@ -103,11 +103,12 @@ impl DelayedReleaser {
     /// releasables for the last time.
     pub fn finalize() {
         RELEASERS.with(|cell| {
-            assert!(cell
-                .borrow()
-                .as_ref()
-                .expect("DelayedReleaser hasn't been finalized yet")
-                .is_empty());
+            assert!(
+                cell.borrow()
+                    .as_ref()
+                    .expect("DelayedReleaser hasn't been finalized yet")
+                    .is_empty()
+            );
             *cell.borrow_mut() = None;
         });
     }

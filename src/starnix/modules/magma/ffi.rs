@@ -9,6 +9,7 @@ use crate::file::{
 use crate::image_file::{ImageFile, ImageInfo};
 use bstr::BString;
 use magma::{
+    MAGMA_QUERY_VENDOR_ID, MAGMA_STATUS_OK, MAGMA_VENDOR_ID_INTEL, MAGMA_VENDOR_ID_MALI,
     magma_buffer_export, magma_buffer_get_handle, magma_buffer_t, magma_command_descriptor,
     magma_connection_execute_command, magma_connection_execute_inline_commands,
     magma_connection_flush, magma_connection_import_semaphore2,
@@ -34,8 +35,7 @@ use magma::{
     virtio_magma_device_import_ctrl_t, virtio_magma_device_import_resp_t,
     virtio_magma_device_query_ctrl_t, virtio_magma_device_query_resp_t,
     virtio_magma_device_release_ctrl_t, virtio_magma_device_release_resp_t,
-    virtmagma_command_descriptor, MAGMA_QUERY_VENDOR_ID, MAGMA_STATUS_OK, MAGMA_VENDOR_ID_INTEL,
-    MAGMA_VENDOR_ID_MALI,
+    virtmagma_command_descriptor,
 };
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};

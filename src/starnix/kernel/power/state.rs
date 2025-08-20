@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::task::CurrentTask;
-use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use crate::vfs::FsNodeOps;
+use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use fidl_fuchsia_power_broker::PowerLevel;
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{FileOpsCore, Locked};

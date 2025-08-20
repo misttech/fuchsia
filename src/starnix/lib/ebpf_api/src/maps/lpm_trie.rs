@@ -146,9 +146,9 @@ impl<'a> LpmKey for EbpfBufferPtr<'a> {
 
 mod internal {
     use super::LpmKey;
+    use crate::maps::MapError;
     use crate::maps::buffer::MapBuffer;
     use crate::maps::lock::RwMapLock;
-    use crate::maps::MapError;
     use ebpf::{EbpfBufferPtr, MapSchema};
     use static_assertions::{const_assert, const_assert_eq};
     use std::sync::atomic::{AtomicU32, Ordering};

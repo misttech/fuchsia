@@ -34,7 +34,7 @@ use core::hash::Hasher;
 
 use std::hash::Hash;
 use std::ops::Deref;
-use std::sync::atomic::{fence, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering, fence};
 use std::sync::{Arc, Weak};
 
 /// Macro to build a specific Releasable and OwnedRef.

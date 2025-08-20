@@ -4,19 +4,19 @@
 
 use crate::arch::registers::RegisterState;
 use crate::arch::task::{decode_page_fault_exception_report, get_signal_for_general_exception};
-use crate::execution::{create_zircon_process, TaskInfo};
+use crate::execution::{TaskInfo, create_zircon_process};
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, TaskMemoryAccessor};
 use crate::security;
-use crate::signals::{send_signal_first, send_standard_signal, RunState, SignalInfo};
-use crate::task::loader::{load_executable, resolve_executable, ResolvedElf};
+use crate::signals::{RunState, SignalInfo, send_signal_first, send_standard_signal};
+use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::{
     ExitStatus, PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions, RobustListHeadPtr,
     SeccompFilter, SeccompFilterContainer, SeccompNotifierHandle, SeccompState, SeccompStateValue,
     StopState, Task, TaskFlags, Waiter,
 };
 use crate::vfs::{
-    CheckAccessReason, FdNumber, FileHandle, FsStr, LookupContext, NamespaceNode, ResolveBase,
-    SymlinkMode, SymlinkTarget, MAX_SYMLINK_FOLLOWS,
+    CheckAccessReason, FdNumber, FileHandle, FsStr, LookupContext, MAX_SYMLINK_FOLLOWS,
+    NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget,
 };
 use extended_pstate::ExtendedPstateState;
 use fuchsia_inspect_contrib::profile_duration;
@@ -25,33 +25,33 @@ use starnix_sync::{
     EventWaitGuard, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, MmDumpable,
     ProcessGroupState, TaskRelease, Unlocked, WakeReason,
 };
-use starnix_syscalls::decls::Syscall;
 use starnix_syscalls::SyscallResult;
+use starnix_syscalls::decls::Syscall;
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
 use starnix_types::ownership::{
-    release_on_error, OwnedRef, Releasable, ReleaseGuard, Share, TempRef, WeakRef,
+    OwnedRef, Releasable, ReleaseGuard, Share, TempRef, WeakRef, release_on_error,
 };
 use starnix_uapi::auth::{
-    Credentials, FsCred, PtraceAccessMode, UserAndOrGroupId, CAP_KILL, CAP_SYS_ADMIN,
-    CAP_SYS_PTRACE, PTRACE_MODE_FSCREDS, PTRACE_MODE_REALCREDS,
+    CAP_KILL, CAP_SYS_ADMIN, CAP_SYS_PTRACE, Credentials, FsCred, PTRACE_MODE_FSCREDS,
+    PTRACE_MODE_REALCREDS, PtraceAccessMode, UserAndOrGroupId,
 };
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::{Errno, ErrnoCode};
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{
-    SigSet, Signal, UncheckedSignal, SIGBUS, SIGCONT, SIGILL, SIGSEGV, SIGTRAP,
+    SIGBUS, SIGCONT, SIGILL, SIGSEGV, SIGTRAP, SigSet, Signal, UncheckedSignal,
 };
 use starnix_uapi::user_address::{ArchSpecific, UserAddress, UserRef};
 use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{
-    clone_args, errno, error, from_status_like_fdio, pid_t, sock_filter, ucred,
     CLONE_CHILD_CLEARTID, CLONE_CHILD_SETTID, CLONE_FILES, CLONE_FS, CLONE_INTO_CGROUP,
     CLONE_NEWUTS, CLONE_PARENT, CLONE_PARENT_SETTID, CLONE_PTRACE, CLONE_SETTLS, CLONE_SIGHAND,
     CLONE_SYSVSEM, CLONE_THREAD, CLONE_VFORK, CLONE_VM, FUTEX_OWNER_DIED, FUTEX_TID_MASK,
     ROBUST_LIST_LIMIT, SECCOMP_FILTER_FLAG_LOG, SECCOMP_FILTER_FLAG_NEW_LISTENER,
-    SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH, SI_KERNEL,
+    SECCOMP_FILTER_FLAG_TSYNC, SECCOMP_FILTER_FLAG_TSYNC_ESRCH, SI_KERNEL, clone_args, errno,
+    error, from_status_like_fdio, pid_t, sock_filter, ucred,
 };
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -381,9 +381,9 @@ impl CurrentTask {
     pub fn set_syscall_restart_func<R: Into<SyscallResult>>(
         &mut self,
         f: impl FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> Result<R, Errno>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
     ) {
         self.thread_state.syscall_restart_func =
             Some(Box::new(|locked, current_task| Ok(f(locked, current_task)?.into())));
@@ -1011,12 +1011,7 @@ impl CurrentTask {
         // File node must have EXEC mode permissions.
         // Note that the ability to execute a file is unrelated to the flags
         // used in the `open` call.
-        executable.name.check_access(
-            locked,
-            self,
-            Access::EXEC,
-            CheckAccessReason::Exec,
-        )?;
+        executable.name.check_access(locked, self, Access::EXEC, CheckAccessReason::Exec)?;
 
         let elf_security_state = security::check_exec_access(self, executable.node())?;
 
@@ -1254,11 +1249,7 @@ impl CurrentTask {
             self.set_seccomp_state(SeccompStateValue::UserDefined)?;
         }
 
-        if let Some(fd) = maybe_fd {
-            Ok(fd.into())
-        } else {
-            Ok(().into())
-        }
+        if let Some(fd) = maybe_fd { Ok(fd.into()) } else { Ok(().into()) }
     }
 
     pub fn run_seccomp_filters(
@@ -1285,11 +1276,7 @@ impl CurrentTask {
         // errno.  However, if TSYNC_ESRCH is set, it returns ESRCH.  This
         // prevents conflicts with fact that SECCOMP_FILTER_FLAG_NEW_LISTENER
         // makes seccomp return an fd.
-        if flags & SECCOMP_FILTER_FLAG_TSYNC_ESRCH != 0 {
-            error!(ESRCH)
-        } else {
-            Ok(id.into())
-        }
+        if flags & SECCOMP_FILTER_FLAG_TSYNC_ESRCH != 0 { error!(ESRCH) } else { Ok(id.into()) }
     }
 
     // Notify all futexes in robust list.  The robust list is in user space, so we

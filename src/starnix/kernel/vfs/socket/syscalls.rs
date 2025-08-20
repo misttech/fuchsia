@@ -11,9 +11,9 @@ use crate::vfs::buffers::{
     AncillaryData, ControlMsg, UserBuffersInputBuffer, UserBuffersOutputBuffer,
 };
 use crate::vfs::socket::{
-    resolve_unix_socket_address, Socket, SocketAddress, SocketDomain, SocketFile,
+    SA_FAMILY_SIZE, SA_STORAGE_SIZE, Socket, SocketAddress, SocketDomain, SocketFile,
     SocketMessageFlags, SocketPeer, SocketProtocol, SocketShutdownFlags, SocketType, UnixSocket,
-    SA_FAMILY_SIZE, SA_STORAGE_SIZE,
+    resolve_unix_socket_address,
 };
 use crate::vfs::{FdFlags, FdNumber, FileHandle, FsString, LookupContext};
 use starnix_logging::{log_trace, track_stub};
@@ -21,7 +21,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::time::duration_from_timespec;
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::auth::CAP_NET_BIND_SERVICE;
-use starnix_uapi::errors::{Errno, EEXIST, EINPROGRESS};
+use starnix_uapi::errors::{EEXIST, EINPROGRESS, Errno};
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
@@ -31,8 +31,8 @@ use starnix_uapi::user_address::{
 use starnix_uapi::user_value::UserValue;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    errno, error, socklen_t, uapi, MSG_CTRUNC, MSG_DONTWAIT, MSG_TRUNC, MSG_WAITFORONE, SHUT_RD,
-    SHUT_RDWR, SHUT_WR, SOCK_CLOEXEC, SOCK_NONBLOCK, UIO_MAXIOV,
+    MSG_CTRUNC, MSG_DONTWAIT, MSG_TRUNC, MSG_WAITFORONE, SHUT_RD, SHUT_RDWR, SHUT_WR, SOCK_CLOEXEC,
+    SOCK_NONBLOCK, UIO_MAXIOV, errno, error, socklen_t, uapi,
 };
 
 uapi::check_arch_independent_layout! {
@@ -111,11 +111,7 @@ fn socket_flags_to_open_flags(flags: u32) -> OpenFlags {
 }
 
 fn socket_flags_to_fd_flags(flags: u32) -> FdFlags {
-    if flags & SOCK_CLOEXEC != 0 {
-        FdFlags::CLOEXEC
-    } else {
-        FdFlags::empty()
-    }
+    if flags & SOCK_CLOEXEC != 0 { FdFlags::CLOEXEC } else { FdFlags::empty() }
 }
 
 fn parse_socket_domain(domain: u32) -> Result<SocketDomain, Errno> {

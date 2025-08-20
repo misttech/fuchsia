@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_core::{NetlinkMessage, NetlinkPayload, NLM_F_REQUEST};
+use netlink_packet_core::{NLM_F_REQUEST, NetlinkMessage, NetlinkPayload};
+use netlink_packet_generic::GenlMessage;
 use netlink_packet_generic::ctrl::nlas::GenlCtrlAttrs;
 use netlink_packet_generic::ctrl::{GenlCtrl, GenlCtrlCmd};
-use netlink_packet_generic::GenlMessage;
 use netlink_sys::protocols::NETLINK_GENERIC;
 use netlink_sys::{Socket, SocketAddr};
 
@@ -39,11 +39,7 @@ fn query_family_id() {
                 .iter()
                 .find_map(
                     |nla| {
-                        if let GenlCtrlAttrs::FamilyId(id) = nla {
-                            Some(*id)
-                        } else {
-                            None
-                        }
+                        if let GenlCtrlAttrs::FamilyId(id) = nla { Some(*id) } else { None }
                     },
                 )
                 .expect("Cannot find FamilyId attribute");

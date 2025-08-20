@@ -9,12 +9,12 @@ use starnix_sync::{LockBefore, Locked, OrderedMutex, UserFaultInner};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
-    errno, error, UFFDIO_CONTINUE_MODE_DONTWAKE, UFFDIO_COPY_MODE_DONTWAKE, UFFDIO_COPY_MODE_WP,
-    UFFDIO_REGISTER_MODE_MINOR, UFFDIO_REGISTER_MODE_MISSING, UFFDIO_REGISTER_MODE_WP,
-    UFFDIO_ZEROPAGE_MODE_DONTWAKE, UFFD_FEATURE_EVENT_FORK, UFFD_FEATURE_EVENT_REMAP,
-    UFFD_FEATURE_EVENT_REMOVE, UFFD_FEATURE_EVENT_UNMAP, UFFD_FEATURE_MINOR_HUGETLBFS,
-    UFFD_FEATURE_MINOR_SHMEM, UFFD_FEATURE_MISSING_HUGETLBFS, UFFD_FEATURE_MISSING_SHMEM,
-    UFFD_FEATURE_SIGBUS, UFFD_FEATURE_THREAD_ID,
+    UFFD_FEATURE_EVENT_FORK, UFFD_FEATURE_EVENT_REMAP, UFFD_FEATURE_EVENT_REMOVE,
+    UFFD_FEATURE_EVENT_UNMAP, UFFD_FEATURE_MINOR_HUGETLBFS, UFFD_FEATURE_MINOR_SHMEM,
+    UFFD_FEATURE_MISSING_HUGETLBFS, UFFD_FEATURE_MISSING_SHMEM, UFFD_FEATURE_SIGBUS,
+    UFFD_FEATURE_THREAD_ID, UFFDIO_CONTINUE_MODE_DONTWAKE, UFFDIO_COPY_MODE_DONTWAKE,
+    UFFDIO_COPY_MODE_WP, UFFDIO_REGISTER_MODE_MINOR, UFFDIO_REGISTER_MODE_MISSING,
+    UFFDIO_REGISTER_MODE_WP, UFFDIO_ZEROPAGE_MODE_DONTWAKE, errno, error,
 };
 use std::ops::Range;
 use std::sync::{Arc, Weak};
@@ -81,11 +81,7 @@ impl UserFault {
         L: LockBefore<UserFaultInner>,
     {
         self.state.lock(locked).userfault_pages.get(addr).map(|(affected_range, is_populated)| {
-            if *is_populated {
-                addr
-            } else {
-                affected_range.end
-            }
+            if *is_populated { addr } else { affected_range.end }
         })
     }
 

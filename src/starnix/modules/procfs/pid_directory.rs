@@ -4,27 +4,27 @@
 
 use itertools::Itertools;
 use regex::Regex;
-use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, ProcMapsFile, ProcSmapsFile, PAGE_SIZE};
+use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, PAGE_SIZE, ProcMapsFile, ProcSmapsFile};
 use starnix_core::security;
 use starnix_core::task::{
-    path_from_root, CurrentTask, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup,
-    ThreadGroupKey,
+    CurrentTask, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup, ThreadGroupKey,
+    path_from_root,
 };
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::{
-    parse_i32_file, parse_unsigned_file, serialize_for_file, BytesFile, BytesFileOps,
-    SimpleFileNode,
+    BytesFile, BytesFileOps, SimpleFileNode, parse_i32_file, parse_unsigned_file,
+    serialize_for_file,
 };
 use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
-    default_seek, emit_dotdot, fileops_impl_delegate_read_and_seek, fileops_impl_directory,
-    fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_unbounded_seek,
-    fs_node_impl_dir_readonly, CallbackSymlinkNode, CloseFreeSafe, DirectoryEntryType, DirentSink,
-    FdNumber, FileObject, FileOps, FileSystemHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps,
-    FsStr, FsString, ProcMountinfoFile, ProcMountsFile, SeekTarget, SymlinkTarget,
+    CallbackSymlinkNode, CloseFreeSafe, DirectoryEntryType, DirentSink, FdNumber, FileObject,
+    FileOps, FileSystemHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
+    ProcMountinfoFile, ProcMountsFile, SeekTarget, SymlinkTarget, default_seek, emit_dotdot,
+    fileops_impl_delegate_read_and_seek, fileops_impl_directory, fileops_impl_noop_sync,
+    fileops_impl_seekable, fileops_impl_unbounded_seek, fs_node_impl_dir_readonly,
 };
 use starnix_logging::{bug_ref, track_stub};
 use starnix_sync::{FileOpsCore, Locked};
@@ -33,13 +33,13 @@ use starnix_types::time::duration_to_scheduler_clock;
 use starnix_uapi::auth::{CAP_SYS_NICE, CAP_SYS_RESOURCE};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{mode, FileMode};
+use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
-    errno, error, ino_t, off_t, pid_t, uapi, OOM_ADJUST_MIN, OOM_DISABLE, OOM_SCORE_ADJ_MIN,
-    RLIM_INFINITY,
+    OOM_ADJUST_MIN, OOM_DISABLE, OOM_SCORE_ADJ_MIN, RLIM_INFINITY, errno, error, ino_t, off_t,
+    pid_t, uapi,
 };
 use std::borrow::Cow;
 use std::ffi::CString;

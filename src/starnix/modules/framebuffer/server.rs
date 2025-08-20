@@ -11,19 +11,19 @@
 //! `.cml`.
 
 use anyhow::anyhow;
-use fidl::endpoints::{create_proxy, create_request_stream};
 use fidl::HandleBased;
+use fidl::endpoints::{create_proxy, create_request_stream};
 use flatland_frame_scheduling_lib::{
     PresentationInfo, PresentedInfo, SchedulingLib, ThroughputScheduler,
 };
 use fuchsia_component::client::{
     connect_to_protocol, connect_to_protocol_at_dir_root, connect_to_protocol_sync,
 };
-use fuchsia_framebuffer::sysmem::BufferCollectionAllocator;
 use fuchsia_framebuffer::FrameUsage;
-use fuchsia_scenic::flatland::ViewCreationTokenPair;
+use fuchsia_framebuffer::sysmem::BufferCollectionAllocator;
 use fuchsia_scenic::BufferCollectionTokenPair;
-use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use fuchsia_scenic::flatland::ViewCreationTokenPair;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::{FutureExt, StreamExt};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::task::{Kernel, LockedAndTask};
@@ -33,8 +33,8 @@ use starnix_sync::Mutex;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::ops::{Deref, DerefMut};
-use std::sync::mpsc::channel;
 use std::sync::Arc;
+use std::sync::mpsc::channel;
 use {
     fidl_fuchsia_element as felement, fidl_fuchsia_images2 as fimages2, fidl_fuchsia_math as fmath,
     fidl_fuchsia_ui_composition as fuicomposition, fidl_fuchsia_ui_views as fuiviews,

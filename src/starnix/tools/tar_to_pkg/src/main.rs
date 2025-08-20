@@ -11,7 +11,7 @@ use argh::FromArgs;
 use std::fs::File;
 use std::path::Path;
 use tar_img_extract::docker_archive::DockerArchive;
-use tar_img_extract::{tar_img_extract_docker_archive, tar_img_extract_tarball, InputFormat};
+use tar_img_extract::{InputFormat, tar_img_extract_docker_archive, tar_img_extract_tarball};
 
 fn tar_to_pkg(
     image_path: &str,

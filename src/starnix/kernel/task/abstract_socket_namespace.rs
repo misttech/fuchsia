@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use starnix_sync::Mutex;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::{Arc, Weak};
 
 use crate::task::CurrentTask;
-use crate::vfs::socket::{Socket, SocketAddress, SocketHandle};
 use crate::vfs::FsString;
+use crate::vfs::socket::{Socket, SocketAddress, SocketHandle};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};

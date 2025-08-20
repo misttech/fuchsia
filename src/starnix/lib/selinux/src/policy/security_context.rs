@@ -578,7 +578,7 @@ pub enum SecurityContextError {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{parse_policy_by_value, Policy};
+    use super::super::{Policy, parse_policy_by_value};
     use super::*;
 
     use std::num::NonZeroU32;

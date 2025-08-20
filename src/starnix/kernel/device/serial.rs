@@ -5,7 +5,7 @@
 use crate::device::kobject::DeviceMetadata;
 use crate::device::terminal::{Terminal, TtyState};
 use crate::device::{DeviceMode, DeviceOps};
-use crate::fs::devpts::{new_pts_fs_with_state, TtyFile};
+use crate::fs::devpts::{TtyFile, new_pts_fs_with_state};
 use crate::task::{CurrentTask, EventHandler, Kernel, Waiter};
 use crate::vfs::{FileOps, FsString, NamespaceNode, VecInputBuffer, VecOutputBuffer};
 use anyhow::Error;

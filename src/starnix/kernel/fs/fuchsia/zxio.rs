@@ -9,7 +9,7 @@ use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
 
-use syncio::{zxio, Zxio, ZxioSignals};
+use syncio::{Zxio, ZxioSignals, zxio};
 
 fn get_zxio_signals_from_events(events: FdEvents) -> zxio::zxio_signals_t {
     let mut signals = ZxioSignals::NONE;

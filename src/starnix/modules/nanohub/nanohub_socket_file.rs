@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use starnix_core::vfs::FileObjectState;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
-use starnix_core::vfs::{fileops_impl_nonseekable, fileops_impl_noop_sync, FileObject, FileOps};
+use starnix_core::vfs::{FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_syscalls::{SyscallArg, SyscallResult};
 

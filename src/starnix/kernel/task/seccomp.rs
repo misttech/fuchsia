@@ -3,19 +3,19 @@
 // found in the LICENSE file.
 
 use crate::mm::MemoryAccessorExt;
-use crate::signals::{send_standard_signal, SignalDetail, SignalInfo, SignalSource};
+use crate::signals::{SignalDetail, SignalInfo, SignalSource, send_standard_signal};
 use crate::task::{
     CurrentTask, EventHandler, ExitStatus, Kernel, Task, TaskFlags, WaitCanceler, WaitQueue, Waiter,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, FdFlags, FdNumber, FileObject,
-    FileObjectState, FileOps,
+    Anon, FdFlags, FdNumber, FileObject, FileObjectState, FileOps, fileops_impl_nonseekable,
+    fileops_impl_noop_sync,
 };
 use bstr::ByteSlice;
 use ebpf::{
-    bpf_addressing_mode, bpf_class, convert_and_link_cbpf, BpfProgramContext, CbpfConfig,
-    EbpfProgram, MemoryId, NoMap, ProgramArgument, Type, BPF_ABS, BPF_LD, BPF_ST,
+    BPF_ABS, BPF_LD, BPF_ST, BpfProgramContext, CbpfConfig, EbpfProgram, MemoryId, NoMap,
+    ProgramArgument, Type, bpf_addressing_mode, bpf_class, convert_and_link_cbpf,
 };
 use ebpf_api::SECCOMP_CBPF_CONFIG;
 use starnix_lifecycle::AtomicU64Counter;
@@ -31,11 +31,11 @@ use starnix_uapi::user_address::ArchSpecific;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    __NR_exit, __NR_read, __NR_write, errno, errno_from_code, error, seccomp_data, seccomp_notif,
-    seccomp_notif_resp, sock_filter, SECCOMP_IOCTL_NOTIF_ADDFD, SECCOMP_IOCTL_NOTIF_ID_VALID,
+    __NR_exit, __NR_read, __NR_write, SECCOMP_IOCTL_NOTIF_ADDFD, SECCOMP_IOCTL_NOTIF_ID_VALID,
     SECCOMP_IOCTL_NOTIF_RECV, SECCOMP_IOCTL_NOTIF_SEND, SECCOMP_MODE_DISABLED, SECCOMP_MODE_FILTER,
     SECCOMP_MODE_STRICT, SECCOMP_RET_ACTION_FULL, SECCOMP_RET_DATA,
-    SECCOMP_USER_NOTIF_FLAG_CONTINUE, SYS_SECCOMP,
+    SECCOMP_USER_NOTIF_FLAG_CONTINUE, SYS_SECCOMP, errno, errno_from_code, error, seccomp_data,
+    seccomp_notif, seccomp_notif_resp, sock_filter,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};

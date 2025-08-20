@@ -5,13 +5,13 @@
 use super::{GenericMessage, GenericNetlinkFamily};
 use starnix_logging::{log_debug, log_error, log_warn};
 
-use anyhow::{bail, format_err, Context as _, Error};
+use anyhow::{Context as _, Error, bail, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_wlan_wlanix::{self as fidl_wlanix, Nl80211Message, Nl80211MessageArray};
-use futures::channel::mpsc;
 use futures::StreamExt;
-use netlink::messaging::Sender;
+use futures::channel::mpsc;
 use netlink::NETLINK_LOG_TAG;
+use netlink::messaging::Sender;
 use netlink_packet_core::buffer::NETLINK_HEADER_LEN;
 use netlink_packet_core::{
     DoneMessage, ErrorMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload,

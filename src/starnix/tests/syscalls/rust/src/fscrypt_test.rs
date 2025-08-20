@@ -5,12 +5,12 @@
 #[cfg(test)]
 mod tests {
     use crate::fscrypt_shared::{
-        fscrypt_add_key_arg, fscrypt_key_specifier, fscrypt_remove_key_arg, FscryptOutput,
+        FscryptOutput, fscrypt_add_key_arg, fscrypt_key_specifier, fscrypt_remove_key_arg,
     };
     use linux_uapi::{
-        fscrypt_policy_v2, FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_MODE_AES_256_CTS,
-        FSCRYPT_MODE_AES_256_HCTR2, FSCRYPT_MODE_AES_256_XTS, FSCRYPT_POLICY_FLAGS_PAD_16,
         FS_IOC_ADD_ENCRYPTION_KEY, FS_IOC_REMOVE_ENCRYPTION_KEY, FS_IOC_SET_ENCRYPTION_POLICY,
+        FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_MODE_AES_256_CTS, FSCRYPT_MODE_AES_256_HCTR2,
+        FSCRYPT_MODE_AES_256_XTS, FSCRYPT_POLICY_FLAGS_PAD_16, fscrypt_policy_v2,
     };
     use serial_test::serial;
     use std::env::VarError;

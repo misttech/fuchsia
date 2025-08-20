@@ -262,8 +262,8 @@ mod tests {
     };
 
     use std::num::NonZeroU32;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::LazyLock;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     /// SID to use where any value will do.
     static A_TEST_SID: LazyLock<SecurityId> = LazyLock::new(unique_sid);

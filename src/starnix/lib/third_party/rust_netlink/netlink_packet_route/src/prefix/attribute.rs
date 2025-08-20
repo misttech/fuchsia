@@ -2,9 +2,9 @@
 
 use super::cache_info::{CacheInfo, CacheInfoBuffer};
 use super::error::PrefixError;
+use netlink_packet_utils::Emitable;
 use netlink_packet_utils::nla::{self, DefaultNla, NlaBuffer};
 use netlink_packet_utils::traits::Parseable;
-use netlink_packet_utils::Emitable;
 use std::convert::TryInto;
 use std::net::Ipv6Addr;
 

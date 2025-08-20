@@ -9,7 +9,7 @@ use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::signals::RunState;
 use starnix_core::task::{CurrentTask, WaiterRef};
 use starnix_core::vfs::socket::IfReqPtr;
-use starnix_core::vfs::{default_ioctl, FileObject, FileOps};
+use starnix_core::vfs::{FileObject, FileOps, default_ioctl};
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_uapi::errors::Errno;

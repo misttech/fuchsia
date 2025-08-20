@@ -5,8 +5,8 @@
 use criterion::{Benchmark, Criterion};
 use ebpf::{EbpfProgramContext, FieldMapping, ProgramArgument, StructMapping};
 use ebpf_api::{
-    AttachType, LoadBytesBase, Map, MapValueRef, PinnedMap, ProgramType, SocketFilterContext,
-    __sk_buff, uid_t, SocketCookieContext, CGROUP_SKB_SK_BUF_TYPE, SK_BUF_ID,
+    __sk_buff, AttachType, CGROUP_SKB_SK_BUF_TYPE, LoadBytesBase, Map, MapValueRef, PinnedMap,
+    ProgramType, SK_BUF_ID, SocketCookieContext, SocketFilterContext, uid_t,
 };
 use fuchsia_criterion::FuchsiaCriterion;
 use std::sync::LazyLock;

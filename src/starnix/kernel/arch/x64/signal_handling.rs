@@ -238,7 +238,7 @@ mod tests {
     use crate::mm::memory::MemoryObject;
     use crate::mm::{DesiredAddress, MappingName, MappingOptions, ProtectionFlags};
     use crate::signals::testing::dequeue_signal_for_test;
-    use crate::signals::{restore_from_signal_handler, SignalDetail};
+    use crate::signals::{SignalDetail, restore_from_signal_handler};
     use crate::task::Kernel;
     use crate::testing::*;
     use starnix_sync::{Locked, Unlocked};
@@ -535,8 +535,8 @@ mod tests {
     }
 
     /// Creates a kernel and initial task, giving the task a stack.
-    fn create_kernel_and_task_with_stack(
-    ) -> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>) {
+    fn create_kernel_and_task_with_stack()
+    -> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>) {
         let (kernel, mut current_task, locked) = create_kernel_task_and_unlocked();
 
         const STACK_SIZE: usize = 0x1000;

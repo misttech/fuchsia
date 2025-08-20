@@ -17,8 +17,8 @@ use starnix_logging::{
 use starnix_sync::Mutex;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::ops::Range;
 use std::sync::Arc;
 

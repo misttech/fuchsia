@@ -4,7 +4,7 @@
 
 #![allow(dead_code)]
 
-use crate::{sigaction_t, SA_RESTART};
+use crate::{SA_RESTART, sigaction_t};
 use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Clone, Debug)]
@@ -398,18 +398,14 @@ macro_rules! error {
 /// tagged with the current file name and line number.
 #[macro_export]
 macro_rules! errno_from_code {
-    ($err:expr) => {{
-        $crate::errors::Errno::new($crate::errors::ErrnoCode::from_error_code($err))
-    }};
+    ($err:expr) => {{ $crate::errors::Errno::new($crate::errors::ErrnoCode::from_error_code($err)) }};
 }
 
 /// `errno_from_zxio_code` returns an `Errno` struct with the given error code and is
 /// tagged with the current file name and line number.
 #[macro_export]
 macro_rules! errno_from_zxio_code {
-    ($err:expr) => {{
-        $crate::errno_from_code!($err.raw())
-    }};
+    ($err:expr) => {{ $crate::errno_from_code!($err.raw()) }};
 }
 
 // There isn't really a mapping from zx_status::Status to Errno. The correct mapping is
@@ -418,9 +414,7 @@ macro_rules! errno_from_zxio_code {
 // TODO: Replace clients with more context-specific mappings.
 #[macro_export]
 macro_rules! from_status_like_fdio {
-    ($status:expr) => {{
-        $crate::from_status_like_fdio!($status, "")
-    }};
+    ($status:expr) => {{ $crate::from_status_like_fdio!($status, "") }};
     ($status:expr, $context:expr) => {{
         match $status {
             zx_status::Status::NOT_FOUND => $crate::errno!(ENOENT, $context),

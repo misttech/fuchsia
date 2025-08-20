@@ -2,9 +2,9 @@
 
 use super::super::AddressFamily;
 use super::{RouteAttribute, RouteError, RouteLwEnCapType, RouteType};
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, ParseableParametrized};
-use netlink_packet_utils::DecodeError;
 
 pub(crate) const RTNH_F_DEAD: u8 = 1;
 pub(crate) const RTNH_F_PERVASIVE: u8 = 2;

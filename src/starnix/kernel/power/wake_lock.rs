@@ -4,8 +4,8 @@
 
 use crate::power::LockSource;
 use crate::task::CurrentTask;
-use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use crate::vfs::FsNodeOps;
+use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::borrow::Cow;

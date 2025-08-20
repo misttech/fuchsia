@@ -3,19 +3,19 @@
 // found in the LICENSE file.
 
 use crate::execution::create_kernel_thread;
-use crate::task::{with_new_current_task, CurrentTask, LockedAndTask, Task, WrappedFuture};
+use crate::task::{CurrentTask, LockedAndTask, Task, WrappedFuture, with_new_current_task};
 use fuchsia_sync::Mutex;
-use futures::channel::oneshot;
 use futures::TryFutureExt;
+use futures::channel::oneshot;
 use starnix_logging::{log_debug, log_error};
 use starnix_sync::{Locked, Unlocked};
-use starnix_types::ownership::{release_after, WeakRef};
+use starnix_types::ownership::{WeakRef, release_after};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::ffi::CString;
 use std::future::Future;
-use std::sync::mpsc::{sync_channel, SendError, SyncSender, TrySendError};
 use std::sync::Arc;
+use std::sync::mpsc::{SendError, SyncSender, TrySendError, sync_channel};
 use std::thread::JoinHandle;
 
 type BoxedClosure = Box<dyn FnOnce(&mut Locked<Unlocked>, &CurrentTask) + Send + 'static>;
@@ -360,7 +360,7 @@ impl Drop for RunningThread {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{create_kernel_and_task, AutoReleasableTask};
+    use crate::testing::{AutoReleasableTask, create_kernel_and_task};
 
     fn build_spawner(max_idle_threads: u8) -> (AutoReleasableTask, DynamicThreadSpawner) {
         let (_kernel, task) = create_kernel_and_task();

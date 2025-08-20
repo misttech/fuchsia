@@ -4,8 +4,8 @@
 
 #![cfg(feature = "alternate_anon_allocs")]
 
-use crate::mm::memory::MemoryObject;
 use crate::mm::VMEX_RESOURCE;
+use crate::mm::memory::MemoryObject;
 use starnix_logging::impossible_error;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;

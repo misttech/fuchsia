@@ -11,7 +11,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{errno, mode, statfs, CGROUP2_SUPER_MAGIC, CGROUP_SUPER_MAGIC};
+use starnix_uapi::{CGROUP_SUPER_MAGIC, CGROUP2_SUPER_MAGIC, errno, mode, statfs};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};

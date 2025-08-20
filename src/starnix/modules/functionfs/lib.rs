@@ -8,10 +8,10 @@ use starnix_core::power::{create_proxy_for_wake_events_counter_zero, mark_proxy_
 use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
-    fileops_impl_noop_sync, fileops_impl_seekless, fs_args, fs_node_impl_dir_readonly,
-    fs_node_impl_not_dir, CacheMode, DirectoryEntryType, FileObject, FileObjectState, FileOps,
-    FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeInfo, FsNodeOps,
-    FsStr, InputBuffer, OutputBuffer,
+    CacheMode, DirectoryEntryType, FileObject, FileObjectState, FileOps, FileSystem,
+    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeInfo, FsNodeOps, FsStr,
+    InputBuffer, OutputBuffer, fileops_impl_noop_sync, fileops_impl_seekless, fs_args,
+    fs_node_impl_dir_readonly, fs_node_impl_not_dir,
 };
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
@@ -28,7 +28,7 @@ use starnix_uapi::{
 };
 use std::collections::VecDeque;
 use std::ops::Deref;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use zerocopy::IntoBytes;
 use {fidl_fuchsia_hardware_adb as fadb, fuchsia_async as fasync};
 
@@ -649,11 +649,7 @@ impl FileOps for FunctionFsControlEndpoint {
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         let rootdir = FunctionFsRootDir::from_file(file);
-        if rootdir.available() > 0 {
-            Ok(FdEvents::POLLIN)
-        } else {
-            Ok(FdEvents::empty())
-        }
+        if rootdir.available() > 0 { Ok(FdEvents::POLLIN) } else { Ok(FdEvents::empty()) }
     }
 }
 

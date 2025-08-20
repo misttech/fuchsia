@@ -7,10 +7,10 @@ use crate::NullessByteStr;
 use super::arrays::{
     AccessVectorRules, ConditionalNodes, Context, DeprecatedFilenameTransitions,
     FilenameTransitionList, FilenameTransitions, FsUses, GenericFsContexts, IPv6Nodes,
-    InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSids, NamedContextPairs, Nodes, Ports,
+    InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSids,
+    MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPairs, Nodes, Ports,
     RangeTransitions, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
-    MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, XPERMS_TYPE_IOCTL_PREFIXES,
-    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
+    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES,
 };
 use super::error::{ParseError, ValidateError};
 use super::extensible_bitmap::ExtensibleBitmap;
@@ -23,8 +23,8 @@ use super::symbols::{
 };
 use super::{
     AccessDecision, AccessVector, CategoryId, ClassId, IoctlAccessDecision, Parse,
-    PolicyValidationContext, RoleId, SensitivityId, TypeId, UserId, Validate, XpermsBitmap,
-    SELINUX_AVD_FLAGS_PERMISSIVE,
+    PolicyValidationContext, RoleId, SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId,
+    Validate, XpermsBitmap,
 };
 
 use anyhow::Context as _;

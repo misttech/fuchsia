@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
 use super::super::AddressFamily;
-use super::flags::RuleFlags;
 use super::RuleAction;
+use super::flags::RuleFlags;
 
 const RULE_HEADER_LEN: usize = 12;
 

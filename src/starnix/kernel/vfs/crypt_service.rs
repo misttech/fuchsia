@@ -5,7 +5,7 @@
 use crate::task::EncryptionKeyId;
 use aes_gcm_siv::aead::Aead;
 use aes_gcm_siv::{Aes256GcmSiv, Key, KeyInit as _, Nonce};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl_fuchsia_fxfs::{
     CryptCreateKeyResult, CryptCreateKeyWithIdResult, CryptRequest, CryptRequestStream,
     CryptUnwrapKeyResult, FxfsKey, KeyPurpose, WrappedKey,

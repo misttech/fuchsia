@@ -11,8 +11,8 @@ use crate::policy::metadata::HandleUnknown;
 use crate::policy::parser::PolicyData;
 
 use crate::policy::{
-    parse_policy_by_value, AccessDecision, AccessVector, AccessVectorComputer, ClassId,
-    ClassPermissionId, FsUseLabelAndType, FsUseType, IoctlAccessDecision, Policy,
+    AccessDecision, AccessVector, AccessVectorComputer, ClassId, ClassPermissionId,
+    FsUseLabelAndType, FsUseType, IoctlAccessDecision, Policy, parse_policy_by_value,
 };
 use crate::sid_table::SidTable;
 use crate::sync::RwLock;

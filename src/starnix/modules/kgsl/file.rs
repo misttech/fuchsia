@@ -5,8 +5,8 @@
 use fdio::service_connect;
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
 use magma::{
-    magma_device_import, magma_device_query, magma_device_release, magma_device_t, magma_handle_t,
-    magma_initialize_logging, MAGMA_QUERY_VENDOR_ID, MAGMA_STATUS_OK,
+    MAGMA_QUERY_VENDOR_ID, MAGMA_STATUS_OK, magma_device_import, magma_device_query,
+    magma_device_release, magma_device_t, magma_handle_t, magma_initialize_logging,
 };
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::CurrentTask;
@@ -14,14 +14,14 @@ use starnix_core::vfs::{FileObject, FileOps, FsNode};
 use starnix_core::{fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync};
 use starnix_logging::{log_error, log_info, log_warn};
 use starnix_sync::{Locked, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{
-    errno, error, kgsl_device_getproperty, kgsl_devinfo, IOCTL_KGSL_DEVICE_GETPROPERTY,
-    KGSL_PROP_DEVICE_INFO,
+    IOCTL_KGSL_DEVICE_GETPROPERTY, KGSL_PROP_DEVICE_INFO, errno, error, kgsl_device_getproperty,
+    kgsl_devinfo,
 };
 use std::sync::Once;
 use zx::{Channel, HandleBased};
@@ -42,11 +42,7 @@ impl KgslFile {
         let (client, server) = Channel::create();
         service_connect("/svc/fuchsia.logger.LogSink", server).map_err(|_| ())?;
         let result = unsafe { magma_initialize_logging(client.into_raw()) };
-        if result == MAGMA_STATUS_OK {
-            Ok(())
-        } else {
-            Err(())
-        }
+        if result == MAGMA_STATUS_OK { Ok(()) } else { Err(()) }
     }
 
     fn import_device(path: &str) -> Result<magma_device_t, zx::Status> {

@@ -12,11 +12,11 @@ use crate::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileS
 use crate::vfs::pseudo::simple_file::SimpleFileNode;
 use crate::vfs::socket::{SocketAddress, SocketHandle, UnixSocket};
 use crate::vfs::{
-    fileops_impl_dataless, fileops_impl_delegate_read_and_seek, fileops_impl_nonseekable,
-    fileops_impl_noop_sync, fs_node_impl_not_dir, CheckAccessReason, DirEntry, DirEntryHandle,
-    FileHandle, FileObject, FileOps, FileSystemHandle, FileSystemOptions, FileWriteGuardMode,
-    FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString, PathBuilder, RenameFlags, SymlinkTarget,
-    UnlinkKind,
+    CheckAccessReason, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps, FileSystemHandle,
+    FileSystemOptions, FileWriteGuardMode, FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString,
+    PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind, fileops_impl_dataless,
+    fileops_impl_delegate_read_and_seek, fileops_impl_nonseekable, fileops_impl_noop_sync,
+    fs_node_impl_not_dir,
 };
 use macro_rules_attribute::apply;
 use ref_cast::RefCast;
@@ -35,7 +35,7 @@ use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::unmount_flags::UnmountFlags;
 use starnix_uapi::vfs::{FdEvents, ResolveFlags};
-use starnix_uapi::{errno, error, NAME_MAX};
+use starnix_uapi::{NAME_MAX, errno, error};
 use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -576,11 +576,7 @@ impl MountState<Base = Mount, BaseType = Arc<Mount>> {
     }
 
     fn remove_submount_internal(&mut self, mount_hash_key: &ArcKey<DirEntry>) -> Result<(), Errno> {
-        if self.submounts.remove(mount_hash_key) {
-            Ok(())
-        } else {
-            error!(EINVAL)
-        }
+        if self.submounts.remove(mount_hash_key) { Ok(()) } else { error!(EINVAL) }
     }
 
     /// Set this mount's peer group.
@@ -1304,11 +1300,7 @@ impl NamespaceNode {
             };
 
             // Make sure this can't escape a chroot.
-            if *self == root {
-                root
-            } else {
-                self.parent().unwrap_or_else(|| self.clone())
-            }
+            if *self == root { root } else { self.parent().unwrap_or_else(|| self.clone()) }
         } else {
             let mut child = self.with_new_entry(self.entry.component_lookup(
                 locked,

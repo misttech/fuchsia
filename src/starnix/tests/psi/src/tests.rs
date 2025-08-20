@@ -11,7 +11,7 @@ use test_case::test_case;
 use zx::{AsHandleRef, HandleBased};
 
 mod event_waiter;
-use event_waiter::{make_epoll_waiter, make_poll_waiter, EventWaiter};
+use event_waiter::{EventWaiter, make_epoll_waiter, make_poll_waiter};
 mod fake_psi_provider;
 use fake_psi_provider::*;
 mod puppet;

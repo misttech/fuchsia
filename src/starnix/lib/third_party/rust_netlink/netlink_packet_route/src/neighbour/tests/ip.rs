@@ -5,13 +5,13 @@ use std::str::FromStr;
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::neighbour::flags::NeighbourFlags;
 use crate::neighbour::{
     NeighbourAttribute, NeighbourCacheInfo, NeighbourHeader, NeighbourMessage,
     NeighbourMessageBuffer, NeighbourState,
 };
 use crate::route::{RouteProtocol, RouteType};
-use crate::AddressFamily;
 
 // wireshark capture(netlink message header removed) of nlmon against command:
 //   ip -4 neighbour show

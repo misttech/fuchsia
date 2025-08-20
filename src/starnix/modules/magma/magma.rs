@@ -5,9 +5,9 @@
 #![allow(non_upper_case_globals)]
 
 use magma::{
-    magma_handle_t, magma_poll_item__bindgen_ty_1, magma_poll_item_t, magma_semaphore_t,
-    virtio_magma_ctrl_hdr_t, virtio_magma_ctrl_type, virtmagma_ioctl_args_magma_command,
-    MAGMA_POLL_TYPE_SEMAPHORE,
+    MAGMA_POLL_TYPE_SEMAPHORE, magma_handle_t, magma_poll_item__bindgen_ty_1, magma_poll_item_t,
+    magma_semaphore_t, virtio_magma_ctrl_hdr_t, virtio_magma_ctrl_type,
+    virtmagma_ioctl_args_magma_command,
 };
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::CurrentTask;

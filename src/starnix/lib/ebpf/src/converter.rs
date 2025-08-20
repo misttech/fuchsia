@@ -5,19 +5,19 @@
 use linux_uapi::sock_filter;
 use std::collections::HashMap;
 
-use crate::api::{
-    EbpfInstruction, BPF_A, BPF_ABS, BPF_ADD, BPF_ALU, BPF_ALU64, BPF_AND, BPF_B, BPF_DIV,
-    BPF_EXIT, BPF_H, BPF_IMM, BPF_IND, BPF_JA, BPF_JEQ, BPF_JGE, BPF_JGT, BPF_JLE, BPF_JLT,
-    BPF_JMP, BPF_JMP32, BPF_JNE, BPF_JSET, BPF_K, BPF_LD, BPF_LDX, BPF_LEN, BPF_LSH, BPF_MEM,
-    BPF_MISC, BPF_MOV, BPF_MSH, BPF_MUL, BPF_NEG, BPF_OR, BPF_RET, BPF_RSH, BPF_ST, BPF_STX,
-    BPF_SUB, BPF_TAX, BPF_TXA, BPF_W, BPF_X, BPF_XOR,
-};
-use crate::program::{link_program, BpfProgramContext, EbpfProgram, HelperSet, ProgramArgument};
-use crate::verifier::{
-    verify_program, CallingContext, NullVerifierLogger, Type, VerifiedEbpfProgram,
-};
 use crate::EbpfError;
 use crate::EbpfError::*;
+use crate::api::{
+    BPF_A, BPF_ABS, BPF_ADD, BPF_ALU, BPF_ALU64, BPF_AND, BPF_B, BPF_DIV, BPF_EXIT, BPF_H, BPF_IMM,
+    BPF_IND, BPF_JA, BPF_JEQ, BPF_JGE, BPF_JGT, BPF_JLE, BPF_JLT, BPF_JMP, BPF_JMP32, BPF_JNE,
+    BPF_JSET, BPF_K, BPF_LD, BPF_LDX, BPF_LEN, BPF_LSH, BPF_MEM, BPF_MISC, BPF_MOV, BPF_MSH,
+    BPF_MUL, BPF_NEG, BPF_OR, BPF_RET, BPF_RSH, BPF_ST, BPF_STX, BPF_SUB, BPF_TAX, BPF_TXA, BPF_W,
+    BPF_X, BPF_XOR, EbpfInstruction,
+};
+use crate::program::{BpfProgramContext, EbpfProgram, HelperSet, ProgramArgument, link_program};
+use crate::verifier::{
+    CallingContext, NullVerifierLogger, Type, VerifiedEbpfProgram, verify_program,
+};
 
 const CBPF_WORD_SIZE: u32 = 4;
 
@@ -423,8 +423,8 @@ mod tests {
     use super::*;
     use crate::{MemoryId, NoMap};
     use linux_uapi::{
-        seccomp_data, sock_filter, AUDIT_ARCH_AARCH64, AUDIT_ARCH_X86_64, SECCOMP_RET_ALLOW,
-        SECCOMP_RET_TRAP,
+        AUDIT_ARCH_AARCH64, AUDIT_ARCH_X86_64, SECCOMP_RET_ALLOW, SECCOMP_RET_TRAP, seccomp_data,
+        sock_filter,
     };
     use std::mem::offset_of;
     use std::sync::LazyLock;

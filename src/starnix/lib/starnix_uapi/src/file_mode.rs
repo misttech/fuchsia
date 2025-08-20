@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::errors::{errno, error, Errno};
+use crate::errors::{Errno, errno, error};
 use crate::open_flags::OpenFlags;
 use crate::uapi;
 use bstr::BStr;
@@ -167,7 +167,7 @@ mod inner_access {
     // a whole, the produced code is still correct.
     #![allow(clippy::bad_bit_mask)] // TODO(b/303500202) Remove once addressed in bitflags.
     use super::OpenFlags;
-    use crate::errors::{errno, Errno};
+    use crate::errors::{Errno, errno};
 
     bitflags::bitflags! {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

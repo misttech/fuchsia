@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use itertools::Itertools as _;
-use regex::bytes::RegexSet;
 use regex::Error;
+use regex::bytes::RegexSet;
 
 /// Per-container overrides for thread roles.
 #[derive(Debug)]

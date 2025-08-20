@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use super::{
-    new_netlink_socket, NetlinkFamily, SocketAddress, SocketDomain, SocketFile, SocketMessageFlags,
-    SocketProtocol, SocketShutdownFlags, SocketType, UnixSocket, VsockSocket, ZxioBackedSocket,
+    NetlinkFamily, SocketAddress, SocketDomain, SocketFile, SocketMessageFlags, SocketProtocol,
+    SocketShutdownFlags, SocketType, UnixSocket, VsockSocket, ZxioBackedSocket, new_netlink_socket,
 };
 use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::syscalls::time::TimeValPtr;
 use crate::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
 use crate::vfs::buffers::{AncillaryData, InputBuffer, MessageReadInfo, OutputBuffer};
-use crate::vfs::{default_ioctl, DowncastedFile, FileHandle, FileObject, FsNodeHandle};
+use crate::vfs::{DowncastedFile, FileHandle, FileObject, FsNodeHandle, default_ioctl};
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SyscallArg, SyscallResult};
@@ -19,16 +19,16 @@ use starnix_types::time::{duration_from_timeval, timeval_from_duration};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::auth::CAP_NET_RAW;
-use starnix_uapi::errors::{Errno, ENOTTY};
+use starnix_uapi::errors::{ENOTTY, Errno};
 use starnix_uapi::user_address::MappingMultiArchUserRef;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    errno, error, uapi, SOL_SOCKET, SO_DOMAIN, SO_MARK, SO_PROTOCOL, SO_RCVTIMEO, SO_SNDTIMEO,
-    SO_TYPE,
+    SO_DOMAIN, SO_MARK, SO_PROTOCOL, SO_RCVTIMEO, SO_SNDTIMEO, SO_TYPE, SOL_SOCKET, errno, error,
+    uapi,
 };
 use std::collections::VecDeque;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use zerocopy::{FromBytes, IntoBytes};
 
 pub const DEFAULT_LISTEN_BACKLOG: usize = 1024;
@@ -805,8 +805,8 @@ mod tests {
     use super::*;
     use crate::testing::{create_kernel_task_and_unlocked, map_memory};
     use crate::vfs::{UnixControlData, VecInputBuffer, VecOutputBuffer};
-    use starnix_uapi::user_address::{UserAddress, UserRef};
     use starnix_uapi::SO_PASSCRED;
+    use starnix_uapi::user_address::{UserAddress, UserRef};
 
     #[::fuchsia::test]
     async fn test_dgram_socket() {

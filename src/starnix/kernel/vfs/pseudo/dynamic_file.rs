@@ -6,8 +6,8 @@ use crate::task::CurrentTask;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer, VecOutputBuffer};
 use crate::vfs::pseudo::simple_file::SimpleFileNode;
 use crate::vfs::{
-    default_seek, fileops_impl_delegate_read_and_seek, fileops_impl_noop_sync, Buffer, FileObject,
-    FileOps, FsNodeOps, OutputBufferCallback, PeekBufferSegmentsCallback, SeekTarget,
+    Buffer, FileObject, FileOps, FsNodeOps, OutputBufferCallback, PeekBufferSegmentsCallback,
+    SeekTarget, default_seek, fileops_impl_delegate_read_and_seek, fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, Locked, Mutex};
 use starnix_uapi::errors::Errno;
@@ -424,7 +424,7 @@ impl FileOps for ConstFile {
 
 #[cfg(test)]
 mod tests {
-    use crate::testing::{anon_test_file, create_kernel_task_and_unlocked, AutoReleasableTask};
+    use crate::testing::{AutoReleasableTask, anon_test_file, create_kernel_task_and_unlocked};
     use crate::vfs::pseudo::dynamic_file::{
         DynamicFile, DynamicFileBuf, DynamicFileSource, SequenceFileSource,
     };

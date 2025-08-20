@@ -2,12 +2,12 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
     InfoData, InfoKind, InfoMacVlan, LinkAttribute, LinkHeader, LinkInfo, LinkLayerType,
     LinkMessage, LinkMessageBuffer, MacVlanMode,
 };
-use crate::AddressFamily;
 
 #[test]
 fn test_macvlan_link_info() {

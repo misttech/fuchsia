@@ -2,9 +2,9 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{LinkAttribute, LinkHeader, LinkLayerType, LinkMessage, LinkMessageBuffer, Prop};
-use crate::AddressFamily;
 
 #[test]
 fn test_wlan0_with_prop_altname() {

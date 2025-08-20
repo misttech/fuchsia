@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::arch::vdso::VDSO_SIGRETURN_NAME;
-use crate::mm::memory::MemoryObject;
 use crate::mm::PAGE_SIZE;
+use crate::mm::memory::MemoryObject;
 use crate::time::utc::update_utc_clock;
 use fuchsia_runtime::{UtcClockTransform, UtcInstant};
 use process_builder::elf_parse;

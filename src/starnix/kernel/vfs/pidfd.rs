@@ -7,8 +7,8 @@ use crate::task::{
     WaitCanceler, Waiter,
 };
 use crate::vfs::{
-    fileops_impl_dataless, fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, FileHandle,
-    FileObject, FileOps,
+    Anon, FileHandle, FileObject, FileOps, fileops_impl_dataless, fileops_impl_nonseekable,
+    fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;

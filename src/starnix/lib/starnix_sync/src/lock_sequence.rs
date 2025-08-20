@@ -415,7 +415,7 @@ mod test {
 
     #[test]
     fn example() {
-        use crate::{lock_ordering, Unlocked};
+        use crate::{Unlocked, lock_ordering};
 
         #[derive(Default)]
         pub struct HoldsLocks {

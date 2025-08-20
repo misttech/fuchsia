@@ -4,10 +4,10 @@ use std::os::unix::io::RawFd;
 
 use anyhow::Context;
 use byteorder::{ByteOrder, NativeEndian};
-use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator, NLA_F_NESTED};
-use netlink_packet_utils::parsers::{parse_i32, parse_string, parse_u32, parse_u8};
-use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
 use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::nla::{DefaultNla, NLA_F_NESTED, Nla, NlaBuffer, NlasIterator};
+use netlink_packet_utils::parsers::{parse_i32, parse_string, parse_u8, parse_u32};
+use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
 
 #[cfg(any(target_os = "linux", target_os = "fuchsia",))]
 use super::af_spec::VecAfSpecBridge;

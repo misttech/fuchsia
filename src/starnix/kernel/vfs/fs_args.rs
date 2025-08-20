@@ -126,7 +126,7 @@ mod parse_mount_options {
     use nom::multi::separated_list0;
     use nom::sequence::{delimited, separated_pair, terminated};
     use nom::{IResult, Parser};
-    use starnix_uapi::errors::{errno, error, Errno};
+    use starnix_uapi::errors::{Errno, errno, error};
     use std::collections::HashMap;
 
     fn unquoted(input: &[u8]) -> IResult<&[u8], &[u8]> {
@@ -176,7 +176,7 @@ mod parse_mount_options {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, MountParams};
+    use super::{MountParams, parse};
     use crate::vfs::FsString;
     use maplit::hashmap;
     use starnix_uapi::mount_flags::MountFlags;

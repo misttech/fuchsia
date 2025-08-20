@@ -5,15 +5,15 @@
 use crate::security;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::{
-    fs_node_impl_not_dir, CacheMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle,
-    FileSystemOps, FileSystemOptions, FsNode, FsNodeInfo, FsNodeOps, FsStr, FsString,
+    CacheMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
+    FileSystemOptions, FsNode, FsNodeInfo, FsNodeOps, FsStr, FsString, fs_node_impl_not_dir,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::{error, statfs, ANON_INODE_FS_MAGIC};
+use starnix_uapi::{ANON_INODE_FS_MAGIC, error, statfs};
 
 pub struct Anon {
     /// If this instance represents an `anon_inode` then `name` holds the type-name of the node,

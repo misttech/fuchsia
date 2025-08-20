@@ -4,12 +4,12 @@ use std::net::Ipv4Addr;
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::tc::filters::{TcU32OptionFlags, TcU32SelectorFlags};
 use crate::tc::{
     TcAttribute, TcFilterU32Option, TcHandle, TcHeader, TcMessage, TcMessageBuffer, TcOption,
     TcU32Key, TcU32Selector, TcU32SelectorBuffer,
 };
-use crate::AddressFamily;
 
 // Setup:
 //      ip link add veth1 type veth peer veth1.peer

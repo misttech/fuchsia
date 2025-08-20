@@ -4,8 +4,8 @@
 
 use super::fs_node::fs_node_init_with_dentry;
 use super::{
-    check_permission, current_task_state, fs_node_effective_sid_and_class, FileSystemLabel,
-    FileSystemState, FsNodeSidAndClass,
+    FileSystemLabel, FileSystemState, FsNodeSidAndClass, check_permission, current_task_state,
+    fs_node_effective_sid_and_class,
 };
 
 use crate::task::CurrentTask;

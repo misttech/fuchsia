@@ -13,8 +13,8 @@ use starnix_logging::{log_error, log_info};
 use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::{Arc, OnceLock};
 use thiserror::Error;
 
@@ -1465,12 +1465,9 @@ mod tests {
             // The oneshot response will permit the reconnection loop to `replay_network_events`.
             let (sender, mut receiver) = mpsc::channel::<oneshot::Sender<bool>>(1);
 
-            let mut reconnect_fut = std::pin::pin!(reconnect_to_proxy_loop(
-                handle.clone(),
-                sender,
-                initiate_reconnect_receiver
-            )
-            .fuse());
+            let mut reconnect_fut = std::pin::pin!(
+                reconnect_to_proxy_loop(handle.clone(), sender, initiate_reconnect_receiver).fuse()
+            );
             loop {
                 futures::select! {
                     _ = reconnect_fut => unreachable!("Reconnect thread should never complete"),

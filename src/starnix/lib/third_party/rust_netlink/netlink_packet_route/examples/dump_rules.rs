@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 
 use netlink_packet_core::{
-    NetlinkHeader, NetlinkMessage, NetlinkPayload, NLM_F_DUMP, NLM_F_REQUEST,
+    NLM_F_DUMP, NLM_F_REQUEST, NetlinkHeader, NetlinkMessage, NetlinkPayload,
 };
-use netlink_packet_route::rule::RuleMessage;
 use netlink_packet_route::RouteNetlinkMessage;
+use netlink_packet_route::rule::RuleMessage;
 use netlink_sys::protocols::NETLINK_ROUTE;
 use netlink_sys::{Socket, SocketAddr};
 

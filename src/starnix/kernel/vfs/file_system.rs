@@ -433,7 +433,7 @@ impl FileSystem {
             {
                 let mut entries = l.entries.lock();
                 while entries.len() > l.capacity {
-                    purged.push(entries.pop_front().unwrap().0 .0);
+                    purged.push(entries.pop_front().unwrap().0.0);
                 }
             }
             // Entries will get dropped here whilst we're not holding a lock.

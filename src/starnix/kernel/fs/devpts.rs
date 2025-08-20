@@ -2,25 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::device::DeviceMode;
 use crate::device::kobject::DeviceMetadata;
 use crate::device::terminal::{Terminal, TtyState};
-use crate::device::DeviceMode;
 use crate::fs::sysfs::build_device_directory;
 use crate::mm::MemoryAccessorExt;
 use crate::task::{CurrentTask, EventHandler, Kernel, KernelOrTask, WaitCanceler, Waiter};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use crate::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_dir_readonly, CacheMode,
-    DirectoryEntryType, FileHandle, FileObject, FileObjectState, FileOps, FileSystem,
+    CacheMode, DirectoryEntryType, FileHandle, FileObject, FileObjectState, FileOps, FileSystem,
     FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
     FsNodeOps, FsStr, FsString, LookupContext, NamespaceNode, SpecialNode, SymlinkMode,
+    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_dir_readonly,
 };
 use starnix_logging::track_stub;
 use starnix_sync::{
     FileOpsCore, LockBefore, LockEqualOrBefore, Locked, ProcessGroupState, Unlocked,
 };
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::{DeviceType, TTY_ALT_MAJOR};
@@ -31,15 +31,15 @@ use starnix_uapi::signals::SIGWINCH;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    errno, error, gid_t, ino_t, pid_t, statfs, uapi, uid_t, DEVPTS_SUPER_MAGIC, FIOASYNC, FIOCLEX,
-    FIONBIO, FIONCLEX, FIONREAD, FIOQSIZE, TCFLSH, TCGETA, TCGETS, TCGETX, TCSBRK, TCSBRKP, TCSETA,
-    TCSETAF, TCSETAW, TCSETS, TCSETSF, TCSETSW, TCSETX, TCSETXF, TCSETXW, TCXONC, TIOCCBRK,
-    TIOCCONS, TIOCEXCL, TIOCGETD, TIOCGICOUNT, TIOCGLCKTRMIOS, TIOCGPGRP, TIOCGPTLCK, TIOCGPTN,
-    TIOCGRS485, TIOCGSERIAL, TIOCGSID, TIOCGSOFTCAR, TIOCGWINSZ, TIOCLINUX, TIOCMBIC, TIOCMBIS,
-    TIOCMGET, TIOCMIWAIT, TIOCMSET, TIOCNOTTY, TIOCNXCL, TIOCOUTQ, TIOCPKT, TIOCSBRK, TIOCSCTTY,
-    TIOCSERCONFIG, TIOCSERGETLSR, TIOCSERGETMULTI, TIOCSERGSTRUCT, TIOCSERGWILD, TIOCSERSETMULTI,
-    TIOCSERSWILD, TIOCSETD, TIOCSLCKTRMIOS, TIOCSPGRP, TIOCSPTLCK, TIOCSRS485, TIOCSSERIAL,
-    TIOCSSOFTCAR, TIOCSTI, TIOCSWINSZ, TIOCVHANGUP,
+    DEVPTS_SUPER_MAGIC, FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX, FIONREAD, FIOQSIZE, TCFLSH, TCGETA,
+    TCGETS, TCGETX, TCSBRK, TCSBRKP, TCSETA, TCSETAF, TCSETAW, TCSETS, TCSETSF, TCSETSW, TCSETX,
+    TCSETXF, TCSETXW, TCXONC, TIOCCBRK, TIOCCONS, TIOCEXCL, TIOCGETD, TIOCGICOUNT, TIOCGLCKTRMIOS,
+    TIOCGPGRP, TIOCGPTLCK, TIOCGPTN, TIOCGRS485, TIOCGSERIAL, TIOCGSID, TIOCGSOFTCAR, TIOCGWINSZ,
+    TIOCLINUX, TIOCMBIC, TIOCMBIS, TIOCMGET, TIOCMIWAIT, TIOCMSET, TIOCNOTTY, TIOCNXCL, TIOCOUTQ,
+    TIOCPKT, TIOCSBRK, TIOCSCTTY, TIOCSERCONFIG, TIOCSERGETLSR, TIOCSERGETMULTI, TIOCSERGSTRUCT,
+    TIOCSERGWILD, TIOCSERSETMULTI, TIOCSERSWILD, TIOCSETD, TIOCSLCKTRMIOS, TIOCSPGRP, TIOCSPTLCK,
+    TIOCSRS485, TIOCSSERIAL, TIOCSSOFTCAR, TIOCSTI, TIOCSWINSZ, TIOCVHANGUP, errno, error, gid_t,
+    ino_t, pid_t, statfs, uapi, uid_t,
 };
 use std::sync::{Arc, Weak};
 
@@ -1238,14 +1238,9 @@ mod tests {
         let fs = new_pts_fs(locked, &kernel);
         let _opened_main = open_ptmx_and_unlock(locked, &task, &fs).expect("ptmx");
         // Opening the main terminal should not set the terminal of the session.
-        assert!(task
-            .thread_group()
-            .read()
-            .process_group
-            .session
-            .read()
-            .controlling_terminal
-            .is_none());
+        assert!(
+            task.thread_group().read().process_group.session.read().controlling_terminal.is_none()
+        );
         // Opening the terminal should not set the terminal of the session with the NOCTTY flag.
         let _opened_replica2 = open_file_with_flags(
             locked,
@@ -1255,27 +1250,17 @@ mod tests {
             OpenFlags::RDWR | OpenFlags::NOCTTY,
         )
         .expect("open file");
-        assert!(task
-            .thread_group()
-            .read()
-            .process_group
-            .session
-            .read()
-            .controlling_terminal
-            .is_none());
+        assert!(
+            task.thread_group().read().process_group.session.read().controlling_terminal.is_none()
+        );
 
         // Opening the replica terminal should set the terminal of the session.
         let _opened_replica2 =
             open_file_with_flags(locked, &task, &fs, "0".into(), OpenFlags::RDWR)
                 .expect("open file");
-        assert!(task
-            .thread_group()
-            .read()
-            .process_group
-            .session
-            .read()
-            .controlling_terminal
-            .is_some());
+        assert!(
+            task.thread_group().read().process_group.session.read().controlling_terminal.is_some()
+        );
     }
 
     #[::fuchsia::test]
@@ -1362,14 +1347,9 @@ mod tests {
         set_controlling_terminal(locked, &task2, &opened_replica, true)
             .expect("Associate terminal to task2");
 
-        assert!(task1
-            .thread_group()
-            .read()
-            .process_group
-            .session
-            .read()
-            .controlling_terminal
-            .is_none());
+        assert!(
+            task1.thread_group().read().process_group.session.read().controlling_terminal.is_none()
+        );
     }
 
     #[::fuchsia::test]
@@ -1476,14 +1456,9 @@ mod tests {
 
         // Detach the terminal
         ioctl::<i32>(locked, &task2, &opened_replica, TIOCNOTTY, &0).expect("detach terminal");
-        assert!(task2
-            .thread_group()
-            .read()
-            .process_group
-            .session
-            .read()
-            .controlling_terminal
-            .is_none());
+        assert!(
+            task2.thread_group().read().process_group.session.read().controlling_terminal.is_none()
+        );
     }
 
     #[::fuchsia::test]

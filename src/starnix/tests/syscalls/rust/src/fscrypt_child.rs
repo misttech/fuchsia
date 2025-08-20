@@ -5,8 +5,8 @@
 use argh::FromArgs;
 use fscrypt_shared::*;
 use linux_uapi::{
-    fscrypt_policy_v2, FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_POLICY_FLAGS_PAD_16,
     FS_IOC_ADD_ENCRYPTION_KEY, FS_IOC_REMOVE_ENCRYPTION_KEY, FS_IOC_SET_ENCRYPTION_POLICY,
+    FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_POLICY_FLAGS_PAD_16, fscrypt_policy_v2,
 };
 use std::os::fd::AsRawFd;
 use zerocopy::{FromBytes, IntoBytes};

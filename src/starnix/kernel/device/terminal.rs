@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fs::devpts::{get_device_type_for_pts, DEVPTS_COUNT};
+use crate::fs::devpts::{DEVPTS_COUNT, get_device_type_for_pts};
 use crate::mutable_state::{state_accessor, state_implementation};
 use crate::task::{EventHandler, ProcessGroup, Session, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::buffers::{InputBuffer, InputBufferExt as _, OutputBuffer};
@@ -14,12 +14,12 @@ use starnix_sync::{LockBefore, Locked, Mutex, ProcessGroupState, RwLock};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::signals::{Signal, SIGINT, SIGQUIT, SIGSTOP};
+use starnix_uapi::signals::{SIGINT, SIGQUIT, SIGSTOP, Signal};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    cc_t, error, tcflag_t, uapi, ECHO, ECHOCTL, ECHOE, ECHOK, ECHOKE, ECHONL, ECHOPRT, ICANON,
-    ICRNL, IEXTEN, IGNCR, INLCR, ISIG, IUTF8, OCRNL, ONLCR, ONLRET, ONOCR, OPOST, TABDLY, VEOF,
-    VEOL, VEOL2, VERASE, VINTR, VKILL, VQUIT, VSUSP, VWERASE, XTABS,
+    ECHO, ECHOCTL, ECHOE, ECHOK, ECHOKE, ECHONL, ECHOPRT, ICANON, ICRNL, IEXTEN, IGNCR, INLCR,
+    ISIG, IUTF8, OCRNL, ONLCR, ONLRET, ONOCR, OPOST, TABDLY, VEOF, VEOL, VEOL2, VERASE, VINTR,
+    VKILL, VQUIT, VSUSP, VWERASE, XTABS, cc_t, error, tcflag_t, uapi,
 };
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::sync::{Arc, Weak};
@@ -953,11 +953,7 @@ fn compute_next_character_size(buffer: &[RawByte], termios: &uapi::termios) -> u
         parser.advance(&mut receiver, buffer[byte_count]);
         byte_count += 1;
     }
-    if receiver.done == Some(true) {
-        byte_count
-    } else {
-        1
-    }
+    if receiver.done == Some(true) { byte_count } else { 1 }
 }
 
 fn is_ascii(c: RawByte) -> bool {
@@ -1131,20 +1127,12 @@ impl Queue {
 
     /// Returns whether the queue is ready to be read from.
     fn read_readyness(&self) -> FdEvents {
-        if self.readable {
-            FdEvents::POLLIN
-        } else {
-            FdEvents::empty()
-        }
+        if self.readable { FdEvents::POLLIN } else { FdEvents::empty() }
     }
 
     /// Returns the number of bytes ready to be read.
     fn readable_size(&self) -> usize {
-        if self.readable {
-            self.read_buffer.len()
-        } else {
-            0
-        }
+        if self.readable { self.read_buffer.len() } else { 0 }
     }
 
     /// Read from the queue into `data`. Returns the number of bytes copied.

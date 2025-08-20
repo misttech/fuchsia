@@ -31,7 +31,7 @@ use crate::vfs::{FileHandle, FileOps, FsString, Mounts, NamespaceNode};
 use bstr::BString;
 use expando::Expando;
 use fidl::endpoints::{
-    create_endpoints, ClientEnd, ControlHandle, DiscoverableProtocolMarker, ProtocolMarker,
+    ClientEnd, ControlHandle, DiscoverableProtocolMarker, ProtocolMarker, create_endpoints,
 };
 use fidl_fuchsia_component_runner::{ComponentControllerControlHandle, ComponentStopInfo};
 use fidl_fuchsia_feedback::CrashReporterProxy;
@@ -39,7 +39,7 @@ use fidl_fuchsia_time_external::AdjustSynchronousProxy;
 use futures::FutureExt;
 use linux_uapi::FSCRYPT_KEY_IDENTIFIER_SIZE;
 use netlink::interfaces::InterfacesHandler;
-use netlink::{Netlink, NETLINK_LOG_TAG};
+use netlink::{NETLINK_LOG_TAG, Netlink};
 use once_cell::sync::OnceCell;
 use starnix_lifecycle::{AtomicU32Counter, AtomicU64Counter};
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
@@ -49,14 +49,14 @@ use starnix_sync::{
 };
 use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_uapi::device_type::DeviceType;
-use starnix_uapi::errors::{errno, Errno};
+use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::{from_status_like_fdio, VMADDR_CID_HOST};
+use starnix_uapi::{VMADDR_CID_HOST, from_status_like_fdio};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU64;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use zx::AsHandleRef;
 use {

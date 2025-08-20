@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::fs::create_dir_all;
-use std::io::{copy, Read};
+use std::io::{Read, copy};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use tar::{Archive, Entry};
@@ -276,7 +276,9 @@ impl LayeredImage {
                         new_dir
                     }
                     _ => {
-                        bail!("The same layer references both a directory and a non-directory with the same name");
+                        bail!(
+                            "The same layer references both a directory and a non-directory with the same name"
+                        );
                     }
                 }
             };

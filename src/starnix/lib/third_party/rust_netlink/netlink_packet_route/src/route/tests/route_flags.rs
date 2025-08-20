@@ -5,12 +5,12 @@ use std::str::FromStr;
 
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::route::flags::RouteFlags;
 use crate::route::{
     RouteAttribute, RouteHeader, RouteMessage, RouteMessageBuffer, RouteNextHopBuffer,
     RouteProtocol, RouteScope, RouteType,
 };
-use crate::AddressFamily;
 
 // wireshark capture(netlink message header removed) of nlmon against command:
 //   ip route add 2001:db8:1::/64 dev lo onlink

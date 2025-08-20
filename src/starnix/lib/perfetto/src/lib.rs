@@ -6,16 +6,15 @@
 #![recursion_limit = "256"]
 
 use perfetto_protos::perfetto::protos::{
-    ipc_frame, DisableTracingRequest, EnableTracingRequest, FreeBuffersRequest,
-    GetAsyncCommandRequest, GetAsyncCommandResponse, InitializeConnectionRequest,
-    InitializeConnectionResponse, IpcFrame, ReadBuffersRequest, RegisterDataSourceRequest,
-    RegisterDataSourceResponse,
+    DisableTracingRequest, EnableTracingRequest, FreeBuffersRequest, GetAsyncCommandRequest,
+    GetAsyncCommandResponse, InitializeConnectionRequest, InitializeConnectionResponse, IpcFrame,
+    ReadBuffersRequest, RegisterDataSourceRequest, RegisterDataSourceResponse, ipc_frame,
 };
 use prost::Message;
 use starnix_core::task::{CurrentTask, EventHandler, Waiter};
 use starnix_core::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use starnix_core::vfs::socket::{
-    resolve_unix_socket_address, SocketDomain, SocketFile, SocketPeer, SocketProtocol, SocketType,
+    SocketDomain, SocketFile, SocketPeer, SocketProtocol, SocketType, resolve_unix_socket_address,
 };
 use starnix_core::vfs::{FileHandle, FsStr};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
@@ -512,7 +511,7 @@ impl Producer {
                 return Err(ProducerError::InvalidResponse(format!(
                     "Got unexpected reply message: {:?}",
                     m
-                )))
+                )));
             }
         };
 
@@ -618,17 +617,17 @@ impl Producer {
                 return Err(InvokeMethodError::InvalidResponse(format!(
                     "unexpected reply message: {:?}",
                     m
-                )))
+                )));
             }
         };
         match success {
             Some(true) => Ok((reply_proto, has_more.unwrap_or(false))),
-            _ => return Err(InvokeMethodError::InvalidResponse(format!(
-                "InvokeMethod Reply did not succeed. Reply: success: {:?}, has_more: {:?}, proto: {:?}",
-                success,
-                has_more,
-                reply_proto,
-            ))),
+            _ => {
+                return Err(InvokeMethodError::InvalidResponse(format!(
+                    "InvokeMethod Reply did not succeed. Reply: success: {:?}, has_more: {:?}, proto: {:?}",
+                    success, has_more, reply_proto,
+                )));
+            }
         }
     }
 
@@ -692,14 +691,14 @@ impl Producer {
                 return Err(ProducerError::InvalidResponse(format!(
                     "Got unexpected reply message: {:?}",
                     m
-                )))
+                )));
             }
         };
         if !success.unwrap_or(false) {
-            return Err(ProducerError::InvalidResponse(format!( "InvokeMethod Reply did not include success. Reply: success: {:?}, has_more: {:?}, proto: {:?}",
-            success,
-            has_more,
-            reply_proto)));
+            return Err(ProducerError::InvalidResponse(format!(
+                "InvokeMethod Reply did not include success. Reply: success: {:?}, has_more: {:?}, proto: {:?}",
+                success, has_more, reply_proto
+            )));
         }
 
         let Some(reply_proto) = reply_proto else {

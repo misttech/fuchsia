@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input_event_relay::{DeviceId, OpenedFiles};
 use crate::InputFile;
+use crate::input_event_relay::{DeviceId, OpenedFiles};
 use fuchsia_inspect::{NumericProperty, Property};
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::device::{DeviceMode, DeviceOps};
@@ -15,7 +15,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use starnix_uapi::device_type::{DeviceType, INPUT_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::{input_id, BUS_VIRTUAL};
+use starnix_uapi::{BUS_VIRTUAL, input_id};
 use std::sync::Arc;
 
 // Add a fuchsia-specific vendor ID. 0xfc1a is currently not allocated
@@ -336,7 +336,7 @@ mod test {
     use crate::input_event_relay::{self, EventProxyMode};
     use anyhow::anyhow;
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl_fuchsia_ui_input::MediaButtonsEvent;
     use fuipointer::{
         EventPhase, TouchEvent, TouchInteractionId, TouchPointerSample, TouchResponse,
@@ -346,8 +346,8 @@ mod test {
     use pretty_assertions::assert_eq;
     use starnix_core::task::{EventHandler, Waiter};
     use starnix_core::testing::create_kernel_task_and_unlocked;
-    use starnix_core::vfs::buffers::VecOutputBuffer;
     use starnix_core::vfs::FileHandle;
+    use starnix_core::vfs::buffers::VecOutputBuffer;
     use starnix_types::time::timeval_from_time;
     use starnix_uapi::errors::EAGAIN;
     use starnix_uapi::uapi;

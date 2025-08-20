@@ -8,16 +8,16 @@
 //! to a control group (for the duration of their lifetime).
 
 use crate::task::Kernel;
-use starnix_core::signals::{send_freeze_signal, SignalInfo};
+use starnix_core::signals::{SignalInfo, send_freeze_signal};
 use starnix_core::task::{ThreadGroup, ThreadGroupKey, WaitQueue, Waiter};
 use starnix_core::vfs::{FsStr, FsString, PathBuilder};
-use starnix_logging::{log_warn, trace_duration, track_stub, CATEGORY_STARNIX};
+use starnix_logging::{CATEGORY_STARNIX, log_warn, trace_duration, track_stub};
 use starnix_sync::{FileOpsCore, LockBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits};
 use starnix_types::ownership::TempRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SIGKILL;
 use starnix_uapi::{errno, error, pid_t};
-use std::collections::{btree_map, hash_map, BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, btree_map, hash_map};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{generate_kernel_name, StarnixKernel};
+use crate::{StarnixKernel, generate_kernel_name};
 use anyhow::Error;
 use fidl::endpoints::ServerEnd;
 use frunner::{ComponentControllerMarker, ComponentStartInfo};

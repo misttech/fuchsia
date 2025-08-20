@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::kobject::{Bus, Class, Device, DeviceMetadata};
 use crate::device::DeviceMode;
+use crate::device::kobject::{Bus, Class, Device, DeviceMetadata};
 use crate::fs::sysfs::get_sysfs;
 use crate::task::Kernel;
 use crate::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};

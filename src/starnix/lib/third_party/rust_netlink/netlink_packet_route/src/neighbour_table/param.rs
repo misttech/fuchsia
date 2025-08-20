@@ -2,9 +2,9 @@
 
 use super::NeighbourTableError;
 use byteorder::{ByteOrder, NativeEndian};
+use netlink_packet_utils::Parseable;
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
 use netlink_packet_utils::parsers::{parse_u32, parse_u64};
-use netlink_packet_utils::Parseable;
 
 const NDTPA_IFINDEX: u16 = 1;
 const NDTPA_REFCNT: u16 = 2;

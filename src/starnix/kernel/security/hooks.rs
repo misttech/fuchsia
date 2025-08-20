@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use super::{
-    selinux_hooks, BpfMapState, BpfProgState, FileObjectState, FileSystemState, ResolvedElfState,
-    SavedEffectiveState, TaskState,
+    BpfMapState, BpfProgState, FileObjectState, FileSystemState, ResolvedElfState,
+    SavedEffectiveState, TaskState, selinux_hooks,
 };
-use crate::bpf::program::Program;
 use crate::bpf::BpfMap;
+use crate::bpf::program::Program;
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
 use crate::security::KernelState;
 use crate::task::{CurrentTask, FullCredentials, Kernel, Task};
@@ -23,7 +23,7 @@ use crate::vfs::{
 use ebpf::MapFlags;
 use fuchsia_inspect_contrib::profile_duration;
 use selinux::{FileSystemMountOptions, SecurityPermission, SecurityServer};
-use starnix_logging::{log_debug, trace_duration, CATEGORY_STARNIX_SECURITY};
+use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, trace_duration};
 use starnix_sync::{FileOpsCore, LockBefore, LockEqualOrBefore, Locked, ThreadGroupLimits};
 use starnix_types::ownership::TempRef;
 use starnix_uapi::arc_key::WeakKey;
@@ -132,11 +132,7 @@ where
     D: Fn(C) -> R,
 {
     if let Some(state) = task.kernel().security_state.state.as_ref() {
-        if state.server.has_policy() {
-            hook(context, &state.server)
-        } else {
-            default(context)
-        }
+        if state.server.has_policy() { hook(context, &state.server) } else { default(context) }
     } else {
         default(context)
     }
@@ -1869,10 +1865,10 @@ pub fn creds_start_internal_operation(creds: &mut FullCredentials) {
 }
 
 pub mod testing {
-    use super::{selinux_hooks, Arc, KernelState, SecurityServer};
+    use super::{Arc, KernelState, SecurityServer, selinux_hooks};
     use starnix_sync::Mutex;
-    use std::sync::atomic::AtomicU64;
     use std::sync::OnceLock;
+    use std::sync::atomic::AtomicU64;
 
     /// Used by Starnix' `testing.rs` to create `KernelState` wrapping a test-
     /// supplied `SecurityServer`.
@@ -2339,15 +2335,17 @@ mod tests {
                 let before_sid = selinux_hooks::get_cached_sid(node);
                 assert_ne!(Some(InitialSid::Unlabeled.into()), before_sid);
 
-                assert!(fs_node_setsecurity(
-                    locked,
-                    &current_task,
-                    &node,
-                    XATTR_NAME_SELINUX.to_bytes().into(),
-                    "!".into(), // Note: Not a valid security context.
-                    XattrOp::Set,
-                )
-                .is_err());
+                assert!(
+                    fs_node_setsecurity(
+                        locked,
+                        &current_task,
+                        &node,
+                        XATTR_NAME_SELINUX.to_bytes().into(),
+                        "!".into(), // Note: Not a valid security context.
+                        XattrOp::Set,
+                    )
+                    .is_err()
+                );
 
                 assert_eq!(before_sid, selinux_hooks::get_cached_sid(node));
             },
@@ -2702,8 +2700,10 @@ mod tests {
                     Ok(VALID_SECURITY_CONTEXT.into())
                 );
 
-                assert!(get_procattr(current_task, &current_task.temp_task(), ProcAttr::Current)
-                    .is_ok());
+                assert!(
+                    get_procattr(current_task, &current_task.temp_task(), ProcAttr::Current)
+                        .is_ok()
+                );
             },
         )
     }

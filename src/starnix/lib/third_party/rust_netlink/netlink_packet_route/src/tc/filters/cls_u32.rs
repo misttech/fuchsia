@@ -10,10 +10,10 @@ use crate::tc::{TcAction, TcError, TcHandle};
 /// until the first match occurs, and then the associated action is
 /// performed.
 use byteorder::{ByteOrder, NativeEndian};
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
 use netlink_packet_utils::parsers::parse_u32;
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
 const TC_U32_SEL_BUF_LEN: usize = 16;
 const TC_U32_KEY_BUF_LEN: usize = 16;

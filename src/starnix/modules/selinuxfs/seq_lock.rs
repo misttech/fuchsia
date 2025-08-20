@@ -5,8 +5,8 @@
 use starnix_logging::with_zx_name;
 use std::marker::PhantomData;
 use std::mem::{align_of, size_of};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use zerocopy::{Immutable, IntoBytes};
 use zx::{self as zx, AsHandleRef as _, HandleBased as _};
 

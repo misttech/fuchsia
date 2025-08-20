@@ -2,11 +2,11 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::tc::{
     TcAttribute, TcFqCodelQdStats, TcFqCodelXstats, TcHandle, TcHeader, TcMessage, TcMessageBuffer,
     TcOption, TcQdiscFqCodelOption, TcStats, TcStats2, TcStatsBasic, TcStatsQueue, TcXstats,
 };
-use crate::AddressFamily;
 
 // Setup:
 //  * Connect a OpenVPN

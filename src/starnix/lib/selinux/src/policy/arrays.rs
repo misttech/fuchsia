@@ -4,18 +4,18 @@
 
 use super::parser::PolicyCursor;
 use super::{
-    array_type, array_type_validate_deref_both, AccessVector, Array, ClassId, Counted, Parse,
-    PolicyValidationContext, RoleId, TypeId, Validate, ValidateArray,
+    AccessVector, Array, ClassId, Counted, Parse, PolicyValidationContext, RoleId, TypeId,
+    Validate, ValidateArray, array_type, array_type_validate_deref_both,
 };
+use crate::policy::UserId;
 use crate::policy::error::{ParseError, ValidateError};
 use crate::policy::extensible_bitmap::ExtensibleBitmap;
 use crate::policy::symbols::{MlsLevel, MlsRange};
-use crate::policy::UserId;
 use anyhow::Context as _;
 
 use std::num::NonZeroU32;
 use std::ops::Shl;
-use zerocopy::{little_endian as le, FromBytes, Immutable, KnownLayout, Unaligned};
+use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
 pub(super) const MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY: u32 = 31;
 

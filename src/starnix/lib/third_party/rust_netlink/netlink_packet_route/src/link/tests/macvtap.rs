@@ -3,6 +3,7 @@
 use netlink_packet_utils::nla::DefaultNla;
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
     AfSpecInet, AfSpecInet6, AfSpecUnspec, Inet6CacheInfo, Inet6DevConf, Inet6IfaceFlags,
@@ -10,7 +11,6 @@ use crate::link::{
     LinkLayerType, LinkMessage, LinkMessageBuffer, LinkXdp, MacVtapMode, Map, State, Stats,
     Stats64, XdpAttached,
 };
-use crate::AddressFamily;
 
 #[test]
 fn test_macvtap_link_info() {

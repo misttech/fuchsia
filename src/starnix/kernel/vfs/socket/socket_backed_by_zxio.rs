@@ -20,18 +20,18 @@ use fidl::endpoints::DiscoverableProtocolMarker as _;
 use linux_uapi::{IP_MULTICAST_ALL, IP_PASSSEC};
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, Locked};
-use starnix_uapi::errors::{Errno, ErrnoCode, ENOTSUP};
+use starnix_uapi::errors::{ENOTSUP, Errno, ErrnoCode};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    c_int, errno, errno_from_zxio_code, error, from_status_like_fdio, sock_filter, uapi, ucred,
-    AF_PACKET, BPF_MAXINSNS, MSG_DONTWAIT, MSG_WAITALL, SO_ATTACH_FILTER, SO_COOKIE,
+    AF_PACKET, BPF_MAXINSNS, MSG_DONTWAIT, MSG_WAITALL, SO_ATTACH_FILTER, SO_COOKIE, c_int, errno,
+    errno_from_zxio_code, error, from_status_like_fdio, sock_filter, uapi, ucred,
 };
 use static_assertions::const_assert_eq;
 use std::mem::size_of;
 use std::sync::OnceLock;
 use syncio::zxio::{
-    zxio_socket_mark, IP_RECVERR, SOL_IP, SOL_SOCKET, SO_DOMAIN, SO_FUCHSIA_MARK, SO_MARK,
-    SO_PROTOCOL, SO_TYPE, ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2,
+    IP_RECVERR, SO_DOMAIN, SO_FUCHSIA_MARK, SO_MARK, SO_PROTOCOL, SO_TYPE, SOL_IP, SOL_SOCKET,
+    ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2, zxio_socket_mark,
 };
 use syncio::{
     ControlMessage, RecvMessageInfo, ServiceConnector, Zxio, ZxioErrorCode,

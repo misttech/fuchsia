@@ -16,14 +16,14 @@ use starnix_logging::{log_warn, track_stub};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::iptables_flags::NfIpHooks;
 use starnix_uapi::{
-    c_char, errno, error, ip6t_entry, ip6t_get_entries, ip6t_getinfo, ipt_entry, ipt_get_entries,
-    ipt_getinfo, nf_inet_hooks_NF_INET_NUMHOOKS, xt_counters, xt_counters_info,
+    IP6T_SO_GET_ENTRIES, IP6T_SO_GET_INFO, IP6T_SO_GET_REVISION_MATCH, IP6T_SO_GET_REVISION_TARGET,
+    IPT_SO_GET_ENTRIES, IPT_SO_GET_INFO, IPT_SO_GET_REVISION_MATCH, IPT_SO_GET_REVISION_TARGET,
+    IPT_SO_SET_ADD_COUNTERS, IPT_SO_SET_REPLACE, SOL_IP, SOL_IPV6, XT_EXTENSION_MAXNAMELEN,
+    XT_FUNCTION_MAXNAMELEN, XT_TABLE_MAXNAMELEN, c_char, errno, error, ip6t_entry,
+    ip6t_get_entries, ip6t_getinfo, ipt_entry, ipt_get_entries, ipt_getinfo,
+    nf_inet_hooks_NF_INET_NUMHOOKS, xt_counters, xt_counters_info,
     xt_entry_target__bindgen_ty_1__bindgen_ty_1 as xt_entry_target, xt_error_target,
-    xt_get_revision, xt_standard_target, IP6T_SO_GET_ENTRIES, IP6T_SO_GET_INFO,
-    IP6T_SO_GET_REVISION_MATCH, IP6T_SO_GET_REVISION_TARGET, IPT_SO_GET_ENTRIES, IPT_SO_GET_INFO,
-    IPT_SO_GET_REVISION_MATCH, IPT_SO_GET_REVISION_TARGET, IPT_SO_SET_ADD_COUNTERS,
-    IPT_SO_SET_REPLACE, SOL_IP, SOL_IPV6, XT_EXTENSION_MAXNAMELEN, XT_FUNCTION_MAXNAMELEN,
-    XT_TABLE_MAXNAMELEN,
+    xt_get_revision, xt_standard_target,
 };
 use std::collections::HashMap;
 use std::mem::size_of;

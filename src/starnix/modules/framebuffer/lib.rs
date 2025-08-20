@@ -6,26 +6,26 @@
 
 mod server;
 
-use crate::server::{init_viewport_scene, start_presentation_loop, FramebufferServer};
+use crate::server::{FramebufferServer, init_viewport_scene, start_presentation_loop};
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::device::{DeviceMode, DeviceOps};
-use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::MemoryAccessorExt;
+use starnix_core::mm::memory::MemoryObject;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{
-    fileops_impl_memory, fileops_impl_noop_sync, CloseFreeSafe, FileObject, FileOps, NamespaceNode,
+    CloseFreeSafe, FileObject, FileOps, NamespaceNode, fileops_impl_memory, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{
-    errno, error, fb_bitfield, fb_fix_screeninfo, fb_var_screeninfo, FBIOGET_FSCREENINFO,
-    FBIOGET_VSCREENINFO, FBIOPUT_VSCREENINFO, FB_TYPE_PACKED_PIXELS, FB_VISUAL_TRUECOLOR,
+    FB_TYPE_PACKED_PIXELS, FB_VISUAL_TRUECOLOR, FBIOGET_FSCREENINFO, FBIOGET_VSCREENINFO,
+    FBIOPUT_VSCREENINFO, errno, error, fb_bitfield, fb_fix_screeninfo, fb_var_screeninfo,
 };
 use std::sync::Arc;
 use zerocopy::IntoBytes;

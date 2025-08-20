@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::suspend::WakeSources;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
@@ -223,7 +223,7 @@ fn trace_instant(event: &'static std::ffi::CStr, name: &str) {
 
 #[cfg(test)]
 mod test {
-    use super::{fasync, start_proxy, ChannelProxy};
+    use super::{ChannelProxy, fasync, start_proxy};
     use fidl::HandleBased;
     use std::cell::RefCell;
     use std::mem::MaybeUninit;

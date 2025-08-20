@@ -557,11 +557,7 @@ impl Usercopy {
         addr: usize,
     ) -> Result<u32, ()> {
         let value_or_error = unsafe { load_fn(addr) };
-        if value_or_error & ATOMIC_ERROR_MASK == 0 {
-            Ok(value_or_error as u32)
-        } else {
-            Err(())
-        }
+        if value_or_error & ATOMIC_ERROR_MASK == 0 { Ok(value_or_error as u32) } else { Err(()) }
     }
 
     /// Performs an atomic load of a 32 bit value at `addr`.

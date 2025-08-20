@@ -19,23 +19,23 @@ use ebpf::{BpfValue, EbpfBufferPtr, MapFlags, MapReference, MapSchema};
 use fidl_fuchsia_ebpf as febpf;
 use inspect_stubs::track_stub;
 use linux_uapi::{
-    bpf_map_type, bpf_map_type_BPF_MAP_TYPE_ARRAY, bpf_map_type_BPF_MAP_TYPE_ARRAY_OF_MAPS,
-    bpf_map_type_BPF_MAP_TYPE_BLOOM_FILTER, bpf_map_type_BPF_MAP_TYPE_CGROUP_ARRAY,
-    bpf_map_type_BPF_MAP_TYPE_CGROUP_STORAGE, bpf_map_type_BPF_MAP_TYPE_CGRP_STORAGE,
-    bpf_map_type_BPF_MAP_TYPE_CPUMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP,
-    bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH, bpf_map_type_BPF_MAP_TYPE_HASH,
-    bpf_map_type_BPF_MAP_TYPE_HASH_OF_MAPS, bpf_map_type_BPF_MAP_TYPE_INODE_STORAGE,
-    bpf_map_type_BPF_MAP_TYPE_LPM_TRIE, bpf_map_type_BPF_MAP_TYPE_LRU_HASH,
-    bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH, bpf_map_type_BPF_MAP_TYPE_PERCPU_ARRAY,
-    bpf_map_type_BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE, bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH,
-    bpf_map_type_BPF_MAP_TYPE_PERF_EVENT_ARRAY, bpf_map_type_BPF_MAP_TYPE_PROG_ARRAY,
-    bpf_map_type_BPF_MAP_TYPE_QUEUE, bpf_map_type_BPF_MAP_TYPE_REUSEPORT_SOCKARRAY,
-    bpf_map_type_BPF_MAP_TYPE_RINGBUF, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
-    bpf_map_type_BPF_MAP_TYPE_SOCKHASH, bpf_map_type_BPF_MAP_TYPE_SOCKMAP,
-    bpf_map_type_BPF_MAP_TYPE_STACK, bpf_map_type_BPF_MAP_TYPE_STACK_TRACE,
-    bpf_map_type_BPF_MAP_TYPE_STRUCT_OPS, bpf_map_type_BPF_MAP_TYPE_TASK_STORAGE,
-    bpf_map_type_BPF_MAP_TYPE_UNSPEC, bpf_map_type_BPF_MAP_TYPE_USER_RINGBUF,
-    bpf_map_type_BPF_MAP_TYPE_XSKMAP, BPF_EXIST, BPF_NOEXIST,
+    BPF_EXIST, BPF_NOEXIST, bpf_map_type, bpf_map_type_BPF_MAP_TYPE_ARRAY,
+    bpf_map_type_BPF_MAP_TYPE_ARRAY_OF_MAPS, bpf_map_type_BPF_MAP_TYPE_BLOOM_FILTER,
+    bpf_map_type_BPF_MAP_TYPE_CGROUP_ARRAY, bpf_map_type_BPF_MAP_TYPE_CGROUP_STORAGE,
+    bpf_map_type_BPF_MAP_TYPE_CGRP_STORAGE, bpf_map_type_BPF_MAP_TYPE_CPUMAP,
+    bpf_map_type_BPF_MAP_TYPE_DEVMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH,
+    bpf_map_type_BPF_MAP_TYPE_HASH, bpf_map_type_BPF_MAP_TYPE_HASH_OF_MAPS,
+    bpf_map_type_BPF_MAP_TYPE_INODE_STORAGE, bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
+    bpf_map_type_BPF_MAP_TYPE_LRU_HASH, bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH,
+    bpf_map_type_BPF_MAP_TYPE_PERCPU_ARRAY, bpf_map_type_BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE,
+    bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH, bpf_map_type_BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+    bpf_map_type_BPF_MAP_TYPE_PROG_ARRAY, bpf_map_type_BPF_MAP_TYPE_QUEUE,
+    bpf_map_type_BPF_MAP_TYPE_REUSEPORT_SOCKARRAY, bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+    bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, bpf_map_type_BPF_MAP_TYPE_SOCKHASH,
+    bpf_map_type_BPF_MAP_TYPE_SOCKMAP, bpf_map_type_BPF_MAP_TYPE_STACK,
+    bpf_map_type_BPF_MAP_TYPE_STACK_TRACE, bpf_map_type_BPF_MAP_TYPE_STRUCT_OPS,
+    bpf_map_type_BPF_MAP_TYPE_TASK_STORAGE, bpf_map_type_BPF_MAP_TYPE_UNSPEC,
+    bpf_map_type_BPF_MAP_TYPE_USER_RINGBUF, bpf_map_type_BPF_MAP_TYPE_XSKMAP,
 };
 use std::fmt::Debug;
 use std::ops::Deref;
@@ -337,7 +337,10 @@ impl<'a> MapValueRef<'a> {
     }
 }
 
-fn create_map_impl(schema: &MapSchema, vmo: impl Into<VmoOrName>) -> Result<Pin<Box<dyn MapImpl>>, MapError> {
+fn create_map_impl(
+    schema: &MapSchema,
+    vmo: impl Into<VmoOrName>,
+) -> Result<Pin<Box<dyn MapImpl>>, MapError> {
     match schema.map_type {
         bpf_map_type_BPF_MAP_TYPE_ARRAY => Ok(Box::pin(array::Array::new(schema, vmo)?)),
         bpf_map_type_BPF_MAP_TYPE_HASH => Ok(Box::pin(hashmap::HashMap::new(schema, vmo)?)),

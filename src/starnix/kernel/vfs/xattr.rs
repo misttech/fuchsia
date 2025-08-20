@@ -6,8 +6,8 @@ use crate::vfs::{FsStr, FsString, XattrOp, XattrStorage};
 use starnix_sync::{FileOpsCore, Locked, MemoryXattrStorageLevel, OrderedMutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 #[derive(Default)]
 pub struct MemoryXattrStorage {

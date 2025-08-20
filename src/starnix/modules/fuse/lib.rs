@@ -16,13 +16,13 @@ use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::SimpleFileNode;
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
-    default_eof_offset, default_fcntl, default_ioctl, default_seek, fileops_impl_nonseekable,
-    fileops_impl_noop_sync, fs_args, fs_node_impl_dir_readonly, AppendLockGuard, CacheConfig,
-    CacheMode, CheckAccessReason, DirEntry, DirEntryOps, DirectoryEntryType, DirentSink,
-    FallocMode, FdNumber, FileObject, FileObjectState, FileOps, FileSystem, FileSystemHandle,
-    FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    NamespaceNode, PeekBufferSegmentsCallback, SeekTarget, SymlinkTarget, ValueOrSize,
-    WeakFileHandle, XattrOp,
+    AppendLockGuard, CacheConfig, CacheMode, CheckAccessReason, DirEntry, DirEntryOps,
+    DirectoryEntryType, DirentSink, FallocMode, FdNumber, FileObject, FileObjectState, FileOps,
+    FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
+    FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode, PeekBufferSegmentsCallback, SeekTarget,
+    SymlinkTarget, ValueOrSize, WeakFileHandle, XattrOp, default_eof_offset, default_fcntl,
+    default_ioctl, default_seek, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_args,
+    fs_node_impl_dir_readonly,
 };
 use starnix_lifecycle::AtomicU64Counter;
 use starnix_logging::{log_error, log_trace, log_warn, track_stub};
@@ -31,17 +31,17 @@ use starnix_sync::{
     RwLockReadGuard, RwLockWriteGuard, Unlocked,
 };
 use starnix_syscalls::{SyscallArg, SyscallResult};
-use starnix_types::time::{duration_from_timespec, time_from_timespec, NANOS_PER_SECOND};
+use starnix_types::time::{NANOS_PER_SECOND, duration_from_timespec, time_from_timespec};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
-use starnix_uapi::errors::{Errno, EINTR, EINVAL, ENOENT, ENOSYS};
+use starnix_uapi::errors::{EINTR, EINVAL, ENOENT, ENOSYS, Errno};
 use starnix_uapi::file_mode::{Access, FileMode};
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    errno, errno_from_code, error, ino_t, mode, off_t, statfs, uapi, FUSE_SUPER_MAGIC,
+    FUSE_SUPER_MAGIC, errno, errno_from_code, error, ino_t, mode, off_t, statfs, uapi,
 };
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
@@ -1203,22 +1203,16 @@ impl FsNodeOps for FuseNode {
                     FuseOperation::Access { mask: (access & Access::ACCESS_MASK).bits() as u32 },
                 )?;
 
-                if let FuseResponse::Access(result) = response {
-                    result
-                } else {
-                    error!(EINVAL)
-                }
+                if let FuseResponse::Access(result) = response { result } else { error!(EINVAL) }
             }
-            CheckAccessReason::Exec => {
-                self.default_check_access_with_valid_node_attributes(
-                    locked,
-                    node,
-                    current_task,
-                    access,
-                    reason,
-                    info,
-                )
-            }
+            CheckAccessReason::Exec => self.default_check_access_with_valid_node_attributes(
+                locked,
+                node,
+                current_task,
+                access,
+                reason,
+                info,
+            ),
             CheckAccessReason::ChangeTimestamps { .. }
             | CheckAccessReason::InternalPermissionChecks => {
                 // Per FUSE's mount options, the kernel does not check file access
@@ -1590,11 +1584,7 @@ impl FsNodeOps for FuseNode {
             self,
             FuseOperation::SetAttr(attributes),
         )?;
-        if let FuseResponse::Attr(_attr) = response {
-            Ok(())
-        } else {
-            error!(EINVAL)
-        }
+        if let FuseResponse::Attr(_attr) = response { Ok(()) } else { error!(EINVAL) }
     }
 
     fn get_xattr(
@@ -1617,11 +1607,7 @@ impl FsNodeOps for FuseNode {
                 name: name.to_owned(),
             },
         )?;
-        if let FuseResponse::GetXAttr(result) = response {
-            Ok(result)
-        } else {
-            error!(EINVAL)
-        }
+        if let FuseResponse::GetXAttr(result) = response { Ok(result) } else { error!(EINVAL) }
     }
 
     fn set_xattr(
@@ -2631,11 +2617,7 @@ enum FuseResponse {
 
 impl FuseResponse {
     fn entry(&self) -> Option<&uapi::fuse_entry_out> {
-        if let Self::Entry(entry) = self {
-            Some(&entry.arg)
-        } else {
-            None
-        }
+        if let Self::Entry(entry) = self { Some(&entry.arg) } else { None }
     }
 }
 

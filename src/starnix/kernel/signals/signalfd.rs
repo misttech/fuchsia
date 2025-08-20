@@ -6,14 +6,14 @@ use crate::signals::SignalDetail;
 use crate::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, FileHandle, FileObject, FileOps,
+    Anon, FileHandle, FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::SigSet;
 use starnix_uapi::vfs::FdEvents;
-use starnix_uapi::{errno, error, signalfd_siginfo, SFD_NONBLOCK};
+use starnix_uapi::{SFD_NONBLOCK, errno, error, signalfd_siginfo};
 use zerocopy::IntoBytes;
 
 pub struct SignalFd {

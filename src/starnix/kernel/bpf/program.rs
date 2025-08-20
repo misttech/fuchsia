@@ -5,15 +5,15 @@
 use crate::bpf::fs::get_bpf_object;
 use crate::bpf::{BpfMapHandle, EbpfState};
 use crate::security;
-use crate::task::{register_delayed_release, CurrentTask, CurrentTaskAndLocked};
+use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
 use crate::vfs::{FdNumber, OutputBuffer};
 use ebpf::{
-    link_program, verify_program, EbpfError, EbpfHelperImpl, EbpfInstruction, EbpfProgram,
-    EbpfProgramContext, StructMapping, VerifiedEbpfProgram, VerifierLogger, BPF_LDDW,
-    BPF_PSEUDO_BTF_ID, BPF_PSEUDO_FUNC, BPF_PSEUDO_MAP_FD, BPF_PSEUDO_MAP_IDX,
-    BPF_PSEUDO_MAP_IDX_VALUE, BPF_PSEUDO_MAP_VALUE,
+    BPF_LDDW, BPF_PSEUDO_BTF_ID, BPF_PSEUDO_FUNC, BPF_PSEUDO_MAP_FD, BPF_PSEUDO_MAP_IDX,
+    BPF_PSEUDO_MAP_IDX_VALUE, BPF_PSEUDO_MAP_VALUE, EbpfError, EbpfHelperImpl, EbpfInstruction,
+    EbpfProgram, EbpfProgramContext, StructMapping, VerifiedEbpfProgram, VerifierLogger,
+    link_program, verify_program,
 };
-use ebpf_api::{get_common_helpers, AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType};
+use ebpf_api::{AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType, get_common_helpers};
 use fidl_fuchsia_ebpf as febpf;
 use starnix_lifecycle::{AtomicU32Counter, ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_error, log_warn, track_stub};

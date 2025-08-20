@@ -5,18 +5,18 @@
 #[cfg(test)]
 pub mod test {
     use crate::{
-        link_program_dynamic, verify_program, BpfValue, CallingContext, DataWidth, EbpfHelperImpl,
-        EbpfInstruction, EbpfProgramContext, FromBpfValue, FunctionSignature, HelperSet, MemoryId,
-        MemoryParameterSize, NoMap, NullVerifierLogger, Packet, ProgramArgument, Type, BPF_ABS,
-        BPF_ADD, BPF_ALU, BPF_ALU64, BPF_AND, BPF_ARSH, BPF_ATOMIC, BPF_B, BPF_CALL, BPF_CMPXCHG,
-        BPF_DIV, BPF_DW, BPF_END, BPF_EXIT, BPF_FETCH, BPF_H, BPF_IMM, BPF_IND, BPF_JA, BPF_JEQ,
-        BPF_JGE, BPF_JGT, BPF_JLE, BPF_JLT, BPF_JMP, BPF_JMP32, BPF_JNE, BPF_JSET, BPF_JSGE,
-        BPF_JSGT, BPF_JSLE, BPF_JSLT, BPF_LD, BPF_LDX, BPF_LSH, BPF_MEM, BPF_MOD, BPF_MOV, BPF_MUL,
-        BPF_NEG, BPF_OR, BPF_RSH, BPF_SRC_IMM, BPF_SRC_REG, BPF_ST, BPF_STX, BPF_SUB, BPF_TO_BE,
-        BPF_TO_LE, BPF_W, BPF_XCHG, BPF_XOR,
+        BPF_ABS, BPF_ADD, BPF_ALU, BPF_ALU64, BPF_AND, BPF_ARSH, BPF_ATOMIC, BPF_B, BPF_CALL,
+        BPF_CMPXCHG, BPF_DIV, BPF_DW, BPF_END, BPF_EXIT, BPF_FETCH, BPF_H, BPF_IMM, BPF_IND,
+        BPF_JA, BPF_JEQ, BPF_JGE, BPF_JGT, BPF_JLE, BPF_JLT, BPF_JMP, BPF_JMP32, BPF_JNE, BPF_JSET,
+        BPF_JSGE, BPF_JSGT, BPF_JSLE, BPF_JSLT, BPF_LD, BPF_LDX, BPF_LSH, BPF_MEM, BPF_MOD,
+        BPF_MOV, BPF_MUL, BPF_NEG, BPF_OR, BPF_RSH, BPF_SRC_IMM, BPF_SRC_REG, BPF_ST, BPF_STX,
+        BPF_SUB, BPF_TO_BE, BPF_TO_LE, BPF_W, BPF_XCHG, BPF_XOR, BpfValue, CallingContext,
+        DataWidth, EbpfHelperImpl, EbpfInstruction, EbpfProgramContext, FromBpfValue,
+        FunctionSignature, HelperSet, MemoryId, MemoryParameterSize, NoMap, NullVerifierLogger,
+        Packet, ProgramArgument, Type, link_program_dynamic, verify_program,
     };
-    use pest::iterators::Pair;
     use pest::Parser;
+    use pest::iterators::Pair;
     use pest_derive::Parser;
     use std::collections::HashMap;
     use std::str::FromStr;
@@ -276,11 +276,7 @@ pub mod test {
                 }
             };
             let num = Self::parse_num(num);
-            if negative {
-                Value::Minus(num)
-            } else {
-                Value::Plus(num)
-            }
+            if negative { Value::Minus(num) } else { Value::Plus(num) }
         }
 
         fn parse_src(pair: Pair<'_, Rule>, instruction: &mut EbpfInstruction) {
@@ -322,20 +318,12 @@ pub mod test {
             let (op, fetch) = {
                 let next = inner.next().unwrap();
                 let fetch = next.as_rule() == Rule::FETCH;
-                if fetch {
-                    (inner.next().unwrap(), fetch)
-                } else {
-                    (next, false)
-                }
+                if fetch { (inner.next().unwrap(), fetch) } else { (next, false) }
             };
             assert_eq!(op.as_rule(), Rule::ATOMIC_OP);
             let (op, is_32) = {
                 let op = op.as_str();
-                if op.ends_with("32") {
-                    (&op[0..op.len() - 2], true)
-                } else {
-                    (&op[..], false)
-                }
+                if op.ends_with("32") { (&op[0..op.len() - 2], true) } else { (&op[..], false) }
             };
             let code = BPF_ATOMIC | BPF_STX | (if is_32 { BPF_W } else { BPF_DW });
             let mut imm = match op {

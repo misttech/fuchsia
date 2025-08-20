@@ -8,7 +8,7 @@ use fidl_fuchsia_starnix_psi::{
 };
 use fuchsia_async::{OnSignals, WakeupTime};
 use fuchsia_component::client::connect_to_protocol_sync;
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 use starnix_core::task::{
     CurrentTask, EventHandler, Kernel, SignalHandler, SignalHandlerInner, WaitCanceler, Waiter,
 };
@@ -17,8 +17,8 @@ use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, Dynam
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::SimpleFileNode;
 use starnix_core::vfs::{
-    fileops_impl_delegate_read_and_seek, fileops_impl_noop_sync, FileObject, FileObjectState,
-    FileOps, FileSystemHandle, FsNodeHandle, FsNodeOps,
+    FileObject, FileObjectState, FileOps, FileSystemHandle, FsNodeHandle, FsNodeOps,
+    fileops_impl_delegate_read_and_seek, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{

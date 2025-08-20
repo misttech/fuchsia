@@ -8,12 +8,12 @@ use crate::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Wa
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use crate::vfs::{
-    default_ioctl, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_args, inotify, Anon,
-    DirEntryHandle, FileHandle, FileHandleKey, FileObject, FileObjectState, FileOps, FsNodeOps,
-    FsStr, FsString, WdNumber, WeakFileHandle,
+    Anon, DirEntryHandle, FileHandle, FileHandleKey, FileObject, FileObjectState, FileOps,
+    FsNodeOps, FsStr, FsString, WdNumber, WeakFileHandle, default_ioctl, fileops_impl_nonseekable,
+    fileops_impl_noop_sync, fs_args, inotify,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::auth::CAP_SYS_ADMIN;
 use starnix_uapi::errors::Errno;
@@ -23,7 +23,7 @@ use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
-use starnix_uapi::{errno, error, inotify_event, FIONREAD};
+use starnix_uapi::{FIONREAD, errno, error, inotify_event};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::mem::size_of;
@@ -287,11 +287,7 @@ impl FileOps for InotifyFileObject {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        if self.available() > 0 {
-            Ok(FdEvents::POLLIN)
-        } else {
-            Ok(FdEvents::empty())
-        }
+        if self.available() > 0 { Ok(FdEvents::POLLIN) } else { Ok(FdEvents::empty()) }
     }
 
     fn close(
@@ -594,7 +590,7 @@ pub type InotifyMaxUserWatches = InotifyLimitProcFile<MaxUserWatchesGetter>;
 
 #[cfg(test)]
 mod tests {
-    use super::{InotifyEvent, InotifyEventQueue, InotifyFileObject, DATA_SIZE};
+    use super::{DATA_SIZE, InotifyEvent, InotifyEventQueue, InotifyFileObject};
     use crate::testing::create_kernel_task_and_unlocked;
     use crate::vfs::buffers::VecOutputBuffer;
     use crate::vfs::{OutputBuffer, WdNumber};
@@ -825,17 +821,21 @@ mod tests {
         let root = current_task.fs().root().entry;
 
         // Cannot add with both MASK_ADD and MASK_CREATE.
-        assert!(inotify
-            .add_watch(
-                root.clone(),
-                InotifyMask::MODIFY | InotifyMask::MASK_ADD | InotifyMask::MASK_CREATE,
-                &file
-            )
-            .is_err());
+        assert!(
+            inotify
+                .add_watch(
+                    root.clone(),
+                    InotifyMask::MODIFY | InotifyMask::MASK_ADD | InotifyMask::MASK_CREATE,
+                    &file
+                )
+                .is_err()
+        );
 
-        assert!(inotify
-            .add_watch(root.clone(), InotifyMask::MODIFY | InotifyMask::MASK_CREATE, &file)
-            .is_ok());
+        assert!(
+            inotify
+                .add_watch(root.clone(), InotifyMask::MODIFY | InotifyMask::MASK_CREATE, &file)
+                .is_ok()
+        );
 
         {
             let watchers = root.node.ensure_watchers().watchers.lock();
@@ -854,9 +854,11 @@ mod tests {
         }
 
         // Merges with existing mask.
-        assert!(inotify
-            .add_watch(root.clone(), InotifyMask::MODIFY | InotifyMask::MASK_ADD, &file)
-            .is_ok());
+        assert!(
+            inotify
+                .add_watch(root.clone(), InotifyMask::MODIFY | InotifyMask::MASK_ADD, &file)
+                .is_ok()
+        );
 
         {
             let watchers = root.node.ensure_watchers().watchers.lock();

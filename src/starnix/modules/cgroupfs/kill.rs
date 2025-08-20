@@ -12,8 +12,8 @@
 use std::sync::{Arc, Weak};
 
 use starnix_core::task::{CgroupOps, CurrentTask};
-use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_core::vfs::FsNodeOps;
+use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 
@@ -35,10 +35,6 @@ impl BytesFileOps for KillFile {
     fn write(&self, _current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         let cgroup = self.cgroup()?;
         let data_str = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?.trim();
-        if data_str == "1" {
-            Ok(cgroup.kill())
-        } else {
-            error!(EINVAL)
-        }
+        if data_str == "1" { Ok(cgroup.kill()) } else { error!(EINVAL) }
     }
 }

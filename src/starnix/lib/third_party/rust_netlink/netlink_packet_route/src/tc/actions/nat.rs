@@ -5,9 +5,9 @@
 /// The nat action maps one IP prefix to another
 use std::net::Ipv4Addr;
 
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
 use super::nat_flag::TcNatFlags;
 use super::{TcActionGeneric, TcActionGenericBuffer};

@@ -349,8 +349,8 @@ impl<'a, T: AsRef<[u8]> + AsMut<[u8]> + ?Sized> NetlinkBuffer<&'a mut T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::constants::{NLM_F_MATCH, NLM_F_REQUEST, NLM_F_ROOT};
     use crate::NetlinkBuffer;
+    use crate::constants::{NLM_F_MATCH, NLM_F_REQUEST, NLM_F_ROOT};
 
     const RTM_GETLINK: u16 = 18;
 

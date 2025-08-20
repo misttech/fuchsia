@@ -4,8 +4,8 @@
 
 use starnix_core::device::DeviceMode;
 use starnix_core::task::CurrentTask;
-use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_core::vfs::FsNodeOps;
+use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::device_type::{DeviceType, MISC_MAJOR};
 use starnix_uapi::errors::Errno;

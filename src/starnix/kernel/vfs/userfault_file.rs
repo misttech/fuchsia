@@ -8,12 +8,12 @@ use crate::mm::{
 };
 use crate::task::{CurrentTask, EventHandler, WaitCanceler, Waiter};
 use crate::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, FileHandle, FileObject,
-    FileObjectState, FileOps, InputBuffer, OutputBuffer,
+    Anon, FileHandle, FileObject, FileObjectState, FileOps, InputBuffer, OutputBuffer,
+    fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use linux_uapi::{
-    uffdio_copy, uffdio_zeropage, UFFDIO_CONTINUE, UFFDIO_COPY, UFFDIO_WAKE, UFFDIO_WRITEPROTECT,
-    UFFDIO_ZEROPAGE,
+    UFFDIO_CONTINUE, UFFDIO_COPY, UFFDIO_WAKE, UFFDIO_WRITEPROTECT, UFFDIO_ZEROPAGE, uffdio_copy,
+    uffdio_zeropage,
 };
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Unlocked, UserFaultInner};
@@ -22,9 +22,9 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    errno, error, uapi, uffdio_api, uffdio_range, uffdio_register, UFFDIO, UFFDIO_API, UFFDIO_MOVE,
-    UFFDIO_POISON, UFFDIO_REGISTER, UFFDIO_UNREGISTER, _UFFDIO_API, _UFFDIO_REGISTER,
-    _UFFDIO_UNREGISTER,
+    _UFFDIO_API, _UFFDIO_REGISTER, _UFFDIO_UNREGISTER, UFFDIO, UFFDIO_API, UFFDIO_MOVE,
+    UFFDIO_POISON, UFFDIO_REGISTER, UFFDIO_UNREGISTER, errno, error, uapi, uffdio_api,
+    uffdio_range, uffdio_register,
 };
 use static_assertions::const_assert_eq;
 use std::sync::Arc;

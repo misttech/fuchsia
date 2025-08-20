@@ -12,7 +12,7 @@ use super::{
 };
 use byteorder::{ByteOrder, NativeEndian};
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
-use netlink_packet_utils::parsers::{parse_u16, parse_u32, parse_u64, parse_u8};
+use netlink_packet_utils::parsers::{parse_u8, parse_u16, parse_u32, parse_u64};
 use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
 
 const RTA_DST: u16 = 1;

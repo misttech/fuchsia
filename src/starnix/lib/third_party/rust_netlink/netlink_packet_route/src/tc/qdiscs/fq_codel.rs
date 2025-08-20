@@ -2,10 +2,10 @@
 
 use crate::tc::TcError;
 use byteorder::{ByteOrder, NativeEndian};
-use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
-use netlink_packet_utils::parsers::{parse_u32, parse_u8};
-use netlink_packet_utils::traits::{Emitable, Parseable};
 use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
+use netlink_packet_utils::parsers::{parse_u8, parse_u32};
+use netlink_packet_utils::traits::{Emitable, Parseable};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[non_exhaustive]

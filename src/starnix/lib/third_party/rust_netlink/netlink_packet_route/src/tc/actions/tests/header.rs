@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-use crate::tc::actions::{TcActionMessageBuffer, TcActionMessageHeader};
 use crate::AddressFamily;
+use crate::tc::actions::{TcActionMessageBuffer, TcActionMessageHeader};
 use netlink_packet_utils::{Emitable, Parseable};
 
 #[test]

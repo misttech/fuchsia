@@ -3,10 +3,10 @@
 use netlink_packet_core::{
     NetlinkDeserializable, NetlinkHeader, NetlinkPayload, NetlinkSerializable,
 };
-use netlink_packet_utils::traits::{Emitable, ParseableParametrized};
 use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::traits::{Emitable, ParseableParametrized};
 
-use crate::{inet, unix, SockDiagBuffer, SOCK_DIAG_BY_FAMILY};
+use crate::{SOCK_DIAG_BY_FAMILY, SockDiagBuffer, inet, unix};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SockDiagMessage {

@@ -6,10 +6,10 @@ use super::{NetlinkFamily, SocketDomain, SocketFile, SocketProtocol, SocketType}
 use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::task::CurrentTask;
-use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use crate::vfs::FileHandle;
+use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use byteorder::{ByteOrder as _, NativeEndian};
-use starnix_uapi::{arch_struct_with_union, AF_INET};
+use starnix_uapi::{AF_INET, arch_struct_with_union};
 
 use net_types::ip::IpAddress;
 use netlink_packet_core::{ErrorMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload};
@@ -18,16 +18,16 @@ use netlink_packet_route::link::{LinkAttribute, LinkFlags, LinkMessage};
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::auth::CAP_NET_ADMIN;
 use starnix_uapi::errors::{Errno, ErrnoCode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::union::struct_with_union_into_bytes;
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
 use starnix_uapi::{
-    arch_union_wrapper, c_char, errno, error, uapi, SIOCGIFADDR, SIOCGIFFLAGS, SIOCGIFHWADDR,
-    SIOCGIFINDEX, SIOCGIFMTU, SIOCGIFNAME, SIOCGIFNETMASK, SIOCSIFADDR, SIOCSIFFLAGS,
-    SIOCSIFNETMASK,
+    SIOCGIFADDR, SIOCGIFFLAGS, SIOCGIFHWADDR, SIOCGIFINDEX, SIOCGIFMTU, SIOCGIFNAME,
+    SIOCGIFNETMASK, SIOCSIFADDR, SIOCSIFFLAGS, SIOCSIFNETMASK, arch_union_wrapper, c_char, errno,
+    error, uapi,
 };
 use static_assertions::const_assert;
 use std::ffi::CStr;

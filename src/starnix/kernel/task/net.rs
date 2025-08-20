@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::device::kobject::Device;
-use crate::task::waiter::WaitQueue;
 use crate::task::Kernel;
+use crate::task::waiter::WaitQueue;
 use crate::vfs::{FsStr, FsString};
 use starnix_sync::Mutex;
 use std::collections::BTreeMap;

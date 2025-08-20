@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Cursor;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use argh::FromArgs;
 use camino::{Utf8Path, Utf8PathBuf};
 use ext4_extract::ext4_extract;

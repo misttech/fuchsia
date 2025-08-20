@@ -11,34 +11,34 @@ use crate::vfs::buffers::{
     AncillaryData, InputBuffer, MessageQueue, MessageReadInfo, OutputBuffer, UnixControlData,
 };
 use crate::vfs::socket::{
-    AcceptQueue, SockOptValue, Socket, SocketAddress, SocketDomain, SocketFile, SocketHandle,
-    SocketMessageFlags, SocketOps, SocketPeer, SocketProtocol, SocketShutdownFlags, SocketType,
-    DEFAULT_LISTEN_BACKLOG,
+    AcceptQueue, DEFAULT_LISTEN_BACKLOG, SockOptValue, Socket, SocketAddress, SocketDomain,
+    SocketFile, SocketHandle, SocketMessageFlags, SocketOps, SocketPeer, SocketProtocol,
+    SocketShutdownFlags, SocketType,
 };
 use crate::vfs::{
-    default_ioctl, CheckAccessReason, FdNumber, FileHandle, FileObject, FsNodeHandle, FsStr,
-    LookupContext, Message, UcredPtr,
+    CheckAccessReason, FdNumber, FileHandle, FileObject, FsNodeHandle, FsStr, LookupContext,
+    Message, UcredPtr, default_ioctl,
 };
 use ebpf::{
     BpfProgramContext, BpfValue, CbpfConfig, DataWidth, EbpfProgram, Packet, ProgramArgument, Type,
 };
 use ebpf_api::{
-    get_socket_filter_helpers, LoadBytesBase, PinnedMap, ProgramType, SocketCookieContext,
-    SocketFilterContext, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE,
+    LoadBytesBase, PinnedMap, ProgramType, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE,
+    SocketCookieContext, SocketFilterContext, get_socket_filter_helpers,
 };
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
-use starnix_uapi::errors::{Errno, EACCES, EINTR, EPERM};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
+use starnix_uapi::errors::{EACCES, EINTR, EPERM, Errno};
 use starnix_uapi::file_mode::Access;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    __sk_buff, errno, error, gid_t, socklen_t, uapi, ucred, uid_t, FIONREAD, SOL_SOCKET,
-    SO_ACCEPTCONN, SO_ATTACH_BPF, SO_BROADCAST, SO_ERROR, SO_KEEPALIVE, SO_LINGER, SO_NO_CHECK,
-    SO_PASSCRED, SO_PASSSEC, SO_PEERCRED, SO_PEERSEC, SO_RCVBUF, SO_REUSEADDR, SO_REUSEPORT,
-    SO_SNDBUF,
+    __sk_buff, FIONREAD, SO_ACCEPTCONN, SO_ATTACH_BPF, SO_BROADCAST, SO_ERROR, SO_KEEPALIVE,
+    SO_LINGER, SO_NO_CHECK, SO_PASSCRED, SO_PASSSEC, SO_PEERCRED, SO_PEERSEC, SO_RCVBUF,
+    SO_REUSEADDR, SO_REUSEPORT, SO_SNDBUF, SOL_SOCKET, errno, error, gid_t, socklen_t, uapi, ucred,
+    uid_t,
 };
 use std::sync::Arc;
 use zerocopy::IntoBytes;

@@ -8,8 +8,8 @@ use fidl_fuchsia_hardware_power_statecontrol::{AdminMarker, RebootOptions, Reboo
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    fileops_impl_noop_sync, AppendLockGuard, FileObject, FileOps, FsNode, FsNodeHandle, FsNodeOps,
-    FsStr, InputBuffer, OutputBuffer, SeekTarget,
+    AppendLockGuard, FileObject, FileOps, FsNode, FsNodeHandle, FsNodeOps, FsStr, InputBuffer,
+    OutputBuffer, SeekTarget, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_info, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked};

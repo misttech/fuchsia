@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Context;
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
 use netlink_packet_utils::traits::Parseable;
-use netlink_packet_utils::DecodeError;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[non_exhaustive]

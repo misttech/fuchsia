@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Context;
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
 use netlink_packet_utils::parsers::parse_string;
 use netlink_packet_utils::traits::Parseable;
-use netlink_packet_utils::DecodeError;
 
 const IFLA_ALT_IFNAME: u16 = 53;
 

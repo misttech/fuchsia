@@ -2,12 +2,12 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::tc::{
     TcAction, TcActionAttribute, TcActionGeneric, TcActionMirrorOption, TcActionOption,
     TcActionType, TcAttribute, TcFilterMatchAllOption, TcHandle, TcHeader, TcMessage,
     TcMessageBuffer, TcMirror, TcMirrorActionType, TcOption, TcStats2, TcStatsBasic, TcStatsQueue,
 };
-use crate::AddressFamily;
 
 // Setup:
 //      ip link add dummy1 type dummy

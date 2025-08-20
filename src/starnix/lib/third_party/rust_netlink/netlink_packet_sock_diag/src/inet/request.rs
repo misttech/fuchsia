@@ -2,7 +2,7 @@
 
 use anyhow::Context;
 use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
-use netlink_packet_utils::{buffer, DecodeError};
+use netlink_packet_utils::{DecodeError, buffer};
 
 use crate::constants::*;
 use crate::inet::{SocketId, SocketIdBuffer};

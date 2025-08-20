@@ -6,8 +6,8 @@ use crate::security;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    fileops_impl_seekable, fs_node_impl_not_dir, AppendLockGuard, CheckAccessReason, FileObject,
-    FileOps, FsNode, FsNodeInfo, FsNodeOps,
+    AppendLockGuard, CheckAccessReason, FileObject, FileOps, FsNode, FsNodeInfo, FsNodeOps,
+    fileops_impl_seekable, fs_node_impl_not_dir,
 };
 
 use crate::vfs::fileops_impl_noop_sync;

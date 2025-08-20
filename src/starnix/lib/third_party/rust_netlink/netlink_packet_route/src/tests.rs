@@ -6,8 +6,8 @@
 use netlink_packet_core::{NetlinkHeader, NetlinkMessage, NetlinkPayload};
 use netlink_packet_utils::Emitable;
 
-use crate::link::{LinkAttribute, LinkExtentMask, LinkMessage};
 use crate::RouteNetlinkMessage;
+use crate::link::{LinkAttribute, LinkExtentMask, LinkMessage};
 
 // wireshark capture of nlmon against command:
 //   ip link show dev lo

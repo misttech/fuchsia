@@ -8,15 +8,16 @@ use ext4_read_only::parser::{Parser as ExtParser, XattrMap as ExtXattrMap};
 use ext4_read_only::readers::VmoReader;
 use ext4_read_only::structs::{EntryType, INode, ROOT_INODE_NUM};
 use once_cell::sync::OnceCell;
-use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::ProtectionFlags;
+use starnix_core::mm::memory::MemoryObject;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    default_seek, fileops_impl_directory, fileops_impl_noop_sync, fs_node_impl_dir_readonly,
-    fs_node_impl_not_dir, fs_node_impl_symlink, fs_node_impl_xattr_delegate, CacheConfig,
-    CacheMode, DirectoryEntryType, DirentSink, FileObject, FileOps, FileSystem, FileSystemHandle,
-    FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    MemoryRegularFile, SeekTarget, SymlinkTarget, XattrOp, XattrStorage, DEFAULT_BYTES_PER_BLOCK,
+    CacheConfig, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink, FileObject,
+    FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
+    FsNodeInfo, FsNodeOps, FsStr, FsString, MemoryRegularFile, SeekTarget, SymlinkTarget, XattrOp,
+    XattrStorage, default_seek, fileops_impl_directory, fileops_impl_noop_sync,
+    fs_node_impl_dir_readonly, fs_node_impl_not_dir, fs_node_impl_symlink,
+    fs_node_impl_xattr_delegate,
 };
 use starnix_logging::{impossible_error, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
@@ -26,7 +27,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::{errno, error, ino_t, off_t, statfs, EXT4_SUPER_MAGIC};
+use starnix_uapi::{EXT4_SUPER_MAGIC, errno, error, ino_t, off_t, statfs};
 use std::sync::Arc;
 use zx::HandleBased;
 
@@ -423,8 +424,8 @@ mod tests {
     use super::*;
     use ext4_read_only::structs::INode;
     use starnix_uapi::file_mode::mode;
-    use zerocopy::byteorder::little_endian::{U16 as LE16, U32 as LE32};
     use zerocopy::FromBytes;
+    use zerocopy::byteorder::little_endian::{U16 as LE16, U32 as LE32};
 
     fn default_inode() -> INode {
         let zero = vec![0; 160];

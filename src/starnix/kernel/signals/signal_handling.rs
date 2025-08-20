@@ -4,7 +4,7 @@
 
 use crate::arch::registers::RegisterState;
 use crate::arch::signal_handling::{
-    align_stack_pointer, restore_registers, SignalStackFrame, RED_ZONE_SIZE, SIG_STACK_SIZE,
+    RED_ZONE_SIZE, SIG_STACK_SIZE, SignalStackFrame, align_stack_pointer, restore_registers,
 };
 use crate::mm::{MemoryAccessor, MemoryAccessorExt};
 use crate::signals::{KernelSignal, KernelSignalInfo, SignalDetail, SignalInfo, SignalState};
@@ -16,17 +16,17 @@ use starnix_logging::{log_info, log_trace, log_warn};
 use starnix_sync::{LockBefore, Locked, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_types::arch::ArchWidth;
-use starnix_uapi::errors::{Errno, EINTR, ERESTART_RESTARTBLOCK};
+use starnix_uapi::errors::{EINTR, ERESTART_RESTARTBLOCK, Errno};
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::signals::{
-    sigaltstack_contains_pointer, SigSet, SIGABRT, SIGALRM, SIGBUS, SIGCHLD, SIGCONT, SIGFPE,
-    SIGHUP, SIGILL, SIGINT, SIGIO, SIGKILL, SIGPIPE, SIGPROF, SIGPWR, SIGQUIT, SIGSEGV, SIGSTKFLT,
-    SIGSTOP, SIGSYS, SIGTERM, SIGTRAP, SIGTSTP, SIGTTIN, SIGTTOU, SIGURG, SIGUSR1, SIGUSR2,
-    SIGVTALRM, SIGWINCH, SIGXCPU, SIGXFSZ,
+    SIGABRT, SIGALRM, SIGBUS, SIGCHLD, SIGCONT, SIGFPE, SIGHUP, SIGILL, SIGINT, SIGIO, SIGKILL,
+    SIGPIPE, SIGPROF, SIGPWR, SIGQUIT, SIGSEGV, SIGSTKFLT, SIGSTOP, SIGSYS, SIGTERM, SIGTRAP,
+    SIGTSTP, SIGTTIN, SIGTTOU, SIGURG, SIGUSR1, SIGUSR2, SIGVTALRM, SIGWINCH, SIGXCPU, SIGXFSZ,
+    SigSet, sigaltstack_contains_pointer,
 };
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
-    errno, error, sigaction_t, SA_NODEFER, SA_ONSTACK, SA_RESETHAND, SA_SIGINFO, SIG_DFL, SIG_IGN,
+    SA_NODEFER, SA_ONSTACK, SA_RESETHAND, SA_SIGINFO, SIG_DFL, SIG_IGN, errno, error, sigaction_t,
 };
 
 /// Indicates where in the signal queue a signal should go.  Signals

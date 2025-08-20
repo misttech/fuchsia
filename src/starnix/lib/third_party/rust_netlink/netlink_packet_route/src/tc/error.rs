@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::nla::NlaError;
 use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::nla::NlaError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::task::PageFaultExceptionReport;
-use starnix_uapi::signals::{Signal, SIGFPE};
+use starnix_uapi::signals::{SIGFPE, Signal};
 
 // See https://developer.arm.com/documentation/ddi0601/2022-03/AArch64-Registers/ESR-EL1--Exception-Syndrome-Register--EL1-
 // for details about the values used in this file.

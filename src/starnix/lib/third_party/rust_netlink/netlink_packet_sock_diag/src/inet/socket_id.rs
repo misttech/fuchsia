@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use byteorder::{BigEndian, ByteOrder};
 use netlink_packet_utils::traits::{Emitable, ParseableParametrized};
-use netlink_packet_utils::{buffer, DecodeError};
+use netlink_packet_utils::{DecodeError, buffer};
 
 use crate::constants::*;
 

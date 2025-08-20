@@ -2,12 +2,12 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
     InfoData, InfoKind, InfoVeth, LinkAttribute, LinkHeader, LinkInfo, LinkLayerType, LinkMessage,
     LinkMessageBuffer,
 };
-use crate::AddressFamily;
 
 #[test]
 fn test_veth_get_link_info() {

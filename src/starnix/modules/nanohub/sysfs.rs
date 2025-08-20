@@ -9,7 +9,7 @@ use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    fileops_impl_noop_sync, FileObject, FileOps, FsNode, FsNodeOps, InputBuffer, OutputBuffer,
+    FileObject, FileOps, FsNode, FsNodeOps, InputBuffer, OutputBuffer, fileops_impl_noop_sync,
 };
 use starnix_core::{fileops_impl_seekable, fs_node_impl_not_dir};
 use starnix_logging::log_error;

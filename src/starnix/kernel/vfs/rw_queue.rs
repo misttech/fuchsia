@@ -349,11 +349,11 @@ mod test {
     use super::*;
     use crate::task::Kernel;
     use crate::testing::*;
-    use starnix_sync::{lock_ordering, Unlocked};
+    use starnix_sync::{Unlocked, lock_ordering};
     use std::future::Future;
     use std::pin::Pin;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Barrier;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[::fuchsia::test]
     fn test_remove_from_queue() {

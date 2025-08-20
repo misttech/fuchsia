@@ -3,7 +3,7 @@
 use std::convert::TryFrom;
 
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::{buffer, DecodeError};
+use netlink_packet_utils::{DecodeError, buffer};
 
 use crate::constants::*;
 

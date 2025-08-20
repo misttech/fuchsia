@@ -4,8 +4,8 @@
 
 use crate::task::CurrentTask;
 use crate::vfs::{
-    default_seek, fileops_impl_directory, fileops_impl_noop_sync, DirectoryEntryType, DirentSink,
-    FileObject, FileOps, FsString, SeekTarget,
+    DirectoryEntryType, DirentSink, FileObject, FileOps, FsString, SeekTarget, default_seek,
+    fileops_impl_directory, fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, Locked, Mutex};
 use starnix_uapi::errors::Errno;

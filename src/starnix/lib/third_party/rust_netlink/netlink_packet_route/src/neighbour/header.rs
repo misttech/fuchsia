@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
-use super::flags::NeighbourFlags;
 use super::NeighbourState;
-use crate::route::RouteType;
+use super::flags::NeighbourFlags;
 use crate::AddressFamily;
+use crate::route::RouteType;
 
 const NEIGHBOUR_HEADER_LEN: usize = 12;
 

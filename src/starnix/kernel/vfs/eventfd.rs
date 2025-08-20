@@ -5,7 +5,7 @@
 use crate::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::buffers::{InputBuffer, InputBufferExt as _, OutputBuffer};
 use crate::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, FileHandle, FileObject, FileOps,
+    Anon, FileHandle, FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use starnix_uapi::error;

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use std::collections::{HashMap, HashSet};
 use std::iter;
-use std::sync::{mpsc, Arc, Weak};
+use std::sync::{Arc, Weak, mpsc};
 
 use attribution_server::{AttributionServer, AttributionServerHandle};
 use fidl::AsHandleRef;

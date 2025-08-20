@@ -6,14 +6,14 @@
 
 use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::device::{DeviceMode, DeviceOps};
-use starnix_core::fs::sysfs::{build_block_device_directory, BlockDeviceInfo};
+use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use starnix_core::task::{CurrentTask, Kernel, KernelStats};
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::{
-    fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekless, FileOps, FsNodeOps,
-    NamespaceNode,
+    FileOps, FsNodeOps, NamespaceNode, fileops_impl_dataless, fileops_impl_noop_sync,
+    fileops_impl_seekless,
 };
 use starnix_logging::{bug_ref, log_error};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};

@@ -9,7 +9,7 @@ pub mod populate_bundle_visitor;
 use crate::docker_archive::DockerArchive;
 use crate::layered_image::LayeredImage;
 use crate::populate_bundle_visitor::PopulateBundleVisitor;
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use ext4_metadata::{ROOT_INODE_NUM, S_IFDIR};
 use std::collections::HashMap;
 use std::fs::File;

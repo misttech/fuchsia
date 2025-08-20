@@ -7,13 +7,13 @@ use crate::task::{IntervalTimerHandle, ThreadGroupReadGuard, WaitQueue, Waiter, 
 use starnix_sync::{InterruptibleEvent, RwLock};
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::signals::{SigSet, Signal, UncheckedSignal, UNBLOCKABLE_SIGNALS};
+use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal};
 use starnix_uapi::union::struct_with_union_into_bytes;
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress};
 use starnix_uapi::{
+    SI_KERNEL, SI_MAX_SIZE, SIG_IGN, SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD, SIGEV_THREAD_ID,
     c_int, c_uint, errno, error, pid_t, sigaction_t, sigaltstack, sigevent, sigval_t, tid_t, uaddr,
-    uapi, uid_t, SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD, SIGEV_THREAD_ID, SIG_IGN, SI_KERNEL,
-    SI_MAX_SIZE,
+    uapi, uid_t,
 };
 use static_assertions::const_assert;
 use std::cmp::Ordering;
@@ -755,8 +755,8 @@ impl SignalSource {
 #[cfg(test)]
 mod test {
     use super::*;
-    use starnix_uapi::signals::{SIGCHLD, SIGPWR};
     use starnix_uapi::CLD_EXITED;
+    use starnix_uapi::signals::{SIGCHLD, SIGPWR};
 
     #[::fuchsia::test]
     fn test_signal() {
@@ -765,9 +765,9 @@ mod test {
         assert!(Signal::try_from(UncheckedSignal::from(Signal::NUM_SIGNALS)).is_ok());
         assert!(Signal::try_from(UncheckedSignal::from(Signal::NUM_SIGNALS + 1)).is_err());
         assert!(!SIGCHLD.is_real_time());
-        assert!(Signal::try_from(UncheckedSignal::from(uapi::SIGRTMIN + 12))
-            .unwrap()
-            .is_real_time());
+        assert!(
+            Signal::try_from(UncheckedSignal::from(uapi::SIGRTMIN + 12)).unwrap().is_real_time()
+        );
         assert_eq!(format!("{SIGPWR}"), "SIGPWR(30)");
         assert_eq!(
             format!("{}", Signal::try_from(UncheckedSignal::from(uapi::SIGRTMIN + 10)).unwrap()),

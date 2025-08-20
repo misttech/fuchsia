@@ -8,18 +8,18 @@ use netlink::{SysctlError, SysctlInterfaceSelector};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::{
-    parse_i32_file, serialize_for_file, BytesFile, BytesFileOps, SimpleFileNode,
+    BytesFile, BytesFileOps, SimpleFileNode, parse_i32_file, serialize_for_file,
 };
 use starnix_core::vfs::pseudo::stub_bytes_file::StubBytesFile;
 use starnix_core::vfs::{
+    DirectoryEntryType, DirentSink, FileObject, FileOps, FsNode, FsNodeHandle, FsNodeOps, FsStr,
     emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
-    fs_node_impl_dir_readonly, DirectoryEntryType, DirentSink, FileObject, FileOps, FsNode,
-    FsNodeHandle, FsNodeOps, FsStr,
+    fs_node_impl_dir_readonly,
 };
 use starnix_logging::{bug_ref, log_error};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{mode, FileMode};
+use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error};

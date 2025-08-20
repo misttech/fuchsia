@@ -3,9 +3,9 @@
 use anyhow::Context;
 use byteorder::{ByteOrder, NativeEndian};
 use netlink_packet_utils::nla::{self, DefaultNla, NlaBuffer};
-use netlink_packet_utils::parsers::{parse_string, parse_u32, parse_u8};
+use netlink_packet_utils::parsers::{parse_string, parse_u8, parse_u32};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::{buffer, DecodeError};
+use netlink_packet_utils::{DecodeError, buffer};
 
 use crate::constants::*;
 

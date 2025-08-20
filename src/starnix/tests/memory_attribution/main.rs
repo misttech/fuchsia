@@ -5,8 +5,8 @@
 use assert_matches::assert_matches;
 use attribution_testing::PrincipalIdentifier;
 use diagnostics_reader::ArchiveReader;
-use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl::AsHandleRef;
+use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_component::CreateChildArgs;
 use fidl_fuchsia_component_decl::{Child, CollectionRef, StartupMode};
 use fidl_fuchsia_sys2::OpenError;
@@ -14,8 +14,8 @@ use fuchsia_component_test::{
     RealmBuilder, RealmBuilderParams, RealmInstance, ScopedInstanceFactory,
 };
 use fuchsia_runtime::{HandleInfo, HandleType};
-use futures::stream::BoxStream;
 use futures::StreamExt;
+use futures::stream::BoxStream;
 use moniker::Moniker;
 use regex::Regex;
 use zx::{MapDetails, MapInfo, MappingDetails};

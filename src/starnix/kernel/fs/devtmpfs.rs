@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::kobject::DeviceMetadata;
 use crate::device::DeviceMode;
+use crate::device::kobject::DeviceMetadata;
 use crate::fs::tmpfs::{TmpFs, TmpFsData, TmpFsNodeType};
 use crate::security;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::{
-    path, DirEntryHandle, FileSystemHandle, FileSystemOptions, FsStr, LookupContext, MountInfo,
-    NamespaceNode,
+    DirEntryHandle, FileSystemHandle, FileSystemOptions, FsStr, LookupContext, MountInfo,
+    NamespaceNode, path,
 };
 use starnix_logging::log_warn;
 use starnix_sync::{FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Unlocked};

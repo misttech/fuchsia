@@ -8,33 +8,33 @@
 use crate::bpf::syscalls::BpfTypeFormat;
 use crate::bpf::{BpfMapHandle, ProgramHandle};
 use crate::mm::memory::MemoryObject;
-use crate::mm::{ProtectionFlags, PAGE_SIZE};
+use crate::mm::{PAGE_SIZE, ProtectionFlags};
 use crate::security;
 use crate::task::{
     CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Task, WaitCanceler, Waiter,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir,
-    fs_node_impl_xattr_delegate, CacheMode, FdNumber, FileObject, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
-    FsNodeOps, FsStr, MemoryDirectoryFile, MemoryXattrStorage, NamespaceNode, XattrStorage as _,
+    CacheMode, FdNumber, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
+    FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, MemoryDirectoryFile,
+    MemoryXattrStorage, NamespaceNode, XattrStorage as _, fileops_impl_nonseekable,
+    fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
 };
 use ebpf::{MapFlags, MapSchema};
-use ebpf_api::{compute_map_storage_size, RINGBUF_SIGNAL};
+use ebpf_api::{RINGBUF_SIGNAL, compute_map_storage_size};
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{mode, FileMode};
+use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    bpf_map_type_BPF_MAP_TYPE_ARRAY, bpf_map_type_BPF_MAP_TYPE_RINGBUF, errno, error, statfs,
-    BPF_FS_MAGIC,
+    BPF_FS_MAGIC, bpf_map_type_BPF_MAP_TYPE_ARRAY, bpf_map_type_BPF_MAP_TYPE_RINGBUF, errno, error,
+    statfs,
 };
 use std::sync::Arc;
 use zx::AsHandleRef;
@@ -235,11 +235,7 @@ impl FileOps for BpfHandle {
 
         let handler = SignalHandler {
             inner: SignalHandlerInner::ZxHandle(|signals| {
-                if signals.contains(RINGBUF_SIGNAL) {
-                    FdEvents::POLLIN
-                } else {
-                    FdEvents::empty()
-                }
+                if signals.contains(RINGBUF_SIGNAL) { FdEvents::POLLIN } else { FdEvents::empty() }
             }),
             event_handler: handler,
             err_code: None,

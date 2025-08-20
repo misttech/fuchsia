@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use linux_uapi::{__IncompleteArrayField, __u32, __u8};
+use linux_uapi::{__IncompleteArrayField, __u8, __u32};
 use serde::{Deserialize, Serialize};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 

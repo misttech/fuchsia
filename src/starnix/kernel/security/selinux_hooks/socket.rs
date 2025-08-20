@@ -7,20 +7,20 @@ use super::fs_node::compute_new_fs_node_sid;
 use super::{
     check_permission, current_task_state, fs_node_effective_sid_and_class, todo_check_permission,
 };
-use crate::security::selinux_hooks::{superblock, FsNodeSidAndClass};
+use crate::TODO_DENY;
+use crate::security::selinux_hooks::{FsNodeSidAndClass, superblock};
 use crate::task::CurrentTask;
 use crate::vfs::socket::{
-    socket_fs, NetlinkFamily, Socket, SocketAddress, SocketDomain, SocketFile, SocketPeer,
-    SocketProtocol, SocketShutdownFlags, SocketType,
+    NetlinkFamily, Socket, SocketAddress, SocketDomain, SocketFile, SocketPeer, SocketProtocol,
+    SocketShutdownFlags, SocketType, socket_fs,
 };
 use crate::vfs::{Anon, DowncastedFile, FsNode};
-use crate::TODO_DENY;
 use selinux::permission_check::PermissionCheck;
 use selinux::{
     CommonFsNodePermission, CommonSocketPermission, ForClass, FsNodeClass, InitialSid,
     KernelPermission, SecurityId, SecurityServer, SocketClass, UnixStreamSocketPermission,
 };
-use starnix_logging::{track_stub, BugRef};
+use starnix_logging::{BugRef, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 

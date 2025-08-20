@@ -2,13 +2,13 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
     BondMode, BondPortState, InfoBond, InfoBondPort, InfoData, InfoKind, InfoPortData,
     InfoPortKind, LinkAttribute, LinkHeader, LinkInfo, LinkLayerType, LinkMessage,
     LinkMessageBuffer, MiiStatus,
 };
-use crate::AddressFamily;
 
 #[test]
 fn test_bond_link_info() {

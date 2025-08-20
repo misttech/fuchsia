@@ -4,10 +4,10 @@ use std::convert::TryFrom;
 
 use anyhow::Context;
 use byteorder::{ByteOrder, NativeEndian};
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{self, DefaultNla, NlaBuffer};
 use netlink_packet_utils::parsers::parse_u16;
 use netlink_packet_utils::traits::Parseable;
-use netlink_packet_utils::DecodeError;
 
 const IFLA_BRIDGE_FLAGS: u16 = 0;
 const IFLA_BRIDGE_VLAN_INFO: u16 = 2;

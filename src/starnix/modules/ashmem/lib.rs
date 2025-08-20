@@ -12,22 +12,22 @@ use range_map::RangeMap;
 use starnix_core::device::DeviceOps;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{
-    DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt,
-    ProtectionFlags, PAGE_SIZE,
+    DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE,
+    ProtectionFlags,
 };
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    default_ioctl, default_seek, fileops_impl_noop_sync, FileObject, FileOps, FsString,
-    InputBuffer, NamespaceNode, OutputBuffer, SeekTarget,
+    FileObject, FileOps, FsString, InputBuffer, NamespaceNode, OutputBuffer, SeekTarget,
+    default_ioctl, default_seek, fileops_impl_noop_sync,
 };
 use starnix_lifecycle::AtomicU32Counter;
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserCString, UserRef};
-use starnix_uapi::{ashmem_pin, device_type, errno, error, off_t, uapi, ASHMEM_NAME_LEN};
+use starnix_uapi::{ASHMEM_NAME_LEN, ashmem_pin, device_type, errno, error, off_t, uapi};
 use std::sync::Arc;
 
 /// Initializes the ashmem device.

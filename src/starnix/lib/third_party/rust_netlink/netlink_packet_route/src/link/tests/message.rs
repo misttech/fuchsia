@@ -2,11 +2,11 @@
 
 use netlink_packet_utils::traits::{Emitable, ParseableParametrized};
 
+use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
     LinkAttribute, LinkHeader, LinkLayerType, LinkMessage, LinkMessageBuffer, State,
 };
-use crate::AddressFamily;
 
 static LINK_MSG: [u8; 96] = [
     0x00, // interface family AF_UNSPEC

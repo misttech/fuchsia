@@ -7,7 +7,7 @@ use crate::device::kobject_store::KObjectStore;
 use crate::fs::devtmpfs::{devtmpfs_create_device, devtmpfs_remove_path};
 use crate::fs::sysfs::build_device_directory;
 use crate::task::{
-    register_delayed_release, CurrentTask, CurrentTaskAndLocked, Kernel, KernelOrTask, SimpleWaiter,
+    CurrentTask, CurrentTaskAndLocked, Kernel, KernelOrTask, SimpleWaiter, register_delayed_release,
 };
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::{FileOps, FsStr, FsString, NamespaceNode};
@@ -17,7 +17,7 @@ use starnix_sync::{InterruptibleEvent, LockEqualOrBefore, OrderedMutex};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::device_type::{
-    DeviceType, DYN_MAJOR_RANGE, MISC_DYNANIC_MINOR_RANGE, MISC_MAJOR,
+    DYN_MAJOR_RANGE, DeviceType, MISC_DYNANIC_MINOR_RANGE, MISC_MAJOR,
 };
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -28,7 +28,7 @@ use std::collections::btree_map::{BTreeMap, Entry};
 use std::ops::{Deref, Range};
 use std::sync::Arc;
 
-use dyn_clone::{clone_trait_object, DynClone};
+use dyn_clone::{DynClone, clone_trait_object};
 
 const CHRDEV_MINOR_MAX: u32 = 256;
 const BLKDEV_MINOR_MAX: u32 = 2u32.pow(20);
@@ -918,28 +918,32 @@ mod tests {
         let node = create_namespace_node_for_testing(&fs, PanickingFsNode);
 
         // Fail to open non-existent device.
-        assert!(registry
-            .open_device(
-                locked,
-                &current_task,
-                &node,
-                OpenFlags::RDONLY,
-                DeviceType::NONE,
-                DeviceMode::Char
-            )
-            .is_err());
+        assert!(
+            registry
+                .open_device(
+                    locked,
+                    &current_task,
+                    &node,
+                    OpenFlags::RDONLY,
+                    DeviceType::NONE,
+                    DeviceMode::Char
+                )
+                .is_err()
+        );
 
         // Fail to open in wrong mode.
-        assert!(registry
-            .open_device(
-                locked,
-                &current_task,
-                &node,
-                OpenFlags::RDONLY,
-                DeviceType::NULL,
-                DeviceMode::Block
-            )
-            .is_err());
+        assert!(
+            registry
+                .open_device(
+                    locked,
+                    &current_task,
+                    &node,
+                    OpenFlags::RDONLY,
+                    DeviceType::NULL,
+                    DeviceMode::Block
+                )
+                .is_err()
+        );
 
         // Open in correct mode.
         let _ = registry
@@ -1119,19 +1123,23 @@ mod tests {
         );
 
         assert!(registry.objects.root.lookup("class/thermal/cooling_device0".into()).is_some());
-        assert!(registry
-            .objects
-            .root
-            .lookup("devices/virtual/thermal/cooling_device0".into())
-            .is_some());
+        assert!(
+            registry
+                .objects
+                .root
+                .lookup("devices/virtual/thermal/cooling_device0".into())
+                .is_some()
+        );
 
         registry.remove_device(locked, &current_task, cooling_device);
 
         assert!(registry.objects.root.lookup("class/thermal/cooling_device0".into()).is_none());
-        assert!(registry
-            .objects
-            .root
-            .lookup("devices/virtual/thermal/cooling_device0".into())
-            .is_none());
+        assert!(
+            registry
+                .objects
+                .root
+                .lookup("devices/virtual/thermal/cooling_device0".into())
+                .is_none()
+        );
     }
 }

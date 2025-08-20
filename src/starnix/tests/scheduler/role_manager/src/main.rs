@@ -17,8 +17,8 @@ use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmBuilderParams, Ref, Route,
 };
 use fuchsia_runtime::{HandleInfo, HandleType};
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::StreamExt;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use log::info;
 use serde::Deserialize;
 use std::collections::BTreeMap;

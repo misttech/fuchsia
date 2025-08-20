@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use crate::device::kobject::DeviceMetadata;
-use crate::device::{simple_device_ops, DeviceMode};
+use crate::device::{DeviceMode, simple_device_ops};
 use crate::mm::{
-    create_anonymous_mapping_memory, DesiredAddress, MappingName, MappingOptions,
-    MemoryAccessorExt, ProtectionFlags,
+    DesiredAddress, MappingName, MappingOptions, MemoryAccessorExt, ProtectionFlags,
+    create_anonymous_mapping_memory,
 };
 use crate::task::syslog::{self, KmsgLevel};
 use crate::task::{
@@ -15,10 +15,10 @@ use crate::task::{
 };
 use crate::vfs::buffers::{InputBuffer, InputBufferExt as _, OutputBuffer};
 use crate::vfs::{
-    fileops_impl_noop_sync, fileops_impl_seekless, Anon, FileHandle, FileObject, FileOps,
-    FsNodeInfo, NamespaceNode, SeekTarget,
+    Anon, FileHandle, FileObject, FileOps, FsNodeInfo, NamespaceNode, SeekTarget,
+    fileops_impl_noop_sync, fileops_impl_seekless,
 };
-use starnix_logging::{log_info, track_stub, Level};
+use starnix_logging::{Level, log_info, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;

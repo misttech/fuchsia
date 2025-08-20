@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::{register_delayed_release, CurrentTaskAndLocked, Task};
+use crate::task::{CurrentTaskAndLocked, Task, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle};
 use bitflags::bitflags;
 use fuchsia_inspect_contrib::profile_duration;
@@ -12,7 +12,7 @@ use starnix_types::ownership::{Releasable, ReleasableByRef};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
-use starnix_uapi::{errno, error, FD_CLOEXEC};
+use starnix_uapi::{FD_CLOEXEC, errno, error};
 use std::sync::Arc;
 
 bitflags! {
@@ -376,11 +376,7 @@ impl FdTable {
             let mut state = inner.store.lock();
             state.remove_entry(&fd)
         };
-        if removed.is_some() {
-            Ok(())
-        } else {
-            error!(EBADF)
-        }
+        if removed.is_some() { Ok(()) } else { error!(EBADF) }
     }
 
     pub fn get_fd_flags_allowing_opath(&self, fd: FdNumber) -> Result<FdFlags, Errno> {

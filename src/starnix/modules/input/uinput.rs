@@ -19,18 +19,18 @@ use starnix_core::fileops_impl_seekless;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    self, default_ioctl, fileops_impl_noop_sync, FileObject, FileOps, FsString,
+    self, FileObject, FileOps, FsString, default_ioctl, fileops_impl_noop_sync,
 };
 use starnix_logging::log_warn;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::INPUT_MAJOR;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{device_type, errno, error, uapi};
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, Ordering};
 use zerocopy::FromBytes;
 
 // Return the current uinput API version 5, it also told caller this uinput
@@ -324,7 +324,9 @@ impl UinputDeviceFile {
                                     device_id
                                 }
                                 None => {
-                                    log_warn!("register_keyboard_and_get_device_info response does not include a device_id");
+                                    log_warn!(
+                                        "register_keyboard_and_get_device_info response does not include a device_id"
+                                    );
                                     return error!(EPERM);
                                 }
                             },
@@ -381,7 +383,9 @@ impl UinputDeviceFile {
                                     device_id
                                 }
                                 None => {
-                                    log_warn!("register_touch_screen_and_get_device_info response does not include a device_id");
+                                    log_warn!(
+                                        "register_touch_screen_and_get_device_info response does not include a device_id"
+                                    );
                                     return error!(EPERM);
                                 }
                             },
@@ -611,7 +615,7 @@ mod test {
     use super::*;
     use crate::start_input_relays_for_test;
     use starnix_core::task::Kernel;
-    use starnix_core::testing::{create_kernel_task_and_unlocked, AutoReleasableTask};
+    use starnix_core::testing::{AutoReleasableTask, create_kernel_task_and_unlocked};
     use starnix_core::vfs::FileHandle;
     use std::sync::Arc;
     use test_case::test_case;

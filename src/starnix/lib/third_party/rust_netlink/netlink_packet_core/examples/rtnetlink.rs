@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 use netlink_packet_core::{NLM_F_DUMP, NLM_F_REQUEST};
-use netlink_packet_route::rtnl::{LinkMessage, RtnlMessage};
 use netlink_packet_route::NetlinkMessage;
+use netlink_packet_route::rtnl::{LinkMessage, RtnlMessage};
 
 fn main() {
     // Create the netlink message, that contains the rtnetlink

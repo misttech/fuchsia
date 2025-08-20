@@ -10,7 +10,7 @@ use starnix_core::vfs::{
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{statfs, PROC_SUPER_MAGIC};
+use starnix_uapi::{PROC_SUPER_MAGIC, statfs};
 
 struct ProcFsHandle(FileSystemHandle);
 

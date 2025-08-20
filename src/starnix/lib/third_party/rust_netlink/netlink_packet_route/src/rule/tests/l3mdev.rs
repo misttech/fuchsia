@@ -2,12 +2,12 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::route::RouteProtocol;
 use crate::rule::flags::RuleFlags;
 use crate::rule::{
     RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleMessageBuffer, RuleUidRange,
 };
-use crate::AddressFamily;
 
 // Setup:
 //      ip rule add l3mdev priority 1999

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::power::{create_proxy_for_wake_events_counter_zero, OnWakeOps};
+use crate::power::{OnWakeOps, create_proxy_for_wake_events_counter_zero};
 use crate::task::{CurrentTask, LockedAndTask, TargetTime};
 use crate::vfs::timer::TimerOps;
 use anyhow::{Context, Result};
@@ -1008,7 +1008,7 @@ impl PartialOrd for HrTimerNode {
 mod tests {
     use super::*;
     use crate::task::HrTimer;
-    use crate::testing::{create_kernel_and_task, AutoReleasableTask};
+    use crate::testing::{AutoReleasableTask, create_kernel_and_task};
     use starnix_logging::log_warn;
     use std::thread;
     use {fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync};

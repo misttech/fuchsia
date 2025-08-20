@@ -4,15 +4,15 @@
 
 use crate::task::{CurrentTask, ExitStatus};
 use fidl_fuchsia_feedback::{
-    Annotation, CrashReport, CrashReporterProxy, NativeCrashReport, SpecificCrashReport,
-    MAX_ANNOTATION_VALUE_LENGTH, MAX_CRASH_SIGNATURE_LENGTH,
+    Annotation, CrashReport, CrashReporterProxy, MAX_ANNOTATION_VALUE_LENGTH,
+    MAX_CRASH_SIGNATURE_LENGTH, NativeCrashReport, SpecificCrashReport,
 };
 use fuchsia_inspect::{Inspector, Node};
 use fuchsia_inspect_contrib::profile_duration;
 use futures::FutureExt;
 use starnix_logging::{
-    log_error, log_info, log_warn, trace_instant, CoreDumpInfo, CoreDumpList, TraceScope,
-    CATEGORY_STARNIX,
+    CATEGORY_STARNIX, CoreDumpInfo, CoreDumpList, TraceScope, log_error, log_info, log_warn,
+    trace_instant,
 };
 use starnix_sync::Mutex;
 use std::collections::{HashMap, VecDeque};
@@ -257,7 +257,9 @@ impl CrashReporter {
         if crash_info.is_throttled_at(runtime, self.crash_loop_age_out)
             && (crash_info.num_crashes_while_throttled < REPORT_EVERY_X_WHILE_THROTTLED)
         {
-            log_info!("Process '{argv0}' is throttled due to suspected crash loop, will fold report into later crash");
+            log_info!(
+                "Process '{argv0}' is throttled due to suspected crash loop, will fold report into later crash"
+            );
             *self.throttled_core_dumps.lock().entry(argv0).or_default() += 1;
             return None;
         }
@@ -440,9 +442,11 @@ mod tests {
             /*enable_throttling=*/ true,
         );
 
-        assert!(crash_reporter
-            .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
-            .is_some());
+        assert!(
+            crash_reporter
+                .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
+                .is_some()
+        );
     }
 
     #[test]
@@ -455,13 +459,17 @@ mod tests {
         );
 
         for _ in 0..CRASH_LOOP_LIMIT {
-            assert!(crash_reporter
-                .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
-                .is_some());
+            assert!(
+                crash_reporter
+                    .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
+                    .is_some()
+            );
         }
-        assert!(crash_reporter
-            .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
-            .is_none());
+        assert!(
+            crash_reporter
+                .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
+                .is_none()
+        );
     }
 
     #[test]
@@ -474,20 +482,26 @@ mod tests {
         );
 
         for _ in 0..CRASH_LOOP_LIMIT {
-            assert!(crash_reporter
-                .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
-                .is_some());
+            assert!(
+                crash_reporter
+                    .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
+                    .is_some()
+            );
         }
-        assert!(crash_reporter
-            .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
-            .is_none());
-        assert!(crash_reporter
-            .report_guard(
-                vec![],
-                "test-process".to_string(),
-                zx::Instant::from_nanos(CRASH_LOOP_AGE_OUT.into_nanos())
-            )
-            .is_some());
+        assert!(
+            crash_reporter
+                .report_guard(vec![], "test-process".to_string(), zx::Instant::from_nanos(0))
+                .is_none()
+        );
+        assert!(
+            crash_reporter
+                .report_guard(
+                    vec![],
+                    "test-process".to_string(),
+                    zx::Instant::from_nanos(CRASH_LOOP_AGE_OUT.into_nanos())
+                )
+                .is_some()
+        );
     }
 
     #[fuchsia::test]
@@ -521,15 +535,15 @@ mod tests {
         );
 
         for _ in 0..CRASH_LOOP_LIMIT {
-            assert!(crash_reporter
-                .report_guard(vec![], "test-process".to_string(), RUNTIME)
-                .is_some());
+            assert!(
+                crash_reporter.report_guard(vec![], "test-process".to_string(), RUNTIME).is_some()
+            );
         }
 
         for _ in 0..REPORT_EVERY_X_WHILE_THROTTLED - 1 {
-            assert!(crash_reporter
-                .report_guard(vec![], "test-process".to_string(), RUNTIME)
-                .is_none());
+            assert!(
+                crash_reporter.report_guard(vec![], "test-process".to_string(), RUNTIME).is_none()
+            );
         }
 
         assert_eq!(
@@ -550,7 +564,9 @@ mod tests {
             crash_info.crash_runtimes.push_back(zx::MonotonicInstant::from_nanos(50));
         }
 
-        assert!(crash_info.is_throttled_at(zx::MonotonicInstant::from_nanos(0), CRASH_LOOP_AGE_OUT));
+        assert!(
+            crash_info.is_throttled_at(zx::MonotonicInstant::from_nanos(0), CRASH_LOOP_AGE_OUT)
+        );
         assert!(!crash_info.is_throttled_at(
             zx::MonotonicInstant::from_nanos(CRASH_LOOP_AGE_OUT.into_nanos()),
             CRASH_LOOP_AGE_OUT

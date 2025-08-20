@@ -8,7 +8,7 @@ use starnix_core::mm::ProtectionFlags;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, FdNumber, FileObject, FileOps,
+    FdNumber, FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::{impossible_error, log_error};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};

@@ -7,7 +7,7 @@ use starnix_core::fileops_impl_nonseekable;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::buffers::InputBuffer;
 use starnix_core::vfs::pseudo::simple_file::SimpleFileNode;
-use starnix_core::vfs::{fileops_impl_noop_sync, FileObject, FileOps, FsNodeOps, OutputBuffer};
+use starnix_core::vfs::{FileObject, FileOps, FsNodeOps, OutputBuffer, fileops_impl_noop_sync};
 use starnix_logging::CATEGORY_TRACE_META;
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;

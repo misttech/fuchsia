@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use remotevol_linux_test_util::{add_encryption_key_with_key_bytes, MASTER_ENCRYPTION_KEY};
+use remotevol_linux_test_util::{MASTER_ENCRYPTION_KEY, add_encryption_key_with_key_bytes};
 fn main() {
     let root_dir = std::fs::File::open("/data").expect("open failed");
     let dir_path = std::path::Path::new("/data").join("my_dir");

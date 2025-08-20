@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::policy::{Policy, SecurityContext, SecurityContextError};
-use crate::{InitialSid, SecurityId, FIRST_UNUSED_SID};
+use crate::{FIRST_UNUSED_SID, InitialSid, SecurityId};
 
 use std::num::NonZeroU32;
 use std::sync::Arc;

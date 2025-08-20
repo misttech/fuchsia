@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use itertools::Itertools;
 use serde::Deserialize;
-use std::fs::{canonicalize, File};
+use std::fs::{File, canonicalize};
 use std::io::Read;
 use std::path::Path;
 use tar::Archive;

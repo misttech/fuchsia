@@ -16,10 +16,10 @@ use crate::task::container_namespace::ContainerNamespace;
 use crate::task::{CurrentTask, Kernel, KernelOrTask, SchedulerManager, Task, TaskBuilder};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir, Anon, CacheMode,
-    DirEntry, FdNumber, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle,
-    FileSystemOps, FileSystemOptions, FsContext, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps,
-    FsStr, Namespace, NamespaceNode,
+    Anon, CacheMode, DirEntry, FdNumber, FileHandle, FileObject, FileOps, FileSystem,
+    FileSystemHandle, FileSystemOps, FileSystemOptions, FsContext, FsNode, FsNodeHandle,
+    FsNodeInfo, FsNodeOps, FsStr, Namespace, NamespaceNode, fileops_impl_nonseekable,
+    fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
 use fidl_fuchsia_io as fio;
 use selinux::SecurityServer;
@@ -32,11 +32,11 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
-use starnix_uapi::{statfs, MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE};
+use starnix_uapi::{MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE, statfs};
 use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use zerocopy::{Immutable, IntoBytes};
 
 /// Create a FileSystemHandle for use in testing.
@@ -68,8 +68,8 @@ where
 /// Please use `spawn_kernel_and_run` instead. If there isn't a variant of `spawn_kernel_and_run`
 /// for this use case, please consider adding one that follows the new pattern of actually running
 /// the test on the spawned task.
-pub fn create_kernel_task_and_unlocked_with_pkgfs(
-) -> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>) {
+pub fn create_kernel_task_and_unlocked_with_pkgfs()
+-> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>) {
     create_kernel_task_and_unlocked_with_fs(create_pkgfs)
 }
 
@@ -160,8 +160,8 @@ where
 /// Please use `spawn_kernel_and_run` instead. If there isn't a variant of `spawn_kernel_and_run`
 /// for this use case, please consider adding one that follows the new pattern of actually running
 /// the test on the spawned task.
-pub fn create_kernel_task_and_unlocked(
-) -> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>) {
+pub fn create_kernel_task_and_unlocked()
+-> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>) {
     create_kernel_task_and_unlocked_with_fs(TmpFs::new_fs)
 }
 

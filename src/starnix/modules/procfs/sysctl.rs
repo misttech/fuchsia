@@ -6,11 +6,11 @@ use crate::sys_net::{
     ProcSysNetIpv4Conf, ProcSysNetIpv4Neigh, ProcSysNetIpv6Conf, ProcSysNetIpv6Neigh,
 };
 use starnix_core::security;
-use starnix_core::task::{ptrace_get_scope, ptrace_set_scope, CurrentTask, SeccompAction};
+use starnix_core::task::{CurrentTask, SeccompAction, ptrace_get_scope, ptrace_set_scope};
 use starnix_core::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
-use starnix_core::vfs::pseudo::simple_file::{parse_unsigned_file, BytesFile, BytesFileOps};
+use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, parse_unsigned_file};
 use starnix_core::vfs::pseudo::stub_bytes_file::StubBytesFile;
-use starnix_core::vfs::{fs_args, inotify, FileSystemHandle, FsNodeHandle, FsNodeOps, FsString};
+use starnix_core::vfs::{FileSystemHandle, FsNodeHandle, FsNodeOps, FsString, fs_args, inotify};
 use starnix_logging::bug_ref;
 use starnix_uapi::auth::{CAP_LAST_CAP, CAP_NET_ADMIN, CAP_SYS_ADMIN, CAP_SYS_RESOURCE};
 use starnix_uapi::errors::Errno;

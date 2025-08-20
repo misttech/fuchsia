@@ -9,7 +9,7 @@ use macro_rules_attribute::apply;
 use starnix_sync::{LockBefore, Locked, OrderedRwLock, ProcessGroupState};
 use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_uapi::pid_t;
-use starnix_uapi::signals::{Signal, SIGCONT, SIGHUP};
+use starnix_uapi::signals::{SIGCONT, SIGHUP, Signal};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

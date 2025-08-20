@@ -5,12 +5,12 @@ use std::str::FromStr;
 
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::route::flags::RouteFlags;
 use crate::route::{
     RouteAttribute, RouteCacheInfo, RouteHeader, RouteMessage, RouteMessageBuffer, RouteProtocol,
     RouteRealm, RouteScope, RouteType,
 };
-use crate::AddressFamily;
 
 // Setup
 //   ip route add 192.0.2.1 dev lo realm 250/254

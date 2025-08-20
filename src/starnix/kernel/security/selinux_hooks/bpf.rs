@@ -6,11 +6,11 @@
 #![allow(non_upper_case_globals)]
 
 use super::{
-    check_permission, check_self_permission, current_task_state, BpfMapState, BpfProgState,
+    BpfMapState, BpfProgState, check_permission, check_self_permission, current_task_state,
 };
 
-use crate::bpf::program::Program;
 use crate::bpf::BpfMap;
+use crate::bpf::program::Program;
 use crate::security::PermissionFlags;
 use crate::task::CurrentTask;
 use selinux::{BpfPermission, SecurityId, SecurityServer};

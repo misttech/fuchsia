@@ -7,8 +7,8 @@
 
 use starnix_core::bpf::fs::BpfFs;
 use starnix_core::device::kobject::DeviceMetadata;
-use starnix_core::device::mem::{mem_device_init, DevRandom};
-use starnix_core::device::{simple_device_ops, DeviceMode};
+use starnix_core::device::mem::{DevRandom, mem_device_init};
+use starnix_core::device::{DeviceMode, simple_device_ops};
 use starnix_core::fs::devpts::{dev_pts_fs, tty_device_init};
 use starnix_core::fs::devtmpfs::dev_tmp_fs;
 use starnix_core::fs::fuchsia::nmfs::fuchsia_network_monitor_fs;
@@ -19,7 +19,7 @@ use starnix_core::task::Kernel;
 use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_core::vfs::pipe::register_pipe_fs;
 use starnix_modules_binderfs::BinderFs;
-use starnix_modules_cgroupfs::{cgroup2_fs, CgroupV1Fs};
+use starnix_modules_cgroupfs::{CgroupV1Fs, cgroup2_fs};
 use starnix_modules_device_mapper::{create_device_mapper, device_mapper_init};
 use starnix_modules_ext4::ExtFilesystem;
 use starnix_modules_functionfs::FunctionFs;

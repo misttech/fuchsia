@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fs::fuchsia::{new_remote_file, OpenFlags};
+use crate::fs::fuchsia::{OpenFlags, new_remote_file};
 use crate::task::{
     CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, WaitCanceler, Waiter,
 };
@@ -13,7 +13,7 @@ use crate::vfs::socket::{
 };
 use crate::vfs::{AncillaryData, FileHandle, MessageReadInfo, UnixControlData};
 use fidl::endpoints::SynchronousProxy;
-use linux_uapi::{SOL_SOCKET, SO_LINGER};
+use linux_uapi::{SO_LINGER, SOL_SOCKET};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
@@ -470,21 +470,27 @@ mod tests {
                         Ok(fbinder::UnixDomainSocketRequest::Read {
                             payload, responder, ..
                         }) => {
-                            assert!(responder
-                                .send(self.read(payload).map_err(|e| e.into_raw()))
-                                .is_ok());
+                            assert!(
+                                responder
+                                    .send(self.read(payload).map_err(|e| e.into_raw()))
+                                    .is_ok()
+                            );
                         }
                         Ok(fbinder::UnixDomainSocketRequest::Write {
                             payload, responder, ..
                         }) => {
-                            assert!(responder
-                                .send(self.write(payload).as_ref().map_err(|e| e.into_raw()))
-                                .is_ok());
+                            assert!(
+                                responder
+                                    .send(self.write(payload).as_ref().map_err(|e| e.into_raw()))
+                                    .is_ok()
+                            );
                         }
                         Ok(fbinder::UnixDomainSocketRequest::Query { responder }) => {
-                            assert!(responder
-                                .send(fbinder::UnixDomainSocketMarker::PROTOCOL_NAME.as_bytes())
-                                .is_ok());
+                            assert!(
+                                responder
+                                    .send(fbinder::UnixDomainSocketMarker::PROTOCOL_NAME.as_bytes())
+                                    .is_ok()
+                            );
                         }
                         Ok(fbinder::UnixDomainSocketRequest::Clone { request, .. }) => {
                             self.serve(request.into()).await;

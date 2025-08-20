@@ -4,7 +4,7 @@
 
 use super::PAGE_SIZE;
 use smallvec::SmallVec;
-use starnix_uapi::errors::{errno, error, Errno};
+use starnix_uapi::errors::{Errno, errno, error};
 use starnix_uapi::user_address::{UserAddress, UserAddress32, UserRef};
 use std::sync::LazyLock;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};

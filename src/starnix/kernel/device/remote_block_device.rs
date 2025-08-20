@@ -2,24 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::kobject::DeviceMetadata;
 use crate::device::DeviceMode;
-use crate::fs::sysfs::{build_block_device_directory, BlockDeviceInfo};
+use crate::device::kobject::DeviceMetadata;
+use crate::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use crate::mm::memory::MemoryObject;
 use crate::mm::{MemoryAccessorExt, ProtectionFlags};
 use crate::task::CurrentTask;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    default_ioctl, default_seek, FileObject, FileOps, FsString, NamespaceNode, SeekTarget,
+    FileObject, FileOps, FsString, NamespaceNode, SeekTarget, default_ioctl, default_seek,
 };
 use anyhow::Error;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::{DeviceType, REMOTE_BLOCK_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
-use starnix_uapi::{errno, from_status_like_fdio, off_t, BLKGETSIZE, BLKGETSIZE64};
+use starnix_uapi::{BLKGETSIZE, BLKGETSIZE64, errno, from_status_like_fdio, off_t};
 use std::collections::btree_map::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::constraints::{evaluate_constraint, ConstraintError};
+use super::constraints::{ConstraintError, evaluate_constraint};
 use super::error::{ParseError, ValidateError};
 use super::extensible_bitmap::{
     ExtensibleBitmap, ExtensibleBitmapSpan, ExtensibleBitmapSpansIterator,
@@ -10,17 +10,17 @@ use super::extensible_bitmap::{
 use super::parser::PolicyCursor;
 use super::security_context::{CategoryIterator, Level, SecurityContext};
 use super::{
-    array_type, array_type_validate_deref_both, array_type_validate_deref_data,
-    array_type_validate_deref_metadata_data_vec, array_type_validate_deref_none_data_vec,
     AccessVector, Array, CategoryId, ClassId, ClassPermissionId, Counted, Parse,
     PolicyValidationContext, RoleId, SensitivityId, TypeId, UserId, Validate, ValidateArray,
+    array_type, array_type_validate_deref_both, array_type_validate_deref_data,
+    array_type_validate_deref_metadata_data_vec, array_type_validate_deref_none_data_vec,
 };
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use std::fmt::Debug;
 use std::num::NonZeroU32;
 use std::ops::Deref;
-use zerocopy::{little_endian as le, FromBytes, Immutable, KnownLayout, Unaligned};
+use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
 /// ** Constraint term types ***
 ///
@@ -1709,7 +1709,7 @@ impl Validate for CategoryMetadata {
 #[cfg(test)]
 mod tests {
     use super::super::security_context::Level;
-    use super::super::{parse_policy_by_value, CategoryId, SensitivityId, UserId};
+    use super::super::{CategoryId, SensitivityId, UserId, parse_policy_by_value};
     use super::*;
 
     use std::num::NonZeroU32;

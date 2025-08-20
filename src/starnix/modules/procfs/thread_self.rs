@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use starnix_core::task::CurrentTask;
-use starnix_core::vfs::{fs_node_impl_symlink, FsNode, FsNodeOps, SymlinkTarget};
+use starnix_core::vfs::{FsNode, FsNodeOps, SymlinkTarget, fs_node_impl_symlink};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 

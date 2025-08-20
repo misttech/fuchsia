@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use fidl::endpoints;
 use fidl_fuchsia_starnix_container::{ControllerMarker, ControllerVsockConnectRequest};
 use fidl_fuchsia_vsock::{

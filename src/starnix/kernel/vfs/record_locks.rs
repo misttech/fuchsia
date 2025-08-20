@@ -5,11 +5,11 @@
 use crate::task::{CurrentTask, WaitQueue, Waiter};
 use crate::vfs::{FdTableId, FileObject, FileObjectId};
 use starnix_sync::{Locked, Mutex, Unlocked};
-use starnix_uapi::errors::{Errno, EAGAIN};
+use starnix_uapi::errors::{EAGAIN, Errno};
 use starnix_uapi::{
-    __kernel_off_t, c_short, errno, error, pid_t, uapi, F_GETLK, F_GETLK64, F_OFD_GETLK,
-    F_OFD_SETLK, F_OFD_SETLKW, F_RDLCK, F_SETLK, F_SETLK64, F_SETLKW, F_SETLKW64, F_UNLCK, F_WRLCK,
-    SEEK_CUR, SEEK_END, SEEK_SET,
+    __kernel_off_t, F_GETLK, F_GETLK64, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_RDLCK, F_SETLK,
+    F_SETLK64, F_SETLKW, F_SETLKW64, F_UNLCK, F_WRLCK, SEEK_CUR, SEEK_END, SEEK_SET, c_short,
+    errno, error, pid_t, uapi,
 };
 use std::collections::BTreeSet;
 
@@ -21,11 +21,7 @@ enum RecordLength {
 
 impl RecordLength {
     fn new(value: usize) -> Self {
-        if value == 0 {
-            Self::Infinite
-        } else {
-            Self::Value(value)
-        }
+        if value == 0 { Self::Infinite } else { Self::Value(value) }
     }
     fn value(&self) -> __kernel_off_t {
         match self {

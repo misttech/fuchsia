@@ -11,23 +11,23 @@ use crate::task::{
 };
 use crate::vfs::aio::AioContext;
 use crate::vfs::buffers::{UserBuffersInputBuffer, UserBuffersOutputBuffer};
-use crate::vfs::eventfd::{new_eventfd, EventFdType};
+use crate::vfs::eventfd::{EventFdType, new_eventfd};
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::inotify::InotifyFileObject;
-use crate::vfs::io_uring::{IoUringFileObject, IORING_MAX_ENTRIES};
+use crate::vfs::io_uring::{IORING_MAX_ENTRIES, IoUringFileObject};
 use crate::vfs::pidfd::new_pidfd;
-use crate::vfs::pipe::{new_pipe, PipeFileObject};
+use crate::vfs::pipe::{PipeFileObject, new_pipe};
 use crate::vfs::timer::TimerFile;
 use crate::vfs::{
-    checked_add_offset_and_length, new_memfd, splice, CheckAccessReason, DirentSink64,
-    EpollFileObject, FallocMode, FdFlags, FdNumber, FileAsyncOwner, FileHandle, FileSystemOptions,
-    FlockOperation, FsStr, FsString, LookupContext, NamespaceNode, PathWithReachability,
-    RecordLockCommand, RenameFlags, SeekTarget, StatxFlags, SymlinkMode, SymlinkTarget,
-    TargetFdNumber, TimeUpdateType, UnlinkKind, ValueOrSize, WdNumber, WhatToMount, XattrOp,
+    CheckAccessReason, DirentSink64, EpollFileObject, FallocMode, FdFlags, FdNumber,
+    FileAsyncOwner, FileHandle, FileSystemOptions, FlockOperation, FsStr, FsString, LookupContext,
+    NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget, StatxFlags,
+    SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind, ValueOrSize, WdNumber,
+    WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, splice,
 };
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::ownership::TempRef;
 use starnix_types::time::{
     duration_from_poll_timeout, duration_from_timespec, time_from_timespec, timespec_from_duration,
@@ -39,7 +39,7 @@ use starnix_uapi::auth::{
 };
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::{
-    Errno, ErrnoResultExt, EFAULT, EINTR, ENAMETOOLONG, ENOTSUP, ETIMEDOUT,
+    EFAULT, EINTR, ENAMETOOLONG, ENOTSUP, ETIMEDOUT, Errno, ErrnoResultExt,
 };
 use starnix_uapi::file_lease::FileLeaseType;
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
@@ -55,32 +55,32 @@ use starnix_uapi::user_address::{MultiArchUserRef, UserAddress, UserCString, Use
 use starnix_uapi::user_value::UserValue;
 use starnix_uapi::vfs::{EpollEvent, FdEvents, ResolveFlags};
 use starnix_uapi::{
-    __kernel_fd_set, aio_context_t, errno, error, f_owner_ex, io_event, io_uring_params,
+    __kernel_fd_set, AT_EACCESS, AT_EMPTY_PATH, AT_NO_AUTOMOUNT, AT_REMOVEDIR, AT_SYMLINK_FOLLOW,
+    AT_SYMLINK_NOFOLLOW, CLOCK_BOOTTIME, CLOCK_BOOTTIME_ALARM, CLOCK_MONOTONIC, CLOCK_REALTIME,
+    CLOCK_REALTIME_ALARM, CLOSE_RANGE_CLOEXEC, CLOSE_RANGE_UNSHARE, EFD_CLOEXEC, EFD_NONBLOCK,
+    EFD_SEMAPHORE, EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLL_CTL_DEL, EPOLL_CTL_MOD, F_ADD_SEALS,
+    F_DUPFD, F_DUPFD_CLOEXEC, F_GET_SEALS, F_GETFD, F_GETFL, F_GETLEASE, F_GETLK, F_GETLK64,
+    F_GETOWN, F_GETOWN_EX, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_OWNER_PGRP, F_OWNER_PID,
+    F_OWNER_TID, F_SETFD, F_SETFL, F_SETLEASE, F_SETLK, F_SETLK64, F_SETLKW, F_SETLKW64, F_SETOWN,
+    F_SETOWN_EX, F_SETSIG, FIOCLEX, FIONCLEX, IN_CLOEXEC, IN_NONBLOCK, MFD_ALLOW_SEALING,
+    MFD_CLOEXEC, MFD_HUGE_MASK, MFD_HUGE_SHIFT, MFD_HUGETLB, MFD_NOEXEC_SEAL, NAME_MAX, O_CLOEXEC,
+    O_CREAT, O_NOFOLLOW, O_PATH, O_TMPFILE, PIDFD_NONBLOCK, POLLERR, POLLHUP, POLLIN, POLLOUT,
+    POLLPRI, POLLRDBAND, POLLRDNORM, POLLWRBAND, POLLWRNORM, POSIX_FADV_DONTNEED,
+    POSIX_FADV_NOREUSE, POSIX_FADV_NORMAL, POSIX_FADV_RANDOM, POSIX_FADV_SEQUENTIAL,
+    POSIX_FADV_WILLNEED, RWF_SUPPORTED, TFD_CLOEXEC, TFD_NONBLOCK, TFD_TIMER_ABSTIME,
+    TFD_TIMER_CANCEL_ON_SET, XATTR_CREATE, XATTR_NAME_MAX, XATTR_REPLACE, aio_context_t, errno,
+    error, f_owner_ex, io_event, io_uring_params,
     io_uring_register_op_IORING_REGISTER_BUFFERS as IORING_REGISTER_BUFFERS,
     io_uring_register_op_IORING_REGISTER_IOWQ_MAX_WORKERS as IORING_REGISTER_IOWQ_MAX_WORKERS,
     io_uring_register_op_IORING_REGISTER_PBUF_RING as IORING_REGISTER_PBUF_RING,
     io_uring_register_op_IORING_REGISTER_RING_FDS as IORING_REGISTER_RING_FDS,
     io_uring_register_op_IORING_UNREGISTER_BUFFERS as IORING_UNREGISTER_BUFFERS, iocb, off_t,
-    pid_t, pollfd, pselect6_sigmask, sigset_t, statx, timespec, uapi, uid_t, AT_EACCESS,
-    AT_EMPTY_PATH, AT_NO_AUTOMOUNT, AT_REMOVEDIR, AT_SYMLINK_FOLLOW, AT_SYMLINK_NOFOLLOW,
-    CLOCK_BOOTTIME, CLOCK_BOOTTIME_ALARM, CLOCK_MONOTONIC, CLOCK_REALTIME, CLOCK_REALTIME_ALARM,
-    CLOSE_RANGE_CLOEXEC, CLOSE_RANGE_UNSHARE, EFD_CLOEXEC, EFD_NONBLOCK, EFD_SEMAPHORE,
-    EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLL_CTL_DEL, EPOLL_CTL_MOD, FIOCLEX, FIONCLEX, F_ADD_SEALS,
-    F_DUPFD, F_DUPFD_CLOEXEC, F_GETFD, F_GETFL, F_GETLEASE, F_GETLK, F_GETLK64, F_GETOWN,
-    F_GETOWN_EX, F_GET_SEALS, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_OWNER_PGRP, F_OWNER_PID,
-    F_OWNER_TID, F_SETFD, F_SETFL, F_SETLEASE, F_SETLK, F_SETLK64, F_SETLKW, F_SETLKW64, F_SETOWN,
-    F_SETOWN_EX, F_SETSIG, IN_CLOEXEC, IN_NONBLOCK, MFD_ALLOW_SEALING, MFD_CLOEXEC, MFD_HUGETLB,
-    MFD_HUGE_MASK, MFD_HUGE_SHIFT, MFD_NOEXEC_SEAL, NAME_MAX, O_CLOEXEC, O_CREAT, O_NOFOLLOW,
-    O_PATH, O_TMPFILE, PIDFD_NONBLOCK, POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI, POLLRDBAND,
-    POLLRDNORM, POLLWRBAND, POLLWRNORM, POSIX_FADV_DONTNEED, POSIX_FADV_NOREUSE, POSIX_FADV_NORMAL,
-    POSIX_FADV_RANDOM, POSIX_FADV_SEQUENTIAL, POSIX_FADV_WILLNEED, RWF_SUPPORTED, TFD_CLOEXEC,
-    TFD_NONBLOCK, TFD_TIMER_ABSTIME, TFD_TIMER_CANCEL_ON_SET, XATTR_CREATE, XATTR_NAME_MAX,
-    XATTR_REPLACE,
+    pid_t, pollfd, pselect6_sigmask, sigset_t, statx, timespec, uapi, uid_t,
 };
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
-use std::sync::{atomic, Arc};
+use std::sync::{Arc, atomic};
 use std::usize;
 use zerocopy::{Immutable, IntoBytes};
 
@@ -1326,11 +1326,7 @@ pub fn sys_fchmodat(
 }
 
 fn maybe_uid(id: u32) -> Option<uid_t> {
-    if id == u32::MAX {
-        None
-    } else {
-        Some(id)
-    }
+    if id == u32::MAX { None } else { Some(id) }
 }
 
 pub fn sys_fchown(
@@ -1667,11 +1663,7 @@ pub fn sys_umask(
 }
 
 fn get_fd_flags(flags: u32) -> FdFlags {
-    if flags & O_CLOEXEC != 0 {
-        FdFlags::CLOEXEC
-    } else {
-        FdFlags::empty()
-    }
+    if flags & O_CLOEXEC != 0 { FdFlags::CLOEXEC } else { FdFlags::empty() }
 }
 
 pub fn sys_pipe2(
@@ -1836,13 +1828,9 @@ pub fn sys_memfd_create(
         track_stub!(TODO("https://fxbug.dev/408561758"), "MFD_NOEXEC_SEAL");
     }
 
-    let name = current_task.read_c_string_to_vec(user_name, MEMFD_NAME_MAX_LEN).map_err(|e| {
-        if e == ENAMETOOLONG {
-            errno!(EINVAL)
-        } else {
-            e
-        }
-    })?;
+    let name = current_task
+        .read_c_string_to_vec(user_name, MEMFD_NAME_MAX_LEN)
+        .map_err(|e| if e == ENAMETOOLONG { errno!(EINVAL) } else { e })?;
 
     let seals = if flags & (MFD_ALLOW_SEALING | MFD_NOEXEC_SEAL) != 0 {
         SealFlags::empty()
@@ -2254,11 +2242,7 @@ fn select(
         set.fds_bits[index] |= 1 << remainder;
     }
     let read_fd_set = |addr: UserRef<__kernel_fd_set>| {
-        if addr.is_null() {
-            Ok(Default::default())
-        } else {
-            current_task.read_object(addr)
-        }
+        if addr.is_null() { Ok(Default::default()) } else { current_task.read_object(addr) }
     };
 
     if nfds as usize > BITS_PER_BYTE * std::mem::size_of::<__kernel_fd_set>() {
@@ -3349,8 +3333,8 @@ mod arch32 {
     use crate::mm::MemoryAccessorExt;
     use crate::task::CurrentTask;
     use crate::vfs::syscalls::{
-        lookup_at, sys_dup3, sys_faccessat, sys_fallocate, sys_lseek, sys_mkdirat, sys_openat,
-        sys_readlinkat, sys_unlinkat, LookupFlags, OpenFlags,
+        LookupFlags, OpenFlags, lookup_at, sys_dup3, sys_faccessat, sys_fallocate, sys_lseek,
+        sys_mkdirat, sys_openat, sys_readlinkat, sys_unlinkat,
     };
     use crate::vfs::{FdNumber, FsNode};
     use linux_uapi::off_t;
@@ -3362,7 +3346,7 @@ mod arch32 {
     use starnix_uapi::signals::SigSet;
     use starnix_uapi::user_address::{MultiArchUserRef, UserAddress, UserCString, UserRef};
     use starnix_uapi::vfs::EpollEvent;
-    use starnix_uapi::{errno, error, uapi, AT_REMOVEDIR};
+    use starnix_uapi::{AT_REMOVEDIR, errno, error, uapi};
 
     type StatFs64Ptr = MultiArchUserRef<uapi::statfs, uapi::arch32::statfs64>;
 

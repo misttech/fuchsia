@@ -15,7 +15,7 @@ use starnix_sync::{
 };
 use starnix_types::ownership::debug_assert_no_local_temp_ref;
 use starnix_uapi::error;
-use starnix_uapi::errors::{Errno, EINTR};
+use starnix_uapi::errors::{EINTR, Errno};
 use starnix_uapi::vfs::FdEvents;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Weak};
@@ -458,11 +458,7 @@ impl PortWaiter {
         // Trigger delayed releaser before blocking.
         current_task.trigger_delayed_releaser(locked);
 
-        if is_waiting {
-            current_task.run_in_state(run_state, callback)
-        } else {
-            callback()
-        }
+        if is_waiting { current_task.run_in_state(run_state, callback) } else { callback() }
     }
 
     fn next_key(&self) -> WaitKey {
@@ -1120,7 +1116,7 @@ mod tests {
     use crate::fs::fuchsia::*;
     use crate::testing::*;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
-    use crate::vfs::eventfd::{new_eventfd, EventFdType};
+    use crate::vfs::eventfd::{EventFdType, new_eventfd};
     use assert_matches::assert_matches;
     use starnix_sync::Unlocked;
     use starnix_uapi::open_flags::OpenFlags;

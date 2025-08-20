@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::task::PageFaultExceptionReport;
-use starnix_uapi::signals::{Signal, SIGFPE, SIGSEGV};
+use starnix_uapi::signals::{SIGFPE, SIGSEGV, Signal};
 
 pub fn decode_page_fault_exception_report(
     report: &zx::sys::zx_exception_report_t,

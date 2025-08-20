@@ -2,10 +2,10 @@
 
 use anyhow::Context;
 use byteorder::{BigEndian, ByteOrder, NativeEndian};
-use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
-use netlink_packet_utils::parsers::{parse_u16_be, parse_u32, parse_u8};
-use netlink_packet_utils::traits::Parseable;
 use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer};
+use netlink_packet_utils::parsers::{parse_u8, parse_u16_be, parse_u32};
+use netlink_packet_utils::traits::Parseable;
 
 const IFLA_VXLAN_ID: u16 = 1;
 const IFLA_VXLAN_GROUP: u16 = 2;

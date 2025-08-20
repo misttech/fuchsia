@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
-use futures::{pin_mut, select, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt, pin_mut, select};
 use log::{error, warn};
 use std::collections::BTreeMap;
 use std::future::Future;

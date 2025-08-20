@@ -2,10 +2,10 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::route::RouteProtocol;
 use crate::rule::flags::RuleFlags;
 use crate::rule::{RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleMessageBuffer};
-use crate::AddressFamily;
 
 // wireshark capture(netlink message header removed) of nlmon against command:
 //   ip -4 rule show

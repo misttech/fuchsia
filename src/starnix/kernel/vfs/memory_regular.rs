@@ -4,24 +4,24 @@
 
 use crate::fs::tmpfs::TmpFs;
 use crate::mm::memory::MemoryObject;
-use crate::mm::{ProtectionFlags, PAGE_SIZE, VMEX_RESOURCE};
+use crate::mm::{PAGE_SIZE, ProtectionFlags, VMEX_RESOURCE};
 use crate::security;
-use crate::signals::{send_standard_signal, SignalInfo};
+use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::CurrentTask;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    default_ioctl, fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
     AppendLockGuard, DirEntry, FallocMode, FileHandle, FileObject, FileOps, FileSystemHandle,
-    FsNode, FsNodeInfo, FsNodeLinkBehavior, FsNodeOps, FsString, MemoryXattrStorage, Mount,
-    MountInfo, NamespaceNode, WhatToMount, XattrStorage as _, MAX_LFS_FILESIZE,
+    FsNode, FsNodeInfo, FsNodeLinkBehavior, FsNodeOps, FsString, MAX_LFS_FILESIZE,
+    MemoryXattrStorage, Mount, MountInfo, NamespaceNode, WhatToMount, XattrStorage as _,
+    default_ioctl, fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
 };
 use linux_uapi::{ASHMEM_GET_SIZE, ASHMEM_SET_SIZE};
 use starnix_logging::{impossible_error, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::math::round_up_to_system_page_size;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{mode, AccessCheck};
+use starnix_uapi::file_mode::{AccessCheck, mode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::seal_flags::SealFlags;

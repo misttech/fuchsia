@@ -578,7 +578,8 @@ pub struct HashMap {
 impl HashMap {
     pub fn new(schema: &MapSchema, vmo: impl Into<VmoOrName>) -> Result<Self, MapError> {
         let layout = Layout::new(schema)?;
-        let buffer = MapBuffer::new(layout.total_size(), vmo.into().with_name_prefix("ebpf:hashmap"))?;
+        let buffer =
+            MapBuffer::new(layout.total_size(), vmo.into().with_name_prefix("ebpf:hashmap"))?;
 
         // Generate a random key to be used for the hash function and store it
         // in the buffer.

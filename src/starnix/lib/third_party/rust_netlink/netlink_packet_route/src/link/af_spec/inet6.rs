@@ -4,10 +4,10 @@ use std::net::Ipv6Addr;
 
 use anyhow::Context;
 use byteorder::{ByteOrder, NativeEndian};
-use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
-use netlink_packet_utils::parsers::{parse_u32, parse_u8};
-use netlink_packet_utils::traits::{Emitable, Parseable};
 use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
+use netlink_packet_utils::parsers::{parse_u8, parse_u32};
+use netlink_packet_utils::traits::{Emitable, Parseable};
 
 use super::super::buffer_tool::expand_buffer_if_small;
 use super::super::{

@@ -6,10 +6,10 @@ use crate::mm::PAGE_SIZE;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::memory_directory::MemoryDirectoryFile;
 use crate::vfs::{
-    fs_args, fs_node_impl_not_dir, fs_node_impl_xattr_delegate, CacheMode, DirEntry,
-    DirEntryHandle, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions,
-    FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, MemoryRegularNode,
-    MemoryXattrStorage, SymlinkNode, XattrStorage as _,
+    CacheMode, DirEntry, DirEntryHandle, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
+    FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
+    MemoryRegularNode, MemoryXattrStorage, SymlinkNode, XattrStorage as _, fs_args,
+    fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
 };
 use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
@@ -17,13 +17,13 @@ use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{mode, FileMode};
+use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::seal_flags::SealFlags;
-use starnix_uapi::{error, gid_t, statfs, uid_t, TMPFS_MAGIC};
+use starnix_uapi::{TMPFS_MAGIC, error, gid_t, statfs, uid_t};
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 pub struct TmpFs(&'static FsStr);
 

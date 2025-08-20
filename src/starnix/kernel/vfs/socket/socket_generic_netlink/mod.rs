@@ -4,14 +4,14 @@
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
-use futures::future::{join, Future};
+use futures::future::{Future, join};
 use futures::stream::{FuturesUnordered, StreamExt};
 use linux_uapi::{NLM_F_ACK, NLM_F_CAPPED};
+use netlink::NETLINK_LOG_TAG;
 use netlink::messaging::Sender;
 use netlink::multicast_groups::ModernGroup;
-use netlink::NETLINK_LOG_TAG;
 use netlink_packet_core::{
-    ErrorMessage, NetlinkHeader, NetlinkMessage, NetlinkPayload, NETLINK_HEADER_LEN,
+    ErrorMessage, NETLINK_HEADER_LEN, NetlinkHeader, NetlinkMessage, NetlinkPayload,
 };
 use netlink_packet_generic::constants::GENL_ID_CTRL;
 use netlink_packet_generic::ctrl::nlas::{GenlCtrlAttrs, McastGrpAttrs};
@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use starnix_logging::{log_error, log_info, log_warn};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{error, ENOENT};
+use starnix_uapi::{ENOENT, error};
 
 mod messages;
 mod nl80211;
@@ -78,11 +78,7 @@ fn extract_family_names(genl_ctrl: GenlCtrl) -> Vec<String> {
         .into_iter()
         .filter_map(
             |attr| {
-                if let GenlCtrlAttrs::FamilyName(name) = attr {
-                    Some(name)
-                } else {
-                    None
-                }
+                if let GenlCtrlAttrs::FamilyName(name) = attr { Some(name) } else { None }
             },
         )
         .collect()
@@ -677,10 +673,12 @@ mod tests {
             payload,
             NetlinkPayload::InnerMessage(GenericMessage::Ctrl(m)) => m.into_parts());
         assert_eq!(ctrl_payload.cmd, GenlCtrlCmd::NewFamily);
-        assert!(ctrl_payload
-            .nlas
-            .iter()
-            .any(|nla| *nla == GenlCtrlAttrs::FamilyName(TEST_FAMILY.into())));
+        assert!(
+            ctrl_payload
+                .nlas
+                .iter()
+                .any(|nla| *nla == GenlCtrlAttrs::FamilyName(TEST_FAMILY.into()))
+        );
         assert!(ctrl_payload.nlas.iter().any(|nla| matches!(nla, GenlCtrlAttrs::FamilyId(_))));
         let multicast_groups = ctrl_payload
             .nlas
@@ -732,10 +730,12 @@ mod tests {
             payload,
             NetlinkPayload::InnerMessage(GenericMessage::Ctrl(m)) => m.into_parts());
         assert_eq!(ctrl_payload.cmd, GenlCtrlCmd::NewFamily);
-        assert!(ctrl_payload
-            .nlas
-            .iter()
-            .any(|nla| *nla == GenlCtrlAttrs::FamilyName(TEST_FAMILY.into())));
+        assert!(
+            ctrl_payload
+                .nlas
+                .iter()
+                .any(|nla| *nla == GenlCtrlAttrs::FamilyName(TEST_FAMILY.into()))
+        );
         assert!(ctrl_payload.nlas.iter().any(|nla| matches!(nla, GenlCtrlAttrs::FamilyId(_))));
         let multicast_groups = ctrl_payload
             .nlas

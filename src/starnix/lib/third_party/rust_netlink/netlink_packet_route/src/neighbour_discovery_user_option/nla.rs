@@ -2,9 +2,9 @@
 
 use anyhow::Context;
 
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{self, DefaultNla, NlaBuffer};
 use netlink_packet_utils::traits::Parseable;
-use netlink_packet_utils::DecodeError;
 
 use super::constants;
 

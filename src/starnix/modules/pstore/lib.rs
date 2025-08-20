@@ -15,7 +15,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
-use starnix_uapi::{statfs, PSTOREFS_MAGIC};
+use starnix_uapi::{PSTOREFS_MAGIC, statfs};
 
 struct PstoreFsHandle {
     fs_handle: FileSystemHandle,

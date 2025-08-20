@@ -6,7 +6,7 @@ use fidl_fuchsia_starnix_psi::{PsiProviderRequest, PsiProviderRequestStream};
 use fuchsia_component_test::LocalComponentHandles;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::lock::Mutex;
-use futures::{select, Future, FutureExt, SinkExt, StreamExt};
+use futures::{Future, FutureExt, SinkExt, StreamExt, select};
 use std::pin::pin;
 use std::sync::Arc;
 

@@ -10,19 +10,19 @@ use crate::task::{
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, FdFlags, FdNumber, FileObject, FileOps,
+    Anon, FdFlags, FdNumber, FileObject, FileOps, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 
 use starnix_lifecycle::AtomicUsizeCounter;
-use starnix_logging::{impossible_error, log_warn, trace_duration, CATEGORY_STARNIX};
+use starnix_logging::{CATEGORY_STARNIX, impossible_error, log_warn, trace_duration};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    c_char, errno, error, sync_fence_info, sync_file_info, sync_merge_data, SYNC_IOC_MAGIC,
+    SYNC_IOC_MAGIC, c_char, errno, error, sync_fence_info, sync_file_info, sync_merge_data,
 };
 use std::collections::HashSet;
 use std::sync::Arc;

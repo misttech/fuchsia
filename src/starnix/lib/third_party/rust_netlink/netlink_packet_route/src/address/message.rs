@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 
-use crate::address::{AddressAttribute, AddressError, AddressHeaderFlags, AddressScope};
 use crate::AddressFamily;
+use crate::address::{AddressAttribute, AddressError, AddressHeaderFlags, AddressScope};
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{NlaBuffer, NlaError, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
 const ADDRESS_HEADER_LEN: usize = 8;
 

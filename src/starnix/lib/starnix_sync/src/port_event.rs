@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A [`PortEvent`] is interested only in events originating from within the
 /// process (see [`PortEvent.futex`] for more details), and the waiter is
@@ -159,9 +159,10 @@ impl PortEvent {
                             // Once the caller handles all the current user events,
                             // we end up with no remaining user events but a user
                             // packet sitting in the `zx::Port`.
-                            assert!(self
-                                .has_pending_user_packet
-                                .swap(false, ORDERING_FOR_ATOMICS_BETWEEN_NOTIFIER_AND_NOTIFEE));
+                            assert!(
+                                self.has_pending_user_packet
+                                    .swap(false, ORDERING_FOR_ATOMICS_BETWEEN_NOTIFIER_AND_NOTIFEE)
+                            );
 
                             PortWaitResult::NOTIFY_REGULAR
                         }

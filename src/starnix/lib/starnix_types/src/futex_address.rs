@@ -5,7 +5,7 @@
 // A FutexAddress is a more limited form of UserAddress. FutexAddress values must be aligned
 // to a 4 byte boundary and must be within the restricted address space range.
 
-use starnix_uapi::errors::{error, Errno};
+use starnix_uapi::errors::{Errno, error};
 use starnix_uapi::restricted_aspace::RESTRICTED_ASPACE_RANGE;
 use starnix_uapi::user_address::UserAddress;
 use std::fmt;

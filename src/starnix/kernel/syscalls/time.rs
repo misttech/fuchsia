@@ -15,17 +15,17 @@ use fuchsia_runtime::UtcInstant;
 use starnix_logging::{log_debug, log_error, log_trace, track_stub};
 use starnix_sync::{Locked, Unlocked};
 use starnix_types::time::{
-    duration_from_timespec, duration_to_scheduler_clock, time_from_timespec,
-    timespec_from_duration, timespec_is_zero, timeval_from_time, NANOS_PER_SECOND,
+    NANOS_PER_SECOND, duration_from_timespec, duration_to_scheduler_clock, time_from_timespec,
+    timespec_from_duration, timespec_is_zero, timeval_from_time,
 };
 use starnix_uapi::auth::CAP_WAKE_ALARM;
-use starnix_uapi::errors::{Errno, EINTR};
+use starnix_uapi::errors::{EINTR, Errno};
 use starnix_uapi::user_address::{MultiArchUserRef, UserRef};
 use starnix_uapi::{
-    errno, error, from_status_like_fdio, pid_t, tid_t, timespec, timezone, tms, uapi,
     CLOCK_BOOTTIME, CLOCK_BOOTTIME_ALARM, CLOCK_MONOTONIC, CLOCK_MONOTONIC_COARSE,
     CLOCK_MONOTONIC_RAW, CLOCK_PROCESS_CPUTIME_ID, CLOCK_REALTIME, CLOCK_REALTIME_ALARM,
-    CLOCK_REALTIME_COARSE, CLOCK_TAI, CLOCK_THREAD_CPUTIME_ID, MAX_CLOCKS, TIMER_ABSTIME,
+    CLOCK_REALTIME_COARSE, CLOCK_TAI, CLOCK_THREAD_CPUTIME_ID, MAX_CLOCKS, TIMER_ABSTIME, errno,
+    error, from_status_like_fdio, pid_t, tid_t, timespec, timezone, tms, uapi,
 };
 use zx::{
     Task, {self as zx},

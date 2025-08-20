@@ -5,7 +5,7 @@
 use component_events::events::{EventStream, ExitStatus, Stopped};
 use component_events::matcher::EventMatcher;
 use fake_datachannel::MockDataChannel;
-use fake_display_server::{mock_display_server, DisplayRequests};
+use fake_display_server::{DisplayRequests, mock_display_server};
 use fake_nanohub_server::mock_nanohub_server;
 use fake_socket_tunnel::mock_socket_tunnel;
 use fuchsia_component_test::{

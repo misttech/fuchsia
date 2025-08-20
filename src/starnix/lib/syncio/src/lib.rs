@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::zxio::{
-    zxio_dirent_iterator_next, zxio_dirent_iterator_t, ZXIO_NODE_PROTOCOL_DIRECTORY,
-    ZXIO_NODE_PROTOCOL_FILE,
+    ZXIO_NODE_PROTOCOL_DIRECTORY, ZXIO_NODE_PROTOCOL_FILE, zxio_dirent_iterator_next,
+    zxio_dirent_iterator_t,
 };
 use bitflags::bitflags;
 use bstr::BString;
@@ -15,7 +15,7 @@ use pin_weak::sync::PinWeak;
 use std::cell::OnceCell;
 use std::ffi::CStr;
 use std::marker::PhantomData;
-use std::mem::{size_of, size_of_val, MaybeUninit};
+use std::mem::{MaybeUninit, size_of, size_of_val};
 use std::num::TryFromIntError;
 use std::os::raw::{c_char, c_int, c_uint, c_void};
 use std::pin::Pin;
@@ -23,10 +23,10 @@ use std::sync::Arc;
 use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
 use zx::{self as zx, AsHandleRef as _, HandleBased as _};
 use zxio::{
-    msghdr, sockaddr, sockaddr_storage, socklen_t, zx_handle_t, zx_status_t, zxio_object_type_t,
-    zxio_seek_origin_t, zxio_socket_mark_t, zxio_storage_t, ZXIO_SELINUX_CONTEXT_STATE_DATA,
-    ZXIO_SHUTDOWN_OPTIONS_READ, ZXIO_SHUTDOWN_OPTIONS_WRITE, ZXIO_SOCKET_MARK_DOMAIN_1,
-    ZXIO_SOCKET_MARK_DOMAIN_2,
+    ZXIO_SELINUX_CONTEXT_STATE_DATA, ZXIO_SHUTDOWN_OPTIONS_READ, ZXIO_SHUTDOWN_OPTIONS_WRITE,
+    ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2, msghdr, sockaddr, sockaddr_storage,
+    socklen_t, zx_handle_t, zx_status_t, zxio_object_type_t, zxio_seek_origin_t,
+    zxio_socket_mark_t, zxio_storage_t,
 };
 
 pub mod zxio;

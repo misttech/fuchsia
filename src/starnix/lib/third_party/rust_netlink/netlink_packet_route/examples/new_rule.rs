@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 use netlink_packet_core::{
-    NetlinkHeader, NetlinkMessage, NetlinkPayload, NLM_F_ACK, NLM_F_CREATE, NLM_F_EXCL,
-    NLM_F_REQUEST,
+    NLM_F_ACK, NLM_F_CREATE, NLM_F_EXCL, NLM_F_REQUEST, NetlinkHeader, NetlinkMessage,
+    NetlinkPayload,
 };
 use netlink_packet_route::route::RouteProtocol;
 use netlink_packet_route::rule::{RuleAction, RuleAttribute, RuleHeader, RuleMessage};

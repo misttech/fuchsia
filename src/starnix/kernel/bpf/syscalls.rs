@@ -6,8 +6,8 @@
 #![allow(non_upper_case_globals)]
 
 use super::BpfMap;
-use crate::bpf::attachments::{bpf_prog_attach, bpf_prog_detach, BpfAttachAttr};
-use crate::bpf::fs::{get_bpf_object, BpfFsDir, BpfFsObject, BpfHandle};
+use crate::bpf::attachments::{BpfAttachAttr, bpf_prog_attach, bpf_prog_detach};
+use crate::bpf::fs::{BpfFsDir, BpfFsObject, BpfHandle, get_bpf_object};
 use crate::bpf::program::{Program, ProgramInfo};
 use crate::mm::{MemoryAccessor, MemoryAccessorExt};
 use crate::security;
@@ -21,29 +21,30 @@ use ebpf_api::{Map, MapError, MapKey};
 use smallvec::smallvec;
 use starnix_logging::{log_error, log_trace, track_stub};
 use starnix_sync::{Locked, Unlocked};
-use starnix_syscalls::{SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserCString, UserRef};
 use starnix_uapi::{
-    bpf_attr__bindgen_ty_1, bpf_attr__bindgen_ty_10, bpf_attr__bindgen_ty_12,
-    bpf_attr__bindgen_ty_2, bpf_attr__bindgen_ty_4, bpf_attr__bindgen_ty_5, bpf_attr__bindgen_ty_8,
-    bpf_attr__bindgen_ty_9, bpf_cmd, bpf_cmd_BPF_BTF_GET_FD_BY_ID, bpf_cmd_BPF_BTF_GET_NEXT_ID,
-    bpf_cmd_BPF_BTF_LOAD, bpf_cmd_BPF_ENABLE_STATS, bpf_cmd_BPF_ITER_CREATE,
-    bpf_cmd_BPF_LINK_CREATE, bpf_cmd_BPF_LINK_DETACH, bpf_cmd_BPF_LINK_GET_FD_BY_ID,
-    bpf_cmd_BPF_LINK_GET_NEXT_ID, bpf_cmd_BPF_LINK_UPDATE, bpf_cmd_BPF_MAP_CREATE,
-    bpf_cmd_BPF_MAP_DELETE_BATCH, bpf_cmd_BPF_MAP_DELETE_ELEM, bpf_cmd_BPF_MAP_FREEZE,
-    bpf_cmd_BPF_MAP_GET_FD_BY_ID, bpf_cmd_BPF_MAP_GET_NEXT_ID, bpf_cmd_BPF_MAP_GET_NEXT_KEY,
-    bpf_cmd_BPF_MAP_LOOKUP_AND_DELETE_BATCH, bpf_cmd_BPF_MAP_LOOKUP_AND_DELETE_ELEM,
-    bpf_cmd_BPF_MAP_LOOKUP_BATCH, bpf_cmd_BPF_MAP_LOOKUP_ELEM, bpf_cmd_BPF_MAP_UPDATE_BATCH,
-    bpf_cmd_BPF_MAP_UPDATE_ELEM, bpf_cmd_BPF_OBJ_GET, bpf_cmd_BPF_OBJ_GET_INFO_BY_FD,
-    bpf_cmd_BPF_OBJ_PIN, bpf_cmd_BPF_PROG_ATTACH, bpf_cmd_BPF_PROG_BIND_MAP,
-    bpf_cmd_BPF_PROG_DETACH, bpf_cmd_BPF_PROG_GET_FD_BY_ID, bpf_cmd_BPF_PROG_GET_NEXT_ID,
-    bpf_cmd_BPF_PROG_LOAD, bpf_cmd_BPF_PROG_QUERY, bpf_cmd_BPF_PROG_RUN,
-    bpf_cmd_BPF_RAW_TRACEPOINT_OPEN, bpf_cmd_BPF_TASK_FD_QUERY, bpf_cmd_BPF_TOKEN_CREATE,
-    bpf_map_info, bpf_map_type_BPF_MAP_TYPE_DEVMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH,
-    bpf_prog_info, errno, error, BPF_F_RDONLY, BPF_F_WRONLY,
+    BPF_F_RDONLY, BPF_F_WRONLY, bpf_attr__bindgen_ty_1, bpf_attr__bindgen_ty_2,
+    bpf_attr__bindgen_ty_4, bpf_attr__bindgen_ty_5, bpf_attr__bindgen_ty_8, bpf_attr__bindgen_ty_9,
+    bpf_attr__bindgen_ty_10, bpf_attr__bindgen_ty_12, bpf_cmd, bpf_cmd_BPF_BTF_GET_FD_BY_ID,
+    bpf_cmd_BPF_BTF_GET_NEXT_ID, bpf_cmd_BPF_BTF_LOAD, bpf_cmd_BPF_ENABLE_STATS,
+    bpf_cmd_BPF_ITER_CREATE, bpf_cmd_BPF_LINK_CREATE, bpf_cmd_BPF_LINK_DETACH,
+    bpf_cmd_BPF_LINK_GET_FD_BY_ID, bpf_cmd_BPF_LINK_GET_NEXT_ID, bpf_cmd_BPF_LINK_UPDATE,
+    bpf_cmd_BPF_MAP_CREATE, bpf_cmd_BPF_MAP_DELETE_BATCH, bpf_cmd_BPF_MAP_DELETE_ELEM,
+    bpf_cmd_BPF_MAP_FREEZE, bpf_cmd_BPF_MAP_GET_FD_BY_ID, bpf_cmd_BPF_MAP_GET_NEXT_ID,
+    bpf_cmd_BPF_MAP_GET_NEXT_KEY, bpf_cmd_BPF_MAP_LOOKUP_AND_DELETE_BATCH,
+    bpf_cmd_BPF_MAP_LOOKUP_AND_DELETE_ELEM, bpf_cmd_BPF_MAP_LOOKUP_BATCH,
+    bpf_cmd_BPF_MAP_LOOKUP_ELEM, bpf_cmd_BPF_MAP_UPDATE_BATCH, bpf_cmd_BPF_MAP_UPDATE_ELEM,
+    bpf_cmd_BPF_OBJ_GET, bpf_cmd_BPF_OBJ_GET_INFO_BY_FD, bpf_cmd_BPF_OBJ_PIN,
+    bpf_cmd_BPF_PROG_ATTACH, bpf_cmd_BPF_PROG_BIND_MAP, bpf_cmd_BPF_PROG_DETACH,
+    bpf_cmd_BPF_PROG_GET_FD_BY_ID, bpf_cmd_BPF_PROG_GET_NEXT_ID, bpf_cmd_BPF_PROG_LOAD,
+    bpf_cmd_BPF_PROG_QUERY, bpf_cmd_BPF_PROG_RUN, bpf_cmd_BPF_RAW_TRACEPOINT_OPEN,
+    bpf_cmd_BPF_TASK_FD_QUERY, bpf_cmd_BPF_TOKEN_CREATE, bpf_map_info,
+    bpf_map_type_BPF_MAP_TYPE_DEVMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH, bpf_prog_info, errno,
+    error,
 };
 use zerocopy::{FromBytes, IntoBytes};
 

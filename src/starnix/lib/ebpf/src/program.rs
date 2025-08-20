@@ -5,9 +5,9 @@
 use crate::executor::execute;
 use crate::verifier::VerifiedEbpfProgram;
 use crate::{
-    CbpfConfig, DataWidth, EbpfError, EbpfInstruction, MapSchema, MemoryId, StructAccess, Type,
     BPF_CALL, BPF_DW, BPF_JMP, BPF_LDDW, BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE,
-    BPF_SIZE_MASK,
+    BPF_SIZE_MASK, CbpfConfig, DataWidth, EbpfError, EbpfInstruction, MapSchema, MemoryId,
+    StructAccess, Type,
 };
 use derivative::Derivative;
 use std::collections::HashMap;
@@ -719,8 +719,8 @@ mod test {
     use crate::api::*;
     use crate::conformance::test::parse_asm;
     use crate::{
-        verify_program, CallingContext, FieldDescriptor, FieldMapping, FieldType,
-        NullVerifierLogger, ProgramArgument, StructDescriptor, Type,
+        CallingContext, FieldDescriptor, FieldMapping, FieldType, NullVerifierLogger,
+        ProgramArgument, StructDescriptor, Type, verify_program,
     };
     use std::mem::offset_of;
     use std::sync::{Arc, LazyLock};

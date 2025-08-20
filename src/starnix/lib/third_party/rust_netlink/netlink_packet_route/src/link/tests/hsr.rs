@@ -2,12 +2,12 @@
 
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
 use crate::link::link_flag::LinkFlags;
 use crate::link::{
     HsrProtocol, InfoData, InfoHsr, InfoKind, LinkAttribute, LinkHeader, LinkInfo, LinkLayerType,
     LinkMessage, LinkMessageBuffer,
 };
-use crate::AddressFamily;
 
 #[test]
 fn test_parsing_link_hsr() {

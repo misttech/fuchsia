@@ -5,11 +5,11 @@
 use crate::mm::memory::MemoryObject;
 use crate::mm::memory_manager::MemoryManagerState;
 use crate::mm::{
-    FaultRegisterMode, MappingOptions, ProtectionFlags, GUARD_PAGE_COUNT_FOR_GROWSDOWN_MAPPINGS,
-    PAGE_SIZE,
+    FaultRegisterMode, GUARD_PAGE_COUNT_FOR_GROWSDOWN_MAPPINGS, MappingOptions, PAGE_SIZE,
+    ProtectionFlags,
 };
-use crate::vfs::aio::AioContext;
 use crate::vfs::FileMapping;
+use crate::vfs::aio::AioContext;
 use bitflags::bitflags;
 use flyweights::FlyByteStr;
 use fuchsia_inspect::HistogramProperty;
@@ -17,7 +17,7 @@ use fuchsia_inspect_contrib::profile_duration;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::Access;
 use starnix_uapi::user_address::UserAddress;
-use starnix_uapi::{errno, PROT_EXEC, PROT_READ, PROT_WRITE};
+use starnix_uapi::{PROT_EXEC, PROT_READ, PROT_WRITE, errno};
 use static_assertions::const_assert_eq;
 use std::mem::MaybeUninit;
 use std::ops::Range;

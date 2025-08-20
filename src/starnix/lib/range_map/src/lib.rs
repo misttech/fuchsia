@@ -25,11 +25,7 @@ pub trait Gap {
 
 impl Gap for u32 {
     fn measure_gap(&self, other: &Self) -> u64 {
-        if *self > *other {
-            (*self - *other) as u64
-        } else {
-            (*other - *self) as u64
-        }
+        if *self > *other { (*self - *other) as u64 } else { (*other - *self) as u64 }
     }
 }
 
@@ -892,11 +888,7 @@ where
             let left_size = self.children.size_at(left_index);
             let right_index = index + 1;
             let right_size = self.children.size_at(right_index);
-            if left_size > right_size {
-                (left_index, index)
-            } else {
-                (index, right_index)
-            }
+            if left_size > right_size { (left_index, index) } else { (index, right_index) }
         }
     }
     /// Rebalance the child at the given index.

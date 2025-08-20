@@ -8,8 +8,8 @@ use crate::remote_binder::RemoteBinderDevice;
 use bitflags::bitflags;
 use fidl::endpoints::ClientEnd;
 use fuchsia_inspect_contrib::profile_duration;
-use starnix_core::device::mem::new_null_file;
 use starnix_core::device::DeviceOps;
+use starnix_core::device::mem::new_null_file;
 use starnix_core::fs::fuchsia::new_remote_file;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{
@@ -24,33 +24,33 @@ use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer, VecInputBuffer};
 use starnix_core::vfs::pseudo::simple_file::BytesFile;
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_dir_readonly, CacheMode,
-    DirEntry, DirectoryEntryType, FdFlags, FdNumber, FileHandle, FileObject, FileObjectState,
-    FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
-    FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode, SpecialNode,
+    CacheMode, DirEntry, DirectoryEntryType, FdFlags, FdNumber, FileHandle, FileObject,
+    FileObjectState, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions,
+    FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode, SpecialNode,
+    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_dir_readonly,
 };
 use starnix_core::{fileops_impl_dataless, security};
 use starnix_lifecycle::AtomicU64Counter;
 use starnix_logging::{
-    log_error, log_trace, log_warn, trace_duration, trace_instaflow_begin, trace_instaflow_end,
-    track_stub, with_zx_name, CATEGORY_STARNIX,
+    CATEGORY_STARNIX, log_error, log_trace, log_warn, trace_duration, trace_instaflow_begin,
+    trace_instaflow_end, track_stub, with_zx_name,
 };
 use starnix_sync::{
-    ordered_lock_vec, FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Mutex,
-    MutexGuard, ResourceAccessorLevel, RwLock, Unlocked,
+    FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Mutex, MutexGuard,
+    ResourceAccessorLevel, RwLock, Unlocked, ordered_lock_vec,
 };
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::convert::IntoFidl as _;
 use starnix_types::ownership::{
-    release_after, release_iter_after, release_on_error, DropGuard, OwnedRef, Releasable,
-    ReleaseGuard, Share, TempRef, WeakRef,
+    DropGuard, OwnedRef, Releasable, ReleaseGuard, Share, TempRef, WeakRef, release_after,
+    release_iter_after, release_on_error,
 };
 use starnix_types::user_buffer::UserBuffer;
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::arc_key::ArcKey;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
-use starnix_uapi::errors::{Errno, EINTR};
+use starnix_uapi::errors::{EINTR, Errno};
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
@@ -58,15 +58,16 @@ use starnix_uapi::union::struct_with_union_into_bytes;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
+    BINDER_BUFFER_FLAG_HAS_PARENT, BINDER_CURRENT_PROTOCOL_VERSION, BINDER_TYPE_BINDER,
+    BINDER_TYPE_FD, BINDER_TYPE_FDA, BINDER_TYPE_HANDLE, BINDER_TYPE_PTR, BINDERFS_SUPER_MAGIC,
     binder_buffer_object, binder_driver_command_protocol,
     binder_driver_command_protocol_BC_ACQUIRE, binder_driver_command_protocol_BC_ACQUIRE_DONE,
     binder_driver_command_protocol_BC_CLEAR_DEATH_NOTIFICATION,
     binder_driver_command_protocol_BC_CLEAR_FREEZE_NOTIFICATION,
     binder_driver_command_protocol_BC_DEAD_BINDER_DONE, binder_driver_command_protocol_BC_DECREFS,
-    binder_driver_command_protocol_BC_ENTER_LOOPER,
+    binder_driver_command_protocol_BC_ENTER_LOOPER, binder_driver_command_protocol_BC_FREE_BUFFER,
     binder_driver_command_protocol_BC_FREEZE_NOTIFICATION_DONE,
-    binder_driver_command_protocol_BC_FREE_BUFFER, binder_driver_command_protocol_BC_INCREFS,
-    binder_driver_command_protocol_BC_INCREFS_DONE,
+    binder_driver_command_protocol_BC_INCREFS, binder_driver_command_protocol_BC_INCREFS_DONE,
     binder_driver_command_protocol_BC_REGISTER_LOOPER, binder_driver_command_protocol_BC_RELEASE,
     binder_driver_command_protocol_BC_REPLY, binder_driver_command_protocol_BC_REPLY_SG,
     binder_driver_command_protocol_BC_REQUEST_DEATH_NOTIFICATION,
@@ -89,8 +90,6 @@ use starnix_uapi::{
     binder_transaction_data, binder_transaction_data__bindgen_ty_2__bindgen_ty_1,
     binder_transaction_data_sg, binder_uintptr_t, binder_version, binder_write_read, errno,
     errno_from_code, error, flat_binder_object, pid_t, statfs, transaction_flags_TF_ONE_WAY, uapi,
-    BINDERFS_SUPER_MAGIC, BINDER_BUFFER_FLAG_HAS_PARENT, BINDER_CURRENT_PROTOCOL_VERSION,
-    BINDER_TYPE_BINDER, BINDER_TYPE_FD, BINDER_TYPE_FDA, BINDER_TYPE_HANDLE, BINDER_TYPE_PTR,
 };
 use std::cell::Cell;
 use std::collections::btree_map::Entry;
@@ -532,11 +531,7 @@ impl CommandQueueWithWaitQueue {
     }
 
     fn query_events(&self) -> FdEvents {
-        if self.is_empty() {
-            FdEvents::POLLOUT
-        } else {
-            FdEvents::POLLIN | FdEvents::POLLOUT
-        }
+        if self.is_empty() { FdEvents::POLLOUT } else { FdEvents::POLLIN | FdEvents::POLLOUT }
     }
 
     fn wait_async_simple(&self, waiter: &mut SimpleWaiter) {
@@ -1624,11 +1619,7 @@ impl ThreadPool {
     fn get_available_thread(&self) -> Option<MutexGuard<'_, BinderThreadState>> {
         self.0.values().find_map(|t| {
             let thread = t.lock();
-            if thread.is_available() {
-                Some(thread)
-            } else {
-                None
-            }
+            if thread.is_available() { Some(thread) } else { None }
         })
     }
 
@@ -3436,11 +3427,7 @@ impl ResourceAccessor for RemoteResourceAccessor {
             }
         }
 
-        if files.len() != num_fds {
-            error!(ENOENT)
-        } else {
-            Ok(files)
-        }
+        if files.len() != num_fds { error!(ENOENT) } else { Ok(files) }
     }
 
     fn add_files_with_flags(
@@ -3474,11 +3461,7 @@ impl ResourceAccessor for RemoteResourceAccessor {
             }
         }
 
-        if fds.len() != num_files {
-            error!(ENOENT)
-        } else {
-            Ok(fds)
-        }
+        if fds.len() != num_files { error!(ENOENT) } else { Ok(fds) }
     }
 
     fn as_memory_accessor(&self) -> Option<&dyn MemoryAccessor> {
@@ -4541,7 +4524,10 @@ impl BinderDriver {
                                     match current_task.set_scheduler_state(scheduler_state) {
                                         Ok(()) => return SchedulerGuard::from(old_scheduler_state),
                                         Err(e) => {
-                                            log_warn!("Unable to update scheduler state of task {} to {scheduler_state:?}: {e:?}", current_task.tid);
+                                            log_warn!(
+                                                "Unable to update scheduler state of task {} to {scheduler_state:?}: {e:?}",
+                                                current_task.tid
+                                            );
                                         }
                                     }
                                 }
@@ -5641,7 +5627,7 @@ fn get_task_for_thread_group(key: &ThreadGroupKey) -> Option<TempRef<'_, Task>> 
 pub mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_endpoints, RequestStream, ServerEnd};
+    use fidl::endpoints::{RequestStream, ServerEnd, create_endpoints};
     use fidl_fuchsia_starnix_binder::FileFlags;
     use fuchsia_async as fasync;
     use fuchsia_async::LocalExecutor;
@@ -5649,12 +5635,12 @@ pub mod tests {
     use memoffset::offset_of;
     use starnix_core::mm::PAGE_SIZE;
     use starnix_core::testing::*;
-    use starnix_core::vfs::{anon_fs, Anon};
+    use starnix_core::vfs::{Anon, anon_fs};
     use starnix_uapi::errors::{EBADF, EINVAL};
 
     use starnix_uapi::{
-        binder_transaction_data__bindgen_ty_1, binder_transaction_data__bindgen_ty_2,
-        BINDER_TYPE_WEAK_HANDLE,
+        BINDER_TYPE_WEAK_HANDLE, binder_transaction_data__bindgen_ty_1,
+        binder_transaction_data__bindgen_ty_2,
     };
     use static_assertions::const_assert;
     use std::sync::Weak;

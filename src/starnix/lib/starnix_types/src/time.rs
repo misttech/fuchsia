@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use linux_uapi::itimerval;
-use starnix_uapi::errors::{error, Errno};
+use starnix_uapi::errors::{Errno, error};
 use starnix_uapi::{itimerspec, timespec, timeval};
 use static_assertions::const_assert_eq;
 
@@ -81,11 +81,7 @@ pub fn timespec_from_timeval(tv: timeval) -> timespec {
 
 pub fn time_from_timeval<T: zx::Timeline + Copy>(tv: timeval) -> Result<zx::Instant<T>, Errno> {
     let duration = duration_from_timeval::<T>(tv)?;
-    if duration.into_nanos() < 0 {
-        error!(EINVAL)
-    } else {
-        Ok(zx::Instant::ZERO + duration)
-    }
+    if duration.into_nanos() < 0 { error!(EINVAL) } else { Ok(zx::Instant::ZERO + duration) }
 }
 
 /// Returns a `zx::SyntheticInstant` for the given `timespec`, treating the `timespec` as an absolute

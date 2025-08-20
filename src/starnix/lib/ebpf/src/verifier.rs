@@ -7,8 +7,8 @@
 use crate::scalar_value::{ScalarValueData, U32Range, U32ScalarValueData, U64Range};
 use crate::visitor::{BpfVisitor, ProgramCounter, Register, Source};
 use crate::{
-    DataWidth, EbpfError, EbpfInstruction, MapSchema, BPF_MAX_INSTS, BPF_PSEUDO_MAP_IDX,
-    BPF_PSEUDO_MAP_IDX_VALUE, BPF_STACK_SIZE, GENERAL_REGISTER_COUNT, REGISTER_COUNT,
+    BPF_MAX_INSTS, BPF_PSEUDO_MAP_IDX, BPF_PSEUDO_MAP_IDX_VALUE, BPF_STACK_SIZE, DataWidth,
+    EbpfError, EbpfInstruction, GENERAL_REGISTER_COUNT, MapSchema, REGISTER_COUNT,
 };
 use byteorder::{BigEndian, ByteOrder, LittleEndian, NativeEndian};
 use fuchsia_sync::Mutex;
@@ -368,11 +368,7 @@ impl Type {
 
     /// The mask associated with a data of size `width`.
     fn mask(width: DataWidth) -> u64 {
-        if width == DataWidth::U64 {
-            u64::MAX
-        } else {
-            (1 << width.bits()) - 1
-        }
+        if width == DataWidth::U64 { u64::MAX } else { (1 << width.bits()) - 1 }
     }
 
     /// Return true if `self` is a scalar with all bytes initialized.

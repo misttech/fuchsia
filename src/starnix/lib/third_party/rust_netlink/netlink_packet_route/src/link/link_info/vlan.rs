@@ -2,10 +2,10 @@
 
 use anyhow::Context;
 use byteorder::{BigEndian, ByteOrder, NativeEndian};
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
 use netlink_packet_utils::parsers::{parse_u16, parse_u16_be, parse_u32};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
 use crate::link::VlanProtocol;
 

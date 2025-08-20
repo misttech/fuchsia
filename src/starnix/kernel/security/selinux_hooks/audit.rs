@@ -7,7 +7,7 @@ use selinux::permission_check::{PermissionCheck, PermissionCheckResult};
 use selinux::{ClassPermission, KernelPermission, SecurityId};
 use starnix_core::task::{CurrentTask, Task};
 use starnix_core::vfs::{FileObject, FileSystem, FsNode, FsStr};
-use starnix_logging::{BugRef, __track_stub_inner, trace_instant, CATEGORY_STARNIX_SECURITY};
+use starnix_logging::{__track_stub_inner, BugRef, CATEGORY_STARNIX_SECURITY, trace_instant};
 use std::fmt::{Display, Error};
 use std::num::NonZeroU64;
 use std::sync::Arc;
@@ -149,11 +149,7 @@ pub(super) fn audit_decision(
         // The first few of each `todo_bug` are logged as "todo_deny", and the denial tracked.
         "todo_deny"
     } else {
-        if result.permit {
-            "granted"
-        } else {
-            "denied"
-        }
+        if result.permit { "granted" } else { "denied" }
     };
 
     // If there is an associated bug then add it to the audit context.

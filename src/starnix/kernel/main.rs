@@ -18,12 +18,12 @@ use fuchsia_inspect::health::Reporter;
 use futures::{StreamExt, TryStreamExt};
 use starnix_core::mm::{init_usercopy, zxio_maybe_faultable_copy_impl};
 use starnix_kernel_runner::{
-    create_component_from_stream, serve_component_runner, serve_container_controller,
-    serve_memory_attribution_provider_elfkernel, Container, ContainerServiceConfig,
+    Container, ContainerServiceConfig, create_component_from_stream, serve_component_runner,
+    serve_container_controller, serve_memory_attribution_provider_elfkernel,
 };
 use starnix_kernel_structured_config::Config as KernelStructuredConfig;
 use starnix_logging::{
-    log_debug, log_error, log_warn, trace_instant, CATEGORY_STARNIX, NAME_START_KERNEL,
+    CATEGORY_STARNIX, NAME_START_KERNEL, log_debug, log_error, log_warn, trace_instant,
 };
 use std::rc::Rc;
 use {

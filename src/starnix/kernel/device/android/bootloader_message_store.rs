@@ -4,7 +4,7 @@
 
 use crate::device::remote_block_device::RemoteBlockDevice;
 use crate::task::CurrentTask;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use bstr::{BStr, ByteSlice as _};
 use starnix_logging::log_info;
 use starnix_sync::{Locked, Unlocked};

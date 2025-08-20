@@ -9,8 +9,8 @@ use crate::vfs::{
     DirectoryEntryType, DirentSink, FileHandle, FileObject, FsStr, LookupContext, NamespaceNode,
     RenameFlags, SeekTarget, UnlinkKind,
 };
-use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl::HandleBased;
+use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl_fuchsia_io as fio;
 use fuchsia_runtime::UtcInstant;
 use futures::future::BoxFuture;
@@ -28,7 +28,7 @@ use std::sync::{Arc, Weak};
 use vfs::directory::mutable::connection::MutableConnection;
 use vfs::directory::{self};
 use vfs::{
-    attributes, execution_scope, file, path, ObjectRequestRef, ProtocolsExt, ToObjectRequest,
+    ObjectRequestRef, ProtocolsExt, ToObjectRequest, attributes, execution_scope, file, path,
 };
 
 /// Returns a handle implementing a fuchsia.io.Node delegating to the given `file`.
@@ -779,7 +779,7 @@ mod tests {
     use fuchsia_async as fasync;
     use starnix_uapi::auth::Capabilities;
     use std::collections::HashSet;
-    use syncio::{zxio_node_attr_has_t, Zxio, ZxioOpenOptions};
+    use syncio::{Zxio, ZxioOpenOptions, zxio_node_attr_has_t};
 
     fn assert_directory_content(zxio: &Zxio, content: &[&[u8]]) {
         let expected = content.iter().map(|&x| FsString::from(x)).collect::<HashSet<_>>();

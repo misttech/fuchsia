@@ -3,6 +3,9 @@
 use netlink_packet_utils::nla::{DefaultNla, NlaBuffer};
 use netlink_packet_utils::{Emitable, Parseable};
 
+use crate::AddressFamily;
+use crate::tc::TcAction;
+use crate::tc::TcActionAttribute::{Cookie, Index, Kind};
 use crate::tc::actions::message::TcActionMessageAttribute::{
     Actions, Flags, RootCount, RootExtWarnMsg, RootTimeDelta,
 };
@@ -11,25 +14,22 @@ use crate::tc::actions::message::{
     TcActionMessageFlagsWithSelector,
 };
 use crate::tc::actions::{TcActionMessageBuffer, TcActionMessageHeader};
-use crate::tc::TcAction;
-use crate::tc::TcActionAttribute::{Cookie, Index, Kind};
-use crate::AddressFamily;
 
 mod mirror {
-    use netlink_packet_utils::nla::DefaultNla;
     use netlink_packet_utils::Parseable;
+    use netlink_packet_utils::nla::DefaultNla;
 
-    use crate::tc::actions::message::TcActionMessage;
-    use crate::tc::actions::message::TcActionMessageAttribute::{Actions, RootCount};
-    use crate::tc::actions::{TcActionMessageBuffer, TcActionMessageHeader};
+    use crate::AddressFamily;
     use crate::tc::TcActionAttribute::{InHwCount, Kind, Options, Other, Stats};
     use crate::tc::TcActionMirrorOption::{Parms, Tm};
     use crate::tc::TcActionOption::Mirror;
     use crate::tc::TcActionType::{Pipe, Stolen};
     use crate::tc::TcMirrorActionType::{EgressRedir, IngressMirror};
     use crate::tc::TcStats2::{Basic, BasicHw, Queue};
+    use crate::tc::actions::message::TcActionMessage;
+    use crate::tc::actions::message::TcActionMessageAttribute::{Actions, RootCount};
+    use crate::tc::actions::{TcActionMessageBuffer, TcActionMessageHeader};
     use crate::tc::{TcAction, TcActionGeneric, TcMirror, TcStatsBasic, TcStatsQueue};
-    use crate::AddressFamily;
 
     /// Captured `TcActionMessage` examples used for testing.
     mod message {

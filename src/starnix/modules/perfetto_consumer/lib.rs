@@ -6,15 +6,15 @@
 
 use anyhow::bail;
 use fuchsia_trace::{
-    category_enabled, trace_string_ref_t, BufferingMode, ProlongedContext, TraceState,
+    BufferingMode, ProlongedContext, TraceState, category_enabled, trace_string_ref_t,
 };
 use fuchsia_trace_observer::TraceObserver;
 use fxt::blob::{BlobHeader, BlobType};
 use perfetto_protos::perfetto::protos::trace_config::buffer_config::FillPolicy;
 use perfetto_protos::perfetto::protos::trace_config::{BufferConfig, DataSource};
 use perfetto_protos::perfetto::protos::{
-    ipc_frame, DataSourceConfig, DisableTracingRequest, EnableTracingRequest, FreeBuffersRequest,
-    FtraceConfig, ReadBuffersRequest, TraceConfig,
+    DataSourceConfig, DisableTracingRequest, EnableTracingRequest, FreeBuffersRequest,
+    FtraceConfig, ReadBuffersRequest, TraceConfig, ipc_frame,
 };
 use perfetto_trace_protos::perfetto::protos::frame_timeline_event::{
     ActualDisplayFrameStart, ActualSurfaceFrameStart, Event, ExpectedDisplayFrameStart,
@@ -24,7 +24,7 @@ use perfetto_trace_protos::perfetto::protos::ftrace_event::Event::Print;
 use perfetto_trace_protos::perfetto::protos::trace_packet;
 use starnix_core::task::{CurrentTask, Kernel, LockedAndTask};
 use starnix_core::vfs::FsString;
-use starnix_logging::{log_debug, log_error, log_info, CATEGORY_ATRACE, NAME_PERFETTO_BLOB};
+use starnix_logging::{CATEGORY_ATRACE, NAME_PERFETTO_BLOB, log_debug, log_error, log_info};
 use starnix_perfetto_trace_decoder::{decode_read_buffers_response, decode_trace, encode_trace};
 use starnix_sync::{Locked, Unlocked};
 use starnix_uapi::errors::Errno;
@@ -284,7 +284,9 @@ impl CallbackState {
                                 break;
                             }
                         } else {
-                            log_error!("perfetto_consumer ignoring non-MsgInvokeMethodReply message: {frame:?}");
+                            log_error!(
+                                "perfetto_consumer ignoring non-MsgInvokeMethodReply message: {frame:?}"
+                            );
                         }
                     }
                     // The response to a free buffers request does not have anything meaningful,

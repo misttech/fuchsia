@@ -19,7 +19,7 @@ use crate::bpf::attachments::EbpfAttachments;
 use crate::bpf::program::{ProgramHandle, ProgramId, WeakProgramHandle};
 use crate::mm::memory::MemoryObject;
 use crate::security;
-use crate::task::{register_delayed_release, CurrentTask, CurrentTaskAndLocked};
+use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
 use ebpf_api::PinnedMap;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_sync::{

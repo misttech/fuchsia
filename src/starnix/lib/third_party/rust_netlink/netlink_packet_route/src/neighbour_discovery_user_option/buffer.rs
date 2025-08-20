@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-use netlink_packet_utils::nla::{NlaBuffer, NlasIterator};
 use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::nla::{NlaBuffer, NlasIterator};
 
 pub const NEIGHBOUR_DISCOVERY_USER_OPTION_HEADER_LEN: usize = 16;
 

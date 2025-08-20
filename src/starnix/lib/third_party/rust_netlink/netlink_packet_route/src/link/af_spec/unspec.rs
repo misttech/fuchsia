@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Context;
+use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
+use crate::AddressFamily;
 use crate::link::af_spec::{VecAfSpecInet, VecAfSpecInet6};
 use crate::link::{AfSpecInet, AfSpecInet6};
-use crate::AddressFamily;
 
 // For `AF_UNSPEC`, the `IFLA_AF_SPEC` is two layer array:
 //

@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use crate::mm::{
-    read_to_array, read_to_object_as_bytes, read_to_vec, MemoryAccessorExt, NumberOfElementsRead,
-    RemoteMemoryManager, TaskMemoryAccessor, UNIFIED_ASPACES_ENABLED,
+    MemoryAccessorExt, NumberOfElementsRead, RemoteMemoryManager, TaskMemoryAccessor,
+    UNIFIED_ASPACES_ENABLED, read_to_array, read_to_object_as_bytes, read_to_vec,
 };
 use crate::task::{CurrentTask, Task};
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
-use starnix_uapi::errors::{Errno, ENOTSUP};
+use starnix_uapi::errors::{ENOTSUP, Errno};
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{errno, error};
 use std::mem::MaybeUninit;
@@ -185,11 +185,7 @@ pub trait OutputBuffer: Buffer {
     /// In case of success, always returns `buffer.len()`.
     fn write_all(&mut self, buffer: &[u8]) -> Result<usize, Errno> {
         let size = self.write(buffer)?;
-        if size != buffer.len() {
-            error!(EINVAL)
-        } else {
-            Ok(size)
-        }
+        if size != buffer.len() { error!(EINVAL) } else { Ok(size) }
     }
 
     /// Write the content of the given `InputBuffer` into this buffer. The number of bytes written
@@ -295,11 +291,7 @@ pub trait InputBuffer: Buffer {
     /// In case of success, always returns `buffer.len()`.
     fn read_exact(&mut self, buffer: &mut [MaybeUninit<u8>]) -> Result<usize, Errno> {
         let size = self.read(buffer)?;
-        if size != buffer.len() {
-            error!(EINVAL)
-        } else {
-            Ok(size)
-        }
+        if size != buffer.len() { error!(EINVAL) } else { Ok(size) }
     }
 }
 
@@ -339,11 +331,7 @@ pub trait InputBufferExt: InputBuffer {
         // bytes were read.
         unsafe {
             read_to_object_as_bytes(|buf| {
-                if self.read(buf)? != buf.len() {
-                    error!(EINVAL)
-                } else {
-                    Ok(())
-                }
+                if self.read(buf)? != buf.len() { error!(EINVAL) } else { Ok(()) }
             })
         }
     }
@@ -683,11 +671,7 @@ impl<'a, M: TaskMemoryAccessor> InputBuffer for UserBuffersInputBuffer<'a, M> {
                 return Ok(());
             }
         }
-        if length != 0 {
-            error!(EINVAL)
-        } else {
-            Ok(())
-        }
+        if length != 0 { error!(EINVAL) } else { Ok(()) }
     }
 
     fn available(&self) -> usize {

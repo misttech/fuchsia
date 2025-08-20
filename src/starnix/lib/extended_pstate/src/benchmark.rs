@@ -29,7 +29,7 @@ use std::mem;
 use std::time::Duration;
 
 #[cfg(target_arch = "x86_64")]
-use extended_pstate::x86_64::{Strategy, PREFERRED_STRATEGY};
+use extended_pstate::x86_64::{PREFERRED_STRATEGY, Strategy};
 
 fn main() {
     let mut fc = FuchsiaCriterion::default();

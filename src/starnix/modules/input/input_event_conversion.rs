@@ -118,7 +118,10 @@ impl LinuxTouchEventParser {
         match &self.current_contact {
             Some(current) => {
                 if !validate_contact_input_report(&current) {
-                    log_warn!("current_contact does not have required information, current_contact = {:?}", current);
+                    log_warn!(
+                        "current_contact does not have required information, current_contact = {:?}",
+                        current
+                    );
                     self.reset_state();
                     return error!(EINVAL);
                 }
@@ -838,7 +841,10 @@ impl LinuxKeyboardEventParser {
             // Press
             1 => {
                 if self.pressing_keys.contains(&fkey) {
-                    log_warn!("keyboard receive a press key event while the key is already pressing, key = {:?}", fkey);
+                    log_warn!(
+                        "keyboard receive a press key event while the key is already pressing, key = {:?}",
+                        fkey
+                    );
                     self.reset_state();
                     return error!(EINVAL);
                 }
@@ -847,7 +853,10 @@ impl LinuxKeyboardEventParser {
             // Release
             0 => {
                 if !self.pressing_keys.contains(&fkey) {
-                    log_warn!("keyboard receive a release key event while the key is not pressing, key = {:?}", fkey);
+                    log_warn!(
+                        "keyboard receive a release key event while the key is not pressing, key = {:?}",
+                        fkey
+                    );
                     self.reset_state();
                     return error!(EINVAL);
                 }
@@ -2666,8 +2675,8 @@ mod keyboard_tests {
     }
 
     #[test]
-    fn parse_linux_events_to_fidl_keyboard_event_send_syn_when_have_cached_event_and_no_pressing_keys(
-    ) {
+    fn parse_linux_events_to_fidl_keyboard_event_send_syn_when_have_cached_event_and_no_pressing_keys()
+     {
         let mut linux_keyboard_event_parser = LinuxKeyboardEventParser::create();
         let e = uapi_input_event(uapi::EV_KEY, uapi::KEY_A, 1);
         let res = linux_keyboard_event_parser.handle(e);

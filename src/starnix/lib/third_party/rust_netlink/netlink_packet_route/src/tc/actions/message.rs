@@ -5,8 +5,8 @@ use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
 use netlink_packet_utils::{DecodeError, Emitable, Parseable};
 use std::convert::TryInto as _;
 
-use crate::tc::actions::{TcActionMessageBuffer, TcActionMessageHeader};
 use crate::tc::TcAction;
+use crate::tc::actions::{TcActionMessageBuffer, TcActionMessageHeader};
 
 /// Message to describe [tc-actions]
 ///

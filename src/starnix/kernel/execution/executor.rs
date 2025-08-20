@@ -6,32 +6,32 @@
 
 use crate::arch::execution::new_syscall;
 use crate::execution::table::dispatch_syscall;
-use crate::signals::{deliver_signal, dequeue_signal, prepare_to_restart_syscall, SignalInfo};
+use crate::signals::{SignalInfo, deliver_signal, dequeue_signal, prepare_to_restart_syscall};
 use crate::task::{
-    ptrace_attach_from_state, ptrace_syscall_enter, ptrace_syscall_exit, CurrentTask,
-    DelayedReleaser, ExceptionResult, ExitStatus, PtraceCoreState, SeccompStateValue, StopState,
-    TaskBuilder, TaskFlags,
+    CurrentTask, DelayedReleaser, ExceptionResult, ExitStatus, PtraceCoreState, SeccompStateValue,
+    StopState, TaskBuilder, TaskFlags, ptrace_attach_from_state, ptrace_syscall_enter,
+    ptrace_syscall_exit,
 };
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 #[cfg(feature = "syscall_stats")]
 use fuchsia_inspect::NumericProperty;
-use fuchsia_inspect_contrib::{profile_duration, ProfileDuration};
+use fuchsia_inspect_contrib::{ProfileDuration, profile_duration};
 use starnix_logging::{
+    ARG_NAME, CATEGORY_STARNIX, NAME_EXECUTE_SYSCALL, NAME_HANDLE_EXCEPTION,
+    NAME_READ_RESTRICTED_STATE, NAME_RESTRICTED_KICK, NAME_RUN_TASK, NAME_WRITE_RESTRICTED_STATE,
     firehose_trace_duration, firehose_trace_duration_begin, firehose_trace_duration_end,
-    firehose_trace_instant, log_error, log_trace, log_warn, set_current_task_info, ARG_NAME,
-    CATEGORY_STARNIX, NAME_EXECUTE_SYSCALL, NAME_HANDLE_EXCEPTION, NAME_READ_RESTRICTED_STATE,
-    NAME_RESTRICTED_KICK, NAME_RUN_TASK, NAME_WRITE_RESTRICTED_STATE,
+    firehose_trace_instant, log_error, log_trace, log_warn, set_current_task_info,
 };
 use starnix_sync::{LockBefore, Locked, TaskRelease, Unlocked};
-use starnix_syscalls::decls::{Syscall, SyscallDecl};
 use starnix_syscalls::SyscallResult;
+use starnix_syscalls::decls::{Syscall, SyscallDecl};
 use starnix_types::ownership::WeakRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SIGKILL;
 use starnix_uapi::{errno, error};
 use std::os::unix::thread::JoinHandleExt;
-use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
 use zx::{
     AsHandleRef, {self as zx},
 };

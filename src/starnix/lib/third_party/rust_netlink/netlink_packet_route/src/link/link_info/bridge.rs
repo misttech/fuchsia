@@ -4,12 +4,12 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use anyhow::Context;
 use byteorder::{BigEndian, ByteOrder, NativeEndian};
-use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator, NLA_F_NESTED};
+use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::nla::{DefaultNla, NLA_F_NESTED, Nla, NlaBuffer, NlasIterator};
 use netlink_packet_utils::parsers::{
-    parse_ip, parse_mac, parse_u16, parse_u16_be, parse_u32, parse_u64, parse_u8,
+    parse_ip, parse_mac, parse_u8, parse_u16, parse_u16_be, parse_u32, parse_u64,
 };
 use netlink_packet_utils::traits::{Emitable, Parseable};
-use netlink_packet_utils::DecodeError;
 
 const IFLA_BR_FORWARD_DELAY: u16 = 1;
 const IFLA_BR_HELLO_TIME: u16 = 2;
@@ -546,10 +546,12 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for BridgeQuerierS
                     return Err(DecodeError::from(format!(
                         "Invalid BRIDGE_QUERIER_IP_ADDRESS, \
                         expecting IPv4 address, but got {v}"
-                    )))
+                    )));
                 }
                 Err(e) => {
-                    return Err(DecodeError::from(format!("Invalid BRIDGE_QUERIER_IP_ADDRESS {e}")))
+                    return Err(DecodeError::from(format!(
+                        "Invalid BRIDGE_QUERIER_IP_ADDRESS {e}"
+                    )));
                 }
             },
             BRIDGE_QUERIER_IPV6_ADDRESS => match parse_ip(payload) {

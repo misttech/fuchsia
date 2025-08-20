@@ -6,8 +6,8 @@ use starnix_core::device::DeviceOps;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
-    fileops_impl_nonseekable, fileops_impl_noop_sync, CloseFreeSafe, FileObject, FileOps,
-    NamespaceNode,
+    CloseFreeSafe, FileObject, FileOps, NamespaceNode, fileops_impl_nonseekable,
+    fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_info};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
@@ -15,8 +15,8 @@ use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender};
 use zerocopy::IntoBytes;
 
 #[derive(Clone)]

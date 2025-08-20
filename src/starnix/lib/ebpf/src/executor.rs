@@ -4,8 +4,8 @@
 
 use crate::visitor::{BpfVisitor, ProgramCounter, Register, Source};
 use crate::{
-    BpfValue, DataWidth, EbpfInstruction, EbpfProgramContext, FromBpfValue, HelperSet, Packet,
-    BPF_STACK_SIZE, GENERAL_REGISTER_COUNT,
+    BPF_STACK_SIZE, BpfValue, DataWidth, EbpfInstruction, EbpfProgramContext, FromBpfValue,
+    GENERAL_REGISTER_COUNT, HelperSet, Packet,
 };
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use std::mem::MaybeUninit;
@@ -310,11 +310,7 @@ impl<C: EbpfProgramContext> BpfVisitor for ComputationContext<'_, C> {
         self.alu(dst, src, |x, y| {
             let x = x as i64;
             if y > u32::MAX.into() {
-                if x >= 0 {
-                    0
-                } else {
-                    u64::MAX
-                }
+                if x >= 0 { 0 } else { u64::MAX }
             } else {
                 x.overflowing_shr(y as u32).0 as u64
             }

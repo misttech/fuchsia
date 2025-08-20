@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
 use anyhow::Context;
-use netlink_packet_utils::traits::{Parseable, ParseableParametrized};
 use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::traits::{Parseable, ParseableParametrized};
 
 use crate::constants::*;
-use crate::{inet, unix, SockDiagMessage};
+use crate::{SockDiagMessage, inet, unix};
 
 const BUF_MIN_LEN: usize = 2;
 

@@ -10,7 +10,7 @@ use starnix_sync::{InterruptibleEvent, LockBefore, Locked, OrderedMutex, Termina
 use starnix_types::futex_address::FutexAddress;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::UserAddress;
-use starnix_uapi::{errno, error, FUTEX_BITSET_MATCH_ANY, FUTEX_TID_MASK, FUTEX_WAITERS};
+use starnix_uapi::{FUTEX_BITSET_MATCH_ANY, FUTEX_TID_MASK, FUTEX_WAITERS, errno, error};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;

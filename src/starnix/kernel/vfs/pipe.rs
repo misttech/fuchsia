@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use crate::mm::{
-    read_to_vec, MemoryAccessorExt, NumberOfElementsRead, TaskMemoryAccessor, PAGE_SIZE,
+    MemoryAccessorExt, NumberOfElementsRead, PAGE_SIZE, TaskMemoryAccessor, read_to_vec,
 };
 use crate::security;
-use crate::signals::{send_standard_signal, SignalInfo};
+use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::{CurrentTask, EventHandler, WaitCallback, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::buffers::{
     Buffer, InputBuffer, InputBufferCallback, MessageData, MessageQueue, OutputBuffer,
@@ -14,12 +14,12 @@ use crate::vfs::buffers::{
 };
 use crate::vfs::fs_registry::FsRegistry;
 use crate::vfs::{
-    default_fcntl, default_ioctl, fileops_impl_nonseekable, fileops_impl_noop_sync, CacheMode,
-    FileHandle, FileObject, FileObjectState, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
-    FileSystemOptions, FsNodeInfo, FsStr, SpecialNode,
+    CacheMode, FileHandle, FileObject, FileObjectState, FileOps, FileSystem, FileSystemHandle,
+    FileSystemOps, FileSystemOptions, FsNodeInfo, FsStr, SpecialNode, default_fcntl, default_ioctl,
+    fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, MutexGuard, Unlocked};
-use starnix_syscalls::{SyscallArg, SyscallResult, SUCCESS};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::CAP_SYS_RESOURCE;
@@ -30,7 +30,7 @@ use starnix_uapi::signals::SIGPIPE;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    errno, error, statfs, uapi, FIONREAD, F_GETPIPE_SZ, F_SETPIPE_SZ, PIPEFS_MAGIC,
+    F_GETPIPE_SZ, F_SETPIPE_SZ, FIONREAD, PIPEFS_MAGIC, errno, error, statfs, uapi,
 };
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -786,11 +786,7 @@ impl PipeFileObject {
         file.blocking_op(locked, current_task, events, None, |locked| {
             let other = pregen(locked)?;
             let pipe = self.pipe.lock();
-            if condition(&pipe) {
-                Ok((other, pipe))
-            } else {
-                error!(EAGAIN)
-            }
+            if condition(&pipe) { Ok((other, pipe)) } else { error!(EAGAIN) }
         })
     }
 

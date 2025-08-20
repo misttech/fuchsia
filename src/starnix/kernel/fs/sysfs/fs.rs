@@ -16,7 +16,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
-use starnix_uapi::{statfs, SYSFS_MAGIC};
+use starnix_uapi::{SYSFS_MAGIC, statfs};
 
 struct SysFs;
 impl FileSystemOps for SysFs {

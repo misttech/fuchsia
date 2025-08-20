@@ -3,10 +3,10 @@
 use super::{TcActionMirror, TcActionMirrorOption, TcActionNat, TcActionNatOption};
 use crate::tc::{TcError, TcStats2};
 use byteorder::{ByteOrder, NativeEndian};
-use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator, NLA_F_NESTED};
+use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::nla::{DefaultNla, NLA_F_NESTED, Nla, NlaBuffer, NlasIterator};
 use netlink_packet_utils::parsers::{parse_string, parse_u32};
 use netlink_packet_utils::traits::{Emitable, Parseable, ParseableParametrized};
-use netlink_packet_utils::DecodeError;
 
 const TCA_ACT_TAB: u16 = 1;
 

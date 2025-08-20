@@ -5,8 +5,8 @@
 use crate::task::CurrentTask;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    default_ioctl, fileops_impl_nonseekable, fileops_impl_noop_sync, Anon, FileHandle, FileObject,
-    FileOps,
+    Anon, FileHandle, FileObject, FileOps, default_ioctl, fileops_impl_nonseekable,
+    fileops_impl_noop_sync,
 };
 use starnix_logging::log_info;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};

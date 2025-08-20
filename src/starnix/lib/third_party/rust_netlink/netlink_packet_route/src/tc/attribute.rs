@@ -3,7 +3,7 @@
 use super::{TcError, TcOption, TcStats, TcStats2, TcStatsBuffer, TcXstats, VecTcOption};
 use byteorder::{ByteOrder, NativeEndian};
 use netlink_packet_utils::nla::{DefaultNla, Nla, NlaBuffer, NlasIterator};
-use netlink_packet_utils::parsers::{parse_string, parse_u32, parse_u8};
+use netlink_packet_utils::parsers::{parse_string, parse_u8, parse_u32};
 use netlink_packet_utils::{Emitable, Parseable, ParseableParametrized};
 
 const TCA_KIND: u16 = 1;
