@@ -9,15 +9,15 @@ use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::node::{FxNode, OpenedNode};
 use crate::fuchsia::pager::{
-    default_page_in, MarkDirtyRange, PageInRange, PagerBacked, PagerPacketReceiverRegistration,
+    MarkDirtyRange, PageInRange, PagerBacked, PagerPacketReceiverRegistration, default_page_in,
 };
-use crate::fuchsia::volume::{FxVolume, BASE_READ_AHEAD_SIZE};
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use crate::fuchsia::volume::{BASE_READ_AHEAD_SIZE, FxVolume};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use fidl_fuchsia_feedback::{Annotation, Attachment, CrashReport};
 use fidl_fuchsia_mem::Buffer;
 use fuchsia_component_client::connect_to_protocol;
 use fuchsia_hash::Hash;
-use fuchsia_merkle::{hash_block, MerkleTree};
+use fuchsia_merkle::{MerkleTree, hash_block};
 use futures::try_join;
 use fxfs::errors::FxfsError;
 use fxfs::log::*;
@@ -29,8 +29,8 @@ use fxfs_macros::ToWeakNode;
 use std::future::Future;
 use std::num::NonZero;
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use storage_device::buffer;
 use zx::{self as zx, AsHandleRef, HandleBased, Status};
 
@@ -415,8 +415,10 @@ impl PagerBacked for FxBlob {
                             }
                             decompression_errors += 1;
                             if decompression_errors == 2 {
-                                bail!(anyhow!(FxfsError::IntegrityError)
-                                    .context(format!("Decompression error: {error:?}")));
+                                bail!(
+                                    anyhow!(FxfsError::IntegrityError)
+                                        .context(format!("Decompression error: {error:?}"))
+                                );
                             } else {
                                 warn!(error:?; "Decompression error; retrying");
                             }
@@ -607,10 +609,10 @@ fn read_ahead_size_for_chunk_size(chunk_size: u64, suggested_read_ahead_size: u6
 mod tests {
     use super::*;
     use crate::fuchsia::epochs::Epochs;
-    use crate::fuchsia::fxblob::testing::{new_blob_fixture, BlobFixture};
+    use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture};
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::pager::PageInRange;
-    use crate::fuchsia::volume::{MemoryPressureConfig, MAX_READ_AHEAD_SIZE};
+    use crate::fuchsia::volume::{MAX_READ_AHEAD_SIZE, MemoryPressureConfig};
     use assert_matches::assert_matches;
     use delivery_blob::CompressionMode;
     use fuchsia_async as fasync;
@@ -898,41 +900,55 @@ mod tests {
         .unwrap();
 
         // The start of reads must be chunk aligned.
-        assert!(compression_info
-            .compressed_range_for_uncompressed_range(&(1..BASE_READ_AHEAD_SIZE),)
-            .is_err());
+        assert!(
+            compression_info
+                .compressed_range_for_uncompressed_range(&(1..BASE_READ_AHEAD_SIZE),)
+                .is_err()
+        );
 
         // Reading entirely past the last offset isn't allowed.
-        assert!(compression_info
-            .compressed_range_for_uncompressed_range(
-                &(BASE_READ_AHEAD_SIZE * 9..BASE_READ_AHEAD_SIZE * 12),
-            )
-            .is_err());
+        assert!(
+            compression_info
+                .compressed_range_for_uncompressed_range(
+                    &(BASE_READ_AHEAD_SIZE * 9..BASE_READ_AHEAD_SIZE * 12),
+                )
+                .is_err()
+        );
 
         // Reading a different amount than the read-ahead size isn't allowed for middle offsets.
-        assert!(compression_info
-            .compressed_range_for_uncompressed_range(&(0..BASE_READ_AHEAD_SIZE + 1),)
-            .is_err());
-        assert!(compression_info
-            .compressed_range_for_uncompressed_range(&(0..BASE_READ_AHEAD_SIZE - 1),)
-            .is_err());
-        assert!(compression_info
-            .compressed_range_for_uncompressed_range(
-                &(BASE_READ_AHEAD_SIZE..BASE_READ_AHEAD_SIZE * 2 + 1),
-            )
-            .is_err());
-        assert!(compression_info
-            .compressed_range_for_uncompressed_range(
-                &(BASE_READ_AHEAD_SIZE..BASE_READ_AHEAD_SIZE * 2 - 1),
-            )
-            .is_err());
+        assert!(
+            compression_info
+                .compressed_range_for_uncompressed_range(&(0..BASE_READ_AHEAD_SIZE + 1),)
+                .is_err()
+        );
+        assert!(
+            compression_info
+                .compressed_range_for_uncompressed_range(&(0..BASE_READ_AHEAD_SIZE - 1),)
+                .is_err()
+        );
+        assert!(
+            compression_info
+                .compressed_range_for_uncompressed_range(
+                    &(BASE_READ_AHEAD_SIZE..BASE_READ_AHEAD_SIZE * 2 + 1),
+                )
+                .is_err()
+        );
+        assert!(
+            compression_info
+                .compressed_range_for_uncompressed_range(
+                    &(BASE_READ_AHEAD_SIZE..BASE_READ_AHEAD_SIZE * 2 - 1),
+                )
+                .is_err()
+        );
 
         // Reading less than the read-ahead size for the last offset is allowed.
-        assert!(compression_info
-            .compressed_range_for_uncompressed_range(
-                &(BASE_READ_AHEAD_SIZE * 8..BASE_READ_AHEAD_SIZE * 8 + 4096),
-            )
-            .is_ok());
+        assert!(
+            compression_info
+                .compressed_range_for_uncompressed_range(
+                    &(BASE_READ_AHEAD_SIZE * 8..BASE_READ_AHEAD_SIZE * 8 + 4096),
+                )
+                .is_ok()
+        );
     }
 
     #[fuchsia::test]
@@ -1033,7 +1049,10 @@ mod tests {
             )
             .await;
             assert_eq!(&get_chunks(&blob.chunks_supplied), &[1, 2, 1, 1, 0, 1, 0, 2]);
-            assert_eq!(volume.refault_tracker().count(), 2);
+            // `chunks_supplied` is updated before the refault tracker and possibly on a separate
+            // thread which means that we also need to wait for the refault tracker to be updated.
+            wait(|| volume.refault_tracker().count() == 2, "The refault tracker was not updated")
+                .await;
             // The last chunk is only 28KiB.
             assert_eq!(volume.refault_tracker().bytes(), 60 * 1024);
         }

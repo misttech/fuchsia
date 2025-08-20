@@ -6,33 +6,33 @@
 
 use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::errors::map_to_status;
-use crate::fuchsia::fxblob::blob::{CompressionInfo, FxBlob};
 use crate::fuchsia::fxblob::BlobDirectory;
+use crate::fuchsia::fxblob::blob::{CompressionInfo, FxBlob};
 use crate::fuchsia::node::{FxNode, GetResult};
 use crate::fuchsia::volume::FxVolume;
 use anyhow::{Context as _, Error};
-use base64::prelude::{Engine as _, BASE64_STANDARD};
-use delivery_blob::compression::{decode_archive, ChunkInfo, ChunkedDecompressor};
+use base64::prelude::{BASE64_STANDARD, Engine as _};
 use delivery_blob::Type1Blob;
+use delivery_blob::compression::{ChunkInfo, ChunkedDecompressor, decode_archive};
 use fidl::endpoints::{ControlHandle as _, RequestStream as _};
 use fidl_fuchsia_fxfs::{BlobWriterRequest, BlobWriterRequestStream};
 use fuchsia_hash::Hash;
 use fuchsia_merkle::{MerkleTree, MerkleTreeBuilder};
-use futures::{try_join, TryStreamExt as _};
+use futures::{TryStreamExt as _, try_join};
 use fxfs::errors::FxfsError;
 use fxfs::object_handle::ObjectHandle;
 use fxfs::object_store::data_object_handle::OverwriteOptions;
-use fxfs::object_store::directory::{replace_child_with_object, ReplacedChild};
-use fxfs::object_store::transaction::{lock_keys, LockKey};
+use fxfs::object_store::directory::{ReplacedChild, replace_child_with_object};
+use fxfs::object_store::transaction::{LockKey, lock_keys};
 use fxfs::object_store::{
-    DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectStore, Timestamp,
-    BLOB_MERKLE_ATTRIBUTE_ID,
+    BLOB_MERKLE_ATTRIBUTE_ID, DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectStore,
+    Timestamp,
 };
 use fxfs::round::{round_down, round_up};
 use fxfs::serialized_types::BlobMetadata;
 use lazy_static::lazy_static;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use zx::{self as zx, HandleBased as _, Status};
 
 lazy_static! {
@@ -666,7 +666,7 @@ fn parse_seek_table(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuchsia::fxblob::testing::{new_blob_fixture, BlobFixture};
+    use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture};
     use core::ops::Range;
     use delivery_blob::CompressionMode;
     use fidl_fuchsia_fxfs::{BlobCreatorMarker, CreateBlobError};
@@ -892,44 +892,60 @@ mod tests {
     #[fasync::run(10, test)]
     async fn test_new_tombstone_dropped_incomplete_delivery_blobs() {
         let fixture = new_blob_fixture().await;
-        for _ in 0..3 {
-            // `data` is half the size of the test device. If we don't tombstone, we will get
-            // an OUT_OF_SPACE error on the second write.
-            let data = vec![1; 4194304];
+        const BLOB_SIZE: u64 = 4 * 1024 * 1024;
+        // Sanity check that an empty fxfs isn't 4MiB.
+        assert!(fixture.fs().allocator().get_allocated_bytes() < BLOB_SIZE);
 
+        {
+            let data = vec![1; BLOB_SIZE as usize];
             let hash = fuchsia_merkle::from_slice(&data).root();
             let compressed_data = Type1Blob::generate(&data, CompressionMode::Never);
+            let writer =
+                fixture.create_blob(&hash.into(), false).await.expect("failed to create blob");
+            let vmo = writer
+                .get_vmo(compressed_data.len() as u64)
+                .await
+                .expect("transport error on get_vmo")
+                .expect("failed to get vmo");
 
-            {
-                let writer =
-                    fixture.create_blob(&hash.into(), false).await.expect("failed to create blob");
-                let vmo = writer
-                    .get_vmo(compressed_data.len() as u64)
+            let vmo_size = vmo.get_size().expect("failed to get vmo size");
+            // Write all but the last byte to avoid completing the blob.
+            let list_of_writes = generate_list_of_writes((compressed_data.len() as u64) - 1);
+            let mut write_offset = 0;
+            for range in list_of_writes {
+                let len = range.end - range.start;
+                vmo.write(
+                    &compressed_data[range.start as usize..range.end as usize],
+                    write_offset % vmo_size,
+                )
+                .expect("failed to write to vmo");
+                let _ = writer
+                    .bytes_ready(len)
                     .await
-                    .expect("transport error on get_vmo")
-                    .expect("failed to get vmo");
-
-                let vmo_size = vmo.get_size().expect("failed to get vmo size");
-                // Write all but the last byte to avoid completing the blob.
-                let list_of_writes = generate_list_of_writes((compressed_data.len() as u64) - 1);
-                let mut write_offset = 0;
-                for range in list_of_writes {
-                    let len = range.end - range.start;
-                    vmo.write(
-                        &compressed_data[range.start as usize..range.end as usize],
-                        write_offset % vmo_size,
-                    )
-                    .expect("failed to write to vmo");
-                    let _ = writer
-                        .bytes_ready(len)
-                        .await
-                        .expect("transport error on bytes_ready")
-                        .expect("failed to write data to vmo");
-                    write_offset += len;
-                }
+                    .expect("transport error on bytes_ready")
+                    .expect("failed to write data to vmo");
+                write_offset += len;
             }
-            fixture.fs().graveyard().flush().await;
+            // At least 4MiB should now be allocated in fxfs.
+            assert!(fixture.fs().allocator().get_allocated_bytes() > BLOB_SIZE);
         }
+
+        // The BlobWriterProxy was dropped above but the DeliveryBlobWriter won't be dropped and the
+        // blob added to the tombstone queue until the PEER_CLOSED signal from dropping the proxy is
+        // handled. Waiting on the graveyard to flush doesn't work because the flush will be queued
+        // before the blob.
+        //
+        // Wait for the allocated bytes to drop back below the size of the blob as a way of
+        // verifying that the blob was removed.
+        async {
+            while fixture.fs().allocator().get_allocated_bytes() > BLOB_SIZE {
+                fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+            }
+        }
+        .on_timeout(std::time::Duration::from_secs(10), || {
+            panic!("The partially written blob was not cleaned up")
+        })
+        .await;
 
         fixture.close().await;
     }
@@ -1212,16 +1228,16 @@ mod tests {
 
             // Wait for our Arc to be the last strong ref, then it gets dropped. Nothing else
             // should be referencing it here after the tasks complete.
-            assert!(
-                async move {
-                    while Arc::strong_count(&old_blob) > 1 {
-                        fasync::Timer::new(std::time::Duration::from_millis(25)).await;
-                    }
-                    true
+            async move {
+                while Arc::strong_count(&old_blob) > 1 {
+                    fasync::Timer::new(std::time::Duration::from_millis(25)).await;
                 }
-                .on_timeout(std::time::Duration::from_secs(10), || false)
-                .await
-            );
+            }
+            .on_timeout(std::time::Duration::from_secs(10), || {
+                panic!("The old blob was not cleaned up")
+            })
+            .await;
+
             fixture.fs().graveyard().flush().await;
             fixture
                 .volume()
@@ -1335,14 +1351,28 @@ mod tests {
                 .expect("failed to write data to vmo");
 
             assert_eq!(fixture.read_blob(hash).await, data);
-        };
-        {
-            let blob_dir =
-                fixture.volume().root().clone().into_any().downcast::<BlobDirectory>().unwrap();
-            let hash_string: String = hash.into();
-            let (old_id, _, _) =
-                blob_dir.directory().directory().lookup(&hash_string).await.unwrap().expect("");
+        }
 
+        let blob_dir =
+            fixture.volume().root().clone().into_any().downcast::<BlobDirectory>().unwrap();
+        let hash_string: String = hash.into();
+        let (old_id, _, _) =
+            blob_dir.directory().directory().lookup(&hash_string).await.unwrap().expect("");
+        // The `read_blob` call above gets a VMO for the blob. Even though the VMO is dropped, the
+        // blob receives the ON_ZERO_CHILDREN signal asynchronously meaning that the blob may still
+        // be open here. The dirent cache also keeps the blob open so it needs to be cleared.
+        // Waiting for the blob to be removed from the node cache is the best guarantee that the
+        // blob is actually closed.
+        fixture.volume().volume().dirent_cache().clear();
+        async {
+            while fixture.volume().volume().cache().get(old_id).is_some() {
+                fuchsia_async::Timer::new(std::time::Duration::from_millis(5)).await;
+            }
+        }
+        .on_timeout(std::time::Duration::from_secs(10), || panic!("The old blob is still open"))
+        .await;
+
+        {
             let writer =
                 fixture.create_blob(&hash.into(), true).await.expect("failed to create blob");
             let vmo = writer
@@ -1371,7 +1401,8 @@ mod tests {
 
             // Blob is still readable.
             assert_eq!(fixture.read_blob(hash).await, data);
-        };
+        }
+        std::mem::drop(blob_dir);
         fixture.close().await;
     }
 
