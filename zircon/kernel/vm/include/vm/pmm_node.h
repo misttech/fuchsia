@@ -556,7 +556,7 @@ class FreeLoanedPagesHolder {
   FreeLoanedPagesHolder() : pages_(LIST_INITIAL_VALUE(pages_)) {}
   ~FreeLoanedPagesHolder() {
     ASSERT(list_is_empty(&pages_));
-    ASSERT(num_waiters_ == 0);
+    ASSERT(waiters_.is_empty());
   }
 
  private:
@@ -573,17 +573,17 @@ class FreeLoanedPagesHolder {
   // Although the lock cannot be annotated, this member is guarded by the relevant
   // PmmNode::loaned_list_lock_.
   list_node_t pages_;
-  // Count of the number of threads that are in the process of attempting to wait on
-  // |freed_pages_event_| and have not yet completed the method. This is used, along with
-  // |freed_pages_event_| and |no_waiters_event_| so that |withLoanedPage| can ensure the object it
-  // references lives long enough.
-  // See comments in |FinishFreeLoanedPages| and |WithLoanedPage| for more details on how these
-  // work.
-  // Although the lock cannot be annotated, this member is guarded by the relevant
-  // PmmNode::loaned_list_lock_.
-  uint64_t num_waiters_ = 0;
-  Event freed_pages_event_;
-  Event no_waiters_event_;
+
+  struct Waiter : fbl::SinglyLinkedListable<Waiter*> {
+    Event event;
+  };
+  // Maintain a list of waiters to be notified once pages_ have been freed. The Waiter object itself
+  // is stack allocated in the WithLoanedPage method and registered into this list. Having this be a
+  // list of Events of single waiting thread, instead of a single Event with a list of waiting
+  // threads, allows the waiters to retain a reference to the FLPH object while waiting. This
+  // ensures that once FinishFreeLoanedPages performs the signal on the waiters, the FLPH object can
+  // be safely destroyed.
+  fbl::SinglyLinkedList<Waiter*> waiters_;
   friend PmmNode;
 };
 

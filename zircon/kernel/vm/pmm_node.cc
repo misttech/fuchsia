@@ -763,42 +763,21 @@ void PmmNode::FinishFreeLoanedPages(FreeLoanedPagesHolder& flph) {
       checker_.FillPattern(p);
     }
   }
-  bool waiters;
-  {
-    AutoPreemptDisabler preempt_disable;
-    Guard<Mutex> guard{&loaned_list_lock_};
-    DEBUG_ASSERT(!flph.used_);
-    flph.used_ = true;
-    FreeLoanedListLocked(&flph.pages_, fill, [&](vm_page_t* page) {
-      DEBUG_ASSERT(page->state() == vm_page_state::ALLOC);
-      DEBUG_ASSERT(page->alloc.owner == &flph);
-      page->alloc.owner = nullptr;
-    });
-    // We hold the lock and have removed all the pages from the list (clearing their owner in the
-    // process) and so whatever waiters that presently exist are all the ones that can exist.
-    waiters = flph.num_waiters_ > 0;
-    // If we have waiters then we need to manipulate the event objects while we still hold the lock,
-    // but this can be skipped if there are no waiters.
-    if (waiters) {
-      // Unblock all waiters. As freed_pages_event_ is a regular event, and not AutoUnsignal, this
-      // means that even waiters that have not progress through to the actual |Wait| operation will
-      // not block.
-      flph.freed_pages_event_.Signal();
-    }
-  }
-  // If there were any waiters we must wait for them to complete. This is necessary since
-  // |WithLoanedPage| holds a pointer to |flph|, but has no way to keep the object alive. As such we
-  // must not return until we know that |WithLoanedPage| has ceased holding any references to
-  // |flph|.
-  if (waiters) {
-    // First wait for any waiters to complete. This event gets signalled by the last waiter in
-    // |WithLoanedPage| with the locks held.
-    flph.no_waiters_event_.Wait();
-    // Our signaler in |WithLoanedPage| may still be referencing the no_waiters_event and so we
-    // still cannot return as that is a reference to the |flph| object. Therefore we perform a lock
-    // acquisition which, once it succeeds, tells us that |WithLoanedPage| has concluded its
-    // references to |flph|.
-    Guard<Mutex> guard{&loaned_list_lock_};
+  AutoPreemptDisabler preempt_disable;
+  Guard<Mutex> guard{&loaned_list_lock_};
+  DEBUG_ASSERT(!flph.used_);
+  flph.used_ = true;
+  FreeLoanedListLocked(&flph.pages_, fill, [&](vm_page_t* page) {
+    DEBUG_ASSERT(page->state() == vm_page_state::ALLOC);
+    DEBUG_ASSERT(page->alloc.owner == &flph);
+    page->alloc.owner = nullptr;
+  });
+
+  // With the pager owners all cleared, no more waiters can come along so we can wake all the
+  // existing ones up.
+  while (!flph.waiters_.is_empty()) {
+    FreeLoanedPagesHolder::Waiter* waiter = flph.waiters_.pop_front();
+    waiter->event.Signal();
   }
 }
 
@@ -808,7 +787,9 @@ void PmmNode::WithLoanedPage(vm_page_t* page, fit::inline_function<void(vm_page_
   // observed. Such behavior almost certainly represents a kernel bug, so if we detect multiple
   // iterations to track the page down we generate a warning.
   for (int iterations = 0;; iterations++) {
-    FreeLoanedPagesHolder* flph = nullptr;
+    // Intentionally allocate a new waiter every iteration so that its destructor can detect if it
+    // has been left in a list incorrectly between iterations.
+    FreeLoanedPagesHolder::Waiter waiter;
     {
       AutoPreemptDisabler preempt_disable;
       Guard<Mutex> guard{&loaned_list_lock_};
@@ -817,29 +798,19 @@ void PmmNode::WithLoanedPage(vm_page_t* page, fit::inline_function<void(vm_page_
         with_page(page);
         return;
       }
-      flph = page->alloc.owner;
-      flph->num_waiters_++;
+      page->alloc.owner->waiters_.push_front(&waiter);
+      // After placing waiter in the list and dropping the loaned_list_lock_ we must not manipulate
+      // the intrusive list node in the Waiter, as it is now owned by the FLPH.
     }
     if (iterations > 0) {
       printf("WARNING: Required multiple attempts (%d) to track down loaned page %p\n", iterations,
              page);
     }
-    // We incremented num_waiters_ under the lock while there were pages in the list, so it is
-    // guaranteed that |FinishFreeLoanedPages| will see this and signal the event.
-    flph->freed_pages_event_.Wait();
-    {
-      AutoPreemptDisabler preempt_disable;
-      Guard<Mutex> guard{&loaned_list_lock_};
-      // With the lock re-acquired indicate we have completed waiting.
-      flph->num_waiters_--;
-      if (flph->num_waiters_ == 0) {
-        // If we were the last thread to complete the wait process signal |FinishFreeLoanedPages| so
-        // that it knows we have (almost) finished any references to |flph|. We still hold one
-        // final reference, the flph->no_waiters_event_, but that will be resolved by
-        // |FinishFreeLoanedPages| waiting for the lock (see comments in that method).
-        flph->no_waiters_event_.Signal();
-      }
-    }
+    // Now that the lock is dropped, wait on the event.
+    waiter.event.Wait();
+    // Grab the loaned_list_lock_ to ensure that the FinishFreeLoanedPages path has finished holding
+    // any reference to our event.
+    Guard<Mutex> guard{&loaned_list_lock_};
   }
 }
 
