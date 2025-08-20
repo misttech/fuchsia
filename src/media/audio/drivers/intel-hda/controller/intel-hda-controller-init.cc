@@ -382,8 +382,8 @@ zx_status_t IntelHDAController::SetupCommandBufferSize(MMIO_PTR uint8_t* size_re
 }
 
 zx_status_t IntelHDAController::SetupCommandBuffer() {
-  fbl::AutoLock corb_lock(&corb_lock_);
   fbl::AutoLock rirb_lock(&rirb_lock_);
+  fbl::AutoLock corb_lock(&corb_lock_);
   zx_status_t res;
 
   // Allocate our command buffer memory and map it into our address space.

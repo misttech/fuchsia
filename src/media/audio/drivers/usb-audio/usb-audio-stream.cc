@@ -844,10 +844,10 @@ void UsbAudioStream::GetVmo(GetVmoRequestView request, GetVmoCompleter::Sync& co
 }
 
 void UsbAudioStream::Start(StartCompleter::Sync& completer) {
+  fbl::AutoLock lock(&lock_);
   fbl::AutoLock req_lock(&req_lock_);
 
   {
-    fbl::AutoLock lock(&lock_);
     if (!rb_vmo_fetched_) {
       zxlogf(ERROR, "Did not start, VMO not fetched");
       completer.Close(ZX_ERR_BAD_STATE);
@@ -898,10 +898,10 @@ void UsbAudioStream::Start(StartCompleter::Sync& completer) {
 }
 
 void UsbAudioStream::Stop(StopCompleter::Sync& completer) {
+  fbl::AutoLock lock(&lock_);
   fbl::AutoLock req_lock(&req_lock_);
 
   {
-    fbl::AutoLock lock(&lock_);
     if (!rb_vmo_fetched_) {
       zxlogf(ERROR, "Did not stop, VMO not fetched");
       completer.Close(ZX_ERR_BAD_STATE);
