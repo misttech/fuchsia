@@ -6,7 +6,7 @@ use camino::Utf8Path;
 use serde::Deserialize;
 
 /// A parsed GN label.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct GNLabel {
     /// The path to the target.
     pub path: String,

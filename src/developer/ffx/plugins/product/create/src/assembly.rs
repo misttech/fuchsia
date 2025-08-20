@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use assembled_system::AssembledSystem;
-use assembly_artifact_cache::{Artifact, ArtifactCache};
+use assembly_artifact_cache::{ArtifactCache, ArtifactError};
 use assembly_cli_args::ProductArgs;
 use assembly_config_schema::{BoardConfig, ProductConfig};
 use assembly_container::AssemblyContainer;
@@ -26,25 +26,16 @@ impl Assembly {
         platform: Option<String>,
         product_config: String,
         board_config: String,
-        build_dir: Option<Utf8PathBuf>,
-    ) -> Result<Self> {
-        let product_config_artifact = Artifact::from_product(&product_config, build_dir.as_ref())
-            .context("Finding product config")?;
-        let product_config_path =
-            cache.resolve(&product_config_artifact).context("Resolving product config")?;
+    ) -> Result<Self, ArtifactError> {
+        let product_config_path = cache.resolve_product(product_config)?;
         let product_config =
             ProductConfig::from_dir(&product_config_path).context("Reading product config")?;
 
-        let board_config_artifact = Artifact::from_board(&board_config, build_dir.as_ref())
-            .context("Finding board config")?;
-        let board_config_path =
-            cache.resolve(&board_config_artifact).context("Resolving board config")?;
+        let board_config_path = cache.resolve_board(board_config)?;
         let board_config =
             BoardConfig::from_dir(&board_config_path).context("Reading board config")?;
 
-        let platform_artifact =
-            Artifact::from_platform(platform, &board_config.arch, build_dir.as_ref())?;
-        let platform_path = cache.resolve(&platform_artifact).context("Resolving platform")?;
+        let platform_path = cache.resolve_platform(platform, &board_config.arch)?;
         let platform =
             PlatformArtifacts::from_dir_with_path(&platform_path).context("Reading platform")?;
 
@@ -60,7 +51,9 @@ impl Assembly {
 
     pub fn version_string(&self) -> String {
         format!(
-            "\tplatform: {}@{}\n\tproduct_config: {}@{}\n\tboard_config: {}@{}",
+            "\tplatform: {}@{}
+\tproduct_config: {}@{}
+\tboard_config: {}@{}",
             self.platform.release_info.name,
             self.platform.release_info.version,
             self.product_config.product.release_info.info.name,

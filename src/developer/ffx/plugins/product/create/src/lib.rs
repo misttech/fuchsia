@@ -6,7 +6,7 @@ mod assembly;
 
 use anyhow::{Context, Result, anyhow};
 use assembly::Assembly;
-use assembly_artifact_cache::ArtifactCache;
+use assembly_artifact_cache::{ArtifactCache, ArtifactError};
 use assembly_tool::PlatformToolProvider;
 use camino::Utf8PathBuf;
 use delivery_blob::DeliveryBlobType;
@@ -51,23 +51,27 @@ async fn product_bundle_create(
     cmd: CreateCommand,
     build_dir: Option<Utf8PathBuf>,
     writer: SimpleWriter,
-) -> Result<()> {
+) -> Result<(), ArtifactError> {
     let sanitized_cmd = cmd.try_into()?;
     Box::pin(sanitized_product_bundle_create(sanitized_cmd, build_dir, writer)).await
 }
 
 /// Convert the anyhow error into a pretty/stacked fho error.
-fn flatten_error_sources(e: anyhow::Error) -> fho::Error {
+fn flatten_error_sources(e: ArtifactError) -> fho::Error {
+    let suggestion =
+        e.suggestion.map(|s| format!("\n\nSuggestion: {}", s)).unwrap_or_else(|| "".to_string());
     FfxError::Error(
         anyhow::anyhow!(
-            "Failed: {}{}",
-            e,
-            e.chain()
+            "Failed: {}{}{}",
+            e.error,
+            e.error
+                .chain()
                 .skip(1)
                 .enumerate()
                 .map(|(i, e)| format!("\n  {: >3}.  {}", i + 1, e))
                 .collect::<Vec<String>>()
-                .concat()
+                .concat(),
+            suggestion,
         ),
         -1,
     )
@@ -168,14 +172,15 @@ async fn sanitized_product_bundle_create(
     cmd: SanitizedCreateCommand,
     build_dir: Option<Utf8PathBuf>,
     mut writer: SimpleWriter,
-) -> Result<()> {
+) -> Result<(), ArtifactError> {
     let tmp = tempdir().unwrap();
     let tmp_path = Utf8PathBuf::from_path_buf(tmp.path().to_path_buf()).unwrap();
 
-    let cache = ArtifactCache::new();
-    let assembly =
-        Assembly::new(&cache, cmd.platform, cmd.product_config, cmd.board_config, build_dir)?;
-    writer.line(format!("Staged the artifacts\n{}", assembly.version_string()))?;
+    let cache = ArtifactCache::new(build_dir)?;
+    let assembly = Assembly::new(&cache, cmd.platform, cmd.product_config, cmd.board_config)?;
+    writer
+        .line(format!("Staged the artifacts\n{}", assembly.version_string()))
+        .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
 
     let name = cmd.output_name.unwrap_or_else(|| {
         let product_name = assembly.product_config.product.release_info.info.name.clone();
@@ -194,9 +199,12 @@ async fn sanitized_product_bundle_create(
         .output_version
         .unwrap_or_else(|| assembly.product_config.product.release_info.info.version.clone());
     let update_version_file = tmp_path.join("update_version.txt");
-    std::fs::write(&update_version_file, &version)?;
+    std::fs::write(&update_version_file, &version)
+        .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
 
-    writer.line(format!("Assembling into {} ...", &out))?;
+    writer
+        .line(format!("Assembling into {} ...", &out))
+        .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
     let tools = PlatformToolProvider::new(assembly.platform_path.clone());
     let system = Box::pin(assembly.create_system(&tmp_path.join("system"))).await?;
     let mut builder = ProductBundleBuilder::new(name, version)

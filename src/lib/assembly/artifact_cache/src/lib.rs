@@ -8,7 +8,8 @@
 
 mod artifact;
 mod artifact_cache;
+mod build_api;
+mod cipd;
 mod gn_label;
 
-pub use artifact::Artifact;
-pub use artifact_cache::ArtifactCache;
+pub use artifact_cache::{ArtifactCache, ArtifactError};
