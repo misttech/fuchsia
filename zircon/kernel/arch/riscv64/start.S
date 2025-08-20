@@ -35,11 +35,6 @@
   mv      a0, s1
   call    riscv64_boot_cpu_init
 
-  // save the time stamp just before entering C
-  rdtime  a0
-  lla     a1, kernel_virtual_entry_ticks
-  sd      a0, (a1)
-
   // Recover the PhysHandoff pointer.
   mv      a0, s1
 

@@ -48,8 +48,6 @@ extern "C" {
 
 // Samples taken at the first instruction in the kernel.
 arch::EarlyTicks kernel_entry_ticks;
-// ... and at the entry to normal virtual-space kernel code.
-arch::EarlyTicks kernel_virtual_entry_ticks;
 
 }  // extern "C"
 

@@ -12,7 +12,6 @@
 
 // Setup by start.S
 arch::EarlyTicks kernel_entry_ticks;
-arch::EarlyTicks kernel_virtual_entry_ticks;
 
 template <GetTicksSyncFlag Flags>
 inline zx_ticks_t platform_current_raw_ticks_synchronized() {

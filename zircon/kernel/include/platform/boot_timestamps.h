@@ -18,8 +18,6 @@ __BEGIN_CDECLS
 
 // Samples taken at the first instruction in the kernel.
 extern arch::EarlyTicks kernel_entry_ticks;
-// ... and at the entry to normal virtual-space kernel code.
-extern arch::EarlyTicks kernel_virtual_entry_ticks;
 
 __END_CDECLS
 

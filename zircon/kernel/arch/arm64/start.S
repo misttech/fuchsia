@@ -88,10 +88,6 @@ handoff_paddr           .req x21
   // set the per cpu pointer for cpu 0
   adr_global percpu_ptr, arm64_percpu_array
 
-  // Collect the time stamp of entering "normal" C++ code in virtual space.
-  sample_ticks
-  store_ticks kernel_virtual_entry_ticks
-
   mov x0, handoff_paddr
   bl lk_main
   b .

@@ -78,7 +78,6 @@ KCOUNTER(timeline_decompress_start, "boot.timeline.decompress-start")
 KCOUNTER(timeline_decompress_end, "boot.timeline.decompress-end")
 KCOUNTER(timeline_zbi_done, "boot.timeline.zbi-done")
 KCOUNTER(timeline_physboot_handoff, "boot.timeline.physboot-handoff")
-KCOUNTER(timeline_virtual_entry, "boot.timeline.virtual")
 
 void Set(const Counter& counter, arch::EarlyTicks sample) {
   counter.Set(platform_convert_early_ticks(sample));
@@ -117,7 +116,6 @@ void TimelineCounters(unsigned int level) {
         break;
     }
   }
-  Set(timeline_virtual_entry, kernel_virtual_entry_ticks);
   Set(timeline_hw_startup, arch::EarlyTicks::Zero());
 }
 

@@ -144,9 +144,6 @@
   xor %edi, %edi
   call x86_init_percpu
 
-  // Collect the time stamp of entering "normal" C++ code in virtual space.
-  sample_ticks kernel_virtual_entry_ticks(%rip)
-
   // Call the main module
   mov %r14, %rdi
   call lk_main
