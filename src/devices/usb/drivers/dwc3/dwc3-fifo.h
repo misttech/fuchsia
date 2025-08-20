@@ -46,7 +46,7 @@ class Fifo {
   }
 
   std::vector<T> Read(T*& ptr, size_t count) {
-    ZX_DEBUG_ASSERT((ptr >= first_) && (ptr <= last_));
+    ZX_ASSERT((ptr >= first_) && (ptr <= last_));
     // invalidate cache so we can read fresh events
     const zx_off_t offset = (ptr - first_) * sizeof(T);
     const size_t todo = std::min<size_t>(last_ - ptr, count);
@@ -62,7 +62,7 @@ class Fifo {
   }
 
   zx_paddr_t Write(T*& ptr, size_t count = 1) {
-    ZX_DEBUG_ASSERT((ptr >= first_) && (ptr <= last_));
+    ZX_ASSERT((ptr >= first_) && (ptr <= last_));
     // invalidate cache so we can read fresh events
     const zx_off_t offset = (ptr - first_) * sizeof(T);
     const size_t todo = std::min<size_t>(last_ - ptr, count);
@@ -84,7 +84,7 @@ class Fifo {
 
  protected:
   zx_paddr_t GetPhys(T* ptr) const {
-    ZX_DEBUG_ASSERT((ptr >= first_) && (ptr <= last_));
+    ZX_ASSERT((ptr >= first_) && (ptr <= last_));
     return buffer_->phys() + ((ptr - first_) * sizeof(T));
   }
 

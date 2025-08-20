@@ -211,7 +211,7 @@ void Dwc3::StartEvents() {
   // set event buffer pointer and size
   // keep interrupts masked until we are ready
   zx_paddr_t paddr = event_fifo_.GetPhys();
-  ZX_DEBUG_ASSERT(paddr != 0);
+  ZX_ASSERT(paddr != 0);
 
   GEVNTADR::Get(0).FromValue(0).set_EVNTADR(paddr).WriteTo(mmio);
   GEVNTSIZ::Get(0).FromValue(0).set_EVENTSIZ(kBufferSize).set_EVNTINTRPTMASK(0).WriteTo(mmio);

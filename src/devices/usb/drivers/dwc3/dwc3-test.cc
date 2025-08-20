@@ -139,7 +139,7 @@ class TestFixture : public testing::Test {
   void Write_DCTL(uint64_t val) {
     constexpr uint32_t kUnwriteableMask =
         (1 << 29) | (1 << 17) | (1 << 16) | (1 << 15) | (1 << 14) | (1 << 13) | (1 << 0);
-    ZX_DEBUG_ASSERT(val <= std::numeric_limits<uint32_t>::max());
+    ZX_ASSERT(val <= std::numeric_limits<uint32_t>::max());
     dctl_val_ = static_cast<uint32_t>(val & ~kUnwriteableMask);
 
     // Immediately clear the soft reset bit if we are not testing the soft reset

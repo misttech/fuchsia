@@ -63,6 +63,10 @@ void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_
 }
 
 void Dwc3::EpServer::CancelAll(zx_status_t reason) {
+  // TODO(https://fxbug.dev/433971550): Reduce to DEBUG once we're done investigating.
+  FDF_LOG(INFO, "Dwc3::EpServer::CancelAll ep %u reason %s", uep_->ep.ep_num,
+          zx_status_get_string(reason));
+
   if (current_req.has_value()) {
     dwc3_->CmdEpEndTransfer(uep_->ep);
     RequestComplete(reason, 0, std::move(*current_req));
@@ -101,7 +105,7 @@ void Dwc3::HandleEpTransferCompleteEvent(uint8_t ep_num) {
   }
 
   UserEndpoint* const uep = get_user_endpoint(ep_num);
-  ZX_DEBUG_ASSERT(uep != nullptr);
+  ZX_ASSERT(uep != nullptr);
   if (!uep->server->current_req.has_value()) {
     FDF_LOG(ERROR, "no usb request found to complete!");
     return;
@@ -128,7 +132,7 @@ void Dwc3::HandleEpTransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
   }
 
   UserEndpoint* const uep = get_user_endpoint(ep_num);
-  ZX_DEBUG_ASSERT(uep != nullptr);
+  ZX_ASSERT(uep != nullptr);
   uep->ep.got_not_ready = true;
   UserEpQueueNext(*uep);
 }
@@ -138,7 +142,7 @@ void Dwc3::HandleEpTransferStartedEvent(uint8_t ep_num, uint32_t rsrc_id) {
     ((ep_num == kEp0Out) ? ep0_.out : ep0_.in).rsrc_id = rsrc_id;
   } else {
     UserEndpoint* const uep = get_user_endpoint(ep_num);
-    ZX_DEBUG_ASSERT(uep != nullptr);
+    ZX_ASSERT(uep != nullptr);
     uep->ep.rsrc_id = rsrc_id;
   }
 }

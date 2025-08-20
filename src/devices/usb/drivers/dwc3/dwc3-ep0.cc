@@ -60,7 +60,7 @@ void Dwc3::Ep0StartEndpoints() {
 }
 
 void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
-  ZX_DEBUG_ASSERT(is_ep0_num(ep_num));
+  ZX_ASSERT(is_ep0_num(ep_num));
 
   // Only DataOut state needs TRB read.
   dwc3_trb_t trb = ep0_.state == Ep0::State::DataOut ? ep0_.shared_fifo.Read() : dwc3_trb_t{};
@@ -94,14 +94,14 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       break;
     }
     case Ep0::State::DataOut: {
-      ZX_DEBUG_ASSERT(ep_num == kEp0Out);
+      ZX_ASSERT(ep_num == kEp0Out);
       zx_off_t received = ep0_.buffer->size() - TRB_BUFSIZ(trb.status);
       ep0_.state = Ep0::State::WaitNrdyIn;
       HandleEp0Setup(received);
       break;
     }
     case Ep0::State::DataIn:
-      ZX_DEBUG_ASSERT(ep_num == kEp0In);
+      ZX_ASSERT(ep_num == kEp0In);
       ep0_.state = Ep0::State::WaitNrdyOut;
       break;
     case Ep0::State::Status:
@@ -113,7 +113,10 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
 }
 
 void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
-  ZX_DEBUG_ASSERT(is_ep0_num(ep_num));
+  // TODO(https://fxbug.dev/433971550): Reduce to DEBUG once we're done investigating.
+  FDF_LOG(INFO, "Dwc3::HandleEp0TransferNotReadyEvent state %u stage %u", ep0_.state, stage);
+
+  ZX_ASSERT(is_ep0_num(ep_num));
 
   switch (ep0_.state) {
     case Ep0::State::Setup:

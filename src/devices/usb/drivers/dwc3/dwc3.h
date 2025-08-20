@@ -180,9 +180,9 @@ class Dwc3 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
   class UserEndpointCollection {
    public:
     void Init(size_t count, const zx::bti& bti, Dwc3* dwc3) {
-      ZX_DEBUG_ASSERT(count <= (std::numeric_limits<uint8_t>::max() - kUserEndpointStartNum));
-      ZX_DEBUG_ASSERT(count_ == 0);
-      ZX_DEBUG_ASSERT(endpoints_.get() == nullptr);
+      ZX_ASSERT(count <= (std::numeric_limits<uint8_t>::max() - kUserEndpointStartNum));
+      ZX_ASSERT(count_ == 0);
+      ZX_ASSERT(endpoints_.get() == nullptr);
 
       count_ = count;
       endpoints_ = std::make_unique<UserEndpoint[]>(count_);
@@ -196,7 +196,7 @@ class Dwc3 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
     // Standard size and index-operator
     size_t size() const { return count_; }
     UserEndpoint& operator[](size_t ndx) {
-      ZX_DEBUG_ASSERT(ndx < count_);
+      ZX_ASSERT(ndx < count_);
       return endpoints_[ndx];
     }
 

@@ -35,7 +35,7 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
 
   dwc3_trb_t Read() {
     std::vector<dwc3_trb_t> trbs = Fifo::Read(read_, 1);
-    ZX_DEBUG_ASSERT(trbs.size() == 1);
+    ZX_ASSERT(trbs.size() == 1);
     return trbs[0];
   }
   dwc3_trb_t* AdvanceWrite() { return Fifo::Advance(write_); }
