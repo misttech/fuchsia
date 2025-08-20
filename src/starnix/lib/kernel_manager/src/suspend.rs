@@ -140,16 +140,21 @@ pub async fn suspend_container(
     }
     log::info!("Finished waiting on container wake proxies.");
 
-    let mut resume_reason: Option<String> = None;
+    let mut resume_reasons: Vec<String> = Vec::new();
     for wait_item in &wait_items {
-        if wait_item.pending.contains(zx::Signals::COUNTER_POSITIVE) {
+        if (wait_item.pending & wait_item.waitfor) != zx::Signals::NONE {
             let koid = wait_item.handle.get_koid().unwrap();
             if let Some(event) = wake_sources.get(&koid) {
                 log::info!("Woke container from sleep for: {}", event.name,);
-                resume_reason = Some(event.name.clone());
+                resume_reasons.push(event.name.clone());
             }
         }
     }
+
+    let resume_reason: Option<String> = match resume_reasons.is_empty() {
+        true => Some(resume_reasons.join(",")),
+        false => None,
+    };
 
     kernels.acquire_wake_lease(&container_job).await?;
 
