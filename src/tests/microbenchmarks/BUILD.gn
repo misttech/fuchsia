@@ -336,7 +336,10 @@ if (host_os == "linux" && !is_asan) {
   executable("starnix_microbenchmarks_bin") {
     output_name = "starnix_microbenchmarks"
     testonly = true
-    sources = fuchsia_microbenchmark_sources + [ "starnix_filesystem.cc" ]
+    sources = fuchsia_microbenchmark_sources + [
+                "starnix_filesystem.cc",
+                "starnix_tracefs.cc",
+              ]
     deps = fuchsia_microbenchmark_deps + [ "//sdk/lib/zircon-assert" ]
   }
 

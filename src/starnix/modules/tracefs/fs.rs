@@ -15,11 +15,11 @@ use starnix_core::vfs::{
 use starnix_core::{fileops_impl_nonseekable, fileops_impl_noop_sync};
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
-use starnix_types::vfs::default_statfs;
 use starnix_types::PAGE_SIZE;
+use starnix_types::vfs::default_statfs;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
-use starnix_uapi::{errno, error, statfs, TRACEFS_MAGIC};
+use starnix_uapi::{TRACEFS_MAGIC, errno, error, statfs};
 use std::borrow::Cow;
 use std::sync::{Arc, LazyLock};
 
@@ -109,13 +109,13 @@ impl TraceFs {
             dir.entry(
                 "tracing_on",
                 TracingOnFile::new_node(trace_event_queue.clone()),
-                mode!(IFREG, 0o755),
+                mode!(IFREG, 0o666),
             );
             dir.entry("current_tracer", ConstFile::new_node("nop".into()), mode!(IFREG, 0o755));
             dir.entry(
                 "trace_marker",
                 TraceMarkerFile::new_node(trace_event_queue.clone()),
-                mode!(IFREG, 0o755),
+                mode!(IFREG, 0o222),
             );
             dir.entry("printk_formats", TraceBytesFile::new_node(), mode!(IFREG, 0o755));
             dir.entry(

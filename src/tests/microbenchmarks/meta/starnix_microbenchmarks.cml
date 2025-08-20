@@ -4,6 +4,7 @@
 {
     include: [ "//src/tests/microbenchmarks/meta/starnix_microbenchmarks_common.shard.cml" ],
     program: {
+        capabilities: [ "SYS_ADMIN" ],
         environ: [ "TEST_SUITE_LABEL=fuchsia.microbenchmarks.starnix" ],
     },
 }

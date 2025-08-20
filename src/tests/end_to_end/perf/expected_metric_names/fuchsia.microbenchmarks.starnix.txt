@@ -76,3 +76,5 @@ fuchsia.microbenchmarks.starnix: Stdcompat/CopySpan/4Mbytes/128Mbytes
 fuchsia.microbenchmarks.starnix: Stdcompat/CopySpan/4bytes/128Mbytes
 fuchsia.microbenchmarks.starnix: Stdcompat/CopySpan/64Kbytes/128Mbytes
 fuchsia.microbenchmarks.starnix: Stdcompat/CopySpan/64bytes/128Mbytes
+fuchsia.microbenchmarks.starnix: TraceFs/WriteDisabled
+fuchsia.microbenchmarks.starnix: TraceFs/WriteEvent
