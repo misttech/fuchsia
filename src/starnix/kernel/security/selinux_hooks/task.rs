@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::TODO_DENY;
 use crate::security::selinux_hooks::{
-    Auditable, KernelPermission, NO_PERMISSIONS, PermissionCheck, ProcessPermission, TaskAttrs,
-    check_permission, check_self_permission, current_task_state, fs_node_effective_sid_and_class,
+    KernelPermission, PermissionCheck, ProcessPermission, TaskAttrs, check_permission,
+    check_self_permission, current_task_state, fs_node_effective_sid_and_class,
     fs_node_ensure_class, fs_node_set_label_with_task, has_file_permissions, is_internal_operation,
-    permissions_from_flags, task_consistent_attrs, todo_has_fs_node_permissions,
+    permissions_from_flags, task_consistent_attrs,
 };
 use crate::security::{Arc, ProcAttr, ResolvedElfState, SecurityId, SecurityServer};
 use crate::signals::QueuedSignals;
@@ -141,41 +140,24 @@ fn close_inaccessible_file_descriptors(
     let null_file_handle =
         kernel_state.selinuxfs_null.get().expect("selinuxfs_init_null() has been called").clone();
 
-    let audit_context: Auditable<'_> = current_task.into();
+    let audit_context = current_task.into();
     let source_sid = new_sid;
     let permission_check = security_server.as_permission_check();
     // Remap-to-null any fds that failed a check for allowing
-    // `[child-process] [fd-from-child-fd-table]:fd { use }`.
+    // `[child-process] [fd-from-child-fd-table]:fd { use }`,
+    // or for any of the file permissions associated with the file mode and flags.
     current_task.files.remap_fds(|file| {
         let permissions =
             permissions_from_flags(file.flags().into(), file.node().security_state.lock().class);
-        let fd_use_result = has_file_permissions(
+        let permission_result = has_file_permissions(
             &permission_check,
             current_task,
             source_sid,
             file,
-            NO_PERMISSIONS,
-            audit_context.into(),
+            &permissions,
+            audit_context,
         );
-        if !permissions.is_empty() {
-            let audit_context = &[audit_context, file.as_ref().as_ref().into()];
-            // Check FsNode permissions, but don't enforce them for now.
-            // TODO (https://fxbug.dev/322843830) - Enforce this check and remap the file descriptor
-            // to the null file node if the check fails.
-            let _ = todo_has_fs_node_permissions(
-                TODO_DENY!(
-                    "https://fxbug.dev/322843830",
-                    "Check FsNode permissions for open files upon exec."
-                ),
-                &permission_check,
-                current_task,
-                source_sid,
-                file.node(),
-                &permissions,
-                audit_context.into(),
-            );
-        }
-        fd_use_result.map_or_else(|_| Some(null_file_handle.clone()), |_| None)
+        permission_result.map_or_else(|_| Some(null_file_handle.clone()), |_| None)
     });
 }
 
