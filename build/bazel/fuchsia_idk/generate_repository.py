@@ -474,6 +474,7 @@ class PathRewriter(object):
                 [
                     # Generated libc header files.
                     # LINT.IfChange(sysroot_generated_headers)
+                    "dlfcn.h",
                     "fenv.h",
                     "malloc.h",
                     # LINT.ThenChange(//sdk/lib/c/include/BUILD.gn)

@@ -31,6 +31,7 @@ import("libc_headers.gni")
 # generate the headers correctly so that the sysroot can be updated.
 # LINT.IfChange
 llvm_libc_generated_headers = [
+  "dlfcn.h",
   "fenv.h",
   "malloc.h",
 ]

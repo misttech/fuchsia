@@ -1,5 +1,15 @@
 [
   {
+    "name": "dlfcn.h",
+    "standards": [
+      "posix"
+    ],
+    "includes": [
+      "__llvm-libc-common.h",
+      "llvm-libc-types/Dl_info.h"
+    ]
+  },
+  {
     "name": "fenv.h",
     "standards": [
       "stdc"

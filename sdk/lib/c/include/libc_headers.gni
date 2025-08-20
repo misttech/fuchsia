@@ -52,7 +52,6 @@ libc_headers = {
     "cpio.h",
     "ctype.h",
     "dirent.h",
-    "dlfcn.h",
     "elf.h",
     "endian.h",
     "err.h",
