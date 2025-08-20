@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use assembled_system::AssembledSystem;
 use assembly_artifact_cache::{ArtifactCache, ArtifactError};
-use assembly_cli_args::ProductArgs;
+use assembly_cli_args::{ProductArgs, ValidationMode};
 use assembly_config_schema::{BoardConfig, ProductConfig};
 use assembly_container::AssemblyContainer;
 use assembly_platform_artifacts::PlatformArtifacts;
@@ -75,7 +75,7 @@ impl Assembly {
             outdir: outdir.clone(),
             gendir,
             input_bundles_dir: self.platform_path,
-            package_validation: None,
+            package_validation: Some(ValidationMode::Off),
             custom_kernel_aib: None,
             custom_boot_shim_aib: None,
             suppress_overrides_warning: false,
