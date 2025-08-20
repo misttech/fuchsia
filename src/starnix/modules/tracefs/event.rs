@@ -4,6 +4,8 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use fuchsia_runtime::vmar_root_self;
+use shared_buffer::SharedBuffer;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::vfs::OutputBuffer;
 use starnix_sync::Mutex;
@@ -167,6 +169,27 @@ struct TraceEventQueueMetadata {
     /// The number of pages of events dropped because the ring buffer was full and the queue is in
     /// overwrite mode.
     dropped_pages: u64,
+
+    /// While tracing is in session, we map the trace buffer to avoid zx_vmo_write calls.
+    mapping: Option<SharedBuffer>, // mapped_vmo requires a non resizable vmo, so we use
+                                   // SharedBuffer directly
+}
+
+impl Drop for TraceEventQueueMetadata {
+    fn drop(&mut self) {
+        if let Some(ref mut buf) = self.mapping {
+            let (addr, size): (*mut u8, usize) = buf.as_ptr_len();
+            let addr = addr as usize;
+
+            // Safety:
+            //
+            // The memory behind this `SharedBuffer` is only accessible
+            // via `mapping` through this struct.
+            unsafe {
+                let _ = vmar_root_self().unmap(addr, size);
+            }
+        }
+    }
 }
 
 impl TraceEventQueueMetadata {
@@ -180,6 +203,7 @@ impl TraceEventQueueMetadata {
             is_readable: false,
             overwrite: true,
             dropped_pages: 0,
+            mapping: None,
         }
     }
 
@@ -303,7 +327,7 @@ pub struct TraceEventQueue {
     ///   N trace events
     ring_buffer: MemoryObject,
 
-    /// Insepct node used for diagnostics.
+    /// Inspect node used for diagnostics.
     tracefs_node: fuchsia_inspect::Node,
 }
 
@@ -335,6 +359,31 @@ impl<'a> TraceEventQueue {
         self.ring_buffer
             .set_size(DEFAULT_RING_BUFFER_SIZE_BYTES)
             .map_err(|e| from_status_like_fdio!(e))?;
+
+        let vmo = self.ring_buffer.as_vmo().expect("Trace FS's memory must be VMO backed.");
+        let addr = vmar_root_self()
+            .map(
+                0,
+                &vmo,
+                0,
+                DEFAULT_RING_BUFFER_SIZE_BYTES as usize,
+                zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
+            )
+            .map_err(|e| from_status_like_fdio!(e))?;
+
+        // Safety:
+        //
+        // The memory behind this `SharedBuffer` is only accessible via
+        // methods on `TraceEventQueue`.
+        //
+        // The underlying memory is accessible during any accesses to `SharedBuffer`:
+        // - It is only unmapped on `drop`
+        // - We don't expose the mapped address which might allow it to outlive the TraceEventQueue
+        // - The underlying VMO is resizable, but we never resize while the memory is mapped.
+        metadata.mapping = Some(unsafe {
+            SharedBuffer::new(addr as *mut u8, DEFAULT_RING_BUFFER_SIZE_BYTES as usize)
+        });
+
         self.initialize_page(0, metadata.prev_timestamp)?;
         self.tracing_enabled.store(true, Ordering::Relaxed);
         Ok(())
@@ -385,6 +434,9 @@ impl<'a> TraceEventQueue {
         mut event: TraceEvent<'a>,
     ) -> Result<zx::Duration<BootTimeline>, Errno> {
         let mut metadata = self.metadata.lock();
+        if metadata.mapping.is_none() {
+            return Err(errno!(ENOMEM));
+        };
 
         // The timestamp for the current event must be after the metadata.prev_timestamp.
         // This is because the event data header only stores the delta time, not the entire timestamp.
@@ -409,16 +461,18 @@ impl<'a> TraceEventQueue {
         }
 
         // Write the event and update the commit offset.
-        self.ring_buffer.write(&event.as_bytes(), offset).map_err(|e| from_status_like_fdio!(e))?;
+        let bytes = event.as_bytes();
+        if let Some(ref mapping) = metadata.mapping {
+            mapping.write_at(offset as usize, bytes.as_bytes());
+        }
         metadata.commit(event.size() as u64);
 
         // Update the page header's `commit` field with the new size of committed data on the page.
-        self.ring_buffer
-            .write(
-                &((metadata.commit % *PAGE_SIZE) - PAGE_HEADER_SIZE).to_le_bytes(),
-                metadata.commit_field_offset(),
-            )
-            .map_err(|e| from_status_like_fdio!(e))?;
+        let new_commit = ((metadata.commit % *PAGE_SIZE) - PAGE_HEADER_SIZE).to_le_bytes();
+        let commit_offset = metadata.commit_field_offset() as usize;
+        if let Some(ref mapping) = metadata.mapping {
+            mapping.write_at(commit_offset, &new_commit);
+        }
 
         let delta = timestamp - metadata.prev_timestamp;
         metadata.prev_timestamp = timestamp;
@@ -449,11 +503,11 @@ impl<'a> TraceEventQueue {
 #[cfg(test)]
 mod tests {
     use super::{
-        TraceEvent, TraceEventQueue, TraceEventQueueMetadata, DEFAULT_RING_BUFFER_SIZE_BYTES,
-        PAGE_HEADER_SIZE,
+        DEFAULT_RING_BUFFER_SIZE_BYTES, PAGE_HEADER_SIZE, TraceEvent, TraceEventQueue,
+        TraceEventQueueMetadata,
     };
-    use starnix_core::vfs::buffers::VecOutputBuffer;
     use starnix_core::vfs::OutputBuffer;
+    use starnix_core::vfs::buffers::VecOutputBuffer;
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::error;
 
