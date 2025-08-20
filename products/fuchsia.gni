@@ -27,10 +27,10 @@ discoverable_package_labels = [ "//src/developer/debug/debug_agent" ]
 # List which product bundles can be built using this build configuration.
 product_bundle_labels = [ "//products:product_bundles" ]
 
-# Upload these boards to CIPD.
+# List these boards in boards.json, and upload to CIPD.
 assembly_board_configs = [ "//boards" ]
 
-# Upload these products to CIPD.
+# List these products in products.json, and upload to CIPD.
 assembly_product_configs = [ "//products" ]
 
 product_bundle_test_groups = [ "//bundles/buildbot/minimal/arm64" ]
