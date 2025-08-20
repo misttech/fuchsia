@@ -817,6 +817,31 @@ class DriverTest : public testing::Test {
 
 class GlobalLoggerListTest : public testing::Test {
  protected:
+  GlobalLoggerListTest() : loop_(&kAsyncLoopConfigNoAttachToCurrentThread) {}
+  ~GlobalLoggerListTest() {
+    if (svc_dir_) {
+      svc_directory_destroy(svc_dir_);
+    }
+  }
+
+  void SetUp() override {
+    ASSERT_EQ(svc_directory_create(&svc_dir_), ZX_OK);
+
+    constexpr std::string_view log_sink_name(
+        fidl::DiscoverableProtocolName<fuchsia_logger::LogSink>);
+    ASSERT_EQ(
+        svc_directory_add_service(
+            svc_dir_, nullptr, 0, log_sink_name.data(), log_sink_name.size(), nullptr,
+            +[](void* context, const char* service_name, zx_handle_t service_request) {
+              ZX_ASSERT(component::Connect<fuchsia_logger::LogSink>(
+                            fidl::ServerEnd<fuchsia_logger::LogSink>(zx::channel(service_request)))
+                            .is_ok());
+            }),
+        ZX_OK);
+
+    loop_.StartThread();
+  }
+
   std::shared_ptr<fdf::Logger> NewLogger(const std::string& name) {
     auto svc = fidl::CreateEndpoints<fio::Directory>();
     ZX_ASSERT(ZX_OK == svc.status_value());
@@ -830,12 +855,20 @@ class GlobalLoggerListTest : public testing::Test {
     auto ns = fdf::Namespace::Create(entries);
     ZX_ASSERT(ZX_OK == ns.status_value());
 
-    auto logger = fdf::Logger::Create2(*ns, dispatcher(), name, FUCHSIA_LOG_INFO, false);
+    ZX_ASSERT(svc_directory_serve(svc_dir_, loop_.dispatcher(),
+                                  svc->server.TakeChannel().release()) == ZX_OK);
+
+    auto logger = fdf::Logger::Create2(*ns, dispatcher(), name, FUCHSIA_LOG_INFO);
     return std::shared_ptr<fdf::Logger>(logger.release());
   }
-  async_dispatcher_t* dispatcher() { return fdf::Dispatcher::GetCurrent()->async_dispatcher(); }
+
+  static async_dispatcher_t* dispatcher() {
+    return fdf::Dispatcher::GetCurrent()->async_dispatcher();
+  }
 
  private:
+  async::Loop loop_;
+  svc_dir_t* svc_dir_ = nullptr;
   fdf_testing::DriverRuntime runtime_;
 };
 

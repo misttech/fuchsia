@@ -51,7 +51,7 @@ void DriverLoggerHarnessDFv2::Initialize() {
   ASSERT_TRUE(incoming.is_ok()) << incoming.status_string();
 
   auto logger = fdf::Logger::Create2(*incoming, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                     "testing", FUCHSIA_LOG_INFO, true);
+                                     "testing", FUCHSIA_LOG_INFO);
   logger_ = std::move(logger);
   logger_callback_ = magma::InitializePlatformLoggerForDFv2(logger_.get(), "mali");
 }

@@ -12,7 +12,9 @@
 
 namespace fdf {
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 __WEAK bool logger_wait_for_initial_interest = true;
+#endif
 
 DriverBase::DriverBase(std::string_view name, DriverStartArgs start_args,
                        fdf::UnownedSynchronizedDispatcher driver_dispatcher)
@@ -27,8 +29,12 @@ DriverBase::DriverBase(std::string_view name, DriverStartArgs start_args,
     return std::move(incoming.value());
   }();
   logger_ = [&incoming, this]() {
-    auto logger = Logger::Create2(incoming, dispatcher_, name_, FUCHSIA_LOG_INFO,
-                                  logger_wait_for_initial_interest);
+    auto logger = Logger::Create2(incoming, dispatcher_, name_, FUCHSIA_LOG_INFO
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+                                  ,
+                                  logger_wait_for_initial_interest
+#endif
+    );
     return logger;
   }();
   Logger::SetGlobalInstance(logger_.get());

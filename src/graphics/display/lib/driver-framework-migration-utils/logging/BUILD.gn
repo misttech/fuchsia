@@ -85,6 +85,7 @@ test("logging-dfv2-tests-bin") {
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/driver/testing/cpp:scoped_global_logger",
+    "//src/lib/diagnostics/fake-log-sink/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
     "//third_party/googletest:gtest",

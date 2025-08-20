@@ -82,8 +82,7 @@ class MockPwmServer final : public fidl::testing::WireTestBase<fuchsia_hardware_
 };
 
 TEST(PwmInitDeviceTest, InitTest) {
-  fdf::Logger logger{"common-test", FUCHSIA_LOG_DEBUG, zx::socket{},
-                     fidl::WireClient<fuchsia_logger::LogSink>()};
+  fdf::Logger logger;
   fdf::Logger::SetGlobalInstance(&logger);
 
   async::Loop fidl_loop{&kAsyncLoopConfigNoAttachToCurrentThread};

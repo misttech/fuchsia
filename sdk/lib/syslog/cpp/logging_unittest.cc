@@ -507,7 +507,7 @@ TEST(Logger, LocalLogger) {
   EXPECT_EQ(memcmp(record.data(), span.data(), record.size()), 0);
 
   // Make sure a severity update gets through.
-  log_sink.set_severity(FUCHSIA_LOG_WARNING);
+  log_sink.SetSeverity(FUCHSIA_LOG_WARNING);
   std::unique_lock lock(mutex);
   condition.wait(lock, [&] { return severity == FUCHSIA_LOG_WARNING; });
 

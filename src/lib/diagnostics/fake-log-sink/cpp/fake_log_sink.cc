@@ -20,7 +20,7 @@ class FakeLogSink::Impl : public fidl::Server<fuchsia_logger::LogSink> {
  public:
   explicit Impl(RawLogSeverity severity) : severity_(severity) {}
 
-  void set_severity(RawLogSeverity severity) {
+  void SetSeverity(RawLogSeverity severity) {
     std::unique_lock lock(mutex_);
     severity_ = severity;
     if (!interest_change_completers_.empty()) {
@@ -147,6 +147,6 @@ std::optional<diagnostics::reader::LogsData> FakeLogSink::ReadLogsData() {
   return diagnostics::reader::LogsData(std::move(log));
 }
 
-void FakeLogSink::set_severity(RawLogSeverity severity) { impl_->set_severity(severity); }
+void FakeLogSink::SetSeverity(RawLogSeverity severity) { impl_->SetSeverity(severity); }
 
 }  // namespace fuchsia_logging

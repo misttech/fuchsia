@@ -5,160 +5,102 @@
 #include <fidl/fuchsia.component.runner/cpp/wire_types.h>
 #include <fidl/fuchsia.logger/cpp/wire.h>
 #include <fuchsia/io/cpp/fidl.h>
-#include <fuchsia/logger/cpp/fidl_test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/driver/component/cpp/tests/test_base.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fidl/cpp/binding.h>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <rapidjson/document.h>
 
-#include "src/lib/diagnostics/accessor2logger/log_message.h"
-#include "src/lib/diagnostics/log/message/rust/cpp-log-decoder/log_decoder.h"
-#include "src/lib/fsl/vmo/sized_vmo.h"
-#include "src/lib/fsl/vmo/strings.h"
+#include "src/lib/diagnostics/fake-log-sink/cpp/fake_log_sink.h"
+
+namespace {
 
 namespace fio = fuchsia::io;
-namespace flogger = fuchsia::logger;
 namespace frunner = fuchsia_component_runner;
+
+using ::diagnostics::reader::LogsData;
+using ::testing::ElementsAre;
 
 constexpr char kName[] = "my-name";
 constexpr char kMessage[] = "my-message";
-constexpr char kTestMoniker[] = "test_moniker";
 constexpr char kDriverTag[] = "driver";
 
-class TestLogSink : public flogger::testing::LogSink_TestBase {
- public:
-  using ConnectHandler = fit::function<void(zx::socket socket)>;
-
-  void SetConnectHandler(ConnectHandler connect_handler) {
-    connect_handler_ = std::move(connect_handler);
-  }
-
- private:
-  void ConnectStructured(::zx::socket socket) override { connect_handler_(std::move(socket)); }
-  void WaitForInterestChange(WaitForInterestChangeCallback callback) override {}
-
-  void NotImplemented_(const std::string& name) override {
-    printf("Not implemented: LogSink::%s\n", name.data());
-  }
-
-  ConnectHandler connect_handler_;
-};
-
-void CheckLogUnreadable(zx::socket& log_socket) {
-  zx_signals_t pending = ZX_SIGNAL_NONE;
-  EXPECT_EQ(ZX_ERR_TIMED_OUT,
-            log_socket.wait_one(ZX_SOCKET_READABLE, zx::time::infinite_past(), &pending));
-  EXPECT_EQ(ZX_SOCKET_WRITABLE, pending);
-}
-
-std::string rust_decode_message_to_string(uint8_t* data, size_t len) {
-  auto raw_message = fuchsia_decode_log_message_to_json(data, len);
-  std::string ret = raw_message;
-  fuchsia_free_decoded_log_message(raw_message);
-  return ret;
-}
-
-struct DecodedLogMessage {
-  fuchsia::logger::LogMessage message;
-  rapidjson::Document document;
-};
-
-DecodedLogMessage decode_log_message_to_struct(uint8_t* data, size_t len) {
-  fsl::SizedVmo vmo;
-  auto msg = rust_decode_message_to_string(data, len);
-  fsl::VmoFromString(msg, &vmo);
-  fuchsia::diagnostics::FormattedContent content;
-  fuchsia::mem::Buffer buffer;
-  buffer.vmo = std::move(vmo.vmo());
-  buffer.size = msg.size();
-  content.set_json(std::move(buffer));
-  DecodedLogMessage ret;
-  ret.message =
-      diagnostics::accessor2logger::ConvertFormattedContentToLogMessages(std::move(content))
-          .take_value()[0]
-          .take_value();
-  ret.document.Parse(msg);
-  return ret;
-}
-
-void CheckLogReadable(zx::socket& log_socket, flogger::LogLevelFilter severity) {
-  // Check state of logger after writing info log.
-  zx_signals_t pending = ZX_SIGNAL_NONE;
-  EXPECT_EQ(ZX_OK, log_socket.wait_one(ZX_SOCKET_READABLE, zx::time::infinite_past(), &pending));
-  EXPECT_EQ(ZX_SOCKET_READABLE | ZX_SOCKET_WRITABLE, pending);
-
-  // Read from the log socket.
-  uint8_t packet[ZX_CHANNEL_MAX_MSG_BYTES];
-  size_t actual = 0;
-  ASSERT_EQ(ZX_OK, log_socket.read(0, &packet, sizeof(packet), &actual));
-  EXPECT_LT(actual, sizeof(packet));
-  auto msg = decode_log_message_to_struct(packet, actual);
-  EXPECT_EQ(static_cast<int32_t>(severity), msg.message.severity);
-  EXPECT_EQ(msg.message.tags[0], kTestMoniker);
-  EXPECT_EQ(msg.message.tags[1], kDriverTag);
-  EXPECT_EQ(msg.message.tags[2], kName);
-  EXPECT_EQ(std::string(msg.document[0]["payload"]["root"]["message"]["value"].GetString()),
-            kMessage);
+void CheckLogReadable(fuchsia_logging::FakeLogSink& sink,
+                      fuchsia_diagnostics_types::Severity severity) {
+  auto data = sink.ReadLogsData();
+  ASSERT_TRUE(data);
+  const auto& metadata = data->metadata();
+  EXPECT_EQ(metadata.severity, severity);
+  EXPECT_THAT(metadata.tags, ElementsAre(kDriverTag, kName));
+  EXPECT_EQ(data->message(), kMessage);
 }
 
 TEST(LoggerTest, CreateAndLog) {
   async::Loop loop{&kAsyncLoopConfigNoAttachToCurrentThread};
+  async::Loop ns_loop{&kAsyncLoopConfigNoAttachToCurrentThread};
+  ns_loop.StartThread();
 
-  // Setup namespace.
+  // Set up namespace.
   auto svc = fidl::Endpoints<fuchsia_io::Directory>::Create();
   auto ns = fdf::testing::CreateNamespace(std::move(svc.client));
   ASSERT_TRUE(ns.is_ok());
 
-  // Setup logger.
-  zx::socket log_socket;
-  TestLogSink log_sink;
-  log_sink.SetConnectHandler([&log_socket](zx::socket socket) { log_socket = std::move(socket); });
-  fidl::Binding<flogger::LogSink> log_binding(&log_sink);
+  std::optional<fuchsia_logging::FakeLogSink> log_sink;
 
   fdf::testing::Directory svc_directory;
-  svc_directory.SetOpenHandler([&loop, &log_binding](std::string path, auto object) {
+  svc_directory.SetOpenHandler([&log_sink](const std::string& path, auto object) {
     EXPECT_EQ(path, fidl::DiscoverableProtocolName<fuchsia_logger::LogSink>);
-    log_binding.Bind(object.TakeChannel(), loop.dispatcher());
+    ASSERT_FALSE(log_sink);
+    log_sink.emplace(FUCHSIA_LOG_INFO,
+                     fidl::ServerEnd<fuchsia_logger::LogSink>(object.TakeChannel()));
   });
   fidl::Binding<fio::Directory> svc_binding(&svc_directory);
 
   fdf::testing::Directory svc_directory2;
-  svc_directory2.SetOpenHandler([&loop, &svc_binding](std::string path, auto object) {
+  svc_directory2.SetOpenHandler([&ns_loop, &svc_binding](const std::string& path, auto object) {
     EXPECT_EQ(path, ".");
-    svc_binding.Bind(object.TakeChannel(), loop.dispatcher());
+    svc_binding.Bind(object.TakeChannel(), ns_loop.dispatcher());
   });
+
   fidl::Binding<fio::Directory> svc_binding2(&svc_directory2);
+  svc_binding2.Bind(svc.server.TakeChannel(), ns_loop.dispatcher());
 
-  svc_binding2.Bind(svc.server.TakeChannel(), loop.dispatcher());
-
-  auto logger = fdf::Logger::Create2(*ns, loop.dispatcher(), kName, FUCHSIA_LOG_INFO, false);
+  auto logger = fdf::Logger::Create2(*ns, loop.dispatcher(), kName, FUCHSIA_LOG_INFO);
   ASSERT_FALSE(logger->IsNoOp());
   loop.RunUntilIdle();
 
   // Check initial state of logger.
-  ASSERT_TRUE(log_socket.is_valid());
-  CheckLogUnreadable(log_socket);
+  ASSERT_TRUE(log_sink);
+  EXPECT_FALSE(log_sink->WaitForRecord(zx::time::infinite_past()));
 
   // Check state of logger after writing logs that were below |min_severity|.
   FDF_LOGL(TRACE, *logger, kMessage);
-  CheckLogUnreadable(log_socket);
+  EXPECT_FALSE(log_sink->WaitForRecord(zx::time::infinite_past()));
   FDF_LOGL(DEBUG, *logger, kMessage);
-  CheckLogUnreadable(log_socket);
+  EXPECT_FALSE(log_sink->WaitForRecord(zx::time::infinite_past()));
 
   // Check state of logger after writing logs.
   FDF_LOGL(INFO, *logger, kMessage);
-  CheckLogReadable(log_socket, flogger::LogLevelFilter::INFO);
+  {
+    SCOPED_TRACE("");
+    CheckLogReadable(*log_sink, fuchsia_diagnostics_types::Severity::kInfo);
+  }
   FDF_LOGL(WARNING, *logger, kMessage);
-  CheckLogReadable(log_socket, flogger::LogLevelFilter::WARN);
+  {
+    SCOPED_TRACE("");
+    CheckLogReadable(*log_sink, fuchsia_diagnostics_types::Severity::kWarn);
+  }
   FDF_LOGL(ERROR, *logger, kMessage);
-  CheckLogReadable(log_socket, flogger::LogLevelFilter::ERROR);
+  {
+    SCOPED_TRACE("");
+    CheckLogReadable(*log_sink, fuchsia_diagnostics_types::Severity::kError);
+  }
 }
 
-TEST(LoggerTest, Create_NoLogSink) {
+TEST(LoggerTest, CreateNoLogSink) {
   async::Loop loop{&kAsyncLoopConfigNoAttachToCurrentThread};
 
   // Setup namespace.
@@ -177,12 +119,14 @@ TEST(LoggerTest, Create_NoLogSink) {
   svc.server.TakeChannel().reset();
 
   // Setup logger.
-  auto logger = fdf::Logger::Create2(*ns, loop.dispatcher(), kName, FUCHSIA_LOG_INFO, true);
+  auto logger = fdf::Logger::Create2(*ns, loop.dispatcher(), kName, FUCHSIA_LOG_INFO);
   ASSERT_TRUE(logger->IsNoOp());
 }
 
 TEST(LoggerTest, SetSeverity) {
   async::Loop loop{&kAsyncLoopConfigNoAttachToCurrentThread};
+  async::Loop ns_loop{&kAsyncLoopConfigNoAttachToCurrentThread};
+  ns_loop.StartThread();
 
   // Setup namespace.
   auto svc = fidl::Endpoints<fuchsia_io::Directory>::Create();
@@ -190,53 +134,71 @@ TEST(LoggerTest, SetSeverity) {
   ASSERT_TRUE(ns.is_ok());
 
   // Setup logger.
-  zx::socket log_socket;
-  TestLogSink log_sink;
-  log_sink.SetConnectHandler([&log_socket](zx::socket socket) { log_socket = std::move(socket); });
-  fidl::Binding<flogger::LogSink> log_binding(&log_sink);
+  std::optional<fuchsia_logging::FakeLogSink> log_sink;
 
   fdf::testing::Directory svc_directory;
-  svc_directory.SetOpenHandler([&loop, &log_binding](std::string path, auto object) {
+  svc_directory.SetOpenHandler([&log_sink](const std::string& path, auto object) {
     EXPECT_EQ(path, fidl::DiscoverableProtocolName<fuchsia_logger::LogSink>);
-    log_binding.Bind(object.TakeChannel(), loop.dispatcher());
+    ASSERT_FALSE(log_sink);
+    log_sink.emplace(FUCHSIA_LOG_INFO,
+                     fidl::ServerEnd<fuchsia_logger::LogSink>(object.TakeChannel()));
   });
   fidl::Binding<fio::Directory> svc_binding(&svc_directory);
 
   fdf::testing::Directory svc_directory2;
-  svc_directory2.SetOpenHandler([&loop, &svc_binding](std::string path, auto object) {
+  svc_directory2.SetOpenHandler([&ns_loop, &svc_binding](const std::string& path, auto object) {
     EXPECT_EQ(path, ".");
-    svc_binding.Bind(object.TakeChannel(), loop.dispatcher());
+    svc_binding.Bind(object.TakeChannel(), ns_loop.dispatcher());
   });
   fidl::Binding<fio::Directory> svc_binding2(&svc_directory2);
 
-  svc_binding2.Bind(svc.server.TakeChannel(), loop.dispatcher());
+  svc_binding2.Bind(svc.server.TakeChannel(), ns_loop.dispatcher());
 
-  auto logger = fdf::Logger::Create2(*ns, loop.dispatcher(), kName, FUCHSIA_LOG_INFO, false);
+  auto logger = fdf::Logger::Create2(*ns, loop.dispatcher(), kName, FUCHSIA_LOG_INFO);
   ASSERT_FALSE(logger->IsNoOp());
   loop.RunUntilIdle();
 
   // Check initial state of logger.
-  ASSERT_TRUE(log_socket.is_valid());
-  CheckLogUnreadable(log_socket);
+  ASSERT_TRUE(log_sink);
+  EXPECT_FALSE(log_sink->WaitForRecord(zx::time::infinite_past()));
 
-  // Check severity after setting it.
-  logger->SetSeverity(FUCHSIA_LOG_INFO);
-  ASSERT_EQ(FUCHSIA_LOG_INFO, logger->GetSeverity());
-
-  // Check state of logger after writing logs that were above or equal to min
+  // Check state of logger after writing logs that were above or equal to the default
   // severity.
   FDF_LOGL(INFO, *logger, kMessage);
-  CheckLogReadable(log_socket, flogger::LogLevelFilter::INFO);
+  {
+    SCOPED_TRACE("");
+    CheckLogReadable(*log_sink, fuchsia_diagnostics_types::Severity::kInfo);
+  }
   FDF_LOGL(WARNING, *logger, kMessage);
-  CheckLogReadable(log_socket, flogger::LogLevelFilter::WARN);
+  {
+    SCOPED_TRACE("");
+    CheckLogReadable(*log_sink, fuchsia_diagnostics_types::Severity::kWarn);
+  }
 
   // Check severity after setting it.
-  logger->SetSeverity(FUCHSIA_LOG_WARNING);
-  ASSERT_EQ(FUCHSIA_LOG_WARNING, logger->GetSeverity());
+  log_sink->SetSeverity(FUCHSIA_LOG_WARNING);
+
+  for (;;) {
+    loop.RunUntilIdle();
+
+    if (logger->GetSeverity() == FUCHSIA_LOG_WARNING) {
+      break;
+    }
+
+    // Unfortunately, setting the severity involves two async loops on different threads: a FIDL
+    // message has to pass from the server and the client. It's not ideal, but the easiest way to
+    // test this is just to sleep and then test again.
+    usleep(1000);
+  }
 
   // Check state of logger after writing logs that were below min severity.
   FDF_LOGL(INFO, *logger, kMessage);
-  CheckLogUnreadable(log_socket);
+  EXPECT_FALSE(log_sink->WaitForRecord(zx::time::infinite_past()));
   FDF_LOGL(WARNING, *logger, kMessage);
-  CheckLogReadable(log_socket, flogger::LogLevelFilter::WARN);
+  {
+    SCOPED_TRACE("");
+    CheckLogReadable(*log_sink, fuchsia_diagnostics_types::Severity::kWarn);
+  }
 }
+
+}  // namespace

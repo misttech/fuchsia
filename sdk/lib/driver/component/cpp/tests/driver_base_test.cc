@@ -29,6 +29,9 @@
 // calls. Everything runs on the main test thread so everything is safe to access directly.
 class TestForegroundDispatcher : public ::testing::Test {
  public:
+  TestForegroundDispatcher()
+      : device_server_(runtime_.StartBackgroundDispatcher()->async_dispatcher()) {}
+
   void SetUp() override {
     // Create start args
     node_server_.emplace("root");
@@ -36,15 +39,17 @@ class TestForegroundDispatcher : public ::testing::Test {
     EXPECT_EQ(ZX_OK, start_args.status_value());
 
     // Start the test environment
-    test_environment_.emplace();
-    zx::result result =
-        test_environment_->Initialize(std::move(start_args->incoming_directory_server));
-    EXPECT_EQ(ZX_OK, result.status_value());
-
     device_server_.emplace();
-    device_server_->Initialize(component::kDefaultInstance);
-    EXPECT_EQ(ZX_OK, device_server_->Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                           &test_environment_->incoming_directory()));
+    device_server_.SyncCall([&](DeviceServer* device_server) {
+      zx::result result =
+          device_server->env.Initialize(std::move(start_args->incoming_directory_server));
+      EXPECT_EQ(ZX_OK, result.status_value());
+
+      device_server->server.Initialize(component::kDefaultInstance);
+      EXPECT_EQ(ZX_OK,
+                device_server->server.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                            &device_server->env.incoming_directory()));
+    });
 
     // Start driver
     zx::result start_result =
@@ -57,7 +62,6 @@ class TestForegroundDispatcher : public ::testing::Test {
     EXPECT_EQ(ZX_OK, prepare_stop_result.status_value());
 
     device_server_.reset();
-    test_environment_.reset();
     node_server_.reset();
 
     runtime_.ShutdownAllDispatchers(fdf::Dispatcher::GetCurrent()->get());
@@ -66,13 +70,17 @@ class TestForegroundDispatcher : public ::testing::Test {
   fdf_testing::internal::DriverUnderTest<TestDriver>& driver() { return driver_; }
 
  private:
+  struct DeviceServer {
+    fdf_testing::internal::TestEnvironment env;
+    compat::DeviceServer server;
+  };
+
   // Attaches a foreground dispatcher for us automatically.
   fdf_testing::DriverRuntime runtime_;
 
   // These will use the foreground dispatcher.
   std::optional<fdf_testing::TestNode> node_server_;
-  std::optional<fdf_testing::internal::TestEnvironment> test_environment_;
-  std::optional<compat::DeviceServer> device_server_;
+  async_patterns::TestDispatcherBound<DeviceServer> device_server_;
   fdf_testing::internal::DriverUnderTest<TestDriver> driver_;
 };
 

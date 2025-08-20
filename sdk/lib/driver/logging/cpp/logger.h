@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.logger/cpp/wire_types.h>
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
+#include <lib/syslog/structured_backend/cpp/logger.h>
 #include <lib/syslog/structured_backend/fuchsia_syslog.h>
 #include <lib/zx/socket.h>
 
@@ -65,25 +66,34 @@ class Logger final {
   // |dispatcher| must be single threaded or synchornized. Create must be called from the context of
   // the |dispatcher|.
   //
-  // If |wait_for_initial_interest| is true we this will synchronously query the
-  // fuchsia.logger/LogSink for the min severity it should expect, overriding the min_severity
-  // supplied.
-  //
   // If we fail to connect to LogSink, or if there's any error the returned logger will be no-op.
   static std::unique_ptr<Logger> Create2(const Namespace& ns, async_dispatcher_t* dispatcher,
                                          std::string_view name,
-                                         FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO,
-                                         bool wait_for_initial_interest = true);
+                                         FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+                                         ,
+                                         bool wait_for_initial_interest = true
+#endif
+  );
 
   static zx::result<std::unique_ptr<Logger>> Create(
       const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
-      FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO, bool wait_for_initial_interest = true)
+      FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+      ,
+      bool wait_for_initial_interest = true
+#endif
+      )
       ZX_DEPRECATED_SINCE(1, 24, "Use Create2 which will return a no-op logger instead of failing");
 
   static Logger* GlobalInstance();
   static void SetGlobalInstance(Logger*);
   static bool HasGlobalInstance();
 
+  // A no-op logger.
+  Logger() = default;
+
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   Logger(std::string_view name, FuchsiaLogSeverity min_severity, zx::socket socket,
          fidl::WireClient<fuchsia_logger::LogSink> log_sink)
       : tag_(name),
@@ -91,6 +101,10 @@ class Logger final {
         default_severity_(min_severity),
         severity_(min_severity),
         log_sink_(std::move(log_sink)) {}
+#else
+  explicit Logger(fuchsia_logging::Logger logger) : logger_(std::move(logger)) {}
+#endif
+
   ~Logger();
 
   // Retrieves the number of dropped logs and resets it
@@ -98,7 +112,9 @@ class Logger final {
 
   FuchsiaLogSeverity GetSeverity();
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   void SetSeverity(FuchsiaLogSeverity severity);
+#endif
 
   void logf(FuchsiaLogSeverity severity, const char* tag, const char* file, int line,
             const char* msg, ...) __PRINTFLIKE(6, 7);
@@ -150,7 +166,11 @@ class Logger final {
   // on LogBuffer directly.
   bool FlushRecord(fuchsia_logging::LogBuffer& buffer, uint32_t dropped);
 
-  bool IsNoOp() { return !socket_.is_valid(); }
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+  bool IsNoOp() const { return !socket_.is_valid(); }
+#else
+  bool IsNoOp() const { return !logger_.IsValid(); }
+#endif
 
  private:
   Logger(const Logger& other) = delete;
@@ -158,10 +178,16 @@ class Logger final {
 
   static zx::result<std::unique_ptr<Logger>> MaybeCreate(
       const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
-      FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO, bool wait_for_initial_interest = true);
+      FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+      ,
+      bool wait_for_initial_interest = true
+#endif
+  );
 
   static std::unique_ptr<Logger> NoOp();
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 #if FUCHSIA_API_LEVEL_AT_LEAST(27)
   void HandleInterest(fuchsia_diagnostics_types::wire::Interest interest);
 #else
@@ -174,14 +200,18 @@ class Logger final {
   // For thread-safety these members should be read-only.
   const std::string tag_;
   const zx::socket socket_;
-  const FuchsiaLogSeverity default_severity_;
+  const FuchsiaLogSeverity default_severity_ = FUCHSIA_LOG_INFO;
   // Messages below this won't be logged. This field is thread-safe.
-  std::atomic<FuchsiaLogSeverity> severity_;
-  // Dropped log count. This is thread-safe and is reset on success.
-  std::atomic<uint32_t> dropped_logs_ = 0;
+  std::atomic<FuchsiaLogSeverity> severity_ = FUCHSIA_LOG_INFO;
 
   // Used to learn about changes in severity.
   fidl::WireClient<fuchsia_logger::LogSink> log_sink_;
+#else
+  const fuchsia_logging::Logger logger_;
+#endif
+
+  // Dropped log count. This is thread-safe and is reset on success.
+  std::atomic<uint32_t> dropped_logs_ = 0;
 };
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD) && __cplusplus >= 202002L

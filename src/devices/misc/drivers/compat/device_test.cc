@@ -8,12 +8,17 @@
 #include <fidl/fuchsia.device/cpp/markers.h>
 #include <fidl/fuchsia.driver.framework/cpp/wire_test_base.h>
 #include <fidl/test.placeholders/cpp/wire.h>
+#include <lib/async-loop/cpp/loop.h>
+#include <lib/async-loop/default.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/symbols.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
+#include <lib/driver/testing/cpp/internal/test_environment.h>
 #include <lib/driver/testing/cpp/test_node.h>
 #include <lib/fidl/cpp/wire/connect_service.h>
 #include <lib/fidl/cpp/wire/transaction.h>
+#include <lib/svc/dir.h>
+#include <lib/sync/cpp/completion.h>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <ddktl/device.h>
@@ -35,13 +40,40 @@ class DeviceTest : public ::testing::Test {
     return fdf::Dispatcher::GetCurrent()->async_dispatcher();
   }
 
+  DeviceTest() : loop_(&kAsyncLoopConfigNoAttachToCurrentThread) {}
+  ~DeviceTest() {
+    if (svc_dir_) {
+      svc_directory_destroy(svc_dir_);
+    }
+  }
+
   void SetUp() override {
     auto svc = fidl::CreateEndpoints<fio::Directory>();
     ASSERT_EQ(ZX_OK, svc.status_value());
     auto ns = CreateNamespace(std::move(svc->client));
     ASSERT_EQ(ZX_OK, ns.status_value());
 
-    auto logger = fdf::Logger::Create2(*ns, dispatcher(), "test-logger", FUCHSIA_LOG_INFO, false);
+    ASSERT_EQ(svc_directory_create(&svc_dir_), ZX_OK);
+
+    constexpr std::string_view log_sink_name(
+        fidl::DiscoverableProtocolName<fuchsia_logger::LogSink>);
+    ASSERT_EQ(
+        svc_directory_add_service(
+            svc_dir_, nullptr, 0, log_sink_name.data(), log_sink_name.size(), nullptr,
+            +[](void* context, const char* service_name, zx_handle_t service_request) {
+              ZX_ASSERT(component::Connect<fuchsia_logger::LogSink>(
+                            fidl::ServerEnd<fuchsia_logger::LogSink>(zx::channel(service_request)))
+                            .is_ok());
+            }),
+        ZX_OK);
+
+    loop_.StartThread();
+
+    ASSERT_EQ(
+        svc_directory_serve(svc_dir_, loop_.dispatcher(), svc->server.TakeChannel().release()),
+        ZX_OK);
+
+    auto logger = fdf::Logger::Create2(*ns, dispatcher(), "test-logger", FUCHSIA_LOG_INFO);
     logger_ = std::shared_ptr<fdf::Logger>(logger.release());
   }
 
@@ -64,6 +96,8 @@ class DeviceTest : public ::testing::Test {
     return fdf::Namespace::Create(entries);
   }
 
+  async::Loop loop_;
+  svc_dir_t* svc_dir_ = nullptr;
   fdf_testing::DriverRuntime runtime_;
   std::shared_ptr<fdf::Logger> logger_;
 };
@@ -652,8 +686,7 @@ TEST_F(DeviceTest, TestRebind) {
 
 TEST_F(DeviceTest, CreateNodeProperties) {
   fidl::Arena<512> arena;
-  auto logger = std::make_unique<fdf::Logger>("", 0, zx::socket(),
-                                              fidl::WireClient<fuchsia_logger::LogSink>());
+  fdf::Logger logger;
   device_add_args_t args = {};
 
   zx_device_str_prop_t str_prop;
@@ -672,7 +705,7 @@ TEST_F(DeviceTest, CreateNodeProperties) {
   args.runtime_service_offers = &runtime_offer;
   args.runtime_service_offer_count = 1;
 
-  auto properties = compat::CreateProperties(arena, *logger, &args);
+  auto properties = compat::CreateProperties(arena, logger, &args);
 
   ASSERT_EQ(2ul, properties.size());
 

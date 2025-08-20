@@ -29,7 +29,7 @@ class FakeLogSink {
   FakeLogSink& operator=(FakeLogSink&&) = default;
 
   // Changes the severity and notifies listening clients.
-  void set_severity(RawLogSeverity severity);
+  void SetSeverity(RawLogSeverity severity);
 
   // Returns a record. This will block until one is available. If an error is encountered the
   // returned buffer will be empty.

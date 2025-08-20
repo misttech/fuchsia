@@ -6,6 +6,7 @@
 #define LIB_DRIVER_TESTING_CPP_INTERNAL_TEST_ENVIRONMENT_H_
 
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.logger/cpp/fidl.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/fdf/dispatcher.h>
 
@@ -41,6 +42,20 @@ class TestEnvironment final {
   const fdf::OutgoingDirectory& incoming_directory() const {
     std::lock_guard guard(checker_);
     return incoming_directory_server_;
+  }
+
+  // Adds LogSink to the incoming directory. If required, this *must* be called before calling
+  // `Initialize`.
+  template <typename Callback>
+  zx::result<> AddLogSink(Callback callback) {
+    if (logsink_added_) {
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+    logsink_added_ = true;
+    return incoming_directory_server_.component().AddUnmanagedProtocol<fuchsia_logger::LogSink>(
+        [callback = std::move(callback)](fidl::ServerEnd<fuchsia_logger::LogSink> server_end) {
+          callback(std::move(server_end));
+        });
   }
 
   zx::result<> Initialize(fidl::ServerEnd<fuchsia_io::Directory> incoming_directory_server_end);

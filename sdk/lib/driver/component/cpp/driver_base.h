@@ -32,8 +32,10 @@ namespace fdf {
 
 using DriverStartArgs = fuchsia_driver_framework::DriverStartArgs;
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 // Used to indicate if we should wait for the initial interest change for the driver's logger.
 extern bool logger_wait_for_initial_interest;
+#endif
 
 // |DriverBase| is an interface that drivers should inherit from. It provides methods
 // for accessing the start args, as well as helper methods for common initialization tasks.

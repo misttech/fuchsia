@@ -69,13 +69,34 @@ class FakeDriver : public MagmaDriverBase {
   }
 };
 
+// Instantiating drivers involves a synchronous connection to create a logger, so we must serve that
+// as a minimum.
+void SetUpIncomingDirectory(fdf::OutgoingDirectory& dir,
+                            fidl::ServerEnd<fuchsia_io::Directory> server_end) {
+  EXPECT_EQ(
+      dir.component()
+          .AddUnmanagedProtocol<fuchsia_logger::LogSink>(
+              [](fidl::ServerEnd<fuchsia_logger::LogSink> server_end) {
+                ZX_ASSERT(
+                    component::Connect<fuchsia_logger::LogSink>(std::move(server_end)).is_ok());
+              })
+          .status_value(),
+      ZX_OK);
+  EXPECT_EQ(dir.Serve(std::move(server_end)).status_value(), ZX_OK);
+}
+
 // Check that the test driver class can be instantiated (not started).
 TEST(MagmaDriver, CreateTestDriver) {
   fdf_testing::DriverRuntime runtime;
   fdf_testing::TestNode node_server("root");
-
   zx::result start_args = node_server.CreateStartArgsAndServe();
-  EXPECT_EQ(ZX_OK, start_args.status_value());
+  EXPECT_EQ(start_args.status_value(), ZX_OK);
+  async_patterns::TestDispatcherBound<fdf::OutgoingDirectory> env(
+      runtime.StartBackgroundDispatcher()->async_dispatcher());
+  env.emplace();
+  env.SyncCall([&](fdf::OutgoingDirectory* env) {
+    SetUpIncomingDirectory(*env, std::move(start_args->incoming_directory_server));
+  });
   FakeTestDriver driver{std::move(start_args->start_args),
                         fdf::UnownedSynchronizedDispatcher(fdf::Dispatcher::GetCurrent()->get())};
 }
@@ -84,9 +105,14 @@ TEST(MagmaDriver, CreateTestDriver) {
 TEST(MagmaDriver, CreateDriver) {
   fdf_testing::DriverRuntime runtime;
   fdf_testing::TestNode node_server("root");
-
   zx::result start_args = node_server.CreateStartArgsAndServe();
-  EXPECT_EQ(ZX_OK, start_args.status_value());
+  EXPECT_EQ(start_args.status_value(), ZX_OK);
+  async_patterns::TestDispatcherBound<fdf::OutgoingDirectory> env(
+      runtime.StartBackgroundDispatcher()->async_dispatcher());
+  env.emplace();
+  env.SyncCall([&](fdf::OutgoingDirectory* env) {
+    SetUpIncomingDirectory(*env, std::move(start_args->incoming_directory_server));
+  });
   FakeDriver driver{std::move(start_args->start_args),
                     fdf::UnownedSynchronizedDispatcher(fdf::Dispatcher::GetCurrent()->get())};
 }

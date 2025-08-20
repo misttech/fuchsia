@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/async/cpp/irq.h>
+#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 #include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
@@ -47,9 +48,11 @@ class DriverDispatcherTest : public ::testing::Test {
 
     // Start the test environment
     test_environment_.emplace();
-    zx::result result =
-        test_environment_->Initialize(std::move(start_args->incoming_directory_server));
-    EXPECT_OK(result);
+    test_environment_.SyncCall([server = std::move(start_args->incoming_directory_server)](
+                                   fdf_testing::internal::TestEnvironment* env) mutable {
+      zx::result result = env->Initialize(std::move(server));
+      EXPECT_OK(result);
+    });
 
     // Start driver
     zx::result start_result =
@@ -59,8 +62,6 @@ class DriverDispatcherTest : public ::testing::Test {
 
   void TearDown() override {
     StopDriver();
-
-    test_environment_.reset();
     node_server_.reset();
   }
 
@@ -74,6 +75,7 @@ class DriverDispatcherTest : public ::testing::Test {
     }
     zx::result prepare_stop_result = runtime_.RunToCompletion(driver_.PrepareStop());
     EXPECT_OK(prepare_stop_result);
+    test_environment_.reset();
     runtime_.ShutdownAllDispatchers(fdf::Dispatcher::GetCurrent()->get());
     driver_stopped_ = true;
     return true;
@@ -83,9 +85,11 @@ class DriverDispatcherTest : public ::testing::Test {
   // Attaches a foreground dispatcher for us automatically.
   fdf_testing::DriverRuntime runtime_;
 
+  async_patterns::TestDispatcherBound<fdf_testing::internal::TestEnvironment> test_environment_{
+      runtime_.StartBackgroundDispatcher()->async_dispatcher()};
+
   // These will use the foreground dispatcher.
   std::optional<fdf_testing::TestNode> node_server_;
-  std::optional<fdf_testing::internal::TestEnvironment> test_environment_;
   fdf_testing::internal::DriverUnderTest<testing::Dfv2DriverWithDispatcher> driver_;
 
   bool driver_stopped_ = false;
