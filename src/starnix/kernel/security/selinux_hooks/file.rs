@@ -104,8 +104,7 @@ pub(in crate::security) fn file_receive(
         return Ok(());
     }
 
-    todo_has_file_permissions(
-        TODO_DENY!("https://fxbug.dev/399894966", "Check file receive permission."),
+    has_file_permissions(
         &permission_check,
         current_task,
         subject_sid,
