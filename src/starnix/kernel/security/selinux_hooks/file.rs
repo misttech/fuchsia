@@ -15,7 +15,8 @@ use crate::TODO_DENY;
 use crate::bpf::fs::BpfHandle;
 use crate::mm::{Mapping, MappingName, MappingOptions, ProtectionFlags};
 use crate::security::selinux_hooks::{
-    ProcessPermission, check_self_permission, todo_check_permission, todo_has_file_permissions,
+    ProcessPermission, check_self_permission, has_fs_node_permissions, todo_check_permission,
+    todo_has_file_permissions,
 };
 use crate::task::CurrentTask;
 use crate::vfs::{FileHandle, FileObject, FsNodeHandle, canonicalize_ioctl_request};
@@ -236,8 +237,7 @@ pub(in crate::security) fn check_file_fcntl_access(
         if !old_flags.can_write() {
             // The file was previously opened with read-only access. Since append is now requested,
             // we need to check for permission.
-            todo_has_fs_node_permissions(
-                TODO_DENY!("https://fxbug.dev/385121365", "Enforce file_permission() checks"),
+            has_fs_node_permissions(
                 &security_server.as_permission_check(),
                 current_task,
                 subject_sid,
