@@ -43,6 +43,7 @@ _bin_common = {
     "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace-provider",
     "//src/performance/memory/heapdump/instrumentation",
+    "//src/performance/memory/scudo:rust",
     "//src/sys/lib/namespace",
     "//src/sys/lib/stdout-to-debuglog/rust",
     "//src/sys/lib/task-exceptions",

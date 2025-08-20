@@ -5,9 +5,9 @@
 use crate::driver::Driver;
 use crate::utils::update_process_name;
 use anyhow::{Context, Result};
-use fidl::encoding::{clear_tls_buf, DefaultFuchsiaResourceDialect};
-use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl::HandleBased;
+use fidl::encoding::{DefaultFuchsiaResourceDialect, clear_tls_buf};
+use fidl::endpoints::{ClientEnd, ServerEnd};
 use fuchsia_async::Timer;
 use fuchsia_component::client;
 use futures::channel::oneshot;
@@ -131,6 +131,7 @@ impl DriverHost {
                         }
                     }
                     clear_tls_buf::<DefaultFuchsiaResourceDialect>();
+                    let _ = scudo::mallopt(scudo::M_PURGE_ALL, 0);
                     Ok(())
                 }
             })
@@ -351,13 +352,10 @@ impl DriverHost {
     ) -> Option<fdh::DriverCrashInfo> {
         let mut exceptions = self.exceptions.borrow_mut();
 
-        let index_to_remove = exceptions.iter().enumerate().find_map(|(i, exception)| {
-            if &exception.koid == thread_koid {
-                Some(i)
-            } else {
-                None
-            }
-        });
+        let index_to_remove = exceptions
+            .iter()
+            .enumerate()
+            .find_map(|(i, exception)| if &exception.koid == thread_koid { Some(i) } else { None });
 
         index_to_remove.map(|i| exceptions.remove(i).info)
     }
@@ -372,8 +370,8 @@ impl Drop for DriverHost {
     }
 }
 
-fn get_process_info(
-) -> Result<(u64, u64, u64, &'static [fdh::ThreadInfo], &'static [fdh::DispatcherInfo]), i32> {
+fn get_process_info()
+-> Result<(u64, u64, u64, &'static [fdh::ThreadInfo], &'static [fdh::DispatcherInfo]), i32> {
     let job_koid =
         fuchsia_runtime::job_default().get_koid().map_err(zx::Status::into_raw)?.raw_koid();
     let process_koid =
@@ -399,11 +397,7 @@ fn install_loader(loader: ClientEnd<fldsvc::LoaderMarker>) {
 }
 
 fn ignore_peer_closed(err: fidl::Error) -> Result<(), fidl::Error> {
-    if err.is_closed() {
-        Ok(())
-    } else {
-        Err(err)
-    }
+    if err.is_closed() { Ok(()) } else { Err(err) }
 }
 
 #[cfg(test)]

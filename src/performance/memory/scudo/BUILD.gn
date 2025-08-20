@@ -19,6 +19,7 @@ rustc_library("rust") {
   name = "scudo"
   visibility = [
     # Please discuss with the owners before adding a dependency.
+    "//src/devices/bin/driver-host/*",
   ]
   edition = "2021"
   with_unit_tests = false
