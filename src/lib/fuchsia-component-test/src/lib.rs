@@ -4,13 +4,13 @@
 
 use crate::error::Error;
 use crate::local_component_runner::LocalComponentRunnerBuilder;
-use anyhow::{format_err, Context as _};
+use anyhow::{Context as _, format_err};
 use assert_matches::assert_matches;
 use cm_rust::{FidlIntoNative, NativeIntoFidl};
 use component_events::events::Started;
 use component_events::matcher::EventMatcher;
 use fidl::endpoints::{
-    self, create_proxy, ClientEnd, DiscoverableProtocolMarker, Proxy, ServerEnd, ServiceMarker,
+    self, ClientEnd, DiscoverableProtocolMarker, Proxy, ServerEnd, ServiceMarker, create_proxy,
 };
 use fuchsia_component::client as fclient;
 use futures::future::BoxFuture;
@@ -868,13 +868,11 @@ pub struct Route {
     capabilities: Vec<ftest::Capability>,
     from: Option<Ref>,
     to: Vec<Ref>,
-    // For compatibility with `from_dictionary` API. This will be removed soon.
-    from_dictionary_placeholder: Option<String>,
 }
 
 impl Route {
     pub fn new() -> Self {
-        Self { capabilities: vec![], from: None, to: vec![], from_dictionary_placeholder: None }
+        Self { capabilities: vec![], from: None, to: vec![] }
     }
 
     /// Adds a capability to this route. Must be called at least once.
@@ -896,28 +894,11 @@ impl Route {
     ///     .to(Ref::dictionary(Ref::self_(), "diagnostics"))
     /// ```
     pub fn from(mut self, from: impl Into<Ref>) -> Self {
-        let mut from = from.into();
-        if let Some(path) = self.from_dictionary_placeholder.take() {
-            from = Ref::dictionary(from, path);
-        }
+        let from = from.into();
         if self.from.is_some() {
             panic!("from is already set for this route");
         }
         self.from = Some(from);
-        self
-    }
-
-    /// DEPRECATED, will be deleted soon. Use from(Ref::dictionary()) instead
-    pub fn from_dictionary(mut self, from_dictionary: impl Into<String>) -> Self {
-        let from_dictionary = from_dictionary.into();
-        let from = match self.from.as_ref() {
-            Some(from) => Some(Ref::dictionary(from.clone(), from_dictionary)),
-            None => {
-                self.from_dictionary_placeholder = Some(from_dictionary);
-                None
-            }
-        };
-        self.from = from;
         self
     }
 
@@ -1296,10 +1277,13 @@ impl RealmBuilder {
     pub async fn add_local_child(
         &self,
         name: impl Into<String>,
-        local_component_implementation: impl Fn(LocalComponentHandles) -> BoxFuture<'static, Result<(), anyhow::Error>>
-            + Sync
-            + Send
-            + 'static,
+        local_component_implementation: impl Fn(
+            LocalComponentHandles,
+        )
+            -> BoxFuture<'static, Result<(), anyhow::Error>>
+        + Sync
+        + Send
+        + 'static,
         options: ChildOptions,
     ) -> Result<ChildRef, Error> {
         self.root_realm.add_local_child(name, local_component_implementation, options).await
@@ -2768,7 +2752,6 @@ mod tests {
                 ],
                 from: Some(Ref::child("a").into()),
                 to: vec![Ref::collection("b").into(), Ref::parent().into(),],
-                from_dictionary_placeholder: None,
             },
         );
     }
@@ -3071,8 +3054,8 @@ mod tests {
         .boxed()
     }
 
-    fn new_realm_builder_and_server_task(
-    ) -> (RealmBuilder, fasync::Task<()>, mpsc::UnboundedReceiver<ServerRequest>) {
+    fn new_realm_builder_and_server_task()
+    -> (RealmBuilder, fasync::Task<()>, mpsc::UnboundedReceiver<ServerRequest>) {
         let (realm_proxy, realm_stream) = create_proxy_and_stream::<ftest::RealmMarker>();
         let (builder_proxy, mut builder_stream) = create_proxy_and_stream::<ftest::BuilderMarker>();
 
