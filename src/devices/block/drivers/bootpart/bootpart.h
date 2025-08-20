@@ -8,27 +8,19 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
-#include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/banjo_server.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/zbi-format/partition.h>
-
-#include <ddktl/device.h>
-#include <fbl/string_printf.h>
 
 namespace bootpart {
 
-class BootPartition;
-using DeviceType = ddk::Device<BootPartition, ddk::GetProtocolable>;
-class BootPartition : public DeviceType,
-                      public ddk::BlockImplProtocol<BootPartition, ddk::base_protocol>,
+class BootPartition : public ddk::BlockImplProtocol<BootPartition>,
                       public ddk::BlockPartitionProtocol<BootPartition> {
  public:
-  BootPartition(zx_device_t* parent, uint64_t partition_index,
-                const ddk::BlockImplProtocolClient& block_impl_client,
+  BootPartition(const ddk::BlockImplProtocolClient& block_impl_client,
                 fuchsia_boot_metadata::Partition partition, const block_info_t& block_info,
                 size_t block_op_size)
-      : DeviceType(parent),
-        partition_index_(partition_index),
-        block_impl_client_(block_impl_client),
+      : block_impl_client_(block_impl_client),
         partition_(std::move(partition)),
         block_info_(block_info),
         block_op_size_(block_op_size) {
@@ -37,12 +29,11 @@ class BootPartition : public DeviceType,
   }
   ~BootPartition() = default;
 
-  static zx_status_t Bind(void* ctx, zx_device_t* parent);
-  zx_status_t AddBootPartition();
-  fbl::String PartitionName() const { return fbl::StringPrintf("part-%03lu", partition_index_); }
-
-  zx_status_t DdkGetProtocol(uint32_t proto_id, void* out_protocol);
-  void DdkRelease();
+  zx::result<> Init(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
+                    const std::optional<std::string>& node_name,
+                    const std::shared_ptr<fdf::Namespace>& incoming,
+                    const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
+                    async_dispatcher_t* dispatcher, size_t partition_index);
 
   // BlockImplProtocol implementation.
   void BlockImplQuery(block_info_t* out_info, uint64_t* out_block_op_size);
@@ -54,13 +45,31 @@ class BootPartition : public DeviceType,
   zx_status_t BlockPartitionGetMetadata(partition_metadata_t* out_metadata);
 
  private:
-  const uint64_t partition_index_;
-
-  const ddk::BlockImplProtocolClient block_impl_client_;
-  const fuchsia_boot_metadata::Partition partition_;
+  ddk::BlockImplProtocolClient block_impl_client_;
+  fuchsia_boot_metadata::Partition partition_;
 
   block_info_t block_info_;
-  const size_t block_op_size_;
+  size_t block_op_size_;
+
+  compat::BanjoServer block_impl_{ZX_PROTOCOL_BLOCK_IMPL, this, &block_impl_protocol_ops_};
+  compat::BanjoServer block_partition_{ZX_PROTOCOL_BLOCK_PARTITION, this,
+                                       &block_partition_protocol_ops_};
+  compat::SyncInitializedDeviceServer compat_server_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
+};
+
+class Driver : public fdf::DriverBase {
+ public:
+  static constexpr std::string_view kDriverName = "bootpart";
+
+  Driver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+
+  // fdf::DriverBase implementation.
+  zx::result<> Start() override;
+
+ private:
+  std::vector<std::unique_ptr<BootPartition>> boot_partitions_;
 };
 
 }  // namespace bootpart

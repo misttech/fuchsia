@@ -4,22 +4,25 @@
 
 #include "bootpart.h"
 
-#include <lib/stdcompat/span.h>
+#include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 
-#include <zxtest/zxtest.h>
+#include <algorithm>
 
-#include "src/devices/testing/mock-ddk/mock-device.h"
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include "src/lib/testing/predicates/status.h"
 
 namespace bootpart {
 
 class FakeBlockDevice : public ddk::BlockImplProtocol<FakeBlockDevice> {
  public:
-  FakeBlockDevice() { memset(data_, 0xff, sizeof(data_)); }
+  FakeBlockDevice() { memset(data_.data(), 0xff, sizeof(data_)); }
 
-  char* data() { return data_; }
+  std::span<const char, 240> data() const { return std::span<const char, 240>(data_); }
   bool flushed() const { return flushed_; }
-
-  const block_impl_protocol_ops_t* BlockOps() const { return &block_impl_protocol_ops_; }
 
   void BlockImplQuery(block_info_t* out_info, uint64_t* out_block_op_size) {
     out_info->block_count = 24;
@@ -37,7 +40,7 @@ class FakeBlockDevice : public ddk::BlockImplProtocol<FakeBlockDevice> {
         if (txn->rw.length != 1 || txn->rw.offset_dev != expected_lba) {
           status = ZX_ERR_OUT_OF_RANGE;
         } else {
-          status = zx_vmo_write(txn->rw.vmo, data_ + txn->rw.offset_dev * 10,
+          status = zx_vmo_write(txn->rw.vmo, data_.data() + (txn->rw.offset_dev * 10),
                                 txn->rw.offset_vmo * 10, 10);
           expected_lba += 12;  // Expect next read at LBA == 12.
         }
@@ -48,7 +51,7 @@ class FakeBlockDevice : public ddk::BlockImplProtocol<FakeBlockDevice> {
         if (txn->rw.length != 1 || txn->rw.offset_dev != expected_lba) {
           status = ZX_ERR_OUT_OF_RANGE;
         } else {
-          status = zx_vmo_read(txn->rw.vmo, data_ + txn->rw.offset_dev * 10,
+          status = zx_vmo_read(txn->rw.vmo, data_.data() + (txn->rw.offset_dev * 10),
                                txn->rw.offset_vmo * 10, 10);
           flushed_ = status != ZX_OK && flushed_;
           expected_lba += 12;  // Expect next write at LBA == 12.
@@ -66,106 +69,160 @@ class FakeBlockDevice : public ddk::BlockImplProtocol<FakeBlockDevice> {
     callback(cookie, status, txn);
   }
 
+  compat::DeviceServer::BanjoConfig GetBanjoConfig() {
+    compat::DeviceServer::BanjoConfig config{.default_proto_id = ZX_PROTOCOL_BLOCK_IMPL};
+    config.callbacks[ZX_PROTOCOL_BLOCK_IMPL] = banjo_server_.callback();
+    return config;
+  }
+
  private:
-  char data_[24 * 10];  // 24 blocks of 10 bytes each.
+  std::array<char, 240> data_;  // 24 blocks of 10 bytes each.
   bool flushed_ = true;
+  compat::BanjoServer banjo_server_{ZX_PROTOCOL_BLOCK_IMPL, this, &block_impl_protocol_ops_};
 };
 
 const std::string kLongName = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-class BootPartitionTest : public zxtest::Test {
+class BootpartTestEnvironment : public fdf_testing::Environment {
+ public:
+  void Init(const fuchsia_boot_metadata::PartitionMap& partition_map) {
+    device_server_.Initialize("default", std::nullopt, block_device_.GetBanjoConfig());
+
+    fit::result persisted = fidl::Persist(partition_map);
+    ASSERT_TRUE(persisted.is_ok());
+    device_server_.AddMetadata(DEVICE_METADATA_PARTITION_MAP, persisted.value().data(),
+                               persisted.value().size());
+  }
+
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+
+    if (zx_status_t status = device_server_.Serve(dispatcher, &to_driver_vfs); status != ZX_OK) {
+      return zx::error(status);
+    }
+
+    return zx::ok();
+  }
+
+  const FakeBlockDevice& block_device() const { return block_device_; }
+
+ private:
+  FakeBlockDevice block_device_;
+  compat::DeviceServer device_server_;
+};
+
+class FixtureConfig final {
+ public:
+  using DriverType = Driver;
+  using EnvironmentType = BootpartTestEnvironment;
+};
+
+class BootPartitionTest : public ::testing::Test {
  public:
   void SetUp() override {
-    parent_->AddProtocol(ZX_PROTOCOL_BLOCK_IMPL, fake_block_device_.BlockOps(),
-                         &fake_block_device_);
-
-    // Set up 2 partitions of equal size.
-    fuchsia_boot_metadata::PartitionMap partition_map{{.partitions{{}}}};
-
     // Set up partition 0.
-    auto& partition0 =
-        partition_map.partitions().value().emplace_back(fuchsia_boot_metadata::Partition{
+    fuchsia_boot_metadata::Partition& partition0 =
+        partition_map_.partitions().value().emplace_back(fuchsia_boot_metadata::Partition{
             {.first_block = 0, .last_block = 11, .name = "This is partition 0"}});
     memset(partition0.type_guid().data(), 'T', partition0.type_guid().size());
     memset(partition0.unique_guid().data(), 'I', partition0.unique_guid().size());
 
     // Set up partition 1.
-    auto& partition1 = partition_map.partitions().value().emplace_back(
+    fuchsia_boot_metadata::Partition& partition1 = partition_map_.partitions().value().emplace_back(
         fuchsia_boot_metadata::Partition{{.first_block = 12, .last_block = 23, .name = kLongName}});
     memset(partition1.type_guid().data(), 'U', partition1.type_guid().size());
     memset(partition1.unique_guid().data(), 'J', partition1.unique_guid().size());
 
-    fit::result persisted = fidl::Persist(partition_map);
-    ASSERT_TRUE(persisted.is_ok());
+    driver_test_.RunInEnvironmentTypeContext([&](auto& env) { env.Init(partition_map_); });
 
-    parent_->SetMetadata(DEVICE_METADATA_PARTITION_MAP, persisted.value().data(),
-                         persisted.value().size());
-
-    ASSERT_OK(BootPartition::Bind(nullptr, parent_.get()));
-    ASSERT_EQ(parent_->child_count(), 2);
+    ASSERT_OK(driver_test_.StartDriver());
   }
 
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
+
  protected:
-  FakeBlockDevice fake_block_device_;
-  std::shared_ptr<MockDevice> parent_ = MockDevice::FakeRootParent();
+  Driver& driver() { return *driver_test_.driver(); }
+  const fuchsia_boot_metadata::PartitionMap& partition_map() const { return partition_map_; }
+
+  template <typename BanjoClient>
+  BanjoClient ConnectToBanjo(size_t partition_index) {
+    static const uint64_t kProcessKoid = compat::internal::GetKoid();
+
+    const std::string instance = std::format("part-{:03}", partition_index);
+    zx::result compat_client_end =
+        driver_test_.Connect<fuchsia_driver_compat::Service::Device>(instance);
+    EXPECT_OK(compat_client_end);
+    fidl::WireClient<fuchsia_driver_compat::Device> compat(
+        std::move(compat_client_end.value()),
+        driver_test_.runtime().GetForegroundDispatcher()->async_dispatcher());
+
+    zx::result<BanjoClient> banjo_client;
+    compat->GetBanjoProtocol(BanjoClient::kProtocolId, kProcessKoid)
+        .ThenExactlyOnce(
+            [&](fidl::WireUnownedResult<fuchsia_driver_compat::Device::GetBanjoProtocol>& result) {
+              ASSERT_OK(result.status());
+              banjo_client = compat::internal::OnResult<BanjoClient>(result);
+              driver_test_.runtime().Quit();
+            });
+
+    driver_test_.runtime().Run();
+    EXPECT_OK(banjo_client);
+    EXPECT_TRUE(banjo_client.value().is_valid());
+    return banjo_client.value();
+  }
+
+  fdf_testing::ForegroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
+
+ private:
+  fdf_testing::ForegroundDriverTest<FixtureConfig> driver_test_;
+  fuchsia_boot_metadata::PartitionMap partition_map_{{.partitions{{}}}};
 };
 
 TEST_F(BootPartitionTest, BlockPartitionOps) {
-  auto check_partition_info = [](BootPartition* driver, uint8_t guid_type_char,
-                                 uint8_t guid_instance_char, const std::string& partition_name) {
-    block_partition_protocol_t partition_proto;
-    EXPECT_OK(driver->DdkGetProtocol(ZX_PROTOCOL_BLOCK_PARTITION, &partition_proto));
-    ddk::BlockPartitionProtocolClient partition_client = {&partition_proto};
-    ASSERT_TRUE(partition_client.is_valid());
+  const std::vector<fuchsia_boot_metadata::Partition>& partitions =
+      partition_map().partitions().value();
+  for (size_t i = 0; i < partitions.size(); ++i) {
+    const fuchsia_boot_metadata::Partition& partition = partitions[i];
+    ddk::BlockPartitionProtocolClient partition_client =
+        ConnectToBanjo<ddk::BlockPartitionProtocolClient>(i);
 
     guid_t guid_type{};
     EXPECT_OK(partition_client.GetGuid(GUIDTYPE_TYPE, &guid_type));
-    for (uint32_t i = 0; i < GUID_LENGTH; i++) {
-      EXPECT_EQ(reinterpret_cast<char*>(&guid_type)[i], guid_type_char);
+    for (size_t i = 0; i < GUID_LENGTH; i++) {
+      EXPECT_EQ(reinterpret_cast<char*>(&guid_type)[i], partition.type_guid()[i]);
     }
 
     guid_t guid_instance{};
     EXPECT_OK(partition_client.GetGuid(GUIDTYPE_INSTANCE, &guid_instance));
     for (uint32_t i = 0; i < GUID_LENGTH; i++) {
-      EXPECT_EQ(reinterpret_cast<char*>(&guid_instance)[i], guid_instance_char);
+      EXPECT_EQ(reinterpret_cast<char*>(&guid_instance)[i], partition.unique_guid()[i]);
     }
 
     char name[MAX_PARTITION_NAME_LENGTH];
     EXPECT_OK(partition_client.GetName(name, sizeof(name)));
-    EXPECT_EQ(strncmp(name, partition_name.c_str(), 32), 0);
+    EXPECT_EQ(std::string(name), partition.name());
 
     char name_short[33];
     EXPECT_OK(partition_client.GetName(name_short, 33));
-    EXPECT_EQ(strncmp(name_short, partition_name.c_str(), 32), 0);
+    EXPECT_EQ(std::string(name_short), partition.name());
 
-    EXPECT_NOT_OK(partition_client.GetName(name_short, 32));
-  };
-
-  auto child0 = parent_->children().front();
-  ASSERT_NO_FATAL_FAILURE(check_partition_info(child0->GetDeviceContext<BootPartition>(), 'T', 'I',
-                                               "This is partition 0"));
-
-  auto child1 = parent_->children().back();
-  ASSERT_NO_FATAL_FAILURE(
-      check_partition_info(child1->GetDeviceContext<BootPartition>(), 'U', 'J', kLongName));
+    EXPECT_NE(partition_client.GetName(name_short, 32), ZX_OK);
+  }
 }
 
 TEST_F(BootPartitionTest, BlockImplOpsPassedThrough) {
-  for (auto child : parent_->children()) {
-    BootPartition* driver = child->GetDeviceContext<BootPartition>();
-
-    block_impl_protocol_t block_proto;
-    EXPECT_OK(driver->DdkGetProtocol(ZX_PROTOCOL_BLOCK_IMPL, &block_proto));
-    ddk::BlockImplProtocolClient block_client = {&block_proto};
-    ASSERT_TRUE(block_client.is_valid());
+  const std::vector<fuchsia_boot_metadata::Partition>& partitions =
+      partition_map().partitions().value();
+  for (size_t i = 0; i < partitions.size(); ++i) {
+    ddk::BlockImplProtocolClient block_client = ConnectToBanjo<ddk::BlockImplProtocolClient>(i);
 
     block_info_t info{};
     uint64_t block_op_size = 0;
     block_client.Query(&info, &block_op_size);
 
-    EXPECT_EQ(info.block_count, 12);
-    EXPECT_EQ(info.block_size, 10);
-    EXPECT_EQ(info.max_transfer_size, 10);
+    EXPECT_EQ(info.block_count, 12u);
+    EXPECT_EQ(info.block_size, 10u);
+    EXPECT_EQ(info.max_transfer_size, 10u);
     EXPECT_EQ(block_op_size, sizeof(block_op_t));
 
     auto block_callback = [](void*, zx_status_t status, block_op_t*) { EXPECT_OK(status); };
@@ -188,15 +245,21 @@ TEST_F(BootPartitionTest, BlockImplOpsPassedThrough) {
             },
     };
     block_client.Queue(&txn, block_callback, nullptr);
-    EXPECT_FALSE(fake_block_device_.flushed());  // FakeBlockDevice operates synchronously.
+    driver_test().RunInEnvironmentTypeContext([](BootpartTestEnvironment& env) {
+      EXPECT_FALSE(env.block_device().flushed());  // FakeBlockDevice operates synchronously.
+    });
 
     txn = {
         .command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0},
     };
     block_client.Queue(&txn, block_callback, nullptr);
-    EXPECT_TRUE(fake_block_device_.flushed());  // FakeBlockDevice operates synchronously.
-
-    EXPECT_STREQ(fake_block_device_.data(), "Test data");
+    driver_test().RunInEnvironmentTypeContext([](BootpartTestEnvironment& env) {
+      EXPECT_TRUE(env.block_device().flushed());  // FakeBlockDevice operates synchronously.
+      std::span data = env.block_device().data();
+      auto end = std::ranges::find(data, '\0');
+      ASSERT_NE(end, data.end());
+      EXPECT_EQ(std::string(data.begin(), end), "Test data");
+    });
 
     txn = {
         .rw =

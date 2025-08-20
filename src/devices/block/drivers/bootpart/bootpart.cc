@@ -4,37 +4,33 @@
 
 #include "src/devices/block/drivers/bootpart/bootpart.h"
 
-#include <assert.h>
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/block/partition/cpp/banjo.h>
-#include <inttypes.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/device.h>
-#include <lib/ddk/driver.h>
 #include <lib/ddk/metadata.h>
-#include <lib/stdcompat/span.h>
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/compat/cpp/metadata.h>
+#include <lib/driver/component/cpp/driver_export.h>
 #include <lib/zbi-format/partition.h>
 #include <lib/zbi-format/zbi.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <zircon/types.h>
 
-#include <fbl/alloc_checker.h>
+#include "src/devices/block/lib/common/include/common.h"
 
-#include "src/devices/block/lib/common/include/common-dfv1.h"
+namespace {
+
+std::string ToGuidString(const uint8_t* src) {
+  const struct guid* guid = reinterpret_cast<const struct guid*>(src);
+  return std::format(
+      "{:#08X}-{:#04X}-{:#04X}-{:#02X}{:#02X}-{:#02X}{:#02X}{:#02X}{:#02X}{:#02X}{:#02X}",
+      guid->data1, guid->data2, guid->data3, guid->data4[0], guid->data4[1], guid->data4[2],
+      guid->data4[3], guid->data4[4], guid->data4[5], guid->data4[6], guid->data4[7]);
+}
+
+}  // namespace
 
 namespace bootpart {
-
-static fbl::String ToGuidString(const uint8_t* src) {
-  const struct guid* guid = reinterpret_cast<const struct guid*>(src);
-  return fbl::StringPrintf("%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X", guid->data1,
-                           guid->data2, guid->data3, guid->data4[0], guid->data4[1], guid->data4[2],
-                           guid->data4[3], guid->data4[4], guid->data4[5], guid->data4[6],
-                           guid->data4[7]);
-}
 
 // implement device protocol:
 
@@ -48,7 +44,8 @@ void BootPartition::BlockImplQueue(block_op_t* bop, block_impl_queue_callback co
   switch (bop->command.opcode) {
     case BLOCK_OPCODE_READ:
     case BLOCK_OPCODE_WRITE: {
-      if (zx_status_t status = block::CheckIoRange(bop->rw, block_info_.block_count);
+      if (zx_status_t status =
+              block::CheckIoRange(bop->rw, block_info_.block_count, *fdf::Logger::GlobalInstance());
           status != ZX_OK) {
         completion_cb(cookie, status, bop);
         return;
@@ -67,8 +64,6 @@ void BootPartition::BlockImplQueue(block_op_t* bop, block_impl_queue_callback co
 
   block_impl_client_.Queue(bop, completion_cb, cookie);
 }
-
-void BootPartition::DdkRelease() { delete this; }
 
 static_assert(ZBI_PARTITION_GUID_LEN == GUID_LENGTH, "GUID length mismatch");
 
@@ -112,89 +107,88 @@ zx_status_t BootPartition::BlockPartitionGetMetadata(partition_metadata_t* out_m
   return ZX_OK;
 }
 
-zx_status_t BootPartition::DdkGetProtocol(uint32_t proto_id, void* out_protocol) {
-  auto* proto = static_cast<ddk::AnyProtocol*>(out_protocol);
-  proto->ctx = this;
-  switch (proto_id) {
-    case ZX_PROTOCOL_BLOCK_IMPL: {
-      proto->ops = &block_impl_protocol_ops_;
-      return ZX_OK;
-    }
-    case ZX_PROTOCOL_BLOCK_PARTITION: {
-      proto->ops = &block_partition_protocol_ops_;
-      return ZX_OK;
-    }
-    default:
-      return ZX_ERR_NOT_SUPPORTED;
+zx::result<> Driver::Start() {
+  zx::result block_impl_result = compat::ConnectBanjo<ddk::BlockImplProtocolClient>(incoming());
+  if (block_impl_result.is_error()) {
+    fdf::error("Failed to connect to block-impl banjo protocol: {}", block_impl_result);
+    return block_impl_result.take_error();
   }
-}
+  ddk::BlockImplProtocolClient block_impl(block_impl_result.value());
 
-zx_status_t BootPartition::Bind(void* ctx, zx_device_t* parent) {
-  ddk::BlockImplProtocolClient block_impl_client(parent);
-  if (!block_impl_client.is_valid()) {
-    zxlogf(ERROR, "Device does not support block impl protocol.");
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  zx::result metadata = ddk::GetEncodedMetadata<fuchsia_boot_metadata::PartitionMap>(
-      parent, DEVICE_METADATA_PARTITION_MAP);
+  zx::result metadata = compat::GetMetadata<fuchsia_boot_metadata::PartitionMap>(
+      incoming(), DEVICE_METADATA_PARTITION_MAP);
   if (metadata.is_error()) {
-    zxlogf(ERROR, "Failed to get metadata: %s", metadata.status_string());
-    return metadata.status_value();
+    fdf::error("Failed to get metadata: {}", metadata);
+    return metadata.take_error();
   }
   const auto& partition_map = metadata.value();
 
   if (!partition_map.partitions().has_value() || partition_map.partitions().value().empty()) {
-    zxlogf(ERROR, "Missing partitions");
-    return ZX_ERR_INTERNAL;
+    fdf::error("Missing partitions");
+    return zx::error(ZX_ERR_INTERNAL);
   }
   const auto& partitions = partition_map.partitions().value();
 
   block_info_t block_info;
   size_t block_op_size;
-  block_impl_client.Query(&block_info, &block_op_size);
+  block_impl.Query(&block_info, &block_op_size);
 
   for (size_t i = 0; i < partitions.size(); ++i) {
-    fbl::AllocChecker ac;
-    auto bootpart = fbl::make_unique_checked<BootPartition>(
-        &ac, parent, i, block_impl_client, partitions[i], block_info, block_op_size);
-    if (!ac.check()) {
-      zxlogf(ERROR, "Failed to allocate memory for boot partition driver.");
-      return ZX_ERR_NO_MEMORY;
+    std::unique_ptr<BootPartition>& bootpart = boot_partitions_.emplace_back(
+        std::make_unique<BootPartition>(block_impl, partitions[i], block_info, block_op_size));
+    zx::result result =
+        bootpart->Init(node(), node_name(), incoming(), outgoing(), dispatcher(), i);
+    if (result.is_error()) {
+      fdf::error("Failed to initialize boot partition {}: {}", i, result);
+      return result.take_error();
     }
-
-    zx_status_t status = bootpart->AddBootPartition();
-    if (status != ZX_OK) {
-      return status;
-    }
-
-    // The DriverFramework now owns driver.
-    [[maybe_unused]] auto placeholder = bootpart.release();
   }
-  return ZX_OK;
+  return zx::ok();
 }
 
-zx_status_t BootPartition::AddBootPartition() {
-  fbl::String type_guid = ToGuidString(partition_.type_guid().data());
-  fbl::String uniq_guid = ToGuidString(partition_.unique_guid().data());
-  zxlogf(TRACE,
-         "Partition %lu (%s) type=%s guid=%s name=%s first=0x%" PRIx64 " last=0x%" PRIx64 "\n",
-         partition_index_, PartitionName().c_str(), type_guid.c_str(), uniq_guid.c_str(),
-         partition_.name().c_str(), partition_.first_block(), partition_.last_block());
+zx::result<> BootPartition::Init(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
+                                 const std::optional<std::string>& node_name,
+                                 const std::shared_ptr<fdf::Namespace>& incoming,
+                                 const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
+                                 async_dispatcher_t* dispatcher, size_t partition_index) {
+  const std::string type_guid = ToGuidString(partition_.type_guid().data());
+  const std::string uniq_guid = ToGuidString(partition_.unique_guid().data());
+  const std::string partition_name = std::format("part-{:03}", partition_index);
+  fdf::trace("Partition {} ({}) type={} guid={} name={} first={:#08x} last={:#08x}",
+             partition_index, partition_name, type_guid, uniq_guid, partition_.name(),
+             partition_.first_block(), partition_.last_block());
 
-  zx_status_t status = DdkAdd(
-      ddk::DeviceAddArgs(PartitionName().c_str()).add_metadata(DEVICE_METADATA_PARTITION_MAP, {}));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed DdkAdd: %s", zx_status_get_string(status));
+  compat::DeviceServer::BanjoConfig banjo_config{.default_proto_id = ZX_PROTOCOL_BLOCK_IMPL};
+  banjo_config.callbacks[ZX_PROTOCOL_BLOCK_IMPL] = block_impl_.callback();
+  banjo_config.callbacks[ZX_PROTOCOL_BLOCK_PARTITION] = block_partition_.callback();
+
+  zx::result result =
+      compat_server_.Initialize(incoming, outgoing, node_name, partition_name,
+                                compat::ForwardMetadata::None(), std::move(banjo_config));
+  if (result.is_error()) {
+    fdf::error("Failed to initialize compat server: {}", result);
+    return result.take_error();
   }
-  return status;
-}
 
-static zx_driver_ops_t driver_ops = {
-    .version = DRIVER_OPS_VERSION,
-    .bind = BootPartition::Bind,
-};
+  const std::vector<fuchsia_driver_framework::Offer> offers = compat_server_.CreateOffers2();
+
+  const std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL, static_cast<uint32_t>(ZX_PROTOCOL_BLOCK_IMPL)),
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL,
+                         static_cast<uint32_t>(ZX_PROTOCOL_BLOCK_PARTITION)),
+  };
+
+  zx::result child =
+      fdf::AddChild(parent, *fdf::Logger::GlobalInstance(), partition_name, properties, offers);
+  if (child.is_error()) {
+    fdf::error("Failed to add child: {}", child);
+    return child.take_error();
+  }
+  child_ = std::move(child.value());
+
+  return zx::ok();
+}
 
 }  // namespace bootpart
 
-ZIRCON_DRIVER(bootpart, bootpart::driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT(bootpart::Driver);
