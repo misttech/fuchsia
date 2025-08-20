@@ -224,6 +224,11 @@ import("//build/testing/host_test_data.gni")
 #    Type: boolean
 #    Default: true
 #
+#  main_callable (optional)
+#    The python symbol in main_source that is the entrypoint for the tests.
+#    Type: string
+#    Default: test_runner.main
+#
 #  testonly (optional)
 #    GN Usual. Allow option to set to false for IDK inclusion.
 #    See https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/BUILD.gn;l=161-167;drc=aa7ba9d998556f7124fe8e2edc6604c9c1592d01
@@ -263,6 +268,12 @@ template("python_mobly_test") {
     _enable_hermetic_exe = invoker.enable_hermetic_exe
   }
 
+  # Mobly-specific entry point.
+  _main_callable = "test_runner.main"
+  if (defined(invoker.main_callable)) {
+    _main_callable = invoker.main_callable
+  }
+
   #
   # Define Mobly test python_binary().
   #
@@ -282,8 +293,7 @@ template("python_mobly_test") {
 
     output_name = _test_binary_name
 
-    # Mobly-specific entry point.
-    main_callable = "test_runner.main"
+    main_callable = _main_callable
 
     deps = []
     if (_testonly) {
