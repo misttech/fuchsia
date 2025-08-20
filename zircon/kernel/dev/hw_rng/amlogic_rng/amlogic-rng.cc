@@ -92,7 +92,7 @@ size_t amlogic_hw_rng_get_entropy(void* buf, size_t len) {
     // Retry until RNG is ready.
     while (!rng_is_ready()) {
       if (retry > kMaxRetry) {
-        mandatory_memset(&buf, 0, len);
+        mandatory_memset(&buf, 0, len + total_read);
         return 0;
       }
 
