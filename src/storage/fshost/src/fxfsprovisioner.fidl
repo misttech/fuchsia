@@ -5,17 +5,14 @@
 library fuchsia.fshost.fxfsprovisioner;
 
 using fuchsia.io;
-using fuchsia.storage.partitions;
 using zx;
 
-/// Protocol to provision Fxfs partition.
+/// Protocol to provision Fxfs to a partition.
 @discoverable
 open protocol FxfsProvisioner {
-    /// Provisions an Fxfs partition using `partitions_admin`. `partitions_dir` connects to the
-    /// directory containing all the partitions.
-    @selector("fuchsia.fshost.fxfsprovisioner/FxfsProvisioner.Provision")
+    /// Format device to use Fxfs.
     flexible Provision(resource struct {
-        partitions_admin client_end:fuchsia.storage.partitions.PartitionsAdmin;
-        partitions_dir client_end:fuchsia.io.Directory;
+        // Handle to directory containing partition services.
+        partition_service_dir client_end:fuchsia.io.Directory;
     }) -> () error zx.Status;
 };

@@ -211,7 +211,7 @@
             default: "never_evict",
         },
         {
-            /// If true, provision Fxfs partition if it does not exist.
+            /// If true, provision the "super_and_userdata" partition with Fxfs.
             config: "fuchsia.fshost.ProvisionFxfs",
             key: "provision_fxfs",
             type: "bool",

@@ -2,22 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::disk_builder::{DEFAULT_TEST_TYPE_GUID, FVM_PART_INSTANCE_GUID};
+use crate::disk_builder::{DataSpec, DiskBuilder, VolumesSpec};
 use anyhow::Error;
 use ffeedback::FileReportResults;
 use fidl::prelude::*;
-use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
+use fs_management::filesystem::DirBasedBlockConnector;
+use fuchsia_component::client::connect::connect_to_named_protocol_at_dir_root;
 use fuchsia_component_test::LocalComponentHandles;
 use futures::channel::mpsc::{self};
 use futures::future::BoxFuture;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _};
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
+
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_feedback as ffeedback,
-    fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner,
-    fidl_fuchsia_hardware_block_partition as fpartition,
-    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_io as fio,
+    fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner, fidl_fuchsia_io as fio,
     fidl_fuchsia_storage_partitions as fpartitions,
 };
 
@@ -123,54 +123,32 @@ async fn run_fxfs_provisioner(mut stream: ffxfsprovisioner::FxfsProvisionerReque
     while let Some(request) = stream.next().await {
         match request.unwrap() {
             ffxfsprovisioner::FxfsProvisionerRequest::Provision {
-                partitions_admin,
-                partitions_dir,
+                partition_service_dir,
                 responder,
             } => {
-                // TODO(https://fxbug.dev/411312604):  this may re-order GPT partitions. Consider
-                // using an alternative approach to altering the partition table.
+                let partition_service = partition_service_dir.into_proxy();
 
-                // Preserve any partitions not labelled as "super" or "userdata", and provision a
-                // partition labelled as "fxfs".
-                let mut partitions = Vec::new();
-                let partitions_dir = partitions_dir.into_proxy();
-                let entries = fuchsia_fs::directory::readdir(&partitions_dir).await.unwrap();
-                for entry in entries {
-                    let endpoint_name = format!("{}/volume", entry.name);
-                    let volume = connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(
-                        &partitions_dir,
-                        &endpoint_name,
-                    )
-                    .unwrap();
-                    let metadata = volume.get_metadata().await.unwrap().unwrap();
-                    if let Some(name) = metadata.name {
-                        if name != "super" && name != "userdata" {
-                            partitions.push(fpartitions::PartitionInfo {
-                                name: name,
-                                type_guid: metadata
-                                    .type_guid
-                                    .unwrap_or(fpartition::Guid { value: DEFAULT_TEST_TYPE_GUID }),
-                                instance_guid: metadata
-                                    .instance_guid
-                                    .unwrap_or(fpartition::Guid { value: FVM_PART_INSTANCE_GUID }),
-                                start_block: metadata.start_block_offset.unwrap_or(0),
-                                num_blocks: metadata.num_blocks.unwrap_or(1),
-                                flags: metadata.flags.unwrap_or(0),
-                            });
-                        }
-                    }
-                }
-                partitions.push(fpartitions::PartitionInfo {
-                    name: "fxfs".to_string(),
-                    type_guid: fpartition::Guid { value: DEFAULT_TEST_TYPE_GUID },
-                    instance_guid: fpartition::Guid { value: FVM_PART_INSTANCE_GUID },
-                    start_block: 64,
-                    num_blocks: 1,
-                    flags: 0,
-                });
-                let partitions_admin_proxy = partitions_admin.into_proxy();
-                let _ =
-                    partitions_admin_proxy.reset_partition_table(&partitions[..]).await.unwrap();
+                let overlay = connect_to_named_protocol_at_dir_root::<
+                    fpartitions::OverlayPartitionProxy,
+                >(&partition_service, "overlay")
+                .expect("failed to connect to OverlayPartition protocol");
+                let partitions_info = overlay
+                    .get_partitions()
+                    .await
+                    .expect("get_partitions FIDL call failed")
+                    .expect("get_partitions failed");
+                assert_eq!(partitions_info.len(), 2);
+                assert!(partitions_info.iter().any(|info| info.name == "super"));
+                assert!(partitions_info.iter().any(|info| info.name == "userdata"));
+
+                let connector =
+                    Box::new(DirBasedBlockConnector::new(partition_service, "/volume".to_string()));
+
+                let mut disk_builder = DiskBuilder::new();
+                disk_builder
+                    .format_volumes(VolumesSpec { fxfs_blob: true, create_data_partition: true })
+                    .format_data(DataSpec { format: Some("fxfs"), zxcrypt: false });
+                disk_builder.build_fxfs_as_volume_manager(connector).await;
 
                 responder.send(Ok(())).unwrap();
             }

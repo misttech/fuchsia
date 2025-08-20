@@ -6,9 +6,11 @@ use assert_matches::assert_matches;
 use diagnostics_assertions::assert_data_tree;
 use diagnostics_reader::ArchiveReader;
 use disk_builder::Disk;
-use fidl::endpoints::{create_proxy, ServiceMarker as _};
+use fidl::endpoints::{ServiceMarker as _, create_proxy};
 use fidl_fuchsia_fxfs::{BlobReaderMarker, CryptManagementProxy, CryptProxy, KeyPurpose};
-use fuchsia_component::client::connect_to_protocol_at_dir_root;
+use fuchsia_component::client::{
+    connect_to_named_protocol_at_dir_root, connect_to_protocol_at_dir_root,
+};
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use futures::channel::mpsc;
@@ -20,7 +22,8 @@ use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_driver_test as fdt,
     fidl_fuchsia_feedback as ffeedback, fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner,
     fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_hardware_ramdisk as framdisk,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    fidl_fuchsia_io as fio, fidl_fuchsia_storage_partitions as fpartitions,
+    fuchsia_async as fasync,
 };
 
 pub mod disk_builder;
@@ -486,5 +489,31 @@ impl TestFixture {
                 }
             });
         }
+    }
+
+    // Check that the system partition table contains partitions with labels found in `expected`.
+    pub async fn check_system_partitions(&self, mut expected: Vec<&str>) {
+        let partitions =
+            self.dir(fpartitions::PartitionServiceMarker::SERVICE_NAME, fio::PERM_READABLE);
+        let entries =
+            fuchsia_fs::directory::readdir(&partitions).await.expect("Failed to read partitions");
+
+        assert_eq!(entries.len(), expected.len());
+
+        let mut found_partition_labels = Vec::new();
+        for entry in entries {
+            let endpoint_name = format!("{}/volume", entry.name);
+            let volume = connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(
+                &partitions,
+                &endpoint_name,
+            )
+            .expect("failed to connect to named protocol at dir root");
+            let (raw_status, label) = volume.get_name().await.expect("failed to call get_name");
+            zx::Status::ok(raw_status).expect("get_name status failed");
+            found_partition_labels.push(label.expect("partition label expected to be some value"));
+        }
+        found_partition_labels.sort();
+        expected.sort();
+        assert_eq!(found_partition_labels, expected);
     }
 }

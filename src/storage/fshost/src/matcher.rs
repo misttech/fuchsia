@@ -8,14 +8,14 @@ use crate::device::constants::{
 };
 use crate::device::{Device, DeviceTag, Parent};
 use crate::environment::Environment;
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error, bail};
 use async_trait::async_trait;
 use fidl_fuchsia_hardware_block::Flag as BlockFlag;
+use fs_management::FVM_TYPE_GUID;
+use fs_management::format::DiskFormat;
 use fs_management::format::constants::{
     ALL_FVM_LABELS, FVM_PARTITION_LABEL, SUPER_AND_USERDATA_PARTITION_LABEL, SUPER_PARTITION_LABEL,
 };
-use fs_management::format::DiskFormat;
-use fs_management::FVM_TYPE_GUID;
 
 mod config_matcher;
 pub use config_matcher::get_config_matchers;
@@ -78,7 +78,8 @@ impl Matchers {
         // We will mount the ramdisk container and its volumes, but we will only mount the on-disk
         // container (which allows enumerating volumes) and will not mount its volumes.
         if config.fxfs_blob {
-            matchers.push(Box::new(FxblobMatcher::new(config.ramdisk_image)));
+            matchers
+                .push(Box::new(FxblobMatcher::new(config.ramdisk_image, config.provision_fxfs)));
             if config.ramdisk_image {
                 matchers.push(Box::new(FxblobOnRecoveryMatcher::new()));
             }
@@ -248,11 +249,23 @@ struct FxblobMatcher {
     // TODO(https://fxbug.dev/42079130): Can we be more precise here, e.g. give the matcher an
     // expected device path based on system configuration?
     already_matched: bool,
+    // True if this device may require provisioning of Fxfs first (only applies the device with
+    // partition label SUPER_AND_USERDATA_PARTITION_LABEL).
+    provision_fxfs: bool,
 }
 
 impl FxblobMatcher {
-    fn new(ramdisk_required: bool) -> Self {
-        Self { ramdisk_required, already_matched: false }
+    fn new(ramdisk_required: bool, provision_fxfs: bool) -> Self {
+        Self { ramdisk_required, already_matched: false, provision_fxfs }
+    }
+
+    async fn mount_fxblob_and_blob_volume(
+        &mut self,
+        device: &mut dyn Device,
+        env: &mut dyn Environment,
+    ) -> Result<(), Error> {
+        env.mount_fxblob(device).await?;
+        env.mount_blob_volume().await
     }
 }
 
@@ -274,12 +287,20 @@ impl Matcher for FxblobMatcher {
                 if !ALL_FVM_LABELS.contains(&label) {
                     return false;
                 }
+                // If device is labelled with SUPER_AND_USERDATA_PARTITION_LABEL, we treat this as
+                // an Fxfs-based system container with a blob and data volume. It may need to be
+                // provisioned with Fxfs first (which will be handled in `self.process_device(..)`).
+                if self.provision_fxfs && label == SUPER_AND_USERDATA_PARTITION_LABEL {
+                    return true;
+                }
             }
             // If there is an error getting the partition label, or if the label is empty, it might
             // be because this device doesn't support labels (like if it's directly on a raw disk in
             // an emulator).  Continue with content sniffing.
             _ => (),
         }
+        // TODO(https://fxbug.dev/438621914): Consider removing content sniffing when we've already
+        // checked the labels.
         device.content_format().await.ok() == Some(DiskFormat::Fxfs)
     }
 
@@ -289,8 +310,17 @@ impl Matcher for FxblobMatcher {
         env: &mut dyn Environment,
     ) -> Result<Option<DeviceTag>, Error> {
         self.already_matched = true;
-        env.mount_fxblob(device).await?;
-        env.mount_blob_volume().await?;
+
+        // Mounting Fxblob and Blob volume will fail if partition is not formatted to Fxfs.
+        if let Err(err) = self.mount_fxblob_and_blob_volume(device, env).await {
+            if self.provision_fxfs {
+                log::info!("Provisioning Fxfs");
+                env.provision_fxfs(device).await?;
+                self.mount_fxblob_and_blob_volume(device, env).await?;
+            } else {
+                return Err(err);
+            }
+        }
         env.mount_data_volume().await?;
         Ok(None)
     }
@@ -511,24 +541,17 @@ impl Matcher for SystemGptMatcher {
         device: &mut dyn Device,
         env: &mut dyn Environment,
     ) -> Result<Option<DeviceTag>, Error> {
-        let partitions = match self.gpt_type {
+        match self.gpt_type {
             PartitionMapType::Driver(driver_path) => {
                 env.attach_driver(device, driver_path).await?;
-                None
             }
             PartitionMapType::StorageHost => {
-                let (gpt, partitions) = env.launch_and_enumerate_gpt_component(device).await?;
+                let (gpt, _) = env.launch_and_enumerate_gpt_component(device).await?;
                 env.register_system_gpt(gpt)?;
-                Some(partitions)
             }
         };
 
         self.device_path = Some(device.topological_path().to_string());
-
-        if let Some(partitions) = partitions {
-            // TODO(https://fxbug.dev/411312604): update fshost of new partition information
-            env.try_provision_fxfs(device, partitions).await?;
-        }
 
         Ok(Some(DeviceTag::SystemPartitionTable))
     }
@@ -694,16 +717,16 @@ mod tests {
     use crate::device::{DeviceTag, Parent, RegisteredDevices};
     use crate::environment::{Filesystem, PartitionInfo, SinglePublisher};
     use crate::matcher::config_matcher::ConfigMatcher;
-    use anyhow::{anyhow, Error};
+    use anyhow::{Error, anyhow};
     use async_trait::async_trait;
     use fidl_fuchsia_device::ControllerProxy;
     use fidl_fuchsia_hardware_block::{BlockInfo, BlockProxy, Flag};
     use fidl_fuchsia_hardware_block_volume::VolumeProxy;
+    use fs_management::FVM_TYPE_GUID;
     use fs_management::filesystem::{BlockConnector, ServingMultiVolumeFilesystem};
     use fs_management::format::constants::{
         ALL_FVM_LABELS, FUCHSIA_FVM_PARTITION_LABEL, FVM_PARTITION_LABEL,
     };
-    use fs_management::FVM_TYPE_GUID;
     use fuchsia_sync::Mutex;
     use std::sync::Arc;
 
@@ -1139,22 +1162,26 @@ mod tests {
         let mock_device = MockDevice::new().set_block_flags(Flag::BOOTPART);
 
         // Check no match when disabled in config.
-        assert!(!Matchers::new(&fshost_config::Config {
-            bootpart: false,
-            gpt: false,
-            ..default_test_config()
-        },)
-        .match_device(Box::new(mock_device.clone()), &mut MockEnv::new())
-        .await
-        .expect("match_device failed"));
-
-        assert!(Matchers::new(&default_test_config())
-            .match_device(
-                Box::new(mock_device),
-                &mut MockEnv::new().expect_attach_driver(BOOTPART_DRIVER_PATH)
-            )
+        assert!(
+            !Matchers::new(&fshost_config::Config {
+                bootpart: false,
+                gpt: false,
+                ..default_test_config()
+            },)
+            .match_device(Box::new(mock_device.clone()), &mut MockEnv::new())
             .await
-            .expect("match_device failed"));
+            .expect("match_device failed")
+        );
+
+        assert!(
+            Matchers::new(&default_test_config())
+                .match_device(
+                    Box::new(mock_device),
+                    &mut MockEnv::new().expect_attach_driver(BOOTPART_DRIVER_PATH)
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1163,15 +1190,19 @@ mod tests {
         let mut env = MockEnv::new().expect_attach_driver(NAND_BROKER_DRIVER_PATH);
 
         // Default shouldn't match.
-        assert!(!Matchers::new(&default_test_config())
-            .match_device(Box::new(device.clone()), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !Matchers::new(&default_test_config())
+                .match_device(Box::new(device.clone()), &mut env)
+                .await
+                .expect("match_device failed")
+        );
 
-        assert!(Matchers::new(&fshost_config::Config { nand: true, ..default_test_config() })
-            .match_device(Box::new(device), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            Matchers::new(&fshost_config::Config { nand: true, ..default_test_config() })
+                .match_device(Box::new(device), &mut env)
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1180,41 +1211,51 @@ mod tests {
 
         // Check no match when disabled in config.
         let device = MockDevice::new().set_content_format(DiskFormat::Gpt);
-        assert!(!Matchers::new(&fshost_config::Config {
-            blobfs: false,
-            data: false,
-            gpt: false,
-            ..default_test_config()
-        },)
-        .match_device(Box::new(device.clone()), &mut env)
-        .await
-        .expect("match_device failed"));
+        assert!(
+            !Matchers::new(&fshost_config::Config {
+                blobfs: false,
+                data: false,
+                gpt: false,
+                ..default_test_config()
+            },)
+            .match_device(Box::new(device.clone()), &mut env)
+            .await
+            .expect("match_device failed")
+        );
 
         let mut matchers = Matchers::new(&default_test_config());
-        assert!(matchers
-            .match_device(Box::new(device.clone()), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(Box::new(device.clone()), &mut env)
+                .await
+                .expect("match_device failed")
+        );
 
         // More GPT devices should not get matched.
-        assert!(!matchers
-            .match_device(Box::new(device.clone()), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(Box::new(device.clone()), &mut env)
+                .await
+                .expect("match_device failed")
+        );
 
         // The gpt_all config should allow multiple GPT devices to be matched.
         let mut matchers =
             Matchers::new(&fshost_config::Config { gpt_all: true, ..default_test_config() });
         let mut env = MockEnv::new().expect_attach_driver(GPT_DRIVER_PATH);
-        assert!(matchers
-            .match_device(Box::new(device.clone()), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(Box::new(device.clone()), &mut env)
+                .await
+                .expect("match_device failed")
+        );
         let mut env = MockEnv::new().expect_attach_driver(GPT_DRIVER_PATH);
-        assert!(matchers
-            .match_device(Box::new(device.clone()), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(Box::new(device.clone()), &mut env)
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1231,26 +1272,32 @@ mod tests {
             .set_content_format(DiskFormat::Fvm)
             .set_topological_path("first_prefix");
         let mut env = MockEnv::new().expect_bind_and_enumerate_fvm();
-        assert!(matchers
-            .match_device(Box::new(fvm_device.clone()), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(Box::new(fvm_device.clone()), &mut env)
+                .await
+                .expect("match_device failed")
+        );
 
         let fvm_device = fvm_device.set_topological_path("second_prefix").set_fshost_ramdisk();
         let mut env = MockEnv::new()
             .expect_bind_and_enumerate_fvm()
             .expect_mount_blobfs_on()
             .expect_mount_data_on();
-        assert!(matchers
-            .match_device(Box::new(fvm_device.clone()), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(Box::new(fvm_device.clone()), &mut env)
+                .await
+                .expect("match_device failed")
+        );
 
         let fvm_device = fvm_device.set_topological_path("third_prefix");
-        assert!(!matchers
-            .match_device(Box::new(fvm_device), &mut MockEnv::new())
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(Box::new(fvm_device), &mut MockEnv::new())
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1268,15 +1315,19 @@ mod tests {
             .set_content_format(DiskFormat::Fvm)
             .set_topological_path("first_prefix");
         let mut env = MockEnv::new().expect_bind_and_enumerate_fvm();
-        assert!(matchers
-            .match_device(Box::new(fvm_device.clone()), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(Box::new(fvm_device.clone()), &mut env)
+                .await
+                .expect("match_device failed")
+        );
         let fvm_device = fvm_device.set_topological_path("second_prefix");
-        assert!(!matchers
-            .match_device(Box::new(fvm_device), &mut MockEnv::new())
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(Box::new(fvm_device), &mut MockEnv::new())
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1294,15 +1345,19 @@ mod tests {
             .set_content_format(DiskFormat::Fvm)
             .set_topological_path("first_prefix");
         let mut env = MockEnv::new().expect_bind_and_enumerate_fvm();
-        assert!(matchers
-            .match_device(Box::new(fvm_device.clone()), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(Box::new(fvm_device.clone()), &mut env)
+                .await
+                .expect("match_device failed")
+        );
         let fvm_device = fvm_device.set_topological_path("second_prefix");
-        assert!(!matchers
-            .match_device(Box::new(fvm_device), &mut MockEnv::new())
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(Box::new(fvm_device), &mut MockEnv::new())
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1315,45 +1370,51 @@ mod tests {
 
         let mut matchers = Matchers::new(&default_test_config());
 
-        assert!(matchers
-            .match_device(Box::new(fvm_device), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(Box::new(fvm_device), &mut env)
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
     async fn test_legacy_data_matcher() {
         let mut matchers = Matchers::new(&default_test_config());
 
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
-                &mut MockEnv::new()
-                    .legacy_data_format()
-                    .expect_bind_and_enumerate_fvm()
-                    .expect_mount_blobfs_on()
-                    .expect_mount_data_on()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
+                    &mut MockEnv::new()
+                        .legacy_data_format()
+                        .expect_bind_and_enumerate_fvm()
+                        .expect_mount_blobfs_on()
+                        .expect_mount_data_on()
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
     async fn test_matcher_without_data_partition() {
         let mut matchers = Matchers::new(&default_test_config());
 
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
-                &mut MockEnv::new()
-                    .without_data_partition()
-                    .expect_bind_and_enumerate_fvm()
-                    .expect_mount_blobfs_on()
-                    .expect_format_data()
-                    .expect_bind_data()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
+                    &mut MockEnv::new()
+                        .without_data_partition()
+                        .expect_bind_and_enumerate_fvm()
+                        .expect_mount_blobfs_on()
+                        .expect_format_data()
+                        .expect_bind_data()
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1361,24 +1422,28 @@ mod tests {
         let mut matchers =
             Matchers::new(&fshost_config::Config { gpt: false, ..default_test_config() });
 
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
-                &mut MockEnv::new()
-                    .expect_bind_and_enumerate_fvm()
-                    .expect_mount_data_on()
-                    .expect_mount_blobfs_on()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
+                    &mut MockEnv::new()
+                        .expect_bind_and_enumerate_fvm()
+                        .expect_mount_data_on()
+                        .expect_mount_blobfs_on()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
-        assert!(!matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
-                &mut MockEnv::new()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
+                    &mut MockEnv::new()
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1391,46 +1456,52 @@ mod tests {
         });
 
         // A device with the wrong label should fail.
-        assert!(!matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new()
-                        .set_content_format(DiskFormat::Fxfs)
-                        .set_partition_label("wrong_label")
-                ),
-                &mut MockEnv::new()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new()
+                            .set_content_format(DiskFormat::Fxfs)
+                            .set_partition_label("wrong_label")
+                    ),
+                    &mut MockEnv::new()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // A device with the right label should succeed.
-        assert!(matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new()
-                        .set_content_format(DiskFormat::Fxfs)
-                        .set_partition_label(FVM_PARTITION_LABEL)
-                ),
-                &mut MockEnv::new()
-                    .expect_mount_fxblob()
-                    .expect_mount_blob_volume()
-                    .expect_mount_data_volume()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new()
+                            .set_content_format(DiskFormat::Fxfs)
+                            .set_partition_label(FVM_PARTITION_LABEL)
+                    ),
+                    &mut MockEnv::new()
+                        .expect_mount_fxblob()
+                        .expect_mount_blob_volume()
+                        .expect_mount_data_volume()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // We should only be able to match Fxblob once.
-        assert!(!matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new()
-                        .set_content_format(DiskFormat::Fxfs)
-                        .set_partition_label(FVM_PARTITION_LABEL)
-                ),
-                &mut MockEnv::new(),
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new()
+                            .set_content_format(DiskFormat::Fxfs)
+                            .set_partition_label(FVM_PARTITION_LABEL)
+                    ),
+                    &mut MockEnv::new(),
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1447,42 +1518,48 @@ mod tests {
         let mut matchers = new_matchers();
 
         // A device with the right label but the wrong content format should fail.
-        assert!(!matchers
-            .match_device(
-                Box::new(MockDevice::new().set_partition_label(FVM_PARTITION_LABEL)),
-                &mut MockEnv::new()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_partition_label(FVM_PARTITION_LABEL)),
+                    &mut MockEnv::new()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // A device with the wrong label but the correct content format should succeed.
-        assert!(matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new()
-                        .set_content_format(DiskFormat::Fvm)
-                        .set_partition_label("wrong_label")
-                ),
-                &mut MockEnv::new()
-                    .expect_mount_fvm()
-                    .expect_mount_blob_volume()
-                    .expect_mount_data_volume()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new()
+                            .set_content_format(DiskFormat::Fvm)
+                            .set_partition_label("wrong_label")
+                    ),
+                    &mut MockEnv::new()
+                        .expect_mount_fvm()
+                        .expect_mount_blob_volume()
+                        .expect_mount_data_volume()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // We should only be able to match Fvm once.
-        assert!(!matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new()
-                        .set_content_format(DiskFormat::Fvm)
-                        .set_partition_label(FVM_PARTITION_LABEL)
-                ),
-                &mut MockEnv::new(),
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new()
+                            .set_content_format(DiskFormat::Fvm)
+                            .set_partition_label(FVM_PARTITION_LABEL)
+                    ),
+                    &mut MockEnv::new(),
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1495,46 +1572,52 @@ mod tests {
         });
 
         // A device with the wrong label should fail.
-        assert!(!matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new()
-                        .set_content_format(DiskFormat::Fxfs)
-                        .set_partition_label("wrong_label")
-                ),
-                &mut MockEnv::new()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new()
+                            .set_content_format(DiskFormat::Fxfs)
+                            .set_partition_label("wrong_label")
+                    ),
+                    &mut MockEnv::new()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // A device with the right label should succeed.
-        assert!(matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new()
-                        .set_content_format(DiskFormat::Fxfs)
-                        .set_partition_label(FUCHSIA_FVM_PARTITION_LABEL)
-                ),
-                &mut MockEnv::new()
-                    .expect_mount_fxblob()
-                    .expect_mount_blob_volume()
-                    .expect_mount_data_volume()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new()
+                            .set_content_format(DiskFormat::Fxfs)
+                            .set_partition_label(FUCHSIA_FVM_PARTITION_LABEL)
+                    ),
+                    &mut MockEnv::new()
+                        .expect_mount_fxblob()
+                        .expect_mount_blob_volume()
+                        .expect_mount_data_volume()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // We should only be able to match Fxblob once.
-        assert!(!matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new()
-                        .set_content_format(DiskFormat::Fxfs)
-                        .set_partition_label(FUCHSIA_FVM_PARTITION_LABEL)
-                ),
-                &mut MockEnv::new(),
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new()
+                            .set_content_format(DiskFormat::Fxfs)
+                            .set_partition_label(FUCHSIA_FVM_PARTITION_LABEL)
+                    ),
+                    &mut MockEnv::new(),
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1553,25 +1636,29 @@ mod tests {
             ..default_test_config()
         });
 
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Fxfs)),
-                &mut MockEnv::new()
-                    .expect_mount_fxblob()
-                    .expect_mount_blob_volume()
-                    .expect_mount_data_volume()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fxfs)),
+                    &mut MockEnv::new()
+                        .expect_mount_fxblob()
+                        .expect_mount_blob_volume()
+                        .expect_mount_data_volume()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // We should only be able to match Fxblob once.
-        assert!(!matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Fxfs)),
-                &mut MockEnv::new(),
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fxfs)),
+                    &mut MockEnv::new(),
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1580,36 +1667,42 @@ mod tests {
             Matchers::new(&fshost_config::Config { storage_host: true, ..default_test_config() });
 
         // Don't match devices with a partition type, since they are likely nested in another GPT.
-        assert!(!matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new()
-                        .set_content_format(DiskFormat::Gpt)
-                        .set_partition_type([1u8; 16])
-                ),
-                &mut MockEnv::new()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new()
+                            .set_content_format(DiskFormat::Gpt)
+                            .set_partition_type([1u8; 16])
+                    ),
+                    &mut MockEnv::new()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new()),
-                &mut MockEnv::new()
-                    .expect_launch_and_enumerate_gpt_component(Vec::new())
-                    .expect_register_system_gpt()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new()),
+                    &mut MockEnv::new()
+                        .expect_launch_and_enumerate_gpt_component(Vec::new())
+                        .expect_register_system_gpt()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // Any future devices shouldn't bind.
-        assert!(!matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
-                &mut MockEnv::new()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            !matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
+                    &mut MockEnv::new()
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1622,49 +1715,55 @@ mod tests {
 
         // Without the appropriate partitions inside it, this gpt will not be registered as the
         // system gpt, just registered as a regular filesystem for shutdown.
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
-                &mut MockEnv::new()
-                    .expect_launch_and_enumerate_gpt_component(vec![PartitionInfo {
-                        label: "test-part".into(),
-                        type_guid: [0; 16]
-                    }])
-                    .expect_register_filesystem()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
+                    &mut MockEnv::new()
+                        .expect_launch_and_enumerate_gpt_component(vec![PartitionInfo {
+                            label: "test-part".into(),
+                            type_guid: [0; 16]
+                        }])
+                        .expect_register_filesystem()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // With a partition labeled "fvm", it is registered as the system gpt.
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
-                &mut MockEnv::new()
-                    .expect_launch_and_enumerate_gpt_component(vec![
-                        PartitionInfo { label: "boot_a".into(), type_guid: [0; 16] },
-                        PartitionInfo { label: "boot_b".into(), type_guid: [0; 16] },
-                        PartitionInfo { label: "fvm".into(), type_guid: FVM_TYPE_GUID }
-                    ])
-                    .expect_register_system_gpt()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
+                    &mut MockEnv::new()
+                        .expect_launch_and_enumerate_gpt_component(vec![
+                            PartitionInfo { label: "boot_a".into(), type_guid: [0; 16] },
+                            PartitionInfo { label: "boot_b".into(), type_guid: [0; 16] },
+                            PartitionInfo { label: "fvm".into(), type_guid: FVM_TYPE_GUID }
+                        ])
+                        .expect_register_system_gpt()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // Following gpt-formatted devices, even with the recognized partition labels, just get
         // registered normally.
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
-                &mut MockEnv::new()
-                    .expect_launch_and_enumerate_gpt_component(vec![
-                        PartitionInfo { label: "boot_a".into(), type_guid: [0; 16] },
-                        PartitionInfo { label: "boot_b".into(), type_guid: [0; 16] },
-                        PartitionInfo { label: "fvm".into(), type_guid: FVM_TYPE_GUID }
-                    ])
-                    .expect_register_filesystem()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
+                    &mut MockEnv::new()
+                        .expect_launch_and_enumerate_gpt_component(vec![
+                            PartitionInfo { label: "boot_a".into(), type_guid: [0; 16] },
+                            PartitionInfo { label: "boot_b".into(), type_guid: [0; 16] },
+                            PartitionInfo { label: "fvm".into(), type_guid: FVM_TYPE_GUID }
+                        ])
+                        .expect_register_filesystem()
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1677,49 +1776,55 @@ mod tests {
 
         // Without the appropriate partitions inside it, this gpt will not be registered as the
         // system gpt, just registered as a regular filesystem for shutdown.
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
-                &mut MockEnv::new()
-                    .expect_launch_and_enumerate_gpt_component(vec![PartitionInfo {
-                        label: "test-part".into(),
-                        type_guid: [0; 16]
-                    }])
-                    .expect_register_filesystem()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
+                    &mut MockEnv::new()
+                        .expect_launch_and_enumerate_gpt_component(vec![PartitionInfo {
+                            label: "test-part".into(),
+                            type_guid: [0; 16]
+                        }])
+                        .expect_register_filesystem()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // With a partition labeled "super", it is registered as the system gpt.
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
-                &mut MockEnv::new()
-                    .expect_launch_and_enumerate_gpt_component(vec![
-                        PartitionInfo { label: "boot_a".into(), type_guid: [0; 16] },
-                        PartitionInfo { label: "boot_b".into(), type_guid: [0; 16] },
-                        PartitionInfo { label: "super".into(), type_guid: [0; 16] }
-                    ])
-                    .expect_register_system_gpt()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
+                    &mut MockEnv::new()
+                        .expect_launch_and_enumerate_gpt_component(vec![
+                            PartitionInfo { label: "boot_a".into(), type_guid: [0; 16] },
+                            PartitionInfo { label: "boot_b".into(), type_guid: [0; 16] },
+                            PartitionInfo { label: "super".into(), type_guid: [0; 16] }
+                        ])
+                        .expect_register_system_gpt()
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         // Following gpt-formatted devices, even with the recognized partition labels, just get
         // registered normally.
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
-                &mut MockEnv::new()
-                    .expect_launch_and_enumerate_gpt_component(vec![
-                        PartitionInfo { label: "boot_a".into(), type_guid: [0; 16] },
-                        PartitionInfo { label: "boot_b".into(), type_guid: [0; 16] },
-                        PartitionInfo { label: "super".into(), type_guid: [0; 16] }
-                    ])
-                    .expect_register_filesystem()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
+                    &mut MockEnv::new()
+                        .expect_launch_and_enumerate_gpt_component(vec![
+                            PartitionInfo { label: "boot_a".into(), type_guid: [0; 16] },
+                            PartitionInfo { label: "boot_b".into(), type_guid: [0; 16] },
+                            PartitionInfo { label: "super".into(), type_guid: [0; 16] }
+                        ])
+                        .expect_register_filesystem()
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1731,19 +1836,21 @@ mod tests {
         });
 
         // With a partition with the legacy fvm type guid, it is registered as the system gpt.
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
-                &mut MockEnv::new()
-                    .expect_launch_and_enumerate_gpt_component(vec![
-                        PartitionInfo { label: "boot_a".into(), type_guid: [0; 16] },
-                        PartitionInfo { label: "boot_b".into(), type_guid: [0; 16] },
-                        PartitionInfo { label: "fvm".into(), type_guid: LEGACY_FVM_TYPE_GUID }
-                    ])
-                    .expect_register_system_gpt()
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Gpt)),
+                    &mut MockEnv::new()
+                        .expect_launch_and_enumerate_gpt_component(vec![
+                            PartitionInfo { label: "boot_a".into(), type_guid: [0; 16] },
+                            PartitionInfo { label: "boot_b".into(), type_guid: [0; 16] },
+                            PartitionInfo { label: "fvm".into(), type_guid: LEGACY_FVM_TYPE_GUID }
+                        ])
+                        .expect_register_system_gpt()
+                )
+                .await
+                .expect("match_device failed")
+        );
     }
 
     #[fuchsia::test]
@@ -1757,32 +1864,37 @@ mod tests {
 
         // The non-ramdisk should match.
         let mut env = MockEnv::new();
-        assert!(matchers
-            .match_device(
-                Box::new(MockDevice::new().set_partition_label(FUCHSIA_FVM_PARTITION_LABEL)),
-                &mut env
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_partition_label(FUCHSIA_FVM_PARTITION_LABEL)),
+                    &mut env
+                )
+                .await
+                .expect("match_device failed")
+        );
 
-        assert!(env
-            .registered_devices
-            .get_topological_path(DeviceTag::SystemContainerOnRecovery)
-            .is_some());
+        assert!(
+            env.registered_devices
+                .get_topological_path(DeviceTag::SystemContainerOnRecovery)
+                .is_some()
+        );
 
         let mut env =
             env.expect_mount_fxblob().expect_mount_blob_volume().expect_mount_data_volume();
 
         // And the ramdisk Fxblob should too.
-        assert!(matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new().set_content_format(DiskFormat::Fxfs).set_fshost_ramdisk()
-                ),
-                &mut env
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new().set_content_format(DiskFormat::Fxfs).set_fshost_ramdisk()
+                    ),
+                    &mut env
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         assert!(env.registered_devices.get_topological_path(DeviceTag::Ramdisk).is_some());
     }
@@ -1794,29 +1906,37 @@ mod tests {
 
         // The non-ramdisk should match by content format.
         let mut env = MockEnv::new().expect_bind_and_enumerate_fvm();
-        assert!(matchers
-            .match_device(Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)), &mut env)
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
+                    &mut env
+                )
+                .await
+                .expect("match_device failed")
+        );
 
-        assert!(env
-            .registered_devices
-            .get_topological_path(DeviceTag::SystemContainerOnRecovery)
-            .is_some());
+        assert!(
+            env.registered_devices
+                .get_topological_path(DeviceTag::SystemContainerOnRecovery)
+                .is_some()
+        );
 
         let mut env =
             env.expect_bind_and_enumerate_fvm().expect_mount_blobfs_on().expect_mount_data_on();
 
         // The ramdisk FVM should still be able to match.
-        assert!(matchers
-            .match_device(
-                Box::new(
-                    MockDevice::new().set_content_format(DiskFormat::Fvm).set_fshost_ramdisk()
-                ),
-                &mut env
-            )
-            .await
-            .expect("match_device failed"));
+        assert!(
+            matchers
+                .match_device(
+                    Box::new(
+                        MockDevice::new().set_content_format(DiskFormat::Fvm).set_fshost_ramdisk()
+                    ),
+                    &mut env
+                )
+                .await
+                .expect("match_device failed")
+        );
 
         assert!(env.registered_devices.get_topological_path(DeviceTag::Ramdisk).is_some());
 
@@ -1827,14 +1947,17 @@ mod tests {
                 ramdisk_image: true,
                 ..default_test_config()
             });
-            assert!(matchers
-                .match_device(Box::new(MockDevice::new().set_partition_label(label)), &mut env)
-                .await
-                .expect("match_device failed"));
-            assert!(env
-                .registered_devices
-                .get_topological_path(DeviceTag::SystemContainerOnRecovery)
-                .is_some());
+            assert!(
+                matchers
+                    .match_device(Box::new(MockDevice::new().set_partition_label(label)), &mut env)
+                    .await
+                    .expect("match_device failed")
+            );
+            assert!(
+                env.registered_devices
+                    .get_topological_path(DeviceTag::SystemContainerOnRecovery)
+                    .is_some()
+            );
         }
     }
 
@@ -1849,10 +1972,12 @@ mod tests {
             .set_partition_type([0x01; 16])
             .set_parent(Parent::Dev);
         let mut env1 = MockEnv::new().expect_publish_device("000");
-        assert!(matchers
-            .match_device(Box::new(device1), &mut env1)
-            .await
-            .expect("match_device failed for device 1"));
+        assert!(
+            matchers
+                .match_device(Box::new(device1), &mut env1)
+                .await
+                .expect("match_device failed for device 1")
+        );
 
         // Second unmanaged device should match and be published as "001".
         let device2 = MockDevice::new()
@@ -1860,10 +1985,12 @@ mod tests {
             .set_partition_type([0x01; 16])
             .set_parent(Parent::Dev);
         let mut env2 = MockEnv::new().expect_publish_device("001");
-        assert!(matchers
-            .match_device(Box::new(device2), &mut env2)
-            .await
-            .expect("match_device failed for device 2"));
+        assert!(
+            matchers
+                .match_device(Box::new(device2), &mut env2)
+                .await
+                .expect("match_device failed for device 2")
+        );
 
         // A device in the SystemPartitionTable should not match.
         let managed_device = MockDevice::new()
@@ -1871,10 +1998,12 @@ mod tests {
             .set_partition_type([0x01; 16])
             .set_parent(Parent::SystemPartitionTable);
         let mut env3 = MockEnv::new(); // No expectations
-        assert!(!matchers
-            .match_device(Box::new(managed_device), &mut env3)
-            .await
-            .expect("match_device failed for managed device"));
+        assert!(
+            !matchers
+                .match_device(Box::new(managed_device), &mut env3)
+                .await
+                .expect("match_device failed for managed device")
+        );
     }
 
     struct MockPublisher {
@@ -1923,10 +2052,12 @@ mod tests {
             .set_partition_label("not-the-right-label")
             .set_parent(Parent::SystemPartitionTable);
         let mut env1 = MockEnv::new(); // No expectations
-        assert!(!matchers
-            .match_device(Box::new(device1), &mut env1)
-            .await
-            .expect("match_device failed for device 1"));
+        assert!(
+            !matchers
+                .match_device(Box::new(device1), &mut env1)
+                .await
+                .expect("match_device failed for device 1")
+        );
 
         // Wrong parent doesn't match.
         let device2 = MockDevice::new()
@@ -1935,10 +2066,12 @@ mod tests {
             .set_partition_label("fts-partition")
             .set_parent(Parent::Fshost);
         let mut env2 = MockEnv::new(); // No expectations
-        assert!(!matchers
-            .match_device(Box::new(device2), &mut env2)
-            .await
-            .expect("match_device failed for device 2"));
+        assert!(
+            !matchers
+                .match_device(Box::new(device2), &mut env2)
+                .await
+                .expect("match_device failed for device 2")
+        );
 
         // Matching device gets published.
         let device3 = MockDevice::new()
@@ -1947,10 +2080,12 @@ mod tests {
             .set_partition_label("fts-partition")
             .set_parent(Parent::SystemPartitionTable);
         let mut env3 = MockEnv::new(); // No expectations
-        assert!(matchers
-            .match_device(Box::new(device3), &mut env3)
-            .await
-            .expect("match_device failed for device 2"));
+        assert!(
+            matchers
+                .match_device(Box::new(device3), &mut env3)
+                .await
+                .expect("match_device failed for device 2")
+        );
 
         // The matcher is fused after it finds a matching device. No further devices are published.
         let device4 = MockDevice::new()
@@ -1959,9 +2094,11 @@ mod tests {
             .set_partition_label("fts-partition")
             .set_parent(Parent::SystemPartitionTable);
         let mut env4 = MockEnv::new(); // No expectations
-        assert!(!matchers
-            .match_device(Box::new(device4), &mut env4)
-            .await
-            .expect("match_device failed for device 2"));
+        assert!(
+            !matchers
+                .match_device(Box::new(device4), &mut env4)
+                .await
+                .expect("match_device failed for device 2")
+        );
     }
 }

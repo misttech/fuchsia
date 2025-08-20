@@ -47,6 +47,7 @@ template("fshost_cml") {
       sources += [ "//src/storage/fshost/meta/core_fshost.cml" ]
       if (_storage_host) {
         sources += [
+          "//src/storage/fshost/meta/provision_fxfs_fshost.shard.cml",
           "//src/storage/fshost/meta/storage_host_base.shard.cml",
           "//src/storage/fshost/meta/storage_host_gpt.shard.cml",
         ]

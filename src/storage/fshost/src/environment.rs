@@ -21,11 +21,11 @@ use crate::device::constants::{
 use crate::device::{BlockDevice, Device, RegisteredDevices};
 use crate::inspect::register_migration_status;
 use crate::watcher::{DirSource, Watcher};
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{Context, Error, anyhow, bail};
 use async_trait::async_trait;
-use crypt_policy::{get_policy, Policy};
+use crypt_policy::{Policy, get_policy};
 use device_watcher::{recursive_wait, recursive_wait_and_open};
-use fidl::endpoints::{create_proxy, Proxy, ServerEnd, ServiceMarker as _};
+use fidl::endpoints::{ServerEnd, ServiceMarker as _, create_proxy};
 use fidl_fuchsia_fs_startup::MountOptions;
 use fidl_fuchsia_hardware_block_partition::Guid;
 use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeMarker, VolumeProxy};
@@ -35,16 +35,15 @@ use fs_management::filesystem::{
 use fs_management::format::DiskFormat;
 use fs_management::partition::fvm_allocate_partition;
 use fs_management::{Blobfs, ComponentType, F2fs, FSConfig, Fvm, Fxfs, Minfs};
-use fuchsia_component::client::{
-    connect_to_protocol, connect_to_protocol_at_dir_root, connect_to_protocol_at_path,
-};
+use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use futures::lock::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
 use uuid::Uuid;
 use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_storage_partitions as fpartitions,
-    fuchsia_async as fasync, fuchsia_inspect as finspect,
+    fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner, fidl_fuchsia_io as fio,
+    fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
+    fuchsia_inspect as finspect,
 };
 
 const INITIAL_SLICE_COUNT: u64 = 1;
@@ -162,13 +161,8 @@ pub trait Environment: Send + Sync {
         name: &str,
     ) -> Result<(), Error>;
 
-    /// When called, attempt to provision an Fxfs partition if a partition with "fxfs" label does
-    /// not exist in `partitions`. Fshost needs to be updated of the new partition layout.
-    async fn try_provision_fxfs(
-        &mut self,
-        _device: &mut dyn Device,
-        _partitions: Vec<PartitionInfo>,
-    ) -> Result<(), Error> {
+    /// When called, attempt to provision the device with Fxfs.
+    async fn provision_fxfs(&mut self, _device: &mut dyn Device) -> Result<(), Error> {
         Ok(())
     }
 }
@@ -195,11 +189,7 @@ pub enum Filesystem {
 
 impl Filesystem {
     fn is_serving(&self) -> bool {
-        if let Self::Queue(_) = self {
-            false
-        } else {
-            true
-        }
+        if let Self::Queue(_) = self { false } else { true }
     }
 
     pub fn exposed_dir(&mut self) -> Result<fio::DirectoryProxy, Error> {
@@ -1140,53 +1130,41 @@ impl Environment for FshostEnvironment {
         self.device_publisher.publish_to_debug_block_dir(device, name)
     }
 
-    async fn try_provision_fxfs(
-        &mut self,
-        device: &mut dyn Device,
-        partitions: Vec<PartitionInfo>,
-    ) -> Result<(), Error> {
-        if !self.config.provision_fxfs {
-            return Ok(());
-        }
-
-        if partitions.into_iter().map(|p| p.label).any(|x| x == "fxfs") {
-            log::info!("try_provision_fxfs skipped as fxfs partition exists");
-            return Ok(());
-        }
-        log::info!("try_provision_fxfs attempting to provision fxfs partition");
-
-        let mut filesystem = fs_management::filesystem::Filesystem::from_boxed_config(
-            device.block_connector()?,
-            Box::new(fs_management::Gpt::dynamic_child()),
+    async fn provision_fxfs(&mut self, device: &mut dyn Device) -> Result<(), Error> {
+        debug_assert!(
+            self.config.provision_fxfs,
+            "fshost was not configured to provision Fxfs yet `provision_fxfs(..)` was called"
         );
-        let serving = filesystem.serve_multi_volume().await.context("Failed to start GPT")?;
-        let exposed_dir_proxy = serving.exposed_dir();
 
-        let partitions_admin_proxy = connect_to_protocol_at_dir_root::<
-            fpartitions::PartitionsAdminMarker,
-        >(&exposed_dir_proxy)
-        .context("failed to connect to PartitionsAdmin admin")?;
-        let partitions_admin = partitions_admin_proxy
-            .into_client_end()
-            .map_err(|_| anyhow!("failed to convert PartitionsAdmin proxy into client end"))?;
-
+        // Clone partition directory to pass to fxfs provisioner
+        let exposed_dir = self.partition_manager_exposed_dir()?;
         let partitions_dir = fuchsia_fs::directory::open_directory(
-            &exposed_dir_proxy,
+            &exposed_dir,
             fpartitions::PartitionServiceMarker::SERVICE_NAME,
             fuchsia_fs::PERM_READABLE,
         )
-        .await
-        .context("Failed to open partitions dir")?
-        .into_client_end()
-        .map_err(|_| anyhow!("failed to convert dir proxy into client end"))?;
+        .await?;
+        // `device.path()` returns the path to the Volume protocol, strip the "/volume" suffix to
+        // get the path of the partition.
+        // TODO(https://fxbug.dev/438829467): consider changing `device.path()` to return path
+        // without "/volume".
+        let path = device
+            .path()
+            .strip_suffix("/volume")
+            .ok_or_else(|| anyhow!("failed to strip volume suffix from device path"))?;
+        let partition =
+            fuchsia_fs::directory::open_directory(&partitions_dir, path, fio::PERM_READABLE)
+                .await?;
+        let (client, server_end) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+        partition.clone(server_end.into_channel().into())?;
 
-        let fxfs_provisioner =
-            connect_to_protocol::<fidl_fuchsia_fshost_fxfsprovisioner::FxfsProvisionerMarker>()
-                .context("failed to connect to fxfs provisioner protocol")?;
-        let _ = fxfs_provisioner
-            .provision(partitions_admin, partitions_dir)
+        let fxfs_provisioner = connect_to_protocol::<ffxfsprovisioner::FxfsProvisionerMarker>()
+            .context("failed to connect to fxfs provisioner protocol")?;
+        fxfs_provisioner
+            .provision(client)
             .await
-            .context("provisioner failed")?;
+            .context("provision FIDL call failed")?
+            .map_err(|err| anyhow!("provision failed {:?}", zx::Status::from_raw(err)))?;
 
         Ok(())
     }

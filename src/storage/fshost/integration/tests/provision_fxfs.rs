@@ -3,92 +3,35 @@
 // found in the LICENSE file.
 
 pub mod config;
-use crate::config::volumes_spec;
-use block_client::RemoteBlockClient;
-use config::new_builder;
-use fidl::endpoints::ServiceMarker;
-use fshost_test_fixture::disk_builder::{
-    Disk, DiskBuilder, DEFAULT_DISK_SIZE, DEFAULT_TEST_TYPE_GUID, FVM_PART_INSTANCE_GUID,
-    TEST_DISK_BLOCK_SIZE,
-};
-use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
-use std::sync::Arc;
-use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
-use zx::HandleBased;
-use {
-    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_io as fio,
-    fidl_fuchsia_storage_partitions as fpartitions,
-};
+use crate::config::new_builder;
+use fshost_test_fixture::VFS_TYPE_FXFS;
+use fshost_test_fixture::disk_builder::{Disk, DiskBuilder};
 
+#[cfg(feature = "fxblob")]
 #[fuchsia::test]
 async fn test_provision_fxfs() {
     let mut builder = new_builder();
     builder.fshost().set_config_value("provision_fxfs", true);
-    let mut fixture = builder.build().await;
-
-    let partition_labels = vec!["a", "super", "userdata"];
-    let vmo = zx::Vmo::create(DEFAULT_DISK_SIZE).unwrap();
-    let server = Arc::new(VmoBackedServer::from_vmo(
-        TEST_DISK_BLOCK_SIZE,
-        vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-    ));
-    let client =
-        Arc::new(RemoteBlockClient::new(server.connect::<fvolume::VolumeProxy>()).await.unwrap());
-    let mut partitions = Vec::new();
-    let mut start_block = 64;
-    for label in partition_labels {
-        partitions.push(gpt::PartitionInfo {
-            label: label.to_string(),
-            type_guid: gpt::Guid::from_bytes(DEFAULT_TEST_TYPE_GUID),
-            instance_guid: gpt::Guid::from_bytes(FVM_PART_INSTANCE_GUID),
-            start_block,
-            num_blocks: 1,
-            flags: 0,
-        });
-        start_block += 1;
-    }
-    let _ = gpt::Gpt::format(client, partitions).await.expect("gpt format failed");
-
-    // Add as system GPT. The device matcher for the system GPT expects the type GUID to be None or
-    // zero.
-    fixture.add_main_disk(Disk::Prebuilt(vmo, None)).await;
-
-    // TODO(https://fxbug.dev/411312604): after updating fshost of the device's new state, expect to
-    // only see two partitions, "a" and "fxfs", if migration was successful.
-
-    fixture.tear_down().await;
-}
-
-#[fuchsia::test]
-async fn test_provision_fxfs_with_fxfs_partition() {
-    let mut builder = new_builder();
-    builder.fshost().set_config_value("provision_fxfs", true);
+    builder.fshost().set_config_value("merge_super_and_userdata", true);
     let mut fixture = builder.build().await;
 
     let mut disk = DiskBuilder::new();
-    disk.with_gpt().format_volumes(volumes_spec()).with_extra_gpt_partition("fxfs", 1);
+    // Use unformatted volume manager to build an unformatted disk
+    disk.with_gpt()
+        .with_unformatted_volume_manager()
+        .with_system_partition_label("super")
+        .with_extra_gpt_partition("userdata", 1)
+        .with_extra_gpt_partition("other", 1);
     fixture.add_main_disk(Disk::Builder(disk)).await;
 
-    let partitions =
-        fixture.dir(fpartitions::PartitionServiceMarker::SERVICE_NAME, fio::PERM_READABLE);
-    let entries =
-        fuchsia_fs::directory::readdir(&partitions).await.expect("Failed to read partitions");
-    assert_eq!(entries.len(), 2);
+    // TODO(https://fxbug.dev/439942311): Don't emit error messages for non-errors.
+    // We expect one crash report when first attempting to mount and serve fxblob before fxfs has
+    // been provisioned.
+    fixture.wait_for_crash_reports(1, "fxfs", "fuchsia-fxfs-corruption").await;
 
-    let mut found_partition_labels = Vec::new();
-    for entry in entries {
-        let endpoint_name = format!("{}/volume", entry.name);
-        let volume = connect_to_named_protocol_at_dir_root::<fvolume::VolumeMarker>(
-            &partitions,
-            &endpoint_name,
-        )
-        .expect("failed to connect to named protocol at dir root");
-        let (raw_status, label) = volume.get_name().await.expect("failed to call get_name");
-        zx::Status::ok(raw_status).expect("get_name status failed");
-        found_partition_labels.push(label.expect("partition label expected to be some value"));
-    }
-    assert!(found_partition_labels.iter().any(|label| label == "fvm"));
-    assert!(found_partition_labels.iter().any(|label| label == "fxfs"));
+    fixture.check_system_partitions(vec!["other", "super_and_userdata"]).await;
+    fixture.check_fs_type("data", VFS_TYPE_FXFS).await;
+    fixture.check_test_data_file().await;
 
     fixture.tear_down().await;
 }

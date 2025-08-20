@@ -13,7 +13,7 @@ use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, Filesystem, ServingMultiVolumeFilesystem,
 };
 use fs_management::format::constants::{F2FS_MAGIC, FXFS_MAGIC, MINFS_MAGIC};
-use fs_management::{Fvm, Fxfs, BLOBFS_TYPE_GUID, DATA_TYPE_GUID, FVM_TYPE_GUID};
+use fs_management::{BLOBFS_TYPE_GUID, DATA_TYPE_GUID, FVM_TYPE_GUID, Fvm, Fxfs};
 use fuchsia_component::client::connect_to_protocol_at_dir_svc;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_hash::Hash;
@@ -428,7 +428,10 @@ impl DiskBuilder {
         (vmo, self.type_guid)
     }
 
-    async fn build_fxfs_as_volume_manager(&mut self, connector: Box<dyn BlockConnector>) {
+    pub(crate) async fn build_fxfs_as_volume_manager(
+        &mut self,
+        connector: Box<dyn BlockConnector>,
+    ) {
         let crypt_realm = create_hermetic_crypt_service(DATA_KEY, METADATA_KEY).await;
         let mut fxfs = Filesystem::from_boxed_config(connector, Box::new(Fxfs::default()));
         // Wipes the device
