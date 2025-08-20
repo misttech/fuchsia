@@ -22,7 +22,8 @@ available tests with `fx test --dry`. You can get JSON output by adding the
 arguments `--logpath -`. Run `fx test --help` for more information.
 
 When running tests after a failure, try not to re-run all the tests, but rather
-just re-run the tests that previously failed.
+just re-run the tests that previously failed. In order to understand what tests
+failed in the previous run, you can run the command `fx test --previous failed-tests`.
 
 To get logs from a fuchsia device, run `ffx log`. You should use the `--dump`
 argument if you want the command to return immediately and not wait for more
