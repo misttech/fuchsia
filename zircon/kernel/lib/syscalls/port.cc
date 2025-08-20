@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <inttypes.h>
+#include <lib/counters.h>
 #include <lib/ktrace.h>
 #include <lib/syscalls/forward.h>
 #include <trace.h>
@@ -19,6 +20,12 @@
 #include <object/process_dispatcher.h>
 
 #define LOCAL_TRACE 0
+
+// Track the number of calls to the two zx_port_cancel.. APIs. We expect the
+// ecosystem to migrate to calling zx_port_cancel_key() over time.
+// TODO(https://fxbug.dev/434997822): Remove this tracking when the migration is complete.
+KCOUNTER(port_cancel_calls, "port.cancel")
+KCOUNTER(port_cancel_key_calls, "port.cancel_key")
 
 // zx_status_t zx_port_create
 zx_status_t sys_port_create(uint32_t options, zx_handle_t* out) {
@@ -93,6 +100,8 @@ zx_status_t sys_port_wait(zx_handle_t handle, zx_instant_mono_t deadline,
 
 // zx_status_t zx_port_cancel
 zx_status_t sys_port_cancel(zx_handle_t handle, zx_handle_t source, uint64_t key) {
+  kcounter_add(port_cancel_calls, 1);
+
   auto up = ProcessDispatcher::GetCurrent();
 
   fbl::RefPtr<PortDispatcher> port;
@@ -125,6 +134,7 @@ zx_status_t sys_port_cancel(zx_handle_t handle, zx_handle_t source, uint64_t key
 
 // zx_status_t zx_port_cancel_key
 zx_status_t sys_port_cancel_key(zx_handle_t handle, uint32_t options, uint64_t key) {
+  kcounter_add(port_cancel_key_calls, 1);
   if (options != 0u) {
     return ZX_ERR_INVALID_ARGS;
   }

@@ -158,14 +158,16 @@ bool VmoToInspectMapper::ShouldInclude(const counters::Descriptor& entry) {
   static constexpr const char* kByName[] = {
       "channel.full",             //
       "channel.messages",         //
-      "profile.create",           //
-      "profile.set",              //
-      "init.target.time.msec",    //
-      "init.userboot.time.msec",  //
       "handles.alloc.failed",     //
       "handles.duped",            //
       "handles.live",             //
       "handles.made",             //
+      "init.target.time.msec",    //
+      "init.userboot.time.msec",  //
+      "port.cancel",              //
+      "port.cancel.key",          //
+      "profile.create",           //
+      "profile.set",              //
   };
 
   for (size_t i = 0; i < std::size(kByName); ++i) {
