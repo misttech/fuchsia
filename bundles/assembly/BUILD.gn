@@ -5235,6 +5235,7 @@ assembly_input_bundle("recovery_android") {
             "//src/developer/adb/bin/adb/meta/adb.core_shard.cml",
             "//src/developer/adb/bin/adb-file-sync/meta/adb-file-sync.core_shard.cml",
             "//src/developer/adb/bin/adb-reboot/meta/adb-reboot.core_shard.cml",
+            "//src/developer/adb/bin/adb-sideload/meta/adb-sideload.core_shard.cml",
           ]
         },
       ]

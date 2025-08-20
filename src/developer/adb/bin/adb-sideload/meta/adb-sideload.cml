@@ -10,6 +10,12 @@
     capabilities: [
         { protocol: "fuchsia.hardware.adb.Provider" },
     ],
+    use: [
+        {
+            protocol: "fuchsia.posix.socket.Provider",
+            from: "parent",
+        },
+    ],
     expose: [
         {
             protocol: "fuchsia.hardware.adb.Provider",

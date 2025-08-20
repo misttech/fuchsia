@@ -8,7 +8,9 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_fs::file::{AsyncReadAt, AsyncReadAtExt as _};
 use futures::{StreamExt as _, TryFutureExt as _};
+use std::sync::Arc;
 
+mod http_server;
 mod sideload_file;
 
 struct SideloadServer {}
@@ -50,12 +52,19 @@ impl SideloadServer {
                 let archive = fuchsia_archive::AsyncUtf8Reader::new(far_file)
                     .await
                     .context("Failed to parse far")?;
-                for entry in archive.list() {
-                    log::info!("far entry: {entry:?}");
-                }
-                // TODO(https://fxbug.dev/419106573): serve files in far over http
-                let far_file = archive.into_source();
-                let () = far_file.close().await?;
+                let (server_fut, close_fn, addr) =
+                    http_server::start_server(archive).context("Failed to start http server")?;
+                let server_task = fasync::Task::spawn(server_fut);
+                log::info!("http server listening on port {}", addr.port());
+                // TODO(https://fxbug.dev/419106573): send the port to recovery-android, and then wait
+                // for a signal that update is done.
+                let () = futures::future::pending().await;
+                let far = close_fn();
+                let () = server_task.await.context("server task")?;
+                let far =
+                    Arc::into_inner(far).ok_or_else(|| anyhow::anyhow!("Failed to unwrap Arc"))?;
+                let far_file = far.into_inner().into_source();
+                let () = far_file.close().await.context("Failed to close sideload file")?;
                 Ok(())
             }
             .unwrap_or_else(|e: Error| log::error!("Error in sideload server: {e:#}")),
