@@ -6,6 +6,7 @@
 
 #include <dev/hdcp/amlogic_s912/init.h>
 #include <dev/hw_rng/amlogic_rng/init.h>
+#include <dev/hw_rng/qcom_rng/init.h>
 #include <dev/hw_watchdog/generic32/init.h>
 #include <dev/init.h>
 #include <dev/interrupt/arm_gicv2_init.h>
@@ -68,6 +69,10 @@ void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {
 
   if (arch_handoff.amlogic_rng_driver) {
     AmlogicRngInit(arch_handoff.amlogic_rng_driver.value());
+  }
+
+  if (arch_handoff.qcom_rng_driver) {
+    QcomRngInit(arch_handoff.qcom_rng_driver.value());
   }
 
   if (arch_handoff.generic32_watchdog_driver) {
