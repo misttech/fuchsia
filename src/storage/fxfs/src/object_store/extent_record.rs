@@ -237,11 +237,7 @@ impl ExtentValue {
     }
 
     pub fn is_deleted(&self) -> bool {
-        if let ExtentValue::None = self {
-            true
-        } else {
-            false
-        }
+        if let ExtentValue::None = self { true } else { false }
     }
 
     /// Returns a new ExtentValue offset by `amount`.  Both `amount` and `extent_len` must be

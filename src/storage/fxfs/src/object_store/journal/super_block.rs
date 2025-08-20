@@ -30,11 +30,11 @@ use crate::lsm_tree::{LSMTree, LayerSet, Query};
 use crate::metrics;
 use crate::object_handle::ObjectHandle as _;
 use crate::object_store::allocator::Reservation;
-use crate::object_store::data_object_handle::OverwriteOptions;
+use crate::object_store::data_object_handle::{FileExtent, OverwriteOptions};
 use crate::object_store::journal::bootstrap_handle::BootstrapObjectHandle;
 use crate::object_store::journal::reader::{JournalReader, ReadResult};
 use crate::object_store::journal::writer::JournalWriter;
-use crate::object_store::journal::{JournalCheckpoint, JournalCheckpointV32, BLOCK_SIZE};
+use crate::object_store::journal::{BLOCK_SIZE, JournalCheckpoint, JournalCheckpointV32};
 use crate::object_store::object_record::{
     ObjectItem, ObjectItemV40, ObjectItemV41, ObjectItemV43, ObjectItemV46, ObjectItemV47,
 };
@@ -45,10 +45,10 @@ use crate::object_store::{
 };
 use crate::range::RangeExt;
 use crate::serialized_types::{
-    migrate_to_version, Migrate, Version, Versioned, VersionedLatest, EARLIEST_SUPPORTED_VERSION,
-    FIRST_EXTENT_IN_SUPERBLOCK_VERSION, SMALL_SUPERBLOCK_VERSION,
+    EARLIEST_SUPPORTED_VERSION, FIRST_EXTENT_IN_SUPERBLOCK_VERSION, Migrate,
+    SMALL_SUPERBLOCK_VERSION, Version, Versioned, VersionedLatest, migrate_to_version,
 };
-use anyhow::{bail, ensure, Context, Error};
+use anyhow::{Context, Error, bail, ensure};
 use fprint::TypeFingerprint;
 use fuchsia_inspect::{Property as _, UintProperty};
 use fuchsia_sync::Mutex;
@@ -415,11 +415,7 @@ impl SuperBlockManager {
             (Err(_), Ok(result)) => result,
             (Ok(result1), Ok(result2)) => {
                 // Break the tie by taking the super-block with the greatest generation.
-                if result2.0.generation > result1.0.generation {
-                    result2
-                } else {
-                    result1
-                }
+                if result2.0.generation > result1.0.generation { result2 } else { result1 }
             }
         };
         info!(super_block:?, current_super_block:?; "loaded super-block");
@@ -565,7 +561,7 @@ impl SuperBlockHeader {
 struct SuperBlockWriter<'a, S: HandleOwner> {
     handle: DataObjectHandle<S>,
     writer: JournalWriter,
-    existing_extents: VecDeque<(u64, Range<u64>)>,
+    existing_extents: VecDeque<FileExtent>,
     size: u64,
     reservation: &'a Reservation,
 }
@@ -595,10 +591,14 @@ impl<'a, S: HandleOwner> SuperBlockWriter<'a, S> {
     /// corresponding extent records onto the journal.
     fn try_extend_existing(&mut self, target_size: u64) -> Result<(), Error> {
         while self.size < target_size {
-            if let Some((offset, range)) = self.existing_extents.pop_front() {
-                ensure!(offset == self.size, "superblock file contains a hole.");
-                self.size += range.end - range.start;
-                SuperBlockRecord::Extent(range).serialize_into(&mut self.writer)?;
+            if let Some(extent) = self.existing_extents.pop_front() {
+                ensure!(
+                    extent.logical_range().start == self.size,
+                    "superblock file contains a hole."
+                );
+                self.size += extent.length();
+                SuperBlockRecord::Extent(extent.device_range().clone())
+                    .serialize_into(&mut self.writer)?;
             } else {
                 break;
             }
@@ -685,27 +685,27 @@ impl RecordReader {
 #[cfg(test)]
 mod tests {
     use super::{
-        compact_root_parent, write, SuperBlockHeader, SuperBlockInstance, UuidWrapper,
-        MIN_SUPER_BLOCK_SIZE, SUPER_BLOCK_CHUNK_SIZE,
+        MIN_SUPER_BLOCK_SIZE, SUPER_BLOCK_CHUNK_SIZE, SuperBlockHeader, SuperBlockInstance,
+        UuidWrapper, compact_root_parent, write,
     };
     use crate::filesystem::{FxFilesystem, OpenFxFilesystem};
     use crate::object_handle::ReadObjectHandle;
     use crate::object_store::journal::JournalCheckpoint;
-    use crate::object_store::transaction::{lock_keys, Options};
+    use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::{
         DataObjectHandle, HandleOptions, ObjectHandle, ObjectKey, ObjectStore,
     };
     use crate::serialized_types::LATEST_VERSION;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     // We require 512kiB each for A/B super-blocks, 256kiB for the journal (128kiB before flush)
     // and compactions require double the layer size to complete.
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
     const TEST_DEVICE_BLOCK_COUNT: u64 = 16384;
 
-    async fn filesystem_and_super_block_handles(
-    ) -> (OpenFxFilesystem, DataObjectHandle<ObjectStore>, DataObjectHandle<ObjectStore>) {
+    async fn filesystem_and_super_block_handles()
+    -> (OpenFxFilesystem, DataObjectHandle<ObjectStore>, DataObjectHandle<ObjectStore>) {
         let device =
             DeviceHolder::new(FakeDevice::new(TEST_DEVICE_BLOCK_COUNT, TEST_DEVICE_BLOCK_SIZE));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");

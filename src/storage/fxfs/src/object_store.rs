@@ -6,6 +6,7 @@ pub mod allocator;
 pub mod caching_object_handle;
 pub mod data_object_handle;
 pub mod directory;
+mod extent_mapping_iterator;
 mod extent_record;
 mod flush;
 pub mod graveyard;
@@ -22,37 +23,37 @@ mod tree_cache;
 pub mod volume;
 
 pub use data_object_handle::{
-    DataObjectHandle, DirectWriter, FsverityState, FsverityStateInner, RangeType,
+    DataObjectHandle, DirectWriter, FileExtent, FsverityState, FsverityStateInner, RangeType,
 };
 pub use directory::Directory;
 pub use object_record::{ChildValue, ObjectDescriptor, PosixAttributes, Timestamp};
 pub use store_object_handle::{
-    SetExtendedAttributeMode, StoreObjectHandle, EXTENDED_ATTRIBUTE_RANGE_END,
-    EXTENDED_ATTRIBUTE_RANGE_START,
+    EXTENDED_ATTRIBUTE_RANGE_END, EXTENDED_ATTRIBUTE_RANGE_START, SetExtendedAttributeMode,
+    StoreObjectHandle,
 };
 
 use crate::errors::FxfsError;
 use crate::filesystem::{
-    ApplyContext, ApplyMode, FxFilesystem, JournalingObject, SyncOptions, TruncateGuard, TxnGuard,
-    MAX_FILE_SIZE,
+    ApplyContext, ApplyMode, FxFilesystem, JournalingObject, MAX_FILE_SIZE, SyncOptions,
+    TruncateGuard, TxnGuard,
 };
 use crate::log::*;
 use crate::lsm_tree::cache::{NullCache, ObjectCache};
 use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
 use crate::lsm_tree::{LSMTree, Query};
-use crate::object_handle::{ObjectHandle, ObjectProperties, ReadObjectHandle, INVALID_OBJECT_ID};
+use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ObjectProperties, ReadObjectHandle};
 use crate::object_store::allocator::Allocator;
 use crate::object_store::graveyard::Graveyard;
 use crate::object_store::journal::{JournalCheckpoint, JournaledTransaction};
 use crate::object_store::key_manager::KeyManager;
 use crate::object_store::transaction::{
-    lock_keys, AssocObj, AssociatedObject, LockKey, ObjectStoreMutation, Operation, Options,
-    Transaction,
+    AssocObj, AssociatedObject, LockKey, ObjectStoreMutation, Operation, Options, Transaction,
+    lock_keys,
 };
 use crate::range::RangeExt;
 use crate::round::round_up;
 use crate::serialized_types::{Version, Versioned, VersionedLatest};
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
 use fprint::TypeFingerprint;
@@ -71,7 +72,7 @@ use storage_device::Device;
 use uuid::Uuid;
 
 pub use extent_record::{
-    ExtentKey, ExtentMode, ExtentValue, BLOB_MERKLE_ATTRIBUTE_ID, DEFAULT_DATA_ATTRIBUTE_ID,
+    BLOB_MERKLE_ATTRIBUTE_ID, DEFAULT_DATA_ATTRIBUTE_ID, ExtentKey, ExtentMode, ExtentValue,
     FSVERITY_MERKLE_ATTRIBUTE_ID,
 };
 pub use object_record::{
@@ -344,11 +345,7 @@ pub enum LockState {
 
 impl LockState {
     fn owner(&self) -> Option<Arc<dyn StoreOwner>> {
-        if let Self::Unlocked { owner, .. } = self {
-            owner.upgrade()
-        } else {
-            None
-        }
+        if let Self::Unlocked { owner, .. } = self { owner.upgrade() } else { None }
     }
 }
 
@@ -918,8 +915,10 @@ impl ObjectStore {
                                 mode: ExtentMode::Overwrite,
                                 ..
                             }) => overwrite_ranges.push(range.clone()),
-                            _ => bail!(anyhow!(FxfsError::Inconsistent)
-                                .context("open_object: Expected extent")),
+                            _ => bail!(
+                                anyhow!(FxfsError::Inconsistent)
+                                    .context("open_object: Expected extent")
+                            ),
                         }
                         iter.advance().await?;
                     }
@@ -2178,8 +2177,10 @@ impl ObjectStore {
                 }
             }
         } else {
-            bail!(anyhow!(FxfsError::Inconsistent)
-                .context("ObjectStore.update_attributes: Expected object value"));
+            bail!(
+                anyhow!(FxfsError::Inconsistent)
+                    .context("ObjectStore.update_attributes: Expected object value")
+            );
         };
         transaction.add(self.store_object_id(), Mutation::ObjectStore(mutation));
         Ok(())
@@ -2458,20 +2459,20 @@ pub async fn load_store_info(
 #[cfg(test)]
 mod tests {
     use super::{
-        StoreInfo, DEFAULT_DATA_ATTRIBUTE_ID, FSVERITY_MERKLE_ATTRIBUTE_ID,
-        MAX_STORE_INFO_SERIALIZED_SIZE, NO_OWNER, OBJECT_ID_HI_MASK,
+        DEFAULT_DATA_ATTRIBUTE_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, MAX_STORE_INFO_SERIALIZED_SIZE,
+        NO_OWNER, OBJECT_ID_HI_MASK, StoreInfo,
     };
     use crate::errors::FxfsError;
     use crate::filesystem::{FxFilesystem, JournalingObject, OpenFxFilesystem, SyncOptions};
     use crate::fsck::fsck;
-    use crate::lsm_tree::types::{ItemRef, LayerIterator};
     use crate::lsm_tree::Query;
+    use crate::lsm_tree::types::{ItemRef, LayerIterator};
     use crate::object_handle::{
-        ObjectHandle, ReadObjectHandle, WriteObjectHandle, INVALID_OBJECT_ID,
+        INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle,
     };
     use crate::object_store::directory::Directory;
     use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKind, ObjectValue};
-    use crate::object_store::transaction::{lock_keys, Options};
+    use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
         FsverityMetadata, HandleOptions, LockKey, Mutation, ObjectStore, RootDigest, StoreOwner,
@@ -2482,12 +2483,12 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use futures::join;
-    use fxfs_crypto::{Crypt, FxfsKey, WrappedKeyBytes, FXFS_WRAPPED_KEY_SIZE};
+    use fxfs_crypto::{Crypt, FXFS_WRAPPED_KEY_SIZE, FxfsKey, WrappedKeyBytes};
     use fxfs_insecure_crypto::InsecureCrypt;
     use std::sync::Arc;
     use std::time::Duration;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 

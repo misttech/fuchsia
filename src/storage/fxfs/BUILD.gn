@@ -91,6 +91,7 @@ fxfs_sources = [
   "src/object_store/data_object_handle.rs",
   "src/object_store/data_object_handle/allocated_ranges.rs",
   "src/object_store/directory.rs",
+  "src/object_store/extent_mapping_iterator.rs",
   "src/object_store/extent_record.rs",
   "src/object_store/flush.rs",
   "src/object_store/graveyard.rs",

@@ -4,8 +4,8 @@
 
 use crate::errors::FxfsError;
 use crate::log::*;
-use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::lsm_tree::Query;
+use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::object_handle::{
     ObjectHandle, ObjectProperties, ReadObjectHandle, WriteBytes, WriteObjectHandle,
 };
@@ -17,28 +17,28 @@ use crate::object_store::object_record::{
 };
 use crate::object_store::store_object_handle::{MaybeChecksums, NeedsTrim};
 use crate::object_store::transaction::{
-    self, lock_keys, AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Operation,
-    Options, Transaction,
+    self, AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Operation, Options,
+    Transaction, lock_keys,
 };
 use crate::object_store::{
-    HandleOptions, HandleOwner, RootDigest, StoreObjectHandle, TrimMode, TrimResult,
-    DEFAULT_DATA_ATTRIBUTE_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, TRANSACTION_MUTATION_THRESHOLD,
+    DEFAULT_DATA_ATTRIBUTE_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, HandleOwner,
+    RootDigest, StoreObjectHandle, TRANSACTION_MUTATION_THRESHOLD, TrimMode, TrimResult,
 };
 use crate::range::RangeExt;
 use crate::round::{round_down, round_up};
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
 use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions, MerkleTreeBuilder};
 use fuchsia_sync::Mutex;
-use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
+use futures::stream::FuturesUnordered;
 use fxfs_trace::trace;
 use mundane::hash::{Digest, Hasher, Sha256, Sha512};
 use std::cmp::min;
 use std::ops::{Deref, DerefMut, Range};
-use std::sync::atomic::{self, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{self, AtomicU64, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
 
 mod allocated_ranges;
@@ -61,6 +61,43 @@ pub struct DataObjectHandle<S: HandleOwner> {
     content_size: AtomicU64,
     fsverity_state: Mutex<FsverityState>,
     overwrite_ranges: AllocatedRanges,
+}
+
+/// Represents the mapping of a file's contents to the physical storage backing it.
+#[derive(Debug, Clone)]
+pub struct FileExtent {
+    logical_offset: u64,
+    device_range: Range<u64>,
+}
+
+impl FileExtent {
+    pub fn new(logical_offset: u64, device_range: Range<u64>) -> Result<Self, Error> {
+        // Ensure `device_range` is valid.
+        let length = device_range.length()?;
+        // Ensure no overflow when we calculate the end of the logical range.
+        let _ = logical_offset.checked_add(length).ok_or(FxfsError::OutOfRange)?;
+        Ok(Self { logical_offset, device_range })
+    }
+}
+
+impl FileExtent {
+    pub fn length(&self) -> u64 {
+        // SAFETY: We verified that the device_range's length is valid in Self::new.
+        unsafe { self.device_range.unchecked_length() }
+    }
+
+    pub fn logical_offset(&self) -> u64 {
+        self.logical_offset
+    }
+
+    pub fn logical_range(&self) -> Range<u64> {
+        // SAFETY: We verified logical_offset plus device_range length won't overflow in Self::new.
+        unsafe { self.logical_offset..self.logical_offset.unchecked_add(self.length()) }
+    }
+
+    pub fn device_range(&self) -> &Range<u64> {
+        &self.device_range
+    }
 }
 
 #[derive(Debug)]
@@ -431,8 +468,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 (RootDigest::Sha512(tree.root().to_vec()), merkle_leaf_nodes)
             }
             _ => {
-                bail!(anyhow!(FxfsError::NotSupported)
-                    .context(format!("hash algorithm not supported")));
+                bail!(
+                    anyhow!(FxfsError::NotSupported)
+                        .context(format!("hash algorithm not supported"))
+                );
             }
         };
         if merkle_tree.len() > WRITE_ATTR_BATCH_SIZE {
@@ -1525,7 +1564,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
 
     /// Returns the set of file_offset->extent mappings for this file.
     /// This operation is potentially expensive and should generally be avoided.
-    pub async fn device_extents(&self) -> Result<Vec<(u64, Range<u64>)>, Error> {
+    pub async fn device_extents(&self) -> Result<Vec<FileExtent>, Error> {
         let mut extents = Vec::new();
         let tree = &self.store().tree;
         let layer_set = tree.layer_set();
@@ -1552,10 +1591,9 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     value: ObjectValue::Extent(ExtentValue::Some { device_offset, .. }),
                     ..
                 }) if *object_id == self.object_id() && *attribute_id == self.attribute_id() => {
-                    extents.push((
-                        range.start,
-                        *device_offset..*device_offset + range.length().unwrap(),
-                    ))
+                    let logical_offset = range.start;
+                    let device_range = *device_offset..*device_offset + range.length()?;
+                    extents.push(FileExtent::new(logical_offset, device_range)?);
                 }
                 _ => break,
             }
@@ -1576,7 +1614,11 @@ impl<S: HandleOwner> AssociatedObject for DataObjectHandle<S> {
                 item: ObjectItem { value: ObjectValue::VerifiedAttribute { size, .. }, .. },
                 ..
             }) => {
-                debug_assert_eq!(self.get_size(), *size, "VerifiedAttribute size should be set when verity is enabled and should not change");
+                debug_assert_eq!(
+                    self.get_size(),
+                    *size,
+                    "size should be set when verity is enabled and must not change"
+                );
                 self.finalize_fsverity_state()
             }
             Mutation::ObjectStore(ObjectStoreMutation {
@@ -1768,39 +1810,39 @@ mod tests {
         FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem, SyncOptions,
     };
     use crate::fsck::{
-        fsck, fsck_volume, fsck_volume_with_options, fsck_with_options, FsckOptions,
+        FsckOptions, fsck, fsck_volume, fsck_volume_with_options, fsck_with_options,
     };
-    use crate::lsm_tree::types::{ItemRef, LayerIterator};
     use crate::lsm_tree::Query;
+    use crate::lsm_tree::types::{ItemRef, LayerIterator};
     use crate::object_handle::{
         ObjectHandle, ObjectProperties, ReadObjectHandle, WriteObjectHandle,
     };
     use crate::object_store::data_object_handle::{OverwriteOptions, WRITE_ATTR_BATCH_SIZE};
     use crate::object_store::directory::replace_child;
     use crate::object_store::object_record::{ObjectKey, ObjectValue, Timestamp};
-    use crate::object_store::transaction::{lock_keys, Mutation, Options};
+    use crate::object_store::transaction::{Mutation, Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
         AttributeKey, DataObjectHandle, Directory, ExtentKey, ExtentMode, ExtentValue,
-        HandleOptions, LockKey, ObjectKeyData, ObjectStore, PosixAttributes,
-        FSVERITY_MERKLE_ATTRIBUTE_ID, NO_OWNER, TRANSACTION_MUTATION_THRESHOLD,
+        FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, LockKey, NO_OWNER, ObjectKeyData, ObjectStore,
+        PosixAttributes, TRANSACTION_MUTATION_THRESHOLD,
     };
     use crate::range::RangeExt;
     use crate::round::{round_down, round_up};
     use assert_matches::assert_matches;
     use bit_vec::BitVec;
     use fuchsia_sync::Mutex;
+    use futures::FutureExt;
     use futures::channel::oneshot::channel;
     use futures::stream::{FuturesUnordered, StreamExt};
-    use futures::FutureExt;
     use fxfs_crypto::{Crypt, KeyPurpose};
     use fxfs_insecure_crypto::InsecureCrypt;
     use mundane::hash::{Digest, Hasher, Sha256};
     use std::ops::Range;
     use std::sync::Arc;
     use std::time::Duration;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;

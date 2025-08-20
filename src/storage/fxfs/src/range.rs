@@ -3,17 +3,26 @@
 // found in the LICENSE file.
 
 use crate::errors::FxfsError;
-use anyhow::{ensure, Error};
+use anyhow::{Error, ensure};
 use std::fmt::Debug;
 use std::ops::{Range, Rem, Sub};
 
 pub trait RangeExt<T> {
     /// Returns whether the range is valid (i.e. start <= end).
     fn is_valid(&self) -> bool;
+
     /// Returns the length of the range, or an error if the range is `!RangeExt::is_valid()`.
     /// Since this is intended to be used primarily for possibly-untrusted serialized ranges, the
     /// error returned is FxfsError::Inconsistent.
     fn length(&self) -> Result<T, Error>;
+
+    /// Returns the length of the range.
+    ///
+    /// # Safety
+    ///
+    /// The range must be valid (i.e. [`RangeExt::is_valid()`] must be true).
+    unsafe fn unchecked_length(&self) -> T;
+
     /// Returns true if the range is aligned to the given block size.
     fn is_aligned(&self, block_size: impl Into<T>) -> bool;
 
@@ -30,10 +39,16 @@ impl<T: Sub<Output = T> + Copy + Ord + Debug + Rem<Output = T> + PartialEq + Def
     fn is_valid(&self) -> bool {
         self.start <= self.end
     }
+
     fn length(&self) -> Result<T, Error> {
         ensure!(self.is_valid(), FxfsError::Inconsistent);
         Ok(self.end - self.start)
     }
+
+    unsafe fn unchecked_length(&self) -> T {
+        self.end - self.start
+    }
+
     fn is_aligned(&self, block_size: impl Into<T>) -> bool {
         let bs = block_size.into();
         self.start % bs == T::default() && self.end % bs == T::default()
