@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::image_assembly_config_builder::{ImageAssemblyConfigBuilder, ValidationMode};
+use crate::image_assembly_config_builder::ImageAssemblyConfigBuilder;
+use assembly_cli_args::ValidationMode;
 
 use anyhow::{Context, Result, bail};
 use assembly_config_schema::developer_overrides::{DeveloperOnlyOptions, DeveloperOverrides};

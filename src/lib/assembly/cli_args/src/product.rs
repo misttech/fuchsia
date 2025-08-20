@@ -33,7 +33,7 @@ pub struct ProductArgs {
 
     /// disable validation of the assembly's packages
     #[argh(option)]
-    pub package_validation: Option<PackageValidationHandling>,
+    pub package_validation: Option<ValidationMode>,
 
     /// path to an AIB containing a customized kernel zbi to use instead of the
     /// one in the platform AIBs.
@@ -104,35 +104,40 @@ impl ProductArgs {
     }
 }
 
-/// PackageValidationHandling enum
-#[derive(Debug, Default, PartialEq)]
-pub enum PackageValidationHandling {
-    /// warning
-    Warning,
+/// How to validate the product.
+#[derive(Debug, Default, PartialEq, Clone, Copy)]
+pub enum ValidationMode {
+    /// Do not validate.
+    Off,
 
-    /// error
+    /// Validate everything, but print warnings instead of exiting.
+    WarnOnly,
+
+    /// Validate everything.
     #[default]
-    Error,
+    On,
 }
 
-impl fmt::Display for PackageValidationHandling {
+impl fmt::Display for ValidationMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PackageValidationHandling::Warning => write!(f, "warning"),
-            PackageValidationHandling::Error => write!(f, "error"),
+            ValidationMode::Off => write!(f, "off"),
+            ValidationMode::WarnOnly => write!(f, "warning"),
+            ValidationMode::On => write!(f, "error"),
         }
     }
 }
 
-impl FromStr for PackageValidationHandling {
+impl FromStr for ValidationMode {
     type Err = String;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s.as_ref() {
-            "warning" => Ok(PackageValidationHandling::Warning),
-            "error" => Ok(PackageValidationHandling::Error),
+        match s {
+            "off" => Ok(ValidationMode::Off),
+            "warning" => Ok(ValidationMode::WarnOnly),
+            "error" => Ok(ValidationMode::On),
             _ => Err(format!(
-                "Unknown handling for package validation, valid values are 'warning' and 'error' (the default): {}",
+                "Unknown handling for package validation, valid values are 'off', 'warning' and 'error' (the default): {}",
                 s
             )),
         }

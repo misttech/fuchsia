@@ -12,6 +12,7 @@ rustc_library("image_assembly_config_builder") {
   version = "0.1.0"
   with_unit_tests = true
   deps = [
+    "//src/lib/assembly/cli_args",
     "//src/lib/assembly/components",
     "//src/lib/assembly/config_capabilities",
     "//src/lib/assembly/config_data",

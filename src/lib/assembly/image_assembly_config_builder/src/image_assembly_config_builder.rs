@@ -5,6 +5,7 @@
 use crate::compiled_package::CompiledPackageBuilder;
 
 use anyhow::{Context, Result, anyhow, bail};
+use assembly_cli_args::ValidationMode;
 use assembly_config_data::ConfigDataBuilder;
 use assembly_config_schema::board_config::{BoardInputBundle, HardwareInfo};
 use assembly_config_schema::common::PackagedDriverDetails;
@@ -1374,18 +1375,6 @@ impl std::fmt::Display for KernelArg {
             f.write_str(&self.key)
         }
     }
-}
-
-/// How to validate the product.
-pub enum ValidationMode {
-    /// Do not validate.
-    Off,
-
-    /// Validate everything.
-    On,
-
-    /// Validate everything, but print warnings instead of exiting.
-    WarnOnly,
 }
 
 struct Validator;

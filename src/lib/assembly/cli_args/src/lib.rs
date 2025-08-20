@@ -13,4 +13,4 @@ mod create_system;
 mod product;
 
 pub use create_system::{CreateSystemArgs, CreateSystemOutputs};
-pub use product::{PackageValidationHandling, ProductArgs, ProductAssemblyOutputs};
+pub use product::{ProductArgs, ProductAssemblyOutputs, ValidationMode};

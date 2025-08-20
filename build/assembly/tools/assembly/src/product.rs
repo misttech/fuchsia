@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use assembly_cli_args::{PackageValidationHandling, ProductArgs};
+use assembly_cli_args::{ProductArgs, ValidationMode};
 use assembly_config_schema::developer_overrides::DeveloperOverrides;
 use assembly_config_schema::{BoardConfig, ProductConfig};
 use assembly_container::AssemblyContainer;
@@ -13,7 +13,7 @@ use assembly_tool::PlatformToolProvider;
 use assembly_util::read_config;
 use camino::Utf8PathBuf;
 use fuchsia_pkg::PackageManifest;
-use image_assembly_config_builder::{ProductAssembly, ValidationMode};
+use image_assembly_config_builder::ProductAssembly;
 use log::info;
 
 /// Product assembly
@@ -35,7 +35,7 @@ pub fn assemble(args: ProductArgs) -> Result<()> {
     info!("Reading configuration files.");
     info!("  product: {}", product);
 
-    if package_validation == Some(PackageValidationHandling::Warning) {
+    if package_validation == Some(ValidationMode::WarnOnly) {
         eprintln!(
             "
 *=========================================*
@@ -88,8 +88,8 @@ Resulting product is not supported and may misbehave!
     if let Some(path) = custom_boot_shim_aib {
         pa.set_boot_shim_aib(path)?;
     }
-    if package_validation == Some(PackageValidationHandling::Warning) {
-        pa.set_validation_mode(ValidationMode::WarnOnly);
+    if let Some(mode) = package_validation {
+        pa.set_validation_mode(mode);
     }
 
     //////////////////////
