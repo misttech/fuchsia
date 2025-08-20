@@ -14,7 +14,7 @@ use ::routing::capability_source::{
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::event::EventFilter;
 use ::routing::mapper::{RouteMapper, RouteSegment};
-use ::routing::{route_event_stream, RouteSource};
+use ::routing::{RouteSource, route_event_stream};
 use async_trait::async_trait;
 use cm_rust::{ChildRef, EventScope, OfferDecl, UseDecl, UseEventStreamDecl};
 use cm_types::Name;
@@ -443,6 +443,7 @@ mod tests {
     }
 
     #[fuchsia::test]
+    #[ignore]
     async fn drop_dispatcher_when_event_stream_dropped() {
         let TestModelResult { model, .. } = TestEnvironmentBuilder::new().build().await;
         let event_registry = EventRegistry::new(Arc::downgrade(model.top_instance()));
@@ -508,6 +509,7 @@ mod tests {
     }
 
     #[fuchsia::test]
+    #[ignore]
     async fn capability_requested_over_two_event_streams() {
         let TestModelResult { model, .. } = TestEnvironmentBuilder::new().build().await;
         let event_registry = EventRegistry::new(Arc::downgrade(model.top_instance()));

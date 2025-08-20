@@ -92,6 +92,7 @@ impl EventSource {
 
     /// Subscribe to `subscriptions`. If there is more than one `EventSubscription`, `EventStream`
     /// will preserve the component state machine's internal event order.
+    #[allow(unused)]
     pub async fn subscribe_on_demand(
         &mut self,
         subscriptions: Vec<EventSubscription>,

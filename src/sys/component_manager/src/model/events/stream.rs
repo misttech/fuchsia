@@ -68,6 +68,7 @@ impl EventStream {
     /// Waits for an event with a particular EventType against a component with a
     /// particular moniker. Ignores all other events.
     #[cfg(all(test, not(feature = "src_model_tests")))]
+    #[allow(unused)]
     pub async fn wait_until(
         &mut self,
         expected_event_type: EventType,

@@ -12,6 +12,9 @@ use crate::model::component::{
 use crate::model::context::ModelContext;
 use crate::model::environment::Environment;
 use crate::model::escrow::{self, EscrowedState};
+use crate::model::events::hook_observer::HookObserver;
+use crate::model::events::names_from_filter;
+use crate::model::events::use_router::EventStreamUseRouter;
 use crate::model::namespace::create_namespace;
 use crate::model::routing::aggregate_router::AggregateRouter;
 use crate::model::routing::legacy::RouteRequestExt;
@@ -21,11 +24,11 @@ use crate::model::storage::build_storage_admin_dictionary;
 use crate::model::token::{InstanceToken, InstanceTokenState};
 use crate::sandbox_util::RoutableExt;
 use ::routing::bedrock::program_output_dict::{
-    build_program_output_dictionary, ProgramOutputGenerator,
+    ProgramOutputGenerator, build_program_output_dictionary,
 };
-use ::routing::bedrock::request_metadata::Metadata;
+use ::routing::bedrock::request_metadata::{Metadata, event_stream_metadata};
 use ::routing::bedrock::sandbox_construction::{
-    self, build_component_sandbox, extend_dict_with_offers, ComponentSandbox,
+    self, ComponentSandbox, build_component_sandbox, extend_dict_with_offers,
 };
 use ::routing::bedrock::structured_dict::{ComponentInput, StructuredDictMap};
 use ::routing::capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
@@ -55,28 +58,30 @@ use errors::{
     CreateNamespaceError, DynamicCapabilityError, OpenError, OpenOutgoingDirError,
     ResolveActionError, StopError,
 };
-use fidl::endpoints::{create_proxy, ServerEnd};
+use fidl::endpoints::{ServerEnd, create_proxy};
 use flyweights::FlyStr;
+use futures::channel::mpsc;
 use futures::future::BoxFuture;
-use hooks::{CapabilityReceiver, EventPayload};
+use futures::lock::Mutex;
+use hooks::{CapabilityReceiver, EventPayload, EventType};
 use log::warn;
 use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use sandbox::{
-    Capability, Connector, Dict, DirConnector, DirEntry, RemotableCapability, Request, Routable,
-    Router, RouterResponse, WeakInstanceToken,
+    Capability, Connector, Data, Dict, DirConnector, DirEntry, RemotableCapability, Request,
+    Routable, Router, RouterResponse, WeakInstanceToken,
 };
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::{DirectoryEntry, OpenRequest, SubNode};
 use vfs::directory::immutable::simple as pfs;
 use vfs::execution_scope::ExecutionScope;
-use vfs::ToObjectRequest;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-    zx,
+    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_sandbox as fsandbox,
+    fidl_fuchsia_io as fio, fuchsia_async as fasync, zx,
 };
 
 /// The mutable state of a component instance.
@@ -310,6 +315,23 @@ pub struct ResolvedInstanceState {
     /// its outgoing directory server endpoint. Present if and only if the component
     /// has a program.
     program_escrow: Option<escrow::Actor>,
+
+    /// When this component is resolved, we want to immediately register a hook to catch capability
+    /// requested events. It's possible for capability requested events to trigger as soon as
+    /// resolution is complete, and if we don't properly handle those then the handles will fall
+    /// over to being delivered over the component's outgoing directory, which is incorrect if
+    /// there's a capability requested event stream configured.
+    ///
+    /// This field holds the hook implementor that watches for those capability requested events,
+    /// and the mpsc channel that buffers them. When the component starts and connects to its event
+    /// stream, the mpsc receiver is taken and drained.
+    ///
+    /// The keys here are the capability names the hook observer is watching for, and are derived
+    /// from the `filter` field in `UseEventStreamDecl`.
+    pub capability_requested_receivers: HashMap<
+        Vec<Name>,
+        (Arc<HookObserver>, Arc<Mutex<mpsc::UnboundedReceiver<fcomponent::Event>>>),
+    >,
 }
 
 /// Abbreviated equivalent to [ComponentAddress] that omits the actual url string.
@@ -405,6 +427,9 @@ impl ResolvedInstanceState {
             None
         };
 
+        let capability_requested_receivers =
+            Self::initialize_capability_requested_hooks(&component, &decl, &component_input).await;
+
         let mut state = Self {
             weak_component,
             execution_scope: component.execution_scope.clone(),
@@ -420,6 +445,7 @@ impl ResolvedInstanceState {
             address,
             sandbox: Default::default(),
             program_escrow,
+            capability_requested_receivers,
         };
         state.add_static_children(component).await?;
 
@@ -483,6 +509,7 @@ impl ResolvedInstanceState {
             declared_dictionaries,
             RoutingFailureErrorReporter::new(),
             &AggregateRouter::new,
+            &EventStreamUseRouter::new,
         );
         Self::extend_program_input_namespace_with_legacy(
             &component,
@@ -498,6 +525,73 @@ impl ResolvedInstanceState {
         state.sandbox = component_sandbox;
         state.populate_child_inputs(&state.sandbox.child_inputs).await;
         Ok(state)
+    }
+
+    async fn initialize_capability_requested_hooks(
+        component: &Arc<ComponentInstance>,
+        component_decl: &ComponentDecl,
+        component_input: &ComponentInput,
+    ) -> HashMap<
+        Vec<Name>,
+        (Arc<HookObserver>, Arc<Mutex<mpsc::UnboundedReceiver<fcomponent::Event>>>),
+    > {
+        let use_event_stream_decls = component_decl.uses.iter().filter_map(|use_| match use_ {
+            cm_rust::UseDecl::EventStream(use_event_stream_decl) => Some(use_event_stream_decl),
+            _ => None,
+        });
+        let mut capability_requested_receivers = HashMap::new();
+        for use_event_stream_decl in use_event_stream_decls {
+            let Some(Capability::DictionaryRouter(offered_router)) = component_input
+                .capabilities()
+                .get(&use_event_stream_decl.source_name)
+                .ok()
+                .flatten()
+            else {
+                continue;
+            };
+            let mut route_metadata = finternal::EventStreamRouteMetadata::default();
+            if let Some(scope) = &use_event_stream_decl.scope {
+                route_metadata.scope_moniker = Some(component.moniker().to_string());
+                route_metadata.scope = Some(scope.clone().native_into_fidl());
+            }
+            let metadata =
+                event_stream_metadata(use_event_stream_decl.availability, route_metadata);
+            let request = Request { metadata, target: component.as_weak().into() };
+            let Ok(RouterResponse::Capability(dictionary)) =
+                offered_router.route(Some(request), false).await
+            else {
+                continue;
+            };
+            let capability_name = match dictionary.get("event_stream_name") {
+                Ok(Some(Capability::Data(Data::String(name)))) => name,
+                other_value => {
+                    panic!("missing or unexpected value for event_stream_name: {:?}", other_value)
+                }
+            };
+            let event_type =
+                EventType::try_from(capability_name.to_string()).expect("invalid event type");
+            if event_type != EventType::CapabilityRequested {
+                continue;
+            }
+            let route_metadata: finternal::EventStreamRouteMetadata =
+                dictionary.get_metadata().expect("missing route metadata");
+            let Some(names) = names_from_filter(&use_event_stream_decl.filter) else {
+                continue;
+            };
+            let (sender, receiver) = futures::channel::mpsc::unbounded();
+            let receiver = Arc::new(futures::lock::Mutex::new(receiver));
+            let capability_requested_hook = Arc::new(HookObserver {
+                event_type: EventType::CapabilityRequested,
+                subscriber: component.moniker.clone(),
+                route_metadata,
+                sender,
+                weak_task_group: component.nonblocking_task_group().as_weak(),
+                filter: use_event_stream_decl.filter.clone(),
+            });
+            component.hooks.install(capability_requested_hook.hooks());
+            capability_requested_receivers.insert(names, (capability_requested_hook, receiver));
+        }
+        capability_requested_receivers
     }
 
     /// Creates a `ConnectorRouter` that requests the specified capability from the
@@ -806,11 +900,7 @@ impl ResolvedInstanceState {
         let mut paths = HashSet::new();
         iter.filter_map(move |use_decl| match use_decl {
             UseDecl::EventStream(ref event_stream) => {
-                if !paths.insert(event_stream.target_path.clone()) {
-                    None
-                } else {
-                    Some(use_decl)
-                }
+                if !paths.insert(event_stream.target_path.clone()) { None } else { Some(use_decl) }
             }
             _ => Some(use_decl),
         })

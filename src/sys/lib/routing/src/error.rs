@@ -222,7 +222,7 @@ pub enum RoutingError {
     CapabilityFromFrameworkNotFound { moniker: Moniker, capability_id: String },
 
     #[error(
-        "A capability was sourced to a base capability `{capability_id}` from `{moniker}`, but this is unsupported",
+        "A capability was sourced to a base capability `{capability_id}` from `{moniker}`, but this is unsupported"
     )]
     CapabilityFromCapabilityNotFound { moniker: Moniker, capability_id: String },
 
@@ -283,10 +283,14 @@ pub enum RoutingError {
     #[error("item `{name}` is not present in dictionary at component `{moniker}`")]
     BedrockNotPresentInDictionary { name: String, moniker: ExtendedMoniker },
 
-    #[error("routed capability was the wrong type at component `{moniker}`. Was: {actual}, expected: {expected}")]
+    #[error(
+        "routed capability was the wrong type at component `{moniker}`. Was: {actual}, expected: {expected}"
+    )]
     BedrockWrongCapabilityType { actual: String, expected: String, moniker: ExtendedMoniker },
 
-    #[error("expected type {type_name} for routed capability at component `{moniker}`, but type was missing")]
+    #[error(
+        "expected type {type_name} for routed capability at component `{moniker}`, but type was missing"
+    )]
     BedrockMissingCapabilityType { type_name: String, moniker: ExtendedMoniker },
 
     #[error("there was an error remoting a capability at component `{moniker}`")]
@@ -307,7 +311,9 @@ pub enum RoutingError {
     #[error("failed to send message for capability `{capability_id}` from component `{moniker}`")]
     BedrockFailedToSend { moniker: ExtendedMoniker, capability_id: String },
 
-    #[error("failed to route capability because the route source has been shutdown and possibly destroyed")]
+    #[error(
+        "failed to route capability because the route source has been shutdown and possibly destroyed"
+    )]
     RouteSourceShutdown { moniker: Moniker },
 
     #[error(transparent)]
@@ -733,7 +739,9 @@ pub enum RightsRoutingError {
     )]
     Invalid { moniker: ExtendedMoniker, requested: Rights, provided: Rights },
 
-    #[error("directory routes must end at source with a rights declaration, it's missing at \"{moniker}\"")]
+    #[error(
+        "directory routes must end at source with a rights declaration, it's missing at \"{moniker}\""
+    )]
     MissingRightsSource { moniker: ExtendedMoniker },
 }
 
@@ -834,6 +842,16 @@ impl From<&cm_rust::UseConfigurationDecl> for RouteRequestErrorInfo {
             capability_type: CapabilityTypeName::Config,
             name: value.source_name().clone(),
             availability: value.availability().clone(),
+        }
+    }
+}
+
+impl From<&cm_rust::UseEventStreamDecl> for RouteRequestErrorInfo {
+    fn from(value: &cm_rust::UseEventStreamDecl) -> Self {
+        RouteRequestErrorInfo {
+            capability_type: CapabilityTypeName::EventStream,
+            name: value.source_name.clone(),
+            availability: value.availability,
         }
     }
 }

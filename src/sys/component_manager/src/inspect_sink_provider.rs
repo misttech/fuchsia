@@ -10,7 +10,7 @@ use fuchsia_async::TaskGroup;
 use fuchsia_inspect::Inspector;
 use fuchsia_sync::Mutex;
 use hooks::{CapabilityReceiver, Event, EventPayload};
-use inspect_runtime::{publish, PublishOptions};
+use inspect_runtime::{PublishOptions, publish};
 use moniker::Moniker;
 use routing::event::EventFilter;
 use sandbox::Message;
@@ -30,6 +30,7 @@ impl InspectSinkProvider {
         Self { inspect_tree_server_tasks: Mutex::new(TaskGroup::new()), inspector }
     }
 
+    #[allow(unused)]
     pub fn inspector(&self) -> &Inspector {
         &self.inspector
     }

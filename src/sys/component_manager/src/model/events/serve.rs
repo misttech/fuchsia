@@ -10,7 +10,7 @@ use cm_types::{BorrowedLongName, BorrowedName};
 use cm_util::io::clone_dir;
 use fidl::endpoints::Proxy;
 use futures::stream::Peekable;
-use futures::{stream, Stream, StreamExt};
+use futures::{Stream, StreamExt, stream};
 use hooks::{CapabilityReceiver, EventPayload, EventType, HasEventType};
 use log::{error, warn};
 use measure_tape_for_events::Measurable;
@@ -167,11 +167,7 @@ pub fn validate_and_filter_event(
     route: &[ComponentEventRoute],
 ) -> bool {
     let needs_filter = route.iter().any(|component| component.scope.is_some());
-    if needs_filter {
-        filter_event(moniker, route)
-    } else {
-        true
-    }
+    if needs_filter { filter_event(moniker, route) } else { true }
 }
 
 /// [`EventFiller`] helps build a vector of events up to the Zircon
@@ -448,9 +444,9 @@ fn create_event_fidl_objects(event: Event) -> BoxStream<Result<fcomponent::Event
             target.strip_prefix(scope).expect("target must be a child of event scope").to_string()
         }
     };
-    let event_type = event.event.event_type().into();
+    let event_type = event.event.event_type();
     let header = fcomponent::EventHeader {
-        event_type: Some(event_type),
+        event_type: Some(event_type.into()),
         moniker: Some(moniker_string),
         component_url: Some(event.event.component_url.to_string()),
         timestamp: Some(event.event.timestamp),
@@ -474,7 +470,7 @@ fn create_event_fidl_objects(event: Event) -> BoxStream<Result<fcomponent::Event
 
 #[cfg(all(test, not(feature = "src_model_tests")))]
 mod tests {
-    use crate::model::events::serve::{validate_and_filter_event, ComponentEventRoute};
+    use crate::model::events::serve::{ComponentEventRoute, validate_and_filter_event};
     use cm_rust::{ChildRef, EventScope};
     use moniker::{ChildName, ExtendedMoniker, Moniker};
 

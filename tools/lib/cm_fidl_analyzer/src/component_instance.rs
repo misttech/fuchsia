@@ -4,9 +4,9 @@
 
 use crate::component_model::{BuildAnalyzerModelError, Child, DynamicDictionaryConfig};
 use crate::component_sandbox::{
-    build_capability_sourced_capabilities_dictionary, build_framework_router,
-    build_root_component_input, new_aggregate_router,
-    static_children_component_output_dictionary_routers, ProgramOutputGenerator,
+    ProgramOutputGenerator, build_capability_sourced_capabilities_dictionary,
+    build_framework_router, build_root_component_input, new_aggregate_router,
+    new_event_stream_multiplexing_router, static_children_component_output_dictionary_routers,
 };
 use crate::environment::EnvironmentForAnalyzer;
 use async_trait::async_trait;
@@ -17,7 +17,7 @@ use config_encoder::ConfigFields;
 use moniker::{BorrowedChildName, ChildName, Moniker};
 use router_error::RouterError;
 use routing::bedrock::program_output_dict::build_program_output_dictionary;
-use routing::bedrock::sandbox_construction::{build_component_sandbox, ComponentSandbox};
+use routing::bedrock::sandbox_construction::{ComponentSandbox, build_component_sandbox};
 use routing::bedrock::structured_dict::ComponentInput;
 use routing::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use routing::component_instance::{
@@ -194,6 +194,7 @@ impl ComponentInstanceForAnalyzer {
             declared_dictionaries,
             NullErrorReporter {},
             &new_aggregate_router,
+            &new_event_stream_multiplexing_router,
         );
         self_.sandbox.append(&sandbox);
         self_

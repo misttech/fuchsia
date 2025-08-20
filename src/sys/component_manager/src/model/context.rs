@@ -11,6 +11,7 @@ use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::policy::GlobalPolicyChecker;
 use cm_config::{AbiRevisionPolicy, RuntimeConfig};
 use errors::ModelError;
+use fuchsia_inspect::Inspector;
 use fuchsia_sync::Mutex;
 use moniker::Moniker;
 use std::collections::HashMap;
@@ -31,8 +32,8 @@ pub struct ModelContext {
     pub scope_factory: Box<dyn Fn() -> ExecutionScope + Send + Sync + 'static>,
     remote_capabilities: Arc<Mutex<RemotedRuntimeCapabilities>>,
     #[cfg(test)]
-    pub extra_framework_capabilities:
-        std::sync::Mutex<HashMap<cm_types::Name, sandbox::Capability>>,
+    pub extra_framework_capabilities: Mutex<HashMap<cm_types::Name, sandbox::Capability>>,
+    inspector: Inspector,
 }
 
 impl ModelContext {
@@ -41,6 +42,7 @@ impl ModelContext {
     pub fn new(
         runtime_config: Arc<RuntimeConfig>,
         instance_registry: Arc<InstanceRegistry>,
+        inspector: Inspector,
         #[cfg(test)] scope_factory: Option<Box<dyn Fn() -> ExecutionScope + Send + Sync + 'static>>,
     ) -> Result<Self, ModelError> {
         #[cfg(not(test))]
@@ -61,7 +63,8 @@ impl ModelContext {
             scope_factory,
             remote_capabilities: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(test)]
-            extra_framework_capabilities: std::sync::Mutex::new(HashMap::new()),
+            extra_framework_capabilities: Mutex::new(HashMap::new()),
+            inspector,
         })
     }
 
@@ -69,7 +72,11 @@ impl ModelContext {
     pub fn new_for_test() -> Self {
         let runtime_config = Arc::new(RuntimeConfig::default());
         let instance_registry = InstanceRegistry::new();
-        Self::new(runtime_config, instance_registry, None).unwrap()
+        let inspector = fuchsia_inspect::component::init_inspector_with_size(
+            crate::builtin_environment::INSPECTOR_SIZE,
+        )
+        .clone();
+        Self::new(runtime_config, instance_registry, inspector, None).unwrap()
     }
 
     /// Returns the runtime policy checker for the model.
@@ -97,6 +104,10 @@ impl ModelContext {
         &self.remote_capabilities
     }
 
+    pub fn inspector(&self) -> &Inspector {
+        &self.inspector
+    }
+
     pub async fn init_internal_capabilities(
         &self,
         b: Vec<Box<dyn BuiltinCapability>>,
@@ -120,7 +131,7 @@ impl ModelContext {
         name: impl Into<String>,
         capability: impl Into<sandbox::Capability>,
     ) {
-        let mut framework_capabilities = self.extra_framework_capabilities.lock().unwrap();
+        let mut framework_capabilities = self.extra_framework_capabilities.lock();
         framework_capabilities.insert(cm_types::Name::new(name.into()).unwrap(), capability.into());
     }
 

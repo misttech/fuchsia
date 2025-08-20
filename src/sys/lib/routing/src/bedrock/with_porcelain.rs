@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::bedrock::request_metadata::{
-    InheritRights, IntermediateRights, Metadata, METADATA_KEY_TYPE,
+    InheritRights, IntermediateRights, METADATA_KEY_TYPE, Metadata,
 };
 use crate::component_instance::{ComponentInstanceInterface, WeakExtendedInstanceInterface};
 use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
@@ -13,13 +13,13 @@ use crate::walk_state::WalkStateUnit;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
 use cm_types::{Availability, Name};
-use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use sandbox::{Capability, CapabilityBound, Data, Dict, Request, Routable, Router, RouterResponse};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
+use {fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_sandbox as fsandbox};
 
 struct PorcelainRouter<T: CapabilityBound, R, C: ComponentInstanceInterface, const D: bool> {
     router: Router<T>,
@@ -28,18 +28,15 @@ struct PorcelainRouter<T: CapabilityBound, R, C: ComponentInstanceInterface, con
     rights: Option<Rights>,
     subdir: Option<SubDir>,
     inherit_rights: Option<bool>,
+    event_stream_route_metadata: Option<finternal::EventStreamRouteMetadata>,
     target: WeakExtendedInstanceInterface<C>,
     route_request: RouteRequestErrorInfo,
     error_reporter: R,
 }
 
 #[async_trait]
-impl<
-        T: CapabilityBound,
-        R: ErrorReporter,
-        C: ComponentInstanceInterface + 'static,
-        const D: bool,
-    > Routable<T> for PorcelainRouter<T, R, C, D>
+impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'static, const D: bool>
+    Routable<T> for PorcelainRouter<T, R, C, D>
 {
     async fn route(
         &self,
@@ -58,12 +55,8 @@ impl<
     }
 }
 
-impl<
-        T: CapabilityBound,
-        R: ErrorReporter,
-        C: ComponentInstanceInterface + 'static,
-        const D: bool,
-    > PorcelainRouter<T, R, C, D>
+impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'static, const D: bool>
+    PorcelainRouter<T, R, C, D>
 {
     #[inline]
     async fn do_route(
@@ -79,6 +72,7 @@ impl<
             rights,
             subdir,
             inherit_rights,
+            event_stream_route_metadata,
             target,
             route_request: _,
             error_reporter: _,
@@ -103,6 +97,9 @@ impl<
             if let Some(inherit_rights) = inherit_rights {
                 metadata.set_metadata(InheritRights(*inherit_rights));
             }
+            if let Some(esrm) = event_stream_route_metadata.as_ref() {
+                metadata.set_metadata(esrm.clone());
+            }
             Request { target: target.clone().into(), metadata }
         };
 
@@ -116,6 +113,19 @@ impl<
         check_and_compute_rights(&moniker, &request, &rights)?;
         if let Some(new_subdir) = check_and_compute_subdir(&moniker, &request, &subdir)? {
             request.metadata.set_metadata(new_subdir);
+        }
+        if let Some(esrm) = event_stream_route_metadata.as_ref() {
+            let mut route_metadata: finternal::EventStreamRouteMetadata = request
+                .metadata
+                .get_metadata()
+                .expect("missing event stream route request metadata");
+            // If the scope is already set then it's a smaller scope (because we can't expose these),
+            // so only set our scope if the request doesn't have one yet.
+            if route_metadata.scope.is_none() && esrm.scope.is_some() {
+                route_metadata.scope_moniker = Some(esrm.scope_moniker.clone().unwrap());
+                route_metadata.scope = Some(esrm.scope.clone().unwrap());
+                request.metadata.set_metadata(route_metadata);
+            }
         }
 
         // Everything checks out, forward the request.
@@ -252,17 +262,14 @@ pub struct PorcelainBuilder<
     rights: Option<Rights>,
     subdir: Option<SubDir>,
     inherit_rights: Option<bool>,
+    event_stream_route_metadata: Option<finternal::EventStreamRouteMetadata>,
     target: Option<WeakExtendedInstanceInterface<C>>,
     error_info: Option<RouteRequestErrorInfo>,
     error_reporter: Option<R>,
 }
 
-impl<
-        T: CapabilityBound,
-        R: ErrorReporter,
-        C: ComponentInstanceInterface + 'static,
-        const D: bool,
-    > PorcelainBuilder<T, R, C, D>
+impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'static, const D: bool>
+    PorcelainBuilder<T, R, C, D>
 {
     fn new(router: Router<T>, porcelain_type: CapabilityTypeName) -> Self {
         Self {
@@ -272,6 +279,7 @@ impl<
             rights: None,
             subdir: None,
             inherit_rights: None,
+            event_stream_route_metadata: None,
             target: None,
             error_info: None,
             error_reporter: None,
@@ -297,6 +305,14 @@ impl<
 
     pub fn inherit_rights(mut self, inherit_rights: bool) -> Self {
         self.inherit_rights = Some(inherit_rights);
+        self
+    }
+
+    pub fn event_stream_route_metadata(
+        mut self,
+        esrm: finternal::EventStreamRouteMetadata,
+    ) -> Self {
+        self.event_stream_route_metadata = Some(esrm);
         self
     }
 
@@ -342,6 +358,7 @@ impl<
             rights: self.rights,
             subdir: self.subdir,
             inherit_rights: self.inherit_rights,
+            event_stream_route_metadata: self.event_stream_route_metadata,
             target: self.target.expect("must set target"),
             route_request: self.error_info.expect("must set route_request"),
             error_reporter: self.error_reporter.expect("must set error_reporter"),
@@ -349,12 +366,8 @@ impl<
     }
 }
 
-impl<
-        R: ErrorReporter,
-        T: CapabilityBound,
-        C: ComponentInstanceInterface + 'static,
-        const D: bool,
-    > From<PorcelainBuilder<T, R, C, D>> for Capability
+impl<R: ErrorReporter, T: CapabilityBound, C: ComponentInstanceInterface + 'static, const D: bool>
+    From<PorcelainBuilder<T, R, C, D>> for Capability
 where
     Router<T>: Into<Capability>,
 {
@@ -447,7 +460,7 @@ mod tests {
     use crate::component_instance::{ExtendedInstanceInterface, TopInstanceInterface};
     use crate::error::ComponentInstanceError;
     use crate::policy::GlobalPolicyChecker;
-    use crate::{environment, ResolvedInstanceInterface};
+    use crate::{ResolvedInstanceInterface, environment};
     use assert_matches::assert_matches;
     use cm_rust_testing::UseBuilder;
     use cm_types::Url;

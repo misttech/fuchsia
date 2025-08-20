@@ -19,13 +19,13 @@ use crate::builtin::fuchsia_boot_resolver::{
 use crate::builtin::log::{ReadOnlyLog, WriteOnlyLog};
 use crate::builtin::ota_health_verification::OtaHealthVerification;
 use crate::builtin::realm_builder::{
-    RealmBuilderResolver, RealmBuilderRunnerFactory, RUNNER_NAME as REALM_BUILDER_RUNNER_NAME,
+    RUNNER_NAME as REALM_BUILDER_RUNNER_NAME, RealmBuilderResolver, RealmBuilderRunnerFactory,
     SCHEME as REALM_BUILDER_SCHEME,
 };
 use crate::builtin::runner::{BuiltinRunner, BuiltinRunnerFactory};
 use crate::builtin::svc_stash_provider::SvcStashCapability;
 use crate::builtin::system_controller::SystemController;
-use crate::builtin::time::{create_utc_clock, UtcInstantMaintainer};
+use crate::builtin::time::{UtcInstantMaintainer, create_utc_clock};
 use crate::capability::{self, BuiltinCapability, FrameworkCapability};
 use crate::framework::binder::BinderFrameworkCapability;
 use crate::framework::capability_store::CapabilityStore;
@@ -42,21 +42,22 @@ use crate::model::component::manager::ComponentManagerInstance;
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::environment::Environment;
 use crate::model::event_logger::EventLogger;
-use crate::model::events::registry::{EventRegistry, EventSubscription};
-use crate::model::events::serve::serve_event_stream;
+use crate::model::events::registry::EventRegistry;
 use crate::model::events::source_factory::{EventSourceFactory, EventSourceFactoryCapability};
 use crate::model::events::stream_provider::EventStreamProvider;
+use crate::model::events::use_router::EventStreamUseRouter;
 use crate::model::model::{Model, ModelParams};
 use crate::model::resolver::{Resolver, ResolverRegistry};
 use crate::model::routing::RoutingFailureErrorReporter;
 use crate::model::token::InstanceRegistry;
 use crate::root_stop_notifier::RootStopNotifier;
-use crate::sandbox_util::{take_handle_as_stream, LaunchTaskOnReceive};
+use crate::sandbox_util::{LaunchTaskOnReceive, take_handle_as_stream};
 use ::diagnostics::lifecycle::ComponentLifecycleTimeStats;
 use ::diagnostics::task_metrics::ComponentTreeStats;
 use ::router_error::RouterError;
 use ::routing::bedrock::dict_ext::DictExt;
-use ::routing::bedrock::request_metadata::Metadata;
+use ::routing::bedrock::request_metadata::{Metadata, event_stream_metadata};
+use ::routing::bedrock::sandbox_construction::EventStreamSourceRouter;
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::bedrock::with_porcelain::WithPorcelain;
 use ::routing::capability_source::{
@@ -66,7 +67,7 @@ use ::routing::component_instance::{ComponentInstanceInterface, TopInstanceInter
 use ::routing::environment::{DebugRegistry, RunnerRegistry};
 use ::routing::error::{ErrorReporter, RouteRequestErrorInfo};
 use ::routing::policy::{GlobalPolicyChecker, ScopedPolicyChecker};
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use async_trait::async_trait;
 use builtins::arguments::Arguments as BootArguments;
 use builtins::cpu_resource::CpuResource;
@@ -90,9 +91,7 @@ use builtins::stall_resource::StallResource;
 use builtins::tracing_resource::TracingResource;
 use builtins::vmex_resource::VmexResource;
 use cm_config::{RuntimeConfig, SecurityPolicy, VmexSource};
-use cm_rust::{
-    Availability, CapabilityTypeName, RunnerRegistration, UseEventStreamDecl, UseSource,
-};
+use cm_rust::{Availability, CapabilityTypeName, RunnerRegistration};
 use cm_types::{Name, RelativePath, Url};
 use cm_util::WeakTaskGroup;
 use elf_runner::crash_info::CrashRecords;
@@ -104,27 +103,27 @@ use fidl_fuchsia_component_runner::Task as DiagnosticsTask;
 use fuchsia_component::server::*;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::stats::InspectorExt;
-use fuchsia_inspect::{component, Inspector};
-use fuchsia_runtime::{take_startup_handle, HandleInfo, HandleType, UtcClock};
+use fuchsia_inspect::{Inspector, component};
+use fuchsia_runtime::{HandleInfo, HandleType, UtcClock, take_startup_handle};
 use fuchsia_zbi::{ZbiParser, ZbiType};
 use futures::future::{self, BoxFuture};
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use hooks::EventType;
 use log::{error, info, warn};
 use routing::resolving::ComponentAddress;
-use sandbox::{DirConnector, Router, RouterResponse};
+use sandbox::{Capability, Data, DirConnector, Message, Request, Router, RouterResponse};
 use std::sync::Arc;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path;
-use vfs::ToObjectRequest;
 use zx::{self, Resource};
 use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_component_resolution as fresolution,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
-    fidl_fuchsia_kernel as fkernel, fidl_fuchsia_pkg as fpkg, fidl_fuchsia_process as fprocess,
-    fidl_fuchsia_sys2 as fsys, fidl_fuchsia_time as ftime, fidl_fuchsia_update_verify as fupdate,
-    fuchsia_async as fasync,
+    fidl_fuchsia_boot as fboot, fidl_fuchsia_component as fcomponent,
+    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_sandbox as fsandbox,
+    fidl_fuchsia_io as fio, fidl_fuchsia_kernel as fkernel, fidl_fuchsia_pkg as fpkg,
+    fidl_fuchsia_process as fprocess, fidl_fuchsia_sys2 as fsys, fidl_fuchsia_time as ftime,
+    fidl_fuchsia_update_verify as fupdate, fuchsia_async as fasync,
 };
 
 #[cfg(feature = "tracing")]
@@ -140,7 +139,7 @@ pub static SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_sec
 
 // LINT.IfChange
 /// Set the size of the inspect VMO to be 350 KiB.
-const INSPECTOR_SIZE: usize = 350 * 1024;
+pub const INSPECTOR_SIZE: usize = 350 * 1024;
 // LINT.ThenChange(/src/tests/diagnostics/meta/component_manager_status_tests.cml)
 
 pub struct BuiltinEnvironmentBuilder {
@@ -325,7 +324,9 @@ impl BuiltinEnvironmentBuilder {
                     match request {
                         UserbootRequest::PostStashSvc { stash_svc_endpoint, control_handle: _ } => {
                             if svc_stash_provider.is_some() {
-                                warn!("Expected at most a single SvcStash, but more were found. Last entry will be preserved.");
+                                warn!(
+                                    "Expected at most a single SvcStash, but more were found. Last entry will be preserved."
+                                );
                             }
                             svc_stash_provider =
                                 Some(SvcStashCapability::new(stash_svc_endpoint.into_channel()));
@@ -443,6 +444,9 @@ impl BuiltinEnvironmentBuilder {
             runtime_config: Arc::clone(&runtime_config),
             top_instance,
             instance_registry: self.instance_registry,
+            inspector: self
+                .inspector
+                .unwrap_or_else(|| component::init_inspector_with_size(INSPECTOR_SIZE).clone()),
             #[cfg(test)]
             scope_factory: self.scope_factory,
         };
@@ -465,8 +469,6 @@ impl BuiltinEnvironmentBuilder {
             boot_resolvers,
             realm_builder_resolver,
             self.utc_clock,
-            self.inspector
-                .unwrap_or_else(|| component::init_inspector_with_size(INSPECTOR_SIZE).clone()),
             self.crash_records,
             capability_passthrough,
             svc_stash_provider,
@@ -506,9 +508,9 @@ impl RootComponentInputBuilder {
     fn add_builtin_protocol_if_enabled<P>(
         &mut self,
         task_to_launch: impl Fn(P::RequestStream) -> BoxFuture<'static, Result<(), anyhow::Error>>
-            + Sync
-            + Send
-            + 'static,
+        + Sync
+        + Send
+        + 'static,
     ) where
         P: DiscoverableProtocolMarker + ProtocolMarker,
     {
@@ -525,9 +527,9 @@ impl RootComponentInputBuilder {
         &mut self,
         name: cm_types::Name,
         task_to_launch: impl Fn(P::RequestStream) -> BoxFuture<'static, Result<(), anyhow::Error>>
-            + Sync
-            + Send
-            + 'static,
+        + Sync
+        + Send
+        + 'static,
     ) where
         P: DiscoverableProtocolMarker + ProtocolMarker,
     {
@@ -872,6 +874,37 @@ impl RootComponentInputBuilder {
         }
     }
 
+    fn add_event_stream_capabilities(&self) {
+        for event_type in EventType::values() {
+            let router = Router::new(move |request: Option<sandbox::Request>, debug| {
+                async move {
+                    if debug {
+                        let name = Name::new(event_type.as_str()).unwrap();
+                        let capability_source = CapabilitySource::Builtin(BuiltinSource {
+                            capability: InternalCapability::EventStream(name),
+                        });
+                        return Ok(RouterResponse::Debug(capability_source.try_into().unwrap()));
+                    }
+                    let request = request.expect("missing request on event stream route");
+                    let request_metadata = request.metadata;
+                    let _ = request_metadata.insert(
+                        Name::new("event_stream_name").unwrap(),
+                        Capability::Data(Data::String(event_type.to_string().into())),
+                    );
+                    Ok(RouterResponse::Capability(request_metadata))
+                }
+                .boxed()
+            });
+            let name = Name::new(event_type.as_str()).unwrap();
+            if let Err(e) = self.input.capabilities().insert_capability(&name, router.into()) {
+                warn!(
+                    "failed to add event_stream {} to root component offered capabilities: {e:?}",
+                    name
+                );
+            }
+        }
+    }
+
     pub fn build(self) -> ComponentInput {
         self.input
     }
@@ -907,7 +940,6 @@ pub struct BuiltinEnvironment {
     // TODO(https://fxbug.dev/332389972): Remove or explain #[allow(dead_code)].
     #[allow(dead_code)]
     pub event_registry: Arc<EventRegistry>,
-    pub event_source_factory: Arc<EventSourceFactory>,
     pub capability_store: CapabilityStore,
     pub stop_notifier: Arc<RootStopNotifier>,
     // TODO(https://fxbug.dev/332389972): Remove or explain #[allow(dead_code)].
@@ -949,7 +981,6 @@ impl BuiltinEnvironment {
         boot_resolvers: Option<(FuchsiaBootResolver, Option<Arc<FuchsiaBootPackageResolver>>)>,
         realm_builder_resolver: Option<RealmBuilderResolver>,
         utc_clock: Option<Arc<UtcClock>>,
-        inspector: Inspector,
         crash_records: CrashRecords,
         capability_passthrough: bool,
         svc_stash_provider: Option<Arc<SvcStashCapability>>,
@@ -1535,8 +1566,10 @@ impl BuiltinEnvironment {
             },
         );
 
+        root_input_builder.add_event_stream_capabilities();
+
         // Set up the Inspect sink provider.
-        let inspect_sink_provider = Arc::new(InspectSinkProvider::new(inspector));
+        let inspect_sink_provider = Arc::new(InspectSinkProvider::new(params.inspector.clone()));
 
         // Set up OtaHealthVerification service.
         let ota_health_verification_svc = OtaHealthVerification::new(
@@ -1672,7 +1705,7 @@ impl BuiltinEnvironment {
             .await;
 
         // Set up the Component Tree Diagnostics runtime statistics.
-        let inspector = inspect_sink_provider.inspector();
+        let inspector = model.context().inspector();
         let component_tree_stats = ComponentTreeStats::new(inspector.root().create_child("stats"));
         component_tree_stats.track_component_manager_stats();
         component_tree_stats.start_measuring();
@@ -1702,7 +1735,6 @@ impl BuiltinEnvironment {
             realm_query,
             lifecycle_controller,
             event_registry,
-            event_source_factory,
             capability_store,
             stop_notifier,
             inspect_sink_provider,
@@ -1775,84 +1807,62 @@ impl BuiltinEnvironment {
         // If component manager is in debug mode, create an event source scoped at the
         // root and offer it via ServiceFs to the outside world.
         if self.debug {
-            let event_source = self.event_source_factory.create_for_above_root();
+            let weak_root_component = self.model.root().as_weak();
 
-            service_fs.dir("svc").add_fidl_service(move |stream| {
-                let mut event_source = event_source.clone();
-                // Spawn a short-lived task that adds the EventSource serve to
-                // component manager's task scope.
+            service_fs.dir("svc").add_service_connector(move |server_end: ServerEnd<fcomponent::EventStreamMarker>| {
+                let weak_root_component = weak_root_component.clone();
+                let Ok(root_component) = weak_root_component.upgrade() else {
+                    // If the root component doesn't exist, then we must be at the end of tearing
+                    // down the world. Let's just drop the connection, it'll be closed in a moment
+                    // regardless of what we do.
+                    return;
+                };
                 fasync::Task::spawn(async move {
-                    serve_event_stream(
-                        event_source
-                            .subscribe_on_demand(vec![
-                                EventSubscription {
-                                    event_name: UseEventStreamDecl {
-                                        source_name: EventType::Started.into(),
-                                        source: UseSource::Parent,
-                                        scope: None,
-                                        target_path: "/svc/fuchsia.component.EventStream"
-                                            .parse()
-                                            .unwrap(),
-                                        filter: None,
-                                        availability: Availability::Required,
-                                    },
-                                },
-                                EventSubscription {
-                                    event_name: UseEventStreamDecl {
-                                        source_name: EventType::Stopped.into(),
-                                        source: UseSource::Parent,
-                                        scope: None,
-                                        target_path: "/svc/fuchsia.component.EventStream"
-                                            .parse()
-                                            .unwrap(),
-                                        filter: None,
-                                        availability: Availability::Required,
-                                    },
-                                },
-                                EventSubscription {
-                                    event_name: UseEventStreamDecl {
-                                        source_name: EventType::Destroyed.into(),
-                                        source: UseSource::Parent,
-                                        scope: None,
-                                        target_path: "/svc/fuchsia.component.EventStream"
-                                            .parse()
-                                            .unwrap(),
-                                        filter: None,
-                                        availability: Availability::Required,
-                                    },
-                                },
-                                EventSubscription {
-                                    event_name: UseEventStreamDecl {
-                                        source_name: EventType::Resolved.into(),
-                                        source: UseSource::Parent,
-                                        scope: None,
-                                        target_path: "/svc/fuchsia.component.EventStream"
-                                            .parse()
-                                            .unwrap(),
-                                        filter: None,
-                                        availability: Availability::Required,
-                                    },
-                                },
-                                EventSubscription {
-                                    event_name: UseEventStreamDecl {
-                                        source_name: EventType::Unresolved.into(),
-                                        source: UseSource::Parent,
-                                        scope: None,
-                                        target_path: "/svc/fuchsia.component.EventStream"
-                                            .parse()
-                                            .unwrap(),
-                                        filter: None,
-                                        availability: Availability::Required,
-                                    },
-                                },
-                            ])
-                            .await
-                            .unwrap(),
-                        stream,
-                    )
-                    .await;
-                })
-                .detach();
+                    let root_sandbox = {
+                        let Ok(resolved_state) = root_component.lock_resolved_state().await else {
+                            return;
+                        };
+                        resolved_state.sandbox.clone()
+                    };
+                    let event_types_to_expose = [
+                        EventType::Started,
+                        EventType::Stopped,
+                        EventType::Destroyed,
+                        EventType::Resolved,
+                        EventType::Unresolved,
+                    ];
+                    let source_routes = event_types_to_expose.iter().map(|event_type| {
+                        let capability = root_sandbox
+                            .component_input
+                            .capabilities()
+                            .get(event_type.as_str())
+                            .ok()
+                            .flatten()
+                            .expect("root component input sandbox should always have all event \
+                                    stream types");
+                        let router = match capability {
+                            Capability::DictionaryRouter(router) => router,
+                            other_type => panic!("unexpected capability type: {:?}", other_type),
+                        };
+                        EventStreamSourceRouter {
+                            router,
+                            filter: None,
+                        }
+                    }).collect::<Vec<_>>();
+                    let use_router = EventStreamUseRouter::new(
+                        &root_component,
+                        source_routes,
+                    );
+
+                    let metadata = event_stream_metadata(cm_rust::Availability::Required, Default::default());
+                    let request = Request { metadata, target: weak_root_component.into() };
+
+                    let connector = match use_router.route(Some(request), false).await {
+                        Ok(RouterResponse::Capability(connector)) => connector,
+                        other_response => panic!("event stream routing from root should always succeed, instead we got {:?}", other_response),
+                    };
+                    let _ = connector.send(Message { channel: server_end.into_channel() });
+                }).detach();
             });
         }
 

@@ -144,6 +144,7 @@ mod tests {
     use cm_types::Name;
     use errors::{ActionError, ModelError, ResolveActionError};
     use fidl_fuchsia_component as fcomponent;
+    use fuchsia_inspect::component;
     use maplit::hashmap;
     use moniker::Moniker;
     use std::collections::{HashMap, HashSet};
@@ -246,6 +247,10 @@ mod tests {
                     ),
                     top_instance,
                     instance_registry: InstanceRegistry::new(),
+                    inspector: component::init_inspector_with_size(
+                        crate::builtin_environment::INSPECTOR_SIZE,
+                    )
+                    .clone(),
                     scope_factory: None,
                 },
                 root_input_builder.build(),
@@ -328,6 +333,10 @@ mod tests {
                 ),
                 top_instance,
                 instance_registry: InstanceRegistry::new(),
+                inspector: component::init_inspector_with_size(
+                    crate::builtin_environment::INSPECTOR_SIZE,
+                )
+                .clone(),
                 scope_factory: None,
             },
             root_input_builder.build(),
@@ -431,6 +440,10 @@ mod tests {
                 ),
                 top_instance,
                 instance_registry: InstanceRegistry::new(),
+                inspector: component::init_inspector_with_size(
+                    crate::builtin_environment::INSPECTOR_SIZE,
+                )
+                .clone(),
                 scope_factory: None,
             },
             root_input_builder.build(),
@@ -565,6 +578,10 @@ mod tests {
                 ),
                 top_instance,
                 instance_registry: InstanceRegistry::new(),
+                inspector: component::init_inspector_with_size(
+                    crate::builtin_environment::INSPECTOR_SIZE,
+                )
+                .clone(),
                 scope_factory: None,
             },
             root_input_builder.build(),
@@ -678,6 +695,10 @@ mod tests {
                 ),
                 top_instance,
                 instance_registry: InstanceRegistry::new(),
+                inspector: component::init_inspector_with_size(
+                    crate::builtin_environment::INSPECTOR_SIZE,
+                )
+                .clone(),
                 scope_factory: None,
             },
             root_input_builder.build(),
@@ -760,6 +781,10 @@ mod tests {
                 ),
                 top_instance,
                 instance_registry: InstanceRegistry::new(),
+                inspector: component::init_inspector_with_size(
+                    crate::builtin_environment::INSPECTOR_SIZE,
+                )
+                .clone(),
                 scope_factory: None,
             },
             ComponentInput::default(),

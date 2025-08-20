@@ -8,8 +8,8 @@ use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RoutingError;
 use async_trait::async_trait;
 use fidl::endpoints::DiscoverableProtocolMarker;
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use moniker::Moniker;
 use router_error::RouterError;
 use routing::capability_source::{CapabilitySource, FrameworkSource, InternalCapability};
@@ -94,7 +94,7 @@ impl Routable<Dict> for FrameworkRouter {
         #[cfg(test)]
         {
             let extra_framework_capabilities =
-                component.context.extra_framework_capabilities.lock().unwrap();
+                component.context.extra_framework_capabilities.lock();
             for (name, capability) in extra_framework_capabilities.iter() {
                 if let Ok(capability) = capability.try_clone() {
                     // Internal capabilities added for a test should preempt existing ones that have
@@ -130,13 +130,13 @@ fn add_protocol<P: DiscoverableProtocolMarker>(
     component: &Arc<ComponentInstance>,
     dict: &Dict,
     task_to_launch: impl Fn(
-            zx::Channel,
-            /*target: */ WeakComponentInstance,
-            /*scope: */ WeakComponentInstance,
-        ) -> BoxFuture<'static, Result<(), anyhow::Error>>
-        + Sync
-        + Send
-        + 'static,
+        zx::Channel,
+        /*target: */ WeakComponentInstance,
+        /*scope: */ WeakComponentInstance,
+    ) -> BoxFuture<'static, Result<(), anyhow::Error>>
+    + Sync
+    + Send
+    + 'static,
 ) {
     let capability_source = CapabilitySource::Framework(FrameworkSource {
         capability: InternalCapability::Protocol(P::PROTOCOL_NAME.parse().unwrap()),

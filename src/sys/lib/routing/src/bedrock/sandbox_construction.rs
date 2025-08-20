@@ -17,8 +17,8 @@ use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
 use crate::{DictExt, LazyGet, Sources, WithPorcelain};
 use async_trait::async_trait;
 use cm_rust::{
-    CapabilityTypeName, ExposeDeclCommon, OfferDeclCommon, SourceName, SourcePath, UseDecl,
-    UseDeclCommon,
+    CapabilityTypeName, DictionaryValue, ExposeDeclCommon, NativeIntoFidl, OfferDeclCommon,
+    SourceName, SourcePath, UseDeclCommon,
 };
 use cm_types::{Availability, BorrowedSeparatedPath, IterablePath, Name, SeparatedPath};
 use fidl::endpoints::DiscoverableProtocolMarker;
@@ -33,13 +33,29 @@ use sandbox::{
     Capability, CapabilityBound, Connector, Data, Dict, DirConnector, DirEntry, Request, Routable,
     Router, RouterResponse,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::sync::{Arc, LazyLock};
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_sys2 as fsys,
+    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_sys2 as fsys,
 };
+
+/// This type comes from `UseEventStreamDecl`.
+pub type EventStreamFilter = Option<BTreeMap<String, DictionaryValue>>;
+
+/// Contains all of the information needed to find and use a source of an event stream.
+#[derive(Clone)]
+pub struct EventStreamSourceRouter {
+    /// The source router that should return a dictionary detailing specifics on the event stream
+    /// such as its type and scope.
+    pub router: Router<Dict>,
+    /// The filter that should be applied on the event stream initialized from the information
+    /// returned by the router.
+    pub filter: EventStreamFilter,
+}
+pub type EventStreamUseRouterFn<C> =
+    dyn Fn(&Arc<C>, Vec<EventStreamSourceRouter>) -> Router<Connector>;
 
 lazy_static! {
     static ref NAMESPACE: Name = "namespace".parse().unwrap();
@@ -277,6 +293,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
     declared_dictionaries: Dict,
     error_reporter: impl ErrorReporter,
     aggregate_router_fn: &AggregateRouterFn<C>,
+    event_stream_use_router_fn: &EventStreamUseRouterFn<C>,
 ) -> ComponentSandbox {
     let component_output = ComponentOutput::new();
     let program_input = ProgramInput::default();
@@ -329,22 +346,23 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
         collection_inputs.insert(collection.name.clone(), input).ok();
     }
 
-    for use_ in decl.uses.iter() {
-        match use_ {
+    for use_bundle in group_use_aggregates(&decl.uses).into_iter() {
+        let first_use = *use_bundle.first().unwrap();
+        match first_use {
             cm_rust::UseDecl::Service(_)
-                if matches!(use_.source(), cm_rust::UseSource::Collection(_)) =>
+                if matches!(first_use.source(), cm_rust::UseSource::Collection(_)) =>
             {
-                let cm_rust::UseSource::Collection(collection_name) = use_.source() else {
+                let cm_rust::UseSource::Collection(collection_name) = first_use.source() else {
                     unreachable!();
                 };
-                let availability = *use_.availability();
+                let availability = *first_use.availability();
                 let aggregate = (aggregate_router_fn)(
                     component.clone(),
                     vec![AggregateSource::Collection { collection_name: collection_name.clone() }],
                     CapabilitySource::AnonymizedAggregate(AnonymizedAggregateSource {
-                        capability: AggregateCapability::Service(use_.source_name().clone()),
+                        capability: AggregateCapability::Service(first_use.source_name().clone()),
                         moniker: component.moniker().clone(),
-                        members: vec![AggregateMember::try_from(use_).unwrap()],
+                        members: vec![AggregateMember::try_from(first_use).unwrap()],
                         sources: Sources::new(cm_rust::CapabilityTypeName::Service),
                         instances: vec![],
                     }),
@@ -354,14 +372,17 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 .with_porcelain_with_default(CapabilityTypeName::Service)
                 .availability(availability)
                 .target(component)
-                .error_info(use_)
+                .error_info(first_use)
                 .error_reporter(error_reporter.clone())
                 .build();
                 if let Err(e) = program_input
                     .namespace()
-                    .insert_capability(use_.path().unwrap(), aggregate.into())
+                    .insert_capability(first_use.path().unwrap(), aggregate.into())
                 {
-                    warn!("failed to insert {} in program input dict: {e:?}", use_.path().unwrap())
+                    warn!(
+                        "failed to insert {} in program input dict: {e:?}",
+                        first_use.path().unwrap()
+                    )
                 }
             }
             cm_rust::UseDecl::Service(_) => extend_dict_with_use::<DirEntry, _>(
@@ -372,10 +393,10 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 &program_output_dict,
                 &framework_router,
                 &capability_sourced_capabilities_dict,
-                use_,
+                first_use,
                 error_reporter.clone(),
             ),
-            UseDecl::Directory(_) => extend_dict_with_use::<DirConnector, C>(
+            cm_rust::UseDecl::Directory(_) => extend_dict_with_use::<DirConnector, C>(
                 component,
                 &child_component_output_dictionary_routers,
                 &component_input,
@@ -383,7 +404,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 &program_output_dict,
                 &framework_router,
                 &capability_sourced_capabilities_dict,
-                use_,
+                first_use,
                 error_reporter.clone(),
             ),
             cm_rust::UseDecl::Protocol(_) | cm_rust::UseDecl::Runner(_) => {
@@ -395,7 +416,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                     &program_output_dict,
                     &framework_router,
                     &capability_sourced_capabilities_dict,
-                    use_,
+                    first_use,
                     error_reporter.clone(),
                 )
             }
@@ -407,6 +428,14 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 &program_output_dict,
                 config,
                 error_reporter.clone(),
+            ),
+            cm_rust::UseDecl::EventStream(_) => extend_dict_with_event_stream_uses(
+                component,
+                &component_input,
+                &program_input,
+                use_bundle,
+                error_reporter.clone(),
+                event_stream_use_router_fn,
             ),
             _ => (),
         }
@@ -523,17 +552,6 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 &(get_target_dict)(),
                 error_reporter.clone(),
             ),
-            cm_rust::OfferDecl::Dictionary(_) => extend_dict_with_offer::<Dict, _>(
-                component,
-                &child_component_output_dictionary_routers,
-                &component_input,
-                &program_output_dict,
-                &framework_router,
-                &capability_sourced_capabilities_dict,
-                first_offer,
-                &(get_target_dict)(),
-                error_reporter.clone(),
-            ),
             cm_rust::OfferDecl::Directory(_) => extend_dict_with_offer::<DirConnector, _>(
                 component,
                 &child_component_output_dictionary_routers,
@@ -545,6 +563,19 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 &(get_target_dict)(),
                 error_reporter.clone(),
             ),
+            cm_rust::OfferDecl::Dictionary(_) | cm_rust::OfferDecl::EventStream(_) => {
+                extend_dict_with_offer::<Dict, _>(
+                    component,
+                    &child_component_output_dictionary_routers,
+                    &component_input,
+                    &program_output_dict,
+                    &framework_router,
+                    &capability_sourced_capabilities_dict,
+                    first_offer,
+                    &(get_target_dict)(),
+                    error_reporter.clone(),
+                )
+            }
             cm_rust::OfferDecl::Protocol(_)
             | cm_rust::OfferDecl::Runner(_)
             | cm_rust::OfferDecl::Resolver(_) => extend_dict_with_offer::<Connector, _>(
@@ -801,8 +832,11 @@ fn new_aggregate_capability_source(
         .iter()
         .map(|o| match o {
             cm_rust::OfferDecl::Service(o) => o,
-            _ => panic!("cannot aggregate non-service capabilities, manifest validation should prevent this"),
-        }).collect::<Vec<_>>();
+            _ => panic!(
+                "cannot aggregate non-service capabilities, manifest validation should prevent this"
+            ),
+        })
+        .collect::<Vec<_>>();
     // This is a filtered offer if any of the offers set a filter or rename mapping.
     let is_filtered_offer = offer_service_decls.iter().any(|o| {
         o.source_instance_filter.as_ref().map(|v| !v.is_empty()).unwrap_or(false)
@@ -827,6 +861,35 @@ fn new_aggregate_capability_source(
             instances: vec![],
         })
     }
+}
+
+/// Groups together a set of offers into sub-sets of those that have the same target and target
+/// name. This is useful for identifying which offers are part of an aggregation of capabilities,
+/// and which are for standalone routes.
+fn group_use_aggregates(uses: &[cm_rust::UseDecl]) -> Vec<Vec<&cm_rust::UseDecl>> {
+    let mut groupings = HashMap::new();
+    let mut ungroupable_uses = vec![];
+    for use_ in uses.iter() {
+        let maybe_target_path = match use_ {
+            cm_rust::UseDecl::Service(u) => Some(&u.target_path),
+            cm_rust::UseDecl::Protocol(u) => Some(&u.target_path),
+            cm_rust::UseDecl::Directory(u) => Some(&u.target_path),
+            cm_rust::UseDecl::Storage(u) => Some(&u.target_path),
+            cm_rust::UseDecl::EventStream(u) => Some(&u.target_path),
+            cm_rust::UseDecl::Runner(_u) => None,
+            cm_rust::UseDecl::Config(_u) => None,
+        };
+        if let Some(target_path) = maybe_target_path {
+            groupings.entry(target_path).or_insert(vec![]).push(use_);
+        } else {
+            ungroupable_uses.push(vec![use_]);
+        }
+    }
+    groupings
+        .into_iter()
+        .map(|(_key, grouping)| grouping)
+        .chain(ungroupable_uses.into_iter())
+        .collect()
 }
 
 /// Groups together a set of offers into sub-sets of those that have the same target and target
@@ -1074,6 +1137,7 @@ pub fn is_supported_use(use_: &cm_rust::UseDecl) -> bool {
             | cm_rust::UseDecl::Runner(_)
             | cm_rust::UseDecl::Service(_)
             | cm_rust::UseDecl::Directory(_)
+            | cm_rust::UseDecl::EventStream(_)
     )
 }
 
@@ -1104,7 +1168,10 @@ fn extend_dict_with_config_use<C: ComponentInstanceInterface + 'static>(
             let Some(child_component_output) =
                 child_component_output_dictionary_routers.get(&child_name)
             else {
-                panic!("use declaration in manifest for component {} has a source of a nonexistent child {}, this should be prevented by manifest validation", moniker, child_name);
+                panic!(
+                    "use declaration in manifest for component {} has a source of a nonexistent child {}, this should be prevented by manifest validation",
+                    moniker, child_name
+                );
             };
             child_component_output.clone().lazy_get(
                 source_path.to_owned(),
@@ -1138,6 +1205,58 @@ fn extend_dict_with_config_use<C: ComponentInstanceInterface + 'static>(
         Err(e) => {
             warn!("failed to insert {} in program input dict: {e:?}", config_use.target_name)
         }
+    }
+}
+
+fn extend_dict_with_event_stream_uses<C: ComponentInstanceInterface + 'static>(
+    component: &Arc<C>,
+    component_input: &ComponentInput,
+    program_input: &ProgramInput,
+    uses: Vec<&cm_rust::UseDecl>,
+    error_reporter: impl ErrorReporter,
+    event_stream_use_router_fn: &EventStreamUseRouterFn<C>,
+) {
+    let use_event_stream_decls = uses.into_iter().map(|u| match u {
+        cm_rust::UseDecl::EventStream(decl) => decl,
+        _other_use => panic!("conflicting use types share target path, this should be prevented by manifest validation"),
+    }).collect::<Vec<_>>();
+    let moniker = component.moniker();
+    let porcelain_type = CapabilityTypeName::EventStream;
+    let target_path = use_event_stream_decls.first().unwrap().target_path.clone();
+    for use_event_stream_decl in &use_event_stream_decls {
+        assert_eq!(
+            &use_event_stream_decl.source,
+            &cm_rust::UseSource::Parent,
+            "event streams can only be used from parent, anything else should be caught by \
+            manifest validation",
+        );
+    }
+    let routers = use_event_stream_decls
+        .into_iter()
+        .map(|use_event_stream_decl| {
+            let mut route_metadata = finternal::EventStreamRouteMetadata::default();
+            if let Some(scope) = &use_event_stream_decl.scope {
+                route_metadata.scope_moniker = Some(component.moniker().to_string());
+                route_metadata.scope = Some(scope.clone().native_into_fidl());
+            }
+
+            let source_path = use_event_stream_decl.source_path().to_owned();
+            let router = use_from_parent_router::<Dict>(component_input, source_path, &moniker)
+                .with_porcelain_with_default(porcelain_type)
+                .availability(use_event_stream_decl.availability)
+                .event_stream_route_metadata(route_metadata)
+                .target(component)
+                .error_info(RouteRequestErrorInfo::from(use_event_stream_decl))
+                .error_reporter(error_reporter.clone())
+                .build();
+            let filter = use_event_stream_decl.filter.clone();
+            EventStreamSourceRouter { router, filter }
+        })
+        .collect::<Vec<_>>();
+
+    let router = event_stream_use_router_fn(component, routers);
+    if let Err(e) = program_input.namespace().insert_capability(&target_path, router.into()) {
+        warn!("failed to insert {} in program input dict: {e:?}", target_path)
     }
 }
 
@@ -1186,7 +1305,10 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
             let Some(child_component_output) =
                 child_component_output_dictionary_routers.get(&child_name)
             else {
-                panic!("use declaration in manifest for component {} has a source of a nonexistent child {}, this should be prevented by manifest validation", moniker, child_name);
+                panic!(
+                    "use declaration in manifest for component {} has a source of a nonexistent child {}, this should be prevented by manifest validation",
+                    moniker, child_name
+                );
             };
             child_component_output.clone().lazy_get(
                 source_path.to_owned(),
@@ -1222,7 +1344,9 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
         }
         cm_rust::UseSource::Debug => {
             let cm_rust::UseDecl::Protocol(use_protocol) = use_ else {
-                panic!("non-protocol capability used with a debug source, this should be prevented by manifest validation");
+                panic!(
+                    "non-protocol capability used with a debug source, this should be prevented by manifest validation"
+                );
             };
             component_input.environment().debug().get_router_or_not_found::<T>(
                 &use_protocol.source_name,
@@ -1235,7 +1359,9 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
         }
         cm_rust::UseSource::Environment => {
             let cm_rust::UseDecl::Runner(use_runner) = use_ else {
-                panic!("non-runner capability used with an environment source, this should be prevented by manifest validation");
+                panic!(
+                    "non-runner capability used with an environment source, this should be prevented by manifest validation"
+                );
             };
             component_input.environment().runners().get_router_or_not_found::<T>(
                 &use_runner.source_name,
@@ -1312,6 +1438,7 @@ fn is_supported_offer(offer: &cm_rust::OfferDecl) -> bool {
             | cm_rust::OfferDecl::Runner(_)
             | cm_rust::OfferDecl::Resolver(_)
             | cm_rust::OfferDecl::Service(_)
+            | cm_rust::OfferDecl::EventStream(_)
     )
 }
 
@@ -1438,6 +1565,16 @@ fn extend_dict_with_offer<T, C: ComponentInstanceInterface + 'static>(
             .rights(decl.rights.clone().map(Into::into))
             .subdir(decl.subdir.clone().into())
             .inherit_rights(true);
+    }
+    if let cm_rust::OfferDecl::EventStream(offer_event_stream) = offer {
+        if let Some(scope) = &offer_event_stream.scope {
+            router_builder =
+                router_builder.event_stream_route_metadata(finternal::EventStreamRouteMetadata {
+                    scope_moniker: Some(component.moniker().to_string()),
+                    scope: Some(scope.clone().native_into_fidl()),
+                    ..Default::default()
+                });
+        }
     }
     let router = router_builder.build().with_service_renames_and_filter(offer.clone());
     match target_dict.insert_capability(target_name, router.into()) {

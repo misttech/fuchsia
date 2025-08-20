@@ -4,8 +4,10 @@
 
 use crate::component_instance::{ComponentInstanceForAnalyzer, TopInstanceForAnalyzer};
 use crate::component_model::DynamicDictionaryConfig;
+use ::routing::DictExt;
 use ::routing::bedrock::aggregate_router::AggregateSource;
 use ::routing::bedrock::program_output_dict;
+use ::routing::bedrock::sandbox_construction::EventStreamSourceRouter;
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::bedrock::with_policy_check::WithPolicyCheck;
 use ::routing::bedrock::with_porcelain::WithPorcelain;
@@ -19,13 +21,13 @@ use ::routing::component_instance::{
 use ::routing::environment::RunnerRegistry;
 use ::routing::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
 use ::routing::policy::GlobalPolicyChecker;
-use ::routing::DictExt;
 use async_trait::async_trait;
 use cm_config::RuntimeConfig;
 use cm_rust::{CapabilityTypeName, ComponentDecl, DeliveryType, DictionaryDecl, ProtocolDecl};
 use cm_types::{Availability, Path};
 use fidl::endpoints::DiscoverableProtocolMarker;
-use futures::{future, FutureExt};
+use futures::stream::{FuturesUnordered, StreamExt};
+use futures::{FutureExt, future};
 use moniker::{ChildName, Moniker};
 use router_error::RouterError;
 use sandbox::{
@@ -316,21 +318,24 @@ impl ProgramOutputGenerator {
         let dict = Dict::new();
         for (capability_type, capability_name) in capabilities {
             match capability_type {
-                    CapabilityTypeName::Protocol => {
-                        let router = new_debug_only_specific_router::<Connector>(
-                            CapabilitySource::Component(ComponentSource {
-                                capability: ComponentCapability::from(ProtocolDecl {
-                                    name: capability_name.clone(),
-                                    source_path: None,
-                                    delivery: DeliveryType::Immediate,
-                                }),
-                                moniker: component.moniker.clone(),
+                CapabilityTypeName::Protocol => {
+                    let router = new_debug_only_specific_router::<Connector>(
+                        CapabilitySource::Component(ComponentSource {
+                            capability: ComponentCapability::from(ProtocolDecl {
+                                name: capability_name.clone(),
+                                source_path: None,
+                                delivery: DeliveryType::Immediate,
                             }),
-                        );
-                        dict.insert_capability(&capability_name, router.into()).expect("can insert to dict");
-                    }
-                    _ => unreachable!("Only protocol capabilities are supported through scrutinity in dynamic dicts at the moment"),
+                            moniker: component.moniker.clone(),
+                        }),
+                    );
+                    dict.insert_capability(&capability_name, router.into())
+                        .expect("can insert to dict");
                 }
+                _ => unreachable!(
+                    "Only protocol capabilities are supported through scrutinity in dynamic dicts at the moment"
+                ),
+            }
         }
         Ok(RouterResponse::<Dict>::Capability(dict))
     }
@@ -468,4 +473,36 @@ pub fn new_aggregate_router(
     _: Availability,
 ) -> Router<DirEntry> {
     new_debug_only_specific_router(capability_source)
+}
+
+pub fn new_event_stream_multiplexing_router(
+    _: &Arc<ComponentInstanceForAnalyzer>,
+    sources: Vec<EventStreamSourceRouter>,
+) -> Router<Connector> {
+    Router::new(move |_request: Option<sandbox::Request>, debug: bool| {
+        assert!(debug, "non-debug routing is unsupported");
+        let sources = sources.clone();
+        async move {
+            let mut routing_tasks = FuturesUnordered::new();
+            for EventStreamSourceRouter { router, .. } in sources.iter() {
+                routing_tasks.push(router.route(None, true));
+            }
+            let mut any_result = None;
+            while let Some(result) = routing_tasks.next().await {
+                match result {
+                    Ok(result) => any_result = Some(result),
+                    Err(e) => return Err(e),
+                }
+            }
+            match any_result {
+                Some(RouterResponse::Debug(data)) => Ok(RouterResponse::Debug(data)),
+                Some(RouterResponse::Unavailable) => Ok(RouterResponse::Unavailable),
+                Some(RouterResponse::Capability(_)) => {
+                    panic!("debug route returned capability, which is disallowed")
+                }
+                None => panic!("no result produced, is sources empty?"),
+            }
+        }
+        .boxed()
+    })
 }
