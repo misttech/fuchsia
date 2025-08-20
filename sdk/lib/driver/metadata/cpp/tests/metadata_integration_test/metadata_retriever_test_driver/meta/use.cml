@@ -12,7 +12,16 @@
         bind: "meta/bind/metadata_retriever_sdk_test_driver_use.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
+    capabilities: [
+        { service: "fuchsia.hardware.test.MetadataRetrieverService" },
+    ],
     use: [
         { service: "fuchsia.hardware.test.Metadata" },
+    ],
+    expose: [
+        {
+            service: "fuchsia.hardware.test.MetadataRetrieverService",
+            from: "self",
+        },
     ],
 }

@@ -13,11 +13,21 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     capabilities: [
-        { service: "fuchsia.hardware.test.Metadata" },
+        {
+            service: [
+                "fuchsia.hardware.test.Metadata",
+                "fuchsia.hardware.test.MetadataSenderService",
+            ],
+        },
     ],
+
+    // Expose the fuchsia.hardware.test.MetadataSenderService FIDL service.
     expose: [
         {
-            service: "fuchsia.hardware.test.Metadata",
+            service: [
+                "fuchsia.hardware.test.Metadata",
+                "fuchsia.hardware.test.MetadataSenderService",
+            ],
             from: "self",
         },
     ],

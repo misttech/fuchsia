@@ -23,7 +23,6 @@ fuchsia_cc_driver("driver") {
     "//examples/drivers/metadata/fuchsia.examples.metadata:fuchsia.examples.metadata_cpp",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//src/devices/lib/driver:driver_runtime",
   ]

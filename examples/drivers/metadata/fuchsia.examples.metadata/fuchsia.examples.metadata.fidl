@@ -15,19 +15,15 @@ type Metadata = table {
 // Implemented by the driver that will be sending metadata using the
 // //sdk/lib/driver/metadata library. Used only for testing.
 closed protocol Sender {
-    // Set the metadata of the driver that will be sent to its children using
-    // the //sdk/lib/driver/metadata library.
-    strict SetMetadata(struct {
+    /// Create a child node and serve |metadata| using a `fdf_metadata::MetadataServer` to that
+    /// child node.
+    strict ServeMetadata(struct {
         metadata Metadata;
     }) -> () error zx.Status;
 };
 
-// Implemented by the driver that will be forwarding metadata using the
-// //sdk/lib/driver/metadata library. Used only for testing.
-closed protocol Forwarder {
-    // Forward the metadata from the driver's parent driver to its children
-    // using the //sdk/lib/driver/metadata library.
-    strict ForwardMetadata() -> () error zx.Status;
+service SenderService {
+    device client_end:Sender;
 };
 
 // Implemented by the driver that will retrieve metadata using the
@@ -38,4 +34,8 @@ closed protocol Retriever {
     strict GetMetadata() -> (struct {
         metadata Metadata;
     }) error zx.Status;
+};
+
+service RetrieverService {
+    device client_end:Retriever;
 };

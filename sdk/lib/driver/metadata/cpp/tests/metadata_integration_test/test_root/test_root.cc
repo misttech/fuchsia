@@ -14,17 +14,15 @@
 namespace fdf_metadata::test {
 
 zx::result<> TestRootDriver::Start() {
-  zx_status_t status = InitControllerChildNode();
-  if (status != ZX_OK) {
-    fdf::error("Failed to initialize controller node: {}", zx_status_get_string(status));
-    return zx::error(status);
+  zx::result result = outgoing()->AddService<fuchsia_hardware_test::RootService>(
+      fuchsia_hardware_test::RootService::InstanceHandler(
+          {.device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure)}));
+  if (result.is_error()) {
+    fdf::error("Failed to add service: {}", result);
+    return result.take_error();
   }
 
   return zx::ok();
-}
-
-void TestRootDriver::Serve(fidl::ServerEnd<fuchsia_hardware_test::Root> request) {
-  bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
 }
 
 void TestRootDriver::AddMetadataSenderNode(AddMetadataSenderNodeRequest& request,
@@ -37,44 +35,17 @@ void TestRootDriver::AddMetadataSenderNode(AddMetadataSenderNodeRequest& request
       fdf::MakeProperty(bind_fuchsia_driver_metadata_test::EXPOSES_METADATA_FIDL_SERVICE,
                         exposes_metadata_fidl_service)};
 
-  std::stringstream node_name;
-  node_name << "metadata_sender_" << (exposes_metadata_fidl_service ? "expose" : "no_expose") << '_'
-            << metadata_sender_node_controllers_.size();
-
-  zx::result result = AddChild(node_name.str(), node_properties, {});
+  const std::string node_name = std::format(
+      "{}-{}", exposes_metadata_fidl_service ? "expose" : "no_expose", metadata_senders_.size());
+  zx::result result = AddChild(node_name, node_properties, {});
   if (result.is_error()) {
     fdf::error("Failed to add child: {}", result);
     completer.Reply(fit::error(result.status_value()));
     return;
   }
 
-  metadata_sender_node_controllers_.emplace_back(std::move(result.value()));
-  completer.Reply(fit::ok(node_name.str()));
-}
-
-zx_status_t TestRootDriver::InitControllerChildNode() {
-  if (controller_node_.has_value()) {
-    fdf::error("Controller node already initialized.");
-    return ZX_ERR_BAD_STATE;
-  }
-
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connector: {}", connector);
-    return connector.status_value();
-  }
-
-  fuchsia_driver_framework::DevfsAddArgs devfs_args{{.connector = std::move(connector.value())}};
-
-  zx::result result = AddOwnedChild(kControllerNodeName, devfs_args);
-  if (result.is_error()) {
-    fdf::error("Failed to add child: {}", result);
-    return result.status_value();
-  }
-
-  controller_node_.emplace(std::move(result.value()));
-
-  return ZX_OK;
+  metadata_senders_.emplace_back(std::move(result.value()));
+  completer.Reply(fit::ok());
 }
 
 }  // namespace fdf_metadata::test

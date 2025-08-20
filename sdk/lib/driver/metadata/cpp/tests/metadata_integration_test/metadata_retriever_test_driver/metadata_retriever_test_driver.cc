@@ -11,43 +11,15 @@
 namespace fdf_metadata::test {
 
 zx::result<> MetadataRetrieverTestDriver::Start() {
-  zx_status_t status = InitControllerNode();
-  if (status != ZX_OK) {
-    fdf::error("Failed to initialize controller node: {}", zx_status_get_string(status));
-    return zx::error(status);
+  zx::result result = outgoing()->AddService<fuchsia_hardware_test::MetadataRetrieverService>(
+      fuchsia_hardware_test::MetadataRetrieverService::InstanceHandler(
+          {.device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure)}));
+  if (result.is_error()) {
+    fdf::error("Failed to add service: {}", result);
+    return result.take_error();
   }
 
   return zx::ok();
-}
-
-zx_status_t MetadataRetrieverTestDriver::InitControllerNode() {
-  if (controller_node_.has_value()) {
-    fdf::error("Controller node already initialized.");
-    return ZX_ERR_BAD_STATE;
-  }
-
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connector: {}", connector);
-    return connector.status_value();
-  }
-
-  fuchsia_driver_framework::DevfsAddArgs devfs_args{{.connector = std::move(connector.value())}};
-
-  zx::result result = AddOwnedChild(kControllerNodeName, devfs_args);
-  if (result.is_error()) {
-    fdf::error("Failed to add child: {}", result);
-    return result.status_value();
-  }
-
-  controller_node_.emplace(std::move(result.value()));
-
-  return ZX_OK;
-}
-
-void MetadataRetrieverTestDriver::Serve(
-    fidl::ServerEnd<fuchsia_hardware_test::MetadataRetriever> request) {
-  bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
 }
 
 void MetadataRetrieverTestDriver::GetMetadata(GetMetadataCompleter::Sync& completer) {

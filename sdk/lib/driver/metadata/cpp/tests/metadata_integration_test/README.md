@@ -13,10 +13,11 @@ variants can bind to.
 ### metadata_sender
 The `metadata_sender`'s purpose is to serve metadata using
 `fdf_metadata::MetadataServer`. The driver has two variants:
-`metadata_sender_expose` which exposes the metadata FIDL service in its
-component manifest and `metadata_sender_no_expose` which does not. It can also
-create nodes that the `metadata_forwarder` driver and `metadata_retriever`
-driver variants can bid to.
+`metadata_sender_expose` which exposes the
+fuchsia.hardware.test.MetadataSenderService FIDL service in its component
+manifest and `metadata_sender_no_expose` which does not. It can also create
+nodes that the `metadata_forwarder` driver and `metadata_retriever` driver
+variants can bid to.
 
 ### metadata_retriever
 The `metadata_retriever`'s purpose is to retrieve metadata via

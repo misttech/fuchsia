@@ -11,4 +11,13 @@
         binary: "driver/test_root_driver.so",
         bind: "meta/bind/test_root.bindbc",
     },
+    capabilities: [
+        { service: "fuchsia.hardware.test.RootService" },
+    ],
+    expose: [
+        {
+            service: "fuchsia.hardware.test.RootService",
+            from: "self",
+        },
+    ],
 }

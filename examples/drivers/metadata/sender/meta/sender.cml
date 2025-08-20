@@ -13,11 +13,19 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     capabilities: [
-        { service: "fuchsia.examples.metadata.Metadata" },
+        {
+            service: [
+                "fuchsia.examples.metadata.Metadata",
+                "fuchsia.examples.metadata.SenderService",
+            ],
+        },
     ],
     expose: [
         {
-            service: "fuchsia.examples.metadata.Metadata",
+            service: [
+                "fuchsia.examples.metadata.Metadata",
+                "fuchsia.examples.metadata.SenderService",
+            ],
             from: "self",
         },
     ],

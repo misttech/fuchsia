@@ -4,7 +4,6 @@
 
 #include <fidl/fuchsia.examples.metadata/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 
@@ -18,19 +17,22 @@ class RetrieverDriver final : public fdf::DriverBase,
  public:
   RetrieverDriver(fdf::DriverStartArgs start_args,
                   fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("child", std::move(start_args), std::move(driver_dispatcher)) {}
+      : DriverBase("retriever", std::move(start_args), std::move(driver_dispatcher)) {}
 
+  // fdf::DriverBase implementation.
   zx::result<> Start() override {
-    zx_status_t status = AddDevfsChild();
-    if (status != ZX_OK) {
-      fdf::error("Failed to add child: {}", zx::make_result(status));
-      return zx::error(status);
+    zx::result result = outgoing()->AddService<fuchsia_examples_metadata::RetrieverService>(
+        fuchsia_examples_metadata::RetrieverService::InstanceHandler(
+            {.device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure)}));
+    if (result.is_error()) {
+      fdf::error("Failed to add service: {}", result);
+      return result.take_error();
     }
 
     return zx::ok();
   }
 
-  // fuchsia.hardware.test/Child implementation.
+  // fidl::Server<fuchsia_examples_metadata::Retriever> implementation.
   void GetMetadata(GetMetadataCompleter::Sync& completer) override {
     zx::result metadata =
         fdf_metadata::GetMetadata<fuchsia_examples_metadata::Metadata>(incoming());
@@ -44,42 +46,7 @@ class RetrieverDriver final : public fdf::DriverBase,
   }
 
  private:
-  void Serve(fidl::ServerEnd<fuchsia_examples_metadata::Retriever> request) {
-    bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
-  }
-
-  // Add child that has a devfs connection in order for tests to communicate with this driver.
-  zx_status_t AddDevfsChild() {
-    if (child_node_.has_value()) {
-      fdf::error("Child node already created.");
-      return ZX_ERR_BAD_STATE;
-    }
-
-    zx::result connector = devfs_connector_.Bind(dispatcher());
-    if (connector.is_error()) {
-      fdf::error("Failed to bind devfs connector: {}", connector);
-      return connector.status_value();
-    }
-
-    // [START add_child]
-    fuchsia_driver_framework::DevfsAddArgs devfs_args{{.connector = std::move(connector.value())}};
-    zx::result owned_child = AddOwnedChild("retriever", devfs_args);
-    if (owned_child.is_error()) {
-      return owned_child.error_value();
-    }
-
-    child_node_.emplace(std::move(owned_child.value()));
-    // [END add_child]
-
-    return ZX_OK;
-  }
-
-  // Used by tests in order to communicate with the driver.
-  driver_devfs::Connector<fuchsia_examples_metadata::Retriever> devfs_connector_{
-      fit::bind_member<&RetrieverDriver::Serve>(this)};
-
   fidl::ServerBindingGroup<fuchsia_examples_metadata::Retriever> bindings_;
-  std::optional<fdf::OwnedChildNode> child_node_;
 };
 
 }  // namespace examples::drivers::metadata

@@ -12,28 +12,32 @@
 namespace fdf_metadata::test {
 
 zx::result<> MetadataSenderTestDriver::Start() {
-  zx_status_t status = InitControllerNode();
-  if (status != ZX_OK) {
-    fdf::error("Failed to initialize controller node: {}", zx_status_get_string(status));
-    return zx::error(status);
+  zx::result result = outgoing()->AddService<fuchsia_hardware_test::MetadataSenderService>(
+      fuchsia_hardware_test::MetadataSenderService::InstanceHandler(
+          {.device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure)}));
+  if (result.is_error()) {
+    fdf::error("Failed to add service: {}", result);
+    return result.take_error();
   }
 
   return zx::ok();
 }
 
-void MetadataSenderTestDriver::Serve(
-    fidl::ServerEnd<fuchsia_hardware_test::MetadataSender> request) {
-  bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
-}
-
-void MetadataSenderTestDriver::ServeMetadata(ServeMetadataCompleter::Sync& completer) {
+void MetadataSenderTestDriver::ServeMetadata(ServeMetadataRequest& request,
+                                             ServeMetadataCompleter::Sync& completer) {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  zx::result result = metadata_server_.Serve(*outgoing(), dispatcher());
-  if (result.is_error()) {
+  if (zx::result result = metadata_server_.SetMetadata(request.metadata()); result.is_error()) {
+    fdf::error("Failed to set metadata: {}", result);
+    completer.Reply(fit::error(result.error_value()));
+    return;
+  }
+
+  if (zx::result result = metadata_server_.Serve(*outgoing(), dispatcher()); result.is_error()) {
     fdf::error("Failed to serve metadata: {}", result);
     completer.Reply(fit::error(result.error_value()));
     return;
   }
+
   offer_metadata_to_child_nodes_ = true;
   completer.Reply(fit::ok());
 #else
@@ -42,65 +46,47 @@ void MetadataSenderTestDriver::ServeMetadata(ServeMetadataCompleter::Sync& compl
 #endif
 }
 
-void MetadataSenderTestDriver::SetMetadata(SetMetadataRequest& request,
-                                           SetMetadataCompleter::Sync& completer) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  zx::result result = metadata_server_.SetMetadata(request.metadata());
-  if (result.is_error()) {
-    fdf::error("Failed to set metadata: {}", result);
-    completer.Reply(fit::error(result.error_value()));
-  }
-  completer.Reply(fit::ok());
-#else
-  fdf::error("Setting metadata not supported at current Fuchsia API level.");
-  completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
-#endif
-}
-
 void MetadataSenderTestDriver::AddMetadataRetrieverNode(
     AddMetadataRetrieverNodeRequest& request, AddMetadataRetrieverNodeCompleter::Sync& completer) {
   bool uses_metadata_fidl_service = request.uses_metadata_fidl_service();
 
-  std::stringstream node_name;
-  node_name << "metadata_retriever_" << (uses_metadata_fidl_service ? "use" : "no_use") << '_'
-            << metadata_node_controllers_.size();
-
-  std::vector<fuchsia_driver_framework::NodeProperty> node_properties{
+  std::vector<fuchsia_driver_framework::NodeProperty> node_properties = {
       fdf::MakeProperty(bind_fuchsia_driver_metadata_test::PURPOSE,
                         bind_fuchsia_driver_metadata_test::PURPOSE_RETRIEVE_METADATA),
       fdf::MakeProperty(bind_fuchsia_driver_metadata_test::USES_METADATA_FIDL_SERVICE,
                         uses_metadata_fidl_service)};
 
-  zx_status_t status = AddMetadataNode(node_name.str(), node_properties);
+  const std::string node_name =
+      std::format("retriever-{}-{}", uses_metadata_fidl_service ? "use" : "no_use",
+                  metadata_recipients_.size());
+  zx_status_t status = AddChildNode(node_name, node_properties);
   if (status != ZX_OK) {
     // Don't log. AddMetadataNode() performs error logging.
     completer.Reply(fit::error(status));
     return;
   }
 
-  completer.Reply(fit::ok(node_name.str()));
+  completer.Reply(fit::ok());
 }
 
 void MetadataSenderTestDriver::AddMetadataForwarderNode(
     AddMetadataForwarderNodeCompleter::Sync& completer) {
-  std::stringstream node_name;
-  node_name << "metadata_forwarder_" << metadata_node_controllers_.size();
-
   static const std::vector<fuchsia_driver_framework::NodeProperty> kNodeProperties{
       fdf::MakeProperty(bind_fuchsia_driver_metadata_test::PURPOSE,
                         bind_fuchsia_driver_metadata_test::PURPOSE_FORWARD_METADATA)};
 
-  zx_status_t status = AddMetadataNode(node_name.str(), kNodeProperties);
+  const std::string node_name = std::format("forwarder-{}", metadata_recipients_.size());
+  zx_status_t status = AddChildNode(node_name, kNodeProperties);
   if (status != ZX_OK) {
     // Don't log. AddMetadataNode() performs error logging.
     completer.Reply(fit::error(status));
     return;
   }
 
-  completer.Reply(fit::ok(node_name.str()));
+  completer.Reply(fit::ok());
 }
 
-zx_status_t MetadataSenderTestDriver::AddMetadataNode(
+zx_status_t MetadataSenderTestDriver::AddChildNode(
     std::string_view node_name,
     const fuchsia_driver_framework::NodePropertyVector& node_properties) {
   std::vector<fuchsia_driver_framework::Offer> offers;
@@ -114,32 +100,7 @@ zx_status_t MetadataSenderTestDriver::AddMetadataNode(
     fdf::error("Failed to add child: {}", result);
     return result.status_value();
   }
-  metadata_node_controllers_.emplace_back(std::move(result.value()));
-  return ZX_OK;
-}
-
-zx_status_t MetadataSenderTestDriver::InitControllerNode() {
-  if (controller_node_.has_value()) {
-    fdf::error("Controller node already initialized.");
-    return ZX_ERR_BAD_STATE;
-  }
-
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connector: {}", connector);
-    return connector.status_value();
-  }
-
-  fuchsia_driver_framework::DevfsAddArgs devfs_args{{.connector = std::move(connector.value())}};
-
-  zx::result result = AddOwnedChild(kControllerNodeName, devfs_args);
-  if (result.is_error()) {
-    fdf::error("Failed to add child: {}", result);
-    return result.status_value();
-  }
-
-  controller_node_.emplace(std::move(result.value()));
-
+  metadata_recipients_.emplace_back(std::move(result.value()));
   return ZX_OK;
 }
 

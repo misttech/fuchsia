@@ -34,7 +34,6 @@ fuchsia_cc_driver("driver") {
   public_deps = [
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/metadata/cpp/tests/fuchsia.hardware.test:fuchsia.hardware.test_cpp",
   ]

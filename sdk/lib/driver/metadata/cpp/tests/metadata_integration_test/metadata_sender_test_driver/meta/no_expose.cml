@@ -12,4 +12,15 @@
         bind: "meta/bind/metadata_sender_sdk_test_driver_no_expose.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
+    capabilities: [
+        { service: "fuchsia.hardware.test.MetadataSenderService" },
+    ],
+
+    // Do NOT expose the fuchsia.hardware.test.MetadataSenderService FIDL service.
+    expose: [
+        {
+            service: "fuchsia.hardware.test.MetadataSenderService",
+            from: "self",
+        },
+    ],
 }

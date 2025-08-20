@@ -12,7 +12,16 @@
         bind: "meta/bind/retriever.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
+    capabilities: [
+        { service: "fuchsia.examples.metadata.RetrieverService" },
+    ],
     use: [
         { service: "fuchsia.examples.metadata.Metadata" },
+    ],
+    expose: [
+        {
+            service: "fuchsia.examples.metadata.RetrieverService",
+            from: "self",
+        },
     ],
 }

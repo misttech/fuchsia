@@ -46,7 +46,7 @@ class MetadataServerTest : public gtest::TestLoopFixture {
     auto [client, server] = fidl::Endpoints<fuchsia_driver_metadata::Metadata>::Create();
     fidl::ServerBinding binding{dispatcher(), std::move(server), &metadata_server,
                                 fidl::kIgnoreBindingClosure};
-    fidl::Client metadata_server_client{std::move(client), dispatcher()};
+    fidl::Client metadata_server_client(std::move(client), dispatcher());
     metadata_server_client->GetPersistedMetadata().Then(
         [expected_metadata](
             fidl::Result<fuchsia_driver_metadata::Metadata::GetPersistedMetadata>& response) {
