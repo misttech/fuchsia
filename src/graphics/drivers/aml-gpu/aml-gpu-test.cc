@@ -108,41 +108,6 @@ class TestAmlGpu {
     EXPECT_EQ(ZX_OK, reset_mock.VerifyAll());
   }
 
-  void TestMetadata() {
-    using fuchsia_hardware_gpu_amlogic::wire::Metadata;
-
-    {
-      fidl::Arena allocator;
-      auto properties = fuchsia_hardware_gpu_mali::wire::MaliProperties::Builder(allocator);
-      auto metadata = Metadata::Builder(allocator);
-      metadata.supports_protected_mode(false);
-      {
-        auto built_metadata = metadata.Build();
-        fit::result encoded_metadata = fidl::Persist(built_metadata);
-        ASSERT_TRUE(encoded_metadata.is_ok());
-        std::vector<uint8_t>& message_bytes = encoded_metadata.value();
-        EXPECT_EQ(ZX_OK, aml_gpu_.ProcessMetadata(
-                             std::vector<uint8_t>(message_bytes.data(),
-                                                  message_bytes.data() + message_bytes.size()),
-                             properties));
-      }
-      EXPECT_FALSE(properties.Build().supports_protected_mode());
-    }
-
-    {
-      fidl::Arena allocator;
-      auto properties = fuchsia_hardware_gpu_mali::wire::MaliProperties::Builder(allocator);
-      auto metadata = Metadata::Builder(allocator);
-      metadata.supports_protected_mode(true);
-      {
-        auto built_metadata = metadata.Build();
-        fit::result metadata_bytes = fidl::Persist(built_metadata);
-        ASSERT_TRUE(metadata_bytes.is_ok());
-        EXPECT_EQ(ZX_OK, aml_gpu_.ProcessMetadata(std::move(metadata_bytes.value()), properties));
-      }
-      EXPECT_TRUE(properties.Build().supports_protected_mode());
-    }
-  }
   fdf_testing::DriverRuntime runtime_;
   // This dispatcher is used by the test environment, and hosts the incoming directory.
   fdf::UnownedSynchronizedDispatcher test_env_dispatcher_{runtime_.StartBackgroundDispatcher()};
@@ -158,5 +123,3 @@ class TestAmlGpu {
 TEST(AmlGpu, SetClkFreq) { aml_gpu::TestAmlGpu().TestSetClkFreq(); }
 
 TEST(AmlGpu, InitialClkFreq) { aml_gpu::TestAmlGpu().TestInitialClkFreq(); }
-
-TEST(AmlGpu, Metadata) { aml_gpu::TestAmlGpu().TestMetadata(); }

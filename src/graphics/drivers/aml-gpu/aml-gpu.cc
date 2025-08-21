@@ -4,10 +4,10 @@
 
 #include "aml-gpu.h"
 
-#include <fidl/fuchsia.driver.compat/cpp/wire.h>
 #include <fidl/fuchsia.hardware.gpu.amlogic/cpp/wire.h>
 #include <fidl/fuchsia.hardware.gpu.mali/cpp/wire.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -299,23 +299,6 @@ void AmlGpu::FinishExitProtectedMode(fdf::Arena& arena,
     completer.buffer(arena).ReplyError(status);
   }
 }
-
-zx_status_t AmlGpu::ProcessMetadata(
-    std::vector<uint8_t> raw_metadata,
-    fidl::WireTableBuilder<fuchsia_hardware_gpu_mali::wire::MaliProperties>& builder) {
-  fit::result decoded = fidl::InplaceUnpersist<fuchsia_hardware_gpu_amlogic::wire::Metadata>(
-      cpp20::span(raw_metadata));
-  if (!decoded.is_ok()) {
-    FDF_LOG(ERROR, "Unable to parse metadata %s",
-            decoded.error_value().FormatDescription().c_str());
-    return ZX_ERR_INTERNAL;
-  }
-  const auto& metadata = *decoded.value();
-  builder.supports_protected_mode(metadata.has_supports_protected_mode() &&
-                                  metadata.supports_protected_mode());
-  return ZX_OK;
-}
-
 zx::result<> AmlGpu::Start() {
   auto loop_dispatcher = fdf::UnsynchronizedDispatcher::Create(
       fdf::UnsynchronizedDispatcher::Options{}, "aml-gpu-thread",
@@ -334,51 +317,16 @@ zx::result<> AmlGpu::Start() {
   // GPU is in unknown mode on Bind.
   current_protected_mode_property_ = root_.CreateInt("current_protected_mode", -1);
   auto builder = fuchsia_hardware_gpu_mali::wire::MaliProperties::Builder(arena_);
-  {
-    zx::result result = incoming()->Connect<fuchsia_driver_compat::Service::Device>();
-    if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to open compat service: %s", result.status_string());
-      return result.take_error();
-    }
-    auto compat = fidl::WireSyncClient(std::move(result.value()));
-    if (!compat.is_valid()) {
-      FDF_LOG(ERROR, "%s: failed to get compat", __func__);
-      return zx::error(ZX_ERR_NO_RESOURCES);
-    }
 
-    auto metadata = compat->GetMetadata();
-    if (!metadata.ok()) {
-      FDF_LOG(ERROR, "%s: failed to GetMetadata %s", __func__, metadata.FormatDescription().data());
-      return zx::error(metadata.status());
+  zx::result metadata = compat::GetMetadata<fuchsia_hardware_gpu_amlogic::wire::Metadata>(
+      incoming(), arena_, fuchsia_hardware_gpu_amlogic::wire::kMaliMetadata);
+  if (metadata.is_error()) {
+    if (metadata.status_value() != ZX_ERR_NOT_FOUND) {
+      return metadata.take_error();
     }
-
-    if (!metadata->is_ok()) {
-      FDF_LOG(ERROR, "Metadata error: %d", metadata->error_value());
-      return zx::error(metadata->error_value());
-    }
-    // Metadata may or may not exist; if not, default values are used.
-    for (auto& entry : metadata->value()->metadata) {
-      if (entry.type == fuchsia_hardware_gpu_amlogic::wire::kMaliMetadata) {
-        uint64_t size;
-        zx_status_t status = entry.data.get_prop_content_size(&size);
-        if (status != ZX_OK) {
-          FDF_LOG(ERROR, "Failed to get metadata size, %s", zx_status_get_string(status));
-          return zx::error(status);
-        }
-        std::vector<uint8_t> raw_metadata(size);
-        status = entry.data.read(raw_metadata.data(), 0, size);
-        if (status != ZX_OK) {
-          FDF_LOG(ERROR, "Failed to read metadata, %s", zx_status_get_string(status));
-          return zx::error(status);
-        }
-        status = ProcessMetadata(std::move(raw_metadata), builder);
-        if (status != ZX_OK) {
-          FDF_LOG(ERROR, "Error processing metadata %d", status);
-          return zx::error(status);
-        }
-        break;
-      }
-    }
+  } else {
+    builder.supports_protected_mode(metadata->has_supports_protected_mode() &&
+                                    metadata->supports_protected_mode());
   }
 
   zx::result pdev_client_end =

@@ -80,9 +80,6 @@ class AmlGpu final : public fdf::DriverBase,
   void InitClock();
   void SetClkFreqSource(int32_t clk_source);
   void SetInitialClkFreqSource(int32_t clk_source);
-  zx_status_t ProcessMetadata(
-      std::vector<uint8_t> metadata,
-      fidl::WireTableBuilder<fuchsia_hardware_gpu_mali::wire::MaliProperties>& builder);
   zx_status_t SetProtected(uint32_t protection_mode);
 
   void UpdateClockProperties();

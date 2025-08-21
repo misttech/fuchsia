@@ -14,6 +14,7 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
         allowed_scheduler_roles: [ "fuchsia.graphics.drivers.aml-gpu" ],
         fallback: "false",
+        service_connect_validation: "true",
     },
     capabilities: [
         { service: "fuchsia.hardware.gpu.mali.Service" },
