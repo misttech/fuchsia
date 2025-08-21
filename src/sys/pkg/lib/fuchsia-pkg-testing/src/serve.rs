@@ -411,7 +411,7 @@ impl ServedRepository {
             return Ok(fail(StatusCode::NOT_FOUND));
         }
 
-        let response = if uri_path == PathBuf::from("/auto") {
+        let response = if uri_path.to_str() == Some("/auto") {
             auto_response_creator.create().await
         } else {
             let fs_path = repo.join(uri_path.strip_prefix("/").unwrap_or(uri_path));
