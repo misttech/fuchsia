@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 library fidl.service.test;
 
-using fuchsia.io;
 using fuchsia.unknown;
 
 @discoverable
@@ -15,13 +14,6 @@ closed protocol Echo {
     }) -> (struct {
         response string:optional;
     });
-};
-
-closed protocol Empty {};
-
-open protocol EmptyCloneableNode {
-    compose fuchsia.unknown.Cloneable;
-    compose fuchsia.io.Node;
 };
 
 /// A service that provides multiple Echo implementations.

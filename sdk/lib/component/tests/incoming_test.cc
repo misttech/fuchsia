@@ -4,6 +4,7 @@
 
 #include <fidl/fidl.service.test/cpp/fidl.h>
 #include <fidl/fidl.service.test/cpp/wire_test_base.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/component/incoming/cpp/constants.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -112,23 +113,6 @@ TEST_F(IncomingProtocolTest, ConnectReturnsErrorIfPathInvalid) {
   EXPECT_TRUE(component::Connect<Echo>("").is_error());
 }
 
-TEST_F(IncomingProtocolTest, CloneWorksForCloneableProtocol) {
-  auto client_end = component::ConnectAt<Echo>(TakeSvcDirectoryRoot());
-  ASSERT_OK(client_end.status_value());
-
-  auto clone_result = component::Clone(*client_end);
-  ASSERT_OK(clone_result.status_value());
-
-  fidl::Client<Echo> client(std::move(clone_result.value()), dispatcher());
-  client->EchoString(fidl::Request<Echo::EchoString>(kTestString))
-      .Then([quit_loop = QuitLoopClosure()](fidl::Result<Echo::EchoString>& result) {
-        EXPECT_EQ(std::string(kTestString), result->response()->data());
-        quit_loop();
-      });
-
-  RunLoop();
-}
-
 TEST_F(IncomingProtocolTest, CloneWorksForServiceDirectories) {
   auto svc = TakeSvcDirectoryRoot();
 
@@ -151,67 +135,25 @@ TEST_F(IncomingProtocolTest, CloneWorksForServiceDirectories) {
   RunLoop();
 }
 
-using EmptyCloneableNode = fidl_service_test::EmptyCloneableNode;
+TEST_F(IncomingProtocolTest, CloneWorksForCloneableProtocol) {
+  auto client_end = component::ConnectAt<Echo>(TakeSvcDirectoryRoot());
+  ASSERT_OK(client_end.status_value());
 
-// |EmptyCloneableNode| server that asserts that only |fuchsia.io/Node.DeprecatedClone| is called.
-// TODO(https://fxbug.dev/324111518): This should call `fuchsia.unknown/Cloneable.Clone` instead
-// of `fuchsia.io/Node.DeprecatedClone`.
-class EmptyCloneableNodeImpl : public fidl::testing::WireTestBase<EmptyCloneableNode> {
- public:
-  explicit EmptyCloneableNodeImpl(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
-  fidl::ServerBindingRef<EmptyCloneableNode> Connect(fidl::ServerEnd<EmptyCloneableNode> request) {
-    return fidl::BindServer(dispatcher_, std::move(request), this);
-  }
+  auto clone_result = component::Clone(*client_end);
+  ASSERT_OK(clone_result.status_value());
 
-  void Clone(CloneRequestView request, CloneCompleter::Sync& completer) override {
-    GTEST_FAIL();
-    completer.Close(ZX_ERR_BAD_STATE);
-  }
+  fidl::Client<Echo> client(std::move(clone_result.value()), dispatcher());
+  client->EchoString(fidl::Request<Echo::EchoString>(kTestString))
+      .Then([quit_loop = QuitLoopClosure()](fidl::Result<Echo::EchoString>& result) {
+        EXPECT_EQ(std::string(kTestString), result->response()->data());
+        quit_loop();
+      });
 
-  void DeprecatedClone(DeprecatedCloneRequestView request,
-                       DeprecatedCloneCompleter::Sync& completer) override {
-    fidl::BindServer(dispatcher_,
-                     fidl::ServerEnd<EmptyCloneableNode>(request->object.TakeChannel()), this);
-  }
-
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    GTEST_FAIL();
-    completer.Close(ZX_ERR_BAD_STATE);
-  }
-
- private:
-  async_dispatcher_t* dispatcher_;
-};
-
-class IncomingCloneTest : public IncomingTest {
- public:
-  void SetUp() override {
-    ASSERT_OK(outgoing()
-                  ->AddProtocol<EmptyCloneableNode>(
-                      std::make_unique<EmptyCloneableNodeImpl>(dispatcher()), kProtocolName)
-                  .status_value());
-  }
-
- protected:
-  constexpr static const char kProtocolName[] = "empty";
-};
-
-TEST_F(IncomingCloneTest, CloneDispatchesToNodeClone) {
-  // Manually convert to the |Empty| protocol.
-  auto empty = component::ConnectAt<EmptyCloneableNode>(TakeSvcDirectoryRoot(), kProtocolName);
-  ASSERT_OK(empty.status_value());
-
-  auto empty_clone = component::Clone<EmptyCloneableNode>(empty.value());
-  ASSERT_OK(empty_clone.status_value());
-
-  // The channel should not have been closed with an error.
-  ASSERT_STATUS(empty_clone->channel().wait_one(ZX_CHANNEL_PEER_CLOSED,
-                                                zx::deadline_after(zx::msec(500)), nullptr),
-                ZX_ERR_TIMED_OUT);
+  RunLoop();
 }
 
-TEST_F(IncomingCloneTest, CloneReturnsPeerClosedIfOtherEndClosesChannel) {
-  auto bad_endpoint = fidl::CreateEndpoints<fuchsia_io::Directory>();
+TEST_F(IncomingProtocolTest, CloneReturnsPeerClosedIfOtherEndClosesChannel) {
+  auto bad_endpoint = fidl::CreateEndpoints<Echo>();
   bad_endpoint->server.reset();
 
   // To mitigate race conditions, the FIDL bindings do not expose PEER_CLOSED
@@ -237,7 +179,7 @@ TEST_F(IncomingCloneTest, CloneReturnsPeerClosedIfOtherEndClosesChannel) {
   }
 }
 
-TEST_F(IncomingCloneTest, CloneReturnsError) {
+TEST_F(IncomingProtocolTest, CloneReturnsErrorWhenHandleLacksRights) {
   auto bad_endpoint = fidl::CreateEndpoints<fuchsia_io::Directory>();
   zx::channel result;
   ASSERT_OK(bad_endpoint->client.TakeHandle().replace(ZX_RIGHT_NONE, &result));

@@ -30,10 +30,7 @@ fidl("fidl.service.test") {
     "disallowed-library-name-component",
     "string-bounds-not-specified",
   ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.io",
-    "//sdk/fidl/fuchsia.unknown",
-  ]
+  public_deps = [ "//sdk/fidl/fuchsia.unknown" ]
   enable_hlcpp = true
 }
 
@@ -41,6 +38,7 @@ test("incoming_test_bin") {
   sources = [ "incoming_test.cc" ]
   deps = [
     ":fidl.service.test_cpp_testing",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
