@@ -110,22 +110,7 @@ zx::result<zxio_object_type_t> zxio_get_object_type(
   const fidl::WireResponse response = result.value();
   const std::string_view protocol{reinterpret_cast<const char*>(response.protocol.data()),
                                   response.protocol.size()};
-  const zxio_object_type_t type = ProtocolToObjectType(protocol);
-  if (type != ZXIO_OBJECT_TYPE_NONE) {
-    return zx::ok(type);
-  }
-  // Legacy protocol names used before all zxio protocols were marked as @discoverable.
-  // Servers now report the discoverable names, but some prebuilt components at previous API levels
-  // still return these legacy constants. These can be removed when they are rebuilt.
-  // TODO(https://fxbug.dev/42056856): We can remove the checks for legacy protocol name constants
-  // once all prebuilt servers are using the latest SDK.
-  if (protocol == std::string_view{"fuchsia.io/File"}) {
-    return zx::ok(ZXIO_OBJECT_TYPE_FILE);
-  }
-  if (protocol == std::string_view{"fuchsia.io/Directory"}) {
-    return zx::ok(ZXIO_OBJECT_TYPE_DIR);
-  }
-  return zx::ok(ZXIO_OBJECT_TYPE_NONE);
+  return zx::ok(ProtocolToObjectType(protocol));
 }
 
 zx_status_t zxio_create_with_info(zx_handle_t raw_handle, const zx_info_handle_basic_t* handle_info,
