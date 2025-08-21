@@ -44,7 +44,6 @@
           "prebuilt/connectivity/openthread/radio-firmware": true,
           "prebuilt/touch/ft5726-sherlock": true,
           "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/firmware": true,
-          "src/connectivity/wlan/drivers/third_party/mediatek/mt7668-wifi-mod/firmware": true,
           "prebuilt/camera/camera_gym_assets": true,
           "prebuilt/drivers/backlight": true,
           "prebuilt/fsatrace": true,

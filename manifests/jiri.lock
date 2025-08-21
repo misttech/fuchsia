@@ -1089,11 +1089,6 @@
         "instance_id": "LwlEPv_9dJIqQOMOqjVkDOfFgTtPhkDUIT1aZPkyNNIC"
     },
     {
-        "package": "fuchsia_internal/firmware/wlan/mediatek/mt7668",
-        "version": "git_revision:e5f55786be98900bc8efc1e138864e60230b8c60",
-        "instance_id": "ZUj4rXBBPLqusZj6dmFCAwBmoAi_9jpY15aQ7zRHlBoC"
-    },
-    {
         "package": "fuchsia_internal/firmware/wlan/synaptics/synadhd",
         "version": "version:4",
         "instance_id": "hrrTPDU3YxuHf3-YIdb-zTORS2k9eDwykifboJ-owtgC"
