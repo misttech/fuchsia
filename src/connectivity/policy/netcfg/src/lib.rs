@@ -21,7 +21,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display};
 use std::num::NonZeroU64;
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::str::FromStr;
 use std::{fs, io, path};
 
@@ -46,11 +46,11 @@ use {
     fidl_fuchsia_net_virtualization as fnet_virtualization, fuchsia_async as fasync,
 };
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use assert_matches::assert_matches;
 use async_trait::async_trait;
 use async_utils::stream::WithTag as _;
-use dns_server_watcher::{DnsServers, DnsServersUpdateSource, DEFAULT_DNS_PORT};
+use dns_server_watcher::{DEFAULT_DNS_PORT, DnsServers, DnsServersUpdateSource};
 use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use log::{debug, error, info, trace, warn};
@@ -61,7 +61,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use self::devices::DeviceInfo;
-use self::errors::{accept_error, ContextExt as _};
+use self::errors::{ContextExt as _, accept_error};
 use self::filter::{FilterControl, FilterEnabledState};
 use self::interface::{
     DeviceInfoRef, InterfaceNamingIdentifier, NetstackManagedRoutesDesignation, ProvisioningAction,
@@ -1190,8 +1190,8 @@ impl<'a> NetCfg<'a> {
         let default_network_updates: Pin<
             Box<
                 dyn futures::Stream<
-                    Item = Result<fnp_properties::DefaultNetworkUpdate, fidl::Error>,
-                >,
+                        Item = Result<fnp_properties::DefaultNetworkUpdate, fidl::Error>,
+                    >,
             >,
         >;
 
@@ -2399,7 +2399,7 @@ impl<'a> NetCfg<'a> {
                 async move {
                     trace!("got {:?} event for {}", event, filename.display());
 
-                    if filename == path::PathBuf::from(THIS_DIRECTORY) {
+                    if filename.to_str() == Some(THIS_DIRECTORY) {
                         debug!("skipping device w/ filename = {}", filename.display());
                         return Ok(None);
                     }
@@ -2664,7 +2664,7 @@ impl<'a> NetCfg<'a> {
             Err(interface::NameGenerationError::GenerationError(e)) => {
                 return Err(devices::AddDeviceError::Other(errors::Error::Fatal(
                     e.context("error getting stable name"),
-                )))
+                )));
             }
         };
 
@@ -2754,13 +2754,11 @@ impl<'a> NetCfg<'a> {
         info!("installed configuration with result {:?}", config);
 
         if device_info.is_wlan_ap() {
-            if let Some(id) = self.interface_states.iter().find_map(|(id, state)| {
-                if state.is_wlan_ap() {
-                    Some(id)
-                } else {
-                    None
-                }
-            }) {
+            if let Some(id) = self
+                .interface_states
+                .iter()
+                .find_map(|(id, state)| if state.is_wlan_ap() { Some(id) } else { None })
+            {
                 return Err(errors::Error::NonFatal(anyhow::anyhow!(
                     "multiple WLAN AP interfaces are not supported, \
                         have WLAN AP interface with id = {}",
@@ -5400,16 +5398,18 @@ mod tests {
                     Some(request_stream)
                 }
             };
-            assert!(interface_states
-                .insert(
-                    id,
-                    TestInterfaceState {
-                        _control_server_end: control_server_end,
-                        dhcpv6_client_request_stream,
-                        kind,
-                    }
-                )
-                .is_none());
+            assert!(
+                interface_states
+                    .insert(
+                        id,
+                        TestInterfaceState {
+                            _control_server_end: control_server_end,
+                            dhcpv6_client_request_stream,
+                            kind,
+                        }
+                    )
+                    .is_none()
+            );
         }
 
         async fn assert_dhcpv6_clients_stopped(
