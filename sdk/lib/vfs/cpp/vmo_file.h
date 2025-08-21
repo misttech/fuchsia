@@ -23,16 +23,12 @@ namespace vfs {
 // This class is thread-safe.
 class VmoFile final : public Node {
  public:
-  // TODO(https://fxbug.dev/311176363): Remove deprecated enum constants and type aliases below.
-
   // Specifies the desired behavior of writes.
   enum class WriteMode : vfs_internal_write_mode_t {
     // The VmoFile is read only.
     kReadOnly = VFS_INTERNAL_WRITE_MODE_READ_ONLY,
     // The VmoFile will be writable.
     kWritable = VFS_INTERNAL_WRITE_MODE_WRITABLE,
-    READ_ONLY ZX_REMOVED_SINCE(1, 19, 20, "Use kReadOnly instead.") = kReadOnly,
-    WRITABLE ZX_REMOVED_SINCE(1, 19, 20, "Use kWritable instead.") = kWritable,
   };
 
   // Specifies the default behavior when a client asks for the file's underlying VMO, but does not
@@ -63,14 +59,7 @@ class VmoFile final : public Node {
     // portions of the VMO outside of the range of the file and when file
     // modifications by clients should not be visible to each other.
     kCloneCow = VFS_INTERNAL_SHARING_MODE_COW,
-
-    NONE ZX_REMOVED_SINCE(1, 19, 20, "Use kNone instead.") = kNone,
-    DUPLICATE ZX_REMOVED_SINCE(1, 19, 20, "Use kDuplicate instead.") = kDuplicate,
-    CLONE_COW ZX_REMOVED_SINCE(1, 19, 20, "Use kCloneCow instead.") = kCloneCow,
   };
-
-  using WriteOption ZX_REMOVED_SINCE(1, 19, 20, "Use WriteMode instead.") = WriteMode;
-  using Sharing ZX_REMOVED_SINCE(1, 19, 20, "Use DefaultSharingMode instead.") = DefaultSharingMode;
 
   // Creates a file node backed by a VMO.
   VmoFile(zx::vmo vmo, size_t length, WriteMode write_option = WriteMode::kReadOnly,
@@ -91,9 +80,6 @@ class VmoFile final : public Node {
     return ServeInternal(flags | fuchsia_io::Flags::kProtocolFile, server_end.TakeChannel(),
                          dispatcher);
   }
-
-  // TODO(https://fxbug.dev/336617685): This version of `Serve` is deprecated and should be removed.
-  using Node::Serve;
 
   // Returns a borrowed handle to the VMO backing this file.
   zx::unowned_vmo vmo() const { return vmo_->borrow(); }

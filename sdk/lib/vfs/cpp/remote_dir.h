@@ -37,12 +37,11 @@ class RemoteDir final : public Node {
   // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
   // Deprecated HLCPP Signatures
   // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
-  //
-  // TODO(https://fxbug.dev/336617685): Mark the following signatures as deprecated once all callers
-  // have migratred to the above LLCPP signatures.
 
   // Binds to a remotely hosted directory using the specified `dir`. The `dir` handle must be valid.
+  // TODO(https://fxbug.dev/408237874): Mark this as removed at NEXT when we ship API level 29.
   explicit RemoteDir(fidl::InterfaceHandle<fuchsia::io::Directory> dir)
+      ZX_DEPRECATED_SINCE(1, NEXT, "Use LLCPP signature instead.")
       : RemoteDir(dir.TakeChannel()) {}
 
  private:

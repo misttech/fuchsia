@@ -16,6 +16,7 @@
 
 #include <lib/async/dispatcher.h>
 #include <stdint.h>
+#include <zircon/availability.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
@@ -62,7 +63,8 @@ typedef zx_status_t (*vfs_internal_write_handler_t)(const void* cookie, const ch
 //
 // This function is thread-safe.
 zx_status_t vfs_internal_node_serve(vfs_internal_node_t* vnode, async_dispatcher_t* dispatcher,
-                                    zx_handle_t channel, uint32_t flags);
+                                    zx_handle_t channel, uint32_t flags)
+    ZX_REMOVED_SINCE(1, 28, NEXT, "Replaced by vfs_internal_node_serve3");
 
 // Serve `vnode` using `dispatcher` over `channel` with specified `flags`, where `flags` aligns with
 // fuchsia.io/Flags. `channel` must be protocol compatible with the type of node. Takes
@@ -72,7 +74,7 @@ zx_status_t vfs_internal_node_serve(vfs_internal_node_t* vnode, async_dispatcher
 //
 // `flags` must not include fuchsia.io/Flags.FLAG_*_CREATE, since object creation requires a path
 // and object type. Objects can be created by serving a connection to a directory and calling
-// fuchsia.io/Directory.Open3 on the resulting channel.
+// fuchsia.io/Directory.Open on the resulting channel.
 //
 // This function is thread-safe.
 zx_status_t vfs_internal_node_serve3(vfs_internal_node_t* vnode, async_dispatcher_t* dispatcher,

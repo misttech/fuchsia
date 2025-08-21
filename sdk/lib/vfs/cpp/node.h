@@ -59,37 +59,9 @@ class Node {
                                     static_cast<uint64_t>(flags));
   }
 
-  // Establishes a connection for `request` using the given `flags`. This method must only be used
-  // with a single-threaded asynchronous dispatcher. If `dispatcher` is `nullptr`, the current
-  // thread's default dispatcher will be used via `async_get_default_dispatcher`.
-  //
-  // The same `dispatcher` must be used if multiple connections are served for the same node,
-  // otherwise `ZX_ERR_INVALID_ARGS` will be returned.
-  //
-  // *WARNING*: Not all node types support `Serve()` due to lifetime restrictions (e.g. `LazyDir`).
-  zx_status_t Serve(fuchsia::io::OpenFlags flags, zx::channel request,
-                    async_dispatcher_t* dispatcher = nullptr)
-      ZX_REMOVED_SINCE(1, 25, 26, "Use new signature of Serve which takes fuchsia.io/Flags.") {
-    if (!dispatcher) {
-      dispatcher = async_get_default_dispatcher();
-    }
-    return vfs_internal_node_serve(handle_, dispatcher, request.release(),
-                                   static_cast<uint32_t>(flags));
-  }
-
  private:
   vfs_internal_node_t* const handle_;
 };
-
-namespace internal {
-
-// TODO(https://fxbug.dev/311176363): Remove the following type aliases when possible.
-using Node ZX_REMOVED_SINCE(1, 19, 20, "Use vfs::Node or a concrete type instead.") = vfs::Node;
-using Directory ZX_REMOVED_SINCE(1, 19, 20,
-                                 "Use vfs::Node or a concrete type instead.") = vfs::Node;
-using File ZX_REMOVED_SINCE(1, 19, 20, "Use vfs::Node or a concrete type instead.") = vfs::Node;
-
-}  // namespace internal
 
 }  // namespace vfs
 

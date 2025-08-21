@@ -47,9 +47,6 @@ class PseudoDir final : public Node {
                          dispatcher);
   }
 
-  // TODO(https://fxbug.dev/336617685): This version of `Serve` is deprecated and should be removed.
-  using Node::Serve;
-
   // Adds a directory entry associating the given `name` with `vn`. The same node may be added
   // multiple times with different names. Returns `ZX_ERR_ALREADY_EXISTS` if there is already a node
   // associated with `name`.

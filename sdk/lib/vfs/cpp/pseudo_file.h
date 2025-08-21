@@ -63,9 +63,6 @@ class PseudoFile final : public Node {
                          dispatcher);
   }
 
-  // TODO(https://fxbug.dev/336617685): This version of `Serve` is deprecated and should be removed.
-  using Node::Serve;
-
  private:
   struct PseudoFileState {
     const ReadHandler read_handler;

@@ -60,7 +60,6 @@ static_assert(static_cast<vfs_internal_sharing_mode_t>(DefaultSharingMode::kClon
               VFS_INTERNAL_SHARING_MODE_COW);
 
 // Implements `vfs::ComposedServiceDir` functionality using the in-tree VFS.
-// TODO(https://fxbug.dev/309685624): Remove when all callers have migrated.
 class LibvfsComposedServiceDir final : public intree_vfs::PseudoDir {
  public:
   zx_status_t Lookup(std::string_view name, fbl::RefPtr<intree_vfs::Vnode>* out) override {
@@ -128,7 +127,6 @@ class LibvfsComposedServiceDir final : public intree_vfs::PseudoDir {
 };
 
 // Implements in-tree `fs::LazyDir` using C callbacks defined in `vfs_internal_lazy_dir_context_t`.
-// TODO(https://fxbug.dev/309685624): Remove when all callers have migrated.
 class LibvfsLazyDir final : public intree_vfs::LazyDir {
  public:
   explicit LibvfsLazyDir(const vfs_internal_lazy_dir_context_t* context) : context_(*context) {}
@@ -179,28 +177,7 @@ __EXPORT zx_status_t vfs_internal_node_serve(vfs_internal_node_t* vnode,
                                              async_dispatcher_t* dispatcher, zx_handle_t channel,
                                              uint32_t flags) {
   zx::channel chan(channel);
-  if (!vnode || !dispatcher) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  if (!chan) {
-    return ZX_ERR_BAD_HANDLE;
-  }
-  // Ensure `flags` are compatible with the version this library was compiled against.
-  std::optional fidl_flags = fuchsia_io::wire::OpenFlags::TryFrom(flags);
-  if (!fidl_flags) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  zx::result open_options = intree_vfs::DeprecatedOptions::FromOpen1Flags(*fidl_flags);
-  if (open_options.is_error()) {
-    return open_options.error_value();
-  }
-  std::lock_guard guard(vnode->mutex);
-  if (!vnode->vfs) {
-    vnode->vfs = std::make_unique<intree_vfs::SynchronousVfs>(dispatcher);
-  } else if (dispatcher != vnode->vfs->dispatcher()) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  return vnode->vfs->ServeDeprecated(vnode->AsNode(), std::move(chan), *open_options);
+  return ZX_ERR_NOT_SUPPORTED;
 }
 
 __EXPORT zx_status_t vfs_internal_node_serve3(vfs_internal_node_t* vnode,
