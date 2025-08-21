@@ -55,9 +55,10 @@ const std::unordered_map<std::string, std::unordered_set<std::string_view>> kCon
      }},
     {"Rebind",
      {
-         "block",               // ramdisk-tests
-         "driver_runner_test",  // driver-runner-test
-         "nand",                // nandpart-broker-test
+         "block",                                            // ramdisk-tests
+         "driver_runner_test",                               // driver-runner-test
+         "No_class_name_but_driver_url_is_owned by parent",  // nand-broker-test
+         "nand",                                             // nandpart-broker-test
          "No_class_name_but_driver_url_is_fuchsia-boot:///dtr#meta/ddk-lifecycle-test.cm",  // ddk-lifecycle-test
      }},
     {"UnbindChildren",
@@ -69,11 +70,11 @@ const std::unordered_map<std::string, std::unordered_set<std::string_view>> kCon
      {
          "bt-emulator",         // bt-host-integration-tests
          "driver_runner_test",  // driver-runner-test
-         "nand",                // ram-nand-test
          "No_class_name_but_driver_url_is_fuchsia-boot:///dtr#meta/ddk-lifecycle-test.cm",  // ddk-lifecycle-test
          "No_class_name_but_driver_url_is_fuchsia-boot:///dtr#meta/fvm.cm",  // paver-test
          "No_class_name_but_driver_url_is_fuchsia-boot:///fvm#meta/fvm.cm",
-         "No_class_name_but_driver_url_is_owned by parent",  // blobfs-ramdisk-test, and so many others
+         "No_class_name_but_driver_url_is_owned by parent",  // blobfs-ramdisk-test, and so many
+                                                             // others
      }},
     {"GetTopologicalPath", {kAllowAllUses}},
 });

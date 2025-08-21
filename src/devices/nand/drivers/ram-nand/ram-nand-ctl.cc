@@ -4,8 +4,7 @@
 
 #include "ram-nand-ctl.h"
 
-#include <fidl/fuchsia.hardware.nand/cpp/wire.h>
-#include <inttypes.h>
+#include <lib/driver/component/cpp/driver_export.h>
 #include <lib/zx/vmo.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,34 +12,12 @@
 
 #include <memory>
 
-#include <ddktl/device.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/macros.h>
 
-#include "ram-nand.h"
-
 namespace {
 
-class RamNandCtl;
-using RamNandCtlDeviceType =
-    ddk::Device<RamNandCtl, ddk::Messageable<fuchsia_hardware_nand::RamNandCtl>::Mixin>;
-
-class RamNandCtl : public RamNandCtlDeviceType {
- public:
-  explicit RamNandCtl(zx_device_t* parent) : RamNandCtlDeviceType(parent) {}
-
-  zx_status_t Bind() {
-    return DdkAdd(ddk::DeviceAddArgs("nand-ctl").set_flags(DEVICE_ADD_NON_BINDABLE));
-  }
-  void DdkRelease() { delete this; }
-
-  void CreateDevice(CreateDeviceRequestView request, CreateDeviceCompleter::Sync& completer);
-
-  DISALLOW_COPY_ASSIGN_AND_MOVE(RamNandCtl);
-};
-
-void nand_banjo_from_fidl(const fuchsia_hardware_nand::wire::Info& source,
-                          nand_info_t* destination) {
+void NandBanjoFromFidl(const fuchsia_hardware_nand::wire::Info& source, nand_info_t* destination) {
   destination->page_size = source.page_size;
   destination->pages_per_block = source.pages_per_block;
   destination->num_blocks = source.num_blocks;
@@ -50,42 +27,57 @@ void nand_banjo_from_fidl(const fuchsia_hardware_nand::wire::Info& source,
   memcpy(&destination->partition_guid, source.partition_guid.data(), NAND_GUID_LEN);
 }
 
+}  // namespace
+
+namespace ram_nand {
+
+zx::result<> RamNandCtl::Start() {
+  zx::result connector = devfs_connector_.Bind(dispatcher());
+  if (connector.is_error()) {
+    fdf::error("Failed to bind devfs connector: {}", connector);
+    return connector.take_error();
+  }
+
+  fuchsia_driver_framework::DevfsAddArgs devfs({
+      .connector = std::move(connector.value()),
+      .connector_supports = fuchsia_device_fs::ConnectionType::kDevice,
+  });
+
+  zx::result child = AddOwnedChild(kChildNodeName, devfs);
+  if (child.is_error()) {
+    fdf::error("Failed to add child: {}", child);
+    return child.take_error();
+  }
+  child_ = std::move(child.value());
+
+  return zx::ok();
+}
+
 void RamNandCtl::CreateDevice(CreateDeviceRequestView request,
                               CreateDeviceCompleter::Sync& completer) {
   nand_info_t temp_info;
-  nand_banjo_from_fidl(request->info.nand_info, &temp_info);
+  NandBanjoFromFidl(request->info.nand_info, &temp_info);
   const auto& params = static_cast<const NandParams>(temp_info);
-  fbl::AllocChecker checker;
-  std::unique_ptr<NandDevice> device(new (&checker) NandDevice(params, zxdev()));
-  if (!checker.check()) {
-    completer.Reply(ZX_ERR_NO_MEMORY, fidl::StringView());
+  const NandDevice::Id device_id = next_device_id_++;
+  auto device = std::make_unique<NandDevice>(params, dispatcher(), device_id,
+                                             [this, device_id]() { devices_.erase(device_id); });
+
+  const zx::result device_name =
+      device->Init(request->info, child_.node_, incoming(), outgoing(), node_name());
+  if (device_name.is_error()) {
+    fdf::error("Failed to initialize device: {}", device_name);
+    completer.Reply(device_name.status_value(), fidl::StringView());
     return;
   }
+  devices_.insert({device_id, std::move(device)});
 
-  zx_status_t status = device->Bind(request->info);
-  if (status != ZX_OK) {
-    completer.Reply(status, fidl::StringView());
-    return;
-  }
-
-  // devmgr is now in charge of the device.
-  [[maybe_unused]] NandDevice* dummy = device.release();
-  completer.Reply(ZX_OK, fidl::StringView::FromExternal(dummy->name()));
+  completer.Reply(ZX_OK, fidl::StringView::FromExternal(device_name.value()));
 }
 
-}  // namespace
-
-zx_status_t RamNandDriverBind(void* ctx, zx_device_t* parent) {
-  fbl::AllocChecker checker;
-  std::unique_ptr<RamNandCtl> device(new (&checker) RamNandCtl(parent));
-  if (!checker.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  zx_status_t status = device->Bind();
-  if (status == ZX_OK) {
-    // devmgr is now in charge of the device.
-    [[maybe_unused]] RamNandCtl* dummy = device.release();
-  }
-  return status;
+void RamNandCtl::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_nand::RamNandCtl> server) {
+  bindings_.AddBinding(dispatcher(), std::move(server), this, fidl::kIgnoreBindingClosure);
 }
+
+}  // namespace ram_nand
+
+FUCHSIA_DRIVER_EXPORT(ram_nand::RamNandCtl);

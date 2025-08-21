@@ -96,11 +96,7 @@ config("fidl-wire-deprecated-mutable-tables") {
 
     #------------------
     #------------------
-    "//src/devices/nand/drivers/ram-nand:ram-nand-driver",
-
-    #------------------
-    #------------------
-    "//src/devices/nand/drivers/ram-nand:test",
+    "//src/devices/nand/drivers/ram-nand:common",
 
     #------------------
     #------------------

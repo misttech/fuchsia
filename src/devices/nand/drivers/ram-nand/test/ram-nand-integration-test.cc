@@ -7,7 +7,8 @@
 #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
-#include <lib/fdio/cpp/caller.h>
+#include <lib/driver_test_realm/realm_builder/cpp/lib.h>
+#include <lib/fdio/fd.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,16 +18,55 @@
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <fbl/string.h>
 #include <fbl/unique_fd.h>
+#include <gtest/gtest.h>
 #include <ramdevice-client/ramnand.h>
-#include <zxtest/zxtest.h>
+
+#include "src/lib/testing/predicates/status.h"
 
 namespace {
 
 fuchsia_hardware_nand::wire::RamNandInfo BuildConfig() {
   return {
-      .nand_info = {4096, 4, 5, 6, 0, fuchsia_hardware_nand::wire::Class::kTest, {}},
+      .nand_info = {.page_size = 4096,
+                    .pages_per_block = 4,
+                    .num_blocks = 5,
+                    .ecc_bits = 6,
+                    .oob_size = 0,
+                    .nand_class = fuchsia_hardware_nand::wire::Class::kTest,
+                    .partition_guid{}},
   };
 }
+
+}  // namespace
+
+namespace ram_nand::testing {
+
+class RamNandIntegrationTest : public ::testing::Test {
+ public:
+  void SetUp() override {
+    // Connect to DriverTestRealm.
+    zx::result client_end = component::Connect<fuchsia_driver_test::Realm>();
+    ASSERT_OK(client_end);
+    fidl::WireSyncClient client(std::move(client_end.value()));
+
+    // Start DriverTestRealm.
+    fidl::Arena arena;
+    const fidl::WireResult result =
+        client->Start(fuchsia_driver_test::wire::RealmArgs::Builder(arena)
+                          .root_driver("fuchsia-boot:///platform-bus#meta/platform-bus.cm")
+                          .software_devices(std::vector{fuchsia_driver_test::wire::SoftwareDevice{
+                              .device_name = "ram-nand",
+                              .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_RAM_NAND,
+                          }})
+                          .Build());
+    ASSERT_OK(result.status());
+    ASSERT_TRUE(result->is_ok());
+
+    // Wait for the ram-nand driver to be bound.
+    zx::result channel = device_watcher::RecursiveWaitForFile(ramdevice_client::RamNand::kBasePath);
+    ASSERT_OK(channel);
+  }
+};
 
 class NandDevice {
  public:
@@ -57,7 +97,7 @@ class NandDevice {
   ramdevice_client::RamNand ram_nand_;
 };
 
-TEST(RamNandIntegrationTest, TrivialLifetime) {
+TEST_F(RamNandIntegrationTest, TrivialLifetime) {
   std::unique_ptr<device_watcher::DirWatcher> watcher;
   fbl::unique_fd dir_fd(open(ramdevice_client::RamNand::kBasePath, O_RDONLY | O_DIRECTORY));
   ASSERT_TRUE(dir_fd);
@@ -78,7 +118,7 @@ TEST(RamNandIntegrationTest, TrivialLifetime) {
   ASSERT_FALSE(found);
 }
 
-TEST(RamNandIntegrationTest, ExportConfig) {
+TEST_F(RamNandIntegrationTest, ExportConfig) {
   fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
   config.export_nand_config = true;
 
@@ -86,7 +126,7 @@ TEST(RamNandIntegrationTest, ExportConfig) {
   ASSERT_OK(device.status_value());
 }
 
-TEST(RamNandIntegrationTest, ExportPartitions) {
+TEST_F(RamNandIntegrationTest, ExportPartitions) {
   fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
   config.export_partition_map = true;
 
@@ -94,7 +134,7 @@ TEST(RamNandIntegrationTest, ExportPartitions) {
   ASSERT_OK(device.status_value());
 }
 
-TEST(RamNandIntegrationTest, CreateFailure) {
+TEST_F(RamNandIntegrationTest, CreateFailure) {
   fuchsia_hardware_nand::wire::RamNandInfo config = BuildConfig();
   config.nand_info.num_blocks = 0;
 
@@ -102,43 +142,4 @@ TEST(RamNandIntegrationTest, CreateFailure) {
   ASSERT_STATUS(device.status_value(), ZX_ERR_INVALID_ARGS);
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
-  // Connect to DriverTestRealm.
-  auto client_end = component::Connect<fuchsia_driver_test::Realm>();
-  if (!client_end.is_ok()) {
-    fprintf(stderr, "Failed to connect to Realm FIDL: %d\n", client_end.error_value());
-    return 1;
-  }
-  fidl::WireSyncClient client{std::move(*client_end)};
-
-  // Start the DriverTestRealm with correct arguments.
-  fidl::Arena arena;
-  auto wire_result =
-      client->Start(fuchsia_driver_test::wire::RealmArgs::Builder(arena)
-                        .root_driver("fuchsia-boot:///platform-bus#meta/platform-bus.cm")
-                        .software_devices(std::vector{fuchsia_driver_test::wire::SoftwareDevice{
-                            .device_name = "ram-nand",
-                            .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_RAM_NAND,
-                        }})
-                        .Build());
-  if (wire_result.status() != ZX_OK) {
-    fprintf(stderr, "Failed to call to Realm:Start: %d\n", wire_result.status());
-    return 1;
-  }
-  if (wire_result->is_error()) {
-    fprintf(stderr, "Realm:Start failed: %d\n", wire_result->error_value());
-    return 1;
-  }
-
-  zx::result channel = device_watcher::RecursiveWaitForFile(ramdevice_client::RamNand::kBasePath);
-  if (channel.is_error()) {
-    fprintf(stderr, "Failed to open device file: %s\n", channel.status_string());
-    return 1;
-  }
-  // TODO(https://fxbug.dev/42073486): Remove this once the elf runner no longer
-  // fools libc into block-buffering stdout.
-  setlinebuf(stdout);
-  return RUN_ALL_TESTS(argc, argv);
-}
+}  // namespace ram_nand::testing

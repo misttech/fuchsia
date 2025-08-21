@@ -117,7 +117,9 @@ std::vector<zx::result<>> NandOperation::ExecuteBatch(
 }
 
 void NandOperation::CreateOperation() {
-  ZX_DEBUG_ASSERT(op_size_ >= sizeof(nand_operation_t));
+  ZX_DEBUG_ASSERT_MSG(op_size_ >= sizeof(nand_operation_t),
+                      "op-size=%zu, sizeof(nand_operation_t)=%zu", op_size_,
+                      sizeof(nand_operation_t));
   raw_buffer_.reset(new char[op_size_]);
 
   memset(raw_buffer_.get(), 0, op_size_);

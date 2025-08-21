@@ -14,112 +14,78 @@ driver_bind_rules("ram-nand-bind") {
 }
 
 fuchsia_cc_driver("ram-nand-driver") {
-  legacy = true
   output_name = "ram-nand"
-  configs += [
-    "//build/config:all_source",
-    "//build/config/fuchsia:enable_zircon_asserts",
-  ]
-  sources = [
-    "bind.cc",
-    "ram-nand-ctl.cc",
-    "ram-nand-ctl.h",
-  ]
-  deps = [
-    ":common",
-    ":ram-nand-bind",
-    "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
-    "//sdk/lib/fidl",
-    "//src/devices/lib/driver",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zx",
-  ]
-
-  # TODO(https://fxbug.dev/42176699): This target uses mutable tables which are deprecated,
-  # rather than builders.
-  configs += [ "//build/cpp:fidl-wire-deprecated-mutable-tables" ]
+  deps = [ ":common" ]
 }
 
 fuchsia_driver_component("ram-nand") {
   component_name = "ram-nand"
-  deps = [ ":ram-nand-driver" ]
+  deps = [
+    ":ram-nand-bind",
+    ":ram-nand-driver",
+  ]
   info = "meta/ram-nand-info.json"
   manifest = "meta/ram-nand.cml"
 }
 
 source_set("common") {
   visibility = [ ":*" ]
+  configs += [
+    "//build/config:all_source",
+    "//build/config/fuchsia:enable_zircon_asserts",
+
+    # TODO(https://fxbug.dev/42176699): This target uses mutable tables which are deprecated,
+    # rather than builders.
+    "//build/cpp:fidl-wire-deprecated-mutable-tables",
+  ]
   sources = [
+    "ram-nand-ctl.cc",
+    "ram-nand-ctl.h",
     "ram-nand.cc",
     "ram-nand.h",
   ]
   deps = [
-    "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
-    "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
-    "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.nand:fuchsia.nand_cpp",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
   ]
   public_deps = [
+    "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
+    "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
+    "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/devfs/cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
+    "//zircon/system/ulib/zx",
   ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
 }
 
-test("test") {
-  output_name = "ram-nand-test"
-  sources = [
-    "test/ram-nand-integration-test.cc",
-    "test/ram-nand-test.cc",
-  ]
-  include_dirs = [ "." ]
+test("ram-nand-integration-test-bin") {
+  output_name = "ram-nand-integration-test"
+  sources = [ "test/ram-nand-integration-test.cc" ]
   deps = [
     ":common",
-    "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
-    "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
-    "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
-    "//sdk/lib/driver_test_realm:static",
-    "//sdk/lib/fdio",
+    "//sdk/lib/driver_test_realm/realm_builder/cpp",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
-    "//src/devices/testing/mock-ddk",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//src/storage/lib/ramdevice_client/cpp",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/fdio-caller",
-    "//zircon/system/ulib/fzl",
-    "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
   ]
-  data_deps = [ ":ram-nand" ]
-
-  # TODO(https://fxbug.dev/42176699): This target uses mutable tables which are deprecated,
-  # rather than builders.
-  configs += [ "//build/cpp:fidl-wire-deprecated-mutable-tables" ]
 }
 
-fuchsia_unittest_package("ram-nand-test") {
-  manifest = "meta/ram-nand-test.cml"
+fuchsia_unittest_package("ram-nand-integration-test") {
+  manifest = "meta/ram-nand-integration-test.cml"
   deps = [
-    ":test",
+    ":ram-nand-integration-test-bin",
     "//src/devices/board/drivers/integration-test",
     "//src/devices/bus/drivers/platform",
     "//src/devices/nand/drivers/nand",
@@ -135,10 +101,37 @@ fuchsia_unittest_package("ram-nand-test") {
   }
 }
 
+test("ram-nand-test-bin") {
+  output_name = "ram-nand-test"
+  sources = [ "test/ram-nand-test.cc" ]
+  deps = [
+    ":common",
+    "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
+    "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/fdio",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
+    "//third_party/googletest:gmock",
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/fdio-caller",
+    "//zircon/system/ulib/fzl",
+    "//zircon/system/ulib/sync",
+    "//zircon/system/ulib/zircon-internal",
+    "//zircon/system/ulib/zx",
+  ]
+  data_deps = [ ":ram-nand" ]
+}
+
+fuchsia_unittest_package("ram-nand-test") {
+  deps = [ ":ram-nand-test-bin" ]
+}
+
 group("tests") {
   testonly = true
   deps = [
     ":ram-nand-bind_test",
+    ":ram-nand-integration-test",
     ":ram-nand-test",
   ]
 }

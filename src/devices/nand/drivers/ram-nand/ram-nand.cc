@@ -7,6 +7,8 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/node/cpp/add_child.h>
 #include <lib/zbi-format/partition.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,28 +32,21 @@
 
 namespace {
 
-struct RamNandOp {
-  nand_operation_t op;
-  nand_queue_callback completion_cb;
-  void* cookie;
-  list_node_t node;
-};
-
 static_assert(ZBI_PARTITION_NAME_LEN == fuchsia_hardware_nand::wire::kNameLen, "bad fidl name");
 static_assert(ZBI_PARTITION_GUID_LEN == fuchsia_hardware_nand::wire::kGuidLen, "bad fidl guid");
 
-uint32_t GetNumPartitions(const fuchsia_hardware_nand::wire::RamNandInfo& info) {
+uint32_t GetPartitionCount(const fuchsia_hardware_nand::wire::RamNandInfo& info) {
   return std::min(info.partition_map.partition_count, fuchsia_hardware_nand::wire::kMaxPartitions);
 }
 
 fuchsia_hardware_nand::Config ExtractNandConfig(
     const fuchsia_hardware_nand::wire::RamNandInfo& info) {
-  fuchsia_hardware_nand::BadBlockConfig bad_block_config{{
+  fuchsia_hardware_nand::BadBlockConfig bad_block_config({
       .type = fuchsia_hardware_nand::BadBlockConfigType::kAmlogicUboot,
-  }};
+  });
   std::vector<fuchsia_hardware_nand::PartitionConfig> extra_partition_configs;
 
-  for (uint32_t i = 0; i < GetNumPartitions(info); i++) {
+  for (size_t i = 0; i < GetPartitionCount(info); i++) {
     const auto& partition = info.partition_map.partitions[i];
     if (partition.hidden && partition.bbt) {
       bad_block_config.table_start_block() = partition.first_block;
@@ -65,29 +60,33 @@ fuchsia_hardware_nand::Config ExtractNandConfig(
     }
   }
 
-  return fuchsia_hardware_nand::Config{
+  return fuchsia_hardware_nand::Config(
       {.bad_block_config = bad_block_config,
-       .extra_partition_configs = std::move(extra_partition_configs)}};
+       .extra_partition_configs = std::move(extra_partition_configs)});
 }
 
 fuchsia_boot_metadata::PartitionMap ExtractPartitionMap(
     const fuchsia_hardware_nand::wire::RamNandInfo& info) {
-  fuchsia_boot_metadata::PartitionMap map{
+  fuchsia_boot_metadata::PartitionMap map(
       {.block_count = info.nand_info.num_blocks,
        .block_size = info.nand_info.page_size * info.nand_info.pages_per_block,
-       .guid{{0}}}};
+       .guid{{0}}});
   std::ranges::copy(info.partition_map.device_guid, map.guid().value().begin());
 
-  std::span src_partitions{info.partition_map.partitions.begin(),
-                           info.partition_map.partition_count};
+  const std::span src_partitions(info.partition_map.partitions.begin(),
+                                 info.partition_map.partition_count);
   auto partitions =
-      src_partitions | std::views::filter([](const auto& partition) { return !partition.hidden; }) |
-      std::views::transform([](const auto& src) {
-        fuchsia_boot_metadata::Partition dst{{.type_guid{{0}},
+      src_partitions |
+      std::views::filter([](const fuchsia_hardware_nand::wire::Partition& partition) {
+        return !partition.hidden;
+      }) |
+      std::views::transform([](const fuchsia_hardware_nand::wire::Partition& src) {
+        const auto name_end = std::ranges::find(src.name, '\0');
+        fuchsia_boot_metadata::Partition dst({.type_guid{{0}},
                                               .unique_guid{{0}},
                                               .first_block = src.first_block,
                                               .last_block = src.last_block,
-                                              .name{src.name.begin(), src.name.end()}}};
+                                              .name = std::string(src.name.begin(), name_end)});
         std::ranges::copy(src.type_guid, dst.type_guid().begin());
         std::ranges::copy(src.unique_guid, dst.unique_guid().begin());
         return dst;
@@ -98,83 +97,36 @@ fuchsia_boot_metadata::PartitionMap ExtractPartitionMap(
 
 }  // namespace
 
-NandDevice::NandDevice(const NandParams& params, zx_device_t* parent)
-    : DeviceType(parent), params_(params) {}
+namespace ram_nand {
 
 NandDevice::~NandDevice() {
-  if (thread_created_) {
-    Kill();
-    sync_completion_signal(&wake_signal_);
-    int result_code;
-    thrd_join(worker_, &result_code);
+  if (operation_performer_.has_value()) {
+    {
+      fbl::AutoLock lock(&lock_);
+      dead_ = true;
+    }
+    sync_completion_signal(&operations_pending_);
+    std::thread operation_performer = std::move(operation_performer_).value();
+    operation_performer.join();
   }
-  ZX_ASSERT(list_is_empty(&txn_list_));
+  ZX_ASSERT(pending_operations_.empty());
   if (mapped_addr_) {
     zx_vmar_unmap(zx_vmar_root_self(), mapped_addr_, params_.GetSize());
   }
 }
 
-zx_status_t NandDevice::Bind(fuchsia_hardware_nand::wire::RamNandInfo& info) {
-  zx::result<DeviceNameType> device_name = Init(std::move(info.vmo));
-  if (device_name.is_error()) {
-    return device_name.status_value();
-  }
-
-  if (info.wear_vmo.is_valid()) {
-    if (zx_status_t status =
-            wear_info_.Map(info.wear_vmo, 0, info.nand_info.num_blocks * sizeof(uint32_t));
-        status != ZX_OK) {
-      zxlogf(ERROR, "Failed to map wear info: %s", zx_status_get_string(status));
-      return status;
-    }
-  }
-
-  zx_device_str_prop_t props[] = {
-      ddk::MakeStrProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_nand::BIND_PROTOCOL_DEVICE),
-      ddk::MakeStrProperty(bind_fuchsia::NAND_CLASS, params_.nand_class),
-  };
-
-  fail_after_ = static_cast<uint64_t>(info.fail_after) * params_.page_size;
-  if (fail_after_ > 0) {
-    zxlogf(INFO, "fail-after: %lu", fail_after_);
-  }
-
-  auto args = ddk::DeviceAddArgs(device_name->data()).set_str_props(props);
-  if (info.export_nand_config) {
-    auto nand_config = ExtractNandConfig(info);
-    fit::result persisted = fidl::Persist(nand_config);
-    if (persisted.is_error()) {
-      zxlogf(ERROR, "Failed to persist nand config: %s",
-             persisted.error_value().FormatDescription().c_str());
-      return persisted.error_value().status();
-    }
-    args.add_metadata(DEVICE_METADATA_PRIVATE, std::move(persisted.value()));
-  }
-  if (info.export_partition_map) {
-    auto partition_map = ExtractPartitionMap(info);
-    fit::result persisted = fidl::Persist(partition_map);
-    if (persisted.is_error()) {
-      zxlogf(ERROR, "Failed to persist partition map: %s",
-             persisted.error_value().FormatDescription().c_str());
-      return persisted.error_value().status();
-    }
-    args.add_metadata(DEVICE_METADATA_PARTITION_MAP, std::move(persisted.value()));
-  }
-
-  return DdkAdd(std::move(args));
-}
-
-zx::result<NandDevice::DeviceNameType> NandDevice::Init(zx::vmo vmo) {
-  ZX_DEBUG_ASSERT(!thread_created_);
-  static uint64_t dev_count = 0;
-
-  DeviceNameType name;
-  snprintf(name.data(), name.size(), "ram-nand-%" PRIu64, dev_count++);
+zx::result<std::string> NandDevice::Init(
+    fuchsia_hardware_nand::wire::RamNandInfo& info,
+    fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
+    const std::shared_ptr<fdf::Namespace>& incoming,
+    const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
+    const std::optional<std::string>& node_name) {
+  ZX_DEBUG_ASSERT(!operation_performer_.has_value());
 
   zx_status_t status;
-  const bool use_vmo = vmo.is_valid();
+  const bool use_vmo = info.vmo.is_valid();
   if (use_vmo) {
-    vmo_ = std::move(vmo);
+    vmo_ = std::move(info.vmo);
 
     uint64_t size;
     status = vmo_.get_size(&size);
@@ -182,11 +134,14 @@ zx::result<NandDevice::DeviceNameType> NandDevice::Init(zx::vmo vmo) {
       return zx::error(status);
     }
     if (size < params_.GetSize()) {
+      fdf::error("VMO size too small: Expected at least {} bytes but actual is {} bytes",
+                 params_.GetSize(), size);
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
   } else {
     status = zx::vmo::create(params_.GetSize(), 0, &vmo_);
     if (status != ZX_OK) {
+      fdf::error("Failed to create vmo: {}", zx_status_get_string(status));
       return zx::error(status);
     }
   }
@@ -194,34 +149,99 @@ zx::result<NandDevice::DeviceNameType> NandDevice::Init(zx::vmo vmo) {
   status = zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo_.get(), 0,
                        params_.GetSize(), &mapped_addr_);
   if (status != ZX_OK) {
+    fdf::error("Failed to map vmar: {}", zx_status_get_string(status));
     return zx::error(status);
   }
   if (!use_vmo) {
     memset(reinterpret_cast<char*>(mapped_addr_), 0xff, params_.GetSize());
   }
 
-  if (thrd_create(&worker_, WorkerThreadStub, this) != thrd_success) {
-    return zx::error(ZX_ERR_NO_RESOURCES);
+  operation_performer_.emplace(fit::bind_member<&NandDevice::PerformOperations>(this));
+
+  if (info.wear_vmo.is_valid()) {
+    if (zx_status_t status =
+            wear_info_.Map(info.wear_vmo, 0, info.nand_info.num_blocks * sizeof(uint32_t));
+        status != ZX_OK) {
+      fdf::error("Failed to map wear info: {}", zx_status_get_string(status));
+      return zx::error(status);
+    }
   }
-  thread_created_ = true;
 
-  return zx::ok(name);
-}
+  fail_after_ = static_cast<uint64_t>(info.fail_after) * params_.page_size;
+  if (fail_after_ > 0) {
+    fdf::info("fail-after: {}", fail_after_);
+  }
 
-void NandDevice::DdkUnbind(ddk::UnbindTxn txn) {
-  Kill();
-  sync_completion_signal(&wake_signal_);
-  txn.Reply();
+  compat::DeviceServer::BanjoConfig banjo_config{.default_proto_id = ZX_PROTOCOL_NAND};
+  banjo_config.callbacks[ZX_PROTOCOL_NAND] = banjo_server_.callback();
+  zx::result init_result =
+      compat_server_.Initialize(incoming, outgoing, node_name, device_name_,
+                                compat::ForwardMetadata::None(), std::move(banjo_config));
+  if (init_result.is_error()) {
+    fdf::error("Failed to initialize compat server: {}", init_result);
+    return init_result.take_error();
+  }
+  if (info.export_partition_map) {
+    const fuchsia_boot_metadata::PartitionMap partition_map = ExtractPartitionMap(info);
+    const fit::result persisted = fidl::Persist(partition_map);
+    if (persisted.is_error()) {
+      fdf::error("Failed to persist nand config: {}", persisted.error_value().FormatDescription());
+      return zx::error(persisted.error_value().status());
+    }
+    compat_server_.inner().AddMetadata(DEVICE_METADATA_PARTITION_MAP, persisted.value().data(),
+                                       persisted.value().size());
+  }
+  if (info.export_nand_config) {
+    const fuchsia_hardware_nand::Config nand_config = ExtractNandConfig(info);
+    const fit::result persisted = fidl::Persist(nand_config);
+    if (persisted.is_error()) {
+      fdf::error("Failed to persist nand config: {}", persisted.error_value().FormatDescription());
+      return zx::error(persisted.error_value().status());
+    }
+    compat_server_.inner().AddMetadata(DEVICE_METADATA_PRIVATE, persisted.value().data(),
+                                       persisted.value().size());
+  }
+
+  zx::result connector = devfs_connector_.Bind(dispatcher_);
+  if (connector.is_error()) {
+    fdf::error("Failed to bind devfs connector: {}", connector);
+    return connector.take_error();
+  }
+
+  fuchsia_driver_framework::DevfsAddArgs devfs({
+      .connector = std::move(connector.value()),
+      .connector_supports = fuchsia_device_fs::ConnectionType::kController,
+  });
+
+  std::vector<fuchsia_driver_framework::Offer> offers = compat_server_.CreateOffers2();
+
+  const std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL,
+                         static_cast<uint32_t>(bind_fuchsia_nand::BIND_PROTOCOL_DEVICE)),
+      fdf::MakeProperty2(bind_fuchsia::NAND_CLASS, params_.nand_class),
+  };
+
+  zx::result child = fdf::AddChild(parent, *fdf::Logger::GlobalInstance(), device_name_, devfs,
+                                   properties, offers);
+  if (child.is_error()) {
+    fdf::error("Failed to create child: {}", child);
+    return child.take_error();
+  }
+  child_ = std::move(child.value());
+
+  return zx::ok(device_name_);
 }
 
 void NandDevice::Unlink(UnlinkCompleter::Sync& completer) {
-  fbl::AutoLock lock(&lock_);
-  if (dead_) {
-    completer.Close(ZX_ERR_BAD_STATE);
-    return;
+  {
+    fbl::AutoLock lock(&lock_);
+    if (dead_) {
+      completer.Close(ZX_ERR_BAD_STATE);
+      return;
+    }
   }
-  DdkAsyncRemove();
   completer.Reply(ZX_OK);
+  on_unlink_();
 }
 
 void NandDevice::NandQuery(nand_info_t* info_out, size_t* nand_op_size_out) {
@@ -272,10 +292,10 @@ void NandDevice::NandQueue(nand_operation_t* operation, nand_queue_callback comp
       return;
   }
 
-  if (AddToList(operation, completion_cb, cookie)) {
-    sync_completion_signal(&wake_signal_);
-  } else {
-    completion_cb(cookie, ZX_ERR_BAD_STATE, operation);
+  if (zx::result result = AddPendingOperation(operation, completion_cb, cookie);
+      result.is_error()) {
+    fdf::error("Failed to queue operation: {}", result);
+    completion_cb(cookie, result.status_value(), operation);
   }
 }
 
@@ -285,129 +305,119 @@ zx_status_t NandDevice::NandGetFactoryBadBlockList(uint32_t* bad_blocks, size_t 
   return ZX_OK;
 }
 
-void NandDevice::Kill() {
+zx::result<> NandDevice::AddPendingOperation(nand_operation_t* operation,
+                                             nand_queue_callback completion_cb, void* cookie) {
   fbl::AutoLock lock(&lock_);
-  dead_ = true;
-}
-
-bool NandDevice::AddToList(nand_operation_t* operation, nand_queue_callback completion_cb,
-                           void* cookie) {
-  fbl::AutoLock lock(&lock_);
-  bool is_dead = dead_;
-  if (!dead_) {
-    RamNandOp* nand_op = reinterpret_cast<RamNandOp*>(operation);
-    nand_op->completion_cb = completion_cb;
-    nand_op->cookie = cookie;
-    list_add_tail(&txn_list_, &nand_op->node);
+  if (dead_) {
+    fdf::error("Device is dead");
+    return zx::error(ZX_ERR_BAD_STATE);
   }
-  return !is_dead;
+  pending_operations_.emplace_back(RamNandOp{
+      .op = operation,
+      .completion_cb = completion_cb,
+      .cookie = cookie,
+  });
+  sync_completion_signal(&operations_pending_);
+  return zx::ok();
 }
 
-bool NandDevice::RemoveFromList(nand_operation_t** operation) {
+std::pair<bool, std::vector<NandDevice::RamNandOp>> NandDevice::TakePendingOperations() {
+  sync_completion_wait(&operations_pending_, ZX_TIME_INFINITE);
   fbl::AutoLock lock(&lock_);
-  RamNandOp* nand_op = list_remove_head_type(&txn_list_, RamNandOp, node);
-  *operation = reinterpret_cast<nand_operation_t*>(nand_op);
-  return !dead_;
+  std::vector pending_operations = std::move(pending_operations_);
+  sync_completion_reset(&operations_pending_);
+  return std::make_pair(dead_, std::move(pending_operations));
 }
 
-int NandDevice::WorkerThread() {
-  for (;;) {
-    nand_operation_t* operation;
-    for (;;) {
-      bool alive = RemoveFromList(&operation);
-      if (operation) {
-        if (alive) {
-          sync_completion_reset(&wake_signal_);
+void NandDevice::PerformOperations() {
+  while (true) {
+    auto [dead, operations] = TakePendingOperations();
+    if (dead) {
+      for (const RamNandOp& operation : operations) {
+        operation.completion_cb(operation.cookie, ZX_ERR_BAD_STATE, operation.op);
+      }
+      return;
+    }
+
+    for (RamNandOp& operation : operations) {
+      PerformOperation(operation);
+    }
+  }
+}
+
+void NandDevice::PerformOperation(RamNandOp& operation) {
+  zx_status_t status = ZX_OK;
+
+  switch (operation.op->command) {
+    case NAND_OP_WRITE_BYTES:
+      if (fail_after_ > 0) {
+        if (write_count_ >= fail_after_) {
+          status = ZX_ERR_IO;
           break;
-        } else {
-          auto* op = reinterpret_cast<RamNandOp*>(operation);
-          op->completion_cb(op->cookie, ZX_ERR_BAD_STATE, operation);
         }
-      } else if (alive) {
-        sync_completion_wait(&wake_signal_, ZX_TIME_INFINITE);
-      } else {
-        return 0;
-      }
-    }
-
-    zx_status_t status = ZX_OK;
-
-    switch (operation->command) {
-      case NAND_OP_WRITE_BYTES:
-        if (fail_after_ > 0) {
-          if (write_count_ >= fail_after_) {
+        if (write_count_ + operation.op->rw_bytes.length > fail_after_) {
+          const uint64_t old_length = operation.op->rw_bytes.length;
+          operation.op->rw_bytes.length = fail_after_ - write_count_;
+          status = ReadWriteData(operation.op, true);
+          if (status == ZX_OK) {
+            write_count_ = fail_after_;
             status = ZX_ERR_IO;
-            break;
           }
-          if (write_count_ + operation->rw_bytes.length > fail_after_) {
-            const uint64_t old_length = operation->rw_bytes.length;
-            operation->rw_bytes.length = fail_after_ - write_count_;
-            status = ReadWriteData(operation, true);
-            if (status == ZX_OK) {
-              write_count_ = fail_after_;
-              status = ZX_ERR_IO;
-            }
-            operation->rw.length = old_length;
-            break;
-          }
+          operation.op->rw.length = old_length;
+          break;
         }
-        __FALLTHROUGH;
-      case NAND_OP_READ_BYTES:
-        status = ReadWriteData(operation, true);
-
-        if (status == ZX_OK && operation->command == NAND_OP_WRITE_BYTES) {
-          write_count_ += operation->rw_bytes.length;
-        }
-        break;
-      case NAND_OP_WRITE:
-        if (fail_after_ > 0) {
-          if (write_count_ >= fail_after_) {
-            status = ZX_ERR_IO;
-            break;
-          }
-          if (write_count_ + (static_cast<uint64_t>(operation->rw.length) * params_.page_size) >
-              fail_after_) {
-            const uint32_t old_length = operation->rw.length;
-            operation->rw.length = (fail_after_ - write_count_) / params_.page_size;
-            status = ReadWriteData(operation, false);
-            if (status == ZX_OK) {
-              status = ReadWriteOob(operation);
-            }
-            if (status == ZX_OK) {
-              write_count_ = fail_after_;
-              status = ZX_ERR_IO;
-            }
-            operation->rw.length = old_length;
-            break;
-          }
-        }
-        __FALLTHROUGH;
-      case NAND_OP_READ:
-        status = ReadWriteData(operation, false);
-        if (status == ZX_OK) {
-          status = ReadWriteOob(operation);
-        }
-        if (status == ZX_OK && operation->command == NAND_OP_WRITE) {
-          write_count_ += static_cast<uint64_t>(operation->rw.length) * params_.page_size;
-        }
-        break;
-
-      case NAND_OP_ERASE: {
-        status = Erase(operation);
-        break;
       }
-      default:
-        ZX_DEBUG_ASSERT(false);  // Unexpected.
-    }
+      __FALLTHROUGH;
+    case NAND_OP_READ_BYTES:
+      status = ReadWriteData(operation.op, true);
 
-    auto* op = reinterpret_cast<RamNandOp*>(operation);
-    op->completion_cb(op->cookie, status, operation);
+      if (status == ZX_OK && operation.op->command == NAND_OP_WRITE_BYTES) {
+        write_count_ += operation.op->rw_bytes.length;
+      }
+      break;
+    case NAND_OP_WRITE:
+      if (fail_after_ > 0) {
+        if (write_count_ >= fail_after_) {
+          status = ZX_ERR_IO;
+          break;
+        }
+        if (write_count_ + (static_cast<uint64_t>(operation.op->rw.length) * params_.page_size) >
+            fail_after_) {
+          const uint32_t old_length = operation.op->rw.length;
+          operation.op->rw.length = (fail_after_ - write_count_) / params_.page_size;
+          status = ReadWriteData(operation.op, false);
+
+          if (status == ZX_OK) {
+            status = ReadWriteOob(operation.op);
+          }
+          if (status == ZX_OK) {
+            write_count_ = fail_after_;
+            status = ZX_ERR_IO;
+          }
+          operation.op->rw.length = old_length;
+          break;
+        }
+      }
+      __FALLTHROUGH;
+    case NAND_OP_READ:
+      status = ReadWriteData(operation.op, false);
+      if (status == ZX_OK) {
+        status = ReadWriteOob(operation.op);
+      }
+      if (status == ZX_OK && operation.op->command == NAND_OP_WRITE) {
+        write_count_ += static_cast<uint64_t>(operation.op->rw.length) * params_.page_size;
+      }
+      break;
+
+    case NAND_OP_ERASE: {
+      status = Erase(operation.op);
+      break;
+    }
+    default:
+      ZX_DEBUG_ASSERT(false);  // Unexpected.
   }
-}
 
-int NandDevice::WorkerThreadStub(void* arg) {
-  NandDevice* device = static_cast<NandDevice*>(arg);
-  return device->WorkerThread();
+  operation.completion_cb(operation.cookie, status, operation.op);
 }
 
 zx_status_t NandDevice::ReadWriteData(nand_operation_t* operation, bool bytes) {
@@ -497,3 +507,9 @@ zx_status_t NandDevice::Erase(nand_operation_t* operation) {
 
   return ZX_OK;
 }
+
+void NandDevice::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_nand::RamNand> server) {
+  bindings_.AddBinding(dispatcher_, std::move(server), this, fidl::kIgnoreBindingClosure);
+}
+
+}  // namespace ram_nand
