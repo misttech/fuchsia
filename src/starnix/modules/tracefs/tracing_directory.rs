@@ -60,9 +60,9 @@ impl FileOps for TraceMarkerFile {
                 // of the thread group/process.
                 // It is used when CPU scheduling information is not available.
                 current_task.get_tid(),
-                &bytes,
+                bytes.len(),
             );
-            self.queue.push_event(trace_event)?;
+            self.queue.push_event(trace_event, &bytes)?;
         }
         return Ok(bytes.len());
     }

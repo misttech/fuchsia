@@ -12,7 +12,8 @@ use starnix_sync::Mutex;
 use starnix_types::PAGE_SIZE;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error, from_status_like_fdio};
-use zerocopy::{Immutable, IntoBytes};
+use zerocopy::native_endian::{I32, U16, U32, U64};
+use zerocopy::{Immutable, IntoBytes, Unaligned};
 use zx::{BootInstant, BootTimeline};
 
 // The default ring buffer size (2MB).
@@ -24,63 +25,55 @@ const PAGE_HEADER_SIZE: u64 = 2 * std::mem::size_of::<u64>() as u64;
 const COMMIT_FIELD_OFFSET: u64 = std::mem::size_of::<u64>() as u64;
 
 // The event id for atrace events.
-const FTRACE_PRINT_ID: u16 = 5;
+const FTRACE_PRINT_ID: U16 = U16::new(5);
 
 // Used for inspect tracking.
 const DROPPED_PAGES: &str = "dropped_pages";
 
 #[repr(C)]
-#[derive(Debug, Default, IntoBytes, Immutable)]
+#[derive(Debug, Default, IntoBytes, Immutable, Unaligned)]
 struct PrintEventHeader {
-    common_type: u16,
+    common_type: U16,
     common_flags: u8,
     common_preempt_count: u8,
-    common_pid: i32,
-    ip: u64,
+    common_pid: I32,
+    ip: U64,
 }
 
 #[repr(C)]
-#[derive(Debug)]
-struct PrintEvent<'a> {
+#[derive(Debug, IntoBytes, Immutable, Unaligned)]
+struct PrintEvent {
     header: PrintEventHeader,
-    data: &'a [u8],
 }
 
-impl<'a> PrintEvent<'a> {
-    fn new(pid: i32, data: &'a [u8]) -> Self {
+impl PrintEvent {
+    fn new(pid: i32) -> Self {
         Self {
             header: PrintEventHeader {
                 common_type: FTRACE_PRINT_ID,
-                common_pid: pid,
+                common_pid: I32::new(pid),
                 // Perfetto doesn't care about any other field.
                 ..Default::default()
             },
-            data,
         }
     }
 
     fn size(&self) -> usize {
-        std::mem::size_of::<PrintEventHeader>() + self.data.len() + 1
-    }
-
-    fn get_bytes(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(&self.header.as_bytes());
-        buf.extend_from_slice(self.data);
-        buf.extend_from_slice(b"\n");
+        std::mem::size_of::<PrintEventHeader>()
     }
 }
 
 #[repr(C)]
-#[derive(Debug, Default, IntoBytes, PartialEq, Immutable)]
+#[derive(Debug, Default, IntoBytes, PartialEq, Immutable, Unaligned)]
 struct TraceEventHeader {
     // u32 where:
     //   type_or_length: bottom 5 bits. If 0, `data` is read for length. Always set to 0 for now.
     //   time_delta: top 27 bits
-    time_delta: u32,
+    time_delta: U32,
 
     // If type_or_length is 0, holds the length of the trace message.
     // We always write length here for simplicity.
-    data: u32,
+    data: U32,
 }
 
 impl TraceEventHeader {
@@ -88,17 +81,17 @@ impl TraceEventHeader {
         // The size reported in the event's header includes the size of `size` (a u32) and the size
         // of the event data.
         let size = (std::mem::size_of::<u32>() + size) as u32;
-        Self { time_delta: 0, data: size }
+        Self { time_delta: U32::new(0), data: U32::new(size) }
     }
 
     fn set_time_delta(&mut self, nanos: u32) {
-        self.time_delta = nanos << 5;
+        self.time_delta = U32::new(nanos << 5);
     }
 }
 
 #[repr(C)]
-#[derive(Debug)]
-pub struct TraceEvent<'a> {
+#[derive(Debug, IntoBytes, Immutable, Unaligned)]
+pub struct TraceEvent {
     /// Common metadata among all trace event types.
     header: TraceEventHeader, // u64
 
@@ -106,25 +99,20 @@ pub struct TraceEvent<'a> {
     ///
     /// Atrace events are reported as PrintFtraceEvents. When we support multiple types of events,
     /// this can be updated to be more generic.
-    event: PrintEvent<'a>,
+    event: PrintEvent,
 }
 
-impl<'a> TraceEvent<'a> {
-    pub fn new(pid: i32, data: &'a [u8]) -> Self {
-        let event: PrintEvent<'_> = PrintEvent::new(pid, data);
-        let header = TraceEventHeader::new(event.size());
+impl TraceEvent {
+    pub fn new(pid: i32, data_len: usize) -> Self {
+        let event = PrintEvent::new(pid);
+        // +1 because we append a trailing '\n' to the data when we serialize.
+        let header = TraceEventHeader::new(event.size() + data_len + 1);
         Self { header, event }
     }
 
     fn size(&self) -> usize {
-        std::mem::size_of::<TraceEventHeader>() + self.event.size()
-    }
-
-    fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(self.size());
-        bytes.extend_from_slice(self.header.as_bytes());
-        self.event.get_bytes(&mut bytes);
-        bytes
+        // The header's data size doesn't include the time_delta size.
+        std::mem::size_of::<u32>() + self.header.data.get() as usize
     }
 
     fn set_timestamp(&mut self, timestamp: BootInstant, prev_timestamp: BootInstant) {
@@ -431,7 +419,8 @@ impl<'a> TraceEventQueue {
     /// Returns the delta duration between this event and the previous event written.
     pub fn push_event(
         &self,
-        mut event: TraceEvent<'a>,
+        mut event: TraceEvent,
+        data: &[u8],
     ) -> Result<zx::Duration<BootTimeline>, Errno> {
         let mut metadata = self.metadata.lock();
         if metadata.mapping.is_none() {
@@ -463,7 +452,9 @@ impl<'a> TraceEventQueue {
         // Write the event and update the commit offset.
         let bytes = event.as_bytes();
         if let Some(ref mapping) = metadata.mapping {
-            mapping.write_at(offset as usize, bytes.as_bytes());
+            mapping.write_at(offset as usize, bytes);
+            mapping.write_at(offset as usize + bytes.len(), data);
+            mapping.write_at(offset as usize + bytes.len() + data.len(), b"\n");
         }
         metadata.commit(event.size() as u64);
 
@@ -613,9 +604,10 @@ mod tests {
         assert_eq!(queue.ring_buffer.get_size(), DEFAULT_RING_BUFFER_SIZE_BYTES);
 
         // Confirm we can push an event.
-        let event = TraceEvent::new(1234, b"B|1234|slice_name");
+        let data = b"B|1234|slice_name";
+        let event = TraceEvent::new(1234, data.len());
         let event_size = event.size() as u64;
-        let result = queue.push_event(event);
+        let result = queue.push_event(event, data);
         assert!(result.is_ok());
         assert!(result.ok().expect("delta").into_nanos() > 0);
         assert_eq!(queue.metadata.lock().commit, PAGE_HEADER_SIZE + event_size);
@@ -629,7 +621,7 @@ mod tests {
     #[fuchsia::test]
     fn create_trace_event() {
         // Create an event.
-        let event: TraceEvent<'_> = TraceEvent::new(1234, b"B|1234|slice_name");
+        let event = TraceEvent::new(1234, b"B|1234|slice_name".len());
         let event_size = event.size();
         assert_eq!(event_size, 42);
     }
@@ -641,10 +633,11 @@ mod tests {
         let queue = TraceEventQueue::new(&inspect_node).expect("create queue");
         queue.enable().expect("enable queue");
         // Create an event.
-        let event = TraceEvent::new(1234, b"B|1234|slice_name");
+        let data = b"B|1234|slice_name";
+        let event = TraceEvent::new(1234, data.len());
 
         // Push the event into the queue.
-        let result = queue.push_event(event);
+        let result = queue.push_event(event, data);
         assert!(result.is_ok());
         assert!(result.ok().expect("delta").into_nanos() > 0);
 
@@ -661,13 +654,13 @@ mod tests {
         let pid = 1234;
         let data = b"B|1234|loooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\
         ooooooooooooooooooooooooooooooooooooooooooooooooooooooooongevent";
-        let expected_event = TraceEvent::new(pid, data);
+        let expected_event = TraceEvent::new(pid, data.len());
         assert_eq!(expected_event.size(), 155);
 
         // Push the event into the queue.
         for _ in 0..27 {
-            let event = TraceEvent::new(pid, data);
-            let result = queue.push_event(event);
+            let event = TraceEvent::new(pid, data.len());
+            let result = queue.push_event(event, data);
             assert!(result.is_ok());
             assert!(result.ok().expect("delta").into_nanos() > 0);
         }
