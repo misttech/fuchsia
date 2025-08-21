@@ -11,7 +11,8 @@
 #include <stdint.h>
 #include <zircon/types.h>
 
-#include <fbl/intrusive_single_list.h>
+#include <fbl/intrusive_double_list.h>
+#include <vm/page.h>
 
 // MBufChain is a container for storing a stream of bytes or a sequence of datagrams.
 //
@@ -82,15 +83,18 @@ class MBufChain {
 
  private:
   // An MBuf is a small fixed-size chainable memory buffer.
-  struct MBuf : public fbl::SinglyLinkedListable<MBuf*> {
-    MBuf();
+  struct MBuf : public fbl::DoublyLinkedListable<MBuf*> {
+    explicit MBuf(vm_page_t* page);
     ~MBuf();
 
-    // 8 for the linked list and explicit padding and 4 for the explicit uint32_t fields.
-    static constexpr size_t kHeaderSize = (8 * 2) + (4 * 2);
-    // 16 is for the malloc header.
-    static constexpr size_t kMallocSize = 2048 - 16;
-    static constexpr size_t kPayloadSize = kMallocSize - kHeaderSize;
+    // 16 for the linked list 16 for the explicit fields.
+    static constexpr size_t kHeaderSize = (8 * 2) + (4 * 2) + 8;
+    static constexpr size_t kPayloadSize = PAGE_SIZE - kHeaderSize;
+
+    // Calculate the number of MBuf objects needed to store a payload of the given size.
+    static constexpr size_t NumBuffersForPayload(size_t payload) {
+      return 1 + ((payload - 1) / kPayloadSize);
+    }
 
     // Returns number of bytes of free space in this MBuf.
     size_t rem() const { return kPayloadSize - len_; }
@@ -98,22 +102,41 @@ class MBufChain {
     // Length of the valid |data_| in this buffer. Writes can append more to |data_| and increment
     // this length.
     uint32_t len_ = 0u;
+
     // pkt_len_ is set to the total number of bytes in a packet
     // when a socket is in ZX_SOCKET_DATAGRAM mode. A pkt_len_ of
     // 0 means this mbuf is part of the body of a packet.
     //
     // Always 0 in ZX_SOCKET_STREAM mode.
     uint32_t pkt_len_ = 0u;
-    uint64_t unused_;
-    char data_[kPayloadSize] = {0};
+
+    // Back-pointer to the vm_page_t this MBuf was allocated from. Recording this is just an
+    // optimization as it should always be the case that:
+    // |Pmm::Node().PaddrToPage(physmap_to_paddr(this)) == page_|
+    vm_page_t* const page_;
+
+    // The data field is left uninitialized as the caller is going to immediately overwrite with the
+    // payload, and is trusted to not access any uninitialized portions.
+    char data_[kPayloadSize];
     // TODO: maybe union data_ with char* blocks for large messages
   };
-  static_assert(sizeof(MBuf) == MBuf::kMallocSize);
+  static_assert(sizeof(MBuf) == PAGE_SIZE);
 
-  static constexpr size_t kSizeMax = 128 * MBuf::kPayloadSize;
+  // Although the maximum size of the data in an MBuf is a kernel implementation detail, it is
+  // visible to user space. To avoid unintentionally changing it when modifying other data
+  // structures round up the currently chosen size (256KiB) to the next multiple of the MBuf payload
+  // size.
+  static constexpr size_t kSizeMax = fbl::round_up(256u * 1024, MBuf::kPayloadSize);
 
-  MBuf* AllocMBuf();
-  void FreeMBuf(MBuf* buf);
+  // The MBuf's are placed in a doubly linked list so that both the front and back of the list can
+  // be manipulated and to allow for efficiently splicing lists into each other.
+  using MBufList = fbl::DoublyLinkedList<MBuf*>;
+
+  // Allocates exactly |num| buffers, or fails.
+  static ktl::optional<MBufList> AllocMBufs(size_t num);
+
+  // Takes ownership of and frees the provided buffers.
+  static void FreeMBufs(MBufList&& bufs);
 
   // Helper method to provide common code for Read() and Peek().
   //
@@ -124,18 +147,11 @@ class MBufChain {
   static zx_status_t ReadHelper(T* chain, user_out_ptr<char> dst, size_t len, bool datagram,
                                 size_t* actual);
 
-  // Inactive buffers that will be re-used for future writes. This serves as a cache to avoid
-  // bouncing buffers in and out of the heap all the time.
-  fbl::SinglyLinkedList<MBuf*> freelist_;
   // The active buffers that make up this chain. buffers_.front() + read_cursor_off_ is the read
-  // cursor.
-  fbl::SinglyLinkedList<MBuf*> buffers_;
+  // cursor. buffers_.back() is the write cursor.
+  MBufList buffers_;
   // The byte offset of the read cursor in next MBuf.
   uint32_t read_cursor_off_ = 0;
-  // The write write_cursor_ is the last buffer in the buffers_ list, and is where writes happen.
-  // This needs to be manually tracked since buffers_ is a SinglyLinkedList, but is always
-  // effectively buffers_.back()
-  MBuf* write_cursor_ = nullptr;
   size_t size_ = 0u;
 };
 
