@@ -36,9 +36,15 @@
     "fuchsia.starnix.fair.30": { "priority": 30 },
     "fuchsia.starnix.fair.31": { "priority": 31 },
 
-    // When possible containers should specify the role overrides for tasks that are more
-    // conservative than this broad default.
-    "fuchsia.starnix.realtime": { "capacity": "1ms", "deadline": "1ms", "period": "1ms" },
+    // When possible containers should specify the role overrides for tasks that
+    // are more conservative than this broad default. This profile is limited to
+    // 95% utilization, similar to the default setting of the RT throttling
+    // mechanism of SCHED_FIFO. This profile can preempt variable bandwidth
+    // tasks for 19ms out of every 20ms, but will not significantly delay
+    // constant bandwidth tasks with tighter periods. To be clear: SCHED_FIFO
+    // tasks are NOT the most important tasks in the system, even if they are
+    // the most important tasks in Android.
+    "fuchsia.starnix.realtime": { "capacity": "19ms", "deadline": "20ms", "period": "20ms" },
     // LINT.ThenChange(src/starnix/kernel/task/scheduler/manager.rs)
   },
   "memory": {
