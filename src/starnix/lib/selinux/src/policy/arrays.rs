@@ -100,6 +100,8 @@ impl<T: Validate> Validate for SimpleArray<T> {
     }
 }
 
+// TODO(https://fxbug.dev/440396781): Removed once SimpleArrayView is in use.
+#[allow(dead_code)]
 pub(super) type SimpleArrayView<T> = ArrayView<le::U32, T>;
 
 impl<T: Validate + Parse + Walk> Validate for SimpleArrayView<T> {
