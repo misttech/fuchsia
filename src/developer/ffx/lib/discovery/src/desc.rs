@@ -4,6 +4,8 @@
 
 use addr::TargetAddr;
 
+use crate::{FastbootConnectionState, FastbootTargetState, TargetHandle, TargetState};
+
 #[derive(Debug, Hash, Copy, Clone, PartialEq, Eq)]
 pub enum FastbootInterface {
     Usb,
@@ -24,4 +26,24 @@ pub struct Description {
     // elsewhere in the code, so this is being done for the sake of congruity.
     // TODO(b/327682973): Use a real address here or delete this.
     pub ssh_host_address: Option<String>,
+}
+
+impl From<&TargetHandle> for Description {
+    fn from(value: &TargetHandle) -> Self {
+        let (addresses, serial) = match &value.state {
+            TargetState::Product { addrs: target_addr, .. } => (target_addr.clone(), None),
+            TargetState::Fastboot(FastbootTargetState { serial_number: sn, connection_state }) => {
+                let addresses = match connection_state {
+                    FastbootConnectionState::Usb => Vec::<TargetAddr>::new(),
+                    FastbootConnectionState::Tcp(addresses)
+                    | FastbootConnectionState::Udp(addresses) => {
+                        addresses.iter().map(Into::into).collect()
+                    }
+                };
+                (addresses, Some(sn.clone()))
+            }
+            _ => (vec![], None),
+        };
+        Self { nodename: value.node_name.clone(), addresses, serial, ..Default::default() }
+    }
 }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::desc::Description;
-use crate::DiscoverySources;
+use crate::{DiscoverySources, TargetHandle};
 use addr::{TargetAddr, TargetIpAddr};
 use fidl_fuchsia_developer_ffx::{
     TargetAddrInfo, TargetInfo, TargetIpAddrInfo, TargetIpPort, TargetVSockNamespace,
@@ -159,6 +159,11 @@ impl TargetInfoQuery {
                 .unwrap_or(false),
             Self::First => true,
         }
+    }
+
+    pub fn match_handle(&self, h: &TargetHandle) -> bool {
+        let desc = Description::from(h);
+        self.match_description(&desc)
     }
 
     /// Return the invoke discovery on to resolve this query

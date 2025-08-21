@@ -1,9 +1,8 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use addr::{TargetAddr, TargetIpAddr};
+use addr::TargetIpAddr;
 use anyhow::{Context, Result, anyhow, bail};
-use discovery::desc::Description;
 use discovery::query::TargetInfoQuery;
 use discovery::{
     DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetDiscovery, TargetEvent,
@@ -316,10 +315,7 @@ fn get_discovery_stream_with_sources(
     ctx: EnvironmentContext,
 ) -> Result<impl futures::Stream<Item = TargetHandle>> {
     let query_clone = query.clone();
-    let filter = move |handle: &TargetHandle| {
-        let description = handle_to_description(handle);
-        query_clone.match_description(&description)
-    };
+    let filter = move |handle: &TargetHandle| query_clone.match_handle(handle);
     // Note that if there is an error getting these two config options, they
     // will simply be ignored. The alternative is to throw an error, which,
     // e.g. will cause ffx-strict to fail under certain circumstances if either
@@ -369,9 +365,15 @@ fn get_discovery_stream_with_sources(
                         if seen.borrow().contains(h) {
                             None
                         } else {
-                            if query_matches_handle(&q_clone, h) {
-                                log::debug!("Signaling early as discovered target matches query");
-                                found_ev.signal();
+                            // We don't want to match against First, since if we did, we'd
+                            // never be able to report an ambiguous target error.
+                            if !matches!(q_clone, TargetInfoQuery::First) {
+                                if q_clone.match_handle(h) {
+                                    log::debug!(
+                                        "Signaling early as discovered target matches query"
+                                    );
+                                    found_ev.signal();
+                                }
                             }
                             seen.borrow_mut().insert(h.clone());
                             Some((*h).clone())
@@ -599,80 +601,6 @@ pub async fn get_discovery_stream(
     }
     // Get nodename, in case we're trying to find an exact match
     get_discovery_stream_with_sources(query, sources, ctx.clone())
-}
-
-fn query_matches_handle(query: &TargetInfoQuery, h: &TargetHandle) -> bool {
-    match query {
-        TargetInfoQuery::NodenameOrSerial(ref s) => {
-            if let Some(nn) = &h.node_name {
-                if nn == s {
-                    return true;
-                }
-            }
-            if let TargetState::Fastboot(fts) = &h.state {
-                if fts.serial_number == *s {
-                    return true;
-                }
-            }
-        }
-        TargetInfoQuery::Serial(ref s) => {
-            if let TargetState::Fastboot(fts) = &h.state {
-                if fts.serial_number == *s {
-                    return true;
-                }
-            }
-        }
-        TargetInfoQuery::Addr(ref sa) => {
-            if let TargetState::Product { addrs, .. } = &h.state {
-                return addrs.iter().any(|a| a.ip() == Some(sa.ip()));
-            } else if let TargetState::Fastboot(fts) = &h.state {
-                match &fts.connection_state {
-                    FastbootConnectionState::Tcp(addrs) | FastbootConnectionState::Udp(addrs) => {
-                        return addrs.iter().any(|a| a.ip() == sa.ip());
-                    }
-                    FastbootConnectionState::Usb => {}
-                }
-            }
-        }
-        TargetInfoQuery::VSock(cid) => {
-            if let TargetState::Product { addrs, .. } = &h.state {
-                if addrs.iter().any(|a| a.cid_vsock() == Some(*cid)) {
-                    return true;
-                }
-            }
-        }
-        TargetInfoQuery::Usb(cid) => {
-            if let TargetState::Product { addrs, .. } = &h.state {
-                if addrs.iter().any(|a| a.cid_usb() == Some(*cid)) {
-                    return true;
-                }
-            }
-        }
-        TargetInfoQuery::First => {}
-    }
-    false
-}
-
-// Descriptions are used for matching against a TargetInfoQuery
-fn handle_to_description(handle: &TargetHandle) -> Description {
-    let (addresses, serial) = match &handle.state {
-        TargetState::Product { addrs: target_addr, .. } => (target_addr.clone(), None),
-        TargetState::Fastboot(discovery::FastbootTargetState {
-            serial_number: sn,
-            connection_state,
-        }) => {
-            let addresses = match connection_state {
-                FastbootConnectionState::Usb => Vec::<TargetAddr>::new(),
-                FastbootConnectionState::Tcp(addresses)
-                | FastbootConnectionState::Udp(addresses) => {
-                    addresses.iter().map(Into::into).collect()
-                }
-            };
-            (addresses, Some(sn.clone()))
-        }
-        _ => (vec![], None),
-    };
-    Description { nodename: handle.node_name.clone(), addresses, serial, ..Default::default() }
 }
 
 impl TargetResolver for DefaultTargetResolver {
@@ -1037,15 +965,21 @@ mod test {
         assert_eq!(target_spec, sn_spec.clone());
     }
 
+    fn make_target_handle_for_product(name: &str, sa: SocketAddr) -> TargetHandle {
+        let state = TargetState::Product { addrs: vec![sa.into()], serial: None };
+        let th = TargetHandle { node_name: Some(String::from(name)), state, manual: false };
+        th
+    }
+
     #[fuchsia::test]
     async fn test_can_resolve_target_locally_dns() {
         let test_env = ffx_config::test_init().await.unwrap();
         let mut resolver = MockTargetResolver::new();
         // A DNS name will satisfy the resolution request
-        let name_spec = TargetInfoQuery::NodenameOrSerial("foobar".to_string());
+        let name = "foobar".to_string();
+        let name_spec = TargetInfoQuery::NodenameOrSerial(name.clone());
         let (sa, addr_spec) = get_addr_and_spec();
-        let state = TargetState::Product { addrs: vec![sa.into()], serial: None };
-        let th = TargetHandle { node_name: name_spec.clone().into(), state, manual: false };
+        let th = make_target_handle_for_product(&name, sa);
         resolver.expect_sources().return_once(move || DiscoverySources::all());
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver
@@ -1086,16 +1020,14 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_can_resolve_target_locally_ambiguous() {
+    async fn test_can_resolve_target_locally_name_ambiguous() {
         let test_env = ffx_config::test_init().await.unwrap();
         let mut resolver = MockTargetResolver::new();
         // An ambiguous name will result in an error
-        let name_spec = Some("foobar".to_string());
+        let name = "foobar".to_string();
         let (sa, _) = get_addr_and_spec();
-        let ts1 = TargetState::Product { addrs: vec![sa.into(), sa.into()], serial: None };
-        let ts2 = TargetState::Product { addrs: vec![sa.into(), sa.into()], serial: None };
-        let th1 = TargetHandle { node_name: name_spec.clone(), state: ts1, manual: false };
-        let th2 = TargetHandle { node_name: name_spec.clone(), state: ts2, manual: false };
+        let th1 = make_target_handle_for_product(&name, sa);
+        let th2 = make_target_handle_for_product(&name, sa);
         resolver.expect_sources().return_once(move || DiscoverySources::all());
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver
@@ -1105,7 +1037,47 @@ mod test {
             locally_resolve_target_spec(&("foo".to_string().into()), &resolver, &test_env.context)
                 .await;
         assert!(target_spec_res.is_err());
+        // XXX We should produce OpenTargetError::AmbiguousQuery, not DaemonError::TargetAmbiguous
         assert!(dbg!(target_spec_res.unwrap_err().to_string()).contains("multiple targets"));
+    }
+
+    #[fuchsia::test]
+    async fn test_can_resolve_target_locally_first() {
+        let test_env = ffx_config::test_init().await.unwrap();
+        let mut resolver = MockTargetResolver::new();
+        // A "first" query will satisfy the resolution request
+        let first_spec = TargetInfoQuery::First;
+        let (sa, addr_spec) = get_addr_and_spec();
+        let th = make_target_handle_for_product("foo", sa);
+        resolver.expect_sources().return_once(move || DiscoverySources::all());
+        resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
+        resolver
+            .expect_discovery_stream()
+            .return_once(move |_, _| Ok(mock_stream::MockHandleStream(vec![th])));
+        let target_spec =
+            locally_resolve_target_spec(&first_spec, &resolver, &test_env.context).await.unwrap();
+        assert_eq!(target_spec, addr_spec);
+    }
+
+    #[fuchsia::test]
+    async fn test_can_resolve_target_locally_first_ambiguous() {
+        let test_env = ffx_config::test_init().await.unwrap();
+        let mut resolver = MockTargetResolver::new();
+        // A "first" query will fail if there are multiple matches
+        let name = "foobar".to_string();
+        let (sa, _) = get_addr_and_spec();
+        let th1 = make_target_handle_for_product(&name, sa);
+        let th2 = make_target_handle_for_product(&name, sa);
+        resolver.expect_sources().return_once(move || DiscoverySources::all());
+        resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
+        resolver
+            .expect_discovery_stream()
+            .return_once(move |_, _| Ok(mock_stream::MockHandleStream(vec![th1, th2])));
+        let first_spec = TargetInfoQuery::First;
+        let target_spec_res =
+            locally_resolve_target_spec(&first_spec, &resolver, &test_env.context).await;
+        assert!(target_spec_res.is_err());
+        assert!(dbg!(target_spec_res.unwrap_err().to_string()).contains("More than one device"));
     }
 
     // XXX Creating a reasonable test for the rest of the behavior:
