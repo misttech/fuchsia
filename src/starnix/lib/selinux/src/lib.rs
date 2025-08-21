@@ -744,6 +744,9 @@ common_permission_enum! {
         // keep-sorted start
         /// Permission to append to a file or socket.
         Append("append"),
+        /// Pseudo-permission used in `dontaudit` access-rules to allow access checks to be made
+        /// between specific sources & targets without generating audit logs.
+        AuditAccess("audit_access"),
         /// Permission to create a file or socket.
         Create("create"),
         /// Permission to query attributes, including uid, gid and extended attributes.

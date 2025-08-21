@@ -867,6 +867,20 @@ pub fn task_get_context(current_task: &CurrentTask, target: &Task) -> Result<Vec
     )
 }
 
+/// Returns true if there exits a `dontaudit` rule for `current_task` access to `fs_node`, which
+/// includes the `audit_access` pseudo-permission.
+/// This appears to be handled via additional options & flags in other hooks, by LSM.
+pub fn has_dontaudit_access(current_task: &CurrentTask, fs_node: &FsNode) -> bool {
+    track_hook_duration!(c"security.hooks.has_dontaudit_access");
+    if_selinux_else(
+        current_task,
+        |security_server| {
+            selinux_hooks::fs_node::has_dontaudit_access(security_server, current_task, fs_node)
+        },
+        || false,
+    )
+}
+
 /// Returns true if a task has the specified `capability`.
 /// Corresponds to the `capable()` LSM hook invoked with a no-audit flag set.
 pub fn is_task_capable_noaudit(
