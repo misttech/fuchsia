@@ -5,7 +5,7 @@
 use crate::NullessByteStr;
 
 use super::arrays::{
-    AccessVectorRules, ConditionalNodes, Context, DeprecatedFilenameTransitions,
+    AccessVectorRule, AccessVectorRules, ConditionalNodes, Context, DeprecatedFilenameTransitions,
     FilenameTransitionList, FilenameTransitions, FsUses, GenericFsContexts, IPv6Nodes,
     InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSids,
     MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPairs, Nodes, Ports,
@@ -31,6 +31,7 @@ use anyhow::Context as _;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::iter::Iterator;
 use zerocopy::little_endian as le;
 
 /// A parsed binary policy.
@@ -148,23 +149,22 @@ impl ParsedPolicy {
         let mut computed_audit_allow = AccessVector::NONE;
         let mut computed_audit_deny = AccessVector::ALL;
 
-        for access_vector_rule in self.access_vector_rules.data.iter() {
+        for access_vector_rule in self.access_vector_rules() {
+            let metadata = &access_vector_rule.metadata;
+
             // Ignore `access_vector_rule` entries not relayed to "allow" or
             // audit statements.
             //
             // TODO: https://fxbug.dev/379657220 - Can an `access_vector_rule`
             // entry express e.g. both "allow" and "auditallow" at the same
             // time?
-            if !access_vector_rule.is_allow()
-                && !access_vector_rule.is_auditallow()
-                && !access_vector_rule.is_dontaudit()
-            {
+            if !metadata.is_allow() && !metadata.is_auditallow() && !metadata.is_dontaudit() {
                 continue;
             }
 
             // Concern ourselves only with `allow [source-type] [target-type]:[class] [...];`
             // policy statements where `[class]` matches `target_class_id`.
-            if access_vector_rule.target_class() != target_class_id {
+            if metadata.target_class() != target_class_id {
                 continue;
             }
 
@@ -177,7 +177,7 @@ impl ParsedPolicy {
             // `[source-type]` is associated with `source_type_id`.
             let source_attribute_bitmap: &ExtensibleBitmap =
                 &self.attribute_maps[(source_type.0.get() - 1) as usize];
-            if !source_attribute_bitmap.is_set(access_vector_rule.source_type().0.get() - 1) {
+            if !source_attribute_bitmap.is_set(metadata.source_type().0.get() - 1) {
                 continue;
             }
 
@@ -185,20 +185,20 @@ impl ParsedPolicy {
             // statements where `[target-type]` is associated with `target_type_id`.
             let target_attribute_bitmap: &ExtensibleBitmap =
                 &self.attribute_maps[(target_type.0.get() - 1) as usize];
-            if !target_attribute_bitmap.is_set(access_vector_rule.target_type().0.get() - 1) {
+            if !target_attribute_bitmap.is_set(metadata.target_type().0.get() - 1) {
                 continue;
             }
 
             // Multiple attributes may be associated with source/target types. Accumulate
             // explicitly allowed permissions into `computed_access_vector`.
             if let Some(access_vector) = access_vector_rule.access_vector() {
-                if access_vector_rule.is_allow() {
+                if metadata.is_allow() {
                     // `access_vector` has bits set for each permission allowed by this rule.
                     computed_access_vector |= access_vector;
-                } else if access_vector_rule.is_auditallow() {
+                } else if metadata.is_auditallow() {
                     // `access_vector` has bits set for each permission to audit when allowed.
                     computed_audit_allow |= access_vector;
-                } else if access_vector_rule.is_dontaudit() {
+                } else if metadata.is_dontaudit() {
                     // `access_vector` has bits cleared for each permission not to audit on denial.
                     computed_audit_deny &= access_vector;
                 }
@@ -261,31 +261,33 @@ impl ParsedPolicy {
         let mut auditallow = XpermsBitmap::NONE;
         let mut auditdeny = XpermsBitmap::ALL;
 
-        for access_vector_rule in self.access_vector_rules.data.iter() {
-            if !access_vector_rule.is_allowxperm()
-                && !access_vector_rule.is_auditallowxperm()
-                && !access_vector_rule.is_dontauditxperm()
+        for access_vector_rule in self.access_vector_rules() {
+            let metadata = &access_vector_rule.metadata;
+
+            if !metadata.is_allowxperm()
+                && !metadata.is_auditallowxperm()
+                && !metadata.is_dontauditxperm()
             {
                 continue;
             }
-            if access_vector_rule.target_class() != target_class_id {
+            if metadata.target_class() != target_class_id {
                 continue;
             }
             let source_attribute_bitmap: &ExtensibleBitmap =
                 &self.attribute_maps[(source_context.type_().0.get() - 1) as usize];
-            if !source_attribute_bitmap.is_set(access_vector_rule.source_type().0.get() - 1) {
+            if !source_attribute_bitmap.is_set(metadata.source_type().0.get() - 1) {
                 continue;
             }
             let target_attribute_bitmap: &ExtensibleBitmap =
                 &self.attribute_maps[(target_context.type_().0.get() - 1) as usize];
-            if !target_attribute_bitmap.is_set(access_vector_rule.target_type().0.get() - 1) {
+            if !target_attribute_bitmap.is_set(metadata.target_type().0.get() - 1) {
                 continue;
             }
 
             if let Some(xperms) = access_vector_rule.extended_permissions() {
                 // Only filter ioctls if there is at least one `allowxperm` rule for any ioctl
                 // prefix.
-                if access_vector_rule.is_allowxperm() {
+                if metadata.is_allowxperm() {
                     explicit_allow.get_or_insert(XpermsBitmap::NONE);
                 }
                 // If the rule applies to ioctls with prefix `ioctl_prefix`, get a bitmap
@@ -303,13 +305,13 @@ impl ParsedPolicy {
                 let Some(xperms_bitmap) = bitmap_if_prefix_matches else {
                     continue;
                 };
-                if access_vector_rule.is_allowxperm() {
+                if metadata.is_allowxperm() {
                     (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |= xperms_bitmap;
                 }
-                if access_vector_rule.is_auditallowxperm() {
+                if metadata.is_auditallowxperm() {
                     auditallow |= xperms_bitmap;
                 }
-                if access_vector_rule.is_dontauditxperm() {
+                if metadata.is_dontauditxperm() {
                     auditdeny -= xperms_bitmap;
                 }
             }
@@ -418,8 +420,13 @@ impl ParsedPolicy {
         &self.range_transitions.data
     }
 
-    pub(super) fn access_vector_rules(&self) -> &AccessVectorRules {
-        &self.access_vector_rules.data
+    pub(super) fn access_vector_rules(&self) -> impl Iterator<Item = &AccessVectorRule> {
+        self.access_vector_rules.data.iter()
+    }
+
+    #[cfg(test)]
+    pub(super) fn access_vector_rules_for_test(&self) -> impl Iterator<Item = &AccessVectorRule> {
+        self.access_vector_rules()
     }
 
     pub(super) fn compute_filename_transition(
@@ -899,7 +906,7 @@ impl ParsedPolicy {
         }
 
         // Validate that types output by access vector rules are defined.
-        for access_vector_rule in &self.access_vector_rules.data {
+        for access_vector_rule in self.access_vector_rules() {
             if let Some(type_id) = access_vector_rule.new_type() {
                 validate_id(&type_ids, type_id, "new_type")?;
             }
