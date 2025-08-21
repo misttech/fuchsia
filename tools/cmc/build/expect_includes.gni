@@ -166,6 +166,6 @@ template("cmc_check_includes") {
              rebase_path(_fromfile, root_build_dir),
              "--depfile",
              rebase_path(depfile, root_build_dir),
-           ] + include_paths
+           ] + cmc_include_paths
   }
 }

@@ -109,7 +109,7 @@ template("cm") {
         invoker.config_values_package_path,
       ]
     }
-    args += include_paths
+    args += cmc_include_paths
 
     if (!defined(restricted_features)) {
       restricted_features = []

@@ -31,3 +31,11 @@ python_binary("package_creation_wrapper") {
     "//build/python/modules/elf",
   ]
 }
+
+python_binary("component_creation_wrapper") {
+  main_source = "fuchsia_component_creation_wrapper.py"
+  deps = [
+    "//build/python/modules/depfile",
+    "//build/python/modules/distribution_manifest",
+  ]
+}
