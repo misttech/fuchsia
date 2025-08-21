@@ -56,6 +56,7 @@ melon/output: \
 >>>
 """
 import os
+import shlex
 from os import PathLike
 from typing import Any, Iterable, Self, TextIO, Union
 
@@ -77,11 +78,15 @@ class DepFile:
             self.rebase_from = rebase
         else:
             self.rebase_from = os.getcwd()
-        self.output = self._rebase(output)
+        self.outputs = [self._rebase(output)]
         self.deps: set[FilePath] = set()
 
     def _rebase(self, path: FilePath) -> FilePath:
         return os.path.relpath(path, start=self.rebase_from)
+
+    def add_output(self, output: str | FilePath) -> None:
+        if output not in self.outputs:
+            self.outputs.append(output)
 
     def add_input(self, input: FilePath) -> None:
         """Add an input to the depfile"""
@@ -119,14 +124,81 @@ class DepFile:
         dep_file.update(inputs)
         return dep_file
 
+    @classmethod
+    def read_from(cls, file: TextIO) -> "DepFile":
+        depfile = None
+        found_continuation = False
+
+        for line in file.readlines():
+            line = line.strip()
+            # ignore empty lines
+            if not line:
+                continue
+            # ignore comment lines
+            if line.startswith("#"):
+                continue
+            # We currently don't allow consecutive backslashes in filenames to
+            # simplify depfile parsing. Support can be added if use cases come up.
+            #
+            # Ninja's implementation:
+            # https://github.com/ninja-build/ninja/blob/5993141c0977f563de5e064fbbe617f9dc34bb8d/src/depfile_parser.cc#L39
+            if r"\\" in line:
+                raise ValueError(
+                    f'Consecutive backslashes found in depfile line "{line}", this is not supported by action tracer'
+                )
+
+            # if we haven't parsed out the outputs lines, do that and setup the
+            # depfile object
+            if not depfile:
+                outputs_string, sep, inputs_string = line.partition(":")
+                outputs = shlex.split(outputs_string)
+                inputs = shlex.split(inputs_string)
+
+                if not sep:
+                    raise ValueError(
+                        "Fail to parse depfile, no separator found on first line:\n"
+                        + line
+                    )
+                if len(outputs) == 0:
+                    raise ValueError(
+                        "Failed to parse depfile, no outputs found:\n" + line
+                    )
+
+                depfile = DepFile(outputs[0])
+                for output in outputs[1:]:
+                    depfile.add_output(output)
+
+                if inputs[-1] in ["\\\n", "\\\r\n"]:
+                    found_continuation = True
+                    inputs.pop()
+
+                for input in inputs:
+                    depfile.add_input(input)
+            else:
+                if not found_continuation:
+                    raise ValueError(
+                        "Found non-empty line without preceding continuation marker."
+                        + line
+                    )
+                inputs = shlex.split(line)
+                if inputs[-1] in ["\\\n", "\\\r\n"]:
+                    found_continuation = True
+                for input in inputs[:-1]:
+                    depfile.add_input(input)
+
+        if depfile:
+            return depfile
+        else:
+            raise ValueError("Depfile was empty")
+
     def __repr__(self) -> str:
+        formatted_outputs = " ".join([str(s) for s in self.outputs])
         if self.deps:
             sorted_deps = sorted(str(d) for d in self.deps)
-            return "{}: \\\n  {}\n".format(
-                self.output, " \\\n  ".join(sorted_deps)
-            )
+            input_continuation = " \\\n  "
+            return f"{formatted_outputs}: \\\n  {input_continuation.join(sorted_deps)}\n"
         else:
-            return "{}:\n".format(self.output)
+            return f"{formatted_outputs}:\n"
 
     def write_to(self, file: TextIO) -> None:
         """Write out the depfile contents to the given writeable `file-like` object."""

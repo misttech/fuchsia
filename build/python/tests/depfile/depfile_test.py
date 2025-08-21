@@ -3,6 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import io
 import os
 import tempfile
 import unittest
@@ -79,6 +80,60 @@ class DepFileTests(unittest.TestCase):
     def test_empty(self) -> None:
         depfile = DepFile("foo/bar/baz/output")
         self.assertEqual(str(depfile), "foo/bar/baz/output:\n")
+
+    def test_extra_outputs(self) -> None:
+        depfile = DepFile("foo/bar/baz/output")
+        depfile.add_output("some/other/output")
+        self.assertEqual(
+            str(depfile), "foo/bar/baz/output some/other/output:\n"
+        )
+
+
+class DepFileSingleLineReadingTests(unittest.TestCase):
+    def test_single_output_and_input(self) -> None:
+        raw = "some/output: some/input"
+        depfile = DepFile.read_from(io.StringIO(raw))
+        self.assertEqual(depfile.outputs, ["some/output"])
+        self.assertEqual(depfile.deps, set(["some/input"]))
+
+    def test_single_output_and_multiple_inputs(self) -> None:
+        raw = "some/output: some/input1 some/input2"
+        depfile = DepFile.read_from(io.StringIO(raw))
+        self.assertEqual(depfile.outputs, ["some/output"])
+        self.assertEqual(depfile.deps, set(["some/input1", "some/input2"]))
+
+    def test_multiple_outputs_and_multiple_inputs(self) -> None:
+        raw = "some/output1 some/output2: some/input1 some/input2"
+        depfile = DepFile.read_from(io.StringIO(raw))
+        self.assertEqual(depfile.outputs, ["some/output1", "some/output2"])
+        self.assertEqual(depfile.deps, set(["some/input1", "some/input2"]))
+
+
+class DepFileMultiLineReadingTests(unittest.TestCase):
+    def test_single_output_and_input(self) -> None:
+        raw = """some/output: \
+some/input """
+        depfile = DepFile.read_from(io.StringIO(raw))
+        self.assertEqual(depfile.outputs, ["some/output"])
+        self.assertEqual(depfile.deps, set(["some/input"]))
+
+    def test_single_output_and_input_with_trailing_continuation(self) -> None:
+        raw = """some/output: \
+some/input \
+"""
+        depfile = DepFile.read_from(io.StringIO(raw))
+        self.assertEqual(depfile.outputs, ["some/output"])
+        self.assertEqual(depfile.deps, set(["some/input"]))
+
+    def test_multiple_outputs_and_inputs(self) -> None:
+        raw = """some/output1 some/output2: some/input1 some/input2 \
+some/input3 \
+"""
+        depfile = DepFile.read_from(io.StringIO(raw))
+        self.assertEqual(depfile.outputs, ["some/output1", "some/output2"])
+        self.assertEqual(
+            depfile.deps, set(["some/input1", "some/input2", "some/input3"])
+        )
 
 
 if __name__ == "__main__":

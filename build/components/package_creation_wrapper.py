@@ -175,18 +175,9 @@ disable this check.
             sys.exit(validator.returncode)
 
     # Read the depfile written by the the package-tool
-    with open(args.output_dir / "meta.far.d") as pkg_tool_depfile:
-        pkg_tool_depfile_lines = pkg_tool_depfile.readlines()
-        if len(pkg_tool_depfile_lines) == 1:
-            # If it's a single-line depfile, then split on whitespace, and ignore the first
-            # token, which is the output.
-            inputs.update(pkg_tool_depfile_lines[0].split()[1:])
-        else:
-            print(
-                "package-tool wrote a multi-line depfile, this isn't supported",
-                sys.stderr,
-            )
-            return -3
+    with open(args.output_dir / "meta.far.d") as file:
+        pkg_tool_depfile = DepFile.read_from(file)
+        inputs.update([str(s) for s in pkg_tool_depfile.deps])
 
     # Write it back out as our own, after adding our own inputs to it
     with open(args.depfile, "w") as depfile:

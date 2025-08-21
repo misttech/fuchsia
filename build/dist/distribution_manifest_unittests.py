@@ -9,7 +9,12 @@ import os
 import tempfile
 import unittest
 
-# From current directory
+sys.path.append(
+    os.path.join(
+        os.path.dirname(__file__),
+        "../python/modules/distribution_manifest",
+    )
+)
 import distribution_manifest as dm
 
 Entry = dm.Entry
