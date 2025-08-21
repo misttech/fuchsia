@@ -16,10 +16,22 @@
     offer: [
         {
             protocol: [
+                "fuchsia.boot.Arguments",
+                "fuchsia.fxfs.BlobCreator",
+                "fuchsia.fxfs.BlobReader",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.paver.Paver",
             ],
             from: "parent",
+            to: "#system_recovery",
+        },
+        {
+            protocol: [
+                "fuchsia.net.http.Loader",
+                "fuchsia.net.name.Lookup",
+                "fuchsia.posix.socket.Provider",
+            ],
+            from: "#network",
             to: "#system_recovery",
         },
         {
@@ -29,14 +41,12 @@
             availability: "same_as_target",
         },
         {
-            directory: "dev-topological",
-            from: "parent",
-            as: "dev-sys-platform",
-            to: "#system_recovery",
-            subdir: "sys/platform",
-        },
-        {
-            directory: "build-info",
+            directory: [
+                "blob",
+                "blob-exec",
+                "build-info",
+                "root-ssl-certificates",
+            ],
             from: "parent",
             to: "#system_recovery",
         },

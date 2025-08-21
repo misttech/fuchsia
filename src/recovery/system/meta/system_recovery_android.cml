@@ -12,6 +12,12 @@
         forward_stderr_to: "log",
         forward_stdout_to: "log",
     },
+    children: [
+        {
+            name: "pkg-recovery",
+            url: "#meta/pkg.cm",
+        },
+    ],
     use: [
         {
             protocol: [
@@ -24,6 +30,36 @@
             from: "parent",
             rights: [ "r*" ],
             path: "/config/build-info",
+        },
+        {
+            protocol: "fuchsia.update.installer.Installer",
+            from: "#pkg-recovery",
+        },
+    ],
+    offer: [
+        {
+            directory: [
+                "blob",
+                "blob-exec",
+                "build-info",
+                "config-data",
+                "root-ssl-certificates",
+            ],
+            from: "parent",
+            to: "#pkg-recovery",
+        },
+        {
+            protocol: [
+                "fuchsia.boot.Arguments",
+                "fuchsia.fxfs.BlobCreator",
+                "fuchsia.fxfs.BlobReader",
+                "fuchsia.net.http.Loader",
+                "fuchsia.net.name.Lookup",
+                "fuchsia.paver.Paver",
+                "fuchsia.posix.socket.Provider",
+            ],
+            from: "parent",
+            to: "#pkg-recovery",
         },
     ],
 }

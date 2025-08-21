@@ -15,8 +15,8 @@ use carnelian::scene::layout::{
 };
 use carnelian::scene::scene::{Scene, SceneBuilder};
 use carnelian::{
-    input, App, AppAssistant, AppAssistantPtr, AppSender, IntPoint, Point, Size, ViewAssistant,
-    ViewAssistantContext, ViewAssistantPtr, ViewKey,
+    App, AppAssistant, AppAssistantPtr, AppSender, IntPoint, Point, Size, ViewAssistant,
+    ViewAssistantContext, ViewAssistantPtr, ViewKey, input,
 };
 use euclid::size2;
 use fidl_fuchsia_input_report::ConsumerControlButton;
@@ -26,6 +26,7 @@ mod menu;
 use menu::Menu;
 mod fdr;
 mod power;
+mod update;
 mod view_sender;
 use view_sender::ViewSender;
 
@@ -131,6 +132,10 @@ impl RecoveryViewAssistant {
             menu::MenuItem::RebootBootloader => {
                 self.log("Rebooting to bootloader...");
                 self.view_sender.queue_message(RecoveryMessages::RebootBootloader);
+            }
+            menu::MenuItem::Sideload => {
+                self.log("Applying update from ADB...");
+                self.view_sender.queue_message(RecoveryMessages::Sideload);
             }
             menu::MenuItem::PowerOff => {
                 self.log("Powering off...");
@@ -375,16 +380,20 @@ impl ViewAssistant for RecoveryViewAssistant {
             return Ok(());
         }
         match *touch_event.contacts {
-            [input::touch::Contact {
-                contact_id,
-                phase: input::touch::Phase::Down(location, _size),
-            }] => {
+            [
+                input::touch::Contact {
+                    contact_id,
+                    phase: input::touch::Phase::Down(location, _size),
+                },
+            ] => {
                 self.active_contact = Some((contact_id, location, location));
             }
-            [input::touch::Contact {
-                contact_id,
-                phase: input::touch::Phase::Moved(location, _size),
-            }] => {
+            [
+                input::touch::Contact {
+                    contact_id,
+                    phase: input::touch::Phase::Moved(location, _size),
+                },
+            ] => {
                 let start_location = if let Some((active_contact_id, start_location, _)) =
                     self.active_contact
                     && contact_id == active_contact_id
@@ -462,9 +471,7 @@ impl ViewAssistant for RecoveryViewAssistant {
                 button: ConsumerControlButton::Power,
                 phase: input::consumer_control::Phase::Up,
             } => self.on_menu_select(),
-            _ => {
-                return Ok(());
-            }
+            _ => return Ok(()),
         }
         Ok(())
     }
@@ -504,6 +511,18 @@ impl ViewAssistant for RecoveryViewAssistant {
                 })
                 .detach();
             }
+            RecoveryMessages::Sideload => {
+                let view_sender = self.view_sender.clone();
+                fasync::Task::local(async move {
+                    if let Err(e) = update::apply_update().await {
+                        view_sender.queue_message(RecoveryMessages::Log(format!(
+                            "Failed to apply update: {e:#}"
+                        )));
+                    }
+                    view_sender.queue_message(RecoveryMessages::TaskDone);
+                })
+                .detach();
+            }
             RecoveryMessages::PowerOff => {
                 let view_sender = self.view_sender.clone();
                 fasync::Task::local(async move {
@@ -537,6 +556,7 @@ enum RecoveryMessages {
     TaskDone,
     Reboot,
     RebootBootloader,
+    Sideload,
     PowerOff,
     WipeData,
 }

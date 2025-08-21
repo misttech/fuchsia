@@ -5223,6 +5223,7 @@ assembly_input_bundle("recovery_android") {
   base_packages = [
     "//src/recovery/system:system_recovery_android",
     "//src/developer/adb/bin:adb",
+    "//src/security/bin/root_ssl_certificates",
   ]
   compiled_packages = [
     {
@@ -5236,6 +5237,28 @@ assembly_input_bundle("recovery_android") {
             "//src/developer/adb/bin/adb-file-sync/meta/adb-file-sync.core_shard.cml",
             "//src/developer/adb/bin/adb-reboot/meta/adb-reboot.core_shard.cml",
             "//src/developer/adb/bin/adb-sideload/meta/adb-sideload.core_shard.cml",
+          ]
+        },
+      ]
+    },
+    {
+      bootfs_package = true
+      name = "bootstrap"
+      components = [
+        {
+          component_name = "bootstrap"
+          shards = [ "//src/recovery/system/meta/system_recovery_android.bootstrap_shard.cml" ]
+        },
+      ]
+    },
+    {
+      bootfs_package = true
+      name = "root"
+      components = [
+        {
+          component_name = "root"
+          shards = [
+            "//src/recovery/system/meta/system_recovery_android.root_shard.cml",
           ]
         },
       ]

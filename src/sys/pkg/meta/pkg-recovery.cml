@@ -80,8 +80,12 @@
             rights: [ "r*" ],
         },
         {
-            // Needed so system-updater knows what board to install for.
-            directory: "build-info",
+            directory: [
+                "blob",
+
+                // Needed so system-updater knows what board to install for.
+                "build-info",
+            ],
             from: "parent",
             to: "#system-updater",
             rights: [ "r*" ],
@@ -100,7 +104,11 @@
             to: "#pkg-resolver",
         },
         {
-            protocol: "fuchsia.paver.Paver",
+            protocol: [
+                "fuchsia.fxfs.BlobReader",
+                "fuchsia.net.http.Loader",
+                "fuchsia.paver.Paver",
+            ],
             from: "parent",
             to: "#system-updater",
         },
@@ -119,6 +127,7 @@
         {
             protocol: [
                 "fuchsia.pkg.PackageCache",
+                "fuchsia.pkg.RetainedBlobs",
                 "fuchsia.pkg.RetainedPackages",
                 "fuchsia.space.Manager",
             ],
@@ -129,6 +138,11 @@
             protocol: "fuchsia.pkg.PackageResolver-ota",
             from: "#pkg-resolver",
             as: "fuchsia.pkg.PackageResolver",
+            to: "#system-updater",
+        },
+        {
+            protocol: [ "fuchsia.pkg.internal.OtaDownloader" ],
+            from: "#pkg-resolver",
             to: "#system-updater",
         },
     ],

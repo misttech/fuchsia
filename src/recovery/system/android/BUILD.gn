@@ -21,6 +21,7 @@ rustc_binary("bin") {
     "//src/lib/ui/carnelian",
     "//src/recovery/lib/recovery-ui",
     "//src/recovery/system:recovery_ui_config",
+    "//src/sys/pkg/lib/isolated-swd",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:euclid",
     "//third_party/rust_crates:log",
@@ -31,6 +32,7 @@ rustc_binary("bin") {
     "src/main.rs",
     "src/menu.rs",
     "src/power.rs",
+    "src/update.rs",
     "src/view_sender.rs",
   ]
 }

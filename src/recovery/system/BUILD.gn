@@ -193,5 +193,6 @@ fuchsia_package("system_recovery_android") {
   deps = [
     ":component_android",
     ":roboto_regular",
+    "//src/sys/pkg/lib/isolated-swd:pkg-component",
   ]
 }
