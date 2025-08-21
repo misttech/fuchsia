@@ -3,9 +3,11 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.driver.test/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.powersource/cpp/fidl.h>
+#include <fidl/fuchsia.power.battery/cpp/fidl.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/driver_test_realm/realm_builder/cpp/lib.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
@@ -16,8 +18,6 @@
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
-using fuchsia_hardware_powersource::wire::PowerType;
-
 class FakeBatteryRealmTest : public gtest::TestLoopFixture {
  public:
  protected:
@@ -27,12 +27,18 @@ class FakeBatteryRealmTest : public gtest::TestLoopFixture {
     // Create and build the realm.
     auto realm_builder = component_testing::RealmBuilder::Create();
     driver_test_realm::Setup(realm_builder);
+
+    std::vector<fuchsia_component_test::Capability> exposes;
+    exposes.emplace_back(fuchsia_component_test::Capability::WithService(
+        fuchsia_component_test::Service{{.name = fuchsia_power_battery::InfoService::Name}}));
+    driver_test_realm::AddDtrExposes(realm_builder, exposes);
     realm_ = realm_builder.Build(dispatcher());
 
     // Start DriverTestRealm.
     zx::result dtr = realm_->component().Connect<fuchsia_driver_test::Realm>();
     fuchsia_driver_test::RealmArgs args{{
         .root_driver = "fuchsia-boot:///platform-bus#meta/platform-bus.cm",
+        .dtr_exposes = exposes,
         .software_devices = std::vector{fuchsia_driver_test::SoftwareDevice(
             "fake-battery", bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_FAKE_BATTERY)},
     }};
@@ -47,23 +53,23 @@ class FakeBatteryRealmTest : public gtest::TestLoopFixture {
 };
 
 TEST_F(FakeBatteryRealmTest, DriversExist) {
-  // Open dev-class/power and wait for the power source.
   fidl::UnownedClientEnd<fuchsia_io::Directory> exposed{
       Realm().component().exposed().unowned_channel()};
-  zx::result dir = component::OpenDirectoryAt(exposed, "dev-class/power");
-  ASSERT_EQ(dir.status_value(), ZX_OK);
 
-  auto watch_result = device_watcher::WatchDirectoryForItems<std::string>(
-      *dir, [](std::string_view name) -> std::optional<std::string> { return std::string(name); });
-  ASSERT_EQ(watch_result.status_value(), ZX_OK);
-  auto name = std::move(watch_result.value());
-  auto client_end = component::ConnectAt<fuchsia_hardware_powersource::Source>(*dir, name);
-  ASSERT_EQ(client_end.status_value(), ZX_OK);
-  fidl::WireSyncClient client(std::move(*client_end));
+  fidl::ClientEnd<fuchsia_io::Directory> svc_root(
+      Realm().component().CloneExposedDir().TakeChannel());
+  component::SyncServiceMemberWatcher<fuchsia_power_battery::InfoService::Device> watcher(
+      svc_root.borrow());
+
+  zx::result result1 = watcher.GetNextInstance(false);
+  ASSERT_TRUE(result1.is_ok());
+
+  auto client_end = std::move(result1.value());
+  fidl::WireSyncClient client(std::move(client_end));
 
   // Send a FIDL request.
-  fidl::WireResult result = client->GetPowerInfo();
-  ASSERT_EQ(ZX_OK, result.status());
-  const auto& info = result.value().info;
-  ASSERT_EQ(info.type, PowerType::kBattery);
+  fidl::WireResult result2 = client->GetBatteryInfo();
+  ASSERT_EQ(ZX_OK, result2.status());
+  const auto& info = result2.value().info;
+  ASSERT_EQ(info.charge_source(), fuchsia_power_battery::ChargeSource::kAcAdapter);
 }

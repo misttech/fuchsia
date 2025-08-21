@@ -15,19 +15,13 @@ driver_bind_rules("fake_battery_bind") {
 
 source_set("common") {
   sources = [
+    "battery_protocol_server.cc",
+    "battery_protocol_server.h",
     "driver.cc",
     "driver.h",
-    "power_source_protocol_server.cc",
-    "power_source_protocol_server.h",
-    "power_source_state.cc",
-    "power_source_state.h",
-    "simulator_impl.cc",
-    "simulator_impl.h",
   ]
 
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.powersource:fuchsia.hardware.powersource_cpp",
-    "//sdk/fidl/fuchsia.hardware.powersource.test:fuchsia.hardware.powersource.test_cpp",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
@@ -56,7 +50,7 @@ fuchsia_driver_package("fake_battery") {
 
 test("fake_battery_test_bin") {
   output_name = "fake_battery_driver_unittests"
-  sources = [ "fake_battery_driver_unittest.cc" ]
+  sources = [ "driver_unittest.cc" ]
 
   deps = [
     ":common",
@@ -74,8 +68,6 @@ test("driver_integration_test") {
   sources = [ "integration_test.cc" ]
   deps = [
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
-    "//sdk/fidl/fuchsia.hardware.powersource:fuchsia.hardware.powersource_cpp",
-    "//sdk/fidl/fuchsia.hardware.powersource.test:fuchsia.hardware.powersource.test_cpp",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",

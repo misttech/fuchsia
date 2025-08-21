@@ -13,7 +13,16 @@
     },
     capabilities: [
         {
-            protocol: [ "fuchsia.hardware.powersource.Source" ],
+            protocol: [ "fuchsia.power.battery.BatteryInfoProvider" ],
+        },
+        {
+            service: [ "fuchsia.power.battery.InfoService" ],
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.power.battery.InfoService",
+            from: 'self',
         },
     ],
 }
