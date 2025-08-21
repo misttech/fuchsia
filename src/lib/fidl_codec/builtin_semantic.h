@@ -11,14 +11,6 @@ namespace fidl_codec::semantic {
 
 constexpr std::string_view kBuiltinSemantics =
     "library fuchsia.io {\n"
-    "  Node::DeprecatedClone {\n"
-    "    request.object = handle : 'cloned';\n"
-    "  }\n"
-    "  Directory::DeprecatedOpen {\n"
-    "    request.object = handle / request.path;\n"
-    "    input_field: request.path;\n"
-    "    result: request.object;\n"
-    "  }\n"
     "  Directory::Open {\n"
     "    request.object = handle / request.path;\n"
     "    input_field: request.path;\n"
