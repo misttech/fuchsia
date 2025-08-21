@@ -45,7 +45,7 @@ template("generate_symbols") {
     deps = [ invoker.library_label ]
     inputs = [
       invoker.library_path,
-      "//build/images/elfinfo.py",
+      "//build/python/modules/elf/elfinfo.py",
     ]
     outputs = [ invoker.output ]
 
@@ -58,7 +58,7 @@ template("generate_symbols") {
       "--build-id-dir",
       rebase_path("$root_build_dir/.build-id", root_build_dir),
       "--build-id-script",
-      rebase_path("//build/images/elfinfo.py", root_build_dir),
+      rebase_path("//build/python/modules/elf/elfinfo.py", root_build_dir),
       "--binary",
       rebase_path(invoker.library_path, root_build_dir),
       "--output",

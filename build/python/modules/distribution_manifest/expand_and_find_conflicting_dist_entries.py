@@ -14,7 +14,7 @@ import sys
 import distribution_manifest
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--input", help="Path to original manifest", required=True
@@ -44,7 +44,7 @@ def main():
             print("while reading:\n\t{}:\n\t{}".format(args.input, e))
             return 1
 
-    opened_files = set()
+    opened_files: set[str] = set()
     entries, error = distribution_manifest.expand_manifest(
         contents, opened_files
     )

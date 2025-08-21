@@ -80,12 +80,14 @@ template("distribution_manifest") {
                              "visibility",
                            ])
 
-    script = "//build/dist/expand_and_find_conflicting_dist_entries.py"
+    script = "//build/python/modules/distribution_manifest/expand_and_find_conflicting_dist_entries.py"
     check_for_output_dir_leaks = false
 
     sources = [ intermediate_file ]
     outputs = [ manifest_file ]
-    inputs = [ "//build/dist/distribution_manifest.py" ]
+    inputs = [
+      "//build/python/modules/distribution_manifest/distribution_manifest.py",
+    ]
 
     args = [
       "--input",

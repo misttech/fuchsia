@@ -13,9 +13,7 @@ import os
 import sys
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-# elfinfo is in //build/images/ while this script is in //build/dist/.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "images"))
-import elfinfo
+from .elfinfo import get_elf_info
 
 # The general strategy for checking the ELF binaries within a package is
 # the following:
@@ -189,7 +187,7 @@ def find_unstripped_file(
                 build_id_dir = os.path.join(lib_dir, ".build-id")
             if not os.path.exists(build_id_dir):
                 return None
-            build_id = elfinfo.get_elf_info(filename).build_id
+            build_id = get_elf_info(filename).build_id
             # The build-id value is an hexadecimal string, used to locate the
             # debug file under debug/.build-id/XX/YYYYYY.debug where XX are its
             # first two chars, and YYYYYY is the rest (typically longer than
@@ -265,7 +263,7 @@ def verify_manifest_elf_binaries(
             continue
 
         depfile_items.add(source_file)
-        info = elfinfo.get_elf_info(source_file)
+        info = get_elf_info(source_file)
         if info is not None:
             elf_entries[target] = info
 

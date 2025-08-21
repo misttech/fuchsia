@@ -6,6 +6,7 @@ import("//build/config/clang/clang.gni")
 import("//build/config/fuchsia/target_api_level.gni")
 import("//build/dist/distribution_manifest_generated_file.gni")
 import("//build/packages/package_metadata.gni")
+import("//build/python/python_action.gni")
 import("//build/rust/config.gni")
 
 # Which tool(s) to use in this process are conditional based on this being a
@@ -347,7 +348,7 @@ template("fuchsia_package") {
     }
 
     # Call the wrapper script that builds the package
-    action("${_labels.build_target}") {
+    python_action("${_labels.build_target}") {
       mnemonic = "PACKAGE"
       forward_variables_from(invoker,
                              [
@@ -356,7 +357,8 @@ template("fuchsia_package") {
                                "testonly",
                                "visibility",
                              ])
-      script = "//build/packages/package_creation_wrapper.py"
+      binary_label =
+          "//build/components:package_creation_wrapper($host_toolchain)"
 
       # These are the base deps/inputs/outputs/args for all package creation calls
       deps = [
@@ -417,11 +419,6 @@ template("fuchsia_package") {
       }
 
       if (verify_elf) {
-        inputs += [
-          "//build/dist/verify_manifest_elf_binaries.py",
-          "//build/dist/distribution_manifest.py",
-          "//build/images/elfinfo.py",
-        ]
         args += [
           "--verify-elf-binaries",
           "--toolchain-lib-dir=${rebased_clang_dir}/lib",

@@ -55,7 +55,7 @@ zx_host_tool_action("extract_bootfs") {
 action("elf_sizes.json") {
   testonly = true
   hermetic_deps = false
-  script = "//build/images/elfinfo.py"
+  script = "//build/python/modules/elf/elfinfo.py"
   deps = [
     ":extract_bootfs",
     labels.images,

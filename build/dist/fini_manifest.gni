@@ -86,7 +86,9 @@ template("fini_manifest") {
 
     sources = [ intermediate_file ]
     outputs = [ manifest_file ]
-    inputs = [ "//build/dist/distribution_manifest.py" ]
+    inputs = [
+      "//build/python/modules/distribution_manifest/distribution_manifest.py",
+    ]
 
     args = [
       "--input",

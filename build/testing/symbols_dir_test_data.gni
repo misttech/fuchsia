@@ -39,7 +39,10 @@ template("symbols_dir_test_data") {
     testonly = true
     script = "//build/testing/copy_unstripped_binaries.py"
 
-    inputs = [ _unstripped_binaries_list_file ]
+    inputs = [
+      _unstripped_binaries_list_file,
+      "//build/python/modules/elf/elfinfo.py",
+    ]
     deps = [ ":${_rspfile_target}" ]
 
     outputs = [ _copy_unstripped_stamp_file ]

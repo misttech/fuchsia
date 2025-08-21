@@ -11,13 +11,12 @@ python process.
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "dist"))
 import distribution_manifest
+from depfile import DepFile
 
 
 def main() -> int:
@@ -105,7 +104,7 @@ def main() -> int:
     if args.verify_elf_binaries:
         # Only import the elf verification script when it's needed, to save
         # whatever few ms that it might give us.
-        from verify_manifest_elf_binaries import (
+        from elf.verify_manifest_elf_binaries import (
             VerificationFailure,
             verify_manifest_elf_binaries,
         )
@@ -191,9 +190,7 @@ disable this check.
 
     # Write it back out as our own, after adding our own inputs to it
     with open(args.depfile, "w") as depfile:
-        depfile.write(f"{package_manifest}: \\\n")
-        depfile.write("  " + "  \\\n  ".join([str(p) for p in inputs]))
-        depfile.write("\n")
+        DepFile.from_deps(package_manifest, inputs).write_to(depfile)
 
     return 0
 

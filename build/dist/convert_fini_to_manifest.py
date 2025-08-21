@@ -5,11 +5,19 @@
 """Converts a distribution manifest to the Fuchsia INI format."""
 
 import argparse
+import os
+import sys
 
+sys.path.append(
+    os.path.join(
+        os.path.dirname(__file__),
+        "../python/modules/distribution_manifest",
+    )
+)
 import distribution_manifest
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", help="Path to FINI manifest", required=True)
     parser.add_argument(

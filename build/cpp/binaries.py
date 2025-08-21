@@ -10,13 +10,13 @@ sys.path.append(
     os.path.join(
         os.path.dirname(__file__),
         os.pardir,
-        "images",
+        "python/modules/elf",
     )
 )
 import elfinfo
 
 
-def get_sdk_debug_path(binary):
+def get_sdk_debug_path(binary: str) -> str:
     elf_info = elfinfo.get_elf_info(binary)
     if not elf_info:
         raise RuntimeError(f"Unable to extract ELF info from {binary}")
@@ -25,7 +25,7 @@ def get_sdk_debug_path(binary):
 
 
 # For testing.
-def main():
+def main() -> None:
     print(get_sdk_debug_path(sys.argv[1]))
 
 

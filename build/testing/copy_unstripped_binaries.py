@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 from shutil import rmtree
 
-# Import //build/images/elfinfo.py
-sys.path.insert(0, os.path.dirname(__file__) + "/../images")
+# Import //build/python/modules/elf/elfinfo.py
+sys.path.insert(0, os.path.dirname(__file__) + "/../python/modules/elf")
 import elfinfo
 
 
@@ -34,7 +34,7 @@ def try_link(binary: str, build_id_dir: Path) -> Path:
     return dest
 
 
-def main():
+def main() -> int:
     assert len(sys.argv) == 6, "Incorrect number of arguments"
 
     unstripped_binaries_list_file = Path(sys.argv[1])
@@ -63,6 +63,8 @@ def main():
 
     depfile.write_text(depfile_content + "\n")
     stampfile.write_text("done!")
+
+    return 0
 
 
 if __name__ == "__main__":

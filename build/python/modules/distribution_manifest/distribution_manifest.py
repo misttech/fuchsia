@@ -13,6 +13,7 @@ import filecmp
 import json
 import os
 from typing import (
+    Any,
     Callable,
     DefaultDict,
     Dict,
@@ -161,9 +162,9 @@ def expand_partial_manifest_items(
 
         # A map that associates with each destination path (e.g. 'bin/foo')
         # the extra items that have an elf_runtime_dir key in it.
-        elf_runtime_entries: Dict[str, List[Dict]] = collections.defaultdict(
-            list
-        )
+        elf_runtime_entries: Dict[
+            str, List[Dict[Any, Any]]
+        ] = collections.defaultdict(list)
 
         # A map built from all copy entries, that maps their destination path
         # to the corresponding source path.
