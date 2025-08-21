@@ -400,7 +400,6 @@ impl NetworkRegistries {
         {
             let fuchsia = self.fuchsia.lock().await;
             if fuchsia.has_default_network() {
-                info!("FuchsiaNetworks has a default network, preferring Fuchsia mark.");
                 return fuchsia.current_mark();
             }
         }
@@ -415,7 +414,6 @@ impl NetworkRegistries {
         {
             let fuchsia = self.fuchsia.lock().await;
             if fuchsia.has_default_network() {
-                info!("FuchsiaNetworks has a default network, preferring Fuchsia DNS.");
                 return fuchsia.dns_servers();
             }
         }
@@ -1071,8 +1069,8 @@ mod test {
             fnp_properties::DefaultNetworkUpdate {
                 interface_id: Some(self.0),
                 socket_marks: Some(fnet::Marks {
-                    mark_1: Some(self.1 .0),
-                    mark_2: self.1 .1,
+                    mark_1: Some(self.1.0),
+                    mark_2: self.1.1,
                     __source_breaking: fidl::marker::SourceBreaking,
                 }),
                 __source_breaking: fidl::marker::SourceBreaking,
