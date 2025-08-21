@@ -8,24 +8,23 @@ There are a few ways that a Fuchsia component generates log messages:
 
 ## `LogSink`/syslog
 
-Components that want to generate log messages call
-[`fuchsia.logger.LogSink/ConnectStructured`]. The
-[`fuchsia.logger.LogSink`] protocol must be
-[`use`d in the component manifest][syslog-use-shard]. This protocol is routed as
-part of the `diagnostics` dictionary. A component must have the
+Components that want to generate log messages should connect to the
+[`fuchsia.logger.LogSink`] protocol and then handle the
+[`fuchsia.logger.LogSink/OnInit`] event. The [`fuchsia.logger.LogSink`] protocol
+must be [`use`d in the component manifest][syslog-use-shard]. This protocol is
+routed as part of the `diagnostics` dictionary. A component must have the
 `fuchsia.logger.LogSink` protocol routed to it directly so it can use it form
 `parent`, or more commonly, have the full `diagnostics` dictionary routed to it,
 in which case it can use the `fuchsia.logger.LogSink` protocol from
 `parent/diagnostics`.
 
-`ConnectStructured` takes a socket where the actual log messages are [written]
-by the syslog library. If the socket buffer is full, the
-[writing thread drops the logs] by default. If there are any dropped log
-messages on the writer side, these are counted and that count is sent in the
-next successful message, after which the counter is reset. `ffx log`
+The `OnInit` event includes an [`IOBuffer`] which is used to actually send log
+messages. If the [`IOBuffer`] is full, logs will be dropped. If there are any
+dropped log messages on the writer side, these are counted and that count is
+sent in the next successful message, after which the counter is reset. `ffx log`
 [prints a warning] when it's aware of dropped messages. The `LogSink` server
-must drain all of the sockets that it receives fast enough to prevent messages
-being dropped on the writer-side.
+must ensure the [`IOBuffer`] has sufficient space to prevent messages being
+dropped on the writer-side.
 
 Different languages use different mechanisms to connect to `LogSink`:
 
@@ -59,9 +58,9 @@ in different parts of the system.
 Note: For more information about driver logging, see
 [Driver logging][driver-logging-docs].
 
-Drivers use the `LogSink` protocol to log, but do so through the use of
-[`zxlogf`]. This function provides a wrapper around the `syslog` library, so
-that each driver has its own log message socket.
+Drivers use the `LogSink` protocol to log, but do so through the use of their
+own library. This library provides a wrapper around the `syslog` library, so
+that each driver has its own logger.
 
 In addition, `driver_manager` binds `stdout` and `stderr` to `debuglog`. This
 allows `driver_manager` to output critical information to the `debuglog`, or to
@@ -83,11 +82,10 @@ they are rolled out of the `klog` buffer before the Archivist reads them into
 All kernel log messages are sent to the system log with `INFO` severity because
 the `debuglog` syscalls do not have a way to express the severity of a message.
 
-[`fuchsia.logger.LogSink/ConnectStructured`]: https://fuchsia.dev/reference/fidl/fuchsia.logger#LogSink.ConnectStructured
+[`fuchsia.logger.LogSink/OnInit`]: https://fuchsia.dev/reference/fidl/fuchsia.logger#LogSink.OnInit
 [`fuchsia.logger.LogSink`]: https://fuchsia.dev/reference/fidl/fuchsia.logger#LogSink
 [syslog-use-shard]: /sdk/lib/syslog/use.shard.cml
-[written]: /zircon/system/ulib/syslog/fx_logger.cc?l=72&drc=1bdbf8a4e6f758c3b1782dee352071cc592ca3ab
-[writing thread drops the logs]: /zircon/system/ulib/syslog/fx_logger.cc?l=130&drc=1bdbf8a4e6f758c3b1782dee352071cc592ca3ab
+[`IOBuffer`]: https://fuchsia.dev/reference/syscalls#io_buffers
 [prints a warning]: /src/diagnostics/log_listener/src/main.rs?l=918&drc=3a02d1922c0519b4c7d639879ec0503de9c79f0c
 [C++ logging]: /docs/development/languages/c-cpp/logging.md
 [Go logging]: /docs/development/languages/go/logging.md
@@ -96,7 +94,6 @@ the `debuglog` syscalls do not have a way to express the severity of a message.
 [bindable to file descriptors]: /sdk/lib/fdio/include/lib/fdio/fdio.h?l=36&drc=1bdbf8a4e6f758c3b1782dee352071cc592ca3ab
 [`debuglog_write`]: /reference/syscalls/debuglog_write.md
 [`debuglog_read`]: /reference/syscalls/debuglog_read.md
-[`zxlogf`]: /sdk/lib/driver/compat/cpp/include/lib/driver/compat/cpp/logging.h
 [kernel params]: /docs/reference/kernel/kernel_cmdline.md#drivernamelogflags
 [`fuchsia.sys/LaunchInfo`]: https://fuchsia.dev/reference/fidl/fuchsia.sys#LaunchInfo
 [`stdout-to-debuglog`]: /src/sys/lib/stdout-to-debuglog
