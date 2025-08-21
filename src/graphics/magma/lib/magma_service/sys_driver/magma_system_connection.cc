@@ -69,9 +69,11 @@ magma::Status MagmaSystemConnection::CreateContext2(uint32_t context_id, uint64_
 
 magma::Status MagmaSystemConnection::DestroyContext(uint32_t context_id) {
   auto iter = context_map_.find(context_id);
-  if (iter == context_map_.end())
-    return MAGMA_DRETF(MAGMA_STATUS_INVALID_ARGS,
-                       "MagmaSystemConnection:Attempting to destroy invalid context id");
+  if (iter == context_map_.end()) {
+    return MAGMA_DRET_MSG(MAGMA_STATUS_INVALID_ARGS,
+                          "MagmaSystemConnection:Attempting to destroy invalid context id: %d",
+                          context_id);
+  }
 
   context_map_.erase(iter);
   return MAGMA_STATUS_OK;

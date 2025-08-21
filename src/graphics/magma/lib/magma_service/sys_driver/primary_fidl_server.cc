@@ -173,6 +173,7 @@ void PrimaryFidlServer::ImportObject(ImportObjectRequestView request,
 
   auto object_type = ValidateObjectType(request->object_type());
   if (!object_type) {
+    MAGMA_DMESSAGE("ImportObject: Bad object type");
     SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
     return;
   }
@@ -211,14 +212,17 @@ void PrimaryFidlServer::ImportObject(ImportObjectRequestView request,
     zx::unowned_vmo vmo(handle.get());
     zx_status_t status = vmo->get_size(&size);
     if (status != ZX_OK) {
+      MAGMA_DMESSAGE("ImportObject: failed to get vmo size");
       SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
       return;
     }
   }
   FlowControl(size);
 
-  if (!delegate_->ImportObject(std::move(handle), flags, *object_type, request->object_id()))
+  if (!delegate_->ImportObject(std::move(handle), flags, *object_type, request->object_id())) {
+    MAGMA_DMESSAGE("ImportObject: failed to import object");
     SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
+  }
 }
 
 void PrimaryFidlServer::ReleaseObject(ReleaseObjectRequestView request,
@@ -230,12 +234,15 @@ void PrimaryFidlServer::ReleaseObject(ReleaseObjectRequestView request,
 
   auto object_type = ValidateObjectType(request->object_type);
   if (!object_type) {
+    MAGMA_DMESSAGE("ReleaseObject: failed to validate");
     SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
     return;
   }
 
-  if (!delegate_->ReleaseObject(request->object_id, *object_type))
+  if (!delegate_->ReleaseObject(request->object_id, *object_type)) {
+    MAGMA_DMESSAGE("ReleaseObject: failed to release");
     SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
+  }
 }
 
 void PrimaryFidlServer::CreateContext(CreateContextRequestView request,
@@ -245,8 +252,10 @@ void PrimaryFidlServer::CreateContext(CreateContextRequestView request,
   FlowControl();
 
   magma::Status status = delegate_->CreateContext(request->context_id);
-  if (!status.ok())
+  if (!status.ok()) {
+    MAGMA_DMESSAGE("CreateContext: failed to create context");
     SetError(&completer, status.get());
+  }
 }
 
 void PrimaryFidlServer::CreateContext2(CreateContext2RequestView request,
@@ -263,8 +272,10 @@ void PrimaryFidlServer::CreateContext2(CreateContext2RequestView request,
   }
 
   magma::Status status = delegate_->CreateContext2(request->context_id, priority);
-  if (!status.ok())
+  if (!status.ok()) {
+    MAGMA_DMESSAGE("CreateContext2: failed to create context");
     SetError(&completer, status.get());
+  }
 }
 
 void PrimaryFidlServer::DestroyContext(DestroyContextRequestView request,
@@ -274,8 +285,10 @@ void PrimaryFidlServer::DestroyContext(DestroyContextRequestView request,
   FlowControl();
 
   magma::Status status = delegate_->DestroyContext(request->context_id);
-  if (!status.ok())
+  if (!status.ok()) {
+    MAGMA_DMESSAGE("DestroyContext: failed to destroy context");
     SetError(&completer, status.get());
+  }
 }
 
 void PrimaryFidlServer::ExecuteCommand(ExecuteCommandRequestView request,
@@ -322,13 +335,16 @@ void PrimaryFidlServer::ExecuteCommand(ExecuteCommandRequestView request,
       request->context_id, command_buffers, resources, wait_semaphores, signal_semaphores,
       static_cast<uint64_t>(request->flags));
 
-  if (!status)
+  if (!status) {
+    MAGMA_DMESSAGE("ExecuteCommand: failed to execute command");
     SetError(&completer, status.get());
+  }
 }
 
 void PrimaryFidlServer::ExecuteImmediateCommands(
     ExecuteImmediateCommandsRequestView request,
     ExecuteImmediateCommandsCompleter::Sync& completer) {
+  MAGMA_DMESSAGE("ExecuteImmediateCommand: unimplemented");
   SetError(&completer, MAGMA_STATUS_UNIMPLEMENTED);
 }
 
@@ -355,8 +371,10 @@ void PrimaryFidlServer::ExecuteInlineCommands(ExecuteInlineCommandsRequestView r
   }
 
   magma::Status status = delegate_->ExecuteInlineCommands(request->context_id, std::move(commands));
-  if (!status)
+  if (!status) {
+    MAGMA_DMESSAGE("ExecuteInlineCommands: Failed to execute inline command");
     SetError(&completer, status.get());
+  }
 }
 
 void PrimaryFidlServer::Flush(FlushCompleter::Sync& completer) {
@@ -372,6 +390,7 @@ void PrimaryFidlServer::MapBuffer(MapBufferRequestView request,
   FlowControl();
 
   if (!request->has_range() || !request->has_hw_va()) {
+    MAGMA_DMESSAGE("MapBuffer: Bad request");
     SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
     return;
   }
@@ -381,8 +400,10 @@ void PrimaryFidlServer::MapBuffer(MapBufferRequestView request,
   magma::Status status =
       delegate_->MapBuffer(request->range().buffer_id, request->hw_va(), request->range().offset,
                            request->range().size, flags);
-  if (!status.ok())
+  if (!status.ok()) {
+    MAGMA_DMESSAGE("MapBuffer: Failed to map buffer");
     SetError(&completer, status.get());
+  }
 }
 
 void PrimaryFidlServer::UnmapBuffer(UnmapBufferRequestView request,
@@ -392,13 +413,16 @@ void PrimaryFidlServer::UnmapBuffer(UnmapBufferRequestView request,
   FlowControl();
 
   if (!request->has_buffer_id() || !request->has_hw_va()) {
+    MAGMA_DMESSAGE("Unmapbuffer: Bad request");
     SetError(&completer, MAGMA_STATUS_INVALID_ARGS);
     return;
   }
 
   magma::Status status = delegate_->UnmapBuffer(request->buffer_id(), request->hw_va());
-  if (!status.ok())
+  if (!status.ok()) {
+    MAGMA_DMESSAGE("Unmapbuffer: Failed to unmap buffer");
     SetError(&completer, status.get());
+  }
 }
 
 void PrimaryFidlServer::BufferRangeOp2(BufferRangeOp2RequestView request,
@@ -430,6 +454,7 @@ void PrimaryFidlServer::EnablePerformanceCounterAccess(
   magma::Status status =
       delegate_->EnablePerformanceCounterAccess(std::move(request->access_token));
   if (!status) {
+    MAGMA_DMESSAGE("EnablePerformanceCounterAccess: Failed to enable");
     SetError(&completer, status.get());
   }
 }
@@ -447,6 +472,7 @@ void PrimaryFidlServer::EnablePerformanceCounters(
   magma::Status status =
       delegate_->EnablePerformanceCounters(request->counters.data(), request->counters.size());
   if (!status) {
+    MAGMA_DMESSAGE("EnablePerformanceCounters: Failed to enable");
     SetError(&completer, status.get());
   }
 }
@@ -459,6 +485,7 @@ void PrimaryFidlServer::CreatePerformanceCounterBufferPool(
                                                         request->event_channel.TakeChannel());
   magma::Status status = delegate_->CreatePerformanceCounterBufferPool(std::move(pool));
   if (!status) {
+    MAGMA_DMESSAGE("CreatePerformanceCounters: Failed to create");
     SetError(&completer, status.get());
   }
 }
@@ -469,6 +496,7 @@ void PrimaryFidlServer::ReleasePerformanceCounterBufferPool(
   FlowControl();
   magma::Status status = delegate_->ReleasePerformanceCounterBufferPool(request->pool_id);
   if (!status) {
+    MAGMA_DMESSAGE("ReleasePerformanceCounterBufferPool: Failed to release");
     SetError(&completer, status.get());
   }
 }
@@ -502,6 +530,7 @@ void PrimaryFidlServer::DumpPerformanceCounters(DumpPerformanceCountersRequestVi
   FlowControl();
   magma::Status status = delegate_->DumpPerformanceCounters(request->pool_id, request->trigger_id);
   if (!status) {
+    MAGMA_DMESSAGE("DumpPerformanceCounters: Failed");
     SetError(&completer, status.get());
   }
 }
