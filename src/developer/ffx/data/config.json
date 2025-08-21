@@ -41,5 +41,8 @@
     },
     "metrics": {
         "upload_timeout": 2.0
+    },
+    "monitor": {
+        "pid_file": "$SHARED_DATA/monitor/ffx_monitor.pid"
     }
 }
