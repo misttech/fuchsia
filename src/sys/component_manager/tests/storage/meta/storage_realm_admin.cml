@@ -18,7 +18,6 @@
         {
             name: "storage_user_with_instance_id",
             url: "#meta/storage_user_with_instance_id.cm",
-            startup: "eager",
             environment: "#elf-env",
         },
     ],
@@ -38,6 +37,10 @@
         {
             event_stream: "stopped",
             from: "parent",
+        },
+        {
+            protocol: "fuchsia.component.Binder",
+            from: "#storage_user_with_instance_id",
         },
     ],
     offer: [

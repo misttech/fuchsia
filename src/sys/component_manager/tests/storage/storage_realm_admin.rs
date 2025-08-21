@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use component_events::events::*;
 use component_events::matcher::*;
-use fidl::endpoints::{create_endpoints, ClientEnd};
+use fidl::endpoints::{ClientEnd, create_endpoints};
 use fuchsia_component::client::connect_to_protocol;
 use futures::TryStreamExt;
 use maplit::hashset;
@@ -17,8 +17,12 @@ async fn main() {
     let component_storage_id = "30f79a42f42300a635c8e04f92002e992368a4947199244554cdb5ec0c023be0";
     assert_eq!(component_storage_id.len(), fcomponent::MAX_STORAGE_ID_LENGTH as usize);
 
-    // Wait for storage_user to stop, ensuring the storage contains the written file.
+    // Open the event stream, and _then_ start the child component. This order is important because
+    // otherwise we might miss the stop event!
     let mut event_stream = EventStream::open().await.unwrap();
+    let _ = connect_to_protocol::<fcomponent::BinderMarker>();
+
+    // Wait for storage_user to stop, ensuring the storage contains the written file.
     EventMatcher::ok()
         .moniker("./storage_user_with_instance_id")
         .wait::<Stopped>(&mut event_stream)
