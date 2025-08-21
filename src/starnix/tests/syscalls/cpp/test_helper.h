@@ -12,7 +12,6 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-#include <functional>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -424,14 +423,14 @@ class EventFdSem {
 };
 
 // Returns the first memory mapping that matches the given predicate.
-std::optional<MemoryMapping> find_memory_mapping(std::function<bool(const MemoryMapping &)> match,
+std::optional<MemoryMapping> find_memory_mapping(fit::function<bool(const MemoryMapping &)> match,
                                                  std::string_view maps);
 
 std::optional<MemoryMapping> find_memory_mapping(uintptr_t addr, std::string_view maps);
 
 // Same as above, but with info from smaps
 std::optional<MemoryMappingExt> find_memory_mapping_ext(
-    std::function<bool(const MemoryMappingExt &)> match, std::string_view maps);
+    fit::function<bool(const MemoryMappingExt &)> match, std::string_view maps);
 
 std::optional<MemoryMappingExt> find_memory_mapping_ext(uintptr_t addr, std::string_view maps);
 

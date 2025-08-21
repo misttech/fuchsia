@@ -309,7 +309,7 @@ std::optional<size_t> parse_field_in_kb(std::string_view value) {
   return result;
 }
 
-std::optional<MemoryMapping> find_memory_mapping(std::function<bool(const MemoryMapping &)> match,
+std::optional<MemoryMapping> find_memory_mapping(fit::function<bool(const MemoryMapping &)> match,
                                                  std::string_view maps) {
   std::vector<std::string_view> lines =
       fxl::SplitString(maps, "\n", fxl::kTrimWhitespace, fxl::kSplitWantNonEmpty);
@@ -333,7 +333,7 @@ std::optional<MemoryMapping> find_memory_mapping(uintptr_t addr, std::string_vie
 }
 
 std::optional<MemoryMappingExt> find_memory_mapping_ext(
-    std::function<bool(const MemoryMappingExt &)> match, std::string_view maps) {
+    fit::function<bool(const MemoryMappingExt &)> match, std::string_view maps) {
   std::vector<std::string_view> lines =
       fxl::SplitString(maps, "\n", fxl::kTrimWhitespace, fxl::kSplitWantNonEmpty);
   std::optional<MemoryMappingExt> current_mapping;
