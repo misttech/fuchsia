@@ -3,22 +3,22 @@
 // found in the LICENSE file.
 
 use anyhow::Context;
-use fidl::{endpoints, HandleBased};
+use fidl::{HandleBased, endpoints};
 use fidl_fuchsia_time_external::TimeSample;
 use fuchsia_component::client;
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 use {
     fidl_fuchsia_testing_harness as ftth, fidl_fuchsia_time as fft, fidl_test_time_realm as fttr,
     fuchsia_async as fasync,
 };
 
-lazy_static! {
-    // A sample backstop time.
-    static ref BACKSTOP_TIME: zx::SyntheticInstant = from_rfc2822("Sun, 20 Sep 2020 01:01:01 GMT");
+// A sample backstop time.
+static BACKSTOP_TIME: LazyLock<zx::SyntheticInstant> =
+    LazyLock::new(|| from_rfc2822("Sun, 20 Sep 2020 01:01:01 GMT"));
 
-    // A sample valid time.  It is strictly after backstop.
-    static ref VALID_TIME: zx::SyntheticInstant = from_rfc2822("Tue, 29 Sep 2020 02:19:01 GMT");
-}
+// A sample valid time.  It is strictly after backstop.
+static VALID_TIME: LazyLock<zx::SyntheticInstant> =
+    LazyLock::new(|| from_rfc2822("Tue, 29 Sep 2020 02:19:01 GMT"));
 
 fn from_rfc2822(date: &str) -> zx::SyntheticInstant {
     zx::SyntheticInstant::from_nanos(

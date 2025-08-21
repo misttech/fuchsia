@@ -12,11 +12,11 @@ use crate::rtc::Rtc;
 use crate::time_source::Sample;
 use crate::time_source_manager::{KernelBootTimeProvider, TimeSourceManager};
 use crate::{Config, UtcTransform};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use chrono::prelude::*;
 use fuchsia_runtime::{UtcClock, UtcClockUpdate, UtcDuration, UtcInstant};
 use futures::channel::mpsc;
-use futures::{select, FutureExt, SinkExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt, select};
 use log::{debug, error, info, warn};
 use std::cell::RefCell;
 use std::cmp;
@@ -974,7 +974,7 @@ fn update_clock(clock: &Arc<UtcClock>, track: &Track, update: impl Into<UtcClock
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagnostics::{FakeDiagnostics, ANY_DURATION};
+    use crate::diagnostics::{ANY_DURATION, FakeDiagnostics};
     use crate::enums::{FrequencyDiscardReason, Role};
     use crate::rtc::FakeRtc;
     use crate::time_source::{Event as TimeSourceEvent, FakePushTimeSource, Sample};
@@ -985,8 +985,8 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl_fuchsia_time_external::{self as ftexternal, Status};
     use fuchsia_async as fasync;
-    use lazy_static::lazy_static;
     use std::pin::pin;
+    use std::sync::LazyLock;
     use test_util::{assert_geq, assert_gt, assert_leq, assert_lt, assert_near};
 
     const NANOS_PER_SECOND: i64 = 1_000_000_000;
@@ -1000,11 +1000,10 @@ mod tests {
     const BACKSTOP_TIME: UtcInstant = UtcInstant::from_nanos(222222 * NANOS_PER_SECOND);
     const ERROR_GROWTH_PPM: u32 = 30;
 
-    lazy_static! {
-        static ref TEST_TRACK: Track = Track::from(TEST_ROLE);
-        static ref CLOCK_OPTS: zx::ClockOpts = zx::ClockOpts::empty();
-        static ref START_CLOCK_SOURCE: StartClockSource = StartClockSource::External(TEST_ROLE);
-    }
+    static TEST_TRACK: LazyLock<Track> = LazyLock::new(|| Track::from(TEST_ROLE));
+    static CLOCK_OPTS: LazyLock<zx::ClockOpts> = LazyLock::new(zx::ClockOpts::empty);
+    static START_CLOCK_SOURCE: LazyLock<StartClockSource> =
+        LazyLock::new(|| StartClockSource::External(TEST_ROLE));
 
     fn new_state_for_test(value: bool) -> Rc<RefCell<time_persistence::State>> {
         Rc::new(RefCell::new(time_persistence::State::new(value)))

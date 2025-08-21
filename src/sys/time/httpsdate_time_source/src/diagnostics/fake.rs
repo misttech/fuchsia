@@ -4,9 +4,9 @@
 
 use crate::datatypes::{HttpsSample, Phase};
 use crate::diagnostics::{Diagnostics, Event};
+use fuchsia_runtime::{UtcDuration, UtcInstant};
 use fuchsia_sync::Mutex;
 use httpdate_hyper::HttpsDateErrorType;
-use fuchsia_runtime::{UtcInstant, UtcDuration};
 
 /// A fake `Diagnostics` implementation useful for verifying unittests.
 pub struct FakeDiagnostics {
@@ -78,25 +78,23 @@ impl<T: AsRef<FakeDiagnostics> + Send + Sync> Diagnostics for T {
 mod test {
     use super::*;
     use crate::datatypes::Poll;
+    use std::sync::LazyLock;
 
-    use lazy_static::lazy_static;
-
-    lazy_static! {
-        static ref TEST_SAMPLE: HttpsSample = HttpsSample {
-            utc: UtcInstant::from_nanos(111_111_111),
-            reference: zx::BootInstant::from_nanos(222_222_222),
-            standard_deviation: UtcDuration::from_millis(235),
-            final_bound_size: UtcDuration::from_millis(100),
-            polls: vec![Poll { round_trip_time: zx::BootDuration::from_nanos(23) }],
-        };
-        static ref TEST_SUCCESS: Event<'static> = Event::Success(&*TEST_SAMPLE);
-        static ref TEST_SAMPLE_2: HttpsSample = {
-            let mut new = TEST_SAMPLE.clone();
-            new.polls = vec![];
-            new
-        };
-        static ref TEST_SUCCESS_2: Event<'static> = Event::Success(&*TEST_SAMPLE_2);
-    }
+    static TEST_SAMPLE: LazyLock<HttpsSample> = LazyLock::new(|| HttpsSample {
+        utc: UtcInstant::from_nanos(111_111_111),
+        reference: zx::BootInstant::from_nanos(222_222_222),
+        standard_deviation: UtcDuration::from_millis(235),
+        final_bound_size: UtcDuration::from_millis(100),
+        polls: vec![Poll { round_trip_time: zx::BootDuration::from_nanos(23) }],
+    });
+    static TEST_SUCCESS: LazyLock<Event<'static>> = LazyLock::new(|| Event::Success(&*TEST_SAMPLE));
+    static TEST_SAMPLE_2: LazyLock<HttpsSample> = LazyLock::new(|| {
+        let mut new = TEST_SAMPLE.clone();
+        new.polls = vec![];
+        new
+    });
+    static TEST_SUCCESS_2: LazyLock<Event<'static>> =
+        LazyLock::new(|| Event::Success(&*TEST_SAMPLE_2));
     const TEST_FAILURE: Event<'static> = Event::Failure(HttpsDateErrorType::NetworkError);
     const TEST_PHASE: Event<'static> = Event::Phase(Phase::Converge);
 

@@ -423,7 +423,9 @@ async fn main() -> Result<()> {
             })
             .detach();
         } else {
-            warn!("no connection to fuchsia.net.reachability/Monitor: sampling time sources is turned off.");
+            warn!(
+                "no connection to fuchsia.net.reachability/Monitor: sampling time sources is turned off."
+            );
         }
     }
 
@@ -654,7 +656,9 @@ async fn maintain_utc<R: Rtc, D: 'static>(
         }
     }
     if config.get_early_exit() {
-        log::info!("early_exit=true: exiting early per request from configuration. UTC clock will not be managed");
+        log::info!(
+            "early_exit=true: exiting early per request from configuration. UTC clock will not be managed"
+        );
         return;
     }
     let primary_source_manager = time_source_fn(
@@ -733,9 +737,9 @@ mod tests {
     use fidl_fuchsia_time_external as ftexternal;
     use fuchsia_runtime::{UtcClockUpdate, UtcInstant};
     use futures::Future;
-    use lazy_static::lazy_static;
     use std::matches;
     use std::pin::pin;
+    use std::sync::LazyLock;
     use std::task::Poll;
     use test_case::test_case;
     use test_util::assert_leq;
@@ -748,9 +752,7 @@ mod tests {
     const BACKSTOP_TIME: UtcInstant = UtcInstant::from_nanos(222222 * NANOS_PER_SECOND);
     const VALID_RTC_TIME: UtcInstant = UtcInstant::from_nanos(333333 * NANOS_PER_SECOND);
 
-    lazy_static! {
-        static ref CLOCK_OPTS: zx::ClockOpts = zx::ClockOpts::empty();
-    }
+    static CLOCK_OPTS: LazyLock<zx::ClockOpts> = LazyLock::new(zx::ClockOpts::empty);
 
     // Sets up the given `executor` to the current system time.
     //

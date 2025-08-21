@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_runtime::{UtcDuration, UtcInstant, BootDurationExt};
+use fuchsia_runtime::{BootDurationExt, UtcDuration, UtcInstant};
 use std::cmp;
 
 /// An estimate of the worst possible time drift in the device's oscillator.
@@ -33,11 +33,7 @@ impl Bound {
             utc_min: cmp::max(later.utc_min, projected.utc_min),
             utc_max: cmp::min(later.utc_max, projected.utc_max),
         };
-        if combined.utc_min > combined.utc_max {
-            None
-        } else {
-            Some(combined)
-        }
+        if combined.utc_min > combined.utc_max { None } else { Some(combined) }
     }
 
     /// Project a bound to a different monotonic time. The bound is expanded by the time
@@ -66,15 +62,13 @@ impl Bound {
 #[cfg(test)]
 mod test {
     use super::*;
-    use lazy_static::lazy_static;
     use fuchsia_runtime::UtcDurationExt;
+    use std::sync::LazyLock;
 
     const DURATION_MICROS_500: UtcDuration = UtcDuration::from_micros(500);
     const MONOTONIC_TIME: zx::BootInstant = zx::BootInstant::from_nanos(1_000_000_000_000);
-    lazy_static! {
-        static ref DRIFT_IN_500_MICROS: UtcDuration =
-            DURATION_MICROS_500 * MAX_DRIFT_PPM / ONE_MILLION;
-    }
+    static DRIFT_IN_500_MICROS: LazyLock<UtcDuration> =
+        LazyLock::new(|| DURATION_MICROS_500 * MAX_DRIFT_PPM / ONE_MILLION);
 
     fn assert_combine_commutative(bound_1: &Bound, bound_2: &Bound) {
         assert_eq!(bound_1.combine(bound_2), bound_2.combine(bound_1))

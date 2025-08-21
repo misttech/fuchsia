@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Config;
 use crate::bound::Bound;
 use crate::datatypes::{HttpsSample, Poll};
-use crate::Config;
 use anyhow::format_err;
 use async_trait::async_trait;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_runtime::{BootDurationExt, UtcDuration, UtcDurationExt, UtcInstant};
 
+use futures::FutureExt;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
-use futures::FutureExt;
 use httpdate_hyper::{HttpsDateError, HttpsDateErrorType, NetworkTimeClient};
 use hyper::Uri;
 use log::warn;
@@ -250,9 +250,9 @@ pub use fake::FakeSampler;
 #[cfg(test)]
 mod fake {
     use super::*;
+    use futures::Future;
     use futures::channel::oneshot;
     use futures::future::pending;
-    use futures::Future;
     use std::collections::VecDeque;
 
     /// An |HttpsSampler| which responds with premade responses and signals when the responses
@@ -321,12 +321,10 @@ mod fake {
 mod test {
     use super::*;
     use futures::TryFutureExt;
-    use lazy_static::lazy_static;
     use std::collections::{HashMap, VecDeque};
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref TEST_URI: hyper::Uri = "https://localhost/".parse().unwrap();
-    }
+    static TEST_URI: LazyLock<hyper::Uri> = LazyLock::new(|| "https://localhost/".parse().unwrap());
 
     const ONE_SECOND: zx::BootDuration = zx::BootDuration::from_seconds(1);
     const RTT_TIMES_ZERO_LATENCY: [zx::BootDuration; 2] =
@@ -455,10 +453,12 @@ mod test {
                 <= (reference_after - reference_before + ONE_SECOND).into_nanos()
         );
         assert_eq!(sample.polls.len(), 3);
-        assert!(sample
-            .polls
-            .iter()
-            .all(|poll| poll.round_trip_time <= reference_after - reference_before));
+        assert!(
+            sample
+                .polls
+                .iter()
+                .all(|poll| poll.round_trip_time <= reference_after - reference_before)
+        );
     }
 
     #[fuchsia::test]

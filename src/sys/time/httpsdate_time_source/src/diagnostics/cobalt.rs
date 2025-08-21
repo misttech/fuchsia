@@ -4,10 +4,10 @@
 
 use crate::datatypes::{HttpsSample, Phase};
 use crate::diagnostics::{Diagnostics, Event};
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use cobalt_client::traits::AsEventCodes;
-use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_contrib::ProtocolConnector;
+use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_fuchsia_metrics::{
     HistogramBucket, MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy,
     ProjectSpec,
@@ -16,13 +16,13 @@ use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
 
-use futures::{future, Future, FutureExt as _};
+use futures::{Future, FutureExt as _, future};
 use time_metrics_registry::{
-    HttpsdateBoundSizeMigratedMetricDimensionPhase as CobaltPhase,
     HTTPSDATE_BOUND_SIZE_MIGRATED_METRIC_ID, HTTPSDATE_POLL_LATENCY_MIGRATED_INT_BUCKETS_FLOOR,
     HTTPSDATE_POLL_LATENCY_MIGRATED_INT_BUCKETS_NUM_BUCKETS as RTT_BUCKETS,
     HTTPSDATE_POLL_LATENCY_MIGRATED_INT_BUCKETS_STEP_SIZE,
-    HTTPSDATE_POLL_LATENCY_MIGRATED_METRIC_ID, PROJECT_ID,
+    HTTPSDATE_POLL_LATENCY_MIGRATED_METRIC_ID,
+    HttpsdateBoundSizeMigratedMetricDimensionPhase as CobaltPhase, PROJECT_ID,
 };
 
 const RTT_BUCKET_SIZE: zx::BootDuration =
@@ -158,11 +158,11 @@ mod test {
     use super::*;
     use crate::datatypes::Poll;
     use fidl_fuchsia_metrics::MetricEventPayload;
+    use fuchsia_runtime::{UtcDuration, UtcInstant};
     use futures::channel::mpsc;
     use futures::stream::StreamExt;
-    use lazy_static::lazy_static;
     use std::collections::HashSet;
-    use fuchsia_runtime::{UtcDuration, UtcInstant};
+    use std::sync::LazyLock;
 
     const TEST_INITIAL_PHASE: Phase = Phase::Initial;
     const TEST_BOUND_SIZE: UtcDuration = UtcDuration::from_millis(101);
@@ -175,13 +175,12 @@ mod test {
     const RTT_BUCKET_SIZE: zx::BootDuration =
         zx::BootDuration::from_micros(HTTPSDATE_POLL_LATENCY_MIGRATED_INT_BUCKETS_STEP_SIZE as i64);
 
-    lazy_static! {
-        static ref TEST_INITIAL_PHASE_COBALT: CobaltPhase = TEST_INITIAL_PHASE.into();
-        static ref TEST_RTT: zx::BootDuration =
-            RTT_BUCKET_FLOOR + RTT_BUCKET_SIZE * TEST_RTT_BUCKET - ONE_MICROS;
-        static ref TEST_RTT_2: zx::BootDuration =
-            RTT_BUCKET_FLOOR + RTT_BUCKET_SIZE * TEST_RTT_2_BUCKET - ONE_MICROS;
-    }
+    static TEST_INITIAL_PHASE_COBALT: LazyLock<CobaltPhase> =
+        LazyLock::new(|| TEST_INITIAL_PHASE.into());
+    static TEST_RTT: LazyLock<zx::BootDuration> =
+        LazyLock::new(|| RTT_BUCKET_FLOOR + RTT_BUCKET_SIZE * TEST_RTT_BUCKET - ONE_MICROS);
+    static TEST_RTT_2: LazyLock<zx::BootDuration> =
+        LazyLock::new(|| RTT_BUCKET_FLOOR + RTT_BUCKET_SIZE * TEST_RTT_2_BUCKET - ONE_MICROS);
 
     /// Create a `CobaltDiagnostics` and a receiver to inspect events it produces.
     fn diagnostics_for_test() -> (CobaltDiagnostics, mpsc::Receiver<MetricEvent>) {

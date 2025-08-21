@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use rustls::client::{ServerCertVerified, ServerCertVerifier};
 use rustls::Certificate;
+use rustls::client::{ServerCertVerified, ServerCertVerifier};
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -272,36 +272,40 @@ impl NetworkTimeClient {
 mod test {
     use super::*;
     use anyhow::Error;
-    use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
     use base64::engine::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
     use fuchsia_async as fasync;
-    use futures::future::{ready, TryFutureExt};
+    use futures::future::{TryFutureExt, ready};
     use futures::stream::{StreamExt, TryStreamExt};
     use hyper::server::accept::from_stream;
     use hyper::service::{make_service_fn, service_fn};
     use hyper::{Body, Response, Server, StatusCode};
-    use lazy_static::lazy_static;
     use log::warn;
     use std::convert::Infallible;
     use std::net::{Ipv6Addr, SocketAddr};
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref TEST_CERT_CHAIN: Vec<rustls::Certificate> =
-            parse_pem(&include_str!("../certs/server.certchain"))
-                .into_iter()
-                .map(rustls::Certificate)
-                .collect();
-        static ref TEST_PRIVATE_KEY: rustls::PrivateKey =
-            parse_pem(&include_str!("../certs/server.rsa")).pop().map(rustls::PrivateKey).unwrap();
-        static ref CERT_NOT_BEFORE: DateTime =
-            DateTime::parse_from_rfc3339(include_str!("../certs/notbefore").trim()).unwrap();
-        static ref CERT_NOT_AFTER: DateTime =
-            DateTime::parse_from_rfc3339(include_str!("../certs/notafter").trim()).unwrap();
-        static ref TEST_CERT_ROOT: rustls::Certificate =
-            parse_pem(&include_str!("../certs/ca.cert")).pop().map(rustls::Certificate).unwrap();
-        static ref TEST_TRUST_ANCHORS: Vec<webpki::TrustAnchor<'static>> =
-            vec![webpki::TrustAnchor::try_from_cert_der(TEST_CERT_ROOT.as_ref()).unwrap()];
-    }
+    static TEST_CERT_CHAIN: LazyLock<Vec<rustls::Certificate>> = LazyLock::new(|| {
+        parse_pem(&include_str!("../certs/server.certchain"))
+            .into_iter()
+            .map(rustls::Certificate)
+            .collect()
+    });
+    static TEST_PRIVATE_KEY: LazyLock<rustls::PrivateKey> = LazyLock::new(|| {
+        parse_pem(&include_str!("../certs/server.rsa")).pop().map(rustls::PrivateKey).unwrap()
+    });
+    static CERT_NOT_BEFORE: LazyLock<DateTime> = LazyLock::new(|| {
+        DateTime::parse_from_rfc3339(include_str!("../certs/notbefore").trim()).unwrap()
+    });
+    static CERT_NOT_AFTER: LazyLock<DateTime> = LazyLock::new(|| {
+        DateTime::parse_from_rfc3339(include_str!("../certs/notafter").trim()).unwrap()
+    });
+    static TEST_CERT_ROOT: LazyLock<rustls::Certificate> = LazyLock::new(|| {
+        parse_pem(&include_str!("../certs/ca.cert")).pop().map(rustls::Certificate).unwrap()
+    });
+    static TEST_TRUST_ANCHORS: LazyLock<Vec<webpki::TrustAnchor<'static>>> = LazyLock::new(|| {
+        vec![webpki::TrustAnchor::try_from_cert_der(TEST_CERT_ROOT.as_ref()).unwrap()]
+    });
 
     /// Spawn an HTTPS server that signs responses with TEST_PRIVATE_KEY and always returns
     /// `served_time` in the Date header. Listens for requests on 'localhost:port', where port

@@ -10,17 +10,19 @@
 use anyhow::Error;
 use chrono::{DateTime, TimeZone as _, Timelike as _, Utc};
 use futures::prelude::*;
-use lazy_static::lazy_static;
 use log::{info, warn};
+use std::sync::LazyLock;
 use {fuchsia_async as fasync, fuchsia_runtime as runtime};
 
 /// Delay between polls of system and userspace clocks.
 const POLL_DELAY: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
 
-lazy_static! {
-   /// Rights to request when duplicating handles to userspace clocks.
-   static ref CLOCK_RIGHTS: zx::Rights = zx::Rights::READ | zx::Rights::DUPLICATE | zx::Rights::WAIT;
-}
+static CLOCK_RIGHTS: LazyLock<zx::Rights> = LazyLock::new(|| {
+    /// Rights to request when duplicating handles to userspace clocks.
+    zx::Rights::READ
+        | zx::Rights::DUPLICATE
+        | zx::Rights::WAIT
+});
 
 #[fasync::run_singlethreaded]
 async fn main() {

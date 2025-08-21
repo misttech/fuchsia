@@ -17,10 +17,9 @@ use fuchsia_sync::Mutex;
 
 use futures::FutureExt;
 use inspect_writable::{InspectWritable, InspectWritableNode};
-use lazy_static::lazy_static;
 use log::warn;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use time_pretty::format_duration;
 
 const ONE_MILLION: i32 = 1_000_000;
@@ -33,9 +32,7 @@ const FREQUENCY_COUNT: usize = 3;
 /// The number of clock corrections that are retained.
 const CLOCK_CORRECTION_COUNT: usize = 3;
 
-lazy_static! {
-    pub static ref INSPECTOR: Inspector = Inspector::default();
-}
+pub static INSPECTOR: LazyLock<Inspector> = LazyLock::new(Inspector::default);
 
 fn reference_time() -> i64 {
     zx::BootInstant::get().into_nanos()
@@ -604,9 +601,9 @@ mod tests {
         TimeSourceError as TSE,
     };
     use crate::time_source::FakePushTimeSource;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_runtime::UtcClockUpdate;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
     const BACKSTOP_TIME: i64 = 111111111;
     const RTC_INITIAL_TIME: i64 = 111111234;
@@ -617,30 +614,28 @@ mod tests {
     const CORRECTION: UtcDuration = UtcDuration::from_millis(88);
     const SQRT_COVARIANCE: i64 = 5454545454;
 
-    lazy_static! {
-        static ref VALID_DETAILS: UtcClockDetails = zx::ClockDetails {
-            backstop: zx::Instant::from_nanos(BACKSTOP_TIME),
-            ticks_to_synthetic: zx::ClockTransformation {
-                reference_offset: zx::Instant::from_nanos(777777777777),
-                synthetic_offset: zx::Instant::from_nanos(787878787878),
-                rate: zx::sys::zx_clock_rate_t { reference_ticks: 1_000, synthetic_ticks: 1_000 },
+    static VALID_DETAILS: LazyLock<UtcClockDetails> = LazyLock::new(|| zx::ClockDetails {
+        backstop: zx::Instant::from_nanos(BACKSTOP_TIME),
+        ticks_to_synthetic: zx::ClockTransformation {
+            reference_offset: zx::Instant::from_nanos(777777777777),
+            synthetic_offset: zx::Instant::from_nanos(787878787878),
+            rate: zx::sys::zx_clock_rate_t { reference_ticks: 1_000, synthetic_ticks: 1_000 },
+        },
+        reference_to_synthetic: zx::ClockTransformation {
+            reference_offset: zx::Instant::from_nanos(888888888888),
+            synthetic_offset: zx::Instant::from_nanos(898989898989),
+            rate: zx::sys::zx_clock_rate_t {
+                reference_ticks: ONE_MILLION as u32,
+                synthetic_ticks: (RATE_ADJUST + ONE_MILLION) as u32,
             },
-            reference_to_synthetic: zx::ClockTransformation {
-                reference_offset: zx::Instant::from_nanos(888888888888),
-                synthetic_offset: zx::Instant::from_nanos(898989898989),
-                rate: zx::sys::zx_clock_rate_t {
-                    reference_ticks: ONE_MILLION as u32,
-                    synthetic_ticks: (RATE_ADJUST + ONE_MILLION) as u32,
-                },
-            },
-            error_bounds: ERROR_BOUNDS,
-            query_ticks: 12345789,
-            last_value_update_ticks: 36363636,
-            last_rate_adjust_update_ticks: 37373737,
-            last_error_bounds_update_ticks: 38383838,
-            generation_counter: GENERATION_COUNTER,
-        };
-    }
+        },
+        error_bounds: ERROR_BOUNDS,
+        query_ticks: 12345789,
+        last_value_update_ticks: 36363636,
+        last_rate_adjust_update_ticks: 37373737,
+        last_error_bounds_update_ticks: 38383838,
+        generation_counter: GENERATION_COUNTER,
+    });
 
     /// Creates a new wrapped clock set to backstop time.
     fn create_clock() -> Arc<UtcClock> {

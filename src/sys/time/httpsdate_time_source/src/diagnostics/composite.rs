@@ -36,19 +36,16 @@ mod test {
 
     use fuchsia_runtime::{UtcDuration, UtcInstant};
     use httpdate_hyper::HttpsDateErrorType;
-    use lazy_static::lazy_static;
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
 
-    lazy_static! {
-        static ref TEST_SAMPLE: HttpsSample = HttpsSample {
-            utc: UtcInstant::from_nanos(111_111_111),
-            reference: zx::BootInstant::from_nanos(222_222_222),
-            standard_deviation: UtcDuration::from_millis(235),
-            final_bound_size: UtcDuration::from_millis(100),
-            polls: vec![],
-        };
-        static ref TEST_SUCCESS: Event<'static> = Event::Success(&*TEST_SAMPLE);
-    }
+    static TEST_SAMPLE: LazyLock<HttpsSample> = LazyLock::new(|| HttpsSample {
+        utc: UtcInstant::from_nanos(111_111_111),
+        reference: zx::BootInstant::from_nanos(222_222_222),
+        standard_deviation: UtcDuration::from_millis(235),
+        final_bound_size: UtcDuration::from_millis(100),
+        polls: vec![],
+    });
+    static TEST_SUCCESS: LazyLock<Event<'static>> = LazyLock::new(|| Event::Success(&*TEST_SAMPLE));
     const TEST_FAILURE: Event<'static> = Event::Failure(HttpsDateErrorType::NetworkError);
     const TEST_PHASE: Event<'static> = Event::Phase(Phase::Converge);
 

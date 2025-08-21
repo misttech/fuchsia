@@ -190,15 +190,14 @@ impl SampleMetric {
 mod test {
     use super::*;
     use crate::datatypes::Poll;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
+    use std::sync::LazyLock;
 
-    use lazy_static::lazy_static;
-
-    lazy_static! {
-        static ref TEST_UTC: UtcInstant = UtcInstant::from_nanos(999_900_000_000);
-        static ref TEST_REFERENCE: zx::BootInstant = zx::BootInstant::from_nanos(550_000_000_000);
-    }
+    static TEST_UTC: LazyLock<UtcInstant> =
+        LazyLock::new(|| UtcInstant::from_nanos(999_900_000_000));
+    static TEST_REFERENCE: LazyLock<zx::BootInstant> =
+        LazyLock::new(|| zx::BootInstant::from_nanos(550_000_000_000));
 
     const TEST_STANDARD_DEVIATION: UtcDuration = UtcDuration::from_millis(211);
 

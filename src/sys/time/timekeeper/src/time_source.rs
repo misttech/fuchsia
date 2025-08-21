@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, format_err, Context as _, Error, Result};
+use anyhow::{Context as _, Error, Result, anyhow, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_component::{
     self as fcomponent, ChildIteratorMarker, CreateChildArgs, RealmMarker, RealmProxy,
@@ -353,7 +353,7 @@ impl PullSource for PullSourceImpl {
 #[cfg(test)]
 use {
     fuchsia_sync::Mutex,
-    futures::{stream, StreamExt},
+    futures::{StreamExt, stream},
 };
 
 /// A time source that immediately produces a collections of events supplied at construction.
@@ -507,28 +507,27 @@ mod test {
     use super::*;
     use fidl::prelude::*;
     use fuchsia_async as fasync;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
     const STATUS_1: Status = Status::Initializing;
     const SAMPLE_1_UTC_NANOS: i64 = 1234567;
     const SAMPLE_1_REF_NANOS: i64 = 222;
     const SAMPLE_1_STD_DEV_NANOS: i64 = 8888;
 
-    lazy_static! {
-        static ref STATUS_EVENT_1: Event = Event::StatusChange { status: STATUS_1 };
-        static ref SAMPLE_1: Sample = Sample {
-            utc: UtcInstant::from_nanos(SAMPLE_1_UTC_NANOS),
-            reference: zx::BootInstant::from_nanos(SAMPLE_1_REF_NANOS),
-            std_dev: zx::BootDuration::from_nanos(SAMPLE_1_STD_DEV_NANOS),
-        };
-        static ref SAMPLE_EVENT_1: Event = Event::from(*SAMPLE_1);
-        static ref SAMPLE_2: Sample = Sample {
-            utc: UtcInstant::from_nanos(12345678),
-            reference: zx::BootInstant::from_nanos(333),
-            std_dev: zx::BootDuration::from_nanos(9999),
-        };
-        static ref SAMPLE_EVENT_2: Event = Event::from(*SAMPLE_2);
-    }
+    static STATUS_EVENT_1: LazyLock<Event> =
+        LazyLock::new(|| Event::StatusChange { status: STATUS_1 });
+    static SAMPLE_1: LazyLock<Sample> = LazyLock::new(|| Sample {
+        utc: UtcInstant::from_nanos(SAMPLE_1_UTC_NANOS),
+        reference: zx::BootInstant::from_nanos(SAMPLE_1_REF_NANOS),
+        std_dev: zx::BootDuration::from_nanos(SAMPLE_1_STD_DEV_NANOS),
+    });
+    static SAMPLE_EVENT_1: LazyLock<Event> = LazyLock::new(|| Event::from(*SAMPLE_1));
+    static SAMPLE_2: LazyLock<Sample> = LazyLock::new(|| Sample {
+        utc: UtcInstant::from_nanos(12345678),
+        reference: zx::BootInstant::from_nanos(333),
+        std_dev: zx::BootDuration::from_nanos(9999),
+    });
+    static SAMPLE_EVENT_2: LazyLock<Event> = LazyLock::new(|| Event::from(*SAMPLE_2));
 
     #[fuchsia::test(allow_stalls = false)]
     async fn single_event_set() -> Result<(), Error> {

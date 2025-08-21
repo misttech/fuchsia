@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Config;
 use crate::constants::{
     CONVERGE_SAMPLES, INITIAL_SAMPLE_POLLS, MAX_TIME_BETWEEN_SAMPLES_RANDOMIZATION, SAMPLE_POLLS,
 };
 use crate::datatypes::{HttpsSample, Phase};
 use crate::diagnostics::{Diagnostics, Event};
 use crate::sampler::HttpsSampler;
-use crate::Config;
 use anyhow::Error;
 use async_trait::async_trait;
 use fidl_fuchsia_time_external::{Properties, Status, TimeSample, Urgency};
@@ -210,7 +210,7 @@ where
                         match e {
                             HttpsDateErrorType::InvalidHostname
                             | HttpsDateErrorType::SchemeNotHttps => {
-                                return Err(pull_source::SampleError::Internal)
+                                return Err(pull_source::SampleError::Internal);
                             }
                             _ => return Err(pull_source::SampleError::Network),
                         }
@@ -302,10 +302,10 @@ fn mult_duration(duration: zx::BootDuration, factor: f32) -> zx::BootDuration {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::SampleConfig;
     use crate::datatypes::Poll;
     use crate::diagnostics::FakeDiagnostics;
     use crate::sampler::FakeSampler;
-    use crate::SampleConfig;
     use anyhow::format_err;
     use assert_matches::assert_matches;
     use fuchsia_runtime::{UtcDuration, UtcInstant};
@@ -313,10 +313,9 @@ mod test {
     use futures::future::ready;
     use futures::stream::StreamExt;
     use futures::task::Poll as FPoll;
-    use lazy_static::lazy_static;
     use pull_source::UpdateAlgorithm as _;
     use push_source::UpdateAlgorithm as _;
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
 
     /// Test retry strategy with minimal wait periods.
     const TEST_RETRY_STRATEGY: RetryStrategy = RetryStrategy {
@@ -327,22 +326,20 @@ mod test {
         maintain_time_between_samples: zx::BootDuration::from_nanos(100),
     };
 
-    lazy_static! {
-        static ref TEST_SAMPLE_1: HttpsSample = HttpsSample {
-            utc: UtcInstant::from_nanos(111_222_333_444_555),
-            reference: zx::BootInstant::from_nanos(666_777_888_999_000),
-            standard_deviation: UtcDuration::from_millis(101),
-            final_bound_size: UtcDuration::from_millis(20),
-            polls: vec![],
-        };
-        static ref TEST_SAMPLE_2: HttpsSample = HttpsSample {
-            utc: UtcInstant::from_nanos(999_999_999_999_999),
-            reference: zx::BootInstant::from_nanos(777_777_777_777_777),
-            standard_deviation: UtcDuration::from_millis(102),
-            final_bound_size: UtcDuration::from_millis(30),
-            polls: vec![Poll { round_trip_time: zx::BootDuration::from_millis(23) }],
-        };
-    }
+    static TEST_SAMPLE_1: LazyLock<HttpsSample> = LazyLock::new(|| HttpsSample {
+        utc: UtcInstant::from_nanos(111_222_333_444_555),
+        reference: zx::BootInstant::from_nanos(666_777_888_999_000),
+        standard_deviation: UtcDuration::from_millis(101),
+        final_bound_size: UtcDuration::from_millis(20),
+        polls: vec![],
+    });
+    static TEST_SAMPLE_2: LazyLock<HttpsSample> = LazyLock::new(|| HttpsSample {
+        utc: UtcInstant::from_nanos(999_999_999_999_999),
+        reference: zx::BootInstant::from_nanos(777_777_777_777_777),
+        standard_deviation: UtcDuration::from_millis(102),
+        final_bound_size: UtcDuration::from_millis(30),
+        polls: vec![Poll { round_trip_time: zx::BootDuration::from_millis(23) }],
+    });
 
     fn to_fidl_time_sample(sample: &HttpsSample) -> TimeSample {
         TimeSample {
@@ -467,10 +464,12 @@ mod test {
         // The first update should indicate status OK, and any subsequent status updates should
         // indicate OK.
         assert_eq!(updates.first().unwrap(), &Status::Ok.into());
-        assert!(updates
-            .iter()
-            .filter(|update| update.is_status())
-            .all(|update| update == &Status::Ok.into()));
+        assert!(
+            updates
+                .iter()
+                .filter(|update| update.is_status())
+                .all(|update| update == &Status::Ok.into())
+        );
 
         let samples = updates
             .iter()
@@ -618,10 +617,12 @@ mod test {
         let updates = receiver.take_until(response_complete_fut).collect::<Vec<_>>().await;
 
         // All status updates should indicate OK.
-        assert!(updates
-            .iter()
-            .filter(|update| update.is_status())
-            .all(|update| *update == Update::Status(Status::Ok)));
+        assert!(
+            updates
+                .iter()
+                .filter(|update| update.is_status())
+                .all(|update| *update == Update::Status(Status::Ok))
+        );
 
         let expected_events = vec![
             vec![

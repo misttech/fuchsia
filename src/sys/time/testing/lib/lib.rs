@@ -21,10 +21,9 @@ use fuchsia_sync::Mutex;
 use futures::channel::mpsc::Sender;
 use futures::stream::{Stream, StreamExt, TryStreamExt};
 use futures::{Future, FutureExt, SinkExt};
-use lazy_static::lazy_static;
 use push_source::{PushSource, TestUpdateAlgorithm, Update};
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use time_metrics_registry::PROJECT_ID;
 use vfs::pseudo_directory;
 use zx::{self as zx, HandleBased, Rights};
@@ -681,17 +680,16 @@ fn from_rfc2822(date: &str) -> zx::SyntheticInstant {
     )
 }
 
-lazy_static! {
-    pub static ref BACKSTOP_TIME: zx::SyntheticInstant =
-        from_rfc2822("Sun, 20 Sep 2020 01:01:01 GMT");
-    pub static ref VALID_RTC_TIME: zx::SyntheticInstant =
-        from_rfc2822("Sun, 20 Sep 2020 02:02:02 GMT");
-    pub static ref BEFORE_BACKSTOP_TIME: zx::SyntheticInstant =
-        from_rfc2822("Fri, 06 Mar 2020 04:04:04 GMT");
-    pub static ref VALID_TIME: zx::SyntheticInstant = from_rfc2822("Tue, 29 Sep 2020 02:19:01 GMT");
-    pub static ref VALID_TIME_2: zx::SyntheticInstant =
-        from_rfc2822("Wed, 30 Sep 2020 14:59:59 GMT");
-}
+pub static BACKSTOP_TIME: LazyLock<zx::SyntheticInstant> =
+    LazyLock::new(|| from_rfc2822("Sun, 20 Sep 2020 01:01:01 GMT"));
+pub static VALID_RTC_TIME: LazyLock<zx::SyntheticInstant> =
+    LazyLock::new(|| from_rfc2822("Sun, 20 Sep 2020 02:02:02 GMT"));
+pub static BEFORE_BACKSTOP_TIME: LazyLock<zx::SyntheticInstant> =
+    LazyLock::new(|| from_rfc2822("Fri, 06 Mar 2020 04:04:04 GMT"));
+pub static VALID_TIME: LazyLock<zx::SyntheticInstant> =
+    LazyLock::new(|| from_rfc2822("Tue, 29 Sep 2020 02:19:01 GMT"));
+pub static VALID_TIME_2: LazyLock<zx::SyntheticInstant> =
+    LazyLock::new(|| from_rfc2822("Wed, 30 Sep 2020 14:59:59 GMT"));
 
 /// Time between each reported sample.
 pub const BETWEEN_SAMPLES: zx::BootDuration = zx::BootDuration::from_seconds(5);
