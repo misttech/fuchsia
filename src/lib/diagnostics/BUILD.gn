@@ -23,6 +23,7 @@ group("tests") {
     "accessor2logger/tests",
     "data:tests",
     "fake-log-sink:tests",
+    "fuchsia-async-inspect:tests",
     "hierarchy:tests",
     "inspect:tests",
     "log:tests",
