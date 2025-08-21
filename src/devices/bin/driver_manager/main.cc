@@ -54,9 +54,7 @@ namespace fio = fuchsia_io;
 
 namespace {
 
-// Sets the logging process name. Needed to redirect output
-// to serial.
-void SetLoggingProcessName() {
+void InitLogging(const driver_manager_config::Config& config) {
   char process_name[ZX_MAX_NAME_LEN] = "";
 
   zx_status_t name_status =
@@ -64,7 +62,10 @@ void SetLoggingProcessName() {
   if (name_status != ZX_OK) {
     process_name[0] = '\0';
   }
-  driver_logger::GetLogger().AddTag(process_name);
+
+  const char* tags[] = {process_name};
+  driver_logger::InitGlobalLogger(
+      tags, config.verbose() ? std::numeric_limits<FuchsiaLogSeverity>::min() : FUCHSIA_LOG_INFO);
 }
 
 }  // namespace
@@ -81,11 +82,7 @@ int main(int argc, char** argv) {
 
   auto config = driver_manager_config::Config::TakeFromStartupHandle();
 
-  if (config.verbose()) {
-    driver_logger::GetLogger().SetSeverity(std::numeric_limits<FuchsiaLogSeverity>::min());
-  }
-
-  SetLoggingProcessName();
+  InitLogging(config);
 
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
   auto outgoing = component::OutgoingDirectory(loop.dispatcher());

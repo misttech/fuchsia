@@ -6,12 +6,17 @@
 #define SRC_DEVICES_LIB_LOG_LOG_H_
 
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
+#include <lib/syslog/structured_backend/cpp/logger.h>
 #include <lib/zx/result.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <zircon/availability.h>
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#include <span>
+#endif
 #include <string>
 #include <vector>
 
@@ -53,9 +58,8 @@ namespace driver_logger {
 zx_koid_t GetCurrentThread();
 class Logger {
  public:
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   // Initializes a logger.
-  // The logger does not take ownership of the socket and the caller is responsible for
-  // freeing it. This allows multiple loggers to be multiplexed over a single socket.
   Logger(zx_koid_t pid, zx::socket socket) : pid_(pid), socket_(std::move(socket)) {}
 
   // Sets the logger's minimum severity. Logs that are less severe
@@ -71,11 +75,21 @@ class Logger {
     global_tags_.push_back(tag);
     return *this;
   }
+#else
+  // Initializes a logger.
+  Logger(zx_koid_t pid, fuchsia_logging::Logger logger) : pid_(pid), logger_(std::move(logger)) {}
+#endif
 
   void SwitchToStdout() { use_stdout_ = true; }
 
   // Gets the minimum severity of the logger
-  FuchsiaLogSeverity GetSeverity() const { return severity_; }
+  FuchsiaLogSeverity GetSeverity() const {
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+    return severity_;
+#else
+    return logger_.GetMinSeverity();
+#endif
+  }
 
   // Begins a record, used by internal macros only.
   void BeginRecord(fuchsia_logging::LogBuffer& buffer, FuchsiaLogSeverity severity,
@@ -86,22 +100,37 @@ class Logger {
   void VLogWrite(FuchsiaLogSeverity severity, const char* tag, const char* msg, va_list args,
                  const char* file = nullptr, uint32_t line = 0) const;
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   // Flushes a log record to the socket, used by internal macros only.
   void FlushRecord(fuchsia_logging::LogBuffer& buffer, FuchsiaLogSeverity severity) const;
 
   // Sets the socket to log to, used primarily for testing purposes.
   void SetSocket(zx::socket socket) { socket_ = std::move(socket); }
+#endif
 
  private:
-  FuchsiaLogSeverity severity_ = FUCHSIA_LOG_INFO;
   zx_koid_t pid_;
+  bool use_stdout_ = false;
+
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+  FuchsiaLogSeverity severity_ = FUCHSIA_LOG_INFO;
   std::vector<std::string> global_tags_;
   zx::socket socket_;
-  bool use_stdout_ = false;
+#else
+  fuchsia_logging::Logger logger_;
+#endif
 };
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 // Creates a logger.
 zx::result<Logger> CreateLogger();
+#endif
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+// Initializes the global logger. If the global logger has already been created, then this will
+// replace the logger with a new one. This is *not* thread safe.
+void InitGlobalLogger(std::span<const char*> tags, FuchsiaLogSeverity severity);
+#endif
 
 }  // namespace driver_logger
 

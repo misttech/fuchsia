@@ -5,13 +5,17 @@
 #include "log.h"
 
 #include <fidl/fuchsia.logger/cpp/fidl.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
 #include <lib/fdio/fdio.h>
 #include <zircon/process.h>
 
+#include <fbl/no_destructor.h>
+
 #include "fidl/fuchsia.logger/cpp/wire_types.h"
 
+namespace driver_logger {
 namespace {
 const char* StripPath(const char* path) {
   auto p = strrchr(path, '/');
@@ -51,9 +55,71 @@ const char* SeverityToString(FuchsiaLogSeverity severity) {
   }
 }
 
+zx_koid_t GetKoid(zx_handle_t handle) {
+  zx_info_handle_basic_t info;
+  zx_status_t status =
+      zx_object_get_info(handle, ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+  return status == ZX_OK ? info.koid : ZX_KOID_INVALID;
+}
+
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+
+Logger& GetOrCreateLogger() {
+  static fbl::NoDestructor<Logger> logger = [] {
+    zx::channel logger_request, logger_client;
+    zx::channel::create(0, &logger_request, &logger_client);
+    fdio_service_connect("/svc/fuchsia.logger.LogSink", logger_request.release());
+    zx::socket remote, local;
+    zx::socket::create(ZX_SOCKET_DATAGRAM, &remote, &local);
+    fidl::ClientEnd<fuchsia_logger::LogSink> log_sink{std::move(logger_client)};
+    auto status = fidl::WireCall(log_sink)->ConnectStructured(std::move(remote));
+    if (!status.ok()) {
+      ZX_PANIC("Failed to create logger: %s", status.status_string());
+    }
+    return Logger(GetKoid(zx_process_self()), std::move(local));
+  }();
+  return *logger;
+}
+
+#else
+
+Logger CreateLogger(fuchsia_logging::RawLogSettings* settings) {
+  zx_koid_t pid = GetKoid(zx_process_self());
+  auto client_end = component::Connect<fuchsia_logger::LogSink>();
+  if (client_end.is_ok()) {
+    std::optional<fuchsia_logging::RawLogSettings> settings_storage;
+    if (!settings) {
+      settings = &settings_storage.emplace();
+    }
+    settings->log_sink = client_end->TakeChannel().release();
+    auto logger = fuchsia_logging::Logger::Create(*settings);
+    if (logger.is_ok()) {
+      return Logger(pid, *std::move(logger));
+    }
+  }
+  return Logger(pid, {});
+}
+
+Logger& GetOrCreateLogger(fuchsia_logging::RawLogSettings* settings = nullptr) {
+  bool called = false;
+  static fbl::NoDestructor<Logger> logger = [called, settings]() mutable {
+    called = true;
+    return CreateLogger(settings);
+  }();
+  if (!called && settings) {
+    *logger = CreateLogger(settings);
+  }
+  return *logger;
+}
+
+#endif
+
+zx_koid_t GetCurrentThreadKoid() { return GetKoid(zx_thread_self()); }
+
+thread_local zx_koid_t tid = GetCurrentThreadKoid();
+
 }  // namespace
 
-namespace driver_logger {
 namespace internal {
 FuchsiaLogSeverity severity_from_verbosity(uint8_t verbosity) {
   // verbosity scale sits in the interstitial space between INFO and DEBUG
@@ -75,7 +141,7 @@ void log_with_source(Logger& logger, FuchsiaLogSeverity severity, const char* ta
 
 void Logger::VLogWrite(FuchsiaLogSeverity severity, const char* tag, const char* msg, va_list args,
                        const char* file, uint32_t line) const {
-  if (severity < severity_) {
+  if (severity < GetSeverity()) {
     return;
   }
   if (use_stdout_) {
@@ -106,61 +172,50 @@ void Logger::VLogWrite(FuchsiaLogSeverity severity, const char* tag, const char*
     file = StripFile(file, severity);
   }
   BeginRecord(buffer, severity, file, line, fmt_string);
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   for (const auto& global_tag : global_tags_) {
     buffer.WriteKeyValue("tag", global_tag);
   }
+#endif
   if (tag) {
     buffer.WriteKeyValue("tag", tag);
   }
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   FlushRecord(buffer, severity);
+#else
+  [[maybe_unused]] zx::result<> result = logger_.FlushBuffer(buffer);
+#endif
 }
 
 void Logger::BeginRecord(fuchsia_logging::LogBuffer& buffer, FuchsiaLogSeverity severity,
                          std::optional<std::string_view> file_name, unsigned int line,
                          std::optional<std::string_view> msg) const {
-  buffer.BeginRecord(severity, file_name, line, msg, socket_.borrow(), 0, pid_, GetCurrentThread());
+  buffer.BeginRecord(severity, file_name, line, msg,
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+                     socket_.borrow(),
+#endif
+                     0, pid_, GetCurrentThread());
 }
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 void Logger::FlushRecord(fuchsia_logging::LogBuffer& buffer, FuchsiaLogSeverity severity) const {
   buffer.FlushRecord();
 }
-
-static zx_koid_t GetKoid(zx_handle_t handle) {
-  zx_info_handle_basic_t info;
-  zx_status_t status =
-      zx_object_get_info(handle, ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
-  return status == ZX_OK ? info.koid : ZX_KOID_INVALID;
-}
-
-static zx_koid_t pid = GetKoid(zx_process_self());
-
-static zx_koid_t GetCurrentThreadKoid() { return GetKoid(zx_thread_self()); }
-
-static thread_local zx_koid_t tid = GetCurrentThreadKoid();
+#endif
 
 zx_koid_t GetCurrentThread() { return tid; }
 
-zx::result<Logger> CreateLogger() {
-  zx::channel logger_request, logger_client;
-  zx::channel::create(0, &logger_request, &logger_client);
-  fdio_service_connect("/svc/fuchsia.logger.LogSink", logger_request.release());
-  zx::socket remote, local;
-  zx::socket::create(ZX_SOCKET_DATAGRAM, &remote, &local);
-  fidl::ClientEnd<fuchsia_logger::LogSink> log_sink{std::move(logger_client)};
-  auto status = fidl::WireCall(log_sink)->ConnectStructured(std::move(remote));
-  if (!status.ok()) {
-    return zx::error(status.error().status());
-  }
-  return zx::ok(Logger(pid, std::move(local)));
+Logger& GetLogger() { return GetOrCreateLogger(); }
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+void InitGlobalLogger(std::span<const char*> tags, FuchsiaLogSeverity severity) {
+  fuchsia_logging::RawLogSettings settings{
+      .min_log_level = severity,
+      .tags = tags.data(),
+      .tags_count = tags.size(),
+  };
+  GetOrCreateLogger(&settings);
 }
+#endif
 
-struct GlobalLogger {
-  std::optional<Logger> logger;
-
- public:
-  GlobalLogger() { logger = *CreateLogger(); }
-};
-static GlobalLogger instance;
-
-Logger& GetLogger() { return *instance.logger; }
 }  // namespace driver_logger
