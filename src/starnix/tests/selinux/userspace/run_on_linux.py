@@ -48,11 +48,11 @@ def build_initrd(
     )
     container_manifest = (
         output_dir
-        / "obj/src/starnix/tests/selinux/userspace/sestarnix_userspace_test_container_manifest"
+        / "obj/src/starnix/tests/selinux/userspace/sestarnix_userspace_test_container.manifest"
     )
     tests_manifest = (
         output_dir
-        / "obj/src/starnix/tests/selinux/userspace/sestarnix_userspace_tests_manifest"
+        / "obj/src/starnix/tests/selinux/userspace/sestarnix_userspace_tests.manifest"
     )
     files = parse_manifest(container_manifest, output_dir)
     files.update(parse_manifest(tests_manifest, output_dir))
