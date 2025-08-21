@@ -511,6 +511,7 @@ pub struct InterfaceView<'a> {
 
 /// `NetworkCheckerOutcome` contains values indicating whether a network check completed or needs
 /// resumption.
+#[derive(Debug)]
 pub enum NetworkCheckerOutcome {
     /// The network check must be resumed via a call to `resume` to complete.
     MustResume,
@@ -958,6 +959,14 @@ impl<Time: TimeProvider> Monitor<Time> {
         })?;
 
         ctx.checker_state = NetworkCheckState::Idle;
+
+        if let Some(IpVersions { ipv4, ipv6 }) = self.state.get(id) {
+            if ipv4.state.link == LinkState::Removed && ipv6.state.link == LinkState::Removed {
+                debug!("interface {} was removed, skipping state update", id);
+                return Ok(NetworkCheckerOutcome::Complete);
+            }
+        }
+
         let info = IpVersions {
             ipv4: StateEvent {
                 state: ctx.discovered_state_v4,
@@ -3058,5 +3067,66 @@ mod tests {
         assert_eq!(state.system_has_dns(), expect_dns);
         assert_eq!(state.system_has_internet(), expect_internet);
         assert_eq!(state.system_has_gateway(), expect_gateway);
+    }
+
+    #[test]
+    fn test_resume_after_interface_removed() {
+        use assert_matches::assert_matches;
+
+        let _exec = fasync::TestExecutor::new();
+        let (sender, _receiver) = mpsc::unbounded::<(NetworkCheckAction, NetworkCheckCookie)>();
+        let mut monitor: Monitor<MonotonicInstant> = Monitor::new(sender).unwrap();
+
+        let properties = fnet_interfaces_ext::Properties {
+            id: ID1.try_into().expect("should be nonzero"),
+            name: ETHERNET_INTERFACE_NAME.to_string(),
+            port_class: fnet_interfaces_ext::PortClass::Ethernet,
+            online: false,
+            addresses: vec![],
+            has_default_ipv4_route: false,
+            has_default_ipv6_route: false,
+        };
+
+        // Insert a placeholder state so that the interface is tracked.
+        let initial_state = IpVersions {
+            ipv4: StateEvent {
+                state: State { link: LinkState::None, ..Default::default() },
+                time: fasync::MonotonicInstant::now(),
+            },
+            ipv6: StateEvent {
+                state: State { link: LinkState::None, ..Default::default() },
+                time: fasync::MonotonicInstant::now(),
+            },
+        };
+        monitor.update_state(ID1, ETHERNET_INTERFACE_NAME, initial_state);
+
+        // Remove the interface. All future updates involving this interface should cause no
+        // change to the interface's state.
+        monitor.handle_interface_removed(properties.clone());
+
+        // Assert that the state is now `Removed`.
+        let removed_state = monitor.state().get(ID1).unwrap();
+        assert_eq!(removed_state.ipv4.state.link, LinkState::Removed);
+        assert_eq!(removed_state.ipv6.state.link, LinkState::Removed);
+
+        // Start another iteration of the network check to ensure that any future state updates
+        // do not affect the `Removed` state. In practice, the network check may be in-progress
+        // when a removal event is received. That new state should not override the
+        // `Removed` state.
+        let routes = testutil::build_route_table_from_flattened_routes([]);
+        let view = InterfaceView { properties: &properties, routes: &routes, neighbors: None };
+        assert_matches!(monitor.begin(view), Ok(NetworkCheckerOutcome::Complete));
+
+        // Confirm that the LinkState discovered from the network check was `Down` and
+        // not `Removed`.
+        let interface_context = monitor.interface_context.get(&ID1).unwrap();
+        assert_matches!(interface_context.discovered_state_v4.link, LinkState::Down);
+        assert_matches!(interface_context.discovered_state_v6.link, LinkState::Down);
+
+        // Assert that the state is still `Removed`, and was not updated to `Down`
+        // by the completed network check's result.
+        let final_state = monitor.state().get(ID1).unwrap();
+        assert_eq!(final_state.ipv4.state.link, LinkState::Removed);
+        assert_eq!(final_state.ipv6.state.link, LinkState::Removed);
     }
 }
