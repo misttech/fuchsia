@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.driver.compat/cpp/wire_messaging.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/mmio/mmio-buffer.h>
 #include <lib/trace/event.h>
@@ -26,49 +27,6 @@ constexpr zx_signals_t kErrorSignal = ZX_USER_SIGNAL_0;
 constexpr zx_signals_t kTxnCompleteSignal = ZX_USER_SIGNAL_1;
 
 constexpr size_t kMaxTransferSize = 512;
-
-zx::result<aml_i2c_delay_values> GetDelay(
-    fidl::WireSyncClient<fuchsia_driver_compat::Device>& compat_client) {
-  fidl::WireResult metadata = compat_client->GetMetadata();
-  if (!metadata.ok()) {
-    FDF_LOG(ERROR, "Failed to send GetMetadata request: %s", metadata.status_string());
-    return zx::error(metadata.status());
-  }
-  if (metadata->is_error()) {
-    FDF_LOG(ERROR, "Failed to get metadata: %s", zx_status_get_string(metadata->error_value()));
-    return metadata->take_error();
-  }
-
-  auto* private_metadata =
-      std::find_if(metadata->value()->metadata.begin(), metadata->value()->metadata.end(),
-                   [](const auto& metadata) { return metadata.type == DEVICE_METADATA_PRIVATE; });
-
-  if (private_metadata == metadata->value()->metadata.end()) {
-    FDF_LOG(DEBUG, "Using default delay values: No metadata found");
-    return zx::ok(aml_i2c_delay_values{0, 0});
-  }
-
-  size_t size;
-  auto status = private_metadata->data.get_prop_content_size(&size);
-  if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to get_prop_content_size: %s", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  aml_i2c_delay_values delay_values;
-  if (size != sizeof delay_values) {
-    FDF_LOG(ERROR, "Expected metadata size to be %lu but actual is %lu", sizeof delay_values, size);
-    return zx::error(ZX_ERR_INTERNAL);
-  }
-
-  status = private_metadata->data.read(&delay_values, 0, size);
-  if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to read metadata: %s", zx_status_get_string(status));
-    return zx::error(status);
-  }
-
-  return zx::ok(delay_values);
-}
 
 zx_status_t SetClockDelay(const aml_i2c_delay_values& delay, const fdf::MmioBuffer& regs_iobuff) {
   if (delay.quarter_clock_delay > aml_i2c::Control::kQtrClkDlyMax ||
@@ -346,14 +304,21 @@ void AmlI2c::Transact(TransactRequestView request, fdf::Arena& arena,
   }
 }
 
-zx::result<> AmlI2c::Start() {
-  zx::result compat_result = incoming()->Connect<fuchsia_driver_compat::Service::Device>();
-  if (compat_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to compat service: %s", compat_result.status_string());
-    return compat_result.take_error();
+zx::result<aml_i2c_delay_values> AmlI2c::GetDelay() {
+  zx::result metadata =
+      compat::GetMetadata<aml_i2c_delay_values>(incoming(), DEVICE_METADATA_PRIVATE);
+  if (metadata.is_error()) {
+    if (metadata.status_value() != ZX_ERR_NOT_FOUND) {
+      FDF_LOG(ERROR, "Failed to get metadata: %s", metadata.status_string());
+      return metadata.take_error();
+    }
+    FDF_LOG(DEBUG, "Using default delay values: No metadata found");
+    return zx::ok(aml_i2c_delay_values{0, 0});
   }
-  auto compat_client = fidl::WireSyncClient(std::move(compat_result.value()));
+  return zx::ok(*metadata.value().get());
+}
 
+zx::result<> AmlI2c::Start() {
   zx::result pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
@@ -378,7 +343,7 @@ zx::result<> AmlI2c::Start() {
     regs_iobuff_.emplace(*std::move(mmio));
   }
 
-  zx::result delay = GetDelay(compat_client);
+  zx::result delay = GetDelay();
   if (delay.is_error()) {
     FDF_LOG(ERROR, "Failed to get delay values");
     return delay.take_error();

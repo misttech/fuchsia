@@ -16,6 +16,8 @@
 #include <lib/zx/interrupt.h>
 #include <lib/zx/time.h>
 
+#include <soc/aml-common/aml-i2c.h>
+
 namespace aml_i2c {
 
 class AmlI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i2cimpl::Device> {
@@ -55,6 +57,8 @@ class AmlI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i
   zx_status_t StartIrqThread();
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                  const zx_packet_interrupt_t* interrupt);
+
+  zx::result<aml_i2c_delay_values> GetDelay();
 
   const fdf::MmioBuffer& regs_iobuff() const;
 

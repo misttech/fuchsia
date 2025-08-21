@@ -40,7 +40,7 @@ fuchsia_cc_driver(
     ],
     output_name = "aml-i2c",
     deps = [
-        "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
+        "//sdk/lib/driver/compat/cpp",
         "//src/devices/lib/amlogic",
         "//src/lib/ddk:ddk_metadata",
         "@fuchsia_sdk//fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo_cpp",
