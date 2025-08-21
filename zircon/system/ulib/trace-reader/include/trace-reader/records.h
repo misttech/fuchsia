@@ -12,7 +12,6 @@
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
-#include <new>
 #include <optional>
 #include <span>
 #include <string>
@@ -95,7 +94,36 @@ class ArgumentValue final {
     return *this;
   }
 
-  ArgumentType type() const { return static_cast<ArgumentType>(value_.index()); }
+  ArgumentType type() const {
+    return std::visit(
+        [](auto&& arg) -> ArgumentType {
+          using T = std::decay_t<decltype(arg)>;
+          if constexpr (std::is_same_v<T, Null>) {
+            return ArgumentType::kNull;
+          } else if constexpr (std::is_same_v<T, Bool>) {
+            return ArgumentType::kBool;
+          } else if constexpr (std::is_same_v<T, int32_t>) {
+            return ArgumentType::kInt32;
+          } else if constexpr (std::is_same_v<T, uint32_t>) {
+            return ArgumentType::kUint32;
+          } else if constexpr (std::is_same_v<T, int64_t>) {
+            return ArgumentType::kInt64;
+          } else if constexpr (std::is_same_v<T, uint64_t>) {
+            return ArgumentType::kUint64;
+          } else if constexpr (std::is_same_v<T, double>) {
+            return ArgumentType::kDouble;
+          } else if constexpr (std::is_same_v<T, std::string>) {
+            return ArgumentType::kString;
+          } else if constexpr (std::is_same_v<T, Pointer>) {
+            return ArgumentType::kPointer;
+          } else if constexpr (std::is_same_v<T, Koid>) {
+            return ArgumentType::kKoid;
+          } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
+            return ArgumentType::kBlob;
+          }
+        },
+        value_);
+  }
 
   uint32_t GetBool() const {
     ZX_DEBUG_ASSERT(type() == ArgumentType::kBool);
@@ -170,21 +198,6 @@ class ArgumentValue final {
   using Variant = std::variant<Null, int32_t, uint32_t, int64_t, uint64_t, double, std::string,
                                Pointer, Koid, Bool, std::vector<uint8_t>>;
   Variant value_;
-
-  // Ensure the variant size and type order matches the type enum values.
-  template <typename T, size_t I>
-  static constexpr bool TypeIndexCheck = std::is_same_v<T, std::variant_alternative_t<I, Variant>>;
-  static_assert(TypeIndexCheck<Bool, TRACE_ARG_BOOL>);
-  static_assert(TypeIndexCheck<int32_t, TRACE_ARG_INT32>);
-  static_assert(TypeIndexCheck<uint32_t, TRACE_ARG_UINT32>);
-  static_assert(TypeIndexCheck<int64_t, TRACE_ARG_INT64>);
-  static_assert(TypeIndexCheck<uint64_t, TRACE_ARG_UINT64>);
-  static_assert(TypeIndexCheck<double, TRACE_ARG_DOUBLE>);
-  static_assert(TypeIndexCheck<std::string, TRACE_ARG_STRING>);
-  static_assert(TypeIndexCheck<Pointer, TRACE_ARG_POINTER>);
-  static_assert(TypeIndexCheck<Koid, TRACE_ARG_KOID>);
-  static_assert(TypeIndexCheck<Bool, TRACE_ARG_BOOL>);
-  static_assert(TypeIndexCheck<std::vector<uint8_t>, TRACE_ARG_BLOB>);
 };
 
 // Named argument and value.
@@ -227,39 +240,35 @@ class TraceInfoContent final {
     uint32_t magic_value;
   };
 
-  explicit TraceInfoContent(MagicNumberInfo magic_number_info)
-      : type_(TraceInfoType::kMagicNumber), magic_number_info_(std::move(magic_number_info)) {}
+  explicit TraceInfoContent(MagicNumberInfo magic_number_info) : value_(magic_number_info) {}
 
   const MagicNumberInfo& GetMagicNumberInfo() const {
-    ZX_DEBUG_ASSERT(type_ == TraceInfoType::kMagicNumber);
-    return magic_number_info_;
+    ZX_DEBUG_ASSERT(type() == TraceInfoType::kMagicNumber);
+    return std::get<MagicNumberInfo>(value_);
   }
 
-  TraceInfoContent(TraceInfoContent&& other) : type_(other.type_) { MoveFrom(std::move(other)); }
+  TraceInfoContent(const TraceInfoContent&) = default;
+  TraceInfoContent& operator=(const TraceInfoContent&) = default;
+  TraceInfoContent(TraceInfoContent&&) = default;
+  TraceInfoContent& operator=(TraceInfoContent&&) = default;
+  ~TraceInfoContent() = default;
 
-  ~TraceInfoContent() { Destroy(); }
-
-  TraceInfoContent& operator=(TraceInfoContent&& other) {
-    Destroy();
-    MoveFrom(std::move(other));
-    return *this;
+  TraceInfoType type() const {
+    return std::visit(
+        [](auto&& arg) -> TraceInfoType {
+          using T = std::decay_t<decltype(arg)>;
+          if constexpr (std::is_same_v<T, MagicNumberInfo>) {
+            return TraceInfoType::kMagicNumber;
+          }
+        },
+        value_);
   }
-
-  TraceInfoType type() const { return type_; }
 
   std::string ToString() const;
 
  private:
-  void Destroy();
-  void MoveFrom(TraceInfoContent&& other);
-
-  TraceInfoType type_;
-  union {
-    MagicNumberInfo magic_number_info_;
-  };
-
-  TraceInfoContent(const TraceInfoContent&) = delete;
-  TraceInfoContent& operator=(const TraceInfoContent&) = delete;
+  using Variant = std::variant<MagicNumberInfo>;
+  Variant value_;
 };
 
 // Metadata type specific data.
@@ -288,61 +297,65 @@ class MetadataContent final {
     TraceInfoContent content;
   };
 
-  explicit MetadataContent(ProviderInfo provider_info)
-      : type_(MetadataType::kProviderInfo), provider_info_(std::move(provider_info)) {}
+  explicit MetadataContent(ProviderInfo provider_info) : value_(std::move(provider_info)) {}
 
-  explicit MetadataContent(ProviderSection provider_section)
-      : type_(MetadataType::kProviderSection), provider_section_(std::move(provider_section)) {}
+  explicit MetadataContent(ProviderSection provider_section) : value_(provider_section) {}
 
-  explicit MetadataContent(ProviderEvent provider_event)
-      : type_(MetadataType::kProviderEvent), provider_event_(std::move(provider_event)) {}
+  explicit MetadataContent(ProviderEvent provider_event) : value_(provider_event) {}
 
-  explicit MetadataContent(TraceInfo trace_info)
-      : type_(MetadataType::kTraceInfo), trace_info_(std::move(trace_info)) {}
+  explicit MetadataContent(TraceInfo trace_info) : value_(trace_info) {}
 
   const ProviderInfo& GetProviderInfo() const {
-    ZX_DEBUG_ASSERT(type_ == MetadataType::kProviderInfo);
-    return provider_info_;
+    ZX_DEBUG_ASSERT(type() == MetadataType::kProviderInfo);
+    return std::get<ProviderInfo>(value_);
   }
 
   const ProviderSection& GetProviderSection() const {
-    ZX_DEBUG_ASSERT(type_ == MetadataType::kProviderSection);
-    return provider_section_;
+    ZX_DEBUG_ASSERT(type() == MetadataType::kProviderSection);
+    return std::get<ProviderSection>(value_);
   }
 
   const ProviderEvent& GetProviderEvent() const {
-    ZX_DEBUG_ASSERT(type_ == MetadataType::kProviderEvent);
-    return provider_event_;
+    ZX_DEBUG_ASSERT(type() == MetadataType::kProviderEvent);
+    return std::get<ProviderEvent>(value_);
   }
 
-  MetadataContent(MetadataContent&& other) : type_(other.type_) { MoveFrom(std::move(other)); }
-
-  ~MetadataContent() { Destroy(); }
-
-  MetadataContent& operator=(MetadataContent&& other) {
-    Destroy();
-    MoveFrom(std::move(other));
-    return *this;
+  const TraceInfo& GetTraceInfo() const {
+    ZX_DEBUG_ASSERT(type() == MetadataType::kTraceInfo);
+    return std::get<TraceInfo>(value_);
   }
 
-  MetadataType type() const { return type_; }
+  MetadataContent(const MetadataContent&) = default;
+  MetadataContent& operator=(const MetadataContent&) = default;
+  MetadataContent(MetadataContent&&) = default;
+  MetadataContent& operator=(MetadataContent&&) = default;
+  ~MetadataContent() = default;
+
+  MetadataType type() const {
+    return std::visit(
+        [](auto&& arg) -> MetadataType {
+          using T = std::decay_t<decltype(arg)>;
+          if constexpr (std::is_same_v<T, std::monostate>) {
+            return static_cast<MetadataType>(0);
+          } else if constexpr (std::is_same_v<T, ProviderInfo>) {
+            return MetadataType::kProviderInfo;
+          } else if constexpr (std::is_same_v<T, ProviderSection>) {
+            return MetadataType::kProviderSection;
+          } else if constexpr (std::is_same_v<T, ProviderEvent>) {
+            return MetadataType::kProviderEvent;
+          } else if constexpr (std::is_same_v<T, TraceInfo>) {
+            return MetadataType::kTraceInfo;
+          }
+        },
+        value_);
+  }
 
   std::string ToString() const;
 
  private:
-  void Destroy();
-  void MoveFrom(MetadataContent&& other);
-
-  MetadataType type_;
-  union {
-    ProviderInfo provider_info_;
-    ProviderSection provider_section_;
-    ProviderEvent provider_event_;
-    TraceInfo trace_info_;
-  };
-
-  MetadataContent(const MetadataContent&) = delete;
-  MetadataContent& operator=(const MetadataContent&) = delete;
+  using Variant =
+      std::variant<std::monostate, ProviderInfo, ProviderSection, ProviderEvent, TraceInfo>;
+  Variant value_;
 };
 
 // Event type specific data.
@@ -399,127 +412,116 @@ class EventData final {
     trace_flow_id_t id;
   };
 
-  explicit EventData(Instant instant) : type_(EventType::kInstant), instant_(std::move(instant)) {}
+  explicit EventData(Instant instant) : value_(instant) {}
+  explicit EventData(Counter counter) : value_(counter) {}
+  explicit EventData(DurationBegin duration_begin) : value_(duration_begin) {}
+  explicit EventData(DurationEnd duration_end) : value_(duration_end) {}
+  explicit EventData(DurationComplete duration_complete) : value_(duration_complete) {}
+  explicit EventData(AsyncBegin async_begin) : value_(async_begin) {}
+  explicit EventData(AsyncInstant async_instant) : value_(async_instant) {}
+  explicit EventData(AsyncEnd async_end) : value_(async_end) {}
+  explicit EventData(FlowBegin flow_begin) : value_(flow_begin) {}
+  explicit EventData(FlowStep flow_step) : value_(flow_step) {}
+  explicit EventData(FlowEnd flow_end) : value_(flow_end) {}
 
-  explicit EventData(Counter counter) : type_(EventType::kCounter), counter_(std::move(counter)) {}
-
-  explicit EventData(DurationBegin duration_begin)
-      : type_(EventType::kDurationBegin), duration_begin_(std::move(duration_begin)) {}
-
-  explicit EventData(DurationEnd duration_end)
-      : type_(EventType::kDurationEnd), duration_end_(std::move(duration_end)) {}
-
-  explicit EventData(DurationComplete duration_complete)
-      : type_(EventType::kDurationComplete), duration_complete_(std::move(duration_complete)) {}
-
-  explicit EventData(AsyncBegin async_begin)
-      : type_(EventType::kAsyncBegin), async_begin_(std::move(async_begin)) {}
-
-  explicit EventData(AsyncInstant async_instant)
-      : type_(EventType::kAsyncInstant), async_instant_(std::move(async_instant)) {}
-
-  explicit EventData(AsyncEnd async_end)
-      : type_(EventType::kAsyncEnd), async_end_(std::move(async_end)) {}
-
-  explicit EventData(FlowBegin flow_begin)
-      : type_(EventType::kFlowBegin), flow_begin_(std::move(flow_begin)) {}
-
-  explicit EventData(FlowStep flow_step)
-      : type_(EventType::kFlowStep), flow_step_(std::move(flow_step)) {}
-
-  explicit EventData(FlowEnd flow_end)
-      : type_(EventType::kFlowEnd), flow_end_(std::move(flow_end)) {}
-
-  EventData(EventData&& other) { MoveFrom(std::move(other)); }
-
-  ~EventData() { Destroy(); }
-
-  EventData& operator=(EventData&& other) {
-    Destroy();
-    MoveFrom(std::move(other));
-    return *this;
-  }
+  EventData(const EventData&) = default;
+  EventData& operator=(const EventData&) = default;
+  EventData(EventData&&) = default;
+  EventData& operator=(EventData&&) = default;
+  ~EventData() = default;
 
   const Instant& GetInstant() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kInstant);
-    return instant_;
+    ZX_DEBUG_ASSERT(type() == EventType::kInstant);
+    return std::get<Instant>(value_);
   }
 
   const Counter& GetCounter() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kCounter);
-    return counter_;
+    ZX_DEBUG_ASSERT(type() == EventType::kCounter);
+    return std::get<Counter>(value_);
   }
 
   const DurationBegin& GetDurationBegin() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kDurationBegin);
-    return duration_begin_;
+    ZX_DEBUG_ASSERT(type() == EventType::kDurationBegin);
+    return std::get<DurationBegin>(value_);
   }
 
   const DurationEnd& GetDurationEnd() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kDurationEnd);
-    return duration_end_;
+    ZX_DEBUG_ASSERT(type() == EventType::kDurationEnd);
+    return std::get<DurationEnd>(value_);
   }
 
   const DurationComplete& GetDurationComplete() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kDurationComplete);
-    return duration_complete_;
+    ZX_DEBUG_ASSERT(type() == EventType::kDurationComplete);
+    return std::get<DurationComplete>(value_);
   }
 
   const AsyncBegin& GetAsyncBegin() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kAsyncBegin);
-    return async_begin_;
+    ZX_DEBUG_ASSERT(type() == EventType::kAsyncBegin);
+    return std::get<AsyncBegin>(value_);
   }
 
   const AsyncInstant& GetAsyncInstant() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kAsyncInstant);
-    return async_instant_;
+    ZX_DEBUG_ASSERT(type() == EventType::kAsyncInstant);
+    return std::get<AsyncInstant>(value_);
   }
 
   const AsyncEnd& GetAsyncEnd() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kAsyncEnd);
-    return async_end_;
+    ZX_DEBUG_ASSERT(type() == EventType::kAsyncEnd);
+    return std::get<AsyncEnd>(value_);
   }
 
   const FlowBegin& GetFlowBegin() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kFlowBegin);
-    return flow_begin_;
+    ZX_DEBUG_ASSERT(type() == EventType::kFlowBegin);
+    return std::get<FlowBegin>(value_);
   }
 
   const FlowStep& GetFlowStep() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kFlowStep);
-    return flow_step_;
+    ZX_DEBUG_ASSERT(type() == EventType::kFlowStep);
+    return std::get<FlowStep>(value_);
   }
 
   const FlowEnd& GetFlowEnd() const {
-    ZX_DEBUG_ASSERT(type_ == EventType::kFlowEnd);
-    return flow_end_;
+    ZX_DEBUG_ASSERT(type() == EventType::kFlowEnd);
+    return std::get<FlowEnd>(value_);
   }
 
-  EventType type() const { return type_; }
+  EventType type() const {
+    return std::visit(
+        [](auto&& arg) -> EventType {
+          using T = std::decay_t<decltype(arg)>;
+          if constexpr (std::is_same_v<T, Instant>) {
+            return EventType::kInstant;
+          } else if constexpr (std::is_same_v<T, Counter>) {
+            return EventType::kCounter;
+          } else if constexpr (std::is_same_v<T, DurationBegin>) {
+            return EventType::kDurationBegin;
+          } else if constexpr (std::is_same_v<T, DurationEnd>) {
+            return EventType::kDurationEnd;
+          } else if constexpr (std::is_same_v<T, DurationComplete>) {
+            return EventType::kDurationComplete;
+          } else if constexpr (std::is_same_v<T, AsyncBegin>) {
+            return EventType::kAsyncBegin;
+          } else if constexpr (std::is_same_v<T, AsyncInstant>) {
+            return EventType::kAsyncInstant;
+          } else if constexpr (std::is_same_v<T, AsyncEnd>) {
+            return EventType::kAsyncEnd;
+          } else if constexpr (std::is_same_v<T, FlowBegin>) {
+            return EventType::kFlowBegin;
+          } else if constexpr (std::is_same_v<T, FlowStep>) {
+            return EventType::kFlowStep;
+          } else if constexpr (std::is_same_v<T, FlowEnd>) {
+            return EventType::kFlowEnd;
+          }
+        },
+        value_);
+  }
 
   std::string ToString() const;
 
  private:
-  void Destroy();
-  void MoveFrom(EventData&& other);
-
-  EventType type_;
-  union {
-    Instant instant_;
-    Counter counter_;
-    DurationBegin duration_begin_;
-    DurationEnd duration_end_;
-    DurationComplete duration_complete_;
-    AsyncBegin async_begin_;
-    AsyncInstant async_instant_;
-    AsyncEnd async_end_;
-    FlowBegin flow_begin_;
-    FlowStep flow_step_;
-    FlowEnd flow_end_;
-  };
-
-  EventData(const EventData&) = delete;
-  EventData& operator=(const EventData&) = delete;
+  using Variant = std::variant<Instant, Counter, DurationBegin, DurationEnd, DurationComplete,
+                               AsyncBegin, AsyncInstant, AsyncEnd, FlowBegin, FlowStep, FlowEnd>;
+  Variant value_;
 };
 
 // Large record specific data
@@ -552,38 +554,35 @@ class LargeRecordData final {
   // after the completion of that callback.
   using Blob = std::variant<BlobEvent, BlobAttachment>;
 
-  explicit LargeRecordData(Blob blob) : type_(LargeRecordType::kBlob), blob_(std::move(blob)) {}
+  explicit LargeRecordData(Blob blob) : value_(std::move(blob)) {}
 
   const Blob& GetBlob() const {
-    ZX_DEBUG_ASSERT(type_ == LargeRecordType::kBlob);
-    return blob_;
+    ZX_DEBUG_ASSERT(type() == LargeRecordType::kBlob);
+    return std::get<Blob>(value_);
   }
 
-  LargeRecordData(LargeRecordData&& other) : type_(other.type_) { MoveFrom(std::move(other)); }
+  LargeRecordData(const LargeRecordData&) = default;
+  LargeRecordData& operator=(const LargeRecordData&) = default;
+  LargeRecordData(LargeRecordData&&) = default;
+  LargeRecordData& operator=(LargeRecordData&&) = default;
+  ~LargeRecordData() = default;
 
-  ~LargeRecordData() { Destroy(); }
-
-  LargeRecordData& operator=(LargeRecordData&& other) {
-    Destroy();
-    MoveFrom(std::move(other));
-    return *this;
+  LargeRecordType type() const {
+    return std::visit(
+        [](auto&& arg) -> LargeRecordType {
+          using T = std::decay_t<decltype(arg)>;
+          if constexpr (std::is_same_v<T, Blob>) {
+            return LargeRecordType::kBlob;
+          }
+        },
+        value_);
   }
-
-  LargeRecordType type() const { return type_; }
 
   std::string ToString() const;
 
  private:
-  void Destroy();
-  void MoveFrom(LargeRecordData&& other);
-
-  LargeRecordType type_;
-  union {
-    Blob blob_;
-  };
-
-  LargeRecordData(const LargeRecordData&) = delete;
-  LargeRecordData& operator=(const LargeRecordData&) = delete;
+  using Variant = std::variant<Blob>;
+  Variant value_;
 };
 
 // A decoded record.
@@ -718,125 +717,110 @@ class Record final {
   // Large record data.
   using Large = LargeRecordData;
 
-  explicit Record(Metadata record) : type_(RecordType::kMetadata), metadata_(std::move(record)) {}
+  explicit Record(Metadata record) : value_(std::move(record)) {}
+  explicit Record(Initialization record) : value_(record) {}
+  explicit Record(String record) : value_(std::move(record)) {}
+  explicit Record(Thread record) : value_(std::move(record)) {}
+  explicit Record(Event record) : value_(std::move(record)) {}
+  explicit Record(Blob record) : value_(std::move(record)) {}
+  explicit Record(KernelObject record) : value_(std::move(record)) {}
+  explicit Record(SchedulerEvent record) : value_(std::move(record)) {}
+  explicit Record(Log record) : value_(std::move(record)) {}
+  explicit Record(Large record) : value_(std::move(record)) {}
 
-  explicit Record(Initialization record)
-      : type_(RecordType::kInitialization), initialization_(std::move(record)) {}
-
-  explicit Record(String record) : type_(RecordType::kString) {
-    new (&string_) String(std::move(record));
-  }
-
-  explicit Record(Thread record) : type_(RecordType::kThread) {
-    new (&thread_) Thread(std::move(record));
-  }
-
-  explicit Record(Event record) : type_(RecordType::kEvent) {
-    new (&event_) Event(std::move(record));
-  }
-
-  explicit Record(Blob record) : type_(RecordType::kBlob) { new (&blob_) Blob(std::move(record)); }
-
-  explicit Record(KernelObject record) : type_(RecordType::kKernelObject) {
-    new (&kernel_object_) KernelObject(std::move(record));
-  }
-
-  explicit Record(SchedulerEvent record) : type_(RecordType::kScheduler) {
-    new (&scheduler_event_) SchedulerEvent(std::move(record));
-  }
-
-  explicit Record(Log record) : type_(RecordType::kLog) { new (&log_) Log(std::move(record)); }
-
-  explicit Record(Large record) : type_(RecordType::kLargeRecord) {
-    new (&large_) Large(std::move(record));
-  }
-
-  Record(Record&& other) { MoveFrom(std::move(other)); }
-
-  ~Record() { Destroy(); }
-
-  Record& operator=(Record&& other) {
-    Destroy();
-    MoveFrom(std::move(other));
-    return *this;
-  }
+  Record(const Record&) = default;
+  Record& operator=(const Record&) = default;
+  Record(Record&&) = default;
+  Record& operator=(Record&&) = default;
+  ~Record() = default;
 
   const Metadata& GetMetadata() const {
-    ZX_DEBUG_ASSERT(type_ == RecordType::kMetadata);
-    return metadata_;
+    ZX_DEBUG_ASSERT(type() == RecordType::kMetadata);
+    return std::get<Metadata>(value_);
   }
 
   const Initialization& GetInitialization() const {
-    ZX_DEBUG_ASSERT(type_ == RecordType::kInitialization);
-    return initialization_;
+    ZX_DEBUG_ASSERT(type() == RecordType::kInitialization);
+    return std::get<Initialization>(value_);
   }
 
   const String& GetString() const {
-    ZX_DEBUG_ASSERT(type_ == RecordType::kString);
-    return string_;
+    ZX_DEBUG_ASSERT(type() == RecordType::kString);
+    return std::get<String>(value_);
   }
 
   const Thread& GetThread() const {
-    ZX_DEBUG_ASSERT(type_ == RecordType::kThread);
-    return thread_;
+    ZX_DEBUG_ASSERT(type() == RecordType::kThread);
+    return std::get<Thread>(value_);
   }
 
   const Event& GetEvent() const {
-    ZX_DEBUG_ASSERT(type_ == RecordType::kEvent);
-    return event_;
+    ZX_DEBUG_ASSERT(type() == RecordType::kEvent);
+    return std::get<Event>(value_);
   }
 
   const Blob& GetBlob() const {
-    ZX_DEBUG_ASSERT(type_ == RecordType::kBlob);
-    return blob_;
+    ZX_DEBUG_ASSERT(type() == RecordType::kBlob);
+    return std::get<Blob>(value_);
   }
 
   const KernelObject& GetKernelObject() const {
-    ZX_DEBUG_ASSERT(type_ == RecordType::kKernelObject);
-    return kernel_object_;
+    ZX_DEBUG_ASSERT(type() == RecordType::kKernelObject);
+    return std::get<KernelObject>(value_);
   }
 
   const SchedulerEvent& GetSchedulerEvent() const {
-    ZX_DEBUG_ASSERT(type_ == RecordType::kScheduler);
-    return scheduler_event_;
+    ZX_DEBUG_ASSERT(type() == RecordType::kScheduler);
+    return std::get<SchedulerEvent>(value_);
   }
 
   const Log& GetLog() const {
-    ZX_DEBUG_ASSERT(type_ == RecordType::kLog);
-    return log_;
+    ZX_DEBUG_ASSERT(type() == RecordType::kLog);
+    return std::get<Log>(value_);
   }
 
   const Large& GetLargeRecord() const {
-    ZX_DEBUG_ASSERT(type_ == RecordType::kLargeRecord);
-    return large_;
+    ZX_DEBUG_ASSERT(type() == RecordType::kLargeRecord);
+    return std::get<Large>(value_);
   }
 
-  RecordType type() const { return type_; }
+  RecordType type() const {
+    return std::visit(
+        [](auto&& arg) -> RecordType {
+          using T = std::decay_t<decltype(arg)>;
+          if constexpr (std::is_same_v<T, Metadata>) {
+            return RecordType::kMetadata;
+          } else if constexpr (std::is_same_v<T, Initialization>) {
+            return RecordType::kInitialization;
+          } else if constexpr (std::is_same_v<T, String>) {
+            return RecordType::kString;
+          } else if constexpr (std::is_same_v<T, Thread>) {
+            return RecordType::kThread;
+          } else if constexpr (std::is_same_v<T, Event>) {
+            return RecordType::kEvent;
+          } else if constexpr (std::is_same_v<T, Blob>) {
+            return RecordType::kBlob;
+          } else if constexpr (std::is_same_v<T, KernelObject>) {
+            return RecordType::kKernelObject;
+          } else if constexpr (std::is_same_v<T, SchedulerEvent>) {
+            return RecordType::kScheduler;
+          } else if constexpr (std::is_same_v<T, Log>) {
+            return RecordType::kLog;
+          } else if constexpr (std::is_same_v<T, Large>) {
+            return RecordType::kLargeRecord;
+          }
+        },
+        value_);
+  }
 
   std::string ToString() const;
 
   std::optional<std::string> GetName() const;
 
  private:
-  void Destroy();
-  void MoveFrom(Record&& other);
-
-  RecordType type_;
-  union {
-    Metadata metadata_;
-    Initialization initialization_;
-    String string_;
-    Thread thread_;
-    Event event_;
-    Blob blob_;
-    KernelObject kernel_object_;
-    SchedulerEvent scheduler_event_;
-    Log log_;
-    Large large_;
-  };
-
-  Record(const Record&) = delete;
-  Record& operator=(const Record&) = delete;
+  using Variant = std::variant<Metadata, Initialization, String, Thread, Event, Blob, KernelObject,
+                               SchedulerEvent, Log, Large>;
+  Variant value_;
 };
 
 }  // namespace trace

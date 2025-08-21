@@ -202,82 +202,31 @@ std::string Argument::ToString() const {
   return (std::stringstream() << name_ << ": " << value_.ToString()).str();
 }
 
-void TraceInfoContent::Destroy() {
-  switch (type_) {
-    case TraceInfoType::kMagicNumber:
-      magic_number_info_.~MagicNumberInfo();
-      break;
-  }
-}
-
-void TraceInfoContent::MoveFrom(TraceInfoContent&& other) {
-  type_ = other.type_;
-  switch (type_) {
-    case TraceInfoType::kMagicNumber:
-      new (&magic_number_info_) MagicNumberInfo(std::move(other.magic_number_info_));
-      break;
-  }
-}
-
 std::string TraceInfoContent::ToString() const {
-  switch (type_) {
+  switch (type()) {
     case TraceInfoType::kMagicNumber: {
       std::stringstream ss;
-      ss << "MagicNumberInfo(magic_value: 0x" << std::hex << magic_number_info_.magic_value << ")";
+      ss << "MagicNumberInfo(magic_value: 0x" << std::hex << GetMagicNumberInfo().magic_value
+         << ")";
       return ss.str();
     }
   }
   ZX_ASSERT(false);
 }
 
-void MetadataContent::Destroy() {
-  switch (type_) {
-    case MetadataType::kProviderInfo:
-      provider_info_.~ProviderInfo();
-      break;
-    case MetadataType::kProviderSection:
-      provider_section_.~ProviderSection();
-      break;
-    case MetadataType::kProviderEvent:
-      provider_event_.~ProviderEvent();
-      break;
-    case MetadataType::kTraceInfo:
-      trace_info_.~TraceInfo();
-      break;
-  }
-}
-
-void MetadataContent::MoveFrom(MetadataContent&& other) {
-  type_ = other.type_;
-  switch (type_) {
-    case MetadataType::kProviderInfo:
-      new (&provider_info_) ProviderInfo(std::move(other.provider_info_));
-      break;
-    case MetadataType::kProviderSection:
-      new (&provider_section_) ProviderSection(std::move(other.provider_section_));
-      break;
-    case MetadataType::kProviderEvent:
-      new (&provider_event_) ProviderEvent(std::move(other.provider_event_));
-      break;
-    case MetadataType::kTraceInfo:
-      new (&trace_info_) TraceInfo(std::move(other.trace_info_));
-      break;
-  }
-}
-
 std::string MetadataContent::ToString() const {
   std::stringstream ss;
-  switch (type_) {
+  switch (type()) {
     case MetadataType::kProviderInfo:
-      ss << "ProviderInfo(id: " << provider_info_.id << ", name: \"" << provider_info_.name
+      ss << "ProviderInfo(id: " << GetProviderInfo().id << ", name: \"" << GetProviderInfo().name
          << "\")";
       return ss.str();
     case MetadataType::kProviderSection:
-      ss << "ProviderSection(id: " << provider_section_.id << ")";
+      ss << "ProviderSection(id: " << GetProviderSection().id << ")";
       return ss.str();
     case MetadataType::kProviderEvent: {
-      ss << "ProviderEvent(id: " << provider_event_.id << ", ";
-      ProviderEventType type = provider_event_.event;
+      ss << "ProviderEvent(id: " << GetProviderEvent().id << ", ";
+      ProviderEventType type = GetProviderEvent().event;
       switch (type) {
         case ProviderEventType::kBufferOverflow:
           ss << "buffer overflow";
@@ -291,154 +240,61 @@ std::string MetadataContent::ToString() const {
       return ss.str();
     }
     case MetadataType::kTraceInfo: {
-      ss << "TraceInfo(content: " << trace_info_.content.ToString() << ")";
+      ss << "TraceInfo(content: " << GetTraceInfo().content.ToString() << ")";
       return ss.str();
     }
   }
   ZX_ASSERT(false);
 }
 
-void EventData::Destroy() {
-  switch (type_) {
-    case EventType::kInstant:
-      instant_.~Instant();
-      break;
-    case EventType::kCounter:
-      counter_.~Counter();
-      break;
-    case EventType::kDurationBegin:
-      duration_begin_.~DurationBegin();
-      break;
-    case EventType::kDurationEnd:
-      duration_end_.~DurationEnd();
-      break;
-    case EventType::kDurationComplete:
-      duration_complete_.~DurationComplete();
-      break;
-    case EventType::kAsyncBegin:
-      async_begin_.~AsyncBegin();
-      break;
-    case EventType::kAsyncInstant:
-      async_instant_.~AsyncInstant();
-      break;
-    case EventType::kAsyncEnd:
-      async_end_.~AsyncEnd();
-      break;
-    case EventType::kFlowBegin:
-      flow_begin_.~FlowBegin();
-      break;
-    case EventType::kFlowStep:
-      flow_step_.~FlowStep();
-      break;
-    case EventType::kFlowEnd:
-      flow_end_.~FlowEnd();
-      break;
-  }
-}
-
-void EventData::MoveFrom(EventData&& other) {
-  type_ = other.type_;
-  switch (type_) {
-    case EventType::kInstant:
-      new (&instant_) Instant(std::move(other.instant_));
-      break;
-    case EventType::kCounter:
-      new (&counter_) Counter(std::move(other.counter_));
-      break;
-    case EventType::kDurationBegin:
-      new (&duration_begin_) DurationBegin(std::move(other.duration_begin_));
-      break;
-    case EventType::kDurationEnd:
-      new (&duration_end_) DurationEnd(std::move(other.duration_end_));
-      break;
-    case EventType::kDurationComplete:
-      new (&duration_complete_) DurationComplete(std::move(other.duration_complete_));
-      break;
-    case EventType::kAsyncBegin:
-      new (&async_begin_) AsyncBegin(std::move(other.async_begin_));
-      break;
-    case EventType::kAsyncInstant:
-      new (&async_instant_) AsyncInstant(std::move(other.async_instant_));
-      break;
-    case EventType::kAsyncEnd:
-      new (&async_end_) AsyncEnd(std::move(other.async_end_));
-      break;
-    case EventType::kFlowBegin:
-      new (&flow_begin_) FlowBegin(std::move(other.flow_begin_));
-      break;
-    case EventType::kFlowStep:
-      new (&flow_step_) FlowStep(std::move(other.flow_step_));
-      break;
-    case EventType::kFlowEnd:
-      new (&flow_end_) FlowEnd(std::move(other.flow_end_));
-      break;
-  }
-}
-
 std::string EventData::ToString() const {
-  switch (type_) {
+  switch (type()) {
     case EventType::kInstant: {
       std::stringstream ss;
-      ss << "Instant(scope: " << EventScopeToString(instant_.scope) << ")";
+      ss << "Instant(scope: " << EventScopeToString(GetInstant().scope) << ")";
       return ss.str();
     }
     case EventType::kCounter:
-      return (std::stringstream() << "Counter(id: " << counter_.id << ")").str();
+      return (std::stringstream() << "Counter(id: " << GetCounter().id << ")").str();
     case EventType::kDurationBegin:
       return "DurationBegin";
     case EventType::kDurationEnd:
       return "DurationEnd";
     case EventType::kDurationComplete: {
       std::stringstream ss;
-      ss << "DurationComplete(end_ts: " << duration_complete_.end_time << ")";
+      ss << "DurationComplete(end_ts: " << GetDurationComplete().end_time << ")";
       return ss.str();
     }
     case EventType::kAsyncBegin:
-      return (std::stringstream() << "AsyncBegin(id: " << async_begin_.id << ")").str();
+      return (std::stringstream() << "AsyncBegin(id: " << GetAsyncBegin().id << ")").str();
     case EventType::kAsyncInstant:
-      return (std::stringstream() << "AsyncInstant(id: " << async_instant_.id << ")").str();
+      return (std::stringstream() << "AsyncInstant(id: " << GetAsyncInstant().id << ")").str();
     case EventType::kAsyncEnd:
-      return (std::stringstream() << "AsyncEnd(id: " << async_end_.id << ")").str();
+      return (std::stringstream() << "AsyncEnd(id: " << GetAsyncEnd().id << ")").str();
     case EventType::kFlowBegin:
-      return (std::stringstream() << "FlowBegin(id: " << flow_begin_.id << ")").str();
+      return (std::stringstream() << "FlowBegin(id: " << GetFlowBegin().id << ")").str();
     case EventType::kFlowStep:
-      return (std::stringstream() << "FlowStep(id: " << flow_step_.id << ")").str();
+      return (std::stringstream() << "FlowStep(id: " << GetFlowStep().id << ")").str();
     case EventType::kFlowEnd:
-      return (std::stringstream() << "FlowEnd(id: " << flow_end_.id << ")").str();
+      return (std::stringstream() << "FlowEnd(id: " << GetFlowEnd().id << ")").str();
   }
   ZX_ASSERT(false);
 }
 
-void LargeRecordData::Destroy() {
-  switch (type_) {
-    case LargeRecordType::kBlob:
-      blob_.~Blob();
-      break;
-  }
-}
-
-void LargeRecordData::MoveFrom(trace::LargeRecordData&& other) {
-  switch (type_) {
-    case LargeRecordType::kBlob:
-      new (&blob_) Blob(std::move(other.blob_));
-      break;
-  }
-}
-
 std::string LargeRecordData::ToString() const {
   std::stringstream ss;
-  switch (type_) {
+  switch (type()) {
     case LargeRecordType::kBlob:
-      if (std::holds_alternative<BlobEvent>(blob_)) {
-        const auto& data = std::get<BlobEvent>(blob_);
+      if (std::holds_alternative<BlobEvent>(GetBlob())) {
+        const auto& data = std::get<BlobEvent>(GetBlob());
         ss << "Blob(format: blob_event, category: \"" << data.category << "\""
            << ", name: \"" << data.name << "\""
            << ", ts: " << data.timestamp << ", pt: " << data.process_thread.ToString() << ", "
            << FormatArgumentList(data.arguments) << ", size: " << data.blob_size
            << ", preview: " << PreviewBlobData<8, 8>(data.blob, data.blob_size) << ")";
         return ss.str();
-      } else if (std::holds_alternative<BlobAttachment>(blob_)) {
-        const auto& data = std::get<BlobAttachment>(blob_);
+      } else if (std::holds_alternative<BlobAttachment>(GetBlob())) {
+        const auto& data = std::get<BlobAttachment>(GetBlob());
         ss << "Blob(format: blob_attachment, category: \"" << data.category << "\""
            << ", name: \"" << data.name << "\""
            << ", size: " << data.blob_size
@@ -450,109 +306,40 @@ std::string LargeRecordData::ToString() const {
   ZX_ASSERT(false);
 }
 
-void Record::Destroy() {
-  switch (type_) {
-    case RecordType::kMetadata:
-      metadata_.~Metadata();
-      break;
-    case RecordType::kInitialization:
-      initialization_.~Initialization();
-      break;
-    case RecordType::kString:
-      string_.~String();
-      break;
-    case RecordType::kThread:
-      thread_.~Thread();
-      break;
-    case RecordType::kEvent:
-      event_.~Event();
-      break;
-    case RecordType::kBlob:
-      blob_.~Blob();
-      break;
-    case RecordType::kKernelObject:
-      kernel_object_.~KernelObject();
-      break;
-    case RecordType::kScheduler:
-      scheduler_event_.~SchedulerEvent();
-      break;
-    case RecordType::kLog:
-      log_.~Log();
-      break;
-    case RecordType::kLargeRecord:
-      large_.~Large();
-      break;
-  }
-}
-
-void Record::MoveFrom(Record&& other) {
-  type_ = other.type_;
-  switch (type_) {
-    case RecordType::kMetadata:
-      new (&metadata_) Metadata(std::move(other.metadata_));
-      break;
-    case RecordType::kInitialization:
-      new (&initialization_) Initialization(std::move(other.initialization_));
-      break;
-    case RecordType::kString:
-      new (&string_) String(std::move(other.string_));
-      break;
-    case RecordType::kThread:
-      new (&thread_) Thread(std::move(other.thread_));
-      break;
-    case RecordType::kEvent:
-      new (&event_) Event(std::move(other.event_));
-      break;
-    case RecordType::kBlob:
-      new (&blob_) Blob(std::move(other.blob_));
-      break;
-    case RecordType::kKernelObject:
-      new (&kernel_object_) KernelObject(std::move(other.kernel_object_));
-      break;
-    case RecordType::kScheduler:
-      new (&scheduler_event_) SchedulerEvent(std::move(other.scheduler_event_));
-      break;
-    case RecordType::kLog:
-      new (&log_) Log(std::move(other.log_));
-      break;
-    case RecordType::kLargeRecord:
-      new (&large_) Large(std::move(other.large_));
-      break;
-  }
-}
-
 std::string Record::ToString() const {
   std::stringstream ss;
-  switch (type_) {
+  switch (type()) {
     case RecordType::kMetadata:
-      ss << "Metadata(content: " << metadata_.content.ToString() << ")";
+      ss << "Metadata(content: " << GetMetadata().content.ToString() << ")";
       return ss.str();
     case RecordType::kInitialization:
-      ss << "Initialization(ticks_per_second: " << initialization_.ticks_per_second << ")";
+      ss << "Initialization(ticks_per_second: " << GetInitialization().ticks_per_second << ")";
       return ss.str();
     case RecordType::kString:
-      ss << "String(index: " << string_.index << ", \"" << string_.string << "\")";
+      ss << "String(index: " << GetString().index << ", \"" << GetString().string << "\")";
       return ss.str();
     case RecordType::kThread:
-      ss << "Thread(index: " << thread_.index << ", " << thread_.process_thread.ToString() << ")";
+      ss << "Thread(index: " << GetThread().index << ", " << GetThread().process_thread.ToString()
+         << ")";
       return ss.str();
     case RecordType::kEvent:
-      ss << "Event(ts: " << event_.timestamp << ", pt: " << event_.process_thread.ToString()
-         << ", category: \"" << event_.category << "\", name: \"" << event_.name << "\", "
-         << event_.data.ToString() << ", " << FormatArgumentList(event_.arguments) << ")";
+      ss << "Event(ts: " << GetEvent().timestamp << ", pt: " << GetEvent().process_thread.ToString()
+         << ", category: \"" << GetEvent().category << "\", name: \"" << GetEvent().name << "\", "
+         << GetEvent().data.ToString() << ", " << FormatArgumentList(GetEvent().arguments) << ")";
       return ss.str();
     case RecordType::kBlob:
-      ss << "Blob(name: " << blob_.name << ", size: " << blob_.blob_size
-         << ", preview: " << PreviewBlobData<8, 8>(blob_.blob, blob_.blob_size) << ")";
+      ss << "Blob(name: " << GetBlob().name << ", size: " << GetBlob().blob_size
+         << ", preview: " << PreviewBlobData<8, 8>(GetBlob().blob, GetBlob().blob_size) << ")";
       return ss.str();
     case RecordType::kKernelObject:
-      ss << "KernelObject(koid: " << kernel_object_.koid
-         << ", type: " << ObjectTypeToString(kernel_object_.object_type) << ", name: \""
-         << kernel_object_.name << "\", " << FormatArgumentList(kernel_object_.arguments) << ")";
+      ss << "KernelObject(koid: " << GetKernelObject().koid
+         << ", type: " << ObjectTypeToString(GetKernelObject().object_type) << ", name: \""
+         << GetKernelObject().name << "\", " << FormatArgumentList(GetKernelObject().arguments)
+         << ")";
       return ss.str();
     case RecordType::kScheduler:
-      if (scheduler_event_.type() == SchedulerEventType::kLegacyContextSwitch) {
-        auto& context_switch = scheduler_event_.legacy_context_switch();
+      if (GetSchedulerEvent().type() == SchedulerEventType::kLegacyContextSwitch) {
+        auto& context_switch = GetSchedulerEvent().legacy_context_switch();
         ss << "ContextSwitch(ts: " << context_switch.timestamp
            << ", cpu: " << context_switch.cpu_number
            << ", os: " << ThreadStateToString(context_switch.outgoing_thread_state)
@@ -560,35 +347,35 @@ std::string Record::ToString() const {
            << ", ipt: " << context_switch.incoming_thread.ToString()
            << ", oprio: " << context_switch.outgoing_thread_priority
            << ", iprio: " << context_switch.incoming_thread_priority << ")";
-      } else if (scheduler_event_.type() == SchedulerEventType::kContextSwitch) {
-        auto& context_switch = scheduler_event_.context_switch();
+      } else if (GetSchedulerEvent().type() == SchedulerEventType::kContextSwitch) {
+        auto& context_switch = GetSchedulerEvent().context_switch();
         ss << "ContextSwitch(ts: " << context_switch.timestamp
            << ", cpu: " << context_switch.cpu_number
            << ", os: " << ThreadStateToString(context_switch.outgoing_thread_state)
            << ", ot: " << context_switch.outgoing_tid << ", it: " << context_switch.incoming_tid
            << ", " << FormatArgumentList(context_switch.arguments) << ")";
-      } else if (scheduler_event_.type() == SchedulerEventType::kThreadWakeup) {
-        auto& thread_wakeup = scheduler_event_.thread_wakeup();
+      } else if (GetSchedulerEvent().type() == SchedulerEventType::kThreadWakeup) {
+        auto& thread_wakeup = GetSchedulerEvent().thread_wakeup();
         ss << "ThreadWakeup(ts: " << thread_wakeup.timestamp
            << ", cpu: " << thread_wakeup.cpu_number << ", it: " << thread_wakeup.incoming_tid
            << ", " << FormatArgumentList(thread_wakeup.arguments) << ")";
       } else {
-        ss << "UnknownSchedulerEvent(type: " << static_cast<int>(scheduler_event_.type()) << ")";
+        ss << "UnknownSchedulerEvent(type: " << static_cast<int>(GetSchedulerEvent().type()) << ")";
       }
       return ss.str();
     case RecordType::kLog:
-      ss << "Log(ts: " << log_.timestamp << ", pt: " << log_.process_thread.ToString() << ", \""
-         << log_.message << "\")";
+      ss << "Log(ts: " << GetLog().timestamp << ", pt: " << GetLog().process_thread.ToString()
+         << ", \"" << GetLog().message << "\")";
       return ss.str();
     case RecordType::kLargeRecord:
-      ss << "LargeRecord(" << large_.ToString() << ")";
+      ss << "LargeRecord(" << GetLargeRecord().ToString() << ")";
       return ss.str();
   }
   ZX_ASSERT(false);
 }
 
 std::optional<std::string> Record::GetName() const {
-  switch (type_) {
+  switch (type()) {
     // Do not have a namefield
     case RecordType::kMetadata:
     case RecordType::kInitialization:
@@ -599,11 +386,11 @@ std::optional<std::string> Record::GetName() const {
     case RecordType::kLargeRecord:
       return std::nullopt;
     case RecordType::kEvent:
-      return {event_.name};
+      return {GetEvent().name};
     case RecordType::kBlob:
-      return {blob_.name};
+      return {GetBlob().name};
     case RecordType::kKernelObject:
-      return {kernel_object_.name};
+      return {GetKernelObject().name};
   }
 }
 
