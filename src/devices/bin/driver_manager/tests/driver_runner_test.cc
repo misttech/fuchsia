@@ -1645,21 +1645,21 @@ TEST(CompositeServiceOfferTest, WorkingOfferPrimary) {
 TEST(NodeTest, ToCollection) {
   async::Loop loop{&kAsyncLoopConfigNeverAttachToThread};
   constexpr char kGrandparentName[] = "grandparent";
-  std::shared_ptr<Node> grandparent = std::make_shared<Node>(
-      kGrandparentName, std::vector<std::weak_ptr<Node>>{}, nullptr, loop.dispatcher());
+  std::shared_ptr<Node> grandparent =
+      std::make_shared<Node>(kGrandparentName, std::weak_ptr<Node>{}, nullptr, loop.dispatcher());
 
   constexpr char kParentName[] = "parent";
-  std::shared_ptr<Node> parent = std::make_shared<Node>(
-      kParentName, std::vector<std::weak_ptr<Node>>{grandparent}, nullptr, loop.dispatcher());
+  std::shared_ptr<Node> parent =
+      std::make_shared<Node>(kParentName, grandparent, nullptr, loop.dispatcher());
 
   constexpr char kChild1Name[] = "child1";
-  std::shared_ptr<Node> child1 = std::make_shared<Node>(
-      kChild1Name, std::vector<std::weak_ptr<Node>>{parent}, nullptr, loop.dispatcher());
+  std::shared_ptr<Node> child1 =
+      std::make_shared<Node>(kChild1Name, parent, nullptr, loop.dispatcher());
 
   constexpr char kChild2Name[] = "child2";
-  std::shared_ptr<Node> child2 =
-      std::make_shared<Node>(kChild2Name, std::vector<std::weak_ptr<Node>>{parent, child1}, nullptr,
-                             loop.dispatcher(), 0, driver_manager::NodeType::kComposite);
+  std::shared_ptr<Node> child2 = std::make_shared<Node>(
+      kChild2Name, std::vector{std::weak_ptr{parent}, std::weak_ptr{child1}},
+      std::vector<std::string>{"parent", "child1"}, nullptr, loop.dispatcher(), 0);
 
   // Test parentless
   EXPECT_EQ(ToCollection(*grandparent, fdfw::DriverPackageType::kBoot), Collection::kBoot);

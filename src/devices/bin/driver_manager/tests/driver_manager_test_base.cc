@@ -11,18 +11,18 @@ void DriverManagerTestBase::SetUp() {
   root_->AddToDevfsForTesting(root_devnode_.value());
 }
 
-std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateNode(const std::string name) {
-  auto node = std::make_shared<driver_manager::Node>(
-      name, std::vector<std::weak_ptr<driver_manager::Node>>(), GetNodeManager(), dispatcher());
+std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateNode(std::string_view name) {
+  auto node = std::make_shared<driver_manager::Node>(name, std::weak_ptr<driver_manager::Node>{},
+                                                     GetNodeManager(), dispatcher());
   node->AddToDevfsForTesting(root_devnode_.value());
   node->devfs_device().publish();
   return node;
 }
 
 std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateNode(
-    const std::string name, std::weak_ptr<driver_manager::Node> parent) {
-  std::vector<std::weak_ptr<driver_manager::Node>> parents = {parent};
-  auto node = std::make_shared<driver_manager::Node>(name, parents, GetNodeManager(), dispatcher());
+    std::string_view name, std::weak_ptr<driver_manager::Node> parent) {
+  auto node = std::make_shared<driver_manager::Node>(name, std::move(parent), GetNodeManager(),
+                                                     dispatcher());
   node->AddToDevfsForTesting(root_devnode_.value());
   node->devfs_device().publish();
   node->AddToParents();
@@ -38,8 +38,8 @@ std::shared_ptr<driver_manager::Node> DriverManagerTestBase::CreateCompositeNode
   for (auto& parent : parents) {
     parent_names.push_back(parent.lock()->name());
   }
-  return driver_manager::Node::CreateCompositeNode(name, parents, std::move(parent_names),
-                                                   parent_properties, GetNodeManager(),
-                                                   dispatcher(), primary_index)
+  return driver_manager::Node::CreateCompositeNode(name, std::move(parents),
+                                                   std::move(parent_names), parent_properties,
+                                                   GetNodeManager(), dispatcher(), primary_index)
       .value();
 }

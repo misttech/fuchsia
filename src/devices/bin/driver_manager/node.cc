@@ -13,6 +13,7 @@
 #include <ranges>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
@@ -265,26 +266,37 @@ NodeOffer CreateCompositeOffer(const NodeOffer& offer, std::string_view parents_
   };
 }
 
-Node::Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents,
-           NodeManager* node_manager, async_dispatcher_t* dispatcher, uint32_t primary_index,
-           NodeType type)
+Node::Node(std::string_view name, std::weak_ptr<Node> parent, NodeManager* node_manager,
+           async_dispatcher_t* dispatcher)
     : name_(name),
-      type_(type),
-      parents_(std::move(parents)),
-      primary_index_(primary_index),
+      type_(Normal{.parent_ = std::move(parent)}),
       node_manager_(node_manager),
       dispatcher_(dispatcher) {
-  if (type == NodeType::kNormal) {
-    ZX_ASSERT(parents_.size() <= 1);
+  // By default, we set `driver_host_` to match the primary parent's
+  // `driver_host_`. If the node is then subsequently bound to a driver in a
+  // different driver host, this value will be updated to match.
+  if (auto* parent = GetPrimaryParent(); parent) {
+    driver_host_ = parent->driver_host_;
   }
+}
 
-  ZX_ASSERT(primary_index_ == 0 || primary_index_ < parents_.size());
-  if (auto primary_parent = GetPrimaryParent()) {
-    // By default, we set `driver_host_` to match the primary parent's
-    // `driver_host_`. If the node is then subsequently bound to a driver in a
-    // different driver host, this value will be updated to match.
-    driver_host_ = primary_parent->driver_host_;
-  }
+Node::Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents,
+           std::vector<std::string> parents_names, NodeManager* node_manager,
+           async_dispatcher_t* dispatcher, uint32_t primary_index)
+    : name_(name),
+      type_(Composite{
+          .parents_ = std::move(parents),
+          .parents_names_ = std::move(parents_names),
+          .primary_index_ = primary_index,
+      }),
+      node_manager_(node_manager),
+      dispatcher_(dispatcher) {
+  ZX_ASSERT(primary_index < std::get<Composite>(type_).parents_.size());
+
+  // By default, we set `driver_host_` to match the primary parent's
+  // `driver_host_`. If the node is then subsequently bound to a driver in a
+  // different driver host, this value will be updated to match.
+  driver_host_ = GetPrimaryParent()->driver_host_;
 }
 
 zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
@@ -312,9 +324,8 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
     return zx::error(ZX_ERR_INTERNAL);
   }
   std::shared_ptr composite =
-      std::make_shared<Node>(node_name, std::move(parents), driver_binder, dispatcher,
-                             primary_index, NodeType::kComposite);
-  composite->parents_names_ = std::move(parents_names);
+      std::make_shared<Node>(node_name, std::move(parents), std::move(parents_names), driver_binder,
+                             dispatcher, primary_index);
 
   composite->SetCompositeParentProperties(parent_properties);
 
@@ -331,7 +342,7 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
   // Copy the offers from each parent.
   std::vector<NodeOffer> node_offers;
   size_t parent_index = 0;
-  for (const std::weak_ptr<Node>& parent : composite->parents_) {
+  for (const std::weak_ptr<Node>& parent : std::get<Composite>(composite->type_).parents_) {
     auto parent_ptr = parent.lock();
     if (!parent_ptr) {
       LOGF(ERROR, "Composite parent node freed before use");
@@ -341,8 +352,9 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
     node_offers.reserve(node_offers.size() + parent_offers.size());
 
     for (auto& parent_offer : parent_offers) {
-      NodeOffer offer = CreateCompositeOffer(parent_offer, composite->parents_names_[parent_index],
-                                             parent_index == primary_index);
+      NodeOffer offer = CreateCompositeOffer(
+          parent_offer, std::get<Composite>(composite->type_).parents_names_[parent_index],
+          parent_index == primary_index);
       node_offers.push_back(std::move(offer));
     }
     parent_index++;
@@ -371,7 +383,11 @@ Node::~Node() {
   }
 
   CloseIfExists(controller_ref_);
-  CloseIfExists(node_ref_);
+  if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
+    driver_component->node_ref_.Close(ZX_OK);
+  } else if (auto* node = std::get_if<OwnedByParent>(&state_); node) {
+    node->node_ref_.Close(ZX_OK);
+  }
 
   for (auto& completer : unbinding_children_completers_) {
     completer.Reply(zx::error(ZX_ERR_CANCELED));
@@ -389,19 +405,23 @@ Node::~Node() {
 }
 
 const std::string& Node::driver_url() const {
-  if (driver_component_) {
-    return driver_component_->driver_url;
+  if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
+    return driver_component->driver_url;
   }
 
-  if (quarantine_driver_url_) {
-    return quarantine_driver_url_.value();
+  if (auto* starting = std::get_if<Starting>(&state_); starting) {
+    return starting->driver_url;
   }
 
-  if (owned_by_parent_) {
+  if (auto* quarantined = std::get_if<Quarantined>(&state_); quarantined) {
+    return quarantined->driver_url;
+  }
+
+  if (std::holds_alternative<OwnedByParent>(state_)) {
     return kOwnedByParentUrl;
   }
 
-  if (is_composite_parent_) {
+  if (std::holds_alternative<CompositeParent>(state_)) {
     return kCompositeParent;
   }
 
@@ -433,8 +453,8 @@ std::string Node::MakeComponentMoniker() const {
 void Node::OnBind() const {
   if (controller_ref_) {
     zx::event node_token;
-    zx_status_t status =
-        driver_component_->component_instance.duplicate(ZX_RIGHT_SAME_RIGHTS, &node_token);
+    zx_status_t status = std::get<DriverComponent>(state_).component_instance.duplicate(
+        ZX_RIGHT_SAME_RIGHTS, &node_token);
     if (status != ZX_OK) {
       LOGF(ERROR, "Failed to send OnBind event: %s", zx_status_get_string(status));
       return;
@@ -466,20 +486,23 @@ void Node::Kill(KillCompleter::Sync& completer) {
 }
 
 void Node::CompleteBind(zx::result<> result) {
+  ZX_ASSERT(!std::holds_alternative<OwnedByParent>(state_));
+
   if (result.is_error()) {
     LOGF(WARNING, "Bind failed for node '%s'", MakeComponentMoniker().c_str());
-    if (GetNodeState() == NodeState::kRunning) {
+    if (GetNodeState() == NodeState::kRunning && !std::holds_alternative<Unbound>(state_)) {
       LOGF(DEBUG, "Quarantining node '%s'", MakeComponentMoniker().c_str());
       QuarantineNode();
+    } else {
+      state_ = Unbound{};
     }
-
-    driver_component_.reset();
   }
 
-  if (driver_component_) {
-    ZX_ASSERT_MSG(driver_component_->state == DriverState::kBinding,
-                  "Node %s CompleteBind() invoked at invalid state", name().c_str());
-    driver_component_->state = DriverState::kRunning;
+  if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
+    ZX_ASSERT_MSG(driver_component->state == DriverState::kBinding,
+                  "Node %s CompleteBind() invoked at invalid state %d", name().c_str(),
+                  driver_component->state);
+    driver_component->state = DriverState::kRunning;
     OnBind();
   }
 
@@ -492,7 +515,7 @@ void Node::CompleteBind(zx::result<> result) {
 
 void Node::AddToParents() {
   auto this_node = shared_from_this();
-  for (auto& parent : parents_) {
+  for (auto& parent : parents()) {
     if (auto ptr = parent.lock(); ptr) {
       ptr->children_.push_back(this_node);
       continue;
@@ -510,7 +533,7 @@ NodeShutdownCoordinator& Node::GetNodeShutdownCoordinator() {
     node_shutdown_coordinator_ = std::make_unique<NodeShutdownCoordinator>(
         this, dispatcher_, is_shutdown_test_delay_enabled, shutdown_rng);
   }
-  return *node_shutdown_coordinator_.get();
+  return *node_shutdown_coordinator_;
 }
 
 // TODO(https://fxbug.dev/42075799): If the node invoking this function cannot multibind to
@@ -518,7 +541,7 @@ NodeShutdownCoordinator& Node::GetNodeShutdownCoordinator() {
 // attempt to bind to something else.
 void Node::RemoveChild(const std::shared_ptr<Node>& child) {
   LOGF(DEBUG, "RemoveChild %s from parent %s", child->name().c_str(), name().c_str());
-  children_.erase(std::find(children_.begin(), children_.end(), child));
+  std::erase(children_, child);
   if (!unbinding_children_completers_.empty() && children_.empty()) {
     for (auto& completer : unbinding_children_completers_) {
       completer.ReplySuccess();
@@ -548,12 +571,15 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
 
   LOGF(DEBUG, "Node: %s finishing shutdown", name().c_str());
   CloseIfExists(controller_ref_);
-  CloseIfExists(node_ref_);
+  if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
+    driver_component->node_ref_.Close(ZX_OK);
+  } else if (auto* node = std::get_if<OwnedByParent>(&state_); node) {
+    node->node_ref_.Close(ZX_OK);
+  }
   devfs_device_.unpublish();
 
   // Store a shared_ptr to ourselves so we won't be freed halfway through this function.
   std::shared_ptr this_node = shared_from_this();
-  driver_component_.reset();
   for (auto& parent : parents()) {
     if (auto ptr = parent.lock(); ptr) {
       ptr->RemoveChild(this_node);
@@ -561,7 +587,13 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
     }
     LOGF(WARNING, "Parent freed before child %s could be removed from it", name().c_str());
   }
-  parents_.clear();
+  state_ = Unbound{};
+
+  if (IsComposite()) {
+    std::get<Composite>(type_).parents_.clear();
+  } else {
+    std::get<Normal>(type_).parent_ = {};
+  }
 
   shutdown_callback();
 
@@ -580,12 +612,16 @@ void Node::FinishRestart() {
 
   GetNodeShutdownCoordinator().ResetShutdown();
 
-  // Store previous url before we reset the driver_component_.
+  // Store previous url before we reset the state_.
   std::string previous_url = driver_url();
 
   // Perform cleanups for previous driver before we try to start the next driver.
-  driver_component_.reset();
-  CloseIfExists(node_ref_);
+  if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
+    driver_component->node_ref_.Close(ZX_OK);
+  } else if (auto* node = std::get_if<OwnedByParent>(&state_); node) {
+    node->node_ref_.Close(ZX_OK);
+  }
+  state_ = Unbound{};
 
   if (restart_driver_url_suffix_.has_value()) {
     auto tracker = CreateBindResultTracker();
@@ -608,16 +644,13 @@ void Node::FinishQuarantine() {
   GetNodeShutdownCoordinator().ResetShutdown();
 
   // |QuarantineNode()| sets this.
-  ZX_ASSERT_MSG(quarantine_driver_url_.has_value(), "Node::quarantine_driver_url_ was not set");
-
-  // Perform cleanups for previous driver.
-  driver_component_.reset();
-  CloseIfExists(node_ref_);
+  ZX_ASSERT_MSG(std::holds_alternative<Quarantined>(state_),
+                "Node::state_ was not set to Quarantined");
 }
 
 void Node::ClearHostDriver() {
-  if (driver_component_) {
-    driver_component_->driver = {};
+  if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
+    driver_component->driver = {};
   }
 }
 
@@ -649,9 +682,13 @@ void Node::RestartNode() {
 }
 
 void Node::QuarantineNode() {
-  // Store previous url before we reset the driver_component_.
-  std::string prev_url = driver_url();
-  quarantine_driver_url_.emplace(std::move(prev_url));
+  // Perform cleanups for previous driver.
+  if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
+    driver_component->node_ref_.Close(ZX_OK);
+  } else {
+    ZX_ASSERT(std::holds_alternative<Starting>(state_));
+  }
+  state_ = Quarantined{.driver_url = driver_url()};
 
   GetNodeShutdownCoordinator().set_shutdown_intent(ShutdownIntent::kQuarantine);
   Remove(RemovalSet::kAll, nullptr);
@@ -683,7 +720,7 @@ void Node::RemoveCompositeNodeForRebind(fit::callback<void(zx::result<>)> comple
     return;
   }
 
-  if (type_ != NodeType::kComposite) {
+  if (!IsComposite()) {
     completer(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
@@ -708,8 +745,8 @@ std::shared_ptr<BindResultTracker> Node::CreateBindResultTracker() {
         if (info.size() < 1) {
           // Failed binding attempt should make the node have an unbound url. Reset this in case
           // there was a previous driver on this node that had failed to start and was stored
-          // in quarantine_driver_url_ as part of the node quarantining.
-          self->quarantine_driver_url_.reset();
+          // as Quarantined{} in state_ as part of the node quarantining.
+          self->state_ = Unbound{};
 
           self->CompleteBind(zx::error(ZX_ERR_NOT_FOUND));
         } else if (info.size() > 1) {
@@ -811,8 +848,9 @@ void Node::SetCompositeParentProperties(const fdf::NodePropertyDictionary2& pare
     };
   });
 
-  ZX_ASSERT(primary_index_ < parents_.size());
-  const auto& default_node_properties = parent_properties[primary_index_].properties();
+  auto& composite = std::get<Composite>(type_);
+  ZX_ASSERT(composite.primary_index_ < composite.parents_.size());
+  const auto& default_node_properties = parent_properties[composite.primary_index_].properties();
   properties.emplace_back(PropertiesEntry{
       .name = "default",
       .properties = ToProperty(default_node_properties),
@@ -831,6 +869,10 @@ std::vector<fdf::BusInfo> Node::GetBusTopology() const {
   std::ranges::reverse(segments);
   return segments;
 }
+
+Node::OwnedByParent::OwnedByParent(fidl::ServerEnd<fdf::Node> node, Node* child)
+    : node_ref_(child->dispatcher_, std::move(node), child,
+                [](Node* node, fidl::UnbindInfo info) { node->OnNodeServerUnbound(info); }) {}
 
 fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
     fuchsia_driver_framework::NodeAddArgs args,
@@ -860,8 +902,8 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
       return fit::as_error(fdf::NodeError::kNameAlreadyExists);
     }
   };
-  std::shared_ptr child = std::make_shared<Node>(
-      name, std::vector<std::weak_ptr<Node>>{weak_from_this()}, *node_manager_, dispatcher_);
+  std::shared_ptr child =
+      std::make_shared<Node>(name, weak_from_this(), *node_manager_, dispatcher_);
 
   auto& fdf_offers = args.offers2();
   std::vector<fuchsia_driver_framework::NodeProperty2> properties;
@@ -980,10 +1022,7 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
                                    fidl::kIgnoreBindingClosure);
   }
   if (node.is_valid()) {
-    child->owned_by_parent_ = true;
-    child->node_ref_.emplace(
-        dispatcher_, std::move(node), child.get(),
-        [](Node* node, fidl::UnbindInfo info) { node->OnNodeServerUnbound(info); });
+    child->state_.emplace<OwnedByParent>(std::move(node), child.get());
   } else {
     // We don't care about tracking binds here, sending nullptr is fine.
     (*node_manager_)->Bind(*child, nullptr);
@@ -1065,7 +1104,6 @@ void Node::AddChild(fuchsia_driver_framework::NodeAddArgs args,
 }
 
 void Node::OnNodeServerUnbound(fidl::UnbindInfo info) {
-  node_ref_.reset();
   // If the unbind is initiated from us, we don't need to do anything to handle
   // the closure.
   if (info.is_user_initiated()) {
@@ -1073,7 +1111,8 @@ void Node::OnNodeServerUnbound(fidl::UnbindInfo info) {
   }
 
   // If the driver fails to bind to the node, don't remove the node.
-  if (driver_component_.has_value() && driver_component_->state == DriverState::kBinding) {
+  if (auto* driver_component = std::get_if<DriverComponent>(&state_);
+      driver_component && driver_component->state == DriverState::kBinding) {
     LOGF(WARNING, "The driver for node %s failed to bind.", name().c_str());
     return;
   }
@@ -1122,7 +1161,7 @@ void Node::RequestBind(RequestBindRequestView request, RequestBindCompleter::Syn
 
 void Node::BindHelper(bool force_rebind, std::optional<std::string> driver_url_suffix,
                       fit::callback<void(zx_status_t)> on_bind_complete) {
-  if (driver_component_.has_value() && !force_rebind) {
+  if (std::holds_alternative<DriverComponent>(state_) && !force_rebind) {
     on_bind_complete(ZX_ERR_ALREADY_BOUND);
     return;
   }
@@ -1137,7 +1176,7 @@ void Node::BindHelper(bool force_rebind, std::optional<std::string> driver_url_s
     on_bind_complete(result.status_value());
   };
 
-  if (driver_component_.has_value()) {
+  if (std::holds_alternative<DriverComponent>(state_)) {
     RestartNodeWithRematch(driver_url_suffix, std::move(completer_wrapper));
     return;
   }
@@ -1210,6 +1249,8 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
       fdf_internal::ProgramValue(start_info.program(), "use_next_vdso").value_or("") == "true";
   bool use_dynamic_linker =
       fdf_internal::ProgramValue(start_info.program(), "use_dynamic_linker").value_or("") == "true";
+
+  state_ = Starting{.driver_url = std::string(url)};
 
   if (host_restart_on_crash && colocate) {
     LOGF(ERROR,
@@ -1312,15 +1353,10 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
   }
   // Bind the Node associated with the driver.
   auto [client_end, server_end] = fidl::Endpoints<fdf::Node>::Create();
-  node_ref_.emplace(dispatcher_, std::move(server_end), this,
-                    [](Node* node, fidl::UnbindInfo info) { node->OnNodeServerUnbound(info); });
 
   LOGF(INFO, "Binding %.*s to %s", static_cast<int>(url.size()), url.data(), name().c_str());
   // Start the driver within the driver host.
   auto driver_endpoints = fidl::Endpoints<fuchsia_driver_host::Driver>::Create();
-
-  // Starting a new driver. Reset the quarantine url if we had one.
-  quarantine_driver_url_.reset();
 
   zx::event node_token;
   if (start_info.has_component_instance()) {
@@ -1333,8 +1369,9 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
   zx::event node_token_dup;
   ZX_ASSERT(node_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &node_token_dup) == ZX_OK);
 
-  driver_component_.emplace(*this, std::string(url), std::move(controller),
-                            std::move(driver_endpoints.client), std::move(node_token_dup));
+  state_.emplace<DriverComponent>(*this, std::string(url), std::move(controller),
+                                  std::move(server_end), std::move(driver_endpoints.client),
+                                  std::move(node_token_dup));
   driver_host_.value()->Start(std::move(client_end), name_, properties, symbols, offers, start_info,
                               std::move(node_token), std::move(driver_endpoints.server),
                               [weak_self = weak_from_this(), name = name_,
@@ -1361,13 +1398,8 @@ void Node::StartDriverWithDynamicLinker(
     std::string_view url, fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller,
     fit::callback<void(zx::result<>)> cb) {
   auto [client_end, server_end] = fidl::Endpoints<fdf::Node>::Create();
-  node_ref_.emplace(dispatcher_, std::move(server_end), this,
-                    [](Node* node, fidl::UnbindInfo info) { node->OnNodeServerUnbound(info); });
 
   auto driver_endpoints = fidl::Endpoints<fuchsia_driver_host::Driver>::Create();
-
-  // Starting a new driver. Reset the quarantine url if we had one.
-  quarantine_driver_url_.reset();
 
   zx::event node_token, node_token_dup;
   if (start_args.start_info_.component_instance().has_value()) {
@@ -1377,16 +1409,17 @@ void Node::StartDriverWithDynamicLinker(
   }
   ZX_ASSERT(node_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &node_token_dup) == ZX_OK);
 
-  driver_component_.emplace(*this, std::string(url), std::move(controller),
-                            std::move(driver_endpoints.client), std::move(node_token_dup));
+  state_.emplace<DriverComponent>(*this, std::string(url), std::move(controller),
+                                  std::move(server_end), std::move(driver_endpoints.client),
+                                  std::move(node_token_dup));
   driver_host_.value()->StartWithDynamicLinker(std::move(client_end), name_, std::move(load_args),
                                                std::move(start_args), std::move(node_token),
                                                std::move(driver_endpoints.server), std::move(cb));
 }
 
 bool Node::EvaluateRematchFlags(fuchsia_driver_development::RestartRematchFlags rematch_flags,
-                                std::string_view requested_url) {
-  if (type_ == NodeType::kComposite &&
+                                std::string_view requested_url) const {
+  if (IsComposite() &&
       !(rematch_flags & fuchsia_driver_development::RestartRematchFlags::kCompositeSpec)) {
     return false;
   }
@@ -1420,14 +1453,15 @@ void Node::StopDriver() {
   if (!HasDriver()) {
     return;
   }
+  auto& driver_component = std::get<DriverComponent>(state_);
 
-  if (driver_component_->state == DriverState::kBinding) {
+  if (driver_component.state == DriverState::kBinding) {
     LOGF(WARNING, "Stopping driver '%s' for node '%s' while bind is in process",
-         driver_component_->driver_url.c_str(), MakeComponentMoniker().c_str());
+         driver_component.driver_url.c_str(), MakeComponentMoniker().c_str());
     return;
   }
 
-  fidl::OneWayStatus result = driver_component_->driver->Stop();
+  fidl::OneWayStatus result = driver_component.driver->Stop();
   if (result.ok()) {
     return;  // We'll now wait for the channel to close
   }
@@ -1442,8 +1476,8 @@ void Node::StopDriverComponent() {
   ZX_ASSERT_MSG(GetNodeState() == NodeState::kWaitingOnDriver,
                 "StopDriverComponent called in invalid node state: %s",
                 GetNodeShutdownCoordinator().NodeStateAsString());
-
-  if (!driver_component_) {
+  auto* driver_component = std::get_if<DriverComponent>(&state_);
+  if (!driver_component) {
     return;
   }
 
@@ -1451,7 +1485,7 @@ void Node::StopDriverComponent() {
   // server of a `ComponentController` protocol is expected to send an epitaph
   // before closing the associated connection.
   auto this_node = shared_from_this();
-  driver_component_->component_controller_ref.Close(ZX_OK);
+  driver_component->component_controller_ref.Close(ZX_OK);
   if (!node_manager_.has_value()) {
     return;
   }
@@ -1470,7 +1504,10 @@ void Node::StopDriverComponent() {
         }
 
         LOGF(DEBUG, "Destroyed driver component for %s", self->MakeComponentMoniker().c_str());
-        self->driver_component_->state = DriverState::kStopped;
+        if (auto* driver_component = std::get_if<DriverComponent>(&self->state_);
+            driver_component) {
+          driver_component->state = DriverState::kStopped;
+        }
         self->GetNodeShutdownCoordinator().CheckNodeState();
       });
 }
@@ -1495,8 +1532,8 @@ void Node::on_fidl_error(fidl::UnbindInfo info) {
 
   if (GetNodeState() == NodeState::kWaitingOnDriverComponent) {
     LOGF(DEBUG, "Node: %s: driver channel had expected shutdown.", name().c_str());
-    if (driver_component_) {
-      driver_component_->state = DriverState::kStopped;
+    if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
+      driver_component->state = DriverState::kStopped;
     }
     GetNodeShutdownCoordinator().CheckNodeState();
     return;
@@ -1510,7 +1547,7 @@ void Node::on_fidl_error(fidl::UnbindInfo info) {
   }
 
   // If the driver fails to bind to the node, don't remove the node.
-  if (driver_component_.has_value() && driver_component_->state == DriverState::kBinding) {
+  if (IsPendingBind()) {
     LOGF(DEBUG, "Node: %s: driver channel closed during binding.", MakeComponentMoniker().c_str());
     return;
   }
@@ -1544,6 +1581,7 @@ fdf::NodePropertyDictionary2 Node::GetNodePropertyDict() const {
 Node::DriverComponent::DriverComponent(
     Node& node, std::string url,
     fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller,
+    fidl::ServerEnd<fuchsia_driver_framework::Node> node_server,
     fidl::ClientEnd<fuchsia_driver_host::Driver> driver, zx::event component_inst)
     : component_controller_ref(
           node.dispatcher_, std::move(controller), &node,
@@ -1554,6 +1592,8 @@ Node::DriverComponent::DriverComponent(
               node->Remove(RemovalSet::kAll, nullptr);
             }
           }),
+      node_ref_(node.dispatcher_, std::move(node_server), &node,
+                [](Node* node, fidl::UnbindInfo info) { node->OnNodeServerUnbound(info); }),
       driver(std::move(driver), node.dispatcher_, &node),
       driver_url(std::move(url)),
       component_instance(std::move(component_inst)) {
@@ -1602,7 +1642,7 @@ void Node::Rebind(RebindRequestView request, RebindCompleter::Sync& completer) {
     }
   };
 
-  if (kEnableCompositeNodeSpecRebind && type_ == NodeType::kComposite) {
+  if (kEnableCompositeNodeSpecRebind && IsComposite()) {
     node_manager_.value()->RebindComposite(name_, url, std::move(rebind_callback));
     return;
   }

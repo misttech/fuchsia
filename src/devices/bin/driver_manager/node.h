@@ -17,6 +17,7 @@
 #include <list>
 #include <memory>
 #include <utility>
+#include <variant>
 
 #include "src/devices/bin/driver_manager/bind/bind_result_tracker.h"
 #include "src/devices/bin/driver_manager/controller_allowlist_passthrough.h"
@@ -114,9 +115,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
              public std::enable_shared_from_this<Node>,
              public NodeShutdownBridge {
  public:
-  Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents, NodeManager* node_manager,
-       async_dispatcher_t* dispatcher, uint32_t primary_index = 0,
-       NodeType type = NodeType::kNormal);
+  Node(std::string_view name, std::weak_ptr<Node> parent, NodeManager* node_manager,
+       async_dispatcher_t* dispatcher);
+  Node(std::string_view name, std::vector<std::weak_ptr<Node>> parents,
+       std::vector<std::string> parents_names, NodeManager* node_manager,
+       async_dispatcher_t* dispatcher, uint32_t primary_index);
 
   ~Node() override;
 
@@ -132,12 +135,13 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // NodeShutdownBridge
   // Exposed for testing.
   bool HasDriverComponent() const override {
-    return driver_component_.has_value() && driver_component_->state != DriverState::kStopped;
+    auto* driver_component = std::get_if<DriverComponent>(&state_);
+    return driver_component && driver_component->state != DriverState::kStopped;
   }
 
   void OnBind() const;
 
-  bool is_bound() const { return driver_component_.has_value(); }
+  bool is_bound() const { return std::holds_alternative<DriverComponent>(state_); }
 
   // Begin the removal process for a Node. This function ensures that a Node is
   // only removed after all of its children are removed. It also ensures that
@@ -186,7 +190,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
                    fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller,
                    fit::callback<void(zx::result<>)> cb);
 
-  bool IsComposite() const { return type_ == NodeType::kComposite; }
+  bool IsComposite() const { return std::holds_alternative<Composite>(type_); }
 
   // Exposed for testing.
   // Set properties to non-composite node properties containing a clone of `properties`.
@@ -201,7 +205,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   //  - the url matches the requested_url and the 'requested' flag is available.
   //  - the url does not match and the 'non_requested' flag is available.
   bool EvaluateRematchFlags(fuchsia_driver_development::RestartRematchFlags rematch_flags,
-                            std::string_view requested_url);
+                            std::string_view requested_url) const;
 
   // Creates the node's topological path by combining each primary parent's name together,
   // separated by '/'.
@@ -215,7 +219,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   // Exposed for testing.
   Node* GetPrimaryParent() const {
-    return parents_.empty() ? nullptr : parents_[primary_index_].lock().get();
+    if (auto* composite = std::get_if<Composite>(&type_); composite) {
+      return composite->parents_[composite->primary_index_].lock().get();
+    }
+    auto parent = std::get<Normal>(type_).parent_.lock();
+    return parent ? parent.get() : nullptr;
   }
 
   // This should be used on the root node. Install the root node at the top of the devfs filesystem.
@@ -238,7 +246,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   const std::string& name() const { return name_; }
 
-  NodeType type() const { return type_; }
+  NodeType type() const {
+    return std::holds_alternative<Normal>(type_) ? NodeType::kNormal : NodeType::kComposite;
+  }
 
   const DriverHost* driver_host() const {
     if (node_manager_.has_value() && node_manager_.value()->IsDriverHostValid(*driver_host_)) {
@@ -250,11 +260,17 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   const std::string& driver_url() const;
 
-  bool quarantined() const {
-    return !driver_component_.has_value() && quarantine_driver_url_.has_value();
-  }
+  bool quarantined() const { return std::holds_alternative<Quarantined>(state_); }
 
-  const std::vector<std::weak_ptr<Node>>& parents() const { return parents_; }
+  std::span<const std::weak_ptr<Node>> parents() const {
+    if (IsComposite()) {
+      return std::get<Composite>(type_).parents_;
+    }
+    if (auto& parent = std::get<Normal>(type_).parent_; parent.lock() != nullptr) {
+      return std::span(&parent, 1);
+    }
+    return {};
+  }
 
   const std::list<std::shared_ptr<Node>>& children() const { return children_; }
 
@@ -279,9 +295,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     dictionary_ref_ = dictionary_ref;
   }
 
-  void MarkAsCompositeParent() { is_composite_parent_ = true; }
+  void MarkAsCompositeParent() { state_ = CompositeParent{}; }
 
-  void UnmarkAsCompositeParent() { is_composite_parent_ = false; }
+  void UnmarkAsCompositeParent() { state_ = Unbound{}; }
 
   std::optional<uint64_t> dictionary_ref() { return dictionary_ref_; }
 
@@ -310,8 +326,9 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   }
 
   std::optional<zx_koid_t> token_koid() const {
-    return driver_component_.has_value() ? std::optional(driver_component_->component_instance_koid)
-                                         : std::nullopt;
+    auto* driver_component = std::get_if<DriverComponent>(&state_);
+    return driver_component ? std::optional(driver_component->component_instance_koid)
+                            : std::nullopt;
   }
   std::vector<fuchsia_driver_framework::BusInfo> GetBusTopology() const;
 
@@ -321,6 +338,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   struct DriverComponent {
     DriverComponent(Node& node, std::string url,
                     fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller,
+                    fidl::ServerEnd<fuchsia_driver_framework::Node> node_server,
                     fidl::ClientEnd<fuchsia_driver_host::Driver> driver,
                     zx::event component_instance);
 
@@ -328,6 +346,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     // When this is closed with an epitaph it signals to the Component Framework
     // that this driver component has stopped.
     fidl::ServerBinding<fuchsia_component_runner::ComponentController> component_controller_ref;
+    fidl::ServerBinding<fuchsia_driver_framework::Node> node_ref_;
     fidl::WireClient<fuchsia_driver_host::Driver> driver;
     std::string driver_url;
     zx::event component_instance;
@@ -392,14 +411,16 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   void FinishShutdown(fit::callback<void()> shutdown_callback) override;
   bool HasChildren() const override { return !children_.empty(); }
   bool HasDriver() const override {
-    return driver_component_.has_value() && driver_component_->driver;
+    return std::holds_alternative<DriverComponent>(state_) &&
+           std::get<DriverComponent>(state_).driver;
   }
 
   bool IsPendingBind() const override {
-    if (!driver_component_) {
+    auto* driver_component = std::get_if<DriverComponent>(&state_);
+    if (!driver_component) {
       return false;
     }
-    return driver_component_->driver && driver_component_->state == DriverState::kBinding;
+    return driver_component->driver && driver_component->state == DriverState::kBinding;
   }
 
   void BindHelper(bool force_rebind, std::optional<std::string> driver_url_suffix,
@@ -462,12 +483,17 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   std::string name_;
 
-  NodeType type_;
+  struct Normal {
+    std::weak_ptr<Node> parent_;
+  };
+  struct Composite {
+    std::vector<std::weak_ptr<Node>> parents_;
+    std::vector<std::string> parents_names_;
+    uint32_t primary_index_;
+  };
 
-  // If this is a composite device, this stores the list of each parent's names.
-  std::vector<std::string> parents_names_;
-  std::vector<std::weak_ptr<Node>> parents_;
-  uint32_t primary_index_ = 0;
+  std::variant<Normal, Composite> type_;
+
   std::list<std::shared_ptr<Node>> children_;
   fit::nullable<NodeManager*> node_manager_;
   async_dispatcher_t* const dispatcher_;
@@ -507,13 +533,28 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Invoked when the node has been fully removed.
   fit::callback<void()> remove_complete_callback_;
 
-  std::optional<DriverComponent> driver_component_;
-  std::optional<std::string> quarantine_driver_url_;
-  std::optional<fidl::ServerBinding<fuchsia_driver_framework::Node>> node_ref_;
-  std::optional<fidl::ServerBinding<fuchsia_driver_framework::NodeController>> controller_ref_;
+  struct Unbound {};
+  struct Starting {
+    std::string driver_url;
+  };
+  struct OwnedByParent {
+    explicit OwnedByParent(fidl::ServerEnd<fuchsia_driver_framework::Node> node, Node* child);
+    fidl::ServerBinding<fuchsia_driver_framework::Node> node_ref_;
+  };
+  struct CompositeParent {};
+  struct Quarantined {
+    std::string driver_url;
+  };
+  // Valid State transitions:
+  // * Unbound -> Starting, OwnedByParent, CompositeParent
+  // * Starting -> Unbound, DriverComponent, Quarantined
+  // * OwnedByParent -> Unbound
+  // * CompositeParent -> Unbound
+  // * DriverComponent -> Unbound, Quarantined
+  std::variant<Unbound, Starting, OwnedByParent, CompositeParent, DriverComponent, Quarantined>
+      state_;
 
-  bool owned_by_parent_ = false;
-  bool is_composite_parent_ = false;
+  std::optional<fidl::ServerBinding<fuchsia_driver_framework::NodeController>> controller_ref_;
 
   std::unique_ptr<NodeShutdownCoordinator> node_shutdown_coordinator_;
 

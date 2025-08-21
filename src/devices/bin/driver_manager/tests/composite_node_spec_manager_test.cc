@@ -104,8 +104,8 @@ class CompositeNodeSpecManagerTest : public zxtest::Test {
         std::make_unique<driver_manager::CompositeNodeSpecManager>(&bridge_);
   }
 
-  fdf::ParentSpec2 MakeParentSpec(std::vector<fdf::BindRule2> bind_rules,
-                                  std::vector<fdf::NodeProperty2> properties) {
+  static fdf::ParentSpec2 MakeParentSpec(std::vector<fdf::BindRule2> bind_rules,
+                                         std::vector<fdf::NodeProperty2> properties) {
     return fdf::ParentSpec2{{
         .bind_rules = std::move(bind_rules),
         .properties = std::move(properties),
@@ -135,9 +135,9 @@ class CompositeNodeSpecManagerTest : public zxtest::Test {
     return add_spec_result.value();
   }
 
-  std::shared_ptr<driver_manager::Node> CreateNode(const char* name) {
-    return std::make_shared<driver_manager::Node>(
-        "node", std::vector<std::weak_ptr<driver_manager::Node>>{}, nullptr, loop_.dispatcher());
+  std::shared_ptr<driver_manager::Node> CreateNode(const char* name) const {
+    return std::make_shared<driver_manager::Node>("node", std::weak_ptr<driver_manager::Node>{},
+                                                  nullptr, loop_.dispatcher());
   }
 
   void VerifyRemoveInvokedForSpec(bool expected, const std::string& name) {
