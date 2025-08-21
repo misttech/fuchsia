@@ -12,7 +12,6 @@ use futures::TryStreamExt;
 use starnix_core::device::serial::SerialDevice;
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::task::{CurrentTask, Kernel};
-use starnix_core::vfs::FsString;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::BytesFile;
 use starnix_logging::{log_error, log_info, log_warn};
@@ -40,75 +39,6 @@ pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, current_task: &Current
         "display".into(),
         build_display_comms_directory,
     );
-
-    struct Descriptor {
-        socket_label: FsString,
-        dev_node_name: FsString,
-    }
-
-    let descriptors = vec![
-        Descriptor { socket_label: b"/dev/nanohub".into(), dev_node_name: b"nanohub".into() },
-        Descriptor {
-            socket_label: b"/dev/nanohub_brightness".into(),
-            dev_node_name: b"nanohub_brightness".into(),
-        },
-        Descriptor { socket_label: b"/dev/nanohub_bt".into(), dev_node_name: b"nanohub_bt".into() },
-        Descriptor {
-            socket_label: b"/dev/nanohub_console".into(),
-            dev_node_name: b"nanohub_console".into(),
-        },
-        Descriptor {
-            socket_label: b"/dev/nanohub_debug_log_data_link".into(),
-            dev_node_name: b"nanohub_debug_log_data_link".into(),
-        },
-        Descriptor {
-            socket_label: b"/dev/nanohub_debug_log".into(),
-            dev_node_name: b"nanohub_debug_log".into(),
-        },
-        Descriptor {
-            socket_label: b"/dev/nanohub_display".into(),
-            dev_node_name: b"nanohub_display".into(),
-        },
-        Descriptor {
-            socket_label: b"/dev/nanohub_logs".into(),
-            dev_node_name: b"nanohub_logs".into(),
-        },
-        Descriptor {
-            socket_label: b"/dev/nanohub_metrics".into(),
-            dev_node_name: b"nanohub_metrics".into(),
-        },
-        Descriptor {
-            socket_label: b"/dev/nanohub_pele".into(),
-            dev_node_name: b"nanohub_pele".into(),
-        },
-        Descriptor {
-            socket_label: b"/dev/nanohub_render".into(),
-            dev_node_name: b"nanohub_render".into(),
-        },
-        Descriptor {
-            socket_label: b"/dev/nanohub_rpc0".into(),
-            dev_node_name: b"nanohub_rpc0".into(),
-        },
-        Descriptor {
-            socket_label: b"/dev/nanohub_rpc1".into(),
-            dev_node_name: b"nanohub_rpc1".into(),
-        },
-        Descriptor {
-            socket_label: b"/dev/nanohub_touch".into(),
-            dev_node_name: b"nanohub_touch".into(),
-        },
-    ];
-
-    for descriptor in descriptors {
-        register_socket_tunnel_device(
-            locked,
-            current_task,
-            descriptor.socket_label.as_ref(),
-            descriptor.dev_node_name.as_ref(),
-            b"nanohub".into(),
-            build_device_directory,
-        );
-    }
 
     // /dev/nanohub_comms requires a set of additional sysfs nodes, so create this route
     // with a specialized directory.
