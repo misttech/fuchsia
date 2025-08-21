@@ -262,7 +262,7 @@ impl TraceTask {
 
         let res = futures::io::copy(&self.read_socket, &mut writer)
             .await
-            .map_err(|e| TracingError::GeneralError(e.into()));
+            .map_err(|e| TracingError::GeneralError(format!("{e:?}")));
 
         if res.is_ok() { self.shutdown().await } else { Err(res.err().unwrap()) }
     }
@@ -278,13 +278,13 @@ impl TraceTask {
     {
         match futures::io::copy(&self.read_socket, &mut writer)
             .await
-            .map_err(|e| TracingError::GeneralError(e.into()))
+            .map_err(|e| TracingError::RecordingStop(e.to_string()))
         {
             Ok(_) => match self.await {
                 Some(r) => Ok(r),
                 None => Err(TracingError::RecordingStop("could not await task".into())),
             },
-            Err(e) => Err(TracingError::GeneralError(e.into())),
+            Err(e) => Err(e),
         }
     }
 }

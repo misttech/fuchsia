@@ -277,7 +277,7 @@ impl FidlProtocol for TracingProtocol {
                 .map(|(_, v)| async move {
                     match File::create(v.output_file)
                         .await
-                        .map_err(|e| TracingError::GeneralError(e.into()))
+                        .map_err(|e| TracingError::GeneralError(format!("{e:?}")))
                     {
                         Ok(output) => v.task.stop_and_receive_data(output).await,
                         Err(e) => Err(e),

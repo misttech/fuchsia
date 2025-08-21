@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_tracing_controller::{self as trace, StartError};
+use fidl_fuchsia_tracing_controller::{self as trace, RecordingError, StartError};
 
 mod trace_task;
 mod triggers;
@@ -39,8 +39,8 @@ pub enum TracingError {
     #[error("fidl error: {0:?}")]
     FidlError(#[from] fidl::Error),
 
-    #[error("general error: {0:?}")]
-    GeneralError(#[from] anyhow::Error),
+    #[error("general error: {0}")]
+    GeneralError(String),
 }
 
 impl From<StartError> for TracingError {
@@ -50,7 +50,23 @@ impl From<StartError> for TracingError {
             StartError::AlreadyStarted => Self::RecordingAlreadyStarted,
             StartError::Stopping => Self::RecordingStart("tracing is stopping".into()),
             StartError::Terminating => Self::RecordingStart("tracing is terminating".into()),
-            e => Self::GeneralError(anyhow::anyhow!("{e:?}")),
+            e => Self::GeneralError(format!("Unknown StartError: {e:?}")),
+        }
+    }
+}
+
+impl Into<RecordingError> for TracingError {
+    fn into(self) -> RecordingError {
+        match self {
+            TracingError::TargetProxyOpen => RecordingError::TargetProxyOpen,
+            TracingError::RecordingStart(_) => RecordingError::RecordingStart,
+            TracingError::RecordingAlreadyStarted => RecordingError::RecordingAlreadyStarted,
+            TracingError::RecordingStop(_) => RecordingError::RecordingStop,
+            TracingError::DuplicateTraceFile(_) => RecordingError::DuplicateTraceFile,
+            TracingError::NoSuchTraceFile(_) => RecordingError::NoSuchTraceFile,
+            TracingError::FidlError(_) | TracingError::GeneralError(_) => {
+                RecordingError::RecordingStart
+            }
         }
     }
 }
@@ -63,7 +79,7 @@ impl PartialEq for TracingError {
             (Self::DuplicateTraceFile(l0), Self::DuplicateTraceFile(r0)) => l0 == r0,
             (Self::NoSuchTraceFile(l0), Self::NoSuchTraceFile(r0)) => l0 == r0,
             (Self::FidlError(l0), Self::FidlError(r0)) => l0.to_string() == r0.to_string(),
-            (Self::GeneralError(l0), Self::GeneralError(r0)) => l0.to_string() == r0.to_string(),
+            (Self::GeneralError(l0), Self::GeneralError(r0)) => l0 == r0,
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
     }
@@ -72,8 +88,7 @@ impl PartialEq for TracingError {
 pub(crate) async fn trace_shutdown(
     proxy: &trace::SessionProxy,
 ) -> Result<trace::StopResult, TracingError> {
-    log::info!("Calling stop_tracing.");
-    proxy
+    let res = proxy
         .stop_tracing(&trace::StopOptions { write_results: Some(true), ..Default::default() })
         .await
         .map_err(|e| {
@@ -84,5 +99,6 @@ pub(crate) async fn trace_shutdown(
             let msg = format!("Received stop error: {:?}", e);
             log::warn!("{msg}");
             TracingError::RecordingStop(msg)
-        })
+        });
+    res
 }

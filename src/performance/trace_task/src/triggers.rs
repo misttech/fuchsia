@@ -14,6 +14,15 @@ pub enum TriggerAction {
     Terminate,
 }
 
+impl From<trace::Action> for TriggerAction {
+    fn from(t: trace::Action) -> Self {
+        match t {
+            trace::Action::Terminate => Self::Terminate,
+            _ => panic!("Unknown trigger action: {t:?}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Trigger {
     /// See fuchsia.tracing.controller.Controller.WatchAlert for more info.
@@ -21,6 +30,17 @@ pub struct Trigger {
     pub action: Option<TriggerAction>,
 }
 
+impl From<trace::Trigger> for Trigger {
+    fn from(t: trace::Trigger) -> Self {
+        Self { alert: t.alert, action: t.action.map(Into::into) }
+    }
+}
+
+impl From<&trace::Trigger> for Trigger {
+    fn from(t: &trace::Trigger) -> Self {
+        Self { alert: t.alert.clone(), action: t.action.map(Into::into) }
+    }
+}
 // A wrapper type for ffx::Trigger that does some unwrapping on allocation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TriggerSetItem {
@@ -75,12 +95,12 @@ impl<'a> TriggersWatcher<'a> {
                     let mut watch_alert = controller.watch_alert().fuse();
                     futures::select! {
                         _ = shutdown_fut => {
-                            log::debug!("received shutdown alert");
+                            log::info!("received shutdown alert");
                             break;
                         }
                         alert = watch_alert => {
                             let Ok(alert) = alert else { break };
-                            log::trace!("alert received: {}", alert);
+                            log::info!("alert received: {}", alert);
                             let lookup_item = TriggerSetItem::lookup(alert);
                             if set.contains(&lookup_item) {
                                 return set.get(&lookup_item).map(|s| s.action.clone());

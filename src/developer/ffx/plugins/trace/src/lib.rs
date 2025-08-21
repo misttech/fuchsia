@@ -279,7 +279,6 @@ pub struct TraceTool {
     proxy: Deferred<TracingProxy>,
     #[with(deferred(moniker("/core/trace_manager")))]
     provisioner: Deferred<ProvisionerProxy>,
-    // TODO(wilkinsonclay): create session_manager component.
     #[with(deferred(moniker("/core/trace_manager/trace_session_manager")))]
     session_manager: Deferred<SessionManagerProxy>,
     #[command]

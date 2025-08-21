@@ -96,6 +96,7 @@ fuchsia_package_with_single_component("trace_manager") {
     "//src/performance/cpuperf_provider",
     "//src/performance/ktrace_provider",
     "//src/performance/perfetto-bridge",
+    "//src/performance/trace_session_manager",
   ]
   visibility = [
     ":*",

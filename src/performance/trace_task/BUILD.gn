@@ -15,7 +15,6 @@ rustc_library("trace_task") {
     "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-channel",
     "//third_party/rust_crates:async-lock",
     "//third_party/rust_crates:futures",

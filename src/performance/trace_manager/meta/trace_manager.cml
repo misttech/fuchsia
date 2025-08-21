@@ -25,6 +25,10 @@
             name: "perfetto-bridge",
             url: "perfetto-bridge#meta/perfetto-bridge.cm",
         },
+        {
+            name: "trace_session_manager",
+            url: "trace_session_manager#meta/trace_session_manager.cm",
+        },
     ],
     collections: [
         {
@@ -89,6 +93,15 @@
             from: "parent",
             to: [ "#ktrace_provider" ],
         },
+        {
+            protocol: [
+                "fuchsia.tracing.controller.Controller",
+                "fuchsia.tracing.controller.Provisioner",
+                "fuchsia.tracing.controller.Session",
+            ],
+            from: "self",
+            to: "#trace_session_manager",
+        },
     ],
     expose: [
         {
@@ -110,6 +123,10 @@
         {
             protocol: "fuchsia.tracing.perfetto.ProducerConnector",
             from: "#perfetto-bridge",
+        },
+        {
+            protocol: "fuchsia.tracing.controller.SessionManager",
+            from: "#trace_session_manager",
         },
     ],
 }
