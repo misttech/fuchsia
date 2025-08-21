@@ -11,6 +11,7 @@
 #include <linux/capability.h>
 #include <linux/if_tun.h>
 
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {

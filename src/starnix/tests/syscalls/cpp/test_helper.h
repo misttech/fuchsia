@@ -23,10 +23,6 @@
 #include <linux/netlink.h>
 #include <linux/taskstats.h>
 
-#include "capabilities_helper.h"
-#include "gtest/gtest.h"
-#include "syscall_matchers.h"
-
 #define SAFE_SYSCALL(X)                                                             \
   ({                                                                                \
     auto retval = (X);                                                              \
@@ -154,7 +150,6 @@ class ScopedTempFD {
   const std::string &name() const { return name_; }
   int fd() const { return fd_.get(); }
 
- public:
   std::string name_;
   fbl::unique_fd fd_;
 };
@@ -222,7 +217,7 @@ struct MemoryMappingExt : public MemoryMapping {
   std::vector<std::string> vm_flags;
 
  public:
-  MemoryMappingExt(const MemoryMapping &mapping) : MemoryMapping(mapping) {}
+  explicit MemoryMappingExt(const MemoryMapping &mapping) : MemoryMapping(mapping) {}
   bool ContainsFlag(std::string_view flag) const {
     return std::ranges::find(vm_flags, flag) != vm_flags.end();
   }
@@ -406,7 +401,9 @@ std::optional<size_t> parse_field_in_kb(std::string_view value);
 // A semaphore implemented with EventFd. Works across Threads and Forks.
 class EventFdSem {
  public:
-  EventFdSem(int initial_value) { fd_ = fbl::unique_fd(eventfd(initial_value, EFD_SEMAPHORE)); }
+  explicit EventFdSem(int initial_value) {
+    fd_ = fbl::unique_fd(eventfd(initial_value, EFD_SEMAPHORE));
+  }
 
   ~EventFdSem() = default;
   EventFdSem(EventFdSem &&other) noexcept = default;

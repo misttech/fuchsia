@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 constexpr char CONTROLLERS_FILE[] = "cgroup.controllers";

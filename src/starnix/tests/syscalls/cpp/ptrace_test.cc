@@ -31,6 +31,7 @@
 
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 constexpr int kOriginalSigno = SIGUSR1;

@@ -22,6 +22,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <fstream>
 #include <optional>
 #include <string_view>
@@ -31,6 +32,8 @@
 
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 namespace test_helper {
 
@@ -38,8 +41,8 @@ namespace test_helper {
   ::testing::AssertionResult result = ::testing::AssertionSuccess();
   while (wait_for_all_children_ || !child_pids_.empty()) {
     int wstatus;
-    pid_t pid;
-    if ((pid = wait(&wstatus)) == -1) {
+    pid_t pid = wait(&wstatus);
+    if (pid == -1) {
       if (errno == EINTR) {
         continue;
       }
@@ -53,7 +56,7 @@ namespace test_helper {
     }
     bool check_result = wait_for_all_children_;
     if (!check_result) {
-      auto it = std::find(child_pids_.begin(), child_pids_.end(), pid);
+      auto it = std::ranges::find(child_pids_, pid);
       if (it != child_pids_.end()) {
         child_pids_.erase(it);
         check_result = true;
@@ -115,8 +118,9 @@ pid_t ForkHelper::RunInForkedProcess(fit::function<void()> action) {
 
 CloneHelper::CloneHelper() {
   // Stack setup
-  this->_childStack = (uint8_t *)mmap(NULL, CloneHelper::_childStackSize, PROT_WRITE | PROT_READ,
-                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  this->_childStack =
+      static_cast<uint8_t *>(mmap(nullptr, CloneHelper::_childStackSize, PROT_WRITE | PROT_READ,
+                                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
   if (this->_childStack == MAP_FAILED) {
     std::cerr << "CloneHelper mmap failed, errno was set to '" << strerror(errno) << "' (" << errno
               << ").\n";
@@ -164,7 +168,7 @@ int SignalMaskHelper::timedWaitForSignal(int signal, time_t msec) {
   return static_cast<int>(TEMP_FAILURE_RETRY(sigtimedwait(&this->_sigset, &siginfo, &ts)));
 }
 
-void SignalMaskHelper::restoreSigmask() { sigprocmask(SIG_SETMASK, &this->_sigmaskCopy, NULL); }
+void SignalMaskHelper::restoreSigmask() { sigprocmask(SIG_SETMASK, &this->_sigmaskCopy, nullptr); }
 
 ScopedTempFD::ScopedTempFD() : name_("/tmp/proc_test_file_XXXXXX") {
   char *mut_name = const_cast<char *>(name_.c_str());
@@ -224,10 +228,10 @@ void waitForChildFails(unsigned int waitFlag, int cloneFlags, int (*childRunFunc
   CloneHelper cloneHelper;
   int pid = cloneHelper.runInClonedChild(cloneFlags, childRunFunction);
 
-  parentRunFunction(NULL);
+  parentRunFunction(nullptr);
 
   int expectedWaitPid = -1;
-  int actualWaitPid = waitpid(pid, NULL, waitFlag);
+  int actualWaitPid = waitpid(pid, nullptr, waitFlag);
   EXPECT_EQ(actualWaitPid, expectedWaitPid);
   EXPECT_EQ(errno, ECHILD);
   errno = 0;
@@ -280,7 +284,13 @@ std::optional<MemoryMapping> parse_mapping_entry(std::string_view line) {
   }
 
   return MemoryMapping{
-      start, end, std::string(parts[1]), offset, std::string(parts[3]), inode, pathname,
+      .start = start,
+      .end = end,
+      .perms = std::string(parts[1]),
+      .offset = offset,
+      .device = std::string(parts[3]),
+      .inode = inode,
+      .pathname = pathname,
   };
 }
 }  // namespace
@@ -334,7 +344,7 @@ std::optional<MemoryMappingExt> find_memory_mapping_ext(
         return current_mapping;
       }
 
-      current_mapping = *maybe_new_mapping;
+      current_mapping = MemoryMappingExt(*maybe_new_mapping);
       continue;
     }
     std::vector<std::string_view> fields =

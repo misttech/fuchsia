@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/files/file.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 // Define SYS_process_mrelease if not available in the toolchain's headers.

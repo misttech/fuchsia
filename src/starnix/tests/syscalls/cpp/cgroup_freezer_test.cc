@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/files/file.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {

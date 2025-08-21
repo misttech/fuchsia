@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 #include <linux/perf_event.h>
 
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "test_helper.h"
 
 namespace {

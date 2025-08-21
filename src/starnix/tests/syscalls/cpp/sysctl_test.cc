@@ -11,12 +11,14 @@
 #include <format>
 #include <thread>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <linux/capability.h>
 #include <linux/if_tun.h>
 
 #include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 class SysctlTest : public ::testing::Test {};

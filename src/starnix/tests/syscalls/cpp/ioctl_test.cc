@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include <fbl/unique_fd.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <linux/input.h>
 #include <linux/netlink.h>

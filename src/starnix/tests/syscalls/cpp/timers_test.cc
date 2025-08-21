@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 #include <linux/capability.h>
 
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 TEST(Timers, NoWakeAlarmCap) {

@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 #include <linux/capability.h>
 
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 void run_timerfd_test(clockid_t clock_id) {

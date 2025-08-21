@@ -37,6 +37,7 @@
 
 #include "fault_test.h"
 #include "linux/genetlink.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "test_helper.h"
 
 #if !defined(__NR_memfd_create)
