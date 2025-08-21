@@ -1399,14 +1399,14 @@ alias(
 )
 
 alias(
-    name = "log-0.4.22",
-    actual = "//third_party/rust_crates/vendor/log-0.4.22:log",
+    name = "log-0.4.27",
+    actual = "//third_party/rust_crates/vendor/log-0.4.27:log",
     tags = ["manual"],
 )
 
 alias(
     name = "log",
-    actual = "//third_party/rust_crates/vendor/log-0.4.22:log",
+    actual = "//third_party/rust_crates/vendor/log-0.4.27:log",
     tags = ["manual"],
 )
 

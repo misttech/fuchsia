@@ -80,6 +80,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/ask2patch/termcolor",
         "//third_party/rust_crates/vendor/chrono-0.4.41:chrono",
-        "//third_party/rust_crates/vendor/log-0.4.22:log",
+        "//third_party/rust_crates/vendor/log-0.4.27:log",
     ],
 )

@@ -13,7 +13,7 @@ use crate::telemetry::inspect_time_series::TimeSeriesStats;
 use crate::telemetry::windowed_stats::WindowedStats;
 use crate::util::historical_list::{HistoricalList, Timestamped};
 use crate::util::pseudo_energy::{EwmaSignalData, RssiVelocity};
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use cobalt_client::traits::AsEventCode;
 use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
 use fuchsia_async::{self as fasync, TimeoutExt};
@@ -28,12 +28,12 @@ use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_inspect_contrib::{inspect_insert, inspect_log, make_inspect_loggable};
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
-use futures::{select, Future, FutureExt, StreamExt};
+use futures::{Future, FutureExt, StreamExt, select};
 use ieee80211::OuiFmt;
 use log::{error, info, warn};
 use num_traits::SaturatingAdd;
 use static_assertions::const_assert_eq;
-use std::cmp::{max, min, Reverse};
+use std::cmp::{Reverse, max, min};
 use std::collections::{HashMap, HashSet};
 use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -115,7 +115,9 @@ impl TelemetrySender {
                     .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
                     .is_ok()
                 {
-                    warn!("TelemetrySender dropped a msg: either buffer is full or no receiver is waiting");
+                    warn!(
+                        "TelemetrySender dropped a msg: either buffer is full or no receiver is waiting"
+                    );
                 }
             }
         }
@@ -1286,11 +1288,17 @@ impl Telemetry {
                     {
                         Ok(Ok(())) => Some(proxy),
                         Ok(Err(e)) => {
-                            error!("Request for SME telemetry for iface {} completed with error {}. No telemetry will be captured.", iface_id, e);
+                            error!(
+                                "Request for SME telemetry for iface {} completed with error {}. No telemetry will be captured.",
+                                iface_id, e
+                            );
                             None
                         }
                         Err(e) => {
-                            error!("Failed to request SME telemetry for iface {} with error {}. No telemetry will be captured.", iface_id, e);
+                            error!(
+                                "Failed to request SME telemetry for iface {} with error {}. No telemetry will be captured.",
+                                iface_id, e
+                            );
                             None
                         }
                     };
@@ -1474,7 +1482,9 @@ impl Telemetry {
                             .await;
                     }
                     _ => {
-                        warn!("Received disconnect event while not connected. Metric may not be logged");
+                        warn!(
+                            "Received disconnect event while not connected. Metric may not be logged"
+                        );
                     }
                 }
 
@@ -1783,8 +1793,8 @@ fn round_to_nearest_second(duration: zx::MonotonicDuration) -> i64 {
     millis / MILLIS_PER_SEC + rounded_portion
 }
 
-pub async fn connect_to_metrics_logger_factory(
-) -> Result<fidl_fuchsia_metrics::MetricEventLoggerFactoryProxy, Error> {
+pub async fn connect_to_metrics_logger_factory()
+-> Result<fidl_fuchsia_metrics::MetricEventLoggerFactoryProxy, Error> {
     let cobalt_svc = fuchsia_component::client::connect_to_protocol::<
         fidl_fuchsia_metrics::MetricEventLoggerFactoryMarker,
     >()
@@ -4423,7 +4433,7 @@ impl ThrottledErrorLogger {
             let curr_time = fasync::MonotonicInstant::now();
             let time_since_last_log = curr_time - self.time_of_last_log;
             if time_since_last_log.into_minutes() > self.minutes_between_reports {
-                warn!("{}", e.to_string());
+                warn!("{}", e);
                 if !self.suppressed_errors.is_empty() {
                     for (log, count) in self.suppressed_errors.iter() {
                         warn!("Suppressed {} instances: {}", count, log);
@@ -4730,14 +4740,14 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_metrics::{MetricEvent, MetricEventLoggerRequest, MetricEventPayload};
     use fuchsia_inspect::reader;
+    use futures::TryStreamExt;
     use futures::stream::FusedStream;
     use futures::task::Poll;
-    use futures::TryStreamExt;
     use ieee80211_testutils::{BSSID_REGEX, SSID_REGEX};
     use rand::Rng;
     use regex::Regex;
     use std::collections::VecDeque;
-    use std::pin::{pin, Pin};
+    use std::pin::{Pin, pin};
     use test_case::test_case;
     use test_util::assert_gt;
     use wlan_common::bss::BssDescription;
@@ -7832,8 +7842,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_log_establish_connection_cobalt_metrics_user_wait_time_tracked_with_clear_while_connected(
-    ) {
+    fn test_log_establish_connection_cobalt_metrics_user_wait_time_tracked_with_clear_while_connected()
+     {
         let (mut test_helper, mut test_fut) = setup_test();
         test_helper.send_connected_event(random_bss_description!(Wpa2));
         test_helper.drain_cobalt_events(&mut test_fut);
@@ -9027,8 +9037,10 @@ mod tests {
         // Verify the reason dimension.
         assert_eq!(
             logged_metrics[0].event_codes,
-            vec![metrics::RecoveryOccurrenceMetricDimensionReason::ClientConnectionFailure
-                .as_event_code()]
+            vec![
+                metrics::RecoveryOccurrenceMetricDimensionReason::ClientConnectionFailure
+                    .as_event_code()
+            ]
         );
 
         // Send a successful connect result.
@@ -9096,8 +9108,10 @@ mod tests {
         // Verify the reason dimension.
         assert_eq!(
             logged_metrics[0].event_codes,
-            vec![metrics::RecoveryOccurrenceMetricDimensionReason::ClientConnectionFailure
-                .as_event_code()]
+            vec![
+                metrics::RecoveryOccurrenceMetricDimensionReason::ClientConnectionFailure
+                    .as_event_code()
+            ]
         );
 
         // Send a failed connect result.
@@ -10083,31 +10097,47 @@ mod tests {
 
         // Check that only the BSS selection occurrence and candidate count metrics are recorded
         assert!(!test_helper.get_logged_metrics(metrics::BSS_SELECTION_COUNT_METRIC_ID).is_empty());
-        assert!(!test_helper
-            .get_logged_metrics(metrics::BSS_SELECTION_COUNT_DETAILED_METRIC_ID)
-            .is_empty());
-        assert!(!test_helper
-            .get_logged_metrics(metrics::NUM_BSS_CONSIDERED_IN_SELECTION_METRIC_ID)
-            .is_empty());
-        assert!(!test_helper
-            .get_logged_metrics(metrics::NUM_BSS_CONSIDERED_IN_SELECTION_DETAILED_METRIC_ID)
-            .is_empty());
+        assert!(
+            !test_helper
+                .get_logged_metrics(metrics::BSS_SELECTION_COUNT_DETAILED_METRIC_ID)
+                .is_empty()
+        );
+        assert!(
+            !test_helper
+                .get_logged_metrics(metrics::NUM_BSS_CONSIDERED_IN_SELECTION_METRIC_ID)
+                .is_empty()
+        );
+        assert!(
+            !test_helper
+                .get_logged_metrics(metrics::NUM_BSS_CONSIDERED_IN_SELECTION_DETAILED_METRIC_ID)
+                .is_empty()
+        );
         assert!(test_helper.get_logged_metrics(metrics::BSS_CANDIDATE_SCORE_METRIC_ID).is_empty());
-        assert!(test_helper
-            .get_logged_metrics(metrics::NUM_NETWORKS_REPRESENTED_IN_BSS_SELECTION_METRIC_ID)
-            .is_empty());
-        assert!(test_helper
-            .get_logged_metrics(metrics::RUNNER_UP_CANDIDATE_SCORE_DELTA_METRIC_ID)
-            .is_empty());
-        assert!(test_helper
-            .get_logged_metrics(metrics::NUM_NETWORKS_REPRESENTED_IN_BSS_SELECTION_METRIC_ID)
-            .is_empty());
-        assert!(test_helper
-            .get_logged_metrics(metrics::BEST_CANDIDATES_GHZ_SCORE_DELTA_METRIC_ID)
-            .is_empty());
-        assert!(test_helper
-            .get_logged_metrics(metrics::GHZ_BANDS_AVAILABLE_IN_BSS_SELECTION_METRIC_ID)
-            .is_empty());
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::NUM_NETWORKS_REPRESENTED_IN_BSS_SELECTION_METRIC_ID)
+                .is_empty()
+        );
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::RUNNER_UP_CANDIDATE_SCORE_DELTA_METRIC_ID)
+                .is_empty()
+        );
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::NUM_NETWORKS_REPRESENTED_IN_BSS_SELECTION_METRIC_ID)
+                .is_empty()
+        );
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::BEST_CANDIDATES_GHZ_SCORE_DELTA_METRIC_ID)
+                .is_empty()
+        );
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::GHZ_BANDS_AVAILABLE_IN_BSS_SELECTION_METRIC_ID)
+                .is_empty()
+        );
     }
 
     #[fuchsia::test]
@@ -10130,9 +10160,11 @@ mod tests {
         test_helper.drain_cobalt_events(&mut test_fut);
 
         // No delta metric should be recorded
-        assert!(test_helper
-            .get_logged_metrics(metrics::RUNNER_UP_CANDIDATE_SCORE_DELTA_METRIC_ID)
-            .is_empty());
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::RUNNER_UP_CANDIDATE_SCORE_DELTA_METRIC_ID)
+                .is_empty()
+        );
     }
 
     #[fuchsia::test]

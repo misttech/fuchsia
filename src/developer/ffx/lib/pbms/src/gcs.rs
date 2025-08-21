@@ -5,7 +5,7 @@
 //! Access utilities for gcs metadata.
 
 use crate::AuthFlowChoice;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use gcs::auth;
 use gcs::client::{Client, DirectoryProgress, FileProgress, ProgressResponse, ProgressResult};
 use gcs::error::GcsError;
@@ -96,7 +96,7 @@ where
                     "The {:?} process to get an access token returned {} with stderr:\n{}",
                     exec,
                     output.status,
-                    String::from_utf8_lossy(&output.stderr).to_string()
+                    String::from_utf8_lossy(&output.stderr)
                 );
                 return Err(GcsError::ExecForAccessFailed(
                     exec.into(),

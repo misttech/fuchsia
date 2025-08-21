@@ -9,10 +9,10 @@
 
 use crate::base_packages::{BasePackages, CachePackages};
 use crate::index::PackageIndex;
-use anyhow::{anyhow, format_err, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow, format_err};
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
-use fidl_contrib::protocol_connector::ConnectedProtocol;
 use fidl_contrib::ProtocolConnector;
+use fidl_contrib::protocol_connector::ConnectedProtocol;
 use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
 };
@@ -23,8 +23,8 @@ use futures::join;
 use futures::prelude::*;
 use log::{error, info};
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 use vfs::directory::helper::DirectlyMutable as _;
 use vfs::remote::remote_dir;
 use {
@@ -138,7 +138,7 @@ async fn main_inner() -> Result<(), Error> {
         let system_image = system_image::SystemImage::new(blobfs.clone(), &boot_args)
             .await
             .context("Accessing contents of system_image package")?;
-        info!("system_image package: {}", system_image.hash().to_string());
+        info!("system_image package: {}", system_image.hash());
         inspector.root().record_string("system_image", system_image.hash().to_string());
 
         let (base_packages_res, cache_packages_res) =

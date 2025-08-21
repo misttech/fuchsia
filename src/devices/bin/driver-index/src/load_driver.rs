@@ -81,10 +81,10 @@ pub async fn load_drivers(
 
         let mut resolved_driver = resolve.unwrap();
         if disabled_drivers.contains(&resolved_driver.component_url) {
-            log::info!("Skipping driver: {}", resolved_driver.component_url.to_string());
+            log::info!("Skipping driver: {}", resolved_driver.component_url);
             continue;
         }
-        log::info!("Found driver: {}", resolved_driver.component_url.to_string());
+        log::info!("Found driver: {}", resolved_driver.component_url);
         if eager_drivers.contains(&resolved_driver.component_url) {
             resolved_driver.fallback = false;
         }

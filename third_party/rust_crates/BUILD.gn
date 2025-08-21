@@ -506,7 +506,7 @@ group("lock_api") {
 }
 
 group("log") {
-  public_deps = [ ":log-v0_4_22" ]
+  public_deps = [ ":log-v0_4_27" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -6202,7 +6202,7 @@ rustc_library("fatfs-v0_3_6") {
   deps += [ ":byteorder-v1_5_0" ]
   deps += [ ":bitflags-v1_3_2" ]
   deps += [ ":chrono-v0_4_41" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
 
   rustenv = []
 
@@ -7280,7 +7280,7 @@ rustc_library("generator-v0_7_5") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   if (true) {
     deps += [ ":libc-v0_2_174" ]
   }
@@ -7573,7 +7573,7 @@ rustc_library("gpt-v3_0_0") {
   deps = []
   deps += [ ":bitflags-v1_3_2" ]
   deps += [ ":crc-v1_8_1" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":uuid-v0_8_2" ]
 
   rustenv = []
@@ -7680,7 +7680,7 @@ rustc_library("handlebars-v4_3_5") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":pest-v2_7_8" ]
   deps += [ ":pest_derive-v2_7_8($host_toolchain)" ]
   deps += [ ":serde-v1_0_204" ]
@@ -9295,18 +9295,18 @@ rustc_library("lock_api-v0_4_11") {
   applicable_licenses = [ ":lock_api-v0_4_11.license" ]
 }
 
-license("log-v0_4_22.license") {
+license("log-v0_4_27.license") {
   public_package_name = "log"
   license_files = [
-    "//third_party/rust_crates/vendor/log-0.4.22/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/log-0.4.22/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/log-0.4.27/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/log-0.4.27/LICENSE-MIT",
   ]
 }
 
-rustc_library("log-v0_4_22") {
+rustc_library("log-v0_4_27") {
   crate_name = "log"
-  source_root = "//third_party/rust_crates/vendor/log-0.4.22/src/lib.rs"
-  output_name = "log-70ad1c5e24df7c26"
+  source_root = "//third_party/rust_crates/vendor/log-0.4.27/src/lib.rs"
+  output_name = "log-21e33b2d5b09805b"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -9318,15 +9318,15 @@ rustc_library("log-v0_4_22") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=70ad1c5e24df7c26",
-    "-Cextra-filename=-70ad1c5e24df7c26",
+    "-Cmetadata=21e33b2d5b09805b",
+    "-Cextra-filename=-21e33b2d5b09805b",
     "--cfg=feature=\"kv\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":log-v0_4_22.license" ]
+  applicable_licenses = [ ":log-v0_4_27.license" ]
 }
 
 license("loom-v0_7_1.license") {
@@ -9785,7 +9785,7 @@ rustc_library("mio-v0_7_14") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   if (true) {
     deps += [ ":libc-v0_2_174" ]
   }
@@ -9827,7 +9827,7 @@ rustc_library("mio-v0_8_9") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   if (false) {
     deps += [ ":wasi-v0_11_0+wasi-snapshot-preview1" ]
     deps += [ ":libc-v0_2_174" ]
@@ -9907,7 +9907,7 @@ rustc_library("mock-omaha-server-v0_3_5") {
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":hex-v0_4_3" ]
   deps += [ ":hyper-v0_14_19" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":omaha_client-v0_2_2" ]
   deps += [ ":p256-v0_11_1" ]
   deps += [ ":serde-v1_0_204" ]
@@ -13008,7 +13008,7 @@ rustc_library("prost-build-v0_11_1") {
   deps += [ ":heck-v0_4_1" ]
   deps += [ ":itertools-v0_10_1" ]
   deps += [ ":lazy_static-v1_5_0" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":multimap-v0_8_3" ]
   deps += [ ":petgraph-v0_6_2" ]
   deps += [ ":prost-types-v0_11_1" ]
@@ -14746,7 +14746,7 @@ icu_rustc_library("rust_icu_ucal-v5_0_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
   deps += [ ":rust_icu_common-v5_0_0" ]
   deps += [ ":rust_icu_sys-v5_0_0" ]
@@ -14790,7 +14790,7 @@ icu_rustc_library("rust_icu_uchar-v5_0_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
   deps += [ ":rust_icu_common-v5_0_0" ]
   deps += [ ":rust_icu_sys-v5_0_0" ]
@@ -14829,7 +14829,7 @@ icu_rustc_library("rust_icu_udat-v5_0_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
   deps += [ ":rust_icu_common-v5_0_0" ]
   deps += [ ":rust_icu_sys-v5_0_0" ]
@@ -14871,7 +14871,7 @@ icu_rustc_library("rust_icu_udata-v5_0_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
   deps += [ ":rust_icu_common-v5_0_0" ]
   deps += [ ":rust_icu_sys-v5_0_0" ]
@@ -14953,7 +14953,7 @@ icu_rustc_library("rust_icu_uloc-v5_0_0") {
 
   deps = []
   deps += [ ":anyhow-v1_0_98" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
   deps += [ ":rust_icu_common-v5_0_0" ]
   deps += [ ":rust_icu_sys-v5_0_0" ]
@@ -14997,7 +14997,7 @@ icu_rustc_library("rust_icu_unorm2-v5_0_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
   deps += [ ":rust_icu_common-v5_0_0" ]
   deps += [ ":rust_icu_sys-v5_0_0" ]
@@ -15042,7 +15042,7 @@ icu_rustc_library("rust_icu_ustring-v5_0_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":paste-v1_0_15($host_toolchain)" ]
   deps += [ ":rust_icu_common-v5_0_0" ]
   deps += [ ":rust_icu_sys-v5_0_0" ]
@@ -15186,7 +15186,7 @@ rustc_library("rustls-v0_21_12") {
 
   deps = []
   deps += [ ":ring-v0_17_8" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":rustls-webpki-v0_101_7" ]
   deps += [ ":sct-v0_7_1" ]
 
@@ -15371,7 +15371,7 @@ rustc_library("rustyline-v2_1_0") {
   deps = []
   deps += [ ":memchr-v2_7_4" ]
   deps += [ ":libc-v0_2_174" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":unicode-segmentation-v1_12_0" ]
   deps += [ ":unicode-width-v0_1_14" ]
   if (true && !(current_os == "fuchsia")) {
@@ -15412,7 +15412,7 @@ rustc_library("rutabaga_gfx-v0_1_3") {
   deps = []
   deps += [ ":cfg-if-v1_0_0" ]
   deps += [ ":libc-v0_2_174" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":remain-v0_2_14($host_toolchain)" ]
   deps += [ ":thiserror-v1_0_69" ]
   deps += [ ":zerocopy-v0_7_35" ]
@@ -16705,7 +16705,7 @@ rustc_library("simplelog-v0_10_2") {
   deps = []
   deps += [ ":termcolor-v1_1_2" ]
   deps += [ ":chrono-v0_4_41" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
 
   rustenv = []
 
@@ -18600,7 +18600,7 @@ rustc_library("tracing-v0_1_40") {
 
   deps = []
   deps += [ ":tracing-core-v0_1_32" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":pin-project-lite-v0_2_13" ]
   deps += [ ":tracing-attributes-v0_1_27($host_toolchain)" ]
 
@@ -18710,7 +18710,7 @@ rustc_library("tracing-log-v0_2_0") {
 
   deps = []
   deps += [ ":tracing-core-v0_1_32" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":once_cell-v1_21_3" ]
 
   rustenv = []
@@ -19010,7 +19010,7 @@ rustc_library("tuf-v0_3_0-beta13") {
   deps += [ ":http-v0_2_4" ]
   deps += [ ":hyper-v0_14_19" ]
   deps += [ ":itoa-v1_0_15" ]
-  deps += [ ":log-v0_4_22" ]
+  deps += [ ":log-v0_4_27" ]
   deps += [ ":percent-encoding-v2_3_1" ]
   deps += [ ":serde-v1_0_204" ]
   deps += [ ":serde_derive-v1_0_204($host_toolchain)" ]

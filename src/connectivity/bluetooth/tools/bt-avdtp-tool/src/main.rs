@@ -2,24 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_bluetooth_avdtp_test::*;
 use fuchsia_async as fasync;
 use fuchsia_sync::RwLock;
-use futures::channel::mpsc::{channel, SendError};
-use futures::{try_join, FutureExt, Sink, SinkExt, Stream, StreamExt, TryStreamExt};
+use futures::channel::mpsc::{SendError, channel};
+use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt, TryStreamExt, try_join};
 use log::info;
 use rustyline::error::ReadlineError;
 use rustyline::{CompletionType, Config, EditMode, Editor};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::pin::pin;
 use std::sync::Arc;
 use std::thread;
 
 use crate::commands::{Cmd, CmdHelper, ReplControl};
-use crate::types::{PeerFactoryMap, CLEAR_LINE, PROMPT};
+use crate::types::{CLEAR_LINE, PROMPT, PeerFactoryMap};
 
 mod commands;
 mod types;
@@ -50,7 +50,7 @@ async fn peer_manager_listener(
                 };
                 // Establish channel with the given peer_id and server endpoint.
                 let _ = avdtp_svc.get_peer(&peer_id, server);
-                info!("Getting peer with peer_id: {}", peer_id.value.to_string());
+                info!("Getting peer with peer_id: {}", peer_id.value);
             }
         }
     }

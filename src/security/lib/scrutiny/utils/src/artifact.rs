@@ -5,7 +5,7 @@
 use crate::blobfs::{BlobFsReader, BlobFsReaderBuilder};
 use crate::fs::tempdir;
 use crate::io::{ReadSeek, TryClonableBufReaderFile, TryClone};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use log::warn;
 use pathdiff::diff_paths;
 use std::collections::HashSet;
@@ -238,8 +238,7 @@ impl FileArtifactReader {
             Err(err) => {
                 warn!(
                     "File artifact reader failed to canonicalize build path: {:?}: {}",
-                    build_path,
-                    err.to_string()
+                    build_path, err
                 );
                 build_path.to_path_buf()
             }
@@ -249,8 +248,7 @@ impl FileArtifactReader {
             Err(err) => {
                 warn!(
                     "File artifact reader failed to canonicalize artifact path: {:?}: {}",
-                    artifact_path,
-                    err.to_string()
+                    artifact_path, err
                 );
                 artifact_path.to_path_buf()
             }
@@ -374,7 +372,7 @@ fn dep_from_absolute<P1: AsRef<Path>, P2: AsRef<Path>>(
 mod tests {
     use super::{ArtifactReader, FileArtifactReader};
     use maplit::hashset;
-    use std::fs::{create_dir, File};
+    use std::fs::{File, create_dir};
     use std::io::Write;
     use std::path::Path;
     use tempfile::tempdir;

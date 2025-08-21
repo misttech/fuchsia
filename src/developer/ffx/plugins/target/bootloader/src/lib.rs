@@ -260,7 +260,7 @@ Reboot the Target to the bootloader and re-run this command."
             Rediscovering the target after bootloader reboot will be impossible.
             Using address {} as node name
             ",
-                                    socket_addr.to_string()
+                                    socket_addr
                                 );
                                 socket_addr.to_string()
                             };
@@ -293,7 +293,7 @@ Reboot the Target to the bootloader and re-run this command."
         Warning: the target does not have a node name and is in UDP fastboot mode.
         Rediscovering the target after bootloader reboot will be impossible.
         Using address {} as node name",
-                                    socket_addr.to_string()
+                                    socket_addr
                                 );
                                 socket_addr.to_string()
                             };

@@ -9,7 +9,7 @@ use anyhow::Error;
 use handlebars::{Context, Handlebars, Helper, JsonRender, Output, RenderContext, RenderError};
 use lazy_static::lazy_static;
 use log::debug;
-use pulldown_cmark::{html as pulldown_html, Parser};
+use pulldown_cmark::{Parser, html as pulldown_html};
 use regex::{Captures, Regex};
 use serde_json::Value;
 
@@ -148,7 +148,11 @@ fn pl(name: &str, base: &str) -> String {
     if package_base == base {
         format!("<a class='link' href='#{anchor}'>{anchor}</a>", anchor = package_name)
     } else {
-        format!("<a class='link' href='../{b}/'>{b}</a>/<a class='link' href='../{b}/#{anchor}'>{anchor}</a>", b = package_base, anchor = package_name)
+        format!(
+            "<a class='link' href='../{b}/'>{b}</a>/<a class='link' href='../{b}/#{anchor}'>{anchor}</a>",
+            b = package_base,
+            anchor = package_name
+        )
     }
 }
 
@@ -232,12 +236,7 @@ fn source_link(
     let tag = h.param(1).ok_or_else(|| RenderError::new("Param 1 is required for sl helper"))?;
     let location =
         h.param(2).ok_or_else(|| RenderError::new("Param 2 is required for sl helper"))?;
-    debug!(
-        "source_link called on {}, {} and {}",
-        config.value().to_string(),
-        tag.value().to_string(),
-        location.value().to_string()
-    );
+    debug!("source_link called on {}, {} and {}", config.value(), tag.value(), location.value());
     out.write(&sl(&config.value(), &tag.value(), &location.value()))?;
     Ok(())
 }
@@ -320,11 +319,7 @@ pub fn method_id(
         h.param(0).ok_or_else(|| RenderError::new("Param 0 is required for method_id helper"))?;
     let protocol_name =
         h.param(1).ok_or_else(|| RenderError::new("Param 1 is required for method_id helper"))?;
-    debug!(
-        "method_id called on {} and {}",
-        method_name.value().to_string(),
-        protocol_name.value().to_string()
-    );
+    debug!("method_id called on {} and {}", method_name.value(), protocol_name.value());
     out.write(&mi(&method_name.value().render(), &protocol_name.value().render()))?;
     Ok(())
 }
@@ -562,7 +557,10 @@ file, the error is <code>ZX_ERR_NOT_FILE</code>.</li>
             json!({"value": json!({"value": "2"}),
             "name": "deprecated",}),
         ]);
-        assert_eq!(pv(&fidl_json1), "<span class=\"fidl-attribute fidl-version\">Removed: 3</span> <span class=\"fidl-attribute fidl-version\">Deprecated: 2</span> <span class=\"fidl-attribute fidl-version\">Added: 1</span>");
+        assert_eq!(
+            pv(&fidl_json1),
+            "<span class=\"fidl-attribute fidl-version\">Removed: 3</span> <span class=\"fidl-attribute fidl-version\">Deprecated: 2</span> <span class=\"fidl-attribute fidl-version\">Added: 1</span>"
+        );
 
         let fidl_json2 = json!([
             json!({"value": json!({"value": "1"}),
@@ -570,7 +568,10 @@ file, the error is <code>ZX_ERR_NOT_FILE</code>.</li>
             json!({"value": json!({"value": "2"}),
             "name": "deprecated",}),
         ]);
-        assert_eq!(pv(&fidl_json2), "<span class=\"fidl-attribute fidl-version\">Deprecated: 2</span> <span class=\"fidl-attribute fidl-version\">Added: 1</span>");
+        assert_eq!(
+            pv(&fidl_json2),
+            "<span class=\"fidl-attribute fidl-version\">Deprecated: 2</span> <span class=\"fidl-attribute fidl-version\">Added: 1</span>"
+        );
 
         let fidl_json3 = json!([json!({"value": json!({"value": "1"}),
             "name": "added",})]);

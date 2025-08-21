@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, format_err, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow, format_err};
 use async_helpers::hanging_get::asynchronous as hanging_get;
 use fidl::endpoints::{Proxy, ServerEnd};
 use fidl_fuchsia_bluetooth::{Appearance, DeviceClass};
@@ -22,13 +22,13 @@ use fuchsia_bluetooth::types::pairing_options::PairingOptions;
 use fuchsia_bluetooth::types::{
     Address, BondingData, HostData, HostId, HostInfo, Identity, Peer, PeerId,
 };
-use fuchsia_inspect::{self as inspect, unique_name, NumericProperty, Property};
+use fuchsia_inspect::{self as inspect, NumericProperty, Property, unique_name};
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_sync::RwLock;
+use futures::FutureExt;
 use futures::channel::{mpsc, oneshot};
 use futures::future::{self, BoxFuture, FusedFuture, Future, Shared};
-use futures::FutureExt;
 use log::{debug, error, info, trace, warn};
 use slab::Slab;
 use std::collections::HashMap;
@@ -392,9 +392,9 @@ impl HostDispatcherState {
 
     fn add_host(&mut self, id: HostId, host: HostDevice) {
         if self.host_devices.insert(id, host).is_some() {
-            warn!("Host replaced: {}", id.to_string())
+            warn!("Host replaced: {}", id)
         } else {
-            info!("Host added: {}", id.to_string());
+            info!("Host added: {}", id);
         }
 
         // If this is the only host, mark it as active.
@@ -591,7 +591,10 @@ impl HostDispatcher {
             std::mem::replace(&mut self.state.write().discovery, DiscoveryState::NotDiscovering);
         match old_state {
             DiscoveryState::NotDiscovering | DiscoveryState::Pending { .. } => {
-                warn!("process_discovery_event_stream: Unexpected discovery event stream close in state {:?}", old_state);
+                warn!(
+                    "process_discovery_event_stream: Unexpected discovery event stream close in state {:?}",
+                    old_state
+                );
             }
             DiscoveryState::Discovering { discovery_stopped_sender, .. } => {
                 let _ = discovery_stopped_sender.send(());
@@ -1338,8 +1341,8 @@ pub(crate) mod test {
     use fidl_fuchsia_bluetooth_host::{
         BondingDelegateRequestStream, HostRequest, HostRequestStream,
     };
-    use futures::future::join;
     use futures::StreamExt;
+    use futures::future::join;
 
     pub(crate) fn make_test_dispatcher(
         watch_peers_publisher: hanging_get::Publisher<HashMap<PeerId, Peer>>,

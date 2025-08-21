@@ -5,12 +5,12 @@
 use crate::v1::FlashManifest as FlashManifestV1;
 use crate::v2::FlashManifest as FlashManifestV2;
 use crate::v3::{Condition, FlashManifest as FlashManifestV3, Partition, Product};
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{Context, Error, Result, bail};
 use assembly_partitions_config::{PartitionAndImage, PartitionImageMapper, Slot};
 use errors::ffx_bail;
 use product_bundle::{ProductBundle, ProductBundleV2};
 use serde::{Deserialize, Serialize};
-use serde_json::{from_value, to_value, Value};
+use serde_json::{Value, from_value, to_value};
 use std::default::Default;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -163,7 +163,7 @@ impl FlashManifestVersion {
         // Copy the unlock credentials from the partitions config to the flash manifest.
         let mut credentials = vec![];
         for c in &product_bundle.partitions.unlock_credentials {
-            log::debug!("Adding unlock credential: {}", c.to_string());
+            log::debug!("Adding unlock credential: {}", c);
             credentials.push(c.to_string());
         }
 

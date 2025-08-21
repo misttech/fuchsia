@@ -13,21 +13,21 @@ use crate::mode_management::iface_manager_api::{
 };
 use crate::mode_management::iface_manager_types::*;
 use crate::mode_management::phy_manager::{CreateClientIfacesReason, PhyManagerApi};
-use crate::mode_management::{recovery, Defect};
+use crate::mode_management::{Defect, recovery};
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
-use crate::util::state_machine::{status_publisher_and_reader, StateMachineStatusReader};
+use crate::util::state_machine::{StateMachineStatusReader, status_publisher_and_reader};
 use crate::util::{atomic_oneshot_stream, future_with_metadata, listener};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::create_proxy;
 use fuchsia_async as fasync;
 use fuchsia_inspect_contrib::log::InspectListClosure;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_inspect_contrib::{inspect_insert, inspect_log};
 use futures::channel::{mpsc, oneshot};
-use futures::future::{ready, Fuse, LocalBoxFuture};
+use futures::future::{Fuse, LocalBoxFuture, ready};
 use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
-use futures::{select, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, select};
 use log::{debug, error, info, warn};
 use std::convert::Infallible;
 use std::fmt::Debug;
@@ -1096,7 +1096,7 @@ async fn handle_connection_selection_for_connect_request_results(
                 target: scanned_candidate,
                 reason: request.reason,
             };
-            info!("Starting connection to {}", selection.target.bss.bssid.to_string(),);
+            info!("Starting connection to {}", selection.target.bss.bssid,);
             let _ = iface_manager.connect(selection).await;
         }
         None => {
@@ -1586,8 +1586,8 @@ mod tests {
     use std::collections::HashMap;
     use std::pin::pin;
     use test_case::test_case;
-    use wlan_common::channel::Cbw;
     use wlan_common::RadioConfig;
+    use wlan_common::channel::Cbw;
     use {fidl_fuchsia_wlan_common as fidl_common, fuchsia_inspect as inspect};
 
     // Responses that FakePhyManager will provide
@@ -1744,11 +1744,7 @@ mod tests {
         }
 
         async fn destroy_all_client_ifaces(&mut self) -> Result<(), PhyManagerError> {
-            if self.destroy_iface_ok {
-                Ok(())
-            } else {
-                Err(PhyManagerError::IfaceDestroyFailure)
-            }
+            if self.destroy_iface_ok { Ok(()) } else { Err(PhyManagerError::IfaceDestroyFailure) }
         }
 
         fn get_client(&mut self) -> Option<u16> {
@@ -1764,19 +1760,11 @@ mod tests {
         }
 
         async fn destroy_ap_iface(&mut self, _iface_id: u16) -> Result<(), PhyManagerError> {
-            if self.destroy_iface_ok {
-                Ok(())
-            } else {
-                Err(PhyManagerError::IfaceDestroyFailure)
-            }
+            if self.destroy_iface_ok { Ok(()) } else { Err(PhyManagerError::IfaceDestroyFailure) }
         }
 
         async fn destroy_all_ap_ifaces(&mut self) -> Result<(), PhyManagerError> {
-            if self.destroy_iface_ok {
-                Ok(())
-            } else {
-                Err(PhyManagerError::IfaceDestroyFailure)
-            }
+            if self.destroy_iface_ok { Ok(()) } else { Err(PhyManagerError::IfaceDestroyFailure) }
         }
 
         fn suggest_ap_mac(&mut self, _mac: MacAddr) {
@@ -2360,13 +2348,14 @@ mod tests {
 
         // Update the saved networks with knowledge of the test SSID and credentials.
         let connect_selection = generate_connect_selection();
-        assert!(exec
-            .run_singlethreaded(test_values.saved_networks.store(
+        assert!(
+            exec.run_singlethreaded(test_values.saved_networks.store(
                 connect_selection.target.network.clone(),
                 connect_selection.target.credential.clone()
             ))
             .expect("failed to store a network password")
-            .is_none());
+            .is_none()
+        );
 
         // Ask the IfaceManager to connect and make sure that it fails.
         let connect_fut = iface_manager.connect(connect_selection);
@@ -2386,10 +2375,11 @@ mod tests {
 
         let network_id = NetworkIdentifier::new(TEST_SSID.clone(), SecurityType::Wpa);
         let credential = Credential::Password(TEST_PASSWORD.as_bytes().to_vec());
-        assert!(exec
-            .run_singlethreaded(test_values.saved_networks.store(network_id, credential))
-            .expect("failed to store a network password")
-            .is_none());
+        assert!(
+            exec.run_singlethreaded(test_values.saved_networks.store(network_id, credential))
+                .expect("failed to store a network password")
+                .is_none()
+        );
 
         {
             // Issue a call to disconnect from the network.
@@ -2423,10 +2413,11 @@ mod tests {
         // Create a PhyManager with knowledge of a single client iface.
         let network_id = NetworkIdentifier::new(TEST_SSID.clone(), SecurityType::Wpa);
         let credential = Credential::Password(TEST_PASSWORD.as_bytes().to_vec());
-        assert!(exec
-            .run_singlethreaded(test_values.saved_networks.store(network_id, credential))
-            .expect("failed to store a network password")
-            .is_none());
+        assert!(
+            exec.run_singlethreaded(test_values.saved_networks.store(network_id, credential))
+                .expect("failed to store a network password")
+                .is_none()
+        );
 
         {
             // Issue a disconnect request for a bogus network configuration.
@@ -2531,10 +2522,11 @@ mod tests {
         // Create a PhyManager with a single, known client iface.
         let network_id = NetworkIdentifier::new(TEST_SSID.clone(), SecurityType::Wpa);
         let credential = Credential::Password(TEST_PASSWORD.as_bytes().to_vec());
-        assert!(exec
-            .run_singlethreaded(test_values.saved_networks.store(network_id, credential))
-            .expect("failed to store a network password")
-            .is_none());
+        assert!(
+            exec.run_singlethreaded(test_values.saved_networks.store(network_id, credential))
+                .expect("failed to store a network password")
+                .is_none()
+        );
 
         {
             // Stop all client connections.
@@ -2572,10 +2564,11 @@ mod tests {
         // Create a PhyManager with one known client.
         let network_id = NetworkIdentifier::new(TEST_SSID.clone(), SecurityType::Wpa);
         let credential = Credential::Password(TEST_PASSWORD.as_bytes().to_vec());
-        assert!(exec
-            .run_singlethreaded(test_values.saved_networks.store(network_id, credential))
-            .expect("failed to store a network password")
-            .is_none());
+        assert!(
+            exec.run_singlethreaded(test_values.saved_networks.store(network_id, credential))
+                .expect("failed to store a network password")
+                .is_none()
+        );
 
         {
             // Call stop_client_connections.
@@ -2648,10 +2641,11 @@ mod tests {
         // Create a PhyManager with a single, known client iface.
         let network_id = NetworkIdentifier::new(TEST_SSID.clone(), SecurityType::Wpa);
         let credential = Credential::Password(TEST_PASSWORD.as_bytes().to_vec());
-        assert!(exec
-            .run_singlethreaded(test_values.saved_networks.store(network_id, credential))
-            .expect("failed to store a network password")
-            .is_none());
+        assert!(
+            exec.run_singlethreaded(test_values.saved_networks.store(network_id, credential))
+                .expect("failed to store a network password")
+                .is_none()
+        );
 
         {
             // Stop all client connections.
@@ -2688,10 +2682,11 @@ mod tests {
         // Create a PhyManager with a single, known client iface.
         let network_id = NetworkIdentifier::new(TEST_SSID.clone(), SecurityType::Wpa);
         let credential = Credential::Password(TEST_PASSWORD.as_bytes().to_vec());
-        assert!(exec
-            .run_singlethreaded(test_values.saved_networks.store(network_id, credential))
-            .expect("failed to store a network password")
-            .is_none());
+        assert!(
+            exec.run_singlethreaded(test_values.saved_networks.store(network_id, credential))
+                .expect("failed to store a network password")
+                .is_none()
+        );
 
         {
             // Stop all client connections.
@@ -4851,13 +4846,14 @@ mod tests {
 
         // Update the saved networks with knowledge of the test SSID and credentials.
         let connect_selection = generate_connect_selection();
-        assert!(exec
-            .run_singlethreaded(test_values.saved_networks.store(
+        assert!(
+            exec.run_singlethreaded(test_values.saved_networks.store(
                 connect_selection.target.network.clone(),
                 connect_selection.target.credential.clone()
             ))
             .expect("failed to store a network password")
-            .is_none());
+            .is_none()
+        );
 
         // Ask the IfaceManager to reconnect.
         {

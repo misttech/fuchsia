@@ -390,7 +390,7 @@ _NORMAL_DEPENDENCIES = {
             "libm": Label("//third_party/rust_crates/vendor/libm-0.2.15:libm"),
             "linked-hash-map": Label("//third_party/rust_crates/vendor/linked-hash-map-0.5.6:linked_hash_map"),
             "lock_api": Label("//third_party/rust_crates/vendor/lock_api-0.4.11:lock_api"),
-            "log": Label("//third_party/rust_crates/vendor/log-0.4.22:log"),
+            "log": Label("//third_party/rust_crates/vendor/log-0.4.27:log"),
             "lru-cache": Label("//third_party/rust_crates/vendor/lru-cache-0.1.2:lru_cache"),
             "macro_rules_attribute": Label("//third_party/rust_crates/vendor/macro_rules_attribute-0.2.2:macro_rules_attribute"),
             "maplit": Label("//third_party/rust_crates/vendor/maplit-1.0.2:maplit"),

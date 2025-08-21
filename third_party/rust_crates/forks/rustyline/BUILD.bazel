@@ -73,7 +73,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/ask2patch/memchr",
         "//third_party/rust_crates/vendor/libc-0.2.174:libc",
-        "//third_party/rust_crates/vendor/log-0.4.22:log",
+        "//third_party/rust_crates/vendor/log-0.4.27:log",
         "//third_party/rust_crates/vendor/unicode-segmentation-1.12.0:unicode_segmentation",
         "//third_party/rust_crates/vendor/unicode-width-0.1.14:unicode_width",
     ] + select({

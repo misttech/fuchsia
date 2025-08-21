@@ -78,7 +78,7 @@ rust_library(
         "//third_party/rust_crates/vendor/heck-0.4.1:heck",
         "//third_party/rust_crates/vendor/itertools-0.10.1:itertools",
         "//third_party/rust_crates/vendor/lazy_static-1.5.0:lazy_static",
-        "//third_party/rust_crates/vendor/log-0.4.22:log",
+        "//third_party/rust_crates/vendor/log-0.4.27:log",
         "//third_party/rust_crates/vendor/multimap-0.8.3:multimap",
         "//third_party/rust_crates/vendor/petgraph-0.6.2:petgraph",
         "//third_party/rust_crates/vendor/prost-0.11.0:prost",
