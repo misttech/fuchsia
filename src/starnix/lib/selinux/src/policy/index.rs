@@ -430,14 +430,14 @@ impl PolicyIndex {
         // multiple matches, so behavior on multiple matches is undefined.
         self.parsed_policy
             .access_vector_rules()
-            .find(|access_vector_rule_view| {
-                let metadata = access_vector_rule_view.read_metadata(&self.parsed_policy.data);
+            .find(|access_vector_rule| {
+                let metadata = &access_vector_rule.metadata;
                 metadata.is_type_transition()
                     && metadata.source_type() == source_type
                     && metadata.target_type() == target_type
                     && metadata.target_class() == class.id()
             })
-            .map(|x| x.parse(&self.parsed_policy.data).new_type().unwrap())
+            .map(|x| x.new_type().unwrap())
     }
 
     fn type_transition_new_type_with_name(
