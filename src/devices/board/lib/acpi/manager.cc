@@ -140,6 +140,12 @@ acpi::status<> Manager::PublishDevices(zx_device_t* platform_bus,
   return acpi::ok();
 }
 
+uint32_t Manager::GetNextCompositeId(std::string composite) {
+  auto id = composite_list_[composite];
+  composite_list_[composite] += 1;
+  return id;
+}
+
 const PowerResource* Manager::AddPowerResource(ACPI_HANDLE power_resource_handle) {
   std::scoped_lock lock(power_resource_lock_);
   auto power_resource_entry = power_resources_.find(power_resource_handle);

@@ -53,6 +53,9 @@ class Manager {
   // For devices: get the next unique BTI ID.
   uint32_t GetNextBtiId() { return next_bti_++; }
 
+  // Get next unique ID for the enumerated composite.
+  uint32_t GetNextCompositeId(std::string composite);
+
   // Used by a device to inform the manager about the existence of a power resource.
   const PowerResource* AddPowerResource(ACPI_HANDLE power_resource_handle);
 
@@ -85,6 +88,10 @@ class Manager {
   zx_device_t* acpi_root_;
   std::unordered_map<ACPI_HANDLE, DeviceBuilder> devices_;
   std::unordered_map<ACPI_HANDLE, zx_device_t*> zx_devices_;
+
+  // Contains a map of acpi name and the id for the next composite with the same name.
+  // The id is incremented each time a composite added for the acpi name.
+  std::unordered_map<std::string, uint32_t> composite_list_;
 
   std::mutex power_resource_lock_;
   std::unordered_map<ACPI_HANDLE, PowerResource> power_resources_

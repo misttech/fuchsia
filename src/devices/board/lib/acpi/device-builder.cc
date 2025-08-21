@@ -346,11 +346,18 @@ zx::result<> DeviceBuilder::BuildComposite(acpi::Manager* manager,
 
 #if !defined(IS_TEST)
   // TODO(https://fxbug.dev/42160209): re-enable this in tests once mock_ddk supports composites.
-  auto composite_node_spec_name = fbl::StringPrintf("%s-composite-spec", name());
+  fbl::String spec_name;
+  uint32_t id = manager->GetNextCompositeId(name());
+  if (id == 0) {
+    spec_name = fbl::StringPrintf("%s-composite-spec", name());
+  } else {
+    spec_name = fbl::StringPrintf("%s-%i-composite-spec", name(), id);
+  }
+
   DeviceArgs composite_node_spec_args(parent_->zx_device_, manager, device_dispatcher, handle_);
   auto composite_node_spec_device = std::make_unique<Device>(composite_node_spec_args);
-  zx_status_t status = composite_node_spec_device->DdkAddCompositeNodeSpec(
-      composite_node_spec_name.data(), composite_node_spec);
+  zx_status_t status =
+      composite_node_spec_device->DdkAddCompositeNodeSpec(spec_name.data(), composite_node_spec);
   if (status != ZX_OK) {
 #ifdef __Fuchsia__
     zxlogf(ERROR, "Failed to add composite node spec: %s", zx_status_get_string(status));
