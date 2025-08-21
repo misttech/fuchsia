@@ -88,9 +88,6 @@ build --tool_java_runtime_version=embedded_jdk
 # As of Bazel 8, this will be enabled by default.
 build --experimental_collect_system_network_usage
 
-# Link Go binaries with PIE to avoid relocation errors.
-build --@io_bazel_rules_go//go/config:linkmode=pie
-
 # Use --config=no_gn_targets to ensure that the @gn_targets repository is empty.
 # Bazel targets built with this option cannot depend on GN target outputs at all,
 # very intentionally.
