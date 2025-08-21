@@ -14,18 +14,6 @@
         order: 10,
     },
     {
-        name: "ProtectedPoolUnallocated",
-        process: "driver_host:pdev:00:00:1b",
-        vmo: "SysmemAmlogicProtectedPool",
-        event_code: 27,
-    },
-    {
-        name: "ContiguousPoolUnallocated",
-        process: "driver_host:pdev:00:00:1b",
-        vmo: "SysmemContiguousPool",
-        event_code: 26,
-    },
-    {
         name: "Storage",
         process: "fshost\\.cm|fxfs-crypt\\.cm|fxfs\\.cm|memfs\\.cm|decompressor-sandbox\\.cm",
         vmo: "",
@@ -92,14 +80,8 @@
         event_code: 46,
     },
     {
-        name: "CompositeDrivers",
-        process: "driver_host:composite-device",
-        vmo: "",
-        event_code: 47,
-    },
-    {
         name: "OtherDrivers",
-        process: "driver_host.*|pwrbtn-monitor\\.cm",
+        process: "driver_host.*|pwrbtn-monitor\\.cm|aml-rawnand\\.cm.*|aml-gpu\\.cm.*|aml-sdmmc\\.cm.*|aml-usb-phy\\.cm|platform-bus\\.cm.*|aml-uart\\.cm.*|amlogic-display\\.cm|aml-gpio\\.cm.*|aml-meson-power\\.cm.*|xhci.cm\\.*|aml-i2c\\.cm.*|optee\\.cm.*|aml-pwm\\.cm.*|amlogic_video_decoder\\.cm.*|aml-g12-tdm\\.cm.*|tas27xx\\.cm.*|ams-light\\.cm.*|aml-securemem\\.cm.*|aml-g12-pdm\\.cm.*|aml-ram\\\.cm.*|aml-thermistor\\.cm.*|aml-canvas\\.cm.*|focaltech\\.cm.*|aml-thermal\\.cm.*|buttons\\.cm.*|aml-light\\.cm.*|ti-lp8556\\.cm.*|aml-g12-tdm-dai\\.cm.*|registers\\.cm.*|aml-pwm-init\\.cm.*|aml_mipicsi\\.cm.*|lowpan-ot-driver\\.cm.*|aml-thermal-s905d2g-legacy\\.cm.*|amlogic_h264_encoder_driver\\.cm.*|focaltech-sherlock\\.cm.*|tas5720\\.cm.*|camera_device\\.cm.*|aml-nna\\.cm.*|gt6853\\.cm.*|ti-ina231\\.cm.*|nelson-brownout-protection\\.cm.*|shtv3\\.cm.*",
         vmo: "",
         event_code: 48,
     },
