@@ -443,10 +443,10 @@ std::string Node::MakeComponentMoniker() const {
   // node name cam only have [a-z0-9-_.] characters. DFv1 composites contain ':'
   // which is not allowed, so replace those characters.
   // TODO(https://fxbug.dev/42062456): Migrate driver names to only use CF valid characters.
-  std::replace(topo_path.begin(), topo_path.end(), ':', '_');
+  std::ranges::replace(topo_path, ':', '_');
   // Since we use '.' to denote topology, replace them with '_'.
-  std::replace(topo_path.begin(), topo_path.end(), '.', '_');
-  std::replace(topo_path.begin(), topo_path.end(), '/', '.');
+  std::ranges::replace(topo_path, '.', '_');
+  std::ranges::replace(topo_path, '/', '.');
   return topo_path;
 }
 
@@ -673,7 +673,7 @@ void Node::ClearHostDriver() {
 // a removal is taking place, but this node will not be removed yet, even if all its children
 // are removed.
 void Node::Remove(RemovalSet removal_set, NodeRemovalTracker* removal_tracker) {
-  GetNodeShutdownCoordinator().Remove(shared_from_this(), removal_set, removal_tracker);
+  NodeShutdownCoordinator::Remove(shared_from_this(), removal_set, removal_tracker);
 }
 
 void Node::RestartNode() {
@@ -1613,8 +1613,10 @@ void Node::ConnectToDeviceFidl(ConnectToDeviceFidlRequestView request,
 
 void Node::ConnectToController(ConnectToControllerRequestView request,
                                ConnectToControllerCompleter::Sync& completer) {
-  ConnectControllerInterface(
-      fidl::ServerEnd<fuchsia_device::Controller>{std::move(request->server)});
+  // This should never be called
+  ZX_ASSERT_MSG(false,
+                "Connect To controller should never be called in node.cc,"
+                " as it is intercepted by the ControllerAllowlistPassthrough");
 }
 
 void Node::Bind(BindRequestView request, BindCompleter::Sync& completer) {
@@ -1673,15 +1675,6 @@ void Node::ScheduleUnbind(ScheduleUnbindCompleter::Sync& completer) {
 }
 void Node::GetTopologicalPath(GetTopologicalPathCompleter::Sync& completer) {
   completer.ReplySuccess(fidl::StringView::FromExternal("/" + MakeTopologicalPath()));
-}
-
-zx_status_t Node::ConnectControllerInterface(
-    fidl::ServerEnd<fuchsia_device::Controller> server_end) {
-  // This should never be called
-  ZX_ASSERT_MSG(false,
-                "Connect To controller should never be called in node.cc,"
-                " as it is intercepted by the ControllerAllowlistPassthrough");
-  return ZX_OK;
 }
 
 zx_status_t Node::ConnectDeviceInterface(zx::channel channel) {

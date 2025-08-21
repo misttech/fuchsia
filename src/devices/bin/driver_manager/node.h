@@ -461,7 +461,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       std::optional<fidl::ClientEnd<fuchsia_device_fs::Connector>> controller_connector,
       bool allow_controller_connection, const std::string& class_name);
 
-  zx_status_t ConnectControllerInterface(fidl::ServerEnd<fuchsia_device::Controller> server_end);
   zx_status_t ConnectDeviceInterface(zx::channel channel);
 
   static std::vector<Property> ToProperty(
