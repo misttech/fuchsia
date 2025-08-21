@@ -25,7 +25,6 @@ source_set("fakes") {
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_cpp",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
     "//sdk/lib/async:async-cpp",
-    "//sdk/lib/fidl/hlcpp",
   ]
 }
 

@@ -22,7 +22,6 @@ foreach(suite, benchmark_suites) {
       "//sdk/lib/async-loop:async-loop-cpp",
       "//sdk/lib/async-loop:async-loop-default",
       "//sdk/lib/fidl",
-      "//sdk/lib/fidl/hlcpp",
       "//zircon/system/ulib/perftest",
     ]
     extra_args = [

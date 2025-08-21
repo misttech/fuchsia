@@ -131,7 +131,7 @@ sdk_source_set("hlcpp_base") {
 
   public_configs = [
     "//sdk/config",
-    "//sdk/lib/fidl/hlcpp:config",
+    ":config",
   ]
 
   public_deps = [

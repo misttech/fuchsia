@@ -51,7 +51,6 @@ source_set("fidl_oneshot") {
     ":errors",
     "//sdk/lib/async",
     "//sdk/lib/async:async-cpp",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
     "//sdk/lib/sys/cpp",
@@ -76,7 +75,6 @@ source_set("instrumented_binding_set") {
   sources = [ "instrumented_binding_set.h" ]
 
   public_deps = [
-    "//sdk/lib/fidl/hlcpp",
     "//src/developer/forensics/utils:inspect_node_manager",
     "//zircon/system/ulib/inspect",
   ]

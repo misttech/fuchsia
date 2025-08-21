@@ -38,10 +38,7 @@ template("engine_library") {
       "//src/ui/scenic/lib/view_tree:view_tree_snapshot",
     ]
 
-    deps = [
-      "//sdk/lib/fidl/hlcpp",
-      "//sdk/lib/sys/cpp",
-    ]
+    deps = [ "//sdk/lib/sys/cpp" ]
 
     public_configs = []
 

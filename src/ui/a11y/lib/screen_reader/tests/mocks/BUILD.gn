@@ -20,7 +20,6 @@ source_set("mocks") {
   ]
 
   deps = [
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/syslog/cpp",
     "//src/ui/a11y/lib/screen_reader",
     "//src/ui/a11y/lib/screen_reader/focus/tests/mocks",

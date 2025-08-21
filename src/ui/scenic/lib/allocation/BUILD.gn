@@ -20,7 +20,6 @@ source_set("allocation") {
   ]
 
   deps = [
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//src/lib/fsl",
     "//src/ui/scenic/lib/utils",

@@ -11,7 +11,6 @@ executable("bin") {
   deps = [
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//src/tests/fidl/dynsuite/client_suite/fidl:fidl.clientsuite_hlcpp",
     "//src/tests/fidl/dynsuite/client_suite/runners/hlcpp_util",

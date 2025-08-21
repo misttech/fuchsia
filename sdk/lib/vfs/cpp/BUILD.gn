@@ -29,7 +29,6 @@ sdk_source_set("cpp") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
     "//sdk/lib/async",
     "//sdk/lib/fdio",
-    "//sdk/lib/fidl/hlcpp",
     "//zircon/system/ulib/zx",
   ]
 

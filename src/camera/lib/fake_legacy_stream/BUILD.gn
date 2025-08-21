@@ -25,7 +25,6 @@ source_set("lib") {
   ]
   deps = [
     "//sdk/lib/async",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/syslog/cpp",
   ]
   public_deps = [

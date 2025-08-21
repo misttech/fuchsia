@@ -60,7 +60,6 @@ source_set("flatland") {
   ]
 
   deps = [
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/scheduler/cpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/ui/scenic/cpp",

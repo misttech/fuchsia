@@ -38,7 +38,6 @@ executable("fake_data_provider_exe") {
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_hlcpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/utils:archive",
@@ -61,7 +60,6 @@ executable("fake_crash_introspect_exe") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fidl/cpp/wire",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
   ]
@@ -80,7 +78,6 @@ source_set("privacy_settings") {
 
   public_deps = [
     "//sdk/fidl/fuchsia.settings:fuchsia.settings_hlcpp",
-    "//sdk/lib/fidl/hlcpp",
     "//src/lib/fxl",
   ]
 

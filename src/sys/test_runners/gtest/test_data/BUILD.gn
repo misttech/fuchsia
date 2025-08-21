@@ -30,7 +30,6 @@ cc_test_executable("echo_gtest_client") {
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//src/lib/fxl/test:gtest_main",
   ]
@@ -180,7 +179,6 @@ cc_test_executable("concurrency_test_driver_gtest") {
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//src/lib/fxl/test:gtest_main",
   ]

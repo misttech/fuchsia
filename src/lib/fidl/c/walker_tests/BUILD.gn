@@ -26,7 +26,6 @@ source_set("test_sources") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fidl",
-    "//sdk/lib/fidl/hlcpp:hlcpp_base",
     "//sdk/lib/fit",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/sync",
@@ -99,7 +98,6 @@ source_set("host_test_sources") {
   public_deps = [
     ":fidl.test.coding_cpp",
     ":fidl.test.coding_hlcpp",
-    "//sdk/lib/fidl/hlcpp:hlcpp_base",
     "//sdk/lib/fidl_base",
     "//zircon/system/ulib/zxtest",
   ]

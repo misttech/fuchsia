@@ -33,7 +33,6 @@ source_set("lib") {
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/syslog/cpp",
   ]
   public_deps = [

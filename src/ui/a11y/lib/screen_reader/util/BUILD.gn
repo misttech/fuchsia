@@ -14,7 +14,6 @@ source_set("util") {
   ]
 
   deps = [
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/ui/a11y/lib/semantics",

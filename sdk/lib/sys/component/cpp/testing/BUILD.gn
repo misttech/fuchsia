@@ -61,7 +61,6 @@ sdk_source_set("cpp_library") {
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/fidl/cpp/wire",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
   ]
 

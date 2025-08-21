@@ -10,7 +10,6 @@ source_set("service_hub_connector") {
     "//sdk/lib/async-default",
     "//sdk/lib/fidl/cpp",
     "//sdk/lib/fidl/cpp/wire",
-    "//sdk/lib/fidl/hlcpp",
     "//src/lib/backoff",
   ]
 }

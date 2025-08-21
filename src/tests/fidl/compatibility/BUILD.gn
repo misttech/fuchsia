@@ -115,7 +115,6 @@ foreach(test, fidl_compatibility_tests_categories) {
       "//sdk/lib/async-loop:async-loop-cpp",
       "//sdk/lib/async-loop:async-loop-default",
       "//sdk/lib/component/incoming/cpp",
-      "//sdk/lib/fidl/hlcpp",
       "//sdk/lib/sys/component/cpp/testing:cpp",
       "//sdk/lib/sys/cpp",
       "//src/lib/files",

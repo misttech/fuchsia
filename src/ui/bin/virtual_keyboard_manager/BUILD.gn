@@ -48,10 +48,7 @@ source_set("lib") {
     "//sdk/lib/syslog/cpp",
   ]
 
-  deps = [
-    ":virtual_keyboard",
-    "//sdk/lib/fidl/hlcpp",
-  ]
+  deps = [ ":virtual_keyboard" ]
 }
 
 source_set("focus_dispatcher") {

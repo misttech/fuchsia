@@ -26,7 +26,6 @@ source_set("lib") {
   public_deps = [
     ":icu_headers",
     "//examples/intl/wisdom/fidl:wisdom_hlcpp",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
   ]
 }
@@ -44,7 +43,6 @@ executable("intl_wisdom_client") {
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//src/lib/fxl:fxl_cli",
     "//src/lib/icu:lib",

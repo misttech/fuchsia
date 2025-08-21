@@ -99,7 +99,6 @@ cc_test_executable("cpp_test") {
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/driver/testing/cpp:minimal_compat_environment",
-    "//sdk/lib/fidl/hlcpp",
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/diagnostics/fake-log-sink/cpp",
     "//src/lib/fxl/test:gtest_main",

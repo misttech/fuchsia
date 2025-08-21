@@ -24,7 +24,6 @@ executable("bin") {
     "//sdk/fidl/fuchsia.buildinfo.test:fuchsia.buildinfo.test_hlcpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//src/lib/fsl",
   ]
@@ -67,7 +66,6 @@ cc_test_executable("test-bin") {
     "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_hlcpp",
     "//sdk/fidl/fuchsia.buildinfo.test:fuchsia.buildinfo.test_hlcpp",
     "//sdk/fidl/fuchsia.component:fuchsia.component_hlcpp",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/component/cpp/testing:cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",

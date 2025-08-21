@@ -37,7 +37,6 @@ source_set("lib") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/outgoing/cpp",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/fit-promise",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
@@ -76,7 +75,6 @@ cc_test_executable("camera_device_watcher_unittest_bin") {
   deps = [
     ":fuchsia.camera.test_hlcpp",
     ":lib",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp/testing:unit",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",

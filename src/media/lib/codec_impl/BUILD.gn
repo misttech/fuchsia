@@ -70,7 +70,6 @@ source_set("codec_impl") {
   public_configs = [ ":codec_impl_include_config" ]
   deps = [
     "//sdk/fidl/fuchsia.media:fuchsia.media_hlcpp",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/memory_barriers",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/vfs/cpp",

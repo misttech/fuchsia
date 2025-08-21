@@ -73,7 +73,6 @@ executable("constructor_helper_proc") {
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//src/lib/files",
     "//src/lib/fxl:fxl_cli",

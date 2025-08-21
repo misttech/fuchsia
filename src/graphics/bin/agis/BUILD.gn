@@ -49,7 +49,6 @@ executable("agis-bin") {
     "//sdk/fidl/fuchsia.gpu.agis:fuchsia.gpu.agis_hlcpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
     "//zircon/system/ulib/fbl",

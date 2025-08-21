@@ -150,7 +150,6 @@ test("optee-client-test-bin") {
   deps = [
     ":optee_lib",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/fake-resource",
     "//src/devices/testing/mock-ddk",

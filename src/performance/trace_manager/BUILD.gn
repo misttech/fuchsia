@@ -40,7 +40,6 @@ source_set("lib") {
     "//sdk/fidl/fuchsia.tracing.provider:fuchsia.tracing.provider_hlcpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/fit",
     "//sdk/lib/sys/cpp",
     "//src/lib/fxl:fxl_cli",

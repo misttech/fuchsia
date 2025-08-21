@@ -8,7 +8,10 @@ import("//build/testing/cc_test_executable.gni")
 source_set("fidl") {
   sources = [ "hanging_getter.h" ]
 
-  public_deps = [ "//sdk/lib/fit" ]
+  public_deps = [
+    "//sdk/lib/fidl/hlcpp",
+    "//sdk/lib/fit",
+  ]
 }
 
 cc_test_executable("tests_bin") {
@@ -19,7 +22,6 @@ cc_test_executable("tests_bin") {
 
   deps = [
     ":fidl",
-    "//sdk/lib/fidl/hlcpp",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]

@@ -48,7 +48,6 @@ source_set("host_test_sources") {
 
   deps = [
     ":test_util",
-    "//sdk/lib/fidl/hlcpp:hlcpp_base",
     "//sdk/testing/fidl:fidl_test_hlcpp",
     "//zircon/system/ulib/zxtest",
   ]
@@ -89,7 +88,6 @@ source_set("test_sources") {
     "//sdk/lib/async-loop",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/fit-promise",
     "//sdk/testing/fidl:collision_test_hlcpp",
     "//sdk/testing/fidl:fidl_test_handles_hlcpp",

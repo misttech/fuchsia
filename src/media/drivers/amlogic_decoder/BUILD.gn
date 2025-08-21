@@ -228,7 +228,6 @@ if (target_cpu == "arm64") {
       "//sdk/fidl/fuchsia.mediacodec:fuchsia.mediacodec_hlcpp",
       "//sdk/lib/driver/platform-device/cpp",
       "//sdk/lib/fdio",
-      "//sdk/lib/fidl/hlcpp",
       "//src/devices/bind/fuchsia:fuchsia_cpp",
       "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree_cpp",
       "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",

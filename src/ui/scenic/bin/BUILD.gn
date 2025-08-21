@@ -55,7 +55,6 @@ source_set("base_deps") {
   public_deps = [
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/fit",
     "//sdk/lib/sys/cpp",
     "//src/lib/fsl",

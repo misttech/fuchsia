@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.audio/cpp/natural_types.h>
 #include <fidl/fuchsia.audio/cpp/wire_types.h>
 #include <fidl/fuchsia.mediastreams/cpp/wire_types.h>
-#include <lib/fidl/cpp/enum.h>
 #include <lib/fpromise/result.h>
 #include <lib/syslog/cpp/macros.h>
 

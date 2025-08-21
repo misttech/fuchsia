@@ -30,7 +30,6 @@ source_set("lib") {
   public_deps = [
     "//examples/components/routing/fidl:echo_cpp",
     "//sdk/lib/component/outgoing/cpp",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/syslog/cpp",
 
     # [START inspect_libs]

@@ -9,7 +9,6 @@ executable("sysmem-version-test") {
   sources = [ "sysmem-version-test.cc" ]
   deps = [
     "//sdk/lib/fdio",
-    "//sdk/lib/fidl/hlcpp:hlcpp_base",
     "//zircon/system/ulib/sysmem-version",
     "//zircon/system/ulib/zxtest",
   ]

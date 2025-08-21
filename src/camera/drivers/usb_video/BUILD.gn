@@ -41,7 +41,6 @@ source_set("lib") {
     ":usb_video_bind",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/fidl/hlcpp",
     "//src/devices/lib/driver",
     "//src/lib/listnode",
     "//zircon/system/ulib/affine",

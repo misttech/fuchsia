@@ -437,7 +437,6 @@ template("escher_library") {
         "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
         "//sdk/lib/async-loop:async-loop-cpp",
         "//sdk/lib/async-loop:async-loop-default",
-        "//sdk/lib/fidl/hlcpp",
         "//sdk/lib/fit",
         "//sdk/lib/syslog/cpp",
         "//sdk/lib/vfs/cpp",

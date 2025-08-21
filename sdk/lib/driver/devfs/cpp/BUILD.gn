@@ -36,7 +36,6 @@ cc_test_executable("cpp_test") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/component/cpp:test_base",
-    "//sdk/lib/fidl/hlcpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
   ]

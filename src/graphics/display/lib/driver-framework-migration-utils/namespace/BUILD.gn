@@ -12,10 +12,7 @@ source_set("namespace") {
   ]
   public_deps = [ "//sdk/lib/component/incoming/cpp" ]
 
-  deps = [
-    "//sdk/lib/fidl/hlcpp",
-    "//zircon/system/ulib/zx",
-  ]
+  deps = [ "//zircon/system/ulib/zx" ]
 }
 
 source_set("namespace-dfv1") {

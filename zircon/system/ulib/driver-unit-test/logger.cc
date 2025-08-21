@@ -4,7 +4,6 @@
 
 #include <fidl/fuchsia.driver.test.logger/cpp/fidl.h>
 #include <lib/driver-unit-test/logger.h>
-#include <lib/fidl/cpp/message.h>
 #include <lib/fidl/cpp/transaction_header.h>
 
 #include <algorithm>

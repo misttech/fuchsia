@@ -15,7 +15,6 @@ executable("parent_bin") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/syslog/cpp",
   ]
 }
@@ -30,7 +29,6 @@ executable("child_bin") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/outgoing/cpp",
-    "//sdk/lib/fidl/hlcpp",
     "//sdk/lib/syslog/cpp",
   ]
 }
