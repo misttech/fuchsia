@@ -342,6 +342,10 @@ template("rust_auxiliary") {
       script = "//build/rust/rustdoc_wrapper.py"
       mnemonic = "DOC"
       deps = _invoker_deps + [ ":${_aux_deps_target}" ]
+      if (!defined(inputs)) {
+        inputs = []
+      }
+      inputs += [ "${default_rustc_prefix}/bin/rustdoc" ]
 
       if (defined(invoker.non_rust_deps)) {
         deps += invoker.non_rust_deps
