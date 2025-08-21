@@ -5,7 +5,7 @@
 use crate::fifo_cache::FifoCache;
 use crate::policy::{AccessDecision, IoctlAccessDecision};
 use crate::sync::Mutex;
-use crate::{FsNodeClass, KernelClass, NullessByteStr, ObjectClass, SecurityId};
+use crate::{FsNodeClass, KernelClass, NullessByteStr, ObjectClass, SecurityId, SecurityServer};
 use std::sync::{Arc, Weak};
 
 pub use crate::fifo_cache::{CacheStats, HasCacheStats};
@@ -578,46 +578,42 @@ impl<R: Reset> Reset for Weak<R> {
 /// Default size of an access vector cache shared by all threads in the system.
 const DEFAULT_SHARED_SIZE: usize = 1000;
 
-/// Composite access vector cache manager that delegates queries to security server type, `SS`, and
-/// owns a shared cache of size `DEFAULT_SHARED_SIZE`, and can produce thread-local caches of size
-/// `DEFAULT_THREAD_LOCAL_SIZE`.
-pub(super) struct Manager<SS> {
-    shared_cache: Locked<FifoQueryCache<Weak<SS>>>,
+/// Composite access vector cache manager that delegates queries to the security server and
+/// owns a shared cache of size `DEFAULT_SHARED_SIZE`.
+pub(super) struct AvcManager {
+    shared_cache: Locked<FifoQueryCache<Weak<SecurityServer>>>,
 }
 
-impl<SS> Manager<SS> {
-    /// Constructs a [`Manager`] that initially has no security server delegate (i.e., will default
+impl AvcManager {
+    /// Constructs a [`AvcManager`] that initially has no security server delegate (i.e., will default
     /// to deny all requests).
     pub fn new() -> Self {
-        Self {
-            shared_cache: Locked::new(FifoQueryCache::new(Weak::<SS>::new(), DEFAULT_SHARED_SIZE)),
-        }
+        Self { shared_cache: Locked::new(FifoQueryCache::new(Weak::new(), DEFAULT_SHARED_SIZE)) }
     }
 
     /// Sets the security server delegate that is consulted when there is no cache hit on a query.
-    pub fn set_security_server(&self, security_server: Weak<SS>) -> Weak<SS> {
+    pub fn set_security_server(
+        &self,
+        security_server: Weak<SecurityServer>,
+    ) -> Weak<SecurityServer> {
         self.shared_cache.set_stateful_cache_delegate(security_server)
     }
 
     /// Returns a shared reference to the shared cache managed by this manager. This operation does
     /// not copy the cache, but it does perform an atomic operation to update a reference count.
-    pub fn get_shared_cache(&self) -> &Locked<FifoQueryCache<Weak<SS>>> {
+    pub fn get_shared_cache(&self) -> &Locked<FifoQueryCache<Weak<SecurityServer>>> {
         &self.shared_cache
     }
 }
 
-impl<SS> Reset for Manager<SS> {
+impl Reset for AvcManager {
     /// Resets caches owned by this manager. If owned caches delegate to a security server that is
     /// reloading its policy, the security server must reload its policy (and start serving the new
-    /// policy) *before* invoking `Manager::reset()` on any managers that delegate to that security
-    /// server. This is because the [`Manager`]-managed caches are consulted by [`Query`] clients
+    /// policy) *before* invoking `AvcManager::reset()` on any managers that delegate to that security
+    /// server. This is because the [`AvcManager`]-managed caches are consulted by [`Query`] clients
     /// *before* the security server; performing reload/reset in the reverse order could move stale
     /// queries into reset caches before policy reload is complete.
     fn reset(&self) -> bool {
-        // Layered cache stale entries avoided only if shared cache reset first, then thread-local
-        // caches are reset. This is because thread-local caches are consulted by `Query` clients
-        // before the shared cache; performing reset in the reverse order could move stale queries
-        // into reset caches.
         self.shared_cache.reset();
         true
     }

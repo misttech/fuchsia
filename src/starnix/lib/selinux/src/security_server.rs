@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::access_vector_cache::{CacheStats, HasCacheStats, Manager as AvcManager, Query, Reset};
+use crate::access_vector_cache::{AvcManager, CacheStats, HasCacheStats, Query, Reset};
 use crate::exceptions_config::ExceptionsConfig;
 use crate::permission_check::PermissionCheck;
 use crate::policy::metadata::HandleUnknown;
@@ -117,10 +117,8 @@ impl SecurityServerState {
 
 pub struct SecurityServer {
     /// Manager for any access vector cache layers that are shared between threads subject to access
-    /// control by this security server. This [`AvcManager`] is also responsible for constructing
-    /// thread-local caches for use by individual threads that subject to access control by this
-    /// security server.
-    avc_manager: AvcManager<SecurityServer>,
+    /// control by this security server.
+    avc_manager: AvcManager,
 
     /// The mutable state of the security server.
     state: RwLock<SecurityServerState>,
