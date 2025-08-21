@@ -1,5 +1,16 @@
 [
     {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/Action.TERMINATE",
+        "value": "1"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.tracing.controller/Action",
+        "strictness": "flexible",
+        "type": "uint32"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.tracing.controller/FxtVersion.major",
         "ordinal": "1",
@@ -191,6 +202,52 @@
         "name": "fuchsia.tracing.controller/Provisioner_GetProviders_Response"
     },
     {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/RecordingError.DISCONNECTED_TARGET",
+        "value": "7"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/RecordingError.DUPLICATE_TRACE_FILE",
+        "value": "4"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/RecordingError.NO_SUCH_TARGET",
+        "value": "6"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/RecordingError.NO_SUCH_TRACE_FILE",
+        "value": "5"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/RecordingError.RECORDING_ALREADY_STARTED",
+        "value": "2"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/RecordingError.RECORDING_START",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/RecordingError.RECORDING_STOP",
+        "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.tracing.controller/RecordingError.TARGET_PROXY_OPEN",
+        "value": "0"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.tracing.controller/RecordingError",
+        "strictness": "flexible",
+        "type": "uint32"
+    },
+    {
         "kind": "protocol/member",
         "name": "fuchsia.tracing.controller/Session.OnSessionStateChange",
         "strictness": "flexible",
@@ -231,6 +288,137 @@
         "name": "fuchsia.tracing.controller/Session",
         "openness": "open",
         "transport": "channel"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.tracing.controller/SessionManager.EndTraceSession",
+        "strictness": "flexible",
+        "ordinal": "8275024019136738679",
+        "direction": "two_way",
+        "request": "fuchsia.tracing.controller/SessionManagerEndTraceSessionRequest",
+        "response": "fuchsia.tracing.controller/SessionManager_EndTraceSession_Response",
+        "error": "fuchsia.tracing.controller/RecordingError"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.tracing.controller/SessionManager.GetKnownCategories",
+        "strictness": "flexible",
+        "ordinal": "8001416274139121842",
+        "direction": "two_way",
+        "response": "fuchsia.tracing.controller/SessionManager_GetKnownCategories_Response"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.tracing.controller/SessionManager.GetProviders",
+        "strictness": "flexible",
+        "ordinal": "440179156399028739",
+        "direction": "two_way",
+        "response": "fuchsia.tracing.controller/SessionManager_GetProviders_Response"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.tracing.controller/SessionManager.StartTraceSession",
+        "strictness": "flexible",
+        "ordinal": "6107899294411129186",
+        "direction": "two_way",
+        "request": "fuchsia.tracing.controller/SessionManagerStartTraceSessionRequest",
+        "response": "fuchsia.tracing.controller/SessionManager_StartTraceSession_Response",
+        "error": "fuchsia.tracing.controller/RecordingError"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.tracing.controller/SessionManager.Status",
+        "strictness": "flexible",
+        "ordinal": "3367594708220350563",
+        "direction": "two_way",
+        "response": "fuchsia.tracing.controller/TraceStatus",
+        "error": "fuchsia.tracing.controller/RecordingError"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.tracing.controller/SessionManager",
+        "openness": "open",
+        "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManagerEndTraceSessionRequest.output",
+        "ordinal": "2",
+        "type": "zx/Handle:<SOCKET,zx.TRANSFER,zx.WRITE,zx.WAIT>"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManagerEndTraceSessionRequest.task_id",
+        "ordinal": "1",
+        "type": "uint64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.tracing.controller/SessionManagerEndTraceSessionRequest",
+        "resourceness": "resource"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManagerStartTraceSessionRequest.config",
+        "ordinal": "1",
+        "type": "fuchsia.tracing.controller/TraceConfig"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManagerStartTraceSessionRequest.options",
+        "ordinal": "2",
+        "type": "fuchsia.tracing.controller/TraceOptions"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.tracing.controller/SessionManagerStartTraceSessionRequest",
+        "resourceness": "resource"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManager_EndTraceSession_Response.options",
+        "ordinal": "1",
+        "type": "fuchsia.tracing.controller/TraceOptions"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManager_EndTraceSession_Response.result",
+        "ordinal": "2",
+        "type": "fuchsia.tracing.controller/StopResult"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.tracing.controller/SessionManager_EndTraceSession_Response"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManager_GetKnownCategories_Response.categories",
+        "ordinal": "1",
+        "type": "vector<fuchsia.tracing/KnownCategory>:5000"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.tracing.controller/SessionManager_GetKnownCategories_Response"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManager_GetProviders_Response.providers",
+        "ordinal": "1",
+        "type": "vector<fuchsia.tracing.controller/ProviderInfo>:100"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.tracing.controller/SessionManager_GetProviders_Response"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.tracing.controller/SessionManager_StartTraceSession_Response.task_id",
+        "ordinal": "1",
+        "type": "uint64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.tracing.controller/SessionManager_StartTraceSession_Response"
     },
     {
         "kind": "struct/member",
@@ -421,6 +609,78 @@
     {
         "kind": "table",
         "name": "fuchsia.tracing.controller/TraceConfig"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.tracing.controller/TraceOptions.duration_ns",
+        "ordinal": "1",
+        "type": "int64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.tracing.controller/TraceOptions.requested_categories",
+        "ordinal": "3",
+        "type": "vector<string:100>:5000"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.tracing.controller/TraceOptions.triggers",
+        "ordinal": "2",
+        "type": "vector<fuchsia.tracing.controller/Trigger>"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.tracing.controller/TraceOptions"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.tracing.controller/TraceStatus.config",
+        "ordinal": "5",
+        "type": "fuchsia.tracing.controller/TraceConfig"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.tracing.controller/TraceStatus.duration",
+        "ordinal": "3",
+        "type": "int64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.tracing.controller/TraceStatus.remaining_runtime",
+        "ordinal": "4",
+        "type": "int64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.tracing.controller/TraceStatus.task_id",
+        "ordinal": "7",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.tracing.controller/TraceStatus.triggers",
+        "ordinal": "6",
+        "type": "vector<fuchsia.tracing.controller/Trigger>"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.tracing.controller/TraceStatus"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.tracing.controller/Trigger.action",
+        "ordinal": "2",
+        "type": "fuchsia.tracing.controller/Action"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.tracing.controller/Trigger.alert",
+        "ordinal": "1",
+        "type": "string:14"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.tracing.controller/Trigger"
     },
     {
         "kind": "library",

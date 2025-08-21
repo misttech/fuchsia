@@ -5,85 +5,16 @@ library fuchsia.developer.ffx;
 
 using fuchsia.tracing.controller;
 using fuchsia.tracing;
-using zx;
 
 /// The maximum length allowed for paths passed to tracing commands.
 ///
 /// We choose the value of 4096 here to match Linux's maximum path length.
 const MAX_PATH_LENGTH uint32 = 4096;
 
-/// This covers errors from using the `Tracing` protocol (specifically
-/// trace recording errors).
-type RecordingError = strict enum {
-    /// Error encountered when opening the proxy to the target.
-    TARGET_PROXY_OPEN = 0;
-
-    /// This is a general error when starting a trace.
-    RECORDING_START = 1;
-
-    /// An error encountered if a trace recording has already been started
-    /// for a given Fuchsia target.
-    RECORDING_ALREADY_STARTED = 2;
-
-    /// An error encountered when attempting to stop a trace. This causes an
-    /// immediate termination of the client channel, so the user should not
-    /// attempt to run `StopRecording` again.
-    RECORDING_STOP = 3;
-
-    /// Error for when a trace file is already being written to by the tracing
-    /// service.
-    DUPLICATE_TRACE_FILE = 4;
-
-    /// When attempting to stop a trace, there were no active traces found for
-    /// the given lookup name.
-    NO_SUCH_TRACE_FILE = 5;
-
-    /// No targets were found matching the query.
-    NO_SUCH_TARGET = 6;
-
-    /// The query matched a target that is not connected to the Daemon's FIDL
-    /// channels.
-    DISCONNECTED_TARGET = 7;
-};
-
-/// An action to be preformed on this trace. Used as part of a Trigger.
-type Action = strict enum {
-    /// Terminates the active trace.
-    TERMINATE = 1;
-};
-
-/// A trigger is an action that is done when a certain alert has been raised in the
-/// fuchsia tracing system.
-type Trigger = table {
-    /// The name of the alert being watched.
-    /// See fuchsia.tracing.controller.Controller.WatchAlert for more info.
-    1: alert string:fuchsia.tracing.controller.MAX_ALERT_NAME_LENGTH;
-
-    /// The action to run when this alert has been witnessed.
-    2: action Action;
-};
-
-/// Covers how a trace will be run when invoking `StartRecording`.
-type TraceOptions = table {
-    /// Determines how long a trace recording will run before terminating in
-    /// nanoseconds. This is an "at-least" duration, with the actual
-    /// runtime terminating likely a few dozen milliseconds longer.
-    ///
-    /// If this is not set, a trace will run indefinitely and must be stopped
-    /// using `StopRecording`. Or by cleanly shutting down the daemon via
-    /// `ffx daemon stop` or by using the Deamon proxy itself.
-    1: duration_ns zx.Duration;
-
-    /// The triggers to run against this trace.
-    2: triggers vector<Trigger>:MAX;
-
-    /// The requested categories for the trace. These could include
-    /// groups, or nothing. These categories are expanded and the expanded
-    /// list is in the TraceConfig. This list is used to support the nice UX of
-    /// explicitly checking for events with these categories and warn the
-    /// user if the no events were captured for any of these categories.
-    3: requested_categories fuchsia.tracing.EnabledCategoryList;
-};
+alias RecordingError = fuchsia.tracing.controller.RecordingError;
+alias Action = fuchsia.tracing.controller.Action;
+alias Trigger = fuchsia.tracing.controller.Trigger;
+alias TraceOptions = fuchsia.tracing.controller.TraceOptions;
 
 @discoverable
 closed protocol Tracing {

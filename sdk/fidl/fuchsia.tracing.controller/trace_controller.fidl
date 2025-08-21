@@ -16,6 +16,107 @@ const MAX_ALERT_NAME_LENGTH uint32 = 14;
 /// aliases
 alias AlertName = string:MAX_ALERT_NAME_LENGTH;
 
+/// This covers errors from using the `Tracing` protocol (specifically
+/// trace recording errors).
+@available(added=NEXT)
+type RecordingError = flexible enum {
+    /// Error encountered when opening the proxy to the target.
+    TARGET_PROXY_OPEN = 0;
+
+    /// This is a general error when starting a trace.
+    RECORDING_START = 1;
+
+    /// An error encountered if a trace recording has already been started
+    /// for a given Fuchsia target.
+    RECORDING_ALREADY_STARTED = 2;
+
+    /// An error encountered when attempting to stop a trace. This causes an
+    /// immediate termination of the client channel, so the user should not
+    /// attempt to run `StopRecording` again.
+    RECORDING_STOP = 3;
+
+    /// Error for when a trace file is already being written to by the tracing
+    /// service.
+    DUPLICATE_TRACE_FILE = 4;
+
+    /// When attempting to stop a trace, there were no active traces found for
+    /// the given lookup name.
+    NO_SUCH_TRACE_FILE = 5;
+
+    /// No targets were found matching the query.
+    NO_SUCH_TARGET = 6;
+
+    /// The query matched a target that is not connected to the Daemon's FIDL
+    /// channels.
+    DISCONNECTED_TARGET = 7;
+};
+
+/// An action to be preformed on this trace. Used as part of a Trigger.
+@available(added=NEXT)
+type Action = flexible enum {
+    /// Terminates the active trace.
+    TERMINATE = 1;
+};
+
+/// A trigger is an action that is done when a certain alert has been raised in the
+/// fuchsia tracing system.
+@available(added=NEXT)
+type Trigger = table {
+    /// The name of the alert being watched.
+    /// See fuchsia.tracing.controller.Controller.WatchAlert for more info.
+    1: alert string:MAX_ALERT_NAME_LENGTH;
+
+    /// The action to run when this alert has been witnessed.
+    2: action Action;
+};
+
+/// Covers how a trace will be run when invoking `StartRecording`.
+@available(added=NEXT)
+type TraceOptions = table {
+    /// Determines how long a trace recording will run before terminating in
+    /// nanoseconds. This is an "at-least" duration, with the actual
+    /// runtime terminating likely a few dozen milliseconds longer.
+    ///
+    /// If this is not set, a trace will run indefinitely and must be stopped
+    /// using `StopRecording`. Or by cleanly shutting down the daemon via
+    /// `ffx daemon stop` or by using the Deamon proxy itself.
+    1: duration_ns zx.Duration;
+
+    /// The triggers to run against this trace.
+    2: triggers vector<Trigger>:MAX;
+
+    /// The requested categories for the trace. These could include
+    /// groups, or nothing. These categories are expanded and the expanded
+    /// list is in the TraceConfig. This list is used to support the nice UX of
+    /// explicitly checking for events with these categories and warn the
+    /// user if the no events were captured for any of these categories.
+    3: requested_categories fuchsia.tracing.EnabledCategoryList;
+};
+
+/// Status of the trace session managed by SessionManager
+@available(added=NEXT)
+type TraceStatus = table {
+
+    // 1-2: reserved
+
+    /// The total duration of the command in fractional seconds. This will not
+    /// be set if the command is supposed to run indefinitely.
+    3: duration zx.Duration;
+
+    /// The amount of time remaining before the trace terminates. This will not
+    /// be set if the command is supposed to run indefinitely.
+    4: remaining_runtime zx.Duration;
+
+    /// The original config sent to the `StartRecording` command.
+    5: config TraceConfig;
+
+    /// A list of triggers active for this trace. See [Trigger] for more info.
+    6: triggers vector<Trigger>:MAX;
+
+    /// unique id of this trace session.
+    7: task_id uint64;
+};
+
 /// The state of the tracing session.
 /// A "session" is everything between `Initialize` and `Terminate`.
 type SessionState = flexible enum {
@@ -72,6 +173,44 @@ open protocol Provisioner {
     flexible GetKnownCategories() -> (struct {
         categories vector<fuchsia.tracing.KnownCategory>:fuchsia.tracing.MAX_NUM_KNOWN_CATEGORIES;
     });
+};
+
+@available(added=NEXT)
+@discoverable
+open protocol SessionManager {
+
+    /// Return the set of registered providers.
+    flexible GetProviders() -> (struct {
+        providers vector<ProviderInfo>:MAX_NUM_PROVIDERS;
+    });
+
+    /// Gets the known categories.
+    flexible GetKnownCategories() -> (struct {
+        categories vector<fuchsia.tracing.KnownCategory>:fuchsia.tracing.MAX_NUM_KNOWN_CATEGORIES;
+    });
+
+    /// Starts a Trace session.
+    flexible StartTraceSession(resource struct {
+        config TraceConfig;
+        options TraceOptions;
+    }) -> (struct {
+        task_id uint64;
+    }) error RecordingError;
+
+    /// Ends the trace session.
+    /// If task_id is non-zero, then only the trace task with the given id is checked.
+    /// Note: Currently there is only 1 trace task active at a time, so the task_id is of
+    /// little value at this time.
+    flexible EndTraceSession(resource struct {
+        task_id uint64;
+        output zx.Handle:<SOCKET, zx.Rights.WRITE | zx.Rights.WAIT | zx.Rights.TRANSFER>;
+    }) -> (struct {
+        options TraceOptions;
+        result StopResult;
+    }) error RecordingError;
+
+    /// Returns the status of the current trace session.
+    flexible Status() -> (TraceStatus) error RecordingError;
 };
 
 /// The session interface used by the trace tool to start/stop/terminate a trace Session.

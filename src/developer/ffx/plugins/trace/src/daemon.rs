@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{handle_recording_error, TraceData};
+use crate::{TraceData, handle_recording_error};
 use anyhow::Result;
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
@@ -30,7 +30,7 @@ pub(crate) async fn trace(
 pub(crate) async fn stop_tracing(
     context: &EnvironmentContext,
     proxy: TracingProxy,
-    output: String,
+    output: &str,
 ) -> Result<TraceData> {
     let res = proxy.stop_recording(&output).await?;
     match res {

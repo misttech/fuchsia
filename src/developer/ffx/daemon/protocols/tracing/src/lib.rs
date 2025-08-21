@@ -9,8 +9,8 @@ use async_trait::async_trait;
 use fidl_fuchsia_tracing_controller::{ProvisionerProxy, TraceConfig};
 use futures::prelude::*;
 use protocols::prelude::*;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::rc::Rc;
 use std::time::Duration;
 use tasks::TaskManager;
@@ -110,17 +110,9 @@ impl TracingProtocol {
         match task_map.output_file_to_nodename.entry(output_file.clone()) {
             Entry::Occupied(_) => return Err(ffx::RecordingError::DuplicateTraceFile),
             Entry::Vacant(e) => {
-                let writer = match File::create(output_file.clone()).await {
-                    Ok(f) => f,
-                    Err(e) => {
-                        log::warn!("unable to create trace file: {:?}", e);
-                        return Err(ffx::RecordingError::RecordingStart);
-                    }
-                };
                 let task = match TraceTask::new(
                     // Use the target info as the task name
                     format!("{target_info:?}"),
-                    writer,
                     trace_config,
                     options.duration_ns.map(|d| Duration::from_nanos(d as u64)),
                     options
@@ -220,8 +212,11 @@ impl FidlProtocol for TracingProtocol {
                 let output_file = task_entry.output_file.clone();
                 let target_info = task_entry.target_info.clone();
                 let categories = task_entry.task.requested_categories();
+
+                let res =
+                    task_entry.task.stop_and_receive_data(File::create(&output_file).await?).await;
                 responder
-                    .send(match task_entry.task.shutdown().await {
+                    .send(match res {
                         Ok(ref result) => Ok((&target_info, &output_file, &categories, result)),
                         Err(e) => Err(to_recording_error(e)),
                     })
@@ -276,7 +271,19 @@ impl FidlProtocol for TracingProtocol {
         let tasks = {
             let mut task_map = self.task_map.lock().await;
             task_map.output_file_to_nodename.clear();
-            task_map.nodename_to_task.drain().map(|(_, v)| v.task.shutdown()).collect::<Vec<_>>()
+            task_map
+                .nodename_to_task
+                .drain()
+                .map(|(_, v)| async move {
+                    match File::create(v.output_file)
+                        .await
+                        .map_err(|e| TracingError::GeneralError(e.into()))
+                    {
+                        Ok(output) => v.task.stop_and_receive_data(output).await,
+                        Err(e) => Err(e),
+                    }
+                })
+                .collect::<Vec<_>>()
         };
         futures::future::join_all(tasks).await;
         Ok(())

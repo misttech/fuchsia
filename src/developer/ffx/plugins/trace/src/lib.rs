@@ -2,23 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_target::get_target_specifier;
 use ffx_trace_args::{Stop, TraceCommand, TraceSubCommand};
 use ffx_tracing::{self as ffx_trace, SymbolizationMap};
 use ffx_writer::{MachineWriter, ToolIO as _};
-use fho::{deferred, Deferred, FfxMain, FfxTool};
-use fidl_fuchsia_developer_ffx::{self as ffx, RecordingError, TracingProxy};
+use fho::{Deferred, FfxMain, FfxTool, deferred};
+use fidl_fuchsia_developer_ffx::{self as ffx, TracingProxy};
 use fidl_fuchsia_tracing::{BufferingMode, KnownCategory};
 use fidl_fuchsia_tracing_controller::{
-    ProviderInfo, ProviderStats, ProvisionerProxy, StopResult, TraceConfig,
+    ProviderInfo, ProviderStats, ProvisionerProxy, RecordingError, SessionManagerProxy, StopResult,
+    TraceConfig, TraceOptions,
 };
-use futures::future::{BoxFuture, FutureExt as _};
 use futures::Future;
+use futures::future::{BoxFuture, FutureExt as _};
 use serde::{Deserialize, Serialize};
-use std::io::{stdin, Stdin};
+use std::io::{Stdin, stdin};
 use std::path::{Component, PathBuf};
 use std::time::Duration;
 use target_holders::{daemon_protocol, moniker};
@@ -62,7 +63,6 @@ impl<'a> LineWaiter<'a> for Stdin {
 // This is to make the schema make sense as this plugin can output one of these based on the
 // subcommand. An alternative is to break this one plugin into multiple plugins each with their own
 // output type. That is probably preferred but either way works.
-// TODO(121214): Fix incorrect- or invalid-type writer declarations
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum TraceOutput {
@@ -116,6 +116,25 @@ pub(crate) struct TraceData {
     pub(crate) output_file: String,
     pub(crate) categories: Vec<String>,
     pub(crate) stop_result: StopResult,
+}
+
+/// Enum to handle the FIDL proxy to get a trace session.
+#[derive(Clone, Debug)]
+pub(crate) enum SessionManagerProxyType {
+    Provisioner(ProvisionerProxy),
+    SessionManager(SessionManagerProxy),
+}
+
+impl From<ProvisionerProxy> for SessionManagerProxyType {
+    fn from(p: ProvisionerProxy) -> Self {
+        Self::Provisioner(p)
+    }
+}
+
+impl From<SessionManagerProxy> for SessionManagerProxyType {
+    fn from(p: SessionManagerProxy) -> Self {
+        Self::SessionManager(p)
+    }
 }
 
 fn handle_fidl_error<T>(res: Result<T, fidl::Error>) -> Result<T> {
@@ -260,6 +279,9 @@ pub struct TraceTool {
     proxy: Deferred<TracingProxy>,
     #[with(deferred(moniker("/core/trace_manager")))]
     provisioner: Deferred<ProvisionerProxy>,
+    // TODO(wilkinsonclay): create session_manager component.
+    #[with(deferred(moniker("/core/trace_manager/trace_session_manager")))]
+    session_manager: Deferred<SessionManagerProxy>,
     #[command]
     cmd: TraceCommand,
     context: EnvironmentContext,
@@ -270,7 +292,7 @@ impl FfxMain for TraceTool {
     type Writer = Writer;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        trace(self.context, self.proxy, self.provisioner, writer, self.cmd)
+        trace(self.context, self.proxy, self.provisioner, self.session_manager, writer, self.cmd)
             .await
             .map_err(Into::into)
     }
@@ -280,14 +302,30 @@ pub async fn trace(
     context: EnvironmentContext,
     proxy: Deferred<TracingProxy>,
     provisioner: Deferred<ProvisionerProxy>,
+    session_manager: Deferred<SessionManagerProxy>,
     mut writer: Writer,
     cmd: TraceCommand,
 ) -> Result<()> {
     let target_spec: Option<String> = get_target_specifier(&context).await?;
+    let trace_proxy: SessionManagerProxyType = match session_manager.await {
+        Ok(p) => p.into(),
+        Err(e) => {
+            eprintln!(
+                "Cannot connect to SessionManagerProxy, falling back to basic trace manager."
+            );
+            log::warn!(
+                "Cannot connect to SessionManagerProxy, falling back to basic trace manager: {e:?}."
+            );
+            provisioner.await?.into()
+        }
+    };
     match cmd.sub_cmd {
         TraceSubCommand::ListCategories(_) => {
-            let controller = provisioner.await?;
-            let mut categories = handle_fidl_error(controller.get_known_categories().await)?;
+            let result = match trace_proxy {
+                SessionManagerProxyType::Provisioner(p) => p.get_known_categories().await,
+                SessionManagerProxyType::SessionManager(p) => p.get_known_categories().await,
+            };
+            let mut categories = handle_fidl_error(result)?;
             categories.sort_unstable();
             if writer.is_machine() {
                 let categories = categories
@@ -313,8 +351,12 @@ pub async fn trace(
             }
         }
         TraceSubCommand::ListProviders(_) => {
-            let provisioner = provisioner.await?;
-            let mut providers = handle_fidl_error(provisioner.get_providers().await)?
+            let result = match trace_proxy {
+                SessionManagerProxyType::Provisioner(p) => p.get_providers().await,
+                SessionManagerProxyType::SessionManager(p) => p.get_providers().await,
+            };
+
+            let mut providers = handle_fidl_error(result)?
                 .into_iter()
                 .map(TraceProviderInfo::from)
                 .collect::<Vec<TraceProviderInfo>>();
@@ -359,7 +401,7 @@ pub async fn trace(
             };
             let output = canonical_path(opts.output)?;
 
-            let options = ffx::TraceOptions {
+            let options = TraceOptions {
                 duration_ns: opts.duration.map(|d| Duration::from_secs(d.into()).as_nanos() as i64),
                 triggers,
                 requested_categories: Some(opts.categories.clone()),
@@ -369,24 +411,32 @@ pub async fn trace(
             // For the background we need a background task, so still use the daemon.
             // Otherwise use a direct connection.
             if opts.background {
-                let tracing_proxy = proxy.await?;
-                daemon::trace(
-                    &context,
-                    tracing_proxy.clone(),
-                    output.clone(),
-                    options,
-                    trace_config.clone(),
-                )
-                .await?;
-                writer.line("To manually stop the trace, use `ffx trace stop`")?;
-                writer.line("Current tracing status:")?;
-                return status(tracing_proxy, &mut writer).await;
+                return match trace_proxy {
+                    SessionManagerProxyType::Provisioner(_) => {
+                        background_trace_legacy(
+                            &context,
+                            proxy.await?,
+                            output,
+                            options,
+                            trace_config,
+                            &mut writer,
+                        )
+                        .await
+                    }
+                    SessionManagerProxyType::SessionManager(_) => {
+                        let trace_config = TraceConfig {
+                            categories: Some(expanded_categories.clone()),
+                            ..trace_config
+                        };
+                        background_trace(trace_proxy, options, trace_config, &mut writer).await
+                    }
+                };
             }
 
-            let provisioner = provisioner.await?;
+            let trace_config =
+                TraceConfig { categories: Some(expanded_categories.clone()), ..trace_config };
             let task =
-                direct::trace(provisioner.clone(), output.clone(), options, trace_config.clone())
-                    .await?;
+                direct::trace(trace_proxy.clone(), options, trace_config.clone(), false).await?;
 
             if opts.duration.is_none() {
                 let waiter = &mut stdin();
@@ -395,7 +445,7 @@ pub async fn trace(
             }
 
             writer.line("Trace completed! Copying trace from device...")?;
-            let trace_data = direct::stop_tracing(task, output).await?;
+            let trace_data = direct::stop_tracing(&context, task, trace_proxy, &output).await?;
 
             finalize_trace(
                 &context,
@@ -410,17 +460,23 @@ pub async fn trace(
             )?;
         }
         TraceSubCommand::Stop(ref opts) => {
-            // Stop is daemon only for the moment.
             let output = match &opts.output {
                 Some(o) => canonical_path(o)?,
-                None => target_spec.unwrap_or_else(|| "".to_owned()),
+                None => canonical_path(target_spec.unwrap_or_else(|| "trace.fxt".to_owned()))?,
             };
-            let trace_data = daemon::stop_tracing(&context, proxy.await?, output).await?;
+            let trace_data = match trace_proxy {
+                SessionManagerProxyType::Provisioner(_) => {
+                    daemon::stop_tracing(&context, proxy.await?, &output).await?
+                }
+                SessionManagerProxyType::SessionManager(_) => {
+                    direct::stop_tracing(&context, None, trace_proxy, &output).await?
+                }
+            };
             finalize_trace(
                 &context,
                 trace_data,
                 &Stop {
-                    output: None,
+                    output: Some(output),
                     verbose: opts.verbose,
                     no_symbolize: opts.no_symbolize,
                     no_verify_trace: opts.no_verify_trace,
@@ -428,7 +484,14 @@ pub async fn trace(
                 &mut writer,
             )?;
         }
-        TraceSubCommand::Status(_opts) => status(proxy.await?, &mut writer).await?,
+        TraceSubCommand::Status(_opts) => match trace_proxy {
+            SessionManagerProxyType::Provisioner(_) => {
+                status_legacy(proxy.await?, &mut writer).await?
+            }
+            SessionManagerProxyType::SessionManager(session_manager_proxy) => {
+                status(session_manager_proxy, &mut writer).await?
+            }
+        },
         TraceSubCommand::Symbolize(opts) => {
             if let Some(trace_file) = opts.fxt {
                 let outfile = opts.outfile.unwrap_or_else(|| trace_file.clone());
@@ -506,7 +569,40 @@ fn post_process(
     Ok(())
 }
 
-async fn status(proxy: TracingProxy, writer: &mut Writer) -> Result<()> {
+async fn status(session_manager_proxy: SessionManagerProxy, writer: &mut Writer) -> Result<()> {
+    let res = session_manager_proxy.status().await?;
+    let data = match res {
+        Err(RecordingError::NoSuchTraceFile) => "No active traces running".to_string(),
+        Ok(status) => {
+            format!(
+                "Task Id: {}\nTotal Duration: {}\nRemaining Duration: {}\nCategories: {}",
+                status.task_id.map(|id| id.to_string()).unwrap_or_else(|| "unknown".to_string()),
+                status
+                    .duration
+                    .map(|d| Duration::from_nanos(d as u64))
+                    .map(|d| format!("{} seconds", d.as_secs()))
+                    .unwrap_or_else(|| "infinite".to_string()),
+                status
+                    .remaining_runtime
+                    .map(|d| Duration::from_nanos(d as u64))
+                    .map(|d| format!("{} seconds", d.as_secs()))
+                    .unwrap_or_else(|| "infinite".to_string()),
+                status
+                    .config
+                    .map(|c| c
+                        .categories
+                        .map(|cat| cat.join(","))
+                        .unwrap_or_else(|| "None".to_string()))
+                    .unwrap_or_else(|| "None".to_string())
+            )
+        }
+        Err(e) => format!("Unexpected error {e:?}"),
+    };
+    writer.line(data)?;
+    Ok(())
+}
+
+async fn status_legacy(proxy: TracingProxy, writer: &mut Writer) -> Result<()> {
     let (iter_proxy, server) = fidl::endpoints::create_proxy::<ffx::TracingStatusIteratorMarker>();
     proxy.status(server).await?;
     let mut res = Vec::new();
@@ -523,8 +619,6 @@ async fn status(proxy: TracingProxy, writer: &mut Writer) -> Result<()> {
     } else {
         let mut unknown_target_counter = 1;
         for trace in res.into_iter() {
-            // TODO(awdavies): Fall back to SSH address, or return SSH
-            // address from the protocol.
             let target_string =
                 trace.target.and_then(|t| t.nodename.or(t.serial_number)).unwrap_or_else(|| {
                     let res = format!("Unknown Target {}", unknown_target_counter);
@@ -573,10 +667,40 @@ async fn status(proxy: TracingProxy, writer: &mut Writer) -> Result<()> {
     Ok(())
 }
 
+async fn background_trace(
+    trace_proxy: SessionManagerProxyType,
+    options: TraceOptions,
+    trace_config: TraceConfig,
+    writer: &mut Writer,
+) -> Result<()> {
+    let _r = direct::trace(trace_proxy.clone(), options, trace_config.clone(), true).await?;
+    writer.line("To manually stop the trace, use `ffx trace stop`")?;
+    writer.line("Current tracing status:")?;
+    if let SessionManagerProxyType::SessionManager(session_manager_proxy) = trace_proxy {
+        status(session_manager_proxy, writer).await
+    } else {
+        anyhow::bail!("Missing SessionManagerProxy")
+    }
+}
+
+async fn background_trace_legacy(
+    context: &EnvironmentContext,
+    tracing_proxy: TracingProxy,
+    output: String,
+    options: TraceOptions,
+    trace_config: TraceConfig,
+    writer: &mut Writer,
+) -> Result<()> {
+    daemon::trace(&context, tracing_proxy.clone(), output, options, trace_config).await?;
+    writer.line("To manually stop the trace, use `ffx trace stop`")?;
+    writer.line("Current tracing status:")?;
+    status_legacy(tracing_proxy, writer).await
+}
+
 pub(crate) async fn handle_recording_error(
     context: &EnvironmentContext,
     err: RecordingError,
-    output: &String,
+    output: &str,
 ) -> String {
     let target_spec = get_target_specifier(context).await.unwrap_or(None);
     match err {
@@ -593,14 +717,12 @@ https://fuchsia.dev/fuchsia-src/development/sdk/ffx/record-traces"
                 .to_owned()
         }
         RecordingError::RecordingAlreadyStarted => {
-            // TODO(85098): Also return file info (which output file is being written to).
             format!(
                 "Trace already started for target {}",
                 target_spec.unwrap_or_else(|| "".to_owned())
             )
         }
         RecordingError::DuplicateTraceFile => {
-            // TODO(85098): Also return target info.
             format!("Trace already running for file {}", output)
         }
         RecordingError::RecordingStart => {
@@ -640,6 +762,7 @@ package is missing from the device's system image.",
                 target_spec.as_deref().unwrap_or("")
             )
         }
+        unknown_error => format!("Unknown error: {unknown_error:?}"),
     }
 }
 
@@ -923,8 +1046,10 @@ mod tests {
 
     async fn run_trace_test(ctx: EnvironmentContext, cmd: TraceCommand, writer: Writer) {
         let proxy = Deferred::from_output(Ok(setup_fake_service()));
+        let session_manager: Deferred<SessionManagerProxy> =
+            Deferred::from_output(Err(fho::user_error!("not found")));
         let controller = setup_fake_controller_proxy();
-        trace(ctx, proxy, controller, writer, cmd).await.unwrap();
+        trace(ctx, proxy, controller, session_manager, writer, cmd).await.unwrap();
     }
 
     #[fuchsia::test]
@@ -1073,9 +1198,12 @@ mod tests {
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         let proxy = Deferred::from_output(Ok(setup_fake_service()));
+        let session_mgr_proxy = Deferred::from_output(Err(fho::user_error!("not found")));
         let controller = setup_closed_fake_controller_proxy();
         let cmd = TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) };
-        let res = trace(env.context.clone(), proxy, controller, writer, cmd).await.unwrap_err();
+        let res = trace(env.context.clone(), proxy, controller, session_mgr_proxy, writer, cmd)
+            .await
+            .unwrap_err();
         assert!(res.ffx_error().is_some());
         assert!(res.to_string().contains("This can happen if tracing is not"));
         assert!(test_buffers.into_stdout_str().is_empty());
@@ -1105,9 +1233,12 @@ mod tests {
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         let proxy = Deferred::from_output(Ok(setup_fake_service()));
+        let session_mgr_proxy = Deferred::from_output(Err(fho::user_error!("not found")));
         let controller = setup_closed_fake_controller_proxy();
         let cmd = TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) };
-        let res = trace(env.context.clone(), proxy, controller, writer, cmd).await.unwrap_err();
+        let res = trace(env.context.clone(), proxy, controller, session_mgr_proxy, writer, cmd)
+            .await
+            .unwrap_err();
         assert!(res.ffx_error().is_some());
         assert!(res.to_string().contains("This can happen if tracing is not"));
         assert!(test_buffers.into_stdout_str().is_empty());
@@ -1520,7 +1651,11 @@ Current tracing status:
             color::Fg(color::Yellow),
             color::Fg(color::Reset)
         );
-        let tip_str = format!("{}TIP: One or more providers dropped records. Consider increasing the buffer size with `--buffer-size <MB>`.{}", style::Bold, style::Reset);
+        let tip_str = format!(
+            "{}TIP: One or more providers dropped records. Consider increasing the buffer size with `--buffer-size <MB>`.{}",
+            style::Bold,
+            style::Reset
+        );
         let mut expected_output: Vec<String> = vec![
             "\"provider_foo\" (pid: 1234) trace stats".into(),
             "Buffer wrapped count: 10".into(),
@@ -1579,7 +1714,7 @@ Current tracing status:
 
         // Avoid being overly prescriptive about the actual contents of the errors. Just make sure
         // the basics are included and the thing we care about is inside.
-        use RecordingError::*;
+        use fidl_fuchsia_tracing_controller::RecordingError::*;
         let tests = vec![
             Test { error: TargetProxyOpen, matches: vec!["unable to connect", "ffx doctor"] },
             Test { error: RecordingAlreadyStarted, matches: vec!["already", target] },

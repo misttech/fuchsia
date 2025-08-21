@@ -53,7 +53,7 @@ impl std::cmp::Ord for TriggerSetItem {
     }
 }
 
-type TriggersFut<'a> = Pin<Box<dyn Future<Output = Option<TriggerAction>> + 'a>>;
+type TriggersFut<'a> = Pin<Box<dyn Future<Output = Option<TriggerAction>> + Send + 'a>>;
 
 pub struct TriggersWatcher<'a> {
     inner: TriggersFut<'a>,
