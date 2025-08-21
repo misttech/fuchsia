@@ -15,6 +15,7 @@
 #include <dev/power/motmot/init.h>
 #include <dev/psci.h>
 #include <dev/timer/arm_generic.h>
+#include <dev/timer/armv7_mmio_timer.h>
 #include <ktl/type_traits.h>
 #include <ktl/variant.h>
 #include <phys/arch/arch-handoff.h>
@@ -62,6 +63,13 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
 void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {
   // First, as above.
   ktl::visit([](const auto& config) { ArmGicInitLate(config); }, arch_handoff.gic_driver);
+
+  // TODO(johngro): we are currently initing the mmio timers rather late in the
+  // boot because we currently use the heap in the driver.  Consider moving to
+  // static allocation so we can init early instead.
+  if (arch_handoff.generic_timer_mmio_driver) {
+    Armv7MmioTimer::Init(arch_handoff.generic_timer_mmio_driver.value());
+  }
 
   if (arch_handoff.amlogic_hdcp_driver) {
     AmlogicS912HdcpInit(arch_handoff.amlogic_hdcp_driver.value());

@@ -28,6 +28,7 @@ source_set("generic-arm") {
     "//zircon/kernel/dev/power/motmot",
     "//zircon/kernel/dev/psci",
     "//zircon/kernel/dev/timer/arm_generic",
+    "//zircon/kernel/dev/timer/armv7_mmio_timer",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/cbuf",
