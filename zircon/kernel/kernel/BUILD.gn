@@ -79,6 +79,7 @@ source_set("kernel") {
 source_set("tests") {
   # TODO: testonly = true
   sources = [
+    "intensive_thread_test.cc",
     "mutex_tests.cc",
     "semaphore_tests.cc",
     "spinlock_tests.cc",

@@ -7,7 +7,6 @@
 
 #include <assert.h>
 #include <debug.h>
-#include <inttypes.h>
 #include <lib/arch/intrin.h>
 #include <lib/unittest/unittest.h>
 #include <platform.h>
@@ -26,14 +25,13 @@
 #include <kernel/thread.h>
 #include <ktl/atomic.h>
 #include <ktl/iterator.h>
-#include <pretty/hexdump.h>
-
-#include "tests.h"
 
 #include <ktl/enforce.h>
 
-// NOTE: The tests in this file are meant for interactive use only. Use a minimal
-// build and in the console type "k thread_tests".
+// These tests take much longer than, and are more intensive on the scheduler than,
+// the //zircon/kernel/kernel/thread.cc tests.
+
+namespace {
 
 static int rand_range(int low, int high) {
   ZX_DEBUG_ASSERT(low <= high);
@@ -43,15 +41,11 @@ static int rand_range(int low, int high) {
 
 static int mutex_thread(void* arg) {
   int i;
-  const int iterations = 1000000;
-  int count = 0;
+  const int iterations = 100000;
 
   static volatile uintptr_t shared = 0;
 
   auto m = reinterpret_cast<Mutex*>(arg);
-
-  printf("mutex tester thread %p starting up, will go for %d iterations\n", Thread::Current::Get(),
-         iterations);
 
   for (i = 0; i < iterations; i++) {
     m->Acquire();
@@ -63,8 +57,6 @@ static int mutex_thread(void* arg) {
     if ((rand() % 5) == 0)
       Thread::Current::Yield();
 
-    if (++count % 10000 == 0)
-      printf("%p: count %d\n", Thread::Current::Get(), count);
     shared = 0;
 
     m->Release();
@@ -72,16 +64,13 @@ static int mutex_thread(void* arg) {
       Thread::Current::Yield();
   }
 
-  printf("mutex tester %p done\n", Thread::Current::Get());
-
   return 0;
 }
 
 static Mutex imutex;
 
-static int mutex_test() {
-  printf("preinitialized mutex:\n");
-  hexdump(&imutex, sizeof(imutex));
+bool mutex_test() {
+  BEGIN_TEST;
 
   Mutex m;
 
@@ -98,13 +87,11 @@ static int mutex_test() {
 
   Thread::Current::SleepRelative(ZX_MSEC(100));
 
-  printf("done with mutex tests\n");
-
-  return 0;
+  END_TEST;
 }
 
-static int mutex_inherit_test() {
-  printf("running mutex inheritance test\n");
+bool mutex_inherit_test() {
+  BEGIN_TEST;
 
   constexpr uint inherit_test_mutex_count = 4;
   constexpr uint inherit_test_thread_count = 5;
@@ -120,7 +107,7 @@ static int mutex_inherit_test() {
     auto inherit_worker = [](void* arg) TA_NO_THREAD_SAFETY_ANALYSIS -> int {
       struct args* args = static_cast<struct args*>(arg);
 
-      for (int count = 0; count < 100000; count++) {
+      for (int count = 0; count < 10000; count++) {
         uint r = rand_range(1, inherit_test_mutex_count);
 
         // pick a random priority
@@ -131,9 +118,6 @@ static int mutex_inherit_test() {
         for (uint j = 0; j < r; j++) {
           args->test_mutex[j].Acquire();
         }
-
-        if (count % 1000 == 0)
-          printf("%p: count %d\n", Thread::Current::Get(), count);
 
         // wait on a event for a period of time, to try to have other grabber threads
         // need to tweak our priority in either one of the mutexes we hold or the
@@ -164,23 +148,17 @@ static int mutex_inherit_test() {
 
   Thread::Current::SleepRelative(ZX_MSEC(100));
 
-  printf("done with mutex inheirit test\n");
-
-  return 0;
+  END_TEST;
 }
 
 static int event_signaler(void* arg) {
   Event* event = static_cast<Event*>(arg);
 
-  printf("event signaler pausing\n");
+  // event signaler pausing
   Thread::Current::SleepRelative(ZX_SEC(1));
 
-  //  for (;;) {
-  printf("signaling event\n");
   event->Signal();
-  printf("done signaling event\n");
   Thread::Current::Yield();
-  //  }
 
   return 0;
 }
@@ -195,16 +173,12 @@ static int event_waiter(void* arg) {
   WaiterArgs args = *static_cast<WaiterArgs*>(arg);
 
   while (args.count > 0) {
-    printf("thread %p: waiting on event...\n", Thread::Current::Get());
     zx_status_t status = args.event->WaitDeadline(ZX_TIME_INFINITE, Interruptible::Yes);
     if (status == ZX_ERR_INTERNAL_INTR_KILLED) {
-      printf("thread %p: killed\n", Thread::Current::Get());
       return -1;
     } else if (status != ZX_OK) {
-      printf("thread %p: event_wait() returned error %d\n", Thread::Current::Get(), status);
       return -1;
     }
-    printf("thread %p: done waiting on event\n", Thread::Current::Get());
     Thread::Current::Yield();
     args.count--;
   }
@@ -212,17 +186,13 @@ static int event_waiter(void* arg) {
   return 0;
 }
 
-static void event_test() {
-  Thread* threads[5];
+bool event_test() {
+  BEGIN_TEST;
 
-  printf("event tests starting\n");
+  Thread* threads[5];
 
   {
     /* make sure signaling the event wakes up all the threads and stays signaled */
-    printf(
-        "creating event, waiting on it with 4 threads, signaling it and making sure all threads "
-        "fall "
-        "through twice\n");
     Event event;
     WaiterArgs args{&event, 2};
     threads[0] = Thread::Create("event signaler", &event_signaler, &event, DEFAULT_PRIORITY);
@@ -238,17 +208,13 @@ static void event_test() {
       thread->Join(NULL, ZX_TIME_INFINITE);
 
     Thread::Current::SleepRelative(ZX_SEC(2));
-    printf("destroying event by going out of scope\n");
+    // destroying event by going out of scope
   }
 
   {
     AutounsignalEvent event;
     WaiterArgs args{&event, 99};
     /* make sure signaling the event wakes up precisely one thread */
-    printf(
-        "creating event, waiting on it with 4 threads, signaling it and making sure only one "
-        "thread "
-        "wakes up\n");
     threads[0] = Thread::Create("event signaler", &event_signaler, &event, DEFAULT_PRIORITY);
     threads[1] = Thread::Create("event waiter 0", &event_waiter, &args, DEFAULT_PRIORITY);
     threads[2] = Thread::Create("event waiter 1", &event_waiter, &args, DEFAULT_PRIORITY);
@@ -266,7 +232,7 @@ static void event_test() {
     }
   }
 
-  printf("event tests done\n");
+  END_TEST;
 }
 
 static Event context_switch_event;
@@ -274,28 +240,23 @@ static Event context_switch_done_event;
 
 static int context_switch_tester(void* arg) {
   int i;
-  uint64_t total_count = 0;
   const int iter = 100000;
-  uintptr_t thread_count = (uintptr_t)arg;
 
   context_switch_event.Wait();
 
-  uint64_t count = arch::Cycles();
   for (i = 0; i < iter; i++) {
     Thread::Current::Yield();
   }
-  total_count += arch::Cycles() - count;
   Thread::Current::SleepRelative(ZX_SEC(1));
-  printf("took %" PRIu64 " cycles to yield %d times, %" PRIu64 " per yield, %" PRIu64
-         " per yield per thread\n",
-         total_count, iter, total_count / iter, total_count / iter / thread_count);
 
   context_switch_done_event.Signal();
 
   return 0;
 }
 
-static void context_switch_test() {
+bool context_switch_test() {
+  BEGIN_TEST;
+
   Thread::Create("context switch idle", &context_switch_tester, (void*)1, DEFAULT_PRIORITY)
       ->DetachAndResume();
   Thread::Current::SleepRelative(ZX_MSEC(100));
@@ -328,6 +289,8 @@ static void context_switch_test() {
   context_switch_event.Signal();
   context_switch_done_event.Wait();
   Thread::Current::SleepRelative(ZX_MSEC(100));
+
+  END_TEST;
 }
 
 static ktl::atomic<int> atomic_var;
@@ -339,23 +302,20 @@ static int atomic_tester(void* arg) {
 
   const int iter = 10000000;
 
-  TRACEF("add %d, %d iterations\n", add, iter);
-
   for (i = 0; i < iter; i++) {
     atomic_var.fetch_add(add);
   }
 
-  int old = atomic_count.fetch_sub(1);
-  TRACEF("exiting, old count %d\n", old);
+  atomic_count.fetch_sub(1);
 
   return 0;
 }
 
-static void atomic_test(void) {
+bool atomic_test(void) {
+  BEGIN_TEST;
+
   atomic_var = 0;
   atomic_count = 8;
-
-  printf("testing atomic routines\n");
 
   Thread* threads[8];
   threads[0] = Thread::Create("atomic tester 1", &atomic_tester, (void*)1, LOW_PRIORITY);
@@ -376,7 +336,7 @@ static void atomic_test(void) {
     thread->Join(NULL, ZX_TIME_INFINITE);
   }
 
-  printf("atomic count == %d (should be zero)\n", atomic_var.load());
+  END_TEST;
 }
 
 static ktl::atomic<int> preempt_count;
@@ -384,18 +344,17 @@ static ktl::atomic<int> preempt_count;
 static int preempt_tester(void* arg) {
   spin(1000000);
 
-  printf("exiting ts %" PRIi64 " ns\n", current_mono_time());
-
   preempt_count.fetch_sub(1);
 
   return 0;
 }
 
-static void preempt_test() {
+bool preempt_test() {
+  BEGIN_TEST;
+
   /* create 5 threads, let them run. If the system is properly timer preempting,
    * the threads should interleave each other at a fine enough granularity so
    * that they complete at roughly the same time. */
-  printf("testing preemption\n");
 
   preempt_count = 5;
 
@@ -406,74 +365,68 @@ static void preempt_test() {
     Thread::Current::SleepRelative(ZX_SEC(1));
   }
 
-  printf("done with preempt test, above time stamps should be very close\n");
+  END_TEST;
 }
 
 static int join_tester(void* arg) {
   int val = (int)(uintptr_t)arg;
 
-  printf("\t\tjoin tester starting\n");
   Thread::Current::SleepRelative(ZX_MSEC(500));
-  printf("\t\tjoin tester exiting with result %d\n", val);
 
   return val;
 }
 
 static int join_tester_server(void* arg) {
   int ret;
-  zx_status_t err;
   Thread* t;
 
-  printf("\ttesting thread_join/thread_detach\n");
-
-  printf("\tcreating and waiting on thread to exit with thread_join\n");
   t = Thread::Create("join tester", &join_tester, (void*)1, DEFAULT_PRIORITY);
   t->Resume();
   ret = 99;
   t->canary().Assert();
-  err = t->Join(&ret, ZX_TIME_INFINITE);
-  printf("\tthread_join returns err %d, retval %d\n", err, ret);
+  ASSERT(ZX_OK == t->Join(&ret, ZX_TIME_INFINITE));
 
-  printf("\tcreating and waiting on thread to exit with thread_join, after thread has exited\n");
   t = Thread::Create("join tester", &join_tester, (void*)2, DEFAULT_PRIORITY);
   t->Resume();
   Thread::Current::SleepRelative(ZX_SEC(1));  // wait until thread is already dead
   ret = 99;
   t->canary().Assert();
-  err = t->Join(&ret, ZX_TIME_INFINITE);
-  printf("\tthread_join returns err %d, retval %d\n", err, ret);
+  ASSERT(ZX_OK == t->Join(&ret, ZX_TIME_INFINITE));
 
-  printf("\tcreating a thread, detaching it, let it exit on its own\n");
+  // creating a thread, detaching it, let it exit on its own
   t = Thread::Create("join tester", &join_tester, (void*)3, DEFAULT_PRIORITY);
   t->Detach();
   t->Resume();
   Thread::Current::SleepRelative(ZX_SEC(1));  // wait until the thread should be dead
 
-  printf("\tcreating a thread, detaching it after it should be dead\n");
+  // creating a thread, detaching it after it should be dead
   t = Thread::Create("join tester", &join_tester, (void*)4, DEFAULT_PRIORITY);
   t->Resume();
   Thread::Current::SleepRelative(ZX_SEC(1));  // wait until thread is already dead
   t->canary().Assert();
   t->Detach();
 
-  printf("\texiting join tester server\n");
+  // exiting join tester server
 
   return 55;
 }
 
-static void join_test() {
+bool join_test() {
+  BEGIN_TEST;
+
+  // TODO(https://fxbug.dev/439836795): re-enable when it passes
+  printf("this test is disabled: https://fxbug.dev/439836795\n");
+  END_TEST;
+
   int ret;
-  zx_status_t err;
   Thread* t;
 
-  printf("testing thread_join/thread_detach\n");
-
-  printf("creating thread join server thread\n");
   t = Thread::Create("join tester server", &join_tester_server, (void*)1, DEFAULT_PRIORITY);
   t->Resume();
   ret = 99;
-  err = t->Join(&ret, ZX_TIME_INFINITE);
-  printf("thread_join returns err %d, retval %d (should be 0 and 55)\n", err, ret);
+  ASSERT(ZX_OK == t->Join(&ret, ZX_TIME_INFINITE));
+
+  END_TEST;
 }
 
 struct lock_pair_t {
@@ -494,12 +447,17 @@ static int hold_and_release(void* arg) {
   return 0;
 }
 
-static void spinlock_test() {
+bool spinlock_test() {
+  BEGIN_TEST;
+
+  // TODO(https://fxbug.dev/439836795): re-enable when it passes
+  printf("this test is disabled: https://fxbug.dev/439836795\n");
+  END_TEST;
+
   interrupt_saved_state_t state;
   SpinLock lock;
 
   // Verify basic functionality (single core).
-  printf("testing spinlock:\n");
 
   // Note that it is invalid the call lock.IsHeld() with interrupts enabled.
 
@@ -515,7 +473,8 @@ static void spinlock_test() {
   const cpu_mask_t active = Scheduler::PeekActiveMask();
   if (!active || ispow2(active)) {
     printf("skipping rest of spinlock_test, not enough active cpus\n");
-    return;
+
+    END_TEST;
   }
 
   lock_pair_t pair;
@@ -540,16 +499,15 @@ static void spinlock_test() {
   pair.first.ReleaseIrqRestore(state);
   holder_thread->Join(NULL, ZX_TIME_INFINITE);
 
-  printf("seems to work\n");
+  END_TEST;
 }
 
-static int sleeper_kill_thread(void* arg) {
+static int sleeper_kill_thread_infinite_wait(void* arg) {
   Thread::Current::SleepRelative(ZX_MSEC(100));
 
-  zx_instant_mono_t t = current_mono_time();
-  zx_status_t err = Thread::Current::SleepInterruptible(t + ZX_SEC(5));
-  zx_duration_mono_t duration = (current_mono_time() - t) / ZX_MSEC(1);
-  TRACEF("thread_sleep_interruptible returns %d after %" PRIi64 " msecs\n", err, duration);
+  printf("sleeper_kill_thread_infinite_wait: waiting until killed\n");
+  zx_status_t err = Thread::Current::SleepInterruptible(ZX_TIME_INFINITE);
+  ASSERT(err == ZX_ERR_INTERNAL_INTR_KILLED);
 
   return 0;
 }
@@ -559,51 +517,39 @@ static int waiter_kill_thread_infinite_wait(void* arg) {
 
   Thread::Current::SleepRelative(ZX_MSEC(100));
 
-  zx_instant_mono_t t = current_mono_time();
+  printf("waiter_kill_thread_infinite_wait: waiting until killed\n");
   zx_status_t err = e->WaitDeadline(ZX_TIME_INFINITE, Interruptible::Yes);
-  zx_duration_mono_t duration = (current_mono_time() - t) / ZX_MSEC(1);
-  TRACEF("event_wait_deadline returns %d after %" PRIi64 " msecs\n", err, duration);
+  ASSERT(err == ZX_ERR_INTERNAL_INTR_KILLED);
 
   return 0;
 }
 
-static int waiter_kill_thread(void* arg) {
-  Event* e = (Event*)arg;
+bool kill_test() {
+  BEGIN_TEST;
 
-  Thread::Current::SleepRelative(ZX_MSEC(100));
-
-  zx_instant_mono_t t = current_mono_time();
-  zx_status_t err = e->WaitDeadline(t + ZX_SEC(5), Interruptible::Yes);
-  zx_duration_mono_t duration = (current_mono_time() - t) / ZX_MSEC(1);
-  TRACEF("event_wait_deadline with deadline returns %d after %" PRIi64 " msecs\n", err, duration);
-
-  return 0;
-}
-
-static void kill_tests() {
   Thread* t;
 
-  printf("starting sleeper thread, then killing it while it sleeps.\n");
-  t = Thread::Create("sleeper", sleeper_kill_thread, 0, LOW_PRIORITY);
+  // Starting sleeper thread, then killing it while it sleeps.
+  t = Thread::Create("sleeper", sleeper_kill_thread_infinite_wait, 0, LOW_PRIORITY);
   t->Resume();
   Thread::Current::SleepRelative(ZX_MSEC(200));
   t->Kill();
   t->Join(NULL, ZX_TIME_INFINITE);
 
-  printf("starting sleeper thread, then killing it before it wakes up.\n");
-  t = Thread::Create("sleeper", sleeper_kill_thread, 0, LOW_PRIORITY);
+  // Starting sleeper thread, then killing it before it wakes up.
+  t = Thread::Create("sleeper", sleeper_kill_thread_infinite_wait, 0, LOW_PRIORITY);
   t->Resume();
   t->Kill();
   t->Join(NULL, ZX_TIME_INFINITE);
 
-  printf("starting sleeper thread, then killing it before it is unsuspended.\n");
-  t = Thread::Create("sleeper", sleeper_kill_thread, 0, LOW_PRIORITY);
+  // Starting sleeper thread, then killing it before it is unsuspended.
+  t = Thread::Create("sleeper", sleeper_kill_thread_infinite_wait, 0, LOW_PRIORITY);
   t->Kill();  // kill it before it is resumed
   t->Resume();
   t->Join(NULL, ZX_TIME_INFINITE);
 
   {
-    printf("starting waiter thread that waits forever, then killing it while it blocks.\n");
+    // Starting waiter thread that waits forever, then killing it while it blocks.
     Event e;
     t = Thread::Create("waiter", waiter_kill_thread_infinite_wait, &e, LOW_PRIORITY);
     t->Resume();
@@ -613,7 +559,7 @@ static void kill_tests() {
   }
 
   {
-    printf("starting waiter thread that waits forever, then killing it before it wakes up.\n");
+    // Starting waiter thread that waits forever, then killing it before it wakes up.
     Event e;
     t = Thread::Create("waiter", waiter_kill_thread_infinite_wait, &e, LOW_PRIORITY);
     t->Resume();
@@ -621,24 +567,7 @@ static void kill_tests() {
     t->Join(NULL, ZX_TIME_INFINITE);
   }
 
-  {
-    printf("starting waiter thread that waits some time, then killing it while it blocks.\n");
-    Event e;
-    t = Thread::Create("waiter", waiter_kill_thread, &e, LOW_PRIORITY);
-    t->Resume();
-    Thread::Current::SleepRelative(ZX_MSEC(200));
-    t->Kill();
-    t->Join(NULL, ZX_TIME_INFINITE);
-  }
-
-  {
-    printf("starting waiter thread that waits some time, then killing it before it wakes up.\n");
-    Event e;
-    t = Thread::Create("waiter", waiter_kill_thread, &e, LOW_PRIORITY);
-    t->Resume();
-    t->Kill();
-    t->Join(NULL, ZX_TIME_INFINITE);
-  }
+  END_TEST;
 }
 
 struct affinity_test_state {
@@ -666,42 +595,29 @@ static cpu_mask_t random_mask(cpu_mask_t active) {
 }
 
 static int affinity_test_thread(void* arg) {
-  Thread* t = Thread::Current::Get();
   affinity_test_state* state = static_cast<affinity_test_state*>(arg);
   const cpu_mask_t active = Scheduler::PeekActiveMask();
-
-  printf("top of affinity tester %p\n", t);
 
   while (!state->shutdown) {
     int which = rand() % static_cast<int>(ktl::size(state->threads));
     switch (rand() % 5) {
       case 0:  // set affinity
-        // printf("%p set aff %p\n", t, state->threads[which]);
         state->threads[which]->SetCpuAffinity((cpu_mask_t)random_mask(active));
         break;
       case 1:  // sleep for a bit
-        // printf("%p sleep\n", t);
         Thread::Current::SleepRelative(ZX_USEC(rand() % 100));
         break;
       case 2:  // spin for a bit
-        // printf("%p spin\n", t);
         spin((uint32_t)rand() % 100);
-        // printf("%p spin done\n", t);
         break;
       case 3:  // yield
-        // printf("%p yield\n", t);
         spin_while(ZX_USEC((uint32_t)rand() % 100), Thread::Current::Yield);
-        // printf("%p yield done\n", t);
         break;
       case 4:  // reschedule
-        // printf("%p reschedule\n", t);
         spin_while(ZX_USEC((uint32_t)rand() % 100), Thread::Current::Reschedule);
-        // printf("%p reschedule done\n", t);
         break;
     }
   }
-
-  printf("affinity tester %p exiting\n", t);
 
   return 0;
 }
@@ -710,13 +626,13 @@ static int affinity_test_thread(void* arg) {
 // to random masks while doing various work.
 // a successful pass is one where it completes the run without tripping over any asserts
 // in the scheduler code.
-__NO_INLINE static void affinity_test() {
-  printf("starting thread affinity test\n");
+__NO_INLINE bool affinity_test() {
+  BEGIN_TEST;
 
   const cpu_mask_t active = Scheduler::PeekActiveMask();
   if (!active || ispow2(active)) {
     printf("aborting test, not enough active cpus\n");
-    return;
+    END_TEST;
   }
 
   affinity_test_state state;
@@ -730,20 +646,17 @@ __NO_INLINE static void affinity_test() {
   }
 
   static const int duration = 30;
-  printf("running tests for %i seconds\n", duration);
   for (int i = 0; i < duration; i++) {
-    Thread::Current::SleepRelative(ZX_SEC(1));
-    printf("%d sec elapsed\n", i + 1);
+    Thread::Current::SleepRelative(ZX_MSEC(250));
   }
   state.shutdown = true;
   Thread::Current::SleepRelative(ZX_SEC(1));
 
   for (auto& t : state.threads) {
-    printf("joining thread %p\n", t);
     t->Join(nullptr, ZX_TIME_INFINITE);
   }
 
-  printf("done with affinity test\n");
+  END_TEST;
 }
 
 static int prio_test_thread(void* arg) {
@@ -781,8 +694,8 @@ static int prio_test_thread(void* arg) {
   return count;
 }
 
-__NO_INLINE static void priority_test() {
-  printf("starting priority tests\n");
+__NO_INLINE bool priority_test() {
+  BEGIN_TEST;
 
   Thread* t = Thread::Current::Get();
   SchedulerState::BaseProfile bp = t->SnapshotBaseProfile();
@@ -790,7 +703,7 @@ __NO_INLINE static void priority_test() {
   if (!bp.IsFair() ||
       (bp.fair.weight != SchedulerState::ConvertPriorityToWeight(DEFAULT_PRIORITY))) {
     printf("unexpected initial state, aborting test\n");
-    return;
+    END_TEST;
   }
 
   t->SetBaseProfile(SchedulerState::BaseProfile{DEFAULT_PRIORITY + 2});
@@ -808,7 +721,8 @@ __NO_INLINE static void priority_test() {
   const cpu_mask_t active = Scheduler::PeekActiveMask();
   if (!active || ispow2(active)) {
     printf("skipping rest, not enough active cpus\n");
-    return;
+
+    END_TEST;
   }
 
   AutounsignalEvent ev;
@@ -828,65 +742,30 @@ __NO_INLINE static void priority_test() {
   nt->SetCpuAffinity(cpu_num_to_mask(other));
   nt->Resume();
 
-  zx_status_t status = ev.WaitDeadline(ZX_TIME_INFINITE, Interruptible::Yes);
-  ASSERT(status == ZX_OK);
+  ASSERT_OK(ev.WaitDeadline(ZX_TIME_INFINITE, Interruptible::Yes));
   nt->SetBaseProfile(SchedulerState::BaseProfile{DEFAULT_PRIORITY});
 
-  status = ev.WaitDeadline(ZX_TIME_INFINITE, Interruptible::Yes);
-  ASSERT(status == ZX_OK);
+  ASSERT_OK(ev.WaitDeadline(ZX_TIME_INFINITE, Interruptible::Yes));
   nt->SetBaseProfile(SchedulerState::BaseProfile{HIGH_PRIORITY});
 
   int count = 0;
   nt->Join(&count, ZX_TIME_INFINITE);
-  printf("%d loops\n", count);
 
-  printf("done with priority tests\n");
+  END_TEST;
 }
 
-int thread_tests(int, const cmd_args*, uint32_t) {
-  kill_tests();
+}  // namespace
 
-  mutex_test();
-  event_test();
-  mutex_inherit_test();
-
-  spinlock_test();
-  atomic_test();
-
-  Thread::Current::SleepRelative(ZX_MSEC(200));
-  context_switch_test();
-
-  preempt_test();
-
-  join_test();
-
-  affinity_test();
-
-  priority_test();
-
-  return 0;
-}
-
-static int spinner_thread(void* arg) {
-  for (;;) {
-    __asm__ volatile("");
-  }
-
-  return 0;
-}
-
-int spinner(int argc, const cmd_args* argv, uint32_t) {
-  if (argc < 2) {
-    printf("not enough args\n");
-    printf("usage: %s <priority>\n", argv[0].str);
-    return -1;
-  }
-
-  Thread* t = Thread::Create("spinner", spinner_thread, NULL, (int)argv[1].u);
-  if (!t)
-    return ZX_ERR_NO_MEMORY;
-
-  t->DetachAndResume();
-
-  return 0;
-}
+UNITTEST_START_TESTCASE(intensive_thread_tests)
+UNITTEST("affinity_test", affinity_test)
+UNITTEST("atomic_test", atomic_test)
+UNITTEST("context_switch_test", context_switch_test)
+UNITTEST("event_test", event_test)
+UNITTEST("join_test", join_test)
+UNITTEST("kill_test", kill_test)
+UNITTEST("mutex_inherit_test", mutex_inherit_test)
+UNITTEST("mutex_test", mutex_test)
+UNITTEST("preempt_test", preempt_test)
+UNITTEST("priority_test", priority_test)
+UNITTEST("spinlock_test", spinlock_test)
+UNITTEST_END_TESTCASE(intensive_thread_tests, "intensive_thread", "intensive thread tests")

@@ -15,7 +15,6 @@
 #include <zircon/compiler.h>
 
 STATIC_COMMAND_START
-STATIC_COMMAND("thread_tests", "test the scheduler", &thread_tests)
 STATIC_COMMAND("clock_tests", "test clocks", &clock_tests)
 STATIC_COMMAND("sleep_tests", "tests sleep", &sleep_tests)
 STATIC_COMMAND("bench", "miscellaneous benchmarks", &benchmarks)
