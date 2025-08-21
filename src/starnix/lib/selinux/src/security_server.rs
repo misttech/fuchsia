@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::access_vector_cache::{
-    CacheStats, HasCacheStats, Manager as AvcManager, Query, QueryMut, Reset,
-};
+use crate::access_vector_cache::{CacheStats, HasCacheStats, Manager as AvcManager, Query, Reset};
 use crate::exceptions_config::ExceptionsConfig;
 use crate::permission_check::PermissionCheck;
 use crate::policy::metadata::HandleUnknown;
@@ -438,24 +436,6 @@ impl SecurityServer {
             assert!(state.status_publisher.is_none());
             state.status_publisher = Some(status_holder);
         });
-    }
-
-    /// Returns a reference to the shared access vector cache that delebates cache misses to `self`.
-    // TODO: Remove this in favour of a higher-level security-lookup interface/impl getter, replacing
-    // `as_permission_check()`.
-    #[allow(dead_code)]
-    pub(super) fn get_shared_avc(&self) -> &impl Query {
-        self.avc_manager.get_shared_cache()
-    }
-
-    /// Returns a newly constructed thread-local access vector cache that delegates cache misses to
-    /// any shared caches owned by `self.avc_manager`, which ultimately delegate to `self`. The
-    /// returned cache will be reset when this security server's policy is reset.
-    // TODO: Remove this in favour of a higher-level security-lookup interface/impl getter, replacing
-    // `as_permission_check()`.
-    #[allow(dead_code)]
-    pub(super) fn new_thread_local_avc(&self) -> impl QueryMut {
-        self.avc_manager.new_thread_local_cache()
     }
 
     /// Runs the supplied function with locked `self`, and then updates the SELinux status file
