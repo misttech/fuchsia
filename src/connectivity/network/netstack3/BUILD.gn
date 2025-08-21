@@ -33,6 +33,7 @@ common_deps = [
   "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes_rust",
   "//sdk/fidl/fuchsia.net.routes.admin:fuchsia.net.routes.admin_rust",
   "//sdk/fidl/fuchsia.net.settings:fuchsia.net.settings_rust",
+  "//sdk/fidl/fuchsia.net.sockets:fuchsia.net.sockets_rust",
   "//sdk/fidl/fuchsia.net.stack:fuchsia.net.stack_rust",
   "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust",
   "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",

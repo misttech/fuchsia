@@ -66,7 +66,11 @@ use {
     fidl_fuchsia_hardware_network as fhardware_network,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
     fidl_fuchsia_net_multicast_admin as fnet_multicast_admin,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
+    fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
+    // TODO(https://fxbug.dev/433947569): This is only here to keep the dep in
+    // the build graph. Remove once it's actually used.
+    fidl_fuchsia_net_sockets as _,
     fuchsia_async as fasync,
 };
 

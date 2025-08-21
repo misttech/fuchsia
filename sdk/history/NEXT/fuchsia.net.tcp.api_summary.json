@@ -79,6 +79,36 @@
         "type": "fuchsia.net.tcp/State"
     },
     {
+        "kind": "table/member",
+        "name": "fuchsia.net.tcp/Info.tcpi_last_ack_recv_msec",
+        "ordinal": "23",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.net.tcp/Info.tcpi_last_data_sent_msec",
+        "ordinal": "20",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.net.tcp/Info.tcpi_segs_in",
+        "ordinal": "40",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.net.tcp/Info.tcpi_segs_out",
+        "ordinal": "39",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.net.tcp/Info.tcpi_total_retrans",
+        "ordinal": "34",
+        "type": "uint32"
+    },
+    {
         "kind": "table",
         "name": "fuchsia.net.tcp/Info"
     },
