@@ -33,6 +33,7 @@ rustc_library("alarms") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
+    "//src/lib/fuchsia-runtime",
     "//src/lib/trace/rust:trace",
     "//src/sys/time/timekeeper/pretty:time_pretty",
     "//third_party/rust_crates:anyhow",

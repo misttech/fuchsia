@@ -29,11 +29,11 @@ mod emu;
 mod timers;
 
 use crate::emu::EmulationTimerOps;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
+use fidl::HandleBased;
 use fidl::encoding::ProxyChannelBox;
 use fidl::endpoints::RequestStream;
-use fidl::HandleBased;
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
 use fuchsia_inspect::{HistogramProperty, Property};
 use futures::channel::mpsc;
@@ -44,11 +44,12 @@ use scopeguard::defer;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::LazyLock;
-use time_pretty::{format_duration, format_timer, MSEC_IN_NANOS};
+use time_pretty::{MSEC_IN_NANOS, format_duration, format_timer};
 use zx::AsHandleRef;
 use {
     fidl_fuchsia_hardware_hrtimer as ffhh, fidl_fuchsia_time_alarms as fta,
-    fuchsia_async as fasync, fuchsia_inspect as finspect, fuchsia_trace as trace,
+    fuchsia_async as fasync, fuchsia_inspect as finspect, fuchsia_runtime as fxr,
+    fuchsia_trace as trace,
 };
 
 static I64_MAX_AS_U64: LazyLock<u64> = LazyLock::new(|| i64::MAX.try_into().expect("infallible"));
@@ -279,9 +280,16 @@ enum Cmd {
         /// The unique connection ID.
         conn_id: zx::Koid,
         /// A timestamp (presumably in the future), at which to expire the timer.
-        deadline: fasync::BootInstant,
+        deadline: timers::Deadline,
         // The API supports several modes. See fuchsia.time.alarms/Wake.fidl.
-        mode: fta::SetMode,
+        //
+        // Optional, because not always needed:
+        //
+        // * `mode` is required for hanging get API calls (e.g. `StartAndWait`), as we must signal
+        //   when the alarm is scheduled.
+        // * The calls such as `SetUtc` which return only upon scheduling do not need a `mode`, as
+        //   the caller can wait for the call to return immediately.
+        mode: Option<fta::SetMode>,
         /// An alarm identifier, chosen by the caller.
         alarm_id: String,
         /// A responder that will be called when the timer expires. The
@@ -314,6 +322,11 @@ enum Cmd {
         resolution_nanos: i64,
         ticks: u64,
     },
+    /// The UTC clock transformation has been updated.
+    UtcUpdated {
+        // The new boot-to-utc clock transformation.
+        transform: fxr::UtcClockTransform,
+    },
 }
 
 impl std::fmt::Display for Cmd {
@@ -323,9 +336,7 @@ impl std::fmt::Display for Cmd {
                 write!(
                     f,
                     "Start[alarm_id=\"{}\", conn_id={:?}, deadline={}]",
-                    alarm_id,
-                    conn_id,
-                    format_timer((*deadline).into())
+                    alarm_id, conn_id, deadline,
                 )
             }
             Cmd::Alarm { expired_deadline, .. } => {
@@ -349,6 +360,9 @@ impl std::fmt::Display for Cmd {
             }
             Cmd::StopById { timer_id, done: _ } => {
                 write!(f, "StopById[timerId={}]", timer_id,)
+            }
+            Cmd::UtcUpdated { transform } => {
+                write!(f, "UtcUpdated[timerId={transform:?}]")
             }
         }
     }
@@ -437,10 +451,11 @@ async fn handle_request(
                 format_timer(deadline.into())
             );
             // Expected to return quickly.
+            let deadline = timers::Deadline::Boot(deadline.into());
             if let Err(e) = log_long_op!(cmd.send(Cmd::Start {
                 conn_id,
-                deadline: deadline.into(),
-                mode,
+                deadline,
+                mode: Some(mode),
                 alarm_id: alarm_id.clone(),
                 responder: responder.clone(),
             })) {
@@ -451,6 +466,28 @@ async fn handle_request(
                     .expect("always present if call fails")
                     .send(Err(fta::WakeAlarmsError::Internal))
                     .unwrap();
+            }
+        }
+        fta::WakeAlarmsRequest::SetUtc { notifier, deadline, alarm_id, responder } => {
+            trace::duration!(c"alarms", c"handle_request::set_utc");
+            let deadline =
+                timers::Deadline::Utc(fxr::UtcInstant::from_nanos(deadline.timestamp_utc));
+            let notifier = Rc::new(RefCell::new(Some(notifier)));
+            debug!(
+                "handle_request: scheduling alarm_id UTC: \"{alarm_id}\"\n\tconn_id: {conn_id:?}\n\tdeadline: {deadline}",
+            );
+            let result = log_long_op!(cmd.send(Cmd::Start {
+                conn_id,
+                deadline,
+                mode: None,
+                alarm_id: alarm_id.clone(),
+                responder: notifier,
+            }));
+            if let Err(err) = result {
+                warn!("handle_request: error while trying to schedule `{alarm_id}`: {err:?}");
+                responder.send(Err(fta::WakeAlarmsError::Internal)).unwrap();
+            } else {
+                responder.send(Ok(())).unwrap();
             }
         }
         fta::WakeAlarmsRequest::Cancel { alarm_id, .. } => {
@@ -467,8 +504,8 @@ async fn handle_request(
             // Expected to return quickly.
             if let Err(e) = log_long_op!(cmd.send(Cmd::Start {
                 conn_id,
-                deadline: deadline.into(),
-                mode,
+                deadline: timers::Deadline::Boot(deadline.into()),
+                mode: Some(mode),
                 alarm_id: alarm_id.clone(),
                 responder: Rc::new(RefCell::new(Some(notifier))),
             })) {
@@ -479,8 +516,6 @@ async fn handle_request(
                 responder.send(Ok(())).unwrap();
             }
         }
-        // TODO: b/422826161 - Implement.
-        fta::WakeAlarmsRequest::SetUtc { .. } => todo!(),
         fta::WakeAlarmsRequest::_UnknownMethod { .. } => {}
     };
 }
@@ -502,26 +537,44 @@ impl Loop {
         scope: fasync::ScopeHandle,
         device_proxy: ffhh::DeviceProxy,
         inspect: finspect::Node,
+        utc_clock: fxr::UtcClock,
     ) -> Self {
         let hw_device_timer_ops = HardwareTimerOps::new(device_proxy);
-        Loop::new_internal(scope, hw_device_timer_ops, inspect)
+        Loop::new_internal(scope, hw_device_timer_ops, inspect, utc_clock)
     }
 
     // Creates a new instance of [Loop] with emulated wake alarms.
-    pub fn new_emulated(scope: fasync::ScopeHandle, inspect: finspect::Node) -> Self {
+    pub fn new_emulated(
+        scope: fasync::ScopeHandle,
+        inspect: finspect::Node,
+        utc_clock: fxr::UtcClock,
+    ) -> Self {
         let timer_ops = Box::new(EmulationTimerOps::new());
-        Loop::new_internal(scope, timer_ops, inspect)
+        Loop::new_internal(scope, timer_ops, inspect, utc_clock)
     }
 
     fn new_internal(
         scope: fasync::ScopeHandle,
         timer_ops: Box<dyn TimerOps>,
         inspect: finspect::Node,
+        utc_clock: fxr::UtcClock,
     ) -> Self {
+        let utc_transform = Rc::new(RefCell::new(
+            utc_clock.get_details().expect("has UTC clock READ capability").reference_to_synthetic,
+        ));
+
         let (snd, rcv) = mpsc::channel(CHANNEL_SIZE);
-        let snd_clone = snd.clone();
         let loop_scope = scope.clone();
-        scope.spawn_local(wake_timer_loop(loop_scope, snd_clone, rcv, timer_ops, inspect));
+
+        scope.spawn_local(wake_timer_loop(
+            loop_scope,
+            snd.clone(),
+            rcv,
+            timer_ops,
+            inspect,
+            utc_transform,
+        ));
+        scope.spawn_local(monitor_utc_clock_changes(utc_clock, snd.clone()));
         Self { snd }
     }
 
@@ -532,8 +585,29 @@ impl Loop {
     }
 }
 
-// Clones a handle. Needed for 1:N notifications.
-pub(crate) fn clone_handle<H: HandleBased>(handle: &H) -> H {
+// Forwards the clock transformation of an updated clock into the alarm manager, to allow
+// correcting the boot time deadlines of clocks on the UTC timeline.
+async fn monitor_utc_clock_changes(utc_clock: fxr::UtcClock, mut cmd: mpsc::Sender<Cmd>) {
+    log::info!("monitor_utc_clock_changes: entry");
+    loop {
+        // CLOCK_UPDATED signal is self-clearing.
+        fasync::OnSignals::new(utc_clock.as_handle_ref(), zx::Signals::CLOCK_UPDATED)
+            .await
+            .expect("UTC clock is readable");
+
+        let transform =
+            utc_clock.get_details().expect("UTC clock details are readable").reference_to_synthetic;
+        log::debug!("Received a UTC update: {transform:?}");
+        if let Err(err) = cmd.send(Cmd::UtcUpdated { transform }).await {
+            // This is OK in tests.
+            log::warn!("monitor_utc_clock_changes: exit: {err:?}");
+            break;
+        }
+    }
+}
+
+/// Clone a handle infallibly with `zx::Rights::SAME_RIGHTS`.
+pub fn clone_handle<H: HandleBased>(handle: &H) -> H {
     handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("infallible")
 }
 
@@ -838,10 +912,11 @@ async fn wake_timer_loop(
     mut cmds: mpsc::Receiver<Cmd>,
     timer_proxy: Box<dyn TimerOps>,
     inspect: finspect::Node,
+    utc_transform: Rc<RefCell<fxr::UtcClockTransform>>,
 ) {
     debug!("wake_timer_loop: started");
 
-    let mut timers = timers::Heap::new();
+    let mut timers = timers::Heap::new(utc_transform.clone());
     let timer_config = get_timer_properties(&timer_proxy).await;
 
     // Keeps the currently executing HrTimer closure.  This is not read from, but
@@ -911,20 +986,23 @@ async fn wake_timer_loop(
                     "wake_timer_loop: START alarm_id: \"{}\", conn_id: {:?}\n\tdeadline: {}\n\tnow:      {}",
                     alarm_id,
                     conn_id,
-                    format_timer(deadline.into()),
+                    deadline,
                     format_timer(now.into()),
                 );
 
                 defer! {
                     // This is the only option that requires further action.
-                    if let fta::SetMode::NotifySetupDone(setup_done) = mode {
-                        // Must signal once the setup is completed.
-                        signal(&setup_done);
-                        debug!("wake_timer_loop: START: setup_done signaled");
-                    };
+                    if let Some(mode) = mode {
+                        if let fta::SetMode::NotifySetupDone(setup_done) = mode {
+                            // Must signal once the setup is completed.
+                            signal(&setup_done);
+                            debug!("wake_timer_loop: START: setup_done signaled");
+                        };
+                    }
                 }
-                deadline_histogram_prop.insert((deadline - now).into_nanos());
-                if timers::Heap::expired(now, deadline) {
+                let deadline_boot = deadline.as_boot(&*utc_transform.borrow());
+                deadline_histogram_prop.insert((deadline_boot - now).into_nanos());
+                if timers::Heap::expired(now, deadline_boot) {
                     trace::duration!(c"alarms", c"Cmd::Start:immediate");
                     fuchsia_trace::flow_step!(
                         c"alarms",
@@ -948,9 +1026,10 @@ async fn wake_timer_loop(
                         );
                     } else {
                         debug!(
-                            "wake_timer_loop: conn_id: {conn_id:?}, alarm: {alarm_id}: EXPIRED IMMEDIATELY\n\tdeadline({}) <= now({})",
-                            format_timer(deadline.into()),
+                            "wake_timer_loop: conn_id: {conn_id:?}, alarm: {alarm_id}: EXPIRED IMMEDIATELY\n\tdeadline({}) <= now({})\n\tfull deadline: {}",
+                            format_timer(deadline_boot.into()),
                             format_timer(now.into()),
+                            deadline,
                         )
                     }
                 } else {
@@ -963,9 +1042,17 @@ async fn wake_timer_loop(
                     // A timer scheduled for the future gets inserted into the timer heap.
                     let was_empty = timers.is_empty();
 
-                    let deadline_before = timers.peek_deadline();
-                    timers.push(timers::BootNode::new(deadline, alarm_id, conn_id, responder));
-                    let deadline_after = timers.peek_deadline();
+                    let deadline_before = timers.peek_deadline_as_boot();
+                    let node = match deadline {
+                        timers::Deadline::Boot(_) => {
+                            timers.new_node_boot(deadline_boot, alarm_id, conn_id, responder)
+                        }
+                        timers::Deadline::Utc(d) => {
+                            timers.new_node_utc(d, alarm_id, conn_id, responder)
+                        }
+                    };
+                    timers.push(node);
+                    let deadline_after = timers.peek_deadline_as_boot();
 
                     let deadline_changed = is_deadline_changed(deadline_before, deadline_after);
                     let needs_cancel = !was_empty && deadline_changed;
@@ -973,7 +1060,7 @@ async fn wake_timer_loop(
 
                     if needs_reschedule {
                         // Always schedule the proximate deadline.
-                        let schedulable_deadline = deadline_after.unwrap_or(deadline);
+                        let schedulable_deadline = deadline_after.unwrap_or(deadline_boot);
                         if needs_cancel {
                             log_long_op!(stop_hrtimer(&timer_proxy, &timer_config));
                         }
@@ -997,10 +1084,10 @@ async fn wake_timer_loop(
                     timers::get_trace_id(&timer_id.alarm())
                 );
                 debug!("wake_timer_loop: STOP timer: {}", timer_id);
-                let deadline_before = timers.peek_deadline();
+                let deadline_before = timers.peek_deadline_as_boot();
 
                 if let Some(timer_node) = timers.remove_by_id(&timer_id) {
-                    let deadline_after = timers.peek_deadline();
+                    let deadline_after = timers.peek_deadline_as_boot();
 
                     if let Some(res) = timer_node
                         .get_responder()
@@ -1061,7 +1148,7 @@ async fn wake_timer_loop(
                     log_long_op!(stop_hrtimer(&timer_proxy, &timer_config));
                 }
                 // There is a timer to reschedule, do that now.
-                hrtimer_status = match timers.peek_deadline() {
+                hrtimer_status = match timers.peek_deadline_as_boot() {
                     None => None,
                     Some(deadline) => Some(log_long_op!(schedule_hrtimer(
                         scope.clone(),
@@ -1091,7 +1178,7 @@ async fn wake_timer_loop(
                 debug!("XXX: [{}] bogus lease: 1 {:?}", line!(), &peer.get_koid().unwrap());
                 notify_all(&mut timers, &peer, now, &slack_histogram_prop)
                     .expect("notification succeeds");
-                hrtimer_status = match timers.peek_deadline() {
+                hrtimer_status = match timers.peek_deadline_as_boot() {
                     None => None, // No remaining timers, nothing to schedule.
                     Some(deadline) => Some(log_long_op!(schedule_hrtimer(
                         scope.clone(),
@@ -1137,7 +1224,7 @@ async fn wake_timer_loop(
                         // We do not have a wake lease, so the system may sleep before
                         // we get to schedule a new timer. We have no way to avoid it
                         // today.
-                        hrtimer_status = match timers.peek_deadline() {
+                        hrtimer_status = match timers.peek_deadline_as_boot() {
                             None => None,
                             Some(deadline) => Some(log_long_op!(schedule_hrtimer(
                                 scope.clone(),
@@ -1149,6 +1236,33 @@ async fn wake_timer_loop(
                                 &schedule_delay_prop,
                             ))),
                         }
+                    }
+                }
+            }
+            Cmd::UtcUpdated { transform } => {
+                trace::duration!(c"alarms", c"Cmd::UtcUpdated");
+                debug!("wake_timer_loop: applying new clock transform: {transform:?}");
+
+                // Assigning to this shared reference updates the deadlines of all
+                // UTC timers.
+                *utc_transform.borrow_mut() = transform;
+
+                // Reschedule the hardware timer with the now-current deadline if there is an
+                // active timer.
+                if hrtimer_status.is_some() {
+                    log_long_op!(stop_hrtimer(&timer_proxy, &timer_config));
+                    // Should we request a wake lock here?
+                    hrtimer_status = match timers.peek_deadline_as_boot() {
+                        None => None,
+                        Some(deadline) => Some(log_long_op!(schedule_hrtimer(
+                            scope.clone(),
+                            now,
+                            &timer_proxy,
+                            deadline,
+                            snd.clone(),
+                            &timer_config,
+                            &schedule_delay_prop,
+                        ))),
                     }
                 }
             }
@@ -1170,7 +1284,7 @@ async fn wake_timer_loop(
             pending_timers_count_prop.set(pending_timers_count);
 
             let pending_timers = format!("{}", timers);
-            debug!("wake_timer_loop: currently pending timers:        {}", &timers);
+            debug!("wake_timer_loop: currently pending timers:        \n\t{}", &timers);
             pending_timers_prop.set(&pending_timers);
 
             let current_deadline: String = hrtimer_status
@@ -1198,7 +1312,8 @@ async fn wake_timer_loop(
 
 /// Schedules a wake alarm.
 ///
-/// Args:
+/// # Args:
+///
 /// - `scope`: used to spawn async tasks.
 /// - `now`: the time instant used as the value of current instant.
 /// - `hrtimer`: the proxy for the hrtimer device driver.
@@ -1206,7 +1321,7 @@ async fn wake_timer_loop(
 /// - `command_send`: the sender channel to use when the timer expires.
 /// - `timer_config`: a configuration of the hardware timer showing supported resolutions and
 ///   max tick value.
-/// - `needs_cancel`: if set, we must first cancel a hrtimer before scheduling a new one.
+/// - `schedule_delay_histogram`: inspect instrumentation.
 async fn schedule_hrtimer(
     scope: fasync::ScopeHandle,
     now: fasync::BootInstant,
@@ -1338,7 +1453,7 @@ fn notify_all(
     while let Some(timer_node) = timers.maybe_expire_earliest(reference_instant) {
         expired += 1;
         // How much later than requested did the notification happen.
-        let deadline = *timer_node.get_deadline();
+        let deadline = timer_node.get_boot_deadline();
         let alarm_id = timer_node.id().alarm().to_string();
         trace::duration!(c"alarms", c"notify_all:notified", "alarm_id" => &*alarm_id);
         fuchsia_trace::flow_step!(c"alarms", c"hrtimer_lifecycle", timers::get_trace_id(&alarm_id));
@@ -1409,7 +1524,7 @@ pub async fn connect_to_hrtimer_async() -> Result<ffhh::DeviceProxy> {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_async::TestExecutor;
     use futures::select;
     use test_case::test_case;
@@ -1740,10 +1855,17 @@ mod tests {
         hrtimer
     }
 
+    fn clone_utc_clock(orig: &fxr::UtcClock) -> fxr::UtcClock {
+        orig.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
+    }
+
     struct TestContext {
         wake_proxy: fta::WakeAlarmsProxy,
         _scope: fasync::Scope,
         _cmd_tx: mpsc::Sender<FakeCmd>,
+        // Use to manipulate the UTC clock from the test.
+        utc_clock: fxr::UtcClock,
+        utc_backstop: fxr::UtcInstant,
     }
 
     impl TestContext {
@@ -1751,6 +1873,10 @@ mod tests {
             TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(0)).await;
 
             let scope = fasync::Scope::new();
+            let utc_backstop = fxr::UtcInstant::from_nanos(1000);
+            let utc_clock =
+                fxr::UtcClock::create(zx::ClockOpts::empty(), Some(utc_backstop)).unwrap();
+            let utc_clone = clone_utc_clock(&utc_clock);
             let (mut cmd_tx, wake_proxy) = {
                 let (tx, rx) = mpsc::channel::<FakeCmd>(0);
                 let hrtimer_proxy = fake_hrtimer_connection(scope.to_handle(), rx);
@@ -1760,6 +1886,7 @@ mod tests {
                     scope.to_handle(),
                     hrtimer_proxy,
                     inspector.root().create_child("test"),
+                    utc_clone,
                 ));
 
                 let (proxy, stream) =
@@ -1784,7 +1911,7 @@ mod tests {
             // Wait until hrtimer configuration has completed.
             assert_matches!(fasync::OnSignals::new(done, zx::Signals::EVENT_SIGNALED).await, Ok(_));
 
-            Self { wake_proxy, _scope: scope, _cmd_tx: cmd_tx }
+            Self { wake_proxy, _scope: scope, _cmd_tx: cmd_tx, utc_clock, utc_backstop }
         }
     }
 
@@ -2161,7 +2288,7 @@ mod tests {
                 },
                 now_formatted: format!("{override_deadline_nanos}ns ({override_deadline_nanos})"),
                 now_ns: override_deadline_nanos,
-                pending_timers: "\n\t",
+                pending_timers: "Boot:\n\t\n\tUTC:\n\t",
                 pending_timers_count: 0u64,
                 requested_deadlines_ns: AnyProperty,
                 schedule_delay_ns: AnyProperty,
@@ -2258,6 +2385,111 @@ mod tests {
                 )
                 .await,
             Err(fidl::Error::ClientChannelClosed { .. })
+        );
+    }
+
+    // The basic test - schedule timer on the UTC timeline, verify that it fires
+    // when time advances.
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_basic_utc_timer_notify() {
+        const ALARM_ID: &str = "Hello";
+        let ctx = TestContext::new().await;
+
+        // Since the UTC clock is tied to the system clock and not the executor's fake
+        // clock, we need some unusual setup here. Use the "now" and UTC backstop to set up
+        // a clock transform which will not, in fact, be used, as we never call
+        // `UtcClock::now()`.
+        //
+        // Instead, we use the UTC clock transform to map any UTC deadlines to boot timeline
+        // immediately. Then on any change to UTC the clock transform, we recompute the
+        // deadlines of any UTC timers.
+        let now_boot = fasync::BootInstant::now();
+        ctx.utc_clock
+            .update(
+                zx::ClockUpdate::builder()
+                    .absolute_value(now_boot.into(), ctx.utc_backstop)
+                    .build(),
+            )
+            .unwrap();
+
+        let (notifier_client, mut notifier_stream) =
+            fidl::endpoints::create_request_stream::<fta::NotifierMarker>();
+        let timestamp_utc = ctx.utc_backstop + fxr::UtcDuration::from_nanos(2);
+        assert_matches!(
+            ctx.wake_proxy
+                .set_utc(
+                    notifier_client,
+                    &fta::InstantUtc { timestamp_utc: timestamp_utc.into_nanos() },
+                    ALARM_ID,
+                )
+                .await,
+            Ok(Ok(()))
+        );
+
+        let mut next_task = notifier_stream.next();
+        assert_matches!(TestExecutor::poll_until_stalled(&mut next_task).await, Poll::Pending);
+
+        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(1)).await;
+        assert_matches!(TestExecutor::poll_until_stalled(&mut next_task).await, Poll::Pending);
+
+        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(2)).await;
+        assert_matches!(
+            TestExecutor::poll_until_stalled(next_task).await,
+            Poll::Ready(Some(Ok(fta::NotifierRequest::Notify { alarm_id, .. }))) if alarm_id == ALARM_ID
+        );
+    }
+
+    // Verify that if a UTC timer is scheduled in the future on the UTC timeline, then the
+    // UTC clock is changed to move "now" beyond the timer's deadline, the timer fires.
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_utc_timeline_change_expires_timer() {
+        const ALARM_ID: &str = "Hello_utc_timeline";
+        let ctx = TestContext::new().await;
+
+        let now_boot = fasync::BootInstant::now();
+        ctx.utc_clock
+            .update(
+                zx::ClockUpdate::builder()
+                    .absolute_value(now_boot.into(), ctx.utc_backstop)
+                    .build(),
+            )
+            .unwrap();
+
+        let (notifier_client, mut notifier_stream) =
+            fidl::endpoints::create_request_stream::<fta::NotifierMarker>();
+        let timestamp_utc = ctx.utc_backstop + fxr::UtcDuration::from_nanos(2);
+        assert_matches!(
+            ctx.wake_proxy
+                .set_utc(
+                    notifier_client,
+                    &fta::InstantUtc { timestamp_utc: timestamp_utc.into_nanos() },
+                    ALARM_ID,
+                )
+                .await,
+            Ok(Ok(()))
+        );
+
+        // Timer is not expired yet.
+        let mut next_task = notifier_stream.next();
+        assert_matches!(TestExecutor::poll_until_stalled(&mut next_task).await, Poll::Pending);
+
+        // Change the clock transform in a way that makes the previously scheduled UTC timer
+        // expire.
+        ctx.utc_clock
+            .update(
+                zx::ClockUpdate::builder()
+                    .absolute_value(
+                        now_boot.into(),
+                        ctx.utc_backstop + fxr::UtcDuration::from_nanos(100),
+                    )
+                    .build(),
+            )
+            .unwrap();
+
+        // Verify that the timer is now expired.
+        assert_matches!(
+            TestExecutor::poll_until_stalled(next_task).await,
+            Poll::Ready(Some(Ok(fta::NotifierRequest::Notify { alarm_id, .. }))) if alarm_id == ALARM_ID
         );
     }
 }

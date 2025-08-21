@@ -13,10 +13,10 @@
 //! crate, so the fake's behavior is faithful to the production code.
 
 use anyhow::{Context, Result};
-use fidl_fuchsia_time_alarms as ffta;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
 use std::rc::Rc;
+use {fidl_fuchsia_time_alarms as ffta, fuchsia_runtime as fxr};
 
 // This is the production alarms crate.
 use alarms;
@@ -32,6 +32,10 @@ enum Services {
 async fn main() -> Result<()> {
     fuchsia_trace_provider::trace_provider_create_with_fdio();
     log::debug!("starting fake wake alarms service");
+
+    // In this component, we do not monitor changes to the UTC clock.
+    let utc_clock =
+        fxr::duplicate_utc_clock_handle(zx::Rights::SAME_RIGHTS).expect("UTC clock is accessible");
 
     // Provide inspect.
     let inspector = fuchsia_inspect::component::inspector();
@@ -54,6 +58,7 @@ async fn main() -> Result<()> {
                 scope.to_handle(),
                 proxy,
                 inspector.root().create_child("wake_alarms"),
+                utc_clock,
             ))
         })?;
     fs.for_each_concurrent(/*limit=*/ None, move |connection| {

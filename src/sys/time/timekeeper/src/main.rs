@@ -243,6 +243,7 @@ async fn main() -> Result<()> {
         .await
         .context("failed to get UTC clock from maintainer")?
         .cast();
+    let utc_clock_for_alarms = alarms::clone_handle(&utc_clock);
     debug!("utc_clock handle with koid: {}", koid_of(&utc_clock));
 
     let time_source_urls = TimeSourceUrls {
@@ -387,11 +388,18 @@ async fn main() -> Result<()> {
         alarms::connect_to_hrtimer_async()
             .await
             .inspect_err(|e| error!("could not connect to hrtimer: {}", &e))
-            .map(|proxy| Rc::new(alarms::Loop::new(scope.to_handle(), proxy, loop_inspect)))?
+            .map(|proxy| {
+                Rc::new(alarms::Loop::new(
+                    scope.to_handle(),
+                    proxy,
+                    loop_inspect,
+                    utc_clock_for_alarms,
+                ))
+            })?
     } else {
         // Emulate wake alarms. This is used on platforms that do not have
         // power management, and will *not* actually sleep.
-        Rc::new(alarms::Loop::new_emulated(scope.to_handle(), loop_inspect))
+        Rc::new(alarms::Loop::new_emulated(scope.to_handle(), loop_inspect, utc_clock_for_alarms))
     };
 
     // Look for this text to know whether connections have succeeded.
