@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockInfo, BlockServer, DeviceInfo, WriteOptions};
-use fidl::endpoints::{create_endpoints, ClientEnd, FromClient, RequestStream, ServerEnd};
+use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
 use fs_management::filesystem::BlockConnector;
 use std::borrow::Cow;
 use std::num::NonZero;
@@ -58,7 +58,7 @@ pub enum InitialContents<'a> {
     FromCapacity(u64),
     /// A VMO is created with capacity for this many *blocks* and the buffer's contents copied into
     /// it.
-    FromBufferAndCapactity(u64, &'a [u8]),
+    FromCapacityAndBuffer(u64, &'a [u8]),
     /// A VMO is created which is exactly large enough for the initial contents (rounded up to block
     /// size), and the buffer's contents copied into it.
     FromBuffer(&'a [u8]),
@@ -95,7 +95,7 @@ impl VmoBackedServerOptions<'_> {
             InitialContents::FromCapacity(block_count) => {
                 (zx::Vmo::create(block_count * self.block_size as u64)?, block_count)
             }
-            InitialContents::FromBufferAndCapactity(block_count, buf) => {
+            InitialContents::FromCapacityAndBuffer(block_count, buf) => {
                 let needed =
                     buf.len()
                         .checked_next_multiple_of(self.block_size as usize)
@@ -198,7 +198,7 @@ impl VmoBackedServerTestingExt for VmoBackedServer {
     fn new(block_count: u64, block_size: u32, initial_content: &[u8]) -> Self {
         VmoBackedServerOptions {
             block_size,
-            initial_contents: InitialContents::FromBufferAndCapactity(block_count, initial_content),
+            initial_contents: InitialContents::FromCapacityAndBuffer(block_count, initial_content),
             ..Default::default()
         }
         .build()

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::format::{detect_disk_format, DiskFormat};
-use anyhow::{anyhow, Context, Error};
+use crate::format::{DiskFormat, detect_disk_format};
+use anyhow::{Context, Error, anyhow};
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
 use fidl_fuchsia_hardware_block_partition::{Guid, PartitionMarker};
 use fidl_fuchsia_hardware_block_volume::VolumeManagerProxy;
@@ -223,14 +223,14 @@ pub async fn fvm_allocate_partition(
 
 #[cfg(test)]
 mod tests {
-    use super::{partition_matches_with_proxy, PartitionMatcher};
-    use crate::format::{constants, DiskFormat};
+    use super::{PartitionMatcher, partition_matches_with_proxy};
+    use crate::format::{DiskFormat, constants};
     use block_server::{DeviceInfo, PartitionInfo};
-    use fidl::endpoints::{create_proxy_and_stream, RequestStream as _};
+    use fidl::endpoints::{RequestStream as _, create_proxy_and_stream};
     use fidl_fuchsia_device::{ControllerMarker, ControllerRequest};
     use fidl_fuchsia_hardware_block_volume::VolumeRequestStream;
     use fuchsia_async as fasync;
-    use futures::{pin_mut, select, FutureExt, StreamExt};
+    use futures::{FutureExt, StreamExt, pin_mut, select};
     use std::sync::Arc;
     use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
 
@@ -266,7 +266,7 @@ mod tests {
                     name: VALID_LABEL.to_string(),
                     ..Default::default()
                 }),
-                initial_contents: InitialContents::FromBufferAndCapactity(
+                initial_contents: InitialContents::FromCapacityAndBuffer(
                     1000,
                     &constants::FVM_MAGIC,
                 ),

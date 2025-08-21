@@ -3154,7 +3154,7 @@ mod tests {
         let fake_server = Arc::new(
             VmoBackedServerOptions {
                 block_size: BLOCK_SIZE,
-                initial_contents: InitialContents::FromBufferAndCapactity(
+                initial_contents: InitialContents::FromCapacityAndBuffer(
                     (contents.len() as u64 + SLICE_SIZE) / BLOCK_SIZE as u64,
                     &contents,
                 ),
