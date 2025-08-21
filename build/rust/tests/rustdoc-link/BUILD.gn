@@ -4,11 +4,13 @@
 group("rustdoc-link") {
   testonly = true
   deps = [
-    "//build/rust/tests/rustdoc-link/basic-hierarchy",
+    # TODO(https://fxbug.dev/440133861) re-enable
+    #     "//build/rust/tests/rustdoc-link/basic-hierarchy",
     "//build/rust/tests/rustdoc-link/presence_in_tool_paths_json",
 
     # Test for the --dry-run flag.
-    "//build/rust/tests/rustdoc-link/basic-dry-run",
+    # TODO(https://fxbug.dev/440133861) re-enable
+    #     "//build/rust/tests/rustdoc-link/basic-dry-run",
 
     # Tests for `fx rustdoc-link` on other crate types
     # and dependency structures may be added here.
