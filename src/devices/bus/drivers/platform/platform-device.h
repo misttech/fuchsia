@@ -163,7 +163,7 @@ class PlatformDevice : public fidl::WireServer<fuchsia_hardware_platform_device:
 
   inspect::Node inspect_node_;
 
-  compat::DeviceServer device_server_;
+  std::unique_ptr<compat::DeviceServer> device_server_;
 
   std::unique_ptr<fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>>
       serial_number_metadata_server_;

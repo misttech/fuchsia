@@ -368,8 +368,10 @@ zx::result<> PlatformDevice::CreateNode() {
 
   std::vector offers = {
       fdf::MakeOffer2<fuchsia_hardware_platform_device::Service>(name_),
-      fdf::MakeOffer2<fuchsia_driver_compat::Service>(name_),
   };
+  if (device_server_) {
+    offers.push_back(fdf::MakeOffer2<fuchsia_driver_compat::Service>(name_));
+  }
   if (serial_number_metadata_server_) {
     offers.push_back(serial_number_metadata_server_->MakeOffer());
     if (zx::result result =
@@ -453,13 +455,18 @@ zx::result<> PlatformDevice::Init() {
     }
   }
 
-  device_server_.Initialize(name_);
-  device_server_.Serve(bus()->dispatcher(), bus()->outgoing().get());
+  const size_t metadata_count = node_.metadata() == std::nullopt ? 0 : node_.metadata()->size();
+  const size_t boot_metadata_count =
+      node_.boot_metadata() == std::nullopt ? 0 : node_.boot_metadata()->size();
+  if (metadata_count > 0 || boot_metadata_count > 0) {
+    device_server_ = std::make_unique<compat::DeviceServer>();
+    device_server_->Initialize(name_);
+    device_server_->Serve(bus()->dispatcher(), bus()->outgoing().get());
+  }
 
   inspect_node_.RecordLazyValues("interrupt_vectors",
                                  fit::bind_member<&PlatformDevice::InspectNodeCallback>(this));
 
-  const size_t metadata_count = node_.metadata() == std::nullopt ? 0 : node_.metadata()->size();
   for (size_t i = 0; i < metadata_count; i++) {
     const auto& metadata = node_.metadata().value()[i];
     if (!IsValid(metadata)) {
@@ -482,7 +489,7 @@ zx::result<> PlatformDevice::Init() {
         static_cast<uint32_t>(std::strtol(metadata_id_start, &metadata_id_end, 10));
     if (!metadata_id.value().empty() && errno == 0 && *metadata_id_end == '\0') {
       zx_status_t status =
-          device_server_.AddMetadata(metadata_type, metadata_data->data(), metadata_data->size());
+          device_server_->AddMetadata(metadata_type, metadata_data->data(), metadata_data->size());
       if (status != ZX_OK) {
         fdf::info("Failed to add metadata with ID {}: {}", metadata_id.value().c_str(),
                   zx_status_get_string(status));
@@ -493,8 +500,6 @@ zx::result<> PlatformDevice::Init() {
     metadata_.emplace(metadata_id.value(), metadata_data.value());
   }
 
-  const size_t boot_metadata_count =
-      node_.boot_metadata() == std::nullopt ? 0 : node_.boot_metadata()->size();
   for (size_t i = 0; i < boot_metadata_count; i++) {
     const auto& metadata = node_.boot_metadata().value()[i];
     if (!IsValid(metadata)) {
@@ -511,7 +516,7 @@ zx::result<> PlatformDevice::Init() {
       // TODO(b/341981272): Remove `device_server_.AddMetadata()` once all drivers bound to platform
       // devices do not use `device_get_metadata()` to retrieve metadata.
       zx_status_t status =
-          device_server_.AddMetadata(metadata_zbi_type.value(), data->data(), data->size());
+          device_server_->AddMetadata(metadata_zbi_type.value(), data->data(), data->size());
       if (status != ZX_OK) {
         fdf::warn("Failed to add boot metadata with ZBI type {}: {}", metadata_zbi_type.value(),
                   zx_status_get_string(status));
