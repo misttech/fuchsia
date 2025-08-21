@@ -761,6 +761,7 @@ sdk_molecule("core_cc_prebuilt_libraries") {
     "//sdk/lib/vfs/internal:vfs_internal_sdk",
     "//src/devices/bin/driver_runtime:driver_runtime_sdk",
     "//src/performance/memory/heapdump/instrumentation:instrumentation_sdk",
+    "//src/performance/memory/sampler/instrumentation:instrumentation_sdk",
     "//third_party/Vulkan-Loader/src:libvulkan_sdk",
     "//zircon/system/ulib/sync:sync_sdk",
     "//zircon/system/ulib/syslog:syslog_sdk",

@@ -5,6 +5,9 @@
 #ifndef SRC_PERFORMANCE_MEMORY_SAMPLER_INSTRUMENTATION_RECORDER_H_
 #define SRC_PERFORMANCE_MEMORY_SAMPLER_INSTRUMENTATION_RECORDER_H_
 
+#include <zircon/availability.h>
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 #include <fidl/fuchsia.memory.sampler/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 
@@ -73,4 +76,5 @@ class Recorder {
 };
 }  // namespace memory_sampler
 
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 #endif  // SRC_PERFORMANCE_MEMORY_SAMPLER_INSTRUMENTATION_RECORDER_H_

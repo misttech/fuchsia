@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/cpp/sdk_shared_library.gni")
+
 source_set("recorder") {
   sources = [
     "recorder.cc",
@@ -31,11 +33,24 @@ source_set("poisson_sampler") {
   public = [ "poisson_sampler.h" ]
 }
 
-shared_library("lib") {
+sdk_shared_library("instrumentation") {
+  category = "partner"
+  sdk_name = "sampler_instrumentation"
   output_name = "sampler_instrumentation"
+  symbols_api = "sampler_instrumentation.ifs"
+
+  no_headers = true
   sources = [ "instrumentation.cc" ]
+
   deps = [
     ":recorder",
     ":scoped_reentrancy_guard",
+  ]
+
+  libcxx_linkage = "static"
+
+  runtime_deps = [
+    "//sdk/lib/fdio:fdio_sdk",
+    "//zircon/system/ulib/trace-engine:trace-engine_sdk",
   ]
 }

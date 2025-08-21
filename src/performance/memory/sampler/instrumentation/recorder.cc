@@ -1,8 +1,9 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#include "recorder.h"
+#include <zircon/availability.h>
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 #include <elf-search.h>
 #include <fidl/fuchsia.memory.sampler/cpp/fidl.h>
 #include <fidl/fuchsia.memory.sampler/cpp/natural_types.h>
@@ -21,6 +22,7 @@
 #include <fbl/auto_lock.h>
 
 #include "poisson_sampler.h"
+#include "recorder.h"
 
 namespace {
 // Note: The destructor is never called. This is on purpose.
@@ -187,3 +189,4 @@ Recorder Recorder::CreateRecorderForTesting(
   return Recorder{std::move(client), std::move(get_poisson_sampler)};
 }
 }  // namespace memory_sampler
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)

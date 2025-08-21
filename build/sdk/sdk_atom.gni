@@ -318,13 +318,7 @@ template("sdk_atom") {
   is_type_not_requiring_compatibility =
       _types_not_requiring_compatibility + [ type ] - [ type ] !=
       _types_not_requiring_compatibility
-  if ((type == "cc_prebuilt_library" &&
-       (target_label ==
-        "//src/devices/bin/driver_runtime:driver_runtime_sdk_manifest" ||
-        target_label ==
-        "//third_party/Vulkan-Loader/src:libvulkan_sdk_manifest")) ||
-      (type == "loadable_module" &&
-       target_label == "//src/lib/vulkan:vulkan_layers")) {
+  if ((type == "cc_prebuilt_library" && (target_label == "//src/devices/bin/driver_runtime:driver_runtime_sdk_manifest" || target_label == "//third_party/Vulkan-Loader/src:libvulkan_sdk_manifest" || target_label == "//src/performance/memory/sampler/instrumentation:instrumentation_sdk_manifest")) || (type == "loadable_module" && target_label == "//src/lib/vulkan:vulkan_layers")) {
     # These few targets specify `no_headers` (or would if using a template).
     # Since this list is unlikely to change much, just exempt them.
     is_type_not_requiring_compatibility = true

@@ -74,8 +74,7 @@ executable("bin") {
 executable("bin_with_memory_sampler") {
   output_name = "memory_monitor_with_memory_sampler"
   sources = [ "main.cc" ]
-  deps =
-      _common_deps + [ "//src/performance/memory/sampler/instrumentation:lib" ]
+  deps = _common_deps + [ "//src/performance/memory/sampler/instrumentation" ]
 }
 
 fuchsia_component_manifest("memory_monitor_manifest") {
