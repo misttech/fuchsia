@@ -44,6 +44,11 @@ open protocol Device {
 
     /// Configures the given serial port.
     /// Values of `flags` are defined in the constants above.
+    ///
+    /// * error one of the following values:
+    /// *     `ZX_ERR_IO_NOT_PRESENT`: The serial controller is in a low-power state or is
+    /// *                              transitioning to a low-power state.
+    /// *     Other values may be returned for driver- or device-specific errors.
     flexible Config(struct {
         baud_rate uint32;
         flags uint32;
@@ -56,6 +61,8 @@ open protocol Device {
     /// + request `enable` true to enable the device, or false to disable it.
     /// * error one of the following values:
     /// *     `ZX_ERR_BAD_STATE`: `enable` was false, and a `Read()` or `Write()` call was pending.
+    /// *     `ZX_ERR_IO_NOT_PRESENT`: The serial controller is in a low-power state or is
+    /// *                              transitioning to a low-power state.
     flexible Enable(struct {
         enable bool;
     }) -> () error zx.Status;
@@ -69,6 +76,8 @@ open protocol Device {
     /// *     `ZX_ERR_BAD_STATE`: The device was not enabled.
     /// *     `ZX_ERR_CANCELED`: The call was canceled by `CancelAll()`.
     /// *     `ZX_ERR_ALREADY_BOUND`: Another `Read()` call was already pending.
+    /// *     `ZX_ERR_IO_NOT_PRESENT`: The serial controller is in a low-power state or is
+    /// *                              transitioning to a low-power state.
     /// *     Other values may be returned for driver- or device-specific errors.
     flexible Read() -> (struct {
         data vector<uint8>:MAX;
@@ -82,6 +91,8 @@ open protocol Device {
     /// *     `ZX_ERR_BAD_STATE`: The device was not enabled.
     /// *     `ZX_ERR_CANCELED`: The call was canceled by `CancelAll()`.
     /// *     `ZX_ERR_ALREADY_BOUND`: Another `Write()` call was already pending.
+    /// *     `ZX_ERR_IO_NOT_PRESENT`: The serial controller is in a low-power state or is
+    /// *                              transitioning to a low-power state.
     /// *     Other values may be returned for driver- or device-specific errors.
     flexible Write(struct {
         data vector<uint8>:MAX;
