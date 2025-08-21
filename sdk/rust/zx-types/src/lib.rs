@@ -1173,15 +1173,21 @@ pub struct zx_exception_info_t {
 }
 
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, KnownLayout, FromBytes, Immutable)]
+#[derive(Default, Copy, Clone, Eq, PartialEq, KnownLayout, FromBytes, Immutable)]
 pub struct zx_x86_64_exc_data_t {
     pub vector: u64,
     pub err_code: u64,
     pub cr2: u64,
 }
 
+impl Debug for zx_x86_64_exc_data_t {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "vector 0x{:x} err_code {} cr2 0x{:x}", self.vector, self.err_code, self.cr2)
+    }
+}
+
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, FromBytes, Immutable)]
+#[derive(Default, Copy, Clone, Eq, PartialEq, FromBytes, Immutable)]
 pub struct zx_arm64_exc_data_t {
     pub esr: u32,
     padding1: [PadByte; 4],
@@ -1189,12 +1195,24 @@ pub struct zx_arm64_exc_data_t {
     padding2: [PadByte; 8],
 }
 
+impl Debug for zx_arm64_exc_data_t {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "esr 0x{:x} far 0x{:x}", self.esr, self.far)
+    }
+}
+
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, FromBytes, Immutable)]
+#[derive(Default, Copy, Clone, Eq, PartialEq, FromBytes, Immutable)]
 pub struct zx_riscv64_exc_data_t {
     pub cause: u64,
     pub tval: u64,
     padding1: [PadByte; 8],
+}
+
+impl Debug for zx_riscv64_exc_data_t {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "cause {} tval {}", self.cause, self.tval)
+    }
 }
 
 #[repr(C)]
@@ -1207,7 +1225,34 @@ pub union zx_exception_header_arch_t {
 
 impl Debug for zx_exception_header_arch_t {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "zx_exception_header_arch_t")
+        write!(f, "zx_exception_header_arch_t ")?;
+        #[cfg(target_arch = "x86_64")]
+        {
+            // SAFETY: Exception reports are presumed to be from the target architecture.
+            // Even if it was not, it's sound to treat the union as another variant as
+            // the size and alignment are the same, there is no internal padding, and
+            // the variants have no validity invariants.
+            let x86_64 = unsafe { self.x86_64 };
+            write!(f, "{x86_64:?}")
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            // SAFETY: Exception reports are presumed to be from the target architecture.
+            // Even if it was not, it's sound to treat the union as another variant as
+            // the size and alignment are the same, there is no internal padding, and
+            // the variants have no validity invariants.
+            let arm_64 = unsafe { self.arm_64 };
+            write!(f, "{arm_64:?}")
+        }
+        #[cfg(target_arch = "riscv64")]
+        {
+            // SAFETY: Exception reports are presumed to be from the target architecture.
+            // Even if it was not, it's sound to treat the union as another variant as
+            // the size and alignment are the same, there is no internal padding, and
+            // the variants have no validity invariants.
+            let riscv_64 = unsafe { self.riscv_64 };
+            write!(f, "{riscv_64:?}")
+        }
     }
 }
 
