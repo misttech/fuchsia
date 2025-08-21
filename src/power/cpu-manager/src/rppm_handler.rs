@@ -9,10 +9,14 @@ use anyhow::{Error, Result};
 use async_trait::async_trait;
 use energy_model_config::{EnergyModel, PowerLevelDomain};
 use fidl::AsHandleRef;
+use fuchsia_async::{self as fasync, PacketReceiver, ReceiverRegistration};
 use fuchsia_inspect::ArrayProperty;
+use futures::StreamExt;
+use futures::channel::mpsc;
 use futures::future::{FutureExt as _, LocalBoxFuture};
 use futures::stream::FuturesUnordered;
 use serde::Deserialize;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
@@ -32,6 +36,18 @@ use {fuchsia_inspect as inspect, serde_json as json};
 ///   - GetOperatingPoint
 ///
 /// FIDL dependencies: No direct dependencies
+
+/// Forwards incoming port packets into a channel. This will prevent the port wait blocking the
+/// single thread.
+struct PortForwarder {
+    channel: mpsc::UnboundedSender<zx::Packet>,
+}
+
+impl PacketReceiver for PortForwarder {
+    fn receive_packet(&self, packet: zx::Packet) {
+        self.channel.unbounded_send(packet).unwrap();
+    }
+}
 
 pub struct RppmHandlerBuilder<'a> {
     // Name of the node, specified in config file.
@@ -135,6 +151,10 @@ impl<'a> RppmHandlerBuilder<'a> {
             }
         };
 
+        let (tx, rx) = mpsc::unbounded();
+        let receiver_registration =
+            fasync::EHandle::local().register_receiver(PortForwarder { channel: tx });
+
         // Optionally use the default inspect root node
         let inspect_root =
             self.inspect_root.unwrap_or_else(|| inspect::component::inspector().root());
@@ -145,6 +165,8 @@ impl<'a> RppmHandlerBuilder<'a> {
             energy_model,
             syscall_handler: self.syscall_handler,
             power_domain_handlers: self.power_domain_handlers,
+            receiver: RefCell::new(rx),
+            receiver_registration,
             _inspect: inspect_data,
         });
 
@@ -158,6 +180,8 @@ pub struct RppmHandler {
     energy_model: EnergyModel,
     syscall_handler: Rc<dyn Node>,
     power_domain_handlers: HashMap<u32, Rc<dyn Node>>,
+    receiver: RefCell<mpsc::UnboundedReceiver<zx::Packet>>,
+    receiver_registration: ReceiverRegistration<PortForwarder>,
     _inspect: InspectData,
 }
 
@@ -165,8 +189,7 @@ impl RppmHandler {
     fn run<'a>(self: Rc<Self>) -> LocalBoxFuture<'a, ()> {
         async move {
             // TODO(https://fxbug.dev/375533194): Add unit tests for handling port messages.
-            let port = zx::Port::create();
-
+            let port = self.receiver_registration.port();
             for power_level_domain in self.energy_model.0.clone() {
                 // Register energy model with kernel.
                 self.register_energy_model(port.raw_handle(), power_level_domain.clone()).await;
@@ -197,53 +220,45 @@ impl RppmHandler {
                 }
             }
 
-            loop {
-                match port.wait(zx::MonotonicInstant::INFINITE) {
-                    Err(e) => log::error!("zx_port_wait failed with error: {}", e),
-                    Ok(p) => {
-                        match p.contents() {
-                            zx::PacketContents::PowerTransition(packet) => {
-                                assert_eq!(
-                                    packet.control_interface(),
-                                    sys::ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER
-                                );
-                                assert_eq!(packet.options(), 0);
-                                let control_argument = packet.control_argument();
+            let mut receiver = self.receiver.borrow_mut();
+            while let Some(p) = receiver.next().await {
+                match p.contents() {
+                    zx::PacketContents::PowerTransition(packet) => {
+                        assert_eq!(
+                            packet.control_interface(),
+                            sys::ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER
+                        );
+                        assert_eq!(packet.options(), 0);
+                        let control_argument = packet.control_argument();
 
-                                // Request CPU driver to make OPP change.
-                                let msg = Message::SetOperatingPoint(
-                                    control_argument.try_into().unwrap(),
-                                );
-                                match self
-                                    .power_domain_handlers
-                                    .get(&packet.domain_id())
-                                    .unwrap()
-                                    .handle_message(&msg)
-                                    .await
-                                {
-                                    Ok(MessageReturn::SetOperatingPoint) => {
-                                        // Notify the kernel about the updated OPP.
-                                        let pstate = sys::zx_processor_power_state_t {
-                                            domain_id: packet.domain_id(),
-                                            control_interface:
-                                                sys::ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER,
-                                            control_argument,
-                                            options: 0,
-                                        };
-                                        self.set_processor_power_state(port.raw_handle(), pstate)
-                                            .await;
-                                    }
-                                    Ok(other) => {
-                                        panic!("Unexpected SetOperatingPoint result: {:?}", other)
-                                    }
-                                    Err(e) => {
-                                        log::error!("Error requesting OPP change: {}", e);
-                                    }
+                        // Request CPU driver to make OPP change.
+                        let msg = Message::SetOperatingPoint(control_argument.try_into().unwrap());
+                        match self
+                            .power_domain_handlers
+                            .get(&packet.domain_id())
+                            .unwrap()
+                            .handle_message(&msg)
+                            .await
+                        {
+                            Ok(MessageReturn::SetOperatingPoint) => {
+                                // Notify the kernel about the updated OPP.
+                                let pstate = sys::zx_processor_power_state_t {
+                                    domain_id: packet.domain_id(),
+                                    control_interface: sys::ZX_PROCESSOR_POWER_CONTROL_CPU_DRIVER,
+                                    control_argument,
+                                    options: 0,
                                 };
+                                self.set_processor_power_state(port.raw_handle(), pstate).await;
                             }
-                            _ => panic!("wrong packet type"),
-                        }
+                            Ok(other) => {
+                                panic!("Unexpected SetOperatingPoint result: {:?}", other)
+                            }
+                            Err(e) => {
+                                log::error!("Error requesting OPP change: {}", e);
+                            }
+                        };
                     }
+                    _ => panic!("wrong packet type"),
                 }
             }
         }
