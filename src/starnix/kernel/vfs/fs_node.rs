@@ -24,7 +24,6 @@ use crate::vfs::{
 use bitflags::bitflags;
 use fuchsia_runtime::UtcInstant;
 use linux_uapi::XATTR_SECURITY_PREFIX;
-use once_cell::race::OnceBool;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{
@@ -288,11 +287,7 @@ impl FsNodeInfo {
         FsCred { uid: self.uid, gid: self.gid }
     }
 
-    pub fn suid_and_sgid(
-        &self,
-        current_task: &CurrentTask,
-        fs_node: &FsNode,
-    ) -> Result<UserAndOrGroupId, Errno> {
+    pub fn suid_and_sgid(&self, current_task: &CurrentTask) -> Result<UserAndOrGroupId, Errno> {
         let uid = self.mode.contains(FileMode::ISUID).then_some(self.uid);
 
         // See <https://man7.org/linux/man-pages/man7/inode.7.html>:
@@ -308,15 +303,7 @@ impl FsNodeInfo {
         if maybe_set_id.is_some() {
             // Check that uid and gid actually have execute access before
             // returning them as the SUID or SGID.
-            check_access(
-                fs_node,
-                current_task,
-                Access::EXEC,
-                CheckAccessReason::InternalPermissionChecks,
-                self.uid,
-                self.gid,
-                self.mode,
-            )?;
+            check_access(current_task, Access::EXEC, self.uid, self.gid, self.mode)?;
         }
         Ok(maybe_set_id)
     }
@@ -583,7 +570,7 @@ impl FallocMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum CheckAccessReason {
     Access,
     Chdir,
@@ -1975,7 +1962,7 @@ impl FsNode {
                 return Ok(());
             }
         }
-        check_access(self, current_task, access, reason, node_uid, node_gid, mode)
+        check_access(current_task, access, node_uid, node_gid, mode)
     }
 
     /// Check whether the node can be accessed in the current context with the specified access
@@ -2685,10 +2672,8 @@ impl Releasable for FsNode {
 }
 
 fn check_access(
-    fs_node: &FsNode,
     current_task: &CurrentTask,
     access: Access,
-    reason: CheckAccessReason,
     node_uid: uid_t,
     node_gid: gid_t,
     mode: FileMode,
@@ -2705,30 +2690,14 @@ fn check_access(
         return Ok(());
     }
 
-    // Callers with CAP_DAC_READ_SEARCH override can read files & directories, and traverse
-    // directories to which they lack permission.
+    // Callers with CAP_DAC_READ_SOURCE override can read files & directories, and traverse directories to which they lack permission.
     let mut requested = access & !granted;
-
-    // If this check was triggered by `access()`, or a variant, then check for a `dontaudit`
-    // statement for the `audit_access` permission for this caller & file.
-    let have_dont_audit = OnceBool::new();
-    let has_capability = move |current_task, capability| {
-        let dont_audit = have_dont_audit.get_or_init(|| {
-            (reason == CheckAccessReason::Access)
-                && security::has_dontaudit_access(current_task, fs_node)
-        });
-        if dont_audit {
-            security::is_task_capable_noaudit(current_task, capability)
-        } else {
-            security::check_task_capable(current_task, capability).is_ok()
-        }
-    };
 
     // CAP_DAC_READ_SEARCH allows bypass of read checks, and directory traverse (eXecute) checks.
     let dac_read_search_access =
         if mode.is_dir() { Access::READ | Access::EXEC } else { Access::READ };
     if dac_read_search_access.intersects(requested)
-        && has_capability(current_task, CAP_DAC_READ_SEARCH)
+        && security::check_task_capable(current_task, CAP_DAC_READ_SEARCH).is_ok()
     {
         requested.remove(dac_read_search_access);
     }
@@ -2737,21 +2706,22 @@ fn check_access(
     }
 
     // CAP_DAC_OVERRIDE allows bypass of all checks (though see the comment for file-execute).
-    let mut dac_override_access = Access::READ | Access::WRITE;
-    dac_override_access |= if mode.is_dir() {
-        Access::EXEC
-    } else {
-        // File execute access checks may not be bypassed unless at least one executable bit is set.
-        (mode.user_access() | mode.group_access() | mode.other_access()) & Access::EXEC
-    };
-    if dac_override_access.intersects(requested) && has_capability(current_task, CAP_DAC_OVERRIDE) {
+    let dac_override_access = Access::READ
+        | Access::WRITE
+        | if mode.is_dir() {
+            Access::EXEC
+        } else {
+            // File execute access checks may not be bypassed unless at least one executable bit is set.
+            (mode.user_access() | mode.group_access() | mode.other_access()) & Access::EXEC
+        };
+    if dac_override_access.intersects(requested)
+        && security::check_task_capable(current_task, CAP_DAC_OVERRIDE).is_ok()
+    {
         requested.remove(dac_override_access);
     }
     if requested.is_empty() {
         return Ok(());
     }
-
-    // TODO: https://fxbug.dev/364568874 - Integrate the security::inode_permission() hook here.
 
     return error!(EACCES);
 }

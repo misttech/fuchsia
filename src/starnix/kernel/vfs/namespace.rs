@@ -1557,7 +1557,7 @@ impl NamespaceNode {
         if self.mount.flags().contains(MountFlags::NOSUID) {
             Ok(UserAndOrGroupId::default())
         } else {
-            self.entry.node.info().suid_and_sgid(current_task, &self.entry.node)
+            self.entry.node.info().suid_and_sgid(current_task)
         }
     }
 
