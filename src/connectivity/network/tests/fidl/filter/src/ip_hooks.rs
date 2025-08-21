@@ -1225,6 +1225,7 @@ async fn drop_incoming<I: TestIpExt, M: Matcher>(name: &str, hook: IncomingHook,
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let network = sandbox.create_network("net").await.expect("create network");
     let name = format!("{name}_{}", format!("{matcher:?}").to_snake_case());
+    let _packet_capture = network.start_capture(&name).await.expect("starting packet capture");
 
     let mut net = TestNet::new::<I>(
         &sandbox,
@@ -1339,6 +1340,7 @@ async fn drop_outgoing<I: TestIpExt, M: Matcher>(name: &str, hook: OutgoingHook,
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let network = sandbox.create_network("net").await.expect("create network");
     let name = format!("{name}_{}", format!("{matcher:?}").to_snake_case());
+    let _packet_capture = network.start_capture(&name).await.expect("starting packet capture");
 
     let mut net = TestNet::new::<I>(
         &sandbox,
@@ -1495,9 +1497,11 @@ pub(crate) struct TestRouterNet<'a, I: RouterTestIpExt> {
     // so that they are not torn down for the lifetime of the test.
     pub router: netemul::TestRealm<'a>,
     pub _router_client_net: netemul::TestNetwork<'a>,
+    _router_client_net_capture: netemul::PacketCapture,
     router_client_interface: netemul::TestInterface<'a>,
     pub router_server_net: netemul::TestNetwork<'a>,
     pub router_server_interface: netemul::TestInterface<'a>,
+    _router_server_net_capture: netemul::PacketCapture,
 
     // Client resources. We keep the handle to the interface around so that it is
     // not torn down for the lifetime of the test.
@@ -1536,6 +1540,10 @@ impl<'a, I: RouterTestIpExt> TestRouterNet<'a, I> {
             .expect("create realm");
 
         let client_net = sandbox.create_network("router_client").await.expect("create network");
+        let client_net_packet_capture = client_net
+            .start_capture(&format!("{name}_router_client"))
+            .await
+            .expect("starting packet capture");
         let router_client_interface =
             router.join_network(&client_net, "router_client").await.expect("join network");
         router_client_interface.apply_nud_flake_workaround().await.expect("nud flake workaround");
@@ -1547,6 +1555,10 @@ impl<'a, I: RouterTestIpExt> TestRouterNet<'a, I> {
         router_client_interface.set_ipv6_forwarding_enabled(true).await.expect("enable forwarding");
 
         let server_net = sandbox.create_network("router_server").await.expect("create network");
+        let server_net_packet_capture = server_net
+            .start_capture(&format!("{name}_router_server"))
+            .await
+            .expect("starting packet capture");
         let router_server_interface =
             router.join_network(&server_net, "router_server").await.expect("join network");
         router_server_interface.apply_nud_flake_workaround().await.expect("nud flake workaround");
@@ -1632,8 +1644,10 @@ impl<'a, I: RouterTestIpExt> TestRouterNet<'a, I> {
             router,
             router_client_interface,
             _router_client_net: client_net,
+            _router_client_net_capture: client_net_packet_capture,
             router_server_interface,
             router_server_net: server_net,
+            _router_server_net_capture: server_net_packet_capture,
             client,
             _client_interface: client_interface,
             server,
