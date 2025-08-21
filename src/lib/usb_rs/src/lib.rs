@@ -33,6 +33,7 @@ impl DeviceHandle {
         DeviceHandle(usb_plat::DeviceHandleInner {
             hdl: path.as_ref().to_string_lossy().into_owned(),
             serial: None,
+            sysfs_path: None,
         })
     }
 }
