@@ -181,9 +181,13 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
 
         return super().setUp()
 
-    def _mock_run_commands_in_parallel(self, stdout: str) -> mock.MagicMock:
+    def _mock_run_commands_in_parallel(
+        self, stdout: str, return_code: int = 0
+    ) -> mock.MagicMock:
         m = mock.AsyncMock(
-            return_value=[mock.MagicMock(stdout=stdout, return_code=0)]
+            return_value=[
+                mock.MagicMock(stdout=stdout, return_code=return_code)
+            ]
         )
         patch = mock.patch("main.run_commands_in_parallel", m)
         patch.start()
@@ -1006,6 +1010,34 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 "bar::test",
             ],
         )
+
+    async def test_list_failing_command(self) -> None:
+        """Test that failing to list test cases using --list results in a nonzero exit code"""
+
+        command_mock = self._mock_run_commands_in_parallel(
+            "Failed to create remote control proxy: Timeout attempting to reach target foo.",
+            100,
+        )
+
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        recorder = event.EventRecorder()
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build", "--list", "--limit=1"]),
+            recorder=recorder,
+        )
+        self.assertEqual(ret, 1)
+        self.assertEqual(command_mock.call_count, 1)
+
+        events = [
+            e.payload.enumerate_test_cases
+            async for e in recorder.iter()
+            if e.payload is not None
+            and e.payload.enumerate_test_cases is not None
+        ]
+        self.assertEqual(len(events), 0)
 
     @mock.patch("main.run_build_with_suspended_output", side_effect=[0])
     async def test_updateifinbase(self, _build_mock: mock.AsyncMock) -> None:

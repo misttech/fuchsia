@@ -723,9 +723,9 @@ class AsyncMain:
             recorder.emit_instruction_message(
                 "Will not run any tests, --list specified"
             )
-            await self._enumerate_test_cases(selections)
+            enumeration_result = await self._enumerate_test_cases(selections)
             recorder.emit_end()
-            return 0
+            return enumeration_result
 
         if flags.list_runtime_deps:
             recorder.emit_info_message("Listing runtime_deps for all tests...")
@@ -1670,7 +1670,15 @@ class AsyncMain:
     async def _enumerate_test_cases(
         self,
         tests: selection_types.TestSelections,
-    ) -> None:
+    ) -> int:
+        """Lists the test cases selected by `tests`.
+
+        Args:
+            tests (selection.TestSelections): The selected tests to list cases.
+
+        Returns:
+            int: 1 if any tests failed to enumerate. 0 otherwise.
+        """
         flags = self._flags
         recorder = self._recorder
         exec_env = self._exec_env
@@ -1719,6 +1727,8 @@ class AsyncMain:
             recorder.emit_info_message(
                 f"{len(failed_enumeration_names)} tests could not be enumerated"
             )
+            return 1
+        return 0
 
     def _start_package_server(
         self,
