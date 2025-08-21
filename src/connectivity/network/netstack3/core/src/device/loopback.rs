@@ -25,8 +25,8 @@ use netstack3_device::socket::{ParseSentFrameError, SentFrame};
 use netstack3_device::{DeviceLayerTypes, DeviceSendFrameError, IpLinkDeviceState, WeakDeviceId};
 use packet::Buf;
 
-use crate::context::prelude::*;
 use crate::context::WrapLockLevel;
+use crate::context::prelude::*;
 use crate::device::integration;
 use crate::{BindingsContext, BindingsTypes, CoreCtx};
 

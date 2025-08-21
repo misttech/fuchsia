@@ -244,8 +244,8 @@ impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
 
 #[cfg(test)]
 mod tests {
-    use netstack3_base::testutil::FakeInstantCtx;
     use netstack3_base::InstantContext as _;
+    use netstack3_base::testutil::FakeInstantCtx;
     use test_case::test_case;
 
     use super::*;

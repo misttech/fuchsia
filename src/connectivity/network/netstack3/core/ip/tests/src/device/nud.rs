@@ -29,15 +29,15 @@ use packet_formats::udp::UdpPacketBuilder;
 use test_case::test_case;
 
 use netstack3_base::testutil::{
-    set_logger_for_test, FakeNetwork, FakeNetworkLinks, TestAddrs, TestIpExt, WithFakeFrameContext,
+    FakeNetwork, FakeNetworkLinks, TestAddrs, TestIpExt, WithFakeFrameContext, set_logger_for_test,
 };
 use netstack3_base::{DeviceIdContext, FrameDestination, InstantContext as _};
 use netstack3_core::device::{
     EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice, WeakDeviceId,
 };
 use netstack3_core::testutil::{
-    new_simple_fake_network, CtxPairExt, DispatchedFrame, FakeBindingsCtx, FakeCtx, FakeCtxBuilder,
-    FakeCtxNetworkSpec, DEFAULT_INTERFACE_METRIC,
+    CtxPairExt, DEFAULT_INTERFACE_METRIC, DispatchedFrame, FakeBindingsCtx, FakeCtx,
+    FakeCtxBuilder, FakeCtxNetworkSpec, new_simple_fake_network,
 };
 use netstack3_core::{CoreTxMetadata, IpExt, UnlockedCoreCtx};
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;

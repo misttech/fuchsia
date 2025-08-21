@@ -15,7 +15,7 @@ use core::num::NonZeroUsize;
 
 use derivative::Derivative;
 use either::Either;
-use netstack3_hashmap::{hash_map, HashMap};
+use netstack3_hashmap::{HashMap, hash_map};
 
 /// A type whose values can "shadow" other values of the type.
 ///

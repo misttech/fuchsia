@@ -4,7 +4,7 @@
 
 mod rollback;
 
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 
 use cobalt_client::traits::AsEventCode as _;
 use fuchsia_async::Task;
@@ -1067,14 +1067,9 @@ mod tests {
         // case we should see the reboot get canceled.
         migration.update_rollback_state(rollback::Persisted::Success).await;
         assert_matches!(migration.persisted.rollback, Some(rollback::Persisted::Success));
-        assert!(migration
-            .collaborative_reboot
-            .scheduler
-            .req
-            .as_ref()
-            .unwrap()
-            .is_closed()
-            .unwrap());
+        assert!(
+            migration.collaborative_reboot.scheduler.req.as_ref().unwrap().is_closed().unwrap()
+        );
 
         // Ensure that the changes were persisted successfully.
         let migration =

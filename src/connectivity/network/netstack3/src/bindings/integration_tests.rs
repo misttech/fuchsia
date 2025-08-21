@@ -45,7 +45,7 @@ use {
 use crate::bindings::ctx::BindingsCtx;
 use crate::bindings::devices::{BindingId, Devices};
 use crate::bindings::util::{ConversionContext as _, IntoFidl as _, TryIntoFidlWithContext as _};
-use crate::bindings::{routes, Ctx, InspectPublisher, LOOPBACK_NAME};
+use crate::bindings::{Ctx, InspectPublisher, LOOPBACK_NAME, routes};
 
 /// Install a logger for tests.
 pub(crate) fn set_logger_for_test() {
@@ -574,11 +574,13 @@ impl TestSetupBuilder {
                 // device_control.
                 interface_control.detach().expect("detach");
 
-                assert!(interface_control
-                    .enable()
-                    .await
-                    .expect("calling enable")
-                    .expect("enable failed"));
+                assert!(
+                    interface_control
+                        .enable()
+                        .await
+                        .expect("calling enable")
+                        .expect("enable failed")
+                );
 
                 // We'll ALWAYS await for the newly created interface to come up
                 // online before returning, so users of `TestSetupBuilder` can
@@ -948,18 +950,26 @@ async fn test_list_del_routes() {
     // delete route1:
     let global_route_set =
         test_stack.get_global_route_set_with_authenticated_interface::<Ipv4>(if_id.get()).await;
-    assert!(global_route_set
-        .remove_route(&route1_fwd_entry.try_into().expect("should convert to FIDL successfully"))
-        .await
-        .expect("should not get FIDL error")
-        .expect("remove route should succeed"));
+    assert!(
+        global_route_set
+            .remove_route(
+                &route1_fwd_entry.try_into().expect("should convert to FIDL successfully")
+            )
+            .await
+            .expect("should not get FIDL error")
+            .expect("remove route should succeed")
+    );
 
     // Should observe that the route was already removed if we try to delete again:
-    assert!(!global_route_set
-        .remove_route(&route1_fwd_entry.try_into().expect("should convert to FIDL successfully"))
-        .await
-        .expect("should not get FIDL error")
-        .expect("remove route should succeed"));
+    assert!(
+        !global_route_set
+            .remove_route(
+                &route1_fwd_entry.try_into().expect("should convert to FIDL successfully")
+            )
+            .await
+            .expect("should not get FIDL error")
+            .expect("remove route should succeed")
+    );
 
     assert_eq!(
         get_routes::<Ipv4>(test_stack),
@@ -1560,11 +1570,9 @@ async fn shutdown_with_open_resources_routes(detach_route_table: bool) {
             .await
             .expect("calling authenticate")
             .expect("authenticate");
-        assert!(main_route_set
-            .add_route(&route)
-            .await
-            .expect("calling add_route")
-            .expect("add route"));
+        assert!(
+            main_route_set.add_route(&route).await.expect("calling add_route").expect("add route")
+        );
         let route_table_provider =
             stack.connect_proxy::<fnet_routes_admin::RouteTableProviderV4Marker>();
 

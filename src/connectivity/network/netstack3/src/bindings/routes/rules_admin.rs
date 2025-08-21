@@ -9,13 +9,13 @@ use std::pin::pin;
 
 use async_utils::fold::{FoldResult, FoldWhile};
 use fidl::endpoints::ControlHandle as _;
+use fnet_routes_ext::Responder;
 use fnet_routes_ext::rules::{
     FidlRuleAdminIpExt, InstalledRule, InterfaceMatcher, MarkMatcher, RuleAction, RuleIndex,
     RuleMatcher, RuleSetPriority, RuleSetRequest, RuleTableRequest,
 };
-use fnet_routes_ext::Responder;
-use futures::channel::{mpsc, oneshot};
 use futures::TryStreamExt as _;
+use futures::channel::{mpsc, oneshot};
 use net_types::ip::Ip;
 use {
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
@@ -23,7 +23,7 @@ use {
 };
 
 use crate::bindings::util::{IntoCore as _, ScopeExt as _, TryFromFidl, TryIntoCore as _};
-use crate::bindings::{routes, Ctx};
+use crate::bindings::{Ctx, routes};
 pub(super) use witness::AddableMatcher;
 
 impl TryFromFidl<InterfaceMatcher> for netstack3_core::routes::BoundDeviceMatcher {

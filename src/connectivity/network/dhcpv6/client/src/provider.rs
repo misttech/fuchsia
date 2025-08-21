@@ -59,7 +59,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::join;
 
-    use anyhow::{anyhow, Error};
+    use anyhow::{Error, anyhow};
     use assert_matches::assert_matches;
     use net_declare::fidl_socket_addr_v6;
 

@@ -8,8 +8,8 @@ use core::num::NonZeroU8;
 use core::time::Duration;
 
 use derivative::Derivative;
-use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6, Mtu};
 use net_types::SpecifiedAddr;
+use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6, Mtu};
 use netstack3_base::{
     IcmpErrorCode, Icmpv4ErrorCode, Icmpv6ErrorCode, IpExt, Marks, Mms, UnscaledWindowSize,
     WeakDeviceIdentifier, WindowSize,

@@ -13,10 +13,10 @@ use netstack3_hashmap::HashMap;
 
 use packet::Buf;
 
+use crate::InstantContext as _;
 use crate::testutil::{
     FakeInstant, FakeTimerId, InstantAndData, WithFakeFrameContext, WithFakeTimerContext,
 };
-use crate::InstantContext as _;
 
 /// A fake network, composed of many `FakeCoreCtx`s.
 ///
@@ -101,12 +101,8 @@ pub trait FakeNetworkLinks<SendMeta, RecvMeta, CtxId> {
     fn map_link(&self, ctx: CtxId, meta: SendMeta) -> Vec<(CtxId, RecvMeta, Option<Duration>)>;
 }
 
-impl<
-        SendMeta,
-        RecvMeta,
-        CtxId,
-        F: Fn(CtxId, SendMeta) -> Vec<(CtxId, RecvMeta, Option<Duration>)>,
-    > FakeNetworkLinks<SendMeta, RecvMeta, CtxId> for F
+impl<SendMeta, RecvMeta, CtxId, F: Fn(CtxId, SendMeta) -> Vec<(CtxId, RecvMeta, Option<Duration>)>>
+    FakeNetworkLinks<SendMeta, RecvMeta, CtxId> for F
 {
     fn map_link(&self, ctx: CtxId, meta: SendMeta) -> Vec<(CtxId, RecvMeta, Option<Duration>)> {
         (self)(ctx, meta)
@@ -432,11 +428,7 @@ where
         let all_frames = self.contexts.iter_mut().filter_map(|(n, ctx)| {
             Spec::fake_frames(ctx).with_fake_frame_ctx_mut(|ctx| {
                 let frames = ctx.take_frames();
-                if frames.is_empty() {
-                    None
-                } else {
-                    Some((n.clone(), frames))
-                }
+                if frames.is_empty() { None } else { Some((n.clone(), frames)) }
             })
         });
 

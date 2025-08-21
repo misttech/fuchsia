@@ -4,10 +4,10 @@
 
 use anyhow::{Context as _, Error};
 use dhcpv4::configuration;
-use dhcpv4::protocol::{Message, CLIENT_PORT, SERVER_PORT};
+use dhcpv4::protocol::{CLIENT_PORT, Message, SERVER_PORT};
 use dhcpv4::server::{
-    DataStore, ResponseTarget, Server, ServerAction, ServerDispatcher, ServerError,
-    DEFAULT_STASH_ID,
+    DEFAULT_STASH_ID, DataStore, ResponseTarget, Server, ServerAction, ServerDispatcher,
+    ServerError,
 };
 use dhcpv4::stash::Stash;
 use fuchsia_async::net::UdpSocket;
@@ -17,8 +17,8 @@ use futures::{Future, SinkExt as _, StreamExt as _, TryFutureExt as _, TryStream
 use log::{debug, error, info, warn};
 use net_declare::net::prefix_length_v4;
 use net_types::ethernet::Mac;
-use packet::serialize::InnerPacketBuilder;
 use packet::Serializer;
+use packet::serialize::InnerPacketBuilder;
 use packet_formats::ipv4::Ipv4PacketBuilder;
 use packet_formats::udp::UdpPacketBuilder;
 use sockaddr::IntoSockAddr as _;
@@ -303,11 +303,7 @@ impl<S: SocketServerDispatcher> ServerDispatcherRuntime<S> {
         &mut self,
         f: F,
     ) -> Result<R, zx::Status> {
-        if self.abort_handle.is_none() {
-            f(&mut self.server)
-        } else {
-            Err(zx::Status::BAD_STATE)
-        }
+        if self.abort_handle.is_none() { f(&mut self.server) } else { Err(zx::Status::BAD_STATE) }
     }
 }
 
@@ -418,7 +414,7 @@ async fn define_msg_handling_loop_future<DS: DataStore>(
                 return Err(anyhow::anyhow!(
                     "IPv4 socket received datagram from IPv6 sender: {}",
                     sender
-                ))
+                ));
             }
         };
         if let Some((dst, msg, chaddr)) = handler
@@ -652,8 +648,8 @@ mod tests {
     use super::*;
     use dhcpv4::configuration::ServerParameters;
     use fuchsia_async as fasync;
-    use futures::sink::drain;
     use futures::FutureExt;
+    use futures::sink::drain;
     use net_declare::{fidl_ip_v4, std_ip_v4};
 
     #[derive(Debug, Eq, PartialEq)]

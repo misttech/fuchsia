@@ -64,17 +64,19 @@ async fn watch_ndp_option(name: &str) {
         .connect_to_protocol::<fnet_ndp::RouterAdvertisementOptionWatcherProviderMarker>()
         .expect("should successfully connect to provider");
 
-    let mut watcher = std::pin::pin!(fnet_ndp_ext::create_watcher_stream(
-        &watcher_provider,
-        &fnet_ndp::RouterAdvertisementOptionWatcherParams {
-            interest_types: None,
-            interest_interface_id: Some(iface.id()),
-            ..Default::default()
-        }
-    )
-    .await
-    .expect("protocol should be present")
-    .expect("creating watcher should succeed"));
+    let mut watcher = std::pin::pin!(
+        fnet_ndp_ext::create_watcher_stream(
+            &watcher_provider,
+            &fnet_ndp::RouterAdvertisementOptionWatcherParams {
+                interest_types: None,
+                interest_interface_id: Some(iface.id()),
+                ..Default::default()
+            }
+        )
+        .await
+        .expect("protocol should be present")
+        .expect("creating watcher should succeed")
+    );
 
     let (option_builder, watch_entry) =
         nonce_option_builder_and_watch_entry(NonZeroU64::new(iface.id()).unwrap());
@@ -135,19 +137,21 @@ async fn filters_for_rdnss(name: &str) {
     let watcher_provider = realm
         .connect_to_protocol::<fnet_ndp::RouterAdvertisementOptionWatcherProviderMarker>()
         .expect("should successfully connect to provider");
-    let mut watcher = std::pin::pin!(fnet_ndp_ext::create_watcher_stream(
-        &watcher_provider,
-        &fnet_ndp::RouterAdvertisementOptionWatcherParams {
-            interest_types: Some(vec![
-                packet_formats_ndp::options::NdpOptionType::RecursiveDnsServer.into()
-            ]),
-            interest_interface_id: None,
-            ..Default::default()
-        }
-    )
-    .await
-    .expect("protocol should be present")
-    .expect("should successfully create watcher stream"));
+    let mut watcher = std::pin::pin!(
+        fnet_ndp_ext::create_watcher_stream(
+            &watcher_provider,
+            &fnet_ndp::RouterAdvertisementOptionWatcherParams {
+                interest_types: Some(vec![
+                    packet_formats_ndp::options::NdpOptionType::RecursiveDnsServer.into()
+                ]),
+                interest_interface_id: None,
+                ..Default::default()
+            }
+        )
+        .await
+        .expect("protocol should be present")
+        .expect("should successfully create watcher stream")
+    );
 
     let (nonce_option_builder, _nonce_watch_entry) =
         nonce_option_builder_and_watch_entry(NonZeroU64::new(iface.id()).unwrap());

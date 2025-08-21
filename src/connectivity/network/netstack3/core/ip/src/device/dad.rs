@@ -15,17 +15,17 @@ use arrayvec::ArrayVec;
 use assert_matches::assert_matches;
 use derivative::Derivative;
 use log::debug;
+use net_types::MulticastAddr;
 use net_types::ip::{
     GenericOverIp, Ip, IpVersion, IpVersionMarker, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr,
 };
-use net_types::MulticastAddr;
 use netstack3_base::{
     AnyDevice, CoreTimerContext, DeviceIdContext, EventContext, HandleableTimer,
     InstantBindingsTypes, IpAddressId as _, IpDeviceAddressIdContext, RngContext,
     StrongDeviceIdentifier as _, TimerBindingsTypes, TimerContext, WeakDeviceIdentifier,
 };
-use packet_formats::icmp::ndp::options::{NdpNonce, MIN_NONCE_LENGTH};
 use packet_formats::icmp::ndp::NeighborSolicitation;
+use packet_formats::icmp::ndp::options::{MIN_NONCE_LENGTH, NdpNonce};
 use packet_formats::utils::NonZeroDuration;
 use rand::Rng;
 
@@ -363,12 +363,7 @@ pub trait DadContext<I: IpDeviceIpExt, BC: DadBindingsTypes>:
     + CoreTimerContext<DadTimerId<I, Self::WeakDeviceId, Self::WeakAddressId>, BC>
 {
     /// The inner address context.
-    type DadAddressCtx<'a>: DadAddressContext<
-        I,
-        BC,
-        DeviceId = Self::DeviceId,
-        AddressId = Self::AddressId,
-    >;
+    type DadAddressCtx<'a>: DadAddressContext<I, BC, DeviceId = Self::DeviceId, AddressId = Self::AddressId>;
 
     /// Calls the function with the DAD state associated with the address.
     fn with_dad_state<O, F: FnOnce(DadStateRef<'_, I, Self::DadAddressCtx<'_>, BC>) -> O>(

@@ -8,8 +8,8 @@ use std::fmt::{self, Debug, Display};
 use std::num::NonZeroU64;
 use std::ops::{Deref as _, DerefMut as _};
 
-use super::util::NeedsDataWatcher;
 use super::DeviceIdExt;
+use super::util::NeedsDataWatcher;
 use assert_matches::assert_matches;
 use derivative::Derivative;
 use fuchsia_async as fasync;
@@ -33,7 +33,7 @@ use crate::bindings::power::TransmitSuspensionHandler;
 use crate::bindings::routes::interface_local::LocalRouteTables;
 use crate::bindings::util::NeedsDataNotifier;
 use crate::bindings::{
-    interfaces_admin, neighbor_worker, netdevice_worker, BindingsCtx, Ctx, InterfaceEventProducer,
+    BindingsCtx, Ctx, InterfaceEventProducer, interfaces_admin, neighbor_worker, netdevice_worker,
 };
 use netdevice_worker::LinkMulticastEvent;
 

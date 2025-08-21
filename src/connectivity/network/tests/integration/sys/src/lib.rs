@@ -4,12 +4,12 @@
 
 #![cfg(test)]
 
-use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
 use fidl::AsHandleRef as _;
+use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObj};
 use futures::StreamExt as _;
 use netemul::{TestRealm, TestSandbox};
-use netstack_testing_common::realms::{constants, Netstack, NetstackVersion, TestSandboxExt as _};
+use netstack_testing_common::realms::{Netstack, NetstackVersion, TestSandboxExt as _, constants};
 use netstack_testing_macros::netstack_test;
 use std::borrow::Cow;
 use std::collections::HashSet;

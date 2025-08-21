@@ -174,8 +174,8 @@ pub mod neighbor {
     // Re-exported types.
     pub use netstack3_ip::nud::{
         Event, EventDynamicState, EventKind, EventState, LinkResolutionContext,
-        LinkResolutionNotifier, LinkResolutionResult, NeighborRemovalError, NudUserConfig,
-        NudUserConfigUpdate, StaticNeighborInsertionError, MAX_ENTRIES,
+        LinkResolutionNotifier, LinkResolutionResult, MAX_ENTRIES, NeighborRemovalError,
+        NudUserConfig, NudUserConfigUpdate, StaticNeighborInsertionError,
     };
 }
 
@@ -226,10 +226,10 @@ pub mod tcp {
     pub use netstack3_base::{FragmentedPayload, Payload, PayloadLen};
     pub use netstack3_tcp::{
         AcceptError, BindError, BoundInfo, Buffer, BufferLimits, BufferSizes, ConnectError,
-        ConnectionError, ConnectionInfo, IntoBuffers, ListenError, ListenerNotifier, NoConnection,
-        OriginalDestinationError, ReceiveBuffer, SendBuffer, SetDeviceError, SetReuseAddrError,
-        SocketAddr, SocketInfo, SocketOptions, TcpBindingsTypes, TcpSettings, TcpSocketId,
-        UnboundInfo, DEFAULT_FIN_WAIT2_TIMEOUT,
+        ConnectionError, ConnectionInfo, DEFAULT_FIN_WAIT2_TIMEOUT, IntoBuffers, ListenError,
+        ListenerNotifier, NoConnection, OriginalDestinationError, ReceiveBuffer, SendBuffer,
+        SetDeviceError, SetReuseAddrError, SocketAddr, SocketInfo, SocketOptions, TcpBindingsTypes,
+        TcpSettings, TcpSocketId, UnboundInfo,
     };
 }
 

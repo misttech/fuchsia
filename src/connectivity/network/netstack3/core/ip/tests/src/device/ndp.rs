@@ -6,7 +6,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryInto as _;
 use core::fmt::Debug;
-use core::num::{NonZeroU16, NonZeroU8};
+use core::num::{NonZeroU8, NonZeroU16};
 use core::time::Duration;
 
 use assert_matches::assert_matches;
@@ -34,8 +34,8 @@ use test_case::test_case;
 use zerocopy::SplitByteSlice;
 
 use netstack3_base::testutil::{
-    assert_empty, set_logger_for_test, FakeInstant, FakeNetwork, FakeNetworkLinks, StepResult,
-    TestIpExt, TEST_ADDRS_V6,
+    FakeInstant, FakeNetwork, FakeNetworkLinks, StepResult, TEST_ADDRS_V6, TestIpExt, assert_empty,
+    set_logger_for_test,
 };
 use netstack3_base::{
     FrameDestination, InstantContext as _, IpAddressId as _, Ipv6DeviceAddr, LinkAddress,
@@ -46,22 +46,22 @@ use netstack3_core::device::{
     MaxEthernetFrameSize,
 };
 use netstack3_core::testutil::{
-    new_simple_fake_network, Ctx, CtxPairExt as _, DispatchedFrame, FakeBindingsCtx, FakeCtx,
-    FakeCtxBuilder, FakeCtxNetworkSpec, DEFAULT_INTERFACE_METRIC,
+    Ctx, CtxPairExt as _, DEFAULT_INTERFACE_METRIC, DispatchedFrame, FakeBindingsCtx, FakeCtx,
+    FakeCtxBuilder, FakeCtxNetworkSpec, new_simple_fake_network,
 };
 use netstack3_core::{BindingsTypes, Instant, TimerId};
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_hashmap::{HashMap, HashSet};
 use netstack3_ip::device::testutil::{calculate_slaac_addr_sub, with_assigned_ipv6_addr_subnets};
 use netstack3_ip::device::{
-    get_ipv6_hop_limit, IidGenerationConfiguration, InnerSlaacTimerId, IpAddressData,
-    IpAddressFlags, IpDeviceBindingsContext, IpDeviceConfigurationUpdate, IpDeviceStateContext,
+    IidGenerationConfiguration, InnerSlaacTimerId, IpAddressData, IpAddressFlags,
+    IpDeviceBindingsContext, IpDeviceConfigurationUpdate, IpDeviceStateContext,
     Ipv4DeviceConfigurationUpdate, Ipv6AddrConfig, Ipv6AddrSlaacConfig,
     Ipv6DeviceConfigurationContext, Ipv6DeviceConfigurationUpdate, Ipv6DeviceHandler,
-    Ipv6DeviceTimerId, Lifetime, OpaqueIid, OpaqueIidNonce, PreferredLifetime,
-    SlaacBindingsContext, SlaacConfig, SlaacConfigurationUpdate, SlaacContext, SlaacTimerId,
-    StableSlaacAddressConfiguration, TemporarySlaacAddressConfiguration, TemporarySlaacConfig,
-    MAX_RTR_SOLICITATION_DELAY, RTR_SOLICITATION_INTERVAL,
+    Ipv6DeviceTimerId, Lifetime, MAX_RTR_SOLICITATION_DELAY, OpaqueIid, OpaqueIidNonce,
+    PreferredLifetime, RTR_SOLICITATION_INTERVAL, SlaacBindingsContext, SlaacConfig,
+    SlaacConfigurationUpdate, SlaacContext, SlaacTimerId, StableSlaacAddressConfiguration,
+    TemporarySlaacAddressConfiguration, TemporarySlaacConfig, get_ipv6_hop_limit,
 };
 use netstack3_ip::icmp::REQUIRED_NDP_IP_PACKET_HOP_LIMIT;
 use netstack3_ip::{self as ip, IpPacketDestination, SendIpPacketMeta};
@@ -392,10 +392,9 @@ fn test_dad_duplicate_address_detected_solicitation() {
 
     // Both devices should not be in the multicast group
     assert!(!net.context("local").test_api().is_in_ip_multicast(&local_device_id, multicast_addr));
-    assert!(!net
-        .context("remote")
-        .test_api()
-        .is_in_ip_multicast(&remote_device_id, multicast_addr));
+    assert!(
+        !net.context("remote").test_api().is_in_ip_multicast(&remote_device_id, multicast_addr)
+    );
 }
 
 fn dad_timer_id(
@@ -469,10 +468,9 @@ fn test_dad_duplicate_address_detected_advertisement() {
 
     // Only local should be in the solicited node multicast group.
     assert!(net.context("local").test_api().is_in_ip_multicast(&local_device_id, multicast_addr));
-    assert!(!net
-        .context("remote")
-        .test_api()
-        .is_in_ip_multicast(&remote_device_id, multicast_addr));
+    assert!(
+        !net.context("remote").test_api().is_in_ip_multicast(&remote_device_id, multicast_addr)
+    );
 
     net.with_context("local", |ctx| {
         assert_eq!(
@@ -513,10 +511,9 @@ fn test_dad_duplicate_address_detected_advertisement() {
 
     // Only local should be in the solicited node multicast group.
     assert!(net.context("local").test_api().is_in_ip_multicast(&local_device_id, multicast_addr));
-    assert!(!net
-        .context("remote")
-        .test_api()
-        .is_in_ip_multicast(&remote_device_id, multicast_addr));
+    assert!(
+        !net.context("remote").test_api().is_in_ip_multicast(&remote_device_id, multicast_addr)
+    );
 }
 
 #[test]
@@ -1714,8 +1711,8 @@ fn single_stable_and_temporary<
     }
 }
 
-fn initialize_with_temporary_addresses_enabled(
-) -> (FakeCtx, DeviceId<FakeBindingsCtx>, SlaacConfigurationUpdate) {
+fn initialize_with_temporary_addresses_enabled()
+-> (FakeCtx, DeviceId<FakeBindingsCtx>, SlaacConfigurationUpdate) {
     set_logger_for_test();
     let config = Ipv6::TEST_ADDRS;
     let mut ctx = FakeCtx::default();

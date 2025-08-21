@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use proc_macro::TokenStream;
-use quote::{quote, quote_spanned, ToTokens};
+use quote::{ToTokens, quote, quote_spanned};
 use syn::spanned::Spanned;
 
 /// Instantiates an impl block as separate Ipv4 and Ipv6 blocks.
@@ -388,7 +388,7 @@ pub fn derive_counter_collection_spec(item: TokenStream) -> TokenStream {
                     "derive CounterCollectionSpec only supported on structs"
                 );
             }
-            .into()
+            .into();
         }
     };
 

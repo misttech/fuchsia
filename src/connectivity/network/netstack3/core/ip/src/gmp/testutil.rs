@@ -12,8 +12,8 @@ use packet_formats::gmp::{GmpReportGroupRecord, GroupRecordType};
 use rand::SeedableRng as _;
 
 use net_declare::{net_ip_v4, net_ip_v6};
-use net_types::ip::{Ip, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use net_types::MulticastAddr;
+use net_types::ip::{Ip, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use netstack3_base::testutil::{FakeBindingsCtx, FakeDeviceId, FakeWeakDeviceId};
 use netstack3_base::{
     AnyDevice, CtxPair, DeviceIdContext, HandleableTimer, InspectableValue, Inspector,

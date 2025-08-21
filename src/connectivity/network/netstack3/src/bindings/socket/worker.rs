@@ -9,9 +9,9 @@ use fidl::endpoints::{ControlHandle, RequestStream};
 use futures::StreamExt as _;
 use log::error;
 
+use crate::bindings::Ctx;
 use crate::bindings::socket::SocketWorkerProperties;
 use crate::bindings::util::ResultExt as _;
-use crate::bindings::Ctx;
 
 pub(crate) struct SocketWorker<Data> {
     ctx: Ctx,

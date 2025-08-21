@@ -6,8 +6,8 @@ mod controller;
 mod conversion;
 pub mod socket_filters;
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::num::NonZeroUsize;
 use std::pin::pin;
 use std::sync::Arc;

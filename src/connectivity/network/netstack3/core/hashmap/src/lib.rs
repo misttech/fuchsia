@@ -15,4 +15,4 @@
 //! This crate may evolve if necessary to provide different HashMap
 //! implementations based on compilation features as necessary.
 
-pub use ::std::collections::{hash_map, hash_set, HashMap, HashSet};
+pub use ::std::collections::{HashMap, HashSet, hash_map, hash_set};

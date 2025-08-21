@@ -6,7 +6,7 @@ use std::num::{NonZeroU16, NonZeroU64};
 use std::ops::RangeInclusive;
 use std::str::FromStr;
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use argh::{ArgsInfo, FromArgs};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,

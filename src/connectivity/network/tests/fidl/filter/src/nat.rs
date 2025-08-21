@@ -17,14 +17,14 @@ use fidl_fuchsia_net_filter_ext::{
 use futures::{FutureExt as _, StreamExt as _};
 use heck::ToSnakeCase as _;
 use net_declare::fidl_mac;
-use net_types::ip::{IpAddress as _, Ipv4, Ipv6};
 use net_types::Witness as _;
+use net_types::ip::{IpAddress as _, Ipv4, Ipv6};
 use netemul::RealmTcpStream;
 use netstack_testing_macros::netstack_test;
 use packet::{ParsablePacket, Serializer};
 use packet_formats::ethernet::{
-    EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
-    ETHERNET_MIN_BODY_LEN_NO_TAG,
+    ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
+    EthernetFrameLengthCheck,
 };
 use packet_formats::icmp::{
     IcmpDestUnreachable, IcmpMessage, IcmpPacketBuilder, IcmpTimeExceeded,
@@ -40,9 +40,9 @@ use {
 };
 
 use crate::ip_hooks::{
-    Addrs, BoundSockets, ExpectedConnectivity, IcmpSocket, OriginalDestination, Ports, Realms,
-    RouterTestIpExt, SockAddrs, SocketType, TcpSocket, TestIpExt, TestNet, TestRealm,
-    TestRouterNet, UdpSocket, LOW_RULE_PRIORITY, MEDIUM_RULE_PRIORITY,
+    Addrs, BoundSockets, ExpectedConnectivity, IcmpSocket, LOW_RULE_PRIORITY, MEDIUM_RULE_PRIORITY,
+    OriginalDestination, Ports, Realms, RouterTestIpExt, SockAddrs, SocketType, TcpSocket,
+    TestIpExt, TestNet, TestRealm, TestRouterNet, UdpSocket,
 };
 
 fn local_type_name<T>() -> &'static str {

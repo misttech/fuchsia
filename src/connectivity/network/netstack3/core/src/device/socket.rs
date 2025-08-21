@@ -11,10 +11,10 @@ use netstack3_device::socket::{
     AllSockets, AnyDeviceSockets, DeviceSocketAccessor, DeviceSocketContext, DeviceSocketId,
     DeviceSockets, HeldSockets, SocketStateAccessor, Target,
 };
-use netstack3_device::{for_any_device_id, DeviceId, WeakDeviceId};
+use netstack3_device::{DeviceId, WeakDeviceId, for_any_device_id};
 
-use crate::context::prelude::*;
 use crate::context::WrapLockLevel;
+use crate::context::prelude::*;
 use crate::device::integration;
 use crate::{BindingsContext, BindingsTypes, CoreCtx, StackState};
 

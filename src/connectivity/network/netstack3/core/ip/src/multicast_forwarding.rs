@@ -52,13 +52,13 @@ pub trait MulticastForwardingBindingsContext<I: IpLayerIpExt, D>:
 {
 }
 impl<
-        I: IpLayerIpExt,
-        D,
-        BC: MulticastForwardingBindingsTypes
-            + InstantContext
-            + TimerContext
-            + EventContext<IpLayerEvent<D, I>>,
-    > MulticastForwardingBindingsContext<I, D> for BC
+    I: IpLayerIpExt,
+    D,
+    BC: MulticastForwardingBindingsTypes
+        + InstantContext
+        + TimerContext
+        + EventContext<IpLayerEvent<D, I>>,
+> MulticastForwardingBindingsContext<I, D> for BC
 {
 }
 
@@ -77,10 +77,10 @@ pub enum MulticastForwardingTimerId<I: Ip> {
 }
 
 impl<
-        I: IpLayerIpExt,
-        BC: MulticastForwardingBindingsContext<I, CC::DeviceId>,
-        CC: MulticastForwardingStateContext<I, BC> + CounterContext<MulticastForwardingCounters<I>>,
-    > HandleableTimer<CC, BC> for MulticastForwardingTimerId<I>
+    I: IpLayerIpExt,
+    BC: MulticastForwardingBindingsContext<I, CC::DeviceId>,
+    CC: MulticastForwardingStateContext<I, BC> + CounterContext<MulticastForwardingCounters<I>>,
+> HandleableTimer<CC, BC> for MulticastForwardingTimerId<I>
 {
     fn handle(self, core_ctx: &mut CC, bindings_ctx: &mut BC, _: BC::UniqueTimerId) {
         match self {

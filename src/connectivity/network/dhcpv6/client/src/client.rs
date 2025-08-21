@@ -22,7 +22,7 @@ use fidl_fuchsia_net_dhcpv6::{
 use fidl_fuchsia_net_dhcpv6_ext::{
     AddressConfig, ClientConfig, InformationConfig, NewClientParams,
 };
-use futures::{select, stream, Future, FutureExt as _, StreamExt as _, TryStreamExt as _};
+use futures::{Future, FutureExt as _, StreamExt as _, TryStreamExt as _, select, stream};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_name as fnet_name,
     fuchsia_async as fasync,
@@ -33,12 +33,12 @@ use assert_matches::assert_matches;
 use byteorder::{NetworkEndian, WriteBytesExt as _};
 use dns_server_watcher::DEFAULT_DNS_PORT;
 use log::{debug, error, warn};
-use net_types::ip::{Ip as _, Ipv6, Ipv6Addr, Subnet, SubnetError};
 use net_types::MulticastAddress as _;
+use net_types::ip::{Ip as _, Ipv6, Ipv6Addr, Subnet, SubnetError};
 use packet::ParsablePacket;
 use packet_formats_dhcp::v6;
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 /// A thin wrapper around `zx::MonotonicInstant` that implements `dhcpv6_core::Instant`.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
@@ -811,7 +811,7 @@ pub(crate) async fn serve_client(
         Err(()) => {
             return request
                 .close_with_epitaph(zx::Status::INVALID_ARGS)
-                .context("closing request channel with epitaph")
+                .context("closing request channel with epitaph");
         }
     };
     let (request_stream, control_handle) = request.into_stream_and_control_handle();
@@ -850,11 +850,11 @@ mod tests {
     use std::task::Poll;
 
     use fidl::endpoints::{
-        create_proxy, create_proxy_and_stream, create_request_stream, ClientEnd,
+        ClientEnd, create_proxy, create_proxy_and_stream, create_request_stream,
     };
     use fidl_fuchsia_net_dhcpv6::{self as fnet_dhcpv6, ClientProxy, DEFAULT_CLIENT_PORT};
     use fuchsia_async as fasync;
-    use futures::{join, poll, TryFutureExt as _};
+    use futures::{TryFutureExt as _, join, poll};
 
     use assert_matches::assert_matches;
     use net_declare::{
@@ -1063,10 +1063,12 @@ mod tests {
             caller2_res,
             Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. })
         );
-        assert!(client_res
-            .expect_err("client should fail with double watch error")
-            .to_string()
-            .contains("got watch request while the previous one is pending"));
+        assert!(
+            client_res
+                .expect_err("client should fail with double watch error")
+                .to_string()
+                .contains("got watch request while the previous one is pending")
+        );
     }
 
     const VALID_INFORMATION_CONFIGS: [InformationConfig; 2] =
@@ -1135,7 +1137,9 @@ mod tests {
                         exec.run_until_stalled(&mut test_fut),
                         Poll::Pending,
                         "information_config={:?}, non_temporary_address_config={:?}, prefix_delegation_config={:?}",
-                        information_config, non_temporary_address_config, prefix_delegation_config
+                        information_config,
+                        non_temporary_address_config,
+                        prefix_delegation_config
                     );
                 }
             }

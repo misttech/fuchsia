@@ -4,7 +4,7 @@
 
 //! IP Device configuration.
 
-use core::num::{NonZeroU16, NonZeroU8};
+use core::num::{NonZeroU8, NonZeroU16};
 
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
 use netstack3_base::{AnyDevice, DeviceIdContext, DeviceIdentifier};
@@ -18,9 +18,9 @@ use crate::internal::device::{
     Ipv6DeviceConfigurationContext, WithIpDeviceConfigurationMutInner as _,
     WithIpv6DeviceConfigurationMutInner as _,
 };
+use crate::internal::gmp::GmpHandler;
 use crate::internal::gmp::igmp::IgmpConfigMode;
 use crate::internal::gmp::mld::MldConfigMode;
-use crate::internal::gmp::GmpHandler;
 
 /// A trait abstracting configuration between IPv4 and IPv6.
 ///

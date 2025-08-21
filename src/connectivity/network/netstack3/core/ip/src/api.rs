@@ -23,10 +23,10 @@ use crate::internal::base::{
 use crate::internal::device::{
     IpDeviceBindingsContext, IpDeviceConfigurationContext, IpDeviceIpExt,
 };
+use crate::internal::routing::RoutingTable;
 use crate::internal::routing::rules::{
     BoundDeviceMatcher, MarkMatcher, Rule, RuleAction, RuleMatcher, TrafficOriginMatcher,
 };
-use crate::internal::routing::RoutingTable;
 use crate::internal::types::{
     Destination, Entry, EntryAndGeneration, Metric, NextHop, OrderedEntry, ResolvedRoute,
     RoutableIpAddr,

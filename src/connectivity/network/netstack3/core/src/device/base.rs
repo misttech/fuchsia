@@ -16,7 +16,7 @@ use net_types::ip::{
     AddrSubnet, Ip, IpAddress, IpInvariant, IpVersion, IpVersionMarker, Ipv4, Ipv4Addr, Ipv6,
     Ipv6Addr, Mtu,
 };
-use net_types::{map_ip_twice, MulticastAddr, SpecifiedAddr, Witness as _};
+use net_types::{MulticastAddr, SpecifiedAddr, Witness as _, map_ip_twice};
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, CounterContext, DeviceIdContext, ExistsError, IpAddressId,
     IpDeviceAddressIdContext, Ipv4DeviceAddr, Ipv6DeviceAddr, NotFoundError, ReceivableFrameMeta,
@@ -33,10 +33,10 @@ use netstack3_device::pure_ip::{self, PureIpDeviceCounters, PureIpDeviceId};
 use netstack3_device::queue::TransmitQueueHandler;
 use netstack3_device::socket::{DeviceSocketCounters, DeviceSocketId, HeldDeviceSockets};
 use netstack3_device::{
-    for_any_device_id, ArpCounters, BaseDeviceId, DeviceCollectionContext,
-    DeviceConfigurationContext, DeviceCounters, DeviceId, DeviceLayerState, DeviceStateSpec,
-    Devices, DevicesIter, IpLinkDeviceState, IpLinkDeviceStateInner, Ipv6DeviceLinkLayerAddr,
-    OriginTracker, OriginTrackerContext, WeakDeviceId,
+    ArpCounters, BaseDeviceId, DeviceCollectionContext, DeviceConfigurationContext, DeviceCounters,
+    DeviceId, DeviceLayerState, DeviceStateSpec, Devices, DevicesIter, IpLinkDeviceState,
+    IpLinkDeviceStateInner, Ipv6DeviceLinkLayerAddr, OriginTracker, OriginTrackerContext,
+    WeakDeviceId, for_any_device_id,
 };
 use netstack3_filter::ProofOfEgressCheck;
 use netstack3_ip::device::{
@@ -71,11 +71,11 @@ fn bytes_to_mac(b: &[u8]) -> Option<Mac> {
 }
 
 impl<
-        I: Ip,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::EthernetIpv4Arp>
-            + LockBefore<crate::lock_ordering::EthernetIpv6Nud>,
-    > NudIpHandler<I, BC> for CoreCtx<'_, BC, L>
+    I: Ip,
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::EthernetIpv4Arp>
+        + LockBefore<crate::lock_ordering::EthernetIpv6Nud>,
+> NudIpHandler<I, BC> for CoreCtx<'_, BC, L>
 where
     Self: NudHandler<I, EthernetLinkDevice, BC>
         + DeviceIdContext<EthernetLinkDevice, DeviceId = EthernetDeviceId<BC>>,
@@ -198,11 +198,8 @@ where
 }
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
-impl<
-        I: BroadcastIpExt,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::FilterState<I>>,
-    > IpDeviceSendContext<I, BC> for CoreCtx<'_, BC, L>
+impl<I: BroadcastIpExt, BC: BindingsContext, L: LockBefore<crate::lock_ordering::FilterState<I>>>
+    IpDeviceSendContext<I, BC> for CoreCtx<'_, BC, L>
 {
     fn send_ip_frame<S>(
         &mut self,
@@ -223,11 +220,11 @@ impl<
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
 impl<
-        I: BroadcastIpExt,
-        Config,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::FilterState<I>>,
-    > IpDeviceSendContext<I, BC> for CoreCtxWithIpDeviceConfiguration<'_, Config, L, BC>
+    I: BroadcastIpExt,
+    Config,
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::FilterState<I>>,
+> IpDeviceSendContext<I, BC> for CoreCtxWithIpDeviceConfiguration<'_, Config, L, BC>
 {
     fn send_ip_frame<S>(
         &mut self,
@@ -567,10 +564,10 @@ impl<BC: BindingsContext, L> IpDeviceAddressIdContext<Ipv6> for CoreCtx<'_, BC, 
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
 impl<
-        I: IpLayerIpExt,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IpDeviceAddressData<I>>,
-    > IpDeviceAddressContext<I, BC> for CoreCtx<'_, BC, L>
+    I: IpLayerIpExt,
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IpDeviceAddressData<I>>,
+> IpDeviceAddressContext<I, BC> for CoreCtx<'_, BC, L>
 {
     fn with_ip_address_data<O, F: FnOnce(&IpAddressData<I, BC::Instant>) -> O>(
         &mut self,

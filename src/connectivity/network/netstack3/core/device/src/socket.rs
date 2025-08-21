@@ -239,11 +239,7 @@ pub type HeldSockets<BT> = Sockets<WeakDeviceId<BT>, BT>;
 /// Core context for accessing socket state.
 pub trait DeviceSocketContext<BT: DeviceSocketTypes>: DeviceIdContext<AnyDevice> {
     /// The core context available in callbacks to methods on this context.
-    type SocketTablesCoreCtx<'a>: DeviceSocketAccessor<
-        BT,
-        DeviceId = Self::DeviceId,
-        WeakDeviceId = Self::WeakDeviceId,
-    >;
+    type SocketTablesCoreCtx<'a>: DeviceSocketAccessor<BT, DeviceId = Self::DeviceId, WeakDeviceId = Self::WeakDeviceId>;
 
     /// Executes the provided callback with access to the collection of all
     /// sockets.
@@ -823,10 +819,10 @@ impl<B> Frame<B> {
 }
 
 impl<
-        D: Device,
-        BC: DeviceSocketBindingsContext<<CC as DeviceIdContext<AnyDevice>>::DeviceId>,
-        CC: DeviceSocketContext<BC> + DeviceIdContext<D>,
-    > DeviceSocketHandler<D, BC> for CC
+    D: Device,
+    BC: DeviceSocketBindingsContext<<CC as DeviceIdContext<AnyDevice>>::DeviceId>,
+    CC: DeviceSocketContext<BC> + DeviceIdContext<D>,
+> DeviceSocketHandler<D, BC> for CC
 where
     <CC as DeviceIdContext<D>>::DeviceId: Into<<CC as DeviceIdContext<AnyDevice>>::DeviceId>,
 {
@@ -978,8 +974,8 @@ mod testutil {
     use alloc::vec::Vec;
     use core::num::NonZeroU64;
     use core::ops::DerefMut;
-    use netstack3_base::testutil::{FakeBindingsCtx, MonotonicIdentifier};
     use netstack3_base::StrongDeviceIdentifier;
+    use netstack3_base::testutil::{FakeBindingsCtx, MonotonicIdentifier};
 
     use super::*;
     use crate::internal::base::{
@@ -1072,10 +1068,10 @@ mod testutil {
     }
 
     impl<
-            TimerId: Debug + PartialEq + Clone + Send + Sync + 'static,
-            Event: Debug + 'static,
-            State: 'static,
-        > DeviceLayerStateTypes for FakeBindingsCtx<TimerId, Event, State, ()>
+        TimerId: Debug + PartialEq + Clone + Send + Sync + 'static,
+        Event: Debug + 'static,
+        State: 'static,
+    > DeviceLayerStateTypes for FakeBindingsCtx<TimerId, Event, State, ()>
     {
         type EthernetDeviceState = ();
         type LoopbackDeviceState = ();
@@ -1239,11 +1235,11 @@ mod tests {
     }
 
     impl<
-            'm,
-            DeviceId: FakeStrongDeviceId,
-            As: AsFakeSocketsMutRefs
-                + DeviceIdContext<AnyDevice, DeviceId = DeviceId, WeakDeviceId = DeviceId::Weak>,
-        > SocketStateAccessor<FakeBindingsCtx> for As
+        'm,
+        DeviceId: FakeStrongDeviceId,
+        As: AsFakeSocketsMutRefs
+            + DeviceIdContext<AnyDevice, DeviceId = DeviceId, WeakDeviceId = DeviceId::Weak>,
+    > SocketStateAccessor<FakeBindingsCtx> for As
     {
         fn with_socket_state<
             F: FnOnce(&ExternalSocketState<Self::WeakDeviceId>, &Target<Self::WeakDeviceId>) -> R,
@@ -1275,12 +1271,12 @@ mod tests {
     }
 
     impl<
-            'm,
-            DeviceId: FakeStrongDeviceId,
-            As: AsFakeSocketsMutRefs<
-                    Devices = HashMap<DeviceId, DeviceSockets<DeviceId::Weak, FakeBindingsCtx>>,
-                > + DeviceIdContext<AnyDevice, DeviceId = DeviceId, WeakDeviceId = DeviceId::Weak>,
-        > DeviceSocketAccessor<FakeBindingsCtx> for As
+        'm,
+        DeviceId: FakeStrongDeviceId,
+        As: AsFakeSocketsMutRefs<
+                Devices = HashMap<DeviceId, DeviceSockets<DeviceId::Weak, FakeBindingsCtx>>,
+            > + DeviceIdContext<AnyDevice, DeviceId = DeviceId, WeakDeviceId = DeviceId::Weak>,
+    > DeviceSocketAccessor<FakeBindingsCtx> for As
     {
         type DeviceSocketCoreCtx<'a> =
             FakeSocketsMutRefs<'a, As::AnyDevice, As::AllSockets, HashSet<DeviceId>, DeviceId>;
@@ -1339,14 +1335,14 @@ mod tests {
     }
 
     impl<
-            'm,
-            DeviceId: FakeStrongDeviceId,
-            As: AsFakeSocketsMutRefs<
-                    AnyDevice = AnyDeviceSockets<DeviceId::Weak, FakeBindingsCtx>,
-                    AllSockets = AllSockets<DeviceId::Weak, FakeBindingsCtx>,
-                    Devices = HashMap<DeviceId, DeviceSockets<DeviceId::Weak, FakeBindingsCtx>>,
-                > + DeviceIdContext<AnyDevice, DeviceId = DeviceId, WeakDeviceId = DeviceId::Weak>,
-        > DeviceSocketContext<FakeBindingsCtx> for As
+        'm,
+        DeviceId: FakeStrongDeviceId,
+        As: AsFakeSocketsMutRefs<
+                AnyDevice = AnyDeviceSockets<DeviceId::Weak, FakeBindingsCtx>,
+                AllSockets = AllSockets<DeviceId::Weak, FakeBindingsCtx>,
+                Devices = HashMap<DeviceId, DeviceSockets<DeviceId::Weak, FakeBindingsCtx>>,
+            > + DeviceIdContext<AnyDevice, DeviceId = DeviceId, WeakDeviceId = DeviceId::Weak>,
+    > DeviceSocketContext<FakeBindingsCtx> for As
     {
         type SocketTablesCoreCtx<'a> = FakeSocketsMutRefs<
             'a,

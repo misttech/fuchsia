@@ -9,7 +9,7 @@ use core::borrow::Borrow;
 use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::marker::PhantomData;
-use core::num::{NonZeroU16, NonZeroU8};
+use core::num::{NonZeroU8, NonZeroU16};
 use core::ops::ControlFlow;
 use lock_order::lock::{DelegatedOrderedLockAccess, OrderedLockAccess, OrderedLockRef};
 
@@ -1042,11 +1042,8 @@ pub enum IcmpEchoIpTransportContext {}
 
 impl EchoTransportContextMarker for IcmpEchoIpTransportContext {}
 
-impl<
-        I: IpExt,
-        BC: IcmpEchoBindingsContext<I, CC::DeviceId>,
-        CC: IcmpEchoBoundStateContext<I, BC>,
-    > IpTransportContext<I, BC, CC> for IcmpEchoIpTransportContext
+impl<I: IpExt, BC: IcmpEchoBindingsContext<I, CC::DeviceId>, CC: IcmpEchoBoundStateContext<I, BC>>
+    IpTransportContext<I, BC, CC> for IcmpEchoIpTransportContext
 {
     fn receive_icmp_error(
         core_ctx: &mut CC,
@@ -1235,14 +1232,14 @@ mod tests {
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
     use net_declare::net_ip_v6;
-    use net_types::ip::Ipv6;
     use net_types::Witness;
+    use net_types::ip::Ipv6;
+    use netstack3_base::CtxPair;
     use netstack3_base::socket::StrictlyZonedAddr;
     use netstack3_base::testutil::{
         FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeSocketWritableListener, FakeWeakDeviceId,
         TestIpExt,
     };
-    use netstack3_base::CtxPair;
     use netstack3_ip::socket::testutil::{FakeDeviceConfig, FakeIpSocketCtx, InnerFakeIpSocketCtx};
     use netstack3_ip::{LocalDeliveryPacketInfo, SendIpPacketMeta};
     use packet::{Buf, EmptyBuf, Serializer};

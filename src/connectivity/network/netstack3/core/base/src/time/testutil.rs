@@ -466,7 +466,7 @@ pub trait WithFakeTimerContext<TimerId> {
 
     /// Calls the callback with a mutable borrow of `FakeTimerCtx`.
     fn with_fake_timer_ctx_mut<O, F: FnOnce(&mut FakeTimerCtx<TimerId>) -> O>(&mut self, f: F)
-        -> O;
+    -> O;
 }
 
 impl<TimerId> WithFakeTimerContext<TimerId> for FakeTimerCtx<TimerId> {
@@ -579,10 +579,8 @@ pub trait FakeTimerCtxExt<Id>: Sized + TimerBindingsTypes {
 
 // TODO(https://fxbug.dev/42081080): hold lock on `FakeTimerCtx` across entire
 // method to avoid potential race conditions.
-impl<
-        Id: Clone,
-        Ctx: WithFakeTimerContext<Id> + TimerBindingsTypes<UniqueTimerId = FakeTimerId>,
-    > FakeTimerCtxExt<Id> for Ctx
+impl<Id: Clone, Ctx: WithFakeTimerContext<Id> + TimerBindingsTypes<UniqueTimerId = FakeTimerId>>
+    FakeTimerCtxExt<Id> for Ctx
 {
     /// Triggers the next timer, if any, by calling `f` on it.
     ///

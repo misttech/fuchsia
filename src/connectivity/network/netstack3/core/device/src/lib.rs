@@ -45,12 +45,12 @@ pub mod blackhole {
 pub mod ethernet {
     pub use crate::internal::base::EthernetDeviceCounters;
     pub use crate::internal::ethernet::{
-        get_mac, get_mtu, join_link_multicast, leave_link_multicast, send_as_ethernet_frame_to_dst,
-        send_ip_frame, set_mtu, DynamicEthernetDeviceState, EthernetCreationProperties,
-        EthernetDeviceEvent, EthernetDeviceEventBindingsContext,
-        EthernetIpLinkDeviceDynamicStateContext, EthernetIpLinkDeviceStaticStateContext,
-        EthernetLinkDevice, EthernetTimerId, MaxEthernetFrameSize, RecvEthernetFrameMeta,
-        StaticEthernetDeviceState,
+        DynamicEthernetDeviceState, EthernetCreationProperties, EthernetDeviceEvent,
+        EthernetDeviceEventBindingsContext, EthernetIpLinkDeviceDynamicStateContext,
+        EthernetIpLinkDeviceStaticStateContext, EthernetLinkDevice, EthernetTimerId,
+        MaxEthernetFrameSize, RecvEthernetFrameMeta, StaticEthernetDeviceState, get_mac, get_mtu,
+        join_link_multicast, leave_link_multicast, send_as_ethernet_frame_to_dst, send_ip_frame,
+        set_mtu,
     };
     pub use crate::internal::id::{
         EthernetDeviceId, EthernetPrimaryDeviceId, EthernetWeakDeviceId,
@@ -60,8 +60,8 @@ pub mod ethernet {
 /// Loopback devices.
 pub mod loopback {
     pub use crate::internal::loopback::{
-        send_ip_frame, LoopbackCreationProperties, LoopbackDevice, LoopbackDeviceId,
-        LoopbackPrimaryDeviceId, LoopbackRxQueueMeta, LoopbackTxQueueMeta, LoopbackWeakDeviceId,
+        LoopbackCreationProperties, LoopbackDevice, LoopbackDeviceId, LoopbackPrimaryDeviceId,
+        LoopbackRxQueueMeta, LoopbackTxQueueMeta, LoopbackWeakDeviceId, send_ip_frame,
     };
 }
 
@@ -74,10 +74,10 @@ pub mod marker {
 pub mod pure_ip {
     pub use crate::internal::base::PureIpDeviceCounters;
     pub use crate::internal::pure_ip::{
-        get_mtu, send_ip_frame, set_mtu, DynamicPureIpDeviceState, PureIpDevice,
-        PureIpDeviceCreationProperties, PureIpDeviceId, PureIpDeviceReceiveFrameMetadata,
-        PureIpDeviceStateContext, PureIpDeviceTxQueueFrameMetadata, PureIpHeaderParams,
-        PureIpPrimaryDeviceId, PureIpWeakDeviceId,
+        DynamicPureIpDeviceState, PureIpDevice, PureIpDeviceCreationProperties, PureIpDeviceId,
+        PureIpDeviceReceiveFrameMetadata, PureIpDeviceStateContext,
+        PureIpDeviceTxQueueFrameMetadata, PureIpHeaderParams, PureIpPrimaryDeviceId,
+        PureIpWeakDeviceId, get_mtu, send_ip_frame, set_mtu,
     };
 }
 
@@ -110,8 +110,8 @@ pub mod queue {
 
 pub use internal::api::{DeviceAnyApi, DeviceApi};
 pub use internal::arp::{
-    send_arp_request, ArpConfigContext, ArpContext, ArpCounters, ArpIpLayerContext, ArpNudCtx,
-    ArpSenderContext, ArpState,
+    ArpConfigContext, ArpContext, ArpCounters, ArpIpLayerContext, ArpNudCtx, ArpSenderContext,
+    ArpState, send_arp_request,
 };
 pub use internal::base::{
     DeviceClassMatcher, DeviceCollectionContext, DeviceCounters, DeviceIdAndNameMatcher,

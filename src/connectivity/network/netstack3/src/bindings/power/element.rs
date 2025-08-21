@@ -5,8 +5,8 @@
 //! Netstack3-internal power elements.
 
 use std::hash::Hash;
-use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
+use std::sync::atomic::{self, AtomicUsize};
 use std::task::Poll;
 
 use futures::task::AtomicWaker;

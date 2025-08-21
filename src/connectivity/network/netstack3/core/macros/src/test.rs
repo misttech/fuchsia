@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
-use netstack3_macros::{instantiate_ip_impl_block, CounterCollection};
+use netstack3_macros::{CounterCollection, instantiate_ip_impl_block};
 
 #[test]
 fn instantiate_ip_impl_block() {

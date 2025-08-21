@@ -11,12 +11,12 @@ use log::trace;
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
 use netstack3_base::{CoreTimerContext, HandleableTimer, TimerHandler};
 use netstack3_device::{DeviceLayerTimerId, WeakDeviceId};
-use netstack3_ip::device::{IpDeviceIpExt, IpDeviceTimerId};
 use netstack3_ip::IpLayerTimerId;
+use netstack3_ip::device::{IpDeviceIpExt, IpDeviceTimerId};
 
+use crate::BindingsTypes;
 use crate::context::CoreCtx;
 use crate::transport::TransportLayerTimerId;
-use crate::BindingsTypes;
 
 pub use netstack3_base::{AtomicInstant, Instant};
 

@@ -19,8 +19,8 @@ use fidl_fuchsia_net_ext::IntoExt;
 use fuchsia_async::TimeoutExt;
 use futures::{FutureExt, StreamExt};
 use net_declare::{fidl_ip, fidl_ip_v4, fidl_mac, fidl_subnet, net_subnet_v4, net_subnet_v6};
-use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use net_types::SpecifiedAddr;
+use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use netemul::InterfaceConfig;
 use netstack_testing_common::interfaces::{self, TestInterfaceExt as _};
 use netstack_testing_common::realms::{
@@ -29,11 +29,11 @@ use netstack_testing_common::realms::{
 };
 use netstack_testing_macros::netstack_test;
 use packet_formats::icmp::ndp::options::{NdpOptionBuilder, PrefixInformation, RouteInformation};
-use routes_common::{test_route, TestSetup};
+use routes_common::{TestSetup, test_route};
 use test_case::test_case;
 
-use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
+use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use {
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_routes as fnet_routes,
@@ -888,9 +888,9 @@ async fn watch_nonexisting_table<
     )
     .expect("failed to create watcher");
 
-    let mut events =
-        pin!(fnet_routes_ext::event_stream_from_watcher::<I>(watcher)
-            .expect("convert to event stream"));
+    let mut events = pin!(
+        fnet_routes_ext::event_stream_from_watcher::<I>(watcher).expect("convert to event stream")
+    );
     assert_matches!(events.next().await, Some(Ok(fnet_routes_ext::Event::Idle)));
 }
 
@@ -922,14 +922,15 @@ async fn route_watcher_in_specific_table<
     let user_route_set = fnet_routes_ext::admin::new_route_set::<I>(&user_route_table)
         .expect("failed to create a new user route set");
 
-    let mut main_table_routes_stream =
-        pin!(fnet_routes_ext::event_stream_from_state_with_options::<I>(
+    let mut main_table_routes_stream = pin!(
+        fnet_routes_ext::event_stream_from_state_with_options::<I>(
             &state,
             fnet_routes_ext::WatcherOptions {
                 table_interest: Some(fnet_routes::TableInterest::Main(fnet_routes::Main)),
             },
         )
-        .expect("failed to watch the main table"));
+        .expect("failed to watch the main table")
+    );
 
     let existing_main_routes =
         fnet_routes_ext::collect_routes_until_idle::<I, Vec<_>>(&mut main_table_routes_stream)
@@ -953,22 +954,25 @@ async fn route_watcher_in_specific_table<
     let route_to_add =
         test_route::<I>(&interface, fnet_routes::SpecifiedMetric::ExplicitMetric(10));
 
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &user_route_set,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("add route"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &user_route_set,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("add route")
+    );
 
-    let mut user_table_routes_stream =
-        pin!(fnet_routes_ext::event_stream_from_state_with_options::<I>(
+    let mut user_table_routes_stream = pin!(
+        fnet_routes_ext::event_stream_from_state_with_options::<I>(
             &state,
             fnet_routes_ext::WatcherOptions {
                 table_interest: Some(fnet_routes::TableInterest::Only(user_table_id.get()))
             }
         )
-        .expect("failed to create event stream"));
+        .expect("failed to create event stream")
+    );
 
     let user_table_routes =
         fnet_routes_ext::collect_routes_until_idle::<I, Vec<_>>(&mut user_table_routes_stream)

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use pest::iterators::Pair;
 use pest::Parser;
+use pest::iterators::Pair;
 
 use {
     fidl_fuchsia_net_filter_ext as filter_ext,
@@ -380,25 +380,27 @@ mod test {
     fn test_rule_with_from_v4_address() {
         assert_eq!(
             parse_str_to_rules("pass in proto tcp from 1.2.3.0/24;", &test_filter_routines()),
-            Ok(vec![filter_ext::Rule {
-                id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
-                matchers: filter_ext::Matchers {
-                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
-                        src_port: None,
-                        dst_port: None,
-                    }),
-                    src_addr: Some(fnet_matchers_ext::Address {
-                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
-                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24"))
-                                .unwrap()
-                        ),
-                        invert: false,
-                    }),
-                    ..Default::default()
-                },
-                action: filter_ext::Action::Accept,
-            }
-            .into()])
+            Ok(vec![
+                filter_ext::Rule {
+                    id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
+                    matchers: filter_ext::Matchers {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                            src_port: None,
+                            dst_port: None,
+                        }),
+                        src_addr: Some(fnet_matchers_ext::Address {
+                            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                                fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24"))
+                                    .unwrap()
+                            ),
+                            invert: false,
+                        }),
+                        ..Default::default()
+                    },
+                    action: filter_ext::Action::Accept,
+                }
+                .into()
+            ])
         )
     }
 
@@ -406,18 +408,22 @@ mod test {
     fn test_rule_with_from_port() {
         assert_eq!(
             parse_str_to_rules("pass in proto tcp from port 10000;", &test_filter_routines()),
-            Ok(vec![filter_ext::Rule {
-                id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
-                matchers: filter_ext::Matchers {
-                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
-                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
-                        dst_port: None,
-                    }),
-                    ..Default::default()
-                },
-                action: filter_ext::Action::Accept,
-            }
-            .into()])
+            Ok(vec![
+                filter_ext::Rule {
+                    id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
+                    matchers: filter_ext::Matchers {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                            src_port: Some(
+                                fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()
+                            ),
+                            dst_port: None,
+                        }),
+                        ..Default::default()
+                    },
+                    action: filter_ext::Action::Accept,
+                }
+                .into()
+            ])
         )
     }
 
@@ -428,18 +434,22 @@ mod test {
                 "pass in proto tcp from range 10000:10010;",
                 &test_filter_routines()
             ),
-            Ok(vec![filter_ext::Rule {
-                id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
-                matchers: filter_ext::Matchers {
-                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
-                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10010, false).unwrap()),
-                        dst_port: None,
-                    }),
-                    ..Default::default()
-                },
-                action: filter_ext::Action::Accept,
-            }
-            .into()])
+            Ok(vec![
+                filter_ext::Rule {
+                    id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
+                    matchers: filter_ext::Matchers {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                            src_port: Some(
+                                fnet_matchers_ext::Port::new(10000, 10010, false).unwrap()
+                            ),
+                            dst_port: None,
+                        }),
+                        ..Default::default()
+                    },
+                    action: filter_ext::Action::Accept,
+                }
+                .into()
+            ])
         )
     }
 
@@ -461,25 +471,29 @@ mod test {
                 "pass in proto tcp from 1.2.3.0/24 port 10000;",
                 &test_filter_routines()
             ),
-            Ok(vec![filter_ext::Rule {
-                id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
-                matchers: filter_ext::Matchers {
-                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
-                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
-                        dst_port: None,
-                    }),
-                    src_addr: Some(fnet_matchers_ext::Address {
-                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
-                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24"))
-                                .unwrap()
-                        ),
-                        invert: false,
-                    }),
-                    ..Default::default()
-                },
-                action: filter_ext::Action::Accept,
-            }
-            .into()])
+            Ok(vec![
+                filter_ext::Rule {
+                    id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
+                    matchers: filter_ext::Matchers {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                            src_port: Some(
+                                fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()
+                            ),
+                            dst_port: None,
+                        }),
+                        src_addr: Some(fnet_matchers_ext::Address {
+                            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                                fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24"))
+                                    .unwrap()
+                            ),
+                            invert: false,
+                        }),
+                        ..Default::default()
+                    },
+                    action: filter_ext::Action::Accept,
+                }
+                .into()
+            ])
         )
     }
 
@@ -490,25 +504,29 @@ mod test {
                 "pass in proto tcp from !1.2.3.0/24 port 10000;",
                 &test_filter_routines()
             ),
-            Ok(vec![filter_ext::Rule {
-                id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
-                matchers: filter_ext::Matchers {
-                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
-                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
-                        dst_port: None,
-                    }),
-                    src_addr: Some(fnet_matchers_ext::Address {
-                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
-                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24"))
-                                .unwrap()
-                        ),
-                        invert: true,
-                    }),
-                    ..Default::default()
-                },
-                action: filter_ext::Action::Accept,
-            }
-            .into()])
+            Ok(vec![
+                filter_ext::Rule {
+                    id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
+                    matchers: filter_ext::Matchers {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                            src_port: Some(
+                                fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()
+                            ),
+                            dst_port: None,
+                        }),
+                        src_addr: Some(fnet_matchers_ext::Address {
+                            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                                fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1.2.3.0/24"))
+                                    .unwrap()
+                            ),
+                            invert: true,
+                        }),
+                        ..Default::default()
+                    },
+                    action: filter_ext::Action::Accept,
+                }
+                .into()
+            ])
         )
     }
 
@@ -519,25 +537,29 @@ mod test {
                 "pass in proto tcp from 1234:5678::/32 port 10000;",
                 &test_filter_routines()
             ),
-            Ok(vec![filter_ext::Rule {
-                id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
-                matchers: filter_ext::Matchers {
-                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
-                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
-                        dst_port: None,
-                    }),
-                    src_addr: Some(fnet_matchers_ext::Address {
-                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
-                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32"))
-                                .unwrap()
-                        ),
-                        invert: false,
-                    }),
-                    ..Default::default()
-                },
-                action: filter_ext::Action::Accept,
-            }
-            .into()])
+            Ok(vec![
+                filter_ext::Rule {
+                    id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
+                    matchers: filter_ext::Matchers {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                            src_port: Some(
+                                fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()
+                            ),
+                            dst_port: None,
+                        }),
+                        src_addr: Some(fnet_matchers_ext::Address {
+                            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                                fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32"))
+                                    .unwrap()
+                            ),
+                            invert: false,
+                        }),
+                        ..Default::default()
+                    },
+                    action: filter_ext::Action::Accept,
+                }
+                .into()
+            ])
         )
     }
 
@@ -548,25 +570,29 @@ mod test {
                 "pass in proto tcp to 1234:5678::/32 port 10000;",
                 &test_filter_routines()
             ),
-            Ok(vec![filter_ext::Rule {
-                id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
-                matchers: filter_ext::Matchers {
-                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
-                        src_port: None,
-                        dst_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
-                    }),
-                    dst_addr: Some(fnet_matchers_ext::Address {
-                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
-                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32"))
-                                .unwrap()
-                        ),
-                        invert: false,
-                    }),
-                    ..Default::default()
-                },
-                action: filter_ext::Action::Accept,
-            }
-            .into()])
+            Ok(vec![
+                filter_ext::Rule {
+                    id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
+                    matchers: filter_ext::Matchers {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                            src_port: None,
+                            dst_port: Some(
+                                fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()
+                            ),
+                        }),
+                        dst_addr: Some(fnet_matchers_ext::Address {
+                            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                                fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32"))
+                                    .unwrap()
+                            ),
+                            invert: false,
+                        }),
+                        ..Default::default()
+                    },
+                    action: filter_ext::Action::Accept,
+                }
+                .into()
+            ])
         )
     }
 
@@ -588,32 +614,38 @@ mod test {
                 "pass in proto tcp from 1234:5678::/32 port 10000 to 2345:6789::/32 port 1000;",
                 &test_filter_routines()
             ),
-            Ok(vec![filter_ext::Rule {
-                id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
-                matchers: filter_ext::Matchers {
-                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
-                        src_port: Some(fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()),
-                        dst_port: Some(fnet_matchers_ext::Port::new(1000, 1000, false).unwrap()),
-                    }),
-                    src_addr: Some(fnet_matchers_ext::Address {
-                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
-                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32"))
-                                .unwrap()
-                        ),
-                        invert: false,
-                    }),
-                    dst_addr: Some(fnet_matchers_ext::Address {
-                        matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
-                            fnet_matchers_ext::Subnet::try_from(fidl_subnet!("2345:6789::/32"))
-                                .unwrap()
-                        ),
-                        invert: false,
-                    }),
-                    ..Default::default()
-                },
-                action: filter_ext::Action::Accept,
-            }
-            .into()])
+            Ok(vec![
+                filter_ext::Rule {
+                    id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
+                    matchers: filter_ext::Matchers {
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                            src_port: Some(
+                                fnet_matchers_ext::Port::new(10000, 10000, false).unwrap()
+                            ),
+                            dst_port: Some(
+                                fnet_matchers_ext::Port::new(1000, 1000, false).unwrap()
+                            ),
+                        }),
+                        src_addr: Some(fnet_matchers_ext::Address {
+                            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                                fnet_matchers_ext::Subnet::try_from(fidl_subnet!("1234:5678::/32"))
+                                    .unwrap()
+                            ),
+                            invert: false,
+                        }),
+                        dst_addr: Some(fnet_matchers_ext::Address {
+                            matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
+                                fnet_matchers_ext::Subnet::try_from(fidl_subnet!("2345:6789::/32"))
+                                    .unwrap()
+                            ),
+                            invert: false,
+                        }),
+                        ..Default::default()
+                    },
+                    action: filter_ext::Action::Accept,
+                }
+                .into()
+            ])
         )
     }
 
@@ -645,21 +677,23 @@ mod test {
                 "pass in proto tcp devclass ap to range 1:2;",
                 &test_filter_routines()
             ),
-            Ok(vec![filter_ext::Rule {
-                id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
-                matchers: filter_ext::Matchers {
-                    in_interface: Some(fnet_matchers_ext::Interface::PortClass(
-                        fnet_interfaces_ext::PortClass::WlanAp
-                    )),
-                    transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
-                        src_port: None,
-                        dst_port: Some(fnet_matchers_ext::Port::new(1, 2, false).unwrap()),
-                    }),
-                    ..Default::default()
-                },
-                action: filter_ext::Action::Accept,
-            }
-            .into()])
+            Ok(vec![
+                filter_ext::Rule {
+                    id: filter_ext::RuleId { routine: local_ingress_routine(), index: 0 },
+                    matchers: filter_ext::Matchers {
+                        in_interface: Some(fnet_matchers_ext::Interface::PortClass(
+                            fnet_interfaces_ext::PortClass::WlanAp
+                        )),
+                        transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
+                            src_port: None,
+                            dst_port: Some(fnet_matchers_ext::Port::new(1, 2, false).unwrap()),
+                        }),
+                        ..Default::default()
+                    },
+                    action: filter_ext::Action::Accept,
+                }
+                .into()
+            ])
         )
     }
 

@@ -1266,9 +1266,9 @@ mod tests {
     use std::str::FromStr;
 
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, tree_assertion, NonZeroUintProperty};
-    use dns::test_util::*;
+    use diagnostics_assertions::{NonZeroUintProperty, assert_data_tree, tree_assertion};
     use dns::DEFAULT_PORT;
+    use dns::test_util::*;
     use futures::future::TryFutureExt as _;
     use itertools::Itertools as _;
     use net_declare::{fidl_ip, std_ip, std_ip_v4, std_ip_v6};
@@ -2514,16 +2514,18 @@ mod tests {
         // requests before `send` fails.
         const BEFORE_LAST_INDEX: usize = MAX_PARALLEL_REQUESTS * 2;
         const LAST_INDEX: usize = MAX_PARALLEL_REQUESTS * 2 + 1;
-        let mut send_fut = pin!(async {
-            for (i, req) in requests.into_iter().enumerate() {
-                match i {
-                    BEFORE_LAST_INDEX => assert_matches!(sender.try_send(req), Ok(())),
-                    LAST_INDEX => assert_matches!(sender.try_send(req), Err(e) if e.is_full()),
-                    _ => assert_matches!(sender.send(req).await, Ok(())),
+        let mut send_fut = pin!(
+            async {
+                for (i, req) in requests.into_iter().enumerate() {
+                    match i {
+                        BEFORE_LAST_INDEX => assert_matches!(sender.try_send(req), Ok(())),
+                        LAST_INDEX => assert_matches!(sender.try_send(req), Err(e) if e.is_full()),
+                        _ => assert_matches!(sender.send(req).await, Ok(())),
+                    }
                 }
             }
-        }
-        .fuse());
+            .fuse()
+        );
         let mut recv_fut = pin!({
             let resolver = SharedResolver::new(BlockingResolver::new(
                 ResolverConfig::default(),

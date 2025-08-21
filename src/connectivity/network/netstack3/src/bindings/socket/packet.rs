@@ -11,8 +11,8 @@ use {
     fidl_fuchsia_posix_socket_packet as fppacket, fuchsia_async as fasync,
 };
 
-use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream as _};
 use fidl::Peered as _;
+use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream as _};
 use futures::TryStreamExt as _;
 use log::{error, info, warn};
 use net_types::ethernet::Mac;
@@ -693,7 +693,7 @@ impl TryFromFidl<fppacket::PacketInfo> for PureIpHeaderParams {
                 return Err(ErrnoError::new(
                     fposix::Errno::Einval,
                     "pure-IP header should not have hardware address",
-                ))
+                ));
             }
         }
         let ip_version = match protocol.into() {
@@ -703,7 +703,7 @@ impl TryFromFidl<fppacket::PacketInfo> for PureIpHeaderParams {
                 return Err(ErrnoError::new(
                     fposix::Errno::Einval,
                     "pure-IP header should have IPv4 or IPv6 ethertype",
-                ))
+                ));
             }
         };
         Ok(PureIpHeaderParams { ip_version })

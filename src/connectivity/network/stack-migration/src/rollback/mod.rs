@@ -337,12 +337,12 @@ mod test {
     use assert_matches::assert_matches;
     use fidl_fuchsia_net_http as fnet_http;
     use fuchsia_async::Task;
-    use futures::channel::mpsc;
     use futures::SinkExt;
+    use futures::channel::mpsc;
     use test_case::test_case;
 
-    use crate::rollback::testutil::MockHttpRequester;
     use crate::NetstackVersion;
+    use crate::rollback::testutil::MockHttpRequester;
 
     #[test_case(None, NetstackVersion::Netstack2 => State::Netstack2)]
     #[test_case(None, NetstackVersion::Netstack3 => State::Checking(0))]

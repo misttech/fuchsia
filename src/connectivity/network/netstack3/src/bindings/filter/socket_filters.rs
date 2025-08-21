@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bindings::bpf::{CgroupSkbProgram, EbpfError, EbpfManager, ValidVerifiedProgram};
 use crate::bindings::Ctx;
+use crate::bindings::bpf::{CgroupSkbProgram, EbpfError, EbpfManager, ValidVerifiedProgram};
 use fidl::endpoints::{ControlHandle, Responder};
 use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_table_validation::ValidFidlTable;

@@ -11,7 +11,7 @@ use netstack3_base::sync::Mutex;
 use netstack3_base::{Device, DeviceIdContext};
 use packet::BufferMut;
 
-use crate::internal::queue::{fifo, DequeueState, EnqueueResult, ReceiveQueueFullError};
+use crate::internal::queue::{DequeueState, EnqueueResult, ReceiveQueueFullError, fifo};
 
 /// The state used to hold a queue of received frames to be handled at a later
 /// time.

@@ -8,8 +8,8 @@ use assert_matches::assert_matches;
 use derivative::Derivative;
 use log::{debug, info, warn};
 use net_types::ip::{Ipv6Addr, Subnet};
-use num::rational::Ratio;
 use num::CheckedMul;
+use num::rational::Ratio;
 use packet::serialize::InnerPacketBuilder;
 use packet_formats_dhcp::v6;
 use rand::Rng;
@@ -1572,12 +1572,12 @@ struct StatefulMessageBuilder<'a, AddrIter, PrefixIter, IaNaIter, IaPdIter> {
 }
 
 impl<
-        'a,
-        AddrIter: Iterator<Item = Ipv6Addr>,
-        PrefixIter: Iterator<Item = Subnet<Ipv6Addr>>,
-        IaNaIter: Iterator<Item = (v6::IAID, AddrIter)>,
-        IaPdIter: Iterator<Item = (v6::IAID, PrefixIter)>,
-    > StatefulMessageBuilder<'a, AddrIter, PrefixIter, IaNaIter, IaPdIter>
+    'a,
+    AddrIter: Iterator<Item = Ipv6Addr>,
+    PrefixIter: Iterator<Item = Subnet<Ipv6Addr>>,
+    IaNaIter: Iterator<Item = (v6::IAID, AddrIter)>,
+    IaPdIter: Iterator<Item = (v6::IAID, PrefixIter)>,
+> StatefulMessageBuilder<'a, AddrIter, PrefixIter, IaNaIter, IaPdIter>
 {
     fn build(self) -> Vec<u8> {
         let StatefulMessageBuilder {
@@ -5443,10 +5443,10 @@ pub(crate) mod testutil {
     }
 
     impl<
-            'a,
-            IaNaIter: Iterator<Item = (v6::IAID, TestIa<Ipv6Addr>)>,
-            IaPdIter: Iterator<Item = (v6::IAID, TestIa<Subnet<Ipv6Addr>>)>,
-        > TestMessageBuilder<'a, IaNaIter, IaPdIter>
+        'a,
+        IaNaIter: Iterator<Item = (v6::IAID, TestIa<Ipv6Addr>)>,
+        IaPdIter: Iterator<Item = (v6::IAID, TestIa<Subnet<Ipv6Addr>>)>,
+    > TestMessageBuilder<'a, IaNaIter, IaPdIter>
     {
         pub(super) fn build(self) -> Vec<u8> {
             let TestMessageBuilder {
@@ -6176,8 +6176,8 @@ mod tests {
     use test_case::test_case;
     use testconsts::*;
     use testutil::{
-        handle_renew_or_rebind_timer, RenewRebindTestState, TestIa, TestIaNa, TestIaPd,
-        TestMessageBuilder, REBIND_TEST_STATE, RENEW_TEST_STATE,
+        REBIND_TEST_STATE, RENEW_TEST_STATE, RenewRebindTestState, TestIa, TestIaNa, TestIaPd,
+        TestMessageBuilder, handle_renew_or_rebind_timer,
     };
 
     #[test]

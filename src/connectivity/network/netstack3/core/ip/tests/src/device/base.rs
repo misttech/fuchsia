@@ -4,7 +4,7 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
-use core::num::{NonZeroU16, NonZeroU8};
+use core::num::{NonZeroU8, NonZeroU16};
 use core::time::Duration;
 
 use assert_matches::assert_matches;
@@ -16,7 +16,7 @@ use net_types::{LinkLocalAddr, SpecifiedAddr, UnicastAddr, Witness, ZonedAddr};
 use test_case::test_case;
 
 use netstack3_base::testutil::{
-    assert_empty, FakeInstant, FakeTimerCtxExt, TestIpExt, WithFakeFrameContext,
+    FakeInstant, FakeTimerCtxExt, TestIpExt, WithFakeFrameContext, assert_empty,
 };
 use netstack3_base::{
     FrameDestination, InstantContext as _, IpAddressId as _, IpDeviceAddr, LocalAddressError,
@@ -26,22 +26,22 @@ use netstack3_core::device::{
     LoopbackCreationProperties, LoopbackDevice, MaxEthernetFrameSize,
 };
 use netstack3_core::testutil::{
-    CtxPairExt as _, DispatchedEvent, DispatchedFrame, FakeBindingsCtx, FakeCtx,
-    DEFAULT_INTERFACE_METRIC,
+    CtxPairExt as _, DEFAULT_INTERFACE_METRIC, DispatchedEvent, DispatchedFrame, FakeBindingsCtx,
+    FakeCtx,
 };
 use netstack3_core::{IpExt, StackStateBuilder, TimerId};
-use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_device::WeakDeviceId;
+use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_hashmap::HashSet;
 use netstack3_ip::device::{
     AddIpAddrSubnetError, AddressRemovedReason, CommonAddressConfig, CommonAddressProperties,
-    DadTimerId, IpAddressState, IpDeviceConfiguration, IpDeviceConfigurationUpdate, IpDeviceEvent,
-    IpDeviceFlags, IpDeviceHandler, IpDeviceStateContext, Ipv4AddrConfig, Ipv4DadAddressInfo,
-    Ipv4DeviceConfigurationUpdate, Ipv4DeviceTimerId, Ipv6DeviceConfigurationUpdate,
-    Ipv6DeviceContext, Ipv6DeviceHandler, Ipv6DeviceTimerId, Ipv6NetworkLearnedParameters,
-    Lifetime, PreferredLifetime, RsTimerId, SetIpAddressPropertiesError, SlaacConfigurationUpdate,
-    StableSlaacAddressConfiguration, TemporarySlaacAddressConfiguration,
-    UpdateIpConfigurationError, IPV4_DAD_ANNOUNCE_NUM,
+    DadTimerId, IPV4_DAD_ANNOUNCE_NUM, IpAddressState, IpDeviceConfiguration,
+    IpDeviceConfigurationUpdate, IpDeviceEvent, IpDeviceFlags, IpDeviceHandler,
+    IpDeviceStateContext, Ipv4AddrConfig, Ipv4DadAddressInfo, Ipv4DeviceConfigurationUpdate,
+    Ipv4DeviceTimerId, Ipv6DeviceConfigurationUpdate, Ipv6DeviceContext, Ipv6DeviceHandler,
+    Ipv6DeviceTimerId, Ipv6NetworkLearnedParameters, Lifetime, PreferredLifetime, RsTimerId,
+    SetIpAddressPropertiesError, SlaacConfigurationUpdate, StableSlaacAddressConfiguration,
+    TemporarySlaacAddressConfiguration, UpdateIpConfigurationError,
 };
 use netstack3_ip::gmp::{IgmpConfigMode, MldConfigMode, MldTimerId};
 use netstack3_ip::nud::{self, LinkResolutionResult};

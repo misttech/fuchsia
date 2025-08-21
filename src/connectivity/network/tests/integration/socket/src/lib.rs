@@ -12,7 +12,7 @@ use std::os::fd::{AsFd as _, AsRawFd as _};
 use std::pin::pin;
 use std::task::Poll;
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use assert_matches::assert_matches;
 use async_trait::async_trait;
 use fidl_fuchsia_net_ext::{IntoExt as _, IpExt as _};
@@ -26,10 +26,10 @@ use net_declare::{
     fidl_ip_v4, fidl_ip_v6, fidl_mac, fidl_socket_addr, fidl_subnet, net_addr_subnet, net_ip_v4,
     net_ip_v6, net_subnet_v4, net_subnet_v6, std_ip, std_ip_v4, std_socket_addr,
 };
+use net_types::Witness as _;
 use net_types::ip::{
     AddrSubnetEither, Ip, IpAddress as _, IpInvariant, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr,
 };
-use net_types::Witness as _;
 use netemul::{
     InterfaceConfig, RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _,
     TestFakeEndpoint, TestInterface, TestNetwork, TestRealm, TestSandbox,
@@ -40,14 +40,14 @@ use netstack_testing_common::realms::{
     KnownServiceProvider, Netstack, Netstack3, NetstackVersion, TestRealmExt, TestSandboxExt as _,
 };
 use netstack_testing_common::{
-    devices, ndp, ping, Result, ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT,
-    ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
+    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, Result, devices, ndp,
+    ping,
 };
 use netstack_testing_macros::netstack_test;
 use packet::{ParsablePacket as _, Serializer as _};
 use packet_formats::ethernet::{
-    EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
-    ETHERNET_MIN_BODY_LEN_NO_TAG,
+    ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
+    EthernetFrameLengthCheck,
 };
 use packet_formats::icmp::ndp::options::{NdpOptionBuilder, PrefixInformation};
 use packet_formats::icmp::{
@@ -3061,30 +3061,32 @@ async fn test_udp_source_address_has_zone<N: Netstack>(name: &str) {
     server_ep.apply_nud_flake_workaround().await.expect("apply NUD flake workaround");
 
     // Get the link local address for the client.
-    let link_local_addr = std::pin::pin!(client
-        .get_interface_event_stream()
-        .expect("get_interface_event_stream failed")
-        .filter_map(|event| async {
-            match event.expect("event error").into_inner() {
-                fnet_interfaces::Event::Existing(properties)
-                | fnet_interfaces::Event::Added(properties) => {
-                    if let Some(addresses) = properties.addresses {
-                        for address in addresses {
-                            if let Some(fnet::Subnet {
-                                addr: fnet::IpAddress::Ipv6(addr), ..
-                            }) = address.addr
-                            {
-                                if addr.is_unicast_link_local() {
-                                    return Some(addr);
+    let link_local_addr = std::pin::pin!(
+        client.get_interface_event_stream().expect("get_interface_event_stream failed").filter_map(
+            |event| async {
+                match event.expect("event error").into_inner() {
+                    fnet_interfaces::Event::Existing(properties)
+                    | fnet_interfaces::Event::Added(properties) => {
+                        if let Some(addresses) = properties.addresses {
+                            for address in addresses {
+                                if let Some(fnet::Subnet {
+                                    addr: fnet::IpAddress::Ipv6(addr),
+                                    ..
+                                }) = address.addr
+                                {
+                                    if addr.is_unicast_link_local() {
+                                        return Some(addr);
+                                    }
                                 }
                             }
                         }
                     }
+                    _ => {}
                 }
-                _ => {}
+                None
             }
-            None
-        }))
+        )
+    )
     .next()
     .await
     .expect("unexpected end of events");
@@ -4456,35 +4458,35 @@ async fn multicast_send<N: Netstack, I: MulticastTestIpExt>(name: &str, target_i
 
     // Check that the packet is sent to the selected network.
     for (index, network) in networks.iter().enumerate() {
-        let mut stream = std::pin::pin!(network
-            .receiver
-            .frame_stream()
-            .map(|r| r.expect("failed to read frame"))
-            .filter_map(|(data, dropped)| async move {
-                assert_eq!(dropped, 0);
-                let (_payload, _src_mac, _dst_mac, _src_ip, dst_ip, proto, _ttl) =
-                    match packet_formats::testutil::parse_ip_packet_in_ethernet_frame::<I>(
-                        &data[..],
-                        EthernetFrameLengthCheck::NoCheck,
-                    ) {
-                        Ok(result) => result,
-                        Err(_e) => {
-                            // Packet may fail to parse if it was for a
-                            // different IP version. Just skip it.
-                            return None;
-                        }
-                    };
+        let mut stream = std::pin::pin!(
+            network.receiver.frame_stream().map(|r| r.expect("failed to read frame")).filter_map(
+                |(data, dropped)| async move {
+                    assert_eq!(dropped, 0);
+                    let (_payload, _src_mac, _dst_mac, _src_ip, dst_ip, proto, _ttl) =
+                        match packet_formats::testutil::parse_ip_packet_in_ethernet_frame::<I>(
+                            &data[..],
+                            EthernetFrameLengthCheck::NoCheck,
+                        ) {
+                            Ok(result) => result,
+                            Err(_e) => {
+                                // Packet may fail to parse if it was for a
+                                // different IP version. Just skip it.
+                                return None;
+                            }
+                        };
 
-                if proto != IpProto::Udp.into() {
-                    return None;
+                    if proto != IpProto::Udp.into() {
+                        return None;
+                    }
+
+                    if dst_ip.to_ip_addr() != I::MCAST_ADDR.ip().into() {
+                        panic!("UDP Packet send to an unexpected address: {:?}", dst_ip);
+                    }
+
+                    Some(())
                 }
-
-                if dst_ip.to_ip_addr() != I::MCAST_ADDR.ip().into() {
-                    panic!("UDP Packet send to an unexpected address: {:?}", dst_ip);
-                }
-
-                Some(())
-            }));
+            )
+        );
 
         if index == target_interface {
             // Check that the packet is delivered to the target interface.

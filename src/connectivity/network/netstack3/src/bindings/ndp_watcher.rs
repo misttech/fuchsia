@@ -4,7 +4,7 @@
 
 use std::collections::VecDeque;
 use std::fmt::Debug;
-use std::task::{ready, Poll};
+use std::task::{Poll, ready};
 
 use derivative::Derivative;
 use fidl::endpoints::{ControlHandle as _, Responder as _};
@@ -84,11 +84,7 @@ mod batch {
         pub(crate) fn new(
             inner_events: &'a mut VecDeque<fnet_ndp::OptionWatchEntry>,
         ) -> Option<Self> {
-            if inner_events.is_empty() {
-                None
-            } else {
-                Some(Self { inner_events })
-            }
+            if inner_events.is_empty() { None } else { Some(Self { inner_events }) }
         }
 
         fn batch_len(&self) -> usize {

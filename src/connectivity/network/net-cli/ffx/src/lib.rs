@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use ffx_writer::MachineWriter;
-use fho::{user_error, FfxMain, FfxTool};
+use fho::{FfxMain, FfxTool, user_error};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
 use std::ops::Deref as _;
 use target_holders::RemoteControlProxyHolder;

@@ -12,7 +12,7 @@ use netstack3_base::testutil::TestIpExt;
 use netstack3_base::{CounterContext, ResourceCounterContext};
 use netstack3_core::sync::RemoveResourceResult;
 use netstack3_core::testutil::{
-    CtxPairExt as _, FakeBindingsCtx, FakeCtx, PureIpDeviceAndIpVersion, DEFAULT_INTERFACE_METRIC,
+    CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCtx, PureIpDeviceAndIpVersion,
 };
 use netstack3_core::types::WorkQueueReport;
 use netstack3_core::{IpExt, StackState};

@@ -13,12 +13,8 @@ use crate::internal::socket::{
     TcpBindingsTypes, TcpDemuxContext, TcpDualStackContext, TcpSocketId,
 };
 
-impl<
-        I: DualStackIpExt,
-        D: WeakDeviceIdentifier,
-        BT: TcpBindingsTypes,
-        P: TcpDemuxContext<I, D, BT>,
-    > TcpDemuxContext<I, D, BT> for UninstantiableWrapper<P>
+impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes, P: TcpDemuxContext<I, D, BT>>
+    TcpDemuxContext<I, D, BT> for UninstantiableWrapper<P>
 {
     type IpTransportCtx<'a> = P::IpTransportCtx<'a>;
     fn with_demux<O, F: FnOnce(&DemuxState<I, D, BT>) -> O>(&mut self, _cb: F) -> O {
@@ -45,11 +41,11 @@ impl<I: DualStackIpExt> DualStackDemuxIdConverter<I> for Uninstantiable {
 }
 
 impl<
-        I: DualStackIpExt,
-        D: WeakDeviceIdentifier,
-        BT: TcpBindingsTypes,
-        P: TcpDualStackContext<I::OtherVersion, D, BT>,
-    > TcpDualStackContext<I, D, BT> for UninstantiableWrapper<P>
+    I: DualStackIpExt,
+    D: WeakDeviceIdentifier,
+    BT: TcpBindingsTypes,
+    P: TcpDualStackContext<I::OtherVersion, D, BT>,
+> TcpDualStackContext<I, D, BT> for UninstantiableWrapper<P>
 {
     type DualStackIpTransportCtx<'a> = P::DualStackIpTransportCtx<'a>;
     fn other_demux_id_converter(&self) -> impl DualStackDemuxIdConverter<I> {

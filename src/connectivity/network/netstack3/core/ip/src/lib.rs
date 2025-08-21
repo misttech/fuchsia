@@ -53,8 +53,8 @@ pub mod device {
     };
     pub use crate::internal::device::dad::{
         DadAddressContext, DadAddressStateRef, DadContext, DadHandler, DadState, DadStateRef,
-        DadTimerId, Ipv4DadAddressInfo, Ipv4DadSendData, Ipv6DadAddressContext, Ipv6DadSendData,
-        OwnedNdpNonce, IPV4_DAD_ANNOUNCE_NUM,
+        DadTimerId, IPV4_DAD_ANNOUNCE_NUM, Ipv4DadAddressInfo, Ipv4DadSendData,
+        Ipv6DadAddressContext, Ipv6DadSendData, OwnedNdpNonce,
     };
     pub use crate::internal::device::opaque_iid::{IidSecret, OpaqueIid, OpaqueIidNonce};
     pub use crate::internal::device::route_discovery::{
@@ -62,15 +62,14 @@ pub mod device {
         Ipv6RouteDiscoveryContext, Ipv6RouteDiscoveryState,
     };
     pub use crate::internal::device::router_solicitation::{
-        RsContext, RsHandler, RsState, RsTimerId, MAX_RTR_SOLICITATION_DELAY,
-        RTR_SOLICITATION_INTERVAL,
+        MAX_RTR_SOLICITATION_DELAY, RTR_SOLICITATION_INTERVAL, RsContext, RsHandler, RsState,
+        RsTimerId,
     };
     pub use crate::internal::device::slaac::{
-        IidGenerationConfiguration, InnerSlaacTimerId, SlaacAddressEntry, SlaacAddressEntryMut,
-        SlaacAddresses, SlaacBindingsContext, SlaacConfigAndState, SlaacConfiguration,
-        SlaacConfigurationUpdate, SlaacContext, SlaacCounters, SlaacState, SlaacTimerId,
-        StableSlaacAddressConfiguration, TemporarySlaacAddressConfiguration,
-        SLAAC_MIN_REGEN_ADVANCE,
+        IidGenerationConfiguration, InnerSlaacTimerId, SLAAC_MIN_REGEN_ADVANCE, SlaacAddressEntry,
+        SlaacAddressEntryMut, SlaacAddresses, SlaacBindingsContext, SlaacConfigAndState,
+        SlaacConfiguration, SlaacConfigurationUpdate, SlaacContext, SlaacCounters, SlaacState,
+        SlaacTimerId, StableSlaacAddressConfiguration, TemporarySlaacAddressConfiguration,
     };
     pub use crate::internal::device::state::{
         AddressId, AddressIdIter, CommonAddressConfig, CommonAddressProperties, DefaultHopLimit,
@@ -82,16 +81,16 @@ pub mod device {
         TemporarySlaacConfig, WeakAddressId,
     };
     pub use crate::internal::device::{
-        add_ip_addr_subnet_with_config, clear_ipv4_device_state, clear_ipv6_device_state,
-        del_ip_addr_inner, get_ipv4_addr_subnet, get_ipv6_hop_limit, is_ip_device_enabled,
-        is_ip_multicast_forwarding_enabled, is_ip_unicast_forwarding_enabled, join_ip_multicast,
-        join_ip_multicast_with_config, leave_ip_multicast, leave_ip_multicast_with_config,
-        on_arp_packet, receive_igmp_packet, AddressRemovedReason, DelIpAddr, IpAddressState,
-        IpDeviceAddressContext, IpDeviceBindingsContext, IpDeviceConfigurationContext,
-        IpDeviceEvent, IpDeviceHandler, IpDeviceIpExt, IpDeviceSendContext, IpDeviceStateContext,
-        IpDeviceTimerId, Ipv4DeviceTimerId, Ipv6DeviceConfigurationContext, Ipv6DeviceContext,
-        Ipv6DeviceHandler, Ipv6DeviceTimerId, Ipv6LinkLayerAddr, WithIpDeviceConfigurationMutInner,
-        WithIpv6DeviceConfigurationMutInner,
+        AddressRemovedReason, DelIpAddr, IpAddressState, IpDeviceAddressContext,
+        IpDeviceBindingsContext, IpDeviceConfigurationContext, IpDeviceEvent, IpDeviceHandler,
+        IpDeviceIpExt, IpDeviceSendContext, IpDeviceStateContext, IpDeviceTimerId,
+        Ipv4DeviceTimerId, Ipv6DeviceConfigurationContext, Ipv6DeviceContext, Ipv6DeviceHandler,
+        Ipv6DeviceTimerId, Ipv6LinkLayerAddr, WithIpDeviceConfigurationMutInner,
+        WithIpv6DeviceConfigurationMutInner, add_ip_addr_subnet_with_config,
+        clear_ipv4_device_state, clear_ipv6_device_state, del_ip_addr_inner, get_ipv4_addr_subnet,
+        get_ipv6_hop_limit, is_ip_device_enabled, is_ip_multicast_forwarding_enabled,
+        is_ip_unicast_forwarding_enabled, join_ip_multicast, join_ip_multicast_with_config,
+        leave_ip_multicast, leave_ip_multicast_with_config, on_arp_packet, receive_igmp_packet,
     };
 
     /// IP device test utilities.
@@ -109,12 +108,12 @@ pub mod device {
 /// Group management protocols.
 pub mod gmp {
     pub use crate::internal::gmp::igmp::{
-        IgmpConfigMode, IgmpContext, IgmpContextMarker, IgmpCounters, IgmpSendContext,
-        IgmpStateContext, IgmpTimerId, IgmpTypeLayout, IGMP_DEFAULT_UNSOLICITED_REPORT_INTERVAL,
+        IGMP_DEFAULT_UNSOLICITED_REPORT_INTERVAL, IgmpConfigMode, IgmpContext, IgmpContextMarker,
+        IgmpCounters, IgmpSendContext, IgmpStateContext, IgmpTimerId, IgmpTypeLayout,
     };
     pub use crate::internal::gmp::mld::{
-        MldConfigMode, MldContext, MldContextMarker, MldCounters, MldSendContext, MldStateContext,
-        MldTimerId, MldTypeLayout, MLD_DEFAULT_UNSOLICITED_REPORT_INTERVAL,
+        MLD_DEFAULT_UNSOLICITED_REPORT_INTERVAL, MldConfigMode, MldContext, MldContextMarker,
+        MldCounters, MldSendContext, MldStateContext, MldTimerId, MldTypeLayout,
     };
     pub use crate::internal::gmp::{
         GmpGroupState, GmpHandler, GmpQueryHandler, GmpState, GmpStateRef, GmpTimerId, IpExt,
@@ -125,11 +124,11 @@ pub mod gmp {
 /// The Internet Control Message Protocol (ICMP).
 pub mod icmp {
     pub use crate::internal::icmp::{
-        send_icmpv4_host_unreachable, send_icmpv6_address_unreachable, send_ndp_packet,
         EchoTransportContextMarker, IcmpBindingsContext, IcmpBindingsTypes, IcmpIpTransportContext,
         IcmpRxCounters, IcmpRxCountersInner, IcmpState, IcmpStateContext, IcmpTxCounters,
         IcmpTxCountersInner, Icmpv4StateBuilder, InnerIcmpContext, InnerIcmpv4Context, NdpCounters,
         NdpMessage, NdpRxCounters, NdpTxCounters, REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
+        send_icmpv4_host_unreachable, send_icmpv6_address_unreachable, send_ndp_packet,
     };
 
     /// ICMP test utilities.
@@ -155,13 +154,13 @@ pub mod nud {
         NeighborApi, NeighborRemovalError, StaticNeighborInsertionError,
     };
     pub use crate::internal::device::nud::{
-        confirm_reachable, ConfirmationFlags, Delay, DelegateNudContext, DynamicNeighborState,
+        ConfirmationFlags, Delay, DelegateNudContext, DynamicNeighborState,
         DynamicNeighborUpdateSource, Event, EventDynamicState, EventKind, EventState, Incomplete,
-        LinkResolutionContext, LinkResolutionNotifier, LinkResolutionResult, NeighborState,
-        NudBindingsContext, NudBindingsTypes, NudConfigContext, NudContext, NudCounters,
-        NudCountersInner, NudHandler, NudIcmpContext, NudIpHandler, NudSenderContext, NudState,
-        NudTimerId, NudUserConfig, NudUserConfigUpdate, Reachable, Stale, UseDelegateNudContext,
-        MAX_ENTRIES,
+        LinkResolutionContext, LinkResolutionNotifier, LinkResolutionResult, MAX_ENTRIES,
+        NeighborState, NudBindingsContext, NudBindingsTypes, NudConfigContext, NudContext,
+        NudCounters, NudCountersInner, NudHandler, NudIcmpContext, NudIpHandler, NudSenderContext,
+        NudState, NudTimerId, NudUserConfig, NudUserConfigUpdate, Reachable, Stale,
+        UseDelegateNudContext, confirm_reachable,
     };
     pub use crate::internal::device::state::IPV6_RETRANS_TIMER_DEFAULT;
 
@@ -169,8 +168,8 @@ pub mod nud {
     #[cfg(any(test, feature = "testutils"))]
     pub mod testutil {
         pub use crate::internal::device::nud::testutil::{
-            assert_dynamic_neighbor_state, assert_dynamic_neighbor_with_addr,
-            assert_neighbor_unknown, FakeLinkResolutionNotifier,
+            FakeLinkResolutionNotifier, assert_dynamic_neighbor_state,
+            assert_dynamic_neighbor_with_addr, assert_neighbor_unknown,
         };
     }
 }
@@ -232,9 +231,8 @@ pub mod raw {
 
 pub use internal::api::{RouteResolveOptions, RoutesAnyApi, RoutesApi};
 pub use internal::base::{
-    gen_ip_packet_id, receive_ipv4_packet, receive_ipv4_packet_action, receive_ipv6_packet,
-    receive_ipv6_packet_action, resolve_output_route_to_destination, AddressStatus,
-    BaseTransportIpContext, DeviceIpLayerMetadata, DropReason, FilterHandlerProvider, HopLimits,
+    AddressStatus, BaseTransportIpContext, DEFAULT_HOP_LIMITS, DEFAULT_TTL, DeviceIpLayerMetadata,
+    DropReason, FilterHandlerProvider, HopLimits, IPV6_DEFAULT_SUBNET,
     IpDeviceConfirmReachableContext, IpDeviceContext, IpDeviceEgressStateContext,
     IpDeviceIngressStateContext, IpDeviceMtuContext, IpLayerBindingsContext, IpLayerContext,
     IpLayerEvent, IpLayerHandler, IpLayerIpExt, IpLayerTimerId, IpPacketDestination,
@@ -243,8 +241,9 @@ pub use internal::base::{
     Ipv4PresentAddressStatus, Ipv4State, Ipv4StateBuilder, Ipv6PresentAddressStatus, Ipv6State,
     Ipv6StateBuilder, MulticastMembershipHandler, NdpBindingsContext, ReceivePacketAction,
     ResolveRouteError, RouterAdvertisementEvent, RoutingTableId, SendIpPacketMeta,
-    TransportIpContext, TransportReceiveError, DEFAULT_HOP_LIMITS, DEFAULT_TTL,
-    IPV6_DEFAULT_SUBNET,
+    TransportIpContext, TransportReceiveError, gen_ip_packet_id, receive_ipv4_packet,
+    receive_ipv4_packet_action, receive_ipv6_packet, receive_ipv6_packet_action,
+    resolve_output_route_to_destination,
 };
 pub use internal::counters::{IpCounters, Ipv6RxCounters};
 pub use internal::fragmentation::FragmentationCounters;
@@ -258,8 +257,8 @@ pub use internal::routing::rules::{
     TrafficOriginMatcher,
 };
 pub use internal::routing::{
-    request_context_add_route, request_context_del_routes, AddRouteError, IpRoutingDeviceContext,
-    NonLocalSrcAddrPolicy, PacketOrigin, RoutingTable,
+    AddRouteError, IpRoutingDeviceContext, NonLocalSrcAddrPolicy, PacketOrigin, RoutingTable,
+    request_context_add_route, request_context_del_routes,
 };
 pub use internal::sas::IpSasHandler;
 pub use internal::types::{

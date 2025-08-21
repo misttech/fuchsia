@@ -1486,7 +1486,7 @@ fn extract_v4_multicast_event(data: &[u8]) -> Vec<MulticastEvent> {
                     IgmpGroupRecordType::ModeIsInclude
                     | IgmpGroupRecordType::ChangeToIncludeMode => MulticastEvent::Left,
                     IgmpGroupRecordType::AllowNewSources | IgmpGroupRecordType::BlockOldSources => {
-                        return None
+                        return None;
                     }
                 };
 

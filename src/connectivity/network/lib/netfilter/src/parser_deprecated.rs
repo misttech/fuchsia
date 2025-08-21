@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use pest::iterators::Pair;
 use pest::Parser;
+use pest::iterators::Pair;
 
 use {
     fidl_fuchsia_hardware_network as fhnet, fidl_fuchsia_net as net,
@@ -781,15 +781,9 @@ mod test {
             Ok(vec![filter::Rdr {
                 proto: filter::SocketProtocol::Tcp,
                 dst_addr: fidl_ip!("1234:5678::"),
-                dst_port_range: filter::PortRange {
-                    start: 10000,
-                    end: 10005,
-                },
+                dst_port_range: filter::PortRange { start: 10000, end: 10005 },
                 new_dst_addr: fidl_ip!("2345:6789::"),
-                new_dst_port_range: filter::PortRange {
-                    start: 20000,
-                    end: 20005,
-                },
+                new_dst_port_range: filter::PortRange { start: 20000, end: 20005 },
                 nic: 0,
             }])
         );

@@ -4,8 +4,8 @@
 
 //! Types and traits providing send buffer management for netstack sockets.
 
-use netstack3_sync::atomic::{AtomicIsize, Ordering};
 use netstack3_sync::Mutex;
+use netstack3_sync::atomic::{AtomicIsize, Ordering};
 
 use crate::num::PositiveIsize;
 

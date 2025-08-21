@@ -30,22 +30,22 @@ use netstack3_device::{
     DeviceId, DeviceLayerEventDispatcher, DeviceLayerTimerId, DeviceSendFrameError,
     IpLinkDeviceState,
 };
+use netstack3_ip::IpDeviceEgressStateContext;
 use netstack3_ip::icmp::{self, NdpCounters};
 use netstack3_ip::nud::{
     DelegateNudContext, NudConfigContext, NudContext, NudIcmpContext, NudSenderContext, NudState,
     NudUserConfig, UseDelegateNudContext,
 };
-use netstack3_ip::IpDeviceEgressStateContext;
 use packet::{Buf, BufferMut, InnerPacketBuilder as _, Serializer};
 use packet_formats::ethernet::EtherType;
+use packet_formats::icmp::IcmpZeroCode;
 use packet_formats::icmp::ndp::options::NdpOptionBuilder;
 use packet_formats::icmp::ndp::{NeighborSolicitation, OptionSequenceBuilder};
-use packet_formats::icmp::IcmpZeroCode;
 use packet_formats::ipv4::Ipv4FragmentType;
 use packet_formats::utils::NonZeroDuration;
 
-use crate::context::prelude::*;
 use crate::context::WrapLockLevel;
+use crate::context::prelude::*;
 use crate::device::integration;
 use crate::{BindingsContext, BindingsTypes, CoreCtx};
 

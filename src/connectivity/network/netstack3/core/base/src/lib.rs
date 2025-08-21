@@ -75,7 +75,7 @@ pub use ip::{
 pub use map_deref::{MapDeref, MapDerefExt};
 pub use matchers::{DeviceNameMatcher, Matcher, SubnetMatcher};
 pub use num::PositiveIsize;
-pub use port_alloc::{simple_randomized_port_alloc, EphemeralPort, PortAllocImpl};
+pub use port_alloc::{EphemeralPort, PortAllocImpl, simple_randomized_port_alloc};
 pub use resource_references::{
     DeferredResourceRemovalContext, ReferenceNotifiers, ReferenceNotifiersExt,
     RemoveResourceResult, RemoveResourceResultWithContext,
@@ -178,14 +178,14 @@ pub mod testutil {
     };
     pub use crate::event::testutil::FakeEventCtx;
     pub use crate::frame::testutil::{FakeFrameCtx, FakeTxMetadata, WithFakeFrameContext};
-    pub use crate::rng::testutil::{new_rng, run_with_many_seeds, FakeCryptoRng};
+    pub use crate::rng::testutil::{FakeCryptoRng, new_rng, run_with_many_seeds};
     pub use crate::settings::testutil::AlwaysDefaultsSettingsContext;
     pub use crate::socket::sndbuf::testutil::FakeSocketWritableListener;
     pub use crate::time::testutil::{
         FakeAtomicInstant, FakeInstant, FakeInstantCtx, FakeTimerCtx, FakeTimerCtxExt, FakeTimerId,
         InstantAndData, WithFakeTimerContext,
     };
-    pub use addr::{TestAddrs, TestDualStackIpExt, TestIpExt, TEST_ADDRS_V4, TEST_ADDRS_V6};
+    pub use addr::{TEST_ADDRS_V4, TEST_ADDRS_V6, TestAddrs, TestDualStackIpExt, TestIpExt};
     pub use benchmarks::{Bencher, RealBencher, TestBencher};
     pub use fake_bindings::FakeBindingsCtx;
     pub use fake_core::FakeCoreCtx;

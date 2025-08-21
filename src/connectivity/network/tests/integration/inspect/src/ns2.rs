@@ -14,8 +14,8 @@ use std::num::NonZeroU16;
 use std::sync::Arc;
 
 use diagnostics_assertions::{
-    assert_data_tree, tree_assertion, AnyProperty, NonZeroIntProperty, PropertyAssertion,
-    TreeAssertion,
+    AnyProperty, NonZeroIntProperty, PropertyAssertion, TreeAssertion, assert_data_tree,
+    tree_assertion,
 };
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_posix_socket as fposix_socket,
@@ -29,11 +29,11 @@ use net_declare::{fidl_ip, fidl_mac, fidl_subnet};
 use net_types::ip::Ip as _;
 use netemul::InStack;
 use netstack_testing_common::realms::{KnownServiceProvider, Netstack, TestSandboxExt as _};
-use netstack_testing_common::{constants, Result};
+use netstack_testing_common::{Result, constants};
 use netstack_testing_macros::netstack_test;
 use packet::{ParsablePacket as _, Serializer as _};
 use packet_formats::ethernet::testutil::ETHERNET_HDR_LEN_NO_TAG;
-use packet_formats::ethernet::{EtherType, EthernetFrameBuilder, ETHERNET_MIN_BODY_LEN_NO_TAG};
+use packet_formats::ethernet::{ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrameBuilder};
 use packet_formats::ipv4::{Ipv4Header as _, Ipv4PacketBuilder};
 use packet_formats::udp::{UdpPacketBuilder, UdpParseArgs};
 use test_case::test_case;

@@ -4,8 +4,8 @@
 
 use core::fmt::Debug;
 
-use net_types::ip::{IpVersion, Ipv4, Ipv6};
 use net_types::SpecifiedAddr;
+use net_types::ip::{IpVersion, Ipv4, Ipv6};
 use netstack3_base::socket::SocketCookie;
 use netstack3_base::{
     InstantBindingsTypes, IpDeviceAddr, IpDeviceAddressIdContext, Marks, RngContext,
@@ -45,12 +45,7 @@ pub trait FilterIpContext<I: FilterIpExt, BT: FilterBindingsTypes>:
 {
     /// The execution context that allows the filtering engine to perform
     /// Network Address Translation (NAT).
-    type NatCtx<'a>: NatContext<
-        I,
-        BT,
-        DeviceId = Self::DeviceId,
-        WeakAddressId = Self::WeakAddressId,
-    >;
+    type NatCtx<'a>: NatContext<I, BT, DeviceId = Self::DeviceId, WeakAddressId = Self::WeakAddressId>;
 
     /// Calls the function with a reference to filtering state.
     fn with_filter_state<O, F: FnOnce(&State<I, Self::WeakAddressId, BT>) -> O>(
@@ -168,11 +163,11 @@ pub trait SocketOpsFilterBindingContext<D: StrongDeviceIdentifier>:
 
 #[cfg(any(test, feature = "testutils"))]
 impl<
-        TimerId: Debug + PartialEq + Clone + Send + Sync + 'static,
-        Event: Debug + 'static,
-        State: 'static,
-        FrameMeta: 'static,
-    > FilterBindingsTypes
+    TimerId: Debug + PartialEq + Clone + Send + Sync + 'static,
+    Event: Debug + 'static,
+    State: 'static,
+    FrameMeta: 'static,
+> FilterBindingsTypes
     for netstack3_base::testutil::FakeBindingsCtx<TimerId, Event, State, FrameMeta>
 {
     type DeviceClass = ();
@@ -180,12 +175,12 @@ impl<
 
 #[cfg(any(test, feature = "testutils"))]
 impl<
-        TimerId: Debug + PartialEq + Clone + Send + Sync + 'static,
-        Event: Debug + 'static,
-        State: 'static,
-        FrameMeta: 'static,
-        D: StrongDeviceIdentifier,
-    > SocketOpsFilterBindingContext<D>
+    TimerId: Debug + PartialEq + Clone + Send + Sync + 'static,
+    Event: Debug + 'static,
+    State: 'static,
+    FrameMeta: 'static,
+    D: StrongDeviceIdentifier,
+> SocketOpsFilterBindingContext<D>
     for netstack3_base::testutil::FakeBindingsCtx<TimerId, Event, State, FrameMeta>
 {
     fn socket_ops_filter(&self) -> impl SocketOpsFilter<D> {
@@ -215,8 +210,8 @@ pub(crate) mod testutil {
 
     use super::*;
     use crate::conntrack;
-    use crate::logic::nat::NatConfig;
     use crate::logic::FilterTimerId;
+    use crate::logic::nat::NatConfig;
     use crate::matchers::testutil::FakeDeviceId;
     use crate::state::validation::ValidRoutines;
     use crate::state::{IpRoutines, NatRoutines, OneWayBoolean, Routines};
@@ -463,11 +458,7 @@ pub(crate) mod testutil {
         ) -> Option<Self::AddressId> {
             let FakePrimaryAddressId(id) = self.device_addrs.get(device_id)?;
             let id = FakeAddressId(id.clone());
-            if id.addr() == addr {
-                Some(id)
-            } else {
-                None
-            }
+            if id.addr() == addr { Some(id) } else { None }
         }
     }
 

@@ -26,11 +26,11 @@ use crate::logging::{log_debug, log_info};
 use crate::messaging::Sender;
 use crate::multicast_groups::ModernGroup;
 use crate::netlink_packet::errno::Errno;
-use crate::protocol_family::route::NetlinkRoute;
 use crate::protocol_family::ProtocolFamily;
+use crate::protocol_family::route::NetlinkRoute;
 use crate::{
-    interfaces, route_tables, routes, rules, FeatureFlags, NetlinkRouteNotifiedGroup, SysctlError,
-    SysctlInterfaceSelector,
+    FeatureFlags, NetlinkRouteNotifiedGroup, SysctlError, SysctlInterfaceSelector, interfaces,
+    route_tables, routes, rules,
 };
 
 #[derive(Derivative)]
@@ -260,10 +260,10 @@ pub(crate) struct EventLoopInputs<
 }
 
 impl<
-        H: interfaces::InterfacesHandler,
-        S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-        E: EventLoopSpec,
-    > EventLoopInputs<H, S, E>
+    H: interfaces::InterfacesHandler,
+    S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+    E: EventLoopSpec,
+> EventLoopInputs<H, S, E>
 {
     /// Creates routes and interface hanging get watchers and connects to route and
     /// interface administration protocols so that requests can be serviced by the returned
@@ -473,10 +473,10 @@ pub(crate) struct EventLoopState<
 }
 
 impl<
-        H: interfaces::InterfacesHandler,
-        S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-        E: EventLoopSpec,
-    > EventLoopState<H, S, E>
+    H: interfaces::InterfacesHandler,
+    S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+    E: EventLoopSpec,
+> EventLoopState<H, S, E>
 {
     #[cfg(test)]
     pub(crate) fn route_table_state<
@@ -923,9 +923,9 @@ impl<
 }
 
 impl<
-        H: interfaces::InterfacesHandler,
-        S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-    > EventLoop<H, S>
+    H: interfaces::InterfacesHandler,
+    S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+> EventLoop<H, S>
 {
     pub(crate) async fn run(
         self,

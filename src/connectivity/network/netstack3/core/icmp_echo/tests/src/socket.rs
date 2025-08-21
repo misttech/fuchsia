@@ -12,11 +12,11 @@ use packet::{Buf, PacketBuilder, Serializer};
 use packet_formats::icmp::{IcmpEchoRequest, IcmpPacketBuilder, IcmpZeroCode};
 use test_case::test_case;
 
-use netstack3_base::testutil::{set_logger_for_test, TestIpExt};
-use netstack3_core::testutil::{
-    new_simple_fake_network, CtxPairExt as _, FakeBindingsCtx, FakeCtxBuilder,
-};
+use netstack3_base::testutil::{TestIpExt, set_logger_for_test};
 use netstack3_core::IpExt;
+use netstack3_core::testutil::{
+    CtxPairExt as _, FakeBindingsCtx, FakeCtxBuilder, new_simple_fake_network,
+};
 
 const REMOTE_ID: u16 = 1;
 

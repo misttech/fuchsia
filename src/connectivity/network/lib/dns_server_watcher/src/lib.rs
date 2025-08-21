@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 
 use fidl_fuchsia_net::SocketAddress;
 use fidl_fuchsia_net_name::{
-    DhcpDnsServerSource, Dhcpv6DnsServerSource, DnsServerSource, DnsServer_, NdpDnsServerSource,
+    DhcpDnsServerSource, Dhcpv6DnsServerSource, DnsServer_, DnsServerSource, NdpDnsServerSource,
     SocketProxyDnsServerSource, StaticDnsServerSource,
 };
 

@@ -4281,13 +4281,15 @@ mod tests {
     fn no_icmp_error_mut_for_normal_bytes<I: TestIpExt>(proto: TransportPacketDataProtocol) {
         let mut buf = proto.make_packet::<I>(I::SRC_IP, I::DST_IP);
 
-        assert!(ParsedIcmpErrorMut::<I>::parse_in_ip_packet(
-            I::SRC_IP,
-            I::DST_IP,
-            proto.proto::<I>(),
-            SliceBufViewMut::new(&mut buf),
-        )
-        .is_none());
+        assert!(
+            ParsedIcmpErrorMut::<I>::parse_in_ip_packet(
+                I::SRC_IP,
+                I::DST_IP,
+                proto.proto::<I>(),
+                SliceBufViewMut::new(&mut buf),
+            )
+            .is_none()
+        );
     }
 
     #[ip_test(I)]

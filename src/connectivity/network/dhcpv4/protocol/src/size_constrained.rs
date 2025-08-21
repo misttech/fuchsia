@@ -19,11 +19,8 @@ pub struct AtLeast<const LOWER_BOUND_ON_NUMBER_OF_ELEMENTS: usize, T> {
 
 // We'd have liked to make this more general, but we run into
 // "unconstrained type parameter" issues.
-impl<
-        const LOWER_BOUND_ON_NUMBER_OF_ELEMENTS: usize,
-        const UPPER_BOUND_ON_SIZE_IN_BYTES: usize,
-        T,
-    > TryFrom<AtMostBytes<UPPER_BOUND_ON_SIZE_IN_BYTES, Vec<T>>>
+impl<const LOWER_BOUND_ON_NUMBER_OF_ELEMENTS: usize, const UPPER_BOUND_ON_SIZE_IN_BYTES: usize, T>
+    TryFrom<AtMostBytes<UPPER_BOUND_ON_SIZE_IN_BYTES, Vec<T>>>
     for AtLeast<
         LOWER_BOUND_ON_NUMBER_OF_ELEMENTS,
         AtMostBytes<UPPER_BOUND_ON_SIZE_IN_BYTES, Vec<T>>,
@@ -66,11 +63,8 @@ impl<const UPPER_BOUND_ON_SIZE_IN_BYTES: usize, T> TryFrom<Vec<T>>
     }
 }
 
-impl<
-        const LOWER_BOUND_ON_NUMBER_OF_ELEMENTS: usize,
-        const UPPER_BOUND_ON_SIZE_IN_BYTES: usize,
-        T,
-    > TryFrom<Vec<T>>
+impl<const LOWER_BOUND_ON_NUMBER_OF_ELEMENTS: usize, const UPPER_BOUND_ON_SIZE_IN_BYTES: usize, T>
+    TryFrom<Vec<T>>
     for AtLeast<
         LOWER_BOUND_ON_NUMBER_OF_ELEMENTS,
         AtMostBytes<UPPER_BOUND_ON_SIZE_IN_BYTES, Vec<T>>,

@@ -17,7 +17,7 @@ mod udpsocket;
 use fidl_fuchsia_net_dhcp::{ClientProviderMarker, ClientProviderRequestStream};
 use fidl_fuchsia_posix_socket_packet as fpacket;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
-use futures::{future, StreamExt as _, TryStreamExt as _};
+use futures::{StreamExt as _, TryStreamExt as _, future};
 
 use anyhow::Error;
 

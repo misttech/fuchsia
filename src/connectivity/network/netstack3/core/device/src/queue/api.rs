@@ -10,6 +10,7 @@ use netstack3_base::{
     ContextPair, Device, DeviceIdContext, ResourceCounterContext, WorkQueueReport,
 };
 
+use crate::DeviceCounters;
 use crate::internal::base::DeviceSendFrameError;
 use crate::internal::queue::rx::{
     ReceiveDequeContext, ReceiveDequeFrameContext as _, ReceiveQueueBindingsContext,
@@ -19,9 +20,8 @@ use crate::internal::queue::tx::{
     self, TransmitDequeueContext, TransmitQueueBindingsContext, TransmitQueueCommon,
     TransmitQueueConfiguration, TransmitQueueContext as _, TransmitQueueState,
 };
-use crate::internal::queue::{fifo, BatchSize, DequeueResult, DequeueState};
+use crate::internal::queue::{BatchSize, DequeueResult, DequeueState, fifo};
 use crate::internal::socket::DeviceSocketHandler;
-use crate::DeviceCounters;
 use log::debug;
 
 /// An API to interact with device `D` transmit queues.

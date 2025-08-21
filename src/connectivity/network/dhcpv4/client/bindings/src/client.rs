@@ -603,7 +603,7 @@ impl Client {
                     return Err(Error::Exit(ClientExitReason::GracefulShutdown));
                 }
                 dhcp_client_core::client::ExitReason::AddressRemoved(reason) => {
-                    return Err(Error::Exit(reason))
+                    return Err(Error::Exit(reason));
                 }
             },
         }

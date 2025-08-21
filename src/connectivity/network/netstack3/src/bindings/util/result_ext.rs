@@ -82,11 +82,7 @@ impl<O, E: ErrorLogExt> ResultExt for Result<O, E> {
 
 impl ErrorLogExt for fidl::Error {
     fn log_level(&self) -> log::Level {
-        if self.is_closed() {
-            log::Level::Debug
-        } else {
-            log::Level::Error
-        }
+        if self.is_closed() { log::Level::Debug } else { log::Level::Error }
     }
 }
 

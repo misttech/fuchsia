@@ -7,13 +7,13 @@ use ip_test_macro::ip_test;
 use net_types::ip::{AddrSubnet, IpAddress as _};
 use net_types::{Witness, ZonedAddr};
 use netstack3_base::testutil::TestIpExt;
+use netstack3_core::IpExt;
 use netstack3_core::routes::{AddableEntry, AddableMetric, RawMetric};
 use netstack3_core::sync::RemoveResourceResult;
 use netstack3_core::testutil::{
-    CtxPairExt as _, FakeBindingsCtx, FakeCtx, DEFAULT_INTERFACE_METRIC,
+    CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCtx,
 };
 use netstack3_core::udp::UdpRemotePort;
-use netstack3_core::IpExt;
 use netstack3_device::blackhole::BlackholeDevice;
 
 // Smoke test verifying [`BlackholeDevice`] implements the traits required to

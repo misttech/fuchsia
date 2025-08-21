@@ -21,15 +21,15 @@ use futures::stream::{self, StreamExt as _, TryStreamExt as _};
 use net_declare::{fidl_ip_v4, fidl_ip_v4_with_prefix, fidl_mac, net_subnet_v4};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, Ipv4};
-use netemul::{DhcpClient, InterfaceConfig, DEFAULT_MTU};
+use netemul::{DEFAULT_MTU, DhcpClient, InterfaceConfig};
 use netstack_testing_common::interfaces::{self, TestInterfaceExt as _};
 use netstack_testing_common::realms::{
-    constants, DhcpClientVersion, KnownServiceProvider, Netstack, NetstackAndDhcpClient,
-    NetstackVersion, TestSandboxExt as _,
+    DhcpClientVersion, KnownServiceProvider, Netstack, NetstackAndDhcpClient, NetstackVersion,
+    TestSandboxExt as _, constants,
 };
 use netstack_testing_common::{
-    annotate, dhcpv4 as dhcpv4_helper, Result, ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT,
-    ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
+    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, Result, annotate,
+    dhcpv4 as dhcpv4_helper,
 };
 use netstack_testing_macros::netstack_test;
 use packet::{InnerPacketBuilder, ParsablePacket as _, Serializer};
@@ -333,9 +333,9 @@ async fn removing_acquired_address_stops_dhcp<SERVER: Netstack, CLIENT: Netstack
             servers: &mut [TestServerConfig {
                 endpoints: &[DhcpTestEndpointConfig {
                     ep_type: DhcpEndpointType::Server {
-                        static_addrs: vec![dhcpv4_helper::DEFAULT_TEST_CONFIG
-                            .server_addr_with_prefix()
-                            .into_ext()],
+                        static_addrs: vec![
+                            dhcpv4_helper::DEFAULT_TEST_CONFIG.server_addr_with_prefix().into_ext(),
+                        ],
                     },
                     network: &network,
                 }],
@@ -381,11 +381,13 @@ async fn removing_acquired_address_stops_dhcp<SERVER: Netstack, CLIENT: Netstack
     } else {
         (STATIC_ADDRESS.into_ext(), ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT)
     };
-    assert!(client
-        .remove_address(&remove_address)
-        .await
-        .expect("send address removal request")
-        .expect("remove DHCP acquired address"),);
+    assert!(
+        client
+            .remove_address(&remove_address)
+            .await
+            .expect("send address removal request")
+            .expect("remove DHCP acquired address"),
+    );
     assert!(client.disable().await.expect("send disable request").expect("disable interface"));
     let socket = client_realm
         .packet_socket(fidl_fuchsia_posix_socket_packet::Kind::Network)
@@ -478,9 +480,11 @@ async fn acquire_with_dhcpd_bound_device<SERVER: Netstack, CLIENT: NetstackAndDh
                 servers: &mut [TestServerConfig {
                     endpoints: &[DhcpTestEndpointConfig {
                         ep_type: DhcpEndpointType::Server {
-                            static_addrs: vec![dhcpv4_helper::DEFAULT_TEST_CONFIG
-                                .server_addr_with_prefix()
-                                .into_ext()],
+                            static_addrs: vec![
+                                dhcpv4_helper::DEFAULT_TEST_CONFIG
+                                    .server_addr_with_prefix()
+                                    .into_ext(),
+                            ],
                         },
                         network: &network,
                     }],
@@ -530,9 +534,9 @@ async fn does_not_crash_with_overlapping_subnet_route<
             servers: &mut [TestServerConfig {
                 endpoints: &[DhcpTestEndpointConfig {
                     ep_type: DhcpEndpointType::Server {
-                        static_addrs: vec![dhcpv4_helper::DEFAULT_TEST_CONFIG
-                            .server_addr_with_prefix()
-                            .into_ext()],
+                        static_addrs: vec![
+                            dhcpv4_helper::DEFAULT_TEST_CONFIG.server_addr_with_prefix().into_ext(),
+                        ],
                     },
                     network: &network,
                 }],
@@ -548,9 +552,10 @@ async fn does_not_crash_with_overlapping_subnet_route<
     let realms_and_interfaces =
         test_dhcp::<CLIENT::DhcpClient>(name, &sandbox, &mut netstack_configs, 1, false).await;
     let (client_realm, client_interfaces) = match &realms_and_interfaces[..] {
-        [TestDhcpRealmAndInterfaces { realm, client_ifaces, server_ifaces: _ }, TestDhcpRealmAndInterfaces { realm: _, client_ifaces: _, server_ifaces: _ }] => {
-            (realm, client_ifaces)
-        }
+        [
+            TestDhcpRealmAndInterfaces { realm, client_ifaces, server_ifaces: _ },
+            TestDhcpRealmAndInterfaces { realm: _, client_ifaces: _, server_ifaces: _ },
+        ] => (realm, client_ifaces),
         _ => panic!("should have a client realm and a server realm: {:?}", &realms_and_interfaces),
     };
 
@@ -600,13 +605,15 @@ async fn does_not_crash_with_overlapping_subnet_route<
         .expect("no FIDL error")
         .expect("authentication should succeed");
 
-    assert!(fnet_routes_ext::admin::add_route::<Ipv4>(
-        &route_set,
-        &dhcp_added_route.try_into().expect("convert to FIDL route")
-    )
-    .await
-    .expect("should have no FIDL error")
-    .expect("add route should succeed"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<Ipv4>(
+            &route_set,
+            &dhcp_added_route.try_into().expect("convert to FIDL route")
+        )
+        .await
+        .expect("should have no FIDL error")
+        .expect("add route should succeed")
+    );
 
     let route_to_use_for_flushing = fnet_routes_ext::Route {
         destination: net_subnet_v4!("199.198.197.0/32"),
@@ -625,13 +632,15 @@ async fn does_not_crash_with_overlapping_subnet_route<
     // never appear on the watcher, but we need to wait long enough for it to
     // get processed by the netstack. Thus, we add an unrelated route and watch
     // for it in order to "flush" the watcher.
-    assert!(fnet_routes_ext::admin::add_route::<Ipv4>(
-        &route_set,
-        &route_to_use_for_flushing.clone().try_into().expect("convert to FIDL route")
-    )
-    .await
-    .expect("should have no FIDL error")
-    .expect("add route should succeed"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<Ipv4>(
+            &route_set,
+            &route_to_use_for_flushing.clone().try_into().expect("convert to FIDL route")
+        )
+        .await
+        .expect("should have no FIDL error")
+        .expect("add route should succeed")
+    );
 
     fnet_routes_ext::wait_for_routes::<Ipv4, _, _>(routes_event_stream, &mut routes, |routes| {
         routes.iter().any(|installed_route| &installed_route.route == &route_to_use_for_flushing)
@@ -692,9 +701,11 @@ async fn acquire_then_renew_with_dhcpd_bound_device<
                 servers: &mut [TestServerConfig {
                     endpoints: &[DhcpTestEndpointConfig {
                         ep_type: DhcpEndpointType::Server {
-                            static_addrs: vec![dhcpv4_helper::DEFAULT_TEST_CONFIG
-                                .server_addr_with_prefix()
-                                .into_ext()],
+                            static_addrs: vec![
+                                dhcpv4_helper::DEFAULT_TEST_CONFIG
+                                    .server_addr_with_prefix()
+                                    .into_ext(),
+                            ],
                         },
                         network: &network,
                     }],
@@ -778,9 +789,11 @@ async fn acquire_with_dhcpd_bound_device_dup_addr<
                     endpoints: &[
                         DhcpTestEndpointConfig {
                             ep_type: DhcpEndpointType::Server {
-                                static_addrs: vec![dhcpv4_helper::DEFAULT_TEST_CONFIG
-                                    .server_addr_with_prefix()
-                                    .into_ext()],
+                                static_addrs: vec![
+                                    dhcpv4_helper::DEFAULT_TEST_CONFIG
+                                        .server_addr_with_prefix()
+                                        .into_ext(),
+                                ],
                             },
                             network: &network,
                         },
@@ -1254,7 +1267,7 @@ async fn acquire_dhcp_server_after_restart<SERVER: Netstack, CLIENT: NetstackAnd
             .expect("failed to connect to DHCP server");
         let parameters = dhcpv4_helper::DEFAULT_TEST_CONFIG.dhcp_parameters().into_iter().chain(
             std::iter::once(fidl_fuchsia_net_dhcp::Parameter::BoundDeviceNames(vec![
-                if_name.to_string()
+                if_name.to_string(),
             ])),
         );
         let () =
@@ -1497,9 +1510,9 @@ async fn forfeit_address_on_conflict<SERVER: Netstack>(name: &str) {
             servers: &mut [TestServerConfig {
                 endpoints: &[DhcpTestEndpointConfig {
                     ep_type: DhcpEndpointType::Server {
-                        static_addrs: vec![dhcpv4_helper::DEFAULT_TEST_CONFIG
-                            .server_addr_with_prefix()
-                            .into_ext()],
+                        static_addrs: vec![
+                            dhcpv4_helper::DEFAULT_TEST_CONFIG.server_addr_with_prefix().into_ext(),
+                        ],
                     },
                     network: &network,
                 }],

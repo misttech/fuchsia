@@ -9,7 +9,7 @@ use num_derive::FromPrimitive;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::net::Ipv4Addr;
-use std::num::{NonZeroU16, NonZeroU8};
+use std::num::{NonZeroU8, NonZeroU16};
 use thiserror::Error;
 
 #[cfg(target_os = "fuchsia")]
@@ -336,7 +336,7 @@ impl Message {
 }
 
 pub mod identifier {
-    use super::{DhcpOption, Message, CHADDR_LEN};
+    use super::{CHADDR_LEN, DhcpOption, Message};
     use net_types::ethernet::Mac as MacAddr;
     use std::convert::TryInto as _;
 
@@ -587,8 +587,8 @@ mod prefix_length {
     use std::net::Ipv4Addr;
 
     use net_types::ip::{Ipv4, NotSubnetMaskError, PrefixLength};
-    use serde::de::{Deserialize as _, Error};
     use serde::Serialize as _;
+    use serde::de::{Deserialize as _, Error};
 
     pub(super) fn serialize<S: serde::Serializer>(
         prefix_length: &PrefixLength<Ipv4>,

@@ -15,17 +15,17 @@ use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use net_declare::{fidl_mac, fidl_subnet, net_ip_v4, net_ip_v6, net_mac, std_socket_addr};
 use netemul::RealmUdpSocket as _;
 use netstack_testing_common::realms::{
-    constants, KnownServiceProvider, Netstack, TestSandboxExt as _,
+    KnownServiceProvider, Netstack, TestSandboxExt as _, constants,
 };
 use netstack_testing_common::{
-    get_component_moniker, ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
+    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, get_component_moniker,
 };
 use netstack_testing_macros::netstack_test;
-use packet::serialize::Serializer as _;
 use packet::ParsablePacket as _;
+use packet::serialize::Serializer as _;
 use packet_formats::error::ParseError;
 use packet_formats::ethernet::{
-    EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck, ETHERNET_MIN_BODY_LEN_NO_TAG,
+    ETHERNET_MIN_BODY_LEN_NO_TAG, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
 };
 use packet_formats::icmp::{
     IcmpEchoRequest, IcmpIpExt, IcmpPacket, IcmpPacketBuilder, IcmpParseArgs, IcmpZeroCode,

@@ -10,8 +10,8 @@
 use core::time::Duration;
 
 use assert_matches::assert_matches;
-use net_types::ip::Ip;
 use net_types::MulticastAddr;
+use net_types::ip::Ip;
 use netstack3_base::Instant;
 use packet_formats::utils::NonZeroDuration;
 use rand::Rng;
@@ -845,7 +845,7 @@ where
 mod test {
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
-    use netstack3_base::testutil::{new_rng, FakeDeviceId, FakeInstant};
+    use netstack3_base::testutil::{FakeDeviceId, FakeInstant, new_rng};
     use test_util::assert_lt;
 
     use super::*;

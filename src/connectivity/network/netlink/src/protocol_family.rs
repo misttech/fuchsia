@@ -70,29 +70,29 @@ pub mod route {
     use futures::channel::{mpsc, oneshot};
     use futures::sink::SinkExt as _;
     use linux_uapi::{
-        rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN, rtnetlink_groups_RTNLGRP_DCB,
-        rtnetlink_groups_RTNLGRP_DECnet_IFADDR, rtnetlink_groups_RTNLGRP_DECnet_ROUTE,
-        rtnetlink_groups_RTNLGRP_DECnet_RULE, rtnetlink_groups_RTNLGRP_IPV4_IFADDR,
-        rtnetlink_groups_RTNLGRP_IPV4_MROUTE, rtnetlink_groups_RTNLGRP_IPV4_MROUTE_R,
-        rtnetlink_groups_RTNLGRP_IPV4_NETCONF, rtnetlink_groups_RTNLGRP_IPV4_ROUTE,
-        rtnetlink_groups_RTNLGRP_IPV4_RULE, rtnetlink_groups_RTNLGRP_IPV6_IFADDR,
-        rtnetlink_groups_RTNLGRP_IPV6_IFINFO, rtnetlink_groups_RTNLGRP_IPV6_MROUTE,
-        rtnetlink_groups_RTNLGRP_IPV6_MROUTE_R, rtnetlink_groups_RTNLGRP_IPV6_NETCONF,
-        rtnetlink_groups_RTNLGRP_IPV6_PREFIX, rtnetlink_groups_RTNLGRP_IPV6_ROUTE,
-        rtnetlink_groups_RTNLGRP_IPV6_RULE, rtnetlink_groups_RTNLGRP_LINK,
-        rtnetlink_groups_RTNLGRP_MDB, rtnetlink_groups_RTNLGRP_MPLS_NETCONF,
-        rtnetlink_groups_RTNLGRP_MPLS_ROUTE, rtnetlink_groups_RTNLGRP_ND_USEROPT,
-        rtnetlink_groups_RTNLGRP_NEIGH, rtnetlink_groups_RTNLGRP_NONE,
-        rtnetlink_groups_RTNLGRP_NOP2, rtnetlink_groups_RTNLGRP_NOP4,
-        rtnetlink_groups_RTNLGRP_NOTIFY, rtnetlink_groups_RTNLGRP_NSID,
-        rtnetlink_groups_RTNLGRP_PHONET_IFADDR, rtnetlink_groups_RTNLGRP_PHONET_ROUTE,
-        rtnetlink_groups_RTNLGRP_TC, IFA_F_NOPREFIXROUTE,
+        IFA_F_NOPREFIXROUTE, rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN,
+        rtnetlink_groups_RTNLGRP_DCB, rtnetlink_groups_RTNLGRP_DECnet_IFADDR,
+        rtnetlink_groups_RTNLGRP_DECnet_ROUTE, rtnetlink_groups_RTNLGRP_DECnet_RULE,
+        rtnetlink_groups_RTNLGRP_IPV4_IFADDR, rtnetlink_groups_RTNLGRP_IPV4_MROUTE,
+        rtnetlink_groups_RTNLGRP_IPV4_MROUTE_R, rtnetlink_groups_RTNLGRP_IPV4_NETCONF,
+        rtnetlink_groups_RTNLGRP_IPV4_ROUTE, rtnetlink_groups_RTNLGRP_IPV4_RULE,
+        rtnetlink_groups_RTNLGRP_IPV6_IFADDR, rtnetlink_groups_RTNLGRP_IPV6_IFINFO,
+        rtnetlink_groups_RTNLGRP_IPV6_MROUTE, rtnetlink_groups_RTNLGRP_IPV6_MROUTE_R,
+        rtnetlink_groups_RTNLGRP_IPV6_NETCONF, rtnetlink_groups_RTNLGRP_IPV6_PREFIX,
+        rtnetlink_groups_RTNLGRP_IPV6_ROUTE, rtnetlink_groups_RTNLGRP_IPV6_RULE,
+        rtnetlink_groups_RTNLGRP_LINK, rtnetlink_groups_RTNLGRP_MDB,
+        rtnetlink_groups_RTNLGRP_MPLS_NETCONF, rtnetlink_groups_RTNLGRP_MPLS_ROUTE,
+        rtnetlink_groups_RTNLGRP_ND_USEROPT, rtnetlink_groups_RTNLGRP_NEIGH,
+        rtnetlink_groups_RTNLGRP_NONE, rtnetlink_groups_RTNLGRP_NOP2,
+        rtnetlink_groups_RTNLGRP_NOP4, rtnetlink_groups_RTNLGRP_NOTIFY,
+        rtnetlink_groups_RTNLGRP_NSID, rtnetlink_groups_RTNLGRP_PHONET_IFADDR,
+        rtnetlink_groups_RTNLGRP_PHONET_ROUTE, rtnetlink_groups_RTNLGRP_TC,
     };
+    use net_types::SpecifiedAddr;
     use net_types::ip::{
         AddrSubnetEither, AddrSubnetError, Ip, IpAddr, IpInvariant, IpVersion, Ipv4, Ipv4Addr,
         Ipv6, Ipv6Addr, Subnet,
     };
-    use net_types::SpecifiedAddr;
     use netlink_packet_route::address::{AddressAttribute, AddressMessage};
     use netlink_packet_route::link::{LinkAttribute, LinkFlags, LinkMessage};
     use netlink_packet_route::route::{RouteAttribute, RouteMessage, RouteType};
@@ -105,7 +105,7 @@ pub mod route {
     use crate::rules::{RuleRequest, RuleRequestArgs};
     use crate::{interfaces, routes};
 
-    use netlink_packet_core::{NetlinkHeader, NLM_F_ACK, NLM_F_DUMP, NLM_F_REPLACE};
+    use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
 
     /// An implementation of the Netlink Route protocol family.
     pub(crate) enum NetlinkRoute {}
@@ -265,8 +265,10 @@ pub mod route {
                     address
                 } else {
                     log_debug!(
-                    "got different `IFA_ADDRESS` and `IFA_LOCAL` values for {} address request from {}: {:?}",
-                    kind, client, req,
+                        "got different `IFA_ADDRESS` and `IFA_LOCAL` values for {} address request from {}: {:?}",
+                        kind,
+                        client,
+                        req,
                     );
                     return Err(Errno::ENOTSUP);
                 }
@@ -579,11 +581,7 @@ pub mod route {
             // TODO(https://fxbug.dev/328603417): This is only necessary because
             // we don't support tables / policy-based routing yet. Remove this
             // hack once we do.
-            if u64::from(outbound_interface) == LOOPBACK_INTERFACE_ID {
-                1
-            } else {
-                0
-            }
+            if u64::from(outbound_interface) == LOOPBACK_INTERFACE_ID { 1 } else { 0 }
         }
     }
 
@@ -1429,20 +1427,20 @@ mod test {
 
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
+    use futures::SinkExt;
     use futures::channel::mpsc;
     use futures::future::FutureExt as _;
     use futures::stream::StreamExt as _;
-    use futures::SinkExt;
     use linux_uapi::{
-        net_device_flags_IFF_UP, rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN, AF_INET,
-        AF_INET6, AF_UNSPEC, IFA_F_NOPREFIXROUTE, RTN_MULTICAST, RTN_UNICAST,
+        AF_INET, AF_INET6, AF_UNSPEC, IFA_F_NOPREFIXROUTE, RTN_MULTICAST, RTN_UNICAST,
+        net_device_flags_IFF_UP, rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN,
     };
     use net_declare::{net_addr_subnet, net_ip_v4, net_ip_v6, net_subnet_v4, net_subnet_v6};
     use net_types::ip::{
         AddrSubnetEither, GenericOverIp, Ip, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet,
     };
     use net_types::{SpecifiedAddr, Witness as _};
-    use netlink_packet_core::{NetlinkHeader, NLM_F_ACK, NLM_F_DUMP, NLM_F_REPLACE};
+    use netlink_packet_core::{NLM_F_ACK, NLM_F_DUMP, NLM_F_REPLACE, NetlinkHeader};
     use netlink_packet_route::address::{AddressAttribute, AddressFlags, AddressMessage};
     use netlink_packet_route::link::{LinkAttribute, LinkFlags, LinkMessage};
     use netlink_packet_route::route::{RouteAddress, RouteAttribute, RouteMessage, RouteType};
@@ -2825,15 +2823,17 @@ mod test {
             let (v4_routes_request_sink, mut v4_routes_request_stream) = mpsc::channel(0);
             let (v6_routes_request_sink, mut v6_routes_request_stream) = mpsc::channel(0);
 
-            let mut split_route_requests_background_work = pin!(split_route_requests(
-                unified_request_stream,
-                v4_routes_request_sink,
-                v6_routes_request_sink,
-            )
-            .fuse());
+            let mut split_route_requests_background_work = pin!(
+                split_route_requests(
+                    unified_request_stream,
+                    v4_routes_request_sink,
+                    v6_routes_request_sink,
+                )
+                .fuse()
+            );
 
-            let mut handler_fut =
-                pin!(futures::future::join(handler.handle_request(request, &mut client), async {
+            let mut handler_fut = pin!(
+                futures::future::join(handler.handle_request(request, &mut client), async {
                     // Conversions are safe as constants can fit into 16-bit integers.
                     if family == AF_UNSPEC as u16 || family == AF_INET as u16 {
                         let next = v4_routes_request_stream.next();
@@ -2872,7 +2872,8 @@ mod test {
                         };
                     }
                 })
-                .fuse());
+                .fuse()
+            );
 
             futures::select! {
                 ((), ()) = handler_fut => (),

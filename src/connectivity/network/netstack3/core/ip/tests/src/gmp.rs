@@ -9,8 +9,8 @@ use net_types::ip::{AddrSubnet, Ip, Ipv4, Ipv4Addr, Ipv6};
 use net_types::{MulticastAddr, SpecifiedAddr, Witness as _};
 use packet::ParsablePacket as _;
 use packet_formats::ethernet::EthernetFrameLengthCheck;
-use packet_formats::icmp::mld::{MulticastListenerDone, MulticastListenerReport};
 use packet_formats::icmp::IcmpSenderZeroCode;
+use packet_formats::icmp::mld::{MulticastListenerDone, MulticastListenerReport};
 use packet_formats::igmp::messages::IgmpPacket;
 use packet_formats::ip::Ipv4Proto;
 use packet_formats::testutil::{
@@ -22,7 +22,7 @@ use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetLinkDevice, MaxEthernetFrameSize,
 };
 use netstack3_core::testutil::{
-    CtxPairExt as _, FakeBindingsCtx, FakeCtx, DEFAULT_INTERFACE_METRIC,
+    CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCtx,
 };
 use netstack3_core::{InstantContext as _, StackStateBuilder, TimerId};
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
@@ -32,8 +32,8 @@ use netstack3_ip::device::{
     StableSlaacAddressConfiguration,
 };
 use netstack3_ip::gmp::{
-    IgmpConfigMode, IgmpTimerId, MldConfigMode, MldTimerId,
-    IGMP_DEFAULT_UNSOLICITED_REPORT_INTERVAL, MLD_DEFAULT_UNSOLICITED_REPORT_INTERVAL,
+    IGMP_DEFAULT_UNSOLICITED_REPORT_INTERVAL, IgmpConfigMode, IgmpTimerId,
+    MLD_DEFAULT_UNSOLICITED_REPORT_INTERVAL, MldConfigMode, MldTimerId,
 };
 
 const V4_HOST_ADDR: SpecifiedAddr<Ipv4Addr> =

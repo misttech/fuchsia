@@ -5,8 +5,8 @@
 use async_trait::async_trait;
 use fuchsia_async::{self as fasync, TimeoutExt};
 
-use futures::future::FutureExt;
 use futures::Future;
+use futures::future::FutureExt;
 use std::io;
 use std::time::Duration;
 use trust_dns_proto::{Executor, Time};

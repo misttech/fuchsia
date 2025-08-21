@@ -478,7 +478,7 @@ mod tests {
 
     use crate::messaging::testutil::SentMessage;
     use crate::protocol_family::testutil::{
-        new_fake_netlink_message, FakeNetlinkRequestHandler, FakeProtocolFamily,
+        FakeNetlinkRequestHandler, FakeProtocolFamily, new_fake_netlink_message,
     };
 
     #[fasync::run_singlethreaded(test)]
@@ -492,12 +492,14 @@ mod tests {
         let join_handle = fasync::Task::spawn(async_work_drain_task);
 
         {
-            let mut client_task = pin!(spawn_client_request_handler::<FakeProtocolFamily, _, _>(
-                client,
-                req_receiver,
-                FakeNetlinkRequestHandler,
-            )
-            .fuse());
+            let mut client_task = pin!(
+                spawn_client_request_handler::<FakeProtocolFamily, _, _>(
+                    client,
+                    req_receiver,
+                    FakeNetlinkRequestHandler,
+                )
+                .fuse()
+            );
 
             assert_matches!((&mut client_task).now_or_never(), None);
             assert_eq!(&client_sink.take_messages()[..], &[]);

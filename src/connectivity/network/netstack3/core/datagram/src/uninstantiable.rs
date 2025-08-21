@@ -17,11 +17,11 @@ use crate::internal::spec_context::{
 };
 
 impl<
-        I: IpExt,
-        S: DatagramSocketSpec,
-        P: DatagramBoundStateContext<I, BC, S>,
-        BC: DatagramBindingsTypes,
-    > DatagramSpecBoundStateContext<I, UninstantiableWrapper<P>, BC> for S
+    I: IpExt,
+    S: DatagramSocketSpec,
+    P: DatagramBoundStateContext<I, BC, S>,
+    BC: DatagramBindingsTypes,
+> DatagramSpecBoundStateContext<I, UninstantiableWrapper<P>, BC> for S
 {
     type IpSocketsCtx<'a> = P::IpSocketsCtx<'a>;
     type DualStackContext = P::DualStackContext;
@@ -74,11 +74,11 @@ impl<
 }
 
 impl<
-        I: IpExt,
-        S: DatagramSocketSpec,
-        P: DatagramBoundStateContext<I, BC, S>,
-        BC: DatagramBindingsTypes,
-    > NonDualStackDatagramSpecBoundStateContext<I, UninstantiableWrapper<P>, BC> for S
+    I: IpExt,
+    S: DatagramSocketSpec,
+    P: DatagramBoundStateContext<I, BC, S>,
+    BC: DatagramBindingsTypes,
+> NonDualStackDatagramSpecBoundStateContext<I, UninstantiableWrapper<P>, BC> for S
 {
     fn nds_converter(
         core_ctx: &UninstantiableWrapper<P>,
@@ -88,11 +88,11 @@ impl<
 }
 
 impl<
-        I: IpExt,
-        S: DatagramSocketSpec,
-        P: DatagramBoundStateContext<I, BC, S>,
-        BC: DatagramBindingsTypes,
-    > DualStackDatagramSpecBoundStateContext<I, UninstantiableWrapper<P>, BC> for S
+    I: IpExt,
+    S: DatagramSocketSpec,
+    P: DatagramBoundStateContext<I, BC, S>,
+    BC: DatagramBindingsTypes,
+> DualStackDatagramSpecBoundStateContext<I, UninstantiableWrapper<P>, BC> for S
 {
     type IpSocketsCtx<'a> = UninstantiableWrapper<P::IpSocketsCtx<'a>>;
 

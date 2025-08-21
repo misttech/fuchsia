@@ -30,11 +30,11 @@ use {
 };
 
 use crate::bindings::devices::{StaticCommonInfo, TxTask};
-use crate::bindings::interfaces_admin::{maybe_create_local_route_tables, InterfaceOptions};
+use crate::bindings::interfaces_admin::{InterfaceOptions, maybe_create_local_route_tables};
 use crate::bindings::util::{IntoFidl, NeedsDataNotifier, ScopeExt as _};
 use crate::bindings::{
-    devices, interfaces_admin, routes, BindingId, BindingsCtx, Ctx, DeviceId, Netstack,
-    DEFAULT_INTERFACE_METRIC,
+    BindingId, BindingsCtx, Ctx, DEFAULT_INTERFACE_METRIC, DeviceId, Netstack, devices,
+    interfaces_admin, routes,
 };
 
 /// Like [`DeviceId`], but restricted to netdevice devices.

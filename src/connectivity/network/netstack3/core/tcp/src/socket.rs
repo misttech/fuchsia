@@ -61,15 +61,15 @@ use netstack3_base::{
     TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_filter::{FilterIpExt, SocketOpsFilterBindingContext, Tuple};
-use netstack3_hashmap::{hash_map, HashMap};
+use netstack3_hashmap::{HashMap, hash_map};
 use netstack3_ip::socket::{
     DeviceIpSocketHandler, IpSock, IpSockCreateAndSendError, IpSockCreationError, IpSocketArgs,
     IpSocketHandler,
 };
 use netstack3_ip::{self as ip, BaseTransportIpContext, TransportIpContext};
-use netstack3_trace::{trace_duration, TraceResourceId};
+use netstack3_trace::{TraceResourceId, trace_duration};
 use packet_formats::ip::IpProto;
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use thiserror::Error;
 
 use crate::internal::base::{
@@ -1774,12 +1774,8 @@ pub struct Connection<
     handshake_status: HandshakeStatus,
 }
 
-impl<
-        SockI: DualStackIpExt,
-        WireI: DualStackIpExt,
-        D: WeakDeviceIdentifier,
-        BT: TcpBindingsTypes,
-    > Connection<SockI, WireI, D, BT>
+impl<SockI: DualStackIpExt, WireI: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
+    Connection<SockI, WireI, D, BT>
 {
     /// Updates this connection's state to reflect the error.
     ///
@@ -4618,8 +4614,7 @@ fn destroy_socket<I, CC, BC>(
             panic!("deferred destruction not allowed in tests. References={debug_refs:?}")
         });
         #[cfg(not(test))]
-        let Some(primary) = primary
-        else {
+        let Some(primary) = primary else {
             return;
         };
 
@@ -5623,11 +5618,11 @@ mod tests {
     use net_types::{LinkLocalAddr, Witness};
     use netstack3_base::sync::{DynDebugReferences, Mutex};
     use netstack3_base::testutil::{
-        new_rng, run_with_many_seeds, set_logger_for_test, AlwaysDefaultsSettingsContext,
-        FakeAtomicInstant, FakeCoreCtx, FakeCryptoRng, FakeDeviceId, FakeInstant, FakeNetwork,
-        FakeNetworkSpec, FakeStrongDeviceId, FakeTimerCtx, FakeTimerId, FakeTxMetadata,
-        FakeWeakDeviceId, InstantAndData, MultipleDevicesId, PendingFrameData, StepResult,
-        TestIpExt, WithFakeFrameContext, WithFakeTimerContext,
+        AlwaysDefaultsSettingsContext, FakeAtomicInstant, FakeCoreCtx, FakeCryptoRng, FakeDeviceId,
+        FakeInstant, FakeNetwork, FakeNetworkSpec, FakeStrongDeviceId, FakeTimerCtx, FakeTimerId,
+        FakeTxMetadata, FakeWeakDeviceId, InstantAndData, MultipleDevicesId, PendingFrameData,
+        StepResult, TestIpExt, WithFakeFrameContext, WithFakeTimerContext, new_rng,
+        run_with_many_seeds, set_logger_for_test,
     };
     use netstack3_base::{
         ContextProvider, CounterCollection, CounterContext, IcmpIpExt, Icmpv4ErrorCode,
@@ -5637,8 +5632,8 @@ mod tests {
     use netstack3_filter::testutil::NoOpSocketOpsFilter;
     use netstack3_filter::{SocketOpsFilter, TransportPacketSerializer, Tuple};
     use netstack3_ip::device::IpDeviceStateIpExt;
-    use netstack3_ip::nud::testutil::FakeLinkResolutionNotifier;
     use netstack3_ip::nud::LinkResolutionContext;
+    use netstack3_ip::nud::testutil::FakeLinkResolutionNotifier;
     use netstack3_ip::socket::testutil::{FakeDeviceConfig, FakeDualStackIpSocketCtx};
     use netstack3_ip::socket::{IpSockSendError, MmsError, RouteResolutionOptions, SendOptions};
     use netstack3_ip::testutil::DualStackSendIpPacketMeta;
@@ -5658,28 +5653,20 @@ mod tests {
 
     use super::*;
     use crate::internal::base::{ConnectionError, DEFAULT_FIN_WAIT2_TIMEOUT};
+    use crate::internal::buffer::BufferLimits;
     use crate::internal::buffer::testutil::{
         ClientBuffers, ProvidedBuffers, RingBuffer, TestSendBuffer, WriteBackClientBuffers,
     };
-    use crate::internal::buffer::BufferLimits;
     use crate::internal::congestion::CongestionWindow;
+    use crate::internal::counters::TcpCountersWithoutSocket;
     use crate::internal::counters::testutil::{
         CounterExpectations, CounterExpectationsWithoutSocket,
     };
-    use crate::internal::counters::TcpCountersWithoutSocket;
-    use crate::internal::state::{Established, TimeWait, MSL};
+    use crate::internal::state::{Established, MSL, TimeWait};
 
     trait TcpTestIpExt: DualStackIpExt + TestIpExt + IpDeviceStateIpExt + DualStackIpExt {
-        type SingleStackConverter: SingleStackConverter<
-            Self,
-            FakeWeakDeviceId<FakeDeviceId>,
-            TcpBindingsCtx<FakeDeviceId>,
-        >;
-        type DualStackConverter: DualStackConverter<
-            Self,
-            FakeWeakDeviceId<FakeDeviceId>,
-            TcpBindingsCtx<FakeDeviceId>,
-        >;
+        type SingleStackConverter: SingleStackConverter<Self, FakeWeakDeviceId<FakeDeviceId>, TcpBindingsCtx<FakeDeviceId>>;
+        type DualStackConverter: DualStackConverter<Self, FakeWeakDeviceId<FakeDeviceId>, TcpBindingsCtx<FakeDeviceId>>;
         fn recv_src_addr(addr: Self::Addr) -> Self::RecvSrcAddr;
 
         fn converter() -> MaybeDualStack<Self::DualStackConverter, Self::SingleStackConverter>;
@@ -6536,11 +6523,11 @@ mod tests {
     )
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         let mut net = new_test_net::<I>();
         let mut rng = new_rng(seed);
@@ -6757,11 +6744,11 @@ mod tests {
     fn bind_listen_connect_accept<I: TcpTestIpExt>(bind_config: BindConfig, listen_addr: I::Addr)
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         set_logger_for_test();
         let (mut net, client, _client_snd_end, accepted) =
@@ -7211,11 +7198,11 @@ mod tests {
     fn connect_reset<I: TcpTestIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         set_logger_for_test();
         let mut net = new_test_net::<I>();
@@ -7297,11 +7284,11 @@ mod tests {
     fn retransmission<I: TcpTestIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         set_logger_for_test();
         run_with_many_seeds(|seed| {
@@ -7639,11 +7626,11 @@ mod tests {
         expected_time_to_close: Duration,
     ) where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         set_logger_for_test();
         let (mut net, local, _local_snd_end, remote) = bind_listen_connect_accept_inner::<I>(
@@ -7712,11 +7699,11 @@ mod tests {
     fn connection_shutdown_then_close_peer_doesnt_call_close<I: TcpTestIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         set_logger_for_test();
         let (mut net, local, _local_snd_end, _remote) = bind_listen_connect_accept_inner::<I>(
@@ -7766,11 +7753,11 @@ mod tests {
     fn connection_shutdown_then_close<I: TcpTestIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         set_logger_for_test();
         let (mut net, local, _local_snd_end, remote) = bind_listen_connect_accept_inner::<I>(
@@ -7872,11 +7859,11 @@ mod tests {
     fn shutdown_listener<I: TcpTestIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         set_logger_for_test();
         let mut net = new_test_net::<I>();
@@ -8602,11 +8589,11 @@ mod tests {
     fn time_wait_reuse<I: TcpTestIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         set_logger_for_test();
         const CLIENT_PORT: NonZeroU16 = NonZeroU16::new(2).unwrap();
@@ -8778,11 +8765,11 @@ mod tests {
     fn conn_addr_not_available<I: TcpTestIpExt + IcmpIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         set_logger_for_test();
         let (mut net, _local, _local_snd_end, _remote) = bind_listen_connect_accept_inner::<I>(
@@ -8947,11 +8934,11 @@ mod tests {
     fn closed_not_in_demux<I: TcpTestIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         let (mut net, local, _local_snd_end, remote) = bind_listen_connect_accept_inner::<I>(
             I::UNSPECIFIED_ADDRESS,
@@ -9086,11 +9073,11 @@ mod tests {
     fn tcp_marks_for_accepted_sockets<I: TcpTestIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         // We want the accepted socket to be marked 101 for MARK_1 and 102 for MARK_2.
         let expected_marks = [(MarkDomain::Mark1, 101), (MarkDomain::Mark2, 102)];
@@ -9137,11 +9124,11 @@ mod tests {
     fn do_send_can_remove_sockets_from_demux_state<I: TcpTestIpExt>()
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         let (mut net, client, _client_snd_end, accepted) = bind_listen_connect_accept_inner(
             I::UNSPECIFIED_ADDRESS,
@@ -9232,11 +9219,11 @@ mod tests {
     fn tcp_data_dequeue_sends_window_update<I: TcpTestIpExt>(server_read_over_mss: bool)
     where
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
-            I,
-            TcpBindingsCtx<FakeDeviceId>,
-            SingleStackConverter = I::SingleStackConverter,
-            DualStackConverter = I::DualStackConverter,
-        >,
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
     {
         const EXTRA_DATA_AMOUNT: usize = 128;
         set_logger_for_test();

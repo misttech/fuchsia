@@ -175,60 +175,72 @@ impl Controller {
         let mut stdout_buf = Vec::new();
         let mut stderr_buf = Vec::new();
 
-        let stdout_fut = pin!(async_stdout
-            .read_to_end(&mut stdout_buf)
-            .map(|res| res.context("failed to read from stdout"))
-            .fuse());
-        let stderr_fut = pin!(async {
-            async_stderr.read_to_end(&mut stderr_buf).await.context("failed to read from socket")
-        }
-        .fuse());
+        let stdout_fut = pin!(
+            async_stdout
+                .read_to_end(&mut stdout_buf)
+                .map(|res| res.context("failed to read from stdout"))
+                .fuse()
+        );
+        let stderr_fut = pin!(
+            async {
+                async_stderr
+                    .read_to_end(&mut stderr_buf)
+                    .await
+                    .context("failed to read from socket")
+            }
+            .fuse()
+        );
 
         let mut command_listener_stream = command_listener_client.take_event_stream();
-        let listener_fut = pin!(async {
-            loop {
-                let event = command_listener_stream
-                    .try_next()
-                    .await
-                    .with_context(|| {
-                        format!("failed to get next CommandListenerEvent for guest {}", self.name)
-                    })?
-                    .with_context(|| {
-                        format!("empty CommandListenerEvent for guest {}", self.name)
-                    })?;
-                match event {
-                    fguest_interaction::CommandListenerEvent::OnStarted { status } => {
-                        let () = zx::Status::ok(status).with_context(|| {
+        let listener_fut = pin!(
+            async {
+                loop {
+                    let event = command_listener_stream
+                        .try_next()
+                        .await
+                        .with_context(|| {
                             format!(
-                                "error starting exec for guest {} and command {}",
-                                self.name, command
+                                "failed to get next CommandListenerEvent for guest {}",
+                                self.name
                             )
+                        })?
+                        .with_context(|| {
+                            format!("empty CommandListenerEvent for guest {}", self.name)
                         })?;
+                    match event {
+                        fguest_interaction::CommandListenerEvent::OnStarted { status } => {
+                            let () = zx::Status::ok(status).with_context(|| {
+                                format!(
+                                    "error starting exec for guest {} and command {}",
+                                    self.name, command
+                                )
+                            })?;
 
-                        if let Some((stdin_local, to_write)) = stdin_local.as_ref() {
-                            assert_eq!(
-                                stdin_local.write(to_write.as_bytes())?,
-                                to_write.as_bytes().len()
-                            );
+                            if let Some((stdin_local, to_write)) = stdin_local.as_ref() {
+                                assert_eq!(
+                                    stdin_local.write(to_write.as_bytes())?,
+                                    to_write.as_bytes().len()
+                                );
+                            }
                         }
-                    }
-                    fguest_interaction::CommandListenerEvent::OnTerminated {
-                        status,
-                        return_code,
-                    } => {
-                        let () = zx::Status::ok(status).with_context(|| {
-                            format!(
-                                "error returning from exec for guest {} and command {}",
-                                self.name, command
-                            )
-                        })?;
+                        fguest_interaction::CommandListenerEvent::OnTerminated {
+                            status,
+                            return_code,
+                        } => {
+                            let () = zx::Status::ok(status).with_context(|| {
+                                format!(
+                                    "error returning from exec for guest {} and command {}",
+                                    self.name, command
+                                )
+                            })?;
 
-                        return Ok(return_code);
+                            return Ok(return_code);
+                        }
                     }
                 }
             }
-        }
-        .fuse());
+            .fuse()
+        );
 
         // Scope required to limit the lifetime of pinned futures.
         let return_code = {

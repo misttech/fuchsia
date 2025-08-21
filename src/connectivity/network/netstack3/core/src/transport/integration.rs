@@ -22,8 +22,8 @@ use netstack3_udp::{
     UdpSocketState,
 };
 
-use crate::context::prelude::*;
 use crate::context::WrapLockLevel;
+use crate::context::prelude::*;
 use crate::transport::TransportLayerTimerId;
 use crate::{BindingsContext, BindingsTypes, CoreCtx, StackState};
 

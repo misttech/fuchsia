@@ -12,8 +12,8 @@ use fidl_fuchsia_net_filter_ext::{
 };
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
 use futures::StreamExt as _;
-use netstack_testing_common::realms::{Netstack3, TestSandboxExt as _};
 use netstack_testing_common::ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT;
+use netstack_testing_common::realms::{Netstack3, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use {fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_root as fnet_root};
 

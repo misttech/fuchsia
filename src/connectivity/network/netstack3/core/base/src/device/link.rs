@@ -9,8 +9,8 @@
 
 use core::fmt::Debug;
 
-use net_types::ethernet::Mac;
 use net_types::UnicastAddress;
+use net_types::ethernet::Mac;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 use crate::Device;

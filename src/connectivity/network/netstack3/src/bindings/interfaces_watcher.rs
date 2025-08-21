@@ -13,7 +13,7 @@ use futures::channel::mpsc;
 use futures::sink::SinkExt as _;
 use futures::task::Poll;
 use futures::{
-    ready, Future, FutureExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _,
+    Future, FutureExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _, ready,
 };
 use log::{debug, error, warn};
 use net_types::ip::{AddrSubnetEither, IpAddr, IpVersion};
@@ -446,9 +446,13 @@ pub(crate) enum WorkerError {
     AssignExistingAddr { interface: BindingId, addr: IpAddr },
     #[error("attempted to unassign nonexisting interface address {addr} on interface {interface}")]
     UnassignNonexistentAddr { interface: BindingId, addr: IpAddr },
-    #[error("attempted to update assignment state to {state:?} on non existing interface address {addr} on interface {interface}")]
+    #[error(
+        "attempted to update assignment state to {state:?} on non existing interface address {addr} on interface {interface}"
+    )]
     UpdateStateOnNonexistentAddr { interface: BindingId, addr: IpAddr, state: IpAddressState },
-    #[error("attempted to update properties with {update:?} on non existing interface address {addr} on interface {interface}")]
+    #[error(
+        "attempted to update properties with {update:?} on non existing interface address {addr} on interface {interface}"
+    )]
     UpdatePropertiesOnNonexistentAddr {
         interface: BindingId,
         addr: IpAddr,
@@ -897,7 +901,7 @@ impl Worker {
                                         interface: id,
                                         addr,
                                         update,
-                                    })
+                                    });
                                 }
                             };
 
@@ -1062,8 +1066,8 @@ mod tests {
     use fixture::fixture;
     use futures::Stream;
     use itertools::Itertools as _;
-    use net_types::ip::{AddrSubnet, Ip as _, IpAddress as _, Ipv4, Ipv6, Ipv6Addr};
     use net_types::Witness as _;
+    use net_types::ip::{AddrSubnet, Ip as _, IpAddress as _, Ipv4, Ipv6, Ipv6Addr};
     use std::convert::{TryFrom as _, TryInto as _};
     use std::num::NonZeroU64;
     use std::pin::pin;
@@ -1172,15 +1176,15 @@ mod tests {
                     preferred_lifetime: ADDR_PREFERRED_LIFETIME,
                 },
                 finterfaces::Event::Changed(finterfaces::Properties {
-                    addresses: Some(vec![finterfaces_ext::Address::<
-                        finterfaces_ext::DefaultInterest,
-                    > {
-                        addr: addr1.clone().into_fidl(),
-                        assignment_state: finterfaces::AddressAssignmentState::Assigned,
-                        valid_until: finterfaces_ext::NoInterest,
-                        preferred_lifetime_info: finterfaces_ext::NoInterest,
-                    }
-                    .into()]),
+                    addresses: Some(vec![
+                        finterfaces_ext::Address::<finterfaces_ext::DefaultInterest> {
+                            addr: addr1.clone().into_fidl(),
+                            assignment_state: finterfaces::AddressAssignmentState::Assigned,
+                            valid_until: finterfaces_ext::NoInterest,
+                            preferred_lifetime_info: finterfaces_ext::NoInterest,
+                        }
+                        .into(),
+                    ]),
                     ..base_properties.clone()
                 }),
             ),
@@ -1603,15 +1607,15 @@ mod tests {
                 Ok(Some((
                     finterfaces::Event::Changed(finterfaces::Properties {
                         id: Some(id.get()),
-                        addresses: Some(vec![finterfaces_ext::Address::<
-                            finterfaces_ext::AllInterest,
-                        > {
-                            addr: addr.clone().into_fidl(),
-                            valid_until,
-                            assignment_state: assignment_state.into_fidl(),
-                            preferred_lifetime_info,
-                        }
-                        .into()]),
+                        addresses: Some(vec![
+                            finterfaces_ext::Address::<finterfaces_ext::AllInterest> {
+                                addr: addr.clone().into_fidl(),
+                                valid_until,
+                                assignment_state: assignment_state.into_fidl(),
+                                preferred_lifetime_info,
+                            }
+                            .into()
+                        ]),
                         ..Default::default()
                     }),
                     ChangedAddressProperties::AssignmentStateChanged { involves_assigned },
@@ -1788,17 +1792,18 @@ mod tests {
                     Ok(Some((
                         finterfaces::Event::Changed(finterfaces::Properties {
                             id: Some(id.get()),
-                            addresses: Some(vec![finterfaces_ext::Address::<
-                                finterfaces_ext::AllInterest,
-                            > {
-                                addr: subnet.into_fidl(),
-                                valid_until: valid_until.try_into().unwrap(),
-                                assignment_state: finterfaces::AddressAssignmentState::Unavailable,
-                                preferred_lifetime_info: preferred_lifetime
-                                    .try_into_fidl()
-                                    .unwrap(),
-                            }
-                            .into()]),
+                            addresses: Some(vec![
+                                finterfaces_ext::Address::<finterfaces_ext::AllInterest> {
+                                    addr: subnet.into_fidl(),
+                                    valid_until: valid_until.try_into().unwrap(),
+                                    assignment_state:
+                                        finterfaces::AddressAssignmentState::Unavailable,
+                                    preferred_lifetime_info: preferred_lifetime
+                                        .try_into_fidl()
+                                        .unwrap(),
+                                }
+                                .into()
+                            ]),
                             ..Default::default()
                         }),
                         ChangedAddressProperties::AssignmentStateChanged { involves_assigned },
@@ -1845,13 +1850,15 @@ mod tests {
         let expected_event = (
             finterfaces::Event::Changed(finterfaces::Properties {
                 id: Some(id.get()),
-                addresses: Some(vec![finterfaces_ext::Address::<finterfaces_ext::AllInterest> {
-                    addr: subnet.into_fidl(),
-                    valid_until: valid_until.try_into().unwrap(),
-                    assignment_state: finterfaces::AddressAssignmentState::Assigned,
-                    preferred_lifetime_info: preferred_lifetime.try_into_fidl().unwrap(),
-                }
-                .into()]),
+                addresses: Some(vec![
+                    finterfaces_ext::Address::<finterfaces_ext::AllInterest> {
+                        addr: subnet.into_fidl(),
+                        valid_until: valid_until.try_into().unwrap(),
+                        assignment_state: finterfaces::AddressAssignmentState::Assigned,
+                        preferred_lifetime_info: preferred_lifetime.try_into_fidl().unwrap(),
+                    }
+                    .into(),
+                ]),
                 ..Default::default()
             }),
             ChangedAddressProperties::AssignmentStateChanged { involves_assigned: true },
@@ -1893,13 +1900,15 @@ mod tests {
         let expected_event = (
             finterfaces::Event::Changed(finterfaces::Properties {
                 id: Some(id.get()),
-                addresses: Some(vec![finterfaces_ext::Address::<finterfaces_ext::AllInterest> {
-                    addr: subnet.into_fidl(),
-                    valid_until: valid_until.try_into().unwrap(),
-                    assignment_state: finterfaces::AddressAssignmentState::Tentative,
-                    preferred_lifetime_info: preferred_lifetime.try_into_fidl().unwrap(),
-                }
-                .into()]),
+                addresses: Some(vec![
+                    finterfaces_ext::Address::<finterfaces_ext::AllInterest> {
+                        addr: subnet.into_fidl(),
+                        valid_until: valid_until.try_into().unwrap(),
+                        assignment_state: finterfaces::AddressAssignmentState::Tentative,
+                        preferred_lifetime_info: preferred_lifetime.try_into_fidl().unwrap(),
+                    }
+                    .into(),
+                ]),
                 ..Default::default()
             }),
             ChangedAddressProperties::AssignmentStateChanged {
@@ -2104,13 +2113,15 @@ mod tests {
             };
             let expect_event = finterfaces::Event::Changed(finterfaces::Properties {
                 id: Some(id.get()),
-                addresses: Some(vec![finterfaces_ext::Address::<finterfaces_ext::AllInterest> {
-                    addr: addr.into_fidl(),
-                    valid_until: valid_until.try_into().unwrap(),
-                    preferred_lifetime_info: preferred_lifetime.try_into_fidl().unwrap(),
-                    assignment_state: assignment_state.into_fidl(),
-                }
-                .into()]),
+                addresses: Some(vec![
+                    finterfaces_ext::Address::<finterfaces_ext::AllInterest> {
+                        addr: addr.into_fidl(),
+                        valid_until: valid_until.try_into().unwrap(),
+                        preferred_lifetime_info: preferred_lifetime.try_into_fidl().unwrap(),
+                        assignment_state: assignment_state.into_fidl(),
+                    }
+                    .into(),
+                ]),
                 ..Default::default()
             });
             let expect_props = ChangedAddressProperties::PropertiesChanged {

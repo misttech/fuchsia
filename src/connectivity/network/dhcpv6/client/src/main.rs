@@ -7,7 +7,7 @@ mod provider;
 
 use fidl_fuchsia_net_dhcpv6::ClientProviderRequestStream;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
-use futures::{future, StreamExt as _, TryStreamExt as _};
+use futures::{StreamExt as _, TryStreamExt as _, future};
 
 use anyhow::{Error, Result};
 use log::info;

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt};
@@ -10,8 +10,8 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use futures_util::{StreamExt as _, TryStreamExt as _};
 use log::{error, info};
-use net_types::ip::{Ip, Ipv4, Ipv6};
 use net_types::SpecifiedAddr;
+use net_types::ip::{Ip, Ipv4, Ipv6};
 use {
     fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
     fidl_fuchsia_net_interfaces as fnet_interfaces,
@@ -228,11 +228,7 @@ async fn configure_interface(
             &mut fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(nicid),
             |properties_and_state| {
                 let addresses = &properties_and_state.properties.addresses;
-                if addresses.is_empty() {
-                    None
-                } else {
-                    Some(addresses.clone())
-                }
+                if addresses.is_empty() { None } else { Some(addresses.clone()) }
             },
         )
         .await

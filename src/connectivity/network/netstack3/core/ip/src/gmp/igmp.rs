@@ -38,9 +38,9 @@ use zerocopy::SplitByteSlice;
 
 use crate::internal::base::{IpDeviceMtuContext, IpLayerHandler, IpPacketDestination};
 use crate::internal::gmp::{
-    self, v2, GmpBindingsContext, GmpBindingsTypes, GmpContext, GmpContextInner, GmpEnabledGroup,
+    self, GmpBindingsContext, GmpBindingsTypes, GmpContext, GmpContextInner, GmpEnabledGroup,
     GmpGroupState, GmpMode, GmpState, GmpStateContext, GmpStateRef, GmpTimerId, GmpTypeLayout,
-    IpExt, MulticastGroupSet, NotAMemberErr,
+    IpExt, MulticastGroupSet, NotAMemberErr, v2,
 };
 use crate::internal::local_delivery::{IpHeaderInfo, LocalDeliveryPacketInfo};
 
@@ -1037,8 +1037,8 @@ mod tests {
 
     use net_types::ip::{Ip, Mtu};
     use netstack3_base::testutil::{
-        assert_empty, run_with_many_seeds, FakeDeviceId, FakeTimerCtxExt, FakeWeakDeviceId,
-        TestIpExt as _,
+        FakeDeviceId, FakeTimerCtxExt, FakeWeakDeviceId, TestIpExt as _, assert_empty,
+        run_with_many_seeds,
     };
     use netstack3_base::{
         CounterCollection, CounterContext, CtxPair, Instant as _, IntoCoreTimerCtx,
@@ -1047,10 +1047,10 @@ mod tests {
     use packet::serialize::Buf;
     use packet::{ParsablePacket as _, ParseBuffer, Serializer};
     use packet_formats::gmp::GroupRecordType;
+    use packet_formats::igmp::IgmpResponseTimeV3;
     use packet_formats::igmp::messages::{
         IgmpMembershipQueryV2, IgmpMembershipQueryV3Builder, Igmpv3QQIC, Igmpv3QRV,
     };
-    use packet_formats::igmp::IgmpResponseTimeV3;
     use packet_formats::ipv4::{Ipv4Header, Ipv4Packet};
     use packet_formats::testutil::parse_ip_packet;
     use test_case::test_case;

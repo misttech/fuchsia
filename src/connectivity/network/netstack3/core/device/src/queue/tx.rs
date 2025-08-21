@@ -12,12 +12,12 @@ use log::trace;
 use netstack3_base::sync::Mutex;
 use netstack3_base::{Device, DeviceIdContext, ErrorAndSerializer};
 use packet::{
-    new_buf_vec, Buf, BufferAlloc, ContiguousBuffer, GrowBufferMut, NoReuseBufferProvider,
-    ReusableBuffer, Serializer,
+    Buf, BufferAlloc, ContiguousBuffer, GrowBufferMut, NoReuseBufferProvider, ReusableBuffer,
+    Serializer, new_buf_vec,
 };
 
 use crate::internal::base::DeviceSendFrameError;
-use crate::internal::queue::{fifo, DequeueState, EnqueueResult, TransmitQueueFrameError};
+use crate::internal::queue::{DequeueState, EnqueueResult, TransmitQueueFrameError, fifo};
 use crate::internal::socket::{DeviceSocketHandler, ParseSentFrameError, SentFrame};
 
 /// State associated with a device transmit queue.
@@ -247,10 +247,10 @@ fn handle_post_enqueue<
 }
 
 impl<
-        D: Device,
-        BC: TransmitQueueBindingsContext<CC::DeviceId>,
-        CC: TransmitQueueContext<D, BC> + DeviceSocketHandler<D, BC>,
-    > TransmitQueueHandler<D, BC> for CC
+    D: Device,
+    BC: TransmitQueueBindingsContext<CC::DeviceId>,
+    CC: TransmitQueueContext<D, BC> + DeviceSocketHandler<D, BC>,
+> TransmitQueueHandler<D, BC> for CC
 where
     for<'a> &'a mut CC::Allocator: BufferAlloc<CC::Buffer>,
     CC::Buffer: ReusableBuffer,
@@ -320,10 +320,10 @@ mod tests {
     };
     use test_case::test_case;
 
+    use crate::DeviceCounters;
     use crate::internal::queue::api::TransmitQueueApi;
     use crate::internal::queue::{BatchSize, MAX_TX_QUEUED_LEN};
     use crate::internal::socket::{EthernetFrame, Frame};
-    use crate::DeviceCounters;
 
     #[derive(Default)]
     struct FakeTxQueueState {

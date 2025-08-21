@@ -4,16 +4,16 @@
 
 use lock_order::lock::{DelegatedOrderedLockAccess, LockLevelFor};
 use lock_order::relation::LockBefore;
-use net_types::ip::{Ip, Ipv4, Ipv6};
 use net_types::SpecifiedAddr;
+use net_types::ip::{Ip, Ipv4, Ipv6};
 use netstack3_base::{IpAddressId, IpDeviceAddr, IpDeviceAddressIdContext};
 use netstack3_device::DeviceId;
 use netstack3_filter::{FilterContext, FilterImpl, FilterIpContext, NatContext, State};
 use netstack3_ip::device::WeakAddressId;
 use netstack3_ip::{FilterHandlerProvider, IpLayerIpExt, IpSasHandler, IpStateInner};
 
-use crate::context::prelude::*;
 use crate::context::WrapLockLevel;
+use crate::context::prelude::*;
 use crate::{BindingsContext, BindingsTypes, CoreCtx, StackState};
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]

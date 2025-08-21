@@ -33,7 +33,7 @@ use netstack3_core::device::{
 use netstack3_core::error::NotFoundError;
 use netstack3_core::neighbor::{NeighborRemovalError, StaticNeighborInsertionError};
 use netstack3_core::routes::Entry;
-use netstack3_core::{neighbor, IpExt};
+use netstack3_core::{IpExt, neighbor};
 
 #[derive(Debug)]
 pub(crate) struct Event {
@@ -625,8 +625,8 @@ pub(super) async fn serve_controller(
 #[cfg(test)]
 mod tests {
     use net_declare::{net_ip_v4, net_subnet_v4};
-    use net_types::ip::{Ipv4Addr, Subnet};
     use net_types::SpecifiedAddr;
+    use net_types::ip::{Ipv4Addr, Subnet};
     use netstack3_core::routes::{Metric, RawMetric};
     use test_case::test_case;
 

@@ -4,7 +4,7 @@
 
 //! Declares types and functionality related to queued multicast packets.
 
-use alloc::collections::{btree_map, BTreeMap};
+use alloc::collections::{BTreeMap, btree_map};
 use alloc::vec::Vec;
 use arrayvec::ArrayVec;
 use core::time::Duration;
@@ -18,12 +18,12 @@ use packet::{Buf, ParseBufferMut};
 use packet_formats::ip::IpPacket;
 use zerocopy::SplitByteSlice;
 
+use crate::IpLayerIpExt;
 use crate::internal::multicast_forwarding::{
     MulticastForwardingBindingsContext, MulticastForwardingBindingsTypes,
     MulticastForwardingTimerId,
 };
 use crate::multicast_forwarding::MulticastRouteKey;
-use crate::IpLayerIpExt;
 
 /// The number of packets that the stack is willing to queue for a given
 /// [`MulticastRouteKey`] while waiting for an applicable route to be installed.
@@ -69,11 +69,8 @@ pub struct MulticastForwardingPendingPackets<
     gc_timer: BT::Timer,
 }
 
-impl<
-        I: IpLayerIpExt,
-        D: WeakDeviceIdentifier,
-        BC: MulticastForwardingBindingsContext<I, D::Strong>,
-    > MulticastForwardingPendingPackets<I, D, BC>
+impl<I: IpLayerIpExt, D: WeakDeviceIdentifier, BC: MulticastForwardingBindingsContext<I, D::Strong>>
+    MulticastForwardingPendingPackets<I, D, BC>
 {
     pub(crate) fn new<CC>(bindings_ctx: &mut BC) -> Self
     where
@@ -122,9 +119,9 @@ impl<
         // If the table is newly non-empty, schedule the GC. The timer must not
         // already be scheduled (given the invariants on `gc_timer`).
         if was_empty && !self.table.is_empty() {
-            assert!(bindings_ctx
-                .schedule_timer(PENDING_ROUTE_GC_PERIOD, &mut self.gc_timer)
-                .is_none());
+            assert!(
+                bindings_ctx.schedule_timer(PENDING_ROUTE_GC_PERIOD, &mut self.gc_timer).is_none()
+            );
         }
 
         outcome
@@ -219,11 +216,8 @@ pub struct PacketQueue<I: Ip, D: WeakDeviceIdentifier, BT: MulticastForwardingBi
     expires_at: BT::Instant,
 }
 
-impl<
-        I: IpLayerIpExt,
-        D: WeakDeviceIdentifier,
-        BC: MulticastForwardingBindingsContext<I, D::Strong>,
-    > PacketQueue<I, D, BC>
+impl<I: IpLayerIpExt, D: WeakDeviceIdentifier, BC: MulticastForwardingBindingsContext<I, D::Strong>>
+    PacketQueue<I, D, BC>
 {
     fn new(bindings_ctx: &mut BC) -> Self {
         Self {

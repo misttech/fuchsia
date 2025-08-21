@@ -5,8 +5,8 @@
 use fuchsia_async as fasync;
 use fuchsia_async::TimeoutExt as _;
 use futures::TryStreamExt;
-use netstack_testing_common::realms::{Netstack3, TestSandboxExt};
 use netstack_testing_common::ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT;
+use netstack_testing_common::realms::{Netstack3, TestSandboxExt};
 
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
@@ -42,13 +42,13 @@ async fn create_blackhole_interface() {
     let interfaces_state = realm
         .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
         .expect("connect to protocol");
-    let mut event_stream = std::pin::pin!(fnet_interfaces_ext::event_stream_from_state::<
-        fnet_interfaces_ext::DefaultInterest,
-    >(
-        &interfaces_state,
-        fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
-    )
-    .expect("create watcher event stream"));
+    let mut event_stream = std::pin::pin!(
+        fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
+            &interfaces_state,
+            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+        )
+        .expect("create watcher event stream")
+    );
 
     let mut interface_state = fnet_interfaces_ext::existing(
         &mut event_stream,
@@ -80,11 +80,13 @@ async fn create_blackhole_interface() {
         );
     }
 
-    assert!(control
-        .enable()
-        .await
-        .expect("should not get terminal event")
-        .expect("should enable successfully"));
+    assert!(
+        control
+            .enable()
+            .await
+            .expect("should not get terminal event")
+            .expect("should enable successfully")
+    );
 
     fnet_interfaces_ext::wait_interface_with_id(
         &mut event_stream,

@@ -22,8 +22,8 @@ use netstack3_base::{
     InspectableValue, Inspector, InspectorExt, ResourceCounterContext, WeakDeviceIdentifier,
 };
 use netstack3_filter::{self as filter, DynTransportSerializer};
-use packet::serialize::{PacketBuilder, Serializer};
 use packet::InnerPacketBuilder;
+use packet::serialize::{PacketBuilder, Serializer};
 use packet_formats::icmp::mld::{
     MldPacket, Mldv1Body, Mldv1MessageBuilder, Mldv1MessageType, Mldv2QueryBody,
     Mldv2ReportMessageBuilder, MulticastListenerDone, MulticastListenerReport,
@@ -847,8 +847,8 @@ mod tests {
     use net_types::ethernet::Mac;
     use net_types::ip::{Ip as _, IpVersionMarker, Mtu};
     use netstack3_base::testutil::{
-        assert_empty, new_rng, run_with_many_seeds, FakeDeviceId, FakeInstant, FakeTimerCtxExt,
-        FakeWeakDeviceId, TestIpExt,
+        FakeDeviceId, FakeInstant, FakeTimerCtxExt, FakeWeakDeviceId, TestIpExt, assert_empty,
+        new_rng, run_with_many_seeds,
     };
     use netstack3_base::{
         CounterCollection, CounterContext, CtxPair, InstantContext as _, IntoCoreTimerCtx,
@@ -861,8 +861,8 @@ mod tests {
     };
     use packet_formats::icmp::{IcmpParseArgs, Icmpv6MessageType, Icmpv6Packet};
     use packet_formats::ip::IpPacket;
-    use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeaderData;
     use packet_formats::ipv6::Ipv6Packet;
+    use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeaderData;
 
     use super::*;
     use crate::internal::base::{IpPacketDestination, IpSendFrameError, SendIpPacketMeta};

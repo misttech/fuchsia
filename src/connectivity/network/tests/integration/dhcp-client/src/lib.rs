@@ -16,7 +16,7 @@ use fidl_fuchsia_net_dhcp_ext::{self as fnet_dhcp_ext, ClientProviderExt as _};
 use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt as _};
 use fnet_dhcp_ext::ClientExt;
 use futures::future::ready;
-use futures::{join, FutureExt, StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt, join};
 use netemul::RealmUdpSocket as _;
 use netstack_testing_common::interfaces::TestInterfaceExt as _;
 use netstack_testing_common::realms::{
@@ -89,10 +89,12 @@ impl<'a> DhcpTestRealm<'a> {
             config
                 .dhcp_parameters()
                 .into_iter()
-                .chain([fnet_dhcp::Parameter::BoundDeviceNames(vec![server_iface
-                    .get_interface_name()
-                    .await
-                    .expect("get interface name should succeed")])])
+                .chain([fnet_dhcp::Parameter::BoundDeviceNames(vec![
+                    server_iface
+                        .get_interface_name()
+                        .await
+                        .expect("get interface name should succeed"),
+                ])])
                 .chain(parameters),
             options,
         )
@@ -117,10 +119,12 @@ impl<'a> DhcpTestRealm<'a> {
             .expect("connect to Server_ protocol should succeed");
         server_proxy.stop_serving().await.expect("stop_serving should not encounter FIDL error");
         let old_config = server_test_config(old_address);
-        assert!(server_iface
-            .del_address_and_subnet_route(old_config.server_addr_with_prefix().into_ext())
-            .await
-            .expect("removing address should succeed"));
+        assert!(
+            server_iface
+                .del_address_and_subnet_route(old_config.server_addr_with_prefix().into_ext())
+                .await
+                .expect("removing address should succeed")
+        );
 
         let new_config = server_test_config(new_address);
         server_proxy
@@ -149,10 +153,12 @@ impl<'a> DhcpTestRealm<'a> {
         server_proxy.stop_serving().await.expect("stop_serving should not encounter FIDL error");
 
         let config = server_test_config(address);
-        assert!(server_iface
-            .del_address_and_subnet_route(config.server_addr_with_prefix().into_ext())
-            .await
-            .expect("removing address should succeed"));
+        assert!(
+            server_iface
+                .del_address_and_subnet_route(config.server_addr_with_prefix().into_ext())
+                .await
+                .expect("removing address should succeed")
+        );
     }
 }
 
@@ -739,7 +745,8 @@ async fn client_rebinds_same_lease_to_other_server<N: Netstack>(name: &str) {
     // The client should successfully renew without ever removing the address.
     let mut watch_fut = pin!(config_stream.try_for_each(|_config| ready(Ok(()))).fuse());
 
-    let mut renewal_fut = pin!({
+    let mut renewal_fut =
+        pin!({
         let request_stream = &mut request_stream;
         async move {
             let mut request_stream = pin!(request_stream);
@@ -803,29 +810,32 @@ async fn watch_configuration_handles_interface_removal<N: Netstack>(name: &str) 
         fnet_dhcp_ext::default_new_client_params(),
     );
 
-    let client_fut = pin!(async {
-        let config_stream = fnet_dhcp_ext::configuration_stream(client.clone()).fuse();
-        let mut config_stream = pin!(config_stream);
+    let client_fut = pin!(
+        async {
+            let config_stream = fnet_dhcp_ext::configuration_stream(client.clone()).fuse();
+            let mut config_stream = pin!(config_stream);
 
-        let watch_config_result =
-            annotate(config_stream.try_next(), DEBUG_PRINT_INTERVAL, "watch_configuration").await;
-        assert_matches!(
-            watch_config_result,
-            Err(fnet_dhcp_ext::Error::Fidl(fidl::Error::ClientChannelClosed {
-                status: zx::Status::PEER_CLOSED,
-                ..
-            }))
-        );
+            let watch_config_result =
+                annotate(config_stream.try_next(), DEBUG_PRINT_INTERVAL, "watch_configuration")
+                    .await;
+            assert_matches!(
+                watch_config_result,
+                Err(fnet_dhcp_ext::Error::Fidl(fidl::Error::ClientChannelClosed {
+                    status: zx::Status::PEER_CLOSED,
+                    ..
+                }))
+            );
 
-        let fnet_dhcp::ClientEvent::OnExit { reason } = client
-            .take_event_stream()
-            .try_next()
-            .await
-            .expect("event stream should not have FIDL error")
-            .expect("event stream should not have ended");
-        assert_eq!(reason, fnet_dhcp::ClientExitReason::InvalidInterface);
-    }
-    .fuse());
+            let fnet_dhcp::ClientEvent::OnExit { reason } = client
+                .take_event_stream()
+                .try_next()
+                .await
+                .expect("event stream should not have FIDL error")
+                .expect("event stream should not have ended");
+            assert_eq!(reason, fnet_dhcp::ClientExitReason::InvalidInterface);
+        }
+        .fuse()
+    );
 
     let sock = fasync::net::UdpSocket::bind_in_realm(
         &server_realm,
@@ -838,26 +848,28 @@ async fn watch_configuration_handles_interface_removal<N: Netstack>(name: &str) 
     .expect("bind_in_realm should succeed");
     sock.set_broadcast(true).expect("set_broadcast should succeed");
 
-    let interface_removal_fut = pin!(async move {
-        // Wait until we see one message from the client before removing the interface.
-        let mut buf = [0u8; 1500];
-        let (_, client_addr): (usize, std::net::SocketAddr) =
-            annotate(sock.recv_from(&mut buf), DEBUG_PRINT_INTERVAL, "recv_from")
-                .await
-                .expect("recv_from should succeed");
+    let interface_removal_fut = pin!(
+        async move {
+            // Wait until we see one message from the client before removing the interface.
+            let mut buf = [0u8; 1500];
+            let (_, client_addr): (usize, std::net::SocketAddr) =
+                annotate(sock.recv_from(&mut buf), DEBUG_PRINT_INTERVAL, "recv_from")
+                    .await
+                    .expect("recv_from should succeed");
 
-        // The client message will be from the unspecified address.
-        assert_eq!(
-            client_addr,
-            std::net::SocketAddr::V4(std::net::SocketAddrV4::new(
-                std::net::Ipv4Addr::UNSPECIFIED,
-                dhcp_protocol::CLIENT_PORT.into()
-            ))
-        );
+            // The client message will be from the unspecified address.
+            assert_eq!(
+                client_addr,
+                std::net::SocketAddr::V4(std::net::SocketAddrV4::new(
+                    std::net::Ipv4Addr::UNSPECIFIED,
+                    dhcp_protocol::CLIENT_PORT.into()
+                ))
+            );
 
-        let _ = client_iface.remove_device();
-    }
-    .fuse());
+            let _ = client_iface.remove_device();
+        }
+        .fuse()
+    );
 
     let ((), ()) = join!(client_fut, interface_removal_fut);
 }

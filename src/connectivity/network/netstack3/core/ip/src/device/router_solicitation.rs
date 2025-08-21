@@ -11,8 +11,8 @@ use core::time::Duration;
 
 use assert_matches::assert_matches;
 use derivative::Derivative;
-use net_types::ip::Ipv6Addr;
 use net_types::UnicastAddr;
+use net_types::ip::Ipv6Addr;
 use netstack3_base::{
     AnyDevice, CoreTimerContext, DeviceIdContext, HandleableTimer, RngContext,
     StrongDeviceIdentifier as _, TimerBindingsTypes, TimerContext, TimerHandler,
@@ -270,8 +270,8 @@ mod tests {
         FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeTimerCtxExt as _, FakeWeakDeviceId,
     };
     use netstack3_base::{CtxPair, InstantContext as _, SendFrameContext as _};
-    use packet_formats::icmp::ndp::options::NdpOption;
     use packet_formats::icmp::ndp::Options;
+    use packet_formats::icmp::ndp::options::NdpOption;
     use test_case::test_case;
 
     use super::*;

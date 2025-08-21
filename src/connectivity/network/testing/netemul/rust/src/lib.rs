@@ -38,11 +38,11 @@ use {
     fidl_fuchsia_posix_socket_raw as fposix_socket_raw,
 };
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use futures::future::{FutureExt as _, LocalBoxFuture, TryFutureExt as _};
 use futures::{SinkExt as _, TryStreamExt as _};
-use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6, Subnet};
 use net_types::SpecifiedAddr;
+use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6, Subnet};
 
 type Result<T = ()> = std::result::Result<T, anyhow::Error>;
 
@@ -1406,7 +1406,7 @@ impl<'a> TestInterface<'a> {
                     Some(fnet::IpAddress::Ipv6(_)) => {
                         return Err(anyhow::anyhow!(
                             "next hop must be same IP version as destination"
-                        ))
+                        ));
                     }
                     None => None,
                 };
@@ -1427,7 +1427,7 @@ impl<'a> TestInterface<'a> {
                     Some(fnet::IpAddress::Ipv4(_)) => {
                         return Err(anyhow::anyhow!(
                             "next hop must be same IP version as destination"
-                        ))
+                        ));
                     }
                     None => None,
                 };
@@ -1488,7 +1488,7 @@ impl<'a> TestInterface<'a> {
                     Some(fnet::IpAddress::Ipv6(_)) => {
                         return Err(anyhow::anyhow!(
                             "next hop must be same IP version as destination"
-                        ))
+                        ));
                     }
                     None => None,
                 };
@@ -1509,7 +1509,7 @@ impl<'a> TestInterface<'a> {
                     Some(fnet::IpAddress::Ipv4(_)) => {
                         return Err(anyhow::anyhow!(
                             "next hop must be same IP version as destination"
-                        ))
+                        ));
                     }
                     None => None,
                 };
@@ -1947,7 +1947,7 @@ impl<'a> TestInterface<'a> {
                 &address;
             match addr {
                 fidl_fuchsia_net::IpAddress::Ipv4(fidl_fuchsia_net::Ipv4Address { addr: _ }) => {
-                    continue
+                    continue;
                 }
                 fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address { addr }) => {
                     let v6_addr = net_types::ip::Ipv6Addr::from_bytes(*addr);

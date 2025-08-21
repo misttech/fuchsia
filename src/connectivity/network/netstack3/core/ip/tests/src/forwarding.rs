@@ -11,14 +11,14 @@ use netstack3_base::{IpDeviceAddr, MarkDomain, Marks};
 use test_case::test_case;
 
 use netstack3_base::testutil::TestIpExt;
+use netstack3_core::StackStateBuilder;
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetLinkDevice, MaxEthernetFrameSize,
 };
 use netstack3_core::error::NotFoundError;
 use netstack3_core::testutil::{
-    CtxPairExt as _, FakeBindingsCtx, FakeCtx, DEFAULT_INTERFACE_METRIC,
+    CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCtx,
 };
-use netstack3_core::StackStateBuilder;
 use netstack3_ip::{
     AddRouteError, AddableEntry, AddableEntryEither, AddableMetric, Entry, InternalForwarding,
     MarkMatcher, MarkMatchers, Metric, RawMetric, ResolvedRoute, RouteResolveOptions, Rule,
@@ -251,13 +251,15 @@ fn test_route_resolution_respects_source_address_matcher<I: TestIpExt + netstack
     // default route to device 1.
     ctx.core_api().routes::<I>().set_routes(
         &main_table,
-        alloc::vec![netstack3_core::routes::Entry {
-            subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap(),
-            device: device_id_1.clone(),
-            gateway: None,
-            metric: Metric::MetricTracksInterface(device_metric_1),
-        }
-        .with_generation(netstack3_ip::Generation::initial())],
+        alloc::vec![
+            netstack3_core::routes::Entry {
+                subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap(),
+                device: device_id_1.clone(),
+                gateway: None,
+                metric: Metric::MetricTracksInterface(device_metric_1),
+            }
+            .with_generation(netstack3_ip::Generation::initial())
+        ],
     );
     let second_table = ctx.core_api().routes::<I>().new_table(100u32);
     let (device_id_2, device_metric_2) = set_up_device(
@@ -392,13 +394,15 @@ fn route_resolution_with_marks<I: TestIpExt + netstack3_core::IpExt>() {
         // default route to device 1.
         ctx.core_api().routes::<I>().set_routes(
             table,
-            alloc::vec![netstack3_core::routes::Entry {
-                subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap(),
-                device: device_id.clone(),
-                gateway: None,
-                metric: Metric::MetricTracksInterface(device_metric),
-            }
-            .with_generation(netstack3_ip::Generation::initial())],
+            alloc::vec![
+                netstack3_core::routes::Entry {
+                    subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap(),
+                    device: device_id.clone(),
+                    gateway: None,
+                    metric: Metric::MetricTracksInterface(device_metric),
+                }
+                .with_generation(netstack3_ip::Generation::initial())
+            ],
         );
 
         device_id

@@ -21,30 +21,30 @@ use {
 };
 
 use derivative::Derivative;
-use futures::channel::oneshot;
 use futures::StreamExt as _;
+use futures::channel::oneshot;
 use linux_uapi::{
     rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN, rtnetlink_groups_RTNLGRP_IPV4_ROUTE,
     rtnetlink_groups_RTNLGRP_IPV6_ROUTE,
 };
 use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Subnet};
 use net_types::{SpecifiedAddr, SpecifiedAddress, Witness as _};
-use netlink_packet_core::{NetlinkMessage, NLM_F_MULTIPART};
+use netlink_packet_core::{NLM_F_MULTIPART, NetlinkMessage};
 use netlink_packet_route::route::{
     RouteAddress, RouteAttribute, RouteHeader, RouteMessage, RouteProtocol, RouteScope, RouteType,
 };
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
-use netlink_packet_utils::nla::Nla;
 use netlink_packet_utils::DecodeError;
+use netlink_packet_utils::nla::Nla;
 
 use crate::client::{ClientTable, InternalClient};
 use crate::logging::{log_debug, log_error, log_warn};
 use crate::messaging::Sender;
 use crate::multicast_groups::ModernGroup;
-use crate::netlink_packet::errno::Errno;
 use crate::netlink_packet::UNSPECIFIED_SEQUENCE_NUMBER;
-use crate::protocol_family::route::NetlinkRoute;
+use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::ProtocolFamily;
+use crate::protocol_family::route::NetlinkRoute;
 use crate::route_tables::{
     FidlRouteMap, ManagedRouteTable, NetlinkRouteTableIndex, NonZeroNetlinkRouteTableIndex,
     RouteRemoveResult, RouteTable, RouteTableMap, TableNeedsCleanup, UnmanagedTable,
@@ -293,8 +293,8 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
         Self,
         RouteTableMap<I>,
         impl futures::Stream<Item = Result<fnet_routes_ext::Event<I>, fnet_routes_ext::WatchError>>
-            + Unpin
-            + 'static,
+        + Unpin
+        + 'static,
     ) {
         let mut route_event_stream = Box::pin(
             fnet_routes_ext::event_stream_from_state(routes_state_proxy)
@@ -1453,8 +1453,8 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
-    use fidl_fuchsia_net_routes_ext::admin::{RouteSetRequest, RouteTableRequest};
     use fidl_fuchsia_net_routes_ext::Responder as _;
+    use fidl_fuchsia_net_routes_ext::admin::{RouteSetRequest, RouteTableRequest};
     use {
         fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
         fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
@@ -1469,8 +1469,8 @@ mod tests {
     use ip_test_macro::ip_test;
     use linux_uapi::rtnetlink_groups_RTNLGRP_LINK;
     use net_declare::{net_ip_v4, net_ip_v6, net_subnet_v4, net_subnet_v6};
-    use net_types::ip::{GenericOverIp, IpInvariant, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
     use net_types::SpecifiedAddr;
+    use net_types::ip::{GenericOverIp, IpInvariant, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
     use netlink_packet_core::NetlinkPayload;
     use test_case::test_case;
 
@@ -4752,12 +4752,13 @@ mod tests {
                 async_work_sink: _,
             } = setup_with_route_clients_yielding_admin_server_ends::<I>(route_clients);
 
-            let mut main_route_table_fut =
-                pin!(fnet_routes_ext::testutil::admin::serve_noop_route_sets_with_table_id::<I>(
+            let mut main_route_table_fut = pin!(
+                fnet_routes_ext::testutil::admin::serve_noop_route_sets_with_table_id::<I>(
                     main_route_table_server_end,
                     MAIN_FIDL_TABLE_ID
                 )
-                .fuse());
+                .fuse()
+            );
 
             let mut watcher_stream = pin!(watcher_stream.fuse());
             let mut route_table_provider_stream = route_table_provider_server_end.into_stream();

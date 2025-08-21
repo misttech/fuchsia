@@ -24,19 +24,19 @@ use netstack3_device::ethernet::EthernetDeviceId;
 use netstack3_device::{DeviceId, WeakDeviceId};
 use netstack3_filter::FilterImpl;
 use netstack3_ip::device::{
-    self, add_ip_addr_subnet_with_config, del_ip_addr_inner, get_ipv6_hop_limit,
-    is_ip_device_enabled, is_ip_multicast_forwarding_enabled, is_ip_unicast_forwarding_enabled,
-    join_ip_multicast_with_config, leave_ip_multicast_with_config, AddressRemovedReason,
-    DadAddressContext, DadAddressStateRef, DadContext, DadState, DadStateRef, DadTimerId,
-    DefaultHopLimit, DelIpAddr, DualStackIpDeviceState, IpAddressData, IpAddressEntry,
-    IpAddressFlags, IpDeviceAddresses, IpDeviceConfiguration, IpDeviceFlags, IpDeviceIpExt,
-    IpDeviceMulticastGroups, IpDeviceStateBindingsTypes, IpDeviceStateContext, IpDeviceStateIpExt,
-    IpDeviceTimerId, Ipv4DadSendData, Ipv4DeviceConfiguration, Ipv4DeviceTimerId, Ipv6AddrConfig,
-    Ipv6AddrSlaacConfig, Ipv6DadAddressContext, Ipv6DadSendData, Ipv6DeviceConfiguration,
-    Ipv6DeviceTimerId, Ipv6DiscoveredRoute, Ipv6DiscoveredRoutesContext,
+    self, AddressRemovedReason, DadAddressContext, DadAddressStateRef, DadContext, DadState,
+    DadStateRef, DadTimerId, DefaultHopLimit, DelIpAddr, DualStackIpDeviceState, IpAddressData,
+    IpAddressEntry, IpAddressFlags, IpDeviceAddresses, IpDeviceConfiguration, IpDeviceFlags,
+    IpDeviceIpExt, IpDeviceMulticastGroups, IpDeviceStateBindingsTypes, IpDeviceStateContext,
+    IpDeviceStateIpExt, IpDeviceTimerId, Ipv4DadSendData, Ipv4DeviceConfiguration,
+    Ipv4DeviceTimerId, Ipv6AddrConfig, Ipv6AddrSlaacConfig, Ipv6DadAddressContext, Ipv6DadSendData,
+    Ipv6DeviceConfiguration, Ipv6DeviceTimerId, Ipv6DiscoveredRoute, Ipv6DiscoveredRoutesContext,
     Ipv6NetworkLearnedParameters, Ipv6RouteDiscoveryContext, Ipv6RouteDiscoveryState, RsContext,
     RsState, RsTimerId, SlaacAddressEntry, SlaacAddressEntryMut, SlaacAddresses,
     SlaacConfigAndState, SlaacContext, SlaacCounters, SlaacState, WeakAddressId,
+    add_ip_addr_subnet_with_config, del_ip_addr_inner, get_ipv6_hop_limit, is_ip_device_enabled,
+    is_ip_multicast_forwarding_enabled, is_ip_unicast_forwarding_enabled,
+    join_ip_multicast_with_config, leave_ip_multicast_with_config,
 };
 use netstack3_ip::gmp::{
     GmpGroupState, GmpState, GmpStateRef, IgmpContext, IgmpContextMarker, IgmpSendContext,
@@ -45,17 +45,17 @@ use netstack3_ip::gmp::{
 };
 use netstack3_ip::nud::{self, ConfirmationFlags, NudCounters, NudIpHandler};
 use netstack3_ip::{
-    self as ip, AddableMetric, AddressStatus, FilterHandlerProvider, IpDeviceContext,
+    self as ip, AddableMetric, AddressStatus, DEFAULT_TTL, FilterHandlerProvider, IpDeviceContext,
     IpDeviceEgressStateContext, IpDeviceIngressStateContext, IpLayerIpExt, IpSasHandler,
-    IpSendFrameError, Ipv4PresentAddressStatus, DEFAULT_TTL,
+    IpSendFrameError, Ipv4PresentAddressStatus,
 };
 use packet::{EmptyBuf, InnerPacketBuilder, PartialSerializer, Serializer};
+use packet_formats::icmp::IcmpZeroCode;
 use packet_formats::icmp::ndp::options::{NdpNonce, NdpOptionBuilder};
 use packet_formats::icmp::ndp::{OptionSequenceBuilder, RouterSolicitation};
-use packet_formats::icmp::IcmpZeroCode;
 
-use crate::context::prelude::*;
 use crate::context::WrapLockLevel;
+use crate::context::prelude::*;
 use crate::{BindingsContext, BindingsTypes, CoreCtx, IpExt};
 
 pub struct SlaacAddrs<'a, BC: BindingsContext> {
@@ -292,11 +292,11 @@ pub struct FilterPresentWithDevices<
 }
 
 impl<
-        I: IpLayerIpExt,
-        Devices: Iterator<Item = Accessor::DeviceId>,
-        Accessor: DeviceIdContext<AnyDevice>,
-        BT,
-    > FilterPresentWithDevices<I, Devices, Accessor, BT>
+    I: IpLayerIpExt,
+    Devices: Iterator<Item = Accessor::DeviceId>,
+    Accessor: DeviceIdContext<AnyDevice>,
+    BT,
+> FilterPresentWithDevices<I, Devices, Accessor, BT>
 {
     fn new(
         devices: Devices,
@@ -313,12 +313,12 @@ impl<
 }
 
 impl<
-        's,
-        BT: IpDeviceStateBindingsTypes,
-        I: Ip + IpLayerIpExt + IpDeviceIpExt,
-        Devices: Iterator<Item = Accessor::DeviceId>,
-        Accessor: IpDeviceStateContext<I, BT>,
-    > Iterator for FilterPresentWithDevices<I, Devices, Accessor, BT>
+    's,
+    BT: IpDeviceStateBindingsTypes,
+    I: Ip + IpLayerIpExt + IpDeviceIpExt,
+    Devices: Iterator<Item = Accessor::DeviceId>,
+    Accessor: IpDeviceStateContext<I, BT>,
+> Iterator for FilterPresentWithDevices<I, Devices, Accessor, BT>
 where
     <I as IpDeviceIpExt>::State<BT>: 's,
 {
@@ -477,11 +477,8 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceConfigurat
 }
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
-impl<
-        I: IpExt,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IpDeviceConfiguration<I>>,
-    > ip::IpDeviceConfirmReachableContext<I, BC> for CoreCtx<'_, BC, L>
+impl<I: IpExt, BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceConfiguration<I>>>
+    ip::IpDeviceConfirmReachableContext<I, BC> for CoreCtx<'_, BC, L>
 {
     fn confirm_reachable(
         &mut self,
@@ -499,11 +496,8 @@ impl<
     }
 }
 
-impl<
-        I: IpExt,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::EthernetDeviceDynamicState>,
-    > ip::IpDeviceMtuContext<I> for CoreCtx<'_, BC, L>
+impl<I: IpExt, BC: BindingsContext, L: LockBefore<crate::lock_ordering::EthernetDeviceDynamicState>>
+    ip::IpDeviceMtuContext<I> for CoreCtx<'_, BC, L>
 {
     fn get_mtu(&mut self, device_id: &Self::DeviceId) -> Mtu {
         crate::device::integration::get_mtu(self, device_id)
@@ -511,11 +505,8 @@ impl<
 }
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
-impl<
-        I: IpExt,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IpDeviceConfiguration<I>>,
-    > ip::multicast_forwarding::MulticastForwardingDeviceContext<I> for CoreCtx<'_, BC, L>
+impl<I: IpExt, BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceConfiguration<I>>>
+    ip::multicast_forwarding::MulticastForwardingDeviceContext<I> for CoreCtx<'_, BC, L>
 {
     fn is_device_multicast_forwarding_enabled(&mut self, device_id: &Self::DeviceId) -> bool {
         is_ip_multicast_forwarding_enabled::<I, _, _>(self, device_id)
@@ -828,11 +819,11 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpDeviceGmp<Ipv6>>
 }
 
 impl<
-        'a,
-        Config: Borrow<Ipv4DeviceConfiguration>,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IpDeviceAddressDad<Ipv4>>,
-    > DadContext<Ipv4, BC> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
+    'a,
+    Config: Borrow<Ipv4DeviceConfiguration>,
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IpDeviceAddressDad<Ipv4>>,
+> DadContext<Ipv4, BC> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
 {
     type DadAddressCtx<'b> = CoreCtxWithIpDeviceConfiguration<
         'b,
@@ -905,11 +896,11 @@ impl<
 }
 
 impl<
-        'a,
-        Config: Borrow<Ipv6DeviceConfiguration>,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IpDeviceAddressDad<Ipv6>>,
-    > DadContext<Ipv6, BC> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
+    'a,
+    Config: Borrow<Ipv6DeviceConfiguration>,
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IpDeviceAddressDad<Ipv6>>,
+> DadContext<Ipv6, BC> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
 {
     type DadAddressCtx<'b> = CoreCtxWithIpDeviceConfiguration<
         'b,
@@ -1060,11 +1051,11 @@ impl<'a, Config: Borrow<Ipv6DeviceConfiguration>, BC: BindingsContext> RsContext
 }
 
 impl<
-        I: IpExt,
-        Config,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::EthernetDeviceDynamicState>,
-    > ip::IpDeviceMtuContext<I> for CoreCtxWithIpDeviceConfiguration<'_, Config, L, BC>
+    I: IpExt,
+    Config,
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::EthernetDeviceDynamicState>,
+> ip::IpDeviceMtuContext<I> for CoreCtxWithIpDeviceConfiguration<'_, Config, L, BC>
 {
     fn get_mtu(&mut self, device_id: &Self::DeviceId) -> Mtu {
         ip::IpDeviceMtuContext::<I>::get_mtu(&mut self.core_ctx, device_id)
@@ -1397,11 +1388,11 @@ impl<BC: BindingsContext, Config, L> MldContextMarker
 }
 
 impl<
-        'a,
-        Config: Borrow<Ipv6DeviceConfiguration>,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IpDeviceGmp<Ipv6>>,
-    > MldContext<BC> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
+    'a,
+    Config: Borrow<Ipv6DeviceConfiguration>,
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IpDeviceGmp<Ipv6>>,
+> MldContext<BC> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
 {
     type SendContext<'b> = CoreCtx<'b, BC, WrapLockLevel<crate::lock_ordering::IpDeviceGmp<Ipv6>>>;
 
@@ -1510,13 +1501,8 @@ where
 }
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
-impl<
-        'a,
-        I: IpExt,
-        Config,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::FilterState<I>>,
-    > FilterHandlerProvider<I, BC> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
+impl<'a, I: IpExt, Config, BC: BindingsContext, L: LockBefore<crate::lock_ordering::FilterState<I>>>
+    FilterHandlerProvider<I, BC> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
 {
     type Handler<'b>
         = FilterImpl<'b, CoreCtx<'a, BC, L>>
@@ -1531,12 +1517,12 @@ impl<
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
 impl<
-        'a,
-        I: IpLayerIpExt,
-        Config,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IpDeviceGmp<I>>,
-    > IpDeviceEgressStateContext<I> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
+    'a,
+    I: IpLayerIpExt,
+    Config,
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IpDeviceGmp<I>>,
+> IpDeviceEgressStateContext<I> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
 {
     fn with_next_packet_id<O, F: FnOnce(&<I as IpLayerIpExt>::PacketIdState) -> O>(
         &self,
@@ -1563,12 +1549,12 @@ impl<
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
 impl<
-        'a,
-        I: IpLayerIpExt,
-        Config,
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IpDeviceGmp<I>>,
-    > IpDeviceIngressStateContext<I> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
+    'a,
+    I: IpLayerIpExt,
+    Config,
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IpDeviceGmp<I>>,
+> IpDeviceIngressStateContext<I> for CoreCtxWithIpDeviceConfiguration<'a, Config, L, BC>
 {
     fn address_status_for_device(
         &mut self,

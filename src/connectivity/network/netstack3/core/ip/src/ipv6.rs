@@ -5,11 +5,11 @@
 //! IPv6 specific functionality.
 
 use netstack3_base::{AnyDevice, DeviceIdContext, FrameDestination};
+use packet_formats::ipv6::Ipv6Packet;
 use packet_formats::ipv6::ext_hdrs::{
     DestinationOptionData, ExtensionHeaderOption, FragmentData, HopByHopOptionData,
     Ipv6ExtensionHeaderData,
 };
-use packet_formats::ipv6::Ipv6Packet;
 use zerocopy::SplitByteSlice;
 
 /// What to do with an IPv6 packet after parsing an extension header.
@@ -183,8 +183,8 @@ mod tests {
     use alloc::vec;
 
     use netstack3_base::testutil::{FakeDeviceId, TEST_ADDRS_V6};
-    use packet::serialize::{Buf, PacketBuilder, Serializer};
     use packet::ParseBuffer;
+    use packet::serialize::{Buf, PacketBuilder, Serializer};
     use packet_formats::ip::IpProto;
     use packet_formats::ipv6::Ipv6PacketBuilder;
 

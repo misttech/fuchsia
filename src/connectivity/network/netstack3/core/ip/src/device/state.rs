@@ -7,14 +7,14 @@
 use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::hash::Hash;
-use core::num::{NonZeroU16, NonZeroU8};
+use core::num::{NonZeroU8, NonZeroU16};
 use core::ops::{Deref, DerefMut};
 use core::time::Duration;
 
 use derivative::Derivative;
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
-use net_types::ip::{AddrSubnet, GenericOverIp, Ip, IpMarked, IpVersionMarker, Ipv4, Ipv6};
 use net_types::Witness as _;
+use net_types::ip::{AddrSubnet, GenericOverIp, Ip, IpMarked, IpVersionMarker, Ipv4, Ipv6};
 use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
     AssignedAddrIpExt, BroadcastIpExt, CoreTimerContext, ExistsError, Inspectable,
@@ -1271,8 +1271,8 @@ mod tests {
     use super::*;
 
     use net_types::ip::{Ipv4Addr, Ipv6Addr};
-    use netstack3_base::testutil::{FakeBindingsCtx, FakeInstant};
     use netstack3_base::InstantContext as _;
+    use netstack3_base::testutil::{FakeBindingsCtx, FakeInstant};
     use test_case::test_case;
 
     type FakeBindingsCtxImpl = FakeBindingsCtx<(), (), (), ()>;

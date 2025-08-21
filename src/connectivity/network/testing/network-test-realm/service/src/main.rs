@@ -10,8 +10,8 @@ use futures::{FutureExt as _, SinkExt as _, StreamExt as _, TryFutureExt as _, T
 use futures_lite::FutureExt as _;
 use log::{error, info, warn};
 use net_types::ip::{Ipv4, Ipv6};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::convert::TryFrom as _;
 use std::num::NonZeroU64;
 use std::pin::pin;

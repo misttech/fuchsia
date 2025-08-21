@@ -186,10 +186,10 @@ where
                     );
                 }
                 Action::Redirect { dst_port } => {
-                    return RoutineResult::Redirect { dst_port: dst_port.clone() }
+                    return RoutineResult::Redirect { dst_port: dst_port.clone() };
                 }
                 Action::Masquerade { src_port } => {
-                    return RoutineResult::Masquerade { src_port: src_port.clone() }
+                    return RoutineResult::Masquerade { src_port: src_port.clone() };
                 }
                 Action::Mark { domain, action } => {
                     // Mark is a non-terminating action, it will not yield a `RoutineResult` but
@@ -699,8 +699,8 @@ pub mod testutil {
     use core::marker::PhantomData;
 
     use net_types::ip::AddrSubnet;
-    use netstack3_base::testutil::{FakeStrongDeviceId, FakeWeakAddressId, FakeWeakDeviceId};
     use netstack3_base::AssignedAddrIpExt;
+    use netstack3_base::testutil::{FakeStrongDeviceId, FakeWeakAddressId, FakeWeakDeviceId};
 
     use super::*;
 
@@ -834,7 +834,7 @@ mod tests {
     use crate::conntrack::{self, ConnectionDirection};
     use crate::context::testutil::{FakeBindingsCtx, FakeCtx, FakeDeviceClass, FakeWeakAddressId};
     use crate::logic::nat::NatConfig;
-    use crate::matchers::testutil::{ethernet_interface, wlan_interface, FakeDeviceId};
+    use crate::matchers::testutil::{FakeDeviceId, ethernet_interface, wlan_interface};
     use crate::matchers::{
         AddressMatcher, AddressMatcherType, InterfaceMatcher, PacketMatcher, PortMatcher,
         TransportProtocolMatcher,

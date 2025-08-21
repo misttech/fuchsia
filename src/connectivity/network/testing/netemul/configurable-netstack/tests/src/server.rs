@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use configurable_netstack_test::{server_ips, BUS_NAME, REQUEST, RESPONSE, SERVER_NAME};
+use configurable_netstack_test::{BUS_NAME, REQUEST, RESPONSE, SERVER_NAME, server_ips};
 use log::info;
 use std::io::{Read as _, Write as _};
 

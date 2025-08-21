@@ -153,11 +153,11 @@ impl<D: WeakDeviceIdentifier, BT: IpDeviceStateBindingsTypes>
 }
 
 impl<
-        D: WeakDeviceIdentifier,
-        BC: IpDeviceStateBindingsTypes,
-        CC: TimerHandler<BC, IgmpTimerId<D>>
-            + TimerHandler<BC, DadTimerId<Ipv4, D, WeakAddressId<Ipv4, BC>>>,
-    > HandleableTimer<CC, BC> for Ipv4DeviceTimerId<D, BC>
+    D: WeakDeviceIdentifier,
+    BC: IpDeviceStateBindingsTypes,
+    CC: TimerHandler<BC, IgmpTimerId<D>>
+        + TimerHandler<BC, DadTimerId<Ipv4, D, WeakAddressId<Ipv4, BC>>>,
+> HandleableTimer<CC, BC> for Ipv4DeviceTimerId<D, BC>
 {
     fn handle(self, core_ctx: &mut CC, bindings_ctx: &mut BC, timer: BC::UniqueTimerId) {
         match self {
@@ -280,14 +280,14 @@ impl<D: WeakDeviceIdentifier, BT: IpDeviceStateBindingsTypes> From<SlaacTimerId<
 }
 
 impl<
-        D: WeakDeviceIdentifier,
-        BC: IpDeviceStateBindingsTypes,
-        CC: TimerHandler<BC, RsTimerId<D>>
-            + TimerHandler<BC, Ipv6DiscoveredRouteTimerId<D>>
-            + TimerHandler<BC, MldTimerId<D>>
-            + TimerHandler<BC, SlaacTimerId<D>>
-            + TimerHandler<BC, DadTimerId<Ipv6, D, WeakAddressId<Ipv6, BC>>>,
-    > HandleableTimer<CC, BC> for Ipv6DeviceTimerId<D, BC>
+    D: WeakDeviceIdentifier,
+    BC: IpDeviceStateBindingsTypes,
+    CC: TimerHandler<BC, RsTimerId<D>>
+        + TimerHandler<BC, Ipv6DiscoveredRouteTimerId<D>>
+        + TimerHandler<BC, MldTimerId<D>>
+        + TimerHandler<BC, SlaacTimerId<D>>
+        + TimerHandler<BC, DadTimerId<Ipv6, D, WeakAddressId<Ipv6, BC>>>,
+> HandleableTimer<CC, BC> for Ipv6DeviceTimerId<D, BC>
 {
     fn handle(self, core_ctx: &mut CC, bindings_ctx: &mut BC, timer: BC::UniqueTimerId) {
         match self {
@@ -506,14 +506,14 @@ pub trait IpDeviceBindingsContext<I: IpDeviceIpExt, D: StrongDeviceIdentifier>:
 {
 }
 impl<
-        D: StrongDeviceIdentifier,
-        I: IpDeviceIpExt,
-        BC: IpDeviceStateBindingsTypes
-            + DeferredResourceRemovalContext
-            + TimerContext
-            + RngContext
-            + EventContext<IpDeviceEvent<D, I, <Self as InstantBindingsTypes>::Instant>>,
-    > IpDeviceBindingsContext<I, D> for BC
+    D: StrongDeviceIdentifier,
+    I: IpDeviceIpExt,
+    BC: IpDeviceStateBindingsTypes
+        + DeferredResourceRemovalContext
+        + TimerContext
+        + RngContext
+        + EventContext<IpDeviceEvent<D, I, <Self as InstantBindingsTypes>::Instant>>,
+> IpDeviceBindingsContext<I, D> for BC
 {
 }
 
@@ -545,12 +545,7 @@ pub trait IpDeviceStateContext<I: IpDeviceIpExt, BT: IpDeviceStateBindingsTypes>
     IpDeviceAddressContext<I, BT>
 {
     /// Inner accessor context.
-    type IpDeviceAddressCtx<'a>: IpDeviceAddressContext<
-        I,
-        BT,
-        DeviceId = Self::DeviceId,
-        AddressId = Self::AddressId,
-    >;
+    type IpDeviceAddressCtx<'a>: IpDeviceAddressContext<I, BT, DeviceId = Self::DeviceId, AddressId = Self::AddressId>;
 
     /// Calls the function with immutable access to the device's flags.
     ///
@@ -858,10 +853,10 @@ pub trait IpDeviceHandler<I: IpDeviceIpExt, BC>: DeviceIdContext<AnyDevice> {
 }
 
 impl<
-        I: IpDeviceIpExt,
-        BC: IpDeviceBindingsContext<I, CC::DeviceId>,
-        CC: IpDeviceConfigurationContext<I, BC> + ResourceCounterContext<CC::DeviceId, IpCounters<I>>,
-    > IpDeviceHandler<I, BC> for CC
+    I: IpDeviceIpExt,
+    BC: IpDeviceBindingsContext<I, CC::DeviceId>,
+    CC: IpDeviceConfigurationContext<I, BC> + ResourceCounterContext<CC::DeviceId, IpCounters<I>>,
+> IpDeviceHandler<I, BC> for CC
 {
     fn is_router_device(&mut self, device_id: &Self::DeviceId) -> bool {
         is_ip_unicast_forwarding_enabled(self, device_id)
@@ -1074,11 +1069,11 @@ pub trait Ipv6DeviceHandler<BC>: IpDeviceHandler<Ipv6, BC> {
 }
 
 impl<
-        BC: IpDeviceBindingsContext<Ipv6, CC::DeviceId>,
-        CC: Ipv6DeviceContext<BC>
-            + Ipv6DeviceConfigurationContext<BC>
-            + ResourceCounterContext<CC::DeviceId, IpCounters<Ipv6>>,
-    > Ipv6DeviceHandler<BC> for CC
+    BC: IpDeviceBindingsContext<Ipv6, CC::DeviceId>,
+    CC: Ipv6DeviceContext<BC>
+        + Ipv6DeviceConfigurationContext<BC>
+        + ResourceCounterContext<CC::DeviceId, IpCounters<Ipv6>>,
+> Ipv6DeviceHandler<BC> for CC
 {
     type LinkLayerAddr = CC::LinkLayerAddr;
 

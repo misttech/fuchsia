@@ -16,7 +16,7 @@ use linux_uapi::{
     rt_class_t_RT_TABLE_DEFAULT, rt_class_t_RT_TABLE_LOCAL, rt_class_t_RT_TABLE_MAIN,
 };
 use net_types::ip::{GenericOverIp, Ip, IpVersion, IpVersionMarker, Ipv4, Ipv6};
-use netlink_packet_core::{NetlinkMessage, NLM_F_MULTIPART};
+use netlink_packet_core::{NLM_F_MULTIPART, NetlinkMessage};
 use netlink_packet_route::rule::{RuleAction, RuleAttribute, RuleMessage};
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 
@@ -28,8 +28,8 @@ use fidl_fuchsia_net_routes_ext::{self as fnet_routes_ext, FidlRouteIpExt};
 use crate::client::InternalClient;
 use crate::messaging::Sender;
 use crate::netlink_packet::errno::Errno;
-use crate::protocol_family::route::NetlinkRoute;
 use crate::protocol_family::ProtocolFamily;
+use crate::protocol_family::route::NetlinkRoute;
 use crate::route_tables::{
     ManagedRouteTable, NetlinkRouteTableIndex, RouteTable, RouteTableMap, TableNeedsCleanup,
     UnmanagedTable,
@@ -720,8 +720,8 @@ mod tests {
     use fuchsia_async as fasync;
     use ip_test_macro::ip_test;
     use linux_uapi::{
-        rt_class_t_RT_TABLE_COMPAT, AF_INET, AF_INET6, FR_ACT_TO_TBL, FR_ACT_UNREACHABLE,
-        FR_ACT_UNSPEC,
+        AF_INET, AF_INET6, FR_ACT_TO_TBL, FR_ACT_UNREACHABLE, FR_ACT_UNSPEC,
+        rt_class_t_RT_TABLE_COMPAT,
     };
     use net_types::ip::IpInvariant;
     use test_case::test_case;

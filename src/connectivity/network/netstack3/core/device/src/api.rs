@@ -34,8 +34,8 @@ use crate::internal::config::{
 };
 use crate::internal::ethernet::EthernetLinkDevice;
 use crate::internal::id::{
-    for_any_device_id, BaseDeviceId, BasePrimaryDeviceId, BaseWeakDeviceId, DeviceId,
-    DeviceProvider,
+    BaseDeviceId, BasePrimaryDeviceId, BaseWeakDeviceId, DeviceId, DeviceProvider,
+    for_any_device_id,
 };
 use crate::internal::loopback::LoopbackDevice;
 use crate::internal::pure_ip::PureIpDevice;

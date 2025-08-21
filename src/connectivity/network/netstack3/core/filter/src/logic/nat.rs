@@ -10,8 +10,8 @@ use core::ops::{ControlFlow, RangeInclusive};
 
 use derivative::Derivative;
 use log::{error, warn};
-use net_types::ip::IpVersionMarker;
 use net_types::SpecifiedAddr;
+use net_types::ip::IpVersionMarker;
 use netstack3_base::sync::Mutex;
 use netstack3_base::{
     Inspectable, InspectableValue, Inspector as _, IpAddressId as _, IpDeviceAddr, MarkDomain,
@@ -1325,8 +1325,8 @@ mod tests {
     use crate::context::testutil::{
         FakeBindingsCtx, FakeDeviceClass, FakeNatCtx, FakePrimaryAddressId, FakeWeakAddressId,
     };
-    use crate::matchers::testutil::{ethernet_interface, FakeDeviceId};
     use crate::matchers::PacketMatcher;
+    use crate::matchers::testutil::{FakeDeviceId, ethernet_interface};
     use crate::packets::testutil::internal::{
         ArbitraryValue, FakeIpPacket, FakeUdpPacket, IcmpErrorMessage, Icmpv4DestUnreachableError,
         Icmpv6DestUnreachableError,

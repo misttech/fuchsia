@@ -10,7 +10,7 @@ use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
 use core::marker::PhantomData;
-use core::num::{NonZeroU16, NonZeroU8, NonZeroUsize};
+use core::num::{NonZeroU8, NonZeroU16, NonZeroUsize};
 use core::ops::RangeInclusive;
 
 use derivative::Derivative;
@@ -325,11 +325,7 @@ fn check_posix_sharing<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes>(
         }) => false,
         AddrVec::Conn(ConnAddr { ip: _, device: Some(_device) }) => false,
     };
-    if found_indirect_conflict {
-        Err(InsertError::IndirectConflict)
-    } else {
-        Ok(())
-    }
+    if found_indirect_conflict { Err(InsertError::IndirectConflict) } else { Ok(()) }
 }
 
 /// The remote port for a UDP socket.
@@ -1121,16 +1117,16 @@ pub trait UdpBindingsContext<I: IpExt, D: StrongDeviceIdentifier>:
 {
 }
 impl<
-        I: IpExt,
-        BC: InstantContext
-            + RngContext
-            + UdpReceiveBindingsContext<I, D>
-            + ReferenceNotifiers
-            + UdpBindingsTypes
-            + SocketOpsFilterBindingContext<D>
-            + SettingsContext<UdpSettings>,
-        D: StrongDeviceIdentifier,
-    > UdpBindingsContext<I, D> for BC
+    I: IpExt,
+    BC: InstantContext
+        + RngContext
+        + UdpReceiveBindingsContext<I, D>
+        + ReferenceNotifiers
+        + UdpBindingsTypes
+        + SocketOpsFilterBindingContext<D>
+        + SettingsContext<UdpSettings>,
+    D: StrongDeviceIdentifier,
+> UdpBindingsContext<I, D> for BC
 {
 }
 
@@ -1146,20 +1142,20 @@ pub trait BoundStateContext<I: IpExt, BC: UdpBindingsContext<I, Self::DeviceId>>
 
     /// The inner dual stack context.
     type DualStackContext: DualStackDatagramBoundStateContext<
-        I,
-        BC,
-        Udp<BC>,
-        DeviceId = Self::DeviceId,
-        WeakDeviceId = Self::WeakDeviceId,
-    >;
+            I,
+            BC,
+            Udp<BC>,
+            DeviceId = Self::DeviceId,
+            WeakDeviceId = Self::WeakDeviceId,
+        >;
     /// The inner non dual stack context.
     type NonDualStackContext: NonDualStackDatagramBoundStateContext<
-        I,
-        BC,
-        Udp<BC>,
-        DeviceId = Self::DeviceId,
-        WeakDeviceId = Self::WeakDeviceId,
-    >;
+            I,
+            BC,
+            Udp<BC>,
+            DeviceId = Self::DeviceId,
+            WeakDeviceId = Self::WeakDeviceId,
+        >;
 
     /// Calls the function with an immutable reference to UDP sockets.
     fn with_bound_sockets<
@@ -1631,14 +1627,14 @@ fn try_dual_stack_deliver<
 pub trait UseUdpIpTransportContextBlanket {}
 
 impl<
-        I: IpExt,
-        BC: UdpBindingsContext<I, CC::DeviceId> + UdpBindingsContext<I::OtherVersion, CC::DeviceId>,
-        CC: StateContext<I, BC>
-            + StateContext<I::OtherVersion, BC>
-            + UseUdpIpTransportContextBlanket
-            + UdpCounterContext<I, CC::WeakDeviceId, BC>
-            + UdpCounterContext<I::OtherVersion, CC::WeakDeviceId, BC>,
-    > IpTransportContext<I, BC, CC> for UdpIpTransportContext
+    I: IpExt,
+    BC: UdpBindingsContext<I, CC::DeviceId> + UdpBindingsContext<I::OtherVersion, CC::DeviceId>,
+    CC: StateContext<I, BC>
+        + StateContext<I::OtherVersion, BC>
+        + UseUdpIpTransportContextBlanket
+        + UdpCounterContext<I, CC::WeakDeviceId, BC>
+        + UdpCounterContext<I::OtherVersion, CC::WeakDeviceId, BC>,
+> IpTransportContext<I, BC, CC> for UdpIpTransportContext
 {
     fn receive_icmp_error(
         core_ctx: &mut CC,
@@ -2606,10 +2602,10 @@ impl<I: IpExt, BC: UdpBindingsContext<I, CC::DeviceId>, CC: StateContext<I, BC>>
 }
 
 impl<
-        I: IpExt,
-        BC: UdpBindingsContext<I, CC::DeviceId>,
-        CC: BoundStateContext<I, BC> + UdpStateContext,
-    > DatagramSpecBoundStateContext<I, CC, BC> for Udp<BC>
+    I: IpExt,
+    BC: UdpBindingsContext<I, CC::DeviceId>,
+    CC: BoundStateContext<I, BC> + UdpStateContext,
+> DatagramSpecBoundStateContext<I, CC, BC> for Udp<BC>
 {
     type IpSocketsCtx<'a> = CC::IpSocketsCtx<'a>;
 
@@ -2670,9 +2666,9 @@ impl<
 }
 
 impl<
-        BC: UdpBindingsContext<Ipv6, CC::DeviceId> + UdpBindingsContext<Ipv4, CC::DeviceId>,
-        CC: DualStackBoundStateContext<Ipv6, BC> + UdpStateContext,
-    > DualStackDatagramSpecBoundStateContext<Ipv6, CC, BC> for Udp<BC>
+    BC: UdpBindingsContext<Ipv6, CC::DeviceId> + UdpBindingsContext<Ipv4, CC::DeviceId>,
+    CC: DualStackBoundStateContext<Ipv6, BC> + UdpStateContext,
+> DualStackDatagramSpecBoundStateContext<Ipv6, CC, BC> for Udp<BC>
 {
     type IpSocketsCtx<'a> = CC::IpSocketsCtx<'a>;
     fn dual_stack_enabled(
@@ -2745,9 +2741,9 @@ impl<
 }
 
 impl<
-        BC: UdpBindingsContext<Ipv4, CC::DeviceId>,
-        CC: BoundStateContext<Ipv4, BC> + NonDualStackBoundStateContext<Ipv4, BC> + UdpStateContext,
-    > NonDualStackDatagramSpecBoundStateContext<Ipv4, CC, BC> for Udp<BC>
+    BC: UdpBindingsContext<Ipv4, CC::DeviceId>,
+    CC: BoundStateContext<Ipv4, BC> + NonDualStackBoundStateContext<Ipv4, BC> + UdpStateContext,
+> NonDualStackDatagramSpecBoundStateContext<Ipv4, CC, BC> for Udp<BC>
 {
     fn nds_converter(_core_ctx: &CC) -> impl NonDualStackConverter<Ipv4, CC::WeakDeviceId, Self> {
         ()
@@ -2774,9 +2770,9 @@ mod tests {
     use netstack3_base::socket::{SocketIpAddrExt as _, StrictlyZonedAddr};
     use netstack3_base::sync::PrimaryRc;
     use netstack3_base::testutil::{
-        set_logger_for_test, FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeReferencyDeviceId,
+        FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeReferencyDeviceId,
         FakeSocketWritableListener, FakeStrongDeviceId, FakeWeakDeviceId, MultipleDevicesId,
-        TestIpExt as _,
+        TestIpExt as _, set_logger_for_test,
     };
     use netstack3_base::{
         CounterCollection, CtxPair, RemoteAddressError, ResourceCounterContext,

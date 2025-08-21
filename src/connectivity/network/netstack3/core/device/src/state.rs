@@ -13,8 +13,8 @@ use netstack3_base::sync::{RwLock, WeakRc};
 use netstack3_base::{
     CoreTimerContext, Device, DeviceIdContext, Inspectable, TimerContext, WeakDeviceIdentifier,
 };
-use netstack3_ip::device::{DualStackIpDeviceState, IpDeviceTimerId};
 use netstack3_ip::RawMetric;
+use netstack3_ip::device::{DualStackIpDeviceState, IpDeviceTimerId};
 
 use crate::internal::base::{DeviceCounters, DeviceLayerTypes, OriginTracker};
 use crate::internal::socket::HeldDeviceSockets;

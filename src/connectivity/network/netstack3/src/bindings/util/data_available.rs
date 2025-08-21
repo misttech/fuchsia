@@ -4,12 +4,12 @@
 
 //! A multiple-producer, single-consumer notification mechanism.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::Poll;
 
-use futures::task::AtomicWaker;
 use futures::Future;
+use futures::task::AtomicWaker;
 
 #[derive(Debug, Default)]
 struct DataAvailable {

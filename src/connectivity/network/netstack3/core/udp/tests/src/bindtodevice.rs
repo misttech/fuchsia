@@ -6,15 +6,15 @@ use core::num::NonZeroU16;
 
 use either::Either;
 use ip_test_macro::ip_test;
-use net_types::ip::Subnet;
 use net_types::ZonedAddr;
-use netstack3_base::testutil::{set_logger_for_test, TestIpExt};
+use net_types::ip::Subnet;
+use netstack3_base::testutil::{TestIpExt, set_logger_for_test};
+use netstack3_core::IpExt;
 use netstack3_core::device::DeviceId;
 use netstack3_core::ip::IpSockSendError;
 use netstack3_core::routes::{AddableEntry, AddableMetric};
 use netstack3_core::testutil::{CtxPairExt as _, FakeBindingsCtx, FakeCtxBuilder};
 use netstack3_core::udp::SendToError;
-use netstack3_core::IpExt;
 use packet::Buf;
 
 const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(100).unwrap();

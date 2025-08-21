@@ -205,10 +205,6 @@ impl<'a> Node<'a> {
             })
             .collect::<Vec<_>>()
             .await;
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
-        }
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
     }
 }

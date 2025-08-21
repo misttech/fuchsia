@@ -19,7 +19,7 @@ pub mod realms;
 
 use anyhow::Context as _;
 use component_events::events::EventStream;
-use diagnostics_hierarchy::{filter_hierarchy, DiagnosticsHierarchy, HierarchyMatcher};
+use diagnostics_hierarchy::{DiagnosticsHierarchy, HierarchyMatcher, filter_hierarchy};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_diagnostics::Selector;
 use fidl_fuchsia_inspect_deprecated::InspectMarker;
@@ -27,7 +27,7 @@ use fuchsia_async::{self as fasync, DurationExt as _};
 use fuchsia_component::client;
 use futures::future::FutureExt as _;
 use futures::stream::{Stream, StreamExt as _, TryStreamExt as _};
-use futures::{select, Future};
+use futures::{Future, select};
 use std::pin::pin;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_netemul as fnetemul};
 
@@ -312,12 +312,14 @@ pub fn annotate<'a, 'b: 'a, T>(
     async move {
         let mut fut = pin!(fut.fuse());
         let event_name = event_name.to_string();
-        let mut print_fut = pin!(futures::stream::repeat(())
-            .for_each(|()| async {
-                fasync::Timer::new(interval).await;
-                eprintln!("waiting for {} at {}", event_name, caller);
-            })
-            .fuse());
+        let mut print_fut = pin!(
+            futures::stream::repeat(())
+                .for_each(|()| async {
+                    fasync::Timer::new(interval).await;
+                    eprintln!("waiting for {} at {}", event_name, caller);
+                })
+                .fuse()
+        );
         let result = select! {
             result = fut => result,
             () = print_fut => unreachable!("should repeat printing forever"),

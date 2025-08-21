@@ -20,8 +20,8 @@ use packet::{
     Buf, InnerPacketBuilder, PacketBuilder as _, ParseBuffer, ParseMetadata, Serializer as _,
 };
 use packet_formats::ethernet::{
-    EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck, EthernetIpExt as _,
-    ETHERNET_MIN_BODY_LEN_NO_TAG,
+    ETHERNET_MIN_BODY_LEN_NO_TAG, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
+    EthernetIpExt as _,
 };
 use packet_formats::icmp::{
     IcmpDestUnreachable, IcmpEchoRequest, IcmpPacketBuilder, IcmpParseArgs, IcmpZeroCode,
@@ -32,16 +32,16 @@ use packet_formats::ip::{
     FragmentOffset, IpPacket as _, IpPacketBuilder, IpProto, Ipv4Proto, Ipv6ExtHdrType, Ipv6Proto,
 };
 use packet_formats::ipv4::Ipv4PacketBuilder;
-use packet_formats::ipv6::ext_hdrs::ExtensionHeaderOptionAction;
 use packet_formats::ipv6::Ipv6PacketBuilder;
+use packet_formats::ipv6::ext_hdrs::ExtensionHeaderOptionAction;
 use packet_formats::testutil::parse_icmp_packet_in_ip_packet_in_ethernet_frame;
 use packet_formats::udp::UdpPacketBuilder;
 use rand::Rng;
 use test_case::test_case;
 
 use netstack3_base::testutil::{
-    new_rng, set_logger_for_test, FakeInstant, TestAddrs, TestDualStackIpExt, TestIpExt,
-    TEST_ADDRS_V4, TEST_ADDRS_V6,
+    FakeInstant, TEST_ADDRS_V4, TEST_ADDRS_V6, TestAddrs, TestDualStackIpExt, TestIpExt, new_rng,
+    set_logger_for_test,
 };
 use netstack3_base::{FrameDestination, InstantContext as _, IpDeviceAddr, Marks};
 use netstack3_core::device::{
@@ -53,8 +53,8 @@ use netstack3_core::filter::{
 };
 use netstack3_core::socket::{ListenerInfo, SocketInfo};
 use netstack3_core::testutil::{
-    new_simple_fake_network, Ctx, CtxPairExt as _, FakeBindingsCtx, FakeCtx, FakeCtxBuilder,
-    DEFAULT_INTERFACE_METRIC,
+    Ctx, CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCtx, FakeCtxBuilder,
+    new_simple_fake_network,
 };
 use netstack3_core::{BindingsContext, CoreCtx, IpExt, StackState};
 use netstack3_device::queue::{ReceiveQueueContext as _, ReceiveQueueHandler as _};

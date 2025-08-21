@@ -5,7 +5,7 @@
 //! DNS Server watcher stream.
 
 use fidl_fuchsia_net_name::{
-    DnsServerSource, DnsServerWatcherProxy, DnsServer_, SocketProxyDnsServerSource,
+    DnsServer_, DnsServerSource, DnsServerWatcherProxy, SocketProxyDnsServerSource,
 };
 
 use async_utils::stream::WithTag as _;

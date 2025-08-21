@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use cm_rust::FidlIntoNative as _;
 use component_events::events::Event;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
@@ -22,14 +22,14 @@ use log::{debug, error, info, warn};
 use std::borrow::Cow;
 use std::collections::hash_map::{Entry, HashMap};
 use std::pin::pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
+use vfs::ObjectRequestRef;
 use vfs::directory::entry::{EntryInfo, OpenRequest};
 use vfs::directory::helper::DirectlyMutable as _;
 use vfs::directory::immutable::simple::Simple as SimpleImmutableDir;
 use vfs::remote::RemoteLike;
-use vfs::ObjectRequestRef;
 use {
     fidl_fuchsia_component_test as ftest, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio,
     fidl_fuchsia_logger as flogger, fidl_fuchsia_netemul_network as fnetemul_network,
@@ -568,11 +568,7 @@ async fn create_realm_instance(
         let args_value = Some(Box::new(fdata::DictionaryValue::StrVec(program_args)));
         match entries.iter_mut().find_map(
             |fdata::DictionaryEntry { key, value }| {
-                if key == ARGS_KEY {
-                    Some(value)
-                } else {
-                    None
-                }
+                if key == ARGS_KEY { Some(value) } else { None }
             },
         ) {
             Some(args) => *args = args_value,
@@ -1259,15 +1255,16 @@ async fn handle_sandbox(
                 Ok(())
             }
         }));
-    let mut realms_fut = pin!(rx
-        .for_each_concurrent(None, |realm| async {
+    let mut realms_fut = pin!(
+        rx.for_each_concurrent(None, |realm| async {
             let name = realm.realm.root.child_name().to_owned();
             realm
                 .run_service()
                 .await
                 .unwrap_or_else(|e| error!("error managing realm '{}': {:?}", name, e))
         })
-        .fuse());
+        .fuse()
+    );
     futures::select! {
         result = sandbox_fut => Ok(result?),
         () = realms_fut => unreachable!("realms_fut should never complete"),

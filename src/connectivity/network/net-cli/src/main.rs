@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use component_debug::dirs::{connect_to_instance_protocol, OpenDirType};
+use component_debug::dirs::{OpenDirType, connect_to_instance_protocol};
 use fidl::endpoints::ProtocolMarker;
 use fuchsia_component::client::connect_to_protocol_at_path;
 use log::{Level, LevelFilter, Log, Metadata, Record};

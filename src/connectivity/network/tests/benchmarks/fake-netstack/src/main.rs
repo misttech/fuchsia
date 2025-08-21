@@ -15,8 +15,8 @@ use futures::io::AsyncReadExt as _;
 use futures::stream::SelectAll;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use log::{error, info};
-use net_types::ip::{Ip, Ipv4, Ipv6};
 use net_types::SpecifiedAddr;
+use net_types::ip::{Ip, Ipv4, Ipv6};
 use packet::{PacketBuilder as _, ParseBuffer as _, Serializer as _};
 use packet_formats::icmp::{
     IcmpEchoReply, IcmpEchoRequest, IcmpMessage, IcmpPacketBuilder, IcmpPacketRaw, IcmpZeroCode,

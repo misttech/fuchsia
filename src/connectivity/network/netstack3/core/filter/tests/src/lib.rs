@@ -13,16 +13,17 @@ use std::sync::Arc;
 
 use assert_matches::assert_matches;
 use ip_test_macro::ip_test;
-use net_types::ip::IpVersion;
 use net_types::ZonedAddr;
+use net_types::ip::IpVersion;
 use packet::{Buf, ParsablePacket as _, Serializer as _};
 use packet_formats::ethernet::{EtherType, EthernetFrameBuilder};
 use packet_formats::ip::{IpPacket as _, IpPacketBuilder as _, IpProto};
 use packet_formats::tcp::TcpSegmentBuilder;
 use packet_formats::udp::UdpPacketBuilder;
 
-use netstack3_base::testutil::{set_logger_for_test, TestDualStackIpExt, TestIpExt};
+use netstack3_base::testutil::{TestDualStackIpExt, TestIpExt, set_logger_for_test};
 use netstack3_base::{CtxPair, Mark, MarkDomain};
+use netstack3_core::IpExt;
 use netstack3_core::device::{EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::filter::{
     Action, Hook, IpRoutines, MarkAction, NatRoutines, PacketMatcher, Routine, Routines, Rule,
@@ -34,7 +35,6 @@ use netstack3_core::routes::{
 use netstack3_core::testutil::{
     CtxPairExt as _, FakeBindingsCtx, FakeCoreCtx, FakeCtx, FakeCtxBuilder,
 };
-use netstack3_core::IpExt;
 
 const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(22222).unwrap();
 const REMOTE_PORT: NonZeroU16 = NonZeroU16::new(44444).unwrap();

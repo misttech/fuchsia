@@ -9,7 +9,7 @@ use fidl_fuchsia_netemul as fnetemul;
 use futures::FutureExt as _;
 use net_types::ip::Ipv4;
 use netstack_testing_common::realms::{
-    constants, KnownServiceProvider, Netstack, ProdNetstack2, ProdNetstack3, TestSandboxExt as _,
+    KnownServiceProvider, Netstack, ProdNetstack2, ProdNetstack3, TestSandboxExt as _, constants,
 };
 use netstack_testing_common::{
     get_component_stopped_event_stream, wait_for_component_stopped_with_stream,

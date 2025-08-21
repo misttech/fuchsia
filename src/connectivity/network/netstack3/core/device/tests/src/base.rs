@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use alloc::vec::Vec;
-use core::num::{NonZeroU16, NonZeroU8};
+use core::num::{NonZeroU8, NonZeroU16};
 use core::time::Duration;
 
 use assert_matches::assert_matches;
 use net_declare::net_mac;
 use net_types::ip::{AddrSubnet, Ip, Ipv4, Ipv6, Mtu};
 use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
-use netstack3_base::testutil::{FakeInstant, TestIpExt};
 use netstack3_base::WorkQueueReport;
+use netstack3_base::testutil::{FakeInstant, TestIpExt};
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice,
     LoopbackCreationProperties, LoopbackDevice, LoopbackDeviceId, MaxEthernetFrameSize,
@@ -25,9 +25,9 @@ use netstack3_core::ip::{
     SlaacConfigurationUpdate, StableSlaacAddressConfiguration,
 };
 use netstack3_core::testutil::{
-    CtxPairExt as _, FakeBindingsCtx, FakeCtx, DEFAULT_INTERFACE_METRIC,
+    CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCtx,
 };
-use netstack3_core::{for_any_device_id, IpExt};
+use netstack3_core::{IpExt, for_any_device_id};
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use test_case::test_case;
 

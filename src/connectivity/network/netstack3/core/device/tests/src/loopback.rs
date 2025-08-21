@@ -6,16 +6,16 @@ use alloc::vec::Vec;
 use assert_matches::assert_matches;
 use ip_test_macro::ip_test;
 
+use net_types::SpecifiedAddr;
 use net_types::ethernet::Mac;
 use net_types::ip::{AddrSubnet, Ipv4, Ipv6, Mtu};
-use net_types::SpecifiedAddr;
-use netstack3_base::testutil::{TestAddrs, TestIpExt};
 use netstack3_base::IpAddressId as _;
+use netstack3_base::testutil::{TestAddrs, TestIpExt};
+use netstack3_core::IpExt;
 use netstack3_core::error::NotFoundError;
 use netstack3_core::testutil::{
-    CtxPairExt as _, FakeBindingsCtx, FakeCtx, DEFAULT_INTERFACE_METRIC,
+    CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCtx,
 };
-use netstack3_core::IpExt;
 use netstack3_device::loopback::{self, LoopbackCreationProperties, LoopbackDevice};
 use netstack3_device::queue::ReceiveQueueContext;
 use netstack3_ip::{self as ip, DeviceIpLayerMetadata};

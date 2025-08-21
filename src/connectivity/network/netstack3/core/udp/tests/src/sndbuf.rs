@@ -13,10 +13,10 @@ use packet::Buf;
 use test_case::test_case;
 use test_util::assert_lt;
 
-use netstack3_base::testutil::{set_logger_for_test, TestIpExt};
+use netstack3_base::testutil::{TestIpExt, set_logger_for_test};
+use netstack3_core::IpExt;
 use netstack3_core::device::{BatchSize, DeviceId, EthernetLinkDevice};
 use netstack3_core::testutil::{CtxPairExt as _, FakeBindingsCtx, FakeCtxBuilder};
-use netstack3_core::IpExt;
 
 const TEST_PORT: NonZeroU16 = NonZeroU16::new(100).unwrap();
 const TEST_MESSAGE: &'static [u8] = b"Hello";

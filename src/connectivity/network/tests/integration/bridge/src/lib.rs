@@ -17,7 +17,7 @@ use net_types::ip::Ipv4;
 use netstack_testing_common::interfaces::TestInterfaceExt;
 use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
 use netstack_testing_common::{
-    interfaces, ping as ping_helper, ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT,
+    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, interfaces, ping as ping_helper,
 };
 use netstack_testing_macros::netstack_test;
 use test_case::test_case;

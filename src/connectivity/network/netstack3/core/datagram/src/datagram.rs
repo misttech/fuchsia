@@ -11,7 +11,7 @@ use core::error::Error;
 use core::fmt::Debug;
 use core::hash::Hash;
 use core::marker::PhantomData;
-use core::num::{NonZeroU16, NonZeroU8};
+use core::num::{NonZeroU8, NonZeroU16};
 use core::ops::{Deref, DerefMut};
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
 use netstack3_ip::marker::OptionDelegationMarker;
@@ -902,12 +902,12 @@ pub trait DatagramBoundStateContext<
     /// sockets, and UDPv4) can use the [`UninstantiableDualStackContext`] type,
     /// which is uninstantiable.
     type DualStackContext: DualStackDatagramBoundStateContext<
-        I,
-        BC,
-        S,
-        DeviceId = Self::DeviceId,
-        WeakDeviceId = Self::WeakDeviceId,
-    >;
+            I,
+            BC,
+            S,
+            DeviceId = Self::DeviceId,
+            WeakDeviceId = Self::WeakDeviceId,
+        >;
 
     /// Context for single-stack socket access.
     ///
@@ -915,12 +915,12 @@ pub trait DatagramBoundStateContext<
     /// [`NonDualStackDatagramBoundStateContext`] trait, to functionality
     /// necessary to implement sockets that do not support dual-stack operation.
     type NonDualStackContext: NonDualStackDatagramBoundStateContext<
-        I,
-        BC,
-        S,
-        DeviceId = Self::DeviceId,
-        WeakDeviceId = Self::WeakDeviceId,
-    >;
+            I,
+            BC,
+            S,
+            DeviceId = Self::DeviceId,
+            WeakDeviceId = Self::WeakDeviceId,
+        >;
 
     /// Calls the function with an immutable reference to the datagram sockets.
     fn with_bound_sockets<
@@ -1475,12 +1475,12 @@ pub trait DatagramSocketSpec: Sized + 'static {
     /// Describes the per-address and per-socket values held in the
     /// demultiplexing map for a given IP version.
     type SocketMapSpec<I: IpExt + DualStackIpExt, D: WeakDeviceIdentifier>: DatagramSocketMapSpec<
-        I,
-        D,
-        Self::AddrSpec,
-        ListenerSharingState = Self::SharingState,
-        ConnSharingState = Self::SharingState,
-    >;
+            I,
+            D,
+            Self::AddrSpec,
+            ListenerSharingState = Self::SharingState,
+            ConnSharingState = Self::SharingState,
+        >;
 
     /// External data kept by datagram sockets.
     ///
@@ -5376,10 +5376,10 @@ pub(crate) mod testutil {
     use super::*;
 
     use alloc::vec;
-    use net_types::ip::IpAddr;
     use net_types::Witness;
-    use netstack3_base::testutil::{FakeStrongDeviceId, TestIpExt};
+    use net_types::ip::IpAddr;
     use netstack3_base::CtxPair;
+    use netstack3_base::testutil::{FakeStrongDeviceId, TestIpExt};
     use netstack3_ip::socket::testutil::FakeDeviceConfig;
 
     /// Helper function to ensure the Fake CoreCtx and BindingsCtx are setup
@@ -5438,8 +5438,8 @@ mod test {
     use derivative::Derivative;
     use ip_test_macro::ip_test;
     use net_declare::{net_ip_v4, net_ip_v6};
-    use net_types::ip::{IpVersionMarker, Ipv4Addr, Ipv6Addr};
     use net_types::Witness;
+    use net_types::ip::{IpVersionMarker, Ipv4Addr, Ipv6Addr};
     use netstack3_base::socket::{
         AddrVec, Bound, IncompatibleError, ListenerAddrInfo, RemoveResult, SocketMapAddrStateSpec,
     };
@@ -5449,12 +5449,12 @@ mod test {
         FakeWeakDeviceId, MultipleDevicesId, TestIpExt,
     };
     use netstack3_base::{ContextProvider, CtxPair, UninstantiableWrapper};
+    use netstack3_ip::DEFAULT_HOP_LIMITS;
     use netstack3_ip::device::IpDeviceStateIpExt;
     use netstack3_ip::socket::testutil::{
         FakeDeviceConfig, FakeDualStackIpSocketCtx, FakeIpSocketCtx,
     };
     use netstack3_ip::testutil::DualStackSendIpPacketMeta;
-    use netstack3_ip::DEFAULT_HOP_LIMITS;
     use packet::{Buf, Serializer as _};
     use packet_formats::ip::{Ipv4Proto, Ipv6Proto};
     use test_case::test_case;
@@ -5467,14 +5467,9 @@ mod test {
     {
     }
     impl<
-            D: FakeStrongDeviceId,
-            I: Ip
-                + IpExt
-                + IpDeviceStateIpExt
-                + TestIpExt
-                + DualStackIpExt
-                + DualStackContextsIpExt<D>,
-        > DatagramIpExt<D> for I
+        D: FakeStrongDeviceId,
+        I: Ip + IpExt + IpDeviceStateIpExt + TestIpExt + DualStackIpExt + DualStackContextsIpExt<D>,
+    > DatagramIpExt<D> for I
     {
     }
 
@@ -6010,19 +6005,19 @@ mod test {
     /// and `Ipv6`.
     trait DualStackContextsIpExt<D: FakeStrongDeviceId>: IpExt {
         type DualStackContext: DualStackDatagramBoundStateContext<
-            Self,
-            FakeBindingsCtx,
-            FakeStateSpec,
-            DeviceId = D,
-            WeakDeviceId = FakeWeakDeviceId<D>,
-        >;
+                Self,
+                FakeBindingsCtx,
+                FakeStateSpec,
+                DeviceId = D,
+                WeakDeviceId = FakeWeakDeviceId<D>,
+            >;
         type NonDualStackContext: NonDualStackDatagramBoundStateContext<
-            Self,
-            FakeBindingsCtx,
-            FakeStateSpec,
-            DeviceId = D,
-            WeakDeviceId = FakeWeakDeviceId<D>,
-        >;
+                Self,
+                FakeBindingsCtx,
+                FakeStateSpec,
+                DeviceId = D,
+                WeakDeviceId = FakeWeakDeviceId<D>,
+            >;
         fn dual_stack_context(
             core_ctx: &mut FakeDualStackCoreCtx<D>,
         ) -> MaybeDualStack<&mut Self::DualStackContext, &mut Self::NonDualStackContext>;

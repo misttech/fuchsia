@@ -13,8 +13,8 @@ use netstack3_base::{
     DeviceNameMatcher, DeviceWithName, Mark, MarkDomain, MarkStorage, Marks, Matcher, SubnetMatcher,
 };
 
-use crate::internal::routing::PacketOrigin;
 use crate::RoutingTableId;
+use crate::internal::routing::PacketOrigin;
 
 /// Table that contains routing rules.
 pub struct RulesTable<I: Ip, D> {
@@ -239,8 +239,8 @@ impl<'a, I: Ip, D: DeviceWithName> Matcher<RuleInput<'a, I, D>> for RuleMatcher<
 #[cfg(test)]
 mod test {
     use ip_test_macro::ip_test;
-    use net_types::ip::Subnet;
     use net_types::SpecifiedAddr;
+    use net_types::ip::Subnet;
     use netstack3_base::testutil::{FakeDeviceId, MultipleDevicesId, TestIpExt};
     use test_case::test_case;
 

@@ -30,18 +30,18 @@ use netemul::{RealmTcpListener as _, RealmUdpSocket as _};
 use netstack_testing_common::constants::ipv6 as ipv6_consts;
 use netstack_testing_common::ndp::send_ra_with_router_lifetime;
 use netstack_testing_common::realms::{
-    constants, KnownServiceProvider, Manager, ManagerConfig, Netstack, NetstackExt,
-    SocketProxyType, TestSandboxExt as _,
+    KnownServiceProvider, Manager, ManagerConfig, Netstack, NetstackExt, SocketProxyType,
+    TestSandboxExt as _, constants,
 };
 use netstack_testing_common::{
-    pause_fake_clock, wait_for_component_stopped, Result, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
+    ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, Result, pause_fake_clock, wait_for_component_stopped,
 };
 use netstack_testing_macros::netstack_test;
-use packet::serialize::{InnerPacketBuilder as _, Serializer as _};
 use packet::ParsablePacket as _;
+use packet::serialize::{InnerPacketBuilder as _, Serializer as _};
 use packet_formats::ethernet::{
-    EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck, EthernetIpExt as _,
-    ETHERNET_MIN_BODY_LEN_NO_TAG,
+    ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
+    EthernetFrameLengthCheck, EthernetIpExt as _,
 };
 use packet_formats::icmp::ndp::options::{NdpOptionBuilder, RecursiveDnsServer};
 use packet_formats::ip::{IpPacket as _, IpProto, Ipv6Proto};
@@ -49,8 +49,8 @@ use packet_formats::ipv6::{Ipv6Packet, Ipv6PacketBuilder};
 use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpParseArgs};
 use packet_formats_dhcp::v6;
 use policy_testing_common::{
-    add_default_route, add_device_to_devfs, verify_interface_added, with_netcfg_owned_device,
-    NetcfgOwnedDeviceArgs,
+    NetcfgOwnedDeviceArgs, add_default_route, add_device_to_devfs, verify_interface_added,
+    with_netcfg_owned_device,
 };
 use test_case::test_case;
 
@@ -402,9 +402,9 @@ async fn discovered_dhcpv4_dns<M: Manager, N: Netstack>(name: &str, check_type: 
                                 ..Default::default()
                             },
                         ),
-                        fidl_fuchsia_net_dhcp::Parameter::BoundDeviceNames(
-                            vec!["eth2".to_string()],
-                        ),
+                        fidl_fuchsia_net_dhcp::Parameter::BoundDeviceNames(vec![
+                            "eth2".to_string(),
+                        ]),
                     ]
                     .iter_mut(),
                 )
@@ -996,105 +996,109 @@ async fn successfully_retrieves_ipv6_record_despite_ipv4_timeout<N: Netstack>(na
     let name_lookup =
         realm.connect_to_protocol::<net_name::LookupMarker>().expect("failed to connect to Lookup");
 
-    let mut lookup_fut = pin!(async {
-        let ips = name_lookup
-            .lookup_ip(
-                EXAMPLE_HOSTNAME,
-                &net_name::LookupIpOptions {
-                    ipv4_lookup: Some(true),
-                    ipv6_lookup: Some(true),
-                    sort_addresses: Some(true),
-                    ..Default::default()
+    let mut lookup_fut = pin!(
+        async {
+            let ips = name_lookup
+                .lookup_ip(
+                    EXAMPLE_HOSTNAME,
+                    &net_name::LookupIpOptions {
+                        ipv4_lookup: Some(true),
+                        ipv6_lookup: Some(true),
+                        sort_addresses: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .expect("FIDL error")
+                .expect("lookup_ip error");
+            let want = net_name::LookupResult {
+                addresses: Some(vec![EXAMPLE_IPV6_ADDR]),
+                ..Default::default()
+            };
+            assert_eq!(ips, want);
+        }
+        .fuse()
+    );
+
+    let mut response_fut = pin!(
+        async {
+            use trust_dns_proto::op::{MessageType, OpCode};
+
+            match async_utils::fold::fold_while(
+                {
+                    let socket = &socket;
+                    let buf = [0; MAX_DNS_UDP_MESSAGE_LEN];
+                    futures::stream::unfold((socket, buf), |(socket, mut buf)| async move {
+                        let (read, src_addr) =
+                            socket.recv_from(&mut buf).await.expect("receive DNS query");
+                        let query = Message::from_vec(&buf[..read]).expect("deserialize DNS query");
+                        Some(((query, src_addr), (socket, buf)))
+                    })
+                },
+                (false, false),
+                |(seen_v4, seen_v6), (query, src_addr)| {
+                    let socket = &socket;
+                    async move {
+                        let id = query.id();
+                        let queries = query.queries().to_vec();
+                        let query = match query.queries() {
+                            [single_query] => single_query,
+                            slice => panic!(
+                                "Unexpectedly received message with {}: {:?}",
+                                if slice.len() == 0 { "no queries" } else { "more than one query" },
+                                query
+                            ),
+                        };
+                        let requested_record_type = query.query_type();
+                        let state @ (seen_v4, seen_v6) = match &requested_record_type {
+                            RecordType::A => (true, seen_v6),
+                            RecordType::AAAA => (seen_v4, true),
+                            _ => (seen_v4, seen_v6),
+                        };
+                        let fold_step = if seen_v4 && seen_v6 {
+                            async_utils::fold::FoldWhile::Done(())
+                        } else {
+                            async_utils::fold::FoldWhile::Continue(state)
+                        };
+                        let answer_addr = match requested_record_type {
+                            RecordType::A => return fold_step,
+                            RecordType::AAAA => EXAMPLE_IPV6_ADDR,
+                            _ => {
+                                panic!(
+                                    "DNS resolver should only request A or AAAA records, got {}",
+                                    query
+                                )
+                            }
+                        };
+                        let answer = answer_for_hostname(EXAMPLE_HOSTNAME, answer_addr);
+                        let mut response = Message::new();
+                        let _: &mut Message = response
+                            .set_response_code(ResponseCode::NoError)
+                            .add_answer(answer)
+                            .set_message_type(MessageType::Response)
+                            .set_op_code(OpCode::Update)
+                            .set_id(id)
+                            .add_queries(queries);
+                        let response = response.to_vec().expect("serialize DNS response");
+                        let written =
+                            socket.send_to(&response, src_addr).await.expect("send DNS response");
+                        assert_eq!(written, response.len());
+                        fold_step
+                    }
                 },
             )
             .await
-            .expect("FIDL error")
-            .expect("lookup_ip error");
-        let want = net_name::LookupResult {
-            addresses: Some(vec![EXAMPLE_IPV6_ADDR]),
-            ..Default::default()
-        };
-        assert_eq!(ips, want);
-    }
-    .fuse());
-
-    let mut response_fut = pin!(async {
-        use trust_dns_proto::op::{MessageType, OpCode};
-
-        match async_utils::fold::fold_while(
             {
-                let socket = &socket;
-                let buf = [0; MAX_DNS_UDP_MESSAGE_LEN];
-                futures::stream::unfold((socket, buf), |(socket, mut buf)| async move {
-                    let (read, src_addr) =
-                        socket.recv_from(&mut buf).await.expect("receive DNS query");
-                    let query = Message::from_vec(&buf[..read]).expect("deserialize DNS query");
-                    Some(((query, src_addr), (socket, buf)))
-                })
-            },
-            (false, false),
-            |(seen_v4, seen_v6), (query, src_addr)| {
-                let socket = &socket;
-                async move {
-                    let id = query.id();
-                    let queries = query.queries().to_vec();
-                    let query = match query.queries() {
-                        [single_query] => single_query,
-                        slice => panic!(
-                            "Unexpectedly received message with {}: {:?}",
-                            if slice.len() == 0 { "no queries" } else { "more than one query" },
-                            query
-                        ),
-                    };
-                    let requested_record_type = query.query_type();
-                    let state @ (seen_v4, seen_v6) = match &requested_record_type {
-                        RecordType::A => (true, seen_v6),
-                        RecordType::AAAA => (seen_v4, true),
-                        _ => (seen_v4, seen_v6),
-                    };
-                    let fold_step = if seen_v4 && seen_v6 {
-                        async_utils::fold::FoldWhile::Done(())
-                    } else {
-                        async_utils::fold::FoldWhile::Continue(state)
-                    };
-                    let answer_addr = match requested_record_type {
-                        RecordType::A => return fold_step,
-                        RecordType::AAAA => EXAMPLE_IPV6_ADDR,
-                        _ => {
-                            panic!(
-                                "DNS resolver should only request A or AAAA records, got {}",
-                                query
-                            )
-                        }
-                    };
-                    let answer = answer_for_hostname(EXAMPLE_HOSTNAME, answer_addr);
-                    let mut response = Message::new();
-                    let _: &mut Message = response
-                        .set_response_code(ResponseCode::NoError)
-                        .add_answer(answer)
-                        .set_message_type(MessageType::Response)
-                        .set_op_code(OpCode::Update)
-                        .set_id(id)
-                        .add_queries(queries);
-                    let response = response.to_vec().expect("serialize DNS response");
-                    let written =
-                        socket.send_to(&response, src_addr).await.expect("send DNS response");
-                    assert_eq!(written, response.len());
-                    fold_step
-                }
-            },
-        )
-        .await
-        {
-            async_utils::fold::FoldResult::ShortCircuited(()) => {}
-            async_utils::fold::FoldResult::StreamEnded((seen_v4, seen_v6)) => panic!(
-                "Stream unexpectedly ended before seeing requests for both v4 and v6 records. \
+                async_utils::fold::FoldResult::ShortCircuited(()) => {}
+                async_utils::fold::FoldResult::StreamEnded((seen_v4, seen_v6)) => panic!(
+                    "Stream unexpectedly ended before seeing requests for both v4 and v6 records. \
                     seen_v4: {}, seen_v6: {}",
-                seen_v4, seen_v6
-            ),
+                    seen_v4, seen_v6
+                ),
+            }
         }
-    }
-    .fuse());
+        .fuse()
+    );
 
     let () = futures::select! {
         () = lookup_fut => panic!("lookup_fut not expected to have completed"),
@@ -1199,101 +1203,109 @@ async fn fallback_on_error_response_code<N: Netstack>(name: &str) {
         let name_lookup = realm
             .connect_to_protocol::<net_name::LookupMarker>()
             .expect("failed to connect to Lookup");
-        let mut lookup_fut = pin!(async {
-            let ips = {
-                let mut ips = name_lookup
-                    .lookup_ip(
-                        EXAMPLE_HOSTNAME,
-                        &net_name::LookupIpOptions {
-                            ipv4_lookup: Some(ipv4_lookup),
-                            ipv6_lookup: Some(ipv6_lookup),
-                            sort_addresses: Some(true),
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .expect("FIDL error")
-                    .expect("lookup_ip error");
-                if let Some(ref mut addresses) = ips.addresses {
-                    // Sort the returned addresses because we don't care about their order when
+        let mut lookup_fut = pin!(
+            async {
+                let ips = {
+                    let mut ips = name_lookup
+                        .lookup_ip(
+                            EXAMPLE_HOSTNAME,
+                            &net_name::LookupIpOptions {
+                                ipv4_lookup: Some(ipv4_lookup),
+                                ipv6_lookup: Some(ipv6_lookup),
+                                sort_addresses: Some(true),
+                                ..Default::default()
+                            },
+                        )
+                        .await
+                        .expect("FIDL error")
+                        .expect("lookup_ip error");
+                    if let Some(ref mut addresses) = ips.addresses {
+                        // Sort the returned addresses because we don't care about their order when
+                        // asserting on the contents of the response.
+                        addresses.sort();
+                    }
+                    ips
+                };
+                let want_addresses = std::iter::empty()
+                    .chain(ipv4_lookup.then(|| EXAMPLE_IPV4_ADDR))
+                    .chain(ipv6_lookup.then(|| EXAMPLE_IPV6_ADDR))
+                    // Sort the expected addresses because we don't care about their order when
                     // asserting on the contents of the response.
-                    addresses.sort();
-                }
-                ips
-            };
-            let want_addresses = std::iter::empty()
-                .chain(ipv4_lookup.then(|| EXAMPLE_IPV4_ADDR))
-                .chain(ipv6_lookup.then(|| EXAMPLE_IPV6_ADDR))
-                // Sort the expected addresses because we don't care about their order when
-                // asserting on the contents of the response.
-                .sorted()
-                .collect::<Vec<_>>();
-            let want =
-                net_name::LookupResult { addresses: Some(want_addresses), ..Default::default() };
-            assert_eq!(ips, want, "test case: {:?}", test_case);
-        }
-        .fuse());
+                    .sorted()
+                    .collect::<Vec<_>>();
+                let want = net_name::LookupResult {
+                    addresses: Some(want_addresses),
+                    ..Default::default()
+                };
+                assert_eq!(ips, want, "test case: {:?}", test_case);
+            }
+            .fuse()
+        );
 
         // The erroring name server expects initial queries from dns-resolver, and always replies
         // with an error response code.
-        let mut error_server_fut = pin!(mock_udp_name_server(&erroring_sock, |_: &Message| {
-            let mut response = Message::new();
-            let _: &mut Message = response.set_response_code(error_response_code);
-            response
-        })
-        .fuse());
+        let mut error_server_fut = pin!(
+            mock_udp_name_server(&erroring_sock, |_: &Message| {
+                let mut response = Message::new();
+                let _: &mut Message = response.set_response_code(error_response_code);
+                response
+            })
+            .fuse()
+        );
         let expected_record_types = std::iter::empty()
             .chain(ipv4_lookup.then(|| RecordType::A))
             .chain(ipv6_lookup.then(|| RecordType::AAAA))
             .collect::<std::collections::HashSet<_>>();
         // The fallback name server expects fallback queries from dns-resolver, and replies with a
         // non-error response, unless it gets a query for a different record type than it expects.
-        let mut fallback_fut = pin!({
-            mock_udp_name_server(&fallback_sock, move |message| {
-                let query = {
-                    let mut queries = message.queries().into_iter();
-                    let query = queries.next().unwrap_or_else(|| {
-                        panic!(
-                            "message {:?} should have exactly one query, got zero instead",
+        let mut fallback_fut = pin!(
+            {
+                mock_udp_name_server(&fallback_sock, move |message| {
+                    let query = {
+                        let mut queries = message.queries().into_iter();
+                        let query = queries.next().unwrap_or_else(|| {
+                            panic!(
+                                "message {:?} should have exactly one query, got zero instead",
+                                message
+                            )
+                        });
+                        assert_eq!(
+                            queries.count(),
+                            0,
+                            "message {:?} should have exactly one query, got multiple instead",
                             message
-                        )
-                    });
-                    assert_eq!(
-                        queries.count(),
-                        0,
-                        "message {:?} should have exactly one query, got multiple instead",
-                        message
-                    );
-                    query
-                };
-                let requested_record_type = query.query_type();
+                        );
+                        query
+                    };
+                    let requested_record_type = query.query_type();
 
-                if !expected_record_types.contains(&requested_record_type) {
-                    // Reply with a `SERVFAIL` response since we want to ignore this query.
-                    let mut response = Message::new();
-                    let _: &mut Message = response.set_response_code(ResponseCode::ServFail);
-                    response
-                } else {
-                    let answer = answer_for_hostname(
-                        EXAMPLE_HOSTNAME,
-                        match requested_record_type {
-                            RecordType::A => EXAMPLE_IPV4_ADDR,
-                            RecordType::AAAA => EXAMPLE_IPV6_ADDR,
-                            _ => panic!(
-                                "DNS resolver should only request A or AAAA records, \
+                    if !expected_record_types.contains(&requested_record_type) {
+                        // Reply with a `SERVFAIL` response since we want to ignore this query.
+                        let mut response = Message::new();
+                        let _: &mut Message = response.set_response_code(ResponseCode::ServFail);
+                        response
+                    } else {
+                        let answer = answer_for_hostname(
+                            EXAMPLE_HOSTNAME,
+                            match requested_record_type {
+                                RecordType::A => EXAMPLE_IPV4_ADDR,
+                                RecordType::AAAA => EXAMPLE_IPV6_ADDR,
+                                _ => panic!(
+                                    "DNS resolver should only request A or AAAA records, \
                                  got {:?} with type {:?} instead",
-                                query, requested_record_type,
-                            ),
-                        },
-                    );
-                    let mut response = Message::new();
-                    let _: &mut Message =
-                        response.set_response_code(ResponseCode::NoError).add_answer(answer);
-                    response
-                }
-            })
-        }
-        .fuse());
+                                    query, requested_record_type,
+                                ),
+                            },
+                        );
+                        let mut response = Message::new();
+                        let _: &mut Message =
+                            response.set_response_code(ResponseCode::NoError).add_answer(answer);
+                        response
+                    }
+                })
+            }
+            .fuse()
+        );
 
         futures::select! {
             () = lookup_fut => {},
@@ -1345,38 +1357,44 @@ async fn no_fallback_to_tcp_on_failed_udp<N: Netstack>(name: &str) {
 
     let name_lookup =
         realm.connect_to_protocol::<net_name::LookupMarker>().expect("connect to protocol");
-    let mut lookup_fut = pin!(async {
-        let lookup_result = name_lookup
-            .lookup_ip(
-                EXAMPLE_HOSTNAME,
-                &net_name::LookupIpOptions { ipv4_lookup: Some(true), ..Default::default() },
-            )
-            .await
-            .expect("call lookup IP");
-        // The DNS resolver should not retry UDP errors over TCP, so when the request over UDP
-        // fails, the overall lookup should result in an error.
-        assert_eq!(lookup_result, Err(net_name::LookupError::NotFound));
-    }
-    .fuse());
+    let mut lookup_fut = pin!(
+        async {
+            let lookup_result = name_lookup
+                .lookup_ip(
+                    EXAMPLE_HOSTNAME,
+                    &net_name::LookupIpOptions { ipv4_lookup: Some(true), ..Default::default() },
+                )
+                .await
+                .expect("call lookup IP");
+            // The DNS resolver should not retry UDP errors over TCP, so when the request over UDP
+            // fails, the overall lookup should result in an error.
+            assert_eq!(lookup_result, Err(net_name::LookupError::NotFound));
+        }
+        .fuse()
+    );
 
     let (udp_socket, tcp_listener) =
         setup_dns_server(&realm, std_socket_addr!("127.0.0.1:1234")).await;
     // The name server responds to queries over UDP with a `SERVFAIL` response.
-    let mut udp_fut = pin!(mock_udp_name_server(&udp_socket, |_: &Message| {
-        let mut response = Message::new();
-        let _: &mut Message = response.set_response_code(ResponseCode::ServFail);
-        response
-    })
-    .fuse());
+    let mut udp_fut = pin!(
+        mock_udp_name_server(&udp_socket, |_: &Message| {
+            let mut response = Message::new();
+            let _: &mut Message = response.set_response_code(ResponseCode::ServFail);
+            response
+        })
+        .fuse()
+    );
     // The name server panics if it gets any connection requests over TCP.
-    let mut tcp_fut = pin!(async {
-        let mut incoming = tcp_listener.accept_stream();
-        if let Some(result) = incoming.next().await {
-            let (_stream, addr) = result.expect("accept incoming TCP connection");
-            panic!("we expect no queries over TCP; got a connection request from {:?}", addr);
+    let mut tcp_fut = pin!(
+        async {
+            let mut incoming = tcp_listener.accept_stream();
+            if let Some(result) = incoming.next().await {
+                let (_stream, addr) = result.expect("accept incoming TCP connection");
+                panic!("we expect no queries over TCP; got a connection request from {:?}", addr);
+            }
         }
-    }
-    .fuse());
+        .fuse()
+    );
 
     futures::select! {
         () = lookup_fut => {},
@@ -1403,24 +1421,26 @@ async fn fallback_to_tcp_on_truncated_response<N: Netstack>(name: &str) {
 
     let name_lookup =
         realm.connect_to_protocol::<net_name::LookupMarker>().expect("connect to protocol");
-    let mut lookup_fut = pin!(async {
-        let ips = name_lookup
-            .lookup_ip(
-                EXAMPLE_HOSTNAME,
-                &net_name::LookupIpOptions { ipv4_lookup: Some(true), ..Default::default() },
-            )
-            .await
-            .expect("call lookup IP")
-            .expect("lookup IP");
-        assert_eq!(
-            ips,
-            net_name::LookupResult {
-                addresses: Some(vec![EXAMPLE_IPV4_ADDR]),
-                ..Default::default()
-            }
-        );
-    }
-    .fuse());
+    let mut lookup_fut = pin!(
+        async {
+            let ips = name_lookup
+                .lookup_ip(
+                    EXAMPLE_HOSTNAME,
+                    &net_name::LookupIpOptions { ipv4_lookup: Some(true), ..Default::default() },
+                )
+                .await
+                .expect("call lookup IP")
+                .expect("lookup IP");
+            assert_eq!(
+                ips,
+                net_name::LookupResult {
+                    addresses: Some(vec![EXAMPLE_IPV4_ADDR]),
+                    ..Default::default()
+                }
+            );
+        }
+        .fuse()
+    );
 
     let (udp_socket, tcp_listener) =
         setup_dns_server(&realm, std_socket_addr!("127.0.0.1:1234")).await;
@@ -1429,57 +1449,61 @@ async fn fallback_to_tcp_on_truncated_response<N: Netstack>(name: &str) {
     //
     // Also, reply with an incorrect resolved IP address here to ensure that the eventual lookup
     // result comes from the TCP name server.
-    let mut udp_fut = pin!(mock_udp_name_server(&udp_socket, |_: &Message| {
-        let answer = answer_for_hostname(EXAMPLE_HOSTNAME, fidl_ip!("2.2.2.2"));
-        let mut response = Message::new();
-        let _: &mut Message = response
-            .set_response_code(ResponseCode::NoError)
-            .add_answer(answer)
-            .set_truncated(true);
-        response
-    })
-    .fuse());
-    // The name server responds to queries over TCP with the full response.
-    let mut tcp_fut = pin!(async {
-        let mut incoming = tcp_listener.accept_stream();
-        let (mut stream, _src_addr) = incoming
-            .next()
-            .await
-            .expect("DNS query over TCP")
-            .expect("accept incoming TCP connection");
-        loop {
-            // Read the two-octet length field, which tells us the length of the following DNS
-            // message, in network (big-endian) order.
-            let mut len_buf = [0_u8; 2];
-            let () = stream.read_exact(&mut len_buf).await.expect("read length field");
-            let len = u16::from_be_bytes(len_buf);
-            let len = usize::from(len);
-
-            let mut buf = vec![0_u8; len];
-            let () = stream.read_exact(&mut buf).await.expect("receive DNS query");
-            let query = Message::from_vec(&buf).expect("deserialize DNS query");
-            let answer = answer_for_hostname(EXAMPLE_HOSTNAME, EXAMPLE_IPV4_ADDR);
+    let mut udp_fut = pin!(
+        mock_udp_name_server(&udp_socket, |_: &Message| {
+            let answer = answer_for_hostname(EXAMPLE_HOSTNAME, fidl_ip!("2.2.2.2"));
             let mut response = Message::new();
             let _: &mut Message = response
-                .set_message_type(MessageType::Response)
-                .set_op_code(OpCode::Update)
                 .set_response_code(ResponseCode::NoError)
                 .add_answer(answer)
-                .set_id(query.id())
-                .add_queries(query.queries().to_vec());
-            let response = response.to_vec().expect("serialize DNS response");
+                .set_truncated(true);
+            response
+        })
+        .fuse()
+    );
+    // The name server responds to queries over TCP with the full response.
+    let mut tcp_fut = pin!(
+        async {
+            let mut incoming = tcp_listener.accept_stream();
+            let (mut stream, _src_addr) = incoming
+                .next()
+                .await
+                .expect("DNS query over TCP")
+                .expect("accept incoming TCP connection");
+            loop {
+                // Read the two-octet length field, which tells us the length of the following DNS
+                // message, in network (big-endian) order.
+                let mut len_buf = [0_u8; 2];
+                let () = stream.read_exact(&mut len_buf).await.expect("read length field");
+                let len = u16::from_be_bytes(len_buf);
+                let len = usize::from(len);
 
-            // Write the two-octet length field.
-            let len = u16::try_from(response.len())
-                .expect("response is larger than maximum size")
-                .to_be_bytes();
-            let written = stream.write(&len).await.expect("send length field");
-            assert_eq!(written, len.len());
-            let written = stream.write(&response).await.expect("send DNS response");
-            assert_eq!(written, response.len());
+                let mut buf = vec![0_u8; len];
+                let () = stream.read_exact(&mut buf).await.expect("receive DNS query");
+                let query = Message::from_vec(&buf).expect("deserialize DNS query");
+                let answer = answer_for_hostname(EXAMPLE_HOSTNAME, EXAMPLE_IPV4_ADDR);
+                let mut response = Message::new();
+                let _: &mut Message = response
+                    .set_message_type(MessageType::Response)
+                    .set_op_code(OpCode::Update)
+                    .set_response_code(ResponseCode::NoError)
+                    .add_answer(answer)
+                    .set_id(query.id())
+                    .add_queries(query.queries().to_vec());
+                let response = response.to_vec().expect("serialize DNS response");
+
+                // Write the two-octet length field.
+                let len = u16::try_from(response.len())
+                    .expect("response is larger than maximum size")
+                    .to_be_bytes();
+                let written = stream.write(&len).await.expect("send length field");
+                assert_eq!(written, len.len());
+                let written = stream.write(&response).await.expect("send DNS response");
+                assert_eq!(written, response.len());
+            }
         }
-    }
-    .fuse());
+        .fuse()
+    );
 
     futures::select! {
         () = lookup_fut => {},
@@ -1620,8 +1644,8 @@ async fn query_preferred_name_servers_first<N: Netstack>(name: &str) {
         // haven't.
         //
         // Expect that the preferred name servers are queried first.
-        let mut preferred_queried =
-            pin!(futures::future::select_all(preferred_servers.iter().map(|server| {
+        let mut preferred_queried = pin!(
+            futures::future::select_all(preferred_servers.iter().map(|server| {
                 server
                     .handle_next_query(|message| {
                         let _: &mut Message = message
@@ -1630,7 +1654,8 @@ async fn query_preferred_name_servers_first<N: Netstack>(name: &str) {
                     })
                     .boxed()
             }))
-            .fuse());
+            .fuse()
+        );
         let mut secondary_queried = pin!(secondary_server.ignore_next_query().fuse());
         futures::select! {
             ((), i, _remaining) = preferred_queried =>

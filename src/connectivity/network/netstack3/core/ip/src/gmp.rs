@@ -47,8 +47,8 @@ use core::time::Duration;
 
 use assert_matches::assert_matches;
 use log::info;
-use net_types::ip::{Ip, IpAddress, IpVersionMarker};
 use net_types::MulticastAddr;
+use net_types::ip::{Ip, IpAddress, IpVersionMarker};
 use netstack3_base::ref_counted_hash_map::{InsertResult, RefCountedHashMap, RemoveResult};
 use netstack3_base::{
     AnyDevice, CoreTimerContext, DeviceIdContext, InspectableValue, Inspector,
@@ -503,11 +503,7 @@ enum LastState {
 
 impl LastState {
     fn from_enabled(enabled: bool) -> Self {
-        if enabled {
-            Self::Enabled
-        } else {
-            Self::Disabled
-        }
+        if enabled { Self::Enabled } else { Self::Disabled }
     }
 }
 
@@ -1058,8 +1054,8 @@ mod tests {
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
     use net_types::Witness as _;
-    use netstack3_base::testutil::{FakeDeviceId, FakeTimerCtxExt, FakeWeakDeviceId};
     use netstack3_base::InstantContext as _;
+    use netstack3_base::testutil::{FakeDeviceId, FakeTimerCtxExt, FakeWeakDeviceId};
 
     use testutil::{FakeCtx, FakeGmpContextInner, FakeV1Query, TestIpExt};
 

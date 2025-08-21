@@ -187,8 +187,8 @@ pub(crate) async fn serve(
     Ok(())
 }
 
-pub(crate) fn create_request_stream<T: fidl::endpoints::ProtocolMarker>(
-) -> (fidl::endpoints::ClientEnd<T>, T::RequestStream) {
+pub(crate) fn create_request_stream<T: fidl::endpoints::ProtocolMarker>()
+-> (fidl::endpoints::ClientEnd<T>, T::RequestStream) {
     fidl::endpoints::create_request_stream()
 }
 

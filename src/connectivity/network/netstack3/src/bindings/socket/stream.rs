@@ -5,7 +5,7 @@
 //! Stream sockets, primarily TCP sockets.
 
 use std::fmt::Debug;
-use std::num::{NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU8, NonZeroUsize, TryFromIntError};
+use std::num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroUsize, TryFromIntError};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,6 +17,7 @@ use futures::channel::{mpsc, oneshot};
 use log::{debug, error, warn};
 use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv6};
 use net_types::{NonMappedAddr, SpecifiedAddr, ZonedAddr};
+use netstack3_core::IpExt;
 use netstack3_core::device::{DeviceId, WeakDeviceId};
 use netstack3_core::socket::ShutdownType;
 use netstack3_core::tcp::{
@@ -25,7 +26,6 @@ use netstack3_core::tcp::{
     OriginalDestinationError, SetReuseAddrError, SocketAddr, SocketInfo, SocketOptions,
     TcpBindingsTypes, UnboundInfo,
 };
-use netstack3_core::IpExt;
 use packet_formats::utils::NonZeroDuration;
 use zx::{self as zx, Peered as _};
 use {

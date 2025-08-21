@@ -12,6 +12,7 @@ use netstack3_base::{
     AnyDevice, CoreTimerContext, CounterContext, DeviceIdContext, StrongDeviceIdentifier,
 };
 
+use crate::IpLayerIpExt;
 use crate::internal::multicast_forwarding::counters::MulticastForwardingCounters;
 use crate::internal::multicast_forwarding::packet_queue::MulticastForwardingPendingPackets;
 use crate::internal::multicast_forwarding::route::{MulticastRouteEntry, MulticastRouteKey};
@@ -19,7 +20,6 @@ use crate::internal::multicast_forwarding::{
     MulticastForwardingBindingsContext, MulticastForwardingBindingsTypes,
     MulticastForwardingTimerId,
 };
-use crate::IpLayerIpExt;
 
 /// Multicast forwarding state for an IP version `I`.
 ///

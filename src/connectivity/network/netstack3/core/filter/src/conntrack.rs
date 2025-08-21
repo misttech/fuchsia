@@ -152,10 +152,10 @@ impl<I: IpExt, E, BC: FilterBindingsContext> Table<I, E, BC> {
 }
 
 impl<
-        I: IpExt,
-        E: Default + Send + Sync + PartialEq + CompatibleWith + 'static,
-        BC: FilterBindingsContext,
-    > Table<I, E, BC>
+    I: IpExt,
+    E: Default + Send + Sync + PartialEq + CompatibleWith + 'static,
+    BC: FilterBindingsContext,
+> Table<I, E, BC>
 {
     /// Attempts to insert the `Connection` into the table.
     ///
@@ -433,11 +433,7 @@ impl<I: IpExt, E: Inspectable, BT: FilterBindingsTypes> Inspectable for Table<I,
                 .table
                 .iter()
                 .filter_map(|(tuple, connection)| {
-                    if *tuple == connection.inner.original_tuple {
-                        Some(connection)
-                    } else {
-                        None
-                    }
+                    if *tuple == connection.inner.original_tuple { Some(connection) } else { None }
                 })
                 .for_each(|connection| {
                     inspector.record_unnamed_child(|inspector| {
@@ -1203,8 +1199,8 @@ mod tests {
     use super::testutils::make_test_udp_packets;
     use super::*;
     use crate::context::testutil::{FakeBindingsCtx, FakeCtx};
-    use crate::packets::testutil::internal::ArbitraryValue;
     use crate::packets::IpPacket;
+    use crate::packets::testutil::internal::ArbitraryValue;
     use crate::state::IpRoutines;
     use crate::testutil::TestIpExt;
 
@@ -1526,10 +1522,12 @@ mod tests {
 
         // Because `packet` is an ICMP error, we shouldn't create and return a
         // connection for it.
-        assert!(table
-            .get_connection_for_packet_and_update(&bindings_ctx, packet.clone())
-            .expect("packet should be valid")
-            .is_none());
+        assert!(
+            table
+                .get_connection_for_packet_and_update(&bindings_ctx, packet.clone())
+                .expect("packet should be valid")
+                .is_none()
+        );
         assert!(!table.contains_tuple(&packet.tuple()));
     }
 

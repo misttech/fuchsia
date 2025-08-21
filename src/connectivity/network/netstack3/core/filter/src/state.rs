@@ -21,8 +21,8 @@ use packet_formats::ip::IpExt;
 use crate::actions::MarkAction;
 use crate::conntrack::{self, ConnectionDirection};
 use crate::context::{FilterBindingsContext, FilterBindingsTypes};
-use crate::logic::nat::NatConfig;
 use crate::logic::FilterTimerId;
+use crate::logic::nat::NatConfig;
 use crate::matchers::PacketMatcher;
 use crate::state::validation::ValidRoutines;
 

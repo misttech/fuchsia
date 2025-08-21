@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use loom::sync::Arc;
+use netstack3_base::PositiveIsize;
 use netstack3_base::socket::{SendBufferFullError, SendBufferTracking};
 use netstack3_base::testutil::FakeSocketWritableListener;
-use netstack3_base::PositiveIsize;
 
 use super::{loom_model, loom_spawn, low_preemption_bound_model};
 

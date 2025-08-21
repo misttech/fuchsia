@@ -34,8 +34,8 @@ use crate::internal::base::{
 };
 use crate::internal::counters::IpCounters;
 use crate::internal::device::state::IpDeviceStateIpExt;
-use crate::internal::routing::rules::RuleInput;
 use crate::internal::routing::PacketOrigin;
+use crate::internal::routing::rules::RuleInput;
 use crate::internal::types::{InternalForwarding, ResolvedRoute, RoutableIpAddr};
 use crate::{HopLimits, NextHop};
 
@@ -430,12 +430,12 @@ pub trait IpSocketBindingsContext<D: StrongDeviceIdentifier>:
 {
 }
 impl<
-        D: StrongDeviceIdentifier,
-        BC: InstantContext
-            + FilterBindingsContext
-            + TxMetadataBindingsTypes
-            + SocketOpsFilterBindingContext<D>,
-    > IpSocketBindingsContext<D> for BC
+    D: StrongDeviceIdentifier,
+    BC: InstantContext
+        + FilterBindingsContext
+        + TxMetadataBindingsTypes
+        + SocketOpsFilterBindingContext<D>,
+> IpSocketBindingsContext<D> for BC
 {
 }
 
@@ -801,11 +801,7 @@ impl<I: Ip> SocketHopLimits<I> {
     /// Returns the appropriate hop limit to use for the given destination addr.
     pub fn hop_limit_for_dst(&self, destination: &SpecifiedAddr<I::Addr>) -> Option<NonZeroU8> {
         let Self { unicast, multicast, version: _ } = self;
-        if destination.is_multicast() {
-            *multicast
-        } else {
-            *unicast
-        }
+        if destination.is_multicast() { *multicast } else { *unicast }
     }
 }
 
@@ -1272,11 +1268,7 @@ pub(crate) mod ipv6_source_address_selection {
             // both be unequal to `remote_ip`. In the first case, we have a tie,
             // and in the second case, the rule doesn't apply. In either case,
             // we move onto the next rule.
-            if a == remote_ip {
-                Ordering::Greater
-            } else {
-                Ordering::Less
-            }
+            if a == remote_ip { Ordering::Greater } else { Ordering::Less }
         } else {
             Ordering::Equal
         }
@@ -1296,17 +1288,9 @@ pub(crate) mod ipv6_source_address_selection {
         let a_scope = a.scope().multicast_scope_id();
         let b_scope = b.scope().multicast_scope_id();
         if a_scope < b_scope {
-            if a_scope < remote_scope {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            }
+            if a_scope < remote_scope { Ordering::Less } else { Ordering::Greater }
         } else if a_scope > b_scope {
-            if b_scope < remote_scope {
-                Ordering::Greater
-            } else {
-                Ordering::Less
-            }
+            if b_scope < remote_scope { Ordering::Greater } else { Ordering::Less }
         } else {
             Ordering::Equal
         }
@@ -1323,11 +1307,7 @@ pub(crate) mod ipv6_source_address_selection {
     fn rule_5<D: PartialEq>(outbound_device: &D, a_device: &D, b_device: &D) -> Ordering {
         if (a_device == outbound_device) != (b_device == outbound_device) {
             // Rule 5: Prefer outgoing interface.
-            if a_device == outbound_device {
-                Ordering::Greater
-            } else {
-                Ordering::Less
-            }
+            if a_device == outbound_device { Ordering::Greater } else { Ordering::Less }
         } else {
             Ordering::Equal
         }
@@ -1553,7 +1533,7 @@ pub(crate) mod testutil {
 
     use super::*;
     use crate::internal::base::{
-        BaseTransportIpContext, HopLimits, MulticastMembershipHandler, DEFAULT_HOP_LIMITS,
+        BaseTransportIpContext, DEFAULT_HOP_LIMITS, HopLimits, MulticastMembershipHandler,
     };
     use crate::internal::routing::testutil::FakeIpRoutingCtx;
     use crate::internal::routing::{self, RoutingTable};

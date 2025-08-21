@@ -28,10 +28,10 @@ use netstack3_ip::nud::{
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
 use netstack3_trace::trace_duration;
 use packet::{Buf, BufferMut, PacketBuilder, Serializer};
-use packet_formats::arp::{peek_arp_types, ArpHardwareType, ArpNetworkType};
+use packet_formats::arp::{ArpHardwareType, ArpNetworkType, peek_arp_types};
 use packet_formats::ethernet::{
-    EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck, EthernetIpExt,
-    ETHERNET_HDR_LEN_NO_TAG,
+    ETHERNET_HDR_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
+    EthernetFrameLengthCheck, EthernetIpExt,
 };
 
 use crate::internal::arp::{ArpFrameMetadata, ArpPacketHandler, ArpState, ArpTimerId};
@@ -752,12 +752,12 @@ pub fn get_mtu<
 pub trait UseArpFrameMetadataBlanket {}
 
 impl<
-        BC: EthernetIpLinkDeviceBindingsContext,
-        CC: EthernetIpLinkDeviceDynamicStateContext<BC>
-            + TransmitQueueHandler<EthernetLinkDevice, BC, Meta = BC::TxMetadata>
-            + ResourceCounterContext<CC::DeviceId, DeviceCounters>
-            + UseArpFrameMetadataBlanket,
-    > SendableFrameMeta<CC, BC> for ArpFrameMetadata<EthernetLinkDevice, CC::DeviceId>
+    BC: EthernetIpLinkDeviceBindingsContext,
+    CC: EthernetIpLinkDeviceDynamicStateContext<BC>
+        + TransmitQueueHandler<EthernetLinkDevice, BC, Meta = BC::TxMetadata>
+        + ResourceCounterContext<CC::DeviceId, DeviceCounters>
+        + UseArpFrameMetadataBlanket,
+> SendableFrameMeta<CC, BC> for ArpFrameMetadata<EthernetLinkDevice, CC::DeviceId>
 {
     fn send_meta<S>(
         self,
@@ -790,11 +790,11 @@ impl DeviceSocketSendTypes for EthernetLinkDevice {
 }
 
 impl<
-        BC: EthernetIpLinkDeviceBindingsContext,
-        CC: EthernetIpLinkDeviceDynamicStateContext<BC>
-            + TransmitQueueHandler<EthernetLinkDevice, BC, Meta = BC::TxMetadata>
-            + ResourceCounterContext<CC::DeviceId, DeviceCounters>,
-    > SendableFrameMeta<CC, BC> for DeviceSocketMetadata<EthernetLinkDevice, EthernetDeviceId<BC>>
+    BC: EthernetIpLinkDeviceBindingsContext,
+    CC: EthernetIpLinkDeviceDynamicStateContext<BC>
+        + TransmitQueueHandler<EthernetLinkDevice, BC, Meta = BC::TxMetadata>
+        + ResourceCounterContext<CC::DeviceId, DeviceCounters>,
+> SendableFrameMeta<CC, BC> for DeviceSocketMetadata<EthernetLinkDevice, EthernetDeviceId<BC>>
 where
     CC: DeviceIdContext<EthernetLinkDevice, DeviceId = EthernetDeviceId<BC>>,
 {
@@ -923,8 +923,8 @@ mod tests {
     use core::convert::Infallible as Never;
     use netstack3_hashmap::HashSet;
 
-    use net_types::ip::{Ipv4Addr, Ipv6Addr};
     use net_types::SpecifiedAddr;
+    use net_types::ip::{Ipv4Addr, Ipv6Addr};
     use netstack3_base::testutil::{
         FakeDeviceId, FakeInstant, FakeTxMetadata, FakeWeakDeviceId, TEST_ADDRS_V4,
     };

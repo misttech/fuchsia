@@ -9,7 +9,7 @@ use alloc::collections::VecDeque;
 use derivative::Derivative;
 
 use crate::internal::queue::{
-    DequeueResult, EnqueueResult, ReceiveQueueFullError, MAX_RX_QUEUED_LEN, MAX_TX_QUEUED_LEN,
+    DequeueResult, EnqueueResult, MAX_RX_QUEUED_LEN, MAX_TX_QUEUED_LEN, ReceiveQueueFullError,
 };
 
 /// A FiFo (First In, First Out) queue.

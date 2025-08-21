@@ -494,10 +494,10 @@ mod tests {
     use futures::StreamExt;
     use test_case::test_case;
 
-    use crate::messaging::testutil::{fake_sender_with_sink, SentMessage};
+    use crate::messaging::testutil::{SentMessage, fake_sender_with_sink};
     use crate::protocol_family::testutil::{
-        new_fake_netlink_message, FakeProtocolFamily, MODERN_GROUP1, MODERN_GROUP2,
-        MODERN_GROUP_NEEDS_BLOCKING,
+        FakeProtocolFamily, MODERN_GROUP_NEEDS_BLOCKING, MODERN_GROUP1, MODERN_GROUP2,
+        new_fake_netlink_message,
     };
 
     impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> ClientTable<F, S> {
@@ -509,8 +509,8 @@ mod tests {
         }
     }
 
-    fn closed_async_work_sink<T: Copy + Clone + Debug + 'static>(
-    ) -> futures::channel::mpsc::UnboundedSender<AsyncWorkItem<T>> {
+    fn closed_async_work_sink<T: Copy + Clone + Debug + 'static>()
+    -> futures::channel::mpsc::UnboundedSender<AsyncWorkItem<T>> {
         let (sender, _) = futures::channel::mpsc::unbounded();
         sender.close_channel();
         sender

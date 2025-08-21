@@ -7,16 +7,16 @@
 use std::sync::Arc;
 
 use derivative::Derivative;
-use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
+use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
 
+use crate::bindings::Ctx;
 use crate::bindings::routes::admin::{RouteTable, UserRouteSet};
 use crate::bindings::routes::{self, RouteWorkItem, TableId, TableIdOverflowsError};
 use crate::bindings::util::ScopeExt as _;
-use crate::bindings::Ctx;
 use zx::HandleBased as _;
 
 #[derive(Derivative, GenericOverIp)]

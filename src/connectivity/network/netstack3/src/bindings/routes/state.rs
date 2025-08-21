@@ -11,9 +11,9 @@ use fidl::endpoints::ProtocolMarker;
 use futures::channel::oneshot;
 use futures::{TryStream, TryStreamExt as _};
 use log::{error, info, warn};
+use net_types::SpecifiedAddr;
 use net_types::ethernet::Mac;
 use net_types::ip::{GenericOverIp, Ip, IpAddr, IpAddress, Ipv4, Ipv6};
-use net_types::SpecifiedAddr;
 use netstack3_core::device::{DeviceId, EthernetDeviceId, EthernetLinkDevice};
 use netstack3_core::error::AddressResolutionFailed;
 use netstack3_core::ip::WrapBroadcastMarker;
@@ -26,13 +26,13 @@ use {
 
 use crate::bindings::routes::rules_state::RuleInterest;
 use crate::bindings::routes::watcher::{
-    serve_watcher, FidlWatcherEvent, ServeWatcherError, Update, UpdateDispatcher, WatcherEvent,
-    WatcherInterest,
+    FidlWatcherEvent, ServeWatcherError, Update, UpdateDispatcher, WatcherEvent, WatcherInterest,
+    serve_watcher,
 };
 use crate::bindings::util::{
     ConversionContext as _, IntoCore as _, IntoFidl as _, ResultExt as _, ScopeExt as _,
 };
-use crate::bindings::{routes, BindingsCtx, Ctx, IpExt};
+use crate::bindings::{BindingsCtx, Ctx, IpExt, routes};
 
 impl LinkResolutionContext<EthernetLinkDevice> for BindingsCtx {
     type Notifier = LinkResolutionNotifier;
@@ -324,7 +324,7 @@ async fn serve_route_watcher<I: fnet_routes_ext::FidlRouteIpExt>(
             return Err(ServeWatcherError::ErrorInStream(fidl::Error::UnknownOrdinal {
                 ordinal: unknown_ordinal,
                 protocol_name: <I::WatcherMarker as ProtocolMarker>::DEBUG_NAME,
-            }))
+            }));
         }
     };
     serve_watcher(server_end, client_interest, dispatcher).await

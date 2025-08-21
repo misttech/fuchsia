@@ -91,11 +91,11 @@ use crate::bindings::settings::Settings;
 use crate::bindings::socket::queue::NoSpace;
 use crate::bindings::time::{AtomicStackTime, StackTime};
 use crate::bindings::util::ScopeExt as _;
+use net_types::SpecifiedAddr;
 use net_types::ethernet::Mac;
 use net_types::ip::{
     AddrSubnet, AddrSubnetEither, Ip, IpAddr, IpAddress, IpVersion, Ipv4, Ipv6, Mtu,
 };
-use net_types::SpecifiedAddr;
 use netstack3_core::device::{
     DeviceConfigurationUpdate, DeviceId, DeviceLayerEventDispatcher, DeviceLayerStateTypes,
     DeviceSendFrameError, EthernetDeviceEvent, EthernetDeviceId, LoopbackCreationProperties,
@@ -119,9 +119,9 @@ use netstack3_core::udp::{
     ReceiveUdpError, UdpBindingsTypes, UdpPacketMeta, UdpReceiveBindingsContext, UdpSocketId,
 };
 use netstack3_core::{
-    neighbor, CoreTxMetadata, DeferredResourceRemovalContext, EventContext, InstantBindingsTypes,
+    CoreTxMetadata, DeferredResourceRemovalContext, EventContext, InstantBindingsTypes,
     InstantContext, IpExt, RngContext, StackState, StackStateBuilder, TimerBindingsTypes,
-    TimerContext, TimerId, TxMetadataBindingsTypes,
+    TimerContext, TimerId, TxMetadataBindingsTypes, neighbor,
 };
 
 pub(crate) use inspect::InspectPublisher;
@@ -353,11 +353,7 @@ impl LifetimeExt for Lifetime<zx::MonotonicInstant> {
     }
 
     fn from_zx_time(t: zx::MonotonicInstant) -> Self {
-        if t == zx::MonotonicInstant::INFINITE {
-            Self::Infinite
-        } else {
-            Self::Finite(t)
-        }
+        if t == zx::MonotonicInstant::INFINITE { Self::Infinite } else { Self::Finite(t) }
     }
 }
 

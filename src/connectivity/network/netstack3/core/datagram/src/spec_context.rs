@@ -161,20 +161,20 @@ pub trait DatagramSpecBoundStateContext<
         + DeviceIdContext<AnyDevice, DeviceId = CC::DeviceId, WeakDeviceId = CC::WeakDeviceId>;
 
     type DualStackContext: DualStackDatagramBoundStateContext<
-        I,
-        BC,
-        Self,
-        DeviceId = CC::DeviceId,
-        WeakDeviceId = CC::WeakDeviceId,
-    >;
+            I,
+            BC,
+            Self,
+            DeviceId = CC::DeviceId,
+            WeakDeviceId = CC::WeakDeviceId,
+        >;
 
     type NonDualStackContext: NonDualStackDatagramBoundStateContext<
-        I,
-        BC,
-        Self,
-        DeviceId = CC::DeviceId,
-        WeakDeviceId = CC::WeakDeviceId,
-    >;
+            I,
+            BC,
+            Self,
+            DeviceId = CC::DeviceId,
+            WeakDeviceId = CC::WeakDeviceId,
+        >;
 
     fn with_bound_sockets<
         O,

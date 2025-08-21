@@ -8,8 +8,8 @@ use alloc::collections::btree_map;
 use core::sync::atomic::Ordering;
 
 use log::warn;
-use net_types::ip::{Ip, IpVersionMarker};
 use net_types::SpecifiedAddr;
+use net_types::ip::{Ip, IpVersionMarker};
 use netstack3_base::{
     AnyDevice, AtomicInstant, ContextPair, CoreTimerContext, CounterContext, DeviceIdContext,
     Inspector, InspectorDeviceExt, InstantBindingsTypes, InstantContext, StrongDeviceIdentifier,
@@ -461,11 +461,11 @@ mod tests {
     use packet::ParseBuffer;
     use test_case::test_case;
 
+    use crate::IpLayerEvent;
     use crate::internal::multicast_forwarding;
     use crate::internal::multicast_forwarding::packet_queue::QueuePacketOutcome;
     use crate::internal::multicast_forwarding::testutil::{SentPacket, TestIpExt};
     use crate::multicast_forwarding::{MulticastRoute, MulticastRouteKey, MulticastRouteTarget};
-    use crate::IpLayerEvent;
 
     #[ip_test(I)]
     fn enable_disable<I: IpLayerIpExt>() {

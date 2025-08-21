@@ -164,11 +164,7 @@ impl SeqNum {
     /// This is equivalent to [`Ord::min`], but keeps within the temporal
     /// instead of numeric semantics.
     pub fn earliest(self, other: SeqNum) -> SeqNum {
-        if self.before(other) {
-            self
-        } else {
-            other
-        }
+        if self.before(other) { self } else { other }
     }
 
     /// Returns the latest sequence number between `self` and `other`.
@@ -176,11 +172,7 @@ impl SeqNum {
     /// This is equivalent to [`Ord::max`], but keeps within the temporal
     /// instead of numeric semantics.
     pub fn latest(self, other: SeqNum) -> SeqNum {
-        if self.after(other) {
-            self
-        } else {
-            other
-        }
+        if self.after(other) { self } else { other }
     }
 }
 
@@ -213,11 +205,7 @@ impl WindowSize {
     /// If the provided window size is out of range, then `None` is returned.
     pub const fn from_u32(wnd: u32) -> Option<Self> {
         let WindowSize(max) = Self::MAX;
-        if wnd > max {
-            None
-        } else {
-            Some(Self(wnd))
-        }
+        if wnd > max { None } else { Some(Self(wnd)) }
     }
 
     /// Add a `u32` to this WindowSize, saturating at [`WindowSize::MAX`].

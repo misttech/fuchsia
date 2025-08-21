@@ -18,11 +18,11 @@ use fuchsia_async::{self as fasync, ReadableHandle as _, WritableHandle as _};
 
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
+use netstack3_core::IpExt;
 use netstack3_core::socket::ShutdownType;
 use netstack3_core::tcp::{
     Buffer, BufferLimits, FragmentedPayload, NoConnection, Payload, ReceiveBuffer, SendBuffer,
 };
-use netstack3_core::IpExt;
 
 use super::TcpSocketId;
 use crate::bindings::{BindingsCtx, Ctx};
@@ -253,16 +253,20 @@ pub(super) async fn receive_task<O: ReceiveTaskOps>(
                 continue;
             }
             let a_written = if a.len() != 0 {
-                futures::future::poll_fn(|ctx| loop {
-                    let res = handle.get_ref().write(a).map_err(SocketErrorAction::from);
-                    match res {
-                        Err(SocketErrorAction::Wait) => {
-                            futures::ready!(handle
-                                .need_writable(ctx)
-                                .map(|r| r.expect("waiting for writable")))
+                futures::future::poll_fn(|ctx| {
+                    loop {
+                        let res = handle.get_ref().write(a).map_err(SocketErrorAction::from);
+                        match res {
+                            Err(SocketErrorAction::Wait) => {
+                                futures::ready!(
+                                    handle
+                                        .need_writable(ctx)
+                                        .map(|r| r.expect("waiting for writable"))
+                                )
+                            }
+                            Err(SocketErrorAction::Shutdown) => return Poll::Ready(None),
+                            Ok(written) => return Poll::Ready(Some(written)),
                         }
-                        Err(SocketErrorAction::Shutdown) => return Poll::Ready(None),
-                        Ok(written) => return Poll::Ready(Some(written)),
                     }
                 })
                 .await
@@ -619,18 +623,23 @@ pub(super) async fn send_task<O: SendTaskOps>(
                     continue;
                 }
                 let a_read = if a.len() != 0 {
-                    let mut poll_socket = futures::future::poll_fn(|ctx| loop {
-                        let res = handle.get_ref().read_uninit(a).map_err(SocketErrorAction::from);
-                        match res {
-                            Err(SocketErrorAction::Wait) => {
-                                futures::ready!(handle
-                                    .need_readable(ctx)
-                                    // `need_readable` should not fail for valid
-                                    // sockets with the correct rights.
-                                    .map(|r| r.expect("waiting for readable")))
+                    let mut poll_socket = futures::future::poll_fn(|ctx| {
+                        loop {
+                            let res =
+                                handle.get_ref().read_uninit(a).map_err(SocketErrorAction::from);
+                            match res {
+                                Err(SocketErrorAction::Wait) => {
+                                    futures::ready!(
+                                        handle
+                                            .need_readable(ctx)
+                                            // `need_readable` should not fail for valid
+                                            // sockets with the correct rights.
+                                            .map(|r| r.expect("waiting for readable"))
+                                    )
+                                }
+                                Err(SocketErrorAction::Shutdown) => return Poll::Ready(None),
+                                Ok(read) => return Poll::Ready(Some(read.len())),
                             }
-                            Err(SocketErrorAction::Shutdown) => return Poll::Ready(None),
-                            Ok(read) => return Poll::Ready(Some(read.len())),
                         }
                     })
                     .fuse();

@@ -16,7 +16,7 @@ use fidl_fuchsia_net_interfaces_admin::{
     self as fnet_interfaces_admin, AddressRemovalReason, InterfaceRemovedReason,
 };
 use fidl_fuchsia_net_interfaces_ext::admin::{
-    wait_for_address_added_event, AddressStateProviderError, TerminalError,
+    AddressStateProviderError, TerminalError, wait_for_address_added_event,
 };
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext, Update as _};
 use {
@@ -26,16 +26,16 @@ use {
 
 use derivative::Derivative;
 use either::Either;
-use futures::channel::oneshot;
 use futures::StreamExt as _;
+use futures::channel::oneshot;
 use linux_uapi::{
+    ARPHRD_6LOWPAN, ARPHRD_ETHER, ARPHRD_LOOPBACK, ARPHRD_PPP, ARPHRD_VOID,
     net_device_flags_IFF_LOOPBACK, net_device_flags_IFF_LOWER_UP, net_device_flags_IFF_RUNNING,
     net_device_flags_IFF_UP, rtnetlink_groups_RTNLGRP_IPV4_IFADDR,
-    rtnetlink_groups_RTNLGRP_IPV6_IFADDR, rtnetlink_groups_RTNLGRP_LINK, ARPHRD_6LOWPAN,
-    ARPHRD_ETHER, ARPHRD_LOOPBACK, ARPHRD_PPP, ARPHRD_VOID,
+    rtnetlink_groups_RTNLGRP_IPV6_IFADDR, rtnetlink_groups_RTNLGRP_LINK,
 };
 use net_types::ip::{AddrSubnetEither, IpVersion, Ipv4, Ipv6};
-use netlink_packet_core::{NetlinkMessage, NLM_F_MULTIPART};
+use netlink_packet_core::{NLM_F_MULTIPART, NetlinkMessage};
 use netlink_packet_route::address::{
     AddressAttribute, AddressFlags, AddressHeader, AddressHeaderFlags, AddressMessage,
 };
@@ -44,17 +44,17 @@ use netlink_packet_route::link::{
 };
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 
+use crate::SysctlError;
 use crate::client::{ClientTable, InternalClient};
 use crate::logging::{log_debug, log_error, log_warn};
 use crate::messaging::Sender;
 use crate::multicast_groups::ModernGroup;
-use crate::netlink_packet::errno::Errno;
 use crate::netlink_packet::UNSPECIFIED_SEQUENCE_NUMBER;
-use crate::protocol_family::route::NetlinkRoute;
+use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::ProtocolFamily;
+use crate::protocol_family::route::NetlinkRoute;
 use crate::route_tables::{NetlinkRouteTableIndex, RouteTable, RouteTableMap, UnmanagedTable};
 use crate::util::respond_to_completer;
-use crate::SysctlError;
 
 /// A handler for interface events.
 pub trait InterfacesHandler: Send + Sync + 'static {
@@ -499,11 +499,11 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMess
     ) -> (
         Self,
         impl futures::Stream<
-                Item = Result<
-                    fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::AllInterest>,
-                    fidl::Error,
-                >,
-            > + 'static,
+            Item = Result<
+                fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::AllInterest>,
+                fidl::Error,
+            >,
+        > + 'static,
     ) {
         let mut if_event_stream = Box::pin(
             fnet_interfaces_ext::event_stream_from_state(
@@ -1530,10 +1530,10 @@ pub(crate) mod testutil {
     use std::convert::Infallible as Never;
     use std::sync::{Arc, Mutex};
 
+    use futures::TryStreamExt as _;
     use futures::channel::mpsc;
     use futures::future::Future;
     use futures::stream::Stream;
-    use futures::TryStreamExt as _;
     use net_declare::{fidl_subnet, net_addr_subnet};
 
     use crate::client::AsyncWorkItem;
@@ -1836,7 +1836,7 @@ mod tests {
     use super::testutil::*;
     use super::*;
 
-    use std::pin::{pin, Pin};
+    use std::pin::{Pin, pin};
 
     use fidl::endpoints::{ControlHandle as _, RequestStream as _, Responder as _};
     use fidl_fuchsia_net as fnet;
@@ -1844,10 +1844,10 @@ mod tests {
     use fuchsia_async::{self as fasync};
 
     use assert_matches::assert_matches;
+    use futures::FutureExt as _;
     use futures::sink::SinkExt as _;
     use futures::stream::Stream;
-    use futures::FutureExt as _;
-    use linux_uapi::{rtnetlink_groups_RTNLGRP_IPV4_ROUTE, IFA_F_PERMANENT, IFA_F_TENTATIVE};
+    use linux_uapi::{IFA_F_PERMANENT, IFA_F_TENTATIVE, rtnetlink_groups_RTNLGRP_IPV4_ROUTE};
     use pretty_assertions::assert_eq;
     use test_case::test_case;
 

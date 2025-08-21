@@ -4,8 +4,8 @@
 
 //! Facilities backing raw IP sockets.
 
-use alloc::collections::btree_map::Entry;
 use alloc::collections::BTreeMap;
+use alloc::collections::btree_map::Entry;
 use core::fmt::{self, Debug, Display};
 use core::num::NonZeroU8;
 use derivative::Derivative;
@@ -30,6 +30,7 @@ use packet_formats::ip::{DscpAndEcn, IpPacket};
 use thiserror::Error;
 use zerocopy::SplitByteSlice;
 
+use crate::DEFAULT_HOP_LIMITS;
 use crate::internal::raw::counters::RawIpSocketCounters;
 use crate::internal::raw::filter::RawIpSocketIcmpFilter;
 use crate::internal::raw::protocol::RawIpSocketProtocol;
@@ -38,7 +39,6 @@ use crate::internal::socket::{
     IpSockCreateAndSendError, IpSocketArgs, IpSocketHandler, RouteResolutionOptions,
     SendOneShotIpPacketError, SendOptions, SocketHopLimits,
 };
-use crate::DEFAULT_HOP_LIMITS;
 
 mod checksum;
 pub(crate) mod counters;
@@ -549,12 +549,7 @@ pub trait RawIpSocketStateContext<I: IpExt + FilterIpExt, BT: RawIpSocketsBindin
 {
     /// The implementation of `IpSocketHandler` available after having locked
     /// the state for an individual socket.
-    type SocketHandler<'a>: IpSocketHandler<
-        I,
-        BT,
-        DeviceId = Self::DeviceId,
-        WeakDeviceId = Self::WeakDeviceId,
-    >;
+    type SocketHandler<'a>: IpSocketHandler<I, BT, DeviceId = Self::DeviceId, WeakDeviceId = Self::WeakDeviceId>;
 
     /// Calls the callback with an immutable reference to the socket's locked
     /// state.
@@ -616,11 +611,9 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: RawIpSocketsBindingsTypes> RawIpSock
         let strong = RawIpSocketId(PrimaryRc::clone_strong(primary));
         // NB: The socket must be newly inserted because there can only ever
         // be a single primary ID for a socket.
-        assert!(sockets
-            .entry(*strong.protocol())
-            .or_default()
-            .insert(strong.clone(), socket)
-            .is_none());
+        assert!(
+            sockets.entry(*strong.protocol()).or_default().insert(strong.clone(), socket).is_none()
+        );
         strong
     }
 
@@ -902,7 +895,7 @@ mod test {
 
     use crate::internal::socket::testutil::{FakeIpSocketCtx, InnerFakeIpSocketCtx};
     use crate::socket::testutil::FakeDeviceConfig;
-    use crate::{SendIpPacketMeta, DEFAULT_HOP_LIMITS};
+    use crate::{DEFAULT_HOP_LIMITS, SendIpPacketMeta};
 
     #[derive(Derivative, Debug)]
     #[derivative(Default(bound = ""))]

@@ -73,17 +73,17 @@ use crate::bindings::interface_config::{
     FidlInterfaceConfig, InterfaceConfig, InterfaceConfigUpdate,
 };
 use crate::bindings::netdevice_worker::LinkMulticastWorker;
+use crate::bindings::routes::TableIdOverflowsError;
 use crate::bindings::routes::admin::RouteSet;
 use crate::bindings::routes::interface_local::LocalRouteTables;
-use crate::bindings::routes::TableIdOverflowsError;
 use crate::bindings::time::StackTime;
 use crate::bindings::util::{
     ErrorLogExt, IntoCore as _, RemoveResourceResultExt as _, ResultExt as _, ScopeExt as _,
     TryIntoCore,
 };
 use crate::bindings::{
-    netdevice_worker, routes, BindingId, CoreRwLock, Ctx, DeviceIdExt as _, InterfaceProperties,
-    LifetimeExt as _, Netstack,
+    BindingId, CoreRwLock, Ctx, DeviceIdExt as _, InterfaceProperties, LifetimeExt as _, Netstack,
+    netdevice_worker, routes,
 };
 
 pub(crate) async fn serve(
@@ -1721,9 +1721,7 @@ async fn address_state_provider_main_loop(
 
 #[derive(Error, Debug)]
 pub(crate) enum AddressStateProviderError {
-    #[error(
-        "received a `WatchAddressAssignmentState` request while a previous request is pending"
-    )]
+    #[error("received a `WatchAddressAssignmentState` request while a previous request is pending")]
     PreviousPendingWatchRequest,
     #[error("FIDL error: {0}")]
     Fidl(fidl::Error),

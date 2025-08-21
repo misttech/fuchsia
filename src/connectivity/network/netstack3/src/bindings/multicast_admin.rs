@@ -11,26 +11,26 @@ use derivative::Derivative;
 use explicit::ResultExt;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream};
 use fidl_fuchsia_net_multicast_admin::{
-    self as fnet_multicast_admin, RouteStats, RoutingEvent, TableControllerCloseReason,
-    WrongInputInterface, MAX_ROUTING_EVENTS,
+    self as fnet_multicast_admin, MAX_ROUTING_EVENTS, RouteStats, RoutingEvent,
+    TableControllerCloseReason, WrongInputInterface,
 };
 use fidl_fuchsia_net_multicast_ext::{
     AddRouteError, DelRouteError, FidlMulticastAdminIpExt, FidlResponder as _, GetRouteStatsError,
     Route as FidlExtRoute, TableControllerRequest, TerminalEventControlHandle,
     UnicastSourceAndMulticastDestination, WatchRoutingEventsResponse,
 };
+use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use futures::future::OptionFuture;
-use futures::StreamExt as _;
 use log::{error, info, warn};
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
+use netstack3_core::IpExt;
 use netstack3_core::device::{DeviceId, WeakDeviceId};
 use netstack3_core::ip::{
     ForwardMulticastRouteError, MulticastForwardingDisabledError, MulticastForwardingEvent,
     MulticastRoute, MulticastRouteKey, MulticastRouteStats, MulticastRouteTarget,
 };
-use netstack3_core::IpExt;
 
 use crate::bindings::time::StackTime;
 use crate::bindings::util::{
@@ -192,8 +192,8 @@ impl<I: IpExt + FidlMulticastAdminIpExt> MulticastAdminWorker<I> {
 /// dropped.
 ///
 /// Attempting to use the sink after the worker has been dropped may panic.
-fn new_worker_and_sink<I: IpExt + FidlMulticastAdminIpExt>(
-) -> (MulticastAdminWorker<I>, MulticastAdminEventSink<I>) {
+fn new_worker_and_sink<I: IpExt + FidlMulticastAdminIpExt>()
+-> (MulticastAdminWorker<I>, MulticastAdminEventSink<I>) {
     let (sender, receiver) = futures::channel::mpsc::unbounded();
     (MulticastAdminWorker { receiver }, MulticastAdminEventSink { sender })
 }
@@ -678,16 +678,16 @@ impl IntoFidl<RouteStats> for MulticastRouteStats<StackTime> {
 mod tests {
     use super::*;
 
+    use crate::NetstackSeed;
+    use crate::bindings::BindingId;
     use crate::bindings::integration_tests::{StackSetupBuilder, TestSetupBuilder};
     use crate::bindings::util::testutils::FakeConversionContext;
-    use crate::bindings::BindingId;
-    use crate::NetstackSeed;
 
     use assert_matches::assert_matches;
     use fidl::endpoints::Proxy;
     use fidl_fuchsia_net_multicast_ext::TableControllerProxy as _;
     use futures::task::Poll;
-    use futures::{poll, FutureExt};
+    use futures::{FutureExt, poll};
     use ip_test_macro::ip_test;
     use net_declare::{net_ip_v4, net_ip_v6};
     use net_types::ip::{Ipv4Addr, Ipv6Addr};

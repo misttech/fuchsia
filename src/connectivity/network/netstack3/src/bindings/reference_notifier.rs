@@ -10,8 +10,8 @@ use fuchsia_async as fasync;
 use futures::channel::oneshot;
 use futures::{Future, FutureExt as _, StreamExt as _};
 use log::{debug, warn};
-use netstack3_core::sync::{DynDebugReferences, RcNotifier};
 use netstack3_core::ReferenceNotifiers;
+use netstack3_core::sync::{DynDebugReferences, RcNotifier};
 
 use crate::bindings::{BindingsCtx, Ctx};
 

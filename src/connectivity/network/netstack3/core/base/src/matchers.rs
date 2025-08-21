@@ -69,8 +69,8 @@ mod tests {
     use net_types::ip::Ip;
 
     use super::*;
-    use crate::testutil::{FakeDeviceId, TestIpExt};
     use crate::DeviceNameMatcher;
+    use crate::testutil::{FakeDeviceId, TestIpExt};
 
     /// Only matches `true`.
     #[derive(Debug)]

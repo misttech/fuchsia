@@ -124,13 +124,13 @@ impl<I: DualStackIpExt, T: GenericOverIp<I> + GenericOverIp<I::OtherVersion>> Du
 }
 
 impl<
-        I: DualStackIpExt,
-        NewIp: DualStackIpExt,
-        T: GenericOverIp<NewIp>
-            + GenericOverIp<NewIp::OtherVersion>
-            + GenericOverIp<I>
-            + GenericOverIp<I::OtherVersion>,
-    > GenericOverIp<NewIp> for DualStackTuple<I, T>
+    I: DualStackIpExt,
+    NewIp: DualStackIpExt,
+    T: GenericOverIp<NewIp>
+        + GenericOverIp<NewIp::OtherVersion>
+        + GenericOverIp<I>
+        + GenericOverIp<I::OtherVersion>,
+> GenericOverIp<NewIp> for DualStackTuple<I, T>
 {
     type Type = DualStackTuple<NewIp, T>;
 }
@@ -546,7 +546,7 @@ pub trait SocketMapAddrStateSpec {
     ///
     /// If this returns `Ok`, `try_get_dest` should succeed.
     fn could_insert(&self, new_sharing_state: &Self::SharingState)
-        -> Result<(), IncompatibleError>;
+    -> Result<(), IncompatibleError>;
 
     /// Removes the given socket from the existing state.
     ///
@@ -758,13 +758,13 @@ pub enum Connection {}
 pub struct Sockets<AddrToStateMap, SocketType>(AddrToStateMap, PhantomData<SocketType>);
 
 impl<
-        'a,
-        I: Ip,
-        D: DeviceIdentifier,
-        SocketType: ConvertSocketMapState<I, D, A, S>,
-        A: SocketMapAddrSpec,
-        S: SocketMapStateSpec,
-    > Sockets<&'a SocketMap<AddrVec<I, D, A>, Bound<S>>, SocketType>
+    'a,
+    I: Ip,
+    D: DeviceIdentifier,
+    SocketType: ConvertSocketMapState<I, D, A, S>,
+    A: SocketMapAddrSpec,
+    S: SocketMapStateSpec,
+> Sockets<&'a SocketMap<AddrVec<I, D, A>, Bound<S>>, SocketType>
 where
     S: SocketMapConflictPolicy<SocketType::Addr, SocketType::SharingState, I, D, A>,
 {
@@ -814,14 +814,14 @@ pub struct SocketStateEntry<
 }
 
 impl<
-        'a,
-        I: Ip,
-        D: DeviceIdentifier,
-        SocketType: ConvertSocketMapState<I, D, A, S>,
-        A: SocketMapAddrSpec,
-        S: SocketMapStateSpec
-            + SocketMapConflictPolicy<SocketType::Addr, SocketType::SharingState, I, D, A>,
-    > Sockets<&'a mut SocketMap<AddrVec<I, D, A>, Bound<S>>, SocketType>
+    'a,
+    I: Ip,
+    D: DeviceIdentifier,
+    SocketType: ConvertSocketMapState<I, D, A, S>,
+    A: SocketMapAddrSpec,
+    S: SocketMapStateSpec
+        + SocketMapConflictPolicy<SocketType::Addr, SocketType::SharingState, I, D, A>,
+> Sockets<&'a mut SocketMap<AddrVec<I, D, A>, Bound<S>>, SocketType>
 where
     SocketType::SharingState: Clone,
     SocketType::Id: Clone,
@@ -928,13 +928,13 @@ where
 pub struct UpdateSharingError;
 
 impl<
-        'a,
-        I: Ip,
-        D: DeviceIdentifier,
-        SocketType: ConvertSocketMapState<I, D, A, S>,
-        A: SocketMapAddrSpec,
-        S: SocketMapStateSpec,
-    > SocketStateEntry<'a, I, D, A, S, SocketType>
+    'a,
+    I: Ip,
+    D: DeviceIdentifier,
+    SocketType: ConvertSocketMapState<I, D, A, S>,
+    A: SocketMapAddrSpec,
+    S: SocketMapStateSpec,
+> SocketStateEntry<'a, I, D, A, S, SocketType>
 where
     SocketType::Id: Clone,
 {
@@ -1043,12 +1043,12 @@ where
     pub fn listeners(&self) -> Sockets<&SocketMap<AddrVec<I, D, A>, Bound<S>>, Listener>
     where
         S: SocketMapConflictPolicy<
-            ListenerAddr<ListenerIpAddr<I::Addr, A::LocalIdentifier>, D>,
-            <S as SocketMapStateSpec>::ListenerSharingState,
-            I,
-            D,
-            A,
-        >,
+                ListenerAddr<ListenerIpAddr<I::Addr, A::LocalIdentifier>, D>,
+                <S as SocketMapStateSpec>::ListenerSharingState,
+                I,
+                D,
+                A,
+            >,
         S::ListenerAddrState:
             SocketMapAddrStateSpec<Id = S::ListenerId, SharingState = S::ListenerSharingState>,
     {
@@ -1060,12 +1060,12 @@ where
     pub fn listeners_mut(&mut self) -> Sockets<&mut SocketMap<AddrVec<I, D, A>, Bound<S>>, Listener>
     where
         S: SocketMapConflictPolicy<
-            ListenerAddr<ListenerIpAddr<I::Addr, A::LocalIdentifier>, D>,
-            <S as SocketMapStateSpec>::ListenerSharingState,
-            I,
-            D,
-            A,
-        >,
+                ListenerAddr<ListenerIpAddr<I::Addr, A::LocalIdentifier>, D>,
+                <S as SocketMapStateSpec>::ListenerSharingState,
+                I,
+                D,
+                A,
+            >,
         S::ListenerAddrState:
             SocketMapAddrStateSpec<Id = S::ListenerId, SharingState = S::ListenerSharingState>,
     {
@@ -1077,12 +1077,12 @@ where
     pub fn conns(&self) -> Sockets<&SocketMap<AddrVec<I, D, A>, Bound<S>>, Connection>
     where
         S: SocketMapConflictPolicy<
-            ConnAddr<ConnIpAddr<I::Addr, A::LocalIdentifier, A::RemoteIdentifier>, D>,
-            <S as SocketMapStateSpec>::ConnSharingState,
-            I,
-            D,
-            A,
-        >,
+                ConnAddr<ConnIpAddr<I::Addr, A::LocalIdentifier, A::RemoteIdentifier>, D>,
+                <S as SocketMapStateSpec>::ConnSharingState,
+                I,
+                D,
+                A,
+            >,
         S::ConnAddrState:
             SocketMapAddrStateSpec<Id = S::ConnId, SharingState = S::ConnSharingState>,
     {
@@ -1094,12 +1094,12 @@ where
     pub fn conns_mut(&mut self) -> Sockets<&mut SocketMap<AddrVec<I, D, A>, Bound<S>>, Connection>
     where
         S: SocketMapConflictPolicy<
-            ConnAddr<ConnIpAddr<I::Addr, A::LocalIdentifier, A::RemoteIdentifier>, D>,
-            <S as SocketMapStateSpec>::ConnSharingState,
-            I,
-            D,
-            A,
-        >,
+                ConnAddr<ConnIpAddr<I::Addr, A::LocalIdentifier, A::RemoteIdentifier>, D>,
+                <S as SocketMapStateSpec>::ConnSharingState,
+                I,
+                D,
+                A,
+            >,
         S::ConnAddrState:
             SocketMapAddrStateSpec<Id = S::ConnId, SharingState = S::ConnSharingState>,
     {
@@ -1477,11 +1477,7 @@ mod tests {
             let Self(_, v) = self;
             let index = v.iter().position(|i| i == &id).expect("did not find id");
             let _: I = v.swap_remove(index);
-            if v.is_empty() {
-                RemoveResult::IsLast
-            } else {
-                RemoveResult::Success
-            }
+            if v.is_empty() { RemoveResult::IsLast } else { RemoveResult::Success }
         }
     }
 

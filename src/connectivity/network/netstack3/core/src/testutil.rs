@@ -50,8 +50,8 @@ use netstack3_device::queue::{ReceiveQueueBindingsContext, TransmitQueueBindings
 use netstack3_device::socket::{DeviceSocketBindingsContext, DeviceSocketTypes, ReceiveFrameError};
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_device::{
-    self as device, for_any_device_id, DeviceId, DeviceLayerEventDispatcher, DeviceLayerStateTypes,
-    DeviceLayerTypes, DeviceProvider, DeviceSendFrameError, WeakDeviceId,
+    self as device, DeviceId, DeviceLayerEventDispatcher, DeviceLayerStateTypes, DeviceLayerTypes,
+    DeviceProvider, DeviceSendFrameError, WeakDeviceId, for_any_device_id,
 };
 use netstack3_filter::testutil::NoOpSocketOpsFilter;
 use netstack3_filter::{
@@ -83,8 +83,8 @@ use packet::{Buf, BufferMut};
 use zerocopy::SplitByteSlice;
 
 use crate::api::CoreApi;
-use crate::context::prelude::*;
 use crate::context::UnlockedCoreCtx;
+use crate::context::prelude::*;
 use crate::state::{StackState, StackStateBuilder};
 use crate::time::{TimerId, TimerIdInner};
 use crate::{BindingsContext, BindingsTypes, CoreTxMetadata, IpExt};
@@ -619,11 +619,11 @@ impl<T: ?Sized, S: Deref, Callback: for<'a> Fn(&'a <S as Deref>::Target) -> &'a 
 }
 
 impl<
-        T: ?Sized,
-        S: DerefMut,
-        Callback: for<'a> Fn(&'a <S as Deref>::Target) -> &'a T,
-        CallbackMut: for<'a> Fn(&'a mut <S as Deref>::Target) -> &'a mut T,
-    > DerefMut for Wrapper<S, Callback, CallbackMut>
+    T: ?Sized,
+    S: DerefMut,
+    Callback: for<'a> Fn(&'a <S as Deref>::Target) -> &'a T,
+    CallbackMut: for<'a> Fn(&'a mut <S as Deref>::Target) -> &'a mut T,
+> DerefMut for Wrapper<S, Callback, CallbackMut>
 {
     fn deref_mut(&mut self) -> &mut T {
         let Self(guard, _, f) = self;
@@ -831,8 +831,9 @@ impl TimerContext for FakeBindingsCtx {
         // netstack to quiesce.
         match timer.dispatch_id.0 {
             TimerIdInner::IpLayer(IpLayerTimerId::FilterTimerv4(FilterTimerId::ConntrackGc(_)))
-            | TimerIdInner::IpLayer(IpLayerTimerId::FilterTimerv6(FilterTimerId::ConntrackGc(_))) => {
-                return None
+            | TimerIdInner::IpLayer(IpLayerTimerId::FilterTimerv6(FilterTimerId::ConntrackGc(_))) =>
+            {
+                return None;
             }
             _ => {}
         }

@@ -6,14 +6,14 @@ mod filter;
 mod opts;
 mod ser;
 
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use fidl_fuchsia_net_stack_ext::{self as fstack_ext, FidlReturn as _};
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use itertools::Itertools as _;
 use log::{info, warn};
 use net_types::ip::{Ip, Ipv4, Ipv6};
 use netfilter::FidlReturn as _;
-use prettytable::{cell, format, row, Row, Table};
+use prettytable::{Row, Table, cell, format, row};
 use ser::AddressAssignmentState;
 use serde_json::json;
 use serde_json::value::Value;
@@ -39,7 +39,7 @@ use {
 };
 
 pub use opts::{
-    underlying_user_facing_error, user_facing_error, Command, CommandEnum, UserFacingError,
+    Command, CommandEnum, UserFacingError, underlying_user_facing_error, user_facing_error,
 };
 
 macro_rules! filter_fidl {

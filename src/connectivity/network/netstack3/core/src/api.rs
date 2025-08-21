@@ -21,10 +21,10 @@ use netstack3_ip::{RoutesAnyApi, RoutesApi};
 use netstack3_tcp::TcpApi;
 use netstack3_udp::UdpApi;
 
+use crate::BindingsTypes;
 use crate::context::CoreCtx;
 use crate::counters::CountersApi;
 use crate::time::TimerId;
-use crate::BindingsTypes;
 
 type CoreApiCtxPair<'a, BP> = CtxPair<CoreCtx<'a, <BP as ContextProvider>::Context, Unlocked>, BP>;
 

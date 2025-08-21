@@ -15,8 +15,8 @@ use core::num::{NonZeroU16, NonZeroU32};
 use assert_matches::assert_matches;
 use derivative::Derivative;
 use log::{debug, error, warn};
-use net_types::ip::{GenericOverIp, Ip, IpMarked, Ipv4, Ipv6};
 use net_types::SpecifiedAddr;
+use net_types::ip::{GenericOverIp, Ip, IpMarked, Ipv4, Ipv6};
 use netstack3_base::socket::{SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::{
     AddressResolutionFailed, AnyDevice, CoreTimerContext, Counter, CounterContext, DeviceIdContext,
@@ -1738,14 +1738,14 @@ pub trait NudBindingsContext<I: Ip, D: LinkDevice, DeviceId>:
 }
 
 impl<
-        I: Ip,
-        D: LinkDevice,
-        DeviceId,
-        BC: TimerContext
-            + LinkResolutionContext<D>
-            + EventContext<Event<D::Address, DeviceId, I, <Self as InstantBindingsTypes>::Instant>>
-            + NudBindingsTypes<D>,
-    > NudBindingsContext<I, D, DeviceId> for BC
+    I: Ip,
+    D: LinkDevice,
+    DeviceId,
+    BC: TimerContext
+        + LinkResolutionContext<D>
+        + EventContext<Event<D::Address, DeviceId, I, <Self as InstantBindingsTypes>::Instant>>
+        + NudBindingsTypes<D>,
+> NudBindingsContext<I, D, DeviceId> for BC
 {
 }
 
@@ -2152,11 +2152,11 @@ enum TransmitProbe<A> {
 }
 
 impl<
-        I: NudIcmpIpExt,
-        D: LinkDevice,
-        BC: NudBindingsContext<I, D, CC::DeviceId>,
-        CC: NudContext<I, D, BC> + NudIcmpContext<I, D, BC> + CounterContext<NudCounters<I>>,
-    > HandleableTimer<CC, BC> for NudTimerId<I, D, CC::WeakDeviceId>
+    I: NudIcmpIpExt,
+    D: LinkDevice,
+    BC: NudBindingsContext<I, D, CC::DeviceId>,
+    CC: NudContext<I, D, BC> + NudIcmpContext<I, D, BC> + CounterContext<NudCounters<I>>,
+> HandleableTimer<CC, BC> for NudTimerId<I, D, CC::WeakDeviceId>
 {
     fn handle(self, core_ctx: &mut CC, bindings_ctx: &mut BC, _: BC::UniqueTimerId) {
         let Self { device_id, timer_type, _marker: PhantomData } = self;
@@ -2415,12 +2415,8 @@ fn handle_neighbor_timer<I, D, CC, BC>(
     }
 }
 
-impl<
-        I: Ip,
-        D: LinkDevice,
-        BC: NudBindingsContext<I, D, CC::DeviceId>,
-        CC: NudContext<I, D, BC>,
-    > NudHandler<I, D, BC> for CC
+impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudContext<I, D, BC>>
+    NudHandler<I, D, BC> for CC
 {
     fn handle_neighbor_update(
         &mut self,

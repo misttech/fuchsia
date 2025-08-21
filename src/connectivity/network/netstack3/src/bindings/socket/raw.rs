@@ -8,8 +8,9 @@ use std::ops::ControlFlow;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream};
 use futures::TryStreamExt as _;
 use log::{error, warn};
-use net_types::ip::{Ip, IpInvariant, IpVersion, Ipv4, Ipv6};
 use net_types::SpecifiedAddr;
+use net_types::ip::{Ip, IpInvariant, IpVersion, Ipv4, Ipv6};
+use netstack3_core::IpExt;
 use netstack3_core::ip::{
     IpSockCreateAndSendError, IpSockSendError, RawIpSocketIcmpFilter, RawIpSocketIcmpFilterError,
     RawIpSocketProtocol, RawIpSocketSendToError, RawIpSocketsBindingsContext,
@@ -17,7 +18,6 @@ use netstack3_core::ip::{
 };
 use netstack3_core::socket::StrictlyZonedAddr;
 use netstack3_core::sync::Mutex;
-use netstack3_core::IpExt;
 use packet::Buf;
 use packet_formats::ip::IpPacket as _;
 use zerocopy::SplitByteSlice;

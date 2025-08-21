@@ -8,8 +8,8 @@
 
 use core::hash::Hash;
 
-use net_types::ip::{Ipv6Addr, Subnet};
 use net_types::LinkLocalUnicastAddr;
+use net_types::ip::{Ipv6Addr, Subnet};
 use netstack3_base::{
     AnyDevice, CoreTimerContext, DeviceIdContext, HandleableTimer, InstantBindingsTypes,
     LocalTimerHeap, TimerBindingsTypes, TimerContext, WeakDeviceIdentifier,

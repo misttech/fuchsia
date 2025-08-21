@@ -6,8 +6,8 @@ use std::borrow::Borrow;
 use std::panic::Location;
 
 use fidl::endpoints::{ProtocolMarker, RequestStream};
-use fuchsia_async::scope::{ScopeActiveGuard, ScopeHandle};
 use fuchsia_async::JoinHandle;
+use fuchsia_async::scope::{ScopeActiveGuard, ScopeHandle};
 use futures::{Future, FutureExt as _};
 use log::debug;
 

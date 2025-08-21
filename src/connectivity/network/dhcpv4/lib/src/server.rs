@@ -553,7 +553,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
         let entry = match records.entry(id) {
             std::collections::hash_map::Entry::Occupied(v) => v,
             std::collections::hash_map::Entry::Vacant(v) => {
-                return Err(ServerError::DeclineFromUnrecognizedClient(v.into_key()))
+                return Err(ServerError::DeclineFromUnrecognizedClient(v.into_key()));
             }
         };
         let LeaseRecord { current, .. } = entry.get();
@@ -1106,7 +1106,10 @@ impl<DS: DataStore, TS: SystemTimeSource> ServerDispatcher for Server<DS, TS> {
                     {
                         Ok(static_assignments) => static_assignments,
                         Err(e) => {
-                            info!("dispatch_set_parameter() got invalid StaticallyAssignedAddrs argument: {}", e);
+                            info!(
+                                "dispatch_set_parameter() got invalid StaticallyAssignedAddrs argument: {}",
+                                e
+                            );
                             return Err(Status::INVALID_ARGS);
                         }
                     }
@@ -1471,11 +1474,7 @@ fn get_client_state(msg: &Message) -> Result<ClientState, ()> {
 
 fn get_requested_ip_addr(req: &Message) -> Option<Ipv4Addr> {
     req.options.iter().find_map(|opt| {
-        if let DhcpOption::RequestedIpAddress(addr) = opt {
-            Some(*addr)
-        } else {
-            None
-        }
+        if let DhcpOption::RequestedIpAddress(addr) = opt { Some(*addr) } else { None }
     })
 }
 
@@ -1514,10 +1513,10 @@ pub mod tests {
         OptionCode, ProtocolError,
     };
     use crate::server::{
-        build_offer, get_client_state, options_repo, validate_discover, AddressPool,
-        AddressPoolError, ClientIdentifier, ClientState, DataStore, LeaseRecord, NakReason,
-        OfferOptions, ResponseTarget, ServerAction, ServerDispatcher, ServerError,
-        ServerParameters, SystemTimeSource,
+        AddressPool, AddressPoolError, ClientIdentifier, ClientState, DataStore, LeaseRecord,
+        NakReason, OfferOptions, ResponseTarget, ServerAction, ServerDispatcher, ServerError,
+        ServerParameters, SystemTimeSource, build_offer, get_client_state, options_repo,
+        validate_discover,
     };
     use anyhow::Error;
     use datastore::{ActionRecordingDataStore, DataStoreAction};
@@ -1992,8 +1991,8 @@ pub mod tests {
     }
 
     #[test]
-    fn dispatch_with_discover_returns_correct_offer_and_dest_yiaddr_when_giaddr_and_ciaddr_unspecified_and_broadcast_bit_unset(
-    ) {
+    fn dispatch_with_discover_returns_correct_offer_and_dest_yiaddr_when_giaddr_and_ciaddr_unspecified_and_broadcast_bit_unset()
+     {
         let mut server = new_test_minimal_server();
         let disc = {
             let mut disc = new_test_discover();
@@ -2345,8 +2344,8 @@ pub mod tests {
     }
 
     #[test]
-    fn dispatch_with_discover_expired_client_binding_returns_next_addr_for_unavailable_requested_addr(
-    ) {
+    fn dispatch_with_discover_expired_client_binding_returns_next_addr_for_unavailable_requested_addr()
+     {
         let (mut server, time_source) = new_test_minimal_server_with_time_source();
         let mut disc = new_test_discover();
         let client_id = ClientIdentifier::from(&disc);
@@ -3714,11 +3713,7 @@ pub mod tests {
                 .options
                 .iter()
                 .filter_map(|opt| {
-                    if let DhcpOption::IpAddressLeaseTime(v) = opt {
-                        Some(*v)
-                    } else {
-                        None
-                    }
+                    if let DhcpOption::IpAddressLeaseTime(v) = opt { Some(*v) } else { None }
                 })
                 .next()
                 .unwrap(),
@@ -3756,11 +3751,7 @@ pub mod tests {
                 .options
                 .iter()
                 .filter_map(|opt| {
-                    if let DhcpOption::IpAddressLeaseTime(v) = opt {
-                        Some(*v)
-                    } else {
-                        None
-                    }
+                    if let DhcpOption::IpAddressLeaseTime(v) = opt { Some(*v) } else { None }
                 })
                 .next()
                 .unwrap(),

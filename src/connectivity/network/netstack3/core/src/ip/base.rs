@@ -15,7 +15,7 @@ use netstack3_base::{
     WeakDeviceIdentifier,
 };
 use netstack3_datagram as datagram;
-use netstack3_device::{for_any_device_id, BaseDeviceId, DeviceId, DeviceStateSpec, WeakDeviceId};
+use netstack3_device::{BaseDeviceId, DeviceId, DeviceStateSpec, WeakDeviceId, for_any_device_id};
 use netstack3_hashmap::HashMap;
 use netstack3_icmp_echo::{
     self as icmp_echo, IcmpEchoBoundStateContext, IcmpEchoContextMarker,
@@ -37,15 +37,15 @@ use netstack3_ip::{
     MulticastMembershipHandler, PmtuCache, PmtuContext, ResolveRouteError, ResolvedRoute,
     RoutingTable, RoutingTableId, RulesTable, TransportReceiveError,
 };
-use netstack3_sync::rc::Primary;
 use netstack3_sync::RwLock;
+use netstack3_sync::rc::Primary;
 use netstack3_tcp::TcpIpTransportContext;
 use netstack3_udp::UdpIpTransportContext;
 use packet::BufferMut;
 use packet_formats::ip::{IpProto, Ipv4Proto, Ipv6Proto};
 
-use crate::context::prelude::*;
 use crate::context::WrapLockLevel;
+use crate::context::prelude::*;
 use crate::{BindingsContext, BindingsTypes, CoreCtx, StackState};
 
 impl<I, BT, L> FragmentContext<I, BT> for CoreCtx<'_, BT, L>
@@ -79,12 +79,12 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IpStatePmtuCache<I
 }
 
 impl<
-        I: Ip + IpDeviceIpExt + IpLayerIpExt,
-        BC: BindingsContext
-            + IpDeviceBindingsContext<I, Self::DeviceId>
-            + IpLayerBindingsContext<I, Self::DeviceId>,
-        L: LockBefore<crate::lock_ordering::IpState<I>>,
-    > MulticastMembershipHandler<I, BC> for CoreCtx<'_, BC, L>
+    I: Ip + IpDeviceIpExt + IpLayerIpExt,
+    BC: BindingsContext
+        + IpDeviceBindingsContext<I, Self::DeviceId>
+        + IpLayerBindingsContext<I, Self::DeviceId>,
+    L: LockBefore<crate::lock_ordering::IpState<I>>,
+> MulticastMembershipHandler<I, BC> for CoreCtx<'_, BC, L>
 where
     Self: device::IpDeviceConfigurationContext<I, BC> + IpStateContext<I> + IpDeviceContext<I>,
 {
@@ -223,11 +223,11 @@ impl<BT: BindingsTypes, L> CounterContext<NdpCounters> for CoreCtx<'_, BT, L> {
 }
 
 impl<
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IcmpBoundMap<Ipv4>>
-            + LockBefore<crate::lock_ordering::TcpAllSocketsSet<Ipv4>>
-            + LockBefore<crate::lock_ordering::UdpAllSocketsSet<Ipv4>>,
-    > InnerIcmpv4Context<BC> for CoreCtx<'_, BC, L>
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IcmpBoundMap<Ipv4>>
+        + LockBefore<crate::lock_ordering::TcpAllSocketsSet<Ipv4>>
+        + LockBefore<crate::lock_ordering::UdpAllSocketsSet<Ipv4>>,
+> InnerIcmpv4Context<BC> for CoreCtx<'_, BC, L>
 {
     fn should_send_timestamp_reply(&self) -> bool {
         self.unlocked_access::<crate::lock_ordering::UnlockedState>().ipv4.icmp.send_timestamp_reply
@@ -517,11 +517,11 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
 }
 
 impl<
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IcmpBoundMap<Ipv4>>
-            + LockBefore<crate::lock_ordering::TcpAllSocketsSet<Ipv4>>
-            + LockBefore<crate::lock_ordering::UdpAllSocketsSet<Ipv4>>,
-    > InnerIcmpContext<Ipv4, BC> for CoreCtx<'_, BC, L>
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IcmpBoundMap<Ipv4>>
+        + LockBefore<crate::lock_ordering::TcpAllSocketsSet<Ipv4>>
+        + LockBefore<crate::lock_ordering::UdpAllSocketsSet<Ipv4>>,
+> InnerIcmpContext<Ipv4, BC> for CoreCtx<'_, BC, L>
 {
     type EchoTransportContext = IcmpEchoIpTransportContext;
 
@@ -595,11 +595,11 @@ impl<
 }
 
 impl<
-        BC: BindingsContext,
-        L: LockBefore<crate::lock_ordering::IcmpBoundMap<Ipv6>>
-            + LockBefore<crate::lock_ordering::TcpAllSocketsSet<Ipv6>>
-            + LockBefore<crate::lock_ordering::UdpAllSocketsSet<Ipv6>>,
-    > InnerIcmpContext<Ipv6, BC> for CoreCtx<'_, BC, L>
+    BC: BindingsContext,
+    L: LockBefore<crate::lock_ordering::IcmpBoundMap<Ipv6>>
+        + LockBefore<crate::lock_ordering::TcpAllSocketsSet<Ipv6>>
+        + LockBefore<crate::lock_ordering::UdpAllSocketsSet<Ipv6>>,
+> InnerIcmpContext<Ipv6, BC> for CoreCtx<'_, BC, L>
 {
     type EchoTransportContext = IcmpEchoIpTransportContext;
 

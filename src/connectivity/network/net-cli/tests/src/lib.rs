@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use argh::FromArgs as _;
 use futures::StreamExt as _;
-use net_cli::{underlying_user_facing_error, UserFacingError};
+use net_cli::{UserFacingError, underlying_user_facing_error};
 use net_declare::{fidl_ip_v6, fidl_mac};
 use net_types::ip::{IpVersion, Ipv4, Ipv6};
 use netemul::TestRealm;
@@ -501,13 +501,13 @@ async fn add_remove_blackhole() {
     let connector = NetworkTestRealmConnector { realm: &realm };
 
     let interfaces_state = connector.connect_to_protocol::<fnet_interfaces::StateMarker>().await;
-    let mut event_stream = std::pin::pin!(fnet_interfaces_ext::event_stream_from_state::<
-        fnet_interfaces_ext::AllInterest,
-    >(
-        &interfaces_state,
-        fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
-    )
-    .expect("should succeed"));
+    let mut event_stream = std::pin::pin!(
+        fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::AllInterest>(
+            &interfaces_state,
+            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+        )
+        .expect("should succeed")
+    );
     let mut state = fnet_interfaces_ext::existing(
         event_stream.by_ref(),
         HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new(),

@@ -17,13 +17,13 @@ use packet_formats::ip::Ipv6Proto;
 use packet_formats::ipv6::Ipv6PacketBuilder;
 use packet_formats::utils::NonZeroDuration;
 
-use netstack3_base::testutil::{FakeInstant, TestAddrs, TestIpExt as _};
 use netstack3_base::FrameDestination;
+use netstack3_base::testutil::{FakeInstant, TestAddrs, TestIpExt as _};
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetDeviceEvent, EthernetLinkDevice,
 };
 use netstack3_core::testutil::{
-    CtxPairExt as _, DispatchedEvent, FakeBindingsCtx, FakeCtx, DEFAULT_INTERFACE_METRIC,
+    CtxPairExt as _, DEFAULT_INTERFACE_METRIC, DispatchedEvent, FakeBindingsCtx, FakeCtx,
 };
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_hashmap::HashMap;
@@ -33,8 +33,8 @@ use netstack3_ip::device::{
     Ipv6RouteDiscoveryBindingsContext, Ipv6RouteDiscoveryContext,
 };
 use netstack3_ip::{
-    self as ip, AddableEntry, AddableEntryEither, AddableMetric, Entry, IpLayerEvent, Metric,
-    RouterAdvertisementEvent, IPV6_DEFAULT_SUBNET,
+    self as ip, AddableEntry, AddableEntryEither, AddableMetric, Entry, IPV6_DEFAULT_SUBNET,
+    IpLayerEvent, Metric, RouterAdvertisementEvent,
 };
 
 const ONE_SECOND: NonZeroDuration = NonZeroDuration::from_secs(1).unwrap();

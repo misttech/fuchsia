@@ -9,8 +9,8 @@ use futures::channel::oneshot;
 use crate::client::InternalClient;
 use crate::logging::log_debug;
 use crate::messaging::Sender;
-use crate::protocol_family::route::NetlinkRoute;
 use crate::protocol_family::ProtocolFamily;
+use crate::protocol_family::route::NetlinkRoute;
 
 pub(crate) fn respond_to_completer<
     S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,

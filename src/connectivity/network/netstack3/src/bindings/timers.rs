@@ -172,10 +172,7 @@ impl<T: Clone + Send + Sync + Debug + 'static> TimerDispatcher<T> {
                 let after = Self::gc_timer_heap(&inner.state, gc_generation);
                 trace!(
                     "timer gc gen({}) triggered with heap_len={}, target={}, after={}",
-                    gc_generation,
-                    heap_len,
-                    target_heap_len,
-                    after
+                    gc_generation, heap_len, target_heap_len, after
                 );
             }
         }
@@ -516,7 +513,7 @@ const MIN_TARGET_HEAP_SIZE: usize = 10;
 mod scheduled_instant {
     use crate::bindings::time::StackTime;
 
-    use super::{fasync, UNSCHEDULED_SENTINEL};
+    use super::{UNSCHEDULED_SENTINEL, fasync};
 
     /// A time that stands as a witness for a valid schedule time.
     ///
@@ -560,8 +557,8 @@ mod tests {
 
     use crate::bindings::integration_tests::set_logger_for_test;
 
-    use futures::channel::mpsc;
     use futures::Future;
+    use futures::channel::mpsc;
     use test_case::test_case;
 
     use super::*;

@@ -214,9 +214,9 @@ pub mod testutil {
     use net_types::ip::GenericOverIp;
 
     use super::*;
+    use crate::StrongDeviceIdentifier;
     use crate::inspect::Inspector;
     use crate::testutil::FakeCoreCtx;
-    use crate::StrongDeviceIdentifier;
 
     /// A fake weak address ID.
     #[derive(Clone, Debug, Hash, Eq, PartialEq)]

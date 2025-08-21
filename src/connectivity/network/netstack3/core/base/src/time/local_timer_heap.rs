@@ -4,11 +4,11 @@
 
 //! A local timer heap for use in netstack3 core.
 
-use alloc::collections::{binary_heap, BinaryHeap};
+use alloc::collections::{BinaryHeap, binary_heap};
 use core::hash::Hash;
 use core::time::Duration;
 
-use netstack3_hashmap::{hash_map, HashMap};
+use netstack3_hashmap::{HashMap, hash_map};
 
 use crate::{CoreTimerContext, Instant, InstantBindingsTypes, TimerBindingsTypes, TimerContext};
 
@@ -419,8 +419,8 @@ mod tests {
     use alloc::vec::Vec;
     use core::convert::Infallible as Never;
 
-    use crate::testutil::{FakeAtomicInstant, FakeInstant, FakeInstantCtx};
     use crate::InstantContext;
+    use crate::testutil::{FakeAtomicInstant, FakeInstant, FakeInstantCtx};
 
     use super::*;
 

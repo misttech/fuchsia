@@ -7,8 +7,8 @@
 use core::fmt::{Debug, Display, Formatter};
 use core::hash::Hash;
 
-use net_types::ip::{GenericOverIp, Ip, IpAddress, Ipv4Addr, Ipv6Addr, Subnet, SubnetEither};
 use net_types::SpecifiedAddr;
+use net_types::ip::{GenericOverIp, Ip, IpAddress, Ipv4Addr, Ipv6Addr, Subnet, SubnetEither};
 use netstack3_base::socket::SocketIpAddr;
 use netstack3_base::{BroadcastIpExt, IpDeviceAddr};
 

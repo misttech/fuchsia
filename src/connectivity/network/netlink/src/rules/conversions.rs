@@ -6,10 +6,10 @@ use std::collections::BTreeMap;
 
 use linux_uapi::rt_class_t_RT_TABLE_COMPAT as RT_TABLE_COMPAT;
 use net_types::ip::{GenericOverIp, Ip, IpVersion};
+use netlink_packet_route::AddressFamily;
 use netlink_packet_route::rule::{
     RuleAction, RuleAttribute, RuleHeader, RuleMessage, RuleUidRange,
 };
-use netlink_packet_route::AddressFamily;
 
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext};
 use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
@@ -305,10 +305,10 @@ mod test {
     use ip_test_macro::ip_test;
     use linux_uapi::{rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN};
     use net_types::ip::{Ip, IpVersion, IpVersionMarker, Ipv4, Ipv6};
+    use netlink_packet_route::AddressFamily;
     use netlink_packet_route::rule::{
         RuleAction, RuleAttribute, RuleFlags, RuleHeader, RuleMessage, RuleUidRange,
     };
-    use netlink_packet_route::AddressFamily;
     use test_case::test_case;
 
     use fidl_fuchsia_net_routes_ext as fnet_routes_ext;

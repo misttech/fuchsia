@@ -15,9 +15,9 @@ use {
 };
 
 use crate::bindings::devices::{BindingId, DeviceSpecificInfo, LOOPBACK_MAC};
-use crate::bindings::routes::admin::{serve_route_set, GlobalRouteSet};
+use crate::bindings::routes::admin::{GlobalRouteSet, serve_route_set};
 use crate::bindings::util::{IntoFidl as _, ResultExt as _, ScopeExt as _};
-use crate::bindings::{interfaces_admin, DeviceIdExt as _, Netstack};
+use crate::bindings::{DeviceIdExt as _, Netstack, interfaces_admin};
 
 // Serve a stream of fuchsia.net.root.Interfaces API requests for a single
 // channel (e.g. a single client connection).

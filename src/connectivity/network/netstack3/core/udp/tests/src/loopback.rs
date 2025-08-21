@@ -10,9 +10,9 @@ use net_types::ZonedAddr;
 use packet::Buf;
 use test_case::test_case;
 
-use netstack3_base::testutil::{set_logger_for_test, TestIpExt};
-use netstack3_core::testutil::{CtxPairExt as _, FakeBindingsCtx, FakeCtxBuilder};
+use netstack3_base::testutil::{TestIpExt, set_logger_for_test};
 use netstack3_core::IpExt;
+use netstack3_core::testutil::{CtxPairExt as _, FakeBindingsCtx, FakeCtxBuilder};
 
 const LOCAL_PORT: NonZeroU16 = NonZeroU16::new(100).unwrap();
 

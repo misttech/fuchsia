@@ -305,7 +305,7 @@ mod test {
     use super::*;
     use crate::udpsocket::testutil::TestUdpSocketProvider;
     use dhcp_client_core::deps::{DatagramInfo, Socket as _};
-    use futures::{join, FutureExt as _};
+    use futures::{FutureExt as _, join};
     use net_declare::std_socket_addr;
     use netstack_testing_common::realms::TestSandboxExt as _;
     use {

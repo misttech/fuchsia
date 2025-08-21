@@ -393,7 +393,7 @@ fn collect_common_fields<T: Copy>(
 
     match op {
         dhcp_protocol::OpCode::BOOTREQUEST => {
-            return Err(CommonIncomingMessageError::NotBootReply(op))
+            return Err(CommonIncomingMessageError::NotBootReply(op));
         }
         dhcp_protocol::OpCode::BOOTREPLY => (),
     };
@@ -456,7 +456,7 @@ fn collect_common_fields<T: Copy>(
             DhcpOption::ParameterRequestList(_)
             | DhcpOption::RequestedIpAddress(_)
             | DhcpOption::MaxDhcpMessageSize(_) => {
-                return Err(CommonIncomingMessageError::IllegallyIncludedOption(option.code()))
+                return Err(CommonIncomingMessageError::IllegallyIncludedOption(option.code()));
             }
             DhcpOption::Pad()
             | DhcpOption::End()
@@ -637,7 +637,7 @@ pub(crate) fn fields_to_retain_from_selecting(
         | dhcp_protocol::MessageType::DHCPNAK
         | dhcp_protocol::MessageType::DHCPRELEASE
         | dhcp_protocol::MessageType::DHCPINFORM => {
-            return Err(SelectingIncomingMessageError::NotDhcpOffer(message_type))
+            return Err(SelectingIncomingMessageError::NotDhcpOffer(message_type));
         }
     };
 

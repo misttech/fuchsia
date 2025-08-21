@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use std::collections::HashMap;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
@@ -145,12 +145,6 @@ pub async fn get_interface_id<'a>(
         |fidl_fuchsia_net_interfaces_ext::PropertiesAndState {
              properties: fidl_fuchsia_net_interfaces_ext::Properties { id, name, .. },
              state: _,
-         }| {
-            if name == interface_name {
-                Some(id.get())
-            } else {
-                None
-            }
-        },
+         }| { if name == interface_name { Some(id.get()) } else { None } },
     ))
 }

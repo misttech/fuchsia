@@ -13,11 +13,11 @@ use std::pin::Pin;
 use fidl_fuchsia_net_ndp_ext::{OptionWatchStreamError, OptionWatchStreamItem};
 use futures::{Stream, StreamExt};
 use netlink_packet_core::NetlinkMessage;
+use netlink_packet_route::RouteNetlinkMessage;
 use netlink_packet_route::neighbour_discovery_user_option::{
     NeighbourDiscoveryIcmpType, NeighbourDiscoveryIcmpV6Type, NeighbourDiscoveryUserOptionHeader,
     NeighbourDiscoveryUserOptionMessage, Nla,
 };
-use netlink_packet_route::RouteNetlinkMessage;
 use packet::records::options::OptionLayout;
 use packet_formats::icmp::ndp;
 use packet_formats::icmp::ndp::options::option_types as ndp_option_types;

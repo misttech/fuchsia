@@ -117,14 +117,14 @@ pub trait ArpBindingsContext<D: ArpDevice, DeviceId>:
 }
 
 impl<
-        DeviceId,
-        D: ArpDevice,
-        BC: TimerContext
-            + LinkResolutionContext<D>
-            + EventContext<
-                nud::Event<D::Address, DeviceId, Ipv4, <Self as InstantBindingsTypes>::Instant>,
-            > + TxMetadataBindingsTypes,
-    > ArpBindingsContext<D, DeviceId> for BC
+    DeviceId,
+    D: ArpDevice,
+    BC: TimerContext
+        + LinkResolutionContext<D>
+        + EventContext<
+            nud::Event<D::Address, DeviceId, Ipv4, <Self as InstantBindingsTypes>::Instant>,
+        > + TxMetadataBindingsTypes,
+> ArpBindingsContext<D, DeviceId> for BC
 {
 }
 
@@ -347,10 +347,10 @@ pub(crate) trait ArpPacketHandler<D: ArpDevice, BC>: DeviceIdContext<D> {
 }
 
 impl<
-        D: ArpDevice,
-        BC: ArpBindingsContext<D, CC::DeviceId>,
-        CC: ArpContext<D, BC> + ArpIpLayerContext<D, BC> + NudHandler<Ipv4, D, BC>,
-    > ArpPacketHandler<D, BC> for CC
+    D: ArpDevice,
+    BC: ArpBindingsContext<D, CC::DeviceId>,
+    CC: ArpContext<D, BC> + ArpIpLayerContext<D, BC> + NudHandler<Ipv4, D, BC>,
+> ArpPacketHandler<D, BC> for CC
 {
     /// Handles an inbound ARP packet.
     fn handle_packet<B: BufferMut + Debug>(
@@ -553,8 +553,7 @@ fn handle_packet<
             core_ctx.counters().rx_dropped_non_local_target.increment();
             trace!(
                 "non-gratuitous ARP packet not targetting us; sender = {}, target={}",
-                sender_addr,
-                target_addr
+                sender_addr, target_addr
             );
             return;
         }
@@ -700,8 +699,8 @@ mod tests {
     use net_types::ethernet::Mac;
     use netstack3_base::socket::SocketIpAddr;
     use netstack3_base::testutil::{
-        assert_empty, FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeInstant, FakeLinkDeviceId,
-        FakeNetworkSpec, FakeTimerId, FakeTxMetadata, FakeWeakDeviceId, WithFakeFrameContext,
+        FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeInstant, FakeLinkDeviceId, FakeNetworkSpec,
+        FakeTimerId, FakeTxMetadata, FakeWeakDeviceId, WithFakeFrameContext, assert_empty,
     };
     use netstack3_base::{CtxPair, InstantContext as _, IntoCoreTimerCtx, TimerHandler};
     use netstack3_ip::nud::testutil::{
@@ -712,7 +711,7 @@ mod tests {
         UseDelegateNudContext,
     };
     use packet::{Buf, ParseBuffer};
-    use packet_formats::arp::{peek_arp_types, ArpHardwareType, ArpNetworkType};
+    use packet_formats::arp::{ArpHardwareType, ArpNetworkType, peek_arp_types};
     use packet_formats::ipv4::Ipv4FragmentType;
     use test_case::test_case;
 
@@ -1222,11 +1221,7 @@ mod tests {
                     .clone()
                     .filter_map(|cfg| {
                         let ArpHostConfig { name, proto_addr: _, hw_addr: _ } = cfg;
-                        if !ctx.eq(*name) {
-                            Some((*name, meta.clone(), None))
-                        } else {
-                            None
-                        }
+                        if !ctx.eq(*name) { Some((*name, meta.clone(), None)) } else { None }
                     })
                     .collect::<Vec<_>>()
             },

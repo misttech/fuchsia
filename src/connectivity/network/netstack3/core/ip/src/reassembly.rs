@@ -48,8 +48,8 @@ use netstack3_hashmap::hash_map::{Entry, HashMap};
 use packet::BufferViewMut;
 use packet_formats::ip::{IpPacket, Ipv4Proto};
 use packet_formats::ipv4::{Ipv4Header, Ipv4Packet};
-use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeaderData;
 use packet_formats::ipv6::Ipv6Packet;
+use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeaderData;
 use zerocopy::{SplitByteSlice, SplitByteSliceMut};
 
 /// An IP extension trait supporting reassembly of fragments.
@@ -739,9 +739,12 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
         //   create a new gap where the end is MAX when we are processing a
         //   packet with the last fragment block.
         if found_gap.end > fragment_blocks_range.end && m_flag {
-            assert!(fragment_data
-                .missing_blocks
-                .insert(BlockRange { start: fragment_blocks_range.end + 1, end: found_gap.end }));
+            assert!(
+                fragment_data.missing_blocks.insert(BlockRange {
+                    start: fragment_blocks_range.end + 1,
+                    end: found_gap.end
+                })
+            );
         } else if found_gap.end > fragment_blocks_range.end && !m_flag && found_gap.end < u16::MAX {
             // There is another fragment after this one that is already present
             // in the cache. That means that this fragment can't be the last
@@ -923,11 +926,11 @@ mod tests {
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
     use net_declare::{net_ip_v4, net_ip_v6};
-    use net_types::ip::{Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
     use net_types::Witness;
+    use net_types::ip::{Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
     use netstack3_base::testutil::{
-        assert_empty, FakeBindingsCtx, FakeCoreCtx, FakeInstant, FakeTimerCtxExt, TEST_ADDRS_V4,
-        TEST_ADDRS_V6,
+        FakeBindingsCtx, FakeCoreCtx, FakeInstant, FakeTimerCtxExt, TEST_ADDRS_V4, TEST_ADDRS_V6,
+        assert_empty,
     };
     use netstack3_base::{CtxPair, IntoCoreTimerCtx};
     use packet::{Buf, PacketBuilder, ParsablePacket, ParseBuffer, Serializer};

@@ -4,8 +4,8 @@
 
 //! Provides common SAS (Source Address Selection) implementations.
 
-use net_types::ip::{Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use net_types::SpecifiedAddr;
+use net_types::ip::{Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use netstack3_base::{IpAddressId, IpDeviceAddr, IpDeviceAddressIdContext};
 
 use crate::internal::device::state::{IpAddressData, IpAddressFlags, IpDeviceStateBindingsTypes};

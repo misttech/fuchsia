@@ -10,22 +10,19 @@ use lock_order::relation::LockBefore;
 use lock_order::wrap::{LockedWrapperApi, LockedWrapperUnlockedApi};
 use netstack3_base::{CoreTimerContext, CounterContext};
 use netstack3_device::{DeviceId, WeakDeviceId};
+use netstack3_ip::IpLayerTimerId;
 use netstack3_ip::multicast_forwarding::{
     MulticastForwardingCounters, MulticastForwardingEnabledState,
     MulticastForwardingPendingPackets, MulticastForwardingPendingPacketsContext,
     MulticastForwardingState, MulticastForwardingStateContext, MulticastForwardingTimerId,
     MulticastRouteTable, MulticastRouteTableContext,
 };
-use netstack3_ip::IpLayerTimerId;
 
-use crate::{lock_ordering, BindingsContext, BindingsTypes, CoreCtx, IpExt};
+use crate::{BindingsContext, BindingsTypes, CoreCtx, IpExt, lock_ordering};
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
-impl<
-        I: IpExt,
-        BC: BindingsContext,
-        L: LockBefore<lock_ordering::IpMulticastForwardingState<I>>,
-    > MulticastForwardingStateContext<I, BC> for CoreCtx<'_, BC, L>
+impl<I: IpExt, BC: BindingsContext, L: LockBefore<lock_ordering::IpMulticastForwardingState<I>>>
+    MulticastForwardingStateContext<I, BC> for CoreCtx<'_, BC, L>
 {
     type Ctx<'a> = CoreCtx<'a, BC, lock_ordering::IpMulticastForwardingState<I>>;
 
@@ -93,10 +90,10 @@ impl<I: IpExt, BC: BindingsContext, L: LockBefore<lock_ordering::IpMulticastRout
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
 impl<
-        I: IpExt,
-        BC: BindingsContext,
-        L: LockBefore<lock_ordering::IpMulticastForwardingPendingPackets<I>>,
-    > MulticastForwardingPendingPacketsContext<I, BC> for CoreCtx<'_, BC, L>
+    I: IpExt,
+    BC: BindingsContext,
+    L: LockBefore<lock_ordering::IpMulticastForwardingPendingPackets<I>>,
+> MulticastForwardingPendingPacketsContext<I, BC> for CoreCtx<'_, BC, L>
 {
     fn with_pending_table_mut<
         O,

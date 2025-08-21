@@ -40,8 +40,8 @@ use netstack3_ip::{
 use netstack3_tcp::{self as tcp, TcpBindingsContext, TcpBindingsTypes, TcpContext};
 use netstack3_udp::{self as udp, UdpBindingsContext, UdpBindingsTypes, UdpCounterContext};
 
-use crate::transport::CoreTxMetadata;
 use crate::TimerId;
+use crate::transport::CoreTxMetadata;
 
 /// A marker for extensions to IP types.
 ///

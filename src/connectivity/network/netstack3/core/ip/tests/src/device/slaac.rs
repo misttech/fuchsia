@@ -18,15 +18,15 @@ use packet_formats::utils::NonZeroDuration;
 use netstack3_base::testutil::{TestAddrs, TestIpExt as _};
 use netstack3_base::{FrameDestination, InstantContext as _};
 use netstack3_core::device::{BlackholeDevice, EthernetCreationProperties, EthernetLinkDevice};
-use netstack3_core::testutil::{CtxPairExt as _, FakeCtx, DEFAULT_INTERFACE_METRIC};
+use netstack3_core::testutil::{CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeCtx};
 use netstack3_device::loopback::{LoopbackCreationProperties, LoopbackDevice};
 use netstack3_device::pure_ip::{PureIpDevice, PureIpDeviceCreationProperties};
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_ip::device::testutil::with_assigned_ipv6_addr_subnets;
 use netstack3_ip::device::{
     InnerSlaacTimerId, IpDeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate,
-    SlaacConfigurationUpdate, StableSlaacAddressConfiguration, TemporarySlaacAddressConfiguration,
-    SLAAC_MIN_REGEN_ADVANCE,
+    SLAAC_MIN_REGEN_ADVANCE, SlaacConfigurationUpdate, StableSlaacAddressConfiguration,
+    TemporarySlaacAddressConfiguration,
 };
 use netstack3_ip::icmp::REQUIRED_NDP_IP_PACKET_HOP_LIMIT;
 use netstack3_ip::{self as ip};
@@ -206,18 +206,22 @@ fn integration_remove_all_addresses_on_ipv6_disable() {
         timers.get(&InnerSlaacTimerId::InvalidateSlaacAddress { addr: temp_addr_sub.addr() }),
         Some(&temp_addr_lifetime_until)
     );
-    assert!(timers
-        .get(&InnerSlaacTimerId::DeprecateSlaacAddress { addr: temp_addr_sub.addr() })
-        .is_some_and(|time| {
-            (temp_addr_preferred_until_start..temp_addr_preferred_until_end).contains(time)
-        }));
-    assert!(timers
-        .get(&InnerSlaacTimerId::RegenerateTemporaryAddress { addr_subnet: temp_addr_sub })
-        .is_some_and(|time| {
-            (temp_addr_preferred_until_start - SLAAC_MIN_REGEN_ADVANCE.get()
-                ..temp_addr_preferred_until_end - SLAAC_MIN_REGEN_ADVANCE.get())
-                .contains(time)
-        }));
+    assert!(
+        timers
+            .get(&InnerSlaacTimerId::DeprecateSlaacAddress { addr: temp_addr_sub.addr() })
+            .is_some_and(|time| {
+                (temp_addr_preferred_until_start..temp_addr_preferred_until_end).contains(time)
+            })
+    );
+    assert!(
+        timers
+            .get(&InnerSlaacTimerId::RegenerateTemporaryAddress { addr_subnet: temp_addr_sub })
+            .is_some_and(|time| {
+                (temp_addr_preferred_until_start - SLAAC_MIN_REGEN_ADVANCE.get()
+                    ..temp_addr_preferred_until_end - SLAAC_MIN_REGEN_ADVANCE.get())
+                    .contains(time)
+            })
+    );
     // Disabling IP should remove all the SLAAC addresses.
     set_ip_enabled(&mut ctx, false /* enabled */);
     let addrs = with_assigned_ipv6_addr_subnets(&mut ctx.core_ctx(), &device_id, |addrs| {

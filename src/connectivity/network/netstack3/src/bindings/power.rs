@@ -75,23 +75,25 @@ impl PowerWorker {
         // resumed state. This allows us to drop connections with SAG if we find
         // ourselves in a bad state as well as offering an always-pending stream
         // when suspend is disabled.
-        let mut suspend_blocker_stream = pin!(suspend_blocker_stream
-            .map(|rs| {
-                rs.filter_map(|r| {
-                    futures::future::ready(match r {
-                        Ok(r) => Some(Work::SuspendBlockerRequest(r)),
-                        Err(e) => {
-                            // Filter out these errors, assuming the FIDL channel will
-                            // close and we'll observe the finished state.
-                            error!("error from suspend blocker stream: {e}");
-                            None
-                        }
+        let mut suspend_blocker_stream = pin!(
+            suspend_blocker_stream
+                .map(|rs| {
+                    rs.filter_map(|r| {
+                        futures::future::ready(match r {
+                            Ok(r) => Some(Work::SuspendBlockerRequest(r)),
+                            Err(e) => {
+                                // Filter out these errors, assuming the FIDL channel will
+                                // close and we'll observe the finished state.
+                                error!("error from suspend blocker stream: {e}");
+                                None
+                            }
+                        })
                     })
+                    .chain(futures::stream::once(async { Work::SuspendBlockerFinished }))
                 })
-                .chain(futures::stream::once(async { Work::SuspendBlockerFinished }))
-            })
-            .flatten()
-            .fuse());
+                .flatten()
+                .fuse()
+        );
 
         let mut work_stream = work_stream.map(Work::Sink);
 
@@ -169,8 +171,8 @@ impl PowerWorker {
     }
 }
 
-async fn open_suspension_blocker(
-) -> Result<fpower_system::SuspendBlockerRequestStream, PowerFrameworkError> {
+async fn open_suspension_blocker()
+-> Result<fpower_system::SuspendBlockerRequestStream, PowerFrameworkError> {
     let sag =
         fuchsia_component::client::connect_to_protocol::<fpower_system::ActivityGovernorMarker>()
             .map_err(PowerFrameworkError::ConnectToProtocol)?;

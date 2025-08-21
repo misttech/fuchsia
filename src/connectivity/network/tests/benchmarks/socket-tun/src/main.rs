@@ -154,11 +154,9 @@ async fn setup<'a>(
                 .expect("create interface");
             control
         };
-        assert!(control
-            .enable()
-            .await
-            .expect("enable interface FIDL call")
-            .expect("enable interface"));
+        assert!(
+            control.enable().await.expect("enable interface FIDL call").expect("enable interface")
+        );
 
         for subnet in subnets {
             let addr_state_provider = interfaces::add_address_wait_assigned(

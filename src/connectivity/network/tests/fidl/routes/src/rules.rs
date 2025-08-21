@@ -6,13 +6,13 @@ use assert_matches::assert_matches;
 use fidl_fuchsia_net_routes_ext::{self as fnet_routes_ext, FidlRouteIpExt};
 use fnet_routes_ext::admin::FidlRouteAdminIpExt;
 use fnet_routes_ext::rules::{
-    add_rule, close_rule_set, new_rule_set, remove_rule, FidlRuleAdminIpExt, FidlRuleIpExt,
-    InstalledRule, RuleAction, RuleEvent, RuleIndex, RuleMatcher, DEFAULT_RULE_SET_PRIORITY,
+    DEFAULT_RULE_SET_PRIORITY, FidlRuleAdminIpExt, FidlRuleIpExt, InstalledRule, RuleAction,
+    RuleEvent, RuleIndex, RuleMatcher, add_rule, close_rule_set, new_rule_set, remove_rule,
 };
 use futures::{StreamExt as _, TryStreamExt as _};
 use net_declare::{fidl_ip, fidl_subnet, net_ip_v4, net_ip_v6};
-use net_types::ip::Ip;
 use net_types::SpecifiedAddr;
+use net_types::ip::Ip;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt};
 use netstack_testing_macros::netstack_test;
 use std::pin::pin;

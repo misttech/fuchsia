@@ -19,7 +19,7 @@ use packet_formats::testutil::{parse_ethernet_frame, parse_ip_packet_in_ethernet
 use test_case::test_case;
 
 use netstack3_base::socket::SocketIpAddr;
-use netstack3_base::testutil::{set_logger_for_test, TestAddrs, TestIpExt};
+use netstack3_base::testutil::{TestAddrs, TestIpExt, set_logger_for_test};
 use netstack3_base::{
     CounterCollection as _, CounterContext, EitherDeviceId, IpDeviceAddr, Mms,
     ResourceCounterContext,
@@ -36,8 +36,8 @@ use netstack3_ip::socket::{
 };
 use netstack3_ip::testutil::IpCounterExpectations;
 use netstack3_ip::{
-    self as ip, device, AddableEntryEither, AddableMetric, IpCounters, IpDeviceMtuContext,
-    RawMetric, ResolveRouteError,
+    self as ip, AddableEntryEither, AddableMetric, IpCounters, IpDeviceMtuContext, RawMetric,
+    ResolveRouteError, device,
 };
 
 enum AddressType {

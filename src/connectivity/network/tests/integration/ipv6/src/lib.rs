@@ -23,7 +23,7 @@ use {
 
 use anyhow::Context as _;
 use futures::{
-    future, Future, FutureExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _,
+    Future, FutureExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _, future,
 };
 use net_declare::net_ip_v6;
 use net_types::ethernet::Mac;
@@ -35,16 +35,15 @@ use net_types::{
 use netemul::InterfaceConfig;
 use netstack_testing_common::constants::{eth as eth_consts, ipv6 as ipv6_consts};
 use netstack_testing_common::ndp::{
-    self, assert_dad_failed, assert_dad_success, expect_dad_neighbor_solicitation,
+    self, DadState, assert_dad_failed, assert_dad_success, expect_dad_neighbor_solicitation,
     fail_dad_with_na, fail_dad_with_ns, send_ra_with_router_lifetime, wait_for_router_solicitation,
-    DadState,
 };
 use netstack_testing_common::realms::{
-    constants, KnownServiceProvider, Netstack, NetstackVersion, TestSandboxExt as _,
+    KnownServiceProvider, Netstack, NetstackVersion, TestSandboxExt as _, constants,
 };
 use netstack_testing_common::{
-    interfaces, setup_network, setup_network_with, ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT,
-    ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
+    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, interfaces,
+    setup_network, setup_network_with,
 };
 use netstack_testing_macros::netstack_test;
 use packet::ParsablePacket as _;
@@ -341,10 +340,14 @@ async fn sends_router_solicitations<N: Netstack>(
         let observed_sll = observed_slls.into_iter().nth(0);
         if src_ip.is_specified() {
             if observed_sll.is_none() {
-                panic!("expected source-link-layer address option if RS has a specified source IP address");
+                panic!(
+                    "expected source-link-layer address option if RS has a specified source IP address"
+                );
             }
         } else if observed_sll.is_some() {
-            panic!("unexpected source-link-layer address option for RS with unspecified source IP address");
+            panic!(
+                "unexpected source-link-layer address option for RS with unspecified source IP address"
+            );
         }
 
         observed_rs += 1;
@@ -1533,9 +1536,11 @@ async fn slaac_addrs_report_lifetimes<N: Netstack>(name: &str) {
         .await
         .expect("failed to send router advertisement");
 
-    let mut watcher = pin!(realm
-        .get_interface_event_stream_with_interest::<fnet_interfaces_ext::AllInterest>()
-        .expect("error getting interface state event stream"));
+    let mut watcher = pin!(
+        realm
+            .get_interface_event_stream_with_interest::<fnet_interfaces_ext::AllInterest>()
+            .expect("error getting interface state event stream")
+    );
     let mut watcher_state = &mut fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(iface.id());
 
     #[derive(Debug, Eq, PartialEq)]

@@ -9,6 +9,7 @@ use netstack3_base::{ContextPair, CounterContext, Inspector, InspectorExt as _};
 use netstack3_device::ethernet::EthernetDeviceCounters;
 use netstack3_device::socket::DeviceSocketCounters;
 use netstack3_device::{ArpCounters, DeviceCounters};
+use netstack3_ip::IpCounters;
 use netstack3_ip::gmp::{IgmpCounters, MldCounters};
 use netstack3_ip::icmp::{
     IcmpRxCounters, IcmpRxCountersInner, IcmpTxCounters, IcmpTxCountersInner, NdpCounters,
@@ -17,7 +18,6 @@ use netstack3_ip::icmp::{
 use netstack3_ip::multicast_forwarding::MulticastForwardingCounters;
 use netstack3_ip::nud::{NudCounters, NudCountersInner};
 use netstack3_ip::raw::RawIpSocketCounters;
-use netstack3_ip::IpCounters;
 use netstack3_tcp::{CombinedTcpCounters, TcpCountersWithSocket, TcpCountersWithoutSocket};
 use netstack3_udp::{CombinedUdpCounters, UdpCountersWithSocket, UdpCountersWithoutSocket};
 

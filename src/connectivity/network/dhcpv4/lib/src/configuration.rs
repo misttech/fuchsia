@@ -182,7 +182,12 @@ impl FidlCompatible<fidl_fuchsia_net_dhcp::AddressPool> for ManagedAddresses {
                 format!("failed to determine address pool size for range_start ({}) and range_stop ({})", pool_range_start, pool_range_stop)
             })?;
             if pool_range_size > mask.subnet_size() {
-                Err(anyhow::format_err!("fuchsia.net.dhcp.AddressPool contained prefix_length ({}) which cannot fit address pool defined by range_start: ({}) and range_stop: ({})", prefix_length, pool_range_start, pool_range_stop))
+                Err(anyhow::format_err!(
+                    "fuchsia.net.dhcp.AddressPool contained prefix_length ({}) which cannot fit address pool defined by range_start: ({}) and range_stop: ({})",
+                    prefix_length,
+                    pool_range_start,
+                    pool_range_stop
+                ))
             } else {
                 Ok(addresses_candidate)
             }

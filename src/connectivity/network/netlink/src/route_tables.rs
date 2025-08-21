@@ -17,7 +17,7 @@ use {
 use assert_matches::assert_matches;
 use net_types::ip::{GenericOverIp, Ip};
 
-use crate::routes::{NetlinkRouteMessage, MAIN_ROUTE_TABLE_INDEX};
+use crate::routes::{MAIN_ROUTE_TABLE_INDEX, NetlinkRouteMessage};
 
 /// The index of a route table (in netlink's view of indices).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]

@@ -6,7 +6,7 @@
 
 use alloc::boxed::Box;
 use core::convert::TryInto as _;
-use core::num::{NonZeroU16, NonZeroU8};
+use core::num::{NonZeroU8, NonZeroU16};
 
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
 use log::{debug, error, trace};
@@ -36,12 +36,12 @@ use packet_formats::icmp::ndp::{
     OptionSequenceBuilder, RouterSolicitation,
 };
 use packet_formats::icmp::{
-    peek_message_type, IcmpDestUnreachable, IcmpEchoRequest, IcmpMessage, IcmpMessageType,
-    IcmpPacket, IcmpPacketBuilder, IcmpPacketRaw, IcmpParseArgs, IcmpTimeExceeded, IcmpZeroCode,
+    IcmpDestUnreachable, IcmpEchoRequest, IcmpMessage, IcmpMessageType, IcmpPacket,
+    IcmpPacketBuilder, IcmpPacketRaw, IcmpParseArgs, IcmpTimeExceeded, IcmpZeroCode,
     Icmpv4DestUnreachableCode, Icmpv4Packet, Icmpv4ParameterProblem, Icmpv4ParameterProblemCode,
     Icmpv4TimeExceededCode, Icmpv6DestUnreachableCode, Icmpv6Packet, Icmpv6PacketTooBig,
     Icmpv6ParameterProblem, Icmpv6ParameterProblemCode, Icmpv6TimeExceededCode, MessageBody,
-    OriginalPacket,
+    OriginalPacket, peek_message_type,
 };
 use packet_formats::ip::{DscpAndEcn, IpPacket, Ipv4Proto, Ipv6Proto};
 use packet_formats::ipv4::{Ipv4FragmentType, Ipv4Header, Ipv4OnlyMeta};
@@ -49,9 +49,9 @@ use packet_formats::ipv6::{ExtHdrParseError, Ipv6Header};
 use zerocopy::SplitByteSlice;
 
 use crate::internal::base::{
-    AddressStatus, IpDeviceIngressStateContext, IpLayerHandler, IpPacketDestination,
-    IpSendFrameError, IpTransportContext, Ipv6PresentAddressStatus, NdpBindingsContext,
-    RouterAdvertisementEvent, SendIpPacketMeta, TransportReceiveError, IPV6_DEFAULT_SUBNET,
+    AddressStatus, IPV6_DEFAULT_SUBNET, IpDeviceIngressStateContext, IpLayerHandler,
+    IpPacketDestination, IpSendFrameError, IpTransportContext, Ipv6PresentAddressStatus,
+    NdpBindingsContext, RouterAdvertisementEvent, SendIpPacketMeta, TransportReceiveError,
 };
 use crate::internal::device::nud::{ConfirmationFlags, NudIpHandler};
 use crate::internal::device::route_discovery::Ipv6DiscoveredRoute;
@@ -325,7 +325,7 @@ pub trait IcmpHandlerIpExt: IpExt {
 
     /// An IP-specific optional-constructor for MTU Exceeded ICMP errors.
     fn new_mtu_exceeded(proto: Self::Proto, header_len: usize, mtu: Mtu)
-        -> Option<Self::IcmpError>;
+    -> Option<Self::IcmpError>;
 }
 
 impl IcmpHandlerIpExt for Ipv4 {
@@ -427,10 +427,8 @@ pub trait IcmpErrorHandler<I: IcmpHandlerIpExt, BC>: DeviceIdContext<AnyDevice> 
     );
 }
 
-impl<
-        BC: IcmpBindingsContext,
-        CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>,
-    > IcmpErrorHandler<Ipv4, BC> for CC
+impl<BC: IcmpBindingsContext, CC: InnerIcmpv4Context<BC> + CounterContext<IcmpTxCounters<Ipv4>>>
+    IcmpErrorHandler<Ipv4, BC> for CC
 {
     fn send_icmp_error_message<B: BufferMut>(
         &mut self,
@@ -516,10 +514,8 @@ impl<
     }
 }
 
-impl<
-        BC: IcmpBindingsContext,
-        CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>,
-    > IcmpErrorHandler<Ipv6, BC> for CC
+impl<BC: IcmpBindingsContext, CC: InnerIcmpv6Context<BC> + CounterContext<IcmpTxCounters<Ipv6>>>
+    IcmpErrorHandler<Ipv6, BC> for CC
 {
     fn send_icmp_error_message<B: BufferMut>(
         &mut self,
@@ -803,12 +799,12 @@ fn receive_ip_transport_icmp_error<
 }
 
 impl<
-        BC: IcmpBindingsContext,
-        CC: InnerIcmpv4Context<BC>
-            + PmtuHandler<Ipv4, BC>
-            + CounterContext<IcmpRxCounters<Ipv4>>
-            + CounterContext<IcmpTxCounters<Ipv4>>,
-    > IpTransportContext<Ipv4, BC, CC> for IcmpIpTransportContext
+    BC: IcmpBindingsContext,
+    CC: InnerIcmpv4Context<BC>
+        + PmtuHandler<Ipv4, BC>
+        + CounterContext<IcmpRxCounters<Ipv4>>
+        + CounterContext<IcmpTxCounters<Ipv4>>,
+> IpTransportContext<Ipv4, BC, CC> for IcmpIpTransportContext
 {
     fn receive_icmp_error(
         core_ctx: &mut CC,
@@ -850,8 +846,7 @@ impl<
 
         trace!(
             "<IcmpIpTransportContext as IpTransportContext<Ipv4>>::receive_ip_packet({}, {})",
-            src_ip,
-            dst_ip
+            src_ip, dst_ip
         );
         let packet =
             match buffer.parse_with::<_, Icmpv4Packet<_>>(IcmpParseArgs::new(src_ip, dst_ip)) {
@@ -1325,8 +1320,7 @@ fn receive_ndp_packet<
                 None => {
                     trace!(
                         "dropping NS from {} with non-unicast target={:?}",
-                        src_ip,
-                        target_address
+                        src_ip, target_address
                     );
                     return;
                 }
@@ -1437,8 +1431,7 @@ fn receive_ndp_packet<
                 None => {
                     trace!(
                         "dropping NA from {} with non-unicast target={:?}",
-                        src_ip,
-                        target_address
+                        src_ip, target_address
                     );
                     return;
                 }
@@ -1707,19 +1700,19 @@ fn receive_ndp_packet<
 }
 
 impl<
-        BC: IcmpBindingsContext + NdpBindingsContext<CC::DeviceId>,
-        CC: InnerIcmpv6Context<BC>
-            + InnerIcmpContext<Ipv6, BC>
-            + Ipv6DeviceHandler<BC>
-            + IpDeviceHandler<Ipv6, BC>
-            + IpDeviceIngressStateContext<Ipv6>
-            + PmtuHandler<Ipv6, BC>
-            + NudIpHandler<Ipv6, BC>
-            + IpLayerHandler<Ipv6, BC>
-            + CounterContext<IcmpRxCounters<Ipv6>>
-            + CounterContext<IcmpTxCounters<Ipv6>>
-            + CounterContext<NdpCounters>,
-    > IpTransportContext<Ipv6, BC, CC> for IcmpIpTransportContext
+    BC: IcmpBindingsContext + NdpBindingsContext<CC::DeviceId>,
+    CC: InnerIcmpv6Context<BC>
+        + InnerIcmpContext<Ipv6, BC>
+        + Ipv6DeviceHandler<BC>
+        + IpDeviceHandler<Ipv6, BC>
+        + IpDeviceIngressStateContext<Ipv6>
+        + PmtuHandler<Ipv6, BC>
+        + NudIpHandler<Ipv6, BC>
+        + IpLayerHandler<Ipv6, BC>
+        + CounterContext<IcmpRxCounters<Ipv6>>
+        + CounterContext<IcmpTxCounters<Ipv6>>
+        + CounterContext<NdpCounters>,
+> IpTransportContext<Ipv6, BC, CC> for IcmpIpTransportContext
 {
     fn receive_icmp_error(
         core_ctx: &mut CC,
@@ -1761,8 +1754,7 @@ impl<
 
         trace!(
             "<IcmpIpTransportContext as IpTransportContext<Ipv6>>::receive_ip_packet({:?}, {})",
-            src_ip,
-            dst_ip
+            src_ip, dst_ip
         );
 
         let packet = match buffer
@@ -3167,8 +3159,8 @@ mod tests {
 
     use net_types::ip::Subnet;
     use netstack3_base::testutil::{
-        set_logger_for_test, FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeInstant,
-        FakeTxMetadata, FakeWeakDeviceId, TestIpExt, TEST_ADDRS_V4, TEST_ADDRS_V6,
+        FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeInstant, FakeTxMetadata, FakeWeakDeviceId,
+        TEST_ADDRS_V4, TEST_ADDRS_V6, TestIpExt, set_logger_for_test,
     };
     use netstack3_base::{CtxPair, Uninstantiable};
     use netstack3_filter::TransportPacketSerializer;
@@ -3479,7 +3471,9 @@ mod tests {
             dst_ip,
             false /* allow_dst_multicast */
         ));
-        assert!(should_send_icmpv6_error(None, src_ip, dst_ip, false /* allow_dst_multicast */));
+        assert!(should_send_icmpv6_error(
+            None, src_ip, dst_ip, false /* allow_dst_multicast */
+        ));
         assert!(should_send_icmpv6_error(
             Some(frame_dst),
             src_ip,

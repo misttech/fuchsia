@@ -7,13 +7,13 @@ use fidl_fuchsia_net_stack::{
 };
 use futures::{TryFutureExt as _, TryStreamExt as _};
 use log::{debug, error};
-use net_types::ip::{Ip, IpAddr, Ipv4, Ipv6};
 use net_types::SpecifiedAddr;
+use net_types::ip::{Ip, IpAddr, Ipv4, Ipv6};
 use netstack3_core::device::DeviceId;
 use netstack3_core::routes::{AddableEntry, AddableEntryEither};
 
 use super::util::{IntoCore as _, ResultExt as _, TryFromFidlWithContext as _, TryIntoCore as _};
-use super::{routes, BindingId, Ctx};
+use super::{BindingId, Ctx, routes};
 
 pub(crate) struct StackFidlWorker {
     netstack: crate::bindings::Netstack,

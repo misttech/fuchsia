@@ -312,7 +312,7 @@ impl PacketSocketProvider for PacketSocketProviderImpl {
 mod test {
     use super::*;
     use dhcp_client_core::deps::{DatagramInfo, Socket as _};
-    use futures::{join, FutureExt as _};
+    use futures::{FutureExt as _, join};
     use netstack_testing_common::realms::TestSandboxExt as _;
     use packet::{InnerPacketBuilder as _, PacketBuilder as _, Serializer as _};
     use {

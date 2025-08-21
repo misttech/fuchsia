@@ -158,9 +158,9 @@ pub trait Clock {
 pub(crate) mod testutil {
     use super::*;
     use diagnostics_traits::InstantPropertyName;
+    use futures::StreamExt as _;
     use futures::channel::{mpsc, oneshot};
     use futures::lock::Mutex;
-    use futures::StreamExt as _;
     use rand::SeedableRng as _;
     use std::cell::RefCell;
     use std::cmp::Reverse;

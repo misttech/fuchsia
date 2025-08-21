@@ -89,11 +89,7 @@ pub(crate) mod errno {
         ///
         /// Returns `None` when the code is non-negative (which includes 0).
         const fn new(code: i32) -> Option<Self> {
-            if code.is_negative() {
-                Some(Errno(code))
-            } else {
-                None
-            }
+            if code.is_negative() { Some(Errno(code)) } else { None }
         }
     }
 
@@ -164,7 +160,7 @@ mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
-    use netlink_packet_core::{NetlinkBuffer, NLMSG_DONE, NLMSG_ERROR};
+    use netlink_packet_core::{NLMSG_DONE, NLMSG_ERROR, NetlinkBuffer};
     use netlink_packet_route::RouteNetlinkMessage;
     use netlink_packet_utils::Parseable as _;
     use test_case::test_case;

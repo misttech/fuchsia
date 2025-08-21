@@ -28,11 +28,7 @@ impl<M> SeqRanges<M> {
         f: F,
     ) -> Option<SeqRange<M>> {
         let front = self.blocks.front()?;
-        if f(front) {
-            self.blocks.pop_front()
-        } else {
-            None
-        }
+        if f(front) { self.blocks.pop_front() } else { None }
     }
 
     fn find_first_after(blocks: &VecDeque<SeqRange<M>>, start: SeqNum) -> usize {

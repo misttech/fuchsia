@@ -13,8 +13,8 @@ use assert_matches::assert_matches;
 
 /// Create a Tun device, returning handles to the created
 /// `fuchsia.net.tun/Device` and the underlying network device.
-pub fn create_tun_device(
-) -> (fnet_tun::DeviceProxy, fidl::endpoints::ClientEnd<fhardware_network::DeviceMarker>) {
+pub fn create_tun_device()
+-> (fnet_tun::DeviceProxy, fidl::endpoints::ClientEnd<fhardware_network::DeviceMarker>) {
     create_tun_device_with(fnet_tun::DeviceConfig::default())
 }
 
@@ -143,8 +143,8 @@ pub async fn create_eth_tun_port(
 pub const TUN_DEFAULT_PORT_ID: u8 = 0;
 
 /// Create a Tun device pair with an Ethernet port.
-pub async fn create_eth_tun_pair(
-) -> (fnet_tun::DevicePairProxy, fhardware_network::PortProxy, fhardware_network::PortProxy) {
+pub async fn create_eth_tun_pair()
+-> (fnet_tun::DevicePairProxy, fhardware_network::PortProxy, fhardware_network::PortProxy) {
     create_tun_pair_with(
         fnet_tun::DevicePairConfig::default(),
         fnet_tun::DevicePairPortConfig {

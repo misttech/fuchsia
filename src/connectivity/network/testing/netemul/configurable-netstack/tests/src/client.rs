@@ -5,7 +5,7 @@
 #![cfg(test)]
 
 use assert_matches::assert_matches;
-use configurable_netstack_test::{server_ips, BUS_NAME, REQUEST, RESPONSE, SERVER_NAME};
+use configurable_netstack_test::{BUS_NAME, REQUEST, RESPONSE, SERVER_NAME, server_ips};
 use fuchsia_component::client::connect_to_protocol;
 use futures_util::StreamExt as _;
 use net_declare::{fidl_mac, net_ip_v4};

@@ -12,12 +12,12 @@ use {
 
 use futures::{FutureExt as _, StreamExt as _};
 use net_declare::{net_ip_v4, std_ip_v4};
-use net_types::ip::{self as net_types_ip, Ipv4, Ipv4Addr};
 use net_types::MulticastAddress as _;
+use net_types::ip::{self as net_types_ip, Ipv4, Ipv4Addr};
 use netemul::RealmUdpSocket;
 use netstack_testing_common::interfaces::{self, TestInterfaceExt};
 use netstack_testing_common::realms::{Netstack, NetstackVersion, TestSandboxExt};
-use netstack_testing_common::{setup_network, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT};
+use netstack_testing_common::{ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, setup_network};
 use netstack_testing_macros::netstack_test;
 use packet::ParsablePacket as _;
 use packet_formats::ethernet::{EtherType, EthernetFrame, EthernetFrameLengthCheck};

@@ -38,8 +38,8 @@ pub(crate) mod testutil {
     use rand::{CryptoRng, Rng as _, RngCore, SeedableRng};
     use rand_xorshift::XorShiftRng;
 
-    use crate::sync::Mutex;
     use crate::RngContext;
+    use crate::sync::Mutex;
 
     /// A wrapper which implements `RngCore` and `CryptoRng` for any `RngCore`.
     ///

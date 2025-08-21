@@ -32,37 +32,42 @@ pub async fn wait_for_non_loopback_interface_up<
 ) -> Result<(u64, String)> {
     let mut if_map =
         HashMap::<u64, fidl_fuchsia_net_interfaces_ext::PropertiesAndState<(), _>>::new();
-    let mut wait_for_interface = pin!(fidl_fuchsia_net_interfaces_ext::wait_interface(
-        fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
-            fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-        >(
-            interface_state, fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
-        )?,
-        &mut if_map,
-        |if_map| {
-            if_map.iter().find_map(
-                |(
-                    id,
-                    fidl_fuchsia_net_interfaces_ext::PropertiesAndState {
-                        properties:
-                            fidl_fuchsia_net_interfaces_ext::Properties {
-                                name, port_class, online, ..
-                            },
-                        state: _,
+    let mut wait_for_interface = pin!(
+        fidl_fuchsia_net_interfaces_ext::wait_interface(
+            fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
+                fidl_fuchsia_net_interfaces_ext::DefaultInterest,
+            >(
+                interface_state, fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            )?,
+            &mut if_map,
+            |if_map| {
+                if_map.iter().find_map(
+                    |(
+                        id,
+                        fidl_fuchsia_net_interfaces_ext::PropertiesAndState {
+                            properties:
+                                fidl_fuchsia_net_interfaces_ext::Properties {
+                                    name,
+                                    port_class,
+                                    online,
+                                    ..
+                                },
+                            state: _,
+                        },
+                    )| {
+                        (*port_class != fidl_fuchsia_net_interfaces_ext::PortClass::Loopback
+                            && *online
+                            && exclude_ids.map_or(true, |ids| !ids.contains(id)))
+                        .then(|| (*id, name.clone()))
                     },
-                )| {
-                    (*port_class != fidl_fuchsia_net_interfaces_ext::PortClass::Loopback
-                        && *online
-                        && exclude_ids.map_or(true, |ids| !ids.contains(id)))
-                    .then(|| (*id, name.clone()))
-                },
-            )
-        },
-    )
-    .map_err(anyhow::Error::from)
-    .on_timeout(timeout.after_now(), || Err(anyhow::anyhow!("timed out")))
-    .map(|r| r.context("failed to wait for non-loopback interface up"))
-    .fuse());
+                )
+            },
+        )
+        .map_err(anyhow::Error::from)
+        .on_timeout(timeout.after_now(), || Err(anyhow::anyhow!("timed out")))
+        .map(|r| r.context("failed to wait for non-loopback interface up"))
+        .fuse()
+    );
     futures::select! {
         wait_for_interface_res = wait_for_interface => {
             wait_for_interface_res

@@ -433,14 +433,14 @@ pub trait DeviceLayerTypes:
 {
 }
 impl<
-        BC: DeviceLayerStateTypes
-            + socket::DeviceSocketTypes
-            + LinkResolutionContext<EthernetLinkDevice>
-            + TimerBindingsTypes
-            + ReferenceNotifiers
-            + TxMetadataBindingsTypes
-            + 'static,
-    > DeviceLayerTypes for BC
+    BC: DeviceLayerStateTypes
+        + socket::DeviceSocketTypes
+        + LinkResolutionContext<EthernetLinkDevice>
+        + TimerBindingsTypes
+        + ReferenceNotifiers
+        + TxMetadataBindingsTypes
+        + 'static,
+> DeviceLayerTypes for BC
 {
 }
 

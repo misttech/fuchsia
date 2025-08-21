@@ -13,7 +13,7 @@
 mod cubic;
 
 use core::cmp::Ordering;
-use core::num::{NonZeroU32, NonZeroU8};
+use core::num::{NonZeroU8, NonZeroU32};
 use core::time::Duration;
 
 use netstack3_base::{Instant, Mss, SackBlocks, SeqNum, WindowSize};
@@ -1065,8 +1065,8 @@ mod test {
     use core::ops::Range;
 
     use assert_matches::assert_matches;
-    use netstack3_base::testutil::FakeInstant;
     use netstack3_base::SackBlock;
+    use netstack3_base::testutil::FakeInstant;
     use test_case::{test_case, test_matrix};
 
     use super::*;
@@ -1955,15 +1955,17 @@ mod test {
 
         let block1 = nth_range(snd_una, mss, 101..110);
         let block2 = nth_range(snd_una, mss, 111..112);
-        assert!(scoreboard.process_ack(
-            snd_una,
-            snd_nxt,
-            recovery.high_rxt(),
-            &[SackBlock::try_from(block1).unwrap(), SackBlock::try_from(block2).unwrap()]
-                .into_iter()
-                .collect(),
-            mss,
-        ));
+        assert!(
+            scoreboard.process_ack(
+                snd_una,
+                snd_nxt,
+                recovery.high_rxt(),
+                &[SackBlock::try_from(block1).unwrap(), SackBlock::try_from(block2).unwrap()]
+                    .into_iter()
+                    .collect(),
+                mss,
+            )
+        );
 
         let cwnd = CongestionWindow::new(u32::MAX, mss);
 

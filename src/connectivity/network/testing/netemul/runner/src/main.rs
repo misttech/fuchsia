@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use component_events::events::{self};
 use fidl::endpoints::{ControlHandle as _, Proxy as _, RequestStream as _};
 use fuchsia_component::client::{

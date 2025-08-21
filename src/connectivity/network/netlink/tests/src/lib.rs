@@ -15,16 +15,16 @@ use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
 use ip_test_macro::ip_test;
 use linux_uapi::{
-    rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN, rt_class_t_RT_TABLE_UNSPEC,
+    NLM_F_DUMP, rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN, rt_class_t_RT_TABLE_UNSPEC,
     rtnetlink_groups_RTNLGRP_IPV4_ROUTE, rtnetlink_groups_RTNLGRP_IPV6_ROUTE,
-    rtnetlink_groups_RTNLGRP_ND_USEROPT, NLM_F_DUMP,
+    rtnetlink_groups_RTNLGRP_ND_USEROPT,
 };
 use net_declare::{fidl_mac, net_ip_v6, std_ip};
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use netemul::{RealmUdpSocket as _, TestRealm};
 use netlink::multicast_groups::ModernGroup;
 use netlink_packet_core::{
-    ErrorMessage, NetlinkMessage, NetlinkPayload, NetlinkSerializable, NLM_F_ACK,
+    ErrorMessage, NLM_F_ACK, NetlinkMessage, NetlinkPayload, NetlinkSerializable,
 };
 use netlink_packet_route::route::{
     RouteAttribute, RouteFlags, RouteHeader, RouteMessage, RouteProtocol, RouteScope, RouteType,
@@ -39,9 +39,9 @@ use packet_formats::icmp::ndp as packet_formats_ndp;
 use test_case::test_matrix;
 
 use fidl_fuchsia_net_ext::FromExt as _;
+use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::FidlRuleIpExt;
-use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_ext as fnet_ext,
     fidl_fuchsia_net_interfaces as fnet_interfaces,
@@ -656,9 +656,9 @@ async fn successfully_installs_rule_referencing_main_table<
     let client = add_route_client(&netlink);
 
     let state = &main_realm.connect_to_protocol::<I::StateMarker>().expect("connect to protocol");
-    let mut rules_event_stream =
-        std::pin::pin!(fnet_routes_ext::rules::rule_event_stream_from_state::<I>(state)
-            .expect("get rule watcher"));
+    let mut rules_event_stream = std::pin::pin!(
+        fnet_routes_ext::rules::rule_event_stream_from_state::<I>(state).expect("get rule watcher")
+    );
     let _preexisting_rules = fnet_routes_ext::rules::collect_rules_until_idle::<I, HashSet<_>>(
         rules_event_stream.by_ref(),
     )
@@ -778,9 +778,9 @@ async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>
     let client = add_route_client(&netlink);
 
     let state = &main_realm.connect_to_protocol::<I::StateMarker>().expect("connect to protocol");
-    let mut rules_event_stream =
-        std::pin::pin!(fnet_routes_ext::rules::rule_event_stream_from_state::<I>(state)
-            .expect("get rule watcher"));
+    let mut rules_event_stream = std::pin::pin!(
+        fnet_routes_ext::rules::rule_event_stream_from_state::<I>(state).expect("get rule watcher")
+    );
     let _preexisting_rules = fnet_routes_ext::rules::collect_rules_until_idle::<I, HashSet<_>>(
         rules_event_stream.by_ref(),
     )
@@ -1144,23 +1144,24 @@ async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
     };
 
     let state = &main_realm.connect_to_protocol::<I::StateMarker>().expect("connect to protocol");
-    let mut rules_event_stream =
-        std::pin::pin!(fnet_routes_ext::rules::rule_event_stream_from_state::<I>(state)
-            .expect("get rule watcher"));
+    let mut rules_event_stream = std::pin::pin!(
+        fnet_routes_ext::rules::rule_event_stream_from_state::<I>(state).expect("get rule watcher")
+    );
     let _preexisting_rules = fnet_routes_ext::rules::collect_rules_until_idle::<I, HashSet<_>>(
         rules_event_stream.by_ref(),
     )
     .await
     .expect("collect rules until idle");
 
-    let mut routes_event_stream =
-        std::pin::pin!(fnet_routes_ext::event_stream_from_state_with_options::<I>(
+    let mut routes_event_stream = std::pin::pin!(
+        fnet_routes_ext::event_stream_from_state_with_options::<I>(
             state,
             fnet_routes_ext::WatcherOptions {
                 table_interest: Some(fnet_routes::TableInterest::All(fnet_routes::All)),
             },
         )
-        .expect("get routes watcher"));
+        .expect("get routes watcher")
+    );
     let _preexisting_routes =
         fnet_routes_ext::collect_routes_until_idle::<I, HashSet<_>>(routes_event_stream.by_ref())
             .await
@@ -1758,13 +1759,15 @@ async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpE
         .expect("failed to get interface local table");
     let table_id = fnet_routes_ext::admin::get_table_id::<I>(&local_table).await.expect("fidl");
     let state = realm.connect_to_protocol::<I::StateMarker>().expect("connect to protocol");
-    let mut stream = std::pin::pin!(fnet_routes_ext::event_stream_from_state_with_options(
-        &state,
-        fnet_routes_ext::WatcherOptions {
-            table_interest: Some(fnet_routes::TableInterest::Only(table_id.get())),
-        },
-    )
-    .expect("convert to stream"));
+    let mut stream = std::pin::pin!(
+        fnet_routes_ext::event_stream_from_state_with_options(
+            &state,
+            fnet_routes_ext::WatcherOptions {
+                table_interest: Some(fnet_routes::TableInterest::Only(table_id.get())),
+            },
+        )
+        .expect("convert to stream")
+    );
     let routes = fnet_routes_ext::collect_routes_until_idle::<I, HashSet<_>>(stream.by_ref())
         .await
         .expect("collect routes until idle");

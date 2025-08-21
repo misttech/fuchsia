@@ -316,8 +316,8 @@ mod helpers {
     };
     use packet_formats::arp::{ArpOp, ArpPacket, ArpPacketBuilder};
     use packet_formats::ethernet::{
-        EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
-        ETHERNET_MIN_BODY_LEN_NO_TAG,
+        ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
+        EthernetFrameLengthCheck,
     };
     use packet_formats::icmp::{
         IcmpEchoRequest, IcmpPacketBuilder, IcmpParseArgs, IcmpZeroCode, Icmpv4Packet,

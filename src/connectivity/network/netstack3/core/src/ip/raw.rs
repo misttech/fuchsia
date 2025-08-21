@@ -16,7 +16,7 @@ use netstack3_ip::raw::{
 };
 
 use crate::marker::IpExt;
-use crate::{lock_ordering, BindingsContext, BindingsTypes, CoreCtx};
+use crate::{BindingsContext, BindingsTypes, CoreCtx, lock_ordering};
 
 #[netstack3_macros::instantiate_ip_impl_block(I)]
 impl<I: IpExt, BC: BindingsContext, L: LockBefore<lock_ordering::RawIpSocketState<I>>>

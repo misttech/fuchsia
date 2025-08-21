@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::FuchsiaTime;
 use crate::tcp::DnsTcpStream;
 use crate::udp::DnsUdpSocket;
-use crate::FuchsiaTime;
 use fuchsia_async as fasync;
 use futures::{Future, FutureExt};
 use trust_dns_proto::error::ProtoError;
+use trust_dns_resolver::AsyncResolver;
 use trust_dns_resolver::name_server::{
     GenericConnection as Connection, GenericConnectionProvider, RuntimeProvider, Spawn,
 };
-use trust_dns_resolver::AsyncResolver;
 
 /// Implement the `trust_dns_resolver::name_server::Spawn` trait in-terms-of fasync::Task.
 #[derive(Clone)]
@@ -124,7 +124,7 @@ mod tests {
     // The test requires Internet connection for testing.
     #[test]
     #[ignore] // TODO(chunyingw): Make it as a manual test.
-              // The test requires Internet connection for testing.
+    // The test requires Internet connection for testing.
     fn test_lookup_quad9() {
         use trust_dns_resolver::testing::lookup_test;
         let exec = FuchsiaExec::new().expect("failed to create fuchsia executor");

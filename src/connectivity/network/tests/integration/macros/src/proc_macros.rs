@@ -7,7 +7,7 @@ use std::str::FromStr;
 use either::Either;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::spanned::Spanned as _;
 
 /// A specific implementation of a test variant.
@@ -315,17 +315,15 @@ fn netstack_test_inner(
 
         let arg_type = match arg {
             syn::FnArg::Typed(syn::PatType { attrs: _, pat: _, colon_token: _, ty }) => ty,
-            other => {
-                return syn::Error::new_spanned(
-                    inputs,
-                    format!(
+            other => return syn::Error::new_spanned(
+                inputs,
+                format!(
                     "test function's first argument must be a `&str` for test name; got = {:#?}",
                     other
                 ),
-                )
-                .to_compile_error()
-                .into()
-            }
+            )
+            .to_compile_error()
+            .into(),
         };
 
         let arg_type = match arg_type.as_ref() {
@@ -335,32 +333,28 @@ fn netstack_test_inner(
                 mutability: _,
                 elem,
             }) => elem,
-            other => {
-                return syn::Error::new_spanned(
-                    inputs,
-                    format!(
+            other => return syn::Error::new_spanned(
+                inputs,
+                format!(
                     "test function's first argument must be a `&str` for test name; got = {:#?}",
                     other
                 ),
-                )
-                .to_compile_error()
-                .into()
-            }
+            )
+            .to_compile_error()
+            .into(),
         };
 
         let arg_type = match arg_type.as_ref() {
             syn::Type::Path(syn::TypePath { qself: _, path }) => path,
-            other => {
-                return syn::Error::new_spanned(
-                    inputs,
-                    format!(
+            other => return syn::Error::new_spanned(
+                inputs,
+                format!(
                     "test function's first argument must be a `&str` for test name; got = {:#?}",
                     other
                 ),
-                )
-                .to_compile_error()
-                .into()
-            }
+            )
+            .to_compile_error()
+            .into(),
         };
 
         if !arg_type.is_ident("str") {
@@ -384,7 +378,7 @@ fn netstack_test_inner(
                     format!("test functions only support generic parameters; got = {:#?}", other),
                 )
                 .to_compile_error()
-                .into()
+                .into();
             }
         };
 
@@ -406,7 +400,7 @@ fn netstack_test_inner(
                     format!("expected typed fn arg; got = {:#?}", other),
                 )
                 .to_compile_error()
-                .into()
+                .into();
             }
         };
 
@@ -424,7 +418,7 @@ fn netstack_test_inner(
                     format!("expected ident fn arg; got = {:#?}", other),
                 )
                 .to_compile_error()
-                .into()
+                .into();
             }
         };
 

@@ -64,9 +64,9 @@ use crate::internal::device::{
     self, IpDeviceAddressContext, IpDeviceBindingsContext, IpDeviceIpExt, IpDeviceSendContext,
 };
 use crate::internal::fragmentation::{FragmentableIpSerializer, FragmentationIpExt, IpFragmenter};
+use crate::internal::gmp::GmpQueryHandler;
 use crate::internal::gmp::igmp::IgmpCounters;
 use crate::internal::gmp::mld::MldCounters;
-use crate::internal::gmp::GmpQueryHandler;
 use crate::internal::icmp::{
     IcmpBindingsTypes, IcmpErrorHandler, IcmpHandlerIpExt, Icmpv4Error, Icmpv4ErrorKind,
     Icmpv4State, Icmpv4StateBuilder, Icmpv6ErrorKind, Icmpv6State, Icmpv6StateBuilder,
@@ -232,10 +232,10 @@ impl<BT: TxMetadataBindingsTypes> DeviceIpLayerMetadata<BT> {
 }
 
 impl<
-        I: IpLayerIpExt,
-        A: WeakIpAddressId<I::Addr>,
-        BT: FilterBindingsTypes + TxMetadataBindingsTypes,
-    > IpLayerPacketMetadata<I, A, BT>
+    I: IpLayerIpExt,
+    A: WeakIpAddressId<I::Addr>,
+    BT: FilterBindingsTypes + TxMetadataBindingsTypes,
+> IpLayerPacketMetadata<I, A, BT>
 {
     fn from_device_ip_layer_metadata<CC, D>(
         core_ctx: &mut CC,
@@ -570,14 +570,14 @@ where
 }
 
 impl<
-        I: IpLayerIpExt,
-        BC: FilterBindingsContext + TxMetadataBindingsTypes,
-        CC: IpDeviceContext<I>
-            + IpSocketHandler<I, BC>
-            + IpStateContext<I>
-            + FilterIpContext<I, BC>
-            + UseTransportIpContextBlanket,
-    > BaseTransportIpContext<I, BC> for CC
+    I: IpLayerIpExt,
+    BC: FilterBindingsContext + TxMetadataBindingsTypes,
+    CC: IpDeviceContext<I>
+        + IpSocketHandler<I, BC>
+        + IpStateContext<I>
+        + FilterIpContext<I, BC>
+        + UseTransportIpContextBlanket,
+> BaseTransportIpContext<I, BC> for CC
 {
     type DevicesWithAddrIter<'s> =
         AssignedAddressDeviceIterator<CC::DeviceAndAddressStatusIter<'s>, I, CC::DeviceId>;
@@ -850,11 +850,7 @@ pub trait IpRouteTablesContext<I: IpLayerIpExt>:
     IpRouteTableContext<I> + IpDeviceContext<I>
 {
     /// The inner context that can provide access to individual routing tables.
-    type Ctx<'a>: IpRouteTableContext<
-        I,
-        DeviceId = Self::DeviceId,
-        WeakDeviceId = Self::WeakDeviceId,
-    >;
+    type Ctx<'a>: IpRouteTableContext<I, DeviceId = Self::DeviceId, WeakDeviceId = Self::WeakDeviceId>;
 
     /// Gets the main table ID.
     fn main_table_id(&self) -> RoutingTableId<I, Self::DeviceId>;
@@ -1107,13 +1103,13 @@ pub trait IpLayerBindingsContext<I: IpLayerIpExt, DeviceId>:
 {
 }
 impl<
-        I: IpLayerIpExt,
-        DeviceId,
-        BC: InstantContext
-            + EventContext<IpLayerEvent<DeviceId, I>>
-            + FilterBindingsContext
-            + TxMetadataBindingsTypes,
-    > IpLayerBindingsContext<I, DeviceId> for BC
+    I: IpLayerIpExt,
+    DeviceId,
+    BC: InstantContext
+        + EventContext<IpLayerEvent<DeviceId, I>>
+        + FilterBindingsContext
+        + TxMetadataBindingsTypes,
+> IpLayerBindingsContext<I, DeviceId> for BC
 {
 }
 
@@ -1139,18 +1135,18 @@ pub trait IpLayerContext<
 }
 
 impl<
-        I: IpLayerIpExt,
-        BC: IpLayerBindingsContext<I, <CC as DeviceIdContext<AnyDevice>>::DeviceId>,
-        CC: IpStateContext<I>
-            + IpDeviceContext<I>
-            + IpDeviceMtuContext<I>
-            + IpDeviceSendContext<I, BC>
-            + IcmpErrorHandler<I, BC>
-            + MulticastForwardingStateContext<I, BC>
-            + MulticastForwardingDeviceContext<I>
-            + CounterContext<MulticastForwardingCounters<I>>
-            + ResourceCounterContext<<Self as DeviceIdContext<AnyDevice>>::DeviceId, IpCounters<I>>,
-    > IpLayerContext<I, BC> for CC
+    I: IpLayerIpExt,
+    BC: IpLayerBindingsContext<I, <CC as DeviceIdContext<AnyDevice>>::DeviceId>,
+    CC: IpStateContext<I>
+        + IpDeviceContext<I>
+        + IpDeviceMtuContext<I>
+        + IpDeviceSendContext<I, BC>
+        + IcmpErrorHandler<I, BC>
+        + MulticastForwardingStateContext<I, BC>
+        + MulticastForwardingDeviceContext<I>
+        + CounterContext<MulticastForwardingCounters<I>>
+        + ResourceCounterContext<<Self as DeviceIdContext<AnyDevice>>::DeviceId, IpCounters<I>>,
+> IpLayerContext<I, BC> for CC
 {
 }
 
@@ -1574,18 +1570,18 @@ pub fn resolve_output_route_to_destination<
 pub trait UseIpSocketContextBlanket {}
 
 impl<
-        I: Ip + IpDeviceStateIpExt + IpDeviceIpExt + IpLayerIpExt,
-        BC: IpDeviceBindingsContext<I, CC::DeviceId>
-            + IpLayerBindingsContext<I, CC::DeviceId>
-            + IpSocketBindingsContext<CC::DeviceId>,
-        CC: IpLayerEgressContext<I, BC>
-            + IpStateContext<I>
-            + IpDeviceContext<I>
-            + IpDeviceConfirmReachableContext<I, BC>
-            + IpDeviceMtuContext<I>
-            + device::IpDeviceConfigurationContext<I, BC>
-            + UseIpSocketContextBlanket,
-    > IpSocketContext<I, BC> for CC
+    I: Ip + IpDeviceStateIpExt + IpDeviceIpExt + IpLayerIpExt,
+    BC: IpDeviceBindingsContext<I, CC::DeviceId>
+        + IpLayerBindingsContext<I, CC::DeviceId>
+        + IpSocketBindingsContext<CC::DeviceId>,
+    CC: IpLayerEgressContext<I, BC>
+        + IpStateContext<I>
+        + IpDeviceContext<I>
+        + IpDeviceConfirmReachableContext<I, BC>
+        + IpDeviceMtuContext<I>
+        + device::IpDeviceConfigurationContext<I, BC>
+        + UseIpSocketContextBlanket,
+> IpSocketContext<I, BC> for CC
 {
     fn lookup_route(
         &mut self,
@@ -1713,21 +1709,18 @@ pub trait IpLayerIngressContext<I: IpLayerIpExt, BC: IpLayerBindingsContext<I, S
 }
 
 impl<
-        I: IpLayerIpExt,
-        BC: IpLayerBindingsContext<I, CC::DeviceId>,
-        CC: IpTransportDispatchContext<
-                I,
-                BC,
-                DeviceId: filter::InterfaceProperties<BC::DeviceClass>,
-            > + IpDeviceIngressStateContext<I>
-            + IpDeviceMtuContext<I>
-            + IpDeviceSendContext<I, BC>
-            + IcmpErrorHandler<I, BC>
-            + IpLayerContext<I, BC>
-            + FragmentHandler<I, BC>
-            + FilterHandlerProvider<I, BC>
-            + RawIpSocketHandler<I, BC>,
-    > IpLayerIngressContext<I, BC> for CC
+    I: IpLayerIpExt,
+    BC: IpLayerBindingsContext<I, CC::DeviceId>,
+    CC: IpTransportDispatchContext<I, BC, DeviceId: filter::InterfaceProperties<BC::DeviceClass>>
+        + IpDeviceIngressStateContext<I>
+        + IpDeviceMtuContext<I>
+        + IpDeviceSendContext<I, BC>
+        + IcmpErrorHandler<I, BC>
+        + IpLayerContext<I, BC>
+        + FragmentHandler<I, BC>
+        + FilterHandlerProvider<I, BC>
+        + RawIpSocketHandler<I, BC>,
+> IpLayerIngressContext<I, BC> for CC
 {
 }
 
@@ -1759,10 +1752,10 @@ pub trait IpLayerForwardingContext<I: IpLayerIpExt, BC: IpLayerBindingsContext<I
 }
 
 impl<
-        I: IpLayerIpExt,
-        BC: IpLayerBindingsContext<I, CC::DeviceId>,
-        CC: IpLayerEgressContext<I, BC> + IcmpErrorHandler<I, BC> + IpDeviceMtuContext<I>,
-    > IpLayerForwardingContext<I, BC> for CC
+    I: IpLayerIpExt,
+    BC: IpLayerBindingsContext<I, CC::DeviceId>,
+    CC: IpLayerEgressContext<I, BC> + IcmpErrorHandler<I, BC> + IpDeviceMtuContext<I>,
+> IpLayerForwardingContext<I, BC> for CC
 {
 }
 
@@ -2121,10 +2114,10 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpStateBindingsTypes> IpSta
 }
 
 impl<
-        I: IpLayerIpExt,
-        D: StrongDeviceIdentifier,
-        BC: TimerContext + RngContext + IpStateBindingsTypes,
-    > IpStateInner<I, D, BC>
+    I: IpLayerIpExt,
+    D: StrongDeviceIdentifier,
+    BC: TimerContext + RngContext + IpStateBindingsTypes,
+> IpStateInner<I, D, BC>
 {
     /// Creates a new inner IP layer state.
     fn new<CC: CoreTimerContext<IpLayerTimerId, BC>>(bindings_ctx: &mut BC) -> Self {
@@ -4550,10 +4543,10 @@ pub trait IpLayerHandler<I: IpExt + FragmentationIpExt + FilterIpExt, BC>:
 }
 
 impl<
-        I: IpLayerIpExt,
-        BC: IpLayerBindingsContext<I, <CC as DeviceIdContext<AnyDevice>>::DeviceId>,
-        CC: IpLayerEgressContext<I, BC> + IpDeviceEgressStateContext<I> + IpDeviceMtuContext<I>,
-    > IpLayerHandler<I, BC> for CC
+    I: IpLayerIpExt,
+    BC: IpLayerBindingsContext<I, <CC as DeviceIdContext<AnyDevice>>::DeviceId>,
+    CC: IpLayerEgressContext<I, BC> + IpDeviceEgressStateContext<I> + IpDeviceMtuContext<I>,
+> IpLayerHandler<I, BC> for CC
 {
     fn send_ip_packet_from_device<S>(
         &mut self,
@@ -4651,12 +4644,7 @@ pub trait FilterHandlerProvider<I: FilterIpExt, BT: FilterBindingsTypes>:
     IpDeviceAddressIdContext<I, DeviceId: filter::InterfaceProperties<BT::DeviceClass>>
 {
     /// The filter handler.
-    type Handler<'a>: filter::FilterHandler<
-        I,
-        BT,
-        DeviceId = Self::DeviceId,
-        WeakAddressId = Self::WeakAddressId,
-    >
+    type Handler<'a>: filter::FilterHandler<I, BT, DeviceId = Self::DeviceId, WeakAddressId = Self::WeakAddressId>
     where
         Self: 'a;
 

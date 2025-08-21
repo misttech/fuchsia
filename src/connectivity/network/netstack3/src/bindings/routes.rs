@@ -24,13 +24,13 @@ use assert_matches::assert_matches;
 use derivative::Derivative;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::{
-    InstalledRule, RuleAction, RuleEvent, RuleIndex, RuleSetPriority, DEFAULT_RULE_SET_PRIORITY,
+    DEFAULT_RULE_SET_PRIORITY, InstalledRule, RuleAction, RuleEvent, RuleIndex, RuleSetPriority,
 };
 use futures::channel::{mpsc, oneshot};
-use futures::{stream, Future, FutureExt as _, StreamExt as _};
+use futures::{Future, FutureExt as _, StreamExt as _, stream};
 use log::{debug, error, info, warn};
-use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv6, Subnet};
 use net_types::SpecifiedAddr;
+use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv6, Subnet};
 use netstack3_core::routes::{AddableEntry, AddableMetric};
 use thiserror::Error;
 use zx::AsHandleRef as _;
@@ -51,7 +51,7 @@ use rules_admin::{NewRuleSet, RuleOp, RuleTable, RuleWorkItem, SetPriorityConfli
 pub(crate) mod state;
 pub(crate) mod watcher;
 mod witness;
-pub(crate) use witness::{main_table_id, TableId, TableIdEither};
+pub(crate) use witness::{TableId, TableIdEither, main_table_id};
 
 type WeakDeviceId = netstack3_core::device::WeakDeviceId<crate::bindings::BindingsCtx>;
 type DeviceId = netstack3_core::device::DeviceId<crate::bindings::BindingsCtx>;
@@ -1338,7 +1338,7 @@ mod tests {
 
     use super::*;
     use crate::bindings::integration_tests::{
-        set_logger_for_test, StackSetupBuilder, TestSetup, TestSetupBuilder,
+        StackSetupBuilder, TestSetup, TestSetupBuilder, set_logger_for_test,
     };
 
     #[netstack3_core::context_ip_bounds(I, BindingsCtx)]

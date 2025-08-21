@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use log::{debug, info};
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map};
 use std::str::FromStr;
 use {
     fidl_fuchsia_data as fdata, fidl_fuchsia_net_ext as fnet_ext,
@@ -146,11 +146,7 @@ impl Dictionary {
 
     fn into_empty(self) -> Result<(), Vec<String>> {
         let Self(entries) = self;
-        if !entries.is_empty() {
-            Err(entries.into_keys().collect::<Vec<_>>())
-        } else {
-            Ok(())
-        }
+        if !entries.is_empty() { Err(entries.into_keys().collect::<Vec<_>>()) } else { Ok(()) }
     }
 }
 

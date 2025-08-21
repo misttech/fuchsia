@@ -20,9 +20,9 @@ use fidl_fuchsia_net_ext::IntoExt as _;
 use fuchsia_async::TimeoutExt as _;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _, TryStreamExt as _};
 use net_declare::{fidl_mac, fidl_subnet, net_ip_v4, std_socket_addr_v4};
+use net_types::MulticastAddr;
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip as _, IpAddress as _, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
-use net_types::MulticastAddr;
 use netemul::RealmUdpSocket as _;
 use netstack_testing_common::realms::{Netstack, Netstack3, TestSandboxExt as _};
 use netstack_testing_common::{
@@ -32,8 +32,8 @@ use netstack_testing_macros::netstack_test;
 use packet::{Buf, PacketBuilder as _, ParsablePacket as _, Serializer as _};
 use packet_formats::error::ParseError;
 use packet_formats::ethernet::{
-    EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
-    ETHERNET_HDR_LEN_NO_TAG, ETHERNET_MIN_BODY_LEN_NO_TAG,
+    ETHERNET_HDR_LEN_NO_TAG, ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame,
+    EthernetFrameBuilder, EthernetFrameLengthCheck,
 };
 use packet_formats::icmp::MessageBody as _;
 use packet_formats::ipv4::Ipv4Header as _;

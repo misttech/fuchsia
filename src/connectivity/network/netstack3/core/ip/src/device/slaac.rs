@@ -17,8 +17,8 @@ use core::time::Duration;
 
 use assert_matches::assert_matches;
 use log::{debug, error, trace, warn};
-use net_types::ip::{AddrSubnet, Ip as _, IpAddress, Ipv6, Ipv6Addr, Subnet};
 use net_types::Witness as _;
+use net_types::ip::{AddrSubnet, Ip as _, IpAddress, Ipv6, Ipv6Addr, Subnet};
 use netstack3_base::{
     AnyDevice, CoreTimerContext, Counter, CounterContext, DeviceIdContext, DeviceIdentifier,
     EventContext, ExistsError, HandleableTimer, Instant, InstantBindingsTypes, InstantContext,
@@ -27,8 +27,8 @@ use netstack3_base::{
 };
 use packet_formats::icmp::ndp::NonZeroNdpLifetime;
 use packet_formats::utils::NonZeroDuration;
-use rand::distr::Uniform;
 use rand::Rng;
+use rand::distr::Uniform;
 
 use crate::device::Ipv6AddrSlaacConfig;
 use crate::internal::device::opaque_iid::{IidSecret, OpaqueIid, OpaqueIidNonce};
@@ -713,9 +713,7 @@ fn apply_slaac_update_to_addr<D: DeviceIdentifier, BC: SlaacBindingsContext<D>>(
     let slaac_type = SlaacType::from(&*slaac_config);
     trace!(
         "receive_ndp_packet: already have a {:?} SLAAC address {:?} configured on device {:?}",
-        slaac_type,
-        addr_sub,
-        device_id
+        slaac_type, addr_sub, device_id
     );
 
     /// Encapsulates a lifetime bound and where it came from.
@@ -1843,8 +1841,7 @@ fn add_slaac_addr_sub<BC: SlaacBindingsContext<CC::DeviceId>, CC: SlaacContext<B
                         trace!(
                             "failed to calculate DESYNC_FACTOR; \
                                 temp_preferred_lifetime={:?}, regen_advance={:?}",
-                            temp_preferred_lifetime,
-                            regen_advance,
+                            temp_preferred_lifetime, regen_advance,
                         );
                         return;
                     };
@@ -1876,8 +1873,7 @@ fn add_slaac_addr_sub<BC: SlaacBindingsContext<CC::DeviceId>, CC: SlaacContext<B
                                     trace!(
                                         "receive_ndp_packet: preferred lifetime of {:?} \
                                             for subnet {:?} is too short to allow regen",
-                                        preferred_for,
-                                        subnet
+                                        preferred_for, subnet
                                     );
                                     return;
                                 }
@@ -2086,8 +2082,8 @@ mod tests {
 
     use net_declare::net::ip_v6;
     use netstack3_base::testutil::{
-        assert_empty, FakeBindingsCtx, FakeCoreCtx, FakeCryptoRng, FakeDeviceId, FakeInstant,
-        FakeTimerCtxExt as _, FakeWeakDeviceId,
+        FakeBindingsCtx, FakeCoreCtx, FakeCryptoRng, FakeDeviceId, FakeInstant,
+        FakeTimerCtxExt as _, FakeWeakDeviceId, assert_empty,
     };
     use netstack3_base::{CtxPair, IntoCoreTimerCtx};
     use netstack3_hashmap::HashSet;

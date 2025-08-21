@@ -15,8 +15,8 @@ use core::ops::DerefMut;
 
 use assert_matches::assert_matches;
 use derivative::Derivative;
-use netstack3_base::sync::Mutex;
 use netstack3_base::Inspector;
+use netstack3_base::sync::Mutex;
 use netstack3_hashmap::HashMap;
 
 /// A notifier used to tell Bindings about new pending connections for a single

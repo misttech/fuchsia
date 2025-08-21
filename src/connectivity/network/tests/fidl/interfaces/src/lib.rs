@@ -14,15 +14,15 @@ use net_declare::{fidl_ip, fidl_subnet, net_subnet_v4, net_subnet_v6, std_ip};
 use net_types::ip::{Ip, IpVersion};
 use netemul::{RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _};
 use netstack_testing_common::realms::{Netstack, Netstack3, NetstackVersion, TestSandboxExt as _};
-use netstack_testing_common::{interfaces, Result, ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT};
+use netstack_testing_common::{ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, Result, interfaces};
 use netstack_testing_macros::netstack_test;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto as _;
 use std::pin::pin;
 use test_case::test_case;
 
-use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
+use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use {
     fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_routes as fnet_routes,
@@ -612,13 +612,15 @@ async fn ignores_default_route_in_non_main_table<I: Ip + FidlRouteAdminIpExt + F
         .await
         .expect("creating global route set for main table should succeed");
     let state = realm.connect_to_protocol::<I::StateMarker>().expect("connect to routes State");
-    let mut routes_stream = pin!(fnet_routes_ext::event_stream_from_state_with_options::<I>(
-        &state,
-        fnet_routes_ext::WatcherOptions {
-            table_interest: Some(fnet_routes::TableInterest::All(fnet_routes::All)),
-        },
-    )
-    .expect("failed to watch the main table"));
+    let mut routes_stream = pin!(
+        fnet_routes_ext::event_stream_from_state_with_options::<I>(
+            &state,
+            fnet_routes_ext::WatcherOptions {
+                table_interest: Some(fnet_routes::TableInterest::All(fnet_routes::All)),
+            },
+        )
+        .expect("failed to watch the main table")
+    );
 
     let existing_routes =
         fnet_routes_ext::collect_routes_until_idle::<I, Vec<_>>(&mut routes_stream)
@@ -658,13 +660,15 @@ async fn ignores_default_route_in_non_main_table<I: Ip + FidlRouteAdminIpExt + F
         properties: fnet_routes_ext::RouteProperties::from_explicit_metric(0),
     };
 
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &user_route_set,
-        &default_route.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("add route should succeed"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &user_route_set,
+            &default_route.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("add route should succeed")
+    );
 
     // We should not observe default route presence in the interface watcher.
     fidl_fuchsia_net_interfaces_ext::wait_interface(event_stream.by_ref(), &mut if_map, |if_map| {
@@ -679,13 +683,15 @@ async fn ignores_default_route_in_non_main_table<I: Ip + FidlRouteAdminIpExt + F
 
     // Add the default route to the main table and observe the interface watcher
     // notification.
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &main_route_set,
-        &default_route.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("add route should succeed"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &main_route_set,
+            &default_route.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("add route should succeed")
+    );
 
     fidl_fuchsia_net_interfaces_ext::wait_interface(event_stream.by_ref(), &mut if_map, |if_map| {
         has_default_route(if_map.get(&id).expect("should have interface")).then_some(())
@@ -695,13 +701,15 @@ async fn ignores_default_route_in_non_main_table<I: Ip + FidlRouteAdminIpExt + F
 
     // Remove the default route from the user route table. We should not observe
     // any notification in the interface watcher.
-    assert!(fnet_routes_ext::admin::remove_route::<I>(
-        &user_route_set,
-        &default_route.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("remove route should succeed"));
+    assert!(
+        fnet_routes_ext::admin::remove_route::<I>(
+            &user_route_set,
+            &default_route.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("remove route should succeed")
+    );
     fidl_fuchsia_net_interfaces_ext::wait_interface(event_stream.by_ref(), &mut if_map, |if_map| {
         (!has_default_route(if_map.get(&id).expect("should have interface"))).then_some(())
     })
@@ -714,13 +722,15 @@ async fn ignores_default_route_in_non_main_table<I: Ip + FidlRouteAdminIpExt + F
 
     // Now remove the default route from the main table. We should observe this
     // via the interfaces watcher.
-    assert!(fnet_routes_ext::admin::remove_route::<I>(
-        &main_route_set,
-        &default_route.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("remove route should succeed"));
+    assert!(
+        fnet_routes_ext::admin::remove_route::<I>(
+            &main_route_set,
+            &default_route.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("remove route should succeed")
+    );
     fidl_fuchsia_net_interfaces_ext::wait_interface(event_stream.by_ref(), &mut if_map, |if_map| {
         (!has_default_route(if_map.get(&id).expect("should have interface"))).then_some(())
     })
@@ -1883,10 +1893,12 @@ async fn test_readded_address_present<N: Netstack>(name: &str) {
         listener.accept().await.expect("accept");
     assert_eq!(from, src_sockaddr);
 
-    assert!(interface
-        .del_address_and_subnet_route(SRC_IP)
-        .await
-        .expect("delete address and subnet route"));
+    assert!(
+        interface
+            .del_address_and_subnet_route(SRC_IP)
+            .await
+            .expect("delete address and subnet route")
+    );
 
     interface.add_address_and_subnet_route(SRC_IP).await.expect("re-add address and subnet route");
     let addresses = interface

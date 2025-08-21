@@ -16,17 +16,17 @@ use fidl::endpoints::{ProtocolMarker, Proxy as _};
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::{self as fnet_routes_ext, FidlRouteIpExt, RouteAction};
 use fuchsia_async::TimeoutExt as _;
-use futures::future::FutureExt as _;
 use futures::StreamExt;
+use futures::future::FutureExt as _;
 use itertools::Itertools as _;
 use net_declare::{
     fidl_ip_v4, fidl_ip_v4_with_prefix, fidl_ip_v6, fidl_ip_v6_with_prefix, fidl_subnet,
 };
 use net_types::ip::{GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6, Subnet};
-use netstack_testing_common::realms::{Netstack, Netstack2, Netstack3, TestSandboxExt};
 use netstack_testing_common::ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT;
+use netstack_testing_common::realms::{Netstack, Netstack2, Netstack3, TestSandboxExt};
 use netstack_testing_macros::netstack_test;
-use routes_common::{test_route, TestSetup};
+use routes_common::{TestSetup, test_route};
 use std::pin::pin;
 use test_case::{test_case, test_matrix};
 use zx::HandleBased as _;
@@ -129,13 +129,15 @@ async fn add_remove_route<I: FidlRouteAdminIpExt + FidlRouteIpExt, N: Netstack>(
     let route_to_add = test_route(&interface, metric);
 
     let add_route_and_assert_added = |proxy| async {
-        assert!(fnet_routes_ext::admin::add_route::<I>(
-            &proxy,
-            &route_to_add.try_into().expect("convert to FIDL")
-        )
-        .await
-        .expect("no FIDL error")
-        .expect("add route"));
+        assert!(
+            fnet_routes_ext::admin::add_route::<I>(
+                &proxy,
+                &route_to_add.try_into().expect("convert to FIDL")
+            )
+            .await
+            .expect("no FIDL error")
+            .expect("add route")
+        );
         proxy
     };
 
@@ -155,13 +157,15 @@ async fn add_remove_route<I: FidlRouteAdminIpExt + FidlRouteIpExt, N: Netstack>(
 
     // Move the RouteSet Proxy into an Option so that we can avoid dropping it in one of the cases.
     let maybe_proxy = if explicit_remove {
-        assert!(fnet_routes_ext::admin::remove_route::<I>(
-            &proxy,
-            &route_to_add.try_into().expect("convert to FIDL")
-        )
-        .await
-        .expect("no FIDL error")
-        .expect("remove route"));
+        assert!(
+            fnet_routes_ext::admin::remove_route::<I>(
+                &proxy,
+                &route_to_add.try_into().expect("convert to FIDL")
+            )
+            .await
+            .expect("no FIDL error")
+            .expect("remove route")
+        );
         println!("explicitly removed route");
         Some(proxy)
     } else {
@@ -483,13 +487,15 @@ async fn add_route_twice_with_same_set<I: FidlRouteAdminIpExt + FidlRouteIpExt, 
     .expect("should succeed");
 
     // Even though it was added twice, removing the route once should remove it.
-    assert!(fnet_routes_ext::admin::remove_route::<I>(
-        &proxy,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("remove route"));
+    assert!(
+        fnet_routes_ext::admin::remove_route::<I>(
+            &proxy,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("remove route")
+    );
 
     fnet_routes_ext::wait_for_routes::<I, _, _>(&mut routes_stream, &mut routes, |routes| {
         !routes.iter().any(|installed_route| &installed_route.route == &route_to_add)
@@ -498,13 +504,15 @@ async fn add_route_twice_with_same_set<I: FidlRouteAdminIpExt + FidlRouteIpExt, 
     .expect("should succeed");
 
     // Removing the route a second time should return false.
-    assert!(!fnet_routes_ext::admin::remove_route::<I>(
-        &proxy,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("remove route"));
+    assert!(
+        !fnet_routes_ext::admin::remove_route::<I>(
+            &proxy,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("remove route")
+    );
 }
 
 #[netstack_test]
@@ -558,13 +566,15 @@ async fn add_route_with_multiple_route_sets<
     let route_to_add = test_route(&interface, METRIC_TRACKS_INTERFACE);
 
     for proxy in [&proxy_a, &proxy_b] {
-        assert!(fnet_routes_ext::admin::add_route::<I>(
-            &proxy,
-            &route_to_add.try_into().expect("convert to FIDL")
-        )
-        .await
-        .expect("no FIDL error")
-        .expect("add route"));
+        assert!(
+            fnet_routes_ext::admin::add_route::<I>(
+                &proxy,
+                &route_to_add.try_into().expect("convert to FIDL")
+            )
+            .await
+            .expect("no FIDL error")
+            .expect("add route")
+        );
     }
 
     fnet_routes_ext::wait_for_routes::<I, _, _>(&mut routes_stream, &mut routes, |routes| {
@@ -575,13 +585,15 @@ async fn add_route_with_multiple_route_sets<
 
     // Even if one of the route sets removes the route, it should remain until
     // the other one removes it.
-    assert!(fnet_routes_ext::admin::remove_route::<I>(
-        &proxy_a,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("remove route"));
+    assert!(
+        fnet_routes_ext::admin::remove_route::<I>(
+            &proxy_a,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("remove route")
+    );
 
     assert_matches!(
         fnet_routes_ext::wait_for_routes::<I, _, _>(&mut routes_stream, &mut routes, |routes| {
@@ -594,13 +606,15 @@ async fn add_route_with_multiple_route_sets<
     );
 
     // Then removing the route from the other route set should result in the route getting removed.
-    assert!(fnet_routes_ext::admin::remove_route::<I>(
-        &proxy_b,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("remove route"));
+    assert!(
+        fnet_routes_ext::admin::remove_route::<I>(
+            &proxy_b,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("remove route")
+    );
 
     fnet_routes_ext::wait_for_routes::<I, _, _>(&mut routes_stream, &mut routes, |routes| {
         !routes.iter().any(|installed_route| &installed_route.route == &route_to_add)
@@ -655,13 +669,15 @@ async fn add_remove_system_route<I: FidlRouteAdminIpExt + FidlRouteIpExt, N: Net
                 .expect("no FIDL error")
                 .expect("authentication should succeed");
 
-            assert!(fnet_routes_ext::admin::add_route::<I>(
-                &proxy,
-                &route_to_add.try_into().expect("convert to FIDL")
-            )
-            .await
-            .expect("no FIDL error")
-            .expect("add route"));
+            assert!(
+                fnet_routes_ext::admin::add_route::<I>(
+                    &proxy,
+                    &route_to_add.try_into().expect("convert to FIDL")
+                )
+                .await
+                .expect("no FIDL error")
+                .expect("add route")
+            );
         }
         SystemRouteProtocol::NetStack => {
             let fuchsia_net_stack = realm
@@ -682,30 +698,36 @@ async fn add_remove_system_route<I: FidlRouteAdminIpExt + FidlRouteIpExt, N: Net
     .expect("should succeed");
 
     // Trying to remove the route via the RouteSet should return `newly_removed` = false.
-    assert!(!fnet_routes_ext::admin::remove_route::<I>(
-        &route_set,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("remove route"));
+    assert!(
+        !fnet_routes_ext::admin::remove_route::<I>(
+            &route_set,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("remove route")
+    );
 
     // Adding and removing the same route with a RouteSet should not result in it going away.
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &route_set,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("add route"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &route_set,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("add route")
+    );
 
-    assert!(fnet_routes_ext::admin::remove_route::<I>(
-        &route_set,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("remove route"));
+    assert!(
+        fnet_routes_ext::admin::remove_route::<I>(
+            &route_set,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("remove route")
+    );
 
     assert_matches!(
         fnet_routes_ext::wait_for_routes::<I, _, _>(&mut routes_stream, &mut routes, |routes| {
@@ -755,13 +777,15 @@ async fn system_removes_route_from_route_set<
     let route_to_add = test_route::<I>(&interface, METRIC_TRACKS_INTERFACE);
 
     // Add a route with the RouteSet.
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &route_set,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("add route"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &route_set,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("add route")
+    );
 
     fnet_routes_ext::wait_for_routes::<I, _, _>(&mut routes_stream, &mut routes, |routes| {
         routes.iter().any(|installed_route| &installed_route.route == &route_to_add)
@@ -782,13 +806,15 @@ async fn system_removes_route_from_route_set<
                 .expect("no FIDL error")
                 .expect("authentication should succeed");
 
-            assert!(fnet_routes_ext::admin::remove_route::<I>(
-                &proxy,
-                &route_to_add.try_into().expect("convert to FIDL")
-            )
-            .await
-            .expect("no FIDL error")
-            .expect("add route"));
+            assert!(
+                fnet_routes_ext::admin::remove_route::<I>(
+                    &proxy,
+                    &route_to_add.try_into().expect("convert to FIDL")
+                )
+                .await
+                .expect("no FIDL error")
+                .expect("add route")
+            );
         }
         SystemRouteProtocol::NetStack => {
             let fuchsia_net_stack = realm
@@ -812,13 +838,15 @@ async fn system_removes_route_from_route_set<
     // When we "remove" the route from the local RouteSet, the RouteSet should
     // have noticed the route disappearing (and thus return false here because
     // the route had already been removed).
-    assert!(!fnet_routes_ext::admin::remove_route::<I>(
-        &route_set,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("remove route"));
+    assert!(
+        !fnet_routes_ext::admin::remove_route::<I>(
+            &route_set,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("remove route")
+    );
 }
 
 // TODO(https://fxbug.dev/42081105): Remove all uses of {Add,Del}ForwardingEntry
@@ -908,13 +936,15 @@ async fn root_route_apis_can_remove_loopback_route<
                 .expect("no FIDL error")
                 .expect("authentication should succeed");
 
-            assert!(fnet_routes_ext::admin::remove_route::<I>(
-                &proxy,
-                &loopback_route.route.try_into().expect("convert to FIDL")
-            )
-            .await
-            .expect("should not have FIDL error")
-            .expect("should succeed"));
+            assert!(
+                fnet_routes_ext::admin::remove_route::<I>(
+                    &proxy,
+                    &loopback_route.route.try_into().expect("convert to FIDL")
+                )
+                .await
+                .expect("should not have FIDL error")
+                .expect("should succeed")
+            );
         }
         SystemRouteProtocol::NetStack => {
             let fuchsia_net_stack = realm
@@ -1009,13 +1039,15 @@ async fn removing_one_default_route_does_not_flip_presence<
     let default_route_2 = default_route(fnet_routes::SpecifiedMetric::ExplicitMetric(123));
 
     // Add a default route.
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &route_set_1,
-        &default_route_1.clone().try_into().expect("convert to FIDL"),
-    )
-    .await
-    .expect("should not get add route FIDL error")
-    .expect("should not get add route error"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &route_set_1,
+            &default_route_1.clone().try_into().expect("convert to FIDL"),
+        )
+        .await
+        .expect("should not get add route FIDL error")
+        .expect("should not get add route error")
+    );
 
     let mut interface_state = fnet_interfaces_ext::InterfaceState::Unknown(interface.id());
 
@@ -1040,13 +1072,15 @@ async fn removing_one_default_route_does_not_flip_presence<
     .expect("should have default route");
 
     // Add a default route with a different metric (so they don't get de-duped).
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &route_set_2,
-        &default_route_2.clone().try_into().expect("convert to FIDL"),
-    )
-    .await
-    .expect("should not get add route FIDL error")
-    .expect("should not get add route error"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &route_set_2,
+            &default_route_2.clone().try_into().expect("convert to FIDL"),
+        )
+        .await
+        .expect("should not get add route FIDL error")
+        .expect("should not get add route error")
+    );
 
     let mut routes_state = HashSet::new();
 
@@ -1065,13 +1099,15 @@ async fn removing_one_default_route_does_not_flip_presence<
             None
         }
         DefaultRouteRemovalCase::ExplicitRemove => {
-            assert!(fnet_routes_ext::admin::remove_route::<I>(
-                &route_set_1,
-                &default_route_1.clone().try_into().expect("convert to FIDL"),
-            )
-            .await
-            .expect("should not get remove route FIDL error")
-            .expect("should not get remove route error"));
+            assert!(
+                fnet_routes_ext::admin::remove_route::<I>(
+                    &route_set_1,
+                    &default_route_1.clone().try_into().expect("convert to FIDL"),
+                )
+                .await
+                .expect("should not get remove route FIDL error")
+                .expect("should not get remove route error")
+            );
             Some(route_set_1)
         }
     };
@@ -1150,13 +1186,15 @@ async fn dropping_global_route_set_does_not_remove_routes<
         .expect("no FIDL error")
         .expect("authentication should succeed");
 
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &proxy,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("add route"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &proxy,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("add route")
+    );
 
     fnet_routes_ext::wait_for_routes::<I, _, _>(&mut routes_stream, &mut routes, |routes| {
         routes.iter().any(|installed_route| &installed_route.route == &route_to_add)
@@ -1398,13 +1436,15 @@ async fn unauthenticated_connections_cannot_remove_routes<
             .expect("authentication should succeed");
 
         // Add a route to ensure authentication took effect.
-        assert!(fnet_routes_ext::admin::add_route::<I>(
-            &proxy,
-            &route_to_add.try_into().expect("convert to FIDL")
-        )
-        .await
-        .expect("no FIDL error")
-        .expect("add route"));
+        assert!(
+            fnet_routes_ext::admin::add_route::<I>(
+                &proxy,
+                &route_to_add.try_into().expect("convert to FIDL")
+            )
+            .await
+            .expect("no FIDL error")
+            .expect("add route")
+        );
 
         // Ensure the route was added
         fnet_routes_ext::wait_for_routes::<I, _, _>(&mut routes_stream, &mut routes, |routes| {
@@ -1615,13 +1655,15 @@ async fn route_set_closed_when_table_removed<I: FidlRouteAdminIpExt + FidlRouteI
     let route_to_add =
         test_route::<I>(&interface, fnet_routes::SpecifiedMetric::ExplicitMetric(10));
 
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &user_route_set,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("add route"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &user_route_set,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("add route")
+    );
 
     fnet_routes_ext::wait_for_routes(&mut routes_stream, &mut routes, |routes| {
         routes.iter().any(|installed_route| {
@@ -1650,13 +1692,15 @@ async fn route_set_closed_when_table_removed<I: FidlRouteAdminIpExt + FidlRouteI
     if detach && !explicit_remove {
         // If detached, the route table still exists if not explicitly removed.
         // We can still remove the route we installed.
-        assert!(fnet_routes_ext::admin::remove_route::<I>(
-            &user_route_set,
-            &route_to_add.try_into().expect("convert to FIDL")
-        )
-        .await
-        .expect("no FIDL error")
-        .expect("remove route"));
+        assert!(
+            fnet_routes_ext::admin::remove_route::<I>(
+                &user_route_set,
+                &route_to_add.try_into().expect("convert to FIDL")
+            )
+            .await
+            .expect("no FIDL error")
+            .expect("remove route")
+        );
     } else {
         // If not detached, or the table is explicitly removed, the route set
         // should be closed.
@@ -1721,13 +1765,15 @@ async fn add_route_in_user_table<I: FidlRouteAdminIpExt + FidlRouteIpExt>(name: 
     let route_to_add =
         test_route::<I>(&interface, fnet_routes::SpecifiedMetric::ExplicitMetric(10));
 
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &user_route_set,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("add route"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &user_route_set,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("add route")
+    );
 
     fnet_routes_ext::wait_for_routes::<I, _, _>(&mut routes_stream, &mut routes, |routes| {
         routes.iter().any(|installed_route| {
@@ -1779,13 +1825,15 @@ async fn interface_removal_remove_routes_in_all_tables<I: FidlRouteAdminIpExt + 
             .expect("no FIDL error")
             .expect("authentication should succeed");
 
-        assert!(fnet_routes_ext::admin::add_route::<I>(
-            &route_set,
-            &route_to_add.try_into().expect("convert to FIDL")
-        )
-        .await
-        .expect("no FIDL error")
-        .expect("add route"));
+        assert!(
+            fnet_routes_ext::admin::add_route::<I>(
+                &route_set,
+                &route_to_add.try_into().expect("convert to FIDL")
+            )
+            .await
+            .expect("no FIDL error")
+            .expect("add route")
+        );
     }
 
     let routes_stream =
@@ -1866,13 +1914,15 @@ async fn concurrent_route_table_and_route_set_removal<I: FidlRouteAdminIpExt + F
             .expect("no FIDL error")
             .expect("authentication should succeed");
 
-        assert!(fnet_routes_ext::admin::add_route::<I>(
-            &route_set,
-            &route_to_add.try_into().expect("convert to FIDL")
-        )
-        .await
-        .expect("no FIDL error")
-        .expect("add route"));
+        assert!(
+            fnet_routes_ext::admin::add_route::<I>(
+                &route_set,
+                &route_to_add.try_into().expect("convert to FIDL")
+            )
+            .await
+            .expect("no FIDL error")
+            .expect("add route")
+        );
         // Drop both of the channels and make sure netstack3 doesn't explode.
         drop((user_route_table, route_set));
 
@@ -2071,13 +2121,15 @@ async fn interface_local_route_table<I: Ip + FidlRouteIpExt + FidlRouteAdminIpEx
         .expect("no FIDL error")
         .expect("authentication should succeed");
     let route_to_add = test_route(&interface, METRIC_TRACKS_INTERFACE);
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &route_set,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("no FIDL error")
-    .expect("add route"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &route_set,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("no FIDL error")
+        .expect("add route")
+    );
 
     let state = realm.connect_to_protocol::<I::StateMarker>().expect("connect to state");
     let routes_stream =
@@ -2180,10 +2232,12 @@ async fn interface_local_route_table_outlasts_interface<
         .expect("authentication should succeed");
 
     let route_to_add = test_route(&if_2, METRIC_TRACKS_INTERFACE);
-    assert!(fnet_routes_ext::admin::add_route::<I>(&route_set, &route_to_add.try_into().unwrap(),)
-        .await
-        .expect("no fidl error")
-        .expect("added the route"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(&route_set, &route_to_add.try_into().unwrap(),)
+            .await
+            .expect("no fidl error")
+            .expect("added the route")
+    );
 
     let state = realm.connect_to_protocol::<I::StateMarker>().expect("connect to state");
     let routes_stream = fnet_routes_ext::event_stream_from_state_with_options::<I>(

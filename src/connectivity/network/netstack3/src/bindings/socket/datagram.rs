@@ -7,12 +7,12 @@
 use std::convert::{Infallible as Never, TryInto as _};
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::num::{NonZeroU16, NonZeroU64, NonZeroU8, NonZeroUsize, TryFromIntError};
+use std::num::{NonZeroU8, NonZeroU16, NonZeroU64, NonZeroUsize, TryFromIntError};
 use std::ops::{ControlFlow, Deref};
 
 use either::Either;
-use netstack3_core::types::BufferSizeSettings;
 use netstack3_core::MapDerefExt as _;
+use netstack3_core::types::BufferSizeSettings;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_posix as fposix,
     fidl_fuchsia_posix_socket as fposix_socket,
@@ -38,7 +38,7 @@ use netstack3_core::socket::{
 use netstack3_core::sync::Mutex as CoreMutex;
 use netstack3_core::trace::trace_duration;
 use netstack3_core::udp::UdpPacketMeta;
-use netstack3_core::{icmp, udp, IpExt};
+use netstack3_core::{IpExt, icmp, udp};
 use packet::{Buf, BufferMut};
 use packet_formats::ip::DscpAndEcn;
 use thiserror::Error;
@@ -2746,12 +2746,12 @@ mod tests {
     use zx::{self as zx, AsHandleRef};
 
     use crate::bindings::integration_tests::{
-        test_ep_name, StackSetupBuilder, TestSetup, TestSetupBuilder, TestStack,
+        StackSetupBuilder, TestSetup, TestSetupBuilder, TestStack, test_ep_name,
     };
     use crate::bindings::socket::testutil::TestSockAddr;
     use crate::bindings::socket::{ZXSIO_SIGNAL_INCOMING, ZXSIO_SIGNAL_OUTGOING};
-    use net_types::ip::{IpAddr, IpAddress};
     use net_types::Witness as _;
+    use net_types::ip::{IpAddr, IpAddress};
 
     async fn prepare_test<A: TestSockAddr>(
         proto: fposix_socket::DatagramSocketProtocol,
@@ -4331,11 +4331,13 @@ mod tests {
         );
 
         // Check the option is currently false.
-        assert!(!alice_socket
-            .get_ip_receive_original_destination_address()
-            .await
-            .expect("get_ip_receive_original_destination_address (FIDL) failed")
-            .expect("get_ip_receive_original_destination_address failed"),);
+        assert!(
+            !alice_socket
+                .get_ip_receive_original_destination_address()
+                .await
+                .expect("get_ip_receive_original_destination_address (FIDL) failed")
+                .expect("get_ip_receive_original_destination_address failed"),
+        );
 
         alice_socket
             .set_ip_receive_original_destination_address(true)
@@ -4344,11 +4346,13 @@ mod tests {
             .expect("set_ip_receive_original_destination_address failed");
 
         // The option should now be reported as set.
-        assert!(alice_socket
-            .get_ip_receive_original_destination_address()
-            .await
-            .expect("get_ip_receive_original_destination_address (FIDL) failed")
-            .expect("get_ip_receive_original_destination_address failed"),);
+        assert!(
+            alice_socket
+                .get_ip_receive_original_destination_address()
+                .await
+                .expect("get_ip_receive_original_destination_address (FIDL) failed")
+                .expect("get_ip_receive_original_destination_address failed"),
+        );
 
         let recvmsg_result = alice_socket
             .recv_msg(false, 2048, true, fposix_socket::RecvMsgFlags::empty())
@@ -4395,11 +4399,13 @@ mod tests {
             .expect("set_ip_receive_original_destination_address (FIDL) failed")
             .expect("set_ip_receive_original_destination_address failed");
 
-        assert!(!alice_socket
-            .get_ip_receive_original_destination_address()
-            .await
-            .expect("get_ip_receive_original_destination_address (FIDL) failed")
-            .expect("get_ip_receive_original_destination_address failed"),);
+        assert!(
+            !alice_socket
+                .get_ip_receive_original_destination_address()
+                .await
+                .expect("get_ip_receive_original_destination_address (FIDL) failed")
+                .expect("get_ip_receive_original_destination_address failed"),
+        );
 
         assert_eq!(
             bob_socket

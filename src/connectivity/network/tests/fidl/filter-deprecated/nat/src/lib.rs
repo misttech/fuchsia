@@ -13,7 +13,7 @@ use netemul::{RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket as _};
 use netfilter::FidlReturn as _;
 use netstack_testing_common::interfaces::TestInterfaceExt as _;
 use netstack_testing_common::realms::{Netstack2, TestSandboxExt as _};
-use netstack_testing_common::{ping as ping_helper, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT};
+use netstack_testing_common::{ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, ping as ping_helper};
 use netstack_testing_macros::netstack_test;
 use test_case::test_case;
 use {
@@ -252,8 +252,10 @@ pub async fn setup_masquerade_nat_network<'a>(
                 name.clone()
             }
             fnet_interfaces_ext::InterfaceState::Unknown(id) => {
-                panic!("expected known interface state for router_ep2(id={}); got unknown state for ID = {}",
-                       router_ep2_id, id)
+                panic!(
+                    "expected known interface state for router_ep2(id={}); got unknown state for ID = {}",
+                    router_ep2_id, id
+                )
             }
         };
 

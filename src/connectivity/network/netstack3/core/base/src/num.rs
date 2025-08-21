@@ -19,11 +19,7 @@ impl PositiveIsize {
     ///
     /// Returns `None` if `value` is less than or equal to zero.
     pub const fn new(value: isize) -> Option<Self> {
-        if value > 0 {
-            Some(Self(value))
-        } else {
-            None
-        }
+        if value > 0 { Some(Self(value)) } else { None }
     }
 
     /// Creates a new `PositiveIsize` from a `usize` value.
@@ -41,11 +37,7 @@ impl PositiveIsize {
     /// Returns `None` if `value` is zero or larger than `isize::MAX`.
     pub const fn new_nonzero_unsigned(value: NonZeroUsize) -> Option<Self> {
         let value = value.get();
-        if value > (isize::MAX as usize) {
-            None
-        } else {
-            Some(Self(value as isize))
-        }
+        if value > (isize::MAX as usize) { None } else { Some(Self(value as isize)) }
     }
 
     /// Returns the `isize` value within this `PositiveIsize`.

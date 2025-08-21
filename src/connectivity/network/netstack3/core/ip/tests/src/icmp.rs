@@ -24,7 +24,7 @@ use packet_formats::ip::{FragmentOffset, IpPacketBuilder as _, IpProto, Ipv4Prot
 use packet_formats::testutil::parse_icmp_packet_in_ip_packet_in_ethernet_frame;
 use packet_formats::udp::UdpPacketBuilder;
 
-use netstack3_base::testutil::{set_logger_for_test, TestIpExt, TEST_ADDRS_V4, TEST_ADDRS_V6};
+use netstack3_base::testutil::{TEST_ADDRS_V4, TEST_ADDRS_V6, TestIpExt, set_logger_for_test};
 use netstack3_base::{FrameDestination, Marks};
 use netstack3_core::device::DeviceId;
 use netstack3_core::ip::MarkDomain;

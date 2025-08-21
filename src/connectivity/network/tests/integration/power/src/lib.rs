@@ -9,14 +9,14 @@
 use std::pin::pin;
 
 use assert_matches::assert_matches;
-use fidl::endpoints::{DiscoverableProtocolMarker as _, ServiceMarker as _};
 use fidl::AsHandleRef;
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ServiceMarker as _};
 use fuchsia_async::TimeoutExt as _;
 use futures::stream::FusedStream;
 use futures::{Stream, StreamExt as _};
 use net_declare::{fidl_subnet, std_socket_addr_v6};
-use netstack_testing_common::realms::{KnownServiceProvider, NetstackVersion};
 use netstack_testing_common::ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT;
+use netstack_testing_common::realms::{KnownServiceProvider, NetstackVersion};
 use netstack_testing_macros::netstack_test;
 use packet::ParsablePacket as _;
 use packet_formats::ip::{IpPacket, IpProto, Ipv6Proto};
@@ -249,21 +249,23 @@ async fn tx_suspension(name: &str, netstack_suspend_enabled: bool) {
     .await;
     tun_port.set_online(true).await.expect("set online");
 
-    let mut udp_frame_stream = pin!(futures::stream::unfold((), |()| async {
-        loop {
-            let fnet_tun::Frame { data, frame_type, .. } =
-                tun_device.read_frame().await.expect("FIDL error").expect("read frame error");
-            let data = data.unwrap();
-            let frame_type = frame_type.unwrap();
-            if frame_type != fhardware_network::FrameType::Ipv6 {
-                continue;
+    let mut udp_frame_stream = pin!(
+        futures::stream::unfold((), |()| async {
+            loop {
+                let fnet_tun::Frame { data, frame_type, .. } =
+                    tun_device.read_frame().await.expect("FIDL error").expect("read frame error");
+                let data = data.unwrap();
+                let frame_type = frame_type.unwrap();
+                if frame_type != fhardware_network::FrameType::Ipv6 {
+                    continue;
+                }
+                if let Some(udp_frame) = extract_udp_frame_in_ipv6_packet(&data) {
+                    break Some((udp_frame.to_vec(), ()));
+                }
             }
-            if let Some(udp_frame) = extract_udp_frame_in_ipv6_packet(&data) {
-                break Some((udp_frame.to_vec(), ()));
-            }
-        }
-    })
-    .fuse());
+        })
+        .fuse()
+    );
 
     let device_control = netstack_testing_common::devices::install_device(&realm, device);
     let interface_control = finterfaces_ext::admin::Control::new(

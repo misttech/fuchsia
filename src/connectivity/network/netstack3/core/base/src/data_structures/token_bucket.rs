@@ -123,11 +123,7 @@ impl<I: crate::Instant> TokenBucket<I> {
         // refill, which means it's fine to fill the bucket completely.
         let dur_since_last_refilled = self.last_refilled.map_or(SECOND, |last_refilled| {
             let dur = now.saturating_duration_since(last_refilled);
-            if dur > SECOND {
-                SECOND
-            } else {
-                dur
-            }
+            if dur > SECOND { SECOND } else { dur }
         });
 
         // Do math in u128 to avoid overflow. Be careful to multiply first and

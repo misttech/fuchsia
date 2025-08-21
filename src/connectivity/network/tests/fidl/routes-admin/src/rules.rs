@@ -6,11 +6,11 @@ use std::collections::HashSet;
 use std::pin::pin;
 
 use assert_matches::assert_matches;
-use fidl::endpoints::{ProtocolMarker, Proxy as _};
 use fidl::HandleBased;
+use fidl::endpoints::{ProtocolMarker, Proxy as _};
+use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::{FidlRuleAdminIpExt, FidlRuleIpExt};
-use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fnet_routes_ext::rules::{InstalledRule, RuleAction, RuleIndex, RuleMatcher, RuleSetPriority};
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, StreamExt as _};
 use net_declare::fidl_subnet;
@@ -19,7 +19,7 @@ use netemul::{RealmTcpListener as _, RealmTcpStream as _};
 use netstack_testing_common::interfaces::TestInterfaceExt as _;
 use netstack_testing_common::realms::{Netstack2, Netstack3, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
-use routes_common::{add_default_route_for_mark, TestSetup};
+use routes_common::{TestSetup, add_default_route_for_mark};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
@@ -307,9 +307,9 @@ async fn table_removal_removes_rules<
     .expect("fidl error")
     .expect("failed to add rule");
 
-    let rule_events =
-        pin!(fnet_routes_ext::rules::rule_event_stream_from_state::<I>(&state)
-            .expect("get rule stream"));
+    let rule_events = pin!(
+        fnet_routes_ext::rules::rule_event_stream_from_state::<I>(&state).expect("get rule stream")
+    );
     let rules = fnet_routes_ext::rules::collect_rules_until_idle::<I, HashSet<_>>(rule_events)
         .await
         .expect("failed to collect events");
@@ -337,9 +337,9 @@ async fn table_removal_removes_rules<
         .await
         .expect("fidl error")
         .expect("remove table");
-    let rule_events =
-        pin!(fnet_routes_ext::rules::rule_event_stream_from_state::<I>(&state)
-            .expect("get rule stream"));
+    let rule_events = pin!(
+        fnet_routes_ext::rules::rule_event_stream_from_state::<I>(&state).expect("get rule stream")
+    );
     let rules = fnet_routes_ext::rules::collect_rules_until_idle::<I, Vec<_>>(rule_events)
         .await
         .expect("failed to collect events");

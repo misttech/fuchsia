@@ -8,13 +8,13 @@ use crate::constants;
 use anyhow::Context as _;
 use assert_matches::assert_matches;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
-use futures::{future, FutureExt as _, Stream, StreamExt as _, TryStreamExt as _};
-use net_types::ip::Ip as _;
+use futures::{FutureExt as _, Stream, StreamExt as _, TryStreamExt as _, future};
 use net_types::Witness as _;
-use packet::serialize::{InnerPacketBuilder, Serializer};
+use net_types::ip::Ip as _;
 use packet::Buf;
+use packet::serialize::{InnerPacketBuilder, Serializer};
 use packet_formats::ethernet::{
-    EtherType, EthernetFrameBuilder, EthernetFrameLengthCheck, ETHERNET_MIN_BODY_LEN_NO_TAG,
+    ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrameBuilder, EthernetFrameLengthCheck,
 };
 use packet_formats::icmp::ndp::options::{NdpOption, NdpOptionBuilder};
 use packet_formats::icmp::ndp::{

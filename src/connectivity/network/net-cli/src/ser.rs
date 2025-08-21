@@ -7,8 +7,8 @@
 //! protocols.
 
 use fidl_fuchsia_net_routes_ext as froutes_ext;
-use net_types::ip::IpAddress as _;
 use net_types::Witness as _;
+use net_types::ip::IpAddress as _;
 use thiserror::Error;
 
 #[derive(serde::Serialize, Ord, PartialOrd, Eq, PartialEq)]
@@ -83,12 +83,12 @@ impl Addresses {
 }
 
 impl<
-        I: Iterator<
-            Item = fidl_fuchsia_net_interfaces_ext::Address<
-                fidl_fuchsia_net_interfaces_ext::AllInterest,
-            >,
+    I: Iterator<
+        Item = fidl_fuchsia_net_interfaces_ext::Address<
+            fidl_fuchsia_net_interfaces_ext::AllInterest,
         >,
-    > From<I> for Addresses
+    >,
+> From<I> for Addresses
 {
     fn from(addresses: I) -> Addresses {
         use itertools::Itertools as _;
@@ -255,7 +255,7 @@ impl<I: net_types::ip::Ip> TryFrom<froutes_ext::InstalledRoute<I>> for Forwardin
                 next_hop,
             }) => (outbound_interface, next_hop),
             froutes_ext::RouteAction::Unknown => {
-                return Err(ForwardingEntryConversionError::UnknownRouteAction)
+                return Err(ForwardingEntryConversionError::UnknownRouteAction);
             }
         };
         let subnet = destination.into();

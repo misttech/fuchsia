@@ -14,11 +14,11 @@ use {
     fidl_fuchsia_net_filter_ext as fnet_filter_ext, fidl_fuchsia_net_interfaces as fnet_interfaces,
 };
 
+use crate::bindings::filter::CommitError;
 use crate::bindings::filter::controller::{
     InstalledIpRoutine, InstalledNatRoutine, IpRoutineType, Namespace, NatRoutineType, Routine,
     Rule,
 };
-use crate::bindings::filter::CommitError;
 use crate::bindings::util::{IntoCore as _, TryFromFidl};
 
 // The requirement or lack thereof that a particular resource's IP version (for
@@ -279,7 +279,7 @@ where
                 Ok(ConversionResult::State(matcher)) => matcher,
                 Ok(ConversionResult::Omit) => return None,
                 Err(IpVersionMismatchError) => {
-                    return Some(Err(CommitError::RuleWithInvalidMatcher(rule_id)))
+                    return Some(Err(CommitError::RuleWithInvalidMatcher(rule_id)));
                 }
             };
 
@@ -299,7 +299,7 @@ where
                         Ok(ConversionResult::State(proxy)) => proxy,
                         Ok(ConversionResult::Omit) => return None,
                         Err(IpVersionMismatchError) => {
-                            return Some(Err(CommitError::RuleWithInvalidMatcher(rule_id)))
+                            return Some(Err(CommitError::RuleWithInvalidMatcher(rule_id)));
                         }
                     };
                     netstack3_core::filter::Action::TransparentProxy(proxy)

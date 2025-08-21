@@ -9,8 +9,8 @@ use assert_matches::assert_matches;
 use async_trait::async_trait;
 use futures::{SinkExt as _, StreamExt as _};
 use net_declare::fidl_mac;
-use net_types::ip::Ip as _;
 use net_types::Witness as _;
+use net_types::ip::Ip as _;
 use {
     fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
     fidl_fuchsia_net_interfaces as fnet_interfaces,
@@ -237,7 +237,7 @@ fn serialize_neighbor_solictation(
     src_mac: net_types::ethernet::Mac,
 ) -> Vec<u8> {
     use packet::serialize::{InnerPacketBuilder as _, Serializer as _};
-    use packet_formats::ethernet::{EtherType, EthernetFrameBuilder, ETHERNET_MIN_BODY_LEN_NO_TAG};
+    use packet_formats::ethernet::{ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrameBuilder};
     use packet_formats::icmp::ndp::NeighborSolicitation;
     use packet_formats::icmp::{IcmpPacketBuilder, IcmpZeroCode};
     use packet_formats::ip::Ipv6Proto;

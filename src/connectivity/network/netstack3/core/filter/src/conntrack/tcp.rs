@@ -403,11 +403,7 @@ impl FinState {
             FinState::Sent(s) => {
                 // NOTE: We want to track the first FIN in the sequence
                 // space, not the first one we saw.
-                if s.before(seq) {
-                    FinState::Sent(s)
-                } else {
-                    FinState::Sent(seq)
-                }
+                if s.before(seq) { FinState::Sent(s) } else { FinState::Sent(seq) }
             }
             FinState::Acked => FinState::Acked,
         }
@@ -780,7 +776,7 @@ impl WaitingOnOpeningAck {
                 (new_original, new_reply, fin_seen)
             }
             EstablishedUpdateResult::Invalid { original, reply } => {
-                return (Self { original, reply }.into(), false)
+                return (Self { original, reply }.into(), false);
             }
             EstablishedUpdateResult::Reset => return (Closed {}.into(), true),
         };
@@ -834,7 +830,7 @@ impl Established {
                 (new_original, new_reply, fin_seen)
             }
             EstablishedUpdateResult::Invalid { original, reply } => {
-                return (Self { original, reply }.into(), false)
+                return (Self { original, reply }.into(), false);
             }
             EstablishedUpdateResult::Reset => return (Closed {}.into(), true),
         };
@@ -900,7 +896,7 @@ impl Closing {
                 (new_original, new_reply)
             }
             EstablishedUpdateResult::Invalid { original, reply } => {
-                return (Self { original, reply }.into(), false)
+                return (Self { original, reply }.into(), false);
             }
             EstablishedUpdateResult::Reset => return (Closed {}.into(), true),
         };
@@ -926,8 +922,8 @@ impl Closing {
 #[cfg(test)]
 mod tests {
     use super::{
-        do_established_update, Closed, Closing, Established, EstablishedUpdateResult, FinState,
-        Peer, State, SynSent, Untracked, UpdatePeers, WaitingOnOpeningAck,
+        Closed, Closing, Established, EstablishedUpdateResult, FinState, Peer, State, SynSent,
+        Untracked, UpdatePeers, WaitingOnOpeningAck, do_established_update,
     };
 
     use assert_matches::assert_matches;

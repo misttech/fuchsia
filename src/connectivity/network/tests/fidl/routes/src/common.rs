@@ -6,8 +6,8 @@ use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::rules::{FidlRuleAdminIpExt, RuleIndex};
 use fidl_fuchsia_net_routes_ext::{self as fnet_routes_ext, FidlRouteIpExt};
-use net_types::ip::{Ip, Subnet};
 use net_types::SpecifiedAddr;
+use net_types::ip::{Ip, Subnet};
 use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
 use {
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_routes as fnet_routes,
@@ -133,13 +133,15 @@ pub async fn add_default_route_for_mark<
         .await
         .expect("no FIDL error")
         .expect("authentication should succeed");
-    assert!(fnet_routes_ext::admin::add_route::<I>(
-        &route_set,
-        &route_to_add.try_into().expect("convert to FIDL")
-    )
-    .await
-    .expect("fidl")
-    .expect("add route"));
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &route_set,
+            &route_to_add.try_into().expect("convert to FIDL")
+        )
+        .await
+        .expect("fidl")
+        .expect("add route")
+    );
     fnet_routes_ext::admin::detach_route_table::<I>(&route_table).await.expect("fidl error");
 
     let table_id =

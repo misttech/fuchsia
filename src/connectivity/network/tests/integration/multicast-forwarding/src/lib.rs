@@ -15,7 +15,7 @@ use net_declare::{fidl_ip, fidl_subnet};
 use net_types::ip::{GenericOverIp, Ip, IpVersion, IpVersionMarker, Ipv4Addr, Ipv6Addr};
 use netemul::RealmUdpSocket as _;
 use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
-use netstack_testing_common::{interfaces, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT};
+use netstack_testing_common::{ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, interfaces};
 use netstack_testing_macros::netstack_test;
 use std::collections::HashMap;
 use test_case::test_case;

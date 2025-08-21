@@ -9,8 +9,9 @@ use ip_test_macro::ip_test;
 use net_types::ethernet::Mac;
 use net_types::ip::{AddrSubnet, Ip, IpAddr, IpAddress, IpVersion, Ipv4, Ipv6, Ipv6Addr};
 use net_types::{SpecifiedAddr, UnicastAddr, Witness};
-use netstack3_base::testutil::{new_rng, TestIpExt, TEST_ADDRS_V4};
+use netstack3_base::testutil::{TEST_ADDRS_V4, TestIpExt, new_rng};
 use netstack3_base::{FrameDestination, IpAddressId as _};
+use netstack3_core::IpExt;
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetLinkDevice, RecvEthernetFrameMeta,
 };
@@ -20,10 +21,9 @@ use netstack3_core::ip::{
     SlaacConfigurationUpdate,
 };
 use netstack3_core::testutil::{
-    CtxPairExt as _, FakeBindingsCtx, FakeCoreCtx, FakeCtx, FakeCtxBuilder,
-    DEFAULT_INTERFACE_METRIC,
+    CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCoreCtx, FakeCtx,
+    FakeCtxBuilder,
 };
-use netstack3_core::IpExt;
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_ip::device::{IpDeviceStateContext, StableSlaacAddressConfiguration};
 use netstack3_ip::testutil::IpCounterExpectations;

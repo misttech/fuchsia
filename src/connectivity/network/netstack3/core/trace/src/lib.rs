@@ -27,8 +27,8 @@ pub const CATEGORY: &'static core::ffi::CStr = c"net";
 pub mod __inner {
     use super::CATEGORY;
 
-    pub use fuchsia_trace::{duration, instant, ArgValue, AsTraceStrRef, Scope};
-    use fuchsia_trace::{trace_site_t, TraceCategoryContext};
+    pub use fuchsia_trace::{ArgValue, AsTraceStrRef, Scope, duration, instant};
+    use fuchsia_trace::{TraceCategoryContext, trace_site_t};
 
     /// A single trace site cache that is used in the macro expansions.
     ///

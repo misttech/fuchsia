@@ -21,10 +21,10 @@ use net_types::ip::{Ip, IpAddr, IpAddress as _, IpVersion, Ipv4, Ipv6};
 use netemul::{InterfaceConfig, RealmUdpSocket as _, TestFakeEndpoint};
 use netstack_testing_common::constants::ipv6 as ipv6_consts;
 use netstack_testing_common::devices::{
-    add_pure_ip_interface, create_ip_tun_port, create_tun_device, create_tun_port_with,
-    install_device, TUN_DEFAULT_PORT_ID,
+    TUN_DEFAULT_PORT_ID, add_pure_ip_interface, create_ip_tun_port, create_tun_device,
+    create_tun_port_with, install_device,
 };
-use netstack_testing_common::interfaces::{self, add_address_wait_assigned, TestInterfaceExt as _};
+use netstack_testing_common::interfaces::{self, TestInterfaceExt as _, add_address_wait_assigned};
 use netstack_testing_common::ndp::{send_ra_with_router_lifetime, wait_for_router_solicitation};
 use netstack_testing_common::realms::{
     Netstack, Netstack3, NetstackVersion, TestRealmExt as _, TestSandboxExt as _,
@@ -34,8 +34,8 @@ use netstack_testing_common::{
 };
 use netstack_testing_macros::netstack_test;
 use packet_formats::ethernet::EthernetFrameLengthCheck;
-use packet_formats::icmp::ndp::options::{NdpOptionBuilder, PrefixInformation};
 use packet_formats::icmp::ndp::NeighborSolicitation;
+use packet_formats::icmp::ndp::options::{NdpOptionBuilder, PrefixInformation};
 use packet_formats::testutil::ArpPacketInfo;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto as _;
@@ -311,9 +311,9 @@ async fn update_address_lifetimes<N: Netstack>(name: &str) {
         }) if id == interface.id() => addresses
     );
 
-    assert!(addresses
-        .iter()
-        .all(|fnet_interfaces::Address { addr, .. }| addr.clone() != Some(ADDR)));
+    assert!(
+        addresses.iter().all(|fnet_interfaces::Address { addr, .. }| addr.clone() != Some(ADDR))
+    );
 }
 
 #[netstack_test]
@@ -682,11 +682,13 @@ async fn add_address_removal<N: Netstack>(
         let admin_control =
             add_pure_ip_interface(&network_port, &admin_device_control, "tunif").await;
         let admin_control = fidl_fuchsia_net_interfaces_ext::admin::Control::new(admin_control);
-        assert!(admin_control
-            .enable()
-            .await
-            .expect("send enable tun interface request")
-            .expect("enable tun interface"));
+        assert!(
+            admin_control
+                .enable()
+                .await
+                .expect("send enable tun interface request")
+                .expect("enable tun interface")
+        );
         (
             KeepResource::Tun {
                 _dev: tun_device,

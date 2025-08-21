@@ -910,8 +910,8 @@ mod tests {
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
     use net_types::Witness as _;
-    use netstack3_base::testutil::{FakeDeviceId, FakeTimerCtxExt, FakeWeakDeviceId};
     use netstack3_base::InstantContext as _;
+    use netstack3_base::testutil::{FakeDeviceId, FakeTimerCtxExt, FakeWeakDeviceId};
     use test_case::{test_case, test_matrix};
 
     use super::*;
