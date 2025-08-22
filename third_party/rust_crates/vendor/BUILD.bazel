@@ -955,14 +955,14 @@ alias(
 )
 
 alias(
-    name = "fragile-1.0.0",
-    actual = "//third_party/rust_crates/vendor/fragile-1.0.0:fragile",
+    name = "fragile-2.0.1",
+    actual = "//third_party/rust_crates/vendor/fragile-2.0.1:fragile",
     tags = ["manual"],
 )
 
 alias(
     name = "fragile",
-    actual = "//third_party/rust_crates/vendor/fragile-1.0.0:fragile",
+    actual = "//third_party/rust_crates/vendor/fragile-2.0.1:fragile",
     tags = ["manual"],
 )
 

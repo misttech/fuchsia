@@ -112,7 +112,7 @@ flate2 = { version = "1.1.1", default-features = false, features = ["rust_backen
 flyweights = { version = "0.1.5", features = ["json_schema", "serde"] }
 foreign-types = "0.3.1"
 foreign-types-shared = "0.1.0"
-fragile = "=1.0.0"
+fragile = "=2.0.1"
 futures = "=0.3.31"
 futures-executor = "=0.3.31"
 futures-io = "=0.3.31"
