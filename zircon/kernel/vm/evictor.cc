@@ -405,12 +405,8 @@ Evictor::EvictedPageCounts Evictor::EvictUntilTargetsMet(uint64_t min_pages_to_e
     return total_evicted_counts;
   }
 
-  // Wait until no eviction attempts are ongoing, so that we don't overshoot the free pages target.
-  no_ongoing_eviction_.Wait(Deadline::infinite());
-  auto signal_cleanup = fit::defer([&]() {
-    // Unblock any waiting eviction requests.
-    no_ongoing_eviction_.Signal();
-  });
+  // Lock the eviction attempts so that we don't overshoot the free pages target.
+  Guard<Mutex> evict_guard{&eviction_lock_};
 
   uint64_t total_non_loaned_pages_freed = 0;
 

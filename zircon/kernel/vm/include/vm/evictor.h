@@ -207,9 +207,9 @@ class Evictor {
   // Target for eviction.
   EvictionTarget eviction_target_ TA_GUARDED(lock_) = {};
 
-  // Event that enforces only one eviction attempt to be active at any time. This prevents us from
+  // Mutex that enforces only one eviction attempt to be active at any time. This prevents us from
   // overshooting the free memory targets required by various simultaneous eviction requests.
-  AutounsignalEvent no_ongoing_eviction_{true};
+  DECLARE_MUTEX(Evictor) eviction_lock_;
 
   // Use MonitoredSpinLock to provide lockup detector diagnostics for the critical sections
   // protected by this lock.
