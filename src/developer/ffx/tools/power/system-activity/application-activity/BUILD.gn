@@ -95,5 +95,6 @@ if (is_fuchsia && has_board) {
         suspend_enabled = true
       }
     }
+    version = build_info_version
   }
 }

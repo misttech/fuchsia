@@ -107,5 +107,6 @@ if (current_toolchain == default_toolchain) {
         package_target = ":duplicate_allocations"
       },
     ]
+    version = build_info_version
   }
 }

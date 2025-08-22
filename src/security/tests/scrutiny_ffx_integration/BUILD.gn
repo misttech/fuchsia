@@ -65,6 +65,7 @@ if (is_fuchsia) {
       }
     }
     base_packages = _base_packages
+    version = build_info_version
   }
 
   product_assembly_configuration("product_config_recovery") {
@@ -88,6 +89,7 @@ if (is_fuchsia) {
       }
     }
     base_packages = _base_packages
+    version = build_info_version
   }
 
   # `assembled_system` builds a zbi and blob.blk for consumption by the test.

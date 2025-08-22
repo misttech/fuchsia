@@ -27,6 +27,7 @@ if (is_fuchsia) {
         }
       }
     }
+    version = build_info_version
   }
 
   assembled_system("limited_netsvc_assembled_system") {

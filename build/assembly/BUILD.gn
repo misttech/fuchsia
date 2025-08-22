@@ -4,6 +4,7 @@
 
 import("//build/assembly/assembly_input_bundle.gni")
 import("//build/assembly/product_assembly_configuration.gni")
+import("//build/info/info.gni")
 import("//build/python/python_action.gni")
 import("//build/security.gni")
 
@@ -33,6 +34,7 @@ if (is_fuchsia) {
     }
     product = {
     }
+    version = build_info_version
   }
 }
 

@@ -34,6 +34,7 @@ if (is_fuchsia) {
         package_target = "//examples/hello_world/cpp:hello-world-cpp"
       },
     ]
+    version = build_info_version
   }
 
   board_configuration("board_config") {

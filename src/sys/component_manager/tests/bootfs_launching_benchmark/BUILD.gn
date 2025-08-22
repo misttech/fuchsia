@@ -132,6 +132,7 @@ if (current_toolchain == default_toolchain) {
       "//src/sys/component_manager/tests/bootfs_launching_benchmark/test_data/components/test_component_25:test_component_25_package",
     ]
     bootfs_files_labels = [ ":bootfs" ]
+    version = build_info_version
   }
 
   # `assembled_system` builds a zbi for consumption by the test.

@@ -71,5 +71,6 @@ if (is_host) {
       build_type = "eng"
       feature_set_level = "standard"
     }
+    version = build_info_version
   }
 }

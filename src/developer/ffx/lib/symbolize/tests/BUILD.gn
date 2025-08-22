@@ -108,6 +108,7 @@ if (is_host) {
           package_target = ":package"
         },
       ]
+      version = build_info_version
     }
   }
 }

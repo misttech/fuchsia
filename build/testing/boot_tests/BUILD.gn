@@ -17,6 +17,7 @@ product_assembly_configuration("product_config") {
       }
     }
   }
+  version = build_info_version
 }
 
 # Empty ZBI for boot-shim only tests. While these tests do not require a ZBI to run,

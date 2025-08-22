@@ -105,6 +105,7 @@ if (is_fuchsia) {
         package_target = ":package"
       },
     ]
+    version = build_info_version
   }
 
   assembled_system("assembly") {

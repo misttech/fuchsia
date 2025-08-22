@@ -68,6 +68,7 @@ if (is_fuchsia) {
         }
       }
     }
+    version = build_info_version
   }
 
   assembled_system("recovery-fdr") {

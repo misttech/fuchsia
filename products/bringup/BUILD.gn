@@ -4,6 +4,7 @@
 
 import("//build/assembly/bootfs_files_for_assembly.gni")
 import("//build/assembly/product_assembly_configuration.gni")
+import("//build/info/info.gni")
 
 # This is the base platform configuration used by bringup
 _platform_configuration_base = {
@@ -49,6 +50,7 @@ product_assembly_configuration("bringup_with_tests") {
   ]
 
   bootfs_files_labels = [ ":bootfs_test_files" ]
+  version = build_info_version
 }
 
 bootfs_files_for_assembly("bootfs_test_files") {

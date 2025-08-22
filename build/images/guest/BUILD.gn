@@ -136,6 +136,7 @@ if (labels.images == "//build/images/bringup") {
         package_target = "//src/security/bin/root_ssl_certificates"
       },
     ]
+    version = build_info_version
   }
 
   # The guest image itself.

@@ -9,6 +9,7 @@ import("//build/assembly/product_assembly_configuration.gni")
 import("//build/component/config.gni")
 import("//build/components.gni")
 import("//build/components/fuchsia_package.gni")
+import("//build/info/info.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/testing/host_test_data.gni")
 
@@ -60,6 +61,7 @@ if (current_toolchain == default_toolchain) {
 
     bootfs_packages = [ ":root_component_pkg" ]
     bootfs_files_labels = [ ":bootfs_config" ]
+    version = build_info_version
   }
 
   # `assembled_system` builds a zbi for consumption by the test.
