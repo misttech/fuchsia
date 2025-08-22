@@ -11,6 +11,7 @@ use std::io::{Read, Seek, Write};
 use std::os::unix::fs::{DirEntryExt, FileTypeExt, MetadataExt};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use vfs::ObjectRequestRef;
 use vfs::directory::dirents_sink;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::directory::entry_container::{Directory, DirectoryWatcher, MutableDirectory};
@@ -21,7 +22,6 @@ use vfs::file::connection::FidlIoConnection;
 use vfs::file::{File, FileIo, FileLike, FileOptions, SyncMode};
 use vfs::node::Node;
 use vfs::path::Path as VfsPath;
-use vfs::{ObjectRequestRef, ProtocolsExt, ToObjectRequest};
 use zx_status::Status;
 
 /// Convert a Rust [`std::fs::Metadata`] to a [`fio::NodeAttributes2`] FIDL struct.
@@ -248,29 +248,6 @@ impl HostDirectory {
     pub fn new(path: impl AsRef<std::path::Path>) -> Arc<Self> {
         Arc::new(HostDirectory(path.as_ref().to_owned()))
     }
-
-    fn do_open(
-        self: Arc<Self>,
-        scope: ExecutionScope,
-        path: VfsPath,
-        protocols: impl ProtocolsExt,
-        object_request: ObjectRequestRef<'_>,
-    ) -> Result<(), Status> {
-        let path = self.0.join(path.as_ref());
-        if !path.exists() {
-            Err(Status::NOT_FOUND)
-        } else if path.is_dir() {
-            let directory = Arc::new(HostDirectory(path));
-            object_request
-                .take()
-                .create_connection_sync::<MutableConnection<_>, _>(scope, directory, protocols);
-            Ok(())
-        } else {
-            let file = Arc::new(HostFile { file: Mutex::new(None), path });
-
-            vfs::file::serve(file, scope, &protocols, object_request)
-        }
-    }
 }
 
 impl DirectoryEntry for HostDirectory {
@@ -321,18 +298,6 @@ impl Node for HostDirectory {
 }
 
 impl Directory for HostDirectory {
-    fn deprecated_open(
-        self: Arc<Self>,
-        scope: ExecutionScope,
-        flags: fio::OpenFlags,
-        path: VfsPath,
-        server_end: fidl::endpoints::ServerEnd<fio::NodeMarker>,
-    ) {
-        flags
-            .to_object_request(server_end)
-            .handle(|object_request| self.do_open(scope, path, flags, object_request));
-    }
-
     fn open(
         self: Arc<Self>,
         scope: ExecutionScope,
@@ -340,7 +305,19 @@ impl Directory for HostDirectory {
         flags: fio::Flags,
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), Status> {
-        self.do_open(scope, path, flags, object_request)
+        let path = self.0.join(path.as_ref());
+        if !path.exists() {
+            Err(Status::NOT_FOUND)
+        } else if path.is_dir() {
+            let directory = Arc::new(HostDirectory(path));
+            object_request
+                .take()
+                .create_connection_sync::<MutableConnection<_>, _>(scope, directory, flags);
+            Ok(())
+        } else {
+            let file = Arc::new(HostFile { file: Mutex::new(None), path });
+            vfs::file::serve(file, scope, &flags, object_request)
+        }
     }
 
     async fn read_dirents<'a>(

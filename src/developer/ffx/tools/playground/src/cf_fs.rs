@@ -14,8 +14,8 @@ use vfs::directory::entry_container::{Directory, DirectoryWatcher};
 use vfs::directory::immutable::connection::ImmutableConnection;
 use vfs::directory::traversal_position::TraversalPosition;
 use vfs::execution_scope::ExecutionScope;
+use vfs::immutable_attributes;
 use vfs::node::Node;
-use vfs::{immutable_attributes, ToObjectRequest};
 use zx_status::Status;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as sys2};
 
@@ -92,48 +92,6 @@ impl DotFile {
             DotFile::EnvDir(_, _) => fio::DirentType::Directory,
             DotFile::InfoFile(_, _) => fio::DirentType::File,
         }
-    }
-}
-
-/// Trait for dealing with flags and protocol lists in Open/Open3.
-trait OpenArgs: vfs::ProtocolsExt + Send + Sync {
-    fn open_subdir(
-        &self,
-        proxy: &fio::DirectoryProxy,
-        path: &str,
-        object_request: vfs::ObjectRequestRef<'_>,
-    );
-}
-
-impl OpenArgs for fio::OpenFlags {
-    fn open_subdir(
-        &self,
-        proxy: &fio::DirectoryProxy,
-        path: &str,
-        object_request: vfs::ObjectRequestRef<'_>,
-    ) {
-        let _ = proxy.deprecated_open(
-            *self,
-            fio::ModeType::empty(),
-            path,
-            object_request.take().into_server_end(),
-        );
-    }
-}
-
-impl OpenArgs for fio::Flags {
-    fn open_subdir(
-        &self,
-        proxy: &fio::DirectoryProxy,
-        path: &str,
-        object_request: vfs::ObjectRequestRef<'_>,
-    ) {
-        let _ = proxy.open(
-            path,
-            *self,
-            &object_request.options(),
-            object_request.take().into_channel(),
-        );
     }
 }
 
@@ -242,11 +200,10 @@ impl CFDirectory {
         }
     }
 
-    /// Common implementation for open and open3
-    fn do_open<P: OpenArgs>(
+    fn do_open(
         self: Arc<Self>,
         scope: ExecutionScope,
-        protocols: P,
+        flags: fio::Flags,
         mut path: vfs::path::Path,
         object_request: vfs::ObjectRequestRef<'_>,
     ) {
@@ -266,7 +223,7 @@ impl CFDirectory {
             }
             object_request
                 .take()
-                .create_connection_sync::<ImmutableConnection<_>, _>(scope, self, protocols);
+                .create_connection_sync::<ImmutableConnection<_>, _>(scope, self, flags);
             return;
         };
 
@@ -306,12 +263,7 @@ impl CFDirectory {
                             if !path.is_empty() {
                                 return Err(Status::NOT_DIR);
                             }
-                            vfs::file::serve(
-                                vfs::file::read_only(x),
-                                scope,
-                                &protocols,
-                                object_request,
-                            )
+                            vfs::file::serve(vfs::file::read_only(x), scope, &flags, object_request)
                         });
                     }
                     Action::EnvDir(ty) => {
@@ -330,7 +282,12 @@ impl CFDirectory {
                             object_request.shutdown(Status::INTERNAL);
                             return;
                         };
-                        protocols.open_subdir(&dir, path.as_ref(), &mut object_request);
+                        let _ = dir.open(
+                            path.as_ref(),
+                            flags,
+                            &object_request.options(),
+                            object_request.take().into_channel(),
+                        );
                     }
                     Action::None => (),
                 }
@@ -365,7 +322,7 @@ impl CFDirectory {
                     .map_err(|_| Status::INTERNAL)
                     .and_then(|x| x)
                 {
-                    Ok(x) => x.do_open(scope, protocols, path, &mut object_request),
+                    Ok(x) => x.do_open(scope, flags, path, &mut object_request),
                     Err(e) => object_request.shutdown(e),
                 }
             });
@@ -401,16 +358,6 @@ impl Directory for CFDirectory {
     ) -> Result<(), Status> {
         self.do_open(scope, flags, path, object_request);
         Ok(())
-    }
-
-    fn deprecated_open(
-        self: Arc<Self>,
-        scope: ExecutionScope,
-        flags: fio::OpenFlags,
-        path: vfs::path::Path,
-        server_end: fidl::endpoints::ServerEnd<fio::NodeMarker>,
-    ) {
-        self.do_open(scope, flags, path, &mut flags.to_object_request(server_end))
     }
 
     async fn read_dirents<'a>(
