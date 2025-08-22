@@ -9,6 +9,76 @@ import("//build/test.gni")
 import("//sdk/ctf/build/ctf.gni")
 import("//tools/fidl/gidl/gidl.gni")
 
+# Limit visibility for the HLCPP bindings libraries:
+hlcpp_visibility = [
+  "//build/sdk:*",
+  "//examples/components/routing/fidl:*",
+  "//examples/components/services/fidl:*",
+  "//examples/diagnostics/inspect/codelab/fidl:*",
+  "//examples/fidl/fuchsia.examples:*",
+  "//examples/intl/wisdom/fidl:*",
+  "//sdk:*",
+  "//sdk/ctf/tests/examples/fidl/fuchsia.examples/testing/fidl:*",
+  "//sdk/ctf/tests/fidl/fuchsia.element/testing/fidl:*",
+  "//sdk/ctf/tests/fidl/fuchsia.settings/testing/fidl:*",
+  "//sdk/ctf/tests/pkg/fidl/cpp:*",
+  "//sdk/ctf/tests/pkg/fidl/cpp:*",
+  "//sdk/fidl/*",
+  "//sdk/lib/component/tests:*",
+  "//sdk/lib/driver/power/cpp/testing:*",
+  "//sdk/lib/fidl/cpp/tests/hlcpp_conversion/fidl:*",
+  "//sdk/lib/fidl/hlcpp:*",
+  "//sdk/lib/fuzzing/cpp:*",
+  "//sdk/testing/fidl:*",
+  "//sdk/testing/fidl:*",
+  "//sdk/testing/fidl/protocols_tests:*",
+  "//sdk/testing/fidl/types_tests:*",
+  "//src/camera/bin/camera-gym/fidl:*",
+  "//src/camera/bin/device_watcher:*",
+  "//src/camera/bin/factory:*",
+  "//src/camera/bin/virtual_camera:*",
+  "//src/connectivity/bluetooth/lib/fidl:*",
+  "//src/connectivity/ethernet/drivers/asix-88179:*",
+  "//src/connectivity/network/testing/netemul/network-context/fidl:*",
+  "//src/connectivity/network/testing/netemul/sync-manager/fidl:*",
+  "//src/developer/forensics/exceptions/fidl:*",
+  "//src/developer/forensics/public/fakes:*",
+  "//src/diagnostics/validator/inspect/fidl:*",
+  "//src/diagnostics/validator/logs/fidl:*",
+  "//src/lib/fake-clock/fidl:*",
+  "//src/lib/fake-clock/named-timer:*",
+  "//src/lib/fidl_codec:*",
+  "//src/lib/fidl/c/coding_tables_tests:*",
+  "//src/lib/fidl/c/walker_tests:*",
+  "//src/lib/fostr:*",
+  "//src/lib/fostr/test/fuchsia.example.fostr:*",
+  "//src/lib/fostr/test/fuchsia.example.fostr2:*",
+  "//src/lib/fsl/types:*",
+  "//src/lib/intl/examples:*",
+  "//src/lib/intl/intl_property_provider_impl:*",
+  "//src/lib/intl/lookup/rust:*",
+  "//src/lib/ui/input-synthesis:*",
+  "//src/power/fidl/testing:*",
+  "//src/sys/component_manager/tests/structured_config/fidl:*",
+  "//src/sys/fuzzing/fidl:*",
+  "//src/sys/fuzzing/libfuzzer/testing:*",
+  "//src/sys/test_manager/fidl/fuchsia.test.debug:*",
+  "//src/testing/fidl:*",
+  "//src/tests/benchmarks/fidl/benchmark_suite:*",
+  "//src/tests/fidl/compatibility/fidl:*",
+  "//src/tests/fidl/conformance_suite:*",
+  "//src/tests/fidl/dangerous_identifiers:*",
+  "//src/tests/fidl/dynsuite/client_suite/fidl:*",
+  "//src/tests/fidl/dynsuite/server_suite/fidl:*",
+  "//src/tests/microbenchmarks:*",
+  "//src/ui/a11y/lib/screen_reader/i18n:*",
+  "//src/ui/a11y/lib/semantics/util:*",
+  "//src/ui/a11y/testing/fidl:*",
+  "//tools/fidl/measure-tape/testdata:*",
+  "//tools/fidl/fidlc/testdata/*",
+  "//vendor/*",
+]
+
 # The complete high-level C++ bindings library supporting both asynchronous
 # and synchronous APIs.
 sdk_source_set("hlcpp") {
@@ -64,6 +134,8 @@ sdk_source_set("hlcpp") {
   ]
 
   public_configs = [ "//sdk/config" ]
+
+  visibility = hlcpp_visibility
 }
 
 # The synchronous high-level C++ bindings library.
@@ -92,6 +164,12 @@ sdk_source_set("hlcpp_sync") {
     "//sdk/lib/fidl",
     "//sdk/lib/fit",
     "//zircon/system/ulib/zx",
+  ]
+
+  visibility = [
+    ":*",
+    "//build/sdk:*",
+    "//src/tests/fidl/dynsuite/client_suite/*",
   ]
 }
 
@@ -150,6 +228,8 @@ sdk_source_set("hlcpp_base") {
       "//zircon/system/ulib/zx",
     ]
   }
+
+  visibility = [ ":*" ] + hlcpp_visibility
 }
 
 config("config") {
