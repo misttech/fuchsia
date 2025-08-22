@@ -20,17 +20,13 @@ zx::result<> ExampleBoard::Start() {
     return manager.take_error();
   }
 
-  manager_.emplace(std::move(*manager));
-
   auto visitors = fdf_devicetree::LoadVisitors(symbols());
   if (visitors.is_error()) {
     FDF_LOG(ERROR, "Failed to create visitors: %s", visitors.status_string());
     return visitors.take_error();
   }
 
-  visitors_ = std::move(*visitors);
-
-  auto status = manager_->Walk(*visitors_);
+  auto status = manager->Walk(*(visitors.value()));
   if (status.is_error()) {
     FDF_LOG(ERROR, "Failed to walk the device tree: %s", status.status_string());
     return status.take_error();
@@ -49,7 +45,7 @@ zx::result<> ExampleBoard::Start() {
   }
 
   auto pbus_client = fdf::WireSyncClient(std::move(pbus.value()));
-  status = manager_->PublishDevices(pbus_client, std::move(*group_manager), node_);
+  status = manager->PublishDevices(pbus_client, std::move(*group_manager), node_);
   if (status.is_error()) {
     FDF_LOG(ERROR, "Failed to publish devices: %s", status.status_string());
     return status.take_error();

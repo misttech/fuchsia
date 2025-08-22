@@ -23,8 +23,6 @@ class Vim3Devicetree : public fdf::DriverBase {
   zx::result<> Start() final;
 
  private:
-  std::optional<fdf_devicetree::Manager> manager_;
-  std::unique_ptr<fdf_devicetree::VisitorRegistry> visitors_;
   fidl::SyncClient<fuchsia_driver_framework::Node> node_;
 };
 

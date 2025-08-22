@@ -23,8 +23,6 @@ class ExampleBoard : public fdf::DriverBase {
   zx::result<> Start() override;
 
  private:
-  std::optional<fdf_devicetree::Manager> manager_;
-  std::unique_ptr<fdf_devicetree::VisitorRegistry> visitors_;
   fidl::SyncClient<fuchsia_driver_framework::Node> node_;
 };
 

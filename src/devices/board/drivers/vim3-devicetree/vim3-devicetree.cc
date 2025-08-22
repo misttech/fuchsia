@@ -24,7 +24,6 @@ zx::result<> Vim3Devicetree::Start() {
     FDF_LOG(ERROR, "Failed to create devicetree manager: %d", manager.error_value());
     return manager.take_error();
   }
-  manager_.emplace(std::move(*manager));
 
   auto visitors = fdf_devicetree::LoadVisitors(symbols());
   if (visitors.is_error()) {
@@ -55,9 +54,7 @@ zx::result<> Vim3Devicetree::Start() {
     return result.take_error();
   };
 
-  visitors_ = std::move(*visitors);
-
-  zx::result<> status = manager_->Walk(*visitors_);
+  zx::result<> status = manager->Walk(*(visitors.value()));
   if (status.is_error()) {
     FDF_LOG(ERROR, "Failed to walk the device tree: %s", status.status_string());
     return status.take_error();
@@ -76,7 +73,7 @@ zx::result<> Vim3Devicetree::Start() {
   }
 
   auto pbus_client = fdf::WireSyncClient(std::move(pbus.value()));
-  status = manager_->PublishDevices(pbus_client, std::move(*group_manager), node_);
+  status = manager->PublishDevices(pbus_client, std::move(*group_manager), node_);
   if (status.is_error()) {
     FDF_LOG(ERROR, "Failed to publish devices: %s", status.status_string());
     return status.take_error();
