@@ -193,54 +193,62 @@ mod tests {
 
     fn generate_test_pb_flat_unique_release_info_vector() -> Vec<UniqueReleaseInfo> {
         vec![
-            UniqueReleaseInfo {
-                name: "fake_platform".to_string(),
-                version: "fake_version_for_platform".to_string(),
-                repository: "fake_repository_for_platform".to_string(),
-                slot: vec![Slot::A, Slot::R],
-            },
-            UniqueReleaseInfo {
-                name: "fake_product".to_string(),
-                version: "fake_version_for_product".to_string(),
-                repository: "fake_repository_for_product".to_string(),
-                slot: vec![Slot::A, Slot::R],
-            },
-            UniqueReleaseInfo {
-                name: "fake_example_pib_1".to_string(),
-                version: "fake_version_for_product".to_string(),
-                repository: "fake_repository_for_product".to_string(),
-                slot: vec![Slot::A],
-            },
-            UniqueReleaseInfo {
-                name: "fake_example_pib_2".to_string(),
-                version: "fake_version_for_product".to_string(),
-                repository: "fake_repository_for_product".to_string(),
-                slot: vec![Slot::A],
-            },
-            UniqueReleaseInfo {
-                name: "fake_board".to_string(),
-                version: "fake_version_for_board".to_string(),
-                repository: "fake_repository_for_board".to_string(),
-                slot: vec![Slot::A, Slot::R],
-            },
-            UniqueReleaseInfo {
-                name: "fake_example_bib_set_1".to_string(),
-                version: "fake_version_for_board".to_string(),
-                repository: "fake_repository_for_board".to_string(),
-                slot: vec![Slot::A],
-            },
-            UniqueReleaseInfo {
-                name: "fake_example_bib_set_2".to_string(),
-                version: "fake_version_for_board".to_string(),
-                repository: "fake_repository_for_board".to_string(),
-                slot: vec![Slot::A],
-            },
-            UniqueReleaseInfo {
-                name: "fake_example_bib_set_3".to_string(),
-                version: "fake_version_for_board".to_string(),
-                repository: "fake_repository_for_board".to_string(),
-                slot: vec![Slot::A],
-            },
+            UniqueReleaseInfo::new(
+                "fake_platform".to_string(),
+                "fake_version_for_platform".to_string(),
+                "fake_repository_for_platform".to_string(),
+                vec![Slot::A, Slot::R],
+                "platform".to_string(),
+            ),
+            UniqueReleaseInfo::new(
+                "fake_product".to_string(),
+                "fake_version_for_product".to_string(),
+                "fake_repository_for_product".to_string(),
+                vec![Slot::A, Slot::R],
+                "product".to_string(),
+            ),
+            UniqueReleaseInfo::new(
+                "fake_example_pib_1".to_string(),
+                "fake_version_for_product".to_string(),
+                "fake_repository_for_product".to_string(),
+                vec![Slot::A],
+                "pib".to_string(),
+            ),
+            UniqueReleaseInfo::new(
+                "fake_example_pib_2".to_string(),
+                "fake_version_for_product".to_string(),
+                "fake_repository_for_product".to_string(),
+                vec![Slot::A],
+                "pib".to_string(),
+            ),
+            UniqueReleaseInfo::new(
+                "fake_board".to_string(),
+                "fake_version_for_board".to_string(),
+                "fake_repository_for_board".to_string(),
+                vec![Slot::A, Slot::R],
+                "board".to_string(),
+            ),
+            UniqueReleaseInfo::new(
+                "fake_example_bib_set_1".to_string(),
+                "fake_version_for_board".to_string(),
+                "fake_repository_for_board".to_string(),
+                vec![Slot::A],
+                "bib".to_string(),
+            ),
+            UniqueReleaseInfo::new(
+                "fake_example_bib_set_2".to_string(),
+                "fake_version_for_board".to_string(),
+                "fake_repository_for_board".to_string(),
+                vec![Slot::A],
+                "bib".to_string(),
+            ),
+            UniqueReleaseInfo::new(
+                "fake_example_bib_set_3".to_string(),
+                "fake_version_for_board".to_string(),
+                "fake_repository_for_board".to_string(),
+                vec![Slot::A],
+                "bib".to_string(),
+            ),
         ]
     }
 
@@ -313,12 +321,13 @@ mod tests {
         assert_eq!(info.human, "fake_version_for_platform");
         assert_eq!(
             info.machine[0],
-            UniqueReleaseInfo {
-                name: "fake_platform".to_string(),
-                version: "fake_version_for_platform".to_string(),
-                repository: "fake_repository_for_platform".to_string(),
-                slot: vec![],
-            }
+            UniqueReleaseInfo::new(
+                "fake_platform".to_string(),
+                "fake_version_for_platform".to_string(),
+                "fake_repository_for_platform".to_string(),
+                vec![],
+                "platform".to_string(),
+            )
         );
     }
 
@@ -353,12 +362,13 @@ mod tests {
         assert_eq!(info.human, "fake_version_for_product");
         assert_eq!(
             info.machine[0],
-            UniqueReleaseInfo {
-                name: "fake_product".to_string(),
-                version: "fake_version_for_product".to_string(),
-                repository: "fake_repository_for_product".to_string(),
-                slot: vec![],
-            }
+            UniqueReleaseInfo::new(
+                "fake_product".to_string(),
+                "fake_version_for_product".to_string(),
+                "fake_repository_for_product".to_string(),
+                vec![],
+                "product".to_string(),
+            )
         );
     }
 
@@ -376,12 +386,13 @@ mod tests {
         assert_eq!(info.human, "fake_version_for_pib");
         assert_eq!(
             info.machine[0],
-            UniqueReleaseInfo {
-                name: "fake_pib".to_string(),
-                version: "fake_version_for_pib".to_string(),
-                repository: "fake_repository_for_pib".to_string(),
-                slot: vec![],
-            }
+            UniqueReleaseInfo::new(
+                "fake_pib".to_string(),
+                "fake_version_for_pib".to_string(),
+                "fake_repository_for_pib".to_string(),
+                vec![],
+                "pib".to_string(),
+            )
         );
     }
 
@@ -413,12 +424,13 @@ mod tests {
         assert_eq!(info.version.human, "fake_version_for_board");
         assert_eq!(
             info.version.machine[0],
-            UniqueReleaseInfo {
-                name: "fake_board".to_string(),
-                version: "fake_version_for_board".to_string(),
-                repository: "fake_repository_for_board".to_string(),
-                slot: vec![],
-            }
+            UniqueReleaseInfo::new(
+                "fake_board".to_string(),
+                "fake_version_for_board".to_string(),
+                "fake_repository_for_board".to_string(),
+                vec![],
+                "board".to_string(),
+            )
         );
     }
 
@@ -437,12 +449,13 @@ mod tests {
         assert_eq!(info.human, "fake_version_for_bib_set");
         assert_eq!(
             info.machine[0],
-            UniqueReleaseInfo {
-                name: "fake_bib_set".to_string(),
-                version: "fake_version_for_bib_set".to_string(),
-                repository: "fake_repository_for_bib_set".to_string(),
-                slot: vec![],
-            }
+            UniqueReleaseInfo::new(
+                "fake_bib_set".to_string(),
+                "fake_version_for_bib_set".to_string(),
+                "fake_repository_for_bib_set".to_string(),
+                vec![],
+                "bib_set".to_string(),
+            )
         );
     }
 }

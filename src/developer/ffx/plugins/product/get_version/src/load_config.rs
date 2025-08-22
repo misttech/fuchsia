@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::unique_release_info::{
-    UniqueReleaseInfo, from_board_release_info, from_product_release_info, from_release_info,
+    UniqueReleaseInfo, from_bib_set_release_info, from_board_release_info, from_pib_release_info,
+    from_platform_release_info, from_product_release_info,
 };
 
 use assembly_config_schema::{BoardConfig, BoardInputBundleSet, ProductConfig};
@@ -67,7 +68,7 @@ impl Ord for VersionInfo {
 pub fn load_platform(platform: &PlatformArtifacts) -> VersionInfo {
     VersionInfo {
         human: platform.release_info.version.clone(),
-        machine: vec![from_release_info(&platform.release_info.clone(), &None)],
+        machine: vec![from_platform_release_info(&platform.release_info.clone(), &None)],
     }
 }
 
@@ -86,7 +87,7 @@ pub fn load_product(assembly_config: &ProductConfig) -> VersionInfo {
 pub fn load_pibs(pibs: &ProductInputBundle) -> VersionInfo {
     VersionInfo {
         human: pibs.release_info.version.clone(),
-        machine: vec![from_release_info(&pibs.release_info.clone(), &None)],
+        machine: vec![from_pib_release_info(&pibs.release_info.clone(), &None)],
     }
 }
 
@@ -110,7 +111,7 @@ pub fn load_board(board: &BoardConfig) -> VersionInfoWithDependencies {
             bib_set.version.clone()
         ));
 
-        let bib_set_info = from_release_info(bib_set, &None);
+        let bib_set_info = from_bib_set_release_info(bib_set, &None);
         info.version_with_deps.machine.push(bib_set_info);
     });
 
@@ -121,7 +122,7 @@ pub fn load_board(board: &BoardConfig) -> VersionInfoWithDependencies {
 pub fn load_bib_set(bib_set: &BoardInputBundleSet) -> VersionInfo {
     VersionInfo {
         human: bib_set.release_info.version.clone(),
-        machine: vec![from_release_info(&bib_set.release_info.clone(), &None)],
+        machine: vec![from_bib_set_release_info(&bib_set.release_info.clone(), &None)],
     }
 }
 
@@ -145,21 +146,20 @@ pub fn load_product_bundle_v2(pb: &ProductBundleV2) -> VersionInfoWithDependenci
     };
 
     let mut add_flat_system_info = |info: SystemReleaseInfo, slot: Slot| {
-        push_or_merge(from_release_info(&info.platform, &Some(slot.clone())));
+        push_or_merge(from_platform_release_info(&info.platform, &Some(slot.clone())));
 
         let product = info.product;
-        push_or_merge(from_release_info(&product.info, &Some(slot.clone())));
+        push_or_merge(from_product_release_info(&product, &Some(slot.clone())));
         product
             .pibs
             .iter()
-            .for_each(|pib| push_or_merge(from_release_info(pib, &Some(slot.clone()))));
+            .for_each(|pib| push_or_merge(from_pib_release_info(pib, &Some(slot.clone()))));
 
         let board = info.board;
-        push_or_merge(from_release_info(&board.info, &Some(slot.clone())));
-        board
-            .bib_sets
-            .iter()
-            .for_each(|bib_set| push_or_merge(from_release_info(bib_set, &Some(slot.clone()))));
+        push_or_merge(from_board_release_info(&board, &Some(slot.clone())));
+        board.bib_sets.iter().for_each(|bib_set| {
+            push_or_merge(from_bib_set_release_info(bib_set, &Some(slot.clone())))
+        });
     };
 
     // Push release information for the systems inside the PB.
@@ -176,12 +176,13 @@ pub fn load_product_bundle_v2(pb: &ProductBundleV2) -> VersionInfoWithDependenci
         flat_str.push_str(&format!("\n{}: {}", info.name.clone(), info.version.clone()));
     }
 
-    let pb_release_info = UniqueReleaseInfo {
-        name: pb.product_name.clone(),
-        version: pb.product_version.clone(),
-        repository: "unspecified".to_string(), // Product Bundles do not have a repository.
-        slot: vec![],
-    };
+    let pb_release_info = UniqueReleaseInfo::new(
+        pb.product_name.clone(),
+        pb.product_version.clone(),
+        "unspecified".to_string(), // Product Bundles do not have a repository.
+        vec![],
+        "product_bundle".to_string(),
+    );
 
     VersionInfoWithDependencies {
         version: VersionInfo { human: pb.product_version.clone(), machine: vec![pb_release_info] },

@@ -17,20 +17,85 @@ use std::hash::{Hash, Hasher};
 
 /// Struct holding release information (name, repository, version, etc..)
 /// for a given assembly input artifact.
-#[derive(Clone, Debug, Eq, Deserialize, Serialize)]
+#[derive(Default, Clone, Debug, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct UniqueReleaseInfo {
     /// The name of this assembly artifact.
     pub name: String,
 
+    /// The name of this assembly artifact, sanitized. Meaning:
+    ///   > All uppercase letters are converted to lowercase.
+    ///   > All instances of "/" are converted to "_".
+    ///
+    /// All other constraints on what a valid name string can be are enforced
+    /// during construction. See //build/assembly/tools/assembly_config
+    /// for more information.
+    name_sanitized: String,
+
     /// Release version for this assembly artifact.
     pub version: String,
+
+    /// Release version for this assembly artifact, sanitized. Meaning:
+    ///   > All uppercase letters are converted to lowercase.
+    ///   > All instances of "/" are converted to "_".
+    ///
+    /// All other constraints on what a valid version string can be are enforced
+    /// during construction. See //build/assembly/tools/assembly_config
+    /// for more information.
+    version_sanitized: String,
 
     /// Origin where this release artifact was created.
     pub repository: String,
 
+    /// Origin where this release artifact was created, sanitized. Meaning:
+    ///   > All uppercase letters are converted to lowercase.
+    ///   > All instances of "/" are converted to "_".
+    ///
+    /// All other constraints on what a valid repository string can be are
+    /// enforced during construction. See //build/assembly/tools/assembly_config
+    /// for more information.
+    repository_sanitized: String,
+
     /// System image location.
     pub slot: Vec<Slot>,
+}
+
+impl UniqueReleaseInfo {
+    pub fn new(
+        name: String,
+        version: String,
+        repository: String,
+        slot: Vec<Slot>,
+        artifact_type: String,
+    ) -> Self {
+        let name_sanitized = sanitize(&format!("{}_{}", artifact_type, &name));
+        let version_sanitized = sanitize(&version);
+        let repository_sanitized = sanitize(&repository);
+        UniqueReleaseInfo {
+            name,
+            version,
+            repository,
+            slot,
+            name_sanitized,
+            version_sanitized,
+            repository_sanitized,
+        }
+    }
+}
+
+fn sanitize(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| {
+            if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_' || c == '-' {
+                c
+            } else if c.is_ascii_uppercase() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 impl PartialOrd for UniqueReleaseInfo {
@@ -64,26 +129,32 @@ impl Hash for UniqueReleaseInfo {
     }
 }
 
-/// Convert a ReleaseInfo instance into a UniqueReleaseInfo instance,
-/// to better suit the format needed by customers of `ffx product get-version`.
-pub fn from_release_info(info: &ReleaseInfo, slot: &Option<Slot>) -> UniqueReleaseInfo {
-    UniqueReleaseInfo {
-        name: info.name.clone(),
-        version: info.version.clone(),
-        repository: info.repository.clone(),
-        slot: if let Some(s) = slot { vec![s.clone()] } else { vec![] },
-    }
+fn from_release_info(
+    name: String,
+    version: String,
+    repository: String,
+    slot: &Option<Slot>,
+    artifact_type: &str,
+) -> UniqueReleaseInfo {
+    UniqueReleaseInfo::new(
+        name,
+        version,
+        repository,
+        if let Some(s) = slot { vec![s.clone()] } else { vec![] },
+        artifact_type.to_string(),
+    )
 }
 
-/// Convert a BoardReleaseInfo instance into a UniqueReleaseInfo instance,
+/// Convert a Platform ReleaseInfo instance into a UniqueReleaseInfo instance,
 /// to better suit the format needed by customers of `ffx product get-version`.
-pub fn from_board_release_info(info: &BoardReleaseInfo, slot: &Option<Slot>) -> UniqueReleaseInfo {
-    UniqueReleaseInfo {
-        name: info.info.name.clone(),
-        version: info.info.version.clone(),
-        repository: info.info.repository.clone(),
-        slot: if let Some(s) = slot { vec![s.clone()] } else { vec![] },
-    }
+pub fn from_platform_release_info(info: &ReleaseInfo, slot: &Option<Slot>) -> UniqueReleaseInfo {
+    from_release_info(
+        info.name.clone(),
+        info.version.clone(),
+        info.repository.clone(),
+        slot,
+        "platform",
+    )
 }
 
 /// Convert a ProductReleaseInfo instance into a UniqueReleaseInfo instance,
@@ -92,12 +163,43 @@ pub fn from_product_release_info(
     info: &ProductReleaseInfo,
     slot: &Option<Slot>,
 ) -> UniqueReleaseInfo {
-    UniqueReleaseInfo {
-        name: info.info.name.clone(),
-        version: info.info.version.clone(),
-        repository: info.info.repository.clone(),
-        slot: if let Some(s) = slot { vec![s.clone()] } else { vec![] },
-    }
+    from_release_info(
+        info.info.name.clone(),
+        info.info.version.clone(),
+        info.info.repository.clone(),
+        slot,
+        "product",
+    )
+}
+
+/// Convert a PIB ReleaseInfo instance into a UniqueReleaseInfo instance,
+/// to better suit the format needed by customers of `ffx product get-version`.
+pub fn from_pib_release_info(info: &ReleaseInfo, slot: &Option<Slot>) -> UniqueReleaseInfo {
+    from_release_info(info.name.clone(), info.version.clone(), info.repository.clone(), slot, "pib")
+}
+
+/// Convert a BoardReleaseInfo instance into a UniqueReleaseInfo instance,
+/// to better suit the format needed by customers of `ffx product get-version`.
+pub fn from_board_release_info(info: &BoardReleaseInfo, slot: &Option<Slot>) -> UniqueReleaseInfo {
+    from_release_info(
+        info.info.name.clone(),
+        info.info.version.clone(),
+        info.info.repository.clone(),
+        slot,
+        "board",
+    )
+}
+
+/// Convert a BIB Set ReleaseInfo instance into a UniqueReleaseInfo instance,
+/// to better suit the format needed by customers of `ffx product get-version`.
+pub fn from_bib_set_release_info(info: &ReleaseInfo, slot: &Option<Slot>) -> UniqueReleaseInfo {
+    from_release_info(
+        info.name.clone(),
+        info.version.clone(),
+        info.repository.clone(),
+        slot,
+        "bib_set",
+    )
 }
 
 /// Struct holding a vector of UniqueReleaseInfo elements.
@@ -148,5 +250,49 @@ impl<'de> Deserialize<'de> for UniqueReleaseInfoVector {
         Err(D::Error::custom(
             "Expected either a single ReleaseInfo object or an array of ReleaseInfo objects",
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitization() {
+        // Test with valid characters that don't need sanitization.
+        let info = UniqueReleaseInfo::new(
+            "product-name".to_string(),
+            "1.2.3".to_string(),
+            "fuchsia".to_string(),
+            vec![],
+            "product".to_string(),
+        );
+        assert_eq!(info.name_sanitized, "product_product-name");
+        assert_eq!(info.version_sanitized, "1.2.3");
+        assert_eq!(info.repository_sanitized, "fuchsia");
+
+        // Test with invalid characters that should be replaced with underscores.
+        let info = UniqueReleaseInfo::new(
+            "product name with spaces".to_string(),
+            "1!2@3".to_string(),
+            "invalid/repo/path".to_string(),
+            vec![],
+            "product".to_string(),
+        );
+        assert_eq!(info.name_sanitized, "product_product_name_with_spaces");
+        assert_eq!(info.version_sanitized, "1_2_3");
+        assert_eq!(info.repository_sanitized, "invalid_repo_path");
+
+        // Test with mixed-case characters.
+        let info = UniqueReleaseInfo::new(
+            "ProductName".to_string(),
+            "VERSION".to_string(),
+            "REPOSITORY".to_string(),
+            vec![],
+            "product".to_string(),
+        );
+        assert_eq!(info.name_sanitized, "product_productname");
+        assert_eq!(info.version_sanitized, "version");
+        assert_eq!(info.repository_sanitized, "repository");
     }
 }
