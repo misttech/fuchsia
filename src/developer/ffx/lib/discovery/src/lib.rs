@@ -5,6 +5,7 @@
 use crate::emulator_watcher::EmulatorWatcher;
 pub use crate::events::*;
 use crate::fastboot_file_watcher::FastbootWatcher;
+use crate::query::TargetInfoQuery;
 use anyhow::Result;
 use bitflags::bitflags;
 use futures::Stream;
@@ -33,9 +34,9 @@ pub mod query;
 #[allow(dead_code)]
 /// A stream of new devices as they appear on the bus. See [`wait_for_devices`].
 pub struct TargetStream {
-    filter: Option<Box<dyn TargetFilter>>,
-
+    query: TargetInfoQuery,
     /// Watches mdns events
+    ///
     mdns_watcher: Option<MdnsWatcher>,
 
     /// Watches for FastbootUsb events
@@ -60,25 +61,12 @@ pub struct TargetStream {
     notify_removed: bool,
 }
 
-pub trait TargetFilter: Send + 'static {
-    fn filter_target(&mut self, handle: &TargetHandle) -> bool;
-}
-
-impl<F> TargetFilter for F
-where
-    F: FnMut(&TargetHandle) -> bool + Send + 'static,
-{
-    fn filter_target(&mut self, handle: &TargetHandle) -> bool {
-        self(handle)
-    }
-}
-
 pub trait TargetEventStream: Stream<Item = TargetEvent> + std::marker::Unpin {}
 
 impl TargetEventStream for TargetStream {}
 
-pub trait TargetDiscovery<F> {
-    fn discover_devices(&self, filter: F) -> Result<impl TargetEventStream>;
+pub trait TargetDiscovery {
+    fn discover_devices(&self, query: TargetInfoQuery) -> Result<impl TargetEventStream>;
 }
 
 pub struct DiscoveryBuilder {
@@ -166,14 +154,11 @@ impl Discovery {
     }
 }
 
-impl<F> TargetDiscovery<F> for Discovery
-where
-    F: TargetFilter,
-{
+impl TargetDiscovery for Discovery {
     #[allow(refining_impl_trait)]
-    fn discover_devices(&self, filter: F) -> Result<TargetStream> {
+    fn discover_devices(&self, query: TargetInfoQuery) -> Result<TargetStream> {
         let stream = wait_for_devices(
-            filter,
+            query,
             self.emulator_instance_root.clone(),
             self.fastboot_devices_file_path.clone(),
             self.notify_added,
@@ -201,17 +186,14 @@ impl Default for DiscoverySources {
     }
 }
 
-fn wait_for_devices<F>(
-    filter: F,
+fn wait_for_devices(
+    query: TargetInfoQuery,
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
     notify_added: bool,
     notify_removed: bool,
     sources: DiscoverySources,
-) -> Result<TargetStream>
-where
-    F: TargetFilter,
-{
+) -> Result<TargetStream> {
     let (sender, queue) = unbounded();
     // MDNS Watcher
     let mdns_watcher = if sources.contains(DiscoverySources::MDNS) {
@@ -276,7 +258,7 @@ where
     };
 
     Ok(TargetStream {
-        filter: Some(Box::new(filter)),
+        query,
         queue,
         notify_added,
         notify_removed,
@@ -295,22 +277,11 @@ impl Stream for TargetStream {
         let Some(event) = ready!(Pin::new(&mut self.queue).poll_next(cx)) else {
             return Poll::Ready(None);
         };
-        if let Some(ref mut filter) = self.filter {
-            let handle = event.as_handle();
-            if !filter.filter_target(handle) {
-                log::trace!(
-                    "Skipping event for target handle: {} as it did not match our filter",
-                    handle
-                );
-                // Important: must schedule the future for this to be woken up again.
-                cx.waker().wake_by_ref();
-                return Poll::Pending;
-            }
-        }
 
+        let should_notify_matches = self.query.match_handle(event.as_handle());
         let should_notify_added = event.is_added() && self.notify_added;
         let should_notify_removed = event.is_removed() && self.notify_removed;
-        let should_notify = should_notify_added || should_notify_removed;
+        let should_notify = should_notify_matches && (should_notify_added || should_notify_removed);
         if should_notify {
             return Poll::Ready(Some(event));
         }
@@ -334,21 +305,19 @@ pub mod test {
     use std::rc::Rc;
     use std::str::FromStr;
 
-    /// Used for testing functions that take a TargetDiscovery<TargetFilter>
+    /// Used for testing functions that take a TargetDiscovery
     ///
-    /// In discover_devices the `filter` parameter is explicitly not used.
+    /// In discover_devices the `query` parameter is explicitly not used.
     /// Test authors are expected to pass the VecDeque with the events "pre filtered"
-    /// You should have separate tests for your TargetFilter impls
+    /// You should have separate tests for your queries
     pub struct TestDiscovery {
         events: Rc<RefCell<VecDeque<TargetEvent>>>,
     }
 
-    impl<F> TargetDiscovery<F> for TestDiscovery
-    where
-        F: TargetFilter,
-    {
+    impl TargetDiscovery for TestDiscovery {
         #[allow(refining_impl_trait)]
-        fn discover_devices(&self, _filter: F) -> Result<TestTargetStream> {
+
+        fn discover_devices(&self, _query: TargetInfoQuery) -> Result<TestTargetStream> {
             Ok(TestTargetStream { events: self.events.clone() })
         }
     }
@@ -416,7 +385,7 @@ pub mod test {
             ]))),
         };
 
-        let stream = disco.discover_devices(|_: &_| true)?;
+        let stream = disco.discover_devices(TargetInfoQuery::First)?;
 
         write_event_stream(&mut writer, stream).await;
 
@@ -485,23 +454,12 @@ pub mod test {
     ///  TargetStream tests
     ///////////////////////////////////////////////////////////////////////////
 
-    fn true_target_filter(_handle: &TargetHandle) -> bool {
-        true
-    }
-
-    fn zedboot_target_filter(handle: &TargetHandle) -> bool {
-        match handle.state {
-            TargetState::Zedboot => true,
-            _ => false,
-        }
-    }
-
     #[fuchsia::test]
     async fn test_target_stream() -> Result<()> {
         let (sender, queue) = unbounded();
 
         let mut stream = TargetStream {
-            filter: Some(Box::new(true_target_filter)),
+            query: TargetInfoQuery::First,
             mdns_watcher: None,
             fastboot_usb_watcher: None,
             manual_targets_watcher: None,
@@ -551,7 +509,7 @@ pub mod test {
         let (sender, queue) = unbounded();
 
         let mut stream = TargetStream {
-            filter: Some(Box::new(true_target_filter)),
+            query: TargetInfoQuery::First,
             mdns_watcher: None,
             fastboot_usb_watcher: None,
             manual_targets_watcher: None,
@@ -592,7 +550,7 @@ pub mod test {
         let (sender, queue) = unbounded();
 
         let mut stream = TargetStream {
-            filter: Some(Box::new(true_target_filter)),
+            query: TargetInfoQuery::First,
             mdns_watcher: None,
             fastboot_usb_watcher: None,
             manual_targets_watcher: None,
@@ -633,7 +591,7 @@ pub mod test {
         let (sender, queue) = unbounded();
 
         let mut stream = TargetStream {
-            filter: Some(Box::new(zedboot_target_filter)),
+            query: TargetInfoQuery::NodenameOrSerial("Vin".to_string()),
             mdns_watcher: None,
             fastboot_usb_watcher: None,
             manual_targets_watcher: None,
@@ -727,7 +685,7 @@ pub mod test {
 
         // Start watching the directory
         let mut stream = wait_for_devices(
-            true_target_filter,
+            TargetInfoQuery::First,
             Some(instance_dir.clone()),
             None,
             true,

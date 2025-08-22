@@ -314,8 +314,6 @@ fn get_discovery_stream_with_sources(
     sources: DiscoverySources,
     ctx: EnvironmentContext,
 ) -> Result<impl futures::Stream<Item = TargetHandle>> {
-    let query_clone = query.clone();
-    let filter = move |handle: &TargetHandle| query_clone.match_handle(handle);
     // Note that if there is an error getting these two config options, they
     // will simply be ignored. The alternative is to throw an error, which,
     // e.g. will cause ffx-strict to fail under certain circumstances if either
@@ -331,7 +329,7 @@ fn get_discovery_stream_with_sources(
         .notify_added(true)
         .notify_removed(false)
         .build();
-    let stream = discovery.discover_devices(filter)?;
+    let stream = discovery.discover_devices(query.clone())?;
 
     // This is tricky. We want the stream to complete immediately if we find
     // a target whose name/serial matches the query exactly. Otherwise, run

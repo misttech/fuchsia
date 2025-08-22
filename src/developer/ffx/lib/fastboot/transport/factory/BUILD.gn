@@ -34,10 +34,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:tokio",
   ]
 
-  test_deps = [
-    "//src/developer/ffx/lib/addr:lib",
-    "//src/lib/fuchsia",
-  ]
+  test_deps = [ "//src/lib/fuchsia" ]
 
   sources = [
     "src/helpers.rs",

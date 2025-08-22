@@ -7,9 +7,8 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use discovery::events::TargetEvent;
-use discovery::{
-    DiscoveryBuilder, FastbootConnectionState, TargetDiscovery, TargetHandle, TargetState,
-};
+use discovery::query::TargetInfoQuery;
+use discovery::{DiscoveryBuilder, FastbootConnectionState, TargetDiscovery, TargetState};
 use errors::ffx_bail;
 use fastboot_file_discovery::FASTBOOT_FILE_PATH;
 use ffx_bootloader_args::SubCommand::{Boot, Info, Lock, Unlock};
@@ -158,24 +157,11 @@ Reboot the Target to the bootloader and re-run this command."
                 }
 
                 let criteria = Criteria { serial: info.serial_number.clone() };
-                let c_clone = criteria.clone();
 
-                let filter_target = move |handle: &TargetHandle| {
-                    log::debug!("Considering handle: {:#?}", handle);
-                    match &handle.state {
-                        discovery::TargetState::Fastboot(fts)
-                            if Some(fts.serial_number.clone()) == c_clone.serial =>
-                        {
-                            true
-                        }
-                        _ => {
-                            log::debug!("Skipping handle: {:#?}", handle);
-                            false
-                        }
-                    }
-                };
-
-                let stream = disco.discover_devices(filter_target)?;
+                let query = info
+                    .serial_number
+                    .map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
+                let stream = disco.discover_devices(query)?;
                 let timer =
                     fuchsia_async::Timer::new(std::time::Duration::from_millis(100000)).fuse();
                 let found_target_event = async_utils::event::Event::new();

@@ -5,11 +5,11 @@
 use crate::helpers::rediscover_helper;
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
-use discovery::{FastbootConnectionState, TargetFilter, TargetHandle, TargetState};
+use discovery::{FastbootConnectionState, TargetHandle, TargetState};
 use ffx_fastboot_interface::interface_factory::{
     InterfaceFactory, InterfaceFactoryBase, InterfaceFactoryError,
 };
-use ffx_fastboot_transport_interface::tcp::{open_once, TcpNetworkInterface};
+use ffx_fastboot_transport_interface::tcp::{TcpNetworkInterface, open_once};
 use fuchsia_async::Timer;
 use netext::TokioAsyncWrapper;
 use std::net::SocketAddr;
@@ -76,12 +76,10 @@ impl InterfaceFactoryBase<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for
     }
 
     async fn rediscover(&mut self) -> Result<(), InterfaceFactoryError> {
-        let filter = TcpTargetFilter { node_name: self.target_name.clone() };
-
         rediscover_helper(
             &self.fastboot_devices_file_path,
             &self.target_name,
-            filter,
+            filter_target,
             &mut |connection_state| {
                 match connection_state {
                     FastbootConnectionState::Tcp(addrs) => {
@@ -92,7 +90,7 @@ impl InterfaceFactoryBase<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for
                             self.target_name.clone(),
                             "TCP".to_string(),
                             s.to_string(),
-                        ))
+                        ));
                     }
                 }
                 Ok(())
@@ -104,89 +102,17 @@ impl InterfaceFactoryBase<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for
 
 impl InterfaceFactory<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for TcpFactory {}
 
-pub struct TcpTargetFilter {
-    node_name: String,
-}
-
-impl TargetFilter for TcpTargetFilter {
-    fn filter_target(&mut self, handle: &TargetHandle) -> bool {
-        if handle.node_name.as_ref() != Some(&self.node_name) {
-            log::debug!(
-                "Discovered target name \"{:#?}\" does not match desired \"{}\"... skipping",
-                handle.node_name,
-                self.node_name
-            );
-            return false;
+fn filter_target(handle: &TargetHandle) -> bool {
+    match &handle.state {
+        TargetState::Fastboot(ts)
+            if matches!(ts.connection_state, FastbootConnectionState::Tcp(_)) =>
+        {
+            log::debug!("Filtered and found target handle: {}", handle);
+            true
         }
-        match &handle.state {
-            TargetState::Fastboot(ts)
-                if matches!(ts.connection_state, FastbootConnectionState::Tcp(_)) =>
-            {
-                log::debug!("Filtered and found target handle: {}", handle);
-                true
-            }
-            state @ _ => {
-                log::debug!("Target state {} is not  TCP Fastboot... skipping", state);
-                false
-            }
+        state @ _ => {
+            log::debug!("Target state {} is not  TCP Fastboot... skipping", state);
+            false
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use addr::TargetIpAddr;
-    use std::net::{IpAddr, Ipv4Addr};
-
-    ///////////////////////////////////////////////////////////////////////////////
-    // TcpTargetFilter
-    //
-
-    #[fuchsia::test]
-    fn filter_target_test() -> Result<()> {
-        let node_name = "jod".to_string();
-        let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
-        let addr = TargetIpAddr::from(socket);
-
-        let mut filter = TcpTargetFilter { node_name };
-
-        // Passes
-        assert!(filter.filter_target(&TargetHandle {
-            node_name: Some("jod".to_string()),
-            state: TargetState::Fastboot(discovery::FastbootTargetState {
-                serial_number: "".to_string(),
-                connection_state: FastbootConnectionState::Tcp(vec![addr])
-            }),
-            manual: false,
-        }));
-        // Fails: wrong name
-        assert!(!filter.filter_target(&TargetHandle {
-            node_name: Some("Wake".to_string()),
-            state: TargetState::Fastboot(discovery::FastbootTargetState {
-                serial_number: "".to_string(),
-                connection_state: FastbootConnectionState::Tcp(vec![addr])
-            }),
-            manual: false,
-        }));
-        // Fails: wrong state
-        assert!(!filter.filter_target(&TargetHandle {
-            node_name: Some("jod".to_string()),
-            state: TargetState::Fastboot(discovery::FastbootTargetState {
-                serial_number: "".to_string(),
-                connection_state: FastbootConnectionState::Udp(vec![addr])
-            }),
-            manual: false,
-        }));
-        // Fails: Bad name
-        assert!(!filter.filter_target(&TargetHandle {
-            node_name: None,
-            state: TargetState::Fastboot(discovery::FastbootTargetState {
-                serial_number: "".to_string(),
-                connection_state: FastbootConnectionState::Tcp(vec![addr])
-            }),
-            manual: false,
-        }));
-        Ok(())
     }
 }

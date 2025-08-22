@@ -3,12 +3,11 @@
 // found in the LICENSE file.
 
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use manual_targets::watcher::{ManualTargetEvent, ManualTargetState};
 use netext::IsLocalAddr;
 use std::cmp::Ordering;
-use std::fmt;
-use std::fmt::Display;
+use std::fmt::{self, Display};
 use usb_fastboot_discovery::FastbootEvent;
 // TODO(colnnelson): Long term it would be nice to have this be pulled into the mDNS library
 // so that it can speak our language. Or even have the mdns library not export FIDL structs
@@ -268,9 +267,9 @@ impl From<ManualTargetEvent> for TargetEvent {
                     },
                     ManualTargetState::Fastboot => TargetState::Fastboot(FastbootTargetState {
                         serial_number: "".to_string(),
-                        connection_state: FastbootConnectionState::Tcp(vec![manual_target
-                            .addr()
-                            .into()]),
+                        connection_state: FastbootConnectionState::Tcp(vec![
+                            manual_target.addr().into(),
+                        ]),
                     }),
                 };
 

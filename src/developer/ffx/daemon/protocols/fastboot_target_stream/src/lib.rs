@@ -4,6 +4,7 @@
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use discovery::query::TargetInfoQuery;
 use discovery::{
     DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetDiscovery, TargetEvent,
     TargetState,
@@ -73,7 +74,7 @@ impl FidlProtocol for FastbootTargetStreamProtocol {
                     .notify_removed(true)
                     .set_source(DiscoverySources::USB_FASTBOOT | DiscoverySources::FASTBOOT_FILE)
                     .build();
-                let mut device_stream = discovery.discover_devices(|_: &_| true)?;
+                let mut device_stream = discovery.discover_devices(TargetInfoQuery::First)?;
                 while let Some(event) = device_stream.next().await {
                         match event {
                             TargetEvent::Added(e) => match e.state {
