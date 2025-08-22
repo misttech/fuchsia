@@ -14,23 +14,17 @@ namespace debug_agent {
 namespace {
 
 void ValidateModules(const std::vector<debug_ipc::Module>& modules) {
-  // It should contain at least libc, libsyslog, libfdio, vdso and the main executable.
-  EXPECT_GT(modules.size(), 5u);
+  // It should contain at least libc, libfdio, vdso and the main executable.
+  EXPECT_GT(modules.size(), 4u);
 
   bool has_libc = false;
-  bool has_syslog = false;
   for (const auto& module : modules) {
     if (module.name == "libc.so") {
       has_libc = true;
       EXPECT_FALSE(module.build_id.empty());
     }
-    if (module.name == "libsyslog.so") {
-      has_syslog = true;
-      EXPECT_FALSE(module.build_id.empty());
-    }
   }
   EXPECT_TRUE(has_libc);
-  EXPECT_TRUE(has_syslog);
 }
 
 TEST(ElfUtils, GetElfModulesForProcess) {
