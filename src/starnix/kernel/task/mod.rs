@@ -30,6 +30,7 @@ mod task;
 mod thread_group;
 mod timeline;
 mod timers;
+pub mod tracing;
 mod uts_namespace;
 mod waiter;
 

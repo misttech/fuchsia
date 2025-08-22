@@ -7,6 +7,7 @@ use crate::mutable_state::{state_accessor, state_implementation};
 use crate::security;
 use crate::signals::{KernelSignal, RunState, SignalInfo, SignalState};
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
+use crate::task::tracing::KoidPair;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, EventHandler, Kernel,
     NormalPriority, PidTable, ProcessEntryRef, ProcessExitInfo, PtraceEvent, PtraceEventData,
@@ -1036,7 +1037,8 @@ pub struct Task {
     // See https://fxbug.dev/291962828 for details.
     pub proc_pid_directory_cache: Mutex<Option<FsNodeHandle>>,
 
-    /// The Linux Security Modules state for this thread group.
+    /// The Linux Security Modules state for this thread group. This should be the last member of
+    /// this struct.
     pub security_state: security::TaskState,
 }
 
@@ -1525,6 +1527,14 @@ impl Task {
 
     pub fn get_signal_action(&self, signal: Signal) -> sigaction_t {
         self.thread_group().signal_actions.get(signal)
+    }
+
+    pub fn record_pid_koid_mapping(&self) {
+        let Some(ref mapping_table) = *self.kernel().pid_to_koid_mapping.read() else { return };
+
+        let pkoid = self.thread_group().get_process_koid().ok();
+        let tkoid = self.thread.read().as_ref().and_then(|t| t.get_koid().ok());
+        mapping_table.write().insert(self.tid, KoidPair { process: pkoid, thread: tkoid });
     }
 }
 

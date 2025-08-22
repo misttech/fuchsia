@@ -231,6 +231,7 @@ rustc_library("starnix_core") {
     "task/thread_group.rs",
     "task/timeline.rs",
     "task/timers.rs",
+    "task/tracing.rs",
     "task/uts_namespace.rs",
     "task/waiter.rs",
     "testing.rs",

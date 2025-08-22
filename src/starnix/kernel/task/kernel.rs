@@ -14,6 +14,7 @@ use crate::task::container_namespace::ContainerNamespace;
 use crate::task::limits::SystemLimits;
 use crate::task::memory_attribution::MemoryAttributionManager;
 use crate::task::net::NetstackDevices;
+use crate::task::tracing::PidToKoidMap;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, DelayedReleaser,
     HrTimerManager, HrTimerManagerHandle, IpTables, KernelCgroups, KernelStats, KernelThreads,
@@ -157,6 +158,9 @@ pub struct Kernel {
 
     /// The processes and threads running in this kernel, organized by pid_t.
     pub pids: RwLock<PidTable>,
+
+    /// Used to record the pid/tid to Koid mappings. Set when collecting trace data.
+    pub pid_to_koid_mapping: Arc<RwLock<Option<PidToKoidMap>>>,
 
     /// Subsystem-specific properties that hang off the Kernel object.
     ///
@@ -400,6 +404,7 @@ impl Kernel {
             kthreads: KernelThreads::new(kernel.clone()),
             features,
             pids: RwLock::new(PidTable::new()),
+            pid_to_koid_mapping: Arc::new(RwLock::new(None)),
             expando: Default::default(),
             default_abstract_socket_namespace: AbstractUnixSocketNamespace::new(unix_address_maker),
             default_abstract_vsock_namespace: AbstractVsockSocketNamespace::new(

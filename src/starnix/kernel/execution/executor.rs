@@ -546,15 +546,10 @@ where
             }
         }
     };
-    // Wait to send the `TaskBuilder` to the spawned thread until we know that it
-    // spawned successfully, as we need to ensure the builder is always explicitly
-    // released.
-    sender
-        .send(task_builder)
-        .expect("receiver should not be disconnected because thread spawned successfully");
 
-    // We're done with the sender now. We drop the sender explicitly to free the memory earlier.
-    std::mem::drop(sender);
+    // Update the thread and task information before sending the task_builder to the spawned thread.
+    // This will make sure the mapping between linux tid and fuchsia koid is set before trace events
+    // are emitted from the linux code.
 
     // Set the task's thread handle
     let pthread = join_handle.as_pthread_t();
@@ -565,17 +560,29 @@ where
             .duplicate(zx::Rights::SAME_RIGHTS)
             .expect("must have RIGHT_DUPLICATE on handle we created"),
     ));
-
-    // Reset the process handle used to create threads.
-    unsafe {
-        thrd_set_zx_process(old_process_handle);
-    };
-
     // Now that the task has a thread handle, update the thread's role using the policy configured.
     drop(task_thread_guard);
     if let Err(err) = ref_task.sync_scheduler_state_to_role() {
         log_warn!(err:?; "Couldn't update freshly spawned thread's profile.");
     }
+
+    // Record the thread and process ids for tracing after the task_thread is unlocked.
+    ref_task.record_pid_koid_mapping();
+
+    // Wait to send the `TaskBuilder` to the spawned thread until we know that it
+    // spawned successfully, as we need to ensure the builder is always explicitly
+    // released.
+    sender
+        .send(task_builder)
+        .expect("receiver should not be disconnected because thread spawned successfully");
+
+    // We're done with the sender now. We drop the sender explicitly to free the memory earlier.
+    std::mem::drop(sender);
+
+    // Reset the process handle used to create threads.
+    unsafe {
+        thrd_set_zx_process(old_process_handle);
+    };
 
     Ok(())
 }
