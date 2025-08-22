@@ -4,13 +4,13 @@
 
 use anyhow::Result;
 use fuchsia_async::Task;
-use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::StreamExt;
+use futures::channel::mpsc::{self, Receiver, Sender};
 use notify::EventKind::{Create, Modify, Remove};
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
-use std::fs::{create_dir_all, File, OpenOptions};
+use std::fs::{File, OpenOptions, create_dir_all};
 use std::io::{BufRead, BufReader};
 use std::net::{AddrParseError, SocketAddr};
 use std::num::ParseIntError;
@@ -29,7 +29,7 @@ pub enum FastbootMode {
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ParseFastbootModeError {
-    #[error("Invalid string: {}. Supported: \"tcp\" or \"udp\"", got)]
+    #[error("Invalid string: \"{}\". Supported: \"tcp\" or \"udp\"", got)]
     InvalidString { got: String },
 }
 
@@ -65,12 +65,20 @@ impl FastbootEntry {
 pub enum ParseFastbootEntryError {
     #[error("Invalid format: {}", got)]
     InvalidFormat { got: String },
-    #[error("could not parse mode")]
+    #[error("Could not parse mode")]
     ModeError(#[from] ParseFastbootModeError),
-    #[error("invalid port number")]
+    #[error("Invalid port number")]
     InvalidPortNum(#[from] ParseIntError),
-    #[error("invalid ip address number")]
+    #[error("Invalid ip address number")]
     InvalidAddress(#[from] AddrParseError),
+}
+
+#[derive(Error, Debug)]
+pub enum GetFastbootEntriesError {
+    #[error("Invalid entry")]
+    InvalidEntry(#[from] ParseFastbootEntryError),
+    #[error("Error accessing file")]
+    IoError(#[from] std::io::Error),
 }
 
 impl FromStr for FastbootEntry {
@@ -80,11 +88,6 @@ impl FromStr for FastbootEntry {
         let (connection_type, addr_port) = s
             .split_once(":")
             .ok_or_else(|| ParseFastbootEntryError::InvalidFormat { got: s.to_string() })?;
-        // let (addr, port_str) = addr_port
-        //     .rsplit_once(":")
-        //     .ok_or_else(|| ParseFastbootEntryError::InvalidFormat { got: s.to_string() })?;
-
-        // let port = port_str.parse::<u16>()?;
         let mode = connection_type.parse::<FastbootMode>()?;
 
         let socket_addr = SocketAddr::from_str(addr_port)?;
@@ -163,7 +166,9 @@ impl FastbootFileWatcher {
     }
 }
 
-pub fn get_fastboot_devices(device_file_path: &impl AsRef<Path>) -> Result<Vec<FastbootEntry>> {
+pub fn get_fastboot_devices(
+    device_file_path: &impl AsRef<Path>,
+) -> Result<Vec<FastbootEntry>, GetFastbootEntriesError> {
     match device_file_path.as_ref().try_exists() {
         Ok(false) | Err(_) => {
             return Ok(vec![]);
