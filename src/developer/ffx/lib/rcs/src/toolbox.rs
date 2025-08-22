@@ -31,31 +31,15 @@ async fn connect_realm_query(
 ) -> Result<sys2::RealmQueryProxy> {
     // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
     let (query, server) = fidl::endpoints::create_proxy::<sys2::RealmQueryMarker>();
-    let result = rcs
-        .connect_capability(
-            moniker,
-            sys2::OpenDirType::NamespaceDir,
-            &format!("svc/{}.root", sys2::RealmQueryMarker::PROTOCOL_NAME),
-            server.into_channel(),
-        )
-        .await?
-        .map_err(|e| anyhow::anyhow!("{e:?}"));
-    if result.is_ok() {
-        return Ok(query);
-    }
-    // Fallback to fuchsia.developer.remotecontrol/RemoteControl.DeprecatedOpenCapability.
-    // This can be removed once we drop support for API level 27.
-    let (query, server) = fidl::endpoints::create_proxy::<sys2::RealmQueryMarker>();
-    rcs.deprecated_open_capability(
+    rcs.connect_capability(
         moniker,
         sys2::OpenDirType::NamespaceDir,
         &format!("svc/{}.root", sys2::RealmQueryMarker::PROTOCOL_NAME),
         server.into_channel(),
-        Default::default(),
     )
     .await?
     .map_err(|e| anyhow::anyhow!("{e:?}"))?;
-    Ok(query)
+    return Ok(query);
 }
 
 // Note: this function is copied from component_debug, so we don't need to

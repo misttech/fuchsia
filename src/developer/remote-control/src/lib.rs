@@ -141,21 +141,6 @@ impl RemoteControlService {
                 )?;
                 Ok(())
             }
-            rcs::RemoteControlRequest::DeprecatedOpenCapability {
-                moniker,
-                capability_set,
-                capability_name,
-                server_channel,
-                flags: _,
-                responder,
-            } => {
-                responder.send(
-                    self.clone()
-                        .open_capability(moniker, capability_set, capability_name, server_channel)
-                        .await,
-                )?;
-                Ok(())
-            }
             rcs::RemoteControlRequest::GetTime { responder } => {
                 responder.send(zx::MonotonicInstant::get())?;
                 Ok(())

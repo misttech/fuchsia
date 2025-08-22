@@ -113,36 +113,12 @@ impl DriverConnector {
         ) -> Result<S::Proxy> {
             // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
             let (proxy, server) = fidl::endpoints::create_proxy::<S>();
-            if let Ok(response) = remote_control
+            remote_control
                 .connect_capability(
                     moniker,
                     fsys::OpenDirType::ExposedDir,
                     capability,
                     server.into_channel(),
-                )
-                .await
-            {
-                response.map_err(|e| {
-                    anyhow::anyhow!(
-                        "failed to connect to {} at {} as {}: {:?}",
-                        S::DEBUG_NAME,
-                        moniker,
-                        capability,
-                        e
-                    )
-                })?;
-                return Ok(proxy);
-            }
-            // Fallback to fuchsia.developer.remotecontrol/RemoteControl.DeprecatedOpenCapability.
-            // This can be removed once we drop support for API level 27.
-            let (proxy, server) = fidl::endpoints::create_proxy::<S>();
-            remote_control
-                .deprecated_open_capability(
-                    moniker,
-                    fsys::OpenDirType::ExposedDir,
-                    capability,
-                    server.into_channel(),
-                    Default::default(),
                 )
                 .await?
                 .map_err(|e| {

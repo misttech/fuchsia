@@ -247,25 +247,9 @@ async fn connect_to_rcs(
     let (client, server) = rcs_client.create_channel();
     #[cfg(not(feature = "fdomain"))]
     let client = fuchsia_async::Channel::from_channel(client);
-    if let Ok(response) =
-        rcs_proxy.connect_capability(moniker, capability_set, capability_name, server).await
-    {
-        response.map_err(|e| KnockRcsError::RcsConnectCapabilityError(e))?;
-        return Ok(KnockClientType::new(client, "knock_client"));
-    }
-    // Fallback to fuchsia.developer.remotecontrol/RemoteControl.DeprecatedOpenCapability.
-    // This can be removed once we drop support for API level 27.
-    let (client, server) = rcs_proxy.domain().create_channel();
-    #[cfg(not(feature = "fdomain"))]
-    let client = fuchsia_async::Channel::from_channel(client);
+
     rcs_proxy
-        .deprecated_open_capability(
-            moniker,
-            capability_set,
-            capability_name,
-            server,
-            Default::default(),
-        )
+        .connect_capability(moniker, capability_set, capability_name, server)
         .await?
         .map_err(|e| KnockRcsError::RcsConnectCapabilityError(e))?;
     return Ok(KnockClientType::new(client, "knock_client"));
@@ -326,23 +310,8 @@ pub async fn open_with_timeout_at<T: ProtocolMarker>(
     let connect_capability_fut = async move {
         // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
         let (proxy, server) = rcs_proxy.domain().create_proxy::<T>();
-        if let Ok(Ok(())) = rcs_proxy
-            .connect_capability(moniker, capability_set, capability_name, server.into_channel())
-            .await
-        {
-            return Ok(Ok(proxy));
-        }
-        // Fallback to fuchsia.developer.remotecontrol/RemoteControl.DeprecatedOpenCapability.
-        // This can be removed once we drop support for API level 27.
-        let (proxy, server) = rcs_proxy.domain().create_proxy::<T>();
         rcs_proxy
-            .deprecated_open_capability(
-                moniker,
-                capability_set,
-                capability_name,
-                server.into_channel(),
-                Default::default(),
-            )
+            .connect_capability(moniker, capability_set, capability_name, server.into_channel())
             .await
             .map(|result| result.map(|_| proxy))
     };

@@ -385,32 +385,12 @@ async fn connect_to_capability<T: DiscoverableProtocolMarker>(
     let rcs_proxy = try_rcs_proxy_connection(rcs_proxy_connector, time_to_wait).await?;
     // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
     let (proxy, server) = fidl::endpoints::create_proxy::<T>();
-    if let Ok(response) = rcs_proxy
+    rcs_proxy
         .connect_capability(
             &REPOSITORY_MANAGER_MONIKER,
             OpenDirType::ExposedDir,
             T::PROTOCOL_NAME,
             server.into_channel(),
-        )
-        .await
-    {
-        response.map_err(|err| {
-            bug!(
-                "Attempting to connect to moniker {REPOSITORY_MANAGER_MONIKER} failed with {err:?}",
-            )
-        })?;
-        return Ok(proxy);
-    }
-    // Fallback to fuchsia.developer.remotecontrol/RemoteControl.DeprecatedOpenCapability.
-    // This can be removed once we drop support for API level 27.
-    let (proxy, server) = fidl::endpoints::create_proxy::<T>();
-    rcs_proxy
-        .deprecated_open_capability(
-            &REPOSITORY_MANAGER_MONIKER,
-            OpenDirType::ExposedDir,
-            T::PROTOCOL_NAME,
-            server.into_channel(),
-            Default::default(),
         )
         .await
         .map_err(|e| bug!(e))?

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use addr::TargetIpAddr;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use ascendd::Ascendd;
 use async_trait::async_trait;
 use errors::ffx_error;
@@ -224,33 +224,11 @@ impl DaemonProtocolProvider for Daemon {
             .context("getting rcs instance")?;
         // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
         let (client, server) = fidl::Channel::create();
-        if let Ok(response) = rcs
-            .proxy
+        rcs.proxy
             .connect_capability(moniker, fsys::OpenDirType::ExposedDir, capability_name, server)
             .await
-        {
-            response.map_err(|e| {
-                anyhow!("Failed to connect to {capability_name} in {moniker}: {e:?}")
-            })?;
-            log::debug!("Returning target and proxy for {}@{}", target.nodename_str(), target.id());
-            return Ok((target.as_ref().into(), client));
-        }
-        // Fallback to fuchsia.developer.remotecontrol/RemoteControl.DeprecatedOpenCapability.
-        // This can be removed once we drop support for API level 27.
-        let (client, server) = fidl::Channel::create();
-        rcs.proxy
-            .deprecated_open_capability(
-                moniker,
-                fsys::OpenDirType::ExposedDir,
-                capability_name,
-                server,
-                Default::default(),
-            )
-            .await
             .context("transport error")?
-            .map_err(|e| anyhow!("{:#?}", e))
-            .context("DeprecatedOpenCapability")?;
-
+            .map_err(|e| anyhow!("Failed to connect to {capability_name} in {moniker}: {e:?}"))?;
         log::debug!("Returning target and proxy for {}@{}", target.nodename_str(), target.id());
         return Ok((target.as_ref().into(), client));
     }

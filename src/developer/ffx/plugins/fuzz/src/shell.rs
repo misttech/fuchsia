@@ -4,14 +4,14 @@
 
 use crate::fuzzer::Fuzzer;
 use crate::reader::{ParsedCommand, Reader};
-use anyhow::{anyhow, bail, Context as _, Error, Result};
+use anyhow::{Context as _, Error, Result, anyhow, bail};
 use errors::ffx_bail;
 use ffx_fuzz_args::*;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fuchsia_fuzzctl::{
-    get_corpus_type, get_fuzzer_urls, Manager, MonotonicDuration, OutputSink, Writer,
+    Manager, MonotonicDuration, OutputSink, Writer, get_corpus_type, get_fuzzer_urls,
 };
-use futures::{pin_mut, select, FutureExt};
+use futures::{FutureExt, pin_mut, select};
 use serde_json::json;
 use std::cell::RefCell;
 use std::fs;
@@ -617,36 +617,16 @@ impl<R: Reader, O: OutputSink> Shell<R, O> {
     async fn connect_to_manager(&self) -> Result<Manager> {
         // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
         let (proxy, server) = fidl::endpoints::create_proxy::<fuzz::ManagerMarker>();
-        if let Ok(response) = self
-            .remote_control
+        self.remote_control
             .connect_capability(
                 "/core/fuzz-manager",
                 fsys::OpenDirType::ExposedDir,
                 fuzz::ManagerMarker::PROTOCOL_NAME,
                 server.into_channel(),
             )
-            .await
-        {
-            response
-                .map_err(|e| anyhow!("{:?}", e))
-                .context("failed to connect to fuzz-manager")?;
-            return Ok(Manager::new(proxy));
-        }
-        // Fallback to fuchsia.developer.remotecontrol/RemoteControl.DeprecatedOpenCapability.
-        // This can be removed once we drop support for API level 27.
-        let (proxy, server) = fidl::endpoints::create_proxy::<fuzz::ManagerMarker>();
-        let response = self
-            .remote_control
-            .deprecated_open_capability(
-                "/core/fuzz-manager",
-                fsys::OpenDirType::ExposedDir,
-                fuzz::ManagerMarker::PROTOCOL_NAME,
-                server.into_channel(),
-                Default::default(),
-            )
-            .await
-            .context("fuchsia.developer.remotecontrol/OpenCapability")?;
-        response.map_err(|e| anyhow!("{:?}", e)).context("failed to connect to fuzz-manager")?;
+            .await?
+            .map_err(|e| anyhow!("{:?}", e))
+            .context("failed to connect to fuzz-manager")?;
         return Ok(Manager::new(proxy));
     }
 
@@ -676,13 +656,13 @@ impl<R: Reader, O: OutputSink> Shell<R, O> {
 mod test_fixtures {
     use super::Shell;
     use crate::reader::test_fixtures::ScriptReader;
-    use anyhow::{anyhow, Context as _, Result};
+    use anyhow::{Context as _, Result, anyhow};
     use ffx_fuzz_args::FuzzerState;
-    use fidl::endpoints::{create_proxy, DiscoverableProtocolMarker as _, ServerEnd};
+    use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd, create_proxy};
     use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
     use fuchsia_fuzzctl::MonotonicDuration;
     use fuchsia_fuzzctl_test::{
-        create_task, serve_manager, BufferSink, FakeController, Test, TEST_URL,
+        BufferSink, FakeController, TEST_URL, Test, create_task, serve_manager,
     };
     use futures::StreamExt;
     use std::fmt::Display;
@@ -857,12 +837,12 @@ mod test_fixtures {
 
 #[cfg(test)]
 mod tests {
-    use super::test_fixtures::ShellScript;
     use super::DEFAULT_FUZZING_OUTPUT_VARIABLE;
+    use super::test_fixtures::ShellScript;
     use anyhow::Result;
     use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
-    use fuchsia_fuzzctl::{digest_path, MonotonicDuration};
-    use fuchsia_fuzzctl_test::{verify_saved, Test, TEST_URL};
+    use fuchsia_fuzzctl::{MonotonicDuration, digest_path};
+    use fuchsia_fuzzctl_test::{TEST_URL, Test, verify_saved};
     use std::path::PathBuf;
     use zx_status as zx;
 

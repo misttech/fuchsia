@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use addr::TargetIpAddr;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_utils::async_once::Once;
 use ffx_daemon_events::TargetConnectionState;
 use ffx_daemon_target::target::Target;
@@ -14,8 +14,8 @@ use ffx_fastboot_connection_factory::{
 use ffx_fastboot_interface::fastboot_interface::RebootEvent;
 use ffx_ssh::ssh::build_ssh_command;
 use ffx_target::FastbootInterface;
-use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl::Error;
+use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_developer_ffx::{TargetRebootError, TargetRebootResponder, TargetRebootState};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_hardware_power_statecontrol::{
@@ -49,7 +49,9 @@ pub(crate) struct RebootController {
 
 #[derive(thiserror::Error, Debug, Clone)]
 enum FastbootConnectionError {
-    #[error("Passed Target Name was empty. Target name needs to be a non-empty string to support Target rediscovery")]
+    #[error(
+        "Passed Target Name was empty. Target name needs to be a non-empty string to support Target rediscovery"
+    )]
     EmptyTargetName,
 }
 
@@ -90,31 +92,15 @@ impl RebootController {
         let rcs_proxy = self.get_remote_proxy().await?;
         // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
         let (proxy, server) = fidl::endpoints::create_proxy::<AdminMarker>();
-        if let Ok(response) = rcs_proxy
+        rcs_proxy
             .connect_capability(
                 ADMIN_MONIKER,
                 fsys::OpenDirType::ExposedDir,
                 AdminMarker::PROTOCOL_NAME,
                 server.into_channel(),
             )
-            .await
-        {
-            response.map_err(|e| anyhow!("could not get admin proxy: {e:?}"))?;
-            return Ok(proxy);
-        }
-        // Fallback to fuchsia.developer.remotecontrol/RemoteControl.DeprecatedOpenCapability.
-        // This can be removed once we drop support for API level 27.
-        let (proxy, server) = fidl::endpoints::create_proxy::<AdminMarker>();
-        rcs_proxy
-            .deprecated_open_capability(
-                ADMIN_MONIKER,
-                fsys::OpenDirType::ExposedDir,
-                AdminMarker::PROTOCOL_NAME,
-                server.into_channel(),
-                Default::default(),
-            )
             .await?
-            .map_err(|_| anyhow!("could not get admin proxy"))?;
+            .map_err(|e| anyhow!("could not get admin proxy: {e:?}"))?;
         return Ok(proxy);
     }
 
@@ -340,7 +326,9 @@ pub(crate) fn handle_fidl_connection_err(e: Error, responder: TargetRebootRespon
             if protocol_name == "fuchsia.hardware.power.statecontrol.Admin" {
                 log::info!("Target reboot succeeded.");
             } else {
-                log::info!("Assuming target reboot succeeded. Client received a PEER_CLOSED from '{protocol_name}'");
+                log::info!(
+                    "Assuming target reboot succeeded. Client received a PEER_CLOSED from '{protocol_name}'"
+                );
             }
             log::debug!("{:?}", e);
             responder.send(Ok(()))?;
@@ -401,7 +389,7 @@ mod tests {
     use anyhow::anyhow;
     use assert_matches::assert_matches;
     use ffx_fastboot_connection_factory::test::setup_connection_factory;
-    use fidl::endpoints::{create_proxy_and_stream, RequestStream};
+    use fidl::endpoints::{RequestStream, create_proxy_and_stream};
     use fidl_fuchsia_developer_ffx::{TargetMarker, TargetProxy, TargetRequest};
     use fidl_fuchsia_developer_remotecontrol::{RemoteControlMarker, RemoteControlRequest};
     use fidl_fuchsia_hardware_power_statecontrol::{AdminRequest, AdminRequestStream};
