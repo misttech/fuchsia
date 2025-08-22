@@ -435,7 +435,7 @@ impl FakeClockController {
     }
 
     pub async fn get_monotonic(&self) -> Result<i64, fidl::Error> {
-        self.clock_proxy.get().await
+        self.clock_proxy.get().await.map(|(_boot, mono)| mono.into_nanos())
     }
 
     /// Returns the current fake instant on the reference timeline.

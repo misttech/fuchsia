@@ -12,41 +12,77 @@ using fuchsia.testing.deadline;
 closed protocol FakeClock {
     /// Gets the current time.
     strict Get() -> (struct {
-        time zx.Time;
+        boot_time zx.InstantBoot;
+        monotonic_time zx.InstantMono;
     });
+
     /// Registers the event handle `event` to be signaled with `ZX_EVENTPAIR_SIGNALED` when the
-    /// provided `time` is reached by the fake clock.
+    /// provided `time` is reached by the fake monotonic clock.
     /// The `FakeClock` instance will retain this event (even after it's fired) for as long as the
     /// client-side of the provided event pair `event` is open.
-    strict RegisterEvent(resource struct {
+    strict RegisterEventInMonotonic(resource struct {
         event zx.Handle:EVENTPAIR;
-        time zx.Time;
+        time zx.InstantMono;
     });
+
+    /// Registers the event handle `event` to be signaled with `ZX_EVENTPAIR_SIGNALED` when the
+    /// provided `time` is reached by the fake boot clock.
+    /// The `FakeClock` instance will retain this event (even after it's fired) for as long as the
+    /// client-side of the provided event pair `event` is open.
+    strict RegisterEventInBoot(resource struct {
+        event zx.Handle:EVENTPAIR;
+        time zx.InstantBoot;
+    });
+
     /// Reschedules an event to be signalled with `ZX_EVENTPAIR_SIGNALED` at the new deadline in
-    /// `time`.
+    /// `time` on the monotonic clock.
     /// `event` is a duplicate of the client-side of the event pair, and it's used to retrieve the
     /// originally registered event through its kernel object identifier.
-    strict RescheduleEvent(resource struct {
+    strict RescheduleEventInMonotonic(resource struct {
         event zx.Handle:EVENTPAIR;
-        time zx.Time;
-    }) -> ();
+        time zx.InstantMono;
+    }) -> () error zx.Status;
+
+    /// Reschedules an event to be signalled with `ZX_EVENTPAIR_SIGNALED` at the new deadline in
+    /// `time` on the boot clock.
+    /// `event` is a duplicate of the client-side of the event pair, and it's used to retrieve the
+    /// originally registered event through its kernel object identifier.
+    strict RescheduleEventInBoot(resource struct {
+        event zx.Handle:EVENTPAIR;
+        time zx.InstantBoot;
+    }) -> () error zx.Status;
+
     /// Cancels a previously registered event.
     /// `event` is a duplicate of the client-side of the event pair, and it's used to retrieve the
     /// originally registered event through its kernel object identifier.
     strict CancelEvent(resource struct {
         event zx.Handle:EVENTPAIR;
     }) -> ();
-    /// Calculate and set a deadline associated with an id.
+
+    /// Calculate and set a deadline associated with an id on the monotonic clock.
     /// The returned `deadline` is calculated as `duration` after the current fake time.
     /// FakeClock emits two events: A `SET` event immediately, and an `EXPIRED` event when the
     /// deadline expires. A test using `FakeClockControl` may reference events related to the
     /// deadline using a matching `id`. See `FakeClockControl.SetStopPoint` for information on how a
     /// test can wait for a deadline event.
-    strict CreateNamedDeadline(struct {
+    strict CreateNamedDeadlineInMonotonic(struct {
         id fuchsia.testing.deadline.DeadlineId;
         duration zx.Duration;
     }) -> (struct {
-        deadline zx.Time;
+        deadline zx.InstantMono;
+    });
+
+    /// Calculate and set a deadline associated with an id on the boot clock.
+    /// The returned `deadline` is calculated as `duration` after the current fake time.
+    /// FakeClock emits two events: A `SET` event immediately, and an `EXPIRED` event when the
+    /// deadline expires. A test using `FakeClockControl` may reference events related to the
+    /// deadline using a matching `id`. See `FakeClockControl.SetStopPoint` for information on how a
+    /// test can wait for a deadline event.
+    strict CreateNamedDeadlineInBoot(struct {
+        id fuchsia.testing.deadline.DeadlineId;
+        duration zx.Duration;
+    }) -> (struct {
+        deadline zx.InstantBoot;
     });
 };
 
@@ -87,12 +123,23 @@ type Increment = strict union {
 /// up.
 @discoverable
 closed protocol FakeClockControl {
-    /// Advances the fake clock `increment` once.
+    /// Advances the fake clock `increment` once. This advances both monotonic and boot clocks by
+    /// the same amount.
     /// Returns `ZX_ERR_INVALID_ARGS` if the provided `increment` is invalid (such as a badly formed
     /// RandomRange). Returns `ZX_ERR_ACCESS_DENIED` if called while the FakeClock is free-running.
     strict Advance(struct {
         increment Increment;
     }) -> () error zx.Status;
+
+    /// Increments the mono-to-boot offset by the given `increment`. With real
+    /// clocks, the positive offset from monotonic clock to boot clock increases
+    /// during suspend. Here, this method fakes such an increase in offset.
+    /// `increment` must be a positive duration.
+    /// Returns `ZX_ERR_INVALID_ARGS` if the provided `increment` is not positive.
+    strict IncrementMonoToBootOffsetBy(struct {
+        increment zx.Duration;
+    }) -> () error zx.Status;
+
     /// Resumes free-running increments on the fake clock.
     /// `real` is the period based on the real monotonic clock over which `increment` is going to be
     /// applied. Returns `ZX_ERR_INVALID_ARGS` if the provided `increment` is invalid (such as a
@@ -101,6 +148,7 @@ closed protocol FakeClockControl {
         real zx.Duration;
         increment Increment;
     }) -> () error zx.Status;
+
     /// Registers interest in a deadline event.
     /// `deadline_id` and `event_type` identify the named deadline and the event associated with
     /// the deadline. When the event occurs, FakeClock will signal `EVENTPAIR_SIGNALED` on
@@ -121,8 +169,10 @@ closed protocol FakeClockControl {
         event_type DeadlineEventType;
         on_stop zx.Handle:EVENTPAIR;
     }) -> () error zx.Status;
+
     /// Pauses free-running increments on the fake clock.
     strict Pause() -> ();
+
     /// Instructs the fake clock to make deadlines named `deadline_id` never expire.
     /// This is a no-op if `deadline_id` is already in the ignored set.
     strict IgnoreNamedDeadline(struct {

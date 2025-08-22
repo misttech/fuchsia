@@ -1,8 +1,5 @@
 # Fake-clock
 
-> At the moment, the fake-clock library returns identical results from monotonic
-> and boot clocks.
-
 A system enabling a test component to manipulate monotonic and boot time for
 components under test.
 
@@ -95,6 +92,57 @@ The test may then connect to
 
 See the [examples][examples] directory for example setups.
 
+## Design Invariants
+
+When using `FakeClockControl` to manipulate time, it's important to be aware of the following
+invariants to avoid putting the system into an inconsistent state:
+
+*   **Advance of Monotonic Clock Advances the Boot Clock:** The `Advance` method
+    in `FakeClockControl` takes a single increment which is applied to both
+    clocks equally. This prevents the monotonic clock from moving forward
+    independently of the boot clock.
+
+*   **Mono-to-Boot Offset is Always Non-Negative and Never Decreases:** The
+    offset between the boot and monotonic clocks (`boot_time - monotonic_time`)
+    must obey these two invariants. The FIDL API offers
+    `IncrementMonoToBootOffsetBy` to allow advances on the boot clock
+    independently of the monotonic clock.
+
+Adhering to these invariants is crucial for maintaining a consistent and predictable timeline
+during testing.
+
+## Boot Clock Support
+
+In addition to the monotonic clock, the fake-clock library provides full
+support for `ZX_CLOCK_BOOT`. Tests can create, set, and cancel boot timers, and
+the fake-clock service will correctly manage their lifecycle.
+
+### How it Works
+
+The library intercepts the `zx_timer_create` syscall. When a timer is created,
+its handle and the specified clock type (`ZX_CLOCK_MONOTONIC` or
+`ZX_CLOCK_BOOT`) are stored in a client-side map. Subsequent calls like
+`zx_timer_set` use this map to determine which clock the timer belongs to and
+forward the request to the correct implementation in the fake-clock service.
+
+### Example Usage
+
+Here is a simple example of creating and waiting on a boot timer in a test:
+
+```cpp
+TEST_F(FakeClockTest, timer_fire_boot) {
+  auto [t1_boot, _] = GetTime();
+  auto deadline = t1_boot + zx::msec(500);
+  zx::timer timer;
+  ASSERT_OK(zx::timer::create(0, ZX_CLOCK_BOOT, &timer));
+  ASSERT_OK(timer.set(deadline, /*slack*/zx::msec(10)));
+  Advance(zx::msec(500), zx::msec(600));
+  zx_signals_t signals;
+  ASSERT_OK(timer.wait_one(ZX_TIMER_SIGNALED, zx::time::infinite(), &signals));
+  ASSERT_EQ(signals, ZX_TIMER_SIGNALED);
+}
+```
+
 ## Troubleshooting
 
 ### "UTC clock may interact in unexpected ways with the fake-clock library"
@@ -126,4 +174,3 @@ fix this are:
 [examples]: examples/
 [ttrf]: /src/sys/time/testing/realm-proxy/README.md
 [tr]: https://fuchsia.dev/fuchsia-src/development/testing/components/test_realm_factory
-

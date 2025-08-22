@@ -29,29 +29,49 @@ class FakeClockTest : public gtest::RealLoopFixture {
     return ret;
   }
 
-  void Advance(zx::duration dur) {
+  void Advance(zx::duration adv) {
     mock_clock::FakeClockControl_Advance_Result result;
-    ASSERT_OK(mock_clock->Advance(MakeIncrement(dur), &result));
+    ASSERT_OK(mock_clock->Advance(MakeIncrement(adv), &result));
     ASSERT_TRUE(result.is_response());
   }
 
-  static zx::time GetTime() { return zx::time(zx_clock_get_monotonic()); }
+  void IncrementMonoToBootOffset(zx::duration offset) {
+    mock_clock::FakeClockControl_IncrementMonoToBootOffsetBy_Result result;
+    ASSERT_OK(mock_clock->IncrementMonoToBootOffsetBy(offset.to_nsecs(), &result));
+    ASSERT_TRUE(result.is_response());
+  }
+
+  std::pair<zx::time_boot, zx::time_monotonic> GetTime() {
+    return {zx::time_boot(zx_clock_get_boot()), zx::time_monotonic(zx_clock_get_monotonic())};
+  }
 
   mock_clock::FakeClockControlSyncPtr mock_clock;
 };
 
-TEST_F(FakeClockTest, get_monotonic) {
-  auto t1 = GetTime();
+TEST_F(FakeClockTest, get_time) {
+  auto [t1_boot, t1_mono] = GetTime();
   auto adv = zx::msec(500);
   Advance(adv);
-  auto t2 = GetTime();
-  ASSERT_EQ(t1 + adv, t2);
+  auto [t2_boot, t2_mono] = GetTime();
+  ASSERT_EQ(t1_mono + adv, t2_mono);
+  ASSERT_EQ(t1_boot + adv, t2_boot);
+}
+
+TEST_F(FakeClockTest, get_boot_clock) {
+  auto [t1_boot, t1_mono] = GetTime();
+  auto boot_adv = zx::msec(500);
+  auto mono_adv = zx::msec(100);
+  Advance(mono_adv);
+  IncrementMonoToBootOffset(boot_adv - mono_adv);
+  auto [t2_boot, t2_mono] = GetTime();
+  ASSERT_EQ(t1_boot + boot_adv, t2_boot);
+  ASSERT_EQ(t1_mono + mono_adv, t2_mono);
 }
 
 TEST_F(FakeClockTest, deadline_after) {
-  auto t1 = GetTime();
+  auto [_, t1_mono] = GetTime();
   auto t2 = zx::deadline_after(zx::msec(500));
-  ASSERT_EQ(t1 + zx::msec(500), t2);
+  ASSERT_EQ(t1_mono + zx::msec(500), t2);
 }
 
 TEST_F(FakeClockTest, nanosleep) {
@@ -245,6 +265,19 @@ TEST_F(FakeClockTest, timer_fire) {
   ASSERT_EQ(signals, ZX_TIMER_SIGNALED);
 }
 
+TEST_F(FakeClockTest, timer_fire_boot) {
+  auto [t1_boot, _] = GetTime();
+  auto deadline = t1_boot + zx::msec(500);
+  zx::timer timer;
+  ASSERT_OK(zx::timer::create(0, ZX_CLOCK_BOOT, &timer));
+  ASSERT_OK(timer.set(deadline, /*slack*/ zx::msec(10)));
+  Advance(zx::msec(400));
+  IncrementMonoToBootOffset(zx::msec(100));
+  zx_signals_t signals;
+  ASSERT_OK(timer.wait_one(ZX_TIMER_SIGNALED, zx::time::infinite(), &signals));
+  ASSERT_EQ(signals, ZX_TIMER_SIGNALED);
+}
+
 TEST_F(FakeClockTest, timer_cancel) {
   auto deadline = zx::deadline_after(zx::msec(500));
   zx::timer timer;
@@ -264,4 +297,33 @@ TEST_F(FakeClockTest, timer_cancel) {
   ASSERT_EQ(timer.wait_one(ZX_TIMER_SIGNALED, zx::time(0), &signals), ZX_OK);
   ASSERT_OK(timer.cancel());
   ASSERT_EQ(timer.wait_one(ZX_TIMER_SIGNALED, zx::time(0), &signals), ZX_ERR_TIMED_OUT);
+}
+
+TEST_F(FakeClockTest, timer_cancel_boot) {
+  auto [t1_boot, _] = GetTime();
+  auto deadline = t1_boot + zx::msec(500);
+  zx::timer timer;
+  ASSERT_OK(zx::timer::create(0, ZX_CLOCK_BOOT, &timer));
+  // set timer to some deadline
+  ASSERT_OK(timer.set(deadline, zx::msec(10)));
+  zx_signals_t signals;
+  // cancel and then advance the timer, check that it wasn't signaled
+  ASSERT_OK(timer.cancel());
+  Advance(zx::msec(500));
+  ASSERT_EQ(timer.wait_one(ZX_TIMER_SIGNALED, zx::time(0), &signals), ZX_ERR_TIMED_OUT);
+
+  deadline = t1_boot + zx::msec(1000);
+  ASSERT_OK(timer.set(deadline, zx::msec(10)));
+  // trigger and then cancel the timer, cancelling the timer MUST clear the signaled bit
+  Advance(zx::msec(500));
+  ASSERT_EQ(timer.wait_one(ZX_TIMER_SIGNALED, zx::time(0), &signals), ZX_OK);
+  ASSERT_OK(timer.cancel());
+  ASSERT_EQ(timer.wait_one(ZX_TIMER_SIGNALED, zx::time(0), &signals), ZX_ERR_TIMED_OUT);
+}
+
+TEST_F(FakeClockTest, IncrementMonoToBootOffsetBy_Negative) {
+  mock_clock::FakeClockControl_IncrementMonoToBootOffsetBy_Result result;
+  ASSERT_OK(mock_clock->IncrementMonoToBootOffsetBy(zx::msec(-1).to_nsecs(), &result));
+  ASSERT_TRUE(result.is_err());
+  ASSERT_EQ(result.err(), ZX_ERR_INVALID_ARGS);
 }

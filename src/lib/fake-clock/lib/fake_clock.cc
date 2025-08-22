@@ -13,13 +13,52 @@
 #include <zircon/utc.h>
 
 #include <atomic>
+#include <map>
 #include <mutex>
+#include <thread>
 
 #include <src/lib/fake-clock/named-timer/named_timer.h>
 
 namespace fake_clock = fuchsia_testing;
 
 namespace {
+
+// Every timer is associated with either the monotonic clock or the boot clock.
+// This implementation needs to track that association. This class stores that
+// mapping in a thread-safe way.
+class ClockOfTimer {
+ public:
+  // Get the singleton instance of the manager.
+  static ClockOfTimer& GetInstance() {
+    static ClockOfTimer* instance = new ClockOfTimer();
+    return *instance;
+  }
+
+  // Thread-safe method to associate a clock type with a handle.
+  void SetClockType(zx_handle_t handle, zx_clock_t clock_id) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    clock_map_[handle] = clock_id;
+  }
+
+  // Thread-safe method to retrieve the clock type for a handle.
+  // Panics if the handle is not found.
+  zx_clock_t GetClockType(zx_handle_t handle) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    auto it = clock_map_.find(handle);
+    if (it != clock_map_.end()) {
+      return it->second;
+    }
+    ZX_PANIC("Could not find clock type for handle %d", handle);
+  }
+
+ private:
+  // Private constructor to enforce singleton pattern.
+  ClockOfTimer() = default;
+
+  std::mutex mutex_;
+  std::map<zx_handle_t, zx_clock_t> clock_map_;
+};
+
 fidl::UnownedClientEnd<fake_clock::FakeClock> GetService() {
   static std::once_flag svc_connect_once;
   static fidl::ClientEnd<fake_clock::FakeClock> fake_clock;
@@ -40,12 +79,24 @@ fidl::UnownedClientEnd<fake_clock::FakeClock> GetService() {
   return fake_clock.borrow();
 }
 
-zx::eventpair MakeEvent(zx_time_t deadline) {
+zx::eventpair MakeEvent(zx_time_t deadline, zx_clock_t clock_id) {
   zx::eventpair l, r;
   if (zx_status_t status = zx::eventpair::create(0, &l, &r); status != ZX_OK) {
     ZX_PANIC("%s", zx_status_get_string(status));
   }
-  const fidl::Status result = fidl::WireCall(GetService())->RegisterEvent(std::move(r), deadline);
+  fidl::Status result;
+  switch (clock_id) {
+    case ZX_CLOCK_MONOTONIC:
+      result =
+          fidl::WireCall(GetService())->RegisterEventInMonotonic(std::move(r), zx::time(deadline));
+      break;
+    case ZX_CLOCK_BOOT:
+      result =
+          fidl::WireCall(GetService())->RegisterEventInBoot(std::move(r), zx::time_boot(deadline));
+      break;
+    default:
+      ZX_PANIC("Unsupported clock ID: %d", clock_id);
+  }
   ZX_ASSERT_MSG(result.ok(), "%s", result.FormatDescription().c_str());
   return l;
 }
@@ -124,13 +175,13 @@ __EXPORT zx_status_t zx_channel_call(zx_handle_t handle, uint32_t options, zx_ti
 __EXPORT zx_time_t zx_clock_get_monotonic() {
   const fidl::WireResult result = fidl::WireCall(GetService())->Get();
   ZX_ASSERT_MSG(result.ok(), "%s", result.FormatDescription().c_str());
-  return result.value().time;
+  return result.value().monotonic_time.get();
 }
 
 __EXPORT zx_time_t zx_clock_get_boot() {
-  // For now, treat the boot clock and the monotonic clock exactly the same when
-  // fake clock is used.
-  return zx_clock_get_monotonic();
+  const fidl::WireResult result = fidl::WireCall(GetService())->Get();
+  ZX_ASSERT_MSG(result.ok(), "%s", result.FormatDescription().c_str());
+  return result.value().boot_time.get();
 }
 
 __EXPORT zx_time_t zx_deadline_after(zx_duration_t duration) {
@@ -138,7 +189,7 @@ __EXPORT zx_time_t zx_deadline_after(zx_duration_t duration) {
 }
 
 __EXPORT zx_status_t zx_nanosleep(zx_time_t deadline) {
-  zx::eventpair e = MakeEvent(deadline);
+  zx::eventpair e = MakeEvent(deadline, ZX_CLOCK_MONOTONIC);
   if (zx_status_t status =
           _zx_object_wait_one(e.get(), ZX_EVENTPAIR_SIGNALED, ZX_TIME_INFINITE, nullptr) != ZX_OK) {
     ZX_PANIC("%s", zx_status_get_string(status));
@@ -153,7 +204,8 @@ __EXPORT zx_status_t zx_object_wait_one(zx_handle_t handle, zx_signals_t signals
   if (deadline == ZX_TIME_INFINITE || deadline == 0) {
     return _zx_object_wait_one(handle, signals, deadline, observed);
   }
-  zx::eventpair e = MakeEvent(deadline);
+
+  zx::eventpair e = MakeEvent(deadline, ZX_CLOCK_MONOTONIC);
   zx_wait_item_t items[] = {
       {
           .handle = e.get(),
@@ -200,7 +252,7 @@ __EXPORT zx_status_t zx_object_wait_many(zx_wait_item_t* items, size_t num_items
         return status;
       }
     }
-    zx::eventpair event = MakeEvent(deadline);
+    zx::eventpair event = MakeEvent(deadline, ZX_CLOCK_MONOTONIC);
     if (zx_status_t status =
             _zx_object_wait_async(event.get(), port.get(), num_items, ZX_EVENTPAIR_SIGNALED, 0);
         status != ZX_OK) {
@@ -239,7 +291,7 @@ __EXPORT zx_status_t zx_object_wait_many(zx_wait_item_t* items, size_t num_items
   // we can just add an extra item, but we'll need to copy all the wait items
   zx_wait_item_t tmp[ZX_WAIT_MANY_MAX_ITEMS];
   std::copy_n(items, num_items, tmp);
-  zx::eventpair event = MakeEvent(deadline);
+  zx::eventpair event = MakeEvent(deadline, ZX_CLOCK_MONOTONIC);
   tmp[num_items].pending = 0;
   tmp[num_items].waitfor = ZX_EVENTPAIR_SIGNALED;
   tmp[num_items].handle = event.get();
@@ -292,7 +344,7 @@ __EXPORT zx_status_t zx_port_wait(zx_handle_t handle, zx_time_t deadline,
     return status;
   }
 
-  zx::eventpair event = MakeEvent(deadline);
+  zx::eventpair event = MakeEvent(deadline, ZX_CLOCK_MONOTONIC);
   uint64_t private_syscall_key = GetPortKeyNamespace().AddNewPrivateKey();
   if (zx_status_t status =
           _zx_object_wait_async(event.get(), handle, private_syscall_key, ZX_EVENTPAIR_SIGNALED, 0);
@@ -329,20 +381,44 @@ __EXPORT zx_status_t zx_timer_create(uint32_t options, zx_clock_t clock_id, zx_h
     return _zx_timer_create(options, clock_id, out);
   }
   // Create an event with infinite deadline and return that instead of a timer handle
-  *out = MakeEvent(ZX_TIME_INFINITE).release();
+  *out = MakeEvent(ZX_TIME_INFINITE, clock_id).release();
+  ClockOfTimer::GetInstance().SetClockType(*out, clock_id);
   return ZX_OK;
 }
 
 __EXPORT zx_status_t zx_timer_set(zx_handle_t handle, zx_time_t deadline, zx_duration_t slack) {
+  zx_clock_t clock_id = ClockOfTimer::GetInstance().GetClockType(handle);
+
   zx::eventpair e;
   if (zx_status_t status = zx::unowned_eventpair(handle)->duplicate(ZX_RIGHT_SAME_RIGHTS, &e);
       status != ZX_OK) {
     return status;
   }
-  // reschedule the event with the fake clock service:
-  const fidl::WireResult result =
-      fidl::WireCall(GetService())->RescheduleEvent(std::move(e), deadline);
-  ZX_ASSERT_MSG(result.ok(), "%s", result.FormatDescription().c_str());
+
+  switch (clock_id) {
+    case ZX_CLOCK_MONOTONIC: {
+      auto result = fidl::WireCall(GetService())
+                        ->RescheduleEventInMonotonic(std::move(e), zx::time(deadline));
+      if (!result.ok()) {
+        return result.status();
+      }
+      if (result->is_error()) {
+        return result->error_value();
+      }
+      break;
+    }
+    case ZX_CLOCK_BOOT: {
+      auto result = fidl::WireCall(GetService())
+                        ->RescheduleEventInBoot(std::move(e), zx::time_boot(deadline));
+      if (!result.ok()) {
+        return result.status();
+      }
+      if (result->is_error()) {
+        return result->error_value();
+      }
+      break;
+    }
+  }
   return ZX_OK;
 }
 
@@ -361,14 +437,14 @@ __EXPORT bool create_named_deadline(char* component, size_t component_len, char*
                                     size_t code_len, zx_time_t duration, zx_time_t* out) {
   const fidl::WireResult result =
       fidl::WireCall(GetService())
-          ->CreateNamedDeadline(
+          ->CreateNamedDeadlineInMonotonic(
               {
                   .component_id = fidl::StringView::FromExternal(component, component_len),
                   .code = fidl::StringView::FromExternal(code, code_len),
               },
               duration);
   ZX_ASSERT_MSG(result.ok(), "%s", result.FormatDescription().c_str());
-  *out = result.value().deadline;
+  *out = result.value().deadline.get();
   return true;
 }
 
