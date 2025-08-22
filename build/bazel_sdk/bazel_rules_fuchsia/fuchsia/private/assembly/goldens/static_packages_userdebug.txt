@@ -84,6 +84,7 @@ pkg-resolver
 ?sampler
 ?scene_manager
 ?scenic
+?scp
 ?sensor-config
 ?sensors
 serial

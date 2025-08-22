@@ -26,7 +26,6 @@ group("tools") {
     "//third_party/boringssl:boringssl_tool",
     "//third_party/curl:curl_pkg",
     "//third_party/iperf:iperf3_pkg",
-    "//third_party/openssh-portable:scp-shell-pkg",
     "//third_party/openssh-portable:ssh-keygen-shell-pkg",
     "//third_party/openssh-portable:ssh-shell-pkg",
   ]

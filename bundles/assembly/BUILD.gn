@@ -1461,10 +1461,6 @@ assembly_input_bundle("core_realm_eng") {
       components = [ "curl" ]
     },
     {
-      package = "scp"
-      components = [ "scp" ]
-    },
-    {
       package = "ssh-keygen"
       components = [ "ssh-keygen" ]
     },
@@ -1601,6 +1597,7 @@ assembly_input_bundle("core_realm_development_access") {
   base_packages = [
     # SSH is necessary for remote access for development
     "//src/developer/sshd-host",
+    "//third_party/openssh-portable:scp-shell-pkg",
 
     # Process resolver enables cli commands to be resolved to components.
     "//src/sys/process-resolver",
@@ -1652,6 +1649,10 @@ assembly_input_bundle("core_realm_development_access") {
         "remote_control_runner",
         "remote_control_bin",
       ]
+    },
+    {
+      package = "scp"
+      components = [ "scp" ]
     },
     {
       package = "snapshot"

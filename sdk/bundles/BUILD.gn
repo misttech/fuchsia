@@ -19,7 +19,6 @@ group("core-tools") {
     "//src/sys/pkg/bin/far",
     "//src/ui/tools:scenic",
     "//third_party/curl:curl_pkg",
-    "//third_party/openssh-portable:scp-shell-pkg",
     "//third_party/openssh-portable:ssh-keygen-shell-pkg",
     "//third_party/openssh-portable:ssh-shell-pkg",
   ]
