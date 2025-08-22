@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _, Error};
-use fidl::endpoints::{create_proxy, Proxy};
-use fidl::HandleBased;
+use anyhow::{Context as _, Error, anyhow};
+use fidl::endpoints::{Proxy, create_proxy};
+use fidl::{HandleBased, endpoints};
 use fidl_fuchsia_test::{self as ftest};
 use frunner::ComponentNamespaceEntry;
 use ftest::CaseListenerProxy;
@@ -13,6 +13,7 @@ use futures::StreamExt;
 use gtest_runner_lib::parser::read_file;
 use log::debug;
 use namespace::Namespace;
+use std::collections::HashMap;
 use {
     fidl_fuchsia_component_runner as frunner, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio,
     fidl_fuchsia_process as fprocess, fuchsia_runtime as fruntime,
@@ -389,4 +390,40 @@ pub fn start_top_level_report(
     )?;
 
     Ok(overall_test_listener_proxy)
+}
+
+pub fn format_arg(test_type: TestType, test_arg: &str) -> String {
+    match test_type {
+        TestType::Gtest | TestType::GtestXmlOutput => {
+            format!("--gtest_{}", test_arg)
+        }
+        TestType::Gunit => format!("--gunit_{}", test_arg),
+        _ => panic!("unexpected test type"),
+    }
+}
+
+pub fn start_tests(
+    tests: &Vec<ftest::Invocation>,
+    run_listener_proxy: &ftest::RunListenerProxy,
+) -> Result<HashMap<String, CaseListenerProxy>, Error> {
+    let mut run_listener_proxies = HashMap::new();
+    for test in tests {
+        let test_name = test.name.clone().expect("No test name.");
+
+        let (case_listener_proxy, case_listener) =
+            endpoints::create_proxy::<ftest::CaseListenerMarker>();
+        run_listener_proxy.on_test_case_started(
+            &test,
+            ftest::StdHandles::default(),
+            case_listener,
+        )?;
+
+        run_listener_proxies.insert(test_name, case_listener_proxy);
+    }
+
+    Ok(run_listener_proxies)
+}
+
+pub fn unique_test_result_filename() -> String {
+    format!("test_result-{}.json", uuid::Uuid::new_v4())
 }

@@ -4,11 +4,10 @@
 
 use crate::{helpers, results_parser};
 use anyhow::{Context, Error};
-use fidl::endpoints;
 use fidl_fuchsia_test::{self as ftest, Result_ as TestResult, Status};
 use ftest::CaseListenerProxy;
-use futures::io::BufReader;
 use futures::AsyncBufReadExt;
+use futures::io::BufReader;
 use gtest_runner_lib::parser;
 use gtest_runner_lib::parser::{IndividualTestOutputStatus, TestSuiteOutput};
 use helpers::TestType;
@@ -30,10 +29,10 @@ pub async fn get_cases_list_for_gtests(
 ) -> Result<Vec<ftest::Case>, Error> {
     log::debug!("getting test cases for gtest");
     // Replace the program args to get test cases in a json file.
-    let list_tests_arg = format_arg(test_type, LIST_TESTS_ARG);
-    let output_file_name = unique_filename();
+    let list_tests_arg = helpers::format_arg(test_type, LIST_TESTS_ARG);
+    let output_file_name = helpers::unique_test_result_filename();
     let output_path = format!("output=json:{}{}", OUTPUT_PATH, output_file_name);
-    let output_arg = format_arg(test_type, &output_path);
+    let output_arg = helpers::format_arg(test_type, &output_path);
     helpers::replace_program_args(
         vec![list_tests_arg, output_arg],
         start_info.program.as_mut().context("No program.")?,
@@ -100,7 +99,7 @@ pub async fn run_gunit_cases(
     )?;
 
     // Notify test manager of cases starting.
-    let mut run_listener_proxies = start_tests(&tests, run_listener_proxy)?;
+    let mut run_listener_proxies = helpers::start_tests(&tests, run_listener_proxy)?;
     let test_filter_arg = create_tests_filter_arg(&tests, TestType::Gunit);
     helpers::append_program_args(
         vec![test_filter_arg],
@@ -190,17 +189,17 @@ pub async fn execute_gtests(
     test_type: TestType,
 ) -> Result<(HashMap<String, CaseListenerProxy>, Vec<TestSuiteOutput>), Error> {
     // Notify test manager of cases starting.
-    let run_listener_proxies = start_tests(&tests, run_listener_proxy)?;
+    let run_listener_proxies = helpers::start_tests(&tests, run_listener_proxy)?;
     let test_filter_arg = create_tests_filter_arg(&tests, test_type);
 
-    let output_file_name = unique_filename();
+    let output_file_name = helpers::unique_test_result_filename();
     let output_format = match test_type {
         TestType::Gtest => "json",
         TestType::GtestXmlOutput => "xml",
         _ => panic!("unexpected test type"),
     };
 
-    let output_arg = format_arg(
+    let output_arg = helpers::format_arg(
         test_type,
         &format!("output={}:{}{}", output_format, OUTPUT_PATH, output_file_name),
     );
@@ -269,50 +268,14 @@ pub fn report_test_results(
     Ok(())
 }
 
-fn start_tests(
-    tests: &Vec<ftest::Invocation>,
-    run_listener_proxy: &ftest::RunListenerProxy,
-) -> Result<HashMap<String, CaseListenerProxy>, Error> {
-    let mut run_listener_proxies = HashMap::new();
-    for test in tests {
-        let test_name = test.name.clone().expect("No test name.");
-
-        let (case_listener_proxy, case_listener) =
-            endpoints::create_proxy::<ftest::CaseListenerMarker>();
-        run_listener_proxy.on_test_case_started(
-            &test,
-            ftest::StdHandles::default(),
-            case_listener,
-        )?;
-
-        run_listener_proxies.insert(test_name, case_listener_proxy);
-    }
-
-    Ok(run_listener_proxies)
-}
-
 pub fn create_tests_filter_arg(tests: &Vec<ftest::Invocation>, test_type: TestType) -> String {
-    let mut test_filter_arg = format_arg(test_type, FILTER_ARG);
+    let mut test_filter_arg = helpers::format_arg(test_type, FILTER_ARG);
     for test in tests {
         let test_name = test.name.clone().expect("No test name.");
         test_filter_arg = format!("{}{}:", test_filter_arg, &test_name);
     }
 
     test_filter_arg
-}
-
-fn format_arg(test_type: TestType, test_arg: &str) -> String {
-    match test_type {
-        TestType::Gtest | TestType::GtestXmlOutput => {
-            format!("--gtest_{}", test_arg)
-        }
-        TestType::Gunit => format!("--gunit_{}", test_arg),
-        _ => panic!("unexpected test type"),
-    }
-}
-
-fn unique_filename() -> String {
-    format!("test_result-{}.json", uuid::Uuid::new_v4())
 }
 
 /// We may have unresolved cases if the test was explicitly disabled, but also if running the test
