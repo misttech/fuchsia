@@ -24,39 +24,6 @@ pub(crate) fn stricter_or_same_rights(parent_flags: fio::OpenFlags, flags: fio::
     return !rights.intersects(!parent_rights);
 }
 
-/// Common logic for rights processing during cloning a node, shared by both file and directory
-/// implementations.
-pub(crate) fn inherit_rights_for_clone(
-    parent_flags: fio::OpenFlags,
-    mut flags: fio::OpenFlags,
-) -> Result<fio::OpenFlags, Status> {
-    if flags.intersects(fio::OpenFlags::CLONE_SAME_RIGHTS) && flags.intersects(FS_RIGHTS) {
-        return Err(Status::INVALID_ARGS);
-    }
-
-    // We preserve OPEN_FLAG_APPEND as this is what is the most convenient for the POSIX emulation.
-    //
-    // OPEN_FLAG_NODE_REFERENCE is enforced, according to our current FS permissions design.
-    flags |= parent_flags & (fio::OpenFlags::APPEND | fio::OpenFlags::NODE_REFERENCE);
-
-    // If CLONE_FLAG_SAME_RIGHTS is requested, cloned connection will inherit the same rights
-    // as those from the originating connection.  We have ensured that no FS_RIGHTS flags are set
-    // above.
-    if flags.intersects(fio::OpenFlags::CLONE_SAME_RIGHTS) {
-        flags &= !fio::OpenFlags::CLONE_SAME_RIGHTS;
-        flags |= parent_flags & FS_RIGHTS;
-    }
-
-    if !stricter_or_same_rights(parent_flags, flags) {
-        return Err(Status::ACCESS_DENIED);
-    }
-
-    // Ignore the POSIX flags for clone.
-    flags &= !(fio::OpenFlags::POSIX_WRITABLE | fio::OpenFlags::POSIX_EXECUTABLE);
-
-    Ok(flags)
-}
-
 /// A helper method to send OnOpen event on the handle owned by the `server_end` in case `flags`
 /// contains `OPEN_FLAG_STATUS`.
 ///

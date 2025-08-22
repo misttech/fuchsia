@@ -120,11 +120,18 @@ void DirectoryConnection::Unbind() {
     binding_->Unbind();
 }
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 void DirectoryConnection::DeprecatedClone(DeprecatedCloneRequestView request,
                                           DeprecatedCloneCompleter::Sync& completer) {
-  Connection::NodeCloneDeprecated(request->flags, VnodeProtocol::kDirectory,
-                                  std::move(request->object));
+  fidl::ServerEnd<fio::Node> server_end{std::move(request->object)};
+  if (request->flags & fio::wire::OpenFlags::kDescribe) {
+    // Ignore errors since there is nothing we can do if this fails.
+    [[maybe_unused]] auto result =
+        fidl::WireSendEvent(server_end)->OnOpen(ZX_ERR_NOT_SUPPORTED, {});
+  }
+  server_end.Close(ZX_ERR_NOT_SUPPORTED);
 }
+#endif
 
 void DirectoryConnection::Clone(CloneRequestView request, CloneCompleter::Sync& completer) {
   Connection::NodeClone(fio::Flags::kProtocolDirectory | fs::internal::RightsToFlags(rights()),

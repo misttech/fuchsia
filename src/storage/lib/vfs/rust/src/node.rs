@@ -4,7 +4,7 @@
 
 //! Implementation of a (limited) node connection.
 
-use crate::common::{IntoAny, inherit_rights_for_clone};
+use crate::common::IntoAny;
 use crate::directory::entry::GetEntryInfo;
 use crate::directory::entry_container::MutableDirectory;
 use crate::execution_scope::ExecutionScope;
@@ -12,7 +12,7 @@ use crate::name::Name;
 use crate::object_request::{ConnectionCreator, Representation, run_synchronous_future_or_spawn};
 use crate::protocols::ToNodeOptions;
 use crate::request_handler::{RequestHandler, RequestListener};
-use crate::{ObjectRequest, ObjectRequestRef, ToObjectRequest};
+use crate::{ObjectRequest, ObjectRequestRef};
 use anyhow::Error;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_io as fio;
@@ -162,8 +162,16 @@ impl<N: Node> Connection<N> {
     /// Handle a [`NodeRequest`].
     async fn handle_request(&mut self, req: fio::NodeRequest) -> Result<ConnectionState, Error> {
         match req {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             fio::NodeRequest::DeprecatedClone { flags, object, control_handle: _ } => {
-                self.handle_clone_deprecated(flags, object).await;
+                crate::common::send_on_open_with_error(
+                    flags.contains(fio::OpenFlags::DESCRIBE),
+                    object,
+                    Status::NOT_SUPPORTED,
+                );
             }
             fio::NodeRequest::Clone { request, control_handle: _ } => {
                 // Suppress any errors in the event a bad `request` channel was provided.
@@ -253,33 +261,6 @@ impl<N: Node> Connection<N> {
             fio::NodeRequest::_UnknownMethod { .. } => (),
         }
         Ok(ConnectionState::Alive)
-    }
-
-    async fn handle_clone_deprecated(
-        &mut self,
-        flags: fio::OpenFlags,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) {
-        flags
-            .to_object_request(server_end)
-            .handle_async(async |object_request| {
-                let options = inherit_rights_for_clone(fio::OpenFlags::NODE_REFERENCE, flags)?
-                    .to_node_options(self.node.entry_info().type_())?;
-
-                self.node.will_clone();
-
-                let connection = Self {
-                    scope: self.scope.clone(),
-                    node: OpenNode::new(self.node.clone()),
-                    options,
-                };
-
-                let requests = object_request.take().into_request_stream(&connection).await?;
-                self.scope.spawn(RequestListener::new(requests, connection));
-
-                Ok(())
-            })
-            .await;
     }
 
     fn handle_clone(&mut self, server_end: ServerEnd<fio::NodeMarker>) {
