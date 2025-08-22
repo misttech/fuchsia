@@ -220,7 +220,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // Exposed for testing.
   Node* GetPrimaryParent() const {
     if (auto* composite = std::get_if<Composite>(&type_); composite) {
-      return composite->parents_[composite->primary_index_].lock().get();
+      if (composite->primary_index_ < composite->parents_.size()) {
+        return composite->parents_[composite->primary_index_].lock().get();
+      }
+      return nullptr;
     }
     auto parent = std::get<Normal>(type_).parent_.lock();
     return parent ? parent.get() : nullptr;
