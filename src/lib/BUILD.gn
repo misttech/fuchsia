@@ -82,6 +82,7 @@ group("tests") {
     "pty:tests",
     "replace-with:tests",
     "rust_url:tests",
+    "sandbox:tests",
     "scoped_task:tests",
     "security:tests",
     "shared-buffer:tests",
