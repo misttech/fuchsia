@@ -67,9 +67,11 @@ enum class Error : uint8_t {
 
 // Convenience method that provide an approximate mapping to Zircon error values.
 zx::error<zx_status_t> ErrorToZxError(Error e);
+zx::error<zx_status_t> LeaseErrorToZxError(fuchsia_power_broker::LeaseError e);
 
 // Convenience method for printing errors.
 const char* ErrorToString(Error e);
+const char* LeaseErrorToString(fuchsia_power_broker::LeaseError e);
 
 enum class ElementRunnerError : uint8_t {
   /// Maps to fuchsia.power.broker/RequiredLevelError::INTERNAL

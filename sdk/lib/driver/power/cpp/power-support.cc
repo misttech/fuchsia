@@ -338,6 +338,32 @@ const char* ErrorToString(Error e) {
   return "(unknown)";
 }
 
+zx::error<zx_status_t> LeaseErrorToZxError(fuchsia_power_broker::LeaseError e) {
+  switch (e) {
+    case fuchsia_power_broker::LeaseError::kInternal:
+      return zx::error(ZX_ERR_INTERNAL);
+    case fuchsia_power_broker::LeaseError::kNotAuthorized:
+      return zx::error(ZX_ERR_ACCESS_DENIED);
+    case fuchsia_power_broker::LeaseError::kInvalidLevel:
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    default:
+      return zx::error(ZX_ERR_INTERNAL);
+  }
+}
+
+const char* LeaseErrorToString(fuchsia_power_broker::LeaseError e) {
+  switch (e) {
+    case fuchsia_power_broker::LeaseError::kInternal:
+      return "Internal error";
+    case fuchsia_power_broker::LeaseError::kNotAuthorized:
+      return "Not authorized";
+    case fuchsia_power_broker::LeaseError::kInvalidLevel:
+      return "Invalid level";
+    default:
+      return "(unknown)";
+  }
+}
+
 void ElementRunner::RunPowerElement() {
   // * First, we watch for a new required level.
   // * Second, we report this level to |on_level_change_|.
