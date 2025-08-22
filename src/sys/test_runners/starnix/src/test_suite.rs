@@ -1,14 +1,15 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 use crate::binder_latency::run_binder_latency;
+use crate::debian_guest::DebianGuest;
 use crate::gbenchmark::*;
 use crate::gtest::*;
 use crate::helpers::*;
 use crate::ltp::*;
 use crate::selinux::*;
-use anyhow::{anyhow, Error};
+use crate::syscalls::*;
+use anyhow::{Error, anyhow};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_test::{self as ftest};
 use frunner::{ComponentRunnerMarker, ComponentRunnerProxy, ComponentStartInfo};
@@ -16,6 +17,7 @@ use futures::TryStreamExt;
 use log::debug;
 use namespace::Namespace;
 use rust_measure_tape_for_case::Measurable as _;
+use std::sync::Arc;
 use test_runners_lib::elf::SuiteServerError;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
 use {fidl_fuchsia_component_runner as frunner, fidl_fuchsia_data as fdata};
@@ -33,6 +35,7 @@ fn remove_test_type(program: &mut fdata::Dictionary) -> Result<TestType, Error> 
         Some("gunit") => Ok(TestType::Gunit),
         Some("ltp") => Ok(TestType::Ltp),
         Some("selinux") => Ok(TestType::SeLinux),
+        Some("syscall") => Ok(TestType::Syscall),
         Some(value) => Err(anyhow!("Unrecognized test_type: {}", value)),
 
         // If test_type is not specified, then just run the component as a single test case.
@@ -62,6 +65,7 @@ async fn component_runner_from_start_info(
 pub async fn handle_suite_requests(
     mut start_info: frunner::ComponentStartInfo,
     mut stream: ftest::SuiteRequestStream,
+    debian_guest: Arc<DebianGuest>,
 ) -> Result<(), Error> {
     debug!(start_info:?; "got suite request stream");
     let test_type = remove_test_type(start_info.program.as_mut().unwrap())?;
@@ -80,11 +84,13 @@ pub async fn handle_suite_requests(
                 let stream = iterator.into_stream();
 
                 let test_cases = match test_type {
-                    TestType::Gtest | TestType::Gunit | TestType::GtestXmlOutput => {
+                    TestType::Gtest
+                    | TestType::Gunit
+                    | TestType::GtestXmlOutput
+                    | TestType::Syscall => {
                         get_cases_list_for_gtests(test_start_info, &component_runner, test_type)
                             .await?
                     }
-                    TestType::Ltp => get_cases_list_for_ltp(test_start_info).await?,
                     TestType::BinderLatency | TestType::Gbenchmark | TestType::SingleTest => {
                         let name = test_start_info
                             .resolved_url
@@ -96,7 +102,9 @@ pub async fn handle_suite_requests(
                             ..Default::default()
                         }]
                     }
-                    TestType::SeLinux => get_cases_list_for_ltp(test_start_info).await?,
+                    TestType::Ltp | TestType::SeLinux => {
+                        get_cases_list_for_ltp(test_start_info).await?
+                    }
                 };
 
                 handle_case_iterator(test_cases, stream).await?
@@ -185,6 +193,16 @@ pub async fn handle_suite_requests(
                         )
                         .await?
                     }
+                    TestType::Syscall => {
+                        run_syscall_tests(
+                            tests,
+                            test_start_info,
+                            &run_listener_proxy,
+                            &component_runner,
+                            debian_guest.clone(),
+                        )
+                        .await?;
+                    }
                 }
 
                 run_listener_proxy.on_finished()?;
@@ -266,7 +284,7 @@ async fn handle_case_iterator(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::endpoints::{create_request_stream, ClientEnd};
+    use fidl::endpoints::{ClientEnd, create_request_stream};
     use fuchsia_async as fasync;
 
     /// Returns a `ftest::CaseIteratorProxy` that is served by `super::handle_case_iterator`.

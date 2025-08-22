@@ -18,7 +18,9 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
     "//sdk/fidl/fuchsia.test:fuchsia.test_rust",
     "//sdk/fidl/fuchsia.test:rust_measure_tape_for_case",
+    "//sdk/fidl/fuchsia.virtualization:fuchsia.virtualization_rust",
     "//sdk/rust/zx",
+    "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
@@ -29,10 +31,12 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace-provider",
     "//src/performance/lib/fuchsiaperf",
+    "//src/sys/lib/cm_types",
     "//src/sys/lib/namespace",
     "//src/sys/lib/runner",
     "//src/sys/test_runners:lib",
     "//src/sys/test_runners/gtest:lib",
+    "//src/virtualization/lib/guest_interaction:fuchsia.virtualization.guest.interaction_rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:heck-v0_3_1",
@@ -45,6 +49,7 @@ rustc_binary("bin") {
 
   sources = [
     "src/binder_latency.rs",
+    "src/debian_guest.rs",
     "src/gbenchmark.rs",
     "src/gtest.rs",
     "src/helpers.rs",
@@ -53,6 +58,7 @@ rustc_binary("bin") {
     "src/results_parser.rs",
     "src/runner.rs",
     "src/selinux.rs",
+    "src/syscalls.rs",
     "src/test_suite.rs",
   ]
 }

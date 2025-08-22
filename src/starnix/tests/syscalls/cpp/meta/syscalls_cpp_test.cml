@@ -10,7 +10,7 @@
     ],
     program: {
         uid: "0",
-        test_type: "gtest",
+        test_type: "syscall",
         environ: [ "MUTABLE_STORAGE={component_path}/data" ],
     },
     use: [

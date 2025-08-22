@@ -238,6 +238,9 @@ pub async fn execute_gtests(
     return Ok((run_listener_proxies, test_result_list));
 }
 
+/// Reports the test results back to the given proxies. If any proxies are left unanswered by the
+/// given results, they will be cross-checked for disabled status. If they were not disabled, then
+/// it will be assumed that the tests failed (e.g. crashed and results not reported).
 pub fn report_test_results(
     mut run_listener_proxies: HashMap<String, CaseListenerProxy>,
     test_suite_output: Vec<TestSuiteOutput>,

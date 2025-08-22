@@ -5,7 +5,7 @@
 use std::iter::Peekable;
 
 use crate::helpers::TestType;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use gtest_runner_lib::parser::{
     Failure, IndividualTestOutput, IndividualTestOutputStatus, TestOutput, TestSuiteOutput,
 };
@@ -13,7 +13,7 @@ use xml::reader::{EventReader, XmlEvent};
 
 pub fn parse_results(test_type: TestType, contents: &str) -> Result<TestOutput, Error> {
     match test_type {
-        TestType::Gtest | TestType::Gunit => {
+        TestType::Gtest | TestType::Gunit | TestType::Syscall => {
             serde_json::from_str(contents).map_err(|e| anyhow!("JSON parsing error: {e}"))
         }
         TestType::GtestXmlOutput => {

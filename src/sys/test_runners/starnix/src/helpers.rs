@@ -29,6 +29,7 @@ pub enum TestType {
     Ltp,
     SeLinux,
     SingleTest,
+    Syscall,
 }
 
 pub fn get_opt_str_value_from_dict(
@@ -394,7 +395,7 @@ pub fn start_top_level_report(
 
 pub fn format_arg(test_type: TestType, test_arg: &str) -> String {
     match test_type {
-        TestType::Gtest | TestType::GtestXmlOutput => {
+        TestType::Gtest | TestType::GtestXmlOutput | TestType::Syscall => {
             format!("--gtest_{}", test_arg)
         }
         TestType::Gunit => format!("--gunit_{}", test_arg),
