@@ -20,6 +20,15 @@ pub fn new(args: &ProductArgs) -> Result<()> {
         config.product_input_bundles.insert(pib.release_info.name.clone(), pib);
     }
 
+    let version = if args.version.is_none() && args.version_file.is_none() {
+        common::get_release_version(
+            &None,
+            &config.product.build_info.as_ref().map(|b| b.version.clone()),
+        )?
+    } else {
+        common::get_release_version(&args.version, &args.version_file)?
+    };
+
     config.product.release_info = ProductReleaseInfo {
         info: ReleaseInfo {
             name: match config.product.build_info {
@@ -29,10 +38,7 @@ pub fn new(args: &ProductArgs) -> Result<()> {
                 None => "unknown".to_string(),
             },
             repository: common::get_release_repository(&args.repo, &args.repo_file)?,
-            version: common::get_release_version(
-                &None,
-                &config.product.build_info.as_ref().map(|b| b.version.clone()),
-            )?,
+            version,
         },
         pibs: config.product_input_bundles.values().map(|p| p.release_info.clone()).collect(),
     };
@@ -166,6 +172,8 @@ mod tests {
             output: product_path.clone(),
             depfile: None,
             product_input_bundles: vec![],
+            version: Some("fake_version".to_string()),
+            version_file: None,
         };
         let _ = new(&args);
         let config = ProductConfig::from_dir(product_path).unwrap();
@@ -198,6 +206,8 @@ mod tests {
             output: product_path.clone(),
             depfile: None,
             product_input_bundles: vec![],
+            version: None,
+            version_file: None,
         };
         let _ = new(&args);
         let config = ProductConfig::from_dir(product_path).unwrap();

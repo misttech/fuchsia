@@ -98,6 +98,15 @@ struct ProductArgs {
     #[argh(option)]
     config: Utf8PathBuf,
 
+    /// release version that this product config corresponds to.
+    #[argh(option)]
+    version: Option<String>,
+
+    /// path to a file containing the release version that this
+    /// product config matches.
+    #[argh(option)]
+    version_file: Option<Utf8PathBuf>,
+
     /// name of repository where this product is released.
     #[argh(option)]
     repo: Option<String>,

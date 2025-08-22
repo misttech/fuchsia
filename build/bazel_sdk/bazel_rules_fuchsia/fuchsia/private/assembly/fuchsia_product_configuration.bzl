@@ -175,6 +175,13 @@ def _fuchsia_product_configuration_impl(ctx):
     if repo:
         args += ["--repo", repo]
 
+    # If version is "__unset", the target hasn't set it.
+    if ctx.attr.version != "__unset":
+        args += ["--version", ctx.attr.version]
+    if ctx.file.version_file:
+        args += ["--version-file", ctx.file.version_file.path]
+        input_files.append(ctx.file.version_file)
+
     for pib in ctx.attr.product_input_bundles:
         directory = pib[FuchsiaProductInputBundleInfo].directory
         args += ["--product-input-bundles", directory]
@@ -276,6 +283,14 @@ _fuchsia_product_configuration = rule(
         "ota_configuration": attr.label(
             doc = "OTA configuration to include in the product. Only for use with products that use Omaha.",
             providers = [FuchsiaOmahaOtaConfigInfo],
+        ),
+        "version": attr.string(
+            doc = "Release version of this board.",
+            default = "__unset",
+        ),
+        "version_file": attr.label(
+            doc = "Path to a file containing the current release version.",
+            allow_single_file = True,
         ),
         "repo": attr.string(
             doc = "Name of the release repository. Overrides _release_repository_flag when set.",

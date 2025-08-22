@@ -6,6 +6,7 @@ import("//build/assembly/product_assembly_config_file_impl.gni")
 import("//build/compiled_action.gni")
 import("//build/components/fuchsia_package.gni")
 import("//build/group_with_inputs.gni")
+import("//build/info/info.gni")
 
 # Create a product assembly config file from the lists of packages and config
 # passed into the template.
@@ -501,6 +502,19 @@ template("product_assembly_configuration") {
       "--depfile",
       rebase_path(depfile, root_build_dir),
     ]
+
+    if (defined(invoker.version) && invoker.version != "") {
+      args += [
+        "--version",
+        invoker.version,
+      ]
+    } else if (defined(invoker.version_file) && invoker.version_file != "") {
+      inputs += [ invoker.version_file ]
+      args += [
+        "--version-file",
+        invoker.version_file,
+      ]
+    }
 
     public_deps = [ ":${labels.assembly_config}" ]
     deps = [
