@@ -16,6 +16,9 @@ forwarding:
     Replace `HOST_PORT` with an available port on your machine
     (for example, `5559`).
 
+    Tip: You can also run this `ffx forward` command in the background
+    with the `-q` (quiet) flag, for example: `fx forward -q "5559:5555" &`.
+
 2.  In a second terminal, connect the ADB server to that host port:
 
     ```posix-terminal
