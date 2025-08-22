@@ -1267,6 +1267,10 @@ impl Task {
         self.fs.as_ref().expect("fs must be set").read().clone()
     }
 
+    pub fn has_shared_fs(&self) -> bool {
+        self.fs.as_ref().is_some_and(|fs| Arc::strong_count(&*fs.read()) > 1usize)
+    }
+
     pub fn mm(&self) -> Option<&Arc<MemoryManager>> {
         self.mm.as_ref()
     }

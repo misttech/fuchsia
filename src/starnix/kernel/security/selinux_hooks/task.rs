@@ -368,6 +368,19 @@ pub(in crate::security) fn check_exec_access(
             )
             .map_err(|_| errno!(EPERM))?;
         }
+
+        // If the process shares filesystem context with other processes (via `CLONE_FS`) then check
+        // for the share permission to the new domain.
+        if current_task.has_shared_fs() {
+            check_permission(
+                &permission_check,
+                current_task,
+                current_sid,
+                new_sid,
+                ProcessPermission::Share,
+                audit_context,
+            )?;
+        }
     }
     Ok(ResolvedElfState { sid: Some(new_sid) })
 }

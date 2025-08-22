@@ -203,7 +203,7 @@ fn create_test_init_task(
         &kernel.weak_self.upgrade().unwrap(),
         init_pid,
         CString::new("test-task").unwrap(),
-        fs.clone(),
+        fs.fork(),
         &[],
     )
     .expect("failed to create first task");

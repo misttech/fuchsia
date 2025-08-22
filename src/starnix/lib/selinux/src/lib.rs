@@ -1334,6 +1334,8 @@ class_permission_enum! {
         SetSched("setsched"),
         /// Permission to set the Security Context used when creating new labeled sockets.
         SetSockCreate("setsockcreate"),
+        /// Permission to share resources (e.g. FD table, address-space, etc) with a process.
+        Share("share"),
         /// Permission to send SIGCHLD to a process.
         SigChld("sigchld"),
         /// Permission to inherit the parent process's signal state.
