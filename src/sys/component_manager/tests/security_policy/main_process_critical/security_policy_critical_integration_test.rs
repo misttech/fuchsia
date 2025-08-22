@@ -8,7 +8,7 @@ use component_events::matcher::*;
 use component_events::sequence::{EventSequence, Ordering};
 use fidl::endpoints::Proxy;
 use fuchsia_component::client;
-use futures::future::{select, Either};
+use futures::future::{Either, select};
 use security_policy_test_util::{open_exposed_dir, start_policy_test};
 use std::pin::pin;
 use {fidl_fuchsia_component as fcomponent, fidl_test_policy as ftest, fuchsia_async as fasync};
@@ -20,9 +20,9 @@ const COMPONENT_MANAGER_DEATH_TIMEOUT: i64 = 5;
 
 #[fasync::run_singlethreaded(test)]
 async fn verify_main_process_critical_default_denied() -> Result<(), Error> {
-    let (test, realm, _event) = start_policy_test(COMPONENT_MANAGER_URL, ROOT_URL).await?;
-
     let mut event_stream = EventStream::open().await.unwrap();
+
+    let (test, realm, _event) = start_policy_test(COMPONENT_MANAGER_URL, ROOT_URL).await?;
 
     let child_name = "policy_not_requested";
     let exposed_dir = open_exposed_dir(&realm, child_name).await.expect("bind should succeed");
@@ -60,9 +60,9 @@ async fn verify_main_process_critical_default_denied() -> Result<(), Error> {
 
 #[fasync::run_singlethreaded(test)]
 async fn verify_main_process_critical_nonzero_flag_used() -> Result<(), Error> {
-    let (test, realm, _event) = start_policy_test(COMPONENT_MANAGER_URL, ROOT_URL).await?;
-
     let mut event_stream = EventStream::open().await.unwrap();
+
+    let (test, realm, _event) = start_policy_test(COMPONENT_MANAGER_URL, ROOT_URL).await?;
 
     let child_name = "policy_allowed";
     let exposed_dir = open_exposed_dir(&realm, child_name).await.expect("bind should succeed");
@@ -102,9 +102,9 @@ async fn verify_main_process_critical_nonzero_flag_used() -> Result<(), Error> {
 
 #[fasync::run_singlethreaded(test)]
 async fn verify_main_process_critical_allowed() -> Result<(), Error> {
-    let (test, realm, _event) = start_policy_test(COMPONENT_MANAGER_URL, ROOT_URL).await?;
-
     let mut event_stream = EventStream::open().await.unwrap();
+
+    let (test, realm, _event) = start_policy_test(COMPONENT_MANAGER_URL, ROOT_URL).await?;
 
     let child_name = "policy_allowed";
     let exposed_dir = open_exposed_dir(&realm, child_name).await.expect("bind should succeed");
