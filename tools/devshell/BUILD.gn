@@ -54,7 +54,7 @@ if (!is_host) {
       "//tools/devshell/python:install($host_toolchain)",
 
       # For `fx bazel2gn`
-      "//build/bazel/host:bazel_root_host_tools.bazel2gn($host_toolchain)",
+      "//build/tools/bazel2gn:host($host_toolchain)",
 
       # For `fx disable_ctf_tests`
       "//scripts/disable_ctf_tests:install",

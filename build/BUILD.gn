@@ -45,6 +45,7 @@ if (is_host) {
   group("bazel2gn_verifications") {
     testonly = true
     deps = [
+      "//build/tools/bazel2gn:verify_bazel2gn",
       "//sdk/lib/magma_common:verify_bazel2gn",
       "//sdk/lib/media/cpp:verify_bazel2gn",
       "//sdk/lib/memory_barriers:verify_bazel2gn",

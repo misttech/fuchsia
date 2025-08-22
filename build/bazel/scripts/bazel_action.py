@@ -72,7 +72,6 @@ _BAZEL_BUILTIN_REPOSITORIES = (
     "rules_python+",
     "pythons_hub",  # A sub-repo created by rule_python+
     "rules_rust",
-    "io_bazel_rules_go",
     # Created from in-tree top-level module
     "fuchsia_sdk_common",
 )
@@ -97,10 +96,6 @@ _IGNORED_LABELS = {
     #
     # See details in https://fxbug.dev/434864899.
     "//third_party/rust_crates/vendor/ansi_term-0.12.1:LICENSE",
-    # Internal targets for building Go SDK from rules_go.
-    "@@rules_go++go_sdk+io_bazel_rules_nogo//:BUILD.bazel",
-    "@@rules_go++go_sdk+io_bazel_rules_nogo//:scope.bzl",
-    "@@rules_go++go_sdk+main___wrap_0//:ROOT",
 }
 
 # A list of external repository names which do not require a hash content file
