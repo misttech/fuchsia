@@ -50,7 +50,11 @@ class HdlcChannelSocketConnection {
   // Closes the connection.
   void Close();
 
-  int connection_fd() { return stream_.connection_fd(); }
+  int connection_fd() const {
+    // TODO(https://fxbug.dev/440207090): This needs fixing.
+    abort();
+    return -1;
+  }
   constexpr std::optional<uint64_t> address() const { return address_; }
 
  private:

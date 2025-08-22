@@ -35,7 +35,6 @@ class ComponentInstance : public fidl::Server<fuchsia_component_runner::Componen
   // the `O_NONBLOCK` flag.
   ComponentInstance(
       async_dispatcher_t* dispatcher, pw::stream::SocketStream stream,
-      fidl::Client<fuchsia_logger::LogSink> log_sink,
       fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller_server_end,
       fit::callback<void()> deletion_cb);
   ~ComponentInstance() override;
@@ -46,8 +45,11 @@ class ComponentInstance : public fidl::Server<fuchsia_component_runner::Componen
 
   void Stop(StopCompleter::Sync& completer) override;
   void Kill(KillCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_component_runner::ComponentController> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  void Start();
+  void Start(fidl::ClientEnd<fuchsia_logger::LogSink> log_sink);
 
   void Close();
 
@@ -57,7 +59,6 @@ class ComponentInstance : public fidl::Server<fuchsia_component_runner::Componen
   async_dispatcher_t* const dispatcher_;
   fidl::ServerBinding<fuchsia_component_runner::ComponentController> binding_;
   std::shared_ptr<ConnectionGroup> connections_;
-  fidl::Client<fuchsia_logger::LogSink> log_sink_;
   component::OutgoingDirectory outgoing_dir_;
   fit::callback<void()> deletion_cb_;
   zx::eventpair disconnect_event_;
@@ -68,6 +69,9 @@ class ComponentRunnerImpl : public fidl::Server<fuchsia_component_runner::Compon
  public:
   explicit ComponentRunnerImpl(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
   void Start(StartRequest& request, StartCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_component_runner::ComponentRunner> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
 
  private:
   zx::result<> DoStart(fuchsia_component_runner::ComponentStartInfo start_info,

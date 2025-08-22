@@ -35,13 +35,11 @@
 
 ComponentInstance::ComponentInstance(
     async_dispatcher_t* dispatcher, pw::stream::SocketStream stream,
-    fidl::Client<fuchsia_logger::LogSink> log_sink,
     fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller_server_end,
     fit::callback<void()> deletion_cb)
     : dispatcher_(dispatcher),
       binding_(dispatcher_, std::move(controller_server_end), this, fidl::kIgnoreBindingClosure),
       connections_(std::make_shared<ConnectionGroup>(std::move(stream))),
-      log_sink_(std::move(log_sink)),
       outgoing_dir_(dispatcher_),
       deletion_cb_(std::move(deletion_cb)) {}
 
@@ -58,15 +56,12 @@ zx::result<> ComponentInstance::Serve(
   return outgoing_dir_.Serve(std::move(outgoing_dir_server_end));
 }
 
-void ComponentInstance::Start() {
-  zx::socket log_socket, log_server_socket;
-  zx::socket::create(0, &log_socket, &log_server_socket);
-  if (!log_socket.is_valid()) {
-    FX_LOG_KV(WARNING, "Failed to establish connection to log sink. Terminating component.");
-    Close();
-    return;
-  }
-  if (auto result = log_sink_->ConnectStructured(std::move(log_server_socket)); result.is_error()) {
+void ComponentInstance::Start(fidl::ClientEnd<fuchsia_logger::LogSink> log_sink) {
+  auto logger = fuchsia_logging::Logger::Create(fuchsia_logging::RawLogSettings{
+      .log_sink = log_sink.TakeChannel().release(),
+      .dispatcher = dispatcher_,
+  });
+  if (logger.is_error()) {
     FX_LOG_KV(WARNING, "Failed to establish connection to log sink. Terminating component.");
     Close();
     return;
@@ -74,7 +69,7 @@ void ComponentInstance::Start() {
   auto result = OpenLoggerStream();
   if (result.is_error()) {
     FX_LOG_KV(WARNING, "Failed to open connection for log forwarding. Terminating component.",
-              KV("status", result.status_string()));
+              FX_KV("status", result.status_string()));
     Close();
     return;
   }
@@ -88,7 +83,7 @@ void ComponentInstance::Start() {
         FX_CHECK(status == ZX_OK);
         Close();
       });
-  LogProxy log_proxy(std::move(logger_stream), std::move(log_socket));
+  LogProxy log_proxy(std::move(logger_stream), *std::move(logger));
   log_proxy.Detach();
 
   Multiplexer multiplexer(connections_, std::move(other));
@@ -126,7 +121,7 @@ void ComponentRunnerImpl::Start(StartRequest& request, StartCompleter::Sync& com
 }
 
 constexpr zx_status_t InstanceCannotStart() {
-  return static_cast<zx_status_t>(fuchsia_component::Error::kInstanceCannotStart);
+  return static_cast<uint32_t>(fuchsia_component::Error::kInstanceCannotStart);
 }
 
 static zx::result<std::tuple<std::string, uint16_t>> ExtractHostPort(
@@ -176,7 +171,7 @@ static zx::result<std::tuple<std::string, uint16_t>> ExtractHostPort(
   return zx::success(std::make_tuple(*host, *port));
 }
 
-static fidl::Client<fuchsia_logger::LogSink> ConnectLogSink(
+static fidl::ClientEnd<fuchsia_logger::LogSink> ConnectLogSink(
     async_dispatcher_t* dispatcher, fuchsia_component_runner::ComponentStartInfo& start_info) {
   if (start_info.ns().has_value()) {
     for (const fuchsia_component_runner::ComponentNamespaceEntry& entry : *start_info.ns()) {
@@ -191,13 +186,13 @@ static fidl::Client<fuchsia_logger::LogSink> ConnectLogSink(
                 svc_handle, "fuchsia.logger.LogSink", log_sink_server_end.TakeChannel().release());
             status != ZX_OK) {
           FX_LOG_KV(WARNING, "Failed to open component's /svc.",
-                    KV("status", zx_status_get_string(status)));
+                    FX_KV("status", zx_status_get_string(status)));
         }
-        return fidl::Client<fuchsia_logger::LogSink>(std::move(log_sink_client_end), dispatcher);
+        return std::move(log_sink_client_end);
       }
     }
   }
-  return fidl::Client<fuchsia_logger::LogSink>{};
+  return {};
 }
 
 zx::result<> ComponentRunnerImpl::DoStart(
@@ -217,25 +212,29 @@ zx::result<> ComponentRunnerImpl::DoStart(
   // TODO: This is blocking, make it async or spin up another thread.
   pw::stream::SocketStream stream;
   if (!stream.Connect(host.c_str(), port).ok()) {
-    FX_LOG_KV(WARNING, "Failed to connect to remote endpoint", KV("host", host), KV("port", port));
+    FX_LOG_KV(WARNING, "Failed to connect to remote endpoint", FX_KV("host", host),
+              FX_KV("port", port));
     return zx::error(InstanceCannotStart());
   }
-  const int flags = fcntl(stream.connection_fd(), F_GETFD, 0) | O_NONBLOCK;
-  FX_CHECK(fcntl(stream.connection_fd(), F_SETFD, flags) == 0);
 
-  fidl::Client<fuchsia_logger::LogSink> log_sink = ConnectLogSink(dispatcher_, start_info);
+  // TODO(https://fxbug.dev/440207090): This needs fixing.
+  abort();
+
+  // const int flags = fcntl(stream.connection_fd(), F_GETFD, 0) | O_NONBLOCK;
+  // FX_CHECK(fcntl(stream.connection_fd(), F_SETFD, flags) == 0);
+
+  fidl::ClientEnd<fuchsia_logger::LogSink> log_sink = ConnectLogSink(dispatcher_, start_info);
   const uint64_t component_id = next_component_id_++;
   auto deletion_cb = [this, component_id]() { components_.erase(component_id); };
-  std::unique_ptr instance =
-      std::make_unique<ComponentInstance>(dispatcher_, std::move(stream), std::move(log_sink),
-                                          std::move(controller), std::move(deletion_cb));
+  std::unique_ptr instance = std::make_unique<ComponentInstance>(
+      dispatcher_, std::move(stream), std::move(controller), std::move(deletion_cb));
   if (auto result = instance->Serve(std::move(*start_info.outgoing_dir())); result.is_error()) {
     FX_LOG_KV(WARNING, "Failed to serve component's outgoing dir.",
-              KV("status", result.status_string()));
+              FX_KV("status", result.status_string()));
     return zx::error(InstanceCannotStart());
   }
   components_.emplace(component_id, std::move(instance));
-  components_.at(component_id)->Start();
+  components_.at(component_id)->Start(std::move(log_sink));
 
   return zx::ok();
 }

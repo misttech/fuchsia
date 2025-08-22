@@ -15,8 +15,8 @@
 
 #include "pw_assert/assert.h"
 #include "pw_assert/check.h"
+#include "pw_hdlc/decoder.h"
 #include "pw_hdlc/rpc_channel.h"
-#include "pw_hdlc/rpc_packets.h"
 #include "pw_log/levels.h"
 #include "pw_log/proto/log.pwpb.h"
 #include "pw_log/proto/log.raw_rpc.pb.h"
@@ -104,22 +104,22 @@ pw::Status DecodeOptionallyTokenizedData(pw::protobuf::Decoder& entry_decoder, s
 fuchsia_logging::LogSeverity ConvertLogLevel(uint8_t level) {
   switch (level) {
     case PW_LOG_LEVEL_DEBUG:
-      return fuchsia_logging::LOG_DEBUG;
+      return fuchsia_logging::Debug;
     case PW_LOG_LEVEL_INFO:
-      return fuchsia_logging::LOG_INFO;
+      return fuchsia_logging::Info;
     case PW_LOG_LEVEL_WARN:
-      return fuchsia_logging::LOG_WARNING;
+      return fuchsia_logging::Warn;
     case PW_LOG_LEVEL_ERROR:
     case PW_LOG_LEVEL_CRITICAL:
-      return fuchsia_logging::LOG_ERROR;
+      return fuchsia_logging::Error;
     case PW_LOG_LEVEL_FATAL:
-      return fuchsia_logging::LOG_FATAL;
+      return fuchsia_logging::Fatal;
     default:
-      return fuchsia_logging::LOG_INFO;
+      return fuchsia_logging::Info;
   }
 }
 
-pw::Status LogEntry(pw::protobuf::Decoder& entry_decoder, const zx::socket& log_socket) {
+pw::Status LogEntry(pw::protobuf::Decoder& entry_decoder, const fuchsia_logging::Logger& logger) {
   PW_TRY_NEXT(entry_decoder.Next());
   if (entry_decoder.FieldNumber() !=
       static_cast<uint32_t>(pw::log::pwpb::LogEntry::Fields::kMessage)) {
@@ -135,13 +135,16 @@ pw::Status LogEntry(pw::protobuf::Decoder& entry_decoder, const zx::socket& log_
   PW_TRY_NEXT(entry_decoder.Next());
 
   uint32_t line = 0;
-  fuchsia_logging::LogSeverity level = fuchsia_logging::LOG_INFO;
+  fuchsia_logging::LogSeverity level = fuchsia_logging::Info;
   if (entry_decoder.FieldNumber() ==
       static_cast<uint32_t>(pw::log::pwpb::LogEntry::Fields::kLineLevel)) {
     uint32_t line_level;
     PW_TRY(entry_decoder.ReadUint32(&line_level));
     // Fuchsia and pigweed log severity codes are compatible
     level = ConvertLogLevel(static_cast<uint8_t>(line_level & PW_LOG_LEVEL_BITMASK));
+    if (level < logger.GetMinSeverity()) {
+      return pw::OkStatus();
+    }
     line = (line_level & ~PW_LOG_LEVEL_BITMASK) >> PW_LOG_LEVEL_BITS;
     PW_TRY_NEXT(entry_decoder.Next());
   }
@@ -185,16 +188,15 @@ pw::Status LogEntry(pw::protobuf::Decoder& entry_decoder, const zx::socket& log_
     PW_TRY_NEXT(entry_decoder.Next());
   }
 
-  if (log_socket.is_valid()) {
-    fuchsia_logging::LogBuffer log_buffer;
-    fuchsia_logging::BeginRecordWithSocket(&log_buffer, level, file.c_str(), line, message.c_str(),
-                                           /* condition */ nullptr, log_socket.get());
-    fuchsia_logging::FlushRecord(&log_buffer);
+  if (logger.IsValid()) {
+    fuchsia_logging::LogBuffer buffer =
+        fuchsia_logging::LogBufferBuilder(level).WithFile(file, line).WithMsg(message).Build();
+    [[maybe_unused]] zx::result<> result = logger.FlushBuffer(buffer);
   }
   return pw::OkStatus();
 }
 
-void ListenNext(SocketClient<pw::log::pw_rpc::raw::Logs>& sc, const zx::socket& log_socket,
+void ListenNext(SocketClient<pw::log::pw_rpc::raw::Logs>& sc, const fuchsia_logging::Logger& logger,
                 pw::ConstByteSpan response) {
   pw::protobuf::Decoder entries_decoder(response);
   while (entries_decoder.Next().ok()) {
@@ -206,7 +208,7 @@ void ListenNext(SocketClient<pw::log::pw_rpc::raw::Logs>& sc, const zx::socket& 
         continue;
       }
       pw::protobuf::Decoder entry_decoder(entry);
-      ::pw::Status status = LogEntry(entry_decoder, log_socket);
+      ::pw::Status status = LogEntry(entry_decoder, logger);
       if (!status.ok()) {
         FX_LOG_KV(WARNING, "Encountered invalid pigweed log entry");
       }
@@ -228,23 +230,23 @@ void LogProxy::Detach() {
 void LogProxy::Run() {
   SocketClient<pw::log::pw_rpc::raw::Logs> sc{std::move(stream_)};
   auto call = sc->Listen(
-      {}, [&sc, this](pw::ConstByteSpan response) { ListenNext(sc, log_socket_, response); },
+      {}, [&sc, this](pw::ConstByteSpan response) { ListenNext(sc, logger_, response); },
       [&](pw::Status status) {
         if (!status.ok()) {
-          FX_LOG_KV(INFO, "Log listener completed with error", KV("status", status.str()));
+          FX_LOG_KV(INFO, "Log listener completed with error", FX_KV("status", status.str()));
         }
         sc.terminate();
       },
       [&](pw::Status status) {
-        FX_LOG_KV(INFO, "Failed to read logs", KV("status", status.str()));
+        FX_LOG_KV(INFO, "Failed to read logs", FX_KV("status", status.str()));
         sc.terminate();
       });
 
   sc.ProcessPackets();
 
-  fuchsia_logging::LogBuffer log_buffer;
-  fuchsia_logging::BeginRecordWithSocket(&log_buffer, fuchsia_logging::LOG_INFO, __FILE__, __LINE__,
-                                         "Connection to proxy has terminated. Exiting.",
-                                         /* condition */ nullptr, log_socket_.get());
-  fuchsia_logging::FlushRecord(&log_buffer);
+  fuchsia_logging::LogBuffer buffer = fuchsia_logging::LogBufferBuilder(fuchsia_logging::Info)
+                                          .WithFile(__FILE__, __LINE__)
+                                          .WithMsg("Connection to proxy has terminated. Exiting.")
+                                          .Build();
+  [[maybe_unused]] zx::result<> result = logger_.FlushBuffer(buffer);
 }

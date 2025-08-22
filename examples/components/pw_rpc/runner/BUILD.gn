@@ -41,7 +41,6 @@ executable("bin") {
     "//sdk/lib/syslog/cpp",
     "//third_party/pigweed/backends/pw_log:printf",
     "//third_party/pigweed/src/pw_hdlc",
-    "//third_party/pigweed/src/pw_hdlc:pw_rpc",
     "//third_party/pigweed/src/pw_hdlc:rpc_channel_output",
     "//third_party/pigweed/src/pw_log:protos.pwpb",
     "//third_party/pigweed/src/pw_log:protos.raw_rpc",
