@@ -237,7 +237,7 @@
     {
         "kind": "protocol/member",
         "name": "fuchsia.io/Directory.OnOpen",
-        "strictness": "strict",
+        "strictness": "flexible",
         "ordinal": "9207534335756671346",
         "direction": "event",
         "request": "fuchsia.io/NodeOnOpenRequest"
@@ -848,7 +848,7 @@
     {
         "kind": "protocol/member",
         "name": "fuchsia.io/File.OnOpen",
-        "strictness": "strict",
+        "strictness": "flexible",
         "ordinal": "9207534335756671346",
         "direction": "event",
         "request": "fuchsia.io/NodeOnOpenRequest"
@@ -1661,7 +1661,7 @@
     {
         "kind": "protocol/member",
         "name": "fuchsia.io/Node.OnOpen",
-        "strictness": "strict",
+        "strictness": "flexible",
         "ordinal": "9207534335756671346",
         "direction": "event",
         "request": "fuchsia.io/NodeOnOpenRequest"
@@ -2572,7 +2572,7 @@
     {
         "kind": "protocol/member",
         "name": "fuchsia.io/Symlink.OnOpen",
-        "strictness": "strict",
+        "strictness": "flexible",
         "ordinal": "9207534335756671346",
         "direction": "event",
         "request": "fuchsia.io/NodeOnOpenRequest"

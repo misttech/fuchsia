@@ -386,7 +386,7 @@ open protocol Directory {
     /// `mode` is ignored.
     @available(replaced=27, renamed="DeprecatedOpen")
     @selector("fuchsia.io1/Directory.Open")
-    strict Open(resource struct {
+    flexible Open(resource struct {
         flags OpenFlags;
         mode ModeType;
         path Path;
@@ -399,8 +399,8 @@ open protocol Directory {
     // `removed=27, renamed="DeprecatedOpen"` on `Open` to get this for free,
     // but unfortunately that doesn't work.
     //
-    // TODO(https://fxbug.dev/324081103): Delete (don't just set removed=NEXT)
-    // this method once all API levels below 27 have been retired.
+    // TODO(https://fxbug.dev/324080864): Mark this as removed at NEXT when all out-of-tree servers
+    // and clients are using the latest FIDL definition.
     @available(added=27)
     @selector("fuchsia.io1/Directory.Open")
     flexible DeprecatedOpen(resource struct {

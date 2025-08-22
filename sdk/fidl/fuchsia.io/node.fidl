@@ -337,7 +337,7 @@ open protocol Node {
     /// object. If the status is `ZX_OK`, `info` contains descriptive information about the object
     /// (the same as would be returned by `Describe`).
     @selector("fuchsia.io1/Node.OnOpen")
-    strict -> OnOpen(resource struct {
+    flexible -> OnOpen(resource struct {
         s zx.Status;
         info @generated_name("NodeInfoDeprecated") strict resource union {
             /// No protocol information was supplied by the connection.
