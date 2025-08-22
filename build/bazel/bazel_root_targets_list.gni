@@ -35,6 +35,9 @@ declare_args() {
       bazel_label = "//build/tools/formatjson5"
       install_host_tool = true
     },
+    {
+      bazel_label = "//build/tools/bazel2gn"
+    },
   ]
 
   # A similar list to extend the list above for custom build configuration
