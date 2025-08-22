@@ -6,11 +6,12 @@
 // from fuchsia.io.
 
 use assert_matches::assert_matches;
-use fidl::endpoints::{DiscoverableProtocolMarker as _, ProtocolMarker, create_proxy};
+use fidl::endpoints::{create_proxy, DiscoverableProtocolMarker as _, ProtocolMarker};
 use fidl_fuchsia_io as fio;
 use fidl_test_placeholders::EchoMarker;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
 use futures::StreamExt as _;
+use io_conformance_util::flags::Rights;
 use io_conformance_util::test_harness::TestHarness;
 use io_conformance_util::*;
 
@@ -51,7 +52,11 @@ async fn deprecated_open_node_status<T: ProtocolMarker>(
         .expect("Cannot open node");
     let status = get_open_status(&node_proxy).await;
 
-    if status != zx::Status::OK { Err(status) } else { Ok(convert_node_proxy(node_proxy)) }
+    if status != zx::Status::OK {
+        Err(status)
+    } else {
+        Ok(convert_node_proxy(node_proxy))
+    }
 }
 
 /// Helper function to open a file with the given flags. Only use this if testing something other
@@ -576,6 +581,165 @@ async fn deprecated_open_remote_directory_right_escalation_test() {
     // we should only get RW permissions back.
     let (_, node_flags) = node_proxy.deprecated_get_flags().await.unwrap();
     assert_eq!(node_flags, fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::RIGHT_WRITABLE);
+}
+
+#[fuchsia::test]
+async fn deprecated_clone_file_with_same_or_fewer_rights() {
+    let harness = TestHarness::new().await;
+
+    for rights in harness.file_rights.rights_combinations() {
+        let file_rights = Rights::new(rights);
+        let entries = vec![file(TEST_FILE, vec![])];
+        let dir = harness.get_directory(entries, harness.dir_rights.all_flags());
+        let file =
+            deprecated_open_file_with_flags(&dir, file_rights.all_flags_deprecated(), TEST_FILE)
+                .await;
+
+        // Clone using every subset of flags.
+        for clone_flags in file_rights.combinations_deprecated() {
+            let (proxy, server) = create_proxy::<fio::NodeMarker>();
+            file.deprecated_clone(clone_flags | fio::OpenFlags::DESCRIBE, server)
+                .expect("clone failed");
+            let status = get_open_status(&proxy).await;
+            assert_eq!(status, zx::Status::OK);
+
+            // Check flags of cloned connection are correct.
+            let proxy = convert_node_proxy::<fio::FileProxy>(proxy);
+            let (status, flags) = proxy.deprecated_get_flags().await.expect("get_flags failed");
+            assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+            assert_eq!(flags, clone_flags);
+        }
+    }
+}
+
+#[fuchsia::test]
+async fn deprecated_clone_file_with_same_rights_flag() {
+    let harness = TestHarness::new().await;
+
+    for file_flags in harness.file_rights.combinations_deprecated() {
+        let entries = vec![file(TEST_FILE, vec![])];
+        let dir = harness.get_directory(entries, harness.dir_rights.all_flags());
+        let file = deprecated_open_file_with_flags(&dir, file_flags, TEST_FILE).await;
+
+        // Clone using CLONE_FLAG_SAME_RIGHTS.
+        let (proxy, server) = create_proxy::<fio::NodeMarker>();
+        file.deprecated_clone(fio::OpenFlags::CLONE_SAME_RIGHTS | fio::OpenFlags::DESCRIBE, server)
+            .expect("clone failed");
+        let status = get_open_status(&proxy).await;
+        assert_eq!(status, zx::Status::OK);
+
+        // Check flags of cloned connection are correct.
+        let proxy = convert_node_proxy::<fio::FileProxy>(proxy);
+        let (status, flags) = proxy.deprecated_get_flags().await.expect("get_flags failed");
+        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(flags, file_flags);
+    }
+}
+
+#[fuchsia::test]
+async fn deprecated_clone_file_with_additional_rights() {
+    let harness = TestHarness::new().await;
+
+    for rights in harness.file_rights.rights_combinations() {
+        let file_rights = Rights::new(rights);
+        let entries = vec![file(TEST_FILE, vec![])];
+        let dir = harness.get_directory(entries, harness.dir_rights.all_flags());
+        let file =
+            deprecated_open_file_with_flags(&dir, file_rights.all_flags_deprecated(), TEST_FILE)
+                .await;
+
+        // Clone using every superset of flags, should fail.
+        for clone_flags in
+            harness.file_rights.combinations_containing_deprecated(file_rights.all_rights())
+        {
+            if clone_flags == file_rights.all_flags_deprecated() {
+                continue;
+            }
+            let (proxy, server) = create_proxy::<fio::NodeMarker>();
+            file.deprecated_clone(clone_flags | fio::OpenFlags::DESCRIBE, server)
+                .expect("clone failed");
+            let status = get_open_status(&proxy).await;
+            assert_eq!(status, zx::Status::ACCESS_DENIED);
+        }
+    }
+}
+
+#[fuchsia::test]
+async fn deprecated_clone_directory_with_same_or_fewer_rights() {
+    let harness = TestHarness::new().await;
+
+    for rights in harness.dir_rights.rights_combinations() {
+        let dir_rights = Rights::new(rights);
+        let entries = vec![directory("dir", vec![])];
+        let dir = harness.get_directory(entries, harness.dir_rights.all_flags());
+        let dir =
+            deprecated_open_dir_with_flags(&dir, dir_rights.all_flags_deprecated(), "dir").await;
+
+        // Clone using every subset of flags.
+        for clone_flags in Rights::new(dir_rights.all_rights()).combinations_deprecated() {
+            let (proxy, server) = create_proxy::<fio::NodeMarker>();
+            dir.deprecated_clone(clone_flags | fio::OpenFlags::DESCRIBE, server)
+                .expect("clone failed");
+            let status = get_open_status(&proxy).await;
+            assert_eq!(status, zx::Status::OK);
+
+            // Check flags of cloned connection are correct.
+            let (status, flags) = proxy.deprecated_get_flags().await.expect("get_flags failed");
+            assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+            assert_eq!(flags, clone_flags);
+        }
+    }
+}
+
+#[fuchsia::test]
+async fn deprecated_clone_directory_with_same_rights_flag() {
+    let harness = TestHarness::new().await;
+
+    for dir_flags in harness.dir_rights.combinations_deprecated() {
+        let entries = vec![directory("dir", vec![])];
+        let dir = harness.get_directory(entries, harness.dir_rights.all_flags());
+        let dir = deprecated_open_dir_with_flags(&dir, dir_flags, "dir").await;
+
+        // Clone using CLONE_FLAG_SAME_RIGHTS.
+        let (proxy, server) = create_proxy::<fio::NodeMarker>();
+        dir.deprecated_clone(fio::OpenFlags::CLONE_SAME_RIGHTS | fio::OpenFlags::DESCRIBE, server)
+            .expect("clone failed");
+        let status = get_open_status(&proxy).await;
+        assert_eq!(status, zx::Status::OK);
+
+        // Check flags of cloned connection are correct.
+        let proxy = convert_node_proxy::<fio::DirectoryProxy>(proxy);
+        let (status, flags) = proxy.deprecated_get_flags().await.expect("get_flags failed");
+        assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
+        assert_eq!(flags, dir_flags);
+    }
+}
+
+#[fuchsia::test]
+async fn deprecated_clone_directory_with_additional_rights() {
+    let harness = TestHarness::new().await;
+
+    for rights in harness.dir_rights.rights_combinations() {
+        let dir_rights = Rights::new(rights);
+        let entries = vec![directory("dir", vec![])];
+        let dir = harness.get_directory(entries, harness.dir_rights.all_flags());
+        let dir =
+            deprecated_open_dir_with_flags(&dir, dir_rights.all_flags_deprecated(), "dir").await;
+
+        // Clone using every superset of flags, should fail.
+        for clone_flags in
+            harness.dir_rights.combinations_containing_deprecated(dir_rights.all_rights())
+        {
+            if clone_flags == dir_rights.all_flags_deprecated() {
+                continue;
+            }
+            let (proxy, server) = create_proxy::<fio::NodeMarker>();
+            dir.deprecated_clone(clone_flags | fio::OpenFlags::DESCRIBE, server)
+                .expect("clone failed");
+            let status = get_open_status(&proxy).await;
+            assert_eq!(status, zx::Status::ACCESS_DENIED);
+        }
+    }
 }
 
 #[fuchsia::test]

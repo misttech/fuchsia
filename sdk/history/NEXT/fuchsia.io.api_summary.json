@@ -140,6 +140,14 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.io/Directory.DeprecatedClone",
+        "strictness": "flexible",
+        "ordinal": "6512600400724287855",
+        "direction": "one_way",
+        "request": "fuchsia.io/NodeDeprecatedCloneRequest"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.io/Directory.DeprecatedGetAttr",
         "strictness": "strict",
         "ordinal": "8689798978500614909",
@@ -745,6 +753,14 @@
         "direction": "two_way",
         "response": "fuchsia.unknown/Closeable_Close_Response",
         "error": "int32"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.io/File.DeprecatedClone",
+        "strictness": "flexible",
+        "ordinal": "6512600400724287855",
+        "direction": "one_way",
+        "request": "fuchsia.io/NodeDeprecatedCloneRequest"
     },
     {
         "kind": "protocol/member",
@@ -1589,6 +1605,14 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.io/Node.DeprecatedClone",
+        "strictness": "flexible",
+        "ordinal": "6512600400724287855",
+        "direction": "one_way",
+        "request": "fuchsia.io/NodeDeprecatedCloneRequest"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.io/Node.DeprecatedGetAttr",
         "strictness": "strict",
         "ordinal": "8689798978500614909",
@@ -1898,6 +1922,23 @@
         "name": "fuchsia.io/NodeAttributesQuery",
         "strictness": "flexible",
         "type": "uint64"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.io/NodeDeprecatedCloneRequest.flags",
+        "ordinal": "1",
+        "type": "fuchsia.io/OpenFlags"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.io/NodeDeprecatedCloneRequest.object",
+        "ordinal": "2",
+        "type": "server_end:fuchsia.io/Node"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.io/NodeDeprecatedCloneRequest",
+        "resourceness": "resource"
     },
     {
         "kind": "struct/member",
@@ -2479,6 +2520,14 @@
         "direction": "two_way",
         "response": "fuchsia.unknown/Closeable_Close_Response",
         "error": "int32"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.io/Symlink.DeprecatedClone",
+        "strictness": "flexible",
+        "ordinal": "6512600400724287855",
+        "direction": "one_way",
+        "request": "fuchsia.io/NodeDeprecatedCloneRequest"
     },
     {
         "kind": "protocol/member",

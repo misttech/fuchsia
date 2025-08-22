@@ -53,6 +53,57 @@ Connection::~Connection() {
   }
 }
 
+void Connection::NodeCloneDeprecated(fio::OpenFlags flags, VnodeProtocol protocol,
+                                     fidl::ServerEnd<fio::Node> server_end) {
+  zx_status_t status = [&]() -> zx_status_t {
+    zx::result clone_options = DeprecatedOptions::FromCloneFlags(flags, protocol);
+    if (clone_options.is_error()) {
+      FS_PRETTY_TRACE_DEBUG("[NodeCloneDeprecated] invalid clone flags: ", flags);
+      return clone_options.error_value();
+    }
+    FS_PRETTY_TRACE_DEBUG("[NodeCloneDeprecated] our rights: ", rights(),
+                          ", options: ", *clone_options);
+
+    // If CLONE_SAME_RIGHTS is requested, cloned connection will inherit the same rights as those
+    // from the originating connection.
+    if (clone_options->flags & fio::OpenFlags::kCloneSameRights) {
+      clone_options->rights = rights_;
+    } else if (clone_options->rights - rights_) {
+      // Return ACCESS_DENIED if the client asked for a right the parent connection doesn't have.
+      return ZX_ERR_ACCESS_DENIED;
+    }
+
+    if (zx::result validated = vnode()->DeprecatedValidateOptions(*clone_options);
+        validated.is_error()) {
+      return validated.error_value();
+    }
+
+    auto vfs = vfs_.Upgrade();
+    if (!vfs)
+      return ZX_ERR_CANCELED;
+
+    fbl::RefPtr vn = vnode();
+    // We only need to open the Vnode for non-node reference connection.
+    if (protocol != VnodeProtocol::kNode) {
+      if (zx_status_t open_status = OpenVnode(&vn); open_status != ZX_OK) {
+        return open_status;
+      }
+    }
+    // On failure, |Vfs::ServeDeprecated()| will close the channel with an epitaph.
+    vfs->ServeDeprecated(vn, server_end.TakeChannel(), *clone_options);
+    return ZX_OK;
+  }();
+
+  if (status != ZX_OK) {
+    FS_PRETTY_TRACE_DEBUG("[NodeCloneDeprecated] error: ", zx_status_get_string(status));
+    if (flags & fio::wire::OpenFlags::kDescribe) {
+      // Ignore errors since there is nothing we can do if this fails.
+      [[maybe_unused]] auto result = fidl::WireSendEvent(server_end)->OnOpen(status, {});
+    }
+    server_end.Close(status);
+  }
+}
+
 void Connection::NodeClone(fio::Flags flags, zx::channel object) const {
   FS_PRETTY_TRACE_DEBUG("[NodeClone] reopening with flags: ", flags);
   auto vfs = this->vfs();
