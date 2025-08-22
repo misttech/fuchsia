@@ -11,9 +11,9 @@ use fidl_fuchsia_samplertestcontroller::SamplerTestControllerProxy;
 use fidl_test_persistence_factory::ControllerProxy;
 use fuchsia_async as fasync;
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams, RealmInstance};
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 use log::*;
-use pretty_assertions::{assert_eq, StrComparison};
+use pretty_assertions::{StrComparison, assert_eq};
 use serde_json::Value;
 use std::fs::File;
 use std::io::Read;
@@ -405,12 +405,12 @@ async fn never_idles() {
     )
     .await
     .unwrap();
-    let instance = builder.build().await.unwrap();
 
     let mut event_stream = EventStream::open().await.unwrap();
-    let moniker = format!(".*{}.*persistence$", instance.root.child_name());
+    let instance = builder.build().await.unwrap();
 
     // Wait for the start event.
+    let moniker = format!(".*{}.*persistence$", instance.root.child_name());
     EventMatcher::ok()
         .moniker_regex(moniker.clone())
         .wait::<Started>(&mut event_stream)
