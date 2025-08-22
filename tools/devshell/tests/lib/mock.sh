@@ -21,7 +21,7 @@
 # "${executable_path}.mock_state.2").
 #
 # After sourcing the ".mock_state(.n)" file, an array variable, "BT_MOCK_ARGS", will be
-# set (or overwritten if a prior value was set) to the command name (the ${BASH_SOURCE})
+# set (or overwritten if a prior value was set) to the command name (the ${script})
 # followed by the arguments passed to the mocked tool by the last caller. Also, if a
 # ".mock_side_effects" file was provided, the variable "BT_SIDE_EFFECT_STATUS" will be
 # set to the status returned from sourcing the ".mock_side_effects" file.
@@ -49,53 +49,80 @@
 # loop with a long sleep). Alternatively, your side effect program can write
 # its own output.
 #
+# Supporting multiple calls to the same script with different outputs and
+# side effects is supported by using index suffixed files, such as
+# "${executable_path}.mock_stdout.1" or "${executable_path}.mock_side_effects.2"
+# which will only be used for the n-th script invocation. The suffix-less version
+# of the file, if available, will be used as a fallback otherwise.
+#
 # Limitations:
 #   - Input from stdin is ignored. The only way to change the behavior is to
 #     create the .mock_status, .mock_stdout, and/or .mock_stderr files.
 #   - stdout results are written first, in entirety, followed by stderr results
 #     (if supplied)
 
-if [[ -e "${BASH_SOURCE}.mock_stdout" ]]; then
-  cat "${BASH_SOURCE}.mock_stdout"
+declare script="${BASH_SOURCE[0]}"
+declare state_file="${script}.mock_state"
+declare -i run_index=1
+if [[ -e "${state_file}" ]]; then
+  # Command was executed more than once. Use numeric suffixes.
+  mv "${state_file}" "${state_file}.1"
+  state_file="${state_file}.2"
+  run_index=2
+elif [[ -e "${state_file}.1" ]]; then
+  declare -i index
+  declare -i max_index=1
+  for file in "${state_file}".*; do
+    index=${file##*.}
+    max_index=$(( index > max_index ? index : max_index ))
+  done
+  run_index=$((max_index+1))
+  state_file="${state_file}.${run_index}"
 fi
 
-if [[ -e "${BASH_SOURCE}.mock_stderr" ]]; then
-  >&2 cat "${BASH_SOURCE}.mock_stderr"
+stdout_file="${script}.mock_stdout.${run_index}"
+if [[ ! -e "${stdout_file}" ]]; then
+  stdout_file="${script}.mock_stdout"
+fi
+if [[ -e "${stdout_file}" ]]; then
+    cat "${stdout_file}"
+fi
+
+stderr_file="${script}.mock_stderr.${run_index}"
+if [[ ! -e "${stderr_file}" ]]; then
+  stderr_file="${script}.mock_stderr"
+fi
+if [[ -e "${stderr_file}" ]]; then
+  >&2 cat "${stderr_file}"
 fi
 
 declare had_side_effect=false
 declare -i side_effect_status=0
-if [[ -e "${BASH_SOURCE}.mock_side_effects" ]]; then
-  source "${BASH_SOURCE}.mock_side_effects" "$@"
+declare side_effect_file="${script}.mock_side_effects.${run_index}"
+if [[ ! -e "${side_effect_file}" ]]; then
+  side_effect_file="${script}.mock_side_effects"
+fi
+if [[ -e "${side_effect_file}" ]]; then
+  # shellcheck source=/dev/null
+  source "${side_effect_file}" "$@"
   side_effect_status=$?
   had_side_effect=true
 fi
 
 declare -i status=0
-if [[ -e "${BASH_SOURCE}.mock_status" ]]; then
-  status=$(cat "${BASH_SOURCE}.mock_status")
+declare status_file="${script}.mock_status.${run_index}"
+if [[ ! -e "${status_file}" ]]; then
+  status_file="${script}.mock_status"
+fi
+if [[ -e "${status_file}" ]]; then
+  status=$(cat "${status_file}")
 elif ${had_side_effect}; then
   status=${side_effect_status}
 fi
 
-declare state_file="${BASH_SOURCE}.mock_state"
-if [[ -e "${state_file}" ]]; then
-  # Command was executed more than once. Use numeric suffixes.
-  mv "${state_file}" "${state_file}.1"
-  state_file="${state_file}.2"
-elif [[ -e "${state_file}.1" ]]; then
-  declare -i index
-  declare -i max_index=1
-  for file in $(ls "${state_file}".*); do
-    index=${file##*.}
-    max_index=$(( index > max_index ? index : max_index ))
-  done
-  state_file="${state_file}.$((max_index+1))"
-fi
-
 echo "#!/bin/bash" >>"${state_file}"
 
-# Write the args into the status file.
+# Write the args into the state file.
 #
 # This is split into three steps, the middle of which writes the Bash array
 # literal. The array is written using printf and %q to quote or escape the
@@ -108,13 +135,15 @@ echo "#!/bin/bash" >>"${state_file}"
 # * Using printf allows all strings to be safely included in the array.
 # * Using printf prevents variable expansion when the status file is sourced as
 #   a script.
-printf "BT_MOCK_ARGS=( " >>"${state_file}"
-printf "%q " "${BASH_SOURCE}" "$@" >>"${state_file}"
-printf ")\n" >>"${state_file}"
-if ${had_side_effect}; then
-  echo "declare -i BT_MOCK_SIDE_EFFECT_STATUS=${side_effect_status}" >>"${state_file}"
-fi
-echo "return ${status}" >>"${state_file}"
+{
+  printf "BT_MOCK_ARGS=( "
+  printf "%q " "${script}" "$@"
+  printf ")\n"
+  if ${had_side_effect}; then
+    echo "declare -i BT_MOCK_SIDE_EFFECT_STATUS=${side_effect_status}"
+  fi
+  echo "return ${status}"
+} >> "${state_file}"
 
 # If script was sourced, use 'return', otherwise use 'exit'
 (return 0 2>/dev/null) && return ${status} || exit ${status}

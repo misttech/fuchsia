@@ -50,6 +50,9 @@ btf::setup_fx() {
   function track-command-finished {
    :
   }
+  function track-build-event {
+   :
+  }
 EOF
   fi
   # If the host-tool command is not mocked, some code in vars.sh will
