@@ -193,12 +193,14 @@ HandoffEnd::Elf CreatePhysElf(const PhysElfImage& image) {
 
 // This function is called first thing on kernel entry, so it should be
 // careful on what it assumes is present.
-void HandoffFromPhys(PhysHandoff* handoff) {
-  gPhysHandoff = handoff;
+void PostHandoffBootstrap(PhysHandoff* handoff) {
+  ZX_DEBUG_ASSERT(handoff);
 
-  // This serves as a verification that code-patching was performed before
-  // the kernel was booted; if unpatched, we would trap here and halt.
-  CodePatchingNopTest();
+  // Crucial set-up happens in ArchPostHandoffBootstrap() and it should happen
+  // early. We take care to only sequence the simple setting of several,
+  // fundamental global variables before then.
+
+  gPhysHandoff = handoff;
 
   gBootOptions = gPhysHandoff->boot_options.get();
 
@@ -208,9 +210,15 @@ void HandoffFromPhys(PhysHandoff* handoff) {
   gPhysmapBase = gPhysHandoff->physmap_base;
   gPhysmapSize = gPhysHandoff->physmap_size;
 
+  ArchPostHandoffBootstrap(handoff->arch_handoff);
+
   if (gPhysHandoff->reboot_reason) {
     platform_set_hw_reboot_reason(gPhysHandoff->reboot_reason.value());
   }
+
+  // This serves as a verification that code-patching was performed before
+  // the kernel was booted; if unpatched, we would trap here and halt.
+  CodePatchingNopTest();
 }
 
 paddr_t KernelPhysicalLoadAddress() { return gKernelPhysicalLoadAddress; }

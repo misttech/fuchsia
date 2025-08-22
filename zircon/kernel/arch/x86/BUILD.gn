@@ -126,6 +126,7 @@ zx_library("x86") {
     "faults.cc",
     "feature.cc",
     "gdt.S",
+    "handoff.cc",
     "hwp.cc",
     "idle_states.cc",
     "idt.cc",

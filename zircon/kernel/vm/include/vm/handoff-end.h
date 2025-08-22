@@ -21,10 +21,14 @@
 // Forward declaration; defined in <vm/vm_object.h>
 class VmObject;
 
-// Called as soon as the kernel is entered to set the gPhysHandoff pointer.
-void HandoffFromPhys(PhysHandoff* handoff);
+// Called as soon as the kernel is entered to finish the earliest kernel
+// bootstrapping. In particular, this sets the gPhysHandoff pointer.
+void PostHandoffBootstrap(PhysHandoff* handoff);
 
-// Valid to call only after HandoffFromPhys().
+// The arch-specific post-handoff bootstrap subroutine.
+void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff);
+
+// Valid to call only after PostHandoffBootstrap().
 paddr_t KernelPhysicalLoadAddress();
 
 // This is valid to call only with addresses inside the kernel image itself.

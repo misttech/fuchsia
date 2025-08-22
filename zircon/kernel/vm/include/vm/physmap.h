@@ -19,7 +19,7 @@
 // virtual [gPhysmapBase, gPhysmapBase + gPhysmapSize), where gPhysmapSize is
 // just large enough to capture all of physical RAM. The mapping is set up in
 // physboot and then the variables giving its dimensions are set in
-// HandoffFromPhys().
+// PostHandoffBootstrap().
 
 extern vaddr_t gPhysmapBase;
 extern size_t gPhysmapSize;

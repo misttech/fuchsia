@@ -69,6 +69,7 @@ if (toolchain_base_environment == "kernel") {
       "feature.cc",
       "fpu.cc",
       "fpu_asm.S",
+      "handoff.cc",
       "mmu.cc",
       "mp.cc",
       "restricted.cc",

@@ -116,6 +116,7 @@ if (toolchain_environment == "physmem" ||
       "exceptions_c.cc",
       "feature.cc",
       "fpu.cc",
+      "handoff.cc",
       "mexec.S",
       "mmu.cc",
       "mmu_tests.cc",
