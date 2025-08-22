@@ -1,3 +1,7 @@
+**NOTE**: Debugging the kernel with QEMU is not well supported.  The support and
+tooling that does exist is brittle and frequently broken.  Do not be surprised
+if the steps below do not work.
+
 # Debug the kernel using QEMU
 
 Zircon can run under emulation using QEMU. QEMU can either be installed via
