@@ -504,7 +504,10 @@ rustc_library("starnix_core") {
 }
 
 static_library("restricted_trampoline") {
-  sources = [ "execution/trampoline_${current_cpu}.S" ]
+  sources = [
+    "execution/asm.h",
+    "execution/trampoline_${current_cpu}.S",
+  ]
 }
 
 resource("starnix-test-files") {

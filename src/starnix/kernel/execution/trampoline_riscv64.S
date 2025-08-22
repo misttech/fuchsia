@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-.globl breakpoint_for_module_changes
-.type breakpoint_for_module_changes, @function
-breakpoint_for_module_changes:
+#include "asm.h"
+
+FUNCTION(breakpoint_for_module_changes)
   ebreak
   ret
+END_FUNCTION(breakpoint_for_module_changes)
 
 
 //      fn restricted_enter_loop(
@@ -17,9 +18,7 @@ breakpoint_for_module_changes:
 //  a4    restricted_state_addr: usize,
 //  a5    extended_pstate_addr: usize,
 //  a0 ) -> zx::sys::zx_status_t;
-.globl restricted_enter_loop
-.type restricted_enter_loop, @function
-restricted_enter_loop:
+FUNCTION(restricted_enter_loop)
   // Make space for all 12 callee saved registers, return address, thread pointer, shadow call
   // stack pointer, and 6 parameters on the stack. Since the stack must remain aligned to 16
   // byte boundaries an additional 8 bytes are allocated and not used.
@@ -109,6 +108,7 @@ restricted_enter_loop:
   // Reset the stack.
   addi sp, sp, (22 * 8)
   ret
+END_FUNCTION(restricted_enter_loop)
 
 // The restricted return entry point is not really a function but we treat it like one. It has
 // the following parameters:
@@ -116,9 +116,7 @@ restricted_enter_loop:
 //    a0   context: usize,
 //    a1   reason_code: u64
 // )
-.globl restricted_return_loop
-.type restricted_return_loop, @function
-restricted_return_loop:
+FUNCTION(restricted_return_loop)
   // a0 holds the context, which is the stack pointer
   mv sp, a0
 
@@ -160,3 +158,5 @@ restricted_return_loop:
 
   // Go back to the top
   j .restricted_enter_loop_top
+  // Never reached
+END_FUNCTION(restricted_return_loop)

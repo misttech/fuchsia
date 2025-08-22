@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-.globl breakpoint_for_module_changes
-.type breakpoint_for_module_changes, %function
-breakpoint_for_module_changes:
+#include "asm.h"
+
+FUNCTION(breakpoint_for_module_changes)
   brk #0
   ret
+END_FUNCTION(breakpoint_for_module_changes)
 
 //       fn restricted_enter_loop(
 //  x0    options: u32,
@@ -16,9 +17,7 @@ breakpoint_for_module_changes:
 //  x4    restricted_state_addr: usize,
 //  x5    extended_pstate_addr: usize,
 //  x0 ) -> zx::sys::zx_status_t;
-.globl restricted_enter_loop
-.type restricted_enter_loop, %function
-restricted_enter_loop:
+FUNCTION(restricted_enter_loop)
   // This function:
   //   - Saves the callee saved registers (including the link register) on the stack.
   //   - Passes the stack pointer as the third ("context") parameter (in r2) to zx_restricted_enter().
@@ -79,6 +78,7 @@ restricted_enter_loop:
   ldp x20, x19, [sp], #16
 
   ret
+END_FUNCTION(restricted_enter_loop)
 
 // The restricted return entry point is not really a function but we treat it like one. It has the following
 // parameters:
@@ -86,9 +86,12 @@ restricted_enter_loop:
 //    x0   context: usize,
 //    x1   reason_code: u64
 // )
-.globl restricted_return_loop
-.type restricted_return_loop, %function
-restricted_return_loop:
+FUNCTION(restricted_return_loop)
+  // The "caller" is actually interrupted restricted mode state.  This means the
+  // "return address" will be treated as the precise PC of the "caller", rather
+  // than as its return address that's one instruction after the call site.
+  .cfi_signal_frame
+
   // x0 holds the context, which is the stack pointer.
   mov sp, x0
 
@@ -113,7 +116,6 @@ restricted_return_loop:
   ldr x29, [x27, 0xE8]
 
   // Emit CFI directives referring to the restricted mode register state
-  .cfi_startproc
   .cfi_remember_state
   .cfi_def_cfa x27, 0
   .cfi_offset x0, 0
@@ -161,7 +163,6 @@ restricted_return_loop:
   
   // Restore CFI state after callback
   .cfi_restore_state
-  .cfi_endproc
 
   // Did the callback tell us to exit?
   cbz x0, .restricted_enter_loop_ret
@@ -172,3 +173,5 @@ restricted_return_loop:
 
   // Go back to the loop
   b .restricted_enter_loop_top
+  // Never reached.
+END_FUNCTION(restricted_return_loop)

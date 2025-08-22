@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-.globl breakpoint_for_module_changes
-.type breakpoint_for_module_changes STT_FUNC
-breakpoint_for_module_changes:
+#include "asm.h"
+
+FUNCTION(breakpoint_for_module_changes)
   int3
   ret
+END_FUNCTION(breakpoint_for_module_changes)
 
 
 //       fn restricted_enter_loop(
@@ -17,9 +18,7 @@ breakpoint_for_module_changes:
 // %r8     restricted_state_addr: usize,
 // %r9     extended_pstate_addr: usize,
 // %rax  ) -> zx::sys::zx_status_t;
-.globl restricted_enter_loop
-.type restricted_enter_loop STT_FUNC
-restricted_enter_loop:
+FUNCTION(restricted_enter_loop)
   // Save callee saved registers on the stack.
   push  %rbx
   push  %rbp
@@ -81,7 +80,7 @@ restricted_enter_loop:
 
   // Return value is already in %rax
   ret
-
+END_FUNCTION(restricted_enter_loop)
 
 // The restricted return entry point is not really a function but we treat it like one. It has the following
 // parameters:
@@ -89,9 +88,7 @@ restricted_enter_loop:
 //   %rdi   context: usize,
 //   %rsi   reason_code: u64
 // )
-.globl restricted_return_loop
-.type restricted_return_loop STT_FUNC
-restricted_return_loop:
+FUNCTION(restricted_return_loop)
   // Back from restricted mode, rdi holds our context (stack pointer, before call)
   mov %rdi,%rsp
 
@@ -117,7 +114,6 @@ restricted_return_loop:
 
   // Emit CFI directives referring to the current restricted mode register state to
   // emulate the restricted mode code "calling" the restricted exit callback.
-  .cfi_startproc
   .cfi_remember_state
   .cfi_def_cfa r14, 0
   // These offsets match the offsets of
@@ -153,7 +149,6 @@ restricted_return_loop:
 
   // Restore CFI state
   .cfi_restore_state
-  .cfi_endproc
 
   // Did the callback tell us to exit?
   test %eax, %eax
@@ -165,3 +160,5 @@ restricted_return_loop:
 
   // Go back to the loop.
   jmp .restricted_enter_loop_top
+  // Never reached
+END_FUNCTION(restricted_return_loop)
