@@ -329,6 +329,7 @@ fn get_discovery_stream_with_sources(
         .with_fastboot_devices_file_path(fastboot_file_path)
         .with_emulator_instance_root(emu_instance_root)
         .notify_added(true)
+        .notify_removed(false)
         .build();
     let stream = discovery.discover_devices(filter)?;
 
