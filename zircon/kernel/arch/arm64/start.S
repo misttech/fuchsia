@@ -92,6 +92,3 @@ handoff_paddr           .req x21
   bl lk_main
   b .
 .end_function
-
-// This symbol is used by gdb python to know the base of the kernel module
-.label KERNEL_BASE_ADDRESS, global, value=KERNEL_BASE

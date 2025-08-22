@@ -927,9 +927,6 @@ if (is_kernel) {
       "//zircon/kernel/lib/libc",
     ]
 
-    # Used as a bias when patching kernel code.
-    defines = [ "KERNEL_LINK_ADDRESS=${kernel_base}" ]
-
     # Defines the maximum support kernel image size.
     configs += [ "//zircon/kernel:kernel_image_max_size" ]
   }

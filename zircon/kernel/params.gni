@@ -21,9 +21,6 @@ declare_args() {
     smp_max_cpus = 16
   }
 
-  # TODO(https://fxbug.dev/42164859): stub, probably not needed post-physboot
-  kernel_base = 0
-
   # Enable kernel lock dependency tracking.
   enable_lock_dep = false
 
@@ -77,8 +74,7 @@ declare_args() {
   # 3 = Adds duration events for PMM allocations and frees.
   vm_tracing_level = 0
 
-  # Extra macro definitions for kernel code, e.g. "DISABLE_KASLR",
-  # "ENABLE_KERNEL_LL_DEBUG".
+  # Extra macro definitions for kernel code, e.g. "ENABLE_KERNEL_LL_DEBUG".
   kernel_extra_defines = []
 
   # Enables various kernel debugging and diagnostic features.  Valid

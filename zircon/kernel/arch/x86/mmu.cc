@@ -27,6 +27,7 @@
 #include <arch/x86/mmu_mem_types.h>
 #include <kernel/mp.h>
 #include <ktl/span.h>
+#include <phys/arch/arch-handoff.h>
 #include <vm/arch_vm_aspace.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>
@@ -97,12 +98,8 @@ static uint64_t num_handoff_mmu_pages = 0;
 
 // Static relocated base to prepare for KASLR. Used at early boot and by gdb
 // script to know the target relocated address.
-// TODO(thgarnie): Move to a dynamically generated base address
-#if DISABLE_KASLR
-uint64_t kernel_relocated_base = KERNEL_BASE;
-#else
-uint64_t kernel_relocated_base = 0xffffffff00000000;
-#endif
+// TODO(https://fxbug.dev/42098994): Choose it randomly.
+uint64_t kernel_relocated_base = kArchHandoffVirtualAddress;
 
 /**
  * @brief  check if the virtual address is canonical
