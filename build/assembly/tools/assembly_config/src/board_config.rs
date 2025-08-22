@@ -63,11 +63,15 @@ pub fn new(args: &BoardArgs) -> Result<()> {
         }
     }
 
+    let name = config.name.clone();
+    let repository = common::get_release_repository(&args.repo, &args.repo_file)?;
+    let version = common::get_release_version(&args.version, &args.version_file)?;
+
     config.release_info = BoardReleaseInfo {
         info: ReleaseInfo {
-            name: config.name.clone(),
-            repository: common::get_release_repository(&args.repo, &args.repo_file)?,
-            version: common::get_release_version(&args.version, &args.version_file)?,
+            name: common::validate_string_for_upstream_versioning(name)?,
+            repository: common::validate_string_for_upstream_versioning(repository)?,
+            version: common::validate_string_for_upstream_versioning(version)?,
         },
         bib_sets: bib_sets_info,
     };
