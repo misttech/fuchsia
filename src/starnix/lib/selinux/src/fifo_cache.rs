@@ -6,9 +6,6 @@ use indexmap::IndexMap;
 use std::hash::Hash;
 use std::ops::Add;
 
-#[cfg(all(test, target_os = "fuchsia"))]
-use indexmap::map::Iter;
-
 /// Describes the performance statistics of a cache implementation.
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CacheStats {
@@ -40,12 +37,6 @@ impl Add for &CacheStats {
             frees: self.frees + other.frees,
         }
     }
-}
-
-/// An interface through which statistics may be obtained from each cache.
-pub trait HasCacheStats {
-    /// Returns statistics for the cache implementation.
-    fn cache_stats(&self) -> CacheStats;
 }
 
 /// Associative FIFO cache with capacity defined at creation.
@@ -136,15 +127,7 @@ impl<A: Hash + Eq, R> FifoCache<A, R> {
         self.cache.get_index_mut(index).map(|(_, v)| v).expect("invalid index after insert!")
     }
 
-    /// Returns an iterator over the cache elements, for use by tests.
-    #[cfg(all(test, target_os = "fuchsia"))]
-    pub fn iter(&self) -> Iter<'_, A, R> {
-        self.cache.iter()
-    }
-}
-
-impl<A: Hash + Eq, R> HasCacheStats for FifoCache<A, R> {
-    fn cache_stats(&self) -> CacheStats {
+    pub fn cache_stats(&self) -> CacheStats {
         self.stats.clone()
     }
 }

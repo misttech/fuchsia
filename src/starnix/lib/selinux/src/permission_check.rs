@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::access_vector_cache::{FifoQueryCache, Locked, Query};
+use crate::access_vector_cache::{AccessVectorCache, Query};
 use crate::policy::{
     AccessDecision, AccessVector, AccessVectorComputer, SELINUX_AVD_FLAGS_PERMISSIVE,
 };
@@ -15,7 +15,6 @@ use crate::{
 use fuchsia_inspect_contrib::profile_duration;
 
 use std::num::NonZeroU64;
-use std::sync::Weak;
 
 /// Describes the result of a permission lookup between two Security Contexts.
 #[derive(Clone, Debug, PartialEq)]
@@ -34,18 +33,18 @@ pub struct PermissionCheckResult {
     pub todo_bug: Option<NonZeroU64>,
 }
 
-/// Implements the `has_permission()` API, based on supplied `Query` and `AccessVectorComputer`
-/// implementations.
+/// Implements the `has_permission()` API, based on supplied `SecurityServer` and
+/// `AccessVectorCache` implementations.
 // TODO: https://fxbug.dev/362699811 - Revise the traits to avoid direct dependencies on `SecurityServer`.
 pub struct PermissionCheck<'a> {
     security_server: &'a SecurityServer,
-    access_vector_cache: &'a Locked<FifoQueryCache<Weak<SecurityServer>>>,
+    access_vector_cache: &'a AccessVectorCache,
 }
 
 impl<'a> PermissionCheck<'a> {
     pub(crate) fn new(
         security_server: &'a SecurityServer,
-        access_vector_cache: &'a Locked<FifoQueryCache<Weak<SecurityServer>>>,
+        access_vector_cache: &'a AccessVectorCache,
     ) -> Self {
         Self { security_server, access_vector_cache }
     }

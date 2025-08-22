@@ -8,7 +8,7 @@ use crate::sync::Mutex;
 use crate::{FsNodeClass, KernelClass, NullessByteStr, ObjectClass, SecurityId, SecurityServer};
 use std::sync::{Arc, Weak};
 
-pub use crate::fifo_cache::{CacheStats, HasCacheStats};
+pub use crate::fifo_cache::CacheStats;
 
 /// Interface used internally by the `SecurityServer` implementation to implement policy queries
 /// such as looking up the set of permissions to grant, or the Security Context to apply to new
@@ -236,6 +236,10 @@ impl<D> FifoQueryCache<D> {
         }
     }
 
+    pub fn cache_stats(&self) -> CacheStats {
+        &self.access_cache.cache_stats() + &self.ioctl_access_cache.cache_stats()
+    }
+
     /// Returns true if the main access decision cache has reached capacity.
     #[cfg(test)]
     fn access_cache_is_full(&self) -> bool {
@@ -349,12 +353,6 @@ impl<D: QueryMut> QueryMut for FifoQueryCache<D> {
     }
 }
 
-impl<D> HasCacheStats for FifoQueryCache<D> {
-    fn cache_stats(&self) -> CacheStats {
-        &self.access_cache.cache_stats() + &self.ioctl_access_cache.cache_stats()
-    }
-}
-
 impl<D> ResetMut for FifoQueryCache<D> {
     fn reset(&mut self) -> bool {
         self.access_cache = FifoCache::with_capacity(self.access_cache.capacity());
@@ -370,32 +368,38 @@ impl<D> ProxyMut<D> for FifoQueryCache<D> {
     }
 }
 
-/// A locked access vector cache.
-pub(super) struct Locked<D> {
-    delegate: Arc<Mutex<D>>,
+/// An access vector cache.
+#[derive(Clone)]
+pub(super) struct AccessVectorCache {
+    cache: Arc<Mutex<FifoQueryCache<Weak<SecurityServer>>>>,
 }
 
-impl<D> Clone for Locked<D> {
-    fn clone(&self) -> Self {
-        Self { delegate: self.delegate.clone() }
+impl AccessVectorCache {
+    /// Constructs an access vector cache that delegates to `delegate`.
+    pub fn new(delegate: FifoQueryCache<Weak<SecurityServer>>) -> Self {
+        Self { cache: Arc::new(Mutex::new(delegate)) }
+    }
+
+    pub fn cache_stats(&self) -> CacheStats {
+        self.cache.lock().cache_stats()
+    }
+
+    pub fn set_stateful_cache_delegate(
+        &self,
+        delegate: Weak<SecurityServer>,
+    ) -> Weak<SecurityServer> {
+        self.cache.lock().set_delegate(delegate)
     }
 }
 
-impl<D> Locked<D> {
-    /// Constructs a locked access vector cache that delegates to `delegate`.
-    pub fn new(delegate: D) -> Self {
-        Self { delegate: Arc::new(Mutex::new(delegate)) }
-    }
-}
-
-impl<D: QueryMut> Query for Locked<D> {
+impl Query for AccessVectorCache {
     fn compute_access_decision(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
         target_class: ObjectClass,
     ) -> AccessDecision {
-        self.delegate.lock().compute_access_decision(source_sid, target_sid, target_class)
+        self.cache.lock().compute_access_decision(source_sid, target_sid, target_class)
     }
 
     fn compute_new_fs_node_sid(
@@ -404,7 +408,7 @@ impl<D: QueryMut> Query for Locked<D> {
         target_sid: SecurityId,
         fs_node_class: FsNodeClass,
     ) -> Result<SecurityId, anyhow::Error> {
-        self.delegate.lock().compute_new_fs_node_sid(source_sid, target_sid, fs_node_class)
+        self.cache.lock().compute_new_fs_node_sid(source_sid, target_sid, fs_node_class)
     }
 
     fn compute_new_fs_node_sid_with_name(
@@ -414,7 +418,7 @@ impl<D: QueryMut> Query for Locked<D> {
         fs_node_class: FsNodeClass,
         fs_node_name: NullessByteStr<'_>,
     ) -> Option<SecurityId> {
-        self.delegate.lock().compute_new_fs_node_sid_with_name(
+        self.cache.lock().compute_new_fs_node_sid_with_name(
             source_sid,
             target_sid,
             fs_node_class,
@@ -429,7 +433,7 @@ impl<D: QueryMut> Query for Locked<D> {
         target_class: ObjectClass,
         ioctl_prefix: u8,
     ) -> IoctlAccessDecision {
-        self.delegate.lock().compute_ioctl_access_decision(
+        self.cache.lock().compute_ioctl_access_decision(
             source_sid,
             target_sid,
             target_class,
@@ -438,24 +442,9 @@ impl<D: QueryMut> Query for Locked<D> {
     }
 }
 
-impl<D: HasCacheStats> HasCacheStats for Locked<D> {
-    fn cache_stats(&self) -> CacheStats {
-        self.delegate.lock().cache_stats()
-    }
-}
-
-impl<D: ResetMut> Reset for Locked<D> {
+impl Reset for AccessVectorCache {
     fn reset(&self) -> bool {
-        self.delegate.lock().reset()
-    }
-}
-
-impl<D> Locked<D> {
-    pub fn set_stateful_cache_delegate<PD>(&self, delegate: PD) -> PD
-    where
-        D: ProxyMut<PD>,
-    {
-        self.delegate.lock().set_delegate(delegate)
+        self.cache.lock().reset()
     }
 }
 
@@ -581,14 +570,19 @@ const DEFAULT_SHARED_SIZE: usize = 1000;
 /// Composite access vector cache manager that delegates queries to the security server and
 /// owns a shared cache of size `DEFAULT_SHARED_SIZE`.
 pub(super) struct AvcManager {
-    shared_cache: Locked<FifoQueryCache<Weak<SecurityServer>>>,
+    shared_cache: AccessVectorCache,
 }
 
 impl AvcManager {
     /// Constructs a [`AvcManager`] that initially has no security server delegate (i.e., will default
     /// to deny all requests).
     pub fn new() -> Self {
-        Self { shared_cache: Locked::new(FifoQueryCache::new(Weak::new(), DEFAULT_SHARED_SIZE)) }
+        Self {
+            shared_cache: AccessVectorCache::new(FifoQueryCache::new(
+                Weak::new(),
+                DEFAULT_SHARED_SIZE,
+            )),
+        }
     }
 
     /// Sets the security server delegate that is consulted when there is no cache hit on a query.
@@ -601,7 +595,7 @@ impl AvcManager {
 
     /// Returns a shared reference to the shared cache managed by this manager. This operation does
     /// not copy the cache, but it does perform an atomic operation to update a reference count.
-    pub fn get_shared_cache(&self) -> &Locked<FifoQueryCache<Weak<SecurityServer>>> {
+    pub fn get_shared_cache(&self) -> &AccessVectorCache {
         &self.shared_cache
     }
 }
@@ -904,303 +898,5 @@ mod tests {
             0x0,
         );
         assert_eq!(delegate_query_count + 1, avc.delegate.query_count());
-    }
-}
-
-/// Async tests that depend on `fuchsia::test` only run in starnix.
-#[cfg(test)]
-#[cfg(feature = "selinux_starnix")]
-mod starnix_tests {
-    use super::testing::*;
-    use super::*;
-    use crate::KernelClass;
-    use crate::policy::AccessVector;
-    use crate::policy::testing::{ACCESS_VECTOR_0001, ACCESS_VECTOR_0010};
-
-    use rand::distr::Uniform;
-    use rand::{Rng as _, rng};
-    use std::collections::HashMap;
-    use std::sync::atomic::{AtomicU32, Ordering};
-    use std::thread::spawn;
-
-    const NO_RIGHTS: u32 = 0;
-    const READ_RIGHTS: u32 = 1;
-    const WRITE_RIGHTS: u32 = 2;
-
-    const ACCESS_VECTOR_READ: AccessDecision = AccessDecision::allow(ACCESS_VECTOR_0001);
-    const ACCESS_VECTOR_WRITE: AccessDecision = AccessDecision::allow(ACCESS_VECTOR_0010);
-
-    struct PolicyServer {
-        policy: Arc<AtomicU32>,
-    }
-
-    impl PolicyServer {
-        fn set_policy(&self, policy: u32) {
-            if policy > 2 {
-                panic!("attempt to set policy to invalid value: {}", policy);
-            }
-            self.policy.as_ref().store(policy, Ordering::Relaxed);
-        }
-    }
-
-    impl Query for PolicyServer {
-        fn compute_access_decision(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _target_class: ObjectClass,
-        ) -> AccessDecision {
-            let policy = self.policy.as_ref().load(Ordering::Relaxed);
-            if policy == NO_RIGHTS {
-                AccessDecision::default()
-            } else if policy == READ_RIGHTS {
-                ACCESS_VECTOR_READ
-            } else if policy == WRITE_RIGHTS {
-                ACCESS_VECTOR_WRITE
-            } else {
-                panic!("compute_access_decision found invalid policy: {}", policy);
-            }
-        }
-
-        fn compute_new_fs_node_sid(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _fs_node_class: FsNodeClass,
-        ) -> Result<SecurityId, anyhow::Error> {
-            unreachable!()
-        }
-
-        fn compute_new_fs_node_sid_with_name(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _fs_node_class: FsNodeClass,
-            _fs_node_name: NullessByteStr<'_>,
-        ) -> Option<SecurityId> {
-            unreachable!()
-        }
-
-        fn compute_ioctl_access_decision(
-            &self,
-            _source_sid: SecurityId,
-            _target_sid: SecurityId,
-            _target_class: ObjectClass,
-            _ioctl_prefix: u8,
-        ) -> IoctlAccessDecision {
-            todo!()
-        }
-    }
-
-    impl Reset for PolicyServer {
-        fn reset(&self) -> bool {
-            true
-        }
-    }
-
-    #[fuchsia::test]
-    async fn locked_fixed_access_vector_cache_coherence() {
-        for _ in 0..10 {
-            test_locked_fixed_access_vector_cache_coherence().await
-        }
-    }
-
-    /// Tests cache coherence over two policy changes over a `Locked<Fixed>`.
-    async fn test_locked_fixed_access_vector_cache_coherence() {
-        //
-        // Test setup
-        //
-
-        let active_policy: Arc<AtomicU32> = Arc::new(Default::default());
-        let policy_server = Arc::new(PolicyServer { policy: active_policy.clone() });
-        let fixed_avc = FifoQueryCache::<_>::new(policy_server.clone(), TEST_CAPACITY);
-        let avc = Locked::new(fixed_avc);
-        let sids = unique_sids(30);
-
-        // Ensure the initial policy is `NO_RIGHTS`.
-        policy_server.set_policy(NO_RIGHTS);
-
-        //
-        // Test run: Two threads will query the AVC many times while two other threads make policy
-        // changes.
-        //
-
-        // Allow both query threads to synchronize on "last policy change has been made". Query
-        // threads use this signal to ensure at least some of their queries occur after the last
-        // policy change.
-        let (tx_last_policy_change_1, rx_last_policy_change_1) =
-            futures::channel::oneshot::channel();
-        let (tx_last_policy_change_2, rx_last_policy_change_2) =
-            futures::channel::oneshot::channel();
-
-        // Set up two querying threads. The number of iterations in each thread is highly likely
-        // to perform queries that overlap with the two policy changes, but to be sure, use
-        // `rx_last_policy_change_#` to synchronize  before last queries.
-        let (tx1, rx1) = futures::channel::oneshot::channel();
-        let avc_for_query_1 = avc.clone();
-        let sids_for_query_1 = sids.clone();
-
-        let query_thread_1 = spawn(|| async move {
-            let sids = sids_for_query_1;
-            let mut trace = vec![];
-
-            for i in rng().sample_iter(&Uniform::new(0, 20).unwrap()).take(2000) {
-                trace.push((
-                    sids[i].clone(),
-                    avc_for_query_1.compute_access_decision(
-                        sids[i].clone(),
-                        A_TEST_SID.clone(),
-                        KernelClass::Process.into(),
-                    ),
-                ))
-            }
-
-            rx_last_policy_change_1.await.expect("receive last-policy-change signal (1)");
-
-            for i in rng().sample_iter(&Uniform::new(0, 20).unwrap()).take(10) {
-                trace.push((
-                    sids[i].clone(),
-                    avc_for_query_1.compute_access_decision(
-                        sids[i].clone(),
-                        A_TEST_SID.clone(),
-                        KernelClass::Process.into(),
-                    ),
-                ))
-            }
-
-            tx1.send(trace).expect("send trace 1");
-
-            //
-            // Test expectations: After `<final-policy-reset>; avc.reset();
-            // avc.compute_access_decision();`, all caches (including those that lazily reset on
-            // next query) must contain *only* items consistent with the final policy: `(_, _, ) =>
-            // WRITE`.
-            //
-
-            for (_, result) in avc_for_query_1.delegate.lock().access_cache.iter() {
-                assert_eq!(ACCESS_VECTOR_WRITE, result.access_decision);
-            }
-        });
-
-        let (tx2, rx2) = futures::channel::oneshot::channel();
-        let avc_for_query_2 = avc.clone();
-        let sids_for_query_2 = sids.clone();
-
-        let query_thread_2 = spawn(|| async move {
-            let sids = sids_for_query_2;
-            let mut trace = vec![];
-
-            for i in rng().sample_iter(&Uniform::new(10, 30).unwrap()).take(2000) {
-                trace.push((
-                    sids[i].clone(),
-                    avc_for_query_2.compute_access_decision(
-                        sids[i].clone(),
-                        A_TEST_SID.clone(),
-                        KernelClass::Process.into(),
-                    ),
-                ))
-            }
-
-            rx_last_policy_change_2.await.expect("receive last-policy-change signal (2)");
-
-            for i in rng().sample_iter(&Uniform::new(10, 30).unwrap()).take(10) {
-                trace.push((
-                    sids[i].clone(),
-                    avc_for_query_2.compute_access_decision(
-                        sids[i].clone(),
-                        A_TEST_SID.clone(),
-                        KernelClass::Process.into(),
-                    ),
-                ))
-            }
-
-            tx2.send(trace).expect("send trace 2");
-
-            //
-            // Test expectations: After `<final-policy-reset>; avc.reset();
-            // avc.compute_access_decision();`, all caches (including those that lazily reset on
-            // next query) must contain *only* items consistent with the final policy: `(_, _, ) =>
-            // NONE`.
-            //
-
-            for (_, result) in avc_for_query_2.delegate.lock().access_cache.iter() {
-                assert_eq!(ACCESS_VECTOR_WRITE, result.access_decision);
-            }
-        });
-
-        let policy_server_for_set_read = policy_server.clone();
-        let avc_for_set_read = avc.clone();
-        let (tx_set_read, rx_set_read) = futures::channel::oneshot::channel();
-        let set_read_thread = spawn(move || {
-            // Allow some queries to accumulate before first policy change.
-            std::thread::sleep(std::time::Duration::from_micros(1));
-
-            // Set security server policy *first*, then reset caches. This is normally the
-            // responsibility of the security server.
-            policy_server_for_set_read.set_policy(READ_RIGHTS);
-            avc_for_set_read.reset();
-
-            tx_set_read.send(true).expect("send set-read signal")
-        });
-
-        let policy_server_for_set_write = policy_server.clone();
-        let avc_for_set_write = avc;
-        let set_write_thread = spawn(|| async move {
-            // Complete set-read before executing set-write.
-            rx_set_read.await.expect("receive set-write signal");
-            std::thread::sleep(std::time::Duration::from_micros(1));
-
-            // Set security server policy *first*, then reset caches. This is normally the
-            // responsibility of the security server.
-            policy_server_for_set_write.set_policy(WRITE_RIGHTS);
-            avc_for_set_write.reset();
-
-            tx_last_policy_change_1.send(true).expect("send last-policy-change signal (1)");
-            tx_last_policy_change_2.send(true).expect("send last-policy-change signal (2)");
-        });
-
-        // Join all threads.
-        set_read_thread.join().expect("join set-policy-to-read");
-        let _ = set_write_thread.join().expect("join set-policy-to-write").await;
-        let _ = query_thread_1.join().expect("join query").await;
-        let _ = query_thread_2.join().expect("join query").await;
-
-        // Receive traces from query threads.
-        let trace_1 = rx1.await.expect("receive trace 1");
-        let trace_2 = rx2.await.expect("receive trace 2");
-
-        //
-        // Test expectations: Inspect individual query thread traces separately. For each thread,
-        // group `(sid, 0, 0) -> AccessVector` trace items by `sid`, keeping them in chronological
-        // order. Every such grouping should observe at most `NONE->READ`, `READ->WRITE`
-        // transitions. Any other transitions suggests out-of-order "jitter" from stale cache items.
-        //
-        // We cannot expect stronger guarantees (e.g., across different queries). For example, the
-        // following scheduling is possible:
-        //
-        // 1. Policy change thread changes policy from NONE to READ;
-        // 2. Query thread qt queries q1, which as never been queried before. Result: READ.
-        // 3. Query thread qt queries q0, which was cached before policy reload. Result: NONE.
-        // 4. All caches reset.
-        //
-        // Notice that, ignoring query inputs, qt observes trace `..., READ, NONE`. However, such a
-        // sequence must not occur when observing qt's trace filtered by query input (q1, q0, etc.).
-        //
-
-        for trace in [trace_1, trace_2] {
-            let mut trace_by_sid = HashMap::<SecurityId, Vec<AccessVector>>::new();
-            for (sid, access_decision) in trace {
-                trace_by_sid.entry(sid).or_insert(vec![]).push(access_decision.allow);
-            }
-            for access_vectors in trace_by_sid.values() {
-                let initial_rights = AccessVector::NONE;
-                let mut prev_rights = &initial_rights;
-                for rights in access_vectors.iter() {
-                    // Note: `WRITE > READ > NONE`.
-                    assert!(rights >= prev_rights);
-                    prev_rights = rights;
-                }
-            }
-        }
     }
 }

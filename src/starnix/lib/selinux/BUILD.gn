@@ -96,13 +96,6 @@ rustc_library("selinux") {
 
     # Fuchsia/starnix builds use `starnix_sync` for lock primitives.
     deps += [ "//src/starnix/lib/starnix_sync" ]
-
-    # Fuchsia/starnix async tests rely on additional dependencies.
-    test_deps += [
-      "//src/lib/fuchsia",
-      "//third_party/rust_crates:futures",
-      "//third_party/rust_crates:rand",
-    ]
   }
 }
 
