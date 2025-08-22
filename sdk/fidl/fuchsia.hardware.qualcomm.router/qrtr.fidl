@@ -95,6 +95,12 @@ protocol QrtrClientConnection {
     flexible GetNodeId() -> (struct {
         node_id NodeId;
     });
+
+    /// Close the connection.
+    ///
+    /// Server end drops its end of the channel after replying. This can be
+    /// used for synchronous resource release.
+    flexible CloseConnection() -> ();
 };
 
 /// Connection Options used by QrtrConnector.
