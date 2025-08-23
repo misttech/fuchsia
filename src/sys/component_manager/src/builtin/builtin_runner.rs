@@ -24,10 +24,10 @@ use runner::component::{Controllable, Controller, StopInfo};
 use sandbox::{Capability, Dict, DirEntry, RemotableCapability};
 use std::sync::Arc;
 use thiserror::Error;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
 use vfs::service::endpoint;
-use vfs::ToObjectRequest;
 use zx::{AsHandleRef, HandleBased, Task};
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
@@ -231,11 +231,7 @@ impl BuiltinRunner {
                         let _lifecycle_server = lifecycle_server;
                         let ns_entries: Vec<fprocess::NameInfo> = namespace.into();
                         let Some(svc) = ns_entries.into_iter().find_map(|e| {
-                            if e.path == "/svc" {
-                                Some(e.directory.into_proxy())
-                            } else {
-                                None
-                            }
+                            if e.path == "/svc" { Some(e.directory.into_proxy()) } else { None }
                         }) else {
                             error!("[shutdown-shim] no /svc in namespace");
                             return;
@@ -656,8 +652,8 @@ mod tests {
     use std::sync::LazyLock;
     use std::task::Poll;
     use test_case::test_case;
-    use vfs::path::Path as VfsPath;
     use vfs::ToObjectRequest;
+    use vfs::path::Path as VfsPath;
 
     use crate::bedrock::program::{Program, StartInfo};
     use crate::model::escrow::EscrowedState;
@@ -1002,6 +998,24 @@ mod tests {
         }
     }
 
+    // Provide a UTC clock to avoid reusing the system UTC clock in tests, which may
+    // limit the changes that are allowed to be made to this code. We create this clock
+    // here, and start it from current time.
+    fn new_utc_clock_for_tests() -> Arc<UtcClock> {
+        let reference_now = zx::BootInstant::get();
+        let system_utc_clock =
+            fuchsia_runtime::duplicate_utc_clock_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let utc_now = system_utc_clock.read().unwrap();
+
+        let utc_clock_for_tests =
+            Arc::new(UtcClock::create(zx::ClockOpts::MAPPABLE, /*backstop=*/ None).unwrap());
+        // This will start the test-only UTC clock.
+        utc_clock_for_tests
+            .update(zx::ClockUpdate::builder().absolute_value(reference_now, utc_now.into()))
+            .unwrap();
+        utc_clock_for_tests
+    }
+
     /// Tests that:
     /// - The builtin runner is able to start an ELF runner component.
     /// - The ELF runner component started from it can start an ELF component.
@@ -1062,6 +1076,11 @@ mod tests {
 
         let moniker = Moniker::try_from(["signal_then_hang"]).unwrap();
         let token = elf_runner_resources.instance_registry.add_for_tests(moniker);
+
+        // Avoids using the system clock for the test.
+        let utc_clock_clone =
+            new_utc_clock_for_tests().as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+
         let start_info = StartInfo {
             url: "fuchsia://signal-then-hang.cm".to_string(),
             program: Dictionary {
@@ -1080,10 +1099,16 @@ mod tests {
                 ..Default::default()
             },
             namespace,
-            numbered_handles: vec![fprocess::HandleInfo {
-                handle: ch1.into(),
-                id: HandleInfo::new(HandleType::User0, 0).as_raw(),
-            }],
+            numbered_handles: vec![
+                fprocess::HandleInfo {
+                    handle: ch1.into(),
+                    id: HandleInfo::new(HandleType::User0, 0).as_raw(),
+                },
+                fprocess::HandleInfo {
+                    handle: utc_clock_clone,
+                    id: HandleInfo::new(HandleType::ClockUtc, 0).as_raw(),
+                },
+            ],
             encoded_config: None,
             break_on_start: None,
             component_instance: token,

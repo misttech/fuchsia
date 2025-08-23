@@ -32,13 +32,13 @@ use fidl_fuchsia_component_runner::{
 };
 use fidl_fuchsia_process_lifecycle::LifecycleMarker;
 use fuchsia_async::{self as fasync, TimeoutExt};
-use fuchsia_runtime::{duplicate_utc_clock_handle, job_default, HandleInfo, HandleType, UtcClock};
-use futures::channel::oneshot;
+use fuchsia_runtime::{HandleInfo, HandleType, UtcClock, duplicate_utc_clock_handle, job_default};
 use futures::TryStreamExt;
+use futures::channel::oneshot;
 use log::warn;
 use moniker::Moniker;
-use runner::component::StopInfo;
 use runner::StartInfo;
+use runner::component::StopInfo;
 use std::path::Path;
 use std::sync::Arc;
 use zx::{self as zx, AsHandleRef, HandleBased};
@@ -68,7 +68,12 @@ const DUPLICATE_CLOCK_RIGHTS: zx::Rights = zx::Rights::from_bits_truncate(
     zx::Rights::READ.bits()
         | zx::Rights::WAIT.bits()
         | zx::Rights::DUPLICATE.bits()
-        | zx::Rights::TRANSFER.bits(),
+        | zx::Rights::TRANSFER.bits()
+        // Allows calls to zx_clock_read_mappable and zx_clock_get_details_mappable.
+        // Since "regular" read and details only require READ, and mappable read
+        // and details read the clock the same way, it seems safe to include MAP
+        // in this set of rights.
+        | zx::Rights::MAP.bits(),
 );
 
 // Builds and serves the runtime directory
@@ -720,7 +725,7 @@ mod tests {
     use anyhow::{Context, Error};
     use assert_matches::assert_matches;
     use cm_config::{AllowlistEntryBuilder, JobPolicyAllowlists, SecurityPolicy};
-    use fidl::endpoints::{create_endpoints, create_proxy, DiscoverableProtocolMarker, Proxy};
+    use fidl::endpoints::{DiscoverableProtocolMarker, Proxy, create_endpoints, create_proxy};
     use fidl_connector::Connect;
     use fidl_fuchsia_component_runner::Task as DiagnosticsTask;
     use fidl_fuchsia_logger::{LogSinkMarker, LogSinkRequestStream};
@@ -729,7 +734,7 @@ mod tests {
     use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
     use futures::channel::mpsc;
     use futures::lock::Mutex;
-    use futures::{join, StreamExt};
+    use futures::{StreamExt, join};
     use runner::component::Controllable;
     use std::task::Poll;
     use zx::{self as zx, Task};
@@ -746,8 +751,8 @@ mod tests {
 
     /// Create a new local fs and install a mock LogSink service into.
     /// Returns the created directory and corresponding namespace entries.
-    pub fn create_fs_with_mock_logsink(
-    ) -> Result<(MockServiceFs<'static>, Vec<fcrunner::ComponentNamespaceEntry>), Error> {
+    pub fn create_fs_with_mock_logsink()
+    -> Result<(MockServiceFs<'static>, Vec<fcrunner::ComponentNamespaceEntry>), Error> {
         let (dir_client, dir_server) = create_endpoints::<fio::DirectoryMarker>();
 
         let mut dir = ServiceFs::new_local();
@@ -763,11 +768,28 @@ mod tests {
         Ok((dir, namespace))
     }
 
+    // Provide a UTC clock to avoid reusing the system UTC clock in tests, which may
+    // limit the changes that are allowed to be made to this code. We create this clock
+    // here, and start it from current time.
+    pub fn new_utc_clock_for_tests() -> Arc<UtcClock> {
+        let reference_now = zx::BootInstant::get();
+        let system_utc_clock = duplicate_utc_clock_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let utc_now = system_utc_clock.read().unwrap();
+
+        let utc_clock_for_tests =
+            Arc::new(UtcClock::create(zx::ClockOpts::MAPPABLE, /*backstop=*/ None).unwrap());
+        // This will start the test-only UTC clock.
+        utc_clock_for_tests
+            .update(zx::ClockUpdate::builder().absolute_value(reference_now, utc_now.into()))
+            .unwrap();
+        utc_clock_for_tests
+    }
+
     pub fn new_elf_runner_for_test() -> Arc<ElfRunner> {
         Arc::new(ElfRunner::new(
             job_default().duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
             Box::new(process_launcher::BuiltInConnector {}),
-            None,
+            Some(new_utc_clock_for_tests()),
             CrashRecords::new(),
         ))
     }
@@ -1560,7 +1582,7 @@ mod tests {
         let runner = ElfRunner::new(
             job_default().duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
             Box::new(connector),
-            None,
+            Some(new_utc_clock_for_tests()),
             CrashRecords::new(),
         );
         let policy_checker = ScopedPolicyChecker::new(
@@ -1569,8 +1591,10 @@ mod tests {
         );
 
         // Create a clock and pass it to the component as the UTC clock through numbered_handles.
-        let clock =
-            zx::SyntheticClock::create(zx::ClockOpts::AUTO_START | zx::ClockOpts::MONOTONIC, None)?;
+        let clock = zx::SyntheticClock::create(
+            zx::ClockOpts::AUTO_START | zx::ClockOpts::MONOTONIC | zx::ClockOpts::MAPPABLE,
+            None,
+        )?;
         let clock_koid = clock.get_koid().unwrap();
 
         let (_runtime_dir, runtime_dir_server) = create_proxy::<fio::DirectoryMarker>();
@@ -1587,10 +1611,12 @@ mod tests {
             .context("failed to start component")?;
 
         let payload = payload_rx.next().await.unwrap();
-        assert!(payload
-            .handles
-            .iter()
-            .any(|handle_info| handle_info.handle.get_koid().unwrap() == clock_koid));
+        assert!(
+            payload
+                .handles
+                .iter()
+                .any(|handle_info| handle_info.handle.get_koid().unwrap() == clock_koid)
+        );
 
         Ok(())
     }
