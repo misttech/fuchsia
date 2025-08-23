@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use crate::arch::registers::RegisterState;
-use crate::signals::{SignalInfo, SignalState};
+use crate::signals::{SignalDetail, SignalInfo, SignalState};
 use crate::task::{CurrentTask, Task};
 use extended_pstate::ExtendedPstateState;
 use starnix_logging::{log_debug, track_stub};
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::math::round_down_to_increment;
-use starnix_uapi::signals::{SIGBUS, SIGSEGV, SigSet};
+use starnix_uapi::signals::SigSet;
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
 use starnix_uapi::{
     _aarch64_ctx, ESR_MAGIC, EXTRA_MAGIC, FPSIMD_MAGIC, errno, error, esr_context, fpsimd_context,
@@ -62,10 +62,10 @@ impl SignalStackFrame {
         _action: sigaction_t,
         _stack_pointer: UserAddress,
     ) -> Result<SignalStackFrame, Errno> {
-        let fault_address = 0;
-        if signal_state.has_queued(SIGBUS) || signal_state.has_queued(SIGSEGV) {
-            track_stub!(TODO("https://fxbug.dev/322873483"), "arm64 signal fault address");
-        }
+        let fault_address = match siginfo.detail {
+            SignalDetail::SigFault { addr } => addr,
+            _ => 0,
+        };
         let uc_stack = signal_state
             .alt_stack
             .map(|stack| sigaltstack {

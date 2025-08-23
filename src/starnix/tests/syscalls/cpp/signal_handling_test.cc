@@ -1411,4 +1411,32 @@ TEST(SignalHandling, FlagsRestoredAfterSigsegv) {
   });
 }
 
+TEST(SignalHandling, FaultingAddress) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([]() {
+    // This address is never mappable on platforms we support and unlikely to be confused with
+    // another value by accident.
+    constexpr uintptr_t faulting_address = 0x0023;
+
+    struct sigaction sa{};
+    sa.sa_sigaction = [](int signum, siginfo_t *siginfo, void *ucontext) {
+      if (signum != SIGSEGV) {
+        abort();
+      }
+      if (reinterpret_cast<uintptr_t>(siginfo->si_addr) != faulting_address) {
+        abort();
+      }
+      // Yay, all good. Exit our child process cleanly.
+      _exit(0);
+    };
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+    SAFE_SYSCALL(sigaction(SIGSEGV, &sa, nullptr));
+    *reinterpret_cast<volatile char *>(faulting_address) = 0;
+  });
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 }  // namespace
