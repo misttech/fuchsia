@@ -44,7 +44,8 @@ static int cmd_oom(int argc, const cmd_args* argv) {
   printf("Disabling VM scanner\n");
   scanner_push_disable_count();
   uint64_t pages_evicted = pmm_evictor()->EvictSynchronous(
-      UINT64_MAX, Evictor::EvictionLevel::IncludeNewest, Evictor::Output::NoPrint);
+      /*min_mem_to_free=*/UINT64_MAX, /*free_mem_target=*/0, Evictor::EvictionLevel::IncludeNewest,
+      Evictor::Output::NoPrint);
   if (pages_evicted > 0) {
     printf("Leaked %" PRIu64 " pages from eviction\n", pages_evicted);
   }

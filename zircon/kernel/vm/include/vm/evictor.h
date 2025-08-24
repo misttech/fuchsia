@@ -106,10 +106,11 @@ class Evictor {
   // does not interfere with the |eviction_target_|.
   EvictedPageCounts EvictFromExternalTarget(EvictionTarget target);
 
-  // Performs a synchronous request to evict |min_mem_to_free| (in bytes). The return value is the
-  // number of pages evicted. The |eviction_level| is a rough control that maps to how old a page
-  // needs to be for being considered for eviction. This may acquire arbitrary vmo and aspace locks.
-  uint64_t EvictSynchronous(uint64_t min_mem_to_free,
+  // Performs a synchronous request to evict until free memory equals |free_mem_start| (in bytes)
+  // and at least |min_mem_to_free| (in bytes) has been reclaimed. The return value is the number of
+  // pages evicted. The |eviction_level| is a rough control that maps to how old a page needs to be
+  // for being considered for eviction. This may acquire arbitrary vmo and aspace locks.
+  uint64_t EvictSynchronous(uint64_t min_mem_to_free, uint64_t free_mem_target,
                             EvictionLevel eviction_level = EvictionLevel::OnlyOldest,
                             Output output = Output::NoPrint,
                             TriggerReason reason = TriggerReason::Other);

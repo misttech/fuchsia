@@ -361,16 +361,15 @@ Evictor::EvictedPageCounts Evictor::EvictFromTargetInternal(Evictor::EvictionTar
   return total_evicted_counts;
 }
 
-uint64_t Evictor::EvictSynchronous(uint64_t min_mem_to_free, EvictionLevel eviction_level,
-                                   Output output, TriggerReason reason) {
+uint64_t Evictor::EvictSynchronous(uint64_t min_mem_to_free, uint64_t free_mem_target,
+                                   EvictionLevel eviction_level, Output output,
+                                   TriggerReason reason) {
   if (!IsEvictionEnabled()) {
     return 0;
   }
   EvictionTarget target = {
       .pending = true,
-      // No target free pages to get to. Evict based only on the min pages requested to evict.
-      .free_pages_target = 0,
-      // For synchronous eviction, set the eviction level and min target as requested.
+      .free_pages_target = free_mem_target / PAGE_SIZE,
       .min_pages_to_free = min_mem_to_free / PAGE_SIZE,
       .level = eviction_level,
       .print_counts = (output == Output::Print),
