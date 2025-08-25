@@ -48,6 +48,9 @@ See 'ffx help <command>' for more information on a specific command.
 
 ### Enable on startup
 
+**Note: this feature is currently broken. Please reach out to someone from
+//src/developer/forensics/OWNERS if you need to use it.**
+
 Manual activation works only if you have a way to send commands to the system. But some development
 environments run software earlier that the user can interact with (or run a debugger). Drivers are a
 good example of this. For those cases, having the Process Limbo active from the start lets you catch
