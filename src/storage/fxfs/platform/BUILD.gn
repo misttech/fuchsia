@@ -117,6 +117,12 @@ rustc_library("platform") {
       "//third_party/rust_crates:libc",
       "//third_party/rust_crates:rand",
     ]
+
+    # The test requires more than typical memory,
+    # so remote-build with a larger worker.
+    _concurrent_jobs = concurrent_jobs.rust_highmem
+    test_configs = _concurrent_jobs.configs
+    test_vars = _concurrent_jobs.vars
   }
   visibility = [ "//src/storage/fxfs/*" ]
 
