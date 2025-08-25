@@ -5,9 +5,11 @@
 #include <fcntl.h>
 #include <fidl/fuchsia.fs.startup/cpp/wire.h>
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
-#include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
+#include <gtest/gtest.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/fdio/directory.h>
 #include <lib/fidl/cpp/wire/arena.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fzl/owned-vmo-mapper.h>
@@ -16,9 +18,11 @@
 #include <lib/zx/vmo.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
+#include <zstd/zstd.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -26,7 +30,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <limits>
 #include <memory>
 #include <set>
 #include <span>
@@ -35,8 +38,7 @@
 #include <vector>
 
 #include <fbl/array.h>
-#include <gtest/gtest.h>
-#include <zstd/zstd.h>
+#include <fbl/unique_fd.h>
 
 #include "src/lib/files/file.h"
 #include "src/storage/blobfs/test/blob_utils.h"
@@ -152,8 +154,8 @@ void InitMinfs(const char* root_path, const SystemConfig& config, std::vector<si
   ASSERT_EQ(mkdir(path_buf, 0755), 0) << std::string(path_buf) << ": " << errno;
   for (size_t space = 0; space < config.minfs_cold_data_size;) {
     sprintf(path_buf, "%s/cold/%ld", root_path, space);
-    int f = open(path_buf, O_RDWR | O_CREAT | O_APPEND, 0644);
-    ASSERT_GE(f, 0);
+    fbl::unique_fd f(open(path_buf, O_RDWR | O_CREAT | O_APPEND, 0644));
+    ASSERT_TRUE(f.is_valid());
     size_t write_size;
     if (kMaxWritePages <= 1) {
       write_size = kPageSize;
@@ -162,11 +164,10 @@ void InitMinfs(const char* root_path, const SystemConfig& config, std::vector<si
     }
     space += write_size;
     while (write_size > 0) {
-      ssize_t written = write(f, write_buf.get(), write_size);
-      ASSERT_GT(written, 0l) << "fd " << f << " with size " << write_size << ": " << errno;
+      ssize_t written = write(f.get(), write_buf.get(), write_size);
+      ASSERT_GT(written, 0l) << "fd " << f.get() << " with size " << write_size << ": " << errno;
       write_size -= written;
     }
-    ASSERT_EQ(close(f), 0) << errno;
   }
 
   // "Cycling" data. Files that are periodically overwritten, usually doing some kind of
@@ -176,8 +177,8 @@ void InitMinfs(const char* root_path, const SystemConfig& config, std::vector<si
   int i = 0;
   for (size_t space = 0; space < config.minfs_cycle_data_size;) {
     sprintf(path_buf, "%s/cycle/%d", root_path, i++);
-    int f = open(path_buf, O_WRONLY | O_CREAT);
-    ASSERT_GE(f, 0);
+    fbl::unique_fd f(open(path_buf, O_WRONLY | O_CREAT));
+    ASSERT_TRUE(f.is_valid());
     size_t write_size;
     if (kMaxWritePages == 1) {
       write_size = kPageSize;
@@ -187,11 +188,10 @@ void InitMinfs(const char* root_path, const SystemConfig& config, std::vector<si
     space += write_size;
     file_sizes->push_back(write_size);
     while (write_size > 0) {
-      ssize_t written = write(f, write_buf.get(), write_size);
-      ASSERT_GT(written, 0l) << "fd " << f << ": " << errno;
+      ssize_t written = write(f.get(), write_buf.get(), write_size);
+      ASSERT_GT(written, 0l) << "fd " << f.get() << ": " << errno;
       write_size -= written;
     }
-    ASSERT_EQ(close(f), 0) << errno;
   }
 
   // A folder of growing data, through some mixture of appending data and adding new files. This is
@@ -305,6 +305,23 @@ void WearSimulator::InitFromImage(std::string image_path, std::string wear_info_
     ASSERT_EQ(wear_vmo_.write(wear_data.data(), 0, wear_data.size()), ZX_OK);
   }
   Reboot();
+
+  // Get the cycle file data.
+  char path_buf[255];
+  // Clean up old tmp file if it exists.
+  sprintf(path_buf, "%s/cycle/tmp", mount_->minfs_binding.path().c_str());
+  unlink(path_buf);
+
+  sprintf(path_buf, "%s/cycle", mount_->minfs_binding.path().c_str());
+  for (const auto& entry : std::filesystem::directory_iterator(path_buf)) {
+    size_t size = std::filesystem::file_size(entry.path());
+    ASSERT_NE(size, 0ul);
+    size_t id;
+    // Should be increasing from 0.
+    ASSERT_EQ(sscanf(entry.path().filename().c_str(), "%lu", &id), 1);
+    ASSERT_EQ(id, cycle_files_.size());
+    cycle_files_.push_back(size);
+  }
 }
 
 void WearSimulator::SimulateMinfs(int cycles) {
@@ -331,21 +348,19 @@ void WearSimulator::SimulateMinfs(int cycles) {
         sprintf(path_buf, "%s/cycle/%d", root_path, index);
         size_t size = cycle_files_[index];
 
-        int f = open(temp_path_buf, O_WRONLY | O_CREAT);
-        ASSERT_GE(f, 0) << "Failed to open tmp file: " << errno;
-        ASSERT_EQ(write(f, write_buf.get(), size), static_cast<ssize_t>(size));
-        ASSERT_EQ(close(f), 0);
+        fbl::unique_fd f(open(temp_path_buf, O_WRONLY | O_CREAT));
+        ASSERT_TRUE(f.is_valid()) << "Failed to open tmp file: " << errno;
+        ASSERT_EQ(write(f.get(), write_buf.get(), size), static_cast<ssize_t>(size));
 
         std::filesystem::rename(temp_path_buf, path_buf);
       } break;
       case 1: {
         // Add to a cache file.
         sprintf(path_buf, "%s/cache/%lu", root_path, rand() % kNumCacheFiles);
-        int f = open(path_buf, O_WRONLY | O_CREAT | O_APPEND);
-        ASSERT_GE(f, 0);
+        fbl::unique_fd f(open(path_buf, O_WRONLY | O_CREAT | O_APPEND));
+        ASSERT_TRUE(f.is_valid());
         size_t size = (rand() % (kMaxCacheGrowth - 1) + 1);
-        ASSERT_EQ(write(f, write_buf.get(), size), static_cast<ssize_t>(size));
-        ASSERT_EQ(close(f), 0);
+        ASSERT_EQ(write(f.get(), write_buf.get(), size), static_cast<ssize_t>(size));
       }
 
       break;
@@ -383,13 +398,22 @@ void WearSimulator::FillBlobfs(size_t space) {
     *reinterpret_cast<uint32_t*>(blob.get()) = rand();
     *reinterpret_cast<uint32_t*>(&blob[4]) = rand();
 
-    // Don't compress the delivery blob, this way the blob will fill asmich space as needed for the
+    // Don't compress the delivery blob, this way the blob will fill as much space as needed for the
     // test, but can be well compressed for image import/export.
     auto delivery_blob =
         blobfs::TestDeliveryBlob::CreateUncompressed(std::span<uint8_t>(blob.begin(), blob.end()));
+    // Ensure that nothing got compressed.
+    ASSERT_GE(delivery_blob.delivery_blob.size(), blob.size());
     ASSERT_TRUE(mount_->blob_creator.CreateAndWriteBlob(delivery_blob).is_ok());
     space -= size;
   }
+  // Sync all the writes. Otherwise we lose some writes on reboot and start shrinking the data used.
+  int blobfs_fd;
+  ASSERT_EQ(fdio_open3_fd(mount_->blobfs_binding.path().c_str(),
+                          static_cast<uint64_t>(fuchsia_io::wire::kRStarDir), &blobfs_fd),
+            ZX_OK);
+  ASSERT_EQ(syncfs(blobfs_fd), 0) << "syncfs: " << errno;
+  close(blobfs_fd);
 }
 
 void WearSimulator::ReduceBlobfsBy(size_t* space) {
@@ -403,7 +427,7 @@ void WearSimulator::ReduceBlobfsBy(size_t* space) {
   // Remove files starting from the biggest, skipping over files that would remove
   // too much.
   for (auto it = entries.crbegin(); it != entries.crend() && *space > 0; it++) {
-    if (it->first < *space) {
+    if (it->first <= *space) {
       ASSERT_EQ(unlink(it->second.c_str()), 0) << it->second << ": " << errno;
       *space -= it->first;
     }
@@ -429,21 +453,6 @@ zx::result<RamDevice> WearSimulator::RemountFtl() {
                                       })
                           .value();
 
-  {
-    fzl::VmoMapper mapper;
-    if (zx_status_t s = mapper.Map(snapshot->wear_info); s != ZX_OK) {
-      return zx::error(s);
-    }
-
-    uint32_t* ptr = reinterpret_cast<uint32_t*>(mapper.start());
-    uint32_t max = 0;
-    uint32_t min = std::numeric_limits<uint32_t>::max();
-    for (uint32_t i = 0; i < config_.block_count; ++i) {
-      max = std::max(max, ptr[i]);
-      min = std::min(min, ptr[i]);
-    }
-    printf("Max wear: %u, Min wear: %u\n", max, min);
-  }
   vmo_ = std::move(snapshot->image);
   wear_vmo_ = std::move(snapshot->wear_info);
   return zx::ok(std::move(ramnand));
@@ -544,16 +553,15 @@ void WearSimulator::ExportImage() {
                                     image_mapper.start(), NandSize(config_.block_count), 17);
     ASSERT_FALSE(ZSTD_isError(compressed_size)) << ZSTD_getErrorName(compressed_size);
 
-    int f = open("custom_artifacts/nand.zstd", O_WRONLY | O_CREAT, 0644);
-    ASSERT_GE(f, 0) << errno;
+    fbl::unique_fd f(open("custom_artifacts/nand.zstd", O_WRONLY | O_CREAT, 0644));
+    ASSERT_TRUE(f.is_valid()) << errno;
     uint8_t* offset = reinterpret_cast<uint8_t*>(compressed_mapper.start());
     while (compressed_size > 0) {
-      ssize_t written = write(f, offset, compressed_size);
+      ssize_t written = write(f.get(), offset, compressed_size);
       ASSERT_GT(written, 0) << errno;
       compressed_size -= written;
       offset += written;
     }
-    ASSERT_EQ(close(f), 0) << errno;
   }
 
   // Write out the wear info. No need to compress, it should be relatively small.
@@ -565,16 +573,15 @@ void WearSimulator::ExportImage() {
 
     size_t size = WearSize(config_.block_count);
 
-    int f = open("custom_artifacts/wear_info.bin", O_WRONLY | O_CREAT, 0644);
-    ASSERT_GE(f, 0) << errno;
+    fbl::unique_fd f(open("custom_artifacts/wear_info.bin", O_WRONLY | O_CREAT, 0644));
+    ASSERT_TRUE(f.is_valid()) << errno;
     uint8_t* offset = reinterpret_cast<uint8_t*>(mapper.start());
     while (size > 0) {
-      ssize_t written = write(f, offset, size);
+      ssize_t written = write(f.get(), offset, size);
       ASSERT_GT(written, 0) << errno;
       size -= written;
       offset += written;
     }
-    ASSERT_EQ(close(f), 0) << errno;
   }
 }
 
@@ -587,7 +594,7 @@ TEST(Wear, DISABLED_LargeScale) {
       .fvm_slice_size = 32ul * 1024,
       .block_count = 1716,
       // Set up A/B partitions each with 2MB of breathing room so we don't fill up.
-      .blobfs_partition_size = kBlobUpdateSize + (4ul * 1024 * 1024),
+      .blobfs_partition_size = (kBlobUpdateSize * 2) + (4ul * 1024 * 1024),
       .minfs_partition_size = 13ul * 1024 * 1024,
       .minfs_cold_data_size = 2ul * 1024 * 1024,
       .minfs_cycle_data_size = 2ul * 1024 * 1024,
@@ -595,14 +602,25 @@ TEST(Wear, DISABLED_LargeScale) {
   sim.Init();
   sim.FillBlobfs(kBlobUpdateSize * 2);
 
-  // Perform a number of cycles between updates.
   for (int i = 0; i < 2; i++) {
-    sim.SimulateMinfs(400000);
+    // Perform a number of cycles between updates.
+    int target_minfs_ops = 400000;
+    while (target_minfs_ops > 0) {
+      int ops = ((rand() % 100) + 1) * 1000;  // 1000-100,0000 inclusive.
+      ops = std::min(ops, target_minfs_ops);
+      sim.SimulateMinfs(ops);
+      target_minfs_ops -= ops;
+      sim.Reboot();
+    }
+
+    // Simulate an update.
     size_t reduce_by = kBlobUpdateSize;
     sim.ReduceBlobfsBy(&reduce_by);
     sim.FillBlobfs(kBlobUpdateSize - reduce_by);
+    sim.Reboot();
   }
 
+  sim.ExportImage();
   ASSERT_TRUE(sim.RemountFtl().is_ok());
 }
 
@@ -647,6 +665,10 @@ TEST(Wear, ImageImport) {
       .minfs_partition_size = 10ul * 1024 * 1024,
   });
   sim.InitFromImage("pkg/testdata/nand.zstd", "pkg/testdata/wear_info.bin");
+  sim.SimulateMinfs(100);
+  size_t reduce_by = 1ul * 1024 * 1024;
+  sim.ReduceBlobfsBy(&reduce_by);
+  sim.FillBlobfs(1ul * 1024 * 1024 - reduce_by);
 }
 
 }  // namespace
