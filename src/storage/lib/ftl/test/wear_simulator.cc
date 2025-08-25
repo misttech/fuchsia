@@ -40,7 +40,9 @@
 #include <fbl/array.h>
 #include <fbl/unique_fd.h>
 
+#include "src/lib/digest/digest.h"
 #include "src/lib/files/file.h"
+#include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/fs_test/fs_test.h"
 #include "src/storage/lib/fs_management/cpp/mount.h"
@@ -83,6 +85,7 @@ struct MountedSystem {
 
   fidl::ClientEnd<fuchsia_io::Directory> blobfs_export_root;
   fs_management::NamespaceBinding blobfs_binding;
+  blobfs::BlobReaderWrapper blob_reader;
   blobfs::BlobCreatorWrapper blob_creator;
 
   fidl::ClientEnd<fuchsia_io::Directory> minfs_export_root;
@@ -227,6 +230,7 @@ void WearSimulator::Init() {
   fs_management::MountedVolume* blobfs;
   fs_management::NamespaceBinding blobfs_bind;
   fidl::WireSyncClient<fuchsia_fxfs::BlobCreator> blob_creator;
+  fidl::WireSyncClient<fuchsia_fxfs::BlobReader> blob_reader;
   {
     auto res = ramnand.fvm_partition()->fvm().fs().CreateVolume(
         "blobfs",
@@ -247,6 +251,9 @@ void WearSimulator::Init() {
     auto creator = component::ConnectAt<fuchsia_fxfs::BlobCreator>(*svc);
     ASSERT_TRUE(creator.is_ok());
     blob_creator = fidl::WireSyncClient<fuchsia_fxfs::BlobCreator>(std::move(*creator));
+    auto reader = component::ConnectAt<fuchsia_fxfs::BlobReader>(*svc);
+    ASSERT_TRUE(reader.is_ok());
+    blob_reader = fidl::WireSyncClient<fuchsia_fxfs::BlobReader>(std::move(*reader));
     auto binding = fs_management::NamespaceBinding::Create("/blob/", blobfs->DataRoot().value());
     ASSERT_TRUE(binding.is_ok()) << binding.status_string();
     blobfs_bind = std::move(binding.value());
@@ -277,6 +284,7 @@ void WearSimulator::Init() {
       .ramnand = std::move(ramnand),
       .blobfs_export_root = blobfs->Release(),
       .blobfs_binding = std::move(blobfs_bind),
+      .blob_reader = blobfs::BlobReaderWrapper(std::move(blob_reader)),
       .blob_creator = blobfs::BlobCreatorWrapper(std::move(blob_creator)),
       .minfs_export_root = minfs->Release(),
       .minfs_binding = std::move(minfs_bind),
@@ -383,7 +391,14 @@ void WearSimulator::SimulateMinfs(int cycles) {
 void WearSimulator::FillBlobfs(size_t space) {
   constexpr size_t kMaxBlobSize = 96ul * 1024 * 1024;
   ASSERT_TRUE(mount_) << "Wear simulator not initialized";
+  fbl::unique_fd blobfs_fd;
+  ASSERT_EQ(fdio_open3_fd(mount_->blobfs_binding.path().c_str(),
+                          static_cast<uint64_t>(fuchsia_io::wire::kRStarDir),
+                          blobfs_fd.reset_and_get_address()),
+            ZX_OK);
+  ASSERT_EQ(syncfs(blobfs_fd.get()), 0) << "syncfs: " << errno;
 
+  ASSERT_EQ(space % kPageSize, 0ul);
   for (; space > 0;) {
     size_t max_pages = std::min(space, kMaxBlobSize) / kPageSize;
     size_t size;
@@ -392,6 +407,17 @@ void WearSimulator::FillBlobfs(size_t space) {
     } else {
       size = ((rand() % (max_pages - 1)) + 1) * kPageSize;
     }
+
+    // Make sure that the actual size on disk is within bounds.
+    auto layout = blobfs::BlobLayout::CreateFromSizes(
+        blobfs::BlobLayoutFormat::kCompactMerkleTreeAtEnd, size, size, kPageSize);
+    while (layout->TotalBlockCount() * kPageSize > space) {
+      size -= kPageSize;
+      ASSERT_NE(size, 0ul);
+      auto layout = blobfs::BlobLayout::CreateFromSizes(
+          blobfs::BlobLayoutFormat::kCompactMerkleTreeAtEnd, size, size, kPageSize);
+    }
+
     auto blob = fbl::MakeArray<uint8_t>(size);
     memset(blob.get(), 0x55, blob.size());
     // Random 64 bit value at the start, avoid duplicate blobs.
@@ -405,23 +431,25 @@ void WearSimulator::FillBlobfs(size_t space) {
     // Ensure that nothing got compressed.
     ASSERT_GE(delivery_blob.delivery_blob.size(), blob.size());
     ASSERT_TRUE(mount_->blob_creator.CreateAndWriteBlob(delivery_blob).is_ok());
-    space -= size;
+    space -= layout->TotalBlockCount() * kPageSize;
   }
   // Sync all the writes. Otherwise we lose some writes on reboot and start shrinking the data used.
-  int blobfs_fd;
-  ASSERT_EQ(fdio_open3_fd(mount_->blobfs_binding.path().c_str(),
-                          static_cast<uint64_t>(fuchsia_io::wire::kRStarDir), &blobfs_fd),
-            ZX_OK);
-  ASSERT_EQ(syncfs(blobfs_fd), 0) << "syncfs: " << errno;
-  close(blobfs_fd);
+  ASSERT_EQ(syncfs(blobfs_fd.get()), 0) << "syncfs: " << errno;
 }
 
 void WearSimulator::ReduceBlobfsBy(size_t* space) {
   std::set<std::pair<size_t, std::string>> entries;
   for (const auto& entry :
        std::filesystem::directory_iterator(mount_->blobfs_binding.path().c_str())) {
-    size_t size = std::filesystem::file_size(entry.path().c_str());
-    entries.insert(std::make_pair(size, entry.path().string()));
+    digest::Digest hash;
+    ASSERT_EQ(hash.Parse(entry.path().filename().c_str()), ZX_OK);
+    auto vmo = mount_->blob_reader.GetVmo(hash);
+    ASSERT_TRUE(vmo.is_ok());
+    uint64_t size;
+    vmo->get_stream_size(&size);
+    auto layout = blobfs::BlobLayout::CreateFromSizes(
+        blobfs::BlobLayoutFormat::kCompactMerkleTreeAtEnd, size, size, kPageSize);
+    entries.insert(std::make_pair(layout->TotalBlockCount() * kPageSize, entry.path().string()));
   }
 
   // Remove files starting from the biggest, skipping over files that would remove
@@ -467,6 +495,7 @@ void WearSimulator::Reboot() {
   fs_management::MountedVolume* blobfs;
   fs_management::NamespaceBinding blobfs_bind;
   fidl::WireSyncClient<fuchsia_fxfs::BlobCreator> blob_creator;
+  fidl::WireSyncClient<fuchsia_fxfs::BlobReader> blob_reader;
   {
     auto res = ramnand.fvm_partition()->fvm().fs().OpenVolume(
         "blobfs", fuchsia_fs_startup::wire::MountOptions::Builder(arena)
@@ -478,6 +507,9 @@ void WearSimulator::Reboot() {
 
     auto svc = component::OpenDirectoryAt(blobfs->ExportRoot(), "svc");
     ASSERT_TRUE(svc.is_ok());
+    auto reader = component::ConnectAt<fuchsia_fxfs::BlobReader>(*svc);
+    ASSERT_TRUE(reader.is_ok());
+    blob_reader = fidl::WireSyncClient<fuchsia_fxfs::BlobReader>(std::move(*reader));
     auto creator = component::ConnectAt<fuchsia_fxfs::BlobCreator>(*svc);
     ASSERT_TRUE(creator.is_ok());
     blob_creator = fidl::WireSyncClient<fuchsia_fxfs::BlobCreator>(std::move(*creator));
@@ -504,6 +536,7 @@ void WearSimulator::Reboot() {
       .ramnand = std::move(ramnand),
       .blobfs_export_root = blobfs->Release(),
       .blobfs_binding = std::move(blobfs_bind),
+      .blob_reader = blobfs::BlobReaderWrapper(std::move(blob_reader)),
       .blob_creator = blobfs::BlobCreatorWrapper(std::move(blob_creator)),
       .minfs_export_root = minfs->Release(),
       .minfs_binding = std::move(minfs_bind),
