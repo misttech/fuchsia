@@ -136,7 +136,7 @@ impl ObjectCache<ObjectKey, ObjectValue> for TreeCache {
 #[cfg(test)]
 mod tests {
     use super::super::object_record::{ObjectKey, ObjectValue, Timestamp};
-    use super::{TreeCache, ITEM_LIMIT};
+    use super::{ITEM_LIMIT, TreeCache};
     use crate::lsm_tree::cache::{ObjectCache, ObjectCacheResult};
     use assert_matches::assert_matches;
 

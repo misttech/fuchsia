@@ -3,23 +3,23 @@
 // found in the LICENSE file.
 
 use crate::fuchsia::file::FxFile;
-use crate::fuchsia::fxblob::blob::FxBlob;
 use crate::fuchsia::fxblob::BlobDirectory;
+use crate::fuchsia::fxblob::blob::FxBlob;
 use crate::fuchsia::node::FxNode;
 use crate::fuchsia::pager::PagerBacked;
 use crate::fuchsia::volume::FxVolume;
-use anyhow::{anyhow, ensure, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow, ensure};
 use arrayref::{array_refs, mut_array_refs};
 use async_trait::async_trait;
 use fuchsia_async as fasync;
 use fuchsia_hash::Hash;
-use futures::future::{self, join_all, BoxFuture, RemoteHandle};
-use futures::{select, FutureExt};
+use futures::future::{self, BoxFuture, RemoteHandle, join_all};
+use futures::{FutureExt, select};
 use fxfs::errors::FxfsError;
 use fxfs::log::*;
-use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle, INVALID_OBJECT_ID};
-use fxfs::object_store::transaction::{lock_keys, LockKey, Options};
-use fxfs::object_store::{directory, HandleOptions, ObjectDescriptor, ObjectStore, Timestamp};
+use fxfs::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle};
+use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
+use fxfs::object_store::{HandleOptions, ObjectDescriptor, ObjectStore, Timestamp, directory};
 use linked_hash_map::LinkedHashMap;
 use scopeguard::ScopeGuard;
 use std::cmp::{Eq, PartialEq};
@@ -27,8 +27,8 @@ use std::collections::btree_map::{BTreeMap, Entry};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::pin::pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use vfs::execution_scope::ActiveGuard;
 
 const FILE_OPEN_MARKER: u64 = u64::MAX;
@@ -455,33 +455,36 @@ impl<T: RecordedVolume> ReplayState<T> {
                 // cancelled, we'll drop the sender which will cause the replay threads to drop
                 // their guards, which will allow shutdown to proceed.
                 async move {
-                    let mut task = pin!(async {
-                        // Hold the items in cache until replay is stopped. Optional as None
-                        // indicates that the file could not be opened, and we want to cache that
-                        // failure.
-                        let mut local_cache: BTreeMap<T::IdType, Option<Arc<T::NodeType>>> =
-                            BTreeMap::new();
+                    let mut task = pin!(
+                        async {
+                            // Hold the items in cache until replay is stopped. Optional as None
+                            // indicates that the file could not be opened, and we want to cache that
+                            // failure.
+                            let mut local_cache: BTreeMap<T::IdType, Option<Arc<T::NodeType>>> =
+                                BTreeMap::new();
 
-                        let volume_id = volume.id();
+                            let volume_id = volume.id();
 
-                        if let Err(error) =
-                            Self::read_and_queue(handle, volume, &sender, &mut local_cache).await
-                        {
-                            error!(error:?; "Failed to read back profile");
+                            if let Err(error) =
+                                Self::read_and_queue(handle, volume, &sender, &mut local_cache)
+                                    .await
+                            {
+                                error!(error:?; "Failed to read back profile");
+                            }
+                            sender.close();
+
+                            info!(
+                                "Replay for volume {} opened {} of {} objects.",
+                                volume_id,
+                                local_cache.iter().filter(|(_, e)| e.is_some()).count(),
+                                local_cache.len()
+                            );
+
+                            // Keep the cache alive until dropped.
+                            let () = std::future::pending().await;
                         }
-                        sender.close();
-
-                        info!(
-                            "Replay for volume {} opened {} of {} objects.",
-                            volume_id,
-                            local_cache.iter().filter(|(_, e)| e.is_some()).count(),
-                            local_cache.len()
-                        );
-
-                        // Keep the cache alive until dropped.
-                        let () = std::future::pending().await;
-                    }
-                    .fuse());
+                        .fuse()
+                    );
 
                     select! {
                         _ = task => {}
@@ -655,27 +658,23 @@ impl<T: RecordedVolume> ProfileState for ProfileStateImpl<T> {
     }
 
     async fn wait_for_recording_to_finish(&mut self) -> Result<(), Error> {
-        if let Some(recording) = self.recording.take() {
-            recording.await
-        } else {
-            Ok(())
-        }
+        if let Some(recording) = self.recording.take() { recording.await } else { Ok(()) }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        new_profile_state, BlobMessage, BlobVolume, FileMessage, FileVolume, Message, ReplayState,
-        Request, IO_SIZE,
+        BlobMessage, BlobVolume, FileMessage, FileVolume, IO_SIZE, Message, ReplayState, Request,
+        new_profile_state,
     };
     use crate::fuchsia::file::FxFile;
-    use crate::fuchsia::fxblob::blob::FxBlob;
-    use crate::fuchsia::fxblob::testing::{new_blob_fixture, open_blob_fixture, BlobFixture};
     use crate::fuchsia::fxblob::BlobDirectory;
+    use crate::fuchsia::fxblob::blob::FxBlob;
+    use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture, open_blob_fixture};
     use crate::fuchsia::node::FxNode;
     use crate::fuchsia::pager::PagerBacked;
-    use crate::fuchsia::testing::{open_file_checked, TestFixture, TestFixtureOptions};
+    use crate::fuchsia::testing::{TestFixture, TestFixtureOptions, open_file_checked};
     use crate::fuchsia::volume::FxVolume;
     use anyhow::Error;
     use async_trait::async_trait;
@@ -684,7 +683,7 @@ mod tests {
     use fuchsia_hash::Hash;
     use fuchsia_sync::Mutex;
     use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
-    use fxfs::object_store::transaction::{lock_keys, LockKey, Options};
+    use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
     use fxfs::object_store::{DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectStore};
     use std::collections::BTreeMap;
     use std::mem::size_of;

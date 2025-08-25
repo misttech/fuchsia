@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Args;
 use crate::deletion_actor::DeletionActor;
 use crate::file_actor::FileActor;
 use crate::instance_actor::InstanceActor;
-use crate::Args;
 use anyhow::{anyhow, format_err};
 use async_trait::async_trait;
 use diagnostics_reader::ArchiveReader;
@@ -13,14 +13,14 @@ use either::Either;
 use fidl_fuchsia_device::ControllerMarker;
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
 use fidl_fuchsia_fxfs::{CryptManagementMarker, CryptManagementProxy, CryptMarker, KeyPurpose};
-use fs_management::filesystem::Filesystem;
 use fs_management::FSConfig;
+use fs_management::filesystem::Filesystem;
 use fuchsia_component::client::connect_to_protocol_at_path;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_inspect::hierarchy::DiagnosticsHierarchy;
 use fuchsia_sync::Mutex;
-use futures::lock::Mutex as FuturesMutex;
 use futures::StreamExt as _;
+use futures::lock::Mutex as FuturesMutex;
 use key_bag::Aes256Key;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -29,7 +29,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use storage_stress_test_utils::data::{Compressibility, FileFactory, UncompressedSize};
-use storage_stress_test_utils::fvm::{get_volume_path, FvmInstance, Guid};
+use storage_stress_test_utils::fvm::{FvmInstance, Guid, get_volume_path};
 use storage_stress_test_utils::io::Directory;
 use stress_test::actor::ActorRunner;
 use stress_test::environment::Environment;

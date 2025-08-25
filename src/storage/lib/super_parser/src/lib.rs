@@ -5,8 +5,8 @@
 mod format;
 mod metadata;
 
-use crate::metadata::{round_up_to_alignment, SuperDeviceRange, SuperMetadata};
-use anyhow::{anyhow, ensure, Error};
+use crate::metadata::{SuperDeviceRange, SuperMetadata, round_up_to_alignment};
+use anyhow::{Error, anyhow, ensure};
 use async_trait::async_trait;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -222,12 +222,12 @@ impl Device for SuperPartitionDevice {
 
 #[cfg(test)]
 mod tests {
-    use crate::{into_merged_regions, SuperDeviceRange, SuperParser};
+    use crate::{SuperDeviceRange, SuperParser, into_merged_regions};
     use std::collections::BTreeSet;
     use std::path::Path;
     use std::sync::Arc;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::Device;
+    use storage_device::fake_device::FakeDevice;
 
     const BLOCK_SIZE: u32 = 4096;
     const IMAGE_PATH: &str = "/pkg/data/simple_super.img.zstd";

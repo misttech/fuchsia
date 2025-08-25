@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DataEnum, DataStruct, DeriveInput, Fields, Generics, Ident};
+use syn::{Data, DataEnum, DataStruct, DeriveInput, Fields, Generics, Ident, parse_macro_input};
 
 #[proc_macro_derive(TypeFingerprint)]
 pub fn derive_type_fingerprint(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

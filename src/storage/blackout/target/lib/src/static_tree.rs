@@ -15,8 +15,8 @@
 
 use anyhow::Error;
 use fidl_fuchsia_io as fio;
-use rand::distr::{Bernoulli, Distribution, StandardUniform};
 use rand::Rng;
+use rand::distr::{Bernoulli, Distribution, StandardUniform};
 
 /// A random distribution specialized to generation of random directory trees. This distribution
 /// decreases the likelyhood of a directory being generated linearly relative to the depth of the
@@ -165,8 +165,8 @@ mod tests {
     use fs_management::Minfs;
     use fuchsia_async as fasync;
     use ramdevice_client::RamdiskClient;
-    use rand::rngs::mock::StepRng;
     use rand::Rng as _;
+    use rand::rngs::mock::StepRng;
 
     // this fixture will have to get updated any time the generation logic changes. depending on the
     // nature of the change, the comparison logic may have to be changed as well.

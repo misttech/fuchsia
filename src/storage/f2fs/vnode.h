@@ -365,7 +365,7 @@ class VnodeF2fs : public fs::PagedVnode,
   }
 
  protected:
-  const std::string& GetNameViewUnsafe() const __TA_REQUIRES_SHARED(mutex_) { return name_; }
+  const std::string &GetNameViewUnsafe() const __TA_REQUIRES_SHARED(mutex_) { return name_; }
   void AddBlocksUnsafe(const block_t nblocks) __TA_REQUIRES(mutex_) {
     if (!nblocks) {
       return;
@@ -429,18 +429,17 @@ class VnodeF2fs : public fs::PagedVnode,
   std::atomic<uint64_t> data_version_ = 0;  // data version from the most recent fsync
   uint16_t extra_isize_ = 0;                // extra inode attribute size in bytes
   uint16_t inline_xattr_size_ = 0;          // inline xattr size
-  [[maybe_unused]] umode_t acl_mode_ = 0;  // keep file acl mode temporarily
+  [[maybe_unused]] umode_t acl_mode_ = 0;   // keep file acl mode temporarily
   uint8_t advise_ = 0;                      // use to give file attribute hints
   uint8_t dir_level_ = 0;                   // use for dentry level for large dir
   // TODO: revisit thread annotation when xattr is available.
   nid_t xattr_nid_ = 0;  // node id that contains xattrs
-  std::optional<Timestamps> time_ __TA_GUARDED(mutex_) =
-      std::nullopt;
+  std::optional<Timestamps> time_ __TA_GUARDED(mutex_) = std::nullopt;
 
   std::unique_ptr<ExtentTree> extent_tree_;
 
   const ino_t ino_ = 0;
-  F2fs* const fs_ = nullptr;
+  F2fs *const fs_ = nullptr;
   umode_t mode_ = 0;
   fs::WatcherContainer watcher_{};
 };

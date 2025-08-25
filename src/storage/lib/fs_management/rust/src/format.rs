@@ -4,7 +4,7 @@
 
 pub mod constants;
 
-use anyhow::{anyhow, ensure, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow, ensure};
 use block_client::{AsBlockProxy, BlockClient, MutableBufferSlice, RemoteBlockClient};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -176,11 +176,11 @@ async fn detect_disk_format_res(block_proxy: impl AsBlockProxy) -> Result<DiskFo
 
 #[cfg(test)]
 mod tests {
-    use super::{constants, detect_disk_format_res, DiskFormat};
+    use super::{DiskFormat, constants, detect_disk_format_res};
     use anyhow::Error;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_hardware_block_volume::VolumeMarker;
-    use futures::{select, FutureExt};
+    use futures::{FutureExt, select};
     use std::pin::pin;
     use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
 

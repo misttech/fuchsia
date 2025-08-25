@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use crate::format::{
-    AdjustSlotSuffix, BlockDeviceFlags, MetadataBlockDevice, MetadataExtent, MetadataGeometry,
-    MetadataHeader, MetadataPartition, MetadataPartitionGroup, MetadataTableDescriptor,
-    PartitionGroupFlags, ValidateTable, METADATA_GEOMETRY_RESERVED_SIZE, PARTITION_RESERVED_BYTES,
+    AdjustSlotSuffix, BlockDeviceFlags, METADATA_GEOMETRY_RESERVED_SIZE, MetadataBlockDevice,
+    MetadataExtent, MetadataGeometry, MetadataHeader, MetadataPartition, MetadataPartitionGroup,
+    MetadataTableDescriptor, PARTITION_RESERVED_BYTES, PartitionGroupFlags, ValidateTable,
 };
-use anyhow::{anyhow, ensure, Error};
+use anyhow::{Error, anyhow, ensure};
 use sha2::Digest;
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};

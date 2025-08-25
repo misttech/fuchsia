@@ -2,31 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use delivery_blob::compression::ChunkedArchive;
 use fuchsia_async as fasync;
-use fuchsia_merkle::{Hash, HASH_SIZE};
-use futures::{try_join, SinkExt as _, StreamExt as _, TryStreamExt as _};
+use fuchsia_merkle::{HASH_SIZE, Hash};
+use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _, try_join};
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::WriteBytes;
 use fxfs::object_store::directory::Directory;
-use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::journal::RESERVED_SPACE;
-use fxfs::object_store::transaction::{lock_keys, LockKey};
+use fxfs::object_store::journal::super_block::SuperBlockInstance;
+use fxfs::object_store::transaction::{LockKey, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    DataObjectHandle, DirectWriter, HandleOptions, ObjectStore, BLOB_MERKLE_ATTRIBUTE_ID, NO_OWNER,
+    BLOB_MERKLE_ATTRIBUTE_ID, DataObjectHandle, DirectWriter, HandleOptions, NO_OWNER, ObjectStore,
 };
 use fxfs::round::round_up;
 use fxfs::serialized_types::BlobMetadata;
-use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io::{BufWriter, Read};
 use std::path::PathBuf;
-use storage_device::file_backed_device::FileBackedDevice;
 use storage_device::DeviceHolder;
+use storage_device::file_backed_device::FileBackedDevice;
 
 pub const BLOB_VOLUME_NAME: &str = "blob";
 
@@ -453,20 +453,20 @@ fn maybe_compress(buf: Vec<u8>, block_size: usize, filesystem_block_size: usize)
 
 #[cfg(test)]
 mod tests {
-    use super::{make_blob_image, BlobsJsonOutput, BlobsJsonOutputEntry};
+    use super::{BlobsJsonOutput, BlobsJsonOutputEntry, make_blob_image};
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
     use fxfs::filesystem::FxFilesystem;
+    use fxfs::object_store::NO_OWNER;
     use fxfs::object_store::directory::Directory;
     use fxfs::object_store::volume::root_volume;
-    use fxfs::object_store::NO_OWNER;
     use sparse::reader::SparseReader;
     use std::fs::File;
     use std::io::{Seek as _, SeekFrom, Write as _};
     use std::path::Path;
     use std::str::from_utf8;
-    use storage_device::file_backed_device::FileBackedDevice;
     use storage_device::DeviceHolder;
+    use storage_device::file_backed_device::FileBackedDevice;
     use tempfile::TempDir;
 
     #[fasync::run(10, test)]

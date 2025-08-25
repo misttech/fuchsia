@@ -11,8 +11,8 @@ use crate::fuchsia::fxblob::blob::{CompressionInfo, FxBlob};
 use crate::fuchsia::fxblob::writer::DeliveryBlobWriter;
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
 use crate::fuchsia::volume::{FxVolume, RootDir};
-use anyhow::{anyhow, ensure, Context as _, Error};
-use fidl::endpoints::{create_request_stream, ClientEnd, DiscoverableProtocolMarker, ServerEnd};
+use anyhow::{Context as _, Error, anyhow, ensure};
+use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, ServerEnd, create_request_stream};
 use fidl_fuchsia_fxfs::{
     BlobCreatorMarker, BlobCreatorRequest, BlobCreatorRequestStream, BlobReaderMarker,
     BlobReaderRequest, BlobReaderRequestStream, BlobVolumeWriterMarker, BlobVolumeWriterRequest,
@@ -24,9 +24,9 @@ use fuchsia_merkle::{MerkleTree, MerkleTreeBuilder};
 use futures::TryStreamExt;
 use fxfs::errors::FxfsError;
 use fxfs::object_handle::ReadObjectHandle;
-use fxfs::object_store::transaction::{lock_keys, LockKey};
+use fxfs::object_store::transaction::{LockKey, lock_keys};
 use fxfs::object_store::{
-    self, HandleOptions, ObjectDescriptor, ObjectStore, BLOB_MERKLE_ATTRIBUTE_ID,
+    self, BLOB_MERKLE_ATTRIBUTE_ID, HandleOptions, ObjectDescriptor, ObjectStore,
 };
 use fxfs::serialized_types::BlobMetadata;
 use fxfs_macros::ToWeakNode;
@@ -530,15 +530,15 @@ impl From<object_store::Directory<FxVolume>> for BlobDirectory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuchsia::fxblob::testing::{new_blob_fixture, open_blob_fixture, BlobFixture};
+    use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture, open_blob_fixture};
     use assert_matches::assert_matches;
     use blob_writer::BlobWriter;
-    use delivery_blob::{delivery_blob_path, CompressionMode, Type1Blob};
+    use delivery_blob::{CompressionMode, Type1Blob, delivery_blob_path};
     use fidl_fuchsia_fxfs::BlobReaderMarker;
     use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::directory::{
-        readdir_inclusive, DirEntry, DirentKind, WatchEvent, WatchMessage, Watcher,
+        DirEntry, DirentKind, WatchEvent, WatchMessage, Watcher, readdir_inclusive,
     };
 
     use futures::StreamExt as _;

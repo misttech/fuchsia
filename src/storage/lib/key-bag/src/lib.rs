@@ -7,8 +7,8 @@ use aes_gcm_siv::{Aes128GcmSiv, Aes256GcmSiv, Key, KeyInit};
 
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 use std::os::fd::{FromRawFd as _, IntoRawFd as _};

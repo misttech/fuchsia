@@ -7,10 +7,10 @@
 
 use block_client::{BlockClient, MutableBufferSlice, RemoteBlockClient};
 use device_watcher::recursive_wait;
-use fidl::endpoints::{create_proxy, Proxy as _, ServiceMarker as _};
+use fidl::endpoints::{Proxy as _, ServiceMarker as _, create_proxy};
 use fidl_fuchsia_hardware_block::BlockProxy;
 use fidl_fuchsia_hardware_block_partition::PartitionMarker;
-use fs_management::partition::{find_partition_in, PartitionMatcher};
+use fs_management::partition::{PartitionMatcher, find_partition_in};
 use fshost_test_fixture::disk_builder::VolumesSpec;
 use fshost_test_fixture::write_test_blob;
 use {fidl_fuchsia_fshost as fshost, fidl_fuchsia_io as fio};

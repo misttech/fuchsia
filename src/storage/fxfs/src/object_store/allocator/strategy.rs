@@ -18,7 +18,7 @@
 
 use crate::object_store::FxfsError;
 use anyhow::{Context, Error};
-use std::collections::{btree_map, BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, btree_map};
 use std::fmt::Debug;
 use std::ops::Range;
 
@@ -481,17 +481,21 @@ mod test {
 
         // Overflow 768kb
         for i in 0..max_entries(768 << 10) as u64 + 1 {
-            assert!(bestfit
-                .force_free(ofs + i * 2 * (768 << 10)..ofs + (i * 2 + 1) * (768 << 10))
-                .unwrap());
+            assert!(
+                bestfit
+                    .force_free(ofs + i * 2 * (768 << 10)..ofs + (i * 2 + 1) * (768 << 10))
+                    .unwrap()
+            );
         }
         ofs += (768 << 10) * (max_entries(768 << 10) + 1) as u64 * 3;
 
         // Overflow 512kb.
         for i in 0..max_entries(512 << 10) as u64 + 1 {
-            assert!(bestfit
-                .force_free(ofs + i * 2 * (512 << 10)..ofs + (i * 2 + 1) * (512 << 10))
-                .unwrap());
+            assert!(
+                bestfit
+                    .force_free(ofs + i * 2 * (512 << 10)..ofs + (i * 2 + 1) * (512 << 10))
+                    .unwrap()
+            );
         }
         // We want to put the next free adjacent to the tail of the last 512kb block, so
         // we drop the "+1" and add 512kb.

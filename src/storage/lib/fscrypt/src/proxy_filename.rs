@@ -1,9 +1,9 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{anyhow, ensure, Error};
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use anyhow::{Error, anyhow, ensure};
 use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use sha2::Digest;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
@@ -144,18 +144,26 @@ mod tests {
         assert!(ProxyFilename::try_from(URL_SAFE_NO_PAD.encode(&[b'a'; 9]).as_str()).is_ok());
         assert!(ProxyFilename::try_from(URL_SAFE_NO_PAD.encode(&[b'a'; 8 + 148]).as_str()).is_ok());
         assert!(ProxyFilename::try_from(URL_SAFE_NO_PAD.encode(&[b'a'; 8 + 149]).as_str()).is_ok());
-        assert!(ProxyFilename::try_from(URL_SAFE_NO_PAD.encode(&[b'a'; 8 + 150]).as_str()).is_err());
-        assert!(ProxyFilename::try_from(
-            URL_SAFE_NO_PAD.encode(&[b'a'; PROXY_FILENAME_MAX_SIZE - 1]).as_str()
-        )
-        .is_err());
-        assert!(ProxyFilename::try_from(
-            URL_SAFE_NO_PAD.encode(&[b'a'; PROXY_FILENAME_MAX_SIZE]).as_str()
-        )
-        .is_ok());
-        assert!(ProxyFilename::try_from(
-            URL_SAFE_NO_PAD.encode(&[b'a'; PROXY_FILENAME_MAX_SIZE + 1]).as_str()
-        )
-        .is_err());
+        assert!(
+            ProxyFilename::try_from(URL_SAFE_NO_PAD.encode(&[b'a'; 8 + 150]).as_str()).is_err()
+        );
+        assert!(
+            ProxyFilename::try_from(
+                URL_SAFE_NO_PAD.encode(&[b'a'; PROXY_FILENAME_MAX_SIZE - 1]).as_str()
+            )
+            .is_err()
+        );
+        assert!(
+            ProxyFilename::try_from(
+                URL_SAFE_NO_PAD.encode(&[b'a'; PROXY_FILENAME_MAX_SIZE]).as_str()
+            )
+            .is_ok()
+        );
+        assert!(
+            ProxyFilename::try_from(
+                URL_SAFE_NO_PAD.encode(&[b'a'; PROXY_FILENAME_MAX_SIZE + 1]).as_str()
+            )
+            .is_err()
+        );
     }
 }

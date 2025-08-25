@@ -15,7 +15,7 @@ use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use futures::future::BoxFuture;
 use std::any::Any;
-use std::future::{ready, Future};
+use std::future::{Future, ready};
 use std::sync::Arc;
 use zx_status::Status;
 

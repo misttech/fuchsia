@@ -10,8 +10,8 @@ use crate::directory::serve;
 use crate::pseudo_directory;
 
 use assert_matches::assert_matches;
-use fidl::endpoints::RequestStream;
 use fidl::Error;
+use fidl::endpoints::RequestStream;
 use fidl_fuchsia_io as fio;
 use fidl_test_placeholders::{EchoMarker, EchoProxy, EchoRequest, EchoRequestStream};
 use fuchsia_sync::Mutex;

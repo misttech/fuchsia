@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::serialized_types::{versioned_type, Version, Versioned, VersionedLatest};
+use crate::serialized_types::{Version, Versioned, VersionedLatest, versioned_type};
 use fprint::TypeFingerprint;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
@@ -77,6 +77,8 @@ fn test_deserialize_from_version() {
     );
 
     // Unsupported version.
-    assert!(FooV3::deserialize_from_version(&mut Cursor::new(&v), Version { major: 5, minor: 0 })
-        .is_err());
+    assert!(
+        FooV3::deserialize_from_version(&mut Cursor::new(&v), Version { major: 5, minor: 0 })
+            .is_err()
+    );
 }

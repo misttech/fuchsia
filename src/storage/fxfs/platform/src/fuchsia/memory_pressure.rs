@@ -15,8 +15,8 @@ use futures::task::{self, Poll};
 use futures::{FutureExt, StreamExt};
 use fxfs::log::*;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 pub use fidl_fuchsia_memorypressure::Level as MemoryPressureLevel;
 

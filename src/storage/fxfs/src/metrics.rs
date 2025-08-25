@@ -29,9 +29,9 @@ pub fn detail() -> Node {
 
 pub fn register_fs(
     populate_stores_fn: impl Fn() -> BoxFuture<'static, Result<Inspector, Error>>
-        + Sync
-        + Send
-        + 'static,
+    + Sync
+    + Send
+    + 'static,
 ) -> LazyNode {
     root().create_lazy_child("stores", populate_stores_fn)
 }

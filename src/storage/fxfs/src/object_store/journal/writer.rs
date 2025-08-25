@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::checksum::{fletcher64, Checksum};
+use crate::checksum::{Checksum, fletcher64};
 use crate::log::*;
 use crate::metrics;
 use crate::object_store::journal::JournalCheckpoint;
-use crate::serialized_types::{Versioned, LATEST_VERSION};
-use anyhow::{anyhow, Error};
+use crate::serialized_types::{LATEST_VERSION, Versioned};
+use anyhow::{Error, anyhow};
 use byteorder::{LittleEndian, WriteBytesExt};
 use fuchsia_inspect::{Property as _, UintProperty};
 use std::cmp::min;
@@ -57,7 +57,7 @@ impl JournalWriter {
     ) -> Result<(), Error> {
         let buf_len = self.buf.len();
         record.serialize_into(&mut *self).unwrap(); // Our write implementation cannot fail at the
-                                                    // moment.
+        // moment.
 
         // For now, our reader cannot handle records that are bigger than a block.
         if self.buf.len() - buf_len <= self.block_size {
@@ -172,7 +172,7 @@ impl Drop for JournalWriter {
 #[cfg(test)]
 mod tests {
     use super::JournalWriter;
-    use crate::checksum::{fletcher64, Checksum};
+    use crate::checksum::{Checksum, fletcher64};
     use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
     use crate::object_store::journal::JournalCheckpoint;
     use crate::serialized_types::*;

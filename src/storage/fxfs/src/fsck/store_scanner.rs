@@ -4,20 +4,20 @@
 
 use crate::fsck::errors::{FsckError, FsckFatal, FsckWarning};
 use crate::fsck::{FragmentationStats, Fsck, FsckResult};
-use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
 use crate::lsm_tree::Query;
+use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
 use crate::object_handle::INVALID_OBJECT_ID;
 use crate::object_store::allocator::{self, AllocatorKey, AllocatorValue};
 use crate::object_store::graveyard::Graveyard;
 use crate::object_store::{
-    AttributeKey, ChildValue, ExtendedAttributeValue, ExtentKey, ExtentMode, ExtentValue,
-    ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore,
-    ObjectValue, ProjectProperty, RootDigest, DEFAULT_DATA_ATTRIBUTE_ID,
-    EXTENDED_ATTRIBUTE_RANGE_END, EXTENDED_ATTRIBUTE_RANGE_START, FSVERITY_MERKLE_ATTRIBUTE_ID,
+    AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, EXTENDED_ATTRIBUTE_RANGE_END,
+    EXTENDED_ATTRIBUTE_RANGE_START, ExtendedAttributeValue, ExtentKey, ExtentMode, ExtentValue,
+    FSVERITY_MERKLE_ATTRIBUTE_ID, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData,
+    ObjectKind, ObjectStore, ObjectValue, ProjectProperty, RootDigest,
 };
 use crate::range::RangeExt;
 use crate::round::round_up;
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use rustc_hash::FxHashSet as HashSet;
 use std::cell::UnsafeCell;
 use std::collections::btree_map::BTreeMap;

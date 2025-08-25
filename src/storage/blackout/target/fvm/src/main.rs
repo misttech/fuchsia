@@ -4,13 +4,13 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use blackout_target::random_op::{generate_load, Op};
-use blackout_target::{find_partition, set_up_partition, Test, TestServer};
+use blackout_target::random_op::{Op, generate_load};
+use blackout_target::{Test, TestServer, find_partition, set_up_partition};
 use block_client::{BlockClient as _, BufferSlice, RemoteBlockClient};
 use crypt_policy::Policy;
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
 use fs_management::filesystem::Filesystem;
-use fs_management::{Fvm, DATA_TYPE_GUID};
+use fs_management::{DATA_TYPE_GUID, Fvm};
 use rand::Rng;
 use std::fs::File;
 use std::io::Read;

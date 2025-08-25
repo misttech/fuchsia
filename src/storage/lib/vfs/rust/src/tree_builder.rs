@@ -375,7 +375,7 @@ mod tests {
     use crate::file;
 
     use fidl_fuchsia_io as fio;
-    use fuchsia_fs::directory::{open_directory, readdir, DirEntry, DirentKind};
+    use fuchsia_fs::directory::{DirEntry, DirentKind, open_directory, readdir};
     use vfs_macros::pseudo_directory;
 
     async fn assert_open_file_contents(

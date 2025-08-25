@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::buffer::{round_down, round_up, Buffer};
+use crate::buffer::{Buffer, round_down, round_up};
 use event_listener::{Event, EventListener};
 use fuchsia_sync::Mutex;
 use futures::{Future, FutureExt as _};
@@ -330,14 +330,14 @@ impl BufferAllocator {
 
 #[cfg(test)]
 mod tests {
-    use crate::buffer_allocator::{order, BufferAllocator, BufferSource};
+    use crate::buffer_allocator::{BufferAllocator, BufferSource, order};
     use fuchsia_async as fasync;
     use futures::future::join_all;
     use futures::pin_mut;
     use rand::seq::IndexedRandom;
-    use rand::{rng, Rng};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use rand::{Rng, rng};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     #[fuchsia::test]
     async fn test_odd_sized_buffer_source() {

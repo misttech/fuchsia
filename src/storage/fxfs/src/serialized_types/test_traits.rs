@@ -5,7 +5,7 @@
 // This file saves some repetition in tests where integers are used in place of keys and values
 // by just implementing the traits for some basic types here.
 use crate::serialized_types::{
-    versioned_type, Version, Versioned, VersionedLatest, LATEST_VERSION,
+    LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
 };
 
 // The traits for u64 are implemented by hand to illustrate what the proc_macro is doing.

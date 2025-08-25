@@ -16,7 +16,7 @@ use rand::{Rng, SeedableRng};
 use std::sync::Arc;
 use std::time::Duration;
 use storage_stress_test_utils::data::{Compressibility, FileFactory, UncompressedSize};
-use storage_stress_test_utils::fvm::{get_volume_path, FvmInstance, Guid};
+use storage_stress_test_utils::fvm::{FvmInstance, Guid, get_volume_path};
 use storage_stress_test_utils::io::Directory;
 use stress_test::actor::ActorRunner;
 use stress_test::environment::Environment;

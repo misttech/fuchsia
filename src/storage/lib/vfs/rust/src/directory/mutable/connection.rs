@@ -20,8 +20,8 @@ use crate::token_registry::{TokenInterface, TokenRegistry, Tokenizable};
 use crate::{ObjectRequestRef, ProtocolsExt};
 
 use anyhow::Error;
-use fidl::endpoints::ServerEnd;
 use fidl::Handle;
+use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use std::ops::ControlFlow;
 use std::pin::Pin;
@@ -335,12 +335,12 @@ impl<DirectoryType: MutableDirectory> TokenInterface for MutableConnection<Direc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ToObjectRequest;
     use crate::directory::dirents_sink;
     use crate::directory::entry::{EntryInfo, GetEntryInfo};
     use crate::directory::entry_container::{Directory, DirectoryWatcher};
     use crate::directory::traversal_position::TraversalPosition;
     use crate::node::Node;
-    use crate::ToObjectRequest;
     use fuchsia_sync::Mutex;
     use futures::future::BoxFuture;
     use std::any::Any;

@@ -6,11 +6,11 @@ use crate::device::Device;
 use crate::environment::Environment;
 use crate::matcher::Matcher;
 use crate::{matcher, service};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fs_management::format::DiskFormat;
+use futures::StreamExt;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use futures::StreamExt;
 use std::collections::HashSet;
 use std::sync::Arc;
 

@@ -41,11 +41,7 @@ pub fn how_many<T: Into<u64>>(value: u64, item_size: T) -> u64 {
     let item_size = item_size.into();
     let items = value / item_size;
     let remainder = value % item_size;
-    if remainder != 0 {
-        items + 1
-    } else {
-        items
-    }
+    if remainder != 0 { items + 1 } else { items }
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::fuchsia::RemoteCrypt;
 use crate::fuchsia::component::map_to_raw_status;
 use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::errors::map_to_status;
@@ -9,8 +10,7 @@ use crate::fuchsia::fxblob::BlobDirectory;
 use crate::fuchsia::memory_pressure::{MemoryPressureLevel, MemoryPressureMonitor};
 use crate::fuchsia::profile::new_profile_state;
 use crate::fuchsia::volume::{FxVolume, FxVolumeAndRoot, MemoryPressureConfig, RootDir};
-use crate::fuchsia::RemoteCrypt;
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_fs::{AdminMarker, AdminRequest, AdminRequestStream};
@@ -22,11 +22,11 @@ use futures::{StreamExt, TryStreamExt};
 use fxfs::errors::FxfsError;
 use fxfs::fsck;
 use fxfs::log::*;
-use fxfs::object_store::transaction::{lock_keys, LockKey, LockKeys, Options, Transaction};
+use fxfs::object_store::transaction::{LockKey, LockKeys, Options, Transaction, lock_keys};
 use fxfs::object_store::volume::RootVolume;
 use fxfs::object_store::{Directory, ObjectDescriptor, ObjectStore, StoreOwner};
 use fxfs_crypto::Crypt;
-use fxfs_trace::{trace_future_args, TraceFutureExt};
+use fxfs_trace::{TraceFutureExt, trace_future_args};
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
@@ -885,9 +885,9 @@ impl StoreOwner for VolumesDirectory {
 #[cfg(test)]
 mod tests {
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
-    use crate::fuchsia::testing::{open_file_checked, TestFixture};
+    use crate::fuchsia::testing::{TestFixture, open_file_checked};
     use crate::fuchsia::volumes_directory::VolumesDirectory;
-    use fidl::endpoints::{create_proxy, create_request_stream, DiscoverableProtocolMarker};
+    use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy, create_request_stream};
     use fidl_fuchsia_fs::AdminMarker;
     use fidl_fuchsia_fs_startup::{MountOptions, VolumeMarker, VolumeProxy};
     use fidl_fuchsia_fxfs::KeyPurpose;
@@ -896,7 +896,7 @@ mod tests {
     use futures::join;
     use fxfs::errors::FxfsError;
     use fxfs::filesystem::FxFilesystem;
-    use fxfs::fsck::{fsck, fsck_volume_with_options, fsck_with_options, FsckOptions};
+    use fxfs::fsck::{FsckOptions, fsck, fsck_volume_with_options, fsck_with_options};
     use fxfs::lock_keys;
     use fxfs::object_store::allocator::Allocator;
     use fxfs::object_store::transaction::{LockKey, Options};
@@ -906,8 +906,8 @@ mod tests {
     use std::sync::atomic::Ordering;
     use std::sync::{Arc, Weak};
     use std::time::Duration;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
     use vfs::directory::entry_container::Directory;
     use vfs::execution_scope::ExecutionScope;
     use vfs::path::Path;
@@ -1236,13 +1236,15 @@ mod tests {
             .await
             .expect("create encrypted volume failed");
         // We have the volume mounted so delete attempts should fail.
-        assert!(FxfsError::AlreadyBound.matches(
-            &volumes_directory
-                .remove_volume(VOLUME_NAME)
-                .await
-                .err()
-                .expect("Deleting volume should fail")
-        ));
+        assert!(
+            FxfsError::AlreadyBound.matches(
+                &volumes_directory
+                    .remove_volume(VOLUME_NAME)
+                    .await
+                    .err()
+                    .expect("Deleting volume should fail")
+            )
+        );
         volumes_directory.terminate().await;
         std::mem::drop(volumes_directory);
         filesystem.close().await.expect("close filesystem failed");

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::{BufferSlice, MutableBufferSlice, RemoteBlockClientSync, VmoId};
-use anyhow::{ensure, Error};
+use anyhow::{Error, ensure};
 
 use linked_hash_map::LinkedHashMap;
 use log::error;

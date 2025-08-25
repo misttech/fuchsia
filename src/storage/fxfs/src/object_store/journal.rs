@@ -33,7 +33,7 @@ use crate::object_handle::{ObjectHandle as _, ReadObjectHandle};
 use crate::object_store::allocator::Allocator;
 use crate::object_store::data_object_handle::OverwriteOptions;
 use crate::object_store::extent_record::{
-    ExtentKey, ExtentMode, ExtentValue, DEFAULT_DATA_ATTRIBUTE_ID,
+    DEFAULT_DATA_ATTRIBUTE_ID, ExtentKey, ExtentMode, ExtentValue,
 };
 use crate::object_store::graveyard::Graveyard;
 use crate::object_store::journal::bootstrap_handle::BootstrapObjectHandle;
@@ -46,23 +46,23 @@ use crate::object_store::journal::writer::JournalWriter;
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
 use crate::object_store::transaction::{
-    lock_keys, AllocatorMutation, LockKey, Mutation, MutationV40, MutationV41, MutationV43,
-    MutationV46, MutationV47, ObjectStoreMutation, Options, Transaction, TxnMutation,
-    TRANSACTION_MAX_JOURNAL_USAGE,
+    AllocatorMutation, LockKey, Mutation, MutationV40, MutationV41, MutationV43, MutationV46,
+    MutationV47, ObjectStoreMutation, Options, TRANSACTION_MAX_JOURNAL_USAGE, Transaction,
+    TxnMutation, lock_keys,
 };
 use crate::object_store::{
-    AssocObj, DataObjectHandle, HandleOptions, HandleOwner, Item, ItemRef, NewChildStoreOptions,
-    ObjectStore, INVALID_OBJECT_ID,
+    AssocObj, DataObjectHandle, HandleOptions, HandleOwner, INVALID_OBJECT_ID, Item, ItemRef,
+    NewChildStoreOptions, ObjectStore,
 };
 use crate::range::RangeExt;
 use crate::round::{round_div, round_down};
-use crate::serialized_types::{migrate_to_version, Migrate, Version, Versioned, LATEST_VERSION};
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use crate::serialized_types::{LATEST_VERSION, Migrate, Version, Versioned, migrate_to_version};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use event_listener::Event;
 use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
-use futures::future::poll_fn;
 use futures::FutureExt as _;
+use futures::future::poll_fn;
 use once_cell::sync::OnceCell;
 use rustc_hash::FxHashMap as HashMap;
 use serde::{Deserialize, Serialize};
@@ -70,8 +70,8 @@ use static_assertions::const_assert;
 use std::clone::Clone;
 use std::collections::HashSet;
 use std::ops::{Bound, Range};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Poll, Waker};
 
 // The journal file is written to in blocks of this size.
@@ -932,8 +932,10 @@ impl Journal {
                             };
 
                             if stores_deleted.contains(&object_id) {
-                                bail!(anyhow!(FxfsError::Inconsistent)
-                                    .context("Encountered mutations for deleted store"));
+                                bail!(
+                                    anyhow!(FxfsError::Inconsistent)
+                                        .context("Encountered mutations for deleted store")
+                                );
                             }
 
                             match &mutation {
@@ -1074,8 +1076,10 @@ impl Journal {
                         }
                         JournalRecord::Discard(offset) => {
                             if offset == 0 {
-                                bail!(anyhow!(FxfsError::Inconsistent)
-                                    .context("Invalid offset for Discard"));
+                                bail!(
+                                    anyhow!(FxfsError::Inconsistent)
+                                        .context("Invalid offset for Discard")
+                                );
                             }
                             if let Some(transaction) = current_transaction.as_ref() {
                                 if transaction.checkpoint.file_offset < offset {
@@ -1680,60 +1684,62 @@ impl Journal {
         let mut flush_fut = None;
         let mut compact_fut = None;
         let mut flush_error = false;
-        poll_fn(|ctx| loop {
-            {
-                let mut inner = self.inner.lock();
-                if flush_fut.is_none() && !flush_error && self.handle.get().is_some() {
-                    let flushable = inner.writer.flushable_bytes();
-                    if flushable > 0 {
-                        flush_fut = Some(self.flush(flushable).boxed());
-                    }
-                }
-                if inner.terminate && flush_fut.is_none() && compact_fut.is_none() {
-                    return Poll::Ready(());
-                }
-                // The / 2 is here because after compacting, we cannot reclaim the space until the
-                // _next_ time we flush the device since the super-block is not guaranteed to
-                // persist until then.
-                if compact_fut.is_none()
-                    && !inner.terminate
-                    && !inner.disable_compactions
-                    && inner.image_builder_mode.is_none()
-                    && self.objects.last_end_offset()
-                        - inner.super_block_header.journal_checkpoint.file_offset
-                        > inner.reclaim_size / 2
+        poll_fn(|ctx| {
+            loop {
                 {
-                    compact_fut = Some(self.compact().boxed());
-                    inner.compaction_running = true;
-                }
-                inner.flush_waker = Some(ctx.waker().clone());
-            }
-            let mut pending = true;
-            if let Some(fut) = flush_fut.as_mut() {
-                if let Poll::Ready(result) = fut.poll_unpin(ctx) {
-                    if let Err(e) = result {
-                        self.inner.lock().terminate(Some(e.context("Flush error")));
-                        self.reclaim_event.notify(usize::MAX);
-                        flush_error = true;
-                    }
-                    flush_fut = None;
-                    pending = false;
-                }
-            }
-            if let Some(fut) = compact_fut.as_mut() {
-                if let Poll::Ready(result) = fut.poll_unpin(ctx) {
                     let mut inner = self.inner.lock();
-                    if let Err(e) = result {
-                        inner.terminate(Some(e.context("Compaction error")));
+                    if flush_fut.is_none() && !flush_error && self.handle.get().is_some() {
+                        let flushable = inner.writer.flushable_bytes();
+                        if flushable > 0 {
+                            flush_fut = Some(self.flush(flushable).boxed());
+                        }
                     }
-                    compact_fut = None;
-                    inner.compaction_running = false;
-                    self.reclaim_event.notify(usize::MAX);
-                    pending = false;
+                    if inner.terminate && flush_fut.is_none() && compact_fut.is_none() {
+                        return Poll::Ready(());
+                    }
+                    // The / 2 is here because after compacting, we cannot reclaim the space until the
+                    // _next_ time we flush the device since the super-block is not guaranteed to
+                    // persist until then.
+                    if compact_fut.is_none()
+                        && !inner.terminate
+                        && !inner.disable_compactions
+                        && inner.image_builder_mode.is_none()
+                        && self.objects.last_end_offset()
+                            - inner.super_block_header.journal_checkpoint.file_offset
+                            > inner.reclaim_size / 2
+                    {
+                        compact_fut = Some(self.compact().boxed());
+                        inner.compaction_running = true;
+                    }
+                    inner.flush_waker = Some(ctx.waker().clone());
                 }
-            }
-            if pending {
-                return Poll::Pending;
+                let mut pending = true;
+                if let Some(fut) = flush_fut.as_mut() {
+                    if let Poll::Ready(result) = fut.poll_unpin(ctx) {
+                        if let Err(e) = result {
+                            self.inner.lock().terminate(Some(e.context("Flush error")));
+                            self.reclaim_event.notify(usize::MAX);
+                            flush_error = true;
+                        }
+                        flush_fut = None;
+                        pending = false;
+                    }
+                }
+                if let Some(fut) = compact_fut.as_mut() {
+                    if let Poll::Ready(result) = fut.poll_unpin(ctx) {
+                        let mut inner = self.inner.lock();
+                        if let Err(e) = result {
+                            inner.terminate(Some(e.context("Compaction error")));
+                        }
+                        compact_fut = None;
+                        inner.compaction_running = false;
+                        self.reclaim_event.notify(usize::MAX);
+                        pending = false;
+                    }
+                }
+                if pending {
+                    return Poll::Pending;
+                }
             }
         })
         .await;
@@ -1867,11 +1873,11 @@ mod tests {
     use crate::object_store::directory::Directory;
     use crate::object_store::transaction::Options;
     use crate::object_store::volume::root_volume;
-    use crate::object_store::{lock_keys, HandleOptions, LockKey, ObjectStore, NO_OWNER};
+    use crate::object_store::{HandleOptions, LockKey, NO_OWNER, ObjectStore, lock_keys};
     use fuchsia_async as fasync;
     use fuchsia_async::MonotonicDuration;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 
@@ -2202,8 +2208,8 @@ mod fuzz {
         use crate::filesystem::FxFilesystem;
         use fuchsia_async as fasync;
         use std::io::Write;
-        use storage_device::fake_device::FakeDevice;
         use storage_device::DeviceHolder;
+        use storage_device::fake_device::FakeDevice;
 
         fasync::SendExecutorBuilder::new().num_threads(4).build().run(async move {
             let device = DeviceHolder::new(FakeDevice::new(32768, 512));
@@ -2224,8 +2230,8 @@ mod fuzz {
     fn fuzz_journal(input: Vec<super::JournalRecord>) {
         use crate::filesystem::FxFilesystem;
         use fuchsia_async as fasync;
-        use storage_device::fake_device::FakeDevice;
         use storage_device::DeviceHolder;
+        use storage_device::fake_device::FakeDevice;
 
         fasync::SendExecutorBuilder::new().num_threads(4).build().run(async move {
             let device = DeviceHolder::new(FakeDevice::new(32768, 512));

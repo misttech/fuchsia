@@ -51,7 +51,7 @@ impl Container for FxfsContainer {
         if expected.is_empty() {
             match crypt::fxfs::unlock_data_volume(&mut self.fs, &launcher.config).await {
                 Ok(Some((crypt_service, _, volume))) => {
-                    return Ok(Filesystem::ServingVolumeInMultiVolume(Some(crypt_service), volume))
+                    return Ok(Filesystem::ServingVolumeInMultiVolume(Some(crypt_service), volume));
                 }
                 Ok(None) => {
                     log::warn!(

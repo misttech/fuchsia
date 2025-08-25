@@ -47,11 +47,7 @@ impl FatfsDirRef {
         parent: Option<&Arc<FatDirectory>>,
         name: &str,
     ) -> Result<(), Status> {
-        if self.open_count == 0 {
-            Ok(())
-        } else {
-            self.reopen(fs, parent, name)
-        }
+        if self.open_count == 0 { Ok(()) } else { self.reopen(fs, parent, name) }
     }
 
     unsafe fn reopen(
@@ -152,11 +148,7 @@ impl FatfsFileRef {
         parent: &FatDirectory,
         name: &str,
     ) -> Result<(), Status> {
-        if self.open_count == 0 {
-            Ok(())
-        } else {
-            self.reopen(fs, parent, name)
-        }
+        if self.open_count == 0 { Ok(()) } else { self.reopen(fs, parent, name) }
     }
 
     unsafe fn reopen(

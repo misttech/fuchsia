@@ -4,8 +4,8 @@
 
 use crate::log::*;
 use crate::lsm_tree::types::ItemRef;
-use crate::object_store::allocator::{AllocatorKey, AllocatorValue};
 use crate::object_store::ObjectDescriptor;
+use crate::object_store::allocator::{AllocatorKey, AllocatorValue};
 use std::ops::Range;
 
 #[derive(Clone, Debug, PartialEq)]

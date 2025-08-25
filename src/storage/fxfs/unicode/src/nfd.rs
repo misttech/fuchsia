@@ -120,8 +120,8 @@ mod test {
 
     /// Test suite of codepoint to normalized forms.
     /// Value contains different types of normalization (original, nfc, nfd, nfkc, nfkd)
-    pub fn normalization_test(
-    ) -> Result<Vec<(Vec<u32>, Vec<u32>, Vec<u32>, Vec<u32>, Vec<u32>)>, std::io::Error> {
+    pub fn normalization_test()
+    -> Result<Vec<(Vec<u32>, Vec<u32>, Vec<u32>, Vec<u32>, Vec<u32>)>, std::io::Error> {
         // We use the UCD provided test data for validating our implementation.
         let data = read_zip("NormalizationTest.txt")?;
 

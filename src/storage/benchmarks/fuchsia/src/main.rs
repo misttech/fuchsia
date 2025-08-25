@@ -21,7 +21,7 @@ use storage_benchmarks::io_benchmarks::{
     WriteRandomCold, WriteRandomWarm, WriteSequentialCold, WriteSequentialFsyncCold,
     WriteSequentialFsyncWarm, WriteSequentialWarm,
 };
-use storage_benchmarks::{add_benchmarks, BenchmarkSet};
+use storage_benchmarks::{BenchmarkSet, add_benchmarks};
 
 mod blob_benchmarks;
 mod blob_loader;

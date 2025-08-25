@@ -151,7 +151,7 @@ impl<T: TokenInterface> PinnedDrop for Tokenizable<T> {
 #[cfg(test)]
 mod tests {
     use self::mocks::{MockChannel, MockDirectory};
-    use super::{TokenRegistry, Tokenizable, DEFAULT_TOKEN_RIGHTS};
+    use super::{DEFAULT_TOKEN_RIGHTS, TokenRegistry, Tokenizable};
     use fidl::{AsHandleRef, HandleBased, Rights};
     use futures::pin_mut;
     use std::sync::Arc;
@@ -245,6 +245,7 @@ mod tests {
     }
 
     mod mocks {
+        use crate::ObjectRequestRef;
         use crate::directory::dirents_sink;
         use crate::directory::entry::{EntryInfo, GetEntryInfo};
         use crate::directory::entry_container::{Directory, DirectoryWatcher, MutableDirectory};
@@ -253,7 +254,6 @@ mod tests {
         use crate::node::Node;
         use crate::path::Path;
         use crate::token_registry::{TokenInterface, TokenRegistry};
-        use crate::ObjectRequestRef;
         use fidl_fuchsia_io as fio;
         use std::sync::Arc;
         use zx_status::Status;

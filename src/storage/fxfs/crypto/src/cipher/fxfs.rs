@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use super::{
-    CbcDecryptProcessor, CbcEncryptProcessor, Cipher, Tweak, UnwrappedKey, XtsProcessor,
-    FSCRYPT_PADDING, SECTOR_SIZE,
+    CbcDecryptProcessor, CbcEncryptProcessor, Cipher, FSCRYPT_PADDING, SECTOR_SIZE, Tweak,
+    UnwrappedKey, XtsProcessor,
 };
+use aes::Aes256;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
-use aes::Aes256;
 use anyhow::Error;
 use std::hash::{Hash, Hasher};
 use zerocopy::IntoBytes;

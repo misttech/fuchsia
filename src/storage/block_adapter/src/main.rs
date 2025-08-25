@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl::endpoints::ClientEnd;
 use fuchsia_runtime::HandleType;
 use {fidl_fuchsia_hardware_block as fhardware_block, fuchsia_async as fasync};

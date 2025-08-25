@@ -5,12 +5,12 @@
 use crate::errors::FxfsError;
 use crate::filesystem::FxFilesystem;
 use crate::object_store::directory::Directory;
-use crate::object_store::transaction::{lock_keys, Options, Transaction};
+use crate::object_store::transaction::{Options, Transaction, lock_keys};
 use crate::object_store::tree_cache::TreeCache;
 use crate::object_store::{
-    load_store_info, LockKey, NewChildStoreOptions, ObjectDescriptor, ObjectStore, StoreOwner,
+    LockKey, NewChildStoreOptions, ObjectDescriptor, ObjectStore, StoreOwner, load_store_info,
 };
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use fxfs_crypto::Crypt;
 use std::sync::{Arc, Weak};
 
@@ -195,12 +195,12 @@ mod tests {
     use crate::filesystem::{FxFilesystem, JournalingObject, SyncOptions};
     use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::Directory;
-    use crate::object_store::transaction::{lock_keys, Options};
+    use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::{LockKey, NO_OWNER};
     use fxfs_insecure_crypto::InsecureCrypt;
     use std::sync::Arc;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     #[fuchsia::test]
     async fn test_lookup_nonexistent_volume() {

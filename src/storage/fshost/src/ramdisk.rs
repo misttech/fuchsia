@@ -8,7 +8,7 @@
 //! filesystems off it, such as recovery.
 
 use crate::device::{BlockDevice, Device, LocalBlockDevice};
-use anyhow::{ensure, Context, Error};
+use anyhow::{Context, Error, ensure};
 use fuchsia_component::client::connect_to_protocol;
 use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
 

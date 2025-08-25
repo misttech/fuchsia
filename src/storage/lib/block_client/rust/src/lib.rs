@@ -24,8 +24,8 @@ use std::mem::MaybeUninit;
 use std::num::NonZero;
 use std::ops::{DerefMut, Range};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::task::{Context, Poll, Waker};
 use zx::sys::zx_handle_t;
 use zx::{self as zx, HandleBased as _};
@@ -986,13 +986,13 @@ mod tests {
     use fidl::endpoints::RequestStream as _;
     use futures::future::{AbortHandle, Abortable, TryFutureExt as _};
     use futures::join;
-    use futures::stream::futures_unordered::FuturesUnordered;
     use futures::stream::StreamExt as _;
+    use futures::stream::futures_unordered::FuturesUnordered;
     use ramdevice_client::RamdiskClient;
     use std::borrow::Cow;
     use std::num::NonZero;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use {fidl_fuchsia_hardware_block as block, fuchsia_async as fasync};
 
     const RAMDISK_BLOCK_SIZE: u64 = 1024;

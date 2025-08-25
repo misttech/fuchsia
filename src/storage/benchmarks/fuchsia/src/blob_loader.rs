@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_io as fio;
-use fuchsia_fs::directory::{
-    open_file_async, open_in_namespace, readdir_recursive, DirEntry, DirentKind,
-};
 use fuchsia_fs::PERM_READABLE;
+use fuchsia_fs::directory::{
+    DirEntry, DirentKind, open_file_async, open_in_namespace, readdir_recursive,
+};
 use futures::StreamExt as _;
 
 /// Pages in and retains all of the blobs in the pkg directory. This is done to avoid page faulting

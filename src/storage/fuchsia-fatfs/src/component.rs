@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error, bail};
 use block_client::RemoteBlockClientSync;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, RequestStream, ServerEnd};
 use fidl_fuchsia_fs::{AdminMarker, AdminRequest, AdminRequestStream};
@@ -11,9 +11,9 @@ use fidl_fuchsia_fs_startup::{
 };
 use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
-use fuchsia_fatfs::{fatfs_error_to_status, FatDirectory, FatFs};
-use futures::lock::Mutex;
+use fuchsia_fatfs::{FatDirectory, FatFs, fatfs_error_to_status};
 use futures::TryStreamExt;
+use futures::lock::Mutex;
 use log::{error, info, warn};
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable;

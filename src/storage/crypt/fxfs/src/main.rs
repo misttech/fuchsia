@@ -5,8 +5,8 @@
 use anyhow::Error;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
-use futures::stream::StreamExt;
 use futures::TryFutureExt;
+use futures::stream::StreamExt;
 use fxfs_crypt::log::*;
 use fxfs_crypt::{CryptService, Services};
 

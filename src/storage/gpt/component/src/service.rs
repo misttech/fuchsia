@@ -44,11 +44,7 @@ enum State {
 
 impl State {
     fn is_stopped(&self) -> bool {
-        if let Self::Stopped = self {
-            true
-        } else {
-            false
-        }
+        if let Self::Stopped = self { true } else { false }
     }
 }
 

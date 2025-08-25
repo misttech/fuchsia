@@ -12,11 +12,11 @@
 //!   - [`file_backed_device::FileBackedDevice`], which is backed by a regular file and is portable.
 
 use crate::buffer::{BufferFuture, BufferRef, MutableBufferRef};
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use async_trait::async_trait;
 // pub so `Device` trait implementations don't need to depend on the `block_protocol` crate
 pub use block_protocol::WriteOptions;
-use futures::channel::oneshot::{channel, Sender};
+use futures::channel::oneshot::{Sender, channel};
 use std::future::Future;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, Range};

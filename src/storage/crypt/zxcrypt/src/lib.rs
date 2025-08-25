@@ -5,8 +5,8 @@
 use aes_gcm_siv::aead::{Aead as _, Payload};
 use aes_gcm_siv::{Aes128GcmSiv, Key, KeyInit as _, Nonce};
 use anyhow::Error;
-use crypt_policy::{unseal_sources, KeyConsumer, Policy};
-use fidl::endpoints::{create_request_stream, ClientEnd};
+use crypt_policy::{KeyConsumer, Policy, unseal_sources};
+use fidl::endpoints::{ClientEnd, create_request_stream};
 use fidl_fuchsia_fxfs::CryptRequest;
 use futures::{FutureExt, TryStreamExt};
 use hkdf::Hkdf;
@@ -148,7 +148,7 @@ pub async fn with_crypt_service<R, Fut: Future<Output = Result<R, Error>>>(
 
 #[cfg(test)]
 mod tests {
-    use super::{with_crypt_service, ZxcryptHeader, ZXCRYPT_MAGIC, ZXCRYPT_VERSION};
+    use super::{ZXCRYPT_MAGIC, ZXCRYPT_VERSION, ZxcryptHeader, with_crypt_service};
     use crypt_policy::Policy;
     use fidl_fuchsia_fxfs::WrappedKey;
     use zerocopy::FromBytes;

@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::UnwrappedKey;
+use aes::Aes256;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockEncrypt, KeyInit};
-use aes::Aes256;
 use byteorder::{BigEndian, ByteOrder};
 
 // This is a heavily specialized version of ff1 encryption as described in:

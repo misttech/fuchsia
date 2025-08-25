@@ -4,7 +4,7 @@
 
 use crate::errors::FxfsError;
 use crate::object_handle::{ObjectHandle, ReadObjectHandle};
-use anyhow::{anyhow, ensure, Error};
+use anyhow::{Error, anyhow, ensure};
 use event_listener::{Event, EventListener};
 use fuchsia_sync::Mutex;
 use std::ops::Deref;
@@ -231,16 +231,16 @@ impl<S: ReadObjectHandle> ObjectHandle for CachingObjectHandle<S> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CachingObjectHandle, CHUNK_SIZE};
+    use super::{CHUNK_SIZE, CachingObjectHandle};
     use crate::object_handle::{ObjectHandle, ReadObjectHandle};
-    use anyhow::{anyhow, ensure, Error};
+    use anyhow::{Error, anyhow, ensure};
     use async_trait::async_trait;
     use event_listener::Event;
-    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+    use storage_device::Device;
     use storage_device::buffer::{BufferFuture, MutableBufferRef};
     use storage_device::fake_device::FakeDevice;
-    use storage_device::Device;
 
     // Fills a buffer with a pattern seeded by counter.
     fn fill_buf(buf: &mut [u8], counter: u8) {

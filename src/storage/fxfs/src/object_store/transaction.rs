@@ -8,14 +8,14 @@ use crate::filesystem::{FxFilesystem, TxnGuard};
 use crate::log::*;
 use crate::lsm_tree::types::Item;
 use crate::object_handle::INVALID_OBJECT_ID;
+use crate::object_store::AttributeKey;
 use crate::object_store::allocator::{AllocatorItem, Reservation};
-use crate::object_store::object_manager::{reserved_space_from_journal_usage, ObjectManager};
+use crate::object_store::object_manager::{ObjectManager, reserved_space_from_journal_usage};
 use crate::object_store::object_record::{
     ObjectItem, ObjectItemV40, ObjectItemV41, ObjectItemV43, ObjectItemV46, ObjectItemV47,
     ObjectKey, ObjectKeyData, ObjectValue, ProjectProperty,
 };
-use crate::object_store::AttributeKey;
-use crate::serialized_types::{migrate_nodefault, migrate_to_version, Migrate, Versioned};
+use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
 use anyhow::Error;
 use either::{Either, Left, Right};
 use fprint::TypeFingerprint;
@@ -28,8 +28,8 @@ use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
 use std::cell::UnsafeCell;
 use std::cmp::Ordering;
-use std::collections::hash_map::Entry;
 use std::collections::BTreeSet;
+use std::collections::hash_map::Entry;
 use std::marker::PhantomPinned;
 use std::ops::{Deref, DerefMut, Range};
 use std::sync::Arc;
@@ -465,11 +465,7 @@ pub enum LockKeys {
 
 impl LockKeys {
     pub fn with_capacity(capacity: usize) -> Self {
-        if capacity > 1 {
-            LockKeys::Vec(Vec::with_capacity(capacity))
-        } else {
-            LockKeys::None
-        }
+        if capacity > 1 { LockKeys::Vec(Vec::with_capacity(capacity)) } else { LockKeys::None }
     }
 
     pub fn push(&mut self, key: LockKey) {
@@ -1536,11 +1532,7 @@ pub struct ReadGuard<'a> {
 
 impl ReadGuard<'_> {
     pub fn fs(&self) -> Option<&Arc<FxFilesystem>> {
-        if let LockManagerRef::Owned(fs) = &self.manager {
-            Some(fs)
-        } else {
-            None
-        }
+        if let LockManagerRef::Owned(fs) = &self.manager { Some(fs) } else { None }
     }
 
     pub fn into_owned(mut self, fs: Arc<FxFilesystem>) -> ReadGuard<'static> {
@@ -1620,11 +1612,11 @@ mod tests {
     use futures::channel::oneshot::channel;
     use futures::future::FutureExt;
     use futures::stream::FuturesUnordered;
-    use futures::{join, pin_mut, StreamExt};
+    use futures::{StreamExt, join, pin_mut};
     use std::task::Poll;
     use std::time::Duration;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     #[fuchsia::test]
     async fn test_simple() {

@@ -1,8 +1,8 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::superblock::{f2fs_crc32, BLOCK_SIZE, F2FS_MAGIC, SEGMENT_SIZE};
-use anyhow::{anyhow, ensure, Error};
+use crate::superblock::{BLOCK_SIZE, F2FS_MAGIC, SEGMENT_SIZE, f2fs_crc32};
+use anyhow::{Error, anyhow, ensure};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 const MAX_ACTIVE_NODE_LOGS: usize = 8;

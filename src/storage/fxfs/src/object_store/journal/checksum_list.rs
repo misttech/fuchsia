@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::checksum::{fletcher64, Checksum};
+use crate::checksum::{Checksum, fletcher64};
 use crate::errors::FxfsError;
 use crate::range::RangeExt;
-use anyhow::{anyhow, ensure, Error};
+use anyhow::{Error, anyhow, ensure};
 use std::collections::BTreeMap;
 use std::ops::Range;
 use storage_device::Device;
@@ -19,11 +19,7 @@ enum ChecksumState {
 
 impl ChecksumState {
     fn checksum(&mut self) -> Option<&mut Vec<Checksum>> {
-        if let ChecksumState::Unverified(c) = self {
-            Some(c)
-        } else {
-            None
-        }
+        if let ChecksumState::Unverified(c) = self { Some(c) } else { None }
     }
 }
 
@@ -260,8 +256,8 @@ impl ChecksumList {
 mod tests {
     use super::ChecksumList;
     use crate::checksum::fletcher64;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::Device;
+    use storage_device::fake_device::FakeDevice;
 
     #[fuchsia::test]
     async fn test_verify() {

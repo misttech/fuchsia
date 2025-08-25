@@ -93,11 +93,7 @@ impl FatFile {
         fs: &'a FatFilesystemInner,
     ) -> Option<GuardMut<'a, FatfsFileRef>> {
         let mut file = self.file.borrow_mut();
-        if file.get_mut(fs).is_none() {
-            None
-        } else {
-            Some(GuardMut::new(fs, file))
-        }
+        if file.get_mut(fs).is_none() { None } else { Some(GuardMut::new(fs, file)) }
     }
 
     pub fn borrow_file<'a>(
@@ -105,11 +101,7 @@ impl FatFile {
         fs: &'a FatFilesystemInner,
     ) -> Result<Guard<'a, FatfsFileRef>, Status> {
         let file = self.file.borrow();
-        if file.get(fs).is_none() {
-            Err(Status::BAD_HANDLE)
-        } else {
-            Ok(Guard::new(fs, file))
-        }
+        if file.get(fs).is_none() { Err(Status::BAD_HANDLE) } else { Ok(Guard::new(fs, file)) }
     }
 
     async fn write_or_append(

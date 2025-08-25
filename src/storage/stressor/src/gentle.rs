@@ -8,15 +8,15 @@
 //! Panics if operations fail.
 
 use fuchsia_sync::{Mutex, RwLock};
-use rand::distr::weighted::WeightedIndex;
-use rand::distr::Distribution;
-use rand::seq::IndexedRandom;
 use rand::Rng;
+use rand::distr::Distribution;
+use rand::distr::weighted::WeightedIndex;
+use rand::seq::IndexedRandom;
 use std::fs::File;
 use std::io::ErrorKind;
 use std::os::unix::fs::FileExt;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Default)]
 pub struct Stressor {

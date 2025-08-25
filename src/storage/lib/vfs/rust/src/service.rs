@@ -11,7 +11,7 @@ use crate::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenReque
 use crate::execution_scope::ExecutionScope;
 use crate::node::Node;
 use crate::object_request::{ObjectRequestRef, ObjectRequestSend};
-use crate::{immutable_attributes, ProtocolsExt};
+use crate::{ProtocolsExt, immutable_attributes};
 use fidl::endpoints::RequestStream;
 use fidl_fuchsia_io as fio;
 use fuchsia_async::Channel;

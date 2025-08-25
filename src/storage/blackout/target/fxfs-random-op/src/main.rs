@@ -4,17 +4,17 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use blackout_target::random_op::{generate_load, Op};
-use blackout_target::{find_partition, set_up_partition, Test, TestServer};
+use blackout_target::random_op::{Op, generate_load};
+use blackout_target::{Test, TestServer, find_partition, set_up_partition};
 use fidl::endpoints::{ClientEnd, Proxy as _};
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
 use fidl_fuchsia_fxfs::{CryptManagementMarker, CryptMarker, KeyPurpose};
-use fs_management::filesystem::Filesystem;
 use fs_management::Fxfs;
+use fs_management::filesystem::Filesystem;
 use fuchsia_component::client::connect_to_protocol;
 use rand::Rng;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const BARRIERS_ENABLED: &'static str = std::env!("BARRIERS_ENABLED");
 

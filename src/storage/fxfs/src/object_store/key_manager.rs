@@ -12,8 +12,8 @@ use fuchsia_sync::Mutex;
 use fxfs_crypto::{Cipher, CipherSet, Crypt, FindKeyResult};
 use scopeguard::ScopeGuard;
 use std::cell::UnsafeCell;
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -489,7 +489,7 @@ fn to_result(find_key_result: FindKeyResult) -> Result<Arc<dyn Cipher>, FxfsErro
 #[cfg(target_os = "fuchsia")]
 #[cfg(test)]
 mod tests {
-    use super::{to_result, EncryptionKeys, KeyManager, PURGE_TIMEOUT};
+    use super::{EncryptionKeys, KeyManager, PURGE_TIMEOUT, to_result};
     use crate::log::*;
     use async_trait::async_trait;
     use fuchsia_async::{self as fasync, MonotonicInstant, TestExecutor};
@@ -498,12 +498,12 @@ mod tests {
     use futures::channel::oneshot;
     use futures::join;
     use fxfs_crypto::{
-        Cipher, Crypt, FxfsCipher, FxfsKey, KeyPurpose, UnwrappedKey, WrappedKey, WrappedKeyBytes,
-        FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE,
+        Cipher, Crypt, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsCipher, FxfsKey, KeyPurpose,
+        UnwrappedKey, WrappedKey, WrappedKeyBytes,
     };
     use std::future::pending;
-    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
     const PLAIN_TEXT: &[u8] = b"The quick brown fox jumps over the lazy dog";
     const ERROR_COUNTER: u8 = 0xff;
@@ -757,28 +757,32 @@ mod tests {
         let crypt2 = crypt.clone();
 
         let task1 = fasync::Task::spawn(async move {
-            assert!(manager1
-                .get_keys(
-                    1,
-                    crypt1.as_ref(),
-                    &mut Some(async || Ok(encryption_keys())),
-                    false,
-                    false,
-                )
-                .await
-                .is_err());
+            assert!(
+                manager1
+                    .get_keys(
+                        1,
+                        crypt1.as_ref(),
+                        &mut Some(async || Ok(encryption_keys())),
+                        false,
+                        false,
+                    )
+                    .await
+                    .is_err()
+            );
         });
         let task2 = fasync::Task::spawn(async move {
-            assert!(manager2
-                .get_keys(
-                    1,
-                    crypt2.as_ref(),
-                    &mut Some(async || Ok(encryption_keys())),
-                    false,
-                    false,
-                )
-                .await
-                .is_err());
+            assert!(
+                manager2
+                    .get_keys(
+                        1,
+                        crypt2.as_ref(),
+                        &mut Some(async || Ok(encryption_keys())),
+                        false,
+                        false,
+                    )
+                    .await
+                    .is_err()
+            );
         });
 
         TestExecutor::advance_to(MonotonicInstant::after(zx::MonotonicDuration::from_seconds(1)))
@@ -795,38 +799,40 @@ mod tests {
         let (sender, receiver) = oneshot::channel();
         let dropped = AtomicBool::new(false);
 
-        assert!(join!(
-            async {
-                let mut unwrap_keys = Some(async || {
-                    struct OnDrop<'a>(&'a AtomicBool);
-                    impl Drop for OnDrop<'_> {
-                        fn drop(&mut self) {
-                            self.0.store(true, Ordering::Relaxed);
+        assert!(
+            join!(
+                async {
+                    let mut unwrap_keys = Some(async || {
+                        struct OnDrop<'a>(&'a AtomicBool);
+                        impl Drop for OnDrop<'_> {
+                            fn drop(&mut self) {
+                                self.0.store(true, Ordering::Relaxed);
+                            }
                         }
-                    }
-                    let _on_drop = OnDrop(&dropped);
-                    sender.send(()).unwrap();
-                    // This should wait until both the remove calls below are waiting.
-                    let _ = TestExecutor::poll_until_stalled(pending::<()>()).await;
-                    Ok(encryption_keys())
-                });
-                manager.get_keys(1, crypt.as_ref(), &mut unwrap_keys, false, false).await
-            },
-            async {
-                let _ = receiver.await;
-                join!(
-                    async {
-                        manager.remove(1).await;
-                        assert!(dropped.load(Ordering::Relaxed));
-                    },
-                    async {
-                        manager.remove(1).await;
-                        assert!(dropped.load(Ordering::Relaxed));
-                    }
-                );
-            },
-        )
-        .0
-        .is_err());
+                        let _on_drop = OnDrop(&dropped);
+                        sender.send(()).unwrap();
+                        // This should wait until both the remove calls below are waiting.
+                        let _ = TestExecutor::poll_until_stalled(pending::<()>()).await;
+                        Ok(encryption_keys())
+                    });
+                    manager.get_keys(1, crypt.as_ref(), &mut unwrap_keys, false, false).await
+                },
+                async {
+                    let _ = receiver.await;
+                    join!(
+                        async {
+                            manager.remove(1).await;
+                            assert!(dropped.load(Ordering::Relaxed));
+                        },
+                        async {
+                            manager.remove(1).await;
+                            assert!(dropped.load(Ordering::Relaxed));
+                        }
+                    );
+                },
+            )
+            .0
+            .is_err()
+        );
     }
 }

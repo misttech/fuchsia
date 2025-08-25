@@ -468,7 +468,7 @@ impl BlockServer {
 
 #[cfg(test)]
 mod tests {
-    use crate::fuchsia::testing::{open_file_checked, TestFixture};
+    use crate::fuchsia::testing::{TestFixture, open_file_checked};
     use block_client::{BlockClient, BlockIoFlag, BlockOpcode, RemoteBlockClient, VmoId};
     use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
     use fidl::endpoints::{ClientEnd, ServerEnd};
@@ -476,8 +476,8 @@ mod tests {
     use fidl_fuchsia_hardware_block::{BlockMarker, SessionMarker};
     use fidl_fuchsia_hardware_block_volume::VolumeMarker;
     use fidl_fuchsia_io::{self as fio, DirectoryProxy};
-    use fs_management::filesystem::{BlockConnector as _, Filesystem};
     use fs_management::Blobfs;
+    use fs_management::filesystem::{BlockConnector as _, Filesystem};
     use fuchsia_async as fasync;
     use futures::join;
     use rustc_hash::FxHashSet as HashSet;

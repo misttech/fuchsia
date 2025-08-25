@@ -5,10 +5,10 @@
 use async_trait::async_trait;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_hardware_block_volume::VolumeMarker;
+use fs_management::Fvm;
 use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, ServingMultiVolumeFilesystem,
 };
-use fs_management::Fvm;
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use ramdevice_client::RamdiskClient;
 use storage_benchmarks::block_device::BlockDevice;

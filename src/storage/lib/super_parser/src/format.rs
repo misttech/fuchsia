@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::SuperDeviceRange;
-use anyhow::{anyhow, ensure, Error};
+use anyhow::{Error, anyhow, ensure};
 use bitflags::bitflags;
 use sha2::Digest;
 use static_assertions::const_assert;

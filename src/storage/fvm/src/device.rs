@@ -210,12 +210,12 @@ impl<C: BlockClient> DerefMut for BufferGuard<'_, C> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DeviceImpl, BUFFER_COUNT, BUFFER_SIZE};
+    use super::{BUFFER_COUNT, BUFFER_SIZE, DeviceImpl};
     use assert_matches::assert_matches;
     use fake_block_client::FakeBlockClient;
     use fuchsia_async::{self as fasync, TestExecutor};
-    use futures::future::select_all;
     use futures::FutureExt;
+    use futures::future::select_all;
     use std::iter::repeat_with;
     use std::sync::Arc;
     use std::task::Poll;

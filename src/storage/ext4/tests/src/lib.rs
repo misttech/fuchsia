@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use assert_matches::assert_matches;
-use ext4_metadata::{ExtendedAttributes, Metadata, NodeInfo, Symlink, ROOT_INODE_NUM};
+use ext4_metadata::{ExtendedAttributes, Metadata, NodeInfo, ROOT_INODE_NUM, Symlink};
 
 // To generate the test image:
 //

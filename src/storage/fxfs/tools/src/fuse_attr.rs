@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuse3::raw::prelude::FileAttr;
 use fuse3::FileType;
+use fuse3::raw::prelude::FileAttr;
 use fxfs::object_store::Timestamp;
 use std::time::SystemTime;
 

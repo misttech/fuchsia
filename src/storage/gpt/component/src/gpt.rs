@@ -5,12 +5,12 @@
 use crate::config::Config;
 use crate::partition::PartitionBackend;
 use crate::partitions_directory::PartitionsDirectory;
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use block_client::{
     BlockClient as _, BufferSlice, MutableBufferSlice, RemoteBlockClient, VmoId, WriteOptions,
 };
-use block_server::async_interface::SessionManager;
 use block_server::BlockServer;
+use block_server::async_interface::SessionManager;
 
 use fidl::endpoints::ServerEnd;
 use fuchsia_sync::Mutex;
@@ -686,8 +686,8 @@ mod tests {
     use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
     use gpt::{Gpt, Guid, PartitionInfo};
     use std::num::NonZero;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use vmo_backed_block_server::{
         InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
     };

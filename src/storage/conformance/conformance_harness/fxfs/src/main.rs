@@ -15,7 +15,7 @@ use fidl_fuchsia_io_test::{
 };
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
-use fxfs_testing::{open_dir, open_file, TestFixture};
+use fxfs_testing::{TestFixture, open_dir, open_file};
 use log::error;
 use std::sync::atomic::{AtomicU64, Ordering};
 

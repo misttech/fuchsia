@@ -7,7 +7,7 @@ use fidl_fuchsia_io as fio;
 use ramdevice_client::{RamdiskClient, RamdiskClientBuilder};
 use std::path::PathBuf;
 use storage_isolated_driver_manager::{
-    create_random_guid, fvm, wait_for_block_device_devfs, BlockDeviceMatcher,
+    BlockDeviceMatcher, create_random_guid, fvm, wait_for_block_device_devfs,
 };
 use zx::{AsHandleRef, Rights, Status, Vmo};
 

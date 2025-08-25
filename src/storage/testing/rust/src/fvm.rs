@@ -104,8 +104,8 @@ pub async fn create_fvm_volume(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{wait_for_block_device_devfs, BlockDeviceMatcher};
-    use fidl_fuchsia_hardware_block_volume::{VolumeMarker, ALLOCATE_PARTITION_FLAG_INACTIVE};
+    use crate::{BlockDeviceMatcher, wait_for_block_device_devfs};
+    use fidl_fuchsia_hardware_block_volume::{ALLOCATE_PARTITION_FLAG_INACTIVE, VolumeMarker};
     use fuchsia_component::client::connect_to_protocol_at_path;
     use ramdevice_client::RamdiskClient;
 

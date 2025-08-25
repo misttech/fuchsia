@@ -83,11 +83,7 @@ pub fn default_ignorable(ch: char) -> bool {
             x => x,
         })
         .unwrap_or_else(|x| x);
-    if ix < plane.len() {
-        plane[ix].contains(&ch_lsb)
-    } else {
-        false
-    }
+    if ix < plane.len() { plane[ix].contains(&ch_lsb) } else { false }
 }
 
 pub fn casefold(ch: char) -> Option<&'static str> {

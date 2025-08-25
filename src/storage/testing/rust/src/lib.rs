@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use fidl_fuchsia_device::ControllerProxy;
 use fidl_fuchsia_hardware_block_partition::{PartitionMarker, PartitionProxy};
 use fs_management::filesystem::BlockConnector;
-use fs_management::format::{detect_disk_format, DiskFormat};
-use fuchsia_component::client::{connect_to_protocol_at_path, ServiceInstanceStream};
+use fs_management::format::{DiskFormat, detect_disk_format};
+use fuchsia_component::client::{ServiceInstanceStream, connect_to_protocol_at_path};
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::TryStreamExt;
 use std::path::{Path, PathBuf};

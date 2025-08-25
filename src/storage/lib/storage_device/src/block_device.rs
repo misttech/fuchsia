@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Device;
 use crate::buffer::{BufferFuture, BufferRef, MutableBufferRef};
 use crate::buffer_allocator::{BufferAllocator, BufferSource};
-use crate::Device;
-use anyhow::{bail, ensure, Error};
+use anyhow::{Error, bail, ensure};
 use async_trait::async_trait;
 use block_client::{BlockClient, BlockFlags, BufferSlice, MutableBufferSlice, VmoId, WriteOptions};
 use std::ops::Range;
@@ -138,8 +138,8 @@ impl<T> Drop for BlockDevice<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::block_device::BlockDevice;
     use crate::Device;
+    use crate::block_device::BlockDevice;
     use fake_block_client::FakeBlockClient;
     use zx::Status;
 

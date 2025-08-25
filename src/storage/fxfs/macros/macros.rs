@@ -11,7 +11,7 @@ use proc_macro::TokenStream;
 use quote::ToTokens;
 use std::collections::BTreeMap;
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_macro_input, Data, Fields, Result};
+use syn::{Data, Fields, Result, parse_macro_input};
 
 /// Holds an open-ended version range like `3..` meaning version 3 and up.
 #[derive(Clone)]

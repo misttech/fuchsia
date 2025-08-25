@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fuchsia::fxblob::blob::FxBlob;
 use crate::fuchsia::fxblob::BlobDirectory;
+use crate::fuchsia::fxblob::blob::FxBlob;
 use crate::fuchsia::testing::{TestFixture, TestFixtureOptions};
 use crate::fuchsia::volume::FxVolume;
 use anyhow::Error;
@@ -17,8 +17,8 @@ use fxfs::errors::FxfsError;
 use fxfs::object_store::directory::Directory;
 use fxfs::object_store::{DataObjectHandle, HandleOptions, ObjectStore};
 use std::sync::Arc;
-use storage_device::fake_device::FakeDevice;
 use storage_device::DeviceHolder;
+use storage_device::fake_device::FakeDevice;
 
 pub async fn new_blob_fixture() -> TestFixture {
     TestFixture::open(

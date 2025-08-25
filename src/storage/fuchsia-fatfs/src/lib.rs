@@ -116,8 +116,8 @@ impl FatFs {
 mod tests {
     use super::*;
     use crate::types::{Dir, FileSystem};
-    use anyhow::{anyhow, Context};
-    use fatfs::{format_volume, FormatVolumeOptions};
+    use anyhow::{Context, anyhow};
+    use fatfs::{FormatVolumeOptions, format_volume};
     use fidl::endpoints::Proxy;
     use fidl_fuchsia_io as fio;
     use futures::future::BoxFuture;

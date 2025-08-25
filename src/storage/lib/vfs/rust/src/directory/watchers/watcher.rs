@@ -10,7 +10,7 @@ use crate::execution_scope::ExecutionScope;
 
 use fidl_fuchsia_io as fio;
 use futures::channel::mpsc::{self, UnboundedSender};
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 
 #[cfg(not(target_os = "fuchsia"))]
 use fuchsia_async::emulated_handle::MessageBuf;

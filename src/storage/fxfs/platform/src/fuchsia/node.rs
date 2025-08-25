@@ -9,8 +9,8 @@ use futures::future::poll_fn;
 use fxfs::object_store::ObjectDescriptor;
 use fxfs_macros::ToWeakNode;
 use std::any::TypeId;
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::fmt;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Weak};
@@ -401,8 +401,8 @@ mod tests {
     use futures::future::join_all;
     use fxfs::object_store::ObjectDescriptor;
     use fxfs_macros::ToWeakNode;
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
     #[derive(ToWeakNode)]

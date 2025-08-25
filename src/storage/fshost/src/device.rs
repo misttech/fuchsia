@@ -4,7 +4,7 @@
 
 pub mod constants;
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
@@ -13,13 +13,13 @@ use fidl_fuchsia_hardware_block_partition::{PartitionMarker, PartitionProxy};
 use fidl_fuchsia_hardware_block_volume::{VolumeMarker, VolumeProxy};
 use fidl_fuchsia_io::{self as fio};
 use fs_management::filesystem::{BlockConnector, DirBasedBlockConnector};
-use fs_management::format::{detect_disk_format, DiskFormat};
+use fs_management::format::{DiskFormat, detect_disk_format};
 use fuchsia_async as fasync;
 use fuchsia_async::condition::Condition;
 use fuchsia_component::client::connect_to_protocol_at_path;
 use futures::stream::{AbortHandle, Abortable};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::task::Poll;
 use std::thread::JoinHandle;

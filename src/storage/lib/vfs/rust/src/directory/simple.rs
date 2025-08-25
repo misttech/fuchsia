@@ -13,10 +13,10 @@ use crate::directory::entry_container::{Directory, DirectoryWatcher};
 use crate::directory::helper::{AlreadyExists, DirectlyMutable, NotDirectory};
 use crate::directory::immutable::connection::ImmutableConnection;
 use crate::directory::traversal_position::TraversalPosition;
+use crate::directory::watchers::Watchers;
 use crate::directory::watchers::event_producers::{
     SingleNameEventProducer, StaticVecEventProducer,
 };
-use crate::directory::watchers::Watchers;
 use crate::execution_scope::ExecutionScope;
 use crate::name::Name;
 use crate::node::Node;
@@ -26,8 +26,8 @@ use crate::{ObjectRequestRef, ToObjectRequest};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::iter;
 use std::sync::Arc;
 use zx_status::Status;

@@ -12,16 +12,16 @@ use crate::lsm_tree::types::{
     BoxedLayerIterator, Item, ItemRef, Key, Layer, LayerIterator, LayerIteratorMut, LayerValue,
     OrdLowerBound, OrdUpperBound,
 };
-use crate::serialized_types::{Version, LATEST_VERSION};
-use anyhow::{bail, Error};
+use crate::serialized_types::{LATEST_VERSION, Version};
+use anyhow::{Error, bail};
 use async_trait::async_trait;
 use fuchsia_sync::{Mutex, MutexGuard};
-use std::cmp::{min, Ordering};
+use std::cmp::{Ordering, min};
 use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::ptr::NonNull;
-use std::sync::atomic::{self, AtomicPtr, AtomicU32};
 use std::sync::Arc;
+use std::sync::atomic::{self, AtomicPtr, AtomicU32};
 
 // Each skip list node contains a variable sized pointer list. The head pointers also exist in the
 // form of a pointer list. Index 0 in the pointer list is the chain with the most elements i.e.
@@ -613,13 +613,13 @@ mod tests {
         LayerIteratorMut, SortByU64,
     };
     use crate::serialized_types::{
-        versioned_type, Version, Versioned, VersionedLatest, LATEST_VERSION,
+        LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
     };
     use assert_matches::assert_matches;
     use fprint::TypeFingerprint;
     use fuchsia_async as fasync;
     use futures::future::join_all;
-    use futures::{join, FutureExt as _};
+    use futures::{FutureExt as _, join};
     use fxfs_macros::FuzzyHash;
     use std::hash::Hash;
     use std::ops::Bound;
@@ -1132,13 +1132,15 @@ mod tests {
         }
 
         // Have one thread repeatedly checking the list.
-        let _checker_thread = std::thread::spawn(move || loop {
-            let mut iter = SkipListLayerIter::new(&skip_list, Bound::Included(&TestKey(2)));
-            assert_matches!(iter.get(), Some(ItemRef { key: TestKey(2), .. }));
-            iter.advance().now_or_never().unwrap().unwrap();
-            assert_matches!(iter.get(), Some(ItemRef { key: TestKey(3), .. }));
-            iter.advance().now_or_never().unwrap().unwrap();
-            assert_matches!(iter.get(), Some(ItemRef { key: TestKey(4), .. }));
+        let _checker_thread = std::thread::spawn(move || {
+            loop {
+                let mut iter = SkipListLayerIter::new(&skip_list, Bound::Included(&TestKey(2)));
+                assert_matches!(iter.get(), Some(ItemRef { key: TestKey(2), .. }));
+                iter.advance().now_or_never().unwrap().unwrap();
+                assert_matches!(iter.get(), Some(ItemRef { key: TestKey(3), .. }));
+                iter.advance().now_or_never().unwrap().unwrap();
+                assert_matches!(iter.get(), Some(ItemRef { key: TestKey(4), .. }));
+            }
         });
 
         for thread in threads {

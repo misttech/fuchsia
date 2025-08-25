@@ -12,8 +12,8 @@ use fxfs::log::info;
 use fxfs::object_handle::ObjectProperties;
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    DataObjectHandle, Directory, HandleOptions, ObjectDescriptor, ObjectKey, ObjectKind,
-    ObjectStore, ObjectValue, Timestamp, NO_OWNER,
+    DataObjectHandle, Directory, HandleOptions, NO_OWNER, ObjectDescriptor, ObjectKey, ObjectKind,
+    ObjectStore, ObjectValue, Timestamp,
 };
 use fxfs_crypto::Crypt;
 use once_cell::sync::OnceCell;
@@ -23,9 +23,9 @@ use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
+use storage_device::DeviceHolder;
 use storage_device::fake_device::FakeDevice;
 use storage_device::file_backed_device::FileBackedDevice;
-use storage_device::DeviceHolder;
 use tokio::sync::RwLock;
 
 const DEFAULT_DEVICE_BLOCK_SIZE: u32 = 512;
@@ -368,11 +368,7 @@ pub trait FuseStrParser {
 impl FuseStrParser for OsStr {
     /// Convert from OsStr to str.
     fn osstr_to_str(&self) -> FxfsResult<&str> {
-        if let Some(s) = self.to_str() {
-            Ok(s)
-        } else {
-            Err(FxfsError::InvalidArgs.into())
-        }
+        if let Some(s) = self.to_str() { Ok(s) } else { Err(FxfsError::InvalidArgs.into()) }
     }
 }
 
@@ -380,7 +376,7 @@ impl FuseStrParser for OsStr {
 mod tests {
     use crate::fuse_fs::FuseFs;
     use fxfs::object_handle::ObjectHandle;
-    use fxfs::object_store::transaction::{lock_keys, LockKey, Options};
+    use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 
     /// Load object handle for three times, then continuously release the object handle.
     /// Check the handle counter value after each release.

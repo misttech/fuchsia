@@ -2,19 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use chrono::{TimeZone, Utc};
 use fidl_fuchsia_io as fio;
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::OpenFxFilesystem;
 use fxfs::fsck;
 use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
-use fxfs::object_store::directory::{replace_child, ReplacedChild};
-use fxfs::object_store::transaction::{lock_keys, LockKey, Options};
+use fxfs::object_store::directory::{ReplacedChild, replace_child};
+use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    Directory, HandleOptions, ObjectDescriptor, ObjectStore, SetExtendedAttributeMode,
-    StoreObjectHandle, StoreOwner, NO_OWNER,
+    Directory, HandleOptions, NO_OWNER, ObjectDescriptor, ObjectStore, SetExtendedAttributeMode,
+    StoreObjectHandle, StoreOwner,
 };
 use fxfs_crypto::Crypt;
 use std::io::Write;

@@ -1,14 +1,14 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use fidl::endpoints::{create_proxy, DiscoverableProtocolMarker as _};
+use fidl::endpoints::{DiscoverableProtocolMarker as _, create_proxy};
 use fidl_test_placeholders::EchoMarker;
 
 use assert_matches::assert_matches;
 use fidl_fuchsia_io as fio;
 use futures::TryFutureExt;
-use io_conformance_util::test_harness::TestHarness;
 use io_conformance_util::DirectoryProxyExt as _;
+use io_conformance_util::test_harness::TestHarness;
 use zx::Status;
 
 const TEST_STRING: &'static str = "Hello, world!";

@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::ObjectRequestRef;
 use crate::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use crate::execution_scope::ExecutionScope;
 use crate::file::{FidlIoConnection, File, FileIo, FileLike, FileOptions, SyncMode};
 use crate::node::Node;
-use crate::ObjectRequestRef;
 use fidl_fuchsia_io as fio;
 use std::sync::Arc;
 use zx_status::Status;

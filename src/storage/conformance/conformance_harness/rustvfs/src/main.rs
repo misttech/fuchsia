@@ -4,7 +4,7 @@
 
 //! fuchsia io conformance testing harness for the rust pseudo-fs-mt library
 
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io_test::{
@@ -16,7 +16,7 @@ use futures::prelude::*;
 use log::error;
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable;
-use vfs::directory::immutable::{simple, Simple};
+use vfs::directory::immutable::{Simple, simple};
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::vmo;
 use vfs::remote::remote_dir;

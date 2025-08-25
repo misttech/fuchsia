@@ -7,8 +7,8 @@
 //! lives here and is recompiled into each separate test.
 
 use fshost_test_fixture::disk_builder::{
-    DataSpec, VolumesSpec, DEFAULT_DATA_VOLUME_SIZE, DEFAULT_DISK_SIZE, FVM_F2FS_SLICE_SIZE,
-    FVM_SLICE_SIZE,
+    DEFAULT_DATA_VOLUME_SIZE, DEFAULT_DISK_SIZE, DataSpec, FVM_F2FS_SLICE_SIZE, FVM_SLICE_SIZE,
+    VolumesSpec,
 };
 use fshost_test_fixture::{
     TestFixtureBuilder, VFS_TYPE_BLOBFS, VFS_TYPE_F2FS, VFS_TYPE_FXFS, VFS_TYPE_MINFS,
@@ -23,11 +23,7 @@ pub fn new_builder() -> TestFixtureBuilder {
 }
 
 pub fn blob_fs_type() -> u32 {
-    if DATA_FILESYSTEM_VARIANT == "fxblob" {
-        VFS_TYPE_FXFS
-    } else {
-        VFS_TYPE_BLOBFS
-    }
+    if DATA_FILESYSTEM_VARIANT == "fxblob" { VFS_TYPE_FXFS } else { VFS_TYPE_BLOBFS }
 }
 
 pub fn data_fs_type() -> u32 {
@@ -61,11 +57,7 @@ pub fn data_fs_spec() -> DataSpec {
 }
 
 pub fn fvm_slice_size() -> u64 {
-    if data_fs_name() == "f2fs" {
-        FVM_F2FS_SLICE_SIZE
-    } else {
-        FVM_SLICE_SIZE
-    }
+    if data_fs_name() == "f2fs" { FVM_F2FS_SLICE_SIZE } else { FVM_SLICE_SIZE }
 }
 
 pub fn data_max_bytes() -> u64 {

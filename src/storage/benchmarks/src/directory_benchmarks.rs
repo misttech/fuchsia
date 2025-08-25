@@ -436,11 +436,7 @@ pub fn stat_path_at(dir: &OpenFd, path: &CStr) -> Result<libc::stat, std::io::Er
         let result =
             libc::fstatat(dir.0, path.as_ptr(), stat.as_mut_ptr(), libc::AT_SYMLINK_NOFOLLOW);
 
-        if result == 0 {
-            Ok(stat.assume_init())
-        } else {
-            Err(std::io::Error::last_os_error())
-        }
+        if result == 0 { Ok(stat.assume_init()) } else { Err(std::io::Error::last_os_error()) }
     }
 }
 
@@ -463,11 +459,7 @@ impl Drop for OpenFd {
 
 pub fn open_path(path: &CStr, flags: libc::c_int) -> Result<OpenFd, std::io::Error> {
     let result = unsafe { libc::open(path.as_ptr(), flags) };
-    if result >= 0 {
-        Ok(OpenFd(result))
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
+    if result >= 0 { Ok(OpenFd(result)) } else { Err(std::io::Error::last_os_error()) }
 }
 
 pub fn open_path_at(
@@ -476,11 +468,7 @@ pub fn open_path_at(
     flags: libc::c_int,
 ) -> Result<OpenFd, std::io::Error> {
     let result = unsafe { libc::openat(dir.0, path.as_ptr(), flags) };
-    if result >= 0 {
-        Ok(OpenFd(result))
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
+    if result >= 0 { Ok(OpenFd(result)) } else { Err(std::io::Error::last_os_error()) }
 }
 
 #[cfg(test)]

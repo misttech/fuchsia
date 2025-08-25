@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::format::{CHUNK_HEADER_SIZE, SPARSE_HEADER_SIZE};
-use crate::{Chunk, SparseHeader, BLK_SIZE, NO_SOURCE};
-use anyhow::{ensure, Context, Result};
+use crate::{BLK_SIZE, Chunk, NO_SOURCE, SparseHeader};
+use anyhow::{Context, Result, ensure};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 

@@ -9,7 +9,7 @@ use crate::node::Node;
 use crate::object_request::{ObjectRequestRef, ToObjectRequest as _};
 use crate::protocols::ProtocolsExt;
 use fidl_fuchsia_io as fio;
-use std::future::{ready, Future};
+use std::future::{Future, ready};
 use std::sync::Arc;
 use zx_status::Status;
 

@@ -164,7 +164,9 @@ constexpr size_t kBytesToWrite = 2 * kBytesPerWrite;
 constexpr size_t kFileMaxSize = kBytesToWrite;
 
 TEST_P(DirtyCacheTest, CleanlyMountedFs) {
-  { auto file = CreateTestFile(this, kFileMaxSize, 0, 0); }
+  {
+    auto file = CreateTestFile(this, kFileMaxSize, 0, 0);
+  }
   ASSERT_EQ(GetDirtyBytes(), 0u);
 }
 

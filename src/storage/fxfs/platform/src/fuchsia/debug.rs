@@ -9,9 +9,9 @@ use fidl_fuchsia_fxfs::DebugRequest;
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use fxfs::filesystem::FxFilesystem;
-use fxfs::lsm_tree::types::LayerIterator;
 use fxfs::lsm_tree::Query;
-use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, INVALID_OBJECT_ID};
+use fxfs::lsm_tree::types::LayerIterator;
+use fxfs::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle};
 use fxfs::object_store::{
     AttributeKey, DataObjectHandle, HandleOptions, ObjectKey, ObjectKeyData, ObjectStore,
 };
@@ -26,7 +26,7 @@ use vfs::directory::traversal_position::TraversalPosition;
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::{FidlIoConnection, File, FileIo, FileLike, FileOptions, SyncMode};
 use vfs::node::Node;
-use vfs::{attributes, immutable_attributes, ObjectRequestRef, ToObjectRequest};
+use vfs::{ObjectRequestRef, ToObjectRequest, attributes, immutable_attributes};
 use zx::{self as zx, Status};
 
 // To avoid dependency cycles, FxfsDebug stores weak references back to internal structures.  This

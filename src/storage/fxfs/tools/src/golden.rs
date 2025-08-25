@@ -3,18 +3,18 @@
 // found in the LICENSE file.
 
 use crate::ops;
-use anyhow::{bail, ensure, Context, Error};
+use anyhow::{Context, Error, bail, ensure};
 use chrono::Local;
-use fxfs::filesystem::{mkfs_with_volume, FxFilesystem, OpenFxFilesystem, SyncOptions};
-use fxfs::object_store::{ObjectStore, NO_OWNER};
-use fxfs::serialized_types::{Version, LATEST_VERSION};
+use fxfs::filesystem::{FxFilesystem, OpenFxFilesystem, SyncOptions, mkfs_with_volume};
+use fxfs::object_store::{NO_OWNER, ObjectStore};
+use fxfs::serialized_types::{LATEST_VERSION, Version};
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::InsecureCrypt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use storage_device::fake_device::FakeDevice;
 use storage_device::DeviceHolder;
+use storage_device::fake_device::FakeDevice;
 
 const IMAGE_BLOCKS: u64 = 8192;
 // Version of first image with a verified file included in `create_image()`

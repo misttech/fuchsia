@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use delivery_blob::compression::ChunkedArchiveError;
 use delivery_blob::DeliveryBlobError;
+use delivery_blob::compression::ChunkedArchiveError;
 use fxfs::errors::FxfsError;
 use fxfs::log::*;
 use zx::Status;

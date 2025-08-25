@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, format_err, Error};
-use fidl::endpoints::{create_proxy, ClientEnd, DiscoverableProtocolMarker, RequestStream};
+use anyhow::{Error, anyhow, format_err};
+use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, RequestStream, create_proxy};
 use fidl_fuchsia_device::ControllerMarker;
 use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
 use fs_management::filesystem::{Filesystem, ServingSingleVolumeFilesystem};
-use fs_management::format::{detect_disk_format, DiskFormat};
+use fs_management::format::{DiskFormat, detect_disk_format};
 use fs_management::{Blobfs, F2fs, Fxfs, Minfs};
-use fuchsia_runtime::{take_startup_handle, HandleType};
+use fuchsia_runtime::{HandleType, take_startup_handle};
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{SinkExt, StreamExt, TryStreamExt};

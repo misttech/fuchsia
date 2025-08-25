@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_STORAGE_LIB_PAVER_BOOTCONTROL_DEFINITION_H_
-#define SRC_STORAGE_LIB_PAVER_BOOTCONTROL_DEFINITION_H_
+#ifndef SRC_STORAGE_LIB_PAVER_BOOT_CONTROL_DEFINITION_H_
+#define SRC_STORAGE_LIB_PAVER_BOOT_CONTROL_DEFINITION_H_
 
 #include <stdint.h>
 
@@ -91,4 +91,4 @@ static_assert(sizeof(struct BootloaderControl) ==
 }  // namespace android
 }  // namespace paver
 
-#endif  // SRC_STORAGE_LIB_PAVER_BOOTCONTROL_DEFINITION_H_
+#endif  // SRC_STORAGE_LIB_PAVER_BOOT_CONTROL_DEFINITION_H_

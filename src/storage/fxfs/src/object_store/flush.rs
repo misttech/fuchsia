@@ -7,19 +7,19 @@
 use crate::filesystem::TxnGuard;
 use crate::log::*;
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
-use crate::lsm_tree::{layers_from_handles, LSMTree};
-use crate::object_handle::{ObjectHandle, ReadObjectHandle, INVALID_OBJECT_ID};
+use crate::lsm_tree::{LSMTree, layers_from_handles};
+use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle};
 use crate::object_store::extent_record::ExtentValue;
 use crate::object_store::object_manager::{ObjectManager, ReservationUpdate};
 use crate::object_store::object_record::{ObjectKey, ObjectValue};
-use crate::object_store::transaction::{lock_keys, AssociatedObject, LockKey, Mutation};
+use crate::object_store::transaction::{AssociatedObject, LockKey, Mutation, lock_keys};
 use crate::object_store::{
-    layer_size_from_encrypted_mutations_size, tree, AssocObj, DirectWriter, EncryptedMutations,
-    HandleOptions, LockState, ObjectStore, Options, StoreInfo, Transaction,
-    MAX_ENCRYPTED_MUTATIONS_SIZE,
+    AssocObj, DirectWriter, EncryptedMutations, HandleOptions, LockState,
+    MAX_ENCRYPTED_MUTATIONS_SIZE, ObjectStore, Options, StoreInfo, Transaction,
+    layer_size_from_encrypted_mutations_size, tree,
 };
-use crate::serialized_types::{Version, VersionedLatest, LATEST_VERSION};
-use anyhow::{bail, Context, Error};
+use crate::serialized_types::{LATEST_VERSION, Version, VersionedLatest};
+use anyhow::{Context, Error, bail};
 use fxfs_crypto::KeyPurpose;
 use once_cell::sync::OnceCell;
 use std::sync::atomic::Ordering;
@@ -505,18 +505,18 @@ impl ObjectStore {
 #[cfg(test)]
 mod tests {
     use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, JournalingObject, SyncOptions};
-    use crate::object_handle::{ObjectHandle, INVALID_OBJECT_ID};
+    use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle};
     use crate::object_store::directory::Directory;
-    use crate::object_store::transaction::{lock_keys, Options};
+    use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
-        layer_size_from_encrypted_mutations_size, tree, HandleOptions, LockKey, ObjectStore,
-        NO_OWNER,
+        HandleOptions, LockKey, NO_OWNER, ObjectStore, layer_size_from_encrypted_mutations_size,
+        tree,
     };
     use fxfs_insecure_crypto::InsecureCrypt;
     use std::sync::Arc;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     async fn run_key_roll_test(flush_before_unlock: bool) {
         let device = DeviceHolder::new(FakeDevice::new(8192, 1024));

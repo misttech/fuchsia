@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::device::Device;
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl_fuchsia_hardware_block_partition::Guid;
 use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeProxy};
 use fuchsia_component::client::connect_to_protocol_at_path;
@@ -118,14 +118,14 @@ pub async fn set_partition_max_bytes(
 
 #[cfg(test)]
 mod tests {
-    use crate::volume::{resize_volume, MAX_VSLICES};
+    use crate::volume::{MAX_VSLICES, resize_volume};
     use anyhow::Error;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_hardware_block_volume::{
         VolumeManagerInfo, VolumeMarker, VolumeRequest, VsliceRange,
     };
 
-    use futures::{pin_mut, select, FutureExt, StreamExt};
+    use futures::{FutureExt, StreamExt, pin_mut, select};
 
     const SLICE_SIZE: u64 = 16384;
     const SLICE_COUNT: u64 = 5000;

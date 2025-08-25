@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use crate::errors::FxfsError;
-use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::lsm_tree::Query;
-use crate::object_store::transaction::{lock_keys, LockKey, Mutation, Options};
+use crate::lsm_tree::types::{ItemRef, LayerIterator};
+use crate::object_store::transaction::{LockKey, Mutation, Options, lock_keys};
 use crate::object_store::{
     ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectProperty,
 };
-use anyhow::{ensure, Error};
+use anyhow::{Error, ensure};
 
 impl ObjectStore {
     /// Adds a mutation to set the project limit as an attribute with `bytes` and `nodes` to root
@@ -95,7 +95,7 @@ impl ObjectStore {
             // For now, we don't support attributes on symlink objects, so setting a project id
             // doesn't make sense.
             ObjectKind::Symlink { .. } | ObjectKind::EncryptedSymlink { .. } => {
-                return Err(FxfsError::NotSupported.into())
+                return Err(FxfsError::NotSupported.into());
             }
             ObjectKind::Graveyard => return Err(FxfsError::Inconsistent.into()),
         }
@@ -171,7 +171,7 @@ impl ObjectStore {
             // For now, we don't support attributes on symlink objects, so setting a project id
             // doesn't make sense.
             ObjectKind::Symlink { .. } | ObjectKind::EncryptedSymlink { .. } => {
-                return Err(FxfsError::NotSupported.into())
+                return Err(FxfsError::NotSupported.into());
             }
             ObjectKind::Graveyard => return Err(FxfsError::Inconsistent.into()),
         }

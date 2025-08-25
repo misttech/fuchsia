@@ -7,12 +7,12 @@
 #[cfg(test)]
 mod tests;
 
+use crate::ObjectRequestRef;
 use crate::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use crate::execution_scope::ExecutionScope;
 use crate::file::common::vmo_flags_to_rights;
 use crate::file::{File, FileLike, FileOptions, GetVmo, StreamIoConnection, SyncMode};
 use crate::node::Node;
-use crate::ObjectRequestRef;
 use fidl_fuchsia_io as fio;
 use std::sync::Arc;
 use zx::{self as zx, HandleBased as _, Status, Vmo};

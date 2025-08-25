@@ -4,7 +4,7 @@
 
 //! Tests for the remote node.
 
-use super::{remote_dir, RemoteLike};
+use super::{RemoteLike, remote_dir};
 
 use crate::{assert_close, assert_read, assert_read_dirents, pseudo_directory};
 
@@ -14,7 +14,7 @@ use crate::directory::test_utils::DirentsSameInodeBuilder;
 use crate::execution_scope::ExecutionScope;
 use crate::object_request::ObjectRequest;
 use crate::path::Path;
-use crate::{file, ObjectRequestRef};
+use crate::{ObjectRequestRef, file};
 
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;

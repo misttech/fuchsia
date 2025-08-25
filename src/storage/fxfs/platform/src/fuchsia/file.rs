@@ -7,31 +7,31 @@ use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::node::{FxNode, OpenedNode};
 use crate::fuchsia::paged_object_handle::PagedObjectHandle;
 use crate::fuchsia::pager::{
-    default_page_in, MarkDirtyRange, PageInRange, PagerBacked, PagerPacketReceiverRegistration,
+    MarkDirtyRange, PageInRange, PagerBacked, PagerPacketReceiverRegistration, default_page_in,
 };
-use crate::fuchsia::volume::{info_to_filesystem_info, FxVolume};
+use crate::fuchsia::volume::{FxVolume, info_to_filesystem_info};
 use anyhow::Error;
 use fidl_fuchsia_io as fio;
-use fxfs::filesystem::{SyncOptions, MAX_FILE_SIZE};
+use fxfs::filesystem::{MAX_FILE_SIZE, SyncOptions};
 use fxfs::future_with_guard::FutureWithGuard;
 use fxfs::log::*;
 use fxfs::object_handle::{ObjectHandle, ReadObjectHandle};
 use fxfs::object_store::data_object_handle::OverwriteOptions;
 use fxfs::object_store::object_record::EncryptionKey;
-use fxfs::object_store::transaction::{lock_keys, LockKey, Options};
-use fxfs::object_store::{DataObjectHandle, ObjectDescriptor, FSCRYPT_KEY_ID};
+use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
+use fxfs::object_store::{DataObjectHandle, FSCRYPT_KEY_ID, ObjectDescriptor};
 use fxfs_macros::ToWeakNode;
 use std::fmt::{Debug, Formatter};
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use storage_device::buffer;
 use vfs::directory::entry::{EntryInfo, GetEntryInfo};
 use vfs::directory::entry_container::MutableDirectory;
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::{File, FileOptions, GetVmo, StreamIoConnection, SyncMode};
 use vfs::name::Name;
-use vfs::{attributes, ObjectRequestRef, ProtocolsExt};
+use vfs::{ObjectRequestRef, ProtocolsExt, attributes};
 use zx::{self as zx, HandleBased, Status};
 
 /// In many operating systems, it is possible to delete a file with open handles. In this case the
@@ -175,8 +175,10 @@ impl FxFile {
 
     /// Mark the state as permanent (to be used when the file is currently marked as temporary).
     pub fn mark_as_permanent(&self) {
-        assert!(State(self.state.fetch_and(!IS_UNNAMED_TEMPORARY, Ordering::Relaxed))
-            .is_unnamed_temporary());
+        assert!(
+            State(self.state.fetch_and(!IS_UNNAMED_TEMPORARY, Ordering::Relaxed))
+                .is_unnamed_temporary()
+        );
     }
 
     pub fn is_verified_file(&self) -> bool {
@@ -774,8 +776,8 @@ impl GetVmo for FxFile {
 #[cfg(test)]
 mod tests {
     use crate::fuchsia::testing::{
-        close_file_checked, open_dir_checked, open_file, open_file_checked, TestFixture,
-        TestFixtureOptions,
+        TestFixture, TestFixtureOptions, close_file_checked, open_dir_checked, open_file,
+        open_file_checked,
     };
     use anyhow::format_err;
     use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions};
@@ -784,11 +786,11 @@ mod tests {
     use fxfs::fsck::fsck;
     use fxfs::object_handle::INVALID_OBJECT_ID;
     use fxfs::object_store::Timestamp;
-    use rand::{rng, Rng};
-    use std::sync::atomic::{self, AtomicBool};
+    use rand::{Rng, rng};
     use std::sync::Arc;
-    use storage_device::fake_device::FakeDevice;
+    use std::sync::atomic::{self, AtomicBool};
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
     use zx::Status;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 

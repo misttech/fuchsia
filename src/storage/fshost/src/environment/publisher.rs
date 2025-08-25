@@ -10,9 +10,9 @@ use fidl_fuchsia_io as fio;
 use fs_management::filesystem::BlockConnector;
 use pseudo_fs::{LazyPseudoDirectory, PseudoDirectory, PseudoFile, ToPseudoDirectory};
 use std::sync::Arc;
+use vfs::ExecutionScope;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::service::endpoint;
-use vfs::ExecutionScope;
 
 pub trait SinglePublisher: Send + Sync {
     fn publish(self: Box<Self>, device: &dyn Device) -> Result<(), Error>;
@@ -143,8 +143,8 @@ mod tests {
     use fidl_fuchsia_hardware_block_volume::VolumeProxy;
     use fs_management::format::DiskFormat;
     use fuchsia_fs::directory::read_file_to_string;
-    use futures::channel::mpsc;
     use futures::StreamExt;
+    use futures::channel::mpsc;
     use zx::AsHandleRef;
 
     struct MockDevice {

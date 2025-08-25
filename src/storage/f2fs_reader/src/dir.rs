@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use crate::crypto::PerFileDecryptor;
 use crate::superblock::BLOCK_SIZE;
-use anyhow::{anyhow, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, ensure};
 use enumn::N;
 use fscrypt::proxy_filename::ProxyFilename;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, Unaligned};

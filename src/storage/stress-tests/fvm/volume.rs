@@ -7,7 +7,7 @@ use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_hardware_block_volume::{VolumeMarker, VolumeProxy};
 use fuchsia_component::client::connect_to_protocol_at_path;
 
-use storage_stress_test_utils::fvm::{get_volume_path, Guid};
+use storage_stress_test_utils::fvm::{Guid, get_volume_path};
 
 fn fidl_to_status(result: Result<i32, fidl::Error>) -> Result<(), zx::Status> {
     match result {

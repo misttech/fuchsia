@@ -9,9 +9,9 @@ pub mod builder;
 mod format;
 pub mod reader;
 
-use crate::format::{ChunkHeader, SparseHeader, CHUNK_HEADER_SIZE, SPARSE_HEADER_SIZE};
+use crate::format::{CHUNK_HEADER_SIZE, ChunkHeader, SPARSE_HEADER_SIZE, SparseHeader};
 use crate::reader::SparseReader;
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use core::fmt;
 use serde::de::DeserializeOwned;
 use std::fs::File;
@@ -659,7 +659,7 @@ mod test {
 
     use super::builder::{DataSource, SparseImageBuilder};
     use super::{
-        add_sparse_chunk, resparse, unsparse, Chunk, SparseFileWriter, BLK_SIZE, NO_SOURCE,
+        BLK_SIZE, Chunk, NO_SOURCE, SparseFileWriter, add_sparse_chunk, resparse, unsparse,
     };
     use rand::rngs::SmallRng;
     use rand::{RngCore, SeedableRng};

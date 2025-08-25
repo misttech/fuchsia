@@ -8,10 +8,10 @@ use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
 use fidl_fuchsia_fxfs::CryptMarker;
 use fidl_fuchsia_io as fio;
+use fs_management::FSConfig;
 use fs_management::filesystem::{
     ServingMultiVolumeFilesystem, ServingSingleVolumeFilesystem, ServingVolume,
 };
-use fs_management::FSConfig;
 use fuchsia_merkle::Hash;
 use std::path::Path;
 use std::sync::Arc;

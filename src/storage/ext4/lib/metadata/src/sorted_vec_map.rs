@@ -34,11 +34,7 @@ impl<K, V> SortedVecMap<K, V> {
         K: Borrow<Q> + Ord,
         Q: Ord + ?Sized,
     {
-        if let Ok(index) = self.index_of(key) {
-            Some(&self.vec[index].1)
-        } else {
-            None
-        }
+        if let Ok(index) = self.index_of(key) { Some(&self.vec[index].1) } else { None }
     }
 
     /// Returns a mutable reference to the value corresponding to the key.
@@ -47,11 +43,7 @@ impl<K, V> SortedVecMap<K, V> {
         K: Borrow<Q> + Ord,
         Q: Ord + ?Sized,
     {
-        if let Ok(index) = self.index_of(key) {
-            Some(&mut self.vec[index].1)
-        } else {
-            None
-        }
+        if let Ok(index) = self.index_of(key) { Some(&mut self.vec[index].1) } else { None }
     }
 
     /// Inserts a key-value pair into the map. If the map did not have this key present, `None` is

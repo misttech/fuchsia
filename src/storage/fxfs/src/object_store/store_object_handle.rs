@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::checksum::{fletcher64, Checksum, Checksums};
+use crate::checksum::{Checksum, Checksums, fletcher64};
 use crate::errors::FxfsError;
 use crate::log::*;
-use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
 use crate::lsm_tree::Query;
+use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
 use crate::object_handle::ObjectHandle;
 use crate::object_store::extent_record::{ExtentKey, ExtentMode, ExtentValue};
 use crate::object_store::object_manager::ObjectManager;
@@ -15,27 +15,27 @@ use crate::object_store::object_record::{
     ObjectKeyData, ObjectValue, Timestamp,
 };
 use crate::object_store::transaction::{
-    lock_keys, AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Options,
-    ReadGuard, Transaction,
+    AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Options, ReadGuard,
+    Transaction, lock_keys,
 };
 use crate::object_store::{
     HandleOptions, HandleOwner, ObjectStore, TrimMode, TrimResult, VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
 use crate::round::{round_down, round_up};
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use assert_matches::assert_matches;
 use bit_vec::BitVec;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
-use futures::{try_join, TryStreamExt};
+use futures::{TryStreamExt, try_join};
 use fxfs_crypto::{Cipher, CipherSet, FindKeyResult, FxfsCipher, KeyPurpose};
 use fxfs_trace::trace;
 use static_assertions::const_assert;
 use std::cmp::min;
 use std::future::Future;
 use std::ops::Range;
-use std::sync::atomic::{self, AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{self, AtomicBool, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
 
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
@@ -1455,7 +1455,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                                 deleted extent found at ({}, {})",
                                     target_range.start, target_range.end, range.start, range.end,
                                 )
-                            })
+                            });
                         }
                         ExtentValue::Some { device_offset, mode, .. } => (device_offset, mode),
                     };
@@ -1464,13 +1464,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     if range.start > target_range.start {
                         return Err(anyhow!(FxfsError::Inconsistent)).with_context(|| {
                             format!(
-                            "multi_overwrite failed: target range ({}, {}) starts before first \
+                                "multi_overwrite failed: target range ({}, {}) starts before first \
                             extent found at ({}, {})",
-                            target_range.start,
-                            target_range.end,
-                            range.start,
-                            range.end,
-                        )
+                                target_range.start, target_range.end, range.start, range.end,
+                            )
                         });
                     }
                     let mut bitmap = match mode {
@@ -1482,7 +1479,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                             wrong extent mode",
                                     range.start, range.end, target_range.start, target_range.end,
                                 )
-                            })
+                            });
                         }
                         ExtentMode::OverwritePartial(bitmap) => {
                             OverwriteBitmaps::new(bitmap.clone())
@@ -1664,8 +1661,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         {
             match item.value {
                 ObjectValue::Attribute { size: _, has_overwrite_extents: true } => {
-                    bail!(anyhow!(FxfsError::Inconsistent)
-                        .context("write_attr on an attribute with overwrite extents"))
+                    bail!(
+                        anyhow!(FxfsError::Inconsistent)
+                            .context("write_attr on an attribute with overwrite extents")
+                    )
                 }
                 ObjectValue::Attribute { size, .. } => (data.len() as u64) < size,
                 _ => bail!(FxfsError::Inconsistent),
@@ -1713,8 +1712,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 match item.key {
                     ObjectKey { object_id, data: ObjectKeyData::ExtendedAttribute { name } } => {
                         if self.object_id() != *object_id {
-                            bail!(anyhow!(FxfsError::Inconsistent)
-                                .context("list_extended_attributes: wrong object id"))
+                            bail!(
+                                anyhow!(FxfsError::Inconsistent)
+                                    .context("list_extended_attributes: wrong object id")
+                            )
                         }
                         out.push(name.clone());
                     }
@@ -1755,8 +1756,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 Ok(Some(fio::SelinuxContext::UseExtendedAttributes(fio::EmptyStruct {})))
             }
             _ => {
-                bail!(anyhow!(FxfsError::Inconsistent)
-                    .context("get_inline_extended_attribute: Expected ExtendedAttribute value"))
+                bail!(
+                    anyhow!(FxfsError::Inconsistent)
+                        .context("get_inline_extended_attribute: Expected ExtendedAttribute value")
+                )
             }
         }
     }
@@ -1774,8 +1777,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 Ok(self.read_attr(id).await?.ok_or(FxfsError::Inconsistent)?.into_vec())
             }
             _ => {
-                bail!(anyhow!(FxfsError::Inconsistent)
-                    .context("get_extended_attribute: Expected ExtendedAttribute value"))
+                bail!(
+                    anyhow!(FxfsError::Inconsistent)
+                        .context("get_extended_attribute: Expected ExtendedAttribute value")
+                )
             }
         }
     }
@@ -1819,8 +1824,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => {
                             Some(id)
                         }
-                        _ => bail!(anyhow!(FxfsError::Inconsistent)
-                            .context("expected extended attribute value")),
+                        _ => bail!(
+                            anyhow!(FxfsError::Inconsistent)
+                                .context("expected extended attribute value")
+                        ),
                     },
                 ),
             };
@@ -1930,8 +1937,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => Some(id),
                 ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(..)) => None,
                 _ => {
-                    bail!(anyhow!(FxfsError::Inconsistent)
-                        .context("remove_extended_attribute: Expected ExtendedAttribute value"))
+                    bail!(
+                        anyhow!(FxfsError::Inconsistent)
+                            .context("remove_extended_attribute: Expected ExtendedAttribute value")
+                    )
                 }
             };
 
@@ -2019,17 +2028,17 @@ mod tests {
     use crate::filesystem::{FxFilesystem, OpenFxFilesystem};
     use crate::object_handle::ObjectHandle;
     use crate::object_store::data_object_handle::WRITE_ATTR_BATCH_SIZE;
-    use crate::object_store::transaction::{lock_keys, Mutation, Options};
+    use crate::object_store::transaction::{Mutation, Options, lock_keys};
     use crate::object_store::{
-        AttributeKey, DataObjectHandle, Directory, HandleOptions, LockKey, ObjectKey, ObjectStore,
-        ObjectValue, SetExtendedAttributeMode, StoreObjectHandle, FSVERITY_MERKLE_ATTRIBUTE_ID,
+        AttributeKey, DataObjectHandle, Directory, FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions,
+        LockKey, ObjectKey, ObjectStore, ObjectValue, SetExtendedAttributeMode, StoreObjectHandle,
     };
     use bit_vec::BitVec;
     use fuchsia_async as fasync;
     use futures::join;
     use std::sync::Arc;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
     const TEST_OBJECT_NAME: &str = "foo";

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::device::constants::{DATA_VOLUME_LABEL, UNENCRYPTED_VOLUME_LABEL};
-use anyhow::{anyhow, Context, Error};
-use crypt_policy::{format_sources, get_policy, unseal_sources, KeyConsumer};
+use anyhow::{Context, Error, anyhow};
+use crypt_policy::{KeyConsumer, format_sources, get_policy, unseal_sources};
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_component::{self as fcomponent, RealmMarker};
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
@@ -13,7 +13,7 @@ use fs_management::filesystem::{ServingMultiVolumeFilesystem, ServingVolume};
 use fuchsia_component::client::{
     connect_to_protocol, connect_to_protocol_at_dir_root, open_childs_exposed_directory,
 };
-use key_bag::{Aes256Key, KeyBagManager, WrappingKey, AES128_KEY_SIZE, AES256_KEY_SIZE};
+use key_bag::{AES128_KEY_SIZE, AES256_KEY_SIZE, Aes256Key, KeyBagManager, WrappingKey};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};

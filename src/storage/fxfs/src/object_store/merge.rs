@@ -277,9 +277,9 @@ mod tests {
     use crate::lsm_tree::cache::NullCache;
     use crate::lsm_tree::types::{Item, LayerIterator, MergeableKey, Value};
     use crate::lsm_tree::{LSMTree, Query};
+    use crate::object_store::VOLUME_DATA_KEY_ID;
     use crate::object_store::extent_record::ExtentValue;
     use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectValue, Timestamp};
-    use crate::object_store::VOLUME_DATA_KEY_ID;
     use anyhow::Error;
 
     async fn test_merge<K: MergeableKey, V: Value + PartialEq>(
@@ -863,8 +863,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_merge_deleted_extents_does_not_coalesce_if_not_adjacent_layers(
-    ) -> Result<(), Error> {
+    async fn test_merge_deleted_extents_does_not_coalesce_if_not_adjacent_layers()
+    -> Result<(), Error> {
         // Layer 0:  [XXXXX]
         // Layer 1:  [--------------]
         // Layer 2:        [XXXXXXXX]
@@ -910,8 +910,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_merge_deleted_extents_does_not_coalesce_if_not_adjacent_deletions(
-    ) -> Result<(), Error> {
+    async fn test_merge_deleted_extents_does_not_coalesce_if_not_adjacent_deletions()
+    -> Result<(), Error> {
         // Layer 0:  [XXXXX|--------]
         // Layer 1:           [XXXXX]
         //  Merged:  [XXXXX|--------]

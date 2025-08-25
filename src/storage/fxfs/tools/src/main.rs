@@ -4,7 +4,7 @@
 
 use anyhow::Error;
 use argh::FromArgs;
-use fxfs::filesystem::{mkfs_with_volume, FxFilesystem, FxFilesystemBuilder};
+use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder, mkfs_with_volume};
 use fxfs::fsck;
 use fxfs::object_store::NO_OWNER;
 use fxfs_crypto::Crypt;
@@ -13,15 +13,15 @@ use std::io::Read;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
-use storage_device::file_backed_device::FileBackedDevice;
 use storage_device::DeviceHolder;
+use storage_device::file_backed_device::FileBackedDevice;
 use tools::ops;
 
 const DEFAULT_VOLUME: &str = "default";
 
 #[cfg(target_os = "linux")]
 use {
-    fuse3::{raw::prelude::Session, MountOptions},
+    fuse3::{MountOptions, raw::prelude::Session},
     tools::fuse_fs::FuseFs,
 };
 

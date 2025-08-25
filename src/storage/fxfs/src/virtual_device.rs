@@ -6,12 +6,12 @@
 //! files within an existing fxfs as a virtual storage device (e.g. to mount an inner filesystem).
 
 use crate::object_handle::ReadObjectHandle;
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use async_trait::async_trait;
 use std::ops::Range;
+use storage_device::Device;
 use storage_device::buffer::MutableBufferRef;
 use storage_device::buffer_allocator::BufferFuture;
-use storage_device::Device;
 
 /// Allows using anything that implements [`ReadObjectHandle`] as a read-only storage [`Device`].
 pub struct ReadOnlyDevice<H: ReadObjectHandle> {
@@ -89,12 +89,12 @@ mod tests {
     use super::*;
     use crate::filesystem::FxFilesystem;
     use crate::object_handle::ObjectHandle as _;
-    use crate::object_store::transaction::{lock_keys, LockKey};
+    use crate::object_store::transaction::{LockKey, lock_keys};
     use crate::object_store::volume::root_volume;
-    use crate::object_store::{DataObjectHandle, Directory, ObjectStore, NO_OWNER};
+    use crate::object_store::{DataObjectHandle, Directory, NO_OWNER, ObjectStore};
     use std::sync::Arc;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     /// Helper function that creates a test file filled with a known byte pattern.
     /// Each block in the file will be filled with the block offset mod 0xFF.

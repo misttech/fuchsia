@@ -6,8 +6,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use blackout_target::{Test, TestServer};
 use fidl_fuchsia_io as fio;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 struct IntegrationTest {
     setup_called: AtomicBool,

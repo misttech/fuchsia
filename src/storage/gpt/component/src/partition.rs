@@ -4,8 +4,8 @@
 use crate::gpt::GptPartition;
 use anyhow::Error;
 use block_client::{VmoId, WriteOptions};
-use block_server::async_interface::{PassthroughSession, SessionManager};
 use block_server::OffsetMap;
+use block_server::async_interface::{PassthroughSession, SessionManager};
 use fidl_fuchsia_hardware_block as fblock;
 
 use fuchsia_sync::Mutex;

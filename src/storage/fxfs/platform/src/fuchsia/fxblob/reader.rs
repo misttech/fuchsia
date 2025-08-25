@@ -28,7 +28,7 @@ impl BlobDirectory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuchsia::fxblob::testing::{new_blob_fixture, BlobFixture};
+    use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture};
     use delivery_blob::CompressionMode;
     use fidl_fuchsia_io::{self as fio};
     use fuchsia_async as fasync;

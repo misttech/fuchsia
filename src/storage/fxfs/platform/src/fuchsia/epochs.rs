@@ -5,8 +5,8 @@
 use event_listener::Event;
 use fuchsia_sync::RwLock;
 use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // usize::MAX % EPOCHS_SIZE should be EPOCHS_SIZE - 1.
 const EPOCHS_SIZE: usize = 16;
@@ -136,7 +136,7 @@ impl Drop for RefGuard {
 
 #[cfg(test)]
 mod tests {
-    use super::{Epochs, EPOCHS_SIZE};
+    use super::{EPOCHS_SIZE, Epochs};
     use futures::stream::{FuturesUnordered, StreamExt};
     use std::pin::pin;
 

@@ -7,7 +7,7 @@ use anyhow::{Context as _, Error};
 use async_trait::async_trait;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage};
 use futures::channel::mpsc;
-use futures::{stream, SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt, stream};
 use std::future::ready;
 use std::sync::Arc;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
@@ -319,10 +319,9 @@ mod tests {
         assert_eq!(devices, expected_devices);
 
         // Removing an entry for a device already taken off the stream doesn't do anything.
-        assert!(block
-            .remove_entry("001", false)
-            .expect("failed to remove dir entry 001")
-            .is_some());
+        assert!(
+            block.remove_entry("001", false).expect("failed to remove dir entry 001").is_some()
+        );
 
         // Adding an entry generates a new block device.
         block

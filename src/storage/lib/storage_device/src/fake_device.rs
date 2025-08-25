@@ -5,7 +5,7 @@
 use crate::buffer::{BufferFuture, BufferRef, MutableBufferRef};
 use crate::buffer_allocator::{BufferAllocator, BufferSource};
 use crate::{Device, DeviceHolder};
-use anyhow::{ensure, Error};
+use anyhow::{Error, ensure};
 use async_trait::async_trait;
 use block_protocol::WriteOptions;
 use fuchsia_sync::Mutex;

@@ -179,11 +179,7 @@ impl Path {
     /// Like `into_string` but returns a reference and the path returned is valid for fuchsia.io
     /// i.e. if there are no remaining components, "." is returned.
     fn remainder(&self) -> &str {
-        if self.is_empty() {
-            "."
-        } else {
-            &self.inner[self.next..]
-        }
+        if self.is_empty() { "." } else { &self.inner[self.next..] }
     }
 }
 

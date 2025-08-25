@@ -5,9 +5,9 @@
 use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
 use log::{debug, info};
+use rand::Rng;
 use rand::rngs::SmallRng;
 use rand::seq::IndexedRandom;
-use rand::Rng;
 use storage_stress_test_utils::io::Directory;
 use stress_test::actor::{Actor, ActorError};
 use zx::Status;

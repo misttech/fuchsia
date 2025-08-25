@@ -52,11 +52,11 @@ pub fn construct_fs(
 
 #[cfg(test)]
 mod tests {
-    use super::{construct_fs, FsSourceType};
+    use super::{FsSourceType, construct_fs};
 
     use ext4_read_only::structs::MIN_EXT4_SIZE;
     use fidl_fuchsia_io as fio;
-    use fuchsia_fs::directory::{open_file, readdir, DirEntry, DirentKind};
+    use fuchsia_fs::directory::{DirEntry, DirentKind, open_file, readdir};
     use fuchsia_fs::file::read_to_string;
     use std::fs;
     use zx::Vmo;

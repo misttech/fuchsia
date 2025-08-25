@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl_fuchsia_io::{self as fio, DirectoryProxy, PERM_READABLE};
-use fuchsia_fs::directory::{open_directory, open_file, readdir, DirentKind};
+use fuchsia_fs::directory::{DirentKind, open_directory, open_file, readdir};
 use futures::future::BoxFuture;
 use futures::{FutureExt, TryFutureExt};
 

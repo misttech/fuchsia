@@ -47,9 +47,9 @@ const DirEntry *InlineDentryArray(const Inode &inode) {
   return reinterpret_cast<const DirEntry *>(InlineDentryBitmap(inode) + reserved);
 }
 
-const uint8_t (*InlineDentryNameArray(const Inode &inode))[kDentrySlotLen] {
+const uint8_t (*InlineDentryNameArray(const Inode &inode)) [kDentrySlotLen] {
   size_t reserved = MaxInlineData(inode) - MaxInlineDentry(inode) * kDentrySlotLen;
-  return reinterpret_cast<const uint8_t(*)[kDentrySlotLen]>(InlineDentryBitmap(inode) + reserved);
+  return reinterpret_cast<const uint8_t (*)[kDentrySlotLen]>(InlineDentryBitmap(inode) + reserved);
 }
 
 static bool TestBit(const void *addr, size_t pos, size_t size) {

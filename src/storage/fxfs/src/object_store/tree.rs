@@ -8,7 +8,7 @@ use crate::object_handle::WriteBytes;
 use crate::object_store::journal;
 use crate::serialized_types::LATEST_VERSION;
 use anyhow::{Context, Error};
-use std::future::{ready, Future};
+use std::future::{Future, ready};
 
 pub trait MajorCompactable<K: 'static, V: 'static> {
     /// Returns an iterator that wraps another iterator that is appropriate for major compactions.

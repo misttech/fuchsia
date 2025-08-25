@@ -201,7 +201,8 @@ bool Header::IsValid(uint64_t disk_size, uint64_t disk_block_size, std::string& 
 }
 
 bool Header::HasValidTableSizes(std::string& out_err) const {
-  // TODO(https://fxbug.dev/42116137) Allow the partition table to be different lengths (aligned to blocks):
+  // TODO(https://fxbug.dev/42116137) Allow the partition table to be different lengths (aligned to
+  // blocks):
   //   size_t kMinPartitionTableSize = kBlockSize;
   //   if (sb.vpartition_table_size < kMinPartitionTableSize ||
   //       sb.vpartition_table_size > kMaxPartitionTableByteSize ||

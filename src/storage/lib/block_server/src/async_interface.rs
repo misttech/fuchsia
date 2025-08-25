@@ -3,21 +3,21 @@
 // found in the LICENSE file.
 
 use super::{
-    ActiveRequests, DecodedRequest, DeviceInfo, IntoSessionManager, OffsetMap, Operation,
-    SessionHelper, TraceFlowId, FIFO_MAX_REQUESTS,
+    ActiveRequests, DecodedRequest, DeviceInfo, FIFO_MAX_REQUESTS, IntoSessionManager, OffsetMap,
+    Operation, SessionHelper, TraceFlowId,
 };
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse, WriteOptions};
 use futures::future::{Fuse, FusedFuture};
 use futures::stream::FuturesUnordered;
-use futures::{select_biased, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, select_biased};
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::future::{poll_fn, Future};
+use std::future::{Future, poll_fn};
 use std::mem::MaybeUninit;
 use std::pin::pin;
 use std::sync::Arc;
-use std::task::{ready, Poll};
+use std::task::{Poll, ready};
 use {
     fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume,
     fuchsia_async as fasync,

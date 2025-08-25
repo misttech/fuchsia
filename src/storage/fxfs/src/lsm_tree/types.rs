@@ -310,7 +310,7 @@ pub trait Layer<K, V>: Send + Sync {
     /// Searches for a key. Bound::Excluded is not supported. Bound::Unbounded positions the
     /// iterator on the first item in the layer.
     async fn seek(&self, bound: std::ops::Bound<&K>)
-        -> Result<BoxedLayerIterator<'_, K, V>, Error>;
+    -> Result<BoxedLayerIterator<'_, K, V>, Error>;
 
     /// Returns the number of items in the layer file.
     fn len(&self) -> usize;
@@ -466,8 +466,8 @@ where
 #[cfg(test)]
 mod test_types {
     use crate::lsm_tree::types::{
-        impl_fuzzy_hash, DefaultOrdLowerBound, DefaultOrdUpperBound, FuzzyHash, LayerKey,
-        MergeType, SortByU64,
+        DefaultOrdLowerBound, DefaultOrdUpperBound, FuzzyHash, LayerKey, MergeType, SortByU64,
+        impl_fuzzy_hash,
     };
 
     impl DefaultOrdUpperBound for i32 {}

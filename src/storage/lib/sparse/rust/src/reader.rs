@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{deserialize_from, Chunk, SparseHeader};
-use anyhow::{ensure, Context, Result};
+use crate::{Chunk, SparseHeader, deserialize_from};
+use anyhow::{Context, Result, ensure};
 use byteorder::{ByteOrder as _, LE};
 use std::io::{Read, Seek, SeekFrom};
 

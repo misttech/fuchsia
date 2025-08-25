@@ -17,10 +17,10 @@ namespace minfs {
 
 // This structure contains pointers to relevant allocator fields in the superblock.
 struct SuperblockAllocatorAccess {
-  uint32_t Superblock::*used;
-  uint32_t Superblock::*total;
-  uint32_t Superblock::*data_slices;
-  uint32_t Superblock::*metadata_slices;
+  uint32_t Superblock::* used;
+  uint32_t Superblock::* total;
+  uint32_t Superblock::* data_slices;
+  uint32_t Superblock::* metadata_slices;
 
   // Returns pointers suitable for the block allocator.
   static SuperblockAllocatorAccess Blocks() {

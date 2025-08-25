@@ -11,7 +11,7 @@ use crate::lsm_tree::types::{
 use crate::object_store::extent_record::{
     ExtentKey, ExtentKeyPartitionIterator, ExtentKeyV32, ExtentValue, ExtentValueV38,
 };
-use crate::serialized_types::{migrate_nodefault, migrate_to_version, Migrate, Versioned};
+use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
 use fprint::TypeFingerprint;
 use fxfs_crypto::{
     FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, FxfsKeyV40, WrappedKey, WrappedKeysV40,

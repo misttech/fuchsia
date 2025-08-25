@@ -64,7 +64,9 @@ void mmap_crash(const TestFilesystemOptions& options, int prot, int flags, Death
       break;
     case DeathTestOp::ReadAfterUnmap:
       munmap(addr, PAGE_SIZE);
-      { [[maybe_unused]] int v = *static_cast<volatile int*>(addr); }
+      {
+        [[maybe_unused]] int v = *static_cast<volatile int*>(addr);
+      }
       break;
     case DeathTestOp::WriteAfterUnmap:
       munmap(addr, PAGE_SIZE);

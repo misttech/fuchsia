@@ -192,11 +192,7 @@ impl<'a, K, V> MergeLayerIterator<'a, K, V> {
     // This function exists so that we can advance multiple iterators concurrently using, say,
     // try_join!.
     async fn maybe_advance(&mut self, op: &ItemOp<K, V>) -> Result<(), Error> {
-        if let ItemOp::Keep = op {
-            Ok(())
-        } else {
-            self.advance().await
-        }
+        if let ItemOp::Keep = op { Ok(()) } else { self.advance().await }
     }
 }
 
@@ -809,7 +805,7 @@ mod tests {
     use crate::lsm_tree::{self, Query, Value};
     use crate::object_store::{self, ObjectKey, ObjectValue, VOLUME_DATA_KEY_ID};
     use crate::serialized_types::{
-        versioned_type, Version, Versioned, VersionedLatest, LATEST_VERSION,
+        LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
     };
     use crate::testing::fake_object::{FakeObject, FakeObjectHandle};
     use crate::testing::writer::Writer;

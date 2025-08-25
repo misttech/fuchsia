@@ -119,7 +119,7 @@ TEST_F(FileRWCompatibilityTest, TruncateLinuxToFuchsia) {
     auto extend_file = GetEnclosedGuest().GetFuchsiaOperator().Open(extend_filename, O_RDWR, 0755);
     ASSERT_TRUE(extend_file->IsValid());
 
-    struct stat extend_file_stat {};
+    struct stat extend_file_stat{};
     ASSERT_EQ(extend_file->Fstat(extend_file_stat), 0);
     ASSERT_EQ(extend_file_stat.st_size, kTruncateSize);
 
@@ -136,7 +136,7 @@ TEST_F(FileRWCompatibilityTest, TruncateLinuxToFuchsia) {
     auto shrink_file = GetEnclosedGuest().GetFuchsiaOperator().Open(shrink_filename, O_RDWR, 0755);
     ASSERT_TRUE(shrink_file->IsValid());
 
-    struct stat shrink_file_stat {};
+    struct stat shrink_file_stat{};
     ASSERT_EQ(shrink_file->Fstat(shrink_file_stat), 0);
     ASSERT_EQ(shrink_file_stat.st_size, kTruncateSize);
 
@@ -183,7 +183,7 @@ TEST_F(FileRWCompatibilityTest, TruncateFuchsiaToLinux) {
         std::string(kLinuxPathPrefix) + extend_filename, O_RDWR, 0755);
     ASSERT_TRUE(extend_file->IsValid());
 
-    struct stat extend_file_stat {};
+    struct stat extend_file_stat{};
     ASSERT_EQ(extend_file->Fstat(extend_file_stat), 0);
     ASSERT_EQ(extend_file_stat.st_size, kTruncateSize);
 

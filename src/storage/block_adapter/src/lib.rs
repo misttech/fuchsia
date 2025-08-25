@@ -16,7 +16,7 @@ use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::{FidlIoConnection, File, FileIo, FileLike, FileOptions, SyncMode};
 use vfs::node::Node;
-use vfs::{immutable_attributes, pseudo_directory, ObjectRequestRef};
+use vfs::{ObjectRequestRef, immutable_attributes, pseudo_directory};
 use {
     fidl_fuchsia_hardware_block as fhardware_block, fidl_fuchsia_io as fio, fuchsia_async as fasync,
 };

@@ -16,7 +16,7 @@ use crate::service::{self, ServiceLike};
 use crate::symlink::{self, Symlink};
 use crate::{ObjectRequestRef, ToObjectRequest};
 
-use fidl::endpoints::{create_endpoints, ClientEnd};
+use fidl::endpoints::{ClientEnd, create_endpoints};
 use fidl_fuchsia_io as fio;
 use std::fmt;
 use std::future::Future;
@@ -441,7 +441,7 @@ mod tests {
     use crate::execution_scope::ExecutionScope;
     use crate::file::read_only;
     use crate::path::Path;
-    use crate::{assert_read, pseudo_directory, ObjectRequest};
+    use crate::{ObjectRequest, assert_read, pseudo_directory};
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy;
     use fidl_fuchsia_io as fio;

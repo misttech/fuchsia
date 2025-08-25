@@ -6,14 +6,14 @@
 //! messages since corruption is Bad, so they are in their own test package that allows error logs.
 
 use device_watcher::recursive_wait;
-use fidl::endpoints::{create_proxy, ServiceMarker as _};
+use fidl::endpoints::{ServiceMarker as _, create_proxy};
 use fshost_test_fixture::write_test_blob;
 use {fidl_fuchsia_fshost as fshost, fidl_fuchsia_io as fio};
 
 pub mod config;
 use config::{
-    blob_fs_type, data_fs_name, data_fs_spec, data_fs_type, new_builder, volumes_spec,
-    DATA_FILESYSTEM_VARIANT,
+    DATA_FILESYSTEM_VARIANT, blob_fs_type, data_fs_name, data_fs_spec, data_fs_type, new_builder,
+    volumes_spec,
 };
 
 const TEST_BLOB_DATA: [u8; 8192] = [0xFF; 8192];

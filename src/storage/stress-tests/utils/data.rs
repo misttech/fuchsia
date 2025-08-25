@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use rand::Rng;
 use rand::prelude::IteratorRandom;
 use rand::rngs::SmallRng;
-use rand::Rng;
 use std::cmp::min;
 
 /// Controls the compressibility of data generated for a file.

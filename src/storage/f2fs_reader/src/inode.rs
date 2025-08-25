@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 use crate::crypto;
 use crate::dir::InlineDentry;
-use crate::reader::{Reader, NEW_ADDR, NULL_ADDR};
+use crate::reader::{NEW_ADDR, NULL_ADDR, Reader};
 use crate::superblock::BLOCK_SIZE;
-use crate::xattr::{decode_xattr, XattrEntry};
-use anyhow::{anyhow, ensure, Error};
+use crate::xattr::{XattrEntry, decode_xattr};
+use anyhow::{Error, anyhow, ensure};
 use bitflags::bitflags;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -421,11 +421,7 @@ impl Inode {
             }
         };
         if let Some((logical, physical)) = iter.next() {
-            if logical == offset {
-                physical
-            } else {
-                NULL_ADDR
-            }
+            if logical == offset { physical } else { NULL_ADDR }
         } else {
             NULL_ADDR
         }

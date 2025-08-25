@@ -15,8 +15,8 @@ use rand::prelude::*;
 use std::fs::File;
 use std::io::ErrorKind;
 use std::os::unix::fs::FileExt;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 struct Inner {
     /// Used to round-robin across NUM_FILES in order.

@@ -757,11 +757,7 @@ impl SuperBlock {
     pub fn block_group_descriptor_size(&self) -> usize {
         // NB: We ignore the size recorded in the superblock, since we checked it already and it has
         // to be either 4 or 8
-        if self.is_64bit() {
-            size_of::<BlockGroupDesc64>()
-        } else {
-            size_of::<BlockGroupDesc32>()
-        }
+        if self.is_64bit() { size_of::<BlockGroupDesc64>() } else { size_of::<BlockGroupDesc32>() }
     }
 
     /// Returns whether the filesystem is 64bit enabled
@@ -917,8 +913,8 @@ impl ExtentIndex {
 #[cfg(test)]
 mod test {
     use super::{
-        Extent, ExtentHeader, ExtentIndex, FeatureIncompat, ParseToStruct, SuperBlock, EH_MAGIC,
-        FIRST_BG_PADDING, LEU16, LEU32, LEU64, REQUIRED_FEATURE_INCOMPAT, SB_MAGIC,
+        EH_MAGIC, Extent, ExtentHeader, ExtentIndex, FIRST_BG_PADDING, FeatureIncompat, LEU16,
+        LEU32, LEU64, ParseToStruct, REQUIRED_FEATURE_INCOMPAT, SB_MAGIC, SuperBlock,
     };
     use crate::readers::VecReader;
     use std::fs;

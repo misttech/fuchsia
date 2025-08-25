@@ -7,15 +7,15 @@ use crate::dir::{DentryBlock, DirEntry};
 use crate::inode::{self, Inode};
 use crate::nat::{Nat, NatJournal, RawNatEntry, SummaryBlock};
 use crate::superblock::{
-    f2fs_crc32, SuperBlock, BLOCKS_PER_SEGMENT, BLOCK_SIZE, F2FS_MAGIC, SEGMENT_SIZE,
-    SUPERBLOCK_OFFSET,
+    BLOCK_SIZE, BLOCKS_PER_SEGMENT, F2FS_MAGIC, SEGMENT_SIZE, SUPERBLOCK_OFFSET, SuperBlock,
+    f2fs_crc32,
 };
-use anyhow::{anyhow, bail, ensure, Error};
+use anyhow::{Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use storage_device::buffer::Buffer;
 use storage_device::Device;
+use storage_device::buffer::Buffer;
 use zerocopy::FromBytes;
 
 // Used to indicate zero pages (when used as block_addr) and end of list (when used as nid).
@@ -500,11 +500,9 @@ mod test {
             b"bar"
         );
         // Exercise helper method on zero page. Expect to get back 'None'.
-        assert!(f2fs
-            .read_data(&inode, data_blocks[6].0 - 10)
-            .await
-            .expect("read data block")
-            .is_none());
+        assert!(
+            f2fs.read_data(&inode, data_blocks[6].0 - 10).await.expect("read data block").is_none()
+        );
     }
 
     #[fuchsia::test]

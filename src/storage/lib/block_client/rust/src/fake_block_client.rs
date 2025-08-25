@@ -59,11 +59,7 @@ impl BlockClient for FakeBlockClient {
     async fn detach_vmo(&self, vmo_id: VmoId) -> Result<(), zx::Status> {
         let mut inner = self.inner.lock();
         let id = vmo_id.into_id();
-        if let None = inner.vmo_registry.remove(&id) {
-            Err(zx::Status::NOT_FOUND)
-        } else {
-            Ok(())
-        }
+        if let None = inner.vmo_registry.remove(&id) { Err(zx::Status::NOT_FOUND) } else { Ok(()) }
     }
 
     async fn read_at_traced(

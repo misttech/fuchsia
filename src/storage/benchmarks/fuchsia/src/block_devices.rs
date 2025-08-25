@@ -3,26 +3,26 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use fidl::endpoints::{
-    create_proxy, create_request_stream, DiscoverableProtocolMarker as _, Proxy,
-};
 use fidl::HandleBased as _;
+use fidl::endpoints::{
+    DiscoverableProtocolMarker as _, Proxy, create_proxy, create_request_stream,
+};
 use fidl_fuchsia_device::ControllerMarker;
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
 use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_hardware_block_volume::{
-    VolumeManagerMarker, VolumeManagerProxy, VolumeMarker, VolumeSynchronousProxy,
-    ALLOCATE_PARTITION_FLAG_INACTIVE,
+    ALLOCATE_PARTITION_FLAG_INACTIVE, VolumeManagerMarker, VolumeManagerProxy, VolumeMarker,
+    VolumeSynchronousProxy,
 };
 use fidl_fuchsia_io as fio;
 use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, ServingMultiVolumeFilesystem,
 };
 use fs_management::format::DiskFormat;
-use fs_management::{Fvm, BLOBFS_TYPE_GUID};
+use fs_management::{BLOBFS_TYPE_GUID, Fvm};
 use fuchsia_component::client::{
-    connect_to_named_protocol_at_dir_root, connect_to_protocol, connect_to_protocol_at_dir_root,
-    connect_to_protocol_at_path, Service,
+    Service, connect_to_named_protocol_at_dir_root, connect_to_protocol,
+    connect_to_protocol_at_dir_root, connect_to_protocol_at_path,
 };
 
 use std::path::PathBuf;
@@ -30,8 +30,8 @@ use std::sync::Arc;
 use storage_benchmarks::block_device::BlockDevice;
 use storage_benchmarks::{BlockDeviceConfig, BlockDeviceFactory};
 use storage_isolated_driver_manager::{
-    create_random_guid, find_block_device, find_block_device_devfs, fvm, into_guid,
-    wait_for_block_device_devfs, zxcrypt, BlockDeviceMatcher, Guid,
+    BlockDeviceMatcher, Guid, create_random_guid, find_block_device, find_block_device_devfs, fvm,
+    into_guid, wait_for_block_device_devfs, zxcrypt,
 };
 use {
     fidl_fuchsia_device as fdevice, fidl_fuchsia_storage_partitions as fpartitions,
@@ -617,7 +617,7 @@ impl Drop for FvmVolume {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{RamdiskFactory, RAMDISK_FVM_SLICE_SIZE};
+    use crate::testing::{RAMDISK_FVM_SLICE_SIZE, RamdiskFactory};
     use block_client::RemoteBlockClient;
     use fidl_fuchsia_fs_startup::VolumesMarker;
     use fs_management::Gpt;

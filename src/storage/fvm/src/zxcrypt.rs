@@ -5,17 +5,17 @@
 // Implements Zxcrypt.  This is tested via the fshost tests.
 
 use super::{AlignedMem, Fvm, IoTrait, ReadToMem, WriteFromMem};
-use crate::device::{BufferGuard, Device, BUFFER_SIZE};
+use crate::device::{BUFFER_SIZE, BufferGuard, Device};
+use aes::Aes256;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::inout::InOut;
 use aes::cipher::typenum::consts::U16;
 use aes::cipher::{BlockBackend, BlockClosure, BlockDecrypt, BlockEncrypt, BlockSizeUser, KeyInit};
-use aes::Aes256;
-use anyhow::{ensure, Error};
+use anyhow::{Error, ensure};
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient, WriteOptions};
 
 use futures::stream::{FuturesUnordered, TryStreamExt};
-use zerocopy::{little_endian, FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, little_endian};
 
 pub struct Key {
     data_cipher: Aes256,

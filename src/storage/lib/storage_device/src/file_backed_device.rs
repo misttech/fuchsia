@@ -4,11 +4,11 @@
 
 use {
     crate::{
+        Device,
         buffer::{BufferFuture, BufferRef, MutableBufferRef},
         buffer_allocator::{BufferAllocator, BufferSource},
-        Device,
     },
-    anyhow::{ensure, Error},
+    anyhow::{Error, ensure},
     async_trait::async_trait,
     block_protocol::WriteOptions,
     // Provides read_exact_at and write_all_at.
@@ -132,8 +132,8 @@ impl Device for FileBackedDevice {
 
 #[cfg(test)]
 mod tests {
-    use crate::file_backed_device::FileBackedDevice;
     use crate::Device;
+    use crate::file_backed_device::FileBackedDevice;
     use std::fs::{File, OpenOptions};
     use std::path::PathBuf;
 

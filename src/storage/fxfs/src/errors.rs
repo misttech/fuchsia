@@ -114,7 +114,7 @@ mod fuchsia {
 #[cfg(test)]
 mod tests {
     use super::FxfsError;
-    use anyhow::{anyhow, Context};
+    use anyhow::{Context, anyhow};
 
     #[test]
     fn test_matches() {

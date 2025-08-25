@@ -6,8 +6,8 @@
 
 use crate::error::{QueryError, ShutdownError};
 use crate::{ComponentType, FSConfig, Options};
-use anyhow::{anyhow, bail, ensure, Context, Error};
-use fidl::endpoints::{create_endpoints, create_proxy, ClientEnd, ServerEnd};
+use anyhow::{Context, Error, anyhow, bail, ensure};
+use fidl::endpoints::{ClientEnd, ServerEnd, create_endpoints, create_proxy};
 use fidl_fuchsia_component::{self as fcomponent, RealmMarker};
 use fidl_fuchsia_fs::AdminMarker;
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions, StartupMarker};
@@ -16,8 +16,8 @@ use fuchsia_component_client::{
     connect_to_named_protocol_at_dir_root, connect_to_protocol, connect_to_protocol_at_dir_root,
     connect_to_protocol_at_dir_svc, open_childs_exposed_directory,
 };
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use zx::{self as zx, AsHandleRef as _, Status};
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 

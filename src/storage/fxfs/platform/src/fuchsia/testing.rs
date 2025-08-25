@@ -15,14 +15,14 @@ use fidl_fuchsia_io as fio;
 use fidl_fuchsia_memorypressure::WatcherProxy;
 use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder, OpenFxFilesystem, PreCommitHook};
 use fxfs::fsck::errors::FsckIssue;
-use fxfs::fsck::{fsck_volume_with_options, fsck_with_options, FsckOptions};
-use fxfs::object_store::volume::root_volume;
+use fxfs::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
 use fxfs::object_store::NO_OWNER;
+use fxfs::object_store::volume::root_volume;
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::InsecureCrypt;
 use std::sync::{Arc, Weak};
-use storage_device::fake_device::FakeDevice;
 use storage_device::DeviceHolder;
+use storage_device::fake_device::FakeDevice;
 use vfs::temp_clone::unblock;
 use zx::{self as zx, Status};
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fs_management::partition::{find_partition, PartitionMatcher};
+use fs_management::partition::{PartitionMatcher, find_partition};
 use ramdevice_client::RamdiskClient;
 use zx::MonotonicDuration;
 

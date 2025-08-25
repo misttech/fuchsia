@@ -11,7 +11,7 @@ use {fidl_fuchsia_fshost as fshost, fidl_fuchsia_io as fio};
 
 pub mod config;
 use config::{
-    blob_fs_type, data_fs_spec, data_fs_type, new_builder, volumes_spec, DATA_FILESYSTEM_VARIANT,
+    DATA_FILESYSTEM_VARIANT, blob_fs_type, data_fs_spec, data_fs_type, new_builder, volumes_spec,
 };
 
 const PAYLOAD: &[u8] = b"top secret stuff";

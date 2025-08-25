@@ -6,13 +6,13 @@
 
 #![deny(missing_docs)]
 
-use anyhow::{bail, Context, Error};
-use block_client::cache::Cache;
+use anyhow::{Context, Error, bail};
 use block_client::RemoteBlockClientSync;
+use block_client::cache::Cache;
 use byteorder::{LittleEndian, WriteBytesExt};
 use fidl_fuchsia_hardware_block::BlockMarker;
 use fidl_fuchsia_io as fio;
-use fuchsia_fs::directory::{readdir_recursive, DirEntry, DirentKind};
+use fuchsia_fs::directory::{DirEntry, DirentKind, readdir_recursive};
 use futures::StreamExt;
 use std::io::Write;
 
@@ -336,9 +336,9 @@ pub async fn export_directory(
 #[cfg(test)]
 mod tests {
     use super::{
-        block_align, export_directory, get_entries, num_blocks, round_up_to_block_size,
-        DirectoryEntry, FactoryFS, BLOCK_SIZE, FACTORYFS_MAJOR_VERSION, FACTORYFS_MINOR_VERSION,
-        SUPERBLOCK_DATA_SIZE,
+        BLOCK_SIZE, DirectoryEntry, FACTORYFS_MAJOR_VERSION, FACTORYFS_MINOR_VERSION, FactoryFS,
+        SUPERBLOCK_DATA_SIZE, block_align, export_directory, get_entries, num_blocks,
+        round_up_to_block_size,
     };
 
     use assert_matches::assert_matches;

@@ -12,12 +12,12 @@ use anyhow::{Context as _, Error};
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::FxFilesystemBuilder;
 use fxfs::object_handle::{ObjectHandle as _, ReadObjectHandle as _};
-use fxfs::object_store::directory::{replace_child_with_object, ReplacedChild};
-use fxfs::object_store::transaction::{lock_keys, LockKey};
+use fxfs::object_store::directory::{ReplacedChild, replace_child_with_object};
+use fxfs::object_store::transaction::{LockKey, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectStore, Timestamp,
-    BLOB_MERKLE_ATTRIBUTE_ID, NO_OWNER,
+    BLOB_MERKLE_ATTRIBUTE_ID, DataObjectHandle, HandleOptions, NO_OWNER, ObjectDescriptor,
+    ObjectStore, Timestamp,
 };
 use fxfs::round::round_up;
 use fxfs::virtual_device::ReadOnlyDevice;
@@ -311,7 +311,7 @@ async fn copy_blob(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fuchsia::fxblob::testing::{new_blob_fixture, open_blob_fixture, BlobFixture as _};
+    use crate::fuchsia::fxblob::testing::{BlobFixture as _, new_blob_fixture, open_blob_fixture};
     use delivery_blob::CompressionMode;
     use fidl_fuchsia_fxfs::BlobVolumeWriterMarker;
     use fuchsia_async as fasync;

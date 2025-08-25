@@ -6,16 +6,16 @@ use crate::fuchsia::pager::{
     MarkDirtyRange, Pager, PagerBacked, PagerVmoStatsOptions, VmoDirtyRange,
 };
 use crate::fuchsia::volume::FxVolume;
-use anyhow::{anyhow, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, ensure};
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use fxfs::errors::FxfsError;
-use fxfs::filesystem::{TruncateGuard, MAX_FILE_SIZE};
+use fxfs::filesystem::{MAX_FILE_SIZE, TruncateGuard};
 use fxfs::log::*;
 use fxfs::object_handle::{ObjectHandle, ObjectProperties, ReadObjectHandle};
 use fxfs::object_store::allocator::{Allocator, Reservation, ReservationOwner};
 use fxfs::object_store::transaction::{
-    lock_keys, LockKey, Options, Transaction, TRANSACTION_METADATA_MAX_AMOUNT,
+    LockKey, Options, TRANSACTION_METADATA_MAX_AMOUNT, Transaction, lock_keys,
 };
 use fxfs::object_store::{DataObjectHandle, ObjectStore, RangeType, StoreObjectHandle, Timestamp};
 use fxfs::range::RangeExt;
@@ -25,7 +25,7 @@ use std::future::Future;
 use std::ops::Range;
 use std::sync::Arc;
 use storage_device::buffer::{Buffer, BufferFuture};
-use vfs::temp_clone::{unblock, TempClonable};
+use vfs::temp_clone::{TempClonable, unblock};
 
 /// How much data each sync transaction in a given flush will cover.
 const FLUSH_BATCH_SIZE: u64 = 524_288;
@@ -132,11 +132,7 @@ impl DirtyTimestamp {
 
 impl std::convert::From<Option<Timestamp>> for DirtyTimestamp {
     fn from(value: Option<Timestamp>) -> Self {
-        if let Some(t) = value {
-            DirtyTimestamp::Some(t)
-        } else {
-            DirtyTimestamp::None
-        }
+        if let Some(t) = value { DirtyTimestamp::Some(t) } else { DirtyTimestamp::None }
     }
 }
 
@@ -1201,9 +1197,9 @@ mod tests {
     use super::*;
     use crate::fuchsia::directory::FxDirectory;
     use crate::fuchsia::node::FxNode;
-    use crate::fuchsia::pager::{default_page_in, PageInRange, PagerPacketReceiverRegistration};
+    use crate::fuchsia::pager::{PageInRange, PagerPacketReceiverRegistration, default_page_in};
     use crate::fuchsia::testing::{
-        close_dir_checked, close_file_checked, open_file_checked, TestFixture, TestFixtureOptions,
+        TestFixture, TestFixtureOptions, close_dir_checked, close_file_checked, open_file_checked,
     };
     use crate::fuchsia::volume::FxVolumeAndRoot;
     use anyhow::bail;
@@ -1211,18 +1207,18 @@ mod tests {
     use fidl::endpoints::create_proxy;
     use fuchsia_fs::file;
     use fuchsia_sync::Condvar;
-    use futures::channel::mpsc::{unbounded, UnboundedSender};
-    use futures::{join, StreamExt};
+    use futures::channel::mpsc::{UnboundedSender, unbounded};
+    use futures::{StreamExt, join};
     use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
     use fxfs::object_store::volume::root_volume;
     use fxfs::object_store::{Directory, NO_OWNER};
     use fxfs_macros::ToWeakNode;
     use std::collections::HashSet;
-    use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
     use std::sync::Weak;
+    use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
     use std::time::Duration;
     use storage_device::fake_device::FakeDevice;
-    use storage_device::{buffer, DeviceHolder};
+    use storage_device::{DeviceHolder, buffer};
     use test_util::{assert_geq, assert_lt};
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 

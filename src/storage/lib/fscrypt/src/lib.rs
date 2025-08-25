@@ -5,7 +5,7 @@ pub mod direntry;
 pub mod hkdf;
 pub mod proxy_filename;
 
-use anyhow::{anyhow, ensure, Error};
+use anyhow::{Error, anyhow, ensure};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 pub const POLICY_FLAGS_PAD_16: u8 = 0x02;

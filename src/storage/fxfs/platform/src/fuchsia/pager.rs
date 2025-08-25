@@ -895,8 +895,8 @@ impl<T: PagerBacked, U: PagerRequestType> Drop for PagerRangeChunksIter<T, U> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::channel::mpsc;
     use futures::StreamExt;
+    use futures::channel::mpsc;
     use fxfs_macros::ToWeakNode;
 
     #[derive(Clone, Debug, PartialEq, Eq)]

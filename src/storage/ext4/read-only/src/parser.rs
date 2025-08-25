@@ -35,9 +35,9 @@
 use crate::readers::Reader;
 use crate::structs::{
     BlockGroupDesc32, BlockGroupDesc64, DirEntry2, DirEntryHeader, EntryType, Extent, ExtentHeader,
-    ExtentIndex, ExtentTreeNode, INode, InvalidAddressErrorType, ParseToStruct, ParsingError,
-    SuperBlock, XattrEntryHeader, XattrHeader, FIRST_BG_PADDING, MINIMUM_INODE_SIZE, MIN_EXT4_SIZE,
-    ROOT_INODE_NUM,
+    ExtentIndex, ExtentTreeNode, FIRST_BG_PADDING, INode, InvalidAddressErrorType, MIN_EXT4_SIZE,
+    MINIMUM_INODE_SIZE, ParseToStruct, ParsingError, ROOT_INODE_NUM, SuperBlock, XattrEntryHeader,
+    XattrHeader,
 };
 use once_cell::sync::OnceCell;
 use std::collections::BTreeMap;
@@ -565,11 +565,7 @@ impl Parser {
 
     fn round_up_to_align(x: u64, align: u64) -> u64 {
         let spare = x % align;
-        if spare > 0 {
-            x.checked_add(align - spare).expect("Overflow when aligning")
-        } else {
-            x
-        }
+        if spare > 0 { x.checked_add(align - spare).expect("Overflow when aligning") } else { x }
     }
 
     fn is_valid_xattr_entry_header(header: &XattrEntryHeader) -> bool {

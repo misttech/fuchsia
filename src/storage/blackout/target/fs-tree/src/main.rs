@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use blackout_target::static_tree::{DirectoryEntry, EntryDistribution};
-use blackout_target::{find_partition, set_up_partition, Test, TestServer};
+use blackout_target::{Test, TestServer, find_partition, set_up_partition};
 use fidl::endpoints::{ClientEnd, Proxy as _};
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
 use fidl_fuchsia_fxfs::{CryptManagementMarker, CryptMarker, KeyPurpose};
@@ -17,8 +17,8 @@ use fs_management::{Fxfs, Minfs};
 use fuchsia_component::client::connect_to_protocol;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const DATA_FILESYSTEM_FORMAT: &'static str = std::env!("DATA_FILESYSTEM_FORMAT");
 

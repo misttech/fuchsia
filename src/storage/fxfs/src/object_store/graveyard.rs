@@ -4,22 +4,22 @@
 
 use crate::errors::FxfsError;
 use crate::log::*;
+use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::{Merger, MergerIterator};
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
-use crate::lsm_tree::Query;
 use crate::object_handle::INVALID_OBJECT_ID;
+use crate::object_store::ObjectStore;
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
     ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue, Timestamp,
 };
 use crate::object_store::transaction::{Mutation, Options, Transaction};
-use crate::object_store::ObjectStore;
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{Context, Error, anyhow, bail};
 use fuchsia_async::{self as fasync};
 use fuchsia_sync::Mutex;
-use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use futures::channel::oneshot;
 use futures::StreamExt;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use futures::channel::oneshot;
 use std::sync::Arc;
 
 enum ReaperTask {
@@ -426,11 +426,11 @@ mod tests {
     use crate::object_handle::ObjectHandle;
     use crate::object_store::data_object_handle::WRITE_ATTR_BATCH_SIZE;
     use crate::object_store::object_record::ObjectValue;
-    use crate::object_store::transaction::{lock_keys, Options};
-    use crate::object_store::{HandleOptions, Mutation, ObjectKey, FSVERITY_MERKLE_ATTRIBUTE_ID};
+    use crate::object_store::transaction::{Options, lock_keys};
+    use crate::object_store::{FSVERITY_MERKLE_ATTRIBUTE_ID, HandleOptions, Mutation, ObjectKey};
     use assert_matches::assert_matches;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 

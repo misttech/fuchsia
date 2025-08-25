@@ -4,13 +4,13 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{quote, ToTokens, TokenStreamExt};
+use quote::{ToTokens, TokenStreamExt, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
 use syn::{
-    parse_macro_input, parse_quote, Attribute, Block, Expr, Ident, ImplItem, ItemFn, ItemImpl,
-    LitStr, Path, ReturnType, Token, Type,
+    Attribute, Block, Expr, Ident, ImplItem, ItemFn, ItemImpl, LitStr, Path, ReturnType, Token,
+    Type, parse_macro_input, parse_quote,
 };
 
 enum TraceItem {
@@ -61,7 +61,10 @@ impl Parse for TraceImplArgs {
                     args.prefix = Some(input.parse()?);
                 }
                 arg => {
-                    return Err(syn::Error::new(ident.span(), format!("unknown argument: {}", arg)))
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!("unknown argument: {}", arg),
+                    ));
                 }
             }
             if input.is_empty() {
@@ -254,11 +257,7 @@ fn add_tracing_to_impl(mut item_impl: ItemImpl, args: TraceImplArgs) -> syn::Res
     for item in &mut item_impl.items {
         if let ImplItem::Fn(func) = item {
             let trace_fn_args = remove_trace_attribute(&mut func.attrs)?.or_else(|| {
-                if args.trace_all_methods {
-                    Some(TraceMethodArgs::default())
-                } else {
-                    None
-                }
+                if args.trace_all_methods { Some(TraceMethodArgs::default()) } else { None }
             });
             let Some(trace_fn_args) = trace_fn_args else {
                 continue;

@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::xattr;
+use aes::Block;
 use aes::cipher::inout::InOutBuf;
 use aes::cipher::{BlockDecrypt, BlockDecryptMut, BlockEncrypt, KeyInit, KeyIvInit};
-use aes::Block;
 use anyhow::Error;
-use fscrypt::{hkdf, Context};
+use fscrypt::{Context, hkdf};
 use siphasher::sip::SipHasher;
 use std::hash::Hasher;
 use zerocopy::{FromBytes, IntoBytes};

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, ensure, Error};
+use anyhow::{Error, anyhow, ensure};
 use crc::Hasher32 as _;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -263,7 +263,7 @@ pub fn serialize_partition_table(
 
 #[cfg(test)]
 mod tests {
-    use super::{Header, GPT_HEADER_SIZE};
+    use super::{GPT_HEADER_SIZE, Header};
 
     #[fuchsia::test]
     fn header_crc() {

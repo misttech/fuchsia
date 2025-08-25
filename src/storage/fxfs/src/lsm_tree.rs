@@ -12,7 +12,7 @@ pub mod types;
 use crate::drop_event::DropEvent;
 use crate::log::*;
 use crate::object_handle::{ReadObjectHandle, WriteBytes};
-use crate::serialized_types::{Version, LATEST_VERSION};
+use crate::serialized_types::{LATEST_VERSION, Version};
 use anyhow::Error;
 use cache::{ObjectCache, ObjectCacheResult};
 use fuchsia_sync::{Mutex, RwLock};
@@ -434,14 +434,14 @@ mod tests {
         BoxedLayerIterator, FuzzyHash, Item, ItemRef, Key, Layer, LayerIterator, LayerKey,
         OrdLowerBound, OrdUpperBound, SortByU64, Value,
     };
-    use crate::lsm_tree::{layers_from_handles, Query};
+    use crate::lsm_tree::{Query, layers_from_handles};
     use crate::object_handle::ObjectHandle;
     use crate::serialized_types::{
-        versioned_type, Version, Versioned, VersionedLatest, LATEST_VERSION,
+        LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
     };
     use crate::testing::fake_object::{FakeObject, FakeObjectHandle};
     use crate::testing::writer::Writer;
-    use anyhow::{anyhow, Error};
+    use anyhow::{Error, anyhow};
     use async_trait::async_trait;
     use fprint::TypeFingerprint;
     use fuchsia_sync::Mutex;
@@ -898,7 +898,7 @@ mod fuzz {
         FuzzyHash, Item, LayerKey, OrdLowerBound, OrdUpperBound, SortByU64, Value,
     };
     use crate::serialized_types::{
-        versioned_type, Version, Versioned, VersionedLatest, LATEST_VERSION,
+        LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
     };
     use arbitrary::Arbitrary;
     use fprint::TypeFingerprint;
@@ -965,8 +965,8 @@ mod fuzz {
 
     #[fuzz]
     fn fuzz_lsm_tree_actions(actions: Vec<FuzzAction>) {
-        use super::cache::NullCache;
         use super::LSMTree;
+        use super::cache::NullCache;
         use crate::lsm_tree::merge::{MergeLayerIterator, MergeResult};
         use futures::executor::block_on;
 

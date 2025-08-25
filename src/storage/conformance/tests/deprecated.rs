@@ -6,7 +6,7 @@
 // from fuchsia.io.
 
 use assert_matches::assert_matches;
-use fidl::endpoints::{create_proxy, DiscoverableProtocolMarker as _, ProtocolMarker};
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ProtocolMarker, create_proxy};
 use fidl_fuchsia_io as fio;
 use fidl_test_placeholders::EchoMarker;
 use fuchsia_async::{DurationExt as _, TimeoutExt as _};
@@ -52,11 +52,7 @@ async fn deprecated_open_node_status<T: ProtocolMarker>(
         .expect("Cannot open node");
     let status = get_open_status(&node_proxy).await;
 
-    if status != zx::Status::OK {
-        Err(status)
-    } else {
-        Ok(convert_node_proxy(node_proxy))
-    }
+    if status != zx::Status::OK { Err(status) } else { Ok(convert_node_proxy(node_proxy)) }
 }
 
 /// Helper function to open a file with the given flags. Only use this if testing something other

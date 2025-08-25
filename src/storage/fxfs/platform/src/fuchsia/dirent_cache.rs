@@ -156,8 +156,8 @@ impl DirentCache {
     }
 }
 
-fn create_linked_hash_map(
-) -> LinkedHashMap<DirentCacheKey, CacheHolder, BuildHasherDefault<FxHasher>> {
+fn create_linked_hash_map()
+-> LinkedHashMap<DirentCacheKey, CacheHolder, BuildHasherDefault<FxHasher>> {
     LinkedHashMap::with_hasher(BuildHasherDefault::<FxHasher>::default())
 }
 

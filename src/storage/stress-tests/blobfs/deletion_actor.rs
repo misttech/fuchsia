@@ -4,9 +4,9 @@
 
 use async_trait::async_trait;
 use log::{debug, info};
+use rand::Rng;
 use rand::rngs::SmallRng;
 use rand::seq::IndexedRandom;
-use rand::Rng;
 use storage_stress_test_utils::io::Directory;
 use stress_test::actor::{Actor, ActorError};
 use zx::Status;
@@ -30,7 +30,7 @@ impl Actor for DeletionActor {
         let blobs = match self.root_dir.entries().await {
             Ok(blobs) => blobs,
             Err(Status::PEER_CLOSED) | Err(Status::CONNECTION_ABORTED) => {
-                return Err(ActorError::ResetEnvironment)
+                return Err(ActorError::ResetEnvironment);
             }
             Err(s) => panic!("Error occurred during delete: {}", s),
         };

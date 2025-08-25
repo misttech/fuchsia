@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::errors::FxfsError;
-use crate::fsck::{fsck_volume_with_options, fsck_with_options, FsckOptions};
+use crate::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
 use crate::log::*;
 use crate::object_store::allocator::{Allocator, Hold, Reservation};
 use crate::object_store::directory::Directory;
@@ -12,15 +12,15 @@ use crate::object_store::journal::super_block::{SuperBlockHeader, SuperBlockInst
 use crate::object_store::journal::{self, Journal, JournalCheckpoint, JournalOptions};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::transaction::{
-    self, lock_keys, AssocObj, LockKey, LockKeys, LockManager, MetadataReservation, Mutation,
-    ReadGuard, Transaction, WriteGuard, TRANSACTION_METADATA_MAX_AMOUNT,
+    self, AssocObj, LockKey, LockKeys, LockManager, MetadataReservation, Mutation, ReadGuard,
+    TRANSACTION_METADATA_MAX_AMOUNT, Transaction, WriteGuard, lock_keys,
 };
-use crate::object_store::volume::{root_volume, VOLUMES_DIRECTORY};
-use crate::object_store::{ObjectStore, NO_OWNER};
+use crate::object_store::volume::{VOLUMES_DIRECTORY, root_volume};
+use crate::object_store::{NO_OWNER, ObjectStore};
 use crate::range::RangeExt;
-use crate::serialized_types::{Version, LATEST_VERSION};
+use crate::serialized_types::{LATEST_VERSION, Version};
 use crate::{debug_assert_not_too_long, metrics};
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use event_listener::Event;
 use fuchsia_async as fasync;
@@ -1029,17 +1029,17 @@ mod tests {
     use super::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
     use crate::fsck::{fsck, fsck_volume};
     use crate::log::*;
-    use crate::lsm_tree::types::Item;
     use crate::lsm_tree::Operation;
+    use crate::lsm_tree::types::Item;
     use crate::object_handle::{
-        ObjectHandle, ReadObjectHandle, WriteObjectHandle, INVALID_OBJECT_ID,
+        INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle,
     };
-    use crate::object_store::directory::{replace_child, Directory};
-    use crate::object_store::journal::super_block::SuperBlockInstance;
+    use crate::object_store::directory::{Directory, replace_child};
     use crate::object_store::journal::JournalOptions;
-    use crate::object_store::transaction::{lock_keys, LockKey, Options};
+    use crate::object_store::journal::super_block::SuperBlockInstance;
+    use crate::object_store::transaction::{LockKey, Options, lock_keys};
     use crate::object_store::volume::root_volume;
-    use crate::object_store::{HandleOptions, ObjectDescriptor, ObjectStore, NO_OWNER};
+    use crate::object_store::{HandleOptions, NO_OWNER, ObjectDescriptor, ObjectStore};
     use crate::range::RangeExt;
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
@@ -1048,11 +1048,11 @@ mod tests {
     use fxfs_insecure_crypto::InsecureCrypt;
     use rustc_hash::FxHashMap as HashMap;
     use std::ops::Range;
-    use std::sync::atomic::{self, AtomicU32};
     use std::sync::Arc;
+    use std::sync::atomic::{self, AtomicU32};
     use std::time::Duration;
-    use storage_device::fake_device::{self, FakeDevice};
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::{self, FakeDevice};
     use test_case::test_case;
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;

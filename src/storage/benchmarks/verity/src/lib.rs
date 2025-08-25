@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fuchsiaperf::FuchsiaPerfBenchmarkResult;
-use linux_uapi::{fsverity_enable_arg, FS_IOC_ENABLE_VERITY, FS_VERITY_HASH_ALG_SHA256};
+use linux_uapi::{FS_IOC_ENABLE_VERITY, FS_VERITY_HASH_ALG_SHA256, fsverity_enable_arg};
 use std::os::fd::AsRawFd;
 use std::time::Instant;
 

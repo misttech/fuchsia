@@ -6,27 +6,27 @@
 
 #![deny(missing_docs)]
 
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
-use fidl::endpoints::create_proxy;
 use fidl::HandleBased as _;
+use fidl::endpoints::create_proxy;
 use fidl_fuchsia_blackout_test::{ControllerRequest, ControllerRequestStream};
 use fidl_fuchsia_device::ControllerMarker;
 use fidl_fuchsia_hardware_block_volume::VolumeManagerMarker;
 use fs_management::filesystem::BlockConnector;
 use fs_management::format::DiskFormat;
-use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path, Service};
+use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protocol_at_path};
 use fuchsia_component::server::{ServiceFs, ServiceObj};
 use fuchsia_fs::directory::readdir;
-use futures::{future, FutureExt, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt, future};
 use rand::distr::StandardUniform;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::pin::pin;
 use std::sync::Arc;
 use storage_isolated_driver_manager::{
-    create_random_guid, find_block_device, find_block_device_devfs, into_guid,
-    wait_for_block_device_devfs, BlockDeviceMatcher, Guid,
+    BlockDeviceMatcher, Guid, create_random_guid, find_block_device, find_block_device_devfs,
+    into_guid, wait_for_block_device_devfs,
 };
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,

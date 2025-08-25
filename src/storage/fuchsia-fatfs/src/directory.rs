@@ -26,12 +26,12 @@ use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest
 use vfs::directory::entry_container::{Directory, DirectoryWatcher, MutableDirectory};
 use vfs::directory::mutable::connection::MutableConnection;
 use vfs::directory::traversal_position::TraversalPosition;
-use vfs::directory::watchers::event_producers::{SingleNameEventProducer, StaticVecEventProducer};
 use vfs::directory::watchers::Watchers;
+use vfs::directory::watchers::event_producers::{SingleNameEventProducer, StaticVecEventProducer};
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::FidlIoConnection;
 use vfs::path::Path;
-use vfs::{attributes, ObjectRequestRef, ProtocolsExt as _, ToObjectRequest};
+use vfs::{ObjectRequestRef, ProtocolsExt as _, ToObjectRequest, attributes};
 use zx::Status;
 
 fn check_open_flags_for_existing_entry(flags: fio::OpenFlags) -> Result<(), Status> {
@@ -182,11 +182,7 @@ impl FatDirectory {
         fs: &'a FatFilesystemInner,
     ) -> Result<Guard<'a, FatfsDirRef>, Status> {
         let dir = self.dir.borrow();
-        if dir.get(fs).is_none() {
-            Err(Status::BAD_HANDLE)
-        } else {
-            Ok(Guard::new(fs, dir))
-        }
+        if dir.get(fs).is_none() { Err(Status::BAD_HANDLE) } else { Ok(Guard::new(fs, dir)) }
     }
 
     /// Borrow the underlying fatfs `Dir` that corresponds to this directory.
@@ -195,11 +191,7 @@ impl FatDirectory {
         fs: &'a FatFilesystemInner,
     ) -> Option<GuardMut<'a, FatfsDirRef>> {
         let dir = self.dir.borrow_mut();
-        if dir.get(fs).is_none() {
-            None
-        } else {
-            Some(GuardMut::new(fs, dir))
-        }
+        if dir.get(fs).is_none() { None } else { Some(GuardMut::new(fs, dir)) }
     }
 
     /// Gets a child directory entry from the underlying fatfs implementation.
@@ -1063,11 +1055,7 @@ impl Directory for FatDirectory {
                         maybe_entry
                             .map(|entry| {
                                 let name = entry.file_name();
-                                if &name == ".." {
-                                    None
-                                } else {
-                                    Some(name)
-                                }
+                                if &name == ".." { None } else { Some(name) }
                             })
                             .transpose()
                     }))
@@ -1093,9 +1081,9 @@ mod tests {
     use assert_matches::assert_matches;
     use futures::TryStreamExt;
     use scopeguard::defer;
+    use vfs::ObjectRequest;
     use vfs::directory::dirents_sink::Sealed;
     use vfs::node::Node as _;
-    use vfs::ObjectRequest;
 
     const TEST_DISK_SIZE: u64 = 2048 << 10; // 2048K
 

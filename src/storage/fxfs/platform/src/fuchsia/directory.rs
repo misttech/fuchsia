@@ -7,8 +7,8 @@ use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::file::FxFile;
 use crate::fuchsia::node::{FxNode, GetResult, OpenedNode};
 use crate::fuchsia::symlink::FxSymlink;
-use crate::fuchsia::volume::{info_to_filesystem_info, FxVolume, RootDir};
-use anyhow::{bail, Error};
+use crate::fuchsia::volume::{FxVolume, RootDir, info_to_filesystem_info};
+use anyhow::{Error, bail};
 use either::{Left, Right};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_hardware_block_volume::VolumeMarker;
@@ -19,7 +19,7 @@ use fxfs::errors::FxfsError;
 use fxfs::filesystem::SyncOptions;
 use fxfs::log::*;
 use fxfs::object_store::directory::{self, ReplacedChild};
-use fxfs::object_store::transaction::{lock_keys, LockKey, Options, Transaction};
+use fxfs::object_store::transaction::{LockKey, Options, Transaction, lock_keys};
 use fxfs::object_store::{self, Directory, ObjectDescriptor, ObjectStore, Timestamp};
 use fxfs_macros::ToWeakNode;
 use std::any::Any;
@@ -31,11 +31,11 @@ use vfs::directory::entry_container::{
 };
 use vfs::directory::mutable::connection::MutableConnection;
 use vfs::directory::traversal_position::TraversalPosition;
-use vfs::directory::watchers::event_producers::SingleNameEventProducer;
 use vfs::directory::watchers::Watchers;
+use vfs::directory::watchers::event_producers::SingleNameEventProducer;
 use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path;
-use vfs::{attributes, symlink, ObjectRequest, ObjectRequestRef, ProtocolsExt, ToObjectRequest};
+use vfs::{ObjectRequest, ObjectRequestRef, ProtocolsExt, ToObjectRequest, attributes, symlink};
 
 #[derive(ToWeakNode)]
 pub struct FxDirectory {
@@ -527,7 +527,7 @@ impl FxDirectory {
                 ) => {}
                 (ObjectDescriptor::Directory, _) => return Err(zx::Status::NOT_DIR),
                 (ObjectDescriptor::File | ObjectDescriptor::Symlink, _) => {
-                    return Err(zx::Status::NOT_FILE)
+                    return Err(zx::Status::NOT_FILE);
                 }
                 _ => return Err(zx::Status::IO_DATA_INTEGRITY),
             }
@@ -604,11 +604,7 @@ impl FxDirectory {
         request
             .handle_async(async move |request| {
                 let path = Path::validate_and_split(name).and_then(|p| {
-                    if p.is_single_component() {
-                        Ok(p)
-                    } else {
-                        Err(zx::Status::INVALID_ARGS)
-                    }
+                    if p.is_single_component() { Ok(p) } else { Err(zx::Status::INVALID_ARGS) }
                 })?;
                 let node = this
                     .lookup(&fio::Flags::empty(), path, request)
@@ -1146,32 +1142,32 @@ mod tests {
     use crate::directory::FxDirectory;
     use crate::file::FxFile;
     use crate::fuchsia::testing::{
-        close_dir_checked, close_file_checked, open_dir, open_dir_checked, open_file,
-        open_file_checked, TestFixture, TestFixtureOptions,
+        TestFixture, TestFixtureOptions, close_dir_checked, close_file_checked, open_dir,
+        open_dir_checked, open_file, open_file_checked,
     };
     use anyhow::bail;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, ClientEnd, Proxy};
+    use fidl::endpoints::{ClientEnd, Proxy, create_proxy};
     use fuchsia_fs::directory::{DirEntry, DirentKind};
     use fuchsia_fs::file;
-    use futures::{join, StreamExt};
-    use fxfs::lsm_tree::types::{ItemRef, LayerIterator};
+    use futures::{StreamExt, join};
     use fxfs::lsm_tree::Query;
-    use fxfs::object_store::transaction::{lock_keys, LockKey};
+    use fxfs::lsm_tree::types::{ItemRef, LayerIterator};
+    use fxfs::object_store::transaction::{LockKey, lock_keys};
     use fxfs::object_store::{ObjectKey, ObjectKeyData, ObjectValue, Timestamp};
     use fxfs_crypto::FSCRYPT_PADDING;
     use fxfs_insecure_crypto::InsecureCrypt;
     use std::future::poll_fn;
     use std::os::fd::AsRawFd;
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::task::Poll;
     use std::time::Duration;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
+    use vfs::ObjectRequest;
     use vfs::node::Node;
     use vfs::path::Path;
-    use vfs::ObjectRequest;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     async fn yield_to_executor() {
@@ -4595,14 +4591,15 @@ mod tests {
                     .open(path, flags, &options, server_end.into_channel())
                     .expect("Creating node");
                 // Check event stream to allow the creation to complete.
-                assert!(node
-                    .take_event_stream()
-                    .next()
-                    .await
-                    .expect("Need representation")
-                    .expect("Failed to read")
-                    .into_on_representation()
-                    .is_some());
+                assert!(
+                    node.take_event_stream()
+                        .next()
+                        .await
+                        .expect("Need representation")
+                        .expect("Failed to read")
+                        .into_on_representation()
+                        .is_some()
+                );
 
                 // Fetches the set value just fine.
                 assert_eq!(

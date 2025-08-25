@@ -5,13 +5,13 @@
 use crate::environment::{DevicePublisher, Environment, FshostEnvironment};
 use crate::inspect::register_stats;
 use crate::watcher::{DirSource, PathSource, PathSourceType, WatchSource, Watcher};
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use device::{DeviceTag, Parent};
 use fidl::prelude::*;
-use fuchsia_runtime::{take_startup_handle, HandleType};
+use fuchsia_runtime::{HandleType, take_startup_handle};
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use std::collections::HashSet;
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable;

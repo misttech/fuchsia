@@ -3,29 +3,29 @@
 // found in the LICENSE file.
 
 use crate::errors::FxfsError;
+use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::{Merger, MergerIterator};
 use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
-use crate::lsm_tree::Query;
-use crate::object_handle::{ObjectHandle, ObjectProperties, INVALID_OBJECT_ID};
+use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ObjectProperties};
 use crate::object_store::object_record::{
     ChildValue, EncryptionKey, ObjectAttributes, ObjectDescriptor, ObjectItem, ObjectKey,
     ObjectKeyData, ObjectKind, ObjectValue, Timestamp,
 };
 use crate::object_store::transaction::{
-    lock_keys, LockKey, LockKeys, Mutation, Options, Transaction,
+    LockKey, LockKeys, Mutation, Options, Transaction, lock_keys,
 };
 use crate::object_store::{
     DataObjectHandle, HandleOptions, HandleOwner, ObjectStore, SetExtendedAttributeMode,
     StoreObjectHandle,
 };
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use fidl_fuchsia_io as fio;
 use fscrypt::proxy_filename::ProxyFilename;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::Cipher;
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use zerocopy::IntoBytes;
 
 use super::FSCRYPT_KEY_ID;
@@ -788,8 +788,10 @@ impl<S: HandleOwner> Directory<S> {
             .item
             .value
         else {
-            bail!(anyhow!(FxfsError::Inconsistent)
-                .context("Directory.create_child_file_with_options: expected mutation object"));
+            bail!(
+                anyhow!(FxfsError::Inconsistent)
+                    .context("Directory.create_child_file_with_options: expected mutation object")
+            );
         };
 
         // Update the object mutation with parent's project ID.
@@ -807,8 +809,10 @@ impl<S: HandleOwner> Directory<S> {
         {
             *child_project_id = project_id;
         } else {
-            bail!(anyhow!(FxfsError::Inconsistent)
-                .context("Directory.create_child_file_with_options: expected file object"));
+            bail!(
+                anyhow!(FxfsError::Inconsistent)
+                    .context("Directory.create_child_file_with_options: expected file object")
+            );
         }
         transaction.add(self.store().store_object_id(), Mutation::ObjectStore(child_mutation));
 
@@ -1034,8 +1038,10 @@ impl<S: HandleOwner> Directory<S> {
             {
                 *sub_dirs = sub_dirs.saturating_add_signed(sub_dirs_delta);
             } else {
-                bail!(anyhow!(FxfsError::Inconsistent)
-                    .context("Directory.update_attributes: expected directory object"));
+                bail!(
+                    anyhow!(FxfsError::Inconsistent)
+                        .context("Directory.update_attributes: expected directory object")
+                );
             };
 
             transaction.add(self.store().store_object_id(), Mutation::ObjectStore(mutation));
@@ -1106,8 +1112,10 @@ impl<S: HandleOwner> Directory<S> {
                 attributes.creation_time = Timestamp::from_nanos(time);
             }
         } else {
-            bail!(anyhow!(FxfsError::Inconsistent)
-                .context("Directory.update_attributes: expected directory object"));
+            bail!(
+                anyhow!(FxfsError::Inconsistent)
+                    .context("Directory.update_attributes: expected directory object")
+            );
         };
         transaction.add(self.store().store_object_id(), Mutation::ObjectStore(mutation));
         Ok(())
@@ -1162,8 +1170,10 @@ impl<S: HandleOwner> Directory<S> {
                 wrapping_key_id,
             }),
             _ => {
-                bail!(anyhow!(FxfsError::Inconsistent)
-                    .context("get_properties: Expected object value"))
+                bail!(
+                    anyhow!(FxfsError::Inconsistent)
+                        .context("get_properties: Expected object value")
+                )
             }
         }
     }
@@ -1621,19 +1631,19 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
 
 #[cfg(test)]
 mod tests {
-    use super::{encrypt_filename, replace_child_with_object, ProxyFilename};
+    use super::{ProxyFilename, encrypt_filename, replace_child_with_object};
     use crate::errors::FxfsError;
     use crate::filesystem::{FxFilesystem, JournalingObject, SyncOptions};
     use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::{
-        replace_child, Directory, MutableAttributesInternal, ReplacedChild,
+        Directory, MutableAttributesInternal, ReplacedChild, replace_child,
     };
     use crate::object_store::object_record::{ObjectKey, ObjectValue, Timestamp};
-    use crate::object_store::transaction::{lock_keys, Options};
+    use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
-        HandleOptions, LockKey, ObjectDescriptor, ObjectKind, ObjectStore,
-        SetExtendedAttributeMode, StoreObjectHandle, NO_OWNER,
+        HandleOptions, LockKey, NO_OWNER, ObjectDescriptor, ObjectKind, ObjectStore,
+        SetExtendedAttributeMode, StoreObjectHandle,
     };
     use anyhow::Error;
     use assert_matches::assert_matches;
@@ -1644,8 +1654,8 @@ mod tests {
     use std::future::poll_fn;
     use std::sync::Arc;
     use std::task::Poll;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 

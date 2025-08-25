@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use storage_verity_benchmarks_lib::{
-    enable_verity_benchmark, run_benchmark, ENABLE_BENCHMARK_NAME,
+    ENABLE_BENCHMARK_NAME, enable_verity_benchmark, run_benchmark,
 };
 
 fn main() {

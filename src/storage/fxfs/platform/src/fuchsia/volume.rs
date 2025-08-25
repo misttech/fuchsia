@@ -12,10 +12,10 @@ use crate::fuchsia::pager::Pager;
 use crate::fuchsia::profile::ProfileState;
 use crate::fuchsia::symlink::FxSymlink;
 use crate::fuchsia::volumes_directory::VolumesDirectory;
-use anyhow::{bail, ensure, Error};
+use anyhow::{Error, bail, ensure};
 use async_trait::async_trait;
-use fidl::endpoints::ServerEnd;
 use fidl::AsHandleRef;
+use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_fxfs::{
     BytesAndNodes, FileBackedVolumeProviderRequest, FileBackedVolumeProviderRequestStream,
     ProjectIdRequest, ProjectIdRequestStream, ProjectIterToken,
@@ -30,7 +30,7 @@ use fxfs::filesystem::{self, SyncOptions};
 use fxfs::future_with_guard::FutureWithGuard;
 use fxfs::log::*;
 use fxfs::object_store::directory::Directory;
-use fxfs::object_store::transaction::{lock_keys, LockKey, Options};
+use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{HandleOptions, HandleOwner, ObjectDescriptor, ObjectStore};
 use std::future::Future;
 use std::pin::pin;
@@ -1005,18 +1005,18 @@ impl RefaultTracker {
 
 #[cfg(test)]
 mod tests {
-    use super::{RefaultTracker, DIRENT_CACHE_LIMIT};
-    use crate::fuchsia::fxblob::testing::{self as blob_testing, BlobFixture};
+    use super::{DIRENT_CACHE_LIMIT, RefaultTracker};
     use crate::fuchsia::fxblob::BlobDirectory;
+    use crate::fuchsia::fxblob::testing::{self as blob_testing, BlobFixture};
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::pager::PagerBacked;
-    use crate::fuchsia::profile::{new_profile_state, RECORDED};
+    use crate::fuchsia::profile::{RECORDED, new_profile_state};
     use crate::fuchsia::testing::{
-        close_dir_checked, close_file_checked, open_dir, open_dir_checked, open_file,
-        open_file_checked, TestFixture,
+        TestFixture, close_dir_checked, close_file_checked, open_dir, open_dir_checked, open_file,
+        open_file_checked,
     };
     use crate::fuchsia::volume::{
-        FxVolume, MemoryPressureConfig, MemoryPressureLevelConfig, BASE_READ_AHEAD_SIZE,
+        BASE_READ_AHEAD_SIZE, FxVolume, MemoryPressureConfig, MemoryPressureLevelConfig,
     };
     use crate::fuchsia::volumes_directory::VolumesDirectory;
     use crate::volume::MAX_READ_AHEAD_SIZE;
@@ -1028,15 +1028,15 @@ mod tests {
     use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder};
     use fxfs::fsck::{fsck, fsck_volume};
     use fxfs::object_store::directory::replace_child;
-    use fxfs::object_store::transaction::{lock_keys, LockKey, Options};
+    use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
     use fxfs::object_store::volume::root_volume;
-    use fxfs::object_store::{HandleOptions, ObjectStore, NO_OWNER};
+    use fxfs::object_store::{HandleOptions, NO_OWNER, ObjectStore};
     use fxfs_insecure_crypto::InsecureCrypt;
     use std::sync::atomic::Ordering;
     use std::sync::{Arc, Weak};
     use std::time::Duration;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
     use vfs::directory::entry_container::Directory;
     use vfs::execution_scope::ExecutionScope;
     use vfs::path::Path;

@@ -14,11 +14,11 @@ use crate::object_store::transaction::{
     AssocObj, AssociatedObject, MetadataReservation, Mutation, Transaction, TxnMutation,
 };
 use crate::object_store::tree_cache::TreeCache;
-use crate::object_store::volume::{list_volumes, VOLUMES_DIRECTORY};
+use crate::object_store::volume::{VOLUMES_DIRECTORY, list_volumes};
 use crate::object_store::{ObjectDescriptor, ObjectStore};
 use crate::round::round_div;
-use crate::serialized_types::{Version, LATEST_VERSION};
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use crate::serialized_types::{LATEST_VERSION, Version};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use fuchsia_inspect::{Property as _, UintProperty};
 use fuchsia_sync::RwLock;
 use futures::FutureExt as _;
@@ -224,8 +224,10 @@ impl ObjectManager {
                 self.volume_directory.set(volume_directory).unwrap();
             }
             _ => {
-                bail!(anyhow!(FxfsError::Inconsistent)
-                    .context("Unexpected type for volumes directory"))
+                bail!(
+                    anyhow!(FxfsError::Inconsistent)
+                        .context("Unexpected type for volumes directory")
+                )
             }
         }
 

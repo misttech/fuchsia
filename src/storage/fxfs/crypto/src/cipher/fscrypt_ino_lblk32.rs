@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use super::{Cipher, Tweak, UnwrappedKey, XtsProcessor};
+use aes::Aes256;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::inout::InOutBuf;
 use aes::cipher::{
     Block, BlockDecrypt, BlockDecryptMut, BlockEncrypt, BlockEncryptMut, KeyInit, KeyIvInit,
 };
-use aes::Aes256;
 use anyhow::{Context, Error};
 use siphasher::sip::SipHasher;
 use std::hash::Hasher;

@@ -234,7 +234,7 @@ impl<T> From<BloomFilterWriter<T>> for BloomFilterReader<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lsm_tree::bloom_filter::{estimate_params, BloomFilterReader, BloomFilterWriter};
+    use crate::lsm_tree::bloom_filter::{BloomFilterReader, BloomFilterWriter, estimate_params};
     use crate::object_store::allocator::AllocatorKey;
 
     #[test]

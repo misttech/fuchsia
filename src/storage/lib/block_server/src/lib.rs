@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::bin::Bin;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use block_protocol::{BlockFifoRequest, BlockFifoResponse};
 use fidl_fuchsia_hardware_block::MAX_TRANSFER_UNBOUNDED;
 use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
@@ -13,8 +13,8 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::num::NonZero;
 use std::ops::Range;
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use zx::HandleBased;
 use {
     fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_partition as fpartition,
@@ -1009,22 +1009,22 @@ impl GroupOrRequest {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockOffsetMapping, BlockServer, DeviceInfo, Operation, PartitionInfo, TraceFlowId,
-        FIFO_MAX_REQUESTS,
+        BlockOffsetMapping, BlockServer, DeviceInfo, FIFO_MAX_REQUESTS, Operation, PartitionInfo,
+        TraceFlowId,
     };
     use assert_matches::assert_matches;
     use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse, WriteOptions};
     use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
     use fuchsia_sync::Mutex;
+    use futures::FutureExt as _;
     use futures::channel::oneshot;
     use futures::future::BoxFuture;
-    use futures::FutureExt as _;
     use std::borrow::Cow;
     use std::future::poll_fn;
     use std::num::NonZero;
     use std::pin::pin;
-    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
     use std::task::{Context, Poll};
     use zx::{AsHandleRef as _, HandleBased as _};
     use {
@@ -1521,27 +1521,31 @@ mod tests {
     async fn test_close() {
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
 
-        let mut server = std::pin::pin!(async {
-            let block_server = BlockServer::new(BLOCK_SIZE, Arc::new(MockInterface::default()));
-            block_server.handle_requests(stream).await.unwrap();
-        }
-        .fuse());
+        let mut server = std::pin::pin!(
+            async {
+                let block_server = BlockServer::new(BLOCK_SIZE, Arc::new(MockInterface::default()));
+                block_server.handle_requests(stream).await.unwrap();
+            }
+            .fuse()
+        );
 
-        let mut client = std::pin::pin!(async {
-            let (session_proxy, server) = fidl::endpoints::create_proxy();
+        let mut client = std::pin::pin!(
+            async {
+                let (session_proxy, server) = fidl::endpoints::create_proxy();
 
-            proxy.open_session(server).unwrap();
+                proxy.open_session(server).unwrap();
 
-            // Dropping the proxy should not cause the session to terminate because the session is
-            // still live.
-            std::mem::drop(proxy);
+                // Dropping the proxy should not cause the session to terminate because the session is
+                // still live.
+                std::mem::drop(proxy);
 
-            session_proxy.close().await.unwrap().unwrap();
+                session_proxy.close().await.unwrap().unwrap();
 
-            // Keep the session alive.  Calling `close` should cause the server to terminate.
-            let _: () = std::future::pending().await;
-        }
-        .fuse());
+                // Keep the session alive.  Calling `close` should cause the server to terminate.
+                let _: () = std::future::pending().await;
+            }
+            .fuse()
+        );
 
         futures::select!(
             _ = server => {}
@@ -2552,18 +2556,20 @@ mod tests {
                         .await
                         .unwrap();
                 }
-                assert!(futures::poll!(pin!(writer.write_entries(&BlockFifoRequest {
-                    command: BlockFifoCommand {
-                        opcode: BlockOpcode::Read.into_primitive(),
+                assert!(
+                    futures::poll!(pin!(writer.write_entries(&BlockFifoRequest {
+                        command: BlockFifoCommand {
+                            opcode: BlockOpcode::Read.into_primitive(),
+                            ..Default::default()
+                        },
+                        reqid: u32::MAX,
+                        dev_offset: MAX_REQUESTS,
+                        vmoid: vmo_id.id,
+                        length: 1,
                         ..Default::default()
-                    },
-                    reqid: u32::MAX,
-                    dev_offset: MAX_REQUESTS,
-                    vmoid: vmo_id.id,
-                    length: 1,
-                    ..Default::default()
-                })))
-                .is_pending());
+                    })))
+                    .is_pending()
+                );
                 // OK, let the server start to process.
                 event.1.store(true, Ordering::SeqCst);
                 event.0.notify(usize::MAX);

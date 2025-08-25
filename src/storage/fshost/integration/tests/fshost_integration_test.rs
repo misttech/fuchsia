@@ -3,21 +3,21 @@
 // found in the LICENSE file.
 
 use assert_matches::assert_matches;
-use delivery_blob::{delivery_blob_path, CompressionMode, Type1Blob};
-use fidl::endpoints::{create_proxy, DiscoverableProtocolMarker as _};
+use delivery_blob::{CompressionMode, Type1Blob, delivery_blob_path};
+use fidl::endpoints::{DiscoverableProtocolMarker as _, create_proxy};
 use fidl_fuchsia_fs_startup::VolumeMarker as FsStartupVolumeMarker;
 use fidl_fuchsia_fshost::AdminProxy;
 use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeMarker};
 use fidl_fuchsia_update_verify::HealthStatus;
-use fs_management::format::constants::DATA_PARTITION_LABEL;
-use fs_management::partition::{find_partition_in, PartitionMatcher};
 use fs_management::DATA_TYPE_GUID;
+use fs_management::format::constants::DATA_PARTITION_LABEL;
+use fs_management::partition::{PartitionMatcher, find_partition_in};
 use fshost_test_fixture::disk_builder::{
-    DataSpec, Disk, DiskBuilder, VolumesSpec, BLOBFS_MAX_BYTES, TEST_DISK_BLOCK_SIZE,
+    BLOBFS_MAX_BYTES, DataSpec, Disk, DiskBuilder, TEST_DISK_BLOCK_SIZE, VolumesSpec,
 };
 use fshost_test_fixture::{
-    round_down, BlockDeviceConfig, BlockDeviceIdentifiers, BlockDeviceParent, TestFixture,
-    VFS_TYPE_FXFS, VFS_TYPE_MEMFS, VFS_TYPE_MINFS,
+    BlockDeviceConfig, BlockDeviceIdentifiers, BlockDeviceParent, TestFixture, VFS_TYPE_FXFS,
+    VFS_TYPE_MEMFS, VFS_TYPE_MINFS, round_down,
 };
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
 use futures::FutureExt as _;
@@ -42,8 +42,8 @@ use {
 pub mod config;
 
 use config::{
-    blob_fs_type, data_fs_spec, data_fs_type, data_fs_zxcrypt, data_max_bytes, fvm_slice_size,
-    new_builder, volumes_spec, DATA_FILESYSTEM_VARIANT,
+    DATA_FILESYSTEM_VARIANT, blob_fs_type, data_fs_spec, data_fs_type, data_fs_zxcrypt,
+    data_max_bytes, fvm_slice_size, new_builder, volumes_spec,
 };
 
 #[fuchsia::test]

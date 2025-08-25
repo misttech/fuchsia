@@ -6,16 +6,16 @@ use crate::fuse_attr::{create_file_attr, to_fxfs_time};
 use crate::fuse_errors::{FuseErrorParser, FxfsResult};
 use crate::fuse_fs::{FuseFs, FuseStrParser};
 use async_trait::async_trait;
-use fuse3::raw::prelude::{Filesystem as FuseFilesystem, *};
 use fuse3::Result;
+use fuse3::raw::prelude::{Filesystem as FuseFilesystem, *};
 use futures_util::stream::Iter;
-use futures_util::{stream, StreamExt};
+use futures_util::{StreamExt, stream};
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::SyncOptions;
 use fxfs::log::info;
 use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
-use fxfs::object_store::directory::{replace_child, ReplacedChild};
-use fxfs::object_store::transaction::{lock_keys, LockKey, Options};
+use fxfs::object_store::directory::{ReplacedChild, replace_child};
+use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{ObjectDescriptor, Timestamp};
 use std::ffi::{OsStr, OsString};
 use std::io::Write;
@@ -596,11 +596,7 @@ impl FuseFs {
                     .get_object_properties(inode, ObjectDescriptor::File)
                     .await?
                     .data_attribute_size;
-                if content_size >= offset {
-                    content_size - offset
-                } else {
-                    0
-                }
+                if content_size >= offset { content_size - offset } else { 0 }
             } else {
                 return Err(FxfsError::InvalidArgs.into());
             };
@@ -1470,11 +1466,13 @@ mod tests {
 
         let unlink_res = fs.unlink(new_fake_request(), dir.object_id(), OsStr::new("link")).await;
         let lookup_res = dir.lookup(OsStr::new("link").osstr_to_str().unwrap()).await.unwrap();
-        assert!(FxfsError::NotFound.matches(
-            &fs.get_object_type(symlin_reply.attr.ino)
-                .await
-                .expect_err("get_object_type succeeded")
-        ));
+        assert!(
+            FxfsError::NotFound.matches(
+                &fs.get_object_type(symlin_reply.attr.ino)
+                    .await
+                    .expect_err("get_object_type succeeded")
+            )
+        );
 
         assert_eq!(unlink_res, Ok(()));
         assert_eq!(lookup_res, None);

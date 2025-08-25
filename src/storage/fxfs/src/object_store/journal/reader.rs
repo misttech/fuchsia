@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::checksum::{fletcher64, Checksum};
-use crate::object_store::journal::{JournalCheckpoint, JournalHandle, BLOCK_SIZE, RESET_XOR};
+use crate::checksum::{Checksum, fletcher64};
+use crate::object_store::journal::{BLOCK_SIZE, JournalCheckpoint, JournalHandle, RESET_XOR};
 use crate::serialized_types::{Version, Versioned, VersionedLatest};
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error, bail};
 use byteorder::{ByteOrder, LittleEndian};
 
 /// JournalReader supports reading from a journal file which consist of blocks that have a trailing
@@ -298,11 +298,11 @@ pub enum ReadResult<T> {
 mod tests {
     // The following tests use JournalWriter to test our reader implementation. This works so long
     // as JournalWriter doesn't use JournalReader to test its implementation.
-    use super::{JournalReader, ReadResult, BLOCK_SIZE};
+    use super::{BLOCK_SIZE, JournalReader, ReadResult};
     use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::journal::writer::JournalWriter;
     use crate::object_store::journal::{Checksum, JournalCheckpoint, RESET_XOR};
-    use crate::serialized_types::{Version, VersionedLatest, LATEST_VERSION};
+    use crate::serialized_types::{LATEST_VERSION, Version, VersionedLatest};
     use crate::testing::fake_object::{FakeObject, FakeObjectHandle};
     use std::io::Write;
     use std::sync::Arc;

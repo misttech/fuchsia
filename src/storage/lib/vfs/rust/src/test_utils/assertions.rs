@@ -81,7 +81,7 @@ macro_rules! assert_write_err {
 #[macro_export]
 macro_rules! assert_seek {
     ($proxy:expr, $pos:expr, $start:ident, $expected:expr) => {{
-        use $crate::test_utils::assertions::reexport::{fio, Status};
+        use $crate::test_utils::assertions::reexport::{Status, fio};
 
         let actual = $proxy
             .seek(fio::SeekOrigin::$start, $pos)

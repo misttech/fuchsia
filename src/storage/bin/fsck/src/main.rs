@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Error};
 use argh::FromArgs;
-use component_debug::dirs::{connect_to_instance_protocol, OpenDirType};
+use component_debug::dirs::{OpenDirType, connect_to_instance_protocol};
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_device::ControllerMarker;
 use fidl_fuchsia_fs_realm as fs_realm;

@@ -4,12 +4,12 @@
 
 //! ext4_readonly reads and exposes read-only ext4 file systems to clients.
 
-use anyhow::{format_err, Context as _, Error};
-use ext4_parser::{construct_fs, FsSourceType};
+use anyhow::{Context as _, Error, format_err};
+use ext4_parser::{FsSourceType, construct_fs};
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_hardware_block_volume::VolumeMarker;
 use fidl_fuchsia_io as fio;
-use fuchsia_runtime::{take_startup_handle, HandleType};
+use fuchsia_runtime::{HandleType, take_startup_handle};
 use log::info;
 use vfs::execution_scope::ExecutionScope;
 

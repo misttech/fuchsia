@@ -5,8 +5,8 @@
 use anyhow::{Context, Error};
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::file::{ReadError, WriteError};
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use zx::Status;
 
 /// Copies all data from src to dst recursively.

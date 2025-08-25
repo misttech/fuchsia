@@ -5,7 +5,7 @@
 //! crypt_policy contains all the key policy logic for the different operations that can be done
 //! with hardware keys.  Keeping the policy logic in one place makes it easier to audit.
 
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error, bail};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Policy {

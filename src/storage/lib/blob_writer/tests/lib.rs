@@ -7,8 +7,8 @@ mod tests {
     use blob_writer::BlobWriter;
     use delivery_blob::{CompressionMode, Type1Blob};
     use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
-    use fs_management::filesystem::Filesystem;
     use fs_management::Fxfs;
+    use fs_management::filesystem::Filesystem;
     use fuchsia_component::client::connect_to_protocol_at_dir_svc;
     use ramdevice_client::RamdiskClient;
     const DEVICE_SIZE: u64 = 128 * 1024 * 1024;

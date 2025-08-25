@@ -5,19 +5,19 @@
 use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::node::FxNode;
-use crate::fuchsia::volume::{info_to_filesystem_info, FxVolume};
+use crate::fuchsia::volume::{FxVolume, info_to_filesystem_info};
 use anyhow::Error;
 use fidl_fuchsia_io as fio;
 use fxfs::errors::FxfsError;
 use fxfs::object_handle::{ObjectHandle, ObjectProperties};
-use fxfs::object_store::transaction::{lock_keys, LockKey, Options};
+use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{
     HandleOptions, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectValue,
     StoreObjectHandle,
 };
 use fxfs_macros::ToWeakNode;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use vfs::attributes;
 use vfs::directory::entry::{EntryInfo, GetEntryInfo};
 use vfs::directory::entry_container::MutableDirectory;

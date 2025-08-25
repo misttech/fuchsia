@@ -5,26 +5,26 @@
 use crate::filesystem::FxFilesystem;
 use crate::fsck::errors::{FsckError, FsckFatal, FsckIssue, FsckWarning};
 use crate::log::*;
+use crate::lsm_tree::Query;
 use crate::lsm_tree::skip_list_layer::SkipListLayer;
 use crate::lsm_tree::types::{
     BoxedLayerIterator, Item, Key, Layer, LayerIterator, OrdUpperBound, RangeKey, Value,
 };
-use crate::lsm_tree::Query;
 use crate::object_handle::INVALID_OBJECT_ID;
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue, CoalescingIterator};
 use crate::object_store::journal::super_block::SuperBlockInstance;
 use crate::object_store::load_store_info;
-use crate::object_store::transaction::{lock_keys, LockKey};
+use crate::object_store::transaction::{LockKey, lock_keys};
 use crate::object_store::volume::root_volume;
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use futures::try_join;
 use fxfs_crypto::Crypt;
 use rustc_hash::FxHashSet as HashSet;
 use std::collections::BTreeMap;
 use std::iter::zip;
 use std::ops::Bound;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub mod errors;
 
@@ -368,11 +368,7 @@ impl<'a> Fsck<'a> {
     fn error(&self, error: FsckError) -> Result<(), Error> {
         (self.options.on_error)(&FsckIssue::Error(error.clone()));
         self.errors.fetch_add(1, Ordering::Relaxed);
-        if self.options.halt_on_error {
-            Err(anyhow!("{:?}", error))
-        } else {
-            Ok(())
-        }
+        if self.options.halt_on_error { Err(anyhow!("{:?}", error)) } else { Ok(()) }
     }
 
     fn fatal(&self, error: FsckFatal) -> Result<(), Error> {

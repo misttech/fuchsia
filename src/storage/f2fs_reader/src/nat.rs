@@ -1,8 +1,8 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::superblock::{BLOCKS_PER_SEGMENT, BLOCK_SIZE, SEGMENT_SIZE};
-use anyhow::{ensure, Error};
+use crate::superblock::{BLOCK_SIZE, BLOCKS_PER_SEGMENT, SEGMENT_SIZE};
+use anyhow::{Error, ensure};
 use std::collections::HashMap;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 

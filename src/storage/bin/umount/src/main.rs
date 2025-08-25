@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use argh::FromArgs;
-use component_debug::dirs::{connect_to_instance_protocol, OpenDirType};
+use component_debug::dirs::{OpenDirType, connect_to_instance_protocol};
 use fidl_fuchsia_fs_realm::ControllerMarker;
 use fidl_fuchsia_sys2::RealmQueryMarker;
 use fuchsia_component::client::connect_to_protocol_at_path;

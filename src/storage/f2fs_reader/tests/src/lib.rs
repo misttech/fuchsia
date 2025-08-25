@@ -1,25 +1,25 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{bail, ensure, Context, Error};
-use f2fs_reader::{F2fsReader, FileType, Flags, InlineFlags, Inode, BLOCK_SIZE};
+use anyhow::{Context, Error, bail, ensure};
+use f2fs_reader::{BLOCK_SIZE, F2fsReader, FileType, Flags, InlineFlags, Inode};
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::{ObjectHandle, ObjectProperties};
 use fxfs::object_store::journal::super_block::SuperBlockInstance;
-use fxfs::object_store::transaction::{lock_keys, LockKey, Mutation, Options};
+use fxfs::object_store::transaction::{LockKey, Mutation, Options, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    AttributeKey, Directory, EncryptionKey, ExtentValue, HandleOptions, ObjectAttributes,
-    ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore, ObjectValue, PosixAttributes, Timestamp,
-    DEFAULT_DATA_ATTRIBUTE_ID, FSCRYPT_KEY_ID, NO_OWNER, VOLUME_DATA_KEY_ID,
+    AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, Directory, EncryptionKey, ExtentValue, FSCRYPT_KEY_ID,
+    HandleOptions, NO_OWNER, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind,
+    ObjectStore, ObjectValue, PosixAttributes, Timestamp, VOLUME_DATA_KEY_ID,
 };
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::InsecureCrypt;
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
-use storage_device::fake_device::FakeDevice;
 use storage_device::DeviceHolder;
+use storage_device::fake_device::FakeDevice;
 
 fn open_test_image(path: &str) -> FakeDevice {
     let path = std::path::PathBuf::from(path);
@@ -509,11 +509,7 @@ async fn recursively_verify(
 
                 let fxfs_properties = handle.get_properties().await.context("get properties")?;
                 let f2fs_allocated_size = if let Some(data) = inode.inline_data.as_ref() {
-                    if data.len() > 0 {
-                        BLOCK_SIZE as u64
-                    } else {
-                        0
-                    }
+                    if data.len() > 0 { BLOCK_SIZE as u64 } else { 0 }
                 } else {
                     inode.data_blocks().count() as u64 * BLOCK_SIZE as u64
                 };

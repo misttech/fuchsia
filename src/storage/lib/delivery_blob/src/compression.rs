@@ -516,11 +516,7 @@ impl ChunkedDecompressor {
 /// `{integer}::checked_next_multiple_of()` when `int_roundings` is available.
 fn round_up(value: usize, multiple: usize) -> usize {
     let remainder = value % multiple;
-    if remainder > 0 {
-        value.checked_add(multiple - remainder).unwrap()
-    } else {
-        value
-    }
+    if remainder > 0 { value.checked_add(multiple - remainder).unwrap() } else { value }
 }
 
 #[cfg(test)]

@@ -12,7 +12,7 @@ use crate::environment::{
     self, Container, Environment, FilesystemLauncher, FvmContainer, FxfsContainer,
     ServeFilesystemStatus,
 };
-use anyhow::{anyhow, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, ensure};
 use device_watcher::recursive_wait_and_open;
 use fidl::endpoints::{ClientEnd, Proxy, RequestStream, ServerEnd};
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
@@ -22,11 +22,11 @@ use fidl_fuchsia_hardware_block::{BlockMarker, BlockProxy};
 use fidl_fuchsia_hardware_block_volume::VolumeManagerMarker;
 use fidl_fuchsia_io::{self as fio, DirectoryMarker};
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
-use fs_management::format::{detect_disk_format, DiskFormat};
+use fs_management::format::{DiskFormat, detect_disk_format};
 use fs_management::partition::{
-    find_partition, fvm_allocate_partition, partition_matches_with_proxy, PartitionMatcher,
+    PartitionMatcher, find_partition, fvm_allocate_partition, partition_matches_with_proxy,
 };
-use fs_management::{filesystem, Blobfs, F2fs, Fvm, Fxfs, Minfs};
+use fs_management::{Blobfs, F2fs, Fvm, Fxfs, Minfs, filesystem};
 use fuchsia_async::TimeoutExt as _;
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use fuchsia_fs::directory::clone_onto;

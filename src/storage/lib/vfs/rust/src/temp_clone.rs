@@ -166,17 +166,19 @@ pub async fn unblock<T: 'static + Send>(f: impl FnOnce() -> T + Send + 'static) 
 
     if start_threads {
         for _ in 0..NUM_THREADS {
-            std::thread::spawn(|| loop {
-                let item = {
-                    let mut queue = state.queue.lock();
-                    loop {
-                        if let Some(item) = queue.pop_front() {
-                            break item;
+            std::thread::spawn(|| {
+                loop {
+                    let item = {
+                        let mut queue = state.queue.lock();
+                        loop {
+                            if let Some(item) = queue.pop_front() {
+                                break item;
+                            }
+                            state.cvar.wait(&mut queue);
                         }
-                        state.cvar.wait(&mut queue);
-                    }
-                };
-                item();
+                    };
+                    item();
+                }
             });
         }
     }
@@ -193,7 +195,7 @@ pub async fn unblock<T: 'static + Send>(f: impl FnOnce() -> T + Send + 'static) 
 #[cfg(target_os = "fuchsia")]
 #[cfg(test)]
 mod tests {
-    use super::{clones, TempClonable};
+    use super::{TempClonable, clones};
 
     use std::sync::Arc;
 

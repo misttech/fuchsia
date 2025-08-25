@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Args;
 use crate::instance_actor::InstanceActor;
 use crate::volume::VolumeConnection;
 use crate::volume_actor::VolumeActor;
-use crate::Args;
 use async_trait::async_trait;
 use futures::lock::Mutex;
 use rand::rngs::SmallRng;

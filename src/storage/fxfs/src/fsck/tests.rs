@@ -6,21 +6,21 @@ use crate::filesystem::{
     FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem, SyncOptions,
 };
 use crate::fsck::errors::{FsckError, FsckFatal, FsckIssue, FsckWarning};
-use crate::fsck::{fsck_volume_with_options, fsck_with_options, FsckOptions};
+use crate::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
+use crate::lsm_tree::Query;
 use crate::lsm_tree::persistent_layer::PersistentLayerWriter;
 use crate::lsm_tree::types::{Item, ItemRef, Key, LayerIterator, LayerWriter, Value};
-use crate::lsm_tree::Query;
-use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle, INVALID_OBJECT_ID};
+use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle};
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue, CoalescingIterator};
 use crate::object_store::data_object_handle::OverwriteOptions;
 use crate::object_store::directory::{self, Directory, MutableAttributesInternal};
-use crate::object_store::transaction::{self, lock_keys, LockKey, ObjectStoreMutation, Options};
+use crate::object_store::transaction::{self, LockKey, ObjectStoreMutation, Options, lock_keys};
 use crate::object_store::volume::root_volume;
 use crate::object_store::{
-    AttributeKey, ChildValue, EncryptionKeys, ExtentValue, FsverityMetadata, HandleOptions,
-    Mutation, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind,
-    ObjectStore, ObjectValue, RootDigest, StoreInfo, Timestamp, DEFAULT_DATA_ATTRIBUTE_ID,
-    FSVERITY_MERKLE_ATTRIBUTE_ID, NO_OWNER, VOLUME_DATA_KEY_ID,
+    AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, EncryptionKeys, ExtentValue,
+    FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, HandleOptions, Mutation, NO_OWNER,
+    ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore,
+    ObjectValue, RootDigest, StoreInfo, Timestamp, VOLUME_DATA_KEY_ID,
 };
 use crate::round::round_down;
 use crate::serialized_types::VersionedLatest;
@@ -35,8 +35,8 @@ use fxfs_insecure_crypto::InsecureCrypt;
 use mundane::hash::{Digest, Hasher, Sha256};
 use std::ops::Deref;
 use std::sync::Arc;
-use storage_device::fake_device::FakeDevice;
 use storage_device::DeviceHolder;
+use storage_device::fake_device::FakeDevice;
 
 const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 const TEST_DEVICE_BLOCK_COUNT: u64 = 8192;

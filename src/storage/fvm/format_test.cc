@@ -101,13 +101,14 @@ TEST(FvmFormat, Getters) {
   EXPECT_EQ(kBlockSize, header.GetPartitionTableOffset());
 
   // The number of usable entries in the partition table is one less that the number of slots.
-  // TODO(https://fxbug.dev/42138108) make this consistent so we can use the whole table. Either use 0-1023 as the
-  // valid partition range, or 1-1024.
+  // TODO(https://fxbug.dev/42138108) make this consistent so we can use the whole table. Either use
+  // 0-1023 as the valid partition range, or 1-1024.
   EXPECT_EQ(header.vpartition_table_size / sizeof(VPartitionEntry) - 1,
             header.GetPartitionTableEntryCount());
 
   // The byte size is trivial. Currently this is fixed.
-  // TODO(https://fxbug.dev/42116137): Use this value so the partition table can have different sizes:
+  // TODO(https://fxbug.dev/42116137): Use this value so the partition table can have different
+  // sizes:
   //   EXPECT_EQ(header.vpartition_table_size, header.GetPartitionTableByteSize());
   EXPECT_EQ(65536, header.GetPartitionTableByteSize());
 

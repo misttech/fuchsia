@@ -15,7 +15,7 @@ use storage_benchmarks::io_benchmarks::{
     ReadRandomWarm, ReadSequentialWarm, WriteRandomCold, WriteRandomWarm, WriteSequentialCold,
     WriteSequentialWarm,
 };
-use storage_benchmarks::{add_benchmarks, BenchmarkSet};
+use storage_benchmarks::{BenchmarkSet, add_benchmarks};
 
 /// Fuchsia Filesystem Benchmarks
 #[derive(argh::FromArgs)]

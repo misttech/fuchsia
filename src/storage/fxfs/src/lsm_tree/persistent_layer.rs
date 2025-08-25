@@ -67,10 +67,10 @@ use crate::lsm_tree::types::{
     LayerWriter,
 };
 use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes};
-use crate::object_store::caching_object_handle::{CachedChunk, CachingObjectHandle, CHUNK_SIZE};
+use crate::object_store::caching_object_handle::{CHUNK_SIZE, CachedChunk, CachingObjectHandle};
 use crate::round::{round_down, round_up};
-use crate::serialized_types::{Version, Versioned, VersionedLatest, LATEST_VERSION};
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use crate::serialized_types::{LATEST_VERSION, Version, Versioned, VersionedLatest};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use fprint::TypeFingerprint;
@@ -875,11 +875,7 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
     }
 
     fn data_blocks(&self) -> usize {
-        if self.item_count == 0 {
-            0
-        } else {
-            self.block_keys.len() + 1
-        }
+        if self.item_count == 0 { 0 } else { self.block_keys.len() + 1 }
     }
 }
 
@@ -945,16 +941,16 @@ impl<W: WriteBytes, K: Key, V: LayerValue> Drop for PersistentLayerWriter<W, K, 
 mod tests {
     use super::{PersistentLayer, PersistentLayerWriter};
     use crate::filesystem::MAX_BLOCK_SIZE;
+    use crate::lsm_tree::LayerIterator;
     use crate::lsm_tree::persistent_layer::MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER;
     use crate::lsm_tree::types::{
         DefaultOrdUpperBound, FuzzyHash, Item, ItemRef, Layer, LayerKey, LayerWriter, MergeType,
         SortByU64,
     };
-    use crate::lsm_tree::LayerIterator;
     use crate::object_handle::WriteBytes;
     use crate::round::round_up;
     use crate::serialized_types::{
-        versioned_type, Version, Versioned, VersionedLatest, LATEST_VERSION,
+        LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
     };
     use crate::testing::fake_object::{FakeObject, FakeObjectHandle};
     use crate::testing::writer::Writer;

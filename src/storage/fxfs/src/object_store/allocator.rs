@@ -99,19 +99,19 @@ use crate::lsm_tree::types::{
     FuzzyHash, Item, ItemRef, Layer, LayerIterator, LayerKey, MergeType, OrdLowerBound,
     OrdUpperBound, RangeKey, SortByU64, Value,
 };
-use crate::lsm_tree::{layers_from_handles, LSMTree, Query};
-use crate::object_handle::{ObjectHandle, ReadObjectHandle, INVALID_OBJECT_ID};
+use crate::lsm_tree::{LSMTree, Query, layers_from_handles};
+use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle};
 use crate::object_store::object_manager::ReservationUpdate;
 use crate::object_store::transaction::{
-    lock_keys, AllocatorMutation, AssocObj, LockKey, Mutation, Options, Transaction, WriteGuard,
+    AllocatorMutation, AssocObj, LockKey, Mutation, Options, Transaction, WriteGuard, lock_keys,
 };
-use crate::object_store::{tree, DataObjectHandle, DirectWriter, HandleOptions, ObjectStore};
+use crate::object_store::{DataObjectHandle, DirectWriter, HandleOptions, ObjectStore, tree};
 use crate::range::RangeExt;
 use crate::round::{round_div, round_down, round_up};
 use crate::serialized_types::{
-    Version, Versioned, VersionedLatest, DEFAULT_MAX_SERIALIZED_RECORD_SIZE, LATEST_VERSION,
+    DEFAULT_MAX_SERIALIZED_RECORD_SIZE, LATEST_VERSION, Version, Versioned, VersionedLatest,
 };
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use either::Either::{Left, Right};
 use event_listener::EventListener;
@@ -2141,9 +2141,9 @@ mod tests {
     use crate::object_store::allocator::{
         Allocator, AllocatorKey, AllocatorValue, CoalescingIterator,
     };
-    use crate::object_store::transaction::{lock_keys, Options, TRANSACTION_METADATA_MAX_AMOUNT};
+    use crate::object_store::transaction::{Options, TRANSACTION_METADATA_MAX_AMOUNT, lock_keys};
     use crate::object_store::volume::root_volume;
-    use crate::object_store::{Directory, LockKey, ObjectStore, NO_OWNER};
+    use crate::object_store::{Directory, LockKey, NO_OWNER, ObjectStore};
     use crate::range::RangeExt;
     use crate::round::round_up;
     use fuchsia_async as fasync;
@@ -2151,8 +2151,8 @@ mod tests {
     use std::cmp::{max, min};
     use std::ops::{Bound, Range};
     use std::sync::Arc;
-    use storage_device::fake_device::FakeDevice;
     use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
 
     #[test]
     fn test_allocator_key_is_range_based() {

@@ -5,7 +5,7 @@
 use futures::future::BoxFuture;
 use futures::{FutureExt, Stream};
 use pin_project::pin_project;
-use std::future::{ready, Future};
+use std::future::{Future, ready};
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::task::{Context, Poll};

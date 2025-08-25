@@ -4,7 +4,7 @@
 
 //! Tests for the asynchronous files.
 
-use super::{read_only, VmoFile};
+use super::{VmoFile, read_only};
 use crate::{
     assert_close, assert_get_attr, assert_read, assert_read_at, assert_seek, assert_truncate_err,
     assert_write_err, file,

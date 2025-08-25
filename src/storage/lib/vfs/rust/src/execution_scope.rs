@@ -20,8 +20,8 @@ use crate::token_registry::TokenRegistry;
 
 use fuchsia_async::{JoinHandle, Scope, ScopeHandle, SpawnableFuture};
 use fuchsia_sync::{MappedMutexGuard, Mutex, MutexGuard};
-use futures::task::{self, Poll};
 use futures::Future;
+use futures::task::{self, Poll};
 use std::future::poll_fn;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -234,15 +234,15 @@ impl Future for Task {
 
 #[cfg(test)]
 mod tests {
-    use super::{yield_to_executor, ExecutionScope};
+    use super::{ExecutionScope, yield_to_executor};
 
     use fuchsia_async::{TestExecutor, Timer};
-    use futures::channel::oneshot;
     use futures::Future;
+    use futures::channel::oneshot;
     use std::pin::pin;
+    use std::sync::Arc;
     #[cfg(target_os = "fuchsia")]
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
     #[cfg(target_os = "fuchsia")]
     use std::task::Poll;
     use std::time::Duration;
@@ -445,12 +445,12 @@ mod tests {
     }
 
     mod mocks {
+        use futures::Future;
         use futures::channel::oneshot;
         use futures::task::{Context, Poll};
-        use futures::Future;
         use std::pin::Pin;
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         pub(super) struct TaskCounters {
             poll_call_count: Arc<AtomicUsize>,
