@@ -40,7 +40,6 @@
 #include <string>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <bind/fuchsia/amlogic/platform/sysmem/heap/cpp/bind.h>
@@ -431,8 +430,7 @@ void DisplayEngine::ReleaseImage(display::DriverImageId image_id) {
 }
 
 display::ConfigCheckResult DisplayEngine::CheckConfiguration(
-    display::DisplayId display_id,
-    std::variant<display::ModeId, display::DisplayTiming> display_mode,
+    display::DisplayId display_id, display::ModeId mode_id,
     display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers) {
   fbl::AutoLock lock(&display_mutex_);
 
@@ -440,14 +438,6 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
   if (!display_attached_ || display_id != display_id_) {
     return display::ConfigCheckResult::kOk;
   }
-
-  if (std::holds_alternative<display::DisplayTiming>(display_mode)) {
-    fdf::warn("CheckConfig failure: display timing is not supported");
-    return display::ConfigCheckResult::kUnsupportedDisplayModes;
-  }
-
-  ZX_DEBUG_ASSERT(std::holds_alternative<display::ModeId>(display_mode));
-  display::ModeId mode_id = std::get<display::ModeId>(display_mode);
 
   // Guaranteed by DisplayEngineInterface.
   ZX_DEBUG_ASSERT(mode_id != display::kInvalidModeId);
@@ -537,16 +527,12 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
   return check_result;
 }
 
-void DisplayEngine::ApplyConfiguration(
-    display::DisplayId display_id,
-    std::variant<display::ModeId, display::DisplayTiming> display_mode,
-    display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers,
-    display::DriverConfigStamp config_stamp) {
+void DisplayEngine::ApplyConfiguration(display::DisplayId display_id, display::ModeId mode_id,
+                                       display::ColorConversion color_conversion,
+                                       cpp20::span<const display::DriverLayer> layers,
+                                       display::DriverConfigStamp config_stamp) {
   fbl::AutoLock lock(&display_mutex_);
   if (!layers.empty()) {
-    ZX_DEBUG_ASSERT(std::holds_alternative<display::ModeId>(display_mode));
-    display::ModeId mode_id = std::get<display::ModeId>(display_mode);
-
     // Perform Vout modeset first.
     //
     // Setting up OSD may require Vout framebuffer information, which may be

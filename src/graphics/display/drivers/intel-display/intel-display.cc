@@ -1544,8 +1544,7 @@ bool Controller::CheckDisplayLimits(display::DisplayId display_id,
 }
 
 display::ConfigCheckResult Controller::CheckConfiguration(
-    display::DisplayId display_id,
-    std::variant<display::ModeId, display::DisplayTiming> display_mode,
+    display::DisplayId display_id, display::ModeId display_mode_id,
     display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers) {
   fbl::AutoLock lock(&display_lock_);
 
@@ -1567,11 +1566,8 @@ display::ConfigCheckResult Controller::CheckConfiguration(
     return display::ConfigCheckResult::kOk;
   }
 
-  if (!std::holds_alternative<display::ModeId>(display_mode)) {
-    return display::ConfigCheckResult::kUnsupportedDisplayModes;
-  }
-  const display::ModeId mode_id = std::get<display::ModeId>(display_mode);
-  std::optional<display::DisplayTiming> get_timing_result = display->GetDisplayTiming(mode_id);
+  std::optional<display::DisplayTiming> get_timing_result =
+      display->GetDisplayTiming(display_mode_id);
   if (!get_timing_result.has_value()) {
     return display::ConfigCheckResult::kUnsupportedDisplayModes;
   }
@@ -1760,19 +1756,15 @@ uint16_t Controller::DataBufferBlockCount() const {
   return is_tgl(device_id_) ? kTigerLakeDataBufferBlockCount : kKabyLakeDataBufferBlockCount;
 }
 
-void Controller::ApplyConfiguration(
-    display::DisplayId display_id,
-    std::variant<display::ModeId, display::DisplayTiming> display_mode,
-    display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers,
-    display::DriverConfigStamp driver_config_stamp) {
+void Controller::ApplyConfiguration(display::DisplayId display_id, display::ModeId display_mode_id,
+                                    display::ColorConversion color_conversion,
+                                    cpp20::span<const display::DriverLayer> layers,
+                                    display::DriverConfigStamp driver_config_stamp) {
   fbl::AutoLock lock(&display_lock_);
 
   ZX_DEBUG_ASSERT(display_devices_.size() <= kMaximumConnectedDisplayCount);
   display::DisplayId fake_vsync_display_ids[kMaximumConnectedDisplayCount];
   size_t fake_vsync_size = 0;
-
-  ZX_DEBUG_ASSERT(std::holds_alternative<display::ModeId>(display_mode));
-  const display::ModeId mode_id = std::get<display::ModeId>(display_mode);
 
   ReallocatePlaneBuffers(display_id, layers,
                          /* reallocate_pipes */ pipe_manager_->PipeReallocated());
@@ -1786,7 +1778,7 @@ void Controller::ApplyConfiguration(
       }
       continue;
     }
-    display->ApplyConfiguration(mode_id, color_conversion, layers, driver_config_stamp);
+    display->ApplyConfiguration(display_mode_id, color_conversion, layers, driver_config_stamp);
 
     // The hardware only gives vsyncs if at least one plane is enabled, so
     // fake one if we need to, to inform the client that we're done with the

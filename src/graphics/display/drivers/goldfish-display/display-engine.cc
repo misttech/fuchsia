@@ -332,8 +332,7 @@ void DisplayEngine::ReleaseImage(display::DriverImageId image_id) {
 }
 
 display::ConfigCheckResult DisplayEngine::CheckConfiguration(
-    display::DisplayId display_id,
-    std::variant<display::ModeId, display::DisplayTiming> display_mode,
+    display::DisplayId display_id, display::ModeId display_mode_id,
     display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers) {
   // The display coordinator currently uses zero-display configs to blank a
   // display. We'll remove this eventually.
@@ -342,11 +341,6 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
   }
 
   ZX_DEBUG_ASSERT(display_id == kPrimaryDisplayId);
-
-  if (!std::holds_alternative<display::ModeId>(display_mode)) {
-    return display::ConfigCheckResult::kUnsupportedDisplayModes;
-  }
-  display::ModeId display_mode_id = std::get<display::ModeId>(display_mode);
   if (display_mode_id != kModeId) {
     return display::ConfigCheckResult::kUnsupportedDisplayModes;
   }
@@ -500,11 +494,11 @@ zx_status_t DisplayEngine::PresentPrimaryDisplayConfig(const DisplayConfig& disp
   return ZX_OK;
 }
 
-void DisplayEngine::ApplyConfiguration(
-    display::DisplayId display_id,
-    std::variant<display::ModeId, display::DisplayTiming> display_mode,
-    display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers,
-    display::DriverConfigStamp config_stamp) {
+void DisplayEngine::ApplyConfiguration(display::DisplayId display_id,
+                                       display::ModeId display_mode_id,
+                                       display::ColorConversion color_conversion,
+                                       cpp20::span<const display::DriverLayer> layers,
+                                       display::DriverConfigStamp config_stamp) {
   display::DriverImageId driver_image_id = display::kInvalidDriverImageId;
 
   if (display_id == kPrimaryDisplayId) {
@@ -513,8 +507,7 @@ void DisplayEngine::ApplyConfiguration(
     }
   }
 
-  ZX_DEBUG_ASSERT(std::holds_alternative<display::ModeId>(display_mode));
-  ZX_DEBUG_ASSERT(std::get<display::ModeId>(display_mode) == kModeId);
+  ZX_DEBUG_ASSERT(display_mode_id == kModeId);
 
   if (driver_image_id == display::kInvalidDriverImageId) {
     // The display doesn't have any active layers right now. For layers that
