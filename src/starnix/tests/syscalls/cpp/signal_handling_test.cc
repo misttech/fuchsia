@@ -1053,6 +1053,111 @@ TEST(SignalHandling, ExitSignalIsAProcessSignal) {
   });
 }
 
+TEST(SignalHandling, ChildExecResetsExitSignal) {
+  test_helper::ForkHelper fork_helper;
+
+  fork_helper.RunInForkedProcess([] {
+    sigset_t block_mask, old_mask;
+    sigemptyset(&block_mask);
+    sigaddset(&block_mask, SIGUSR1);
+    sigaddset(&block_mask, SIGCHLD);
+    SAFE_SYSCALL(sigprocmask(SIG_BLOCK, &block_mask, &old_mask));
+
+    test_helper::CloneHelper test_clone_helper;
+    pid_t child_pid = test_clone_helper.runInClonedChild(SIGUSR1, []() {
+      std::string binary_name = "ptrace_test_exec_child";
+      std::string binary_path = GetBinaryPath(binary_name);
+      char *const argv[] = {binary_name.data(), nullptr};
+
+      SAFE_SYSCALL(execve(binary_path.data(), argv, nullptr));
+      __builtin_unreachable();
+    });
+
+    // Wait for the child to exit.
+    // We have to use __WALL here because the child is a clone child before
+    // execve and becomes a non-clone child after the execve``.
+    int status;
+    SAFE_SYSCALL(waitpid(child_pid, &status, __WALL));
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+    // Wait to receive either SIGUSR1 or SIGCHLD
+    int sig;
+    SAFE_SYSCALL(sigwait(&block_mask, &sig));
+
+    sigset_t pending_signals;
+    SAFE_SYSCALL(sigpending(&pending_signals));
+
+    // Test that SIGCHILD was received and not SIGUSR1
+    EXPECT_EQ(sig, SIGCHLD);
+    EXPECT_FALSE(sigismember(&pending_signals, SIGUSR1));
+
+    SAFE_SYSCALL(sigprocmask(SIG_SETMASK, &old_mask, nullptr));
+  });
+}
+
+// Checks that 'exec' on parent should reset the exit signal of child
+TEST(SignalHandling, ParentExecResetsExitSignal) {
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([] {
+    int event_fd = SAFE_SYSCALL(eventfd(0, EFD_SEMAPHORE));
+
+    // Clone child with default exit signal SIGUSR1, then wait for parent to exec before
+    // exiting
+    test_helper::CloneHelper clone_helper;
+    int child_pid = clone_helper.runInClonedChild(SIGUSR1, [event_fd]() {
+      int64_t val;
+      TEMP_FAILURE_RETRY(read(event_fd, &val, sizeof(int64_t)));
+      close(event_fd);
+      return 0;
+    });
+
+    // Parent exec's rest of test
+    std::string binary_name = "signal_handling_test_exec_parent_before_exit";
+    std::string binary_path = GetBinaryPath(binary_name);
+    std::string event_fd_arg = std::to_string(event_fd);
+    std::string child_pid_arg = std::to_string(child_pid);
+
+    char *const argv[] = {binary_name.data(), event_fd_arg.data(), child_pid_arg.data(), nullptr};
+    SAFE_SYSCALL(execve(binary_path.data(), argv, nullptr));
+    __builtin_unreachable();
+  });
+
+  EXPECT_TRUE(fork_helper.WaitForChildren());
+}
+
+// Checks that exit signals do not reset if sent before the parent exec's but received after
+// exec'ing
+TEST(SignalHandling, ExitSignalNotResetBeforeExec) {
+  test_helper::ForkHelper fork_helper;
+
+  fork_helper.RunInForkedProcess([] {
+    sigset_t block_mask, old_mask;
+    sigemptyset(&block_mask);
+    sigaddset(&block_mask, SIGUSR1);
+    sigaddset(&block_mask, SIGCHLD);
+    SAFE_SYSCALL(sigprocmask(SIG_BLOCK, &block_mask, &old_mask));
+
+    // Clone child with exit signal SIGUSR1
+    test_helper::CloneHelper clone_helper;
+    clone_helper.runInClonedChild(SIGUSR1, test_helper::CloneHelper::doNothing);
+
+    // Wait for clone child to exit
+    int status;
+    SAFE_SYSCALL(waitpid(-1, &status, __WALL));
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+    // Parent exec's rest of test
+    std::string binary_name = "signal_handling_test_exec_parent_after_exit";
+    std::string binary_path = GetBinaryPath(binary_name);
+    char *const argv[] = {binary_name.data(), nullptr};
+
+    SAFE_SYSCALL(execve(binary_path.data(), argv, nullptr));
+    __builtin_unreachable();
+  });
+
+  EXPECT_TRUE(fork_helper.WaitForChildren());
+}
+
 void empty_signal_handler(int, siginfo_t *, void *) {}
 
 TEST(SignalHandling, SignalDeliveryWakesOnlyOneFutex) {

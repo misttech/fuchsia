@@ -214,6 +214,12 @@ if (is_host) {
                      "root_out_dir") + "/print_helper",
       get_label_info("test_programs:clone_exec_helper($_host_linux_toolchain)",
                      "root_out_dir") + "/clone_exec_helper",
+      get_label_info(
+              "test_programs:signal_handling_test_exec_parent_before_exit($_host_linux_toolchain)",
+              "root_out_dir") + "/signal_handling_test_exec_parent_before_exit",
+      get_label_info(
+              ":test_programs:signal_handling_test_exec_parent_after_exit($_host_linux_toolchain)",
+              "root_out_dir") + "/signal_handling_test_exec_parent_after_exit",
     ]
     deps = [
       ":extended_pstate_initial_state_child($_host_linux_toolchain)",
@@ -223,6 +229,8 @@ if (is_host) {
       ":syscall_test_exec_child($_host_linux_toolchain)",
       "test_programs:clone_exec_helper($_host_linux_toolchain)",
       "test_programs:print_helper($_host_linux_toolchain)",
+      "test_programs:signal_handling_test_exec_parent_after_exit($_host_linux_toolchain)",
+      "test_programs:signal_handling_test_exec_parent_before_exit($_host_linux_toolchain)",
     ]
   }
 }
@@ -429,6 +437,8 @@ template("syscall_test") {
       ":syscall_test_exec_child_resource($target_linux_toolchain)",
       "test_programs:clone_exec_helper_resource($target_linux_toolchain)",
       "test_programs:print_helper_resource($target_linux_toolchain)",
+      "test_programs:signal_handling_test_exec_parent_after_exit_resource($target_linux_toolchain)",
+      "test_programs:signal_handling_test_exec_parent_before_exit_resource($target_linux_toolchain)",
     ]
     uses_expectations = true
     generated_expectations = ":syscalls_cpp_test_expectations"
@@ -455,6 +465,8 @@ template("syscall_test") {
         ":syscall_test_exec_child_resource($target_linux_arch32_toolchain)",
         "test_programs:clone_exec_helper_resource($target_linux_arch32_toolchain)",
         "test_programs:print_helper_resource($target_linux_arch32_toolchain)",
+        "test_programs:signal_handling_test_exec_parent_after_exit_resource($target_linux_arch32_toolchain)",
+        "test_programs:signal_handling_test_exec_parent_before_exit_resource($target_linux_arch32_toolchain)",
       ]
       uses_expectations = true
       generated_expectations =

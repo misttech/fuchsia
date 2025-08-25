@@ -37,6 +37,17 @@
 
 namespace test_helper {
 
+namespace {
+
+int lambda_wrapper(void *func_ptr) {
+  auto func = static_cast<std::function<void()> *>(func_ptr);
+  (*func)();
+  _exit(testing::Test::HasFailure());
+  return 0;
+}
+
+}  // namespace
+
 ::testing::AssertionResult ForkHelper::WaitForChildrenInternal(int exit_value, int death_signum) {
   ::testing::AssertionResult result = ::testing::AssertionSuccess();
   while (wait_for_all_children_ || !child_pids_.empty()) {
@@ -135,6 +146,10 @@ int CloneHelper::runInClonedChild(unsigned int cloneFlags, int (*childFunction)(
   int childPid = clone(childFunction, this->_childStackBegin, cloneFlags, NULL);
   assert(childPid != -1);
   return childPid;
+}
+
+int CloneHelper::runInClonedChild(unsigned int cloneFlags, std::function<void()> action) {
+  return SAFE_SYSCALL(clone(lambda_wrapper, this->_childStackBegin, cloneFlags, &action));
 }
 
 int CloneHelper::sleep_1sec(void *) {

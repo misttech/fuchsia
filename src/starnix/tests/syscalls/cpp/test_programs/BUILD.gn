@@ -42,4 +42,51 @@ if (is_linux) {
     outputs = [ "data/tests/deps/clone_exec_helper" ]
     deps = [ ":clone_exec_helper" ]
   }
+
+  executable("signal_handling_test_exec_parent_before_exit") {
+    testonly = true
+    emit_tool_path = false
+    sources = [ "signal_handling_test_exec_parent_before_exit.cc" ]
+
+    # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
+    exclude_toolchain_tags = [
+      "asan",
+      "coverage",
+    ]
+    deps = [
+      "//src/starnix/tests/syscalls/cpp:test_utils",
+      "//third_party/googletest:gtest",
+    ]
+  }
+
+  resource("signal_handling_test_exec_parent_before_exit_resource") {
+    testonly = true
+    sources = [ "$root_out_dir/signal_handling_test_exec_parent_before_exit" ]
+    outputs = [ "data/tests/deps/signal_handling_test_exec_parent_before_exit" ]
+    deps = [ ":signal_handling_test_exec_parent_before_exit" ]
+  }
+
+  executable("signal_handling_test_exec_parent_after_exit") {
+    testonly = true
+    emit_tool_path = false
+    sources = [ "signal_handling_test_exec_parent_after_exit.cc" ]
+
+    # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
+    exclude_toolchain_tags = [
+      "asan",
+      "coverage",
+    ]
+
+    deps = [
+      "//src/starnix/tests/syscalls/cpp:test_utils",
+      "//third_party/googletest:gtest",
+    ]
+  }
+
+  resource("signal_handling_test_exec_parent_after_exit_resource") {
+    testonly = true
+    sources = [ "$root_out_dir/signal_handling_test_exec_parent_after_exit" ]
+    outputs = [ "data/tests/deps/signal_handling_test_exec_parent_after_exit" ]
+    deps = [ ":signal_handling_test_exec_parent_after_exit" ]
+  }
 }

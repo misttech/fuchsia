@@ -103,6 +103,11 @@ class CloneHelper {
   // no errors and return the new process ID.
   int runInClonedChild(unsigned int cloneFlags, int (*childFunction)(void *));
 
+  // Call clone and execute the given |action| inside the child,
+  // then exit with a status equal to the number of failed expectations and
+  // assertions. Return immediately with the pid of the child.
+  int runInClonedChild(unsigned int cloneFlags, std::function<void()> action);
+
   // Handy trivial function for passing clone when we want the child to
   // sleep for 1 second and return 0.
   static int sleep_1sec(void *);
