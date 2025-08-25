@@ -1387,14 +1387,14 @@ alias(
 )
 
 alias(
-    name = "lock_api-0.4.11",
-    actual = "//third_party/rust_crates/vendor/lock_api-0.4.11:lock_api",
+    name = "lock_api-0.4.13",
+    actual = "//third_party/rust_crates/vendor/lock_api-0.4.13:lock_api",
     tags = ["manual"],
 )
 
 alias(
     name = "lock_api",
-    actual = "//third_party/rust_crates/vendor/lock_api-0.4.11:lock_api",
+    actual = "//third_party/rust_crates/vendor/lock_api-0.4.13:lock_api",
     tags = ["manual"],
 )
 

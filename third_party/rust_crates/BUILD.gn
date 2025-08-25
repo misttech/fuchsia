@@ -502,7 +502,7 @@ group("linked-hash-map") {
 }
 
 group("lock_api") {
-  public_deps = [ ":lock_api-v0_4_11" ]
+  public_deps = [ ":lock_api-v0_4_13" ]
 }
 
 group("log") {
@@ -9286,19 +9286,19 @@ rustc_library("linked-hash-map-v0_5_6") {
   applicable_licenses = [ ":linked-hash-map-v0_5_6.license" ]
 }
 
-license("lock_api-v0_4_11.license") {
+license("lock_api-v0_4_13.license") {
   public_package_name = "lock_api"
   license_files = [
-    "//third_party/rust_crates/vendor/lock_api-0.4.11/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/lock_api-0.4.11/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/lock_api-0.4.13/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/lock_api-0.4.13/LICENSE-MIT",
   ]
 }
 
-rustc_library("lock_api-v0_4_11") {
+rustc_library("lock_api-v0_4_13") {
   crate_name = "lock_api"
-  source_root = "//third_party/rust_crates/vendor/lock_api-0.4.11/src/lib.rs"
-  output_name = "lock_api-202cfc12c9882962"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/lock_api-0.4.13/src/lib.rs"
+  output_name = "lock_api-6d6355a48fca513a"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -9311,8 +9311,8 @@ rustc_library("lock_api-v0_4_11") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=202cfc12c9882962",
-    "-Cextra-filename=-202cfc12c9882962",
+    "-Cmetadata=6d6355a48fca513a",
+    "-Cextra-filename=-6d6355a48fca513a",
     "--cfg=feature=\"atomic_usize\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"serde\"",
@@ -9321,7 +9321,7 @@ rustc_library("lock_api-v0_4_11") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":lock_api-v0_4_11.license" ]
+  applicable_licenses = [ ":lock_api-v0_4_13.license" ]
 }
 
 license("log-v0_4_27.license") {
@@ -11464,7 +11464,7 @@ rustc_library("parking_lot-v0_11_1") {
 
   deps = []
   deps += [ ":instant-v0_1_13" ]
-  deps += [ ":lock_api-v0_4_11" ]
+  deps += [ ":lock_api-v0_4_13" ]
   deps += [ ":parking_lot_core-v0_8_3" ]
 
   rustenv = []
@@ -11499,7 +11499,7 @@ rustc_library("parking_lot-v0_12_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":lock_api-v0_4_11" ]
+  deps += [ ":lock_api-v0_4_13" ]
   deps += [ ":parking_lot_core-v0_9_9" ]
 
   rustenv = []
@@ -18777,7 +18777,7 @@ rustc_library("tracing-mutex-v0_3_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":lock_api-v0_4_11" ]
+  deps += [ ":lock_api-v0_4_13" ]
   deps += [ ":parking_lot-v0_12_0" ]
 
   rustenv = []

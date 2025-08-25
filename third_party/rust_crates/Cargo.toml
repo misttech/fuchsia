@@ -145,7 +145,7 @@ lazy_static = "1.5"
 libc = { version = "0.2.174", features = ["extra_traits"] }
 libm = "0.2.15"
 linked-hash-map = "0.5.6"
-lock_api = { version = "0.4.11", features = ["serde"] }
+lock_api = { version = "0.4.13", features = ["serde"] }
 log = { version = "0.4.27", features = ["kv", "std"] }
 lru-cache = "0.1.2"
 macro_rules_attribute = "0.2.2"
@@ -692,7 +692,7 @@ rustflags = ["--cfg=freebsd11"]
 # It is a fork:
 uses_fuchsia_license = true
 
-[gn.package.lock_api."0.4.11"]
+[gn.package.lock_api."0.4.13"]
 rustflags = ["--cfg=has_const_fn_trait_bound"]
 
 # Loom has not gone through a thorough safety review yet, and needs to be
