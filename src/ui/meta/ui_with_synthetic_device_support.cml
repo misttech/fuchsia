@@ -29,6 +29,12 @@
             from: "parent",
             to: "#input-helper",
         },
+        {
+            protocol: "fuchsia.tracing.provider.Registry",
+            from: "parent",
+            to: [ "#input-helper" ],
+            availability: "optional",
+        },
     ],
     expose: [
         {

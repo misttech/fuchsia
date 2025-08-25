@@ -18,6 +18,7 @@ enum Service {
 #[fuchsia::main(logging_tags = ["input_helper"])]
 async fn main() -> Result<(), Error> {
     info!("starting input synthesis test component");
+    fuchsia_trace_provider::trace_provider_create_with_fdio();
 
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(Service::RegistryServer);
