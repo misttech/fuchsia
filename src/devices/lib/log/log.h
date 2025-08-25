@@ -19,8 +19,12 @@
 #endif
 #include <string>
 #include <vector>
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD) && __cplusplus >= 202002L
+#include <format>
+#include <source_location>
+#endif
 
-namespace driver_logger {
+namespace fdf_log {
 class Logger;
 Logger& GetLogger();
 namespace internal {
@@ -29,7 +33,7 @@ FuchsiaLogSeverity severity_from_verbosity(uint8_t verbosity);
 void log_with_source(Logger& logger, FuchsiaLogSeverity severity, const char* tag, const char* file,
                      int line, const char* format, ...);
 }  // namespace internal
-}  // namespace driver_logger
+}  // namespace fdf_log
 
 #define LOGF(severity, message...) FX_LOGF(severity, nullptr, message)
 #define VLOGF(verbosity, message...) FX_VLOGF(verbosity, nullptr, message)
@@ -38,23 +42,22 @@ void log_with_source(Logger& logger, FuchsiaLogSeverity severity, const char* ta
 // |tag| is a tag to associated with the message, or NULL if none.
 // |message| is the message to write, or NULL if none.
 #define FX_LOGF(severity, tag, message...) \
-  FX_LOGF_INTERNAL(driver_logger::GetLogger(), (FUCHSIA_LOG_##severity), tag, message)
+  FX_LOGF_INTERNAL(fdf_log::GetLogger(), (FUCHSIA_LOG_##severity), tag, message)
 
 // Writes formatted verbose message to the global logger.
 // |verbosity| is an integer value > 0 up to a maximum of 15.
 // |tag| is a tag to associated with the message, or NULL if none.
 // |message| is the message to write, or NULL if none.
-#define FX_VLOGF(verbosity, tag, message...)   \
-  FX_LOGF_INTERNAL(driver_logger::GetLogger(), \
-                   driver_logger::internal::severity_from_verbosity(verbosity), tag, message)
+#define FX_VLOGF(verbosity, tag, message...)                                                    \
+  FX_LOGF_INTERNAL(fdf_log::GetLogger(), fdf_log::internal::severity_from_verbosity(verbosity), \
+                   tag, message)
 
-#define FX_LOGF_INTERNAL(logger, severity, tag, message...)                                 \
-  do {                                                                                      \
-    driver_logger::internal::log_with_source(logger, (severity), (tag), __FILE__, __LINE__, \
-                                             message);                                      \
+#define FX_LOGF_INTERNAL(logger, severity, tag, message...)                                     \
+  do {                                                                                          \
+    fdf_log::internal::log_with_source(logger, (severity), (tag), __FILE__, __LINE__, message); \
   } while (0)
 
-namespace driver_logger {
+namespace fdf_log {
 zx_koid_t GetCurrentThread();
 class Logger {
  public:
@@ -108,6 +111,17 @@ class Logger {
   void SetSocket(zx::socket socket) { socket_ = std::move(socket); }
 #endif
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD) && __cplusplus >= 202002L
+  template <typename... Args>
+  void log(FuchsiaLogSeverity severity, const std::source_location& loc,
+           std::format_string<Args...> fmt, Args&&... args) {
+    vlog(severity, nullptr, loc.file_name(), loc.line(), fmt.get(), std::make_format_args(args...));
+  }
+
+  void vlog(FuchsiaLogSeverity severity, const char* tag, const char* file, int line,
+            std::string_view fmt, std::format_args args);
+#endif
+
  private:
   zx_koid_t pid_;
   bool use_stdout_ = false;
@@ -132,6 +146,80 @@ zx::result<Logger> CreateLogger();
 void InitGlobalLogger(std::span<const char*> tags, FuchsiaLogSeverity severity);
 #endif
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD) && __cplusplus >= 202002L
+// Use template type deduction to allow us to get source location while using variadic templates.
+template <typename... Args>
+struct trace {
+  trace(std::format_string<Args...> fmt, Args&&... args,
+        const std::source_location& loc = std::source_location::current()) {
+    fdf_log::GetLogger().log(FUCHSIA_LOG_TRACE, loc, fmt, std::forward<Args>(args)...);
+  }
+};
+
+template <typename... Args>
+trace(std::format_string<Args...>, Args&&...) -> trace<Args...>;
+
+template <typename... Args>
+struct debug {
+  debug(std::format_string<Args...> fmt, Args&&... args,
+        const std::source_location& loc = std::source_location::current()) {
+    fdf_log::GetLogger().log(FUCHSIA_LOG_DEBUG, loc, fmt, std::forward<Args>(args)...);
+  }
+};
+
+template <typename... Args>
+debug(std::format_string<Args...>, Args&&...) -> debug<Args...>;
+
+template <typename... Args>
+struct info {
+  info(std::format_string<Args...> fmt, Args&&... args,
+       const std::source_location& loc = std::source_location::current()) {
+    fdf_log::GetLogger().log(FUCHSIA_LOG_INFO, loc, fmt, std::forward<Args>(args)...);
+  }
+};
+
+template <typename... Args>
+info(std::format_string<Args...>, Args&&...) -> info<Args...>;
+
+template <typename... Args>
+struct warn {
+  warn(std::format_string<Args...> fmt, Args&&... args,
+       const std::source_location& loc = std::source_location::current()) {
+    fdf_log::GetLogger().log(FUCHSIA_LOG_WARNING, loc, fmt, std::forward<Args>(args)...);
+  }
+};
+
+template <typename... Args>
+warn(std::format_string<Args...>, Args&&...) -> warn<Args...>;
+
+template <typename... Args>
+struct error {
+  error(std::format_string<Args...> fmt, Args&&... args,
+        const std::source_location& loc = std::source_location::current()) {
+    fdf_log::GetLogger().log(FUCHSIA_LOG_ERROR, loc, fmt, std::forward<Args>(args)...);
+  }
+};
+
+template <typename... Args>
+error(std::format_string<Args...>, Args&&...) -> error<Args...>;
+
+template <typename... Args>
+struct fatal {
+  fatal(std::format_string<Args...> fmt, Args&&... args,
+        const std::source_location& loc = std::source_location::current()) {
+    fdf_log::GetLogger().log(FUCHSIA_LOG_ERROR, loc, fmt, std::forward<Args>(args)...);
+  }
+};
+
+template <typename... Args>
+fatal(std::format_string<Args...>, Args&&...) -> fatal<Args...>;
+#endif
+
+}  // namespace fdf_log
+
+// For backwards compatibility, also export to driver_logger.
+namespace driver_logger {
+using namespace fdf_log;
 }  // namespace driver_logger
 
 #endif  // SRC_DEVICES_LIB_LOG_LOG_H_
