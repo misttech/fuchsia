@@ -15,8 +15,10 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include <fbl/static_vector.h>
+#include <fbl/vector.h>
 
 #include "src/graphics/display/drivers/amlogic-display/clock.h"
 #include "src/graphics/display/drivers/amlogic-display/dsi-host.h"
@@ -26,7 +28,7 @@
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-and-id.h"
 #include "src/graphics/display/lib/api-types/cpp/mode.h"
-#include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
+#include "src/graphics/display/lib/edid/edid.h"
 
 namespace amlogic_display {
 
@@ -37,11 +39,10 @@ enum class VoutType : uint8_t {
 
 struct AddedDisplayInfo {
   // Maximum size of the `preferred_modes`.
-  static constexpr int kMaxPreferredModes = 4;
+  static constexpr int kMaxPreferredModes = 32;
 
   display::DisplayId display_id;
-  fbl::static_vector<display::ModeAndId, kMaxPreferredModes> preferred_modes;
-  fbl::Vector<uint8_t> edid;
+  fbl::Vector<display::ModeAndId> preferred_modes;
 };
 
 // Represents the Video Output (VOUT) module and the connected display device.
@@ -85,13 +86,10 @@ class Vout {
   zx::result<> UpdateStateOnDisplayConnected();
   void DisplayDisconnected();
 
-  display::Mode CurrentDisplayMode() const;
+  // `mode_id` must be valid.
+  std::optional<display::Mode> GetDisplayMode(display::ModeId mode_id) const;
 
-  // Vout must be of `kHdmi` type.
-  bool IsDisplayTimingSupported(const display::DisplayTiming& timing);
-
-  // Vout must be of `kHdmi` type.
-  zx::result<> ApplyConfiguration(const display::DisplayTiming& timing);
+  zx::result<> ApplyConfiguration(display::ModeId mode_id);
 
   // Attempt to turn off all connected displays, and disable clocks. This will
   // also stop vsync interrupts. This is aligned with the interface for
@@ -143,9 +141,12 @@ class Vout {
   struct hdmi_t {
     std::unique_ptr<HdmiHost> hdmi_host;
 
-    fbl::Vector<uint8_t> current_display_edid;
+    std::optional<edid::Edid> edid;
 
-    display::DisplayTiming current_display_timing_;
+    // The timing parameter at index `k` corresponds to ModeId `k+1`.
+    fbl::Vector<display::DisplayTiming> timings;
+
+    display::ModeId current_mode_id = display::kInvalidModeId;
   } hdmi_;
 
   uint8_t visual_debug_level_;

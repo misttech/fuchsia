@@ -221,10 +221,6 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   bool fully_initialized() const { return full_init_done_.load(std::memory_order_relaxed); }
   void set_fully_initialized() { full_init_done_.store(true, std::memory_order_release); }
 
-  // Whether `timing` is a new display timing different from the timing
-  // currently applied to the display.
-  bool IsNewDisplayTiming(const display::DisplayTiming& timing) __TA_REQUIRES(display_mutex_);
-
   std::shared_ptr<fdf::Namespace> incoming_;
 
   // Zircon handles
@@ -273,12 +269,6 @@ class DisplayEngine final : public display::DisplayEngineInterface {
 
   display::DisplayId display_id_ TA_GUARDED(display_mutex_) = kPanelDisplayId;
   bool display_attached_ TA_GUARDED(display_mutex_) = false;
-
-  // The DisplayTiming applied most recently to the display.
-  //
-  // Default-constructed if no configuration is applied to the display yet or
-  // DisplayTiming is ignored.
-  display::DisplayTiming current_display_timing_ TA_GUARDED(display_mutex_) = {};
 
   std::unique_ptr<HotPlugDetection> hot_plug_detection_;
   std::unique_ptr<Capture> capture_;

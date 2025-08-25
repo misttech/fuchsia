@@ -16,36 +16,46 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/compat/cpp/metadata.h>
+#include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/fit/defer.h>
 #include <lib/fit/function.h>
 #include <lib/image-format/image_format.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zx/bti.h>
-#include <lib/zx/channel.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/limits.h>
+#include <zircon/process.h>
+#include <zircon/syscalls.h>
 #include <zircon/types.h>
 
-#include <cinttypes>
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <variant>
+#include <vector>
 
 #include <bind/fuchsia/amlogic/platform/sysmem/heap/cpp/bind.h>
 #include <bind/fuchsia/sysmem/heap/cpp/bind.h>
 #include <fbl/algorithm.h>
+#include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
 
 #include "src/graphics/display/drivers/amlogic-display/board-resources.h"
 #include "src/graphics/display/drivers/amlogic-display/capture.h"
-#include "src/graphics/display/drivers/amlogic-display/display-timing-mode-conversion.h"
 #include "src/graphics/display/drivers/amlogic-display/hot-plug-detection.h"
+#include "src/graphics/display/drivers/amlogic-display/image-info.h"
 #include "src/graphics/display/drivers/amlogic-display/pixel-grid-size2d.h"
 #include "src/graphics/display/drivers/amlogic-display/vout.h"
+#include "src/graphics/display/drivers/amlogic-display/vpu.h"
 #include "src/graphics/display/drivers/amlogic-display/vsync-receiver.h"
 #include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
 #include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
@@ -53,9 +63,19 @@
 #include "src/graphics/display/lib/api-types/cpp/coordinate-transformation.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
+#include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
+#include "src/graphics/display/lib/api-types/cpp/driver-capture-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
+#include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-layer.h"
+#include "src/graphics/display/lib/api-types/cpp/engine-info.h"
+#include "src/graphics/display/lib/api-types/cpp/image-buffer-usage.h"
+#include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
+#include "src/graphics/display/lib/api-types/cpp/image-tiling-type.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
+#include "src/graphics/display/lib/api-types/cpp/mode.h"
+#include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
+#include "src/graphics/display/lib/api-types/cpp/rectangle.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace amlogic_display {
@@ -147,10 +167,6 @@ bool IsFullHardwareResetRequired(
 
 }  // namespace
 
-bool DisplayEngine::IsNewDisplayTiming(const display::DisplayTiming& timing) {
-  return current_display_timing_ != timing;
-}
-
 zx::result<> DisplayEngine::SetMinimumRgb(uint8_t minimum_rgb) {
   if (fully_initialized()) {
     video_input_unit_->SetMinimumRgb(minimum_rgb);
@@ -197,7 +213,7 @@ display::EngineInfo DisplayEngine::CompleteCoordinatorConnection() {
   if (display_attached_) {
     const AddedDisplayInfo added_display_info = vout_->CreateAddedDisplayInfo(display_id_);
     engine_events_.OnDisplayAdded(added_display_info.display_id, added_display_info.preferred_modes,
-                                  added_display_info.edid, kSupportedPixelFormats);
+                                  kSupportedPixelFormats);
   }
 
   return display::EngineInfo{{
@@ -423,42 +439,24 @@ display::ConfigCheckResult DisplayEngine::CheckConfiguration(
     return display::ConfigCheckResult::kOk;
   }
 
-  if (std::holds_alternative<display::ModeId>(display_mode)) {
-    display::ModeId mode_id = std::get<display::ModeId>(display_mode);
-
-    // The DSI specification doesn't support switching display modes. The display
-    // mode is provided by the peripheral supplier through side channels and
-    // should be fixed while the display device is available.
-    //
-    // TODO(https://fxbug.dev/316631158): This assumes preferred modes have
-    // `ModeId`s from 1 to `preferred_modes.size()`. Instead, the coordinator
-    // should use the ModeId <-> Mode mappings agreed on between the coordinator
-    // and the engine driver.
-    if (mode_id != display::ModeId(1)) {
-      fdf::warn("CheckConfig failure: mode id {} not supported", mode_id);
-      return display::ConfigCheckResult::kUnsupportedDisplayModes;
-    }
-  } else {
-    // Fall back to `display_config.timing`.
-    ZX_DEBUG_ASSERT(std::holds_alternative<display::DisplayTiming>(display_mode));
-    display::DisplayTiming display_timing = std::get<display::DisplayTiming>(display_mode);
-    // `current_display_timing_` is already applied to the display so it's
-    // guaranteed to be supported. We only perform the timing check if there
-    // is a new `display_timing`.
-    if (IsNewDisplayTiming(display_timing) && !vout_->IsDisplayTimingSupported(display_timing)) {
-      fdf::warn("CheckConfig failure: display timing not supported");
-      return display::ConfigCheckResult::kUnsupportedDisplayModes;
-    }
+  if (std::holds_alternative<display::DisplayTiming>(display_mode)) {
+    fdf::warn("CheckConfig failure: display timing is not supported");
+    return display::ConfigCheckResult::kUnsupportedDisplayModes;
   }
 
-  display::Mode target_display_mode = [&] {
-    if (std::holds_alternative<display::ModeId>(display_mode)) {
-      return vout_->CurrentDisplayMode();
-    }
-    ZX_DEBUG_ASSERT(std::holds_alternative<display::DisplayTiming>(display_mode));
-    display::DisplayTiming display_timing = std::get<display::DisplayTiming>(display_mode);
-    return ToDisplayMode(display_timing);
-  }();
+  ZX_DEBUG_ASSERT(std::holds_alternative<display::ModeId>(display_mode));
+  display::ModeId mode_id = std::get<display::ModeId>(display_mode);
+
+  // Guaranteed by DisplayEngineInterface.
+  ZX_DEBUG_ASSERT(mode_id != display::kInvalidModeId);
+
+  std::optional<display::Mode> get_display_mode_result = vout_->GetDisplayMode(mode_id);
+  if (!get_display_mode_result.has_value()) {
+    fdf::warn("CheckConfig failure: display mode ID {} not supported", mode_id);
+    return display::ConfigCheckResult::kUnsupportedDisplayModes;
+  }
+
+  display::Mode target_display_mode = std::move(get_display_mode_result).value();
 
   display::ConfigCheckResult check_result = [&] {
     if (layers.size() > 1) {
@@ -544,30 +542,24 @@ void DisplayEngine::ApplyConfiguration(
     display::DriverConfigStamp config_stamp) {
   fbl::AutoLock lock(&display_mutex_);
   if (!layers.empty()) {
-    if (std::holds_alternative<display::ModeId>(display_mode)) {
-      // For displays with preferred ModeId(1), there's no need to reset display
-      // timing information. This should be a no-op.
-      display::ModeId mode_id = std::get<display::ModeId>(display_mode);
-      ZX_DEBUG_ASSERT(mode_id == display::ModeId(1));
-    } else {
-      ZX_DEBUG_ASSERT(std::holds_alternative<display::DisplayTiming>(display_mode));
-      display::DisplayTiming display_timing = std::get<display::DisplayTiming>(display_mode);
+    ZX_DEBUG_ASSERT(std::holds_alternative<display::ModeId>(display_mode));
+    display::ModeId mode_id = std::get<display::ModeId>(display_mode);
 
-      // Perform Vout modeset iff there's a new display mode.
-      //
-      // Setting up OSD may require Vout framebuffer information, which may be
-      // changed on each ApplyConfiguration(), so we need to apply the
-      // configuration to Vout first before initializing the display and OSD.
-      if (IsNewDisplayTiming(display_timing)) {
-        zx::result<> apply_config_result = vout_->ApplyConfiguration(display_timing);
-        if (!apply_config_result.is_ok()) {
-          fdf::error("Failed to apply config to Vout: {}", apply_config_result);
-          return;
-        }
-        current_display_timing_ = display_timing;
-      }
+    // Perform Vout modeset first.
+    //
+    // Setting up OSD may require Vout framebuffer information, which may be
+    // changed on each ApplyConfiguration(), so we need to apply the
+    // configuration to Vout first before initializing the display and OSD.
+    zx::result<> vout_apply_config_result = vout_->ApplyConfiguration(mode_id);
+    if (!vout_apply_config_result.is_ok()) {
+      fdf::error("Failed to apply config to Vout: {}", vout_apply_config_result);
+      return;
     }
-    display::Mode display_mode = vout_->CurrentDisplayMode();
+
+    std::optional<display::Mode> get_display_mode_result = vout_->GetDisplayMode(mode_id);
+    // Guaranteed to be true in `CheckConfiguration()`.
+    ZX_DEBUG_ASSERT(get_display_mode_result.has_value());
+    display::Mode display_mode = std::move(get_display_mode_result).value();
 
     // The only way a checked configuration could now be invalid is if display was
     // unplugged. If that's the case, then the upper layers will give a new configuration
@@ -769,14 +761,7 @@ zx::result<> DisplayEngine::SetDisplayPower(display::DisplayId display_id, bool 
 
   ZX_DEBUG_ASSERT(vout_->type() == VoutType::kDsi);
   if (power_on) {
-    zx::result<> power_on_result = vout_->PowerOn();
-    if (power_on_result.is_ok()) {
-      // Powering on the display panel also resets the display mode set on the
-      // display. This clears the display mode set previously to force a Vout
-      // modeset to be performed on the next ApplyConfiguration().
-      current_display_timing_ = {};
-    }
-    return power_on_result;
+    return vout_->PowerOn();
   }
   return vout_->PowerOff();
 }
@@ -1022,12 +1007,6 @@ void DisplayEngine::OnHotPlugStateChange(HotPlugDetectionState current_state) {
 
     display_attached_ = true;
 
-    // When the new display is attached to the display engine, it's not set
-    // up with any DisplayTiming. This clears the display mode set previously
-    // to force a Vout modeset to be performed on the next
-    // ApplyConfiguration().
-    current_display_timing_ = {};
-
     zx::result<> update_vout_display_state_result = vout_->UpdateStateOnDisplayConnected();
     if (update_vout_display_state_result.is_error()) {
       fdf::error("Failed to update Vout display state: {}", update_vout_display_state_result);
@@ -1036,7 +1015,7 @@ void DisplayEngine::OnHotPlugStateChange(HotPlugDetectionState current_state) {
 
     const AddedDisplayInfo added_display_info = vout_->CreateAddedDisplayInfo(display_id_);
     engine_events_.OnDisplayAdded(added_display_info.display_id, added_display_info.preferred_modes,
-                                  added_display_info.edid, kSupportedPixelFormats);
+                                  kSupportedPixelFormats);
     return;
   }
 

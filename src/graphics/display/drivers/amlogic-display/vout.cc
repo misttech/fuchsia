@@ -8,6 +8,7 @@
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/fit/result.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
@@ -15,19 +16,32 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include <algorithm>
+#include <cinttypes>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <ranges>
+#include <span>
+#include <utility>
 
 #include <fbl/alloc_checker.h>
+#include <fbl/vector.h>
 
 #include "src/graphics/display/drivers/amlogic-display/clock.h"
 #include "src/graphics/display/drivers/amlogic-display/common.h"
 #include "src/graphics/display/drivers/amlogic-display/display-timing-mode-conversion.h"
 #include "src/graphics/display/drivers/amlogic-display/dsi-host.h"
+#include "src/graphics/display/drivers/amlogic-display/hdmi-host.h"
 #include "src/graphics/display/drivers/amlogic-display/logging.h"
 #include "src/graphics/display/drivers/amlogic-display/panel-config.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
+#include "src/graphics/display/lib/api-types/cpp/mode-and-id.h"
+#include "src/graphics/display/lib/api-types/cpp/mode-id.h"
+#include "src/graphics/display/lib/api-types/cpp/mode.h"
+#include "src/graphics/display/lib/edid/edid.h"
 
 namespace amlogic_display {
 
@@ -46,6 +60,18 @@ constexpr supported_features_t kHdmiSupportedFeatures = supported_features_t{
     .hpd = true,
 };
 
+std::optional<display::DisplayTiming> GetDisplayTimingFromModeId(
+    std::span<const display::DisplayTiming> timings, display::ModeId mode_id) {
+  ZX_DEBUG_ASSERT(mode_id != display::kInvalidModeId);
+  size_t index = mode_id.value() - 1;
+  if (index >= timings.size()) {
+    return std::nullopt;
+  }
+  return timings[index];
+}
+
+constexpr display::ModeId kDsiDefaultModeId(1);
+
 }  // namespace
 
 Vout::Vout(std::unique_ptr<DsiHost> dsi_host, std::unique_ptr<Clock> dsi_clock,
@@ -58,7 +84,7 @@ Vout::Vout(std::unique_ptr<DsiHost> dsi_host, std::unique_ptr<Clock> dsi_clock,
           .clock = std::move(dsi_clock),
           .panel_config = *panel_config,
           .mode_and_id = display::ModeAndId({
-              .id = display::ModeId(1),
+              .id = kDsiDefaultModeId,
               .mode = ToDisplayMode(panel_config->display_timing),
           }),
       } {
@@ -168,20 +194,33 @@ AddedDisplayInfo Vout::CreateAddedDisplayInfo(display::DisplayId display_id) {
       return {
           .display_id = display_id,
           .preferred_modes = {dsi_.mode_and_id.value()},
-          .edid = {},
       };
     }
     case VoutType::kHdmi: {
-      ZX_DEBUG_ASSERT(!hdmi_.current_display_edid.is_empty());
-      fbl::Vector<uint8_t> out_edid;
+      ZX_DEBUG_ASSERT(!hdmi_.timings.is_empty());
+      fbl::Vector<display::ModeAndId> preferred_modes;
       fbl::AllocChecker alloc_checker;
-      out_edid.resize(hdmi_.current_display_edid.size(), &alloc_checker);
-      ZX_ASSERT(alloc_checker.check());
-      std::ranges::copy(hdmi_.current_display_edid, out_edid.begin());
+
+      const size_t preferred_modes_count =
+          std::min(hdmi_.timings.size(), size_t{AddedDisplayInfo::kMaxPreferredModes});
+      preferred_modes.reserve(hdmi_.timings.size(), &alloc_checker);
+      ZX_DEBUG_ASSERT(alloc_checker.check());
+
+      for (uint16_t i = 0; i < preferred_modes_count; ++i) {
+        ZX_DEBUG_ASSERT_MSG(
+            preferred_modes.size() < preferred_modes.capacity(),
+            "The push_back() below was not supposed to allocate memory, but it might");
+        preferred_modes.push_back(display::ModeAndId({.id = display::ModeId(i + 1),
+                                                      .mode = ToDisplayMode(hdmi_.timings[i])}),
+                                  &alloc_checker);
+        ZX_DEBUG_ASSERT_MSG(alloc_checker.check(),
+                            "The push_back() above failed to allocate memory; "
+                            "it was not supposed to allocate at all");
+      }
+
       return {
           .display_id = display_id,
-          .preferred_modes = {},
-          .edid = std::move(out_edid),
+          .preferred_modes = std::move(preferred_modes),
       };
     }
   }
@@ -196,9 +235,42 @@ zx::result<> Vout::UpdateStateOnDisplayConnected() {
         // HdmiTransmitter::ReadExtendedEdid() already logs errors.
         return read_extended_edid_result.take_error();
       }
-      hdmi_.current_display_edid = std::move(read_extended_edid_result).value();
+      fit::result<const char*, edid::Edid> edid_result =
+          edid::Edid::Create(std::move(read_extended_edid_result).value());
+      if (edid_result.is_error()) {
+        fdf::error("Failed to parse EDID: {}", edid_result.error_value());
+        return zx::error(ZX_ERR_INTERNAL);
+      }
+      edid::Edid edid = std::move(edid_result).value();
+
+      zx::result<fbl::Vector<display::DisplayTiming>> edid_timings_result =
+          edid.GetSupportedDisplayTimings();
+      if (edid_timings_result.is_error()) {
+        fdf::error("Failed to get supported display timings from EDID: {}",
+                   edid_timings_result.status_string());
+        return edid_timings_result.take_error();
+      }
+      fbl::Vector<display::DisplayTiming> edid_timings = std::move(edid_timings_result).value();
+
+      // Filter and shrink edid_timings to contain only supported timings.
+      auto removed_subrange =
+          std::ranges::remove_if(edid_timings, [&](const display::DisplayTiming& timing) {
+            return !hdmi_.hdmi_host->IsDisplayTimingSupported(timing);
+          });
+      ZX_DEBUG_ASSERT(removed_subrange.size() >= 0);
+      ZX_DEBUG_ASSERT(removed_subrange.size() <= edid_timings.size());
+      edid_timings.resize(edid_timings.size() - removed_subrange.size());
+
+      if (edid_timings.is_empty()) {
+        fdf::error("None of the EDID timings is supported. The new display cannot be added.");
+        return zx::error(ZX_ERR_INTERNAL);
+      }
+
+      hdmi_.edid = std::move(edid);
+      hdmi_.timings = std::move(edid_timings);
+
       // A new connected display is not yet set up with any display timing.
-      hdmi_.current_display_timing_ = {};
+      hdmi_.current_mode_id = display::kInvalidModeId;
       return zx::ok();
     }
     case VoutType::kDsi:
@@ -259,7 +331,10 @@ zx::result<> Vout::PowerOn() {
         return hdmi_host_on_result;
       }
 
-      hdmi_.current_display_timing_ = {};
+      // Powering on the display panel also resets the display mode set on the
+      // display. This clears the display mode set previously to force a Vout
+      // modeset to be performed on the next ApplyConfiguration().
+      hdmi_.current_mode_id = display::kInvalidModeId;
       return zx::ok();
     }
   }
@@ -301,33 +376,60 @@ zx::result<> Vout::SetFrameVisibility(bool frame_visible) {
   }
 }
 
-display::Mode Vout::CurrentDisplayMode() const {
+std::optional<display::Mode> Vout::GetDisplayMode(display::ModeId mode_id) const {
+  ZX_DEBUG_ASSERT(mode_id != display::kInvalidModeId);
   switch (type_) {
-    case VoutType::kDsi:
-      return ToDisplayMode(dsi_.panel_config.display_timing);
-    case VoutType::kHdmi:
-      return ToDisplayMode(hdmi_.current_display_timing_);
+    case VoutType::kDsi: {
+      ZX_DEBUG_ASSERT(dsi_.mode_and_id.has_value());
+      if (mode_id == dsi_.mode_and_id->id()) {
+        return dsi_.mode_and_id->mode();
+      }
+      return std::nullopt;
+    }
+    case VoutType::kHdmi: {
+      std::optional<display::DisplayTiming> get_timing_result =
+          GetDisplayTimingFromModeId(hdmi_.timings, mode_id);
+      if (!get_timing_result.has_value()) {
+        return std::nullopt;
+      }
+      return ToDisplayMode(get_timing_result.value());
+    }
   }
-  ZX_ASSERT_MSG(false, "Invalid Vout type: %" PRIu8, static_cast<uint8_t>(type_));
+  ZX_ASSERT_MSG(false, "Invalid Vout type: %u", static_cast<uint8_t>(type_));
 }
 
-bool Vout::IsDisplayTimingSupported(const display::DisplayTiming& timing) {
-  ZX_DEBUG_ASSERT_MSG(type_ == VoutType::kHdmi,
-                      "Vout display timing check is only supported for HDMI output.");
-  return hdmi_.hdmi_host->IsDisplayTimingSupported(timing);
-}
+zx::result<> Vout::ApplyConfiguration(display::ModeId mode_id) {
+  switch (type_) {
+    case VoutType::kDsi: {
+      ZX_DEBUG_ASSERT(dsi_.mode_and_id.has_value());
+      ZX_DEBUG_ASSERT_MSG(mode_id == dsi_.mode_and_id->id(), "Unsupported DSI mode ID: %" PRIu16,
+                          mode_id.value());
+      return zx::ok();
+    }
+    case VoutType::kHdmi: {
+      ZX_DEBUG_ASSERT(mode_id != display::kInvalidModeId);
+      if (mode_id == hdmi_.current_mode_id) {
+        return zx::ok();
+      }
 
-zx::result<> Vout::ApplyConfiguration(const display::DisplayTiming& timing) {
-  ZX_DEBUG_ASSERT_MSG(type_ == VoutType::kHdmi,
-                      "Vout display timing setup is only supported for HDMI output.");
-  zx_status_t status = hdmi_.hdmi_host->ModeSet(timing);
-  if (status != ZX_OK) {
-    fdf::error("Failed to set HDMI display timing: {}", zx::make_result(status));
-    return zx::error(status);
+      std::optional<display::DisplayTiming> timing_result =
+          GetDisplayTimingFromModeId(hdmi_.timings, mode_id);
+      ZX_DEBUG_ASSERT(timing_result.has_value());
+
+      display::DisplayTiming timing = std::move(timing_result).value();
+      ZX_DEBUG_ASSERT(hdmi_.hdmi_host->IsDisplayTimingSupported(timing));
+
+      zx_status_t status = hdmi_.hdmi_host->ModeSet(timing);
+      if (status != ZX_OK) {
+        fdf::error("Failed to set HDMI display timing: {}", zx::make_result(status));
+        return zx::error(status);
+      }
+
+      hdmi_.current_mode_id = mode_id;
+      return zx::ok();
+    }
   }
-
-  hdmi_.current_display_timing_ = timing;
-  return zx::ok();
+  ZX_ASSERT_MSG(false, "Invalid Vout type: %u", static_cast<uint8_t>(type_));
 }
 
 void Vout::Dump() {
@@ -336,32 +438,34 @@ void Vout::Dump() {
       LogPanelConfig(dsi_.panel_config);
       return;
     }
-    case VoutType::kHdmi:
-      fdf::info("horizontal_active_px = {}", hdmi_.current_display_timing_.horizontal_active_px);
-      fdf::info("horizontal_front_porch_px = {}",
-                hdmi_.current_display_timing_.horizontal_front_porch_px);
-      fdf::info("horizontal_sync_width_px = {}",
-                hdmi_.current_display_timing_.horizontal_sync_width_px);
-      fdf::info("horizontal_back_porch_px = {}",
-                hdmi_.current_display_timing_.horizontal_back_porch_px);
-      fdf::info("vertical_active_lines = {}", hdmi_.current_display_timing_.vertical_active_lines);
-      fdf::info("vertical_front_porch_lines = {}",
-                hdmi_.current_display_timing_.vertical_front_porch_lines);
-      fdf::info("vertical_sync_width_lines = {}",
-                hdmi_.current_display_timing_.vertical_sync_width_lines);
-      fdf::info("vertical_back_porch_lines = {}",
-                hdmi_.current_display_timing_.vertical_back_porch_lines);
-      fdf::info("pixel_clock_frequency_hz = {}",
-                hdmi_.current_display_timing_.pixel_clock_frequency_hz);
-      fdf::info("fields_per_frame (enum) = {}",
-                static_cast<uint32_t>(hdmi_.current_display_timing_.fields_per_frame));
-      fdf::info("hsync_polarity (enum) = {}",
-                static_cast<uint32_t>(hdmi_.current_display_timing_.hsync_polarity));
-      fdf::info("vsync_polarity (enum) = {}",
-                static_cast<uint32_t>(hdmi_.current_display_timing_.vsync_polarity));
-      fdf::info("vblank_alternates = {}", hdmi_.current_display_timing_.vblank_alternates);
-      fdf::info("pixel_repetition = {}", hdmi_.current_display_timing_.pixel_repetition);
+    case VoutType::kHdmi: {
+      if (hdmi_.current_mode_id == display::kInvalidModeId) {
+        fdf::info("No display mode is currently set.");
+        return;
+      }
+      std::optional<display::DisplayTiming> current_timing_optional =
+          GetDisplayTimingFromModeId(hdmi_.timings, hdmi_.current_mode_id);
+      ZX_DEBUG_ASSERT(current_timing_optional.has_value());
+      display::DisplayTiming timing = std::move(current_timing_optional).value();
+
+      fdf::info("HDMI Display Timing:");
+
+      fdf::info("horizontal_active_px = {}", timing.horizontal_active_px);
+      fdf::info("horizontal_front_porch_px = {}", timing.horizontal_front_porch_px);
+      fdf::info("horizontal_sync_width_px = {}", timing.horizontal_sync_width_px);
+      fdf::info("horizontal_back_porch_px = {}", timing.horizontal_back_porch_px);
+      fdf::info("vertical_active_lines = {}", timing.vertical_active_lines);
+      fdf::info("vertical_front_porch_lines = {}", timing.vertical_front_porch_lines);
+      fdf::info("vertical_sync_width_lines = {}", timing.vertical_sync_width_lines);
+      fdf::info("vertical_back_porch_lines = {}", timing.vertical_back_porch_lines);
+      fdf::info("pixel_clock_frequency_hz = {}", timing.pixel_clock_frequency_hz);
+      fdf::info("fields_per_frame (enum) = {}", static_cast<uint32_t>(timing.fields_per_frame));
+      fdf::info("hsync_polarity (enum) = {}", static_cast<uint32_t>(timing.hsync_polarity));
+      fdf::info("vsync_polarity (enum) = {}", static_cast<uint32_t>(timing.vsync_polarity));
+      fdf::info("vblank_alternates = {}", timing.vblank_alternates);
+      fdf::info("pixel_repetition = {}", timing.pixel_repetition);
       return;
+    }
   }
   ZX_ASSERT_MSG(false, "Invalid Vout type: %u", static_cast<uint8_t>(type_));
 }

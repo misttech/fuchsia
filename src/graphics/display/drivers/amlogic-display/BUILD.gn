@@ -109,6 +109,7 @@ source_set("common_srcs") {
     "//src/graphics/display/lib/designware-hdmi:hdmi-transmitter-controller-impl",
     "//src/graphics/display/lib/device-protocol-display",
     "//src/graphics/display/lib/driver-framework-migration-utils/dispatcher",
+    "//src/graphics/display/lib/edid",
     "//src/graphics/display/lib/mipi-dsi",
     "//src/lib/ddk:ddk_metadata_only",
     "//src/lib/fxl",
