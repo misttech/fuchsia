@@ -16,7 +16,7 @@ use crate::mode_management::phy_manager::{CreateClientIfacesReason, PhyManagerAp
 use crate::mode_management::{Defect, recovery};
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use crate::util::state_machine::{StateMachineStatusReader, status_publisher_and_reader};
-use crate::util::{atomic_oneshot_stream, future_with_metadata, listener};
+use crate::util::{future_with_metadata, listener};
 use anyhow::{Error, format_err};
 use async_utils::event::Event;
 use fidl::endpoints::create_proxy;
@@ -25,14 +25,13 @@ use fuchsia_inspect_contrib::log::InspectListClosure;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_inspect_contrib::{inspect_insert, inspect_log};
 use futures::channel::{mpsc, oneshot};
-use futures::future::{Fuse, LocalBoxFuture, ready};
+use futures::future::{LocalBoxFuture, ready};
 use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select};
 use log::{debug, error, info, warn};
 use std::convert::Infallible;
 use std::fmt::Debug;
-use std::pin::pin;
 use std::sync::Arc;
 
 // Maximum allowed interval between scans when attempting to reconnect client interfaces.  This
@@ -1310,7 +1309,6 @@ fn initiate_recovery(
 
 async fn handle_iface_manager_request(
     iface_manager: &mut IfaceManagerService,
-    _token: atomic_oneshot_stream::Token,
     request: IfaceManagerRequest,
 ) {
     match request {
@@ -1361,86 +1359,52 @@ async fn handle_iface_manager_request(
                 error!("could not respond to StartApRequest");
             }
         }
-        IfaceManagerRequest::AtomicOperation(operation) => {
-            match operation {
-                AtomicOperation::Disconnect(DisconnectRequest {
-                    network_id,
-                    responder,
-                    reason,
-                }) => {
-                    if responder.send(iface_manager.disconnect(network_id, reason).await).is_err() {
-                        error!("could not respond to DisconnectRequest");
-                    }
-                }
-                AtomicOperation::StopClientConnections(StopClientConnectionsRequest {
-                    reason,
-                    responder,
-                }) => {
-                    if responder.send(iface_manager.stop_client_connections(reason).await).is_err()
-                    {
-                        error!("could not respond to StopClientConnectionsRequest");
-                    }
-                }
-                AtomicOperation::StopAp(StopApRequest { ssid, password, responder }) => {
-                    if responder.send(iface_manager.stop_ap(ssid, password).await).is_err() {
-                        error!("could not respond to StopApRequest");
-                    }
-                }
-                AtomicOperation::StopAllAps(StopAllApsRequest { responder }) => {
-                    if responder.send(iface_manager.stop_all_aps().await).is_err() {
-                        error!("could not respond to StopAllApsRequest");
-                    }
-                }
-                AtomicOperation::SetCountry(req) => {
-                    let previous_state = initiate_set_country(iface_manager, req).await;
-                    restore_state_after_setting_country_code(iface_manager, previous_state).await;
-                }
-            };
+        IfaceManagerRequest::Disconnect(DisconnectRequest { network_id, responder, reason }) => {
+            if responder.send(iface_manager.disconnect(network_id, reason).await).is_err() {
+                error!("could not respond to DisconnectRequest");
+            }
+        }
+        IfaceManagerRequest::StopClientConnections(StopClientConnectionsRequest {
+            reason,
+            responder,
+        }) => {
+            if responder.send(iface_manager.stop_client_connections(reason).await).is_err() {
+                error!("could not respond to StopClientConnectionsRequest");
+            }
+        }
+        IfaceManagerRequest::StopAp(StopApRequest { ssid, password, responder }) => {
+            if responder.send(iface_manager.stop_ap(ssid, password).await).is_err() {
+                error!("could not respond to StopApRequest");
+            }
+        }
+        IfaceManagerRequest::StopAllAps(StopAllApsRequest { responder }) => {
+            if responder.send(iface_manager.stop_all_aps().await).is_err() {
+                error!("could not respond to StopAllApsRequest");
+            }
+        }
+        IfaceManagerRequest::SetCountry(req) => {
+            let previous_state = initiate_set_country(iface_manager, req).await;
+            restore_state_after_setting_country_code(iface_manager, previous_state).await;
         }
     };
 }
 
 async fn serve_iface_functionality(
     iface_manager: &mut IfaceManagerService,
-    requests: &mut atomic_oneshot_stream::AtomicOneshotStream<mpsc::Receiver<IfaceManagerRequest>>,
+    requests: &mut mpsc::Receiver<IfaceManagerRequest>,
     reconnect_monitor_interval: &mut i64,
     connectivity_monitor_timer: &mut fasync::Interval,
     defect_receiver: &mut mpsc::Receiver<Defect>,
     recovery_action_receiver: &mut recovery::RecoveryActionReceiver,
-    recovery_in_progress: &mut bool,
 ) {
-    let iface_manager_request_fut = Fuse::terminated();
-    let mut iface_manager_request_fut = pin!(iface_manager_request_fut);
-
-    // IfaceManager requests should only be processed if recovery is not in progress.
-    let mut atomic_iface_manager_requests = requests.get_atomic_oneshot_stream();
-    if !*recovery_in_progress {
-        iface_manager_request_fut.set(
-            async move {
-                select! {
-                    (token, req) = atomic_iface_manager_requests.select_next_some() => {
-                        (token, req)
-                    }
-                    complete => {
-                        // "complete" here indicates that the IfaceManager request stream has been
-                        // interrupted because some critical interaction is in progress.  This
-                        // future should stall and allow the other IfaceManager internal futures to
-                        // progress.
-                        let pending: std::future::Pending::<(atomic_oneshot_stream::Token, IfaceManagerRequest)> = std::future::pending();
-                        pending.await
-                    }
-                }
-            }.fuse()
-        );
-    }
-
     select! {
-        (token, req) = iface_manager_request_fut.fuse() => {
-            handle_iface_manager_request(
-                iface_manager,
-                token,
-                req
-            ).await;
+        req = requests.next() => {
+            if let Some(req) = req {
+                handle_iface_manager_request(
+                    iface_manager,
+                    req
+                ).await
+            }
         }
         terminated_fsm = iface_manager.fsm_termination_futures.select_next_some() => {
             info!("state machine exited: {:?}", terminated_fsm.1);
@@ -1513,22 +1477,14 @@ async fn serve_iface_functionality(
 
 pub(crate) async fn serve_iface_manager_requests(
     mut iface_manager: IfaceManagerService,
-    requests: mpsc::Receiver<IfaceManagerRequest>,
+    mut requests: mpsc::Receiver<IfaceManagerRequest>,
     mut defect_receiver: mpsc::Receiver<Defect>,
     mut recovery_action_receiver: recovery::RecoveryActionReceiver,
 ) -> Result<Infallible, Error> {
-    // This allows routines servicing `IfaceManagerRequest`s to prevent incoming requests from
-    // being serviced to prevent potential deadlocks on the `PhyManager`.
-    let mut requests = atomic_oneshot_stream::AtomicOneshotStream::new(requests);
-
     // Create a timer to periodically check to ensure that all client interfaces are connected.
     let mut reconnect_monitor_interval: i64 = 1;
     let mut connectivity_monitor_timer =
         fasync::Interval::new(zx::MonotonicDuration::from_seconds(reconnect_monitor_interval));
-
-    // Any recovery process needs to be allowed to run to completion before further IfaceManager
-    // requests or new recovery requests are processed.
-    let mut recovery_in_progress = false;
 
     loop {
         serve_iface_functionality(
@@ -1538,7 +1494,6 @@ pub(crate) async fn serve_iface_manager_requests(
             &mut connectivity_monitor_timer,
             &mut defect_receiver,
             &mut recovery_action_receiver,
-            &mut recovery_in_progress,
         )
         .await;
     }
@@ -4124,7 +4079,7 @@ mod tests {
             reason: client_types::DisconnectReason::NetworkUnsaved,
             responder: ack_sender,
         };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::Disconnect(req));
+        let req = IfaceManagerRequest::Disconnect(req);
 
         run_service_test(
             &mut exec,
@@ -4624,7 +4579,7 @@ mod tests {
             responder: stop_sender,
             reason: client_types::DisconnectReason::FidlStopClientConnectionsRequest,
         };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::StopClientConnections(req));
+        let req = IfaceManagerRequest::StopClientConnections(req);
 
         run_service_test(
             &mut exec,
@@ -4685,7 +4640,7 @@ mod tests {
             password: TEST_PASSWORD.as_bytes().to_vec(),
             responder: stop_sender,
         };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAp(req));
+        let req = IfaceManagerRequest::StopAp(req);
 
         run_service_test(
             &mut exec,
@@ -4711,7 +4666,7 @@ mod tests {
         // Request that an AP be started.
         let (stop_sender, stop_receiver) = oneshot::channel();
         let req = StopAllApsRequest { responder: stop_sender };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAllAps(req));
+        let req = IfaceManagerRequest::StopAllAps(req);
 
         run_service_test(
             &mut exec,
@@ -5378,7 +5333,7 @@ mod tests {
         // Call set_country and drive the operation to completion.
         let (set_country_sender, set_country_receiver) = oneshot::channel();
         let req = SetCountryRequest { country_code: Some([0, 0]), responder: set_country_sender };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::SetCountry(req));
+        let req = IfaceManagerRequest::SetCountry(req);
 
         run_service_test(
             &mut exec,
@@ -5632,7 +5587,7 @@ mod tests {
         // request should be delayed since recovery is in progress.
         let (stop_sender, mut stop_receiver) = oneshot::channel();
         let req = StopAllApsRequest { responder: stop_sender };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAllAps(req));
+        let req = IfaceManagerRequest::StopAllAps(req);
         iface_manager_sender.try_send(req).expect("failed to make stop all APs request");
 
         // Run the service loop and verify that the stop all APs request has not been acknowledged

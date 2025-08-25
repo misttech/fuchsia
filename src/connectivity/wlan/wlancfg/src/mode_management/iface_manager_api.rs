@@ -9,7 +9,7 @@ use crate::mode_management::iface_manager_types::*;
 use crate::mode_management::{Defect, IfaceFailure};
 use crate::regulatory_manager::REGION_CODE_LEN;
 use crate::telemetry;
-use anyhow::{bail, format_err, Error};
+use anyhow::{Error, bail, format_err};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_wlan_sme as fidl_sme;
@@ -104,8 +104,7 @@ impl IfaceManagerApi for IfaceManager {
     ) -> Result<(), Error> {
         let (responder, receiver) = oneshot::channel();
         let req = DisconnectRequest { network_id, responder, reason };
-        self.sender
-            .try_send(IfaceManagerRequest::AtomicOperation(AtomicOperation::Disconnect(req)))?;
+        self.sender.try_send(IfaceManagerRequest::Disconnect(req))?;
 
         receiver.await?
     }
@@ -176,24 +175,21 @@ impl IfaceManagerApi for IfaceManager {
     ) -> Result<(), Error> {
         let (responder, receiver) = oneshot::channel();
         let req = StopClientConnectionsRequest { responder, reason };
-        self.sender.try_send(IfaceManagerRequest::AtomicOperation(
-            AtomicOperation::StopClientConnections(req),
-        ))?;
+        self.sender.try_send(IfaceManagerRequest::StopClientConnections(req))?;
         receiver.await?
     }
 
     async fn stop_ap(&mut self, ssid: Ssid, password: Vec<u8>) -> Result<(), Error> {
         let (responder, receiver) = oneshot::channel();
         let req = StopApRequest { ssid, password, responder };
-        self.sender.try_send(IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAp(req)))?;
+        self.sender.try_send(IfaceManagerRequest::StopAp(req))?;
         receiver.await?
     }
 
     async fn stop_all_aps(&mut self) -> Result<(), Error> {
         let (responder, receiver) = oneshot::channel();
         let req = StopAllApsRequest { responder };
-        self.sender
-            .try_send(IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAllAps(req)))?;
+        self.sender.try_send(IfaceManagerRequest::StopAllAps(req))?;
         receiver.await?
     }
 
@@ -203,8 +199,7 @@ impl IfaceManagerApi for IfaceManager {
     ) -> Result<(), Error> {
         let (responder, receiver) = oneshot::channel();
         let req = SetCountryRequest { country_code, responder };
-        self.sender
-            .try_send(IfaceManagerRequest::AtomicOperation(AtomicOperation::SetCountry(req)))?;
+        self.sender.try_send(IfaceManagerRequest::SetCountry(req))?;
         receiver.await?
     }
 }
@@ -363,7 +358,7 @@ async fn wait_for_connect_result(
             .map_err(|e| format_err!("Failed to receive connect result from sme: {:?}", e))?
         {
             Some(fidl_sme::ConnectTransactionEvent::OnConnectResult { result }) => {
-                return Ok(result)
+                return Ok(result);
             }
             Some(other) => {
                 info!(
@@ -497,17 +492,17 @@ mod tests {
     use crate::util::testing::{generate_connect_selection, poll_sme_req};
     use anyhow::format_err;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, RequestStream};
+    use fidl::endpoints::{RequestStream, create_proxy};
+    use futures::StreamExt;
     use futures::future::LocalBoxFuture;
     use futures::stream::StreamFuture;
     use futures::task::Poll;
-    use futures::StreamExt;
     use rand::Rng;
     use std::pin::pin;
     use test_case::test_case;
     use wlan_common::channel::Cbw;
     use wlan_common::sequestered::Sequestered;
-    use wlan_common::{random_fidl_bss_description, RadioConfig};
+    use wlan_common::{RadioConfig, random_fidl_bss_description};
     use {
         fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
         fidl_fuchsia_wlan_internal as fidl_internal, fuchsia_async as fasync,
@@ -587,22 +582,14 @@ mod tests {
 
             match req {
                 // Result<(), Err> responder values
-                IfaceManagerRequest::AtomicOperation(AtomicOperation::StopClientConnections(
-                    StopClientConnectionsRequest { responder, .. },
-                ))
-                | IfaceManagerRequest::AtomicOperation(AtomicOperation::Disconnect(
-                    DisconnectRequest { responder, .. },
-                ))
-                | IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAp(StopApRequest {
+                IfaceManagerRequest::StopClientConnections(StopClientConnectionsRequest {
                     responder,
                     ..
-                }))
-                | IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAllAps(
-                    StopAllApsRequest { responder, .. },
-                ))
-                | IfaceManagerRequest::AtomicOperation(AtomicOperation::SetCountry(
-                    SetCountryRequest { responder, .. },
-                ))
+                })
+                | IfaceManagerRequest::Disconnect(DisconnectRequest { responder, .. })
+                | IfaceManagerRequest::StopAp(StopApRequest { responder, .. })
+                | IfaceManagerRequest::StopAllAps(StopAllApsRequest { responder, .. })
+                | IfaceManagerRequest::SetCountry(SetCountryRequest { responder, .. })
                 | IfaceManagerRequest::StartClientConnections(StartClientConnectionsRequest {
                     responder,
                 })
@@ -655,9 +642,9 @@ mod tests {
 
         assert_matches!(
             test_values.exec.run_until_stalled(&mut next_message),
-            Poll::Ready(Some(IfaceManagerRequest::AtomicOperation(AtomicOperation::Disconnect(DisconnectRequest {
+            Poll::Ready(Some(IfaceManagerRequest::Disconnect(DisconnectRequest {
                 network_id, responder, reason
-            })))) => {
+            }))) => {
                 assert_eq!(network_id, req);
                 assert_eq!(reason, req_reason);
                 responder.send(Ok(())).expect("failed to send disconnect response");
@@ -1141,9 +1128,9 @@ mod tests {
 
         assert_matches!(
             test_values.exec.run_until_stalled(&mut next_message),
-            Poll::Ready(Some(IfaceManagerRequest::AtomicOperation(AtomicOperation::StopClientConnections(StopClientConnectionsRequest{
+            Poll::Ready(Some(IfaceManagerRequest::StopClientConnections(StopClientConnectionsRequest{
                 responder, reason
-            })))) => {
+            }))) => {
                 assert_eq!(reason, client_types::DisconnectReason::FidlStopClientConnectionsRequest);
                 responder.send(Ok(())).expect("failed sending stop client connections response");
             }
@@ -1336,9 +1323,9 @@ mod tests {
 
         assert_matches!(
             test_values.exec.run_until_stalled(&mut next_message),
-            Poll::Ready(Some(IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAp(StopApRequest{
+            Poll::Ready(Some(IfaceManagerRequest::StopAp(StopApRequest{
                 ssid, password, responder
-            })))) => {
+            }))) => {
                 assert_eq!(ssid, Ssid::try_from("foo").unwrap());
                 assert_eq!(password, "bar".as_bytes().to_vec());
 
@@ -1398,9 +1385,9 @@ mod tests {
         let mut next_message = pin!(next_message);
         assert_matches!(
             test_values.exec.run_until_stalled(&mut next_message),
-            Poll::Ready(Some(IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAllAps(StopAllApsRequest{
+            Poll::Ready(Some(IfaceManagerRequest::StopAllAps(StopAllApsRequest{
                 responder
-            })))) => {
+            }))) => {
                 responder.send(Ok(())).expect("failed to send stop AP response");
             }
         );
@@ -1456,10 +1443,10 @@ mod tests {
 
         assert_matches!(
             test_values.exec.run_until_stalled(&mut next_message),
-            Poll::Ready(Some(IfaceManagerRequest::AtomicOperation(AtomicOperation::SetCountry(SetCountryRequest{
+            Poll::Ready(Some(IfaceManagerRequest::SetCountry(SetCountryRequest{
                 country_code: None,
                 responder
-            })))) => {
+            }))) => {
                 responder.send(Ok(())).expect("failed to send stop AP response");
             }
         );
