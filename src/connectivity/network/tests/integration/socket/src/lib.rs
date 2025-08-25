@@ -4047,15 +4047,15 @@ async fn tcp_established_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I>
 trait TestPmtuIpExt: TestIpExt {
     type Message: IcmpMessage<Self> + Debug;
 
-    fn packet_too_big() -> (Self::Message, <Self::Message as IcmpMessage<Self>>::Code);
+    fn packet_too_big(
+        lowered_mtu: NonZeroU16,
+    ) -> (Self::Message, <Self::Message as IcmpMessage<Self>>::Code);
 }
 
 impl TestPmtuIpExt for Ipv4 {
     type Message = IcmpDestUnreachable;
 
-    fn packet_too_big() -> (IcmpDestUnreachable, Icmpv4DestUnreachableCode) {
-        let lowered_mtu =
-            NonZeroU16::new(Self::MINIMUM_LINK_MTU.get().try_into().unwrap()).unwrap();
+    fn packet_too_big(lowered_mtu: NonZeroU16) -> (IcmpDestUnreachable, Icmpv4DestUnreachableCode) {
         (
             IcmpDestUnreachable::new_for_frag_req(lowered_mtu),
             Icmpv4DestUnreachableCode::FragmentationRequired,
@@ -4066,8 +4066,8 @@ impl TestPmtuIpExt for Ipv4 {
 impl TestPmtuIpExt for Ipv6 {
     type Message = Icmpv6PacketTooBig;
 
-    fn packet_too_big() -> (Icmpv6PacketTooBig, IcmpZeroCode) {
-        (Icmpv6PacketTooBig::new(Self::MINIMUM_LINK_MTU.get()), IcmpZeroCode)
+    fn packet_too_big(lowered_mtu: NonZeroU16) -> (Icmpv6PacketTooBig, IcmpZeroCode) {
+        (Icmpv6PacketTooBig::new(u32::from(lowered_mtu.get())), IcmpZeroCode)
     }
 }
 
@@ -4095,10 +4095,22 @@ async fn tcp_update_mss_from_pmtu<N: Netstack, I: TestPmtuIpExt>(name: &str, pri
         .await
         .expect("add_neighbor_entry");
 
+    // NS3 enforces a minimum TCP MSS of 216. Select a new MTU value that is
+    // large enough to accommodate this, while also being larger than the IP
+    // version link minimum MTU.
+    let new_mtu = match I::VERSION {
+        // NB: IPv4's `MINIMUM_LINK_MTU` (68) is too small for TCP on NS3.
+        // 256 allows for MSS (216) + TCP Header (20) + IPv4 Header (20).
+        IpVersion::V4 => 256,
+        // NB: IPv6's `MINIMUM_LINK_MTU` (1280) is sufficient for TCP on NS3.
+        IpVersion::V6 => u16::try_from(Ipv6::MINIMUM_LINK_MTU.get()).unwrap(),
+    };
+    let new_mtu = NonZeroU16::new(new_mtu).unwrap();
+
     if prime_cache {
         // First, prime the PMTU cache with the value we will send later, as a
         // regression test for https://fxbug.dev/435260334.
-        let (message, code) = I::packet_too_big();
+        let (message, code) = I::packet_too_big(new_mtu);
         let icmp_error = packet::Buf::new([], ..)
             .wrap_in(IcmpPacketBuilder::<I, _>::new(I::SERVER_ADDR, I::CLIENT_ADDR, code, message))
             .wrap_in(I::PacketBuilder::new(
@@ -4200,9 +4212,9 @@ async fn tcp_update_mss_from_pmtu<N: Netstack, I: TestPmtuIpExt>(name: &str, pri
         let too_large_frame =
             EthernetFrame::parse(&mut &too_large_frame[..], EthernetFrameLengthCheck::NoCheck)
                 .expect("valid ethernet frame");
-        assert_gt!(too_large_frame.body().len(), usize::try_from(I::MINIMUM_LINK_MTU).unwrap());
+        assert_gt!(too_large_frame.body().len(), usize::try_from(new_mtu.get()).unwrap());
 
-        let (message, code) = I::packet_too_big();
+        let (message, code) = I::packet_too_big(new_mtu);
         let icmp_error = packet::Buf::new([], ..)
             .wrap_in(tcp)
             .wrap_in(ip.clone())
@@ -4230,7 +4242,7 @@ async fn tcp_update_mss_from_pmtu<N: Netstack, I: TestPmtuIpExt>(name: &str, pri
                 // It's possible the PMTU update wasn't processed by the netstack before the
                 // retransmission timer fired, in which case we'd see the original segment
                 // again.
-                if eth.body().len() != usize::try_from(I::MINIMUM_LINK_MTU).unwrap() {
+                if eth.body().len() != usize::try_from(new_mtu.get()).unwrap() {
                     continue;
                 }
 
@@ -4261,9 +4273,9 @@ async fn tcp_update_mss_from_pmtu<N: Netstack, I: TestPmtuIpExt>(name: &str, pri
             .expect("connect to server");
 
         // Send a payload that will not fit in a single segment. (The PMTU is updated to
-        // `I::MINIMUM_LINK_MTU`, which is too small due to the need to also fit the TCP
+        // `new_mtu`, which is too small due to the need to also fit the TCP
         // and IP headers).
-        let len = usize::try_from(I::MINIMUM_LINK_MTU).unwrap();
+        let len = usize::try_from(new_mtu.get()).unwrap();
         let payload = vec![0xFF; len];
         socket.write_all(&payload[..]).await.unwrap();
         socket

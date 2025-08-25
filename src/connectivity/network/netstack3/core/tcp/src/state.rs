@@ -1037,7 +1037,7 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
         // have reduced our receive buffer's capacity, so we need to use
         // saturating arithmetic below.
         let reduction = capacity.saturating_sub(len.saturating_add(usize::from(unused_window)));
-        let threshold = usize::min(capacity / 2, usize::from(mss.get().get()));
+        let threshold = usize::min(capacity / 2, usize::from(mss.get()));
         let window_size = if reduction >= threshold {
             // We have enough reduction in the buffer space, advertise more.
             WindowSize::new(capacity - len).unwrap_or(WindowSize::MAX)
@@ -3563,11 +3563,9 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
         let err = match result {
             IcmpErrorResult::ConnectionError(err) => err,
             IcmpErrorResult::PmtuUpdate(mms) => {
-                let should_send = if let Some(mss) = Mss::from_mms(mms) {
-                    self.on_pmtu_update(mss, seq)
-                } else {
-                    ShouldRetransmit::No
-                };
+                // Clamp the PMTU Update to the minimum allowed MSS.
+                let mss = Mss::from_mms(mms).unwrap_or(Mss::MIN);
+                let should_send = self.on_pmtu_update(mss, seq);
                 return (None, NewlyClosed::No, should_send);
             }
         };
@@ -3696,11 +3694,9 @@ mod test {
     use alloc::vec;
     use alloc::vec::Vec;
     use core::fmt::Debug;
-    use core::num::NonZeroU16;
     use core::time::Duration;
 
     use assert_matches::assert_matches;
-    use net_types::ip::Ipv4;
     use netstack3_base::sync::ResourceTokenValue;
     use netstack3_base::testutil::{FakeInstant, FakeInstantCtx};
     use netstack3_base::{
@@ -3715,9 +3711,6 @@ mod test {
     use crate::internal::congestion::DUP_ACK_THRESHOLD;
     use crate::internal::counters::TcpCountersWithSocketInner;
     use crate::internal::counters::testutil::CounterExpectations;
-    use crate::internal::testutil::{
-        DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE, DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE_USIZE,
-    };
 
     const TEST_IRS: SeqNum = SeqNum::new(100);
     const TEST_ISS: SeqNum = SeqNum::new(300);
@@ -3727,7 +3720,13 @@ mod test {
 
     const RTT: Duration = Duration::from_millis(500);
 
-    const DEVICE_MAXIMUM_SEGMENT_SIZE: Mss = Mss(NonZeroU16::new(1400 as u16).unwrap());
+    const DEVICE_MAXIMUM_SEGMENT_SIZE: Mss = Mss::new(1400).unwrap();
+
+    const TEST_MSS: Mss = Mss::new(256).unwrap();
+    // Support Buffering up to three MSS.
+    const BUFFER_SIZE: usize = (TEST_MSS.get() as usize) * 3;
+    // One MSS worth of test data.
+    const TEST_BYTES: &[u8] = &[0xab; TEST_MSS.get() as usize];
 
     fn default_quickack_counter() -> usize {
         quickack_counter(
@@ -4067,7 +4066,7 @@ mod test {
             TEST_ISS + 1,
             UnscaledWindowSize::from(u16::MAX),
             HandshakeOptions {
-                mss: Some(Mss::default::<Ipv4>()),
+                mss: Some(Mss::DEFAULT_IPV4),
                 window_scale: Some(WindowScale::default()),
                 sack_permitted: SACK_PERMITTED,
                 ..Default::default()
@@ -4084,7 +4083,7 @@ mod test {
             ),
             simultaneous_open: None,
             buffer_sizes: BufferSizes::default(),
-            smss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            smss: Mss::DEFAULT_IPV4,
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: false,
@@ -4125,7 +4124,7 @@ mod test {
             ),
             active_open: (),
             buffer_sizes: BufferSizes::default(),
-            default_mss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            default_mss: Mss::DEFAULT_IPV4,
             device_mss: DEVICE_MAXIMUM_SEGMENT_SIZE,
             rcv_wnd_scale: WindowScale::default(),
         };
@@ -4146,7 +4145,7 @@ mod test {
                 TEST_ISS + 1,
                 UnscaledWindowSize::from(u16::MAX),
                 HandshakeOptions {
-                    mss: Some(Mss::default::<Ipv4>()),
+                    mss: Some(Mss::DEFAULT_IPV4),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
                     ..Default::default()
@@ -4163,7 +4162,7 @@ mod test {
                 ),
                 simultaneous_open: None,
                 buffer_sizes: BufferSizes::default(),
-                smss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+                smss: Mss::DEFAULT_IPV4,
                 sack_permitted: false,
                 rcv_wnd_scale: WindowScale::default(),
                 snd_wnd_scale: Some(WindowScale::default()),
@@ -4180,7 +4179,7 @@ mod test {
             TEST_IRS,
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            Mss::DEFAULT_IPV4,
             None,
         );
         listen.on_segment(incoming, FakeInstant::default())
@@ -4581,7 +4580,7 @@ mod test {
             (),
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            Mss::DEFAULT_IPV4,
             &SocketOptions::default_for_state_tests(),
         );
         assert_eq!(
@@ -4610,7 +4609,7 @@ mod test {
                 ),
                 active_open: (),
                 buffer_sizes: BufferSizes::default(),
-                default_mss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+                default_mss: Mss::DEFAULT_IPV4,
                 device_mss: DEVICE_MAXIMUM_SEGMENT_SIZE,
                 rcv_wnd_scale: WindowScale::default(),
             }
@@ -4620,7 +4619,7 @@ mod test {
             passive_iss,
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            Mss::DEFAULT_IPV4,
             None,
         ));
         clock.sleep(RTT / 2);
@@ -4756,7 +4755,7 @@ mod test {
             (),
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            Mss::DEFAULT_IPV4,
             &SocketOptions::default_for_state_tests(),
         );
         let (syn_sent2, syn2) = Closed::<Initial>::connect(
@@ -4765,7 +4764,7 @@ mod test {
             (),
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            Mss::DEFAULT_IPV4,
             &SocketOptions::default_for_state_tests(),
         );
 
@@ -4912,9 +4911,7 @@ mod test {
                 snd: Send {
                     wl1: ISS_2 + 1,
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
-                    congestion_control: CongestionControl::cubic_with_mss(
-                        DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE
-                    ),
+                    congestion_control: CongestionControl::cubic_with_mss(Mss::DEFAULT_IPV4,),
                     ..Send::default_for_test_at(ISS_1 + 1, RingBuffer::default())
                 }
                 .into(),
@@ -4934,9 +4931,7 @@ mod test {
                 snd: Send {
                     wl1: ISS_1 + 1,
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
-                    congestion_control: CongestionControl::cubic_with_mss(
-                        DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE
-                    ),
+                    congestion_control: CongestionControl::cubic_with_mss(Mss::DEFAULT_IPV4,),
                     ..Send::default_for_test_at(ISS_2 + 1, RingBuffer::default())
                 }
                 .into(),
@@ -4950,9 +4945,6 @@ mod test {
         );
     }
 
-    const BUFFER_SIZE: usize = 16;
-    const TEST_BYTES: &[u8] = "Hello".as_bytes();
-
     #[test_case(true; "sack permitted")]
     #[test_case(false; "sack not permitted")]
     fn established_receive(sack_permitted: bool) {
@@ -4963,14 +4955,12 @@ mod test {
                 wnd: WindowSize::ZERO,
                 wnd_max: WindowSize::ZERO,
                 buffer: NullBuffer,
-                congestion_control: CongestionControl::cubic_with_mss(Mss(
-                    NonZeroU16::new(5).unwrap()
-                )),
+                congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
                 ..Send::default_for_test(NullBuffer)
             }
             .into(),
             rcv: Recv {
-                mss: Mss(NonZeroU16::new(5).unwrap()),
+                mss: TEST_MSS,
                 sack_permitted,
                 ..Recv::default_for_test(RingBuffer::new(BUFFER_SIZE))
             }
@@ -5076,7 +5066,7 @@ mod test {
                 assert_eq!(available, &[[TEST_BYTES, TEST_BYTES].concat()]);
                 available[0].len()
             }),
-            10
+            usize::from(TEST_MSS.get() * 2)
         );
     }
 
@@ -5085,7 +5075,7 @@ mod test {
         let clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let mut send_buffer = RingBuffer::new(BUFFER_SIZE);
-        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), 5);
+        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
         let mut established = State::Established(Established {
             snd: Send {
                 una: TEST_ISS,
@@ -5128,8 +5118,14 @@ mod test {
             ))
         );
 
-        // Open up the window by 10 bytes, but the MSS is limited to 2 bytes.
-        open_window(&mut established, TEST_ISS + 2, 10, clock.now(), &counters.refs());
+        // Open up the window, but the limit the send to 2 bytes of data.
+        open_window(
+            &mut established,
+            TEST_ISS + 2,
+            TEST_BYTES.len(),
+            clock.now(),
+            &counters.refs(),
+        );
         assert_eq!(
             established.poll_send_with_default_options(2, clock.now(), &counters.refs()),
             Some(Segment::with_data(
@@ -5144,7 +5140,7 @@ mod test {
             established.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                1,
+                u32::from(TEST_MSS),
                 clock.now(),
                 &SocketOptions { nagle_enabled: false, ..SocketOptions::default_for_state_tests() }
             ),
@@ -5177,7 +5173,7 @@ mod test {
             (),
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            Mss::DEFAULT_IPV4,
             &SocketOptions::default_for_state_tests(),
         );
         let mut state = State::<_, RingBuffer, RingBuffer, ()>::SynSent(syn_sent);
@@ -5342,7 +5338,7 @@ mod test {
         let mut clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let mut send_buffer = RingBuffer::new(BUFFER_SIZE);
-        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), 5);
+        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
         // Set up the state machine to start with Established.
         let mut state = State::Established(Established {
             snd: Send::default_for_test(send_buffer.clone()).into(),
@@ -5477,7 +5473,7 @@ mod test {
             },
             simultaneous_open: Some(()),
             buffer_sizes: Default::default(),
-            smss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            smss: Mss::DEFAULT_IPV4,
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
@@ -5511,21 +5507,16 @@ mod test {
         let mut clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let mut send_buffer = RingBuffer::new(BUFFER_SIZE);
-        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), 5);
+        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
         // Set up the state machine to start with Established.
         let mut state = State::Established(Established {
             snd: Send {
-                congestion_control: CongestionControl::cubic_with_mss(Mss(
-                    NonZeroU16::new(5).unwrap()
-                )),
+                congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
                 ..Send::default_for_test(send_buffer.clone())
             }
             .into(),
-            rcv: Recv {
-                mss: Mss(NonZeroU16::new(5).unwrap()),
-                ..Recv::default_for_test(RingBuffer::new(BUFFER_SIZE))
-            }
-            .into(),
+            rcv: Recv { mss: TEST_MSS, ..Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)) }
+                .into(),
         });
         assert_eq!(
             state.close(
@@ -5751,7 +5742,7 @@ mod test {
         let mut clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let mut send_buffer = RingBuffer::new(BUFFER_SIZE);
-        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), 5);
+        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
 
         let iss = ISS_1;
         // Set up the state machine to start with Established.
@@ -5886,10 +5877,11 @@ mod test {
     #[test_case(
         State::Established(Established {
             snd: Send::default_for_test_at(TEST_ISS, NullBuffer).into(),
-            rcv: Recv::default_for_test_at(TEST_IRS + 5, RingBuffer::default()).into(),
+            rcv: Recv::default_for_test_at(TEST_IRS + u32::from(TEST_MSS), RingBuffer::default()).into(),
         }),
         Segment::with_data(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(u16::MAX), TEST_BYTES) =>
-        Some(Segment::ack(TEST_ISS, TEST_IRS + 5, UnscaledWindowSize::from(u16::MAX))); "retransmit data"
+        Some(Segment::ack(TEST_ISS, TEST_IRS + u32::from(TEST_MSS), UnscaledWindowSize::from(u16::MAX)));
+        "retransmit data"
     )]
     #[test_case(
         State::SynRcvd(SynRcvd {
@@ -5904,7 +5896,7 @@ mod test {
             },
             simultaneous_open: None,
             buffer_sizes: BufferSizes::default(),
-            smss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            smss: Mss::DEFAULT_IPV4,
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
@@ -5942,15 +5934,13 @@ mod test {
         let last_payload_byte = b'D';
         for b in first_payload_byte..=last_payload_byte {
             assert_eq!(
-                send_buffer.enqueue_data(&[b; DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE_USIZE]),
-                DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE_USIZE
+                send_buffer.enqueue_data(&[b; Mss::DEFAULT_IPV4.get() as usize]),
+                usize::from(Mss::DEFAULT_IPV4),
             );
         }
         let mut state: State<_, _, _, ()> = State::Established(Established {
             snd: Send {
-                congestion_control: CongestionControl::cubic_with_mss(
-                    DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
-                ),
+                congestion_control: CongestionControl::cubic_with_mss(Mss::DEFAULT_IPV4),
                 ..Send::default_for_test_at(TEST_ISS, send_buffer.clone())
             }
             .into(),
@@ -5959,7 +5949,7 @@ mod test {
 
         assert_eq!(
             state.poll_send_with_default_options(
-                u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
+                u32::from(Mss::DEFAULT_IPV4),
                 clock.now(),
                 &counters.refs(),
             ),
@@ -5967,7 +5957,7 @@ mod test {
                 TEST_ISS,
                 TEST_IRS,
                 UnscaledWindowSize::from(u16::MAX),
-                FragmentedPayload::new_contiguous(&[b'A'; DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE_USIZE])
+                FragmentedPayload::new_contiguous(&[b'A'; Mss::DEFAULT_IPV4.get() as usize]),
             ))
         );
 
@@ -5984,7 +5974,7 @@ mod test {
 
             assert_eq!(
                 state.poll_send_with_default_options(
-                    u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
+                    u32::from(Mss::DEFAULT_IPV4),
                     clock.now(),
                     counters,
                 ),
@@ -5992,14 +5982,14 @@ mod test {
                     SegmentHeader {
                         seq: TEST_ISS
                             + u32::from(expected_byte - first_payload_byte)
-                                * u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
+                                * u32::from(Mss::DEFAULT_IPV4),
                         ack: Some(TEST_IRS),
                         wnd: UnscaledWindowSize::from(u16::MAX),
                         push: expected_byte == last_payload_byte,
                         ..Default::default()
                     },
                     FragmentedPayload::new_contiguous(
-                        &[expected_byte; DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE_USIZE]
+                        &[expected_byte; Mss::DEFAULT_IPV4.get() as usize]
                     )
                 ))
             );
@@ -6042,7 +6032,7 @@ mod test {
             state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
                 Segment::ack(
                     TEST_IRS,
-                    TEST_ISS + u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
+                    TEST_ISS + u32::from(Mss::DEFAULT_IPV4),
                     UnscaledWindowSize::from(u16::MAX)
                 ),
                 clock.now(),
@@ -6053,7 +6043,7 @@ mod test {
         let established = assert_matches!(state, State::Established(established) => established);
         assert_eq!(
             established.snd.congestion_control.inspect_cwnd().cwnd(),
-            2 * u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE)
+            2 * u32::from(Mss::DEFAULT_IPV4)
         );
         assert_eq!(established.snd.congestion_control.inspect_loss_recovery_mode(), None);
         CounterExpectations {
@@ -6089,7 +6079,7 @@ mod test {
             state.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
+                u32::from(Mss::DEFAULT_IPV4),
                 clock.now(),
                 socket_options,
             ),
@@ -6123,7 +6113,7 @@ mod test {
                 state.poll_send(
                     &FakeStateMachineDebugId::default(),
                     &counters.refs(),
-                    u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
+                    u32::from(Mss::DEFAULT_IPV4),
                     clock.now(),
                     socket_options,
                 ),
@@ -6139,7 +6129,7 @@ mod test {
             state.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
+                u32::from(Mss::DEFAULT_IPV4),
                 clock.now(),
                 socket_options,
             ),
@@ -6225,7 +6215,7 @@ mod test {
                         wnd: WindowSize::DEFAULT,
                         wnd_scale: WindowScale::ZERO,
                     },
-                    u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
+                    u32::from(Mss::DEFAULT_IPV4),
                     FakeInstant::default(),
                     &SocketOptions::default_for_state_tests(),
                 )
@@ -6262,7 +6252,7 @@ mod test {
         let mut clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let mut send_buffer = RingBuffer::new(BUFFER_SIZE);
-        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), 5);
+        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
         // Set up the state machine to start with Established.
         let mut state = State::Established(Established {
             snd: Send {
@@ -6356,7 +6346,7 @@ mod test {
         let clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let mut send_buffer = RingBuffer::new(BUFFER_SIZE);
-        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), 5);
+        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
         // Set up the state machine to start with Established.
         let mut state: State<_, _, _, ()> = State::Established(Established {
             snd: Send::default_for_test(send_buffer.clone()).into(),
@@ -6383,7 +6373,7 @@ mod test {
             state.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                3,
+                u32::from(TEST_MSS),
                 clock.now(),
                 &socket_options
             ),
@@ -6394,7 +6384,7 @@ mod test {
             state.poll_send(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                3,
+                u32::from(TEST_MSS),
                 clock.now(),
                 &socket_options
             ),
@@ -6413,6 +6403,10 @@ mod test {
 
     #[test]
     fn mss_option() {
+        // Ensure we setup an MSS smaller than the amount of data being sent.
+        let mss = Mss::MIN;
+        assert!(usize::from(mss) < TEST_BYTES.len());
+
         let clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let (syn_sent, syn) = Closed::<Initial>::connect(
@@ -6420,8 +6414,8 @@ mod test {
             clock.now(),
             (),
             Default::default(),
-            Mss(NonZeroU16::new(1).unwrap()),
-            DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            mss,
+            Mss::DEFAULT_IPV4,
             &SocketOptions::default_for_state_tests(),
         );
         let mut state = State::<_, RingBuffer, RingBuffer, ()>::SynSent(syn_sent);
@@ -6465,14 +6459,14 @@ mod test {
                 assert_eq!(snd.buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
             }
         }
-        // Since the MSS of the connection is 1, we can only get the first byte.
+        // Expect to only receive MSS bytes.
         assert_eq!(
             state.poll_send_with_default_options(u32::MAX, clock.now(), &counters.refs()),
             Some(Segment::with_data(
                 TEST_ISS + 1,
                 TEST_ISS + 1,
                 UnscaledWindowSize::from(u16::MAX),
-                FragmentedPayload::new_contiguous(&TEST_BYTES[..1]),
+                FragmentedPayload::new_contiguous(&TEST_BYTES[..usize::from(mss)]),
             ))
         );
     }
@@ -6490,7 +6484,7 @@ mod test {
         let mut clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let mut send_buffer = RingBuffer::new(BUFFER_SIZE);
-        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), 5);
+        assert_eq!(send_buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
         // Set up the state machine to start with Established.
         let mut state: State<_, _, _, ()> = State::Established(Established {
             snd: Send {
@@ -6924,8 +6918,8 @@ mod test {
             ),
             active_open: (),
             buffer_sizes: Default::default(),
-            device_mss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
-            default_mss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            device_mss: Mss::DEFAULT_IPV4,
+            default_mss: Mss::DEFAULT_IPV4,
             rcv_wnd_scale: WindowScale::default(),
         })
     => DEFAULT_MAX_SYN_RETRIES.get(); "syn_sent")]
@@ -6942,7 +6936,7 @@ mod test {
             ),
             simultaneous_open: None,
             buffer_sizes: BufferSizes::default(),
-            smss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            smss: Mss::DEFAULT_IPV4,
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
@@ -6995,7 +6989,7 @@ mod test {
             (),
             BufferSizes { receive: buffer_size, ..Default::default() },
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            Mss::DEFAULT_IPV4,
             &SocketOptions::default_for_state_tests(),
         );
         assert_eq!(
@@ -7019,7 +7013,7 @@ mod test {
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(u16::MAX),
                     HandshakeOptions {
-                        mss: Some(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
+                        mss: Some(Mss::DEFAULT_IPV4),
                         window_scale: syn_ack_window_scale,
                         sack_permitted: SACK_PERMITTED,
                     },
@@ -7095,7 +7089,7 @@ mod test {
             ),
             simultaneous_open: None,
             buffer_sizes: BufferSizes { send: 0, receive: receive_buf_size },
-            smss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            smss: Mss::DEFAULT_IPV4,
             rcv_wnd_scale,
             snd_wnd_scale: WindowScale::new(1),
             sack_permitted: SACK_PERMITTED,
@@ -7151,7 +7145,7 @@ mod test {
         const MULTIPLE: usize = 3;
         const CAP: usize = TEST_BYTES.len() * MULTIPLE;
         let mut rcv: Recv<FakeInstant, RingBuffer> = Recv {
-            mss: Mss(NonZeroU16::new(TEST_BYTES.len() as u16).unwrap()),
+            mss: Mss::new(u16::try_from(TEST_BYTES.len()).unwrap()).unwrap(),
             ..Recv::default_for_test_at(TEST_IRS, RingBuffer::new(CAP))
         };
 
@@ -7265,10 +7259,9 @@ mod test {
             wl1: TEST_IRS,
             wl2: TEST_ISS,
             wnd: WindowSize::new(CAP).unwrap(),
-            congestion_control: CongestionControl::cubic_with_mss(Mss(NonZeroU16::new(
-                TEST_BYTES.len() as u16,
-            )
-            .unwrap())),
+            congestion_control: CongestionControl::cubic_with_mss(
+                Mss::new(u16::try_from(TEST_BYTES.len()).unwrap()).unwrap(),
+            ),
             ..Send::default_for_test(RingBuffer::new(CAP))
         };
 
@@ -7493,10 +7486,9 @@ mod test {
             wnd: WindowSize::new(CAP).unwrap(),
             wl1: TEST_IRS,
             wl2: TEST_ISS,
-            congestion_control: CongestionControl::cubic_with_mss(Mss(NonZeroU16::new(
-                TEST_BYTES.len() as u16,
-            )
-            .unwrap())),
+            congestion_control: CongestionControl::cubic_with_mss(
+                Mss::new(u16::try_from(TEST_BYTES.len()).unwrap()).unwrap(),
+            ),
             ..Send::default_for_test(RingBuffer::new(CAP))
         };
 
@@ -7584,7 +7576,6 @@ mod test {
     // Regression test for https://fxbug.dev/334926865.
     fn ack_uses_snd_max() {
         let counters = FakeTcpCounters::default();
-        let mss = Mss(NonZeroU16::new(u16::try_from(TEST_BYTES.len()).unwrap()).unwrap());
         let mut clock = FakeInstantCtx::default();
         let mut buffer = RingBuffer::new(BUFFER_SIZE);
         assert_eq!(buffer.enqueue_data(TEST_BYTES), TEST_BYTES.len());
@@ -7594,12 +7585,15 @@ mod test {
         let iss = ISS_1 + 1;
         let mut state: State<_, _, _, ()> = State::Established(Established {
             snd: Send {
-                congestion_control: CongestionControl::cubic_with_mss(mss),
+                congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
                 ..Send::default_for_test_at(iss, buffer)
             }
             .into(),
-            rcv: Recv { mss, ..Recv::default_for_test_at(iss, RingBuffer::new(BUFFER_SIZE)) }
-                .into(),
+            rcv: Recv {
+                mss: TEST_MSS,
+                ..Recv::default_for_test_at(iss, RingBuffer::new(BUFFER_SIZE))
+            }
+            .into(),
         });
 
         // Send the first two data segments.
@@ -7679,7 +7673,7 @@ mod test {
             ),
             active_open: (),
             buffer_sizes: BufferSizes::default(),
-            default_mss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            default_mss: Mss::DEFAULT_IPV4,
             device_mss: DEVICE_MAXIMUM_SEGMENT_SIZE,
             rcv_wnd_scale: WindowScale::default(),
         }),
@@ -7696,7 +7690,7 @@ mod test {
                 ),
                 active_open: (),
                 buffer_sizes: BufferSizes::default(),
-                default_mss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+                default_mss: Mss::DEFAULT_IPV4,
                 device_mss: DEVICE_MAXIMUM_SEGMENT_SIZE,
                 rcv_wnd_scale: WindowScale::default(),
             },
@@ -7713,7 +7707,7 @@ mod test {
             ),
             simultaneous_open: None,
             buffer_sizes: BufferSizes { send: 0, receive: 0 },
-            smss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            smss: Mss::DEFAULT_IPV4,
             rcv_wnd_scale: WindowScale::new(0).unwrap(),
             snd_wnd_scale: WindowScale::new(0),
             sack_permitted: SACK_PERMITTED,
@@ -7741,17 +7735,16 @@ mod test {
         delayed_ack: bool,
         sack: bool,
     ) {
-        // NOTE: Just enough room to hold TEST_BYTES, but will end up below the
-        // MSS when full.
-        const BUFFER_SIZE: usize = 5;
-        const MSS: Mss = Mss(NonZeroU16::new(5).unwrap());
-        const TEST_BYTES: &[u8] = "Hello".as_bytes();
+        // NOTE: Just enough room to hold TEST_BYTES, but will end up below
+        // TEST_MSS when full.
+        const BUFFER_SIZE: usize = TEST_BYTES.len();
 
         let new_snd = || Send {
-            congestion_control: CongestionControl::cubic_with_mss(MSS),
+            congestion_control: CongestionControl::cubic_with_mss(TEST_MSS),
             ..Send::default_for_test(NullBuffer)
         };
-        let new_rcv = || Recv { mss: MSS, ..Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)) };
+        let new_rcv =
+            || Recv { mss: TEST_MSS, ..Recv::default_for_test(RingBuffer::new(BUFFER_SIZE)) };
 
         let clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
@@ -7816,7 +7809,7 @@ mod test {
                         &mut state.recv_mut().unwrap().buffer,
                         RecvBufferState::Open { buffer: _, assembler } => assembler
                     );
-                    let gap_start = TEST_IRS + u32::from(MSS) + 2;
+                    let gap_start = TEST_IRS + u32::from(TEST_MSS) + 2;
                     // Setup the assembler with a gap to simulate having
                     // received data out of order.
                     assert_eq!(assembler.insert(gap_start..gap_start + 1), 0);
@@ -7846,7 +7839,7 @@ mod test {
                 // Dequeue data we just received, but not enough that will cause
                 // the window to be half open (given we're using a very small
                 // buffer size).
-                let mss: usize = MSS.get().get().into();
+                let mss: usize = TEST_MSS.get().into();
                 assert_eq!(
                     state.read_with(|available| {
                         assert_eq!(available, &[TEST_BYTES]);
@@ -7867,7 +7860,7 @@ mod test {
 
     #[test]
     fn poll_receive_data_dequeued_small_window() {
-        const MSS: Mss = Mss(NonZeroU16::new(65000).unwrap());
+        const MSS: Mss = Mss::new(65000).unwrap();
         const WINDOW: WindowSize = WindowSize::from_u32(500).unwrap();
         let mut recv = Recv::<FakeInstant, _> {
             mss: MSS,

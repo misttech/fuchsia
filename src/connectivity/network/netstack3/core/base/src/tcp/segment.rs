@@ -9,7 +9,7 @@ use core::borrow::Borrow;
 use core::convert::TryFrom as _;
 use core::fmt::Debug;
 use core::mem::MaybeUninit;
-use core::num::{NonZeroU16, TryFromIntError};
+use core::num::TryFromIntError;
 use core::ops::Range;
 
 use arrayvec::ArrayVec;
@@ -142,7 +142,11 @@ impl Options {
             match option {
                 TcpOption::Mss(mss) => {
                     if let Some(h) = options.as_handshake_mut() {
-                        h.mss = NonZeroU16::new(mss).map(Mss);
+                        // If the provided MSS options is too small, clamp it to
+                        // the minimum value. This is in line with the behavior
+                        // of other platforms (e.g. FreeBSD & Linux). See
+                        // https://fxbug.dev/439892604#comment1.
+                        h.mss = Some(Mss::new(mss).unwrap_or(Mss::MIN));
                     }
                 }
                 TcpOption::WindowScale(ws) => {
@@ -231,7 +235,7 @@ impl HandshakeOptions {
     /// Returns an iterator over the contained options.
     pub fn iter(&self) -> impl Iterator<Item = TcpOption<'_>> + Debug + Clone {
         let Self { mss, window_scale, sack_permitted } = self;
-        mss.map(|mss| TcpOption::Mss(mss.get().get()))
+        mss.map(|mss| TcpOption::Mss(mss.get()))
             .into_iter()
             .chain(window_scale.map(|ws| TcpOption::WindowScale(ws.get())))
             .chain((*sack_permitted).then_some(TcpOption::SackPermitted))
@@ -1089,7 +1093,9 @@ mod testutils {
 
 #[cfg(test)]
 mod test {
+
     use assert_matches::assert_matches;
+    use core::num::NonZeroU16;
     use ip_test_macro::ip_test;
     use net_declare::{net_ip_v4, net_ip_v6};
     use net_types::ip::{Ipv4, Ipv6};
@@ -1496,9 +1502,43 @@ mod test {
             control: Some(Control::SYN),
             push: false,
             options: HandshakeOptions {
-                mss: Some(Mss(NonZeroU16::new(1024).unwrap())),
+                mss: Some(Mss::new(1024).unwrap()),
                 window_scale: Some(WindowScale::new(10).unwrap()),
                 sack_permitted: true,
+            }
+            .into(),
+        };
+
+        assert_eq!(converted_header, expected_header);
+    }
+
+    #[ip_test(I)]
+    fn mss_option_clamps_to_minimum<I: TestIpExt>() {
+        let mut builder =
+            TcpSegmentBuilder::new(I::SRC_IP, I::DST_IP, SRC_PORT, DST_PORT, 1, Some(2), 3);
+        builder.syn(true);
+
+        let builder = TcpSegmentBuilderWithOptions::new(
+            builder,
+            // An MSS option below the minimum should be increased to the
+            // minimum.
+            [TcpOption::Mss(Mss::MIN.get() - 1)],
+        )
+        .expect("failed to create tcp segment builder");
+
+        let converted_header =
+            SegmentHeader::try_from(&builder).expect("failed to convert serializer");
+
+        let expected_header = SegmentHeader {
+            seq: SeqNum::new(1),
+            ack: Some(SeqNum::new(2)),
+            wnd: UnscaledWindowSize::from(3u16),
+            control: Some(Control::SYN),
+            push: false,
+            options: HandshakeOptions {
+                mss: Some(Mss::MIN),
+                window_scale: None,
+                sack_permitted: false,
             }
             .into(),
         };

@@ -5,13 +5,13 @@
 //! The Transmission Control Protocol (TCP).
 
 use core::iter::FromIterator;
-use core::num::NonZeroU16;
 use core::ops::Range;
 
 use alloc::vec::Vec;
 use core::mem::MaybeUninit;
 use net_types::ip::{Ip, IpVersion};
 use packet::InnerPacketBuilder;
+use static_assertions::const_assert;
 
 use crate::ip::Mms;
 use crate::tcp::segment::{Payload, PayloadLen};
@@ -41,32 +41,70 @@ impl Control {
 const TCP_HEADER_LEN: u32 = packet_formats::tcp::HDR_PREFIX_LEN as u32;
 
 /// Maximum segment size, that is the maximum TCP payload one segment can carry.
+///
+/// `Mss` also acts as a witness that the contained value is >= `Mss::MIN`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord)]
-pub struct Mss(pub NonZeroU16);
+pub struct Mss(u16);
+
+const_assert!(Mss::MIN.get() <= Mss::DEFAULT_IPV4.get());
+const_assert!(Mss::MIN.get() <= Mss::DEFAULT_IPV6.get());
 
 impl Mss {
+    /// The minimum MSS allowed by TCP.
+    ///
+    /// Although enforcing a minimum MSS is outside the recommendations of any
+    /// RFC, it is a common practice on other platforms and has multiple
+    /// benefits:
+    ///   1) Ensures there is enough space to transmit TCP Options & IP Options.
+    ///      See RFC 6691 section 2, which clarifies that
+    ///          The TCP MSS OPTION [...] SHOULD NOT be decreased to account for
+    ///          any possible IP or TCP options; conversely, the sender MUST
+    ///          reduce the TCP data length to account for any IP or TCP options
+    ///          that it is including in the packets that it sends.
+    ///   2) Protects against DOS attacks in which the attacker initiates TCP
+    ///      connections with an intentionally small MSS to incur additional
+    ///      packet processing overhead on the victim. See
+    ///      * FreeBSD: https://www.cve.org/CVERecord?id=CVE-2004-0002
+    ///      * Linux: https://www.cve.org/CVERecord?id=CVE-2019-11479
+    ///
+    /// Here, the value 216 is inspired by FreeBSD. It's large enough to satisfy
+    /// points 1 & 2 from above, while remaining small enough to support all
+    /// link-layer technologies on the open Internet.
+    pub const MIN: Mss = Mss(216);
+
+    /// Per RFC 9293 Section 3.7.1:
+    ///  If an MSS Option is not received at connection setup, TCP
+    ///  implementations MUST assume a default send MSS of 536 (576 - 40) for
+    ///  IPv4.
+    pub const DEFAULT_IPV4: Mss = Mss(536);
+
+    /// Per RFC 9293 Section 3.7.1:
+    ///  If an MSS Option is not received at connection setup, TCP
+    ///  implementations MUST assume a default send MSS of [...] 1220
+    /// (1280 - 60) for IPv6 (MUST-15).
+    pub const DEFAULT_IPV6: Mss = Mss(1220);
+
+    /// Creates `Mss`, provided the given value satisfies the requirements.
+    pub const fn new(mss: u16) -> Option<Self> {
+        if mss < Self::MIN.get() { None } else { Some(Mss(mss)) }
+    }
+
     /// Creates MSS from the maximum message size of the IP layer.
     pub fn from_mms(mms: Mms) -> Option<Self> {
-        NonZeroU16::new(
-            u16::try_from(mms.get().get().saturating_sub(TCP_HEADER_LEN)).unwrap_or(u16::MAX),
-        )
-        .map(Self)
+        let mss = u16::try_from(mms.get().get().saturating_sub(TCP_HEADER_LEN)).unwrap_or(u16::MAX);
+        Self::new(mss)
     }
 
     /// Create a new [`Mss`] with the IP-version default value, as defined by RFC 9293.
     pub const fn default<I: Ip>() -> Self {
-        // Per RFC 9293 Section 3.7.1:
-        //  If an MSS Option is not received at connection setup, TCP
-        //  implementations MUST assume a default send MSS of 536 (576 - 40) for
-        //  IPv4 or 1220 (1280 - 60) for IPv6 (MUST-15).
         match I::VERSION {
-            IpVersion::V4 => Mss(NonZeroU16::new(536).unwrap()),
-            IpVersion::V6 => Mss(NonZeroU16::new(1220).unwrap()),
+            IpVersion::V4 => Self::DEFAULT_IPV4,
+            IpVersion::V6 => Self::DEFAULT_IPV6,
         }
     }
 
     /// Gets the numeric value of the MSS.
-    pub const fn get(&self) -> NonZeroU16 {
+    pub const fn get(&self) -> u16 {
         let Self(mss) = *self;
         mss
     }
@@ -74,13 +112,13 @@ impl Mss {
 
 impl From<Mss> for u32 {
     fn from(Mss(mss): Mss) -> Self {
-        u32::from(mss.get())
+        u32::from(mss)
     }
 }
 
 impl From<Mss> for usize {
     fn from(Mss(mss): Mss) -> Self {
-        usize::from(mss.get())
+        usize::from(mss)
     }
 }
 

@@ -334,7 +334,6 @@ fn sacked_bytes_threshold(mss: Mss) -> u32 {
 
 #[cfg(test)]
 mod test {
-    use core::num::NonZeroU16;
     use core::ops::Range;
     use test_case::test_case;
 
@@ -342,7 +341,7 @@ mod test {
     use crate::internal::seq_ranges::SeqRange;
     use crate::internal::testutil;
 
-    const TEST_MSS: Mss = Mss(NonZeroU16::new(50).unwrap());
+    const TEST_MSS: Mss = Mss::new(256).unwrap();
 
     fn seq_ranges(iter: impl IntoIterator<Item = Range<u32>>) -> SeqRanges<()> {
         iter.into_iter()
@@ -448,7 +447,8 @@ mod test {
     fn process_ack_pipe_rule_a() {
         let mut sb = SackScoreboard::default();
         let ack = SeqNum::new(5);
-        let snd_nxt = SeqNum::new(500);
+        // NB: snd_nxt should be greater than the end of `large_block`.
+        let snd_nxt = SeqNum::new(u32::from(TEST_MSS.get()) * 10);
         let high_rxt = None;
         let small_block = 20..30;
         let large_block_start = 35;
@@ -538,7 +538,8 @@ mod test {
     fn process_ack_simple() {
         let mut sb = SackScoreboard::default();
         let ack = SeqNum::new(5);
-        let snd_nxt = SeqNum::new(500);
+        // NB: snd_nxt should be greater than the end of `large_block`.
+        let snd_nxt = SeqNum::new(u32::from(TEST_MSS.get()) * 10);
         let high_rxt = None;
 
         // Receive a single cumulative ack up to ack.

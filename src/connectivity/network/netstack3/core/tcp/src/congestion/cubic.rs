@@ -244,12 +244,11 @@ impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
 
 #[cfg(test)]
 mod tests {
-    use netstack3_base::InstantContext as _;
     use netstack3_base::testutil::FakeInstantCtx;
+    use netstack3_base::{InstantContext as _, Mss};
     use test_case::test_case;
 
     use super::*;
-    use crate::internal::testutil::DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE;
 
     impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
         // Helper function in test that takes a u32 instead of a NonZeroU32
@@ -289,7 +288,7 @@ mod tests {
         // The theoretical predictions do not consider fast convergence,
         // disable it.
         let mut cubic = Cubic::<_, false /* FAST_CONVERGENCE */>::default();
-        let mut params = CongestionControlParams::with_mss(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE);
+        let mut params = CongestionControlParams::with_mss(Mss::DEFAULT_IPV4);
         // The theoretical value is a prediction for the congestion avoidance
         // only, set ssthresh to 1 so that we skip slow start. Slow start can
         // grow the window size very quickly.
@@ -325,76 +324,51 @@ mod tests {
     fn cubic_example() {
         let mut clock = FakeInstantCtx::default();
         let mut cubic = Cubic::<_, true /* FAST_CONVERGENCE */>::default();
-        let mut params = CongestionControlParams::with_mss(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE);
+        let mut params = CongestionControlParams::with_mss(Mss::DEFAULT_IPV4);
         const RTT: Duration = Duration::from_millis(100);
 
         // Assert we have the correct initial window.
-        assert_eq!(params.cwnd, 4 * u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE));
+        assert_eq!(params.cwnd, 4 * u32::from(Mss::DEFAULT_IPV4));
 
         // Slow start.
         clock.sleep(RTT);
-        for _seg in 0..params.cwnd / u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE) {
-            cubic.on_ack_u32(
-                &mut params,
-                u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
-                clock.now(),
-                RTT,
-            );
+        for _seg in 0..params.cwnd / u32::from(Mss::DEFAULT_IPV4) {
+            cubic.on_ack_u32(&mut params, u32::from(Mss::DEFAULT_IPV4), clock.now(), RTT);
         }
-        assert_eq!(params.cwnd, 8 * u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE));
+        assert_eq!(params.cwnd, 8 * u32::from(Mss::DEFAULT_IPV4));
 
         clock.sleep(RTT);
         cubic.on_retransmission_timeout(&mut params);
-        assert_eq!(params.cwnd, u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE));
+        assert_eq!(params.cwnd, u32::from(Mss::DEFAULT_IPV4));
 
         // We are now back in slow start.
         clock.sleep(RTT);
-        cubic.on_ack_u32(
-            &mut params,
-            u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
-            clock.now(),
-            RTT,
-        );
-        assert_eq!(params.cwnd, 2 * u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE));
+        cubic.on_ack_u32(&mut params, u32::from(Mss::DEFAULT_IPV4), clock.now(), RTT);
+        assert_eq!(params.cwnd, 2 * u32::from(Mss::DEFAULT_IPV4));
 
         clock.sleep(RTT);
         for _ in 0..2 {
-            cubic.on_ack_u32(
-                &mut params,
-                u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
-                clock.now(),
-                RTT,
-            );
+            cubic.on_ack_u32(&mut params, u32::from(Mss::DEFAULT_IPV4), clock.now(), RTT);
         }
-        assert_eq!(params.cwnd, 4 * u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE));
+        assert_eq!(params.cwnd, 4 * u32::from(Mss::DEFAULT_IPV4));
 
         // In this roundtrip, we enter a new congestion epoch from slow start,
         // in this round trip, both cubic and tcp equations will have t=0, so
         // the cwnd in this round trip will be ssthresh, which is 3001 bytes,
         // or 5 full sized segments.
         clock.sleep(RTT);
-        for _seg in 0..params.cwnd / u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE) {
-            cubic.on_ack_u32(
-                &mut params,
-                u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
-                clock.now(),
-                RTT,
-            );
+        for _seg in 0..params.cwnd / u32::from(Mss::DEFAULT_IPV4) {
+            cubic.on_ack_u32(&mut params, u32::from(Mss::DEFAULT_IPV4), clock.now(), RTT);
         }
-        assert_eq!(params.rounded_cwnd().cwnd(), 5 * u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE));
+        assert_eq!(params.rounded_cwnd().cwnd(), 5 * u32::from(Mss::DEFAULT_IPV4));
 
         // Now we are at `epoch_start+RTT`, the window size should grow by at
-        // lease 1 u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE) per RTT (standard TCP).
+        // least 1 u32::from(Mss::DEFAULT_IPV4) per RTT (standard TCP).
         clock.sleep(RTT);
-        for _seg in 0..params.cwnd / u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE) {
-            cubic.on_ack_u32(
-                &mut params,
-                u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE),
-                clock.now(),
-                RTT,
-            );
+        for _seg in 0..params.cwnd / u32::from(Mss::DEFAULT_IPV4) {
+            cubic.on_ack_u32(&mut params, u32::from(Mss::DEFAULT_IPV4), clock.now(), RTT);
         }
-        assert_eq!(params.rounded_cwnd().cwnd(), 6 * u32::from(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE));
+        assert_eq!(params.rounded_cwnd().cwnd(), 6 * u32::from(Mss::DEFAULT_IPV4));
     }
 
     // This is a regression test for https://fxbug.dev/327628809.
@@ -403,8 +377,7 @@ mod tests {
     fn repro_overflow_b327628809(cwnd: u32) {
         let clock = FakeInstantCtx::default();
         let mut cubic = Cubic::<_, true /* FAST_CONVERGENCE */>::default();
-        let mut params =
-            CongestionControlParams { ssthresh: 0, cwnd, mss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE };
+        let mut params = CongestionControlParams { ssthresh: 0, cwnd, mss: Mss::DEFAULT_IPV4 };
         const RTT: Duration = Duration::from_millis(100);
 
         cubic.on_ack(&mut params, NonZeroU32::MIN, clock.now(), RTT);
@@ -419,7 +392,7 @@ mod tests {
         let mut params = CongestionControlParams {
             ssthresh: u32::MAX,
             cwnd: u32::MAX - 1,
-            mss: DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE,
+            mss: Mss::DEFAULT_IPV4,
         };
         const RTT: Duration = Duration::from_millis(100);
         // Ack enough bytes to push cwnd over u32::MAX.

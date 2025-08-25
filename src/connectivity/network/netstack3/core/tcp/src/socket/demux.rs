@@ -1275,7 +1275,7 @@ mod test {
     #[test_case(
         Segment::syn(SEQ, UnscaledWindowSize::from(u16::MAX),
         HandshakeOptions {
-            mss: Some(Mss(NonZeroU16::new(1440 as u16).unwrap())),
+            mss: Some(Mss::new(1440).unwrap()),
             ..Default::default() }), &[]
             ; "syn with mss")]
     #[test_case(Segment::ack(SEQ, ACK, UnscaledWindowSize::from(u16::MAX)), &[]; "ack")]

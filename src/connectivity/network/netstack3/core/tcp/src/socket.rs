@@ -9536,12 +9536,14 @@ mod tests {
     #[derive(PartialEq)]
     enum MssUpdate {
         Decrease,
+        DecreaseBelowMin,
         Same,
         Increase,
     }
 
     #[ip_test(I)]
     #[test_case(MssUpdate::Decrease; "update if decrease")]
+    #[test_case(MssUpdate::DecreaseBelowMin; "update to min if decreased below min")]
     #[test_case(MssUpdate::Same; "ignore if same")]
     #[test_case(MssUpdate::Increase; "ignore if increase")]
     fn pmtu_update_mss<I: TcpTestIpExt + IcmpIpExt>(mss_update: MssUpdate)
@@ -9578,8 +9580,14 @@ mod tests {
 
         let initial_mss = client.mss();
 
+        // The minimum link MTU needed to support TCP connections.
+        let min_mtu = u32::from(Mss::MIN)
+            + I::IP_HEADER_LENGTH.get()
+            + packet_formats::tcp::HDR_PREFIX_LEN as u32;
+
         let pmtu_update = match mss_update {
-            MssUpdate::Decrease => I::MINIMUM_LINK_MTU,
+            MssUpdate::DecreaseBelowMin => Mtu::new(min_mtu - 1),
+            MssUpdate::Decrease => Mtu::new(min_mtu),
             MssUpdate::Same => LINK_MTU,
             MssUpdate::Increase => Mtu::max(),
         };
@@ -9600,7 +9608,7 @@ mod tests {
         // the PMTU decreases, and deliver a PMTU update.
         let ClientBuffers { send: client_snd_end, receive: _ } =
             client_buffers.0.as_ref().lock().take().unwrap();
-        let payload = vec![0xFF; I::MINIMUM_LINK_MTU.into()];
+        let payload = vec![0xFF; min_mtu.try_into().unwrap()];
         client_snd_end.lock().extend_from_slice(&payload);
         net.with_context(LOCAL, |ctx| {
             ctx.tcp_api().do_send(&client);
@@ -9618,35 +9626,47 @@ mod tests {
             );
         });
 
-        let mms = Mms::from_mtu::<I>(pmtu_update, 0 /* no IP options */).unwrap();
-        let mss = Mss::from_mms(mms).unwrap();
+        let requested_mms = Mms::from_mtu::<I>(pmtu_update, 0 /* no IP options */).unwrap();
+        let requested_mss = Mss::from_mms(requested_mms);
         match mss_update {
+            MssUpdate::DecreaseBelowMin => {
+                // NB: The requested MSS is invalid.
+                assert_eq!(requested_mss, None);
+            }
             MssUpdate::Decrease => {
-                assert!(mss < initial_mss);
+                assert_matches!(requested_mss, Some(mss) if mss < initial_mss);
             }
             MssUpdate::Same => {
-                assert_eq!(mss, initial_mss);
+                assert_eq!(requested_mss, Some(initial_mss));
             }
             MssUpdate::Increase => {
-                assert!(mss > initial_mss);
+                assert_matches!(requested_mss, Some(mss) if mss > initial_mss);
             }
         };
 
         // The socket should only update its MSS if the new MSS is a decrease.
-        if mss_update != MssUpdate::Decrease {
-            assert_eq!(client.mss(), initial_mss);
-            return;
+        match mss_update {
+            MssUpdate::Decrease | MssUpdate::DecreaseBelowMin => {}
+            MssUpdate::Same | MssUpdate::Increase => {
+                assert_eq!(client.mss(), initial_mss);
+                return;
+            }
         }
-        assert_eq!(client.mss(), mss);
+
+        // Note the MSS & MMS used by the stack will be clamped to minimum valid
+        // value.
+        let expected_mss = requested_mss.unwrap_or(Mss::MIN);
+        let expected_mms = usize::from(expected_mss) + packet_formats::tcp::HDR_PREFIX_LEN;
+
+        assert_eq!(client.mss(), expected_mss);
         // The PMTU update should not represent a congestion event.
-        assert_gt!(client.cwnd().cwnd(), u32::from(mss));
+        assert_gt!(client.cwnd().cwnd(), u32::from(expected_mss));
 
         // The segment that was too large should be eagerly retransmitted.
         net.with_context(LOCAL, |ctx| {
             let frames = ctx.core_ctx().ip_socket_ctx.frames();
             let frame = assert_matches!(&frames[..], [(_meta, frame)] => frame);
-            let expected_len: usize = mms.get().get().try_into().unwrap();
-            assert_eq!(frame.len(), expected_len);
+            assert_eq!(frame.len(), expected_mms);
         });
 
         // The remaining in-flight segment(s) are retransmitted via the retransmission

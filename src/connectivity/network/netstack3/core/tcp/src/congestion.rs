@@ -1065,17 +1065,15 @@ mod test {
     use core::ops::Range;
 
     use assert_matches::assert_matches;
-    use netstack3_base::SackBlock;
     use netstack3_base::testutil::FakeInstant;
+    use netstack3_base::{Mss, SackBlock};
     use test_case::{test_case, test_matrix};
 
     use super::*;
-    use crate::internal::testutil::{
-        self, DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE, DEFAULT_IPV6_MAXIMUM_SEGMENT_SIZE,
-    };
+    use crate::internal::testutil;
 
-    const MSS_1: Mss = DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE;
-    const MSS_2: Mss = DEFAULT_IPV6_MAXIMUM_SEGMENT_SIZE;
+    const MSS_1: Mss = Mss::DEFAULT_IPV4;
+    const MSS_2: Mss = Mss::DEFAULT_IPV6;
 
     enum StartingAck {
         One,
@@ -1124,8 +1122,7 @@ mod test {
 
     #[test]
     fn no_recovery_before_reaching_threshold() {
-        let mut congestion_control =
-            CongestionControl::cubic_with_mss(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE);
+        let mut congestion_control = CongestionControl::cubic_with_mss(Mss::DEFAULT_IPV4);
         let old_cwnd = congestion_control.params.cwnd;
         assert_eq!(congestion_control.params.ssthresh, u32::MAX);
         assert_eq!(congestion_control.on_dup_ack(SeqNum::new(0), SeqNum::new(1)), None);
@@ -1146,7 +1143,7 @@ mod test {
         let ack = SeqNum::new(1);
         let snd_nxt = SeqNum::new(100);
         let mut congestion_control =
-            CongestionControl::<FakeInstant>::cubic_with_mss(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE);
+            CongestionControl::<FakeInstant>::cubic_with_mss(Mss::DEFAULT_IPV4);
         assert_eq!(congestion_control.preprocess_ack(ack, snd_nxt, &SackBlocks::EMPTY), None);
         assert_eq!(
             congestion_control.preprocess_ack(ack, snd_nxt, &testutil::sack_blocks([10..20])),
@@ -1171,8 +1168,7 @@ mod test {
     #[test_case(DUP_ACK_THRESHOLD; "exact threshold")]
     #[test_case(DUP_ACK_THRESHOLD+1; "over threshold")]
     fn sack_recovery_enter_exit_loss_dupacks(dup_acks: u8) {
-        let mut congestion_control =
-            CongestionControl::cubic_with_mss(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE);
+        let mut congestion_control = CongestionControl::cubic_with_mss(Mss::DEFAULT_IPV4);
         let mss = congestion_control.mss();
 
         let ack = SeqNum::new(1);
@@ -1247,7 +1243,7 @@ mod test {
     #[test]
     fn sack_recovery_enter_loss_single_dupack() {
         let mut congestion_control =
-            CongestionControl::<FakeInstant>::cubic_with_mss(DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE);
+            CongestionControl::<FakeInstant>::cubic_with_mss(Mss::DEFAULT_IPV4);
 
         // SACK can enter recovery after a *single* duplicate ACK provided
         // enough information is in the scoreboard:
@@ -1279,7 +1275,7 @@ mod test {
     fn sack_recovery_poll_send_not_recovery() {
         let mut scoreboard = SackScoreboard::default();
         let mut recovery = SackRecovery::new();
-        let mss = DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE;
+        let mss = Mss::DEFAULT_IPV4;
         let cwnd_mss = 10u32;
         let cwnd = CongestionWindow::new(cwnd_mss * u32::from(mss), mss);
         let snd_una = SeqNum::new(1);
@@ -1867,7 +1863,7 @@ mod test {
 
     #[test]
     fn sack_rto() {
-        let mss = DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE;
+        let mss = Mss::DEFAULT_IPV4;
         let mut congestion_control = CongestionControl::<FakeInstant>::cubic_with_mss(mss);
 
         let rto_snd_nxt = SeqNum::new(50);
@@ -1938,7 +1934,7 @@ mod test {
     #[test]
     fn dont_rearm_rto_past_recovery_point() {
         let mut scoreboard = SackScoreboard::default();
-        let mss = DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE;
+        let mss = Mss::DEFAULT_IPV4;
         let snd_una = SeqNum::new(1);
 
         let recovery_point = nth_segment_from(snd_una, mss, 100).start;
@@ -2004,7 +2000,7 @@ mod test {
     #[test]
     fn sack_snd_nxt_rewind() {
         let mut scoreboard = SackScoreboard::default();
-        let mss = DEFAULT_IPV4_MAXIMUM_SEGMENT_SIZE;
+        let mss = Mss::DEFAULT_IPV4;
         let snd_una = SeqNum::new(1);
 
         let recovery_point = nth_segment_from(snd_una, mss, 100).start;
