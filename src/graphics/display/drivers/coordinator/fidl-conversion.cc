@@ -28,7 +28,7 @@ fuchsia_hardware_display_engine::wire::DisplayConfig ToFidlDisplayConfig(
   return fuchsia_hardware_display_engine::wire::DisplayConfig{
       .display_id = driver_display_config.display_id.ToFidl(),
       .mode_id = driver_display_config.mode_id.ToFidl(),
-      .timing = display::ToFidlDisplayTiming(driver_display_config.timing),
+      .timing = {},
       .color_conversion = driver_display_config.color_conversion.ToFidl(),
       .layers = fidl_layers,
   };

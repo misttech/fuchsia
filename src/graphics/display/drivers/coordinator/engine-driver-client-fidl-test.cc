@@ -16,7 +16,6 @@
 #include "src/graphics/display/drivers/coordinator/testing/mock-engine-fidl.h"
 #include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
-#include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-layer.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 #include "src/lib/testing/predicates/status.h"
@@ -244,11 +243,6 @@ TEST_F(EngineDriverClientFidlTest, CheckConfigurationOk) {
   const DriverDisplayConfig kDisplayConfig = {
       .display_id = display::DisplayId(1),
       .mode_id = display::ModeId(2),
-      .timing =
-          display::DisplayTiming{
-              .horizontal_active_px = 1920,
-              .vertical_active_lines = 1080,
-          },
       .color_conversion = display::ColorConversion({
           .preoffsets = {0.1f, 0.2f, 0.3f},
           .coefficients =
@@ -270,10 +264,6 @@ TEST_F(EngineDriverClientFidlTest, CheckConfigurationOk) {
                   kDisplayConfig.display_id);
 
         EXPECT_EQ(request->display_config.mode_id.value, kDisplayConfig.mode_id.value());
-        EXPECT_EQ(request->display_config.timing.h_addressable,
-                  static_cast<uint32_t>(kDisplayConfig.timing.horizontal_active_px));
-        EXPECT_EQ(request->display_config.timing.v_addressable,
-                  static_cast<uint32_t>(kDisplayConfig.timing.vertical_active_lines));
 
         EXPECT_THAT(request->display_config.color_conversion.preoffsets,
                     ::testing::ElementsAre(0.1f, 0.2f, 0.3f));
@@ -316,11 +306,6 @@ TEST_F(EngineDriverClientFidlTest, CheckConfigurationError) {
   const DriverDisplayConfig kDisplayConfig = {
       .display_id = display::DisplayId(1),
       .mode_id = display::ModeId(2),
-      .timing =
-          display::DisplayTiming{
-              .horizontal_active_px = 1920,
-              .vertical_active_lines = 1080,
-          },
       .color_conversion = display::ColorConversion({
           .preoffsets = {0.1f, 0.2f, 0.3f},
           .coefficients =
@@ -342,11 +327,6 @@ TEST_F(EngineDriverClientFidlTest, CheckConfigurationError) {
                   kDisplayConfig.display_id);
 
         EXPECT_EQ(request->display_config.mode_id.value, kDisplayConfig.mode_id.value());
-        EXPECT_EQ(request->display_config.timing.h_addressable,
-                  static_cast<uint32_t>(kDisplayConfig.timing.horizontal_active_px));
-        EXPECT_EQ(request->display_config.timing.v_addressable,
-                  static_cast<uint32_t>(kDisplayConfig.timing.vertical_active_lines));
-
         EXPECT_THAT(request->display_config.color_conversion.preoffsets,
                     ::testing::ElementsAre(0.1f, 0.2f, 0.3f));
 
@@ -389,11 +369,6 @@ TEST_F(EngineDriverClientFidlTest, ApplyConfiguration) {
   const DriverDisplayConfig kDisplayConfig = {
       .display_id = display::DisplayId(1),
       .mode_id = display::ModeId(2),
-      .timing =
-          display::DisplayTiming{
-              .horizontal_active_px = 1920,
-              .vertical_active_lines = 1080,
-          },
       .color_conversion = display::ColorConversion({
           .preoffsets = {0.1f, 0.2f, 0.3f},
           .coefficients =
@@ -416,10 +391,6 @@ TEST_F(EngineDriverClientFidlTest, ApplyConfiguration) {
                   kDisplayConfig.display_id);
 
         EXPECT_EQ(request->display_config.mode_id.value, kDisplayConfig.mode_id.value());
-        EXPECT_EQ(request->display_config.timing.h_addressable,
-                  static_cast<uint32_t>(kDisplayConfig.timing.horizontal_active_px));
-        EXPECT_EQ(request->display_config.timing.v_addressable,
-                  static_cast<uint32_t>(kDisplayConfig.timing.vertical_active_lines));
 
         EXPECT_THAT(request->display_config.color_conversion.preoffsets,
                     ::testing::ElementsAre(0.1f, 0.2f, 0.3f));

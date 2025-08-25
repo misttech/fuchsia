@@ -13,14 +13,13 @@
 
 #include <array>
 #include <memory>
-#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
+#include "src/graphics/display/lib/api-types/cpp/mode.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
-#include "src/graphics/display/lib/edid-values/edid-values.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace display_coordinator {
@@ -34,14 +33,24 @@ class AddedDisplayInfoTest : public ::testing::Test {
 
 TEST_F(AddedDisplayInfoTest, CreateFromFidlTranscribesDisplayId) {
   static constexpr display::DisplayId kDisplayId(42);
+  static constexpr std::array<display::Mode, 1> kModes = {
+      display::Mode({
+          .active_width = 1024,
+          .active_height = 768,
+          .refresh_rate_millihertz = 60'000,
+      }),
+  };
   static constexpr std::array<display::PixelFormat, 1> kPixelFormats = {
       display::PixelFormat::kR8G8B8A8};
 
+  std::array<fuchsia_hardware_display_types::wire::Mode, 1> fidl_modes = {kModes[0].ToFidl()};
   std::array<fuchsia_images2::wire::PixelFormat, 1> fidl_pixel_formats = {
       kPixelFormats[0].ToFidl()};
 
   const fuchsia_hardware_display_engine::wire::RawDisplayInfo fidl_display_info = {
       .display_id = kDisplayId.ToFidl(),
+      .preferred_modes =
+          fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(fidl_modes),
       .pixel_formats =
           fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(fidl_pixel_formats),
   };
@@ -53,21 +62,30 @@ TEST_F(AddedDisplayInfoTest, CreateFromFidlTranscribesDisplayId) {
       std::move(added_display_info_result).value();
 
   EXPECT_EQ(kDisplayId, added_display_info->display_id);
-  EXPECT_THAT(added_display_info->preferred_modes, ::testing::SizeIs(0));
-  EXPECT_THAT(added_display_info->edid_bytes, ::testing::SizeIs(0));
+  EXPECT_THAT(added_display_info->preferred_modes, ::testing::SizeIs(1));
   EXPECT_THAT(added_display_info->pixel_formats, ::testing::SizeIs(1));
 }
 
 TEST_F(AddedDisplayInfoTest, CreateFromFidlTranscribesPixelFormats) {
   static constexpr display::DisplayId kDisplayId(42);
+  static constexpr std::array<display::Mode, 1> kModes = {
+      display::Mode({
+          .active_width = 1024,
+          .active_height = 768,
+          .refresh_rate_millihertz = 60'000,
+      }),
+  };
   static constexpr std::array<display::PixelFormat, 2> kPixelFormats = {
       display::PixelFormat::kR8G8B8A8, display::PixelFormat::kB8G8R8A8};
 
+  std::array<fuchsia_hardware_display_types::wire::Mode, 1> fidl_modes = {kModes[0].ToFidl()};
   std::array<fuchsia_images2::wire::PixelFormat, 2> fidl_pixel_formats = {
       kPixelFormats[0].ToFidl(), kPixelFormats[1].ToFidl()};
 
   const fuchsia_hardware_display_engine::wire::RawDisplayInfo fidl_display_info = {
       .display_id = kDisplayId.ToFidl(),
+      .preferred_modes =
+          fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(fidl_modes),
       .pixel_formats =
           fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(fidl_pixel_formats),
   };
@@ -81,37 +99,7 @@ TEST_F(AddedDisplayInfoTest, CreateFromFidlTranscribesPixelFormats) {
   EXPECT_THAT(added_display_info->pixel_formats, ::testing::ElementsAreArray(kPixelFormats));
 
   EXPECT_EQ(kDisplayId, added_display_info->display_id);
-  EXPECT_THAT(added_display_info->preferred_modes, ::testing::SizeIs(0));
-  EXPECT_THAT(added_display_info->edid_bytes, ::testing::SizeIs(0));
-}
-
-TEST_F(AddedDisplayInfoTest, CreateFromFidlCopiesEdidBytes) {
-  static constexpr display::DisplayId kDisplayId(42);
-  static constexpr std::array<display::PixelFormat, 1> kPixelFormats = {
-      display::PixelFormat::kR8G8B8A8};
-
-  std::array<fuchsia_images2::wire::PixelFormat, 1> fidl_pixel_formats = {
-      kPixelFormats[0].ToFidl()};
-  std::vector<uint8_t> fidl_edid(edid::kHpZr30wEdid.begin(), edid::kHpZr30wEdid.end());
-
-  const fuchsia_hardware_display_engine::wire::RawDisplayInfo fidl_display_info = {
-      .display_id = kDisplayId.ToFidl(),
-      .edid_bytes = fidl::VectorView<uint8_t>::FromExternal(fidl_edid),
-      .pixel_formats =
-          fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(fidl_pixel_formats),
-  };
-
-  zx::result<std::unique_ptr<AddedDisplayInfo>> added_display_info_result =
-      AddedDisplayInfo::Create(fidl_display_info);
-  ASSERT_OK(added_display_info_result);
-  std::unique_ptr<AddedDisplayInfo> added_display_info =
-      std::move(added_display_info_result).value();
-
-  EXPECT_THAT(added_display_info->edid_bytes, ::testing::ElementsAreArray(edid::kHpZr30wEdid));
-
-  EXPECT_EQ(kDisplayId, added_display_info->display_id);
-  EXPECT_THAT(added_display_info->preferred_modes, ::testing::SizeIs(0));
-  EXPECT_THAT(added_display_info->pixel_formats, ::testing::SizeIs(1));
+  EXPECT_THAT(added_display_info->preferred_modes, ::testing::SizeIs(1));
 }
 
 TEST_F(AddedDisplayInfoTest, CreateFromFidlCopiesDisplayModes) {
@@ -157,7 +145,6 @@ TEST_F(AddedDisplayInfoTest, CreateFromFidlCopiesDisplayModes) {
   EXPECT_EQ(75'000, added_display_info->preferred_modes[1].refresh_rate_millihertz());
 
   EXPECT_EQ(kDisplayId, added_display_info->display_id);
-  EXPECT_THAT(added_display_info->edid_bytes, ::testing::SizeIs(0));
   EXPECT_THAT(added_display_info->pixel_formats, ::testing::SizeIs(1));
 }
 

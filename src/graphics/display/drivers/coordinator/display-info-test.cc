@@ -12,11 +12,11 @@
 #include <memory>
 #include <utility>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "src/graphics/display/drivers/coordinator/added-display-info.h"
-#include "src/graphics/display/lib/edid-values/edid-values.h"
-#include "src/graphics/display/lib/edid/edid.h"
+#include "src/graphics/display/lib/api-types/cpp/mode.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace display_coordinator {
@@ -28,166 +28,51 @@ class DisplayInfoTest : public ::testing::Test {
   fdf_testing::ScopedGlobalLogger logger_;
 };
 
-TEST_F(DisplayInfoTest, InitializeWithEdidValueSingleBlock) {
-  std::vector<fuchsia_images2::PixelFormat> pixel_formats = {
-      fuchsia_images2::PixelFormat::kR8G8B8A8,
+TEST_F(DisplayInfoTest, InitializeWithPreferredModes) {
+  static constexpr display::PixelFormat kPixelFormat = display::PixelFormat::kR8G8B8A8;
+  const std::vector<display::Mode> kModes = {
+      display::Mode({
+          .active_width = 1024,
+          .active_height = 768,
+          .refresh_rate_millihertz = 60'000,
+      }),
+      display::Mode({
+          .active_width = 800,
+          .active_height = 600,
+          .refresh_rate_millihertz = 75'000,
+      }),
   };
-  std::vector<uint8_t> edid_bytes(edid::kHpZr30wEdid.begin(), edid::kHpZr30wEdid.end());
-
-  const fuchsia_hardware_display_engine::wire::RawDisplayInfo raw_display_info = {
-      .display_id = display::DisplayId(1).ToFidl(),
-      .preferred_modes = {},
-      .edid_bytes = fidl::VectorView<uint8_t>::FromExternal(edid_bytes),
-      .pixel_formats = fidl::VectorView<fuchsia_images2::PixelFormat>::FromExternal(pixel_formats),
+  AddedDisplayInfo added_display_info = {
+      .display_id = display::DisplayId(1),
+      .pixel_formats =
+          {
+              kPixelFormat,
+          },
+      .preferred_modes = {kModes[0], kModes[1]},
   };
-
-  zx::result<std::unique_ptr<AddedDisplayInfo>> added_display_info_result =
-      AddedDisplayInfo::Create(raw_display_info);
-  ASSERT_OK(added_display_info_result);
-  std::unique_ptr<AddedDisplayInfo> added_display_info =
-      std::move(added_display_info_result).value();
-
   zx::result<std::unique_ptr<DisplayInfo>> display_info_result =
-      DisplayInfo::Create(std::move(*added_display_info));
+      DisplayInfo::Create(std::move(added_display_info));
   ASSERT_OK(display_info_result);
 
   std::unique_ptr<DisplayInfo> display_info = std::move(display_info_result).value();
-  ASSERT_TRUE(display_info->edid_info.has_value());
-
-  const edid::Edid& edid_info = display_info->edid_info.value();
-  EXPECT_EQ(edid_info.edid_length(), edid::kHpZr30wEdid.size());
-  EXPECT_EQ(edid_info.GetManufacturerName(), std::string("HEWLETT PACKARD"));
-  EXPECT_EQ(edid_info.product_code(), 10348u);
-  EXPECT_EQ(edid_info.GetDisplayProductSerialNumber(), std::string("CN413010YH"));
+  EXPECT_THAT(display_info->pixel_formats, ::testing::ElementsAre(kPixelFormat));
+  EXPECT_THAT(display_info->preferred_modes,
+              ::testing::ElementsAre(display::ModeAndId({display::ModeId(1), kModes[0]}),
+                                     display::ModeAndId({display::ModeId(2), kModes[1]})));
 }
 
-TEST_F(DisplayInfoTest, InitializeWithEdidValueMultipleBlocks) {
-  std::vector<fuchsia_images2::PixelFormat> pixel_formats = {
-      fuchsia_images2::PixelFormat::kR8G8B8A8,
-  };
-  std::vector<uint8_t> edid_bytes(edid::kSamsungCrg9Edid.begin(), edid::kSamsungCrg9Edid.end());
-
-  const fuchsia_hardware_display_engine::wire::RawDisplayInfo raw_display_info = {
-      .display_id = display::DisplayId(1).ToFidl(),
+TEST_F(DisplayInfoTest, InitializeFailureOnEmptyPreferredModes) {
+  AddedDisplayInfo added_display_info = {
+      .display_id = display::DisplayId(1),
+      .pixel_formats =
+          {
+              display::PixelFormat::kR8G8B8A8,
+          },
       .preferred_modes = {},
-      .edid_bytes = fidl::VectorView<uint8_t>::FromExternal(edid_bytes),
-      .pixel_formats = fidl::VectorView<fuchsia_images2::PixelFormat>::FromExternal(pixel_formats),
   };
-
-  zx::result<std::unique_ptr<AddedDisplayInfo>> added_display_info_result =
-      AddedDisplayInfo::Create(raw_display_info);
-  ASSERT_OK(added_display_info_result);
-  std::unique_ptr<AddedDisplayInfo> added_display_info =
-      std::move(added_display_info_result).value();
-
   zx::result<std::unique_ptr<DisplayInfo>> display_info_result =
-      DisplayInfo::Create(std::move(*added_display_info));
-  ASSERT_OK(display_info_result);
-
-  std::unique_ptr<DisplayInfo> display_info = std::move(display_info_result).value();
-  ASSERT_TRUE(display_info->edid_info.has_value());
-
-  const edid::Edid& edid_info = display_info->edid_info.value();
-  EXPECT_EQ(edid_info.edid_length(), edid::kSamsungCrg9Edid.size());
-  EXPECT_EQ(edid_info.GetManufacturerName(), std::string("SAMSUNG ELECTRIC COMPANY"));
-  EXPECT_EQ(edid_info.product_code(), 28754u);
-  EXPECT_EQ(edid_info.GetDisplayProductSerialNumber(), std::string("H4ZR701271"));
-}
-
-TEST_F(DisplayInfoTest, InitializeWithEdidValueOfInvalidLength) {
-  std::vector<fuchsia_images2::PixelFormat> pixel_formats = {
-      fuchsia_images2::PixelFormat::kR8G8B8A8,
-  };
-  const size_t kInvalidEdidSizeBytes = 173;
-  ASSERT_LT(kInvalidEdidSizeBytes, edid::kSamsungCrg9Edid.size());
-
-  std::span<const uint8_t> invalid_edid_range =
-      edid::kSamsungCrg9Edid.subspan(0, kInvalidEdidSizeBytes);
-  std::vector<uint8_t> edid_bytes(invalid_edid_range.begin(), invalid_edid_range.end());
-
-  const fuchsia_hardware_display_engine::wire::RawDisplayInfo raw_display_info = {
-      .display_id = display::DisplayId(1).ToFidl(),
-      .preferred_modes = {},
-      .edid_bytes = fidl::VectorView<uint8_t>::FromExternal(edid_bytes),
-      .pixel_formats = fidl::VectorView<fuchsia_images2::PixelFormat>::FromExternal(pixel_formats),
-  };
-
-  zx::result<std::unique_ptr<AddedDisplayInfo>> added_display_info_result =
-      AddedDisplayInfo::Create(raw_display_info);
-  ASSERT_OK(added_display_info_result);
-  std::unique_ptr<AddedDisplayInfo> added_display_info =
-      std::move(added_display_info_result).value();
-
-  zx::result<std::unique_ptr<DisplayInfo>> display_info_result =
-      DisplayInfo::Create(std::move(*added_display_info));
-  ASSERT_FALSE(display_info_result.is_ok());
-  EXPECT_STATUS(display_info_result.error_value(), ZX_ERR_INVALID_ARGS);
-}
-
-TEST_F(DisplayInfoTest, InitializeWithEdidValueIncomplete) {
-  std::vector<fuchsia_images2::PixelFormat> pixel_formats = {
-      fuchsia_images2::PixelFormat::kR8G8B8A8,
-  };
-  const size_t kIncompleteEdidSizeBytes = 128;
-  ASSERT_LT(kIncompleteEdidSizeBytes, edid::kSamsungCrg9Edid.size());
-
-  std::span<const uint8_t> invalid_edid_range =
-      edid::kSamsungCrg9Edid.subspan(0, kIncompleteEdidSizeBytes);
-  std::vector<uint8_t> edid_bytes(invalid_edid_range.begin(), invalid_edid_range.end());
-
-  const fuchsia_hardware_display_engine::wire::RawDisplayInfo raw_display_info = {
-      .display_id = display::DisplayId(1).ToFidl(),
-      .preferred_modes = {},
-      .edid_bytes = fidl::VectorView<uint8_t>::FromExternal(edid_bytes),
-      .pixel_formats = fidl::VectorView<fuchsia_images2::PixelFormat>::FromExternal(pixel_formats),
-  };
-
-  zx::result<std::unique_ptr<AddedDisplayInfo>> added_display_info_result =
-      AddedDisplayInfo::Create(raw_display_info);
-  ASSERT_OK(added_display_info_result);
-  std::unique_ptr<AddedDisplayInfo> added_display_info =
-      std::move(added_display_info_result).value();
-
-  zx::result<std::unique_ptr<DisplayInfo>> display_info_result =
-      DisplayInfo::Create(std::move(*added_display_info));
-  ASSERT_FALSE(display_info_result.is_ok());
-  EXPECT_STATUS(display_info_result.error_value(), ZX_ERR_INVALID_ARGS);
-}
-
-TEST_F(DisplayInfoTest, InitializeWithEdidValueNonDigitalDisplay) {
-  // A synthetic EDID of an analog display device.
-  std::vector<uint8_t> edid_analog_display = {
-      0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x22, 0xf0, 0x6c, 0x28, 0x01, 0x01, 0x01,
-      0x01, 0x1e, 0x15, 0x01, 0x04, 0x35, 0x40, 0x28, 0x78, 0xe2, 0x8d, 0x85, 0xad, 0x4f, 0x35,
-      0xb1, 0x25, 0x0e, 0x50, 0x54, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-      0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0xe2, 0x68, 0x00, 0xa0, 0xa0, 0x40,
-      0x2e, 0x60, 0x30, 0x20, 0x36, 0x00, 0x81, 0x90, 0x21, 0x00, 0x00, 0x1a, 0xbc, 0x1b, 0x00,
-      0xa0, 0x50, 0x20, 0x17, 0x30, 0x30, 0x20, 0x36, 0x00, 0x81, 0x90, 0x21, 0x00, 0x00, 0x1a,
-      0x00, 0x00, 0x00, 0xfc, 0x00, 0x48, 0x50, 0x20, 0x5a, 0x52, 0x33, 0x30, 0x77, 0x0a, 0x20,
-      0x20, 0x20, 0x20, 0x00, 0x00, 0x00, 0xff, 0x00, 0x43, 0x4e, 0x34, 0x31, 0x33, 0x30, 0x31,
-      0x30, 0x59, 0x48, 0x0a, 0x20, 0x20, 0x00, 0x40};
-
-  std::vector<fuchsia_images2::PixelFormat> pixel_formats = {
-      fuchsia_images2::PixelFormat::kR8G8B8A8,
-  };
-
-  const fuchsia_hardware_display_engine::wire::RawDisplayInfo raw_display_info = {
-      .display_id = display::DisplayId(1).ToFidl(),
-      .preferred_modes = {},
-      .edid_bytes = fidl::VectorView<uint8_t>::FromExternal(edid_analog_display),
-      .pixel_formats = fidl::VectorView<fuchsia_images2::PixelFormat>::FromExternal(pixel_formats),
-  };
-
-  zx::result<std::unique_ptr<AddedDisplayInfo>> added_display_info_result =
-      AddedDisplayInfo::Create(raw_display_info);
-  ASSERT_OK(added_display_info_result);
-  std::unique_ptr<AddedDisplayInfo> added_display_info =
-      std::move(added_display_info_result).value();
-
-  zx::result<std::unique_ptr<DisplayInfo>> display_info_result =
-      DisplayInfo::Create(std::move(*added_display_info));
-  ASSERT_FALSE(display_info_result.is_ok());
-  EXPECT_STATUS(display_info_result.error_value(), ZX_ERR_INVALID_ARGS);
+      DisplayInfo::Create(std::move(added_display_info));
+  EXPECT_STATUS(display_info_result, ZX_ERR_INVALID_ARGS);
 }
 
 }  // namespace

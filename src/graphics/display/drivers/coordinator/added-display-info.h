@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.hardware.display.engine/cpp/driver/wire.h>
 #include <lib/zx/result.h>
 
-#include <cstdint>
 #include <memory>
 
 #include <fbl/vector.h>
@@ -42,13 +41,10 @@ struct AddedDisplayInfo {
   // store instances in a dictionary keyed by `display_id` in the future.
   display::DisplayId display_id;
 
-  // Empty if no EDID information is provided.
-  fbl::Vector<uint8_t> edid_bytes;
-
   // Guaranteed to be non-empty in valid instances.
   fbl::Vector<display::PixelFormat> pixel_formats;
 
-  // Empty if no preferred modes are provided.
+  // Guaranteed to be non-empty in valid instances.
   fbl::Vector<display::Mode> preferred_modes;
 };
 

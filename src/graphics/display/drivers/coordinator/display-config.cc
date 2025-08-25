@@ -55,7 +55,6 @@ void DisplayConfig::DiscardNonLayerDraftConfig() {
       //
       // TODO(https://fxbug.dev/402804098): Remove this workaround.
       .mode_id = draft_.mode_id,
-      .timing = draft_.timing,
 
       .color_conversion = applied_.color_conversion,
       .layer_count = applied_.layer_count,

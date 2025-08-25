@@ -10,7 +10,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <queue>
 #include <string>
 #include <string_view>
@@ -23,12 +22,10 @@
 #include "src/graphics/display/drivers/coordinator/id-map.h"
 #include "src/graphics/display/drivers/coordinator/image.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
-#include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-and-id.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
-#include "src/graphics/display/lib/edid/edid.h"
 
 namespace display_coordinator {
 
@@ -40,8 +37,7 @@ class DisplayInfo : public IdMappable<std::unique_ptr<DisplayInfo>, display::Dis
   // Exposed for testing. Prefer obtaining instances from the `Create()` factory method.
   explicit DisplayInfo(display::DisplayId display_id,
                        fbl::Vector<display::PixelFormat> pixel_formats,
-                       fbl::Vector<display::ModeAndId> preferred_modes,
-                       std::optional<edid::Edid> edid_info);
+                       fbl::Vector<display::ModeAndId> preferred_modes);
 
   DisplayInfo(const DisplayInfo&) = delete;
   DisplayInfo(DisplayInfo&&) = delete;
@@ -51,9 +47,6 @@ class DisplayInfo : public IdMappable<std::unique_ptr<DisplayInfo>, display::Dis
   ~DisplayInfo();
 
   // Populates an inspect tree for this display.
-  //
-  // Must be called after display timing processing is complete. In particular, EDID modes
-  // must be parsed and filtered.
   void InitializeInspect(inspect::Node* parent_node);
 
   // Guaranteed to be >= 0 and < 2^16.
@@ -74,16 +67,7 @@ class DisplayInfo : public IdMappable<std::unique_ptr<DisplayInfo>, display::Dis
   // Returns an empty string if the information is not available.
   std::string GetMonitorSerial() const;
 
-  // nullopt if the display does not support EDID.
-  const std::optional<edid::Edid> edid_info;
-
   fbl::Vector<display::ModeAndId> preferred_modes;
-
-  // Modified after construction if `edid_info` is not nullopt.
-  //
-  // Once fully initialized, `timings` and `preferred_modes` must not be both
-  // empty.
-  fbl::Vector<display::DisplayTiming> timings;
 
   const fbl::Vector<display::PixelFormat> pixel_formats;
 

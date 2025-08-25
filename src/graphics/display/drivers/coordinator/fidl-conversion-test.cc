@@ -13,7 +13,6 @@
 #include "src/graphics/display/drivers/coordinator/driver-display-config.h"
 #include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
-#include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-layer.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 
@@ -51,11 +50,6 @@ TEST(FidlConversionTest, ToFidlDisplayConfig) {
   const DriverDisplayConfig kDisplayConfig = {
       .display_id = display::DisplayId(1),
       .mode_id = display::ModeId(2),
-      .timing =
-          display::DisplayTiming{
-              .horizontal_active_px = 1920,
-              .vertical_active_lines = 1080,
-          },
       .color_conversion = display::ColorConversion({
           .preoffsets = {0.1f, 0.2f, 0.3f},
           .coefficients =
@@ -75,8 +69,6 @@ TEST(FidlConversionTest, ToFidlDisplayConfig) {
 
   EXPECT_EQ(fidl_config.display_id.value, 1u);
   EXPECT_EQ(fidl_config.mode_id.value, 2u);
-  EXPECT_EQ(fidl_config.timing.h_addressable, 1920u);
-  EXPECT_EQ(fidl_config.timing.v_addressable, 1080u);
   EXPECT_THAT(fidl_config.color_conversion.preoffsets, ::testing::ElementsAre(0.1f, 0.2f, 0.3f));
   ASSERT_EQ(fidl_config.color_conversion.coefficients.size(), 3u);
   EXPECT_THAT(fidl_config.color_conversion.coefficients[0],

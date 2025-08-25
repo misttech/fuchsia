@@ -40,7 +40,6 @@
 #include "src/graphics/display/drivers/coordinator/vsync-monitor.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
-#include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-capture-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
@@ -114,14 +113,9 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   // The display modes are guaranteed to be valid as long as the display with
   // `display_id` is valid.
   //
-  // For a valid display, it's guaranteed that at least one of
-  // `GetDisplayPreferredModes()` and `GetDisplayTimings()` is non-empty.
+  // For a valid display, it's guaranteed that `GetDisplayPreferredModes()` is
+  // non-empty.
   zx::result<std::span<const display::ModeAndId>> GetDisplayPreferredModes(
-      display::DisplayId display_id);
-
-  // The display timings are guaranteed to be valid as long as the display with
-  // `display_id` is valid.
-  zx::result<std::span<const display::DisplayTiming>> GetDisplayTimings(
       display::DisplayId display_id);
 
   zx::result<fbl::Vector<display::PixelFormat>> GetSupportedPixelFormats(
@@ -186,9 +180,6 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
   //
   // Must be called on the driver dispatcher.
   void RemoveDisplay(display::DisplayId removed_display_id);
-
-  // Must be called on the driver dispatcher.
-  void PopulateDisplayTimings(DisplayInfo& info);
 
   // Processes a VSync signal from an engine driver.
   //

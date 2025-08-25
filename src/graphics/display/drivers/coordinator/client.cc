@@ -50,7 +50,6 @@
 #include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
-#include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-capture-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/event-id.h"
@@ -375,70 +374,6 @@ display::ModeId GetPreferredModeIdForMode(
   return display::kInvalidModeId;
 }
 
-// Converts `mode` to a "placeholder" `DisplayTiming` struct.
-//
-// The returned `DisplayTiming` may not represent the actual display timing
-// information, as the detailed timing parameters cannot be deduced by `mode`.
-// It should be only used as a placeholder.
-//
-// TODO(https://fxbug.dev/314126494): Replace all placeholder `DisplayTiming`
-// values with `Mode`.
-display::DisplayTiming ToPlaceholderDisplayTiming(const display::Mode& mode) {
-  const int32_t horizontal_active_px = mode.active_area().width();
-  const int32_t vertical_active_lines = mode.active_area().height();
-  const int64_t pixel_clock_frequency_hz = int64_t{horizontal_active_px} * vertical_active_lines *
-                                           mode.refresh_rate_millihertz() / 1'000;
-  return display::DisplayTiming{
-      .horizontal_active_px = horizontal_active_px,
-      .vertical_active_lines = vertical_active_lines,
-      .pixel_clock_frequency_hz = pixel_clock_frequency_hz,
-  };
-}
-
-// Returns `DisplayTiming` that corresponds to the provided `target_mode`
-// using the following rule:
-//
-// 1. If `target_mode` matches a mode listed in `display_preferred_modes`,
-//    return the placeholder `DisplayTiming` struct that matches the mode.
-// 2. Otherwise, if `target_mode` matches a `DisplayTiming` listed in
-//    `display_timings`, return that `DisplayTiming` value.
-// 3. Otherwise, return nullopt.
-std::optional<display::DisplayTiming> GetDisplayTimingForMode(
-    std::span<const display::ModeAndId> display_preferred_modes,
-    std::span<const display::DisplayTiming> display_timings, const display::Mode& target_mode) {
-  auto display_preferred_mode_it = std::ranges::find_if(
-      display_preferred_modes,
-      [&](const display::ModeAndId& mode_and_id) { return mode_and_id.mode() == target_mode; });
-  if (display_preferred_mode_it != display_preferred_modes.end()) {
-    fdf::info("Found supported display preferred mode for {}", target_mode);
-    return ToPlaceholderDisplayTiming(target_mode);
-  }
-
-  fdf::info(
-      "Failed to find {} in display preferred mode list. "
-      "Fall back to display timings list.",
-      target_mode);
-  auto display_timing_it =
-      std::ranges::find_if(display_timings, [target_mode](const display::DisplayTiming& timing) {
-        if (timing.horizontal_active_px != target_mode.active_area().width()) {
-          return false;
-        }
-        if (timing.vertical_active_lines != target_mode.active_area().height()) {
-          return false;
-        }
-        if (timing.vertical_field_refresh_rate_millihertz() !=
-            target_mode.refresh_rate_millihertz()) {
-          return false;
-        }
-        return true;
-      });
-
-  if (display_timing_it == display_timings.end()) {
-    return std::nullopt;
-  }
-  return *display_timing_it;
-}
-
 }  // namespace
 
 void Client::SetDisplayMode(SetDisplayModeRequestView request,
@@ -474,32 +409,16 @@ void Client::SetDisplayMode(SetDisplayModeRequestView request,
   std::span<const display::ModeAndId> display_preferred_modes =
       std::move(display_preferred_modes_result).value();
 
-  zx::result<std::span<const display::DisplayTiming>> display_timings_result =
-      controller_.GetDisplayTimings(display_id);
-  if (display_timings_result.is_error()) {
-    fdf::error("Failed to get display timings for display ID {}: {}", display_id.value(),
-               display_timings_result);
-    TearDown(display_timings_result.status_value());
-    return;
-  }
-  std::span<const display::DisplayTiming> display_timings =
-      std::move(display_timings_result).value();
-
-  const size_t display_total_modes_count = display_timings.size() + display_preferred_modes.size();
-
   display::ModeId mode_id = GetPreferredModeIdForMode(display_preferred_modes, target_mode);
-  std::optional<display::DisplayTiming> display_timing =
-      GetDisplayTimingForMode(display_preferred_modes, display_timings, target_mode);
-
-  if (!display_timing.has_value()) {
-    fdf::error("Failed to find display timing compatible with mode: {}", target_mode);
+  if (mode_id == display::kInvalidModeId) {
+    fdf::error("Failed to find supported mode for: {}", target_mode);
     TearDown(ZX_ERR_INVALID_ARGS);
     return;
   }
 
-  fdf::info("Found supported display timing for mode: {}", target_mode);
+  fdf::info("Found supported display mode {} in the preferred modes list", target_mode);
 
-  if (display_total_modes_count == 1) {
+  if (display_preferred_modes.size() == 1) {
     // If there is only one mode, the coordinator doesn't need to set
     // the display mode on engine.
     fdf::info("The display has only one mode. Skip setting display mode.");
@@ -507,7 +426,6 @@ void Client::SetDisplayMode(SetDisplayModeRequestView request,
   }
 
   display_config.draft_.mode_id = mode_id;
-  display_config.draft_.timing = *display_timing;
   display_config.has_draft_nonlayer_config_change_ = true;
   draft_display_config_was_validated_ = false;
 }
@@ -1127,30 +1045,24 @@ display::ConfigCheckResult Client::CheckConfigForDisplay(
   // entirely within the display output.
 
   const display::ModeId draft_mode_id(display_config.draft_.mode_id);
-  display::Rectangle display_area({});
-  if (draft_mode_id != display::kInvalidModeId) {
-    auto mode_it = std::ranges::find_if(
-        preferred_modes,
-        [&](const display::ModeAndId& mode_and_id) { return mode_and_id.id() == draft_mode_id; });
-    if (mode_it == preferred_modes.end()) {
-      fdf::error("SetDisplayMode called with unknown mode ID: {}", draft_mode_id.value());
-      return display::ConfigCheckResult::kUnsupportedDisplayModes;
-    }
-    display_area = {{
-        .x = 0,
-        .y = 0,
-        .width = mode_it->mode().active_area().width(),
-        .height = mode_it->mode().active_area().height(),
-    }};
-  } else {
-    // If no mode is set, use the display's current timing information.
-    display_area = {{
-        .x = 0,
-        .y = 0,
-        .width = display_config.draft_.timing.horizontal_active_px,
-        .height = display_config.draft_.timing.vertical_active_lines,
-    }};
+  if (draft_mode_id == display::kInvalidModeId) {
+    return display::ConfigCheckResult::kInvalidConfig;
   }
+
+  auto mode_it = std::ranges::find_if(preferred_modes, [&](const display::ModeAndId& mode_and_id) {
+    return mode_and_id.id() == draft_mode_id;
+  });
+  if (mode_it == preferred_modes.end()) {
+    fdf::error("SetDisplayMode called with unknown mode ID: {}", draft_mode_id.value());
+    return display::ConfigCheckResult::kUnsupportedDisplayModes;
+  }
+  display::Rectangle display_area({});
+  display_area = {{
+      .x = 0,
+      .y = 0,
+      .width = mode_it->mode().active_area().width(),
+      .height = mode_it->mode().active_area().height(),
+  }};
 
   fbl::static_vector<display::DriverLayer, display::EngineInfo::kMaxAllowedMaxLayerCount>
       driver_layers;
@@ -1362,33 +1274,16 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
                 display_preferred_modes_result);
       continue;
     }
-    zx::result<std::span<const display::DisplayTiming>> display_timings_result =
-        controller_.GetDisplayTimings(display_config->id());
-    if (display_timings_result.is_error()) {
-      fdf::warn("Failed to get display timings when processing hotplug: {}",
-                display_timings_result);
-      continue;
-    }
-
     std::span<const display::ModeAndId> display_preferred_modes =
         std::move(display_preferred_modes_result).value();
-    std::span<const display::DisplayTiming> display_timings =
-        std::move(display_timings_result).value();
+    ZX_DEBUG_ASSERT(!display_preferred_modes.empty());
 
-    auto [mode_id, display_timing] = [&]() -> std::tuple<display::ModeId, display::DisplayTiming> {
-      if (!display_preferred_modes.empty()) {
-        const display::ModeAndId preferred_mode_and_id = display_preferred_modes[0];
-        return {preferred_mode_and_id.id(),
-                ToPlaceholderDisplayTiming(preferred_mode_and_id.mode())};
-      }
-      ZX_DEBUG_ASSERT(!display_timings.empty());
-      return {display::kInvalidModeId, display_timings[0]};
-    }();
+    const display::ModeAndId preferred_mode_and_id = display_preferred_modes[0];
+    ZX_DEBUG_ASSERT(preferred_mode_and_id.id() != display::kInvalidModeId);
 
     display_config->applied_ = DriverDisplayConfig{
         .display_id = display_config->id(),
-        .mode_id = mode_id,
-        .timing = display_timing,
+        .mode_id = preferred_mode_and_id.id(),
         .color_conversion = display::ColorConversion::kIdentity,
         .layer_count = 0,
     };
@@ -1424,34 +1319,16 @@ void Client::OnDisplaysChanged(std::span<const display::DisplayId> added_display
         controller_.GetDisplayPreferredModes(display_config.id());
     ZX_DEBUG_ASSERT(display_preferred_modes_result.is_ok());
 
-    zx::result<std::span<const display::DisplayTiming>> display_timings_result =
-        controller_.GetDisplayTimings(display_config.id());
-    ZX_DEBUG_ASSERT(display_timings_result.is_ok());
-
     std::span<const display::ModeAndId> display_preferred_modes =
         std::move(display_preferred_modes_result).value();
-    std::span<const display::DisplayTiming> display_timings =
-        std::move(display_timings_result).value();
-    ZX_DEBUG_ASSERT(!display_preferred_modes.empty() || !display_timings.empty());
+    ZX_DEBUG_ASSERT(!display_preferred_modes.empty());
 
-    std::vector<fuchsia_hardware_display_types::wire::Mode> modes;
-
-    modes.reserve(display_preferred_modes.size() + display_timings.size());
+    std::vector<fuchsia_hardware_display_types::wire::Mode> fidl_modes;
+    fidl_modes.reserve(display_preferred_modes.size());
     for (const display::ModeAndId& mode_and_id : display_preferred_modes) {
-      modes.emplace_back(mode_and_id.mode().ToFidl());
+      fidl_modes.emplace_back(mode_and_id.mode().ToFidl());
     }
-    for (const display::DisplayTiming& timing : display_timings) {
-      modes.emplace_back(fuchsia_hardware_display_types::wire::Mode{
-          .active_area =
-              {
-                  .width = static_cast<uint32_t>(timing.horizontal_active_px),
-                  .height = static_cast<uint32_t>(timing.vertical_active_lines),
-              },
-          .refresh_rate_millihertz =
-              static_cast<uint32_t>(timing.vertical_field_refresh_rate_millihertz()),
-      });
-    }
-    modes_vector.emplace_back(std::move(modes));
+    modes_vector.emplace_back(std::move(fidl_modes));
     fidl_display_info.modes =
         fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(
             modes_vector.back());
