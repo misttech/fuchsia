@@ -526,15 +526,15 @@ TEST(PerfEventOpenTest, CountingCPUClockSucceeds) {
 
 // Valid attributes for sampling. On Linux for the first sampling event you'll get something like:
 // perf_event_header { type = 9, size = 16, misc = 2 }.
-perf_event_attr example_sampling_attr() {
+perf_event_attr example_sampling_attr(uint64_t sample_type) {
   perf_event_attr attr;
   memset(&attr, 0, sizeof(attr));
   attr.type = PERF_TYPE_HARDWARE;
   attr.size = sizeof(attr);
   attr.config = PERF_COUNT_HW_INSTRUCTIONS;
   attr.sample_period = 10;  // Elects sampling instead of counting. "1 sample per 10 events".
-  attr.sample_type = PERF_SAMPLE_TIME;
-  attr.disabled = 0;      // Initiate as enabled.
+  attr.sample_type = sample_type;
+  attr.disabled = 1;      // Initiate as DISABLED as per Perfetto code use-case.
   attr.exclude_user = 0;  // Necessary otherwise we get zeros for sampling.
   attr.exclude_kernel = 1;
   attr.sample_id_all = 1;
@@ -544,7 +544,7 @@ perf_event_attr example_sampling_attr() {
 
 TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
   if (test_helper::HasSysAdmin()) {
-    perf_event_attr attr = example_sampling_attr();
+    perf_event_attr attr = example_sampling_attr(PERF_SAMPLE_TIME);
     int32_t file_descriptor =
         sys_perf_event_open(&attr, example_pid, example_cpu, example_group_fd, example_flags);
 
@@ -553,8 +553,8 @@ TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
     // Ring buffer size, defined to be 1 + 2^n pages per the docs.
     size_t buffer_size = getpagesize() + data_size;
 
-    // mmap() returns the address of the mapping. Note you MUST use MAP_SHARED because you're doing
-    // kernel and user stuff. The offset has to be 0 to access the metadata page (first page).
+    // mmap() returns the address of the mapping. Note you MUST use MAP_SHARED because you're
+    // doing kernel and user stuff. The offset has to be 0 to access the metadata page (first page).
     void* address = mmap(NULL, buffer_size, PROT_READ, MAP_SHARED, file_descriptor, 0);
 
     // Address should not be 0xffffffffffffffff.
@@ -576,8 +576,8 @@ TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
     EXPECT_NE(metadata->offset, (int64_t)-1);
     EXPECT_EQ(metadata->capabilities, (uint64_t)30);
     EXPECT_EQ(metadata->cap_user_time, (uint64_t)1);
-    EXPECT_GT(metadata->time_enabled, (uint64_t)0);
-    EXPECT_GT(metadata->time_running, (uint64_t)0);
+    EXPECT_EQ(metadata->time_enabled, (uint64_t)0);
+    EXPECT_EQ(metadata->time_running, (uint64_t)0);
     // Verify that there is a sample to read, this must be > 0.
     EXPECT_GE(metadata->data_head, (uint64_t)0);
     EXPECT_EQ(metadata->data_tail, (uint64_t)0);
@@ -587,11 +587,12 @@ TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
 }
 
 // TODO(https://fxbug.dev/398914921): The Linux version of this test will fail because
-// we are currently testing against hardcoded values in the Starnix implementation.
+// we are currently testing against semi-hardcoded values in the Starnix implementation.
 // Use better EXPECT statements when we grab real values.
 TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
   if (test_helper::HasSysAdmin()) {
-    perf_event_attr attr = example_sampling_attr();
+    perf_event_attr attr =
+        example_sampling_attr(PERF_SAMPLE_IP | PERF_SAMPLE_TID | PERF_SAMPLE_CALLCHAIN);
     int32_t file_descriptor =
         sys_perf_event_open(&attr, example_pid, example_cpu, example_group_fd, example_flags);
 
@@ -600,15 +601,13 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     // Ring buffer size, defined to be 1 + 2^n pages per the docs.
     size_t buffer_size = getpagesize() + data_size;
 
-    // mmap() returns the address of the mapping. Note you MUST use MAP_SHARED because you're doing
+    // mmap() returns the address of the mapping. Note you MUST use MAP_SHARED because you're
+    // doing
     // kernel and user stuff. The offset has to be 0 to access the metadata page (first page).
     void* address = mmap(NULL, buffer_size, PROT_READ, MAP_SHARED, file_descriptor, 0);
 
     // Address should not be 0xffffffffffffffff.
     EXPECT_NE(address, MAP_FAILED);
-
-    // Docs say you can close here before reading anything.
-    EXPECT_NE(syscall(__NR_close, file_descriptor), EXIT_FAILURE);
 
     char buffer[buffer_size];
     EXPECT_EQ(buffer_size, sizeof(buffer));
@@ -623,13 +622,23 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     EXPECT_NE(metadata->offset, (int64_t)-1);
     EXPECT_EQ(metadata->capabilities, (uint64_t)30);
     EXPECT_EQ(metadata->cap_user_time, (uint64_t)1);
-    EXPECT_GT(metadata->time_enabled, (uint64_t)0);
-    EXPECT_GT(metadata->time_running, (uint64_t)0);
+    EXPECT_EQ(metadata->time_enabled, (uint64_t)0);
+    EXPECT_EQ(metadata->time_running, (uint64_t)0);
     // Verify that there is a sample to read, this must be > 0.
     EXPECT_GT(metadata->data_head, (uint64_t)0);
     EXPECT_EQ(metadata->data_tail, (uint64_t)0);
     EXPECT_EQ(metadata->data_offset, (uint64_t)getpagesize());
     EXPECT_EQ(metadata->data_size, data_size);
+
+    // Start sampling.
+    EXPECT_NE(syscall(__NR_ioctl, file_descriptor, PERF_EVENT_IOC_ENABLE), -1);
+    printf("This is an event\n");
+
+    // End sampling.
+    EXPECT_NE(syscall(__NR_ioctl, file_descriptor, PERF_EVENT_IOC_DISABLE), -1);
+    // As mentioned in the docs, closing the file descriptor does not invalidate
+    // the mmap() mapping.
+    EXPECT_NE(syscall(__NR_close, file_descriptor), EXIT_FAILURE);
 
     // Start reading next page, which is the first sampling data page. From there
     // you can keep iterating to read each sample. Layout:
@@ -662,20 +671,35 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
       // Now that we know the type, we can roll past the perf_event_header
       // and read the rest of the struct, which is different for each type.
       char* record_details_start = record_start + sizeof(perf_event_header);
+
       // This is a subset of the real perf_record_sample which we will implement later.
       struct perf_record_sample {
-        uint64_t sample_id;
         uint64_t ip;
         uint32_t pid;
         uint32_t tid;
-        uint64_t time;
+        uint64_t nr;
       };
       struct perf_record_sample* record_details = (struct perf_record_sample*)record_details_start;
-      EXPECT_GE(record_details->sample_id, (uint64_t)12);
-      EXPECT_GE(record_details->ip, (uint64_t)123);
-      EXPECT_GE(record_details->pid, (uint64_t)1234);
-      EXPECT_GE(record_details->tid, (uint64_t)12345);
-      EXPECT_GE(record_details->time, (uint64_t)123456);
+      EXPECT_GE(record_details->ip, (uint64_t)1);
+      EXPECT_GE(record_details->pid, (uint64_t)1);
+      EXPECT_GE(record_details->tid, (uint64_t)1);
+      // On average we are getting ~100 samples for 100ms hardcoded sample duration.
+      EXPECT_GT(record_details->nr, (uint64_t)1);
+      EXPECT_LT(record_details->nr, (uint64_t)200);
+
+      // Read the next param of perf_record_sample ips[nr]. When we created the
+      // struct, we don't know the size of `ips`. So we iterate over `nr` times.
+      uint64_t number_of_ips = 10;  // should be record_details->nr.
+      char* ips_start = record_details_start + sizeof(perf_record_sample);
+      for (uint64_t i = 1; i < number_of_ips; i++) {
+        uint64_t ip = (uint64_t)(ips_start + i * 8 /* bytes */);
+        if (i == 0) {
+          EXPECT_EQ(ip, record_details->ip);
+        } else {
+          // TODO(https://fxbug.dev/433751865): better way to check validity.
+          EXPECT_GT(ip, (uint64_t)0);
+        }
+      }
     }
   }
 }
