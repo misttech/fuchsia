@@ -22,7 +22,6 @@ library_sources = [
   "coordinate-transformation.h",
   "dimensions.cc",
   "dimensions.h",
-  "display-timing.cc",
   "display-timing.h",
   "driver-buffer-collection-id.h",
   "driver-capture-image-id.h",

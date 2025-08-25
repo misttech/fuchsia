@@ -27,22 +27,6 @@ type ModeFlag = strict bits : uint32 {
     DOUBLE_CLOCKED = 0x10;
 };
 
-/// The video parameters which specify the display mode.
-/// TODO(https://fxbug.dev/42085013): Replace this type with something more similar
-/// to //src/graphics/display/lib/api-types-cpp/display-timing.h.
-type DisplayTiming = struct {
-    pixel_clock_hz int64;
-    h_addressable uint32;
-    h_front_porch uint32;
-    h_sync_pulse uint32;
-    h_blanking uint32;
-    v_addressable uint32;
-    v_front_porch uint32;
-    v_sync_pulse uint32;
-    v_blanking uint32;
-    flags ModeFlag;
-};
-
 type Layer = struct {
     /// The display image (composited output) region occupied by the layer.
     ///
@@ -161,13 +145,8 @@ type DisplayConfig = struct {
     display_id fuchsia.hardware.display.types.DisplayId;
 
     /// Identifies the display mode provided by the panel.
-    ///
-    /// `timing` is used to set the timing parameters iff `mode_id` is
-    /// `INVALID_MODE_ID`.
+    /// Must be valid.
     mode_id fuchsia.hardware.display.types.ModeId;
-
-    /// Fallback timing parameters when `mode_id` is invalid.
-    timing DisplayTiming;
 
     color_conversion ColorConversion;
 

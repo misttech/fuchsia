@@ -5,7 +5,6 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_DISPLAY_TIMING_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_DISPLAY_TIMING_H_
 
-#include <fidl/fuchsia.hardware.display.engine/cpp/wire.h>
 #include <zircon/assert.h>
 
 #include <cstdint>
@@ -427,93 +426,6 @@ constexpr bool operator==(const DisplayTiming& lhs, const DisplayTiming& rhs) {
 
 constexpr bool operator!=(const DisplayTiming& lhs, const DisplayTiming& rhs) {
   return !(lhs == rhs);
-}
-
-DisplayTiming ToDisplayTiming(
-    const fuchsia_hardware_display_engine::wire::DisplayTiming& fidl_display_timing);
-
-// `display_timing` must be valid.
-fuchsia_hardware_display_engine::wire::DisplayTiming ToFidlDisplayTiming(
-    const DisplayTiming& display_timing);
-
-constexpr bool IsFidlDisplayTimingValid(
-    const fuchsia_hardware_display_engine::wire::DisplayTiming& display_timing) {
-  // The "< 0" checks are always true for uint32_t members in the
-  // `DisplayTiming` struct and will be eventually optimized by the compiler.
-  //
-  // These checks, depsite being always true, match the member
-  // definitions in `DisplayTiming` and they make it easier for readers to
-  // reason about the code without checking the types of each struct member.
-
-  if (display_timing.pixel_clock_hz < 0) {
-    return false;
-  }
-  if (display_timing.pixel_clock_hz > kMaxPixelClockHz) {
-    return false;
-  }
-  if (display_timing.h_addressable < 0) {
-    return false;
-  }
-  if (display_timing.h_addressable > kMaxTimingValue) {
-    return false;
-  }
-  if (display_timing.h_front_porch < 0) {
-    return false;
-  }
-  if (display_timing.h_front_porch > kMaxTimingValue) {
-    return false;
-  }
-  if (display_timing.h_sync_pulse < 0) {
-    return false;
-  }
-  if (display_timing.h_sync_pulse > kMaxTimingValue) {
-    return false;
-  }
-  if (display_timing.h_blanking < display_timing.h_front_porch) {
-    return false;
-  }
-  if (display_timing.h_blanking < display_timing.h_sync_pulse) {
-    return false;
-  }
-  if (display_timing.h_blanking - display_timing.h_front_porch < display_timing.h_sync_pulse) {
-    return false;
-  }
-  if (display_timing.h_blanking - display_timing.h_front_porch - display_timing.h_sync_pulse >
-      kMaxTimingValue) {
-    return false;
-  }
-  if (display_timing.v_addressable < 0) {
-    return false;
-  }
-  if (display_timing.v_addressable > kMaxTimingValue) {
-    return false;
-  }
-  if (display_timing.v_front_porch < 0) {
-    return false;
-  }
-  if (display_timing.v_front_porch > kMaxTimingValue) {
-    return false;
-  }
-  if (display_timing.v_sync_pulse < 0) {
-    return false;
-  }
-  if (display_timing.v_sync_pulse > kMaxTimingValue) {
-    return false;
-  }
-  if (display_timing.v_blanking < display_timing.v_front_porch) {
-    return false;
-  }
-  if (display_timing.v_blanking < display_timing.v_sync_pulse) {
-    return false;
-  }
-  if (display_timing.v_blanking - display_timing.v_front_porch < display_timing.v_sync_pulse) {
-    return false;
-  }
-  if (display_timing.v_blanking - display_timing.v_front_porch - display_timing.v_sync_pulse >
-      kMaxTimingValue) {
-    return false;
-  }
-  return true;
 }
 
 }  // namespace display

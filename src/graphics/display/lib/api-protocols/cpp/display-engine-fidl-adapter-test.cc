@@ -507,7 +507,6 @@ TEST_F(DisplayEngineFidlAdapterTest, CheckConfigurationAdapterErrorModeIdInvalid
   const fuchsia_hardware_display_engine::wire::DisplayConfig fidl_display_config = {
       .display_id = kDisplayId.ToFidl(),
       .mode_id = kInvalidModeId.ToFidl(),
-      .timing = {},
       .color_conversion = display::ColorConversion::kIdentity.ToFidl(),
       .layers =
           fidl::VectorView<fuchsia_hardware_display_engine::wire::Layer>::FromExternal(fidl_layers),

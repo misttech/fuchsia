@@ -10,7 +10,6 @@
 #include "src/graphics/display/drivers/coordinator/driver-display-config.h"
 #include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
-#include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-layer.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 
@@ -28,7 +27,6 @@ fuchsia_hardware_display_engine::wire::DisplayConfig ToFidlDisplayConfig(
   return fuchsia_hardware_display_engine::wire::DisplayConfig{
       .display_id = driver_display_config.display_id.ToFidl(),
       .mode_id = driver_display_config.mode_id.ToFidl(),
-      .timing = {},
       .color_conversion = driver_display_config.color_conversion.ToFidl(),
       .layers = fidl_layers,
   };
