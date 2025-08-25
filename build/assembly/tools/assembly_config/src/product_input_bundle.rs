@@ -50,16 +50,12 @@ pub fn new(args: &ProductInputBundleArgs) -> Result<()> {
         let name = package_manifest.name().to_string();
         for_product_config.insert(name, ProductPackageDetails { manifest: manifest.clone() });
     }
-
-    let repository = common::get_release_repository(repo, repo_file)?;
-    let version = common::get_release_version(version, version_file)?;
-
     let bundle = ProductInputBundle {
         packages: ProductPackagesConfig { base, cache, flexible, for_product_config },
         release_info: ReleaseInfo {
-            name: common::validate_string_for_upstream_versioning(name.to_string())?,
-            repository: common::validate_string_for_upstream_versioning(repository)?,
-            version: common::validate_string_for_upstream_versioning(version)?,
+            name: name.to_string(),
+            repository: common::get_release_repository(repo, repo_file)?,
+            version: common::get_release_version(version, version_file)?,
         },
     };
     bundle.write_to_dir(output, depfile.as_ref())?;

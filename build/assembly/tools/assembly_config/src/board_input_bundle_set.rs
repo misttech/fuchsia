@@ -21,17 +21,13 @@ pub fn new(args: &BoardInputBundleSetArgs) -> Result<()> {
             Ok((bib.name, entry))
         })
         .collect::<Result<BTreeMap<String, BoardInputBundleEntry>>>()?;
-
-    let repository = common::get_release_repository(&args.repo, &args.repo_file)?;
-    let version = common::get_release_version(&args.version, &args.version_file)?;
-
     let set = BoardInputBundleSet {
         name: name.clone(),
         board_input_bundles,
         release_info: ReleaseInfo {
-            name: common::validate_string_for_upstream_versioning(name)?,
-            repository: common::validate_string_for_upstream_versioning(repository)?,
-            version: common::validate_string_for_upstream_versioning(version)?,
+            name,
+            version: common::get_release_version(&args.version, &args.version_file)?,
+            repository: common::get_release_repository(&args.repo, &args.repo_file)?,
         },
     };
     set.write_to_dir(&args.output, args.depfile.as_ref())?;

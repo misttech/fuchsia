@@ -4,31 +4,8 @@
 
 use anyhow::{Result, bail};
 use camino::Utf8PathBuf;
-use regex::Regex;
 
 use std::fs;
-use std::sync::OnceLock;
-
-// A helper function to get the compiled regex, describing a valid string
-// that can be used when communicating with the upstream versioning service.
-// The regex is initialized only on the first call.
-fn valid_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9./_-]{0,63}$").unwrap())
-}
-
-/// Return an error of the given string does not satisfy the string constraints
-/// in upstream versioning servers.
-pub fn validate_string_for_upstream_versioning(candidate: String) -> Result<String> {
-    if valid_regex().is_match(&candidate) {
-        Ok(candidate)
-    } else {
-        bail!(
-            "Invalid version string: \"{}\". The string must be 1-63 characters long, start with an alphanumeric character, and only contain alphanumeric characters, '.', '_', '-', or '/'.",
-            candidate
-        )
-    }
-}
 
 /// Return the "version" string if it is provided.
 /// If not, return the contents of the file located at the path "version_file".
@@ -198,36 +175,5 @@ mod tests {
             )
             .is_err()
         );
-    }
-
-    #[test]
-    fn test_validate_string() {
-        let s = "0123579abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-_".to_string();
-        assert!(validate_string_for_upstream_versioning(s).is_ok());
-    }
-
-    #[test]
-    fn test_validate_string_forward_slash() {
-        let s = "a/b".to_string();
-        assert!(validate_string_for_upstream_versioning(s).is_ok());
-    }
-
-    #[test]
-    fn test_validate_string_too_long() {
-        let s = "01234567890123456789012345678901234567890123456789012345678901234".to_string();
-        assert_eq!(s.len(), 65);
-        assert!(validate_string_for_upstream_versioning(s).is_err());
-    }
-
-    #[test]
-    fn test_validate_string_invalid_first_char() {
-        let s = ".a".to_string();
-        assert!(validate_string_for_upstream_versioning(s).is_err());
-    }
-
-    #[test]
-    fn test_validate_string_invalid_char() {
-        let s = "a?b".to_string();
-        assert!(validate_string_for_upstream_versioning(s).is_err());
     }
 }

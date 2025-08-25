@@ -32,7 +32,6 @@ rustc_binary("assembly_config") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:camino",
-    "//third_party/rust_crates:regex",
     "//third_party/rust_crates:serde",
   ]
   test_deps = [
