@@ -89,7 +89,7 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   zx_status_t Initialize();
 
   // Tears down display submodules and turns off the hardware.
-  // TA_REQ
+  //
   // Must be called exactly once before the DisplayEngine instance is
   // destroyed in production code.
   //
@@ -152,7 +152,7 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   }
 
  private:
-  void PopulatePanelType() TA_REQ(display_mutex_);
+  void PopulatePanelType() __TA_REQUIRES(display_mutex_);
 
   void OnHotPlugStateChange(HotPlugDetectionState current_state);
   void OnVsync(zx::time_monotonic timestamp);
@@ -267,8 +267,8 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   inspect::Node root_node_;
   inspect::Node video_input_unit_node_;
 
-  display::DisplayId display_id_ TA_GUARDED(display_mutex_) = kPanelDisplayId;
-  bool display_attached_ TA_GUARDED(display_mutex_) = false;
+  display::DisplayId display_id_ __TA_GUARDED(display_mutex_) = kPanelDisplayId;
+  bool display_attached_ __TA_GUARDED(display_mutex_) = false;
 
   std::unique_ptr<HotPlugDetection> hot_plug_detection_;
   std::unique_ptr<Capture> capture_;

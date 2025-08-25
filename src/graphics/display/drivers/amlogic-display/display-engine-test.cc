@@ -26,7 +26,7 @@
 
 #include "src/graphics/display/drivers/amlogic-display/pixel-grid-size2d.h"
 #include "src/graphics/display/drivers/amlogic-display/structured_config.h"
-#include "src/graphics/display/drivers/amlogic-display/video-input-unit.h"
+#include "src/graphics/display/drivers/amlogic-display/vout-dsi.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-fidl.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
 #include "src/graphics/display/lib/driver-utils/poll-until.h"
@@ -386,8 +386,8 @@ class FakeSysmemTest : public testing::Test {
     display_engine_->SetFormatSupportCheck([](auto) { return true; });
     display_engine_->SetCanvasForTesting(std::move(endpoints.client));
 
-    zx::result<std::unique_ptr<Vout>> create_dsi_vout_result =
-        Vout::CreateDsiVoutForTesting(display::PanelType::kBoeTv070wsmFitipowerJd9364Astro);
+    zx::result<std::unique_ptr<VoutDsi>> create_dsi_vout_result =
+        VoutDsi::CreateForTesting(display::PanelType::kBoeTv070wsmFitipowerJd9364Astro);
     ASSERT_OK(create_dsi_vout_result);
     display_engine_->SetVoutForTesting(std::move(create_dsi_vout_result).value());
 
