@@ -5,11 +5,11 @@
 use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
 use crate::utils::{Position, Size};
 use crate::{metrics, mouse_binding};
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport};
-use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::ArrayProperty;
+use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use maplit::hashmap;
 use metrics_registry::*;
@@ -538,7 +538,7 @@ impl TouchBinding {
 }
 
 fn process_touch_screen_reports(
-    report: InputReport,
+    mut report: InputReport,
     previous_report: Option<InputReport>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     input_event_sender: &mut UnboundedSender<InputEvent>,
@@ -580,6 +580,18 @@ fn process_touch_screen_reports(
         return (Some(report), None);
     }
 
+    // A touch input report containing button state should persist prior contact state,
+    // for the sake of pointer event continuity in future reports containing contact data.
+    if current_contacts.is_empty()
+        && !previous_contacts.is_empty()
+        && (!current_buttons.is_empty() || !previous_buttons.is_empty())
+    {
+        if let Some(touch_report) = report.touch.as_mut() {
+            touch_report.contacts =
+                previous_report.unwrap().touch.as_ref().unwrap().contacts.clone();
+        }
+    }
+
     // Contacts which exist only in current.
     let added_contacts: Vec<TouchContact> = Vec::from_iter(
         current_contacts
@@ -595,12 +607,12 @@ fn process_touch_screen_reports(
             .filter(|contact| previous_contacts.contains_key(&contact.id)),
     );
     // Contacts which exist only in previous.
-    let removed_contacts: Vec<TouchContact> = Vec::from_iter(
-        previous_contacts
-            .values()
-            .cloned()
-            .filter(|contact| !current_contacts.contains_key(&contact.id)),
-    );
+    let removed_contacts: Vec<TouchContact> =
+        Vec::from_iter(previous_contacts.values().cloned().filter(|contact| {
+            current_buttons.is_empty()
+                && previous_buttons.is_empty()
+                && !current_contacts.contains_key(&contact.id)
+        }));
 
     let trace_id = fuchsia_trace::Id::random();
     fuchsia_trace::flow_begin!(c"input", c"event_in_input_pipeline", trace_id);
@@ -1604,6 +1616,71 @@ mod tests {
         let reports = vec![create_touch_input_report(vec![], Some(vec![]), event_time_i64)];
 
         let expected_events: Vec<input_device::InputEvent> = vec![];
+
+        assert_input_report_sequence_generates_events!(
+            input_reports: reports,
+            expected_events: expected_events,
+            device_descriptor: descriptor,
+            device_type: TouchBinding,
+        );
+    }
+
+    // Tests a buttons event after a contact event does not remove contacts.
+    #[fasync::run_singlethreaded(test)]
+    async fn send_button_does_not_remove_contacts() {
+        const TOUCH_ID: u32 = 2;
+
+        let descriptor =
+            input_device::InputDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
+                device_id: 1,
+                contacts: vec![],
+            });
+        let (event_time_i64, event_time_u64) = testing_utilities::event_times();
+
+        let contact = fidl_fuchsia_input_report::ContactInputReport {
+            contact_id: Some(TOUCH_ID),
+            position_x: Some(0),
+            position_y: Some(0),
+            pressure: None,
+            contact_width: None,
+            contact_height: None,
+            ..Default::default()
+        };
+        let reports = vec![
+            create_touch_input_report(vec![contact], None, event_time_i64),
+            create_touch_input_report(
+                vec![],
+                Some(vec![fidl_fuchsia_input_report::TouchButton::Palm]),
+                event_time_i64,
+            ),
+            create_touch_input_report(vec![], Some(vec![]), event_time_i64),
+        ];
+
+        let expected_events = vec![
+            create_touch_screen_event_with_buttons(
+                hashmap! {
+                    fidl_ui_input::PointerEventPhase::Add
+                        => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                    fidl_ui_input::PointerEventPhase::Down
+                        => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                },
+                vec![],
+                event_time_u64,
+                &descriptor,
+            ),
+            create_touch_screen_event_with_buttons(
+                hashmap! {},
+                vec![fidl_fuchsia_input_report::TouchButton::Palm],
+                event_time_u64,
+                &descriptor,
+            ),
+            create_touch_screen_event_with_buttons(
+                hashmap! {},
+                vec![],
+                event_time_u64,
+                &descriptor,
+            ),
+        ];
 
         assert_input_report_sequence_generates_events!(
             input_reports: reports,
