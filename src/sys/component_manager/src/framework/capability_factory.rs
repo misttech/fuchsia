@@ -4,27 +4,27 @@
 
 use crate::model::component::WeakComponentInstance;
 use crate::sandbox_util::take_handle_as_stream;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use cm_types::{Name, RelativePath};
 use cm_util::WeakTaskGroup;
-use fidl::endpoints::{create_endpoints, ClientEnd, ProtocolMarker, Proxy, ServerEnd};
+use fidl::endpoints::{ClientEnd, ProtocolMarker, Proxy, ServerEnd, create_endpoints};
 use fuchsia_sync::Mutex;
+use futures::FutureExt;
 use futures::channel::oneshot;
 use futures::future::BoxFuture;
 use futures::stream::StreamExt;
-use futures::FutureExt;
 use moniker::Moniker;
 use router_error::RouterError;
 use sandbox::{
     Capability, CapabilityBound, Connectable, Connector, Data, Dict, DirConnectable, DirConnector,
     Message, Request, Routable, Router, RouterResponse, WeakInstanceToken,
 };
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
-use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
 use zx::AsHandleRef;
+use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
 use {fidl_fuchsia_component_runtime as fruntime, fidl_fuchsia_io as fio};
 
 /// These two constants are needed in computing how many strings we can fit into a FIDL message.
@@ -165,7 +165,11 @@ impl CapabilityFactory {
                     self.weak_task_group
                         .spawn(self.clone().serve_data_router(router, router_server_end));
                 }
-                unknown_request => return Err(format_err!("unable to process unrecognized request to fuchsia.component.runtime.CapabilityFactory: {unknown_request:?}")),
+                unknown_request => {
+                    return Err(format_err!(
+                        "unable to process unrecognized request to fuchsia.component.runtime.CapabilityFactory: {unknown_request:?}"
+                    ));
+                }
             }
         }
         Ok(())
@@ -777,7 +781,7 @@ impl DirConnectable for RemoteDirReceiver {
         &self,
         server_end: ServerEnd<fio::DirectoryMarker>,
         _subdir: RelativePath,
-        _rights: Option<fio::Operations>,
+        _flags: Option<fio::Flags>,
     ) -> Result<(), ()> {
         let _ = self.remote_receiver.receive(server_end);
         Ok(())
@@ -1016,8 +1020,8 @@ mod tests {
     use assert_matches::assert_matches;
     use cm_util::TaskGroup;
 
-    fn new_factory_connection(
-    ) -> (fruntime::CapabilityFactoryProxy, Arc<Mutex<RemotedRuntimeCapabilities>>, TaskGroup) {
+    fn new_factory_connection()
+    -> (fruntime::CapabilityFactoryProxy, Arc<Mutex<RemotedRuntimeCapabilities>>, TaskGroup) {
         let task_group = TaskGroup::new();
         let remote_capabilities = Arc::new(Mutex::new(HashMap::new()));
         let capability_factory = CapabilityFactory {

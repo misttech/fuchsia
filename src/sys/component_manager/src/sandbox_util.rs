@@ -5,21 +5,21 @@
 use crate::model::component::{
     ComponentInstance, ExtendedInstance, WeakComponentInstance, WeakExtendedInstance,
 };
+use ::routing::WeakInstanceTokenExt;
 use ::routing::capability_source::CapabilitySource;
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::{ComponentInstanceError, RoutingError};
 use ::routing::policy::GlobalPolicyChecker;
 use ::routing::rights::Rights;
-use ::routing::WeakInstanceTokenExt;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
 use cm_types::RelativePath;
 use cm_util::WeakTaskGroup;
+use fidl::AsyncChannel;
 use fidl::endpoints::{ProtocolMarker, RequestStream, ServerEnd};
 use fidl::epitaph::ChannelEpitaphExt;
-use fidl::AsyncChannel;
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use log::warn;
 use router_error::{Explain, RouterError};
 use routing::bedrock::request_metadata::Metadata;
@@ -30,10 +30,10 @@ use sandbox::{
 };
 use std::fmt::Debug;
 use std::sync::Arc;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path;
-use vfs::ToObjectRequest;
 use zx::AsHandleRef;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -52,7 +52,7 @@ pub struct LaunchTaskOnReceive {
                 zx::Channel,
                 WeakComponentInstance,
                 RelativePath,
-                fio::Operations,
+                fio::Flags,
             ) -> BoxFuture<'static, Result<(), anyhow::Error>>
             + Sync
             + Send
@@ -87,7 +87,7 @@ impl LaunchTaskOnReceive {
                     zx::Channel,
                     WeakComponentInstance,
                     RelativePath,
-                    fio::Operations,
+                    fio::Flags,
                 ) -> BoxFuture<'static, Result<(), anyhow::Error>>
                 + Sync
                 + Send
@@ -110,7 +110,7 @@ impl LaunchTaskOnReceive {
                     message.channel,
                     self.target.clone(),
                     RelativePath::dot(),
-                    fio::R_STAR_DIR,
+                    fio::PERM_READABLE,
                 );
                 Ok(())
             }
@@ -123,14 +123,14 @@ impl LaunchTaskOnReceive {
         self: Arc<Self>,
         target: WeakComponentInstance,
         relative_path: RelativePath,
-        allowed_rights: fio::Operations,
+        allowed_flags: fio::Flags,
     ) -> DirConnector {
         #[derive(Debug)]
         struct TaskAndTarget {
             task: Arc<LaunchTaskOnReceive>,
             target: WeakComponentInstance,
             relative_path: RelativePath,
-            allowed_rights: fio::Operations,
+            allowed_flags: fio::Flags,
         }
 
         impl DirConnectable for TaskAndTarget {
@@ -138,7 +138,7 @@ impl LaunchTaskOnReceive {
                 &self,
                 dir: ServerEnd<fio::DirectoryMarker>,
                 subdir: RelativePath,
-                rights: Option<fio::Operations>,
+                flags: Option<fio::Flags>,
             ) -> Result<(), ()> {
                 let mut relative_path = self.relative_path.clone();
                 if !subdir.is_dot() {
@@ -149,18 +149,13 @@ impl LaunchTaskOnReceive {
                         return Err(());
                     }
                 }
-                let allowed_flags = fio::Flags::from_bits(self.allowed_rights.bits()).unwrap();
-                let flags = if let Some(rights) = rights {
-                    fio::Flags::from_bits(rights.bits()).ok_or(())?
-                } else {
-                    allowed_flags | fio::Flags::PROTOCOL_DIRECTORY
-                };
-                let operations = fio::Operations::from_bits_retain(flags.bits());
+                let allowed_flags = fio::Flags::from_bits(self.allowed_flags.bits()).unwrap();
+                let flags = flags.unwrap_or(allowed_flags | fio::Flags::PROTOCOL_DIRECTORY);
                 self.task.launch_task(
                     dir.into_channel(),
                     self.target.clone(),
                     relative_path,
-                    operations,
+                    flags,
                 );
                 Ok(())
             }
@@ -170,7 +165,7 @@ impl LaunchTaskOnReceive {
             task: self,
             target,
             relative_path,
-            allowed_rights,
+            allowed_flags: fio::Flags::from_bits(allowed_flags.bits()).expect("invalid flags"),
         })
     }
 
@@ -248,7 +243,7 @@ impl LaunchTaskOnReceive {
         channel: zx::Channel,
         instance: WeakComponentInstance,
         relative_path: RelativePath,
-        rights: fio::Operations,
+        flags: fio::Flags,
     ) {
         if let Some(policy_checker) = &self.policy {
             if let Err(_e) =
@@ -261,7 +256,7 @@ impl LaunchTaskOnReceive {
             }
         }
 
-        let fut = (self.task_to_launch)(channel, instance, relative_path, rights);
+        let fut = (self.task_to_launch)(channel, instance, relative_path, flags);
         let task_name = self.task_name.clone();
         self.task_group.spawn(async move {
             if let Err(error) = fut.await {
@@ -487,7 +482,7 @@ pub mod tests {
     use router_error::DowncastErrorForTest;
     use routing::bedrock::request_metadata::Metadata;
     use routing::bedrock::structured_dict::ComponentInput;
-    use routing::{test_invalid_instance_token, DictExt, GenericRouterResponse, LazyGet};
+    use routing::{DictExt, GenericRouterResponse, LazyGet, test_invalid_instance_token};
     use sandbox::{Capability, Data, Dict, RemotableCapability};
     use std::pin::pin;
     use std::sync::Weak;
@@ -518,24 +513,30 @@ pub mod tests {
     #[fuchsia::test]
     async fn insert_capability() {
         let test_dict = Dict::new();
-        assert!(test_dict
-            .insert_capability(&RelativePath::new("foo/bar").unwrap(), Dict::new().into())
-            .is_ok());
+        assert!(
+            test_dict
+                .insert_capability(&RelativePath::new("foo/bar").unwrap(), Dict::new().into())
+                .is_ok()
+        );
         assert!(test_dict.get_capability(&RelativePath::new("foo/bar").unwrap()).is_some());
 
         let (_, sender) = Connector::new();
-        assert!(test_dict
-            .insert_capability(&RelativePath::new("foo/baz").unwrap(), sender.into())
-            .is_ok());
+        assert!(
+            test_dict
+                .insert_capability(&RelativePath::new("foo/baz").unwrap(), sender.into())
+                .is_ok()
+        );
         assert!(test_dict.get_capability(&RelativePath::new("foo/baz").unwrap()).is_some());
     }
 
     #[fuchsia::test]
     async fn remove_capability() {
         let test_dict = Dict::new();
-        assert!(test_dict
-            .insert_capability(&RelativePath::new("foo/bar").unwrap(), Dict::new().into())
-            .is_ok());
+        assert!(
+            test_dict
+                .insert_capability(&RelativePath::new("foo/bar").unwrap(), Dict::new().into())
+                .is_ok()
+        );
         assert!(test_dict.get_capability(&RelativePath::new("foo/bar").unwrap()).is_some());
 
         test_dict.remove_capability(&RelativePath::new("foo/bar").unwrap());
@@ -554,15 +555,15 @@ pub mod tests {
         let bar_router = Router::<Dict>::new_ok(bar);
 
         let foo = Dict::new();
-        assert!(foo
-            .insert_capability(&RelativePath::new("bar").unwrap(), bar_router.into())
-            .is_ok());
+        assert!(
+            foo.insert_capability(&RelativePath::new("bar").unwrap(), bar_router.into()).is_ok()
+        );
         let foo_router = Router::<Dict>::new_ok(foo);
 
         let dict = Dict::new();
-        assert!(dict
-            .insert_capability(&RelativePath::new("foo").unwrap(), foo_router.into())
-            .is_ok());
+        assert!(
+            dict.insert_capability(&RelativePath::new("foo").unwrap(), foo_router.into()).is_ok()
+        );
 
         let metadata = Dict::new();
         metadata.set_metadata(Availability::Required);

@@ -5,10 +5,10 @@
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::routing;
 use crate::model::routing_fns::RouteEntry;
+use ::routing::RouteRequest;
 use ::routing::capability_source::ComponentCapability;
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::rights::Rights;
-use ::routing::RouteRequest;
 use async_trait::async_trait;
 use cm_rust::{
     CapabilityTypeName, ExposeDecl, UseDirectoryDecl, UseEventStreamDecl, UseStorageDecl,
@@ -20,11 +20,11 @@ use log::*;
 use router_error::Explain;
 use sandbox::{Capability, DirConnectable, DirConnector, DirEntry};
 use std::sync::Arc;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::{
     DirectoryEntry, DirectoryEntryAsync, EntryInfo, GetEntryInfo, OpenRequest,
 };
 use vfs::execution_scope::ExecutionScope;
-use vfs::ToObjectRequest;
 
 pub trait RouteRequestExt {
     fn into_capability(self, target: &Arc<ComponentInstance>) -> Option<Capability>;
@@ -236,13 +236,9 @@ fn use_directory_or_storage(
             &self,
             server: ServerEnd<fio::DirectoryMarker>,
             _subdir: RelativePath,
-            rights: Option<fio::Operations>,
+            flags: Option<fio::Flags>,
         ) -> Result<(), ()> {
-            let flags = if let Some(rights) = rights {
-                fio::Flags::from_bits(rights.bits()).ok_or(())?
-            } else {
-                self.allowed_flags | fio::Flags::PROTOCOL_DIRECTORY
-            };
+            let flags = flags.unwrap_or(self.allowed_flags | fio::Flags::PROTOCOL_DIRECTORY);
             // Serve this directory on the component's execution scope rather than the namespace
             // execution scope so that requests don't block namespace teardown, but they will block
             // component destruction.

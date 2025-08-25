@@ -46,8 +46,7 @@ impl RemoteLike for DirConnector {
                 return Err(zx::Status::INVALID_ARGS);
             }
         }
-        let operations = fio::Operations::from_bits_retain(flags.bits());
-        self.send(object_request.take().into_server_end(), relative_path, Some(operations))
+        self.send(object_request.take().into_server_end(), relative_path, Some(flags))
             .map_err(|_| zx::Status::INTERNAL)
     }
 }

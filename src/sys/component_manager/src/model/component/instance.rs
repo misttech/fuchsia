@@ -1663,15 +1663,15 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
             scope: ExecutionScope,
             moniker: Moniker,
             path: vfs::path::Path,
-            rights: Rights,
+            flags: fio::Flags,
         }
         impl fmt::Debug for OutgoingDirConnector {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(&format!(
-                    "OutgoingDirConnector {{ moniker: {}, path: {}, rights: {} }}",
+                    "OutgoingDirConnector {{ moniker: {}, path: {}, flags: {:?} }}",
                     &self.moniker,
                     self.path.as_ref(),
-                    self.rights
+                    self.flags
                 ))
             }
         }
@@ -1680,14 +1680,9 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
                 &self,
                 dir: ServerEnd<fio::DirectoryMarker>,
                 subdir: RelativePath,
-                rights: Option<fio::Operations>,
+                flags: Option<fio::Flags>,
             ) -> Result<(), ()> {
-                let allowed_flags: fio::Flags = self.rights.into();
-                let flags = if let Some(rights) = rights {
-                    fio::Flags::from_bits(rights.bits()).ok_or(())?
-                } else {
-                    allowed_flags | fio::Flags::PROTOCOL_DIRECTORY
-                };
+                let flags = flags.unwrap_or(self.flags | fio::Flags::PROTOCOL_DIRECTORY);
                 let subdir = vfs::path::Path::validate_and_split(subdir).unwrap();
                 let path = subdir.with_prefix(&self.path);
                 let mut obj_request = vfs::object_request::ObjectRequest::new(
@@ -1712,7 +1707,7 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
             scope: source_component.execution_scope.clone(),
             moniker: source_component.moniker.clone(),
             path,
-            rights,
+            flags: rights.into(),
         });
         if debug {
             Ok(RouterResponse::Debug(

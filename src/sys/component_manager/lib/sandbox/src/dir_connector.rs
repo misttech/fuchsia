@@ -19,7 +19,7 @@ pub trait DirConnectable: Send + Sync + Debug {
         &self,
         dir: ServerEnd<fio::DirectoryMarker>,
         subdir: RelativePath,
-        rights: Option<fio::Operations>,
+        flags: Option<fio::Flags>,
     ) -> Result<(), ()>;
 }
 
@@ -28,10 +28,10 @@ impl DirConnectable for mpsc::UnboundedSender<ServerEnd<fio::DirectoryMarker>> {
         &self,
         dir: ServerEnd<fio::DirectoryMarker>,
         subdir: RelativePath,
-        rights: Option<fio::Operations>,
+        flags: Option<fio::Flags>,
     ) -> Result<(), ()> {
         assert_eq!(subdir, RelativePath::dot());
-        assert_eq!(rights, None);
+        assert_eq!(flags, None);
         self.unbounded_send(dir).map_err(|_| ())
     }
 }
@@ -70,9 +70,9 @@ impl DirConnector {
         &self,
         dir: ServerEnd<fio::DirectoryMarker>,
         subdir: RelativePath,
-        rights: Option<fio::Operations>,
+        flags: Option<fio::Flags>,
     ) -> Result<(), ()> {
-        self.inner.send(dir, subdir, rights)
+        self.inner.send(dir, subdir, flags)
     }
 }
 
@@ -81,9 +81,9 @@ impl DirConnectable for DirConnector {
         &self,
         channel: ServerEnd<fio::DirectoryMarker>,
         subdir: RelativePath,
-        rights: Option<fio::Operations>,
+        flags: Option<fio::Flags>,
     ) -> Result<(), ()> {
-        self.inner.send(channel, subdir, rights)
+        self.inner.send(channel, subdir, flags)
     }
 }
 
@@ -99,13 +99,9 @@ impl DirConnectable for DirectoryProxyForwarder {
         &self,
         server_end: ServerEnd<fio::DirectoryMarker>,
         subdir: RelativePath,
-        rights: Option<fio::Operations>,
+        flags: Option<fio::Flags>,
     ) -> Result<(), ()> {
-        let flags = if let Some(rights) = rights {
-            fio::Flags::from_bits(rights.bits()).ok_or(())?
-        } else {
-            self.flags | fio::Flags::PROTOCOL_DIRECTORY
-        };
+        let flags = flags.unwrap_or(self.flags | fio::Flags::PROTOCOL_DIRECTORY);
         let mut combined_subdir = self.subdir.clone();
         let success = combined_subdir.extend(subdir);
         if !success {
