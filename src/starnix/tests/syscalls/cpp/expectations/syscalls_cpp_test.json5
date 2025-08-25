@@ -31,6 +31,29 @@
                 // can't support with its current implementation. Enable as support is extended.
                 "UffdTest.PopulateFromAnotherUffd",
                 "UffdTest.NoSigBusOnAccessedPage",
+
+                // TODO(https://fxbug.dev/353537391) deflake and re-enable
+                "SignalHandling.SignalDeliveryWakesOnlyOneFutex",
+
+                // TODO(https://fxbug.dev/365540067)
+                // TODO(https://fxbug.dev/365971179): deflake and re-enable
+                "PidFdTest.PollWaitsForSecondaryThreadsToo",
+
+                // TODO(https://fxbug.dev/372236700): Fails with new toolchain.
+                "PtraceTest.InterruptAfterListen",
+
+                // TODO(https://fxbug.dev/394934526)
+                "PtraceTest.PtraceAttachesToParentThread",
+                "PtraceTest.ExitKillFromThread",
+
+                // TODO(https://fxbug.dev/418965139)
+                "ThreadGroupLifeCycleTest.EndMainThreadFirst",
+
+                // TODO(https://fxbug.dev/399939974): Re-enable after one-big vmo is enabled
+                "ProcessMemoryReleaseTest.SuccessfulRelease",
+
+                // TODO(https://fxbug.dev/438263380)
+                "TimerFD.RealtimeAlarm",
             ],
         },
         {
@@ -115,33 +138,6 @@
 
                 // TODO(https://fxbug.dev/439058791)
                 "DumpableTest.DumpableDropsOnUserChange",
-            ],
-        },
-        {
-            type: "skip",
-            matchers: [
-                // TODO(https://fxbug.dev/353537391) deflake and re-enable
-                "SignalHandling.SignalDeliveryWakesOnlyOneFutex",
-
-                // TODO(https://fxbug.dev/365540067)
-                // TODO(https://fxbug.dev/365971179): deflake and re-enable
-                "PidFdTest.PollWaitsForSecondaryThreadsToo",
-
-                // TODO(https://fxbug.dev/372236700): Fails with new toolchain.
-                "PtraceTest.InterruptAfterListen",
-
-                // TODO(https://fxbug.dev/394934526)
-                "PtraceTest.PtraceAttachesToParentThread",
-                "PtraceTest.ExitKillFromThread",
-
-                // TODO(https://fxbug.dev/418965139)
-                "ThreadGroupLifeCycleTest.EndMainThreadFirst",
-
-                // TODO(https://fxbug.dev/399939974): Re-enable after one-big vmo is enabled
-                "ProcessMemoryReleaseTest.SuccessfulRelease",
-
-                // TODO(https://fxbug.dev/438263380)
-                "TimerFD.RealtimeAlarm",
             ],
         },
     ],
