@@ -16,6 +16,7 @@ use starnix_sync::{
 use starnix_types::ownership::debug_assert_no_local_temp_ref;
 use starnix_uapi::error;
 use starnix_uapi::errors::{EINTR, Errno};
+use starnix_uapi::signals::{SigSet, Signal};
 use starnix_uapi::vfs::FdEvents;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Weak};
@@ -335,6 +336,8 @@ enum WaitEvents {
     Fd(FdEvents),
     /// Wait for the specified value.
     Value(u64),
+    /// Wait for a signal in a specific mask to be received by the task.
+    SignalMask(SigSet),
 }
 
 impl WaitEvents {
@@ -344,6 +347,8 @@ impl WaitEvents {
             (Self::All, _) | (_, Self::All) => true,
             (Self::Fd(m1), Self::Fd(m2)) => m1.bits() & m2.bits() != 0,
             (Self::Value(v1), Self::Value(v2)) => v1 == v2,
+            // A SignalMask event can only be intercepted by another SignalMask event.
+            (Self::SignalMask(m1), Self::SignalMask(m2)) => m1.intersects(m2),
             _ => false,
         }
     }
@@ -540,6 +545,7 @@ impl PortWaiter {
                     // events.
                     WaitEvents::All => FdEvents::all(),
                     WaitEvents::Fd(events) => events,
+                    WaitEvents::SignalMask(_) => FdEvents::POLLIN,
                     _ => panic!("wrong type of handler called: {events:?}"),
                 };
                 handler.handle(events)
@@ -1024,6 +1030,24 @@ impl WaitQueue {
         self.wait_async_entry(waiter, entry)
     }
 
+    /// Establish a wait for a particular signal mask.
+    ///
+    /// The waiter will be notified when a signal in the mask is received.
+    ///
+    /// This function does not actually block the waiter. To block the waiter,
+    // call the [`Waiter::wait`] function on the waiter.
+    ///
+    /// Returns a `WaitCanceler` that can be used to cancel the wait.
+    pub fn wait_async_signal_mask(
+        &self,
+        waiter: &Waiter,
+        mask: SigSet,
+        handler: EventHandler,
+    ) -> WaitCanceler {
+        let entry = waiter.create_wait_entry_with_handler(WaitEvents::SignalMask(mask), handler);
+        self.wait_async_entry(waiter, entry)
+    }
+
     /// Establish a wait for any event.
     ///
     /// The waiter will be notified when any event occurs.
@@ -1067,6 +1091,11 @@ impl WaitQueue {
 
     pub fn notify_fd_events(&self, events: FdEvents) {
         self.notify_events_count(WaitEvents::Fd(events), usize::MAX);
+    }
+
+    pub fn notify_signal(&self, signal: &Signal) {
+        let event = WaitEvents::SignalMask(SigSet::from(*signal));
+        self.notify_events_count(event, usize::MAX);
     }
 
     pub fn notify_value(&self, value: u64) {

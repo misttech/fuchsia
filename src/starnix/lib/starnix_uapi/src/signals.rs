@@ -197,6 +197,11 @@ impl SigSet {
     pub fn has_signal(&self, signal: Signal) -> bool {
         (self.0 & (signal.mask() as std::os::raw::c_ulong)) != 0
     }
+
+    /// Returns whether this signal set has any signals in common with another.
+    pub fn intersects(&self, other: &Self) -> bool {
+        (self.0 & other.0) != 0
+    }
 }
 
 impl From<sigset_t> for SigSet {

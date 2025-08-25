@@ -949,8 +949,9 @@ mod tests {
     use crate::mm::{MemoryAccessor, PAGE_SIZE};
     use crate::signals::send_standard_signal;
     use crate::signals::testing::dequeue_signal_for_test;
-    use crate::task::{ExitStatus, ProcessExitInfo};
+    use crate::task::{EnqueueEventHandler, EventHandler, ExitStatus, ProcessExitInfo};
     use crate::testing::*;
+    use starnix_sync::Mutex;
     use starnix_types::math::round_up_to_system_page_size;
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::errors::ERESTARTSYS;
@@ -958,7 +959,10 @@ mod tests {
         SIGCHLD, SIGHUP, SIGINT, SIGIO, SIGKILL, SIGRTMIN, SIGSEGV, SIGSTOP, SIGTERM, SIGTRAP,
         SIGUSR1,
     };
+    use starnix_uapi::vfs::FdEvents;
     use starnix_uapi::{SI_QUEUE, SI_USER, sigaction_t, uaddr, uid_t};
+    use std::collections::VecDeque;
+    use std::sync::Arc;
     use zerocopy::IntoBytes;
 
     #[cfg(target_arch = "x86_64")]
@@ -2158,5 +2162,165 @@ mod tests {
         } else {
             panic!("expected a queued signal");
         }
+    }
+
+    #[::fuchsia::test]
+    async fn test_signalfd_filters_signals() {
+        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let memory_for_masks =
+            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+
+        // Create a signalfd for SIGTERM and SIGINT.
+        let term_int_mask = SigSet::from(SIGTERM) | SigSet::from(SIGINT);
+        let term_int_mask_addr = UserRef::<SigSet>::new(memory_for_masks);
+        current_task
+            .write_object(term_int_mask_addr, &term_int_mask)
+            .expect("failed to write mask");
+        let sfd_term_int = sys_signalfd4(
+            locked,
+            &current_task,
+            FdNumber::from_raw(-1),
+            term_int_mask_addr,
+            std::mem::size_of::<SigSet>(),
+            0,
+        )
+        .expect("failed to create SIGTERM/SIGINT signalfd");
+
+        // Create a signalfd for SIGCHLD.
+        let sigchld_mask = SigSet::from(SIGCHLD);
+        let sigchld_mask_addr =
+            UserRef::<SigSet>::new((memory_for_masks + std::mem::size_of::<SigSet>()).unwrap());
+        current_task.write_object(sigchld_mask_addr, &sigchld_mask).expect("failed to write mask");
+        let sfd_chld = sys_signalfd4(
+            locked,
+            &current_task,
+            FdNumber::from_raw(-1),
+            sigchld_mask_addr,
+            std::mem::size_of::<SigSet>(),
+            0,
+        )
+        .expect("failed to create SIGCHLD signalfd");
+
+        // Create and exit a child process, which should generate a SIGCHLD.
+        let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+        child.thread_group().exit(locked, ExitStatus::Exit(1), None);
+        std::mem::drop(child);
+
+        // Check which signalfds are readable.
+        let sfd_term_int_file =
+            current_task.files.get(sfd_term_int).expect("failed to get sfd_term_int file");
+        let sfd_chld_file = current_task.files.get(sfd_chld).expect("failed to get sfd_chld file");
+
+        let term_int_events = sfd_term_int_file
+            .query_events(locked, &current_task)
+            .expect("failed to query sfd_term_int events");
+        let chld_events = sfd_chld_file
+            .query_events(locked, &current_task)
+            .expect("failed to query sfd_chld events");
+
+        assert!(!term_int_events.contains(FdEvents::POLLIN));
+        assert!(chld_events.contains(FdEvents::POLLIN));
+    }
+
+    #[::fuchsia::test]
+    async fn test_signalfd_filters_signals_async() {
+        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
+        let memory_for_masks =
+            map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+
+        // Create a signalfd for SIGTERM and SIGINT.
+        let term_int_mask = SigSet::from(SIGTERM) | SigSet::from(SIGINT);
+        let term_int_mask_addr = UserRef::<SigSet>::new(memory_for_masks);
+        current_task
+            .write_object(term_int_mask_addr, &term_int_mask)
+            .expect("failed to write mask");
+        let sfd_term_int = sys_signalfd4(
+            locked,
+            &current_task,
+            FdNumber::from_raw(-1),
+            term_int_mask_addr,
+            std::mem::size_of::<SigSet>(),
+            0,
+        )
+        .expect("failed to create SIGTERM/SIGINT signalfd");
+
+        // Create a signalfd for SIGCHLD.
+        let sigchld_mask = SigSet::from(SIGCHLD);
+        let sigchld_mask_addr =
+            UserRef::<SigSet>::new((memory_for_masks + std::mem::size_of::<SigSet>()).unwrap());
+        current_task.write_object(sigchld_mask_addr, &sigchld_mask).expect("failed to write mask");
+        let sfd_chld = sys_signalfd4(
+            locked,
+            &current_task,
+            FdNumber::from_raw(-1),
+            sigchld_mask_addr,
+            std::mem::size_of::<SigSet>(),
+            0,
+        )
+        .expect("failed to create SIGCHLD signalfd");
+
+        // Set up the async wait.
+        let waiter = Waiter::new();
+        let ready_items = Arc::new(Mutex::new(VecDeque::new()));
+
+        let sfd_term_int_file =
+            current_task.files.get(sfd_term_int).expect("failed to get sfd_term_int file");
+        let sfd_chld_file = current_task.files.get(sfd_chld).expect("failed to get sfd_chld file");
+
+        sfd_term_int_file
+            .wait_async(
+                locked,
+                &current_task,
+                &waiter,
+                FdEvents::POLLIN,
+                EventHandler::Enqueue(EnqueueEventHandler {
+                    key: sfd_term_int.into(),
+                    queue: ready_items.clone(),
+                    sought_events: FdEvents::POLLIN,
+                    mappings: None,
+                }),
+            )
+            .expect("failed to wait on sfd_term_int");
+
+        sfd_chld_file
+            .wait_async(
+                locked,
+                &current_task,
+                &waiter,
+                FdEvents::POLLIN,
+                EventHandler::Enqueue(EnqueueEventHandler {
+                    key: sfd_chld.into(),
+                    queue: ready_items.clone(),
+                    sought_events: FdEvents::POLLIN,
+                    mappings: None,
+                }),
+            )
+            .expect("failed to wait on sfd_chld");
+
+        // Block SIGCHLD so it can be received by the signalfd.
+        let sigchld_mask_ref = UserRef::<SigSet>::new(memory_for_masks);
+        current_task.write_object(sigchld_mask_ref, &sigchld_mask).expect("failed to write mask");
+        sys_rt_sigprocmask(
+            locked,
+            &current_task,
+            SIG_BLOCK,
+            sigchld_mask_ref,
+            UserRef::default(),
+            std::mem::size_of::<SigSet>(),
+        )
+        .expect("failed to block SIGCHLD");
+
+        // Create and exit a child process, which should generate a SIGCHLD.
+        let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+        child.thread_group().exit(locked, ExitStatus::Exit(1), None);
+        std::mem::drop(child);
+
+        // Wait for the signal to be processed.
+        waiter.wait(locked, &current_task).expect("failed to wait");
+
+        // Check that only the correct signalfd was woken up.
+        let ready_items = ready_items.lock();
+        assert_eq!(ready_items.len(), 1);
+        assert_eq!(ready_items[0].key, sfd_chld.into());
     }
 }

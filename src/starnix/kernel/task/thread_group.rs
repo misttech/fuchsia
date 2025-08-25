@@ -2085,7 +2085,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                 || task_state.is_ptraced();
 
             if is_queued {
-                task_state.notify_signal_waiters();
+                task_state.notify_signal_waiters(&signal_info.signal);
                 task_state.set_flags(TaskFlags::SIGNALS_AVAILABLE, true);
 
                 if !is_masked && action.must_interrupt(Some(sigaction)) && !has_interrupted_task {

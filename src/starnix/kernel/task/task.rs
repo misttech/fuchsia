@@ -32,7 +32,6 @@ use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SigSet, Signal, sigaltstack_contains_pointer};
 use starnix_uapi::user_address::{ArchSpecific, MappingMultiArchUserRef, UserAddress, UserRef};
-use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     CLD_CONTINUED, CLD_DUMPED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, FUTEX_BITSET_MATCH_ANY, errno,
     error, from_status_like_fdio, pid_t, sigaction_t, sigaltstack, tid_t, uapi,
@@ -625,14 +624,14 @@ impl TaskMutableState {
     pub fn wait_on_signal_fd_events(
         &self,
         waiter: &Waiter,
-        events: FdEvents,
+        mask: SigSet,
         handler: EventHandler,
     ) -> WaitCanceler {
-        self.signals.signal_wait.wait_async_fd_events(waiter, events, handler)
+        self.signals.signal_wait.wait_async_signal_mask(waiter, mask, handler)
     }
 
-    pub fn notify_signal_waiters(&self) {
-        self.signals.signal_wait.notify_all();
+    pub fn notify_signal_waiters(&self, signal: &Signal) {
+        self.signals.signal_wait.notify_signal(signal);
     }
 
     /// Thaw the task if has been frozen

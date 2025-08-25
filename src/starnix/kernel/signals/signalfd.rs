@@ -136,11 +136,11 @@ impl FileOps for SignalFd {
         _file: &FileObject,
         current_task: &CurrentTask,
         waiter: &Waiter,
-        events: FdEvents,
+        _events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        let task_state = current_task.read();
-        Some(task_state.wait_on_signal_fd_events(waiter, events, handler))
+        let mask = *self.mask.lock();
+        Some(current_task.read().wait_on_signal_fd_events(waiter, mask, handler))
     }
 
     fn query_events(
