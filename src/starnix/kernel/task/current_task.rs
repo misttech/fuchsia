@@ -41,7 +41,7 @@ use starnix_uapi::errors::{Errno, ErrnoCode};
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{
-    SIGBUS, SIGCONT, SIGILL, SIGSEGV, SIGTRAP, SigSet, Signal, UncheckedSignal,
+    SIGBUS, SIGCHLD, SIGCONT, SIGILL, SIGSEGV, SIGTRAP, SigSet, Signal, UncheckedSignal,
 };
 use starnix_uapi::user_address::{ArchSpecific, UserAddress, UserRef};
 use starnix_uapi::vfs::ResolveFlags;
@@ -1143,7 +1143,17 @@ impl CurrentTask {
         self.thread_state.extended_pstate.reset();
         self.thread_group().signal_actions.reset_for_exec();
 
-        // TODO: The termination signal is reset to SIGCHLD.
+        // The exit signal (and that of the children) is reset to SIGCHLD.
+        let mut thread_group_state = self.thread_group().write();
+        thread_group_state.exit_signal = Some(SIGCHLD);
+        for (_, weak_child) in &mut thread_group_state.children {
+            if let Some(child) = weak_child.upgrade() {
+                let mut child_state = child.write();
+                child_state.exit_signal = Some(SIGCHLD);
+            }
+        }
+
+        std::mem::drop(thread_group_state);
 
         // TODO(https://fxbug.dev/42082680): All threads other than the calling thread are destroyed.
 
