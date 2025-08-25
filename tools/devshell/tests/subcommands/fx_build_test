@@ -3,11 +3,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../../lib/platform.sh || exit $?
+
 BT_FILE_DEPS=(
+    "prebuilt/third_party/jq/${HOST_PLATFORM}/bin/jq"
     "scripts/fx"
+    "scripts/fuchsia-vendored-python"
+    "scripts/fuchsia-vendored-python3.11"
+    "scripts/hermetic-env"
     "tools/devshell/lib/vars.sh"
     "tools/devshell/build"
-    "tools/devshell/lib/bazel_utils.sh"
+    "tools/devshell/jq.fx"
     "tools/devshell/lib/build_api_client.sh"
     "tools/devshell/lib/fx-cmd-locator.sh"
     "tools/devshell/lib/fx-optional-features.sh"
@@ -21,119 +27,368 @@ BT_MKDIR_DEPS=(
     "out/default"
 )
 
+MOCK_PYTHON3_DIR="prebuilt/third_party/python3/test"
+MOCK_PYTHON3="${MOCK_PYTHON3_DIR}/bin/python3"
+BT_MOCKED_TOOLS=(
+  "build/api/client"
+  "build/regenerator"
+  "scripts/fuchsia-vendored-python"
+  "tools/devshell/lib/bazel_utils.sh"
+  "tools/devshell/rbe"
+  "tools/devshell/lib/platform.sh"
+  "tools/devshell/contrib/lib/count-ninja-actions.py"
+  "tools/integration/bootstrap.sh"
+  "${MOCK_PYTHON3}"
+)
+
 BT_SET_UP() {
     source "${BT_TEMP_DIR}/tools/devshell/tests/lib/fuchsia-mock.sh"
     fx="$(btf::setup_fx)"
-    FUCHSIA_DIR="${BT_TEMP_DIR}"
-    mkdir -p "$FUCHSIA_DIR/build"
-    touch "$FUCHSIA_DIR/build/regenerator"
-    chmod +x "$FUCHSIA_DIR/build/regenerator"
+    TEST_BUILD_DIR="${BT_TEMP_DIR}/out/default"
+}
+
+# This function must be called by any test that checks the
+# behavior of the validate_build_args() function.
+setup_parsing_validation_test() {
     export FX_BUILD_DEBUG_VALIDATION=1
 }
 
+# This function must be called by regular build tests.
+# $1: optional, set to "enable_landmines" to enable landmine checks.
+setup_build_test() {
+  # Set up mocked replacements for system utils.
+
+  # IMPORTANT: The test suite invokes the current script through "/usr/bin/env -i"
+  # which appends ":." at the end of PATH, which will result in an error when
+  # calling fx-run-build-command, so remove this here explicitly.
+  export PATH="${BT_TEMP_DIR}/bin:${PATH%:.}"
+
+  # Misc mock binaries invoked by tools/devshell/build
+  ninja="$(btf::make_mock_binary bin/ninja)"
+  build_api_client="${BT_TEMP_DIR}/build/api/client"
+
+  bazel="$(btf::make_mock_binary bin/bazel)"
+  cat > "${BT_TEMP_DIR}/tools/devshell/lib/bazel_utils.sh.mock_side_effects" <<EOF
+function fx-get-bazel {
+  echo "${bazel}"
+}
+
+EOF
+  cat > "${BT_TEMP_DIR}/tools/devshell/lib/platform.sh.mock_side_effects" <<EOF
+    readonly PREBUILT_ALL_PATHS="${BT_TEMP_DIR}"
+    readonly PREBUILT_JQ="${BT_TEMP_DIR}/prebuilt/third_party/jq/linux-x64/bin/jq"
+    readonly PREBUILT_PYTHON3_DIR="${BT_TEMP_DIR}/${MOCK_PYTHON3_DIR}"
+    readonly PREBUILT_PYTHON3="${BT_TEMP_DIR}/${MOCK_PYTHON3}"
+    readonly PREBUILT_NINJA="${ninja}"
+EOF
+
+  if [[ "$1" != "enable_landmines" ]]; then
+    # Ensure the landmine checks pass by updating the timestamp of various files
+    # in the test directory.
+
+    # LINT.IfChange(landmine_files)
+    touch "${TEST_BUILD_DIR}/args.gn"
+    touch "${BT_TEMP_DIR}/tools/devshell/build"
+    touch "${BT_TEMP_DIR}/tools/devshell/lib/bazel_utils.sh"
+    touch "${BT_TEMP_DIR}/tools/devshell/lib/vars.sh"
+    touch "${TEST_BUILD_DIR}/build.ninja"  # Must appear last
+    # LINT.ThenChange(//tools/devshell/build:landmine_files)
+  fi
+
+  # Disable RBE by default.
+  echo "" > "${TEST_BUILD_DIR}/rbe_settings.json"
+
+  # args.json is parsed to look for enable_jobserver in Ninja build mode.
+  # Ensure this is disabled by default.
+  touch "${TEST_BUILD_DIR}/args.json"
+
+  # Force concurrency, see fx-cpu-count.
+  mock_getconf=$(btf::make_mock_binary getconf)
+  echo "8" > "${mock_getconf}.mock_stdout"
+  btf::add_binary_to_path "${mock_getconf}"
+}
+
+# In Ninja build mode, build/api/client is called twice. The first time to
+# convert GN labels and Ninja output paths to GN labels (if possible, since
+# some GN convenience aliases have no GN labels), the second time to convert
+# the labels (and remaining aliases) to Ninja paths.
+#
+# These two steps are used to print different set of messages in case of
+# errors, and could be grouped into a single build/api/client command, but
+# for now, both need to be supported.
+# $1: The output of the first build/api/client (should be a list of labels)
+# $2: The output of the second build/api/client (should be a list of Ninja paths)
+setup_build_api_results() {
+  echo "$1" > "${build_api_client}.mock_stdout.1"
+  echo "$2" > "${build_api_client}.mock_stdout.2"
+}
+
+setup_fint_build() {
+  # tools/integration/bootstrap.sh is already mocked, populated
+  # the mock FX_CACHE_DIR with a symlink to a mock fint tool.
+  fint_bin=$(btf::make_mock_binary bin/fint)
+  fint="${BT_TEMP_DIR}/.fx/fint"
+  mkdir -p "$(dirname "${fint}")"
+  ln -s "${fint_bin}" "${fint}"
+}
+
 TEST_fx-build-validate-gn-labels() {
+    setup_parsing_validation_test
     BT_EXPECT "${fx}" build //src:foo ">" stdout.txt
     BT_EXPECT_FILE_CONTAINS stdout.txt "FX_BUILD_MODE gn"
 }
 
 TEST_fx-build-validate-gn-toolchain() {
+    setup_parsing_validation_test
     BT_EXPECT "${fx}" build --toolchain=//toolchain:bar //src:foo ">" stdout.txt
     BT_EXPECT_FILE_CONTAINS stdout.txt "FX_BUILD_MODE gn"
 }
 
 TEST_fx-build-validate-gn-alias-default() {
+    setup_parsing_validation_test
     BT_EXPECT "${fx}" build --default //src:foo ">" stdout.txt
     BT_EXPECT_FILE_CONTAINS stdout.txt "FX_BUILD_MODE gn"
 }
 
 TEST_fx-build-validate-gn-alias-fuchsia() {
+    setup_parsing_validation_test
     BT_EXPECT "${fx}" build --fuchsia //src:foo ">" stdout.txt
     BT_EXPECT_FILE_CONTAINS stdout.txt "FX_BUILD_MODE gn"
 }
 
 TEST_fx-build-validate-gn-alias-fidl() {
+    setup_parsing_validation_test
     BT_EXPECT "${fx}" build --fidl //src:foo ">" stdout.txt
     BT_EXPECT_FILE_CONTAINS stdout.txt "FX_BUILD_MODE gn"
 }
 
 TEST_fx-build-validate-gn-alias-host() {
+    setup_parsing_validation_test
     BT_EXPECT "${fx}" build --host //src:foo ">" stdout.txt
     BT_EXPECT_FILE_CONTAINS stdout.txt "FX_BUILD_MODE gn"
 }
 
 TEST_fx-build-reject-gn-toolchain-as-last-argument() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build //src:foo --host "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: Toolchain option --host must be followed by at least one GN label"
 }
 
 TEST_fx-build-validate-bazel-single-label() {
+    setup_parsing_validation_test
     BT_EXPECT "${fx}" build @//src:foo ">" stdout.txt
     BT_EXPECT_FILE_CONTAINS stdout.txt "FX_BUILD_MODE bazel"
 }
 
 TEST_fx-build-reject-bazel-and-gn-toolchain() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build @//src:foo --toolchain=//toolchain:bar "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: GN option --toolchain=//toolchain:bar cannot be used with Bazel targets: @//src:foo"
 }
 
 TEST_fx-build-reject-bazel-and-gn-alias-default() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build @//src:foo --default "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: GN option --default cannot be used with Bazel targets: @//src:foo"
 }
 
 TEST_fx-build-reject-bazel-and-gn-alias-fuchsia() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build @//src:foo --fuchsia "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: GN option --fuchsia cannot be used with Bazel targets: @//src:foo"
 }
 
 TEST_fx-build-reject-bazel-and-gn-alias-fidl() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build @//src:foo --fidl "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: GN option --fidl cannot be used with Bazel targets: @//src:foo"
 }
 
 TEST_fx-build-validate-bazel-with-host-alias() {
+    setup_parsing_validation_test
     BT_EXPECT "${fx}" build @//src:foo --host ">" stdout.txt
     BT_EXPECT_FILE_CONTAINS stdout.txt "FX_BUILD_MODE bazel"
 }
 
 TEST_fx-build-reject-bazel-and-gn-labels() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build @//src:foo //src:bar "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: GN label //src:bar cannot be used with Bazel targets: @//src:foo"
 }
 
 TEST_fx-build-reject-fint-params-and-bazel-label() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build --fint-params-path foo @//src:foo "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: It's invalid to specify Bazel or GN arguments along with --fint-params-path."
 }
 
 TEST_fx-build-reject-fint-params-and-gn-label() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build --fint-params-path foo //src:foo "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: It's invalid to specify Bazel or GN arguments along with --fint-params-path."
 }
 
 TEST_fx-build-reject-fint-params-and-extra-args() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build --fint-params-path FILE -- -j20 "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: It's invalid to specify extra Ninja flags along with --fint-params-path."
 }
 
 TEST_fx-build-reject-fint-params-missing-arg() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build --fint-params-path "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: Missing --fint-params-path argument, see --help."
 }
 
 TEST_fx-build-validate-fint-params() {
+    setup_parsing_validation_test
     BT_EXPECT "${fx}" build --fint-params-path FOO ">" stdout.txt
     BT_EXPECT_FILE_CONTAINS stdout.txt "FX_BUILD_MODE fint"
 }
 
 TEST_fx-build-validate-fint-params-with-single-arg() {
+    setup_parsing_validation_test
     BT_EXPECT "${fx}" build --fint-params-path=FOO ">" stdout.txt
     BT_EXPECT_FILE_CONTAINS stdout.txt "FX_BUILD_MODE fint"
 }
 
 TEST_fx-build-reject-log-missing-arg() {
+    setup_parsing_validation_test
     BT_EXPECT_FAIL "${fx}" build --log "2>" stderr.txt
     BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: Missing --log argument, see --help."
+}
+
+TEST_fx-build-with-fint() {
+    setup_build_test
+    setup_fint_build
+    BT_EXPECT "${fx}" build --fint-params-path=path/to/build_config.proto
+    source "${fint}.mock_state"
+    local expected_fint_args=(
+      "${fint}"
+      -log-level=error
+      build
+      -static=path/to/build_config.proto
+      -context=/dev/fd/ANY
+    )
+    # The last item in BT_MOCK_ARGS will be -context=/dev/fd/<SOME_NUMBER>
+    # Replace that with /dev/fd/ANY
+    local arg mock_args=()
+    for arg in "${BT_MOCK_ARGS[@]}"; do
+      case "${arg}" in
+        -context=/dev/fd/*)
+          arg="-context=/dev/fd/ANY"
+          ;;
+      esac
+      mock_args+=("${arg}")
+    done
+    BT_EXPECT_EQ "${mock_args[*]}" "${expected_fint_args[*]}"
+}
+
+TEST_fx-build-with-gn-label() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    BT_EXPECT "${fx}" build //src:foo
+    source "${ninja}.mock_state"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -j 8 -C ${TEST_BUILD_DIR} obj/src/foo"
+}
+
+TEST_fx-build-with-gn-label-and-j32() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    BT_EXPECT "${fx}" build -j32 //src:foo
+    source "${ninja}.mock_state"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -C ${TEST_BUILD_DIR} -j32 obj/src/foo"
+}
+
+TEST_fx-build-with-gn-label-and-enable_jobserver() {
+    setup_build_test
+    # Verify that enable_jobserver=true in args.gn sets the Ninja --jobserver flag.
+    echo "{ \"enable_jobserver\": true }" > "${TEST_BUILD_DIR}/args.json"
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    BT_EXPECT "${fx}" build //src:foo
+    source "${ninja}.mock_state"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -j 8 -C ${TEST_BUILD_DIR} --jobserver obj/src/foo"
+}
+
+TEST_fx-build-with-gn-label-and-j-32() {
+    setup_build_test
+    setup_build_api_results "//src:foo" "obj/src/foo"
+    BT_EXPECT "${fx}" build -j 32 //src:foo
+    source "${ninja}.mock_state"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -C ${TEST_BUILD_DIR} -j 32 obj/src/foo"
+}
+
+TEST_fx-build-with-ninja-path() {
+    setup_build_test
+    setup_build_api_results "obj/src/foo" "obj/src/foo"
+    BT_EXPECT "${fx}" build obj/src/foo
+    source "${ninja}.mock_state"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${ninja} -j 8 -C ${TEST_BUILD_DIR} obj/src/foo"
+}
+
+TEST_fx-build-with-bazel-non-host-label() {
+    setup_build_test
+    BT_EXPECT_FAIL "${fx}" build @//src/foo "2>" stderr.txt
+    BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: Only host Bazel target labels are supported for now, please use --host flag."
+}
+
+TEST_fx-build-with-bazel-host-label() {
+    setup_build_test
+    BT_EXPECT "${fx}" build --host @//src/foo
+    source "${bazel}.mock_state"
+    local expected_bazel_command=(
+      "${bazel}"
+      build
+      --config=host
+      --override_repository=gn_targets="${BT_TEMP_DIR}"/build/bazel/local_repositories/empty
+      @//src/foo
+    )
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${expected_bazel_command[*]}"
+}
+
+TEST_fx-build-with-bazel-host-label-and-j32() {
+    setup_build_test
+    BT_EXPECT "${fx}" build --host -j32 @//src/foo
+    source "${bazel}.mock_state"
+    local expected_bazel_command=(
+      "${bazel}"
+      build
+      --config=host
+      -j32
+      --override_repository=gn_targets="${BT_TEMP_DIR}"/build/bazel/local_repositories/empty
+      @//src/foo
+    )
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${expected_bazel_command[*]}"
+}
+
+TEST_fx-build-with-bazel-label-with-trailing-host() {
+    setup_build_test
+    # Unlike with GN build mode, --host can appear after the Bazel label
+    BT_EXPECT "${fx}" build @//src/foo --host
+    source "${bazel}.mock_state"
+    local expected_bazel_command=(
+      "${bazel}"
+      build
+      --config=host
+      --override_repository=gn_targets="${BT_TEMP_DIR}"/build/bazel/local_repositories/empty
+      @//src/foo
+    )
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${expected_bazel_command[*]}"
+}
+
+TEST_fx-build-with-bazel-label-with-config-host() {
+    setup_build_test
+    # Unlike GN --toolchain options, --config can appear after the Bazel label.
+    BT_EXPECT "${fx}" build @//src/foo --config=host
+    source "${bazel}.mock_state"
+    local expected_bazel_command=(
+      "${bazel}"
+      build
+      --config=host
+      --override_repository=gn_targets="${BT_TEMP_DIR}"/build/bazel/local_repositories/empty
+      @//src/foo
+    )
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[*]}" "${expected_bazel_command[*]}"
 }
 
 BT_RUN_TESTS "$@"

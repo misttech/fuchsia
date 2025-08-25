@@ -310,7 +310,6 @@ function main {
   local quiet
   local skip_auth_check=0
   local concurrency=0
-  local has_bazel_host_flag
 
   # When tracing, increase verbosity.
   if [[ -o xtrace ]]; then
@@ -409,12 +408,7 @@ function main {
       # When building Bazel targets, --host is an alias for --config=host
       --host)
           if [[ "${FX_BUILD_MODE}" == "bazel" ]]; then
-            extra_switches+=(
-                # Force a host build configuration.
-                --config=host
-                # Prevent any existing @gn_targets definitions from being visible.
-                --override_repository=gn_targets="${FUCHSIA_DIR}"/build/bazel/local_repositories/empty
-            )
+            extra_switches+=(--config=host)
           else
             assert_build_mode "gn"
             gn_targets+=("$1")
@@ -423,9 +417,6 @@ function main {
 
       --config=*)
         assert_build_mode "bazel"
-        if [[ "$1" == "--config=host" ]]; then
-          has_bazel_host_flag=true
-        fi
         extra_switches+=("$1")
         ;;
 
@@ -521,12 +512,16 @@ function main {
     # that ninja's automatic re-gen rule might not be triggered or might not work
     # properly if it is triggered.  So preemptively force a re-gen if that seems
     # like a plausible possibility.
+
+    # LINT.IfChange(landmine_files)
     local -r landmines=("$PREBUILT_GN"
                         "$FUCHSIA_DIR/tools/devshell/build"
                         "$FUCHSIA_DIR/tools/devshell/lib/bazel_utils.sh"
                         "$FUCHSIA_DIR/tools/devshell/lib/vars.sh"
                         "${FUCHSIA_BUILD_DIR}/args.gn"
                       )
+    # LINT.ThenChange(//tools/devshell/tests/subcommands/fx_build_test:landmine_files)
+
     local mine
     for mine in "${landmines[@]}"; do
       if [[ "$mine" -nt "${FUCHSIA_BUILD_DIR}/build.ninja" ]]; then
@@ -596,7 +591,20 @@ function main {
     # For now, only support host Bazel targets. Supporting Fuchsia targets requires
     # ensuring that all GN build artifacts they use as input are already built, which
     # is not implemented yet.
-    if [[ -z "${has_bazel_host_flag}" ]]; then
+    local has_bazel_host_flag bazel_arg
+    for bazel_arg in "${extra_switches[@]}"; do
+      if [[ "${bazel_arg}" == "--config=host" ]]; then
+         has_bazel_host_flag=true
+         break
+      fi
+    done
+
+    if [[ "${has_bazel_host_flag}" ]]; then
+      extra_switches+=(
+        # Prevent any existing @gn_targets definitions from being visible.
+        --override_repository=gn_targets="${FUCHSIA_DIR}"/build/bazel/local_repositories/empty
+      )
+    else
       fx-error "Only host Bazel target labels are supported for now, please use --host flag."
       exit 1
     fi
@@ -672,9 +680,6 @@ job_count: $concurrency
       # Invoke Bazel through fx-run-bazel to ensure a consistent environment and RBE wrapper
       # script, compared with the case where Bazel is called from Ninja.
       local bazel_build_args=(
-        # Prevent any existing @gn_targets definitions from being visible.
-        --override_repository=gn_targets="${FUCHSIA_DIR}"/build/bazel/local_repositories/empty
-        # Extra Bazel arguments can be passed after --
         "${extra_switches[@]}"
         # The target labels or patterns
         "${bazel_targets[@]}"
