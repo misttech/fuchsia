@@ -70,7 +70,6 @@ zx_library("trace-vthread-with-static-engine") {
     "//zircon/system/ulib/trace-engine:trace-engine-static",
   ]
   deps = [ "//zircon/system/ulib/trace:trace-with-static-engine" ]
-  public = [ "include/trace-vthread/event_vthread.h" ]
 }
 
 group("tests") {

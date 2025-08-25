@@ -18,8 +18,9 @@ import("//build/toolchain/toolchain_environment.gni")
 #
 # * When building with a Zircon-specific toolchain, it will create a source_set()
 #   if the global `is_kernel` is true (meaning building part of the kernel), or
-#   a static_library() target otherwise. The values of `sdk`, `sdk_publishable`
-#   and `sdk_headers` will be ignored entirely.
+#   a static_library() target otherwise. The values of `sdk`, `sdk_area`,
+#   `sdk_headers`, `sdk_headers_for_internal_use`, `sdk_name`,
+#   `sdk_publishable`, and `stable` will be ignored entirely.
 #
 #   This will also create a :headers sub-target, a group used to give access
 #   to the library's include directory from any dependent. Note that this
@@ -104,25 +105,36 @@ import("//build/toolchain/toolchain_environment.gni")
 #   sdk_headers_for_internal_use
 #     Optional: This is always forwarded to the corresponding `sdk_*` template.
 #     See `sdk_source_set` for example about its significance.
+#     Unlike `sdk_headers`, names are not relative to `include/` so "include/"
+#     must be included in the path.
 #     TODO(https://fxbug.dev/333125197): Remove this parameter.
 #
 #   See source_set() for other parameters.
 #
 template("zx_library") {
-  # Parameters that are not forwarded to the underlying target
+  # Parameters that are not forwarded to the underlying target by default.
+  # They must be used or explicitly forwarded when appropriate.
   # TODO(https://fxbug.dev/333125197): Remove when removing the parameters.
   unforwarded_params = [
     "sdk",
     "sdk_area",
     "sdk_headers",
+    "sdk_headers_for_internal_use",
+    "sdk_name",
     "sdk_publishable",
     "stable",
   ]
+  assert(!defined(invoker.public), "Use `sdk_headers` instead.")
 
+  # Ensure SDK-specific parameters are only specified for libraries in the SDK.
+  # The following "sdk" parameters are always allowed:
+  # * `sdk` is required for the `zircon_toolchain=false` case.
+  # * `sdk_headers` is used instead of "public" to specify public headers only
+  #   in the `zircon_toolchain=false` case.
   assert(defined(invoker.sdk_publishable) ||
-         (!defined(invoker.sdk_area) && !defined(invoker.stable) &&
-          !defined(invoker.sdk_name) &&
-          !defined(invoker.sdk_headers_for_internal_use)))
+         (!defined(invoker.sdk_area) &&
+          !defined(invoker.sdk_headers_for_internal_use) &&
+          !defined(invoker.sdk_name) && !defined(invoker.stable)))
 
   if (zircon_toolchain != false) {
     _library_name = target_name
