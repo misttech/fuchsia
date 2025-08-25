@@ -118,11 +118,3 @@ pub(crate) struct SetCountryOperationState {
     pub set_country_result: Result<(), Error>,
     pub responder: oneshot::Sender<Result<(), Error>>,
 }
-
-#[cfg_attr(test, derive(Debug))]
-pub(crate) enum IfaceManagerOperation {
-    ConfigureStateMachine,
-    SetCountry(SetCountryOperationState),
-    ReportDefect,
-    PerformRecovery,
-}

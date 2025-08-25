@@ -18,6 +18,7 @@ use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use crate::util::state_machine::{StateMachineStatusReader, status_publisher_and_reader};
 use crate::util::{atomic_oneshot_stream, future_with_metadata, listener};
 use anyhow::{Error, format_err};
+use async_utils::event::Event;
 use fidl::endpoints::create_proxy;
 use fuchsia_async as fasync;
 use fuchsia_inspect_contrib::log::InspectListClosure;
@@ -65,6 +66,7 @@ struct ClientIfaceContainer {
     sme_proxy: SmeForClientStateMachine,
     config: ClientIfaceContainerConfig,
     client_state_machine: Option<Box<dyn client_fsm::ClientApi>>,
+    state_machine_task: Option<fasync::Task<()>>,
     /// The time of the last scan for roaming or new connection on this iface.
     last_roam_time: fasync::MonotonicInstant,
     status: StateMachineStatusReader<client_fsm::Status>,
@@ -74,6 +76,14 @@ pub(crate) struct ApIfaceContainer {
     pub iface_id: u16,
     pub config: Option<ap_fsm::ApConfig>,
     pub ap_state_machine: Box<dyn AccessPointApi>,
+    // By default, Tasks are killed if their handles are dropped.  While a workaround is to detach
+    // the task, fuchsia_async documentation notes that this can lead to strange behavior in tests
+    // since the lifetime of the Task is now bound to the lifetime of the executor.  By storing the
+    // Tasks in the IfaceContainers, their lifetimes are shared with their parent
+    // IfaceManagerService instances.  Dropping an IfaceManagerService instance will result in all
+    // IfaceContainers dropping, resulting in the termination of any running Tasks.
+    #[expect(unused)]
+    state_machine_task: fasync::Task<()>,
     enabled_time: Option<zx::MonotonicInstant>,
     status: StateMachineStatusReader<ap_fsm::Status>,
 }
@@ -96,6 +106,7 @@ async fn create_client_state_machine(
 ) -> Result<
     (
         Box<dyn client_fsm::ClientApi>,
+        fasync::Task<()>,
         future_with_metadata::FutureWithMetadata<(), StateMachineMetadata>,
         StateMachineStatusReader<client_fsm::Status>,
     ),
@@ -119,7 +130,8 @@ async fn create_client_state_machine(
 
     // State machine status information
     let (publisher, status) = status_publisher_and_reader::<client_fsm::Status>();
-
+    let termination_event = Event::new();
+    let termination_notifier = termination_event.clone();
     let fut = client_fsm::serve(
         iface_id,
         sme_proxy,
@@ -132,13 +144,28 @@ async fn create_client_state_machine(
         defect_sender,
         roam_manager,
         publisher,
-    );
+    )
+    .then(|()| async move {
+        if !termination_notifier.signal() {
+            warn!("Client state machine: signaling termination_event unexpectedly returned false.")
+        }
+    })
+    .boxed_local();
+    let task = fasync::Task::local(fut);
 
     let metadata =
         StateMachineMetadata { iface_id, role: fidl_fuchsia_wlan_common::WlanMacRole::Client };
-    let fut = future_with_metadata::FutureWithMetadata::new(metadata, Box::pin(fut));
+    let fut = future_with_metadata::FutureWithMetadata::new(
+        metadata,
+        async move {
+            // Wait for the state machine to either exit gracefully and signal the event or for the
+            // event to be dropped due to a task cancellation.
+            let _ = termination_event.wait_or_dropped().await;
+        }
+        .boxed_local(),
+    );
 
-    Ok((Box::new(new_client), fut, status))
+    Ok((Box::new(new_client), task, fut, status))
 }
 
 /// Accounts for WLAN interfaces that are present and utilizes them to service requests that are
@@ -153,7 +180,7 @@ pub(crate) struct IfaceManagerService {
     saved_networks: Arc<dyn SavedNetworksManagerApi>,
     connection_selection_requester: ConnectionSelectionRequester,
     roam_manager: RoamManager,
-    fsm_futures:
+    fsm_termination_futures:
         FuturesUnordered<future_with_metadata::FutureWithMetadata<(), StateMachineMetadata>>,
     connection_selection_futures: FuturesUnordered<
         LocalBoxFuture<'static, Result<ConnectionSelectionResponse, anyhow::Error>>,
@@ -190,7 +217,7 @@ impl IfaceManagerService {
             saved_networks,
             connection_selection_requester,
             roam_manager,
-            fsm_futures: FuturesUnordered::new(),
+            fsm_termination_futures: FuturesUnordered::new(),
             connection_selection_futures: FuturesUnordered::new(),
             telemetry_sender,
             defect_sender,
@@ -277,6 +304,7 @@ impl IfaceManagerService {
             sme_proxy,
             config: ClientIfaceContainerConfig::Unconfigured,
             client_state_machine: None,
+            state_machine_task: None,
             last_roam_time: fasync::MonotonicInstant::now(),
             status,
         })
@@ -326,6 +354,8 @@ impl IfaceManagerService {
         let (publisher, status) = status_publisher_and_reader::<ap_fsm::Status>();
 
         let event_stream = sme_proxy.take_event_stream();
+        let termination_event = Event::new();
+        let termination_notifier = termination_event.clone();
         let state_machine_fut = ap_fsm::serve(
             iface_id,
             sme_proxy,
@@ -336,18 +366,33 @@ impl IfaceManagerService {
             self.defect_sender.clone(),
             publisher,
         )
+        .then(|()| async move {
+            if !termination_notifier.signal() {
+                warn!("AP state machine notifier was signaled prematurely.")
+            }
+        })
         .boxed_local();
 
         // Begin running and monitoring the AP state machine future.
         let metadata =
             StateMachineMetadata { iface_id, role: fidl_fuchsia_wlan_common::WlanMacRole::Ap };
-        let fut = future_with_metadata::FutureWithMetadata::new(metadata, state_machine_fut);
-        self.fsm_futures.push(fut);
+        let termination_fut = future_with_metadata::FutureWithMetadata::new(
+            metadata,
+            async move {
+                // Wait for the state machine to either exit gracefully and signal the event or for the
+                // event to be dropped due to a task cancellation.
+                let _ = termination_event.wait_or_dropped().await;
+            }
+            .boxed_local(),
+        );
+        self.fsm_termination_futures.push(termination_fut);
+        let state_machine_task = fasync::Task::local(state_machine_fut);
 
         Ok(ApIfaceContainer {
             iface_id,
             config: None,
             ap_state_machine: Box::new(state_machine),
+            state_machine_task,
             enabled_time: None,
             status,
         })
@@ -557,7 +602,7 @@ impl IfaceManagerService {
             }
             None => {
                 // Create the state machine and controller.
-                let (new_client, fut, status) = create_client_state_machine(
+                let (new_client, state_machine_task, fut, status) = create_client_state_machine(
                     client_iface.iface_id,
                     &mut self.dev_monitor_proxy,
                     self.client_update_sender.clone(),
@@ -570,9 +615,10 @@ impl IfaceManagerService {
                 .await?;
                 client_iface.status = status;
                 client_iface.client_state_machine = Some(new_client);
+                client_iface.state_machine_task = Some(state_machine_task);
 
                 // Begin running and monitoring the client state machine future.
-                self.fsm_futures.push(fut);
+                self.fsm_termination_futures.push(fut);
             }
         }
 
@@ -594,6 +640,7 @@ impl IfaceManagerService {
                 }
                 client.config = ClientIfaceContainerConfig::Unconfigured;
                 client.client_state_machine = None;
+                client.state_machine_task = None;
                 return;
             }
         }
@@ -642,23 +689,25 @@ impl IfaceManagerService {
                 }
 
                 // Create the state machine and controller.
-                let (new_client, fut, status) = create_client_state_machine(
-                    client.iface_id,
-                    &mut self.dev_monitor_proxy,
-                    self.client_update_sender.clone(),
-                    self.saved_networks.clone(),
-                    Some(connect_selection.clone()),
-                    self.telemetry_sender.clone(),
-                    self.defect_sender.clone(),
-                    self.roam_manager.clone(),
-                )
-                .await?;
+                let (new_client, state_machine_task, termination_fut, status) =
+                    create_client_state_machine(
+                        client.iface_id,
+                        &mut self.dev_monitor_proxy,
+                        self.client_update_sender.clone(),
+                        self.saved_networks.clone(),
+                        Some(connect_selection.clone()),
+                        self.telemetry_sender.clone(),
+                        self.defect_sender.clone(),
+                        self.roam_manager.clone(),
+                    )
+                    .await?;
 
-                self.fsm_futures.push(fut);
+                self.fsm_termination_futures.push(termination_fut);
                 client.config =
                     ClientIfaceContainerConfig::Configured(connect_selection.target.network);
                 client.status = status;
                 client.client_state_machine = Some(new_client);
+                client.state_machine_task = Some(state_machine_task);
                 client.last_roam_time = fasync::MonotonicInstant::now();
                 break;
             }
@@ -695,23 +744,25 @@ impl IfaceManagerService {
                 // Create the state machine and controller.  The state machine is setup with no
                 // initial network config.  This will cause it to quickly exit, notifying the
                 // monitor loop that the interface needs attention.
-                let (new_client, fut, status) = create_client_state_machine(
-                    client_iface.iface_id,
-                    &mut self.dev_monitor_proxy,
-                    self.client_update_sender.clone(),
-                    self.saved_networks.clone(),
-                    None,
-                    self.telemetry_sender.clone(),
-                    self.defect_sender.clone(),
-                    self.roam_manager.clone(),
-                )
-                .await?;
+                let (new_client, state_machine_task, termination_fut, status) =
+                    create_client_state_machine(
+                        client_iface.iface_id,
+                        &mut self.dev_monitor_proxy,
+                        self.client_update_sender.clone(),
+                        self.saved_networks.clone(),
+                        None,
+                        self.telemetry_sender.clone(),
+                        self.defect_sender.clone(),
+                        self.roam_manager.clone(),
+                    )
+                    .await?;
 
                 // Begin running and monitoring the client state machine future.
-                self.fsm_futures.push(fut);
+                self.fsm_termination_futures.push(termination_fut);
 
                 client_iface.status = status;
                 client_iface.client_state_machine = Some(new_client);
+                client_iface.state_machine_task = Some(state_machine_task);
                 self.clients.push(client_iface);
             }
             fidl_fuchsia_wlan_common::WlanMacRole::Ap => {
@@ -1163,7 +1214,7 @@ async fn handle_terminated_state_machine(
 fn initiate_set_country(
     iface_manager: &mut IfaceManagerService,
     req: SetCountryRequest,
-) -> LocalBoxFuture<'static, IfaceManagerOperation> {
+) -> LocalBoxFuture<'static, SetCountryOperationState> {
     // Store the initial AP configs so that they can be started later.
     let initial_ap_configs =
         iface_manager.aps.iter().filter_map(|container| container.config.clone()).collect();
@@ -1194,15 +1245,12 @@ fn initiate_set_country(
                 .map_err(|e| format_err!("failed to set regulatory region: {:?}", e))
         };
 
-        let result = SetCountryOperationState {
+        SetCountryOperationState {
             client_connections_initially_enabled,
             initial_ap_configs,
             set_country_result,
             responder: req.responder,
-        };
-
-        // Return all information required to resume to the old state.
-        IfaceManagerOperation::SetCountry(result)
+        }
     };
     regulatory_fut.boxed_local()
 }
@@ -1241,11 +1289,10 @@ async fn restore_state_after_setting_country_code(
 fn initiate_record_defect(
     phy_manager: Arc<Mutex<dyn PhyManagerApi>>,
     defect: Defect,
-) -> LocalBoxFuture<'static, IfaceManagerOperation> {
+) -> LocalBoxFuture<'static, ()> {
     let fut = async move {
         let mut phy_manager = phy_manager.lock().await;
         phy_manager.record_defect(defect);
-        IfaceManagerOperation::ReportDefect
     };
     fut.boxed_local()
 }
@@ -1253,19 +1300,17 @@ fn initiate_record_defect(
 fn initiate_recovery(
     phy_manager: Arc<Mutex<dyn PhyManagerApi>>,
     summary: recovery::RecoverySummary,
-) -> LocalBoxFuture<'static, IfaceManagerOperation> {
+) -> LocalBoxFuture<'static, ()> {
     let fut = async move {
         let mut phy_manager = phy_manager.lock().await;
         phy_manager.perform_recovery(summary).await;
-        IfaceManagerOperation::PerformRecovery
     };
     fut.boxed_local()
 }
 
 async fn handle_iface_manager_request(
     iface_manager: &mut IfaceManagerService,
-    operation_futures: &mut FuturesUnordered<LocalBoxFuture<'static, IfaceManagerOperation>>,
-    token: atomic_oneshot_stream::Token,
+    _token: atomic_oneshot_stream::Token,
     request: IfaceManagerRequest,
 ) {
     match request {
@@ -1317,77 +1362,42 @@ async fn handle_iface_manager_request(
             }
         }
         IfaceManagerRequest::AtomicOperation(operation) => {
-            let fut = match operation {
+            match operation {
                 AtomicOperation::Disconnect(DisconnectRequest {
                     network_id,
                     responder,
                     reason,
                 }) => {
-                    let fut = iface_manager.disconnect(network_id, reason);
-                    let disconnect_fut = async move {
-                        if responder.send(fut.await).is_err() {
-                            error!("could not respond to DisconnectRequest");
-                        }
-                        IfaceManagerOperation::ConfigureStateMachine
-                    };
-                    disconnect_fut.boxed_local()
+                    if responder.send(iface_manager.disconnect(network_id, reason).await).is_err() {
+                        error!("could not respond to DisconnectRequest");
+                    }
                 }
                 AtomicOperation::StopClientConnections(StopClientConnectionsRequest {
                     reason,
                     responder,
                 }) => {
-                    let fut = iface_manager.stop_client_connections(reason);
-                    let stop_client_connections_fut = async move {
-                        if responder.send(fut.await).is_err() {
-                            error!("could not respond to StopClientConnectionsRequest");
-                        }
-                        IfaceManagerOperation::ConfigureStateMachine
-                    };
-                    stop_client_connections_fut.boxed_local()
+                    if responder.send(iface_manager.stop_client_connections(reason).await).is_err()
+                    {
+                        error!("could not respond to StopClientConnectionsRequest");
+                    }
                 }
                 AtomicOperation::StopAp(StopApRequest { ssid, password, responder }) => {
-                    let stop_ap_fut = iface_manager.stop_ap(ssid, password);
-                    let stop_ap_fut = async move {
-                        if responder.send(stop_ap_fut.await).is_err() {
-                            error!("could not respond to StopApRequest");
-                        }
-                        IfaceManagerOperation::ConfigureStateMachine
-                    };
-                    stop_ap_fut.boxed_local()
+                    if responder.send(iface_manager.stop_ap(ssid, password).await).is_err() {
+                        error!("could not respond to StopApRequest");
+                    }
                 }
                 AtomicOperation::StopAllAps(StopAllApsRequest { responder }) => {
-                    let stop_all_aps_fut = iface_manager.stop_all_aps();
-                    let stop_all_aps_fut = async move {
-                        if responder.send(stop_all_aps_fut.await).is_err() {
-                            error!("could not respond to StopAllApsRequest");
-                        }
-                        IfaceManagerOperation::ConfigureStateMachine
-                    };
-                    stop_all_aps_fut.boxed_local()
+                    if responder.send(iface_manager.stop_all_aps().await).is_err() {
+                        error!("could not respond to StopAllApsRequest");
+                    }
                 }
                 AtomicOperation::SetCountry(req) => {
-                    let regulatory_fut = initiate_set_country(iface_manager, req);
-                    regulatory_fut.boxed_local()
+                    let previous_state = initiate_set_country(iface_manager, req).await;
+                    restore_state_after_setting_country_code(iface_manager, previous_state).await;
                 }
             };
-
-            let fut = attempt_atomic_operation(fut, token);
-            operation_futures.push(fut);
         }
     };
-}
-
-// Bundle the operations of running the caller's future with dropping of the `AtomicOneshotStream`
-// `Token`
-fn attempt_atomic_operation<T: 'static>(
-    fut: LocalBoxFuture<'static, T>,
-    token: atomic_oneshot_stream::Token,
-) -> LocalBoxFuture<'static, T> {
-    Box::pin(async move {
-        let result = fut.await;
-        drop(token);
-        result
-    })
 }
 
 async fn serve_iface_functionality(
@@ -1395,7 +1405,6 @@ async fn serve_iface_functionality(
     requests: &mut atomic_oneshot_stream::AtomicOneshotStream<mpsc::Receiver<IfaceManagerRequest>>,
     reconnect_monitor_interval: &mut i64,
     connectivity_monitor_timer: &mut fasync::Interval,
-    operation_futures: &mut FuturesUnordered<LocalBoxFuture<'static, IfaceManagerOperation>>,
     defect_receiver: &mut mpsc::Receiver<Defect>,
     recovery_action_receiver: &mut recovery::RecoveryActionReceiver,
     recovery_in_progress: &mut bool,
@@ -1429,12 +1438,11 @@ async fn serve_iface_functionality(
         (token, req) = iface_manager_request_fut.fuse() => {
             handle_iface_manager_request(
                 iface_manager,
-                operation_futures,
                 token,
                 req
             ).await;
         }
-        terminated_fsm = iface_manager.fsm_futures.select_next_some() => {
+        terminated_fsm = iface_manager.fsm_termination_futures.select_next_some() => {
             info!("state machine exited: {:?}", terminated_fsm.1);
             handle_terminated_state_machine(
                 terminated_fsm.1,
@@ -1445,19 +1453,6 @@ async fn serve_iface_functionality(
             initiate_automatic_connection_selection(
                 iface_manager,
             ).await;
-        },
-        op = operation_futures.select_next_some() => match op {
-            IfaceManagerOperation::SetCountry(previous_state) => {
-                restore_state_after_setting_country_code(
-                    iface_manager,
-                    previous_state
-                ).await;
-            },
-            IfaceManagerOperation::PerformRecovery => {
-                *recovery_in_progress = false;
-            }
-            IfaceManagerOperation::ConfigureStateMachine
-            | IfaceManagerOperation::ReportDefect => {}
         },
         connection_selection_result = iface_manager.connection_selection_futures.select_next_some() => {
             match connection_selection_result {
@@ -1484,11 +1479,9 @@ async fn serve_iface_functionality(
             }
         },
         defect = defect_receiver.select_next_some() => {
-            operation_futures.push(initiate_record_defect(iface_manager.phy_manager.clone(), defect))
+            initiate_record_defect(iface_manager.phy_manager.clone(), defect).await;
         },
         action = recovery_action_receiver.select_next_some() => {
-            *recovery_in_progress = true;
-
             let client_statuses = InspectListClosure(&iface_manager.clients, |node_writer, key, client| {
                 if let Ok(status) = client.status.read_status() {
                     inspect_insert!(node_writer, var key: {
@@ -1513,7 +1506,7 @@ async fn serve_iface_functionality(
                 aps: ap_statuses
             });
 
-            operation_futures.push(initiate_recovery(iface_manager.phy_manager.clone(), action))
+            initiate_recovery(iface_manager.phy_manager.clone(), action).await;
         },
     }
 }
@@ -1524,11 +1517,6 @@ pub(crate) async fn serve_iface_manager_requests(
     mut defect_receiver: mpsc::Receiver<Defect>,
     mut recovery_action_receiver: recovery::RecoveryActionReceiver,
 ) -> Result<Infallible, Error> {
-    // Client and AP state machines need to be allowed to run in order for several operations to
-    // complete.  In such cases, futures can be added to this list to progress them once the state
-    // machines have the opportunity to run.
-    let mut operation_futures = FuturesUnordered::new();
-
     // This allows routines servicing `IfaceManagerRequest`s to prevent incoming requests from
     // being serviced to prevent potential deadlocks on the `PhyManager`.
     let mut requests = atomic_oneshot_stream::AtomicOneshotStream::new(requests);
@@ -1548,7 +1536,6 @@ pub(crate) async fn serve_iface_manager_requests(
             &mut requests,
             &mut reconnect_monitor_interval,
             &mut connectivity_monitor_timer,
-            &mut operation_futures,
             &mut defect_receiver,
             &mut recovery_action_receiver,
             &mut recovery_in_progress,
@@ -1897,6 +1884,7 @@ mod tests {
             sme_proxy,
             config: ClientIfaceContainerConfig::Unconfigured,
             client_state_machine: None,
+            state_machine_task: None,
             last_roam_time: fasync::MonotonicInstant::now(),
             status,
         };
@@ -1959,6 +1947,7 @@ mod tests {
             iface_id: TEST_AP_IFACE_ID,
             config: None,
             ap_state_machine: Box::new(fake_ap),
+            state_machine_task: fasync::Task::local(async {}),
             enabled_time: None,
             status,
         };
@@ -1994,7 +1983,7 @@ mod tests {
         exec: &mut fuchsia_async::TestExecutor,
         iface_manager: &mut IfaceManagerService,
     ) {
-        for mut state_machine in iface_manager.fsm_futures.iter_mut() {
+        for mut state_machine in iface_manager.fsm_termination_futures.iter_mut() {
             assert_matches!(exec.run_until_stalled(&mut state_machine), Poll::Pending);
         }
     }
@@ -2941,7 +2930,7 @@ mod tests {
 
         // Delete all client records initially.
         iface_manager.clients.clear();
-        assert!(iface_manager.fsm_futures.is_empty());
+        assert!(iface_manager.fsm_termination_futures.is_empty());
 
         {
             let start_fut = iface_manager.start_client_connections();
@@ -2997,7 +2986,7 @@ mod tests {
         }
 
         assert!(!iface_manager.clients.is_empty());
-        assert!(!iface_manager.fsm_futures.is_empty());
+        assert!(!iface_manager.fsm_termination_futures.is_empty());
     }
 
     /// Tests the case where the IfaceManager is able to request that the AP state machine start
@@ -3228,6 +3217,7 @@ mod tests {
                 stop_succeeds: true,
                 exit_succeeds: true,
             }),
+            state_machine_task: fasync::Task::local(async {}),
             enabled_time: Some(zx::MonotonicInstant::get()),
             status,
         };
@@ -3270,6 +3260,7 @@ mod tests {
                 stop_succeeds: true,
                 exit_succeeds: true,
             }),
+            state_machine_task: fasync::Task::local(async {}),
             enabled_time: Some(zx::MonotonicInstant::get()),
             status,
         };
@@ -3312,6 +3303,7 @@ mod tests {
                 stop_succeeds: true,
                 exit_succeeds: true,
             }),
+            state_machine_task: fasync::Task::local(async {}),
             enabled_time: Some(zx::MonotonicInstant::get()),
             status,
         };
@@ -3445,6 +3437,7 @@ mod tests {
                 stop_succeeds: true,
                 exit_succeeds: true,
             }),
+            state_machine_task: fasync::Task::local(async {}),
             enabled_time: None,
             status,
         };
@@ -3498,6 +3491,7 @@ mod tests {
                 stop_succeeds: true,
                 exit_succeeds: true,
             }),
+            state_machine_task: fasync::Task::local(async {}),
             enabled_time: None,
             status,
         };
@@ -3597,6 +3591,7 @@ mod tests {
                 stop_succeeds: true,
                 exit_succeeds: true,
             }),
+            state_machine_task: fasync::Task::local(async {}),
             enabled_time: None,
             status,
         };
@@ -3635,6 +3630,7 @@ mod tests {
                 stop_succeeds: true,
                 exit_succeeds: true,
             }),
+            state_machine_task: fasync::Task::local(async {}),
             enabled_time: None,
             status,
         };
@@ -4813,7 +4809,7 @@ mod tests {
 
         // Verify that the state machine future is still alive.
         run_state_machine_futures(&mut exec, &mut iface_manager);
-        assert!(!iface_manager.fsm_futures.is_empty());
+        assert!(!iface_manager.fsm_termination_futures.is_empty());
     }
 
     /// Tests the case where the IfaceManager attempts to reconnect a client interface that does
@@ -4864,7 +4860,7 @@ mod tests {
         }
 
         // Ensure that there are no new state machines.
-        assert!(iface_manager.fsm_futures.is_empty());
+        assert!(iface_manager.fsm_termination_futures.is_empty());
     }
 
     /// Tests the case where the IfaceManager attempts to reconnect a client interface that is
@@ -4903,7 +4899,7 @@ mod tests {
         }
 
         // Ensure that there are no new state machines.
-        assert!(iface_manager.fsm_futures.is_empty());
+        assert!(iface_manager.fsm_termination_futures.is_empty());
     }
 
     enum NetworkSelectionMissingAttribute {
@@ -5120,7 +5116,7 @@ mod tests {
 
         // The reconnect attempt should have seen an idle client interface and created a new client
         // state machine future for it.
-        assert!(!iface_manager.fsm_futures.is_empty());
+        assert!(!iface_manager.fsm_termination_futures.is_empty());
 
         // There should not be any idle clients.
         assert!(iface_manager.idle_clients().is_empty());
@@ -5372,6 +5368,7 @@ mod tests {
                 iface_id: TEST_AP_IFACE_ID,
                 config: Some(create_ap_config(&TEST_SSID, TEST_PASSWORD)),
                 ap_state_machine: Box::new(fake_ap),
+                state_machine_task: fasync::Task::local(async {}),
                 enabled_time: None,
                 status,
             };
@@ -5434,10 +5431,7 @@ mod tests {
             );
 
             // The future should complete immediately.
-            assert_matches!(
-                exec.run_until_stalled(&mut defect_fut),
-                Poll::Ready(IfaceManagerOperation::ReportDefect)
-            );
+            assert_matches!(exec.run_until_stalled(&mut defect_fut), Poll::Ready(()));
         }
 
         // Verify that the defect has been recorded.
@@ -5744,200 +5738,6 @@ mod tests {
         );
     }
 
-    // Demonstrates that the token passed to attempt_atomic_operation is held until the wrapped
-    // future completes.
-    #[fuchsia::test]
-    fn test_attempt_atomic_operation() {
-        let mut exec = fuchsia_async::TestExecutor::new();
-
-        // The mpsc channel pair represents a requester/worker pair to be managed by an
-        // AtomicOneshotReceiver.
-        let (mpsc_sender, mpsc_receiver) = mpsc::unbounded();
-        let mut mpsc_receiver = atomic_oneshot_stream::AtomicOneshotStream::new(mpsc_receiver);
-
-        // A oneshot pair is created to allow the test to synchronize around some work that the
-        // worker will do while holding the token from the AtomicOneshotReceiver.
-        let (oneshot_sender, oneshot_receiver) = oneshot::channel::<()>();
-
-        // Create a dummy future that waits on the receiver and just returns nil.  This will be the
-        // "work" that the worker does when it receives a request.
-        let fut = Box::pin(oneshot_receiver);
-
-        // The mpsc_sender will send two requests to show that the second one is not processed
-        // until the atomic operation completes.
-        mpsc_sender.unbounded_send(()).expect("failed to send first message");
-        mpsc_sender.unbounded_send(()).expect("failed to send second message");
-
-        // Grab the request and the token from the receiving end.
-        let token = {
-            let mut oneshot_stream = mpsc_receiver.get_atomic_oneshot_stream();
-            assert_matches!(
-                exec.run_until_stalled(&mut oneshot_stream.next()),
-                Poll::Ready(Some((token, ()))) => token
-            )
-        };
-
-        // Throw the future and token into the atomic operation wrapper.  Verify that the future is
-        // waiting for the oneshot sender to send something.
-        let mut fut = attempt_atomic_operation(fut, token);
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
-
-        // Demonstrate that the AtomicOneshotStream is not able to produce the second request yet.
-        {
-            let mut oneshot_stream = mpsc_receiver.get_atomic_oneshot_stream();
-            assert_matches!(exec.run_until_stalled(&mut oneshot_stream.next()), Poll::Ready(None));
-        }
-
-        // Send on the oneshot sender so that the wrapped future can run to completion and the
-        // token will be dropped, allowing new requests to be received.
-        oneshot_sender.send(()).expect("failed to send oneshot message");
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(_));
-
-        let mut oneshot_stream = mpsc_receiver.get_atomic_oneshot_stream();
-        assert_matches!(exec.run_until_stalled(&mut oneshot_stream.next()), Poll::Ready(Some(_)));
-    }
-
-    fn test_atomic_operation<T: Debug>(
-        req: IfaceManagerRequest,
-        mut receiver: oneshot::Receiver<T>,
-    ) {
-        let mut exec = fuchsia_async::TestExecutor::new();
-
-        // Create an IfaceManager that has both a fake client and a fake AP state machine.  Hold on
-        // to the receiving ends of the state machine command channels.  The receiving ends will
-        // never be serviced, resulting in the atomic operations stalling while holding the
-        // AtomicOneshotStream Token.
-        let test_values = test_setup(&mut exec);
-        let (mut iface_manager, _) = create_iface_manager_with_client(&test_values, true);
-
-        // Setup the fake client.
-        let (client_sender, client_receiver) = mpsc::channel(1);
-        iface_manager.clients[0].client_state_machine =
-            Some(Box::new(client_fsm::Client::new(client_sender)));
-
-        // Setup the fake AP.
-        let (ap_sender, ap_receiver) = mpsc::channel(1);
-        let (_publisher, status) = status_publisher_and_reader::<ap_fsm::Status>();
-        iface_manager.aps.push(ApIfaceContainer {
-            iface_id: TEST_AP_IFACE_ID,
-            config: Some(create_ap_config(&TEST_SSID, TEST_PASSWORD)),
-            ap_state_machine: Box::new(ap_fsm::AccessPoint::new(ap_sender)),
-            enabled_time: None,
-            status,
-        });
-
-        // For all of the operations except SetCountry, the atomic operation can be stalled by
-        // mocking out the state machine interactions.  For SetCountry, instead make it look as if
-        // client connections are disabled and there are no APs.  This ensures that the second half
-        // of the operations which restores interfaces does not trigger.
-        if let &IfaceManagerRequest::AtomicOperation(AtomicOperation::SetCountry(_)) = &req {
-            let phy_manager = Arc::new(Mutex::new(FakePhyManager {
-                create_iface_ok: false,
-                destroy_iface_ok: false,
-                set_country_ok: false,
-                country_code: None,
-                client_connections_enabled: false,
-                client_ifaces: vec![],
-                defects: vec![],
-                recovery_sender: None,
-            }));
-            iface_manager.phy_manager = phy_manager;
-            let _ = iface_manager.aps.drain(..);
-        }
-
-        // Start the service loop
-        let (mut req_sender, req_receiver) = mpsc::channel(1);
-        let (_defect_sender, defect_receiver) = mpsc::channel(100);
-        let serve_fut = serve_iface_manager_requests(
-            iface_manager,
-            req_receiver,
-            defect_receiver,
-            test_values.recovery_receiver,
-        );
-        let mut serve_fut = pin!(serve_fut);
-
-        // Make the atomic call and run the service future until it stalls.
-        req_sender.try_send(req).expect("failed to make atomic request");
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut receiver), Poll::Pending);
-
-        // Make a second IfaceManager call and observe that there is no response.
-        let (idle_iface_sender, mut idle_iface_receiver) = oneshot::channel();
-        let req = HasIdleIfaceRequest { responder: idle_iface_sender };
-        req_sender
-            .try_send(IfaceManagerRequest::HasIdleIface(req))
-            .expect("failed to send idle client check");
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut idle_iface_receiver), Poll::Pending);
-
-        // It doesn't matter whether the state machines respond successfully, just that the
-        // operation finishes so that the atomic operation can progress.  Simply drop the receivers
-        // to demonstrate that behavior.
-        drop(client_receiver);
-        drop(ap_receiver);
-
-        // The atomic portion of the operation should now complete.
-        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut receiver), Poll::Ready(_));
-
-        // The second operation should also get a response.
-        assert_matches!(exec.run_until_stalled(&mut idle_iface_receiver), Poll::Ready(_));
-    }
-
-    #[fuchsia::test]
-    fn test_atomic_disconnect() {
-        let (ack_sender, ack_receiver) = oneshot::channel();
-        let req = DisconnectRequest {
-            network_id: client_types::NetworkIdentifier {
-                ssid: TEST_SSID.clone(),
-                security_type: client_types::SecurityType::Wpa,
-            },
-            reason: client_types::DisconnectReason::NetworkUnsaved,
-            responder: ack_sender,
-        };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::Disconnect(req));
-        test_atomic_operation(req, ack_receiver);
-    }
-
-    #[fuchsia::test]
-    fn test_atomic_stop_client_connections() {
-        let (ack_sender, ack_receiver) = oneshot::channel();
-        let req = StopClientConnectionsRequest {
-            responder: ack_sender,
-            reason: client_types::DisconnectReason::FidlStopClientConnectionsRequest,
-        };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::StopClientConnections(req));
-        test_atomic_operation(req, ack_receiver);
-    }
-
-    #[fuchsia::test]
-    fn test_atomic_stop_all_aps() {
-        let (ack_sender, ack_receiver) = oneshot::channel();
-        let req = StopAllApsRequest { responder: ack_sender };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAllAps(req));
-        test_atomic_operation(req, ack_receiver);
-    }
-
-    #[fuchsia::test]
-    fn test_atomic_stop_ap() {
-        let (ack_sender, ack_receiver) = oneshot::channel();
-        let req = StopApRequest {
-            ssid: TEST_SSID.clone(),
-            password: TEST_PASSWORD.as_bytes().to_vec(),
-            responder: ack_sender,
-        };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::StopAp(req));
-        test_atomic_operation(req, ack_receiver);
-    }
-
-    #[fuchsia::test]
-    fn test_atomic_set_country() {
-        let (ack_sender, ack_receiver) = oneshot::channel();
-        let req = SetCountryRequest { country_code: Some([0, 0]), responder: ack_sender };
-        let req = IfaceManagerRequest::AtomicOperation(AtomicOperation::SetCountry(req));
-        test_atomic_operation(req, ack_receiver);
-    }
-
     #[fuchsia::test]
     fn test_recovery_inspect_logging() {
         let mut exec = fuchsia_async::TestExecutor::new();
@@ -5980,6 +5780,7 @@ mod tests {
             sme_proxy,
             config: ClientIfaceContainerConfig::Unconfigured,
             client_state_machine: None,
+            state_machine_task: None,
             last_roam_time: fasync::MonotonicInstant::now(),
             status,
         };
@@ -5994,6 +5795,7 @@ mod tests {
             iface_id: TEST_AP_IFACE_ID,
             config: None,
             ap_state_machine: Box::new(fake_ap),
+            state_machine_task: fasync::Task::local(async {}),
             enabled_time: None,
             status,
         };
