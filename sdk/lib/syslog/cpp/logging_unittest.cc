@@ -476,21 +476,23 @@ TEST(Logger, LocalLogger) {
   auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
   FakeLogSink log_sink(FUCHSIA_LOG_INFO, std::move(endpoints->server));
 
-  // Unfortunately, these has to be static because `severity_change_callback` doesn't take a
-  // context.
-  static std::mutex mutex;
-  static std::condition_variable condition;
-  static RawLogSeverity severity = 0;
+  struct Context {
+    std::mutex mutex;
+    std::condition_variable condition;
+    RawLogSeverity severity = 0;
+  } context;
 
   auto logger_result = Logger::Create(RawLogSettings{
       .log_sink = endpoints->client.TakeChannel().release(),
       .dispatcher = loop.dispatcher(),
       .severity_change_callback =
-          +[](RawLogSeverity s) {
-            std::unique_lock lock(mutex);
-            severity = s;
-            condition.notify_all();
+          +[](void* context_in, RawLogSeverity s) {
+            Context* context = static_cast<Context*>(context_in);
+            std::unique_lock lock(context->mutex);
+            context->severity = s;
+            context->condition.notify_all();
           },
+      .severity_change_callback_context = &context,
   });
   ASSERT_EQ(logger_result.status_value(), ZX_OK);
   logger = *std::move(logger_result);
@@ -508,8 +510,8 @@ TEST(Logger, LocalLogger) {
 
   // Make sure a severity update gets through.
   log_sink.SetSeverity(FUCHSIA_LOG_WARNING);
-  std::unique_lock lock(mutex);
-  condition.wait(lock, [&] { return severity == FUCHSIA_LOG_WARNING; });
+  std::unique_lock lock(context.mutex);
+  context.condition.wait(lock, [&] { return context.severity == FUCHSIA_LOG_WARNING; });
 
   EXPECT_EQ(logger.GetMinSeverity(), FUCHSIA_LOG_WARNING);
 }

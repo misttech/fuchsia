@@ -3,6 +3,6 @@
   "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/log_buffer.h": "7932143f12a15dbde60467224aef3c95",
   "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/log_connection.h": "df01fbc6ae94f1784aa48e01131c97ca",
   "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/logger.h": "557de0dad128f06a914ad8978d66534e",
-  "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/raw_log_settings.h": "bccc8511f002a1479c8a9ce9e8f84705",
+  "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/raw_log_settings.h": "60647005428ca7935adb904acd48a62f",
   "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/fuchsia_syslog.h": "f62ead8ca86595ef4ba043f38251b7a5"
 }

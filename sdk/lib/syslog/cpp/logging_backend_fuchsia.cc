@@ -13,7 +13,9 @@
 #include <lib/async/default.h>
 #include <lib/syslog/cpp/log_level.h>
 #include <lib/syslog/cpp/log_settings.h>
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 #include <lib/syslog/cpp/log_settings_internal.h>
+#endif
 #include <lib/syslog/cpp/logging_backend_fuchsia_globals.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/syslog/structured_backend/cpp/raw_log_settings.h>
@@ -361,11 +363,20 @@ LogSettingsBuilder& LogSettingsBuilder::DisableWaitForInitialInterest() {
   return *this;
 }
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 LogSettingsBuilder& LogSettingsBuilder::WithSeverityChangedListener(
     void (*callback)(fuchsia_logging::RawLogSeverity severity)) {
   settings_.severity_change_callback = callback;
   return *this;
 }
+#else
+LogSettingsBuilder& LogSettingsBuilder::WithSeverityChangedListener(
+    void* context, void (*callback)(void*, fuchsia_logging::RawLogSeverity severity)) {
+  settings_.severity_change_callback = callback;
+  settings_.severity_change_callback_context = context;
+  return *this;
+}
+#endif
 
 LogSettingsBuilder& LogSettingsBuilder::WithInterestListenerConfiguration(
     InterestListenerBehavior config) {

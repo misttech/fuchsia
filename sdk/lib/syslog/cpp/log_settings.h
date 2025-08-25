@@ -65,7 +65,12 @@ struct LogSettings {
   // in the pogram incoming namespace will be used.
   zx_handle_t log_sink = ZX_HANDLE_INVALID;
   /// Interest listener callback, or nullptr
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   void (*severity_change_callback)(fuchsia_logging::RawLogSeverity severity) = nullptr;
+#else
+  void (*severity_change_callback)(void*, fuchsia_logging::RawLogSeverity severity) = nullptr;
+  void* severity_change_callback_context = nullptr;
+#endif
   fuchsia_logging::InterestListenerBehavior interest_listener_config_ = fuchsia_logging::Enabled;
 #endif
 };
@@ -109,9 +114,15 @@ class LogSettingsBuilder {
   LogSettingsBuilder& WithInterestListenerConfiguration(InterestListenerBehavior config);
 
   /// Sets a callback that is invoked when the severity changes.
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   LogSettingsBuilder& WithSeverityChangedListener(
       void (*callback)(fuchsia_logging::RawLogSeverity severity));
+#else
+  LogSettingsBuilder& WithSeverityChangedListener(
+      void* context, void (*callback)(void* context, fuchsia_logging::RawLogSeverity severity));
 #endif
+#endif
+
   /// Configures the log settings
   /// and initializes (or re-initializes) the LogSink connection.
   void BuildAndInitialize();

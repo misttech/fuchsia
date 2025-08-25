@@ -82,18 +82,19 @@ int main(int argc, const char** argv) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   fuchsia_logging::LogSettingsBuilder log_settings;
   log_settings.WithDispatcher(loop.dispatcher())
-      .WithSeverityChangedListener(+[](fuchsia_logging::RawLogSeverity severity) {
-        if (is_init) {
-          // Don't log if it's our first interest event.
-          // If we try to log here, we deadlock (since this is the first event,
-          // and logging is still being setup at this point).
-          is_init = false;
-          return;
-        }
-        auto builder = fuchsia_logging::LogBufferBuilder(severity);
-        auto buffer = builder.WithFile(__FILE__, __LINE__).WithMsg("Changed severity").Build();
-        buffer.Flush();
-      });
+      .WithSeverityChangedListener(
+          nullptr, +[](void*, fuchsia_logging::RawLogSeverity severity) {
+            if (is_init) {
+              // Don't log if it's our first interest event.
+              // If we try to log here, we deadlock (since this is the first event,
+              // and logging is still being setup at this point).
+              is_init = false;
+              return;
+            }
+            auto builder = fuchsia_logging::LogBufferBuilder(severity);
+            auto buffer = builder.WithFile(__FILE__, __LINE__).WithMsg("Changed severity").Build();
+            buffer.Flush();
+          });
   log_settings.BuildAndInitialize();
   Puppet puppet(sys::ComponentContext::CreateAndServeOutgoingDirectory());
   // Note: This puppet is ran by a runner that

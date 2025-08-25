@@ -1,7 +1,7 @@
 {
   "pkg/syslog_cpp/include/lib/syslog/cpp/log_level.h": "b9f999f90a58d9640e2de21e97cb33b4",
   "pkg/syslog_cpp/include/lib/syslog/cpp/log_message_impl.h": "9f1e46877fc1659b9957fa299b3bca04",
-  "pkg/syslog_cpp/include/lib/syslog/cpp/log_settings.h": "8067a31d3000883f820eb0e986149102",
-  "pkg/syslog_cpp/include/lib/syslog/cpp/log_settings_internal.h": "f05c4ed084a59e0c316cd977a035caa2",
+  "pkg/syslog_cpp/include/lib/syslog/cpp/log_settings.h": "82fe87a6e65ae6963842cfd53f2cb9b8",
+  "pkg/syslog_cpp/include/lib/syslog/cpp/log_settings_internal.h": "20c18997bffa789dae02148758a149c8",
   "pkg/syslog_cpp/include/lib/syslog/cpp/macros.h": "09ff2d96f0a9674250a13e9911334dc9"
 }

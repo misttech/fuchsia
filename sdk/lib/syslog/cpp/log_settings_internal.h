@@ -26,6 +26,7 @@ auto WithRawSettings(const fuchsia_logging::LogSettings& settings, T callback) {
       .tags_count = settings.tags.size(),
       .dispatcher = settings.single_threaded_dispatcher,
       .severity_change_callback = settings.severity_change_callback,
+      .severity_change_callback_context = settings.severity_change_callback_context,
   };
   return callback(raw_settings);
 }

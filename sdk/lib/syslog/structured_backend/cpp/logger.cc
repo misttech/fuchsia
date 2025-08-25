@@ -24,7 +24,7 @@ FuchsiaLogSeverity GetSeverityFromInterestChange(
 
 class Logger::Impl {
  public:
-  using OnSeverityChanged = void (*)(FuchsiaLogSeverity);
+  using OnSeverityChanged = void (*)(void*, FuchsiaLogSeverity);
 
   static zx::result<std::shared_ptr<Impl>> Create(const RawLogSettings& settings,
                                                   std::atomic<FuchsiaLogSeverity>* min_severity) {
@@ -62,10 +62,11 @@ class Logger::Impl {
     }
 
     auto impl = std::make_shared<Impl>(settings.min_log_level, min_severity, *std::move(connection),
-                                       std::move(tags), settings.severity_change_callback);
+                                       std::move(tags), settings.severity_change_callback,
+                                       settings.severity_change_callback_context);
     fidl::WireSharedClient<fuchsia_logger::LogSink> log_sink;
     if (received_severity) {
-      HandleInterestChange(impl, *received_severity);
+      impl->HandleInterestChange(*received_severity);
     }
 
     if (settings.dispatcher) {
@@ -78,13 +79,14 @@ class Logger::Impl {
 
   Impl(FuchsiaLogSeverity default_severity, std::atomic<FuchsiaLogSeverity>* min_severity,
        internal::LogConnection connection, std::vector<std::string> tags,
-       OnSeverityChanged on_severity_changed)
+       OnSeverityChanged on_severity_changed, void* on_severity_changed_context)
       : default_severity_(default_severity),
         min_severity_(min_severity ? min_severity : &min_severity_storage_),
         connection_(std::move(connection)),
         tags_(std::move(tags)),
         on_severity_changed_(on_severity_changed ? on_severity_changed
-                                                 : +[](FuchsiaLogSeverity) {}) {
+                                                 : +[](void*, FuchsiaLogSeverity) {}),
+        on_severity_changed_context_(on_severity_changed_context) {
     min_severity_->store(default_severity, std::memory_order_relaxed);
   }
 
@@ -104,18 +106,17 @@ class Logger::Impl {
                 interest_result) {
           if (auto impl = weak.lock()) {
             if (interest_result.ok() && interest_result->is_ok()) {
-              HandleInterestChange(
-                  impl, GetSeverityFromInterestChange(***interest_result, impl->default_severity_));
+              impl->HandleInterestChange(
+                  GetSeverityFromInterestChange(***interest_result, impl->default_severity_));
               PollInterest(impl);
             }
           }
         });
   }
 
-  static void HandleInterestChange(const std::shared_ptr<Impl>& impl,
-                                   FuchsiaLogSeverity new_severity) {
-    impl->min_severity_->store(new_severity, std::memory_order_relaxed);
-    impl->on_severity_changed_(new_severity);
+  void HandleInterestChange(FuchsiaLogSeverity new_severity) {
+    min_severity_->store(new_severity, std::memory_order_relaxed);
+    on_severity_changed_(on_severity_changed_context_, new_severity);
   }
 
   FuchsiaLogSeverity default_severity_ = FUCHSIA_LOG_INFO;
@@ -126,6 +127,7 @@ class Logger::Impl {
   const std::vector<std::string> tags_;
   fidl::WireSharedClient<fuchsia_logger::LogSink> log_sink_;
   OnSeverityChanged on_severity_changed_ = nullptr;
+  void* on_severity_changed_context_ = nullptr;
 };
 
 zx::result<Logger> Logger::Create(const RawLogSettings& settings,
