@@ -972,38 +972,6 @@ impl HrTimerNode {
     }
 }
 
-impl PartialEq for HrTimerNode {
-    fn eq(&self, other: &Self) -> bool {
-        self.deadline == other.deadline
-            && Arc::ptr_eq(&self.hr_timer, &other.hr_timer)
-            && match (self.wake_source.as_ref(), other.wake_source.as_ref()) {
-                (Some(this), Some(other)) => Weak::ptr_eq(this, other),
-                (None, None) => true,
-                _ => false,
-            }
-    }
-}
-
-impl Eq for HrTimerNode {}
-
-impl Ord for HrTimerNode {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Sooner the deadline, higher the priority.
-        match other.deadline.cmp(&self.deadline) {
-            std::cmp::Ordering::Equal => {
-                Arc::as_ptr(&other.hr_timer).cmp(&Arc::as_ptr(&self.hr_timer))
-            }
-            other => other,
-        }
-    }
-}
-
-impl PartialOrd for HrTimerNode {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
