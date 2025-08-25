@@ -1342,7 +1342,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             wnd_max: snd_wnd_max,
         } = self;
         let BufferLimits { capacity: _, len: readable_bytes } = buffer.limits();
-        let mss = u32::from(congestion_control.mss());
+        let mss = congestion_control.mss();
         let mut zero_window_probe = false;
         let mut override_sws = false;
 
@@ -1489,7 +1489,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                 LossRecoverySegment::Yes { rearm_retransmit: _, mode: _ } => false,
                 LossRecoverySegment::No => true,
             };
-            if bytes_to_send < mss && !has_fin && loss_recovery_allow_delay {
+            if bytes_to_send < u32::from(mss) && !has_fin && loss_recovery_allow_delay {
                 if bytes_to_send == 0 {
                     return None;
                 }
@@ -1532,7 +1532,8 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                 // If the overriding timer fired or we are in zero window
                 // probing phase, we override it to send data anyways.
                 if available > unused_window
-                    && unused_window < u32::min(mss, u32::from(*snd_wnd_max) / SWS_BUFFER_FACTOR)
+                    && unused_window
+                        < u32::min(u32::from(mss), u32::from(*snd_wnd_max) / SWS_BUFFER_FACTOR)
                     && !override_sws
                     && !zero_window_probe
                 {
@@ -1546,7 +1547,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
 
             let seg = rcv.make_segment(|ack, wnd, sack_blocks| {
                 let (bytes_to_send, options) = {
-                    let mut options = SegmentOptions { sack_blocks };
+                    let options = SegmentOptions { sack_blocks };
                     let mut bytes_to_send = bytes_to_send;
                     // We may have to trim bytes_to_send to account for options.
                     if !options.is_empty() {
@@ -1556,18 +1557,10 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                             packet_formats::tcp::aligned_options_length(options.iter()),
                         )
                         .unwrap();
-                        if options_len < mss {
-                            bytes_to_send = bytes_to_send.min(mss - options_len)
-                        } else {
-                            // NB: we don't encode a minimum Mss in types. To
-                            // prevent the state machine from possibly blocking
-                            // completely here just drop all options.
-                            //
-                            // TODO(https://fxbug.dev/383355972): We might be
-                            // able to get around this if we have guarantees
-                            // over minimum MTU and, hence, Mss.
-                            options = SegmentOptions { sack_blocks: SackBlocks::EMPTY }
-                        }
+                        // Note: The `Mss` type acts as a witness that the MSS
+                        // is large enough to hold all TCP options.
+                        debug_assert!(options_len <= u32::from(mss));
+                        bytes_to_send = bytes_to_send.min(u32::from(mss) - options_len)
                     }
                     (bytes_to_send, options)
                 };

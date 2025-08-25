@@ -48,6 +48,7 @@ pub struct Mss(u16);
 
 const_assert!(Mss::MIN.get() <= Mss::DEFAULT_IPV4.get());
 const_assert!(Mss::MIN.get() <= Mss::DEFAULT_IPV6.get());
+const_assert!(Mss::MIN.get() as usize >= packet_formats::tcp::MAX_OPTIONS_LEN);
 
 impl Mss {
     /// The minimum MSS allowed by TCP.
