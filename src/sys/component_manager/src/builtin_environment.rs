@@ -970,6 +970,7 @@ pub struct BuiltinEnvironment {
     pub realm_builder_resolver: Option<RealmBuilderResolver>,
     capability_passthrough: bool,
     _service_fs_task: Option<fasync::Task<()>>,
+    root_component_input: ComponentInput,
 }
 
 impl BuiltinEnvironment {
@@ -1635,7 +1636,7 @@ impl BuiltinEnvironment {
         }
 
         let root_component_input = root_input_builder.build();
-        let model = Model::new(params, root_component_input).await?;
+        let model = Model::new(params, root_component_input.clone()).await?;
 
         model.root().hooks.install(event_registry.hooks());
         model.root().hooks.install(event_stream_provider.hooks());
@@ -1750,6 +1751,7 @@ impl BuiltinEnvironment {
             realm_builder_resolver,
             capability_passthrough,
             _service_fs_task: None,
+            root_component_input,
         })
     }
 
@@ -1807,63 +1809,52 @@ impl BuiltinEnvironment {
         // If component manager is in debug mode, create an event source scoped at the
         // root and offer it via ServiceFs to the outside world.
         if self.debug {
-            let weak_root_component = self.model.root().as_weak();
-
-            service_fs.dir("svc").add_service_connector(move |server_end: ServerEnd<fcomponent::EventStreamMarker>| {
-                let weak_root_component = weak_root_component.clone();
-                let Ok(root_component) = weak_root_component.upgrade() else {
-                    // If the root component doesn't exist, then we must be at the end of tearing
-                    // down the world. Let's just drop the connection, it'll be closed in a moment
-                    // regardless of what we do.
-                    return;
-                };
-                fasync::Task::spawn(async move {
-                    let root_sandbox = {
-                        let Ok(resolved_state) = root_component.lock_resolved_state().await else {
-                            return;
-                        };
-                        resolved_state.sandbox.clone()
+            let event_types_to_expose = [
+                EventType::Started,
+                EventType::Stopped,
+                EventType::Destroyed,
+                EventType::Resolved,
+                EventType::Unresolved,
+            ];
+            let source_routes = event_types_to_expose
+                .iter()
+                .map(|event_type| {
+                    let capability = self
+                        .root_component_input
+                        .capabilities()
+                        .get(event_type.as_str())
+                        .ok()
+                        .flatten()
+                        .expect(
+                            "root component input sandbox should always have all event \
+                            stream types",
+                        );
+                    let router = match capability {
+                        Capability::DictionaryRouter(router) => router,
+                        other_type => panic!("unexpected capability type: {:?}", other_type),
                     };
-                    let event_types_to_expose = [
-                        EventType::Started,
-                        EventType::Stopped,
-                        EventType::Destroyed,
-                        EventType::Resolved,
-                        EventType::Unresolved,
-                    ];
-                    let source_routes = event_types_to_expose.iter().map(|event_type| {
-                        let capability = root_sandbox
-                            .component_input
-                            .capabilities()
-                            .get(event_type.as_str())
-                            .ok()
-                            .flatten()
-                            .expect("root component input sandbox should always have all event \
-                                    stream types");
-                        let router = match capability {
-                            Capability::DictionaryRouter(router) => router,
-                            other_type => panic!("unexpected capability type: {:?}", other_type),
-                        };
-                        EventStreamSourceRouter {
-                            router,
-                            filter: None,
-                        }
-                    }).collect::<Vec<_>>();
-                    let use_router = EventStreamUseRouter::new(
-                        &root_component,
-                        source_routes,
-                    );
+                    EventStreamSourceRouter { router, filter: None }
+                })
+                .collect::<Vec<_>>();
+            let use_router = EventStreamUseRouter::new(self.model.root(), source_routes);
 
-                    let metadata = event_stream_metadata(cm_rust::Availability::Required, Default::default());
-                    let request = Request { metadata, target: weak_root_component.into() };
+            let metadata =
+                event_stream_metadata(cm_rust::Availability::Required, Default::default());
+            let request = Request { metadata, target: self.model.root().clone().as_weak().into() };
 
-                    let connector = match use_router.route(Some(request), false).await {
-                        Ok(RouterResponse::Capability(connector)) => connector,
-                        other_response => panic!("event stream routing from root should always succeed, instead we got {:?}", other_response),
-                    };
+            let connector = match use_router.route(Some(request), false).await {
+                Ok(RouterResponse::Capability(connector)) => connector,
+                other_response => panic!(
+                    "event stream routing from root should always succeed, instead we got {:?}",
+                    other_response
+                ),
+            };
+
+            service_fs.dir("svc").add_service_connector(
+                move |server_end: ServerEnd<fcomponent::EventStreamMarker>| {
                     let _ = connector.send(Message { channel: server_end.into_channel() });
-                }).detach();
-            });
+                },
+            );
         }
 
         Ok(service_fs)
