@@ -1155,6 +1155,9 @@ class MultiVmoTestInstance : public TestInstance {
         // Discardable VMOs are not very common, so skew away from them.
         if (uniform_rand(10, rng) == 0) {
           options |= ZX_VMO_DISCARDABLE;
+          // Unlocked discardable VMOs fault if accessed and so mappings to them cannot be
+          // considered reliable.
+          reliable_mappings = false;
         }
         // TODO: Also mix in some UNBOUNDED VMOs.
         zx_status_t result = zx::vmo::create(vmo_size, options, &vmo);
