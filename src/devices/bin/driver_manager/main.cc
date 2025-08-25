@@ -64,7 +64,7 @@ void InitLogging(const driver_manager_config::Config& config) {
   }
 
   const char* tags[] = {process_name};
-  driver_logger::InitGlobalLogger(
+  fdf_log::InitGlobalLogger(
       tags, config.verbose() ? std::numeric_limits<FuchsiaLogSeverity>::min() : FUCHSIA_LOG_INFO);
 }
 
@@ -77,7 +77,8 @@ int main(int argc, char** argv) {
 
   zx_status_t status = StdoutToDebuglog::Init();
   if (status != ZX_OK) {
-    LOGF(INFO, "Failed to redirect stdout to debuglog, assuming test environment and continuing");
+    fdf_log::info(
+        "Failed to redirect stdout to debuglog, assuming test environment and continuing");
   }
 
   auto config = driver_manager_config::Config::TakeFromStartupHandle();
@@ -102,7 +103,7 @@ int main(int argc, char** argv) {
 
   auto driver_index_result = component::Connect<fuchsia_driver_index::DriverIndex>();
   if (driver_index_result.is_error()) {
-    LOGF(ERROR, "Failed to connect to driver_index: %d", driver_index_result.error_value());
+    fdf_log::error("Failed to connect to driver_index: {}", driver_index_result);
     return driver_index_result.error_value();
   }
   fbl::unique_fd lib_fd;
@@ -110,7 +111,7 @@ int main(int argc, char** argv) {
       fio::wire::Flags::kProtocolDirectory | fio::wire::kPermReadable | fio::wire::kPermExecutable);
   if (zx_status_t status = fdio_open3_fd("/pkg/lib/", kOpenFlags, lib_fd.reset_and_get_address());
       status != ZX_OK) {
-    LOGF(ERROR, "Failed to open /pkg/lib/ : %s", zx_status_get_string(status));
+    fdf_log::error("Failed to open /pkg/lib/ : {}", zx_status_get_string(status));
     return status;
   }
   // The loader needs its own thread because DriverManager makes synchronous calls to the
@@ -154,7 +155,7 @@ int main(int argc, char** argv) {
   driver_runner.StartDevfsDriver(*devfs);
 
   // Find and load v2 Drivers.
-  LOGF(INFO, "Starting DriverRunner with root driver URL: %s", config.root_driver().c_str());
+  fdf_log::info("Starting DriverRunner with root driver URL: {}", config.root_driver());
   if (auto start = driver_runner.StartRootDriver(config.root_driver()); start.is_error()) {
     return start.error_value();
   }
@@ -182,7 +183,7 @@ int main(int argc, char** argv) {
     ZX_ASSERT_MSG(result.is_ok(), "%s", result.status_string());
   }
 
-  async::PostTask(loop.dispatcher(), [] { LOGF(INFO, "driver_manager main loop is running"); });
+  async::PostTask(loop.dispatcher(), [] { fdf_log::info("driver_manager main loop is running"); });
 
   driver_runner.WaitForBootup([dispatcher = loop.dispatcher()]() {
     // Once bootup is complete we can free some heap memory.
@@ -190,6 +191,6 @@ int main(int argc, char** argv) {
   });
 
   status = loop.Run();
-  LOGF(ERROR, "Driver Manager exited unexpectedly: %s", zx_status_get_string(status));
+  fdf_log::error("Driver Manager exited unexpectedly: {}", zx_status_get_string(status));
   return status;
 }

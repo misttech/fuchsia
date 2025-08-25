@@ -133,12 +133,12 @@ zx_status_t DriverHostRunner::DriverHost::GetDuplicateHandles(zx::process* out_p
   zx::vmar root_vmar;
   zx_status_t status = process_.duplicate(ZX_RIGHT_SAME_RIGHTS, &process);
   if (status != ZX_OK) {
-    LOGF(ERROR, "Failed to duplicate process handle: %s", zx_status_get_string(status));
+    fdf_log::error("Failed to duplicate process handle: {}", zx_status_get_string(status));
     return status;
   }
   status = root_vmar_.duplicate(ZX_RIGHT_SAME_RIGHTS, &root_vmar);
   if (status != ZX_OK) {
-    LOGF(ERROR, "Failed to duplicate vmar handle: %s", zx_status_get_string(status));
+    fdf_log::error("Failed to duplicate vmar handle: {}", zx_status_get_string(status));
     return status;
   }
   *out_process = std::move(process);
@@ -158,7 +158,7 @@ void DriverHostRunner::StartDriverHost(
       [this, name, launcher = std::move(driver_host_launcher), callback = std::move(callback)](
           zx::result<driver_manager::DriverHostRunner::StartedComponent> component) mutable {
         if (component.is_error()) {
-          LOGF(ERROR, "Failed to start driver host: %s", component.status_string());
+          fdf_log::error("Failed to start driver host: {}", component);
           callback(component.take_error());
           return;
         }
@@ -184,23 +184,21 @@ void DriverHostRunner::LoadDriverHost(
 
   zx::result<std::string> binary = fdf_internal::ProgramValue(wire_program, "binary");
   if (binary.is_error()) {
-    LOGF(ERROR, "Failed to start driver host, missing 'binary' argument: %s",
-         binary.status_string());
+    fdf_log::error("Failed to start driver host, missing 'binary' argument: {}", binary);
     callback(binary.take_error());
     return;
   }
 
   auto pkg = fdf_internal::NsValue(*start_info.ns(), "/pkg");
   if (pkg.is_error()) {
-    LOGF(ERROR, "Failed to start driver host, missing '/pkg' directory: %s", pkg.status_string());
+    fdf_log::error("Failed to start driver host, missing '/pkg' directory: {}", pkg);
     callback(pkg.take_error());
     return;
   }
 
   auto driver_file = pkg_utils::OpenPkgFile(*pkg, *binary);
   if (driver_file.is_error()) {
-    LOGF(ERROR, "Failed to open driver host '%s' file: %s", url.c_str(),
-         driver_file.status_string());
+    fdf_log::error("Failed to open driver host '{}' file: {}", url, driver_file);
     callback(driver_file.take_error());
     return;
   }
@@ -209,7 +207,7 @@ void DriverHostRunner::LoadDriverHost(
 
   auto vdso_result = GetVdsoVmo();
   if (vdso_result.is_error()) {
-    LOGF(ERROR, "Failed to get vdso vmo, %s", vdso_result.status_string());
+    fdf_log::error("Failed to get vdso vmo, {}", vdso_result);
     callback(vdso_result.take_error());
     return;
   }
@@ -217,7 +215,7 @@ void DriverHostRunner::LoadDriverHost(
 
   zx::result<DriverHost*> driver_host = CreateDriverHostProcess(name);
   if (driver_host.is_error()) {
-    LOGF(ERROR, "Failed to create driver host env: %s", driver_host.status_string());
+    fdf_log::error("Failed to create driver host env: {}", driver_host);
     callback(driver_host.take_error());
     return;
   }
@@ -227,14 +225,14 @@ void DriverHostRunner::LoadDriverHost(
 
   zx_status_t status = (*driver_host)->GetDuplicateHandles(&process, &root_vmar);
   if (status != ZX_OK) {
-    LOGF(ERROR, "GetDuplicateHandles failed: %s", zx_status_get_string(status));
+    fdf_log::error("GetDuplicateHandles failed: {}", zx_status_get_string(status));
     callback(zx::error(status));
     return;
   }
 
   auto lib_dir = pkg_utils::OpenLibDir(*pkg);
   if (lib_dir.is_error()) {
-    LOGF(ERROR, "Failed to open lib directory %s", lib_dir.status_string());
+    fdf_log::error("Failed to open lib directory {}", lib_dir);
     callback(lib_dir.take_error());
     return;
   }
@@ -253,13 +251,13 @@ void DriverHostRunner::LoadDriverHost(
       [client_end = std::move(client_end), cb = std::move(callback),
        _ = std::move(driver_host_launcher)](auto& result) mutable {
         if (!result.ok()) {
-          LOGF(ERROR, "Failed to start driver host: %s", result.FormatDescription().c_str());
+          fdf_log::error("Failed to start driver host: {}", result.FormatDescription());
           cb(zx::error(result.status()));
           return;
         }
         if (result->is_error()) {
-          LOGF(ERROR, "Failed to start driver host: %s",
-               zx_status_get_string(result->error_value()));
+          fdf_log::error("Failed to start driver host: {}",
+                         zx_status_get_string(result->error_value()));
           cb(result->take_error());
           return;
         }
@@ -297,13 +295,13 @@ void DriverHostRunner::StartDriverHostComponent(std::string_view moniker, std::s
   auto open_callback = [moniker = std::string(moniker)](
                            fidl::WireUnownedResult<fcomponent::Realm::OpenExposedDir>& result) {
     if (!result.ok()) {
-      LOGF(ERROR, "Failed to open exposed directory for driver host: '%s': %s",
-           std::string(moniker).c_str(), result.FormatDescription().data());
+      fdf_log::error("Failed to open exposed directory for driver host: '{}': {}", moniker,
+                     result.FormatDescription());
       return;
     }
     if (result->is_error()) {
-      LOGF(ERROR, "Failed to open exposed directory for driver host: '%s': %s",
-           std::string(moniker).c_str(), GetErrorString(result->error_value()));
+      fdf_log::error("Failed to open exposed directory for driver host: '{}': {}", moniker,
+                     GetErrorString(result->error_value()));
     }
   };
 
@@ -317,20 +315,20 @@ void DriverHostRunner::StartDriverHostComponent(std::string_view moniker, std::s
           fidl::WireUnownedResult<fcomponent::Realm::CreateChild>& result) mutable {
         bool is_error = false;
         if (!result.ok()) {
-          LOGF(ERROR, "Failed to create child '%s': %s", child_moniker.c_str(),
-               result.FormatDescription().c_str());
+          fdf_log::error("Failed to create child '{}': {}", child_moniker,
+                         result.FormatDescription());
           is_error = true;
         }
         if (result.value().is_error()) {
-          LOGF(ERROR, "Failed to create child '%s': %s", child_moniker.c_str(),
-               GetErrorString(result.value().error_value()));
+          fdf_log::error("Failed to create child '{}': {}", child_moniker,
+                         GetErrorString(result.value().error_value()));
           is_error = true;
         }
         if (is_error) {
           zx::result result = CallCallback(koid, zx::error(ZX_ERR_INTERNAL));
           if (result.is_error()) {
-            LOGF(ERROR, "Failed to find driver host request for '%s': %s", child_moniker.c_str(),
-                 result.status_string());
+            fdf_log::error("Failed to find driver host request for '{}': {}", child_moniker,
+                           result);
           }
         }
         fdecl::wire::ChildRef child_ref{
@@ -360,13 +358,13 @@ void DriverHostRunner::Start(StartRequestView request, StartCompleter::Sync& com
   //  2. We avoid collisions that can occur when relying on the package URL
   //  3. We avoid relying on the resolved URL matching the package URL
   if (!request->start_info.has_numbered_handles()) {
-    LOGF(ERROR, "Failed to start driver host'%s', invalid request", url.c_str());
+    fdf_log::error("Failed to start driver host'{}', invalid request", url);
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   auto& handles = request->start_info.numbered_handles();
   if (handles.size() != 1 || !handles[0].handle || handles[0].id != kTokenId) {
-    LOGF(ERROR, "Failed to start driver host '%s', invalid request", url.c_str());
+    fdf_log::error("Failed to start driver host '{}', invalid request", url);
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -382,7 +380,7 @@ void DriverHostRunner::Start(StartRequestView request, StartCompleter::Sync& com
                                                      .controller = std::move(request->controller),
                                                  }));
   if (result.is_error()) {
-    LOGF(ERROR, "Failed to start driver host '%s', unknown request", url.c_str());
+    fdf_log::error("Failed to start driver host '{}', unknown request", url);
     completer.Close(ZX_ERR_UNAVAILABLE);
   }
 }
@@ -390,7 +388,7 @@ void DriverHostRunner::Start(StartRequestView request, StartCompleter::Sync& com
 void DriverHostRunner::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_component_runner::ComponentRunner> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  LOGF(WARNING, "Unknown ComponentRunner request: %llu", metadata.method_ordinal);
+  fdf_log::warn("Unknown ComponentRunner request: {}", metadata.method_ordinal);
 }
 
 zx::result<> DriverHostRunner::CallCallback(zx_koid_t koid,

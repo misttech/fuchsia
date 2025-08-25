@@ -110,8 +110,7 @@ void BindManager::BindInternal(BindRequest request,
   ZX_ASSERT(bind_node_set_.is_bind_ongoing());
   std::shared_ptr node = request.node.lock();
   if (!node) {
-    LOGF(WARNING, "Node was freed before bind request is processed. %s",
-         request.node_moniker.c_str());
+    fdf_log::warn("Node was freed before bind request is processed. {}", request.node_moniker);
     if (request.tracker) {
       request.tracker->ReportNoBind();
     }
@@ -158,7 +157,7 @@ void BindManager::OnMatchDriverCallback(
   // available for binding when the match callback is fired. Currently, there are no issues from it,
   // but it is something we should address.
   if (!node) {
-    LOGF(WARNING, "Node was freed before it could be bound");
+    fdf_log::warn("Node was freed before it could be bound");
     return;
   }
 
@@ -185,7 +184,7 @@ void BindManager::OnMatchDriverCallback(
       } else if (bind_result.is_composite_parents()) {
         request.tracker->ReportSuccessfulBind(node_moniker, bind_result.composite_parents());
       } else {
-        LOGF(ERROR, "Unknown bind result type for %s.", node_moniker.c_str());
+        fdf_log::error("Unknown bind result type for {}.", node_moniker);
       }
     }
 
@@ -197,8 +196,7 @@ BindResult BindManager::BindNodeToResult(
     Node& node, bool composite_only, fidl::WireUnownedResult<fdi::DriverIndex::MatchDriver>& result,
     bool has_tracker) {
   if (!result.ok()) {
-    LOGF(ERROR, "Failed to call match Node '%s': %s", node.name().c_str(),
-         result.error().FormatDescription().data());
+    fdf_log::error("Failed to call match Node '{}': {}", node.name(), result.error());
     return BindResult();
   }
 
@@ -209,8 +207,8 @@ BindResult BindManager::BindNodeToResult(
     // not found errors get very noisy.
     zx_status_t match_error = result->error_value();
     if (match_error != ZX_ERR_NOT_FOUND && !has_tracker) {
-      LOGF(WARNING, "Failed to match Node '%s': %s", node.MakeTopologicalPath().c_str(),
-           zx_status_get_string(match_error));
+      fdf_log::warn("Failed to match Node '{}': {}", node.MakeTopologicalPath(),
+                    zx_status_get_string(match_error));
     }
 
     return BindResult();
@@ -222,10 +220,10 @@ BindResult BindManager::BindNodeToResult(
   }
 
   if (!matched_driver->is_driver() && !matched_driver->is_composite_parents()) {
-    LOGF(WARNING,
-         "Failed to match Node '%s', the MatchedDriver is not a normal driver or a "
-         "parent spec.",
-         node.name().c_str());
+    fdf_log::warn(
+        "Failed to match Node '{}', the MatchedDriver is not a normal driver or a "
+        "parent spec.",
+        node.name());
     return BindResult();
   }
 
@@ -250,8 +248,8 @@ BindResult BindManager::BindNodeToResult(
 
   auto start_result = bridge_->StartDriver(node, matched_driver->driver());
   if (start_result.is_error()) {
-    LOGF(ERROR, "Failed to start driver '%s': %s", node.name().c_str(),
-         zx_status_get_string(start_result.error_value()));
+    fdf_log::error("Failed to start driver '{}': {}", node.name(),
+                   zx_status_get_string(start_result.error_value()));
     return BindResult();
   }
 
@@ -268,8 +266,7 @@ zx::result<CompositeParents> BindManager::BindNodeToSpec(fidl::AnyArena& arena, 
                                           node.can_multibind_composites());
   if (result.is_error()) {
     if (result.error_value() != ZX_ERR_NOT_FOUND) {
-      LOGF(ERROR, "Failed to bind node '%s' to any of the matched parent specs.",
-           node.name().c_str());
+      fdf_log::error("Failed to bind node '{}' to any of the matched parent specs.", node.name());
     }
     return result.take_error();
   }
@@ -279,8 +276,8 @@ zx::result<CompositeParents> BindManager::BindNodeToSpec(fidl::AnyArena& arena, 
     ZX_ASSERT(composite_node);
     auto start_result = bridge_->StartDriver(*composite_node, composite.driver.driver_info());
     if (start_result.is_error()) {
-      LOGF(ERROR, "Failed to start driver '%s': %s", node.name().c_str(),
-           zx_status_get_string(start_result.error_value()));
+      fdf_log::error("Failed to start driver '{}': {}", node.name(),
+                     zx_status_get_string(start_result.error_value()));
       continue;
     }
     composite_node->OnBind();

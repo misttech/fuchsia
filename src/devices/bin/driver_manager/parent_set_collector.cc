@@ -58,8 +58,7 @@ zx::result<std::shared_ptr<Node>> ParentSetCollector::TryToAssemble(
     return result.take_error();
   }
 
-  LOGF(INFO, "Built composite node '%s' for completed composite node spec",
-       composite_name_.c_str());
+  fdf_log::info("Built composite node '{}' for completed composite node spec", composite_name_);
   completed_composite_node_.emplace(result.value());
   return zx::ok(result.value());
 }

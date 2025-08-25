@@ -43,15 +43,15 @@ void NodeShutdownCoordinator::Remove(std::shared_ptr<Node> node, RemovalSet remo
     if (!removal_tracker && node_shutdown_coordinator.removal_tracker_) {
       // TODO(https://fxbug.dev/42066485): Change this to an error when we track shutdown steps
       // better.
-      LOGF(DEBUG, "Untracked Node::Remove() called on %s, indicating an error during shutdown",
-           node->MakeTopologicalPath().c_str());
+      fdf_log::debug("Untracked Node::Remove() called on {}, indicating an error during shutdown",
+                     node->MakeTopologicalPath());
     }
 
     if (removal_tracker) {
       node_shutdown_coordinator.SetRemovalTracker(removal_tracker);
     }
 
-    LOGF(DEBUG, "Remove called on Node: %s", node->name().c_str());
+    fdf_log::debug("Remove called on Node: {}", node->name());
     // Two cases where we will transition state and take action:
     // Removing kAll, and state is Running or Prestop
     // Removing kPkg, and state is Running
@@ -60,8 +60,8 @@ void NodeShutdownCoordinator::Remove(std::shared_ptr<Node> node, RemovalSet remo
         (node_shutdown_coordinator.node_state() == NodeState::kPrestop &&
          removal_set == RemovalSet::kPackage)) {
       if (node->parents().size() <= 1) {
-        LOGF(DEBUG, "Node::Remove() %s called late, already in state %s",
-             node->MakeComponentMoniker().c_str(), node_shutdown_coordinator.NodeStateAsString());
+        fdf_log::debug("Node::Remove() {} called late, already in state {}",
+                       node->MakeComponentMoniker(), node_shutdown_coordinator.NodeStateAsString());
       }
       continue;
     }
@@ -83,8 +83,7 @@ void NodeShutdownCoordinator::Remove(std::shared_ptr<Node> node, RemovalSet remo
 
     // Ask each of our children to remove themselves.
     for (auto& child : node->children()) {
-      LOGF(DEBUG, "Node: %s calling remove on child: %s", node->name().c_str(),
-           child->name().c_str());
+      fdf_log::debug("Node: {} calling remove on child: {}", node->name(), child->name());
       nodes.emplace(child, removal_set);
     }
     nodes_to_check_for_removal.push(std::move(node));
@@ -265,7 +264,7 @@ std::optional<uint32_t> NodeShutdownCoordinator::GenerateTestDelayMs() {
 
   auto rng = rng_gen_.lock();
   if (!rng) {
-    LOGF(WARNING, "Shutdown test RNG released. Unable to generate a test delay");
+    fdf_log::warn("Shutdown test RNG released. Unable to generate a test delay");
     return std::nullopt;
   }
 

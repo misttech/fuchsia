@@ -53,7 +53,7 @@ NodeId NodeRemovalTracker::RegisterNode(NodeInfo info) {
 void NodeRemovalTracker::Notify(NodeId id, NodeState state) {
   auto itr = nodes_.find(id);
   if (itr == nodes_.end()) {
-    LOGF(ERROR, "Tried to Notify without registering!");
+    fdf_log::error("Tried to Notify without registering!");
     return;
   }
   itr->second.state = state;
@@ -76,14 +76,14 @@ void NodeRemovalTracker::Notify(NodeId id, NodeState state) {
 }
 
 void NodeRemovalTracker::OnRemovalTimeout() {
-  LOGF(INFO, "Removal hanging, nodes remaining: %zu pkg, %zu pkg+boot", remaining_pkg_node_count(),
-       remaining_node_count());
+  fdf_log::info("Removal hanging, nodes remaining: {} pkg, {} pkg+boot", remaining_pkg_node_count(),
+                remaining_node_count());
   for (auto& [id, node] : nodes_) {
     if (node.state == NodeState::kStopped || node.state == NodeState::kPrestop) {
       continue;
     }
-    LOGF(INFO, "  '%s' ('%s'): %s", node.name.c_str(), node.driver_url.c_str(),
-         GetNodeStateDescription(node.state));
+    fdf_log::info("  '{}' ('{}'): {}", node.name, node.driver_url,
+                  GetNodeStateDescription(node.state));
   }
   handle_timeout_task_.PostDelayed(dispatcher_, kRemovalTimeoutDuration);
 }
@@ -94,12 +94,12 @@ void NodeRemovalTracker::CheckRemovalDone() {
   };
 
   if (pkg_callback_ && remaining_pkg_node_count() == 0) {
-    LOGF(INFO, "NodeRemovalTracker: package removal completed");
+    fdf_log::info("NodeRemovalTracker: package removal completed");
     pkg_callback_();
     pkg_callback_ = nullptr;
   }
   if (all_callback_ && remaining_node_count() == 0) {
-    LOGF(INFO, "NodeRemovalTracker: all nodes removed");
+    fdf_log::info("NodeRemovalTracker: all nodes removed");
     all_callback_();
     all_callback_ = nullptr;
     handle_timeout_task_.Cancel();

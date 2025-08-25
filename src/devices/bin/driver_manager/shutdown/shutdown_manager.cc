@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.kernel/cpp/wire.h>
+#include <fidl/fuchsia.system.state/cpp/common_types_format.h>
 #include <lib/fidl/cpp/wire/channel.h>  // fidl::WireCall
 #include <lib/zbi-format/zbi.h>
 #include <lib/zbitl/error-string.h>
@@ -31,13 +32,13 @@ struct MexecVmos {
 zx::result<MexecVmos> GetMexecZbis(zx::unowned_resource mexec_resource) {
   zx::result client = component::Connect<fuchsia_system_state::SystemStateTransition>();
   if (client.is_error()) {
-    LOGF(ERROR, "Failed to connect to StateStateTransition: %s", client.status_string());
+    fdf_log::error("Failed to connect to StateStateTransition: {}", client.status_string());
     return client.take_error();
   }
 
   fidl::Result result = fidl::Call(*client)->GetMexecZbis();
   if (result.is_error()) {
-    LOGF(ERROR, "Failed to get mexec zbis: %s", result.error_value().FormatDescription().c_str());
+    fdf_log::error("Failed to get mexec zbis: {}", result.error_value().FormatDescription());
     zx_status_t status = result.error_value().is_domain_error()
                              ? result.error_value().domain_error()
                              : result.error_value().framework_error().status();
@@ -48,13 +49,13 @@ zx::result<MexecVmos> GetMexecZbis(zx::unowned_resource mexec_resource) {
 
   if (zx_status_t status = mexec::PrepareDataZbi(std::move(mexec_resource), data_zbi.borrow());
       status != ZX_OK) {
-    LOGF(ERROR, "Failed to prepare mexec data ZBI: %s", zx_status_get_string(status));
+    fdf_log::error("Failed to prepare mexec data ZBI: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   zx::result connect_result = component::Connect<fuchsia_boot::Items>();
   if (connect_result.is_error()) {
-    LOGF(ERROR, "Failed to connect to fuchsia.boot::Items: %s", connect_result.status_string());
+    fdf_log::error("Failed to connect to fuchsia.boot::Items: {}", connect_result.status_string());
     return connect_result.take_error();
   }
   fidl::WireSyncClient<fuchsia_boot::Items> items(std::move(connect_result).value());
@@ -75,25 +76,22 @@ zx::result<MexecVmos> GetMexecZbis(zx::unowned_resource mexec_resource) {
       }
       if (!result.value().payload.is_valid()) {
         // Absence is signified with an empty result value.
-        LOGF(INFO, "No %.*s item (%#xu) present to append to mexec data ZBI",
-             static_cast<int>(name.size()), name.data(), type);
+        fdf_log::info("No {} item ({:#x}) present to append to mexec data ZBI", name, type);
         continue;
       }
       fsl::SizedVmo payload(std::move(result.value().payload), result.value().length);
 
       std::vector<char> contents;
       if (!fsl::VectorFromVmo(payload, &contents)) {
-        LOGF(ERROR, "Failed to read contents of %.*s item (%#xu)", static_cast<int>(name.size()),
-             name.data(), type);
+        fdf_log::error("Failed to read contents of {} item ({:#x})", name, type);
         return zx::error(ZX_ERR_INTERNAL);
       }
 
       if (fit::result result = data_image.Append(zbi_header_t{.type = type, .extra = extra},
                                                  zbitl::AsBytes(contents));
           result.is_error()) {
-        LOGF(ERROR, "Failed to append %.*s item (%#xu) to mexec data ZBI: %s",
-             static_cast<int>(name.size()), name.data(), type,
-             zbitl::ViewErrorString(result.error_value()).c_str());
+        fdf_log::error("Failed to append {} item ({:#x}) to mexec data ZBI: {}", name, type,
+                       zbitl::ViewErrorString(result.error_value()));
         return zx::error(ZX_ERR_INTERNAL);
       }
     }
@@ -108,15 +106,15 @@ zx::result<MexecVmos> GetMexecZbis(zx::unowned_resource mexec_resource) {
 SystemPowerState GetSystemPowerState() {
   zx::result client = component::Connect<fuchsia_system_state::SystemStateTransition>();
   if (client.is_error()) {
-    LOGF(ERROR, "Failed to connect to StateStateTransition: %s, falling back to default",
-         client.status_string());
+    fdf_log::error("Failed to connect to StateStateTransition: {}, falling back to default",
+                   client.status_string());
     return SystemPowerState::kReboot;
   }
 
   fidl::Result result = fidl::Call(*client)->GetTerminationSystemState();
   if (result.is_error()) {
-    LOGF(ERROR, "Failed to get termination system state: %s, falling back to default",
-         result.error_value().FormatDescription().c_str());
+    fdf_log::error("Failed to get termination system state: {}, falling back to default",
+                   result.error_value().FormatDescription());
     return SystemPowerState::kReboot;
   }
 
@@ -168,8 +166,8 @@ ShutdownManager::ShutdownManager(NodeRemover* node_remover, async_dispatcher_t* 
           [this](fit::callback<void(zx_status_t)> cb) { SignalPackageShutdown(std::move(cb)); }),
       dispatcher_(dispatcher) {
   if (zx::result power_resource = get_power_resource(); power_resource.is_error()) {
-    LOGF(INFO, "Failed to get root resource, assuming test environment and continuing (%s)",
-         power_resource.status_string());
+    fdf_log::info("Failed to get root resource, assuming test environment and continuing ({})",
+                  power_resource.status_string());
   } else {
     power_resource_ = std::move(power_resource.value());
   }
@@ -177,8 +175,8 @@ ShutdownManager::ShutdownManager(NodeRemover* node_remover, async_dispatcher_t* 
   ZX_ASSERT(log_flush.is_ok());
   log_flush_ = std::move(log_flush.value());
   if (zx::result mexec_resource = get_mexec_resource(); mexec_resource.is_error()) {
-    LOGF(INFO, "Failed to get mexec resource, assuming test environment and continuing (%s)",
-         mexec_resource.status_string());
+    fdf_log::info("Failed to get mexec resource, assuming test environment and continuing ({})",
+                  mexec_resource.status_string());
   } else {
     mexec_resource_ = std::move(mexec_resource.value());
   }
@@ -189,11 +187,11 @@ ShutdownManager::ShutdownManager(NodeRemover* node_remover, async_dispatcher_t* 
 // we no longer have a way to get signals to shutdown the system.
 void ShutdownManager::OnUnbound(const char* connection, fidl::UnbindInfo info) {
   if (info.is_user_initiated()) {
-    LOGF(DEBUG, "%s connection to ShutdownManager got unbound: %s", connection,
-         info.FormatDescription().c_str());
+    fdf_log::debug("{} connection to ShutdownManager got unbound: {}", connection,
+                   info.FormatDescription());
   } else {
-    LOGF(ERROR, "%s connection to ShutdownManager got unbound: %s", connection,
-         info.FormatDescription().c_str());
+    fdf_log::error("{} connection to ShutdownManager got unbound: {}", connection,
+                   info.FormatDescription());
   }
   SignalBootShutdown(nullptr);
 }
@@ -221,13 +219,13 @@ void ShutdownManager::Publish(component::OutgoingDirectory& outgoing) {
                                      server->OnUnbound("Lifecycle", info);
                                    });
   } else {
-    LOGF(INFO,
-         "No valid handle found for lifecycle events, assuming test environment and continuing");
+    fdf_log::info(
+        "No valid handle found for lifecycle events, assuming test environment and continuing");
   }
 }
 
 void ShutdownManager::OnPackageShutdownComplete() {
-  LOGF(INFO, "Package shutdown complete");
+  fdf_log::info("Package shutdown complete");
   ZX_ASSERT(shutdown_state_ == State::kPackageStopping);
   shutdown_state_ = State::kPackageStopped;
   for (auto& callback : package_shutdown_complete_callbacks_) {
@@ -292,29 +290,29 @@ void ShutdownManager::SignalBootShutdown(fit::callback<void(zx_status_t)> cb) {
     node_remover_->ShutdownAllDrivers(
         fit::bind_member(this, &ShutdownManager::OnBootShutdownComplete));
   } else if (shutdown_state_ == State::kBootStopping) {
-    LOGF(ERROR, "SignalBootShutdown() called during shutdown.");
+    fdf_log::error("SignalBootShutdown() called during shutdown.");
   }
 }
 
 void ShutdownManager::SystemExecute() {
   auto shutdown_system_state = GetSystemPowerState();
-  LOGF(INFO, "Suspend fallback with flags %#08hhx", shutdown_system_state);
+  fdf_log::info("Suspend fallback with flags {}", shutdown_system_state);
   const char* what = "zx_system_powerctl";
   zx_status_t status = ZX_OK;
   if (!mexec_resource_.is_valid() || !power_resource_.is_valid()) {
-    LOGF(WARNING, "Invalid Power/mexec resources. Assuming test.");
+    fdf_log::warn("Invalid Power/mexec resources. Assuming test.");
     if (lifecycle_stop_) {
       exit(0);
     }
     return;
   }
 
-  LOGF(INFO, "Flushing logs.");
+  fdf_log::info("Flushing logs.");
   if (log_flush_.is_valid()) {
     std::ignore = fidl::WireCall(log_flush_)->WaitUntilFlushed();
   }
 
-  LOGF(INFO, "Executing powerctl.");
+  fdf_log::info("Executing powerctl.");
   switch (shutdown_system_state) {
     case SystemPowerState::kReboot:
       status = zx_system_powerctl(power_resource_.get(), ZX_SYSTEM_POWERCTL_REBOOT, nullptr);
@@ -349,7 +347,7 @@ void ShutdownManager::SystemExecute() {
       status = zx_system_powerctl(power_resource_.get(), ZX_SYSTEM_POWERCTL_SHUTDOWN, nullptr);
       break;
     case SystemPowerState::kMexec: {
-      LOGF(INFO, "About to mexec...");
+      fdf_log::info("About to mexec...");
       zx::result<MexecVmos> mexec_vmos = GetMexecZbis(mexec_resource_.borrow());
       status = mexec_vmos.status_value();
       if (status == ZX_OK) {
@@ -361,13 +359,13 @@ void ShutdownManager::SystemExecute() {
     }
     case SystemPowerState::kFullyOn:
     case SystemPowerState::kSuspendRam:
-      LOGF(ERROR, "Unexpected shutdown state requested: %hhu", shutdown_system_state);
+      fdf_log::error("Unexpected shutdown state requested: {}", shutdown_system_state);
       break;
   }
 
   // This is mainly for test dev:
   if (lifecycle_stop_) {
-    LOGF(INFO, "Exiting driver manager gracefully");
+    fdf_log::info("Exiting driver manager gracefully");
     // TODO(fxb:52627) This event handler should teardown devices and driver hosts
     // properly for system state transitions where driver manager needs to go down.
     // Exiting like so, will not run all the destructors and clean things up properly.
@@ -377,7 +375,7 @@ void ShutdownManager::SystemExecute() {
 
   // Warning - and not an error - as a large number of tests unfortunately rely
   // on this syscall actually failing.
-  LOGF(WARNING, "%s: %s", what, zx_status_get_string(status));
+  fdf_log::warn("{}: {}", what, zx_status_get_string(status));
 }
 
 }  // namespace driver_manager

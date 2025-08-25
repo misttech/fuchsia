@@ -106,12 +106,12 @@ void ControllerAllowlistPassthrough::ConnectToDeviceFidl(
   if (compat_client_.is_valid()) {
     fidl::OneWayStatus status = compat_client_->ConnectToDeviceFidl(std::move(request->server));
     if (!status.ok()) {
-      LOGF(ERROR, "Failed to forward ConnectToDeviceFidl call for %s.", class_name_.c_str());
+      fdf_log::error("Failed to forward ConnectToDeviceFidl call for {}.", class_name_);
     }
   } else {
     std::shared_ptr locked_node = node_.lock();
     if (!locked_node) {
-      LOGF(ERROR, "Node was freed before it was used for %s.", class_name_.c_str());
+      fdf_log::error("Node was freed before it was used for {}.", class_name_);
       return;
     }
     locked_node->ConnectToDeviceFidl(request, completer);
@@ -139,7 +139,7 @@ void ControllerAllowlistPassthrough::Bind(BindRequestView request, BindCompleter
   } else {
     std::shared_ptr locked_node = node_.lock();
     if (!locked_node) {
-      LOGF(ERROR, "Node was freed before it was used for %s.", class_name_.c_str());
+      fdf_log::error("Node was freed before it was used for {}.", class_name_);
       return;
     }
     locked_node->Bind(request, completer);
@@ -162,7 +162,7 @@ void ControllerAllowlistPassthrough::Rebind(RebindRequestView request,
   } else {
     std::shared_ptr locked_node = node_.lock();
     if (!locked_node) {
-      LOGF(ERROR, "Node was freed before it was used for %s.", class_name_.c_str());
+      fdf_log::error("Node was freed before it was used for {}.", class_name_);
       return;
     }
     locked_node->Rebind(request, completer);
@@ -182,7 +182,7 @@ void ControllerAllowlistPassthrough::UnbindChildren(UnbindChildrenCompleter::Syn
   } else {
     std::shared_ptr locked_node = node_.lock();
     if (!locked_node) {
-      LOGF(ERROR, "Node was freed before it was used for %s.", class_name_.c_str());
+      fdf_log::error("Node was freed before it was used for {}.", class_name_);
       return;
     }
     locked_node->UnbindChildren(completer);
@@ -202,7 +202,7 @@ void ControllerAllowlistPassthrough::ScheduleUnbind(ScheduleUnbindCompleter::Syn
   } else {
     std::shared_ptr locked_node = node_.lock();
     if (!locked_node) {
-      LOGF(ERROR, "Node was freed before it was used for %s.", class_name_.c_str());
+      fdf_log::error("Node was freed before it was used for {}.", class_name_);
       return;
     }
     locked_node->ScheduleUnbind(completer);
@@ -217,7 +217,7 @@ void ControllerAllowlistPassthrough::GetTopologicalPath(
   // library.
   std::shared_ptr locked_node = node_.lock();
   if (!locked_node) {
-    LOGF(ERROR, "Node was freed before it was used for %s.", class_name_.c_str());
+    fdf_log::error("Node was freed before it was used for {}.", class_name_);
     return;
   }
   locked_node->GetTopologicalPath(completer);

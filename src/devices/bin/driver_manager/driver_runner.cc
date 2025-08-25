@@ -171,7 +171,7 @@ Collection GetHighestRankingCollection(const Node& node, Collection collection) 
     ancestors.pop();
     auto ancestor_ptr = ancestor.lock();
     if (!ancestor_ptr) {
-      LOGF(WARNING, "Ancestor node released");
+      fdf_log::warn("Ancestor node released");
       continue;
     }
 
@@ -307,7 +307,7 @@ DriverRunner::DriverRunner(
   if (enable_test_shutdown_delays_) {
     // TODO(https://fxbug.dev/42084497): Allow the seed to be set from the configuration.
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-    LOGF(INFO, "Shutdown test delays enabled. Using seed %u", seed);
+    fdf_log::info("Shutdown test delays enabled. Using seed {}", seed);
     shutdown_test_delay_rng_ = std::make_shared<std::mt19937>(static_cast<uint32_t>(seed));
   }
 
@@ -329,7 +329,7 @@ DriverRunner::DriverRunner(
                                        fidl::kIgnoreBindingClosure);
   fidl::OneWayStatus status = driver_index_->SetNotifier(std::move(notifier_client));
   if (!status.ok()) {
-    LOGF(WARNING, "Failed to set the driver notifier: %s", status.status_string());
+    fdf_log::warn("Failed to set the driver notifier: {}", status.status_string());
   }
 }
 
@@ -460,8 +460,8 @@ void DriverRunner::handle_unknown_method(
       break;
   };
 
-  LOGF(WARNING, "CompositeNodeManager received unknown %s method. Ordinal: %lu",
-       method_type.c_str(), metadata.method_ordinal);
+  fdf_log::warn("CompositeNodeManager received unknown {} method. Ordinal: {}", method_type,
+                metadata.method_ordinal);
 }
 
 void DriverRunner::Get(GetRequest& request, GetCompleter::Sync& completer) {
@@ -507,8 +507,8 @@ void DriverRunner::handle_unknown_method(
       break;
   };
 
-  LOGF(WARNING, "NodeBusTopology received unknown %s method. Ordinal: %lu", method_type.c_str(),
-       metadata.method_ordinal);
+  fdf_log::warn("NodeBusTopology received unknown {} method. Ordinal: {}", method_type,
+                metadata.method_ordinal);
 }
 
 void DriverRunner::AddSpecToDriverIndex(fuchsia_driver_framework::wire::CompositeNodeSpec group,
@@ -517,7 +517,7 @@ void DriverRunner::AddSpecToDriverIndex(fuchsia_driver_framework::wire::Composit
       [callback = std::move(callback)](
           fidl::WireUnownedResult<fdi::DriverIndex::AddCompositeNodeSpec>& result) mutable {
         if (!result.ok()) {
-          LOGF(ERROR, "DriverIndex::AddCompositeNodeSpec failed %d", result.status());
+          fdf_log::error("DriverIndex::AddCompositeNodeSpec failed {}", result.status());
           callback(zx::error(result.status()));
           return;
         }
@@ -578,8 +578,7 @@ void DriverRunner::PublishComponentRunner(component::OutgoingDirectory& outgoing
         if (info.is_user_initiated() || info.is_peer_closed()) {
           return;
         }
-        LOGF(WARNING, "Unexpected closure of NodeBusTopology: %s",
-             info.FormatDescription().c_str());
+        fdf_log::warn("Unexpected closure of NodeBusTopology: {}", info.FormatDescription());
       }));
   ZX_ASSERT_MSG(result.is_ok(), "%s", result.status_string());
 
@@ -603,7 +602,7 @@ void DriverRunner::StartDevfsDriver(driver_manager::Devfs& devfs) {
       CollectionName(Collection::kBoot).get(), offers, std::nullopt,
       [&devfs](zx::result<driver_manager::Runner::StartedComponent> component) {
         if (component.is_error()) {
-          LOGF(ERROR, "Starting the devfs component failed %s", component.status_string());
+          fdf_log::error("Starting the devfs component failed {}", component);
           return;
         }
         devfs.AttachComponent(std::move(component->info), std::move(component->controller));
@@ -645,7 +644,7 @@ zx::result<> DriverRunner::StartDriver(Node& node, std::string_view url,
                 fidl::WireUnownedResult<fuchsia_component_sandbox::CapabilityStore::DictionaryCopy>&
                     result) {
               if (!result.ok() || result->is_error()) {
-                LOGF(ERROR, "Failed to copy dictionary.");
+                fdf_log::error("Failed to copy dictionary.");
                 return;
               }
 
@@ -654,7 +653,7 @@ zx::result<> DriverRunner::StartDriver(Node& node, std::string_view url,
                       fidl::WireUnownedResult<fuchsia_component_sandbox::CapabilityStore::Export>&
                           result) {
                     if (!result.ok() || result->is_error()) {
-                      LOGF(ERROR, "Failed to export dictionary.");
+                      fdf_log::error("Failed to export dictionary.");
                       return;
                     }
 
@@ -695,8 +694,8 @@ void DriverRunner::RebindCompositesWithDriver(const std::string& url,
   std::unordered_set<std::string> names;
   PerformBFS(root_node_, [&names, url](const std::shared_ptr<driver_manager::Node>& current) {
     if (current->type() == driver_manager::NodeType::kComposite && current->driver_url() == url) {
-      LOGF(DEBUG, "RebindCompositesWithDriver rebinding composite %s",
-           current->MakeComponentMoniker().c_str());
+      fdf_log::debug("RebindCompositesWithDriver rebinding composite {}",
+                     current->MakeComponentMoniker());
       names.insert(current->name());
       return false;
     }
@@ -744,15 +743,15 @@ zx::result<DriverHost*> DriverRunner::CreateDriverHost(bool use_next_vdso) {
 
   auto client_end = component::ConnectAt<fdh::DriverHost>(endpoints.client);
   if (client_end.is_error()) {
-    LOGF(ERROR, "Failed to connect to service '%s': %s",
-         fidl::DiscoverableProtocolName<fdh::DriverHost>, client_end.status_string());
+    fdf_log::error("Failed to connect to service '{}': {}",
+                   fidl::DiscoverableProtocolName<fdh::DriverHost>, client_end.status_string());
     return client_end.take_error();
   }
 
   auto loader_service_client = loader_service_factory_();
   if (loader_service_client.is_error()) {
-    LOGF(ERROR, "Failed to connect to service fuchsia.ldsvc/Loader: %s",
-         loader_service_client.status_string());
+    fdf_log::error("Failed to connect to service fuchsia.ldsvc/Loader: {}",
+                   loader_service_client.status_string());
     return loader_service_client.take_error();
   }
 
@@ -760,7 +759,7 @@ zx::result<DriverHost*> DriverRunner::CreateDriverHost(bool use_next_vdso) {
                                                            &driver_hosts_, connected);
   auto result = driver_host->InstallLoader(std::move(*loader_service_client));
   if (result.is_error()) {
-    LOGF(ERROR, "Failed to install loader service: %s", result.status_string());
+    fdf_log::error("Failed to install loader service: {}", result);
     return result.take_error();
   }
 
@@ -773,7 +772,7 @@ zx::result<DriverHost*> DriverRunner::CreateDriverHost(bool use_next_vdso) {
 void DriverRunner::CreateDriverHostDynamicLinker(
     fit::callback<void(zx::result<DriverHost*>)> completion_cb) {
   if (!dynamic_linker_args_.has_value()) {
-    LOGF(ERROR, "Dynamic linker was not available");
+    fdf_log::error("Dynamic linker was not available");
     completion_cb(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
@@ -782,8 +781,8 @@ void DriverRunner::CreateDriverHostDynamicLinker(
 
   auto client_end = component::ConnectAt<fdh::DriverHost>(endpoints.client);
   if (client_end.is_error()) {
-    LOGF(ERROR, "Failed to connect to service '%s': %s",
-         fidl::DiscoverableProtocolName<fdh::DriverHost>, client_end.status_string());
+    fdf_log::error("Failed to connect to service '{}': {}",
+                   fidl::DiscoverableProtocolName<fdh::DriverHost>, client_end.status_string());
     completion_cb(client_end.take_error());
     return;
   }
@@ -793,7 +792,7 @@ void DriverRunner::CreateDriverHostDynamicLinker(
   if (!driver_host_launcher_.has_value()) {
     auto client = dynamic_linker_args_->linker_service_factory();
     if (client.is_error()) {
-      LOGF(ERROR, "Failed to create driver host launcher client");
+      fdf_log::error("Failed to create driver host launcher client");
       completion_cb(client.take_error());
       return;
     }
@@ -829,8 +828,7 @@ bool DriverRunner::IsDriverHostValid(DriverHost* driver_host) const {
 zx::result<std::string> DriverRunner::StartDriver(
     Node& node, fuchsia_driver_framework::wire::DriverInfo driver_info) {
   if (!driver_info.has_url()) {
-    LOGF(ERROR, "Failed to start driver for node '%s', the driver URL is missing",
-         node.name().c_str());
+    fdf_log::error("Failed to start driver for node '{}', the driver URL is missing", node.name());
     return zx::error(ZX_ERR_INTERNAL);
   }
 
@@ -869,8 +867,9 @@ void DriverRunner::RequestRebindFromDriverIndex(std::string spec,
           [callback = std::move(callback)](
               fidl::WireUnownedResult<fdi::DriverIndex::RebindCompositeNodeSpec>& result) mutable {
             if (!result.ok()) {
-              LOGF(ERROR, "Failed to send a composite rebind request to the Driver Index failed %s",
-                   result.error().FormatDescription().c_str());
+              fdf_log::error(
+                  "Failed to send a composite rebind request to the Driver Index failed {}",
+                  result.error().FormatDescription());
               callback(zx::error(result.status()));
               return;
             }
@@ -897,13 +896,13 @@ zx::result<> DriverRunner::CreateDriverHostComponent(
   auto open_callback =
       [moniker](fidl::WireUnownedResult<fcomponent::Realm::OpenExposedDir>& result) {
         if (!result.ok()) {
-          LOGF(ERROR, "Failed to open exposed directory for driver host: '%s': %s", moniker.c_str(),
-               result.FormatDescription().data());
+          fdf_log::error("Failed to open exposed directory for driver host: '{}': {}", moniker,
+                         result.FormatDescription());
           return;
         }
         if (result->is_error()) {
-          LOGF(ERROR, "Failed to open exposed directory for driver host: '%s': %u", moniker.c_str(),
-               result->error_value());
+          fdf_log::error("Failed to open exposed directory for driver host: '{}': {}", moniker,
+                         static_cast<uint32_t>(result->error_value()));
         }
       };
   auto create_callback =
@@ -912,13 +911,13 @@ zx::result<> DriverRunner::CreateDriverHostComponent(
        open_callback = std::move(open_callback)](
           fidl::WireUnownedResult<fcomponent::Realm::CreateChild>& result) mutable {
         if (!result.ok()) {
-          LOGF(ERROR, "Failed to create driver host '%s': %s", moniker.c_str(),
-               result.error().FormatDescription().data());
+          fdf_log::error("Failed to create driver host '{}': {}", moniker,
+                         result.error().FormatDescription());
           return;
         }
         if (result->is_error()) {
-          LOGF(ERROR, "Failed to create driver host '%s': %u", moniker.c_str(),
-               result->error_value());
+          fdf_log::error("Failed to create driver host '{}': {}", moniker,
+                         static_cast<uint32_t>(result->error_value()));
           return;
         }
         fdecl::wire::ChildRef child_ref{
@@ -963,22 +962,22 @@ zx::result<uint32_t> DriverRunner::RestartNodesColocatedWithDriverUrl(
       if (current->type() == driver_manager::NodeType::kComposite) {
         // Composites need to go through a different flow that will fully remove the
         // node and empty out the composite spec management layer.
-        LOGF(DEBUG, "RestartNodesColocatedWithDriverUrl rebinding composite %s",
-             current->MakeComponentMoniker().c_str());
+        fdf_log::debug("RestartNodesColocatedWithDriverUrl rebinding composite {}",
+                       current->MakeComponentMoniker());
         RebindComposite(current->name(), std::nullopt, [](zx::result<>) {});
         return false;
       }
 
       // Non-composite nodes use the restart with rematch flow.
-      LOGF(DEBUG, "RestartNodesColocatedWithDriverUrl restarting node with rematch %s",
-           current->MakeComponentMoniker().c_str());
+      fdf_log::debug("RestartNodesColocatedWithDriverUrl restarting node with rematch {}",
+                     current->MakeComponentMoniker());
       current->RestartNodeWithRematch();
       return false;
     }
 
     // Not rematching, plain node restart.
-    LOGF(DEBUG, "RestartNodesColocatedWithDriverUrl restarting node %s",
-         current->MakeComponentMoniker().c_str());
+    fdf_log::debug("RestartNodesColocatedWithDriverUrl restarting node {}",
+                   current->MakeComponentMoniker());
     current->RestartNode();
     return false;
   });
@@ -998,7 +997,7 @@ void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
              imported](fidl::WireUnownedResult<fuchsia_component_sandbox::CapabilityStore::Import>&
                            result) mutable {
         if (!result.ok() || result->is_error()) {
-          LOGF(ERROR, "RestartWithDictionary failed to import the dictionary.");
+          fdf_log::error("RestartWithDictionary failed to import the dictionary.");
           return;
         }
 
@@ -1006,8 +1005,7 @@ void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
         PerformBFS(root_node_, [&](const std::shared_ptr<driver_manager::Node>& current) {
           if (current->MakeComponentMoniker() == moniker) {
             if (current->dictionary_ref()) {
-              LOGF(
-                  ERROR,
+              fdf_log::error(
                   "RestartWithDictionary requested node id already contains a dictionary_ref from another RestartWithDictionary operation.");
               return false;
             }
@@ -1031,13 +1029,13 @@ void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
               [restarted_node = std::move(restarted_node), moved_wait = std::move(wait)](
                   async_dispatcher_t* dispatcher, async::WaitOnce* wait, zx_status_t status,
                   const zx_packet_signal_t* signal) {
-                LOGF(INFO, "RestartWithDictionary operation released.");
+                fdf_log::info("RestartWithDictionary operation released.");
                 restarted_node->SetDictionaryRef(std::nullopt);
                 restarted_node->RestartNode();
               });
 
           if (status != ZX_OK) {
-            LOGF(ERROR, "Failed to Begin async::Wait for RestartWithDictionary.");
+            fdf_log::error("Failed to Begin async::Wait for RestartWithDictionary.");
           }
         }
       });

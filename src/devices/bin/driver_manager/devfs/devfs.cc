@@ -54,7 +54,7 @@ void PathServer::Bind(zx::channel channel, const std::string& class_name) {
         class_name, class_name);
     // Debug assert or just print error and drop channel if not debug
     ZX_DEBUG_ASSERT_MSG(false, "%s", error_msg.c_str());
-    LOGF(ERROR, error_msg.c_str());
+    fdf_log::error("{}", error_msg);
     return;
   }
   bindings_.AddBinding(dispatcher_,
@@ -272,15 +272,13 @@ zx_status_t Devnode::TryAddService(std::string_view class_name, Target target,
   zx::result result =
       devfs_.outgoing().AddUnmanagedProtocolAt(std::move(handler), path, service.member_name);
   if (result.is_error()) {
-    LOGF(WARNING, "Failed to add service entry '%s' for class '%.*s'  %d (%s)",
-         (path + "/" + std::string(service.member_name)).c_str(),
-         static_cast<int>(class_name.size()), class_name.data(), result.status_value(),
-         zx_status_get_string(result.status_value()));
+    fdf_log::warn("Failed to add service entry '{}' for class '{}'  {} ({})",
+                  (path + "/" + std::string(service.member_name)), class_name,
+                  result.status_value(), zx_status_get_string(result.status_value()));
     return result.status_value();
   }
-  LOGF(DEBUG, "Added service entry '%s' for class '%.*s'",
-       (path + "/" + std::string(service.member_name)).c_str(), static_cast<int>(class_name.size()),
-       class_name.data());
+  fdf_log::debug("Added service entry '{}' for class '{}'",
+                 (path + "/" + std::string(service.member_name)), class_name);
   // set the service name so we know that we need to remove the service if the devnode is
   // destroyed.
   service_path_ = path;
@@ -301,8 +299,7 @@ zx_status_t Devnode::add_child(std::string_view name, std::optional<std::string_
   // Check that the child does not have a duplicate name.
   const std::optional other = devfs_.Lookup(children(), name);
   if (other.has_value()) {
-    LOGF(WARNING, "rejecting duplicate device name '%.*s'", static_cast<int>(name.size()),
-         name.data());
+    fdf_log::warn("rejecting duplicate device name '{}'", name);
     return ZX_ERR_ALREADY_EXISTS;
   }
   std::string child_path = path_server_.GetPath() + "/" + std::string(name);
@@ -334,12 +331,12 @@ void Devfs::AttachComponent(
     fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller) {
   // Serve the outgoing directory:
   if (!info.outgoing_dir().has_value()) {
-    LOGF(WARNING, "No outgoing dir available for devfs component.");
+    fdf_log::warn("No outgoing dir available for devfs component.");
     return;
   }
   auto result = outgoing_.Serve(std::move(*info.outgoing_dir()));
   if (result.is_error()) {
-    LOGF(WARNING, "Failed to serve the devfs outgoing directory %s", result.status_string());
+    fdf_log::warn("Failed to serve the devfs outgoing directory {}", result.status_string());
     return;
   }
   binding_.emplace(dispatcher_, std::move(controller), this, fidl::kIgnoreBindingClosure);

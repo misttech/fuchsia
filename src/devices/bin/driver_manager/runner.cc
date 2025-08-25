@@ -107,20 +107,17 @@ void Runner::StartDriverComponent(
           fidl::WireUnownedResult<fcomponent::Realm::CreateChild>& result) mutable {
         bool is_error = false;
         if (!result.ok()) {
-          LOGF(ERROR, "Failed to create child '%s': %s", child_moniker.c_str(),
-               result.FormatDescription().c_str());
+          fdf_log::error("Failed to create child '{}': {}", child_moniker, result.error());
           is_error = true;
         } else if (result.value().is_error()) {
-          auto msg = std::format("Failed to create child '{}': {}", child_moniker,
-                                 result.value().error_value());
-          LOGF(ERROR, msg.c_str());
+          fdf_log::error("Failed to create child '{}': {}", child_moniker,
+                         result.value().error_value());
           is_error = true;
         }
         if (is_error) {
           zx::result result = CallCallback(koid, zx::error(ZX_ERR_INTERNAL));
           if (result.is_error()) {
-            LOGF(ERROR, "Failed to find driver request for '%s': %s", child_moniker.c_str(),
-                 result.status_string());
+            fdf_log::error("Failed to find driver request for '{}': {}", child_moniker, result);
           }
         }
       };
@@ -143,13 +140,13 @@ void Runner::Start(StartRequestView request, StartCompleter::Sync& completer) {
   //  2. We avoid collisions that can occur when relying on the package URL
   //  3. We avoid relying on the resolved URL matching the package URL
   if (!request->start_info.has_numbered_handles()) {
-    LOGF(ERROR, "Failed to start driver '%s', invalid request for driver", url.c_str());
+    fdf_log::error("Failed to start driver '{}', invalid request for driver", url);
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
   auto& handles = request->start_info.numbered_handles();
   if (handles.size() != 1 || !handles[0].handle || handles[0].id != kTokenId) {
-    LOGF(ERROR, "Failed to start driver '%s', invalid request for driver", url.c_str());
+    fdf_log::error("Failed to start driver '{}', invalid request for driver", url);
     completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -165,7 +162,7 @@ void Runner::Start(StartRequestView request, StartCompleter::Sync& completer) {
                                                      .controller = std::move(request->controller),
                                                  }));
   if (result.is_error()) {
-    LOGF(ERROR, "Failed to start driver '%s', unknown request for driver", url.c_str());
+    fdf_log::error("Failed to start driver '{}', unknown request for driver", url);
     completer.Close(ZX_ERR_UNAVAILABLE);
   }
 }

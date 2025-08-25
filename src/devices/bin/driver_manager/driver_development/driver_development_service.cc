@@ -67,7 +67,7 @@ zx::result<fdd::wire::NodeInfo> CreateDeviceInfo(fidl::AnyArena& allocator,
   for (const auto& parent : parents) {
     auto parent_ptr = parent.lock();
     if (!parent_ptr) {
-      LOGF(ERROR, "Parent node freed before it could be used");
+      fdf_log::error("Parent node freed before it could be used");
       return zx::error(ZX_ERR_INTERNAL);
     }
     parent_ids[i++] = reinterpret_cast<uint64_t>(parent_ptr.get());
@@ -93,8 +93,8 @@ zx::result<fdd::wire::NodeInfo> CreateDeviceInfo(fidl::AnyArena& allocator,
       // ZX_ERR_PEER_CLOSED means the host closed while we tried to query it.
       if (result.error_value() != ZX_ERR_SHOULD_WAIT &&
           result.error_value() != ZX_ERR_PEER_CLOSED) {
-        LOGF(ERROR, "Failed to get the process KOID of a driver host: %s",
-             zx_status_get_string(result.status_value()));
+        fdf_log::error("Failed to get the process KOID of a driver host: {}",
+                       zx_status_get_string(result.status_value()));
         return zx::error(result.status_value());
       }
     } else {
@@ -137,7 +137,7 @@ void DriverDevelopmentService::Publish(component::OutgoingDirectory& outgoing) {
   auto result = outgoing.AddUnmanagedProtocol<fdd::Manager>(
       bindings_.CreateHandler(this, dispatcher_, [](fidl::UnbindInfo info) {
         if (!info.is_peer_closed()) {
-          LOGF(WARNING, "development service closed. %s", info.FormatDescription().c_str());
+          fdf_log::warn("development service closed. {}", info.FormatDescription());
         }
       }));
   ZX_ASSERT(result.is_ok());
@@ -204,8 +204,8 @@ void DriverDevelopmentService::GetNodeInfo(GetNodeInfoRequestView request,
           // at any time.
           return;
         }
-        LOGF(ERROR, "Error serving '%s': %s", fidl::DiscoverableProtocolName<fdd::Manager>,
-             info.FormatDescription().c_str());
+        fdf_log::error("Error serving '{}': {}", fidl::DiscoverableProtocolName<fdd::Manager>,
+                       info.FormatDescription());
       });
 }
 
@@ -218,7 +218,7 @@ void DriverDevelopmentService::GetCompositeInfo(GetCompositeInfoRequestView requ
   fidl::BindServer(this->dispatcher_, std::move(request->iterator), std::move(iterator),
                    [](auto* server, fidl::UnbindInfo info, auto channel) {
                      if (!info.is_peer_closed()) {
-                       LOGF(WARNING, "Closed CompositeInfoIterator: %s", info.lossy_description());
+                       fdf_log::warn("Closed CompositeInfoIterator: {}", info.lossy_description());
                      }
                    });
 }
@@ -227,9 +227,9 @@ void DriverDevelopmentService::GetDriverInfo(GetDriverInfoRequestView request,
                                              GetDriverInfoCompleter::Sync& completer) {
   auto driver_index_client = component::Connect<fuchsia_driver_index::DevelopmentManager>();
   if (driver_index_client.is_error()) {
-    LOGF(ERROR, "Failed to connect to service '%s': %s",
-         fidl::DiscoverableProtocolName<fuchsia_driver_index::DevelopmentManager>,
-         driver_index_client.status_string());
+    fdf_log::error("Failed to connect to service '{}': {}",
+                   fidl::DiscoverableProtocolName<fuchsia_driver_index::DevelopmentManager>,
+                   driver_index_client.status_string());
     request->iterator.Close(driver_index_client.status_value());
     return;
   }
@@ -238,8 +238,7 @@ void DriverDevelopmentService::GetDriverInfo(GetDriverInfoRequestView request,
   auto info_result =
       driver_index->GetDriverInfo(std::move(request->driver_filter), std::move(request->iterator));
   if (!info_result.ok()) {
-    LOGF(ERROR, "Failed to call DriverIndex::GetDriverInfo: %s\n",
-         info_result.error().FormatDescription().data());
+    fdf_log::error("Failed to call DriverIndex::GetDriverInfo: {}", info_result.error());
   }
 }
 
@@ -247,9 +246,9 @@ void DriverDevelopmentService::GetCompositeNodeSpecs(
     GetCompositeNodeSpecsRequestView request, GetCompositeNodeSpecsCompleter::Sync& completer) {
   auto driver_index_client = component::Connect<fuchsia_driver_index::DevelopmentManager>();
   if (driver_index_client.is_error()) {
-    LOGF(ERROR, "Failed to connect to service '%s': %s",
-         fidl::DiscoverableProtocolName<fuchsia_driver_index::DevelopmentManager>,
-         driver_index_client.status_string());
+    fdf_log::error("Failed to connect to service '{}': {}",
+                   fidl::DiscoverableProtocolName<fuchsia_driver_index::DevelopmentManager>,
+                   driver_index_client.status_string());
     request->iterator.Close(driver_index_client.status_value());
     return;
   }
@@ -258,8 +257,7 @@ void DriverDevelopmentService::GetCompositeNodeSpecs(
   auto info_result =
       driver_index->GetCompositeNodeSpecs(request->name_filter, std::move(request->iterator));
   if (!info_result.ok()) {
-    LOGF(ERROR, "Failed to call DriverIndex::GetCompositeNodeSpecs: %s\n",
-         info_result.error().FormatDescription().data());
+    fdf_log::error("Failed to call DriverIndex::GetCompositeNodeSpecs: {}", info_result.error());
   }
 }
 
@@ -270,9 +268,9 @@ void DriverDevelopmentService::DisableDriver(DisableDriverRequestView request,
                                              DisableDriverCompleter::Sync& completer) {
   auto driver_index_client = component::Connect<fuchsia_driver_index::DevelopmentManager>();
   if (driver_index_client.is_error()) {
-    LOGF(ERROR, "Failed to connect to service '%s': %s",
-         fidl::DiscoverableProtocolName<fuchsia_driver_index::DevelopmentManager>,
-         driver_index_client.status_string());
+    fdf_log::error("Failed to connect to service '{}': {}",
+                   fidl::DiscoverableProtocolName<fuchsia_driver_index::DevelopmentManager>,
+                   driver_index_client.status_string());
     completer.Close(driver_index_client.status_value());
     return;
   }
@@ -280,8 +278,7 @@ void DriverDevelopmentService::DisableDriver(DisableDriverRequestView request,
   fidl::WireSyncClient driver_index{std::move(*driver_index_client)};
   auto disable_result = driver_index->DisableDriver(request->driver_url, request->package_hash);
   if (!disable_result.ok()) {
-    LOGF(ERROR, "Failed to call DriverIndex::DisableDriver: %s\n",
-         disable_result.FormatDescription().c_str());
+    fdf_log::error("Failed to call DriverIndex::DisableDriver: {}", disable_result.error());
     completer.Close(disable_result.error().status());
     return;
   }
@@ -293,9 +290,9 @@ void DriverDevelopmentService::EnableDriver(EnableDriverRequestView request,
                                             EnableDriverCompleter::Sync& completer) {
   auto driver_index_client = component::Connect<fuchsia_driver_index::DevelopmentManager>();
   if (driver_index_client.is_error()) {
-    LOGF(ERROR, "Failed to connect to service '%s': %s",
-         fidl::DiscoverableProtocolName<fuchsia_driver_index::DevelopmentManager>,
-         driver_index_client.status_string());
+    fdf_log::error("Failed to connect to service '{}': {}",
+                   fidl::DiscoverableProtocolName<fuchsia_driver_index::DevelopmentManager>,
+                   driver_index_client.status_string());
     completer.Close(driver_index_client.status_value());
     return;
   }
@@ -303,8 +300,7 @@ void DriverDevelopmentService::EnableDriver(EnableDriverRequestView request,
   fidl::WireSyncClient driver_index{std::move(*driver_index_client)};
   auto enable_result = driver_index->EnableDriver(request->driver_url, request->package_hash);
   if (!enable_result.ok()) {
-    LOGF(ERROR, "Failed to call DriverIndex::EnableDriver: %s\n",
-         enable_result.FormatDescription().c_str());
+    fdf_log::error("Failed to call DriverIndex::EnableDriver: {}", enable_result.error());
     completer.Close(enable_result.error().status());
     return;
   }
@@ -406,9 +402,9 @@ void DriverDevelopmentService::RebindCompositesWithDriver(
     RebindCompositesWithDriverCompleter::Sync& completer) {
   auto driver_index_client = component::Connect<fuchsia_driver_index::DevelopmentManager>();
   if (driver_index_client.is_error()) {
-    LOGF(ERROR, "Failed to connect to service '%s': %s",
-         fidl::DiscoverableProtocolName<fuchsia_driver_index::DevelopmentManager>,
-         driver_index_client.status_string());
+    fdf_log::error("Failed to connect to service '{}': {}",
+                   fidl::DiscoverableProtocolName<fuchsia_driver_index::DevelopmentManager>,
+                   driver_index_client.status_string());
     completer.Close(driver_index_client.status_value());
     return;
   }
@@ -416,14 +412,14 @@ void DriverDevelopmentService::RebindCompositesWithDriver(
   fidl::WireSyncClient driver_index{std::move(*driver_index_client)};
   auto index_rebind_result = driver_index->RebindCompositesWithDriver(request->driver_url);
   if (!index_rebind_result.ok()) {
-    LOGF(ERROR, "Failed to call DriverIndex::RebindCompositesWithDriver: %s\n",
-         index_rebind_result.FormatDescription().c_str());
+    fdf_log::error("Failed to call DriverIndex::RebindCompositesWithDriver: {}",
+                   index_rebind_result.error());
     completer.ReplyError(index_rebind_result.error().status());
     return;
   }
   if (index_rebind_result.value().is_error()) {
-    LOGF(ERROR, "DriverIndex::RebindCompositesWithDriver failed: %s\n",
-         zx_status_get_string(index_rebind_result.value().error_value()));
+    fdf_log::error("DriverIndex::RebindCompositesWithDriver failed: {}",
+                   zx_status_get_string(index_rebind_result.value().error_value()));
     completer.ReplyError(index_rebind_result.value().error_value());
     return;
   }
@@ -448,8 +444,8 @@ void DriverDevelopmentService::handle_unknown_method(
       break;
   };
 
-  LOGF(WARNING, "DriverDevelopmentService received unknown %s method. Ordinal: %lu",
-       method_type.c_str(), metadata.method_ordinal);
+  fdf_log::warn("DriverDevelopmentService received unknown {} method. Ordinal: {}", method_type,
+                metadata.method_ordinal);
 }
 
 }  // namespace driver_manager

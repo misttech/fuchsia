@@ -59,7 +59,7 @@ bool InAllowlist(std::string path) {
     }
   }
 
-  LOGF(ERROR, "Driver-Loader: %s: Not in allowlist", path.c_str());
+  fdf_log::error("Driver-Loader: {}: Not in allowlist", path);
   return false;
 }
 

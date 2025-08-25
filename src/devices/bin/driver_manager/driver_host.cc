@@ -53,25 +53,25 @@ zx::result<DriverHost::DriverLoadArgs> DriverHost::DriverLoadArgs::Create(
   fuchsia_data::wire::Dictionary wire_program = start_info.program();
   zx::result<std::string> binary = fdf_internal::ProgramValue(wire_program, "binary");
   if (binary.is_error()) {
-    LOGF(ERROR, "Failed to start driver, missing 'binary' argument: %s", binary.status_string());
+    fdf_log::error("Failed to start driver, missing 'binary' argument: {}", binary);
     return binary.take_error();
   }
 
   auto pkg = fdf_internal::NsValue(start_info.ns(), "/pkg");
   if (pkg.is_error()) {
-    LOGF(ERROR, "Failed to start driver, missing '/pkg' directory: %s", pkg.status_string());
+    fdf_log::error("Failed to start driver, missing '/pkg' directory: {}", pkg);
     return pkg.take_error();
   }
 
   auto driver_file = pkg_utils::OpenPkgFile(*pkg, *binary);
   if (driver_file.is_error()) {
-    LOGF(ERROR, "Failed to open driver file: %s", driver_file.status_string());
+    fdf_log::error("Failed to open driver file: {}", driver_file);
     return driver_file.take_error();
   }
 
   auto lib_dir = pkg_utils::OpenLibDir(*pkg);
   if (lib_dir.is_error()) {
-    LOGF(ERROR, "Failed to open driver libs dir: %s", lib_dir.status_string());
+    fdf_log::error("Failed to open driver libs dir: {}", lib_dir);
     return lib_dir.take_error();
   }
 
@@ -79,13 +79,13 @@ zx::result<DriverHost::DriverLoadArgs> DriverHost::DriverLoadArgs::Create(
   if (binary == kCompatDriverRelativePath) {
     zx::result<std::string> compat = fdf_internal::ProgramValue(wire_program, "compat");
     if (compat.is_error()) {
-      LOGF(ERROR, "Failed to start driver with compat shim, missing 'compat' argument: %s",
-           compat.status_string());
+      fdf_log::error("Failed to start driver with compat shim, missing 'compat' argument: {}",
+                     compat);
       return compat.take_error();
     }
     auto v1_driver_file = pkg_utils::OpenPkgFile(*pkg, *compat);
     if (v1_driver_file.is_error()) {
-      LOGF(ERROR, "Failed to open compat driver file: %s", v1_driver_file.status_string());
+      fdf_log::error("Failed to open compat driver file: {}", v1_driver_file);
       return v1_driver_file.take_error();
     }
     additional_root_modules.push_back(fuchsia_driver_loader::RootModule{
@@ -97,7 +97,7 @@ zx::result<DriverHost::DriverLoadArgs> DriverHost::DriverLoadArgs::Create(
     for (const auto& module : *modules) {
       zx::result<std::string> module_name = fdf_internal::ProgramValue(module, "module_name");
       if (module_name.is_error()) {
-        LOGF(ERROR, "Failed to get module name: %s", module_name.status_string());
+        fdf_log::error("Failed to get module name: {}", module_name);
         return module_name.take_error();
       }
       if (module_name == "#program.compat") {
@@ -106,7 +106,7 @@ zx::result<DriverHost::DriverLoadArgs> DriverHost::DriverLoadArgs::Create(
       }
       auto module_vmo = pkg_utils::OpenPkgFile(*pkg, *module_name);
       if (module_vmo.is_error()) {
-        LOGF(ERROR, "Failed to open module: %s", module_vmo.status_string());
+        fdf_log::error("Failed to open module: {}", module_vmo);
         return module_vmo.take_error();
       }
       additional_root_modules.push_back(fuchsia_driver_loader::RootModule{
@@ -126,7 +126,8 @@ zx::result<> SetEncodedConfig(fidl::WireTableBuilder<fdf::wire::DriverStartArgs>
   }
 
   if (!start_info.encoded_config().is_buffer() && !start_info.encoded_config().is_bytes()) {
-    LOGF(ERROR, "Failed to parse encoded config in start info. Encoding is not buffer or bytes.");
+    fdf_log::error(
+        "Failed to parse encoded config in start info. Encoding is not buffer or bytes.");
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -251,14 +252,13 @@ void DriverHostComponent::Start(
   driver_host_->Start(args.Build(), std::move(driver))
       .ThenExactlyOnce([cb = std::move(cb), binary = std::move(binary)](auto& result) mutable {
         if (!result.ok()) {
-          LOGF(ERROR, "Failed to start driver '%s' in driver host: %s", binary.c_str(),
-               result.FormatDescription().c_str());
+          fdf_log::error("Failed to start driver '{}' in driver host: {}", binary, result.error());
           cb(zx::error(result.status()));
           return;
         }
         if (result->is_error()) {
-          LOGF(ERROR, "Failed to start driver '%s' in driver host: %s", binary.c_str(),
-               zx_status_get_string(result->error_value()));
+          fdf_log::error("Failed to start driver '{}' in driver host: {}", binary,
+                         zx_status_get_string(result->error_value()));
           cb(result->take_error());
           return;
         }
@@ -371,14 +371,14 @@ void DriverHostComponent::StartWithDynamicLinker(
        start_args = std::move(start_args), node_token = std::move(node_token), driver_name,
        cb = std::move(cb)](auto& result) mutable {
         if (!result.ok()) {
-          LOGF(ERROR, "Failed to start driver %s in driver host: %s", driver_name.c_str(),
-               result.FormatDescription().c_str());
+          fdf_log::error("Failed to start driver {} in driver host: {}", driver_name,
+                         result.error());
           cb(zx::error(result.status()));
           return;
         }
         if (result->is_error()) {
-          LOGF(ERROR, "Failed to start driver %s in driver host: %s", driver_name.c_str(),
-               zx_status_get_string(result->error_value()));
+          fdf_log::error("Failed to start driver {} in driver host: {}", driver_name,
+                         zx_status_get_string(result->error_value()));
           cb(result->take_error());
           return;
         }

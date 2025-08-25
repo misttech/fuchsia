@@ -29,8 +29,7 @@ void BootupTracker::WaitForBootup(fit::callback<void()> callback) {
 
 void BootupTracker::NotifyNewStartRequest(std::string node_moniker, std::string driver_url) {
   if (outstanding_start_requests_.find(node_moniker) != outstanding_start_requests_.end()) {
-    LOGF(WARNING, "Bootup tracker received conflicting start requests for node %s",
-         node_moniker.c_str());
+    fdf_log::warn("Bootup tracker received conflicting start requests for node {}", node_moniker);
   }
   outstanding_start_requests_[node_moniker] = driver_url;
   UpdateTrackerAndResetTimer();
@@ -41,8 +40,7 @@ void BootupTracker::NotifyStartComplete(std::string node_moniker) {
       itr != outstanding_start_requests_.end()) {
     outstanding_start_requests_.erase(itr);
   } else {
-    LOGF(ERROR, "Bootup tracker notified for an unknown start request for %s",
-         node_moniker.c_str());
+    fdf_log::error("Bootup tracker notified for an unknown start request for {}", node_moniker);
   }
   UpdateTrackerAndResetTimer();
 }
@@ -51,13 +49,13 @@ void BootupTracker::NotifyBindingChanged() { UpdateTrackerAndResetTimer(); }
 
 void BootupTracker::CheckBootupDone() {
   if (IsUpdateDeadlineExceeded()) {
-    LOGF(WARNING, "Deadline exceeded in the bootup tracker with:");
-    LOGF(WARNING, "    %u unfinished start requests:", outstanding_start_requests_.size());
+    fdf_log::warn("Deadline exceeded in the bootup tracker with:");
+    fdf_log::warn("    {} unfinished start requests:", outstanding_start_requests_.size());
     for (const auto& [moniker, url] : outstanding_start_requests_) {
-      LOGF(WARNING, "         - %s - %s", moniker.c_str(), url.c_str());
+      fdf_log::warn("         - {} - {}", moniker, url);
     }
     if (bind_manager_->HasOngoingBind()) {
-      LOGF(WARNING, "    a hanging bind process in the bind manager");
+      fdf_log::warn("    a hanging bind process in the bind manager");
     }
   }
 
@@ -67,7 +65,7 @@ void BootupTracker::CheckBootupDone() {
   }
 
   // LINT.IfChange
-  LOGF(INFO, "Bootup completed.");
+  fdf_log::info("Bootup completed.");
   // LINT.ThenChange(//tools/testing/testrunner/tester.go)
 
   for (auto& callback : callbacks_) {

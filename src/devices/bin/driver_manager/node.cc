@@ -4,6 +4,8 @@
 
 #include "src/devices/bin/driver_manager/node.h"
 
+#include <fidl/fuchsia.component/cpp/common_types_format.h>
+#include <fidl/fuchsia.driver.framework/cpp/common_types_format.h>
 #include <lib/driver/component/cpp/internal/start_args.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
@@ -86,7 +88,7 @@ fit::result<fdf::NodeError, NodeOffer> ProcessNodeOffer(const fdf::Offer& add_of
       transport.emplace(OfferTransport::DriverTransport);
       break;
     default:
-      LOGF(ERROR, "Unknown offer transport type %d", add_offer.Which());
+      fdf_log::error("Unknown offer transport type {}", static_cast<uint32_t>(add_offer.Which()));
       return fit::error(fdf::NodeError::kInternal);
   }
 
@@ -159,16 +161,16 @@ fit::result<fdf::NodeError> ValidateSymbols(std::vector<fdf::NodeSymbol>& symbol
   std::unordered_set<std::string_view> names;
   for (auto& symbol : symbols) {
     if (!symbol.name().has_value()) {
-      LOGF(ERROR, "SymbolError: a symbol is missing a name");
+      fdf_log::error("SymbolError: a symbol is missing a name");
       return fit::error(fdf::NodeError::kSymbolNameMissing);
     }
     if (!symbol.address().has_value()) {
-      LOGF(ERROR, "SymbolError: symbol '%s' is missing an address", symbol.name().value().c_str());
+      fdf_log::error("SymbolError: symbol '{}' is missing an address", symbol.name().value());
       return fit::error(fdf::NodeError::kSymbolAddressMissing);
     }
     auto [_, inserted] = names.emplace(symbol.name().value());
     if (!inserted) {
-      LOGF(ERROR, "SymbolError: symbol '%s' already exists", symbol.name().value().c_str());
+      fdf_log::error("SymbolError: symbol '{}' already exists", symbol.name().value());
       return fit::error(fdf::NodeError::kSymbolAlreadyExists);
     }
   }
@@ -307,20 +309,20 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
   ZX_ASSERT(!parents.empty());
 
   if (parents.size() != parent_properties.size()) {
-    LOGF(ERROR,
-         "Missing parent properties. Expected %d entries, equal to the number of parents %d.",
-         parents.size(), parent_properties.size());
+    fdf_log::error(
+        "Missing parent properties. Expected {} entries, equal to the number of parents {}.",
+        parent_properties.size(), parents.size());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   if (primary_index >= parents.size()) {
-    LOGF(ERROR, "Primary node index is out of bounds");
+    fdf_log::error("Primary node index is out of bounds");
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   auto primary_node_ptr = parents[primary_index].lock();
   if (!primary_node_ptr) {
-    LOGF(ERROR, "Primary node freed before use");
+    fdf_log::error("Primary node freed before use");
     return zx::error(ZX_ERR_INTERNAL);
   }
   std::shared_ptr composite =
@@ -345,7 +347,7 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
   for (const std::weak_ptr<Node>& parent : std::get<Composite>(composite->type_).parents_) {
     auto parent_ptr = parent.lock();
     if (!parent_ptr) {
-      LOGF(ERROR, "Composite parent node freed before use");
+      fdf_log::error("Composite parent node freed before use");
       return zx::error(ZX_ERR_INTERNAL);
     }
     auto parent_offers = parent_ptr->offers();
@@ -378,8 +380,8 @@ Node::~Node() {
   // TODO(https://fxbug.dev/42085057): Notify the NodeRemovalTracker if the node is deallocated
   // before shutdown is complete.
   if (GetNodeState() != NodeState::kStopped) {
-    LOGF(INFO, "Node %s deallocating while at state %s", MakeComponentMoniker().c_str(),
-         GetNodeShutdownCoordinator().NodeStateAsString());
+    fdf_log::info("Node {} deallocating while at state {}", MakeComponentMoniker(),
+                  GetNodeShutdownCoordinator().NodeStateAsString());
   }
 
   CloseIfExists(controller_ref_);
@@ -398,8 +400,8 @@ Node::~Node() {
   }
 
   if (composite_rebind_completer_) {
-    LOGF(WARNING, "Unable to rebind node %s since it deallocated before completing shutdown",
-         MakeComponentMoniker().c_str());
+    fdf_log::warn("Unable to rebind node {} since it deallocated before completing shutdown",
+                  MakeComponentMoniker());
     composite_rebind_completer_(zx::error(ZX_ERR_CANCELED));
   }
 }
@@ -456,15 +458,14 @@ void Node::OnBind() const {
     zx_status_t status = std::get<DriverComponent>(state_).component_instance.duplicate(
         ZX_RIGHT_SAME_RIGHTS, &node_token);
     if (status != ZX_OK) {
-      LOGF(ERROR, "Failed to send OnBind event: %s", zx_status_get_string(status));
+      fdf_log::error("Failed to send OnBind event: {}", zx_status_get_string(status));
       return;
     }
 
     fit::result result =
         fidl::SendEvent(*controller_ref_)->OnBind({{.node_token = std::move(node_token)}});
     if (result.is_error()) {
-      LOGF(ERROR, "Failed to send OnBind event: %s",
-           result.error_value().FormatDescription().c_str());
+      fdf_log::error("Failed to send OnBind event: {}", result.error_value().FormatDescription());
     }
   }
 }
@@ -472,16 +473,16 @@ void Node::OnBind() const {
 void Node::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_component_runner::ComponentController> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  LOGF(INFO, "Unknown ComponentController method request received: %lu", metadata.method_ordinal);
+  fdf_log::info("Unknown ComponentController method request received: {}", metadata.method_ordinal);
 }
 
 void Node::Stop(StopCompleter::Sync& completer) {
-  LOGF(DEBUG, "Calling Remove on %s because of Stop() from component framework.", name().c_str());
+  fdf_log::debug("Calling Remove on {} because of Stop() from component framework.", name());
   Remove(RemovalSet::kAll, nullptr);
 }
 
 void Node::Kill(KillCompleter::Sync& completer) {
-  LOGF(DEBUG, "Calling Remove on %s because of Kill() from component framework.", name().c_str());
+  fdf_log::debug("Calling Remove on {} because of Kill() from component framework.", name());
   Remove(RemovalSet::kAll, nullptr);
 }
 
@@ -489,9 +490,9 @@ void Node::CompleteBind(zx::result<> result) {
   ZX_ASSERT(!std::holds_alternative<OwnedByParent>(state_));
 
   if (result.is_error()) {
-    LOGF(WARNING, "Bind failed for node '%s'", MakeComponentMoniker().c_str());
+    fdf_log::warn("Bind failed for node '{}'", MakeComponentMoniker());
     if (GetNodeState() == NodeState::kRunning && !std::holds_alternative<Unbound>(state_)) {
-      LOGF(DEBUG, "Quarantining node '%s'", MakeComponentMoniker().c_str());
+      fdf_log::debug("Quarantining node '{}'", MakeComponentMoniker());
       QuarantineNode();
     } else {
       state_ = Unbound{};
@@ -520,7 +521,7 @@ void Node::AddToParents() {
       ptr->children_.push_back(this_node);
       continue;
     }
-    LOGF(WARNING, "Parent freed before child %s could be added to it", name().c_str());
+    fdf_log::warn("Parent freed before child {} could be added to it", name());
   }
 }
 
@@ -540,7 +541,7 @@ NodeShutdownCoordinator& Node::GetNodeShutdownCoordinator() {
 // composites, is parenting one composite node, and is not in a state for removal, then it should
 // attempt to bind to something else.
 void Node::RemoveChild(const std::shared_ptr<Node>& child) {
-  LOGF(DEBUG, "RemoveChild %s from parent %s", child->name().c_str(), name().c_str());
+  fdf_log::debug("RemoveChild {} from parent {}", child->name(), name());
   std::erase(children_, child);
   if (!unbinding_children_completers_.empty() && children_.empty()) {
     for (auto& completer : unbinding_children_completers_) {
@@ -556,20 +557,20 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
                 "FinishShutdown called in invalid node state: %s",
                 GetNodeShutdownCoordinator().NodeStateAsString());
   if (shutdown_intent() == ShutdownIntent::kRestart) {
-    LOGF(DEBUG, "Node: %s finishing restart", name().c_str());
+    fdf_log::debug("Node: {} finishing restart", name());
     shutdown_callback();
     FinishRestart();
     return;
   }
 
   if (shutdown_intent() == ShutdownIntent::kQuarantine) {
-    LOGF(DEBUG, "Node: %s finishing quarantine", name().c_str());
+    fdf_log::debug("Node: {} finishing quarantine", name());
     shutdown_callback();
     FinishQuarantine();
     return;
   }
 
-  LOGF(DEBUG, "Node: %s finishing shutdown", name().c_str());
+  fdf_log::debug("Node: {} finishing shutdown", name());
   CloseIfExists(controller_ref_);
   if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
     driver_component->node_ref_.Close(ZX_OK);
@@ -585,7 +586,7 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
       ptr->RemoveChild(this_node);
       continue;
     }
-    LOGF(WARNING, "Parent freed before child %s could be removed from it", name().c_str());
+    fdf_log::warn("Parent freed before child {} could be removed from it", name());
   }
   state_ = Unbound{};
 
@@ -633,7 +634,7 @@ void Node::FinishRestart() {
   zx::result start_result =
       node_manager_.value()->StartDriver(*this, previous_url, driver_package_type_);
   if (start_result.is_error()) {
-    LOGF(ERROR, "Failed to start driver '%s': %s", name().c_str(), start_result.status_string());
+    fdf_log::error("Failed to start driver '{}': {}", name(), start_result);
   }
 }
 
@@ -750,7 +751,7 @@ std::shared_ptr<BindResultTracker> Node::CreateBindResultTracker() {
 
           self->CompleteBind(zx::error(ZX_ERR_NOT_FOUND));
         } else if (info.size() > 1) {
-          LOGF(ERROR, "Unexpectedly bound multiple drivers to a single node");
+          fdf_log::error("Unexpectedly bound multiple drivers to a single node");
           self->CompleteBind(zx::error(ZX_ERR_BAD_STATE));
         }
       });
@@ -879,26 +880,25 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
     fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller,
     fidl::ServerEnd<fuchsia_driver_framework::Node> node) {
   if (!unbinding_children_completers_.empty()) {
-    LOGF(ERROR, "Failed to add node: Node is currently unbinding all of its children");
+    fdf_log::error("Failed to add node: Node is currently unbinding all of its children");
     return fit::as_error(fdf::NodeError::kUnbindChildrenInProgress);
   }
   if (node_manager_ == nullptr) {
-    LOGF(WARNING, "Failed to add Node, as this Node '%s' was removed", name().data());
+    fdf_log::warn("Failed to add Node, as this Node '{}' was removed", name());
     return fit::as_error(fdf::NodeError::kNodeRemoved);
   }
   if (GetNodeShutdownCoordinator().IsShuttingDown()) {
-    LOGF(WARNING, "Failed to add Node, as this Node '%s' is being removed", name().c_str());
+    fdf_log::warn("Failed to add Node, as this Node '{}' is being removed", name());
     return fit::as_error(fdf::NodeError::kNodeRemoved);
   }
   if (!args.name().has_value()) {
-    LOGF(ERROR, "Failed to add Node, a name must be provided");
+    fdf_log::error("Failed to add Node, a name must be provided");
     return fit::as_error(fdf::NodeError::kNameMissing);
   }
   std::string_view name = args.name().value();
   for (auto& child : children_) {
     if (child->name() == name) {
-      LOGF(ERROR, "Failed to add Node '%.*s', name already exists among siblings",
-           static_cast<int>(name.size()), name.data());
+      fdf_log::error("Failed to add Node '{}', name already exists among siblings", name);
       return fit::as_error(fdf::NodeError::kNameAlreadyExists);
     }
   };
@@ -916,19 +916,18 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
   const auto& arg_deprecated_properties = args.properties();
   if (arg_deprecated_properties.has_value()) {
     if (arg_properties.has_value()) {
-      LOGF(
-          ERROR,
-          "Failed to add Node '%.*s'. Found values for both properties and properties2 are set. Only one of the fields can be set.",
-          static_cast<int>(name.size()), name.data());
+      fdf_log::error(
+          "Failed to add Node '{}'. Found values for both properties and properties2 are set. Only one of the fields can be set.",
+          name);
       return fit::as_error(fdf::NodeError::kUnsupportedArgs);
     }
 
     properties.reserve(arg_deprecated_properties->size());
     for (auto& property : arg_deprecated_properties.value()) {
       if (property.key().Which() == fuchsia_driver_framework::NodePropertyKey::Tag::kIntValue) {
-        LOGF(ERROR,
-             "Failed to add Node '%.*s'. Found integer-based key %zu which is no longer supported.",
-             static_cast<int>(name.size()), name.data(), property.key().int_value().value());
+        fdf_log::error(
+            "Failed to add Node '{}'. Found integer-based key {} which is no longer supported.",
+            name, property.key().int_value().value());
         return fit::as_error(fdf::NodeError::kUnsupportedArgs);
       }
       properties.emplace_back(ToProperty2(property));
@@ -956,8 +955,8 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
         fit::result new_offer =
             ProcessNodeOfferWithTransportProperty(fdf_offer, source_collection, source_name);
         if (new_offer.is_error()) {
-          LOGF(ERROR, "Failed to add Node '%s': Bad add offer: %d",
-               child->MakeTopologicalPath().c_str(), new_offer.error_value());
+          fdf_log::error("Failed to add Node '{}': Bad add offer: {}", child->MakeTopologicalPath(),
+                         new_offer.error_value());
           return new_offer.take_error();
         }
         auto [processed_offer, property] = std::move(new_offer.value());
@@ -977,8 +976,7 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
   if (auto& symbols = args.symbols(); symbols.has_value()) {
     auto is_valid = ValidateSymbols(symbols.value());
     if (is_valid.is_error()) {
-      LOGF(ERROR, "Failed to add Node '%.*s', bad symbols", static_cast<int>(name.size()),
-           name.data());
+      fdf_log::error("Failed to add Node '{}', bad symbols", name);
       return fit::as_error(is_valid.error_value());
     }
 
@@ -1039,15 +1037,14 @@ void Node::WaitForChildToExit(std::string_view name,
       continue;
     }
     if (!child->GetNodeShutdownCoordinator().IsShuttingDown()) {
-      LOGF(ERROR, "Failed to add Node '%.*s', name already exists among siblings",
-           static_cast<int>(name.size()), name.data());
+      fdf_log::error("Failed to add Node '{}', name already exists among siblings", name);
       callback(fit::as_error(fdf::NodeError::kNameAlreadyExists));
       return;
     }
     if (child->remove_complete_callback_) {
-      LOGF(ERROR,
-           "Failed to add Node '%.*s': Node with name already exists and is marked to be replaced.",
-           static_cast<int>(name.size()), name.data());
+      fdf_log::error(
+          "Failed to add Node '{}': Node with name already exists and is marked to be replaced.",
+          name);
       callback(fit::as_error(fdf::NodeError::kNameAlreadyExists));
       return;
     }
@@ -1064,14 +1061,14 @@ void Node::AddChild(fuchsia_driver_framework::NodeAddArgs args,
                     fidl::ServerEnd<fuchsia_driver_framework::Node> node,
                     AddNodeResultCallback callback) {
   if (!args.name().has_value()) {
-    LOGF(ERROR, "Failed to add Node, a name must be provided");
+    fdf_log::error("Failed to add Node, a name must be provided");
     callback(fit::as_error(fdf::NodeError::kNameMissing));
     return;
   }
 
   // Verify the properties.
   if (args.properties().has_value() && args.properties2().has_value()) {
-    LOGF(ERROR, "Failed to add Node, both properties and properties2 fields were set");
+    fdf_log::error("Failed to add Node, both properties and properties2 fields were set");
     callback(fit::as_error(fdf::NodeError::kUnsupportedArgs));
     return;
   }
@@ -1081,8 +1078,8 @@ void Node::AddChild(fuchsia_driver_framework::NodeAddArgs args,
     std::unordered_set<std::string> property_keys;
     for (auto& property : args.properties2().value()) {
       if (property_keys.contains(property.key())) {
-        LOGF(ERROR,
-             "Failed to add Node since properties2 contain multiple properties with the same key");
+        fdf_log::error(
+            "Failed to add Node since properties2 contain multiple properties with the same key");
         callback(fit::as_error(fdf::NodeError::kDuplicatePropertyKeys));
         return;
       }
@@ -1113,7 +1110,7 @@ void Node::OnNodeServerUnbound(fidl::UnbindInfo info) {
   // If the driver fails to bind to the node, don't remove the node.
   if (auto* driver_component = std::get_if<DriverComponent>(&state_);
       driver_component && driver_component->state == DriverState::kBinding) {
-    LOGF(WARNING, "The driver for node %s failed to bind.", name().c_str());
+    fdf_log::warn("The driver for node {} failed to bind.", name());
     return;
   }
 
@@ -1121,20 +1118,20 @@ void Node::OnNodeServerUnbound(fidl::UnbindInfo info) {
     // If the node is running but this node closure has happened, then we want to restart
     // the node if it has the host_restart_on_crash_ enabled on it.
     if (host_restart_on_crash_) {
-      LOGF(INFO, "Restarting node %s due to node closure while running.", name().c_str());
+      fdf_log::info("Restarting node {} due to node closure while running.", name());
       RestartNode();
       return;
     }
 
-    LOGF(WARNING, "fdf::Node binding for node %s closed while the node was running: %s",
-         name().c_str(), info.FormatDescription().c_str());
+    fdf_log::warn("fdf::Node binding for node {} closed while the node was running: {}", name(),
+                  info.FormatDescription());
   }
 
   Remove(RemovalSet::kAll, nullptr);
 }
 
 void Node::Remove(RemoveCompleter::Sync& completer) {
-  LOGF(DEBUG, "Remove() Fidl call for %s", name().c_str());
+  fdf_log::debug("Remove() Fidl call for {}", name());
   Remove(RemovalSet::kAll, nullptr);
 }
 
@@ -1203,8 +1200,8 @@ void Node::handle_unknown_method(
       break;
   };
 
-  LOGF(WARNING, "fdf::NodeController received unknown %s method. Ordinal: %lu", method_type.c_str(),
-       metadata.method_ordinal);
+  fdf_log::warn("fdf::NodeController received unknown {} method. Ordinal: {}", method_type,
+                metadata.method_ordinal);
 }
 
 void Node::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
@@ -1232,8 +1229,8 @@ void Node::handle_unknown_method(
       break;
   };
 
-  LOGF(WARNING, "fdf::Node received unknown %s method. Ordinal: %lu", method_type.c_str(),
-       metadata.method_ordinal);
+  fdf_log::warn("fdf::Node received unknown {} method. Ordinal: {}", method_type,
+                metadata.method_ordinal);
 }
 
 void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_info,
@@ -1253,9 +1250,9 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
   state_ = Starting{.driver_url = std::string(url)};
 
   if (host_restart_on_crash && colocate) {
-    LOGF(ERROR,
-         "Failed to start driver '%.*s'. Both host_restart_on_crash and colocate cannot be true.",
-         static_cast<int>(url.size()), url.data());
+    fdf_log::error(
+        "Failed to start driver '{}'. Both host_restart_on_crash and colocate cannot be true.",
+        url);
     cb(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
@@ -1263,10 +1260,10 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
   host_restart_on_crash_ = host_restart_on_crash;
 
   if (colocate && !driver_host_) {
-    LOGF(ERROR,
-         "Failed to start driver '%.*s', driver is colocated but does not have a prent with a "
-         "driver host",
-         static_cast<int>(url.size()), url.data());
+    fdf_log::error(
+        "Failed to start driver '{}', driver is colocated but does not have a prent with a "
+        "driver host",
+        url);
     cb(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
@@ -1289,10 +1286,10 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
     // host. Otherwise for colocated drivers, we need to match what has been set for the driver
     // host.
     if (use_dynamic_linker != driver_host()->IsDynamicLinkingEnabled()) {
-      LOGF(ERROR,
-           "Failed to start driver '%.*s', driver is colocated and set use_dynamic_linker=%s "
-           "but its driver host is not configured for this",
-           static_cast<int>(url.size()), url.data(), use_dynamic_linker ? "true" : "false");
+      fdf_log::error(
+          "Failed to start driver '{}', driver is colocated and set use_dynamic_linker={} "
+          "but its driver host is not configured for this",
+          url, use_dynamic_linker ? "true" : "false");
       cb(zx::error(ZX_ERR_INVALID_ARGS));
       return;
     }
@@ -1322,7 +1319,7 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
                                               zx::result<DriverHost*> driver_host) mutable {
             auto node_ptr = weak_self.lock();
             if (!node_ptr) {
-              LOGF(WARNING, "Node '%s' freed before it is used", name.c_str());
+              fdf_log::warn("Node '{}' freed before it is used", name);
               cb(zx::error(ZX_ERR_BAD_STATE));
               return;
             }
@@ -1354,7 +1351,7 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
   // Bind the Node associated with the driver.
   auto [client_end, server_end] = fidl::Endpoints<fdf::Node>::Create();
 
-  LOGF(INFO, "Binding %.*s to %s", static_cast<int>(url.size()), url.data(), name().c_str());
+  fdf_log::info("Binding {} to {}", url, name());
   // Start the driver within the driver host.
   auto driver_endpoints = fidl::Endpoints<fuchsia_driver_host::Driver>::Create();
 
@@ -1362,7 +1359,7 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
   if (start_info.has_component_instance()) {
     node_token = std::move(start_info.component_instance());
   } else {
-    LOGF(WARNING, "Component instance not provided in start request");
+    fdf_log::warn("Component instance not provided in start request");
     ZX_ASSERT(zx::event::create(0, &node_token) == ZX_OK);
   }
 
@@ -1378,14 +1375,14 @@ void Node::StartDriver(fuchsia_component_runner::wire::ComponentStartInfo start_
                                cb = std::move(cb)](zx::result<> result) mutable {
                                 auto node_ptr = weak_self.lock();
                                 if (!node_ptr) {
-                                  LOGF(WARNING, "Node '%s' freed before it is used", name.c_str());
+                                  fdf_log::warn("Node '{}' freed before it is used", name);
                                   cb(result);
                                   return;
                                 }
 
                                 if (result.is_error()) {
-                                  LOGF(WARNING, "Failed to start driver host for %s",
-                                       node_ptr->MakeComponentMoniker().c_str());
+                                  fdf_log::warn("Failed to start driver host for {}",
+                                                node_ptr->MakeComponentMoniker());
                                 }
                                 cb(result);
 
@@ -1456,8 +1453,8 @@ void Node::StopDriver() {
   auto& driver_component = std::get<DriverComponent>(state_);
 
   if (driver_component.state == DriverState::kBinding) {
-    LOGF(WARNING, "Stopping driver '%s' for node '%s' while bind is in process",
-         driver_component.driver_url.c_str(), MakeComponentMoniker().c_str());
+    fdf_log::warn("Stopping driver '{}' for node '{}' while bind is in process",
+                  driver_component.driver_url, MakeComponentMoniker());
     return;
   }
 
@@ -1466,8 +1463,7 @@ void Node::StopDriver() {
     return;  // We'll now wait for the channel to close
   }
 
-  LOGF(ERROR, "Node: %s failed to stop driver: %s", name().c_str(),
-       result.FormatDescription().data());
+  fdf_log::error("Node: {} failed to stop driver: {}", name(), result.FormatDescription());
   // Continue to clear out the driver, since we can't talk to it.
   ClearHostDriver();
 }
@@ -1493,17 +1489,16 @@ void Node::StopDriverComponent() {
       *this_node,
       [self = this_node](fidl::WireUnownedResult<fcomponent::Realm::DestroyChild>& result) {
         if (!result.ok()) {
-          auto error = result.error().FormatDescription();
-          LOGF(ERROR, "Node: %s: Failed to send request to destroy component: %.*s",
-               self->name_.c_str(), static_cast<int>(error.size()), error.data());
+          fdf_log::error("Node: {}: Failed to send request to destroy component: {}", self->name_,
+                         result.error());
         }
         if (result->is_error() &&
             result->error_value() != fcomponent::wire::Error::kInstanceNotFound) {
-          LOGF(ERROR, "Node: %.*s: Failed to destroy driver component: %u",
-               static_cast<int>(self->name_.size()), self->name_.data(), result->error_value());
+          fdf_log::error("Node: {}: Failed to destroy driver component: {}", self->name_,
+                         result->error_value());
         }
 
-        LOGF(DEBUG, "Destroyed driver component for %s", self->MakeComponentMoniker().c_str());
+        fdf_log::debug("Destroyed driver component for {}", self->MakeComponentMoniker());
         if (auto* driver_component = std::get_if<DriverComponent>(&self->state_);
             driver_component) {
           driver_component->state = DriverState::kStopped;
@@ -1520,18 +1515,17 @@ void Node::on_fidl_error(fidl::UnbindInfo info) {
   // TODO(b/322235974): Increase the log severity to ERROR once we resolve the component shutdown
   // order in DriverTestRealm.
   if (info.reason() != fidl::Reason::kPeerClosedWhileReading || info.status() != ZX_OK) {
-    LOGF(WARNING, "Node: %s: driver channel shutdown with: %s", name().c_str(),
-         info.FormatDescription().data());
+    fdf_log::warn("Node: {}: driver channel shutdown with: {}", name(), info.FormatDescription());
   }
 
   if (GetNodeState() == NodeState::kWaitingOnDriver) {
-    LOGF(DEBUG, "Node: %s: realm channel had expected shutdown.", MakeComponentMoniker().c_str());
+    fdf_log::debug("Node: {}: realm channel had expected shutdown.", MakeComponentMoniker());
     GetNodeShutdownCoordinator().CheckNodeState();
     return;
   }
 
   if (GetNodeState() == NodeState::kWaitingOnDriverComponent) {
-    LOGF(DEBUG, "Node: %s: driver channel had expected shutdown.", name().c_str());
+    fdf_log::debug("Node: {}: driver channel had expected shutdown.", name());
     if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
       driver_component->state = DriverState::kStopped;
     }
@@ -1540,19 +1534,18 @@ void Node::on_fidl_error(fidl::UnbindInfo info) {
   }
 
   if (host_restart_on_crash_) {
-    LOGF(WARNING, "Restarting node %s because of unexpected driver channel shutdown.",
-         name().c_str());
+    fdf_log::warn("Restarting node {} because of unexpected driver channel shutdown.", name());
     RestartNode();
     return;
   }
 
   // If the driver fails to bind to the node, don't remove the node.
   if (IsPendingBind()) {
-    LOGF(DEBUG, "Node: %s: driver channel closed during binding.", MakeComponentMoniker().c_str());
+    fdf_log::debug("Node: {}: driver channel closed during binding.", MakeComponentMoniker());
     return;
   }
 
-  LOGF(WARNING, "Removing node %s because of unexpected driver channel shutdown.", name().c_str());
+  fdf_log::warn("Removing node {} because of unexpected driver channel shutdown.", name());
   Remove(RemovalSet::kAll, nullptr);
 }
 
@@ -1587,8 +1580,8 @@ Node::DriverComponent::DriverComponent(
           node.dispatcher_, std::move(controller), &node,
           [](Node* node, fidl::UnbindInfo info) {
             if (!info.is_user_initiated()) {
-              LOGF(WARNING, "Removing node %s because of ComponentController binding closed: %s",
-                   node->name().c_str(), info.FormatDescription().c_str());
+              fdf_log::warn("Removing node {} because of ComponentController binding closed: {}",
+                            node->name(), info.FormatDescription());
               node->Remove(RemovalSet::kAll, nullptr);
             }
           }),
@@ -1607,7 +1600,7 @@ void Node::ConnectToDeviceFidl(ConnectToDeviceFidlRequestView request,
                                ConnectToDeviceFidlCompleter::Sync& completer) {
   zx_status_t status = ConnectDeviceInterface(std::move(request->server));
   if (status != ZX_OK) {
-    LOGF(ERROR, "%s: Failed to connect to device fidl: ", zx_status_get_string(status));
+    fdf_log::error("{}: Failed to connect to device fidl: ", zx_status_get_string(status));
   }
 }
 
@@ -1695,7 +1688,7 @@ Devnode::Target Node::CreateDevfsPassthrough(
       [node = weak_from_this(), node_name = name_](zx::channel server_end) {
         std::shared_ptr locked_node = node.lock();
         if (!locked_node) {
-          LOGF(ERROR, "Node was freed before it was used for %s.", node_name.c_str());
+          fdf_log::error("Node was freed before it was used for {}.", node_name);
           return ZX_ERR_BAD_STATE;
         }
         return locked_node->ConnectDeviceInterface(std::move(server_end));
@@ -1703,15 +1696,15 @@ Devnode::Target Node::CreateDevfsPassthrough(
       [node = weak_from_this(), allow_controller_connection,
        node_name = name_](fidl::ServerEnd<fuchsia_device::Controller> server_end) {
         if (!allow_controller_connection) {
-          LOGF(WARNING,
-               "Connection to %s controller interface failed, as that node did not"
-               " include controller support in its DevAddArgs",
-               node_name.c_str());
+          fdf_log::warn(
+              "Connection to {} controller interface failed, as that node did not"
+              " include controller support in its DevAddArgs",
+              node_name);
           return ZX_ERR_PROTOCOL_NOT_SUPPORTED;
         }
         std::shared_ptr locked_node = node.lock();
         if (!locked_node) {
-          LOGF(ERROR, "Node was freed before it was used for %s.", node_name.c_str());
+          fdf_log::error("Node was freed before it was used for {}.", node_name);
           return ZX_ERR_BAD_STATE;
         }
         return locked_node->controller_allowlist_passthrough_->Connect(std::move(server_end));
