@@ -4,11 +4,14 @@
 
 use anyhow::Context;
 use fidl_fuchsia_memory_heapdump_client::{self as fheapdump_client, CollectorError};
-use futures::lock::Mutex;
+use fuchsia_inspect::ArrayProperty;
+use fuchsia_sync::Mutex as SyncMutex;
 use futures::StreamExt;
+use futures::lock::Mutex as AsyncMutex;
 use log::{info, warn};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
+
 use zx::Koid;
 use {fidl_fuchsia_memory_heapdump_process as fheapdump_process, fuchsia_async as fasync};
 
@@ -19,22 +22,41 @@ use crate::snapshot_storage::SnapshotStorage;
 /// The "root" data structure, containing the state of the collector process.
 pub struct Registry {
     // Registered live processes.
-    processes: Mutex<HashMap<Koid, Arc<dyn Process>>>,
+    processes: SyncMutex<HashMap<Koid, Arc<dyn Process>>>,
 
     // Stored snapshots.
-    snapshot_storage: Arc<Mutex<SnapshotStorage>>,
+    snapshot_storage: Arc<AsyncMutex<SnapshotStorage>>,
 }
 
 impl Registry {
     pub fn new() -> Registry {
         Registry {
-            processes: Mutex::new(HashMap::new()),
-            snapshot_storage: Arc::new(Mutex::new(SnapshotStorage::new())),
+            processes: SyncMutex::new(HashMap::new()),
+            snapshot_storage: Arc::new(AsyncMutex::new(SnapshotStorage::new())),
         }
     }
 
-    async fn find_process_by_name(&self, name: &str) -> Result<Arc<dyn Process>, CollectorError> {
-        let processes = self.processes.lock().await;
+    pub fn register_inspect(self: &Arc<Self>, root: &fuchsia_inspect::Node) {
+        let this = self.clone();
+
+        root.record_lazy_child("processes", move || {
+            let processes = this.list_processes();
+            let inspector = fuchsia_inspect::Inspector::default();
+            let root = inspector.root();
+            let names = root.create_string_array("names", processes.len());
+            let koids = root.create_uint_array("koids", processes.len());
+            for (i, (koid, name)) in processes.iter().enumerate() {
+                names.set(i, name);
+                koids.set(i, koid.raw_koid());
+            }
+            root.record(names);
+            root.record(koids);
+            Box::pin(async move { Ok(inspector) })
+        });
+    }
+
+    fn find_process_by_name(&self, name: &str) -> Result<Arc<dyn Process>, CollectorError> {
+        let processes = self.processes.lock();
         let mut iterator = processes.values().filter(|p| p.get_name() == name);
         match (iterator.next(), iterator.next()) {
             (Some(process), None) => Ok(process.clone()),
@@ -43,8 +65,8 @@ impl Registry {
         }
     }
 
-    async fn find_process_by_koid(&self, koid: &Koid) -> Result<Arc<dyn Process>, CollectorError> {
-        let result = self.processes.lock().await.get(koid).cloned();
+    fn find_process_by_koid(&self, koid: &Koid) -> Result<Arc<dyn Process>, CollectorError> {
+        let result = self.processes.lock().get(koid).cloned();
         result.ok_or(CollectorError::ProcessSelectorNoMatch)
     }
 
@@ -84,10 +106,10 @@ impl Registry {
 
                     let process = match process_selector {
                         Some(fheapdump_client::ProcessSelector::ByName(name)) => {
-                            self.find_process_by_name(&name).await
+                            self.find_process_by_name(&name)
                         }
                         Some(fheapdump_client::ProcessSelector::ByKoid(koid)) => {
-                            self.find_process_by_koid(&Koid::from_raw(koid)).await
+                            self.find_process_by_koid(&Koid::from_raw(koid))
                         }
                         Some(process_selector @ fheapdump_client::ProcessSelectorUnknown!()) => {
                             warn!(ordinal = process_selector.ordinal(); "Unknown process selector");
@@ -106,7 +128,7 @@ impl Registry {
                                     return snapshot
                                         .write_to(receiver)
                                         .await
-                                        .context("streaming snapshot")
+                                        .context("streaming snapshot");
                                 }
                                 Err(error) => {
                                     warn!(error:?; "Error while taking live snapshot");
@@ -228,7 +250,7 @@ impl Registry {
     async fn serve_process(&self, process: Arc<dyn Process>) -> Result<(), anyhow::Error> {
         let process_koid = process.get_koid();
         info!(koid = process_koid.raw_koid(), name = process.get_name(); "Process connected");
-        match self.processes.lock().await.entry(process_koid) {
+        match self.processes.lock().entry(process_koid) {
             Entry::Vacant(vacant_entry) => vacant_entry.insert(Arc::clone(&process)),
             Entry::Occupied(_) => {
                 // This should not happen if the processes are well-behaved.
@@ -239,25 +261,23 @@ impl Registry {
         let status = process.serve_until_exit().await;
 
         info!(koid = process_koid.raw_koid(), name = process.get_name(); "Process disconnected");
-        self.processes.lock().await.remove(&process_koid).expect("Koid should still be present");
+        self.processes.lock().remove(&process_koid).expect("Koid should still be present");
 
         // Propagate error only after removing the entry from `processes`.
         status
     }
 
-    #[cfg(test)]
-    pub async fn list_processes(&self) -> Vec<(Koid, String)> {
+    pub fn list_processes(&self) -> Vec<(Koid, String)> {
         self.processes
             .lock()
-            .await
             .iter()
             .map(|(koid, process)| (*koid, process.get_name().to_string()))
             .collect()
     }
 
     #[cfg(test)]
-    pub async fn get_process(&self, koid: &Koid) -> Option<Arc<dyn Process>> {
-        self.processes.lock().await.get(koid).cloned()
+    pub fn get_process(&self, koid: &Koid) -> Option<Arc<dyn Process>> {
+        self.processes.lock().get(koid).cloned()
     }
 
     #[cfg(test)]
@@ -283,7 +303,7 @@ mod tests {
     use fidl::endpoints::{create_proxy, create_proxy_and_stream, create_request_stream};
     use futures::channel::oneshot;
     use futures::pin_mut;
-    use itertools::{assert_equal, Itertools};
+    use itertools::{Itertools, assert_equal};
     use test_case::test_case;
     use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
 
@@ -320,7 +340,7 @@ mod tests {
     struct FakeProcess {
         name: String,
         koid: Koid,
-        exit_signal: Mutex<Option<oneshot::Receiver<Result<(), anyhow::Error>>>>,
+        exit_signal: SyncMutex<Option<oneshot::Receiver<Result<(), anyhow::Error>>>>,
         live_snapshot_succeeds: bool,
     }
 
@@ -335,7 +355,7 @@ mod tests {
             let fake_process = FakeProcess {
                 name: name.to_string(),
                 koid,
-                exit_signal: Mutex::new(Some(receiver)),
+                exit_signal: SyncMutex::new(Some(receiver)),
                 live_snapshot_succeeds,
             };
             (Arc::new(fake_process), sender)
@@ -353,7 +373,7 @@ mod tests {
         }
 
         async fn serve_until_exit(&self) -> Result<(), anyhow::Error> {
-            let exit_signal = self.exit_signal.lock().await.take().unwrap();
+            let exit_signal = self.exit_signal.lock().take().unwrap();
             exit_signal.await?
         }
 
@@ -488,14 +508,14 @@ mod tests {
         assert!(ex.run_until_stalled(&mut serve_fut).is_pending());
 
         // Verify that the registry now contains the process.
-        assert_eq!(ex.run_singlethreaded(registry.list_processes()), [(koid, name.to_string())]);
+        assert_eq!(registry.list_processes(), [(koid, name.to_string())]);
 
         // Simulate process exit.
         signal.send(exit_result).unwrap();
         assert!(ex.run_until_stalled(&mut serve_fut).is_ready());
 
         // Verify that the registry no longer contains the process.
-        assert_eq!(ex.run_singlethreaded(registry.list_processes()), []);
+        assert_eq!(registry.list_processes(), []);
     }
 
     #[test]
@@ -516,7 +536,7 @@ mod tests {
         assert!(ex.run_until_stalled(&mut serve1_fut).is_pending());
 
         // Verify that the registry now contains the process.
-        assert_eq!(ex.run_singlethreaded(registry.list_processes()), [(koid, name1.to_string())]);
+        assert_eq!(registry.list_processes(), [(koid, name1.to_string())]);
 
         // Verify that the second process cannot be registered:
         // - serve_process should exit immediately
@@ -524,7 +544,7 @@ mod tests {
         let serve2_fut = registry.serve_process(process2);
         pin_mut!(serve2_fut);
         assert!(ex.run_until_stalled(&mut serve2_fut).is_ready());
-        assert_eq!(ex.run_singlethreaded(registry.list_processes()), [(koid, name1.to_string())]);
+        assert_eq!(registry.list_processes(), [(koid, name1.to_string())]);
 
         // Verify that the first process stayed registered as if nothing happened.
         assert!(ex.run_until_stalled(&mut serve1_fut).is_pending());

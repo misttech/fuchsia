@@ -4,8 +4,8 @@
 
 use async_trait::async_trait;
 use fidl::endpoints::ServerEnd;
-use futures::lock::Mutex;
 use futures::StreamExt;
+use futures::lock::Mutex;
 use heapdump_vmo::allocations_table_v1::AllocationsTableReader;
 use heapdump_vmo::resources_table_v1::ResourcesTableReader;
 use heapdump_vmo::stack_trace_compression;
@@ -282,7 +282,7 @@ mod tests {
     use futures::pin_mut;
     use heapdump_vmo::allocations_table_v1::AllocationsTableWriter;
     use heapdump_vmo::resources_table_v1::ResourcesTableWriter;
-    use itertools::{assert_equal, Itertools};
+    use itertools::{Itertools, assert_equal};
     use std::pin::Pin;
     use test_case::test_case;
     use zx::HandleBased;
@@ -393,14 +393,14 @@ mod tests {
         assert!(ex.run_until_stalled(&mut serve_fut).is_pending());
 
         // Verify that the registry now contains the process.
-        assert_eq!(ex.run_singlethreaded(registry.list_processes()), [(koid, name)]);
+        assert_eq!(registry.list_processes(), [(koid, name)]);
 
         // Simulate process exit by dropping the snapshot sink channel.
         std::mem::drop(snapshot_sink_fn);
         assert!(ex.run_until_stalled(&mut serve_fut).is_ready());
 
         // Verify that the registry no longer contains the process.
-        assert_eq!(ex.run_singlethreaded(registry.list_processes()), []);
+        assert_eq!(registry.list_processes(), []);
     }
 
     const FAKE_THREAD_KOID: u64 = 1234;
@@ -468,7 +468,7 @@ mod tests {
             let receive_worker =
                 fasync::Task::local(heapdump_snapshot::Snapshot::receive_from(receiver_stream));
 
-            let process = registry.get_process(&koid).await.unwrap();
+            let process = registry.get_process(&koid).unwrap();
             let snapshot = process.take_live_snapshot(with_contents).unwrap();
             snapshot.write_to(receiver_proxy).await.expect("failed to write snapshot");
 
