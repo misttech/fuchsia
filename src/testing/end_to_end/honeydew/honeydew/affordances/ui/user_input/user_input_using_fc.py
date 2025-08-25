@@ -44,6 +44,7 @@ class TouchDevice(user_input.TouchDevice):
         self,
         device_name: str,
         fuchsia_controller: fc_transport.FuchsiaController,
+        touch_screen_size: ui_custom_types.Size,
     ) -> None:
         self._device_name = device_name
         channel_server, channel_client = fcp.Channel.create()
@@ -57,6 +58,10 @@ class TouchDevice(user_input.TouchDevice):
             asyncio.run(
                 input_registry_proxy.register_touch_screen(
                     device=channel_server.take(),
+                    coordinate_unit=f_test_input.CoordinateUnit.PHYSICAL_PIXELS,
+                    display_dimensions=f_test_input.DisplayDimensions(
+                        0, 0, touch_screen_size.width, touch_screen_size.height
+                    ),
                 )
             )
         except fcp.ZxStatus as status:
@@ -258,7 +263,9 @@ class UserInputUsingFc(user_input.UserInput):
             UserInputError: if failed to create virtual touch device.
         """
         return TouchDevice(
-            device_name=self._device_name, fuchsia_controller=self._fc_transport
+            device_name=self._device_name,
+            fuchsia_controller=self._fc_transport,
+            touch_screen_size=touch_screen_size,
         )
 
     def create_keyboard_device(self) -> user_input.KeyboardDevice:
