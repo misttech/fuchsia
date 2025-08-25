@@ -5,6 +5,8 @@
 #ifndef SRC_STORAGE_BLOBFS_TEST_INTEGRATION_BLOBFS_FIXTURES_H_
 #define SRC_STORAGE_BLOBFS_TEST_INTEGRATION_BLOBFS_FIXTURES_H_
 
+#include "lib/fdio/directory.h"
+#include "lib/fdio/fd.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/fs_test/fs_test_fixture.h"
@@ -22,8 +24,29 @@ class BaseBlobfsTest : public fs_test::BaseFilesystemTest {
     return root_fd_.get();
   }
 
+  zx::result<int> exec_root_fd() {
+    if (!exec_root_fd_) {
+      auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+      fuchsia_io::wire::Flags flags = fuchsia_io::wire::kPermReadable |
+                                      fuchsia_io::wire::Flags::kPermInheritWrite |
+                                      fuchsia_io::wire::Flags::kPermInheritExecute;
+      const fidl::Status result = fidl::WireCall(fs().ServiceDirectory())
+                                      ->Open("blob-exec", flags, {}, server.TakeChannel());
+      if (!result.ok()) {
+        return zx::error(result.status());
+      }
+      if (zx_status_t status =
+              fdio_fd_create(client.TakeChannel().release(), exec_root_fd_.reset_and_get_address());
+          status != ZX_OK) {
+        return zx::error(status);
+      }
+    }
+    return zx::ok(exec_root_fd_.get());
+  }
+
  private:
   fbl::unique_fd root_fd_;
+  fbl::unique_fd exec_root_fd_;
 };
 
 // A test fixture for running tests with different blobfs settings.
