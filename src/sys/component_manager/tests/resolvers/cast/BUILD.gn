@@ -7,7 +7,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("cast_resolver_bin") {
   name = "cast_resolver"
-  edition = "2021"
+  edition = "2024"
   source_root = "integration_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",

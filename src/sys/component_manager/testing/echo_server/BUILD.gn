@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("echo_server_testing") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//examples/components/routing/fidl:echo_rust",
     "//src/lib/fuchsia",

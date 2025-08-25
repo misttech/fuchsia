@@ -12,7 +12,7 @@ import("//build/sdk/sdk_host_tool.gni")
 rustc_library("cmc_lib") {
   name = "cmc"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   # We want to limit using cmc as a library to
   # just the ffx orchestration commands, the `do` tool.
@@ -58,7 +58,7 @@ rustc_library("cmc_lib") {
 rustc_binary("cmc") {
   name = "cmc"
   with_unit_tests = false
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":cmc_lib",
@@ -79,7 +79,7 @@ if (is_host) {
 
 rustc_test("cmc_integration_test_bin") {
   name = "cmc_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "tests/integration_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",

@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("without_log_bin") {
   testonly = true
   name = "without_log"
-  edition = "2021"
+  edition = "2024"
 
   source_root = "src/without_log.rs"
 
@@ -27,7 +27,7 @@ fuchsia_component("without_log") {
 rustc_binary("with_log_bin") {
   testonly = true
   name = "with_log"
-  edition = "2021"
+  edition = "2024"
 
   source_root = "src/with_log.rs"
 

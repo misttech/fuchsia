@@ -8,7 +8,7 @@ import("//build/host.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("sc_client_integration_support") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "support/lib.rs"
   sources = [ "support/lib.rs" ]

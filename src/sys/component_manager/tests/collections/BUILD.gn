@@ -10,7 +10,7 @@ import("//build/rust/rustc_test.gni")
 # https://fuchsia.dev/fuchsia-src/development/testing/ctf/contributing_tests.
 rustc_test("collections_integration_test_bin") {
   name = "collections_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "integration_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -32,7 +32,7 @@ rustc_test("collections_integration_test_bin") {
 rustc_binary("write_startup_socket_bin") {
   testonly = true
   name = "write_startup_socket"
-  edition = "2021"
+  edition = "2024"
   source_root = "write_startup_socket.rs"
   deps = [
     "//sdk/rust/zx",

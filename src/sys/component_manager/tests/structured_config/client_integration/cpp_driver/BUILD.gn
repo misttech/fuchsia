@@ -58,7 +58,7 @@ fuchsia_structured_config_values("values") {
 }
 
 rustc_binary("shim_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   output_name = "structured_config_cpp_driver_shim"
   source_root = "shim.rs"
@@ -86,7 +86,7 @@ fuchsia_component("shim_component") {
 }
 
 rustc_test("cpp_driver_sc_client_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "test.rs"
   sources = [ "test.rs" ]
   deps = [

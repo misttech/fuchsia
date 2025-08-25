@@ -7,7 +7,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("directory_routing_bin") {
   name = "directory_routing"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/main.rs"
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

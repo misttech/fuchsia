@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 
 rustc_library("errors") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",

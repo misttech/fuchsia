@@ -15,7 +15,7 @@ group("tests") {
 
 rustc_test("ota_health_verification_test_bin") {
   name = "ota_health_verification_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "integration_test.rs"
   deps = [
     "//sdk/rust/zx",

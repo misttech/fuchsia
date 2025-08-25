@@ -8,8 +8,8 @@ pub mod manager;
 use crate::bedrock::program::{StopConclusion, StopDisposition};
 use crate::framework::controller;
 use crate::model::actions::{
-    start, ActionsManager, DestroyAction, ResolveAction, ShutdownAction, ShutdownType, StartAction,
-    UnresolveAction,
+    ActionsManager, DestroyAction, ResolveAction, ShutdownAction, ShutdownType, StartAction,
+    UnresolveAction, start,
 };
 use crate::model::context::ModelContext;
 use crate::model::environment::Environment;
@@ -43,8 +43,8 @@ use errors::{
     OpenOutgoingDirError, ResolveActionError, StartActionError, StopActionError,
     StructuredConfigError,
 };
-use fidl::endpoints::{create_proxy, Proxy};
-use futures::future::{join_all, BoxFuture};
+use fidl::endpoints::{Proxy, create_proxy};
+use futures::future::{BoxFuture, join_all};
 use futures::lock::{MappedMutexGuard, Mutex, MutexGuard};
 use hooks::{Event, EventPayload, Hooks};
 use instance::{
@@ -772,7 +772,7 @@ impl ComponentInstance {
                     .uses
                     .iter()
                     .filter_map(|use_| match use_ {
-                        UseDecl::Storage(ref storage_use) => Some(storage_use.clone()),
+                        UseDecl::Storage(storage_use) => Some(storage_use.clone()),
                         _ => None,
                     })
                     .collect::<Vec<_>>()
@@ -814,7 +814,10 @@ impl ComponentInstance {
                     ))
                 }
                 InstanceState::Started(_, _) => {
-                    error!("component {} was started while it was stopping or shutting down, this should be impossible", &self.moniker);
+                    error!(
+                        "component {} was started while it was stopping or shutting down, this should be impossible",
+                        &self.moniker
+                    );
                     return Err(StopActionError::ComponentStartedDuringShutdown);
                 }
                 InstanceState::Shutdown(_, _) | InstanceState::Destroyed => None,
@@ -878,8 +881,13 @@ impl ComponentInstance {
         let routed_storage = {
             let mut state = self.lock_state().await;
             match *state {
-                InstanceState::Shutdown(ref mut s, _) => s.routed_storage.drain(..).collect::<Vec<_>>(),
-                _ => panic!("cannot destroy component instance {} because it is not shutdown, it is in state {:?}", self.moniker, *state),
+                InstanceState::Shutdown(ref mut s, _) => {
+                    s.routed_storage.drain(..).collect::<Vec<_>>()
+                }
+                _ => panic!(
+                    "cannot destroy component instance {} because it is not shutdown, it is in state {:?}",
+                    self.moniker, *state
+                ),
             }
         };
         for storage in routed_storage {
@@ -1285,11 +1293,7 @@ impl ComponentInstance {
             cur = next
         }
         // Found the moniker, the last child in the chain of resolved parents. Is it resolved?
-        if cur.lock_state().await.get_resolved_state().is_some() {
-            Some(cur.clone())
-        } else {
-            None
-        }
+        if cur.lock_state().await.get_resolved_state().is_some() { Some(cur.clone()) } else { None }
     }
 
     /// Starts the component instance in the given component if it's not already running.
@@ -1544,14 +1548,14 @@ pub mod testing {
 #[cfg(all(test, not(feature = "src_model_tests")))]
 pub mod tests {
     use super::*;
-    use crate::model::actions::test_utils::is_discovered;
     use crate::model::actions::StopAction;
+    use crate::model::actions::test_utils::is_discovered;
     use crate::model::testing::mocks::ControllerActionResponse;
     use crate::model::testing::out_dir::OutDir;
     use crate::model::testing::routing_test_helpers::{RoutingTest, RoutingTestBuilder};
     use crate::model::testing::test_helpers::{
-        assert_event_type_and_moniker, component_decl_with_test_runner, get_n_events, ActionsTest,
-        ComponentInfo,
+        ActionsTest, ComponentInfo, assert_event_type_and_moniker, component_decl_with_test_runner,
+        get_n_events,
     };
     use ::routing::bedrock::structured_dict::ComponentInput;
     use assert_matches::assert_matches;
@@ -1571,9 +1575,9 @@ pub mod tests {
     use routing_test_helpers::component_id_index::make_index_file;
     use std::panic;
     use std::task::Poll;
+    use vfs::ToObjectRequest;
     use vfs::path::Path as VfsPath;
     use vfs::service::host;
-    use vfs::ToObjectRequest;
     use zx::{self as zx, AsHandleRef};
     use {fidl_fuchsia_logger as flogger, fuchsia_async as fasync};
 

@@ -14,9 +14,9 @@ use log::warn;
 use routing::error::RoutingError;
 use sandbox::{Connector, Request, Routable};
 use std::sync::{Arc, Mutex};
+use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
-use vfs::ToObjectRequest;
 use {
     fidl_fuchsia_hardware_power_statecontrol as fstatecontrol, fidl_fuchsia_io as fio,
     fuchsia_async as fasync,
@@ -84,7 +84,7 @@ impl ComponentManagerInstance {
     pub fn get_root_exposed_capability_router(
         &self,
         source_name: cm_types::Name,
-    ) -> impl Routable<Connector> {
+    ) -> impl Routable<Connector> + use<> {
         struct RootCapabilityRouter {
             root: Arc<ComponentInstance>,
             source_name: cm_types::Name,
@@ -153,7 +153,9 @@ impl ComponentManagerInstance {
             }
             .await;
             if let Err(RebootError::AdminError(zx::Status::ALREADY_EXISTS)) = res {
-                warn!("Reboot in progress but trigger_reboot is called again. Something else is going on.");
+                warn!(
+                    "Reboot in progress but trigger_reboot is called again. Something else is going on."
+                );
                 return;
             }
             if let Err(e) = res {

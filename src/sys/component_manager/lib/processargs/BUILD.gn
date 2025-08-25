@@ -13,7 +13,7 @@ group("tests") {
 }
 
 rustc_library("processargs") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

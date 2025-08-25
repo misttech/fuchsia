@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_test("introspector_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "src/main.rs"
   sources = [ "src/main.rs" ]
@@ -31,7 +31,7 @@ rustc_test("introspector_integration_test_bin") {
 }
 
 rustc_binary("proxy_outgoing_to_incoming") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "src/proxy_outgoing_to_incoming.rs"
   sources = [ "src/proxy_outgoing_to_incoming.rs" ]
@@ -104,7 +104,7 @@ fuchsia_unittest_package("introspector-integration-test") {
 }
 
 rustc_test("use_introspector_disallowed_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "src/use_introspector_disallowed_test.rs"
   sources = [ "src/use_introspector_disallowed_test.rs" ]

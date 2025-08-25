@@ -167,7 +167,7 @@ fidl("test.checker") {
 }
 
 rustc_binary("root_component_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "root_component"
   source_root = "src/root_component.rs"

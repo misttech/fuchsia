@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("storage_integration_test_bin") {
   name = "storage_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "integration_test.rs"
   deps = [
     "//src/lib/fuchsia-async",
@@ -21,7 +21,7 @@ rustc_test("storage_integration_test_bin") {
 
 rustc_test("storage_admin_integration_test_bin") {
   name = "storage_admin_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "admin_integration_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -42,7 +42,7 @@ rustc_test("storage_admin_integration_test_bin") {
 
 rustc_binary("storage_realm_admin_bin") {
   name = "storage_realm_admin"
-  edition = "2021"
+  edition = "2024"
   source_root = "storage_realm_admin.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -61,7 +61,7 @@ rustc_binary("storage_realm_admin_bin") {
 
 rustc_binary("storage_realm_coll_bin") {
   name = "storage_realm_coll"
-  edition = "2021"
+  edition = "2024"
   source_root = "storage_realm_coll.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -81,7 +81,7 @@ rustc_binary("storage_realm_coll_bin") {
 
 rustc_binary("storage_realm_coll_invalid_route_bin") {
   name = "storage_realm_coll_invalid_route"
-  edition = "2021"
+  edition = "2024"
   source_root = "storage_realm_coll_invalid_route.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -98,7 +98,7 @@ rustc_binary("storage_realm_coll_invalid_route_bin") {
 
 rustc_binary("storage_user_bin") {
   name = "storage_user"
-  edition = "2021"
+  edition = "2024"
   source_root = "storage_user.rs"
   deps = [ "//src/lib/fuchsia" ]
 
@@ -107,7 +107,7 @@ rustc_binary("storage_user_bin") {
 
 rustc_binary("storage_user_with_instance_id_bin") {
   name = "storage_user_with_instance_id"
-  edition = "2021"
+  edition = "2024"
   source_root = "storage_user_with_instance_id.rs"
   deps = [ "//src/lib/fuchsia" ]
 
@@ -116,7 +116,7 @@ rustc_binary("storage_user_with_instance_id_bin") {
 
 rustc_binary("only_exits_bin") {
   name = "only_exits"
-  edition = "2021"
+  edition = "2024"
   source_root = "only_exits.rs"
   deps = []
 

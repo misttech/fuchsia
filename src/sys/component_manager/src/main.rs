@@ -44,7 +44,7 @@ mod runner;
 mod sandbox_util;
 mod startup;
 
-extern "C" {
+unsafe extern "C" {
     fn dl_set_loader_service(handle: zx::sys::zx_handle_t) -> zx::sys::zx_handle_t;
 }
 

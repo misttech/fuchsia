@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use cache_manager_config_lib::Config;
 use fuchsia_component::{self, client as fclient};
 use log::*;
@@ -47,11 +47,7 @@ struct StorageState {
 
 impl StorageState {
     fn percent_used(&self) -> u64 {
-        if self.total_bytes > 0 {
-            self.used_bytes * 100 / self.total_bytes
-        } else {
-            0
-        }
+        if self.total_bytes > 0 { self.used_bytes * 100 / self.total_bytes } else { 0 }
     }
 }
 
@@ -102,7 +98,11 @@ async fn monitor_storage(
         }
 
         // Clear the cache
-        info!("storage utilization is at {}%, which is above our threshold of {}%, beginning to clear cache storage", storage_state.percent_used(), config.cache_clearing_threshold);
+        info!(
+            "storage utilization is at {}%, which is above our threshold of {}%, beginning to clear cache storage",
+            storage_state.percent_used(),
+            config.cache_clearing_threshold
+        );
 
         match clear_cache_storage(&storage_admin).await {
             Err(e) => match e.downcast_ref::<fidl::Error>() {
@@ -145,7 +145,10 @@ async fn monitor_storage(
         let mut unconditional_success = true;
 
         if storage_state_after.percent_used() > config.cache_clearing_threshold {
-            warn!("storage usage still exceeds threshold after cache clearing, used_bytes={} total_bytes={}", storage_state.used_bytes, storage_state.total_bytes);
+            warn!(
+                "storage usage still exceeds threshold after cache clearing, used_bytes={} total_bytes={}",
+                storage_state.used_bytes, storage_state.total_bytes
+            );
             unconditional_success = false;
         }
 
@@ -235,7 +238,7 @@ async fn log_cobalt_occurence(
     metric_id: u32,
     event_codes: &[u32],
 ) {
-    if let Some(ref c) = cobalt_logger {
+    if let Some(c) = cobalt_logger {
         if let Err(e) = c.log_occurrence(metric_id, 1, event_codes).await {
             warn!("Failed to log metrics: {:?}", e)
         }

@@ -7,7 +7,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_test("integration_bin") {
-  edition = "2021"
+  edition = "2024"
   name = "abi_integration_test"
   source_root = "src/integration_test.rs"
   deps = [

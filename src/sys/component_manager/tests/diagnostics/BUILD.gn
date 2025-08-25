@@ -9,7 +9,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_binary("reporter_bin") {
   name = "reporter"
-  edition = "2021"
+  edition = "2024"
   source_root = "reporter.rs"
   testonly = true
   deps = [
@@ -28,7 +28,7 @@ rustc_binary("reporter_bin") {
 
 rustc_test("bin") {
   name = "diagnostics_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "integration_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",

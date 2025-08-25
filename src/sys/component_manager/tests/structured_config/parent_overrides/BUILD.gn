@@ -14,7 +14,7 @@ fidl("test.config.parentoverrides") {
 
 rustc_binary("config_receiver_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "config_receiver.rs"
   sources = [ "config_receiver.rs" ]
   deps = [
@@ -52,7 +52,7 @@ fuchsia_structured_config_values("receiver_defaults") {
 }
 
 rustc_test("parent_override_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "integration_test.rs"
   sources = [ "integration_test.rs" ]
   deps = [

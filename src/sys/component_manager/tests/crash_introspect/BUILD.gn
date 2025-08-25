@@ -22,7 +22,7 @@ rustc_binary("report_then_panic_on_start_bin") {
     "//third_party/rust_crates:log",
   ]
   name = "report_then_panic_on_start"
-  edition = "2021"
+  edition = "2024"
   source_root = "report_then_panic_on_start.rs"
   sources = [ "report_then_panic_on_start.rs" ]
 }
@@ -38,7 +38,7 @@ fuchsia_component("report_then_panic_on_start") {
 
 rustc_binary("panic_on_start_bin") {
   name = "panic_on_start"
-  edition = "2021"
+  edition = "2024"
   source_root = "panic_on_start.rs"
   sources = [ "panic_on_start.rs" ]
 }
@@ -51,7 +51,7 @@ fuchsia_component("panic_on_start") {
 
 rustc_test("crash_introspect_test_bin") {
   name = "crash_introspect_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "crash_introspect_test.rs"
   deps = [
     "fidl:fuchsia.test_rust",

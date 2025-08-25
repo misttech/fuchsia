@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_test("e2e-bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "e2e-test.rs"
   name = "attributed-logging-e2e-test"
   deps = [

@@ -17,7 +17,7 @@ group("tests") {
 
 # The binary for the test resolver.
 rustc_binary("resolver_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
 
   name = "component_manager_test_resolvers_resolver"
@@ -45,7 +45,7 @@ rustc_binary("resolver_bin") {
 
 # The integration test binary.
 rustc_test("integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   name = "component_manager_test_resolvers_integration_test"
 
   source_root = "src/integration_test.rs"

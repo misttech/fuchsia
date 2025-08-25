@@ -17,7 +17,7 @@ static SVC_DIRECTORY_PATH: LazyLock<NamespacePath> = LazyLock::new(|| "/svc".par
 
 pub fn create_namespace_logger(
     ns: &Namespace,
-) -> Option<impl Future<Output = Option<Publisher>> + Clone> {
+) -> Option<impl Future<Output = Option<Publisher>> + Clone + use<>> {
     let svc_dir = ns.get(&SVC_DIRECTORY_PATH)?;
     if let Ok(logsink) =
         connect_to_named_protocol_at_dir_root(svc_dir, flogger::LogSinkMarker::PROTOCOL_NAME)

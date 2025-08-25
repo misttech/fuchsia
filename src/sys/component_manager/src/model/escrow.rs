@@ -7,10 +7,10 @@ use std::sync::Arc;
 
 use cm_util::TaskGroup;
 use fasync::Task;
-use fidl::endpoints::{create_proxy, ServerEnd};
+use fidl::endpoints::{ServerEnd, create_proxy};
 use futures::channel::{mpsc, oneshot};
 use futures::lock::Mutex;
-use futures::{select, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, select};
 use log::warn;
 use moniker::Moniker;
 use std::pin::pin;
@@ -133,15 +133,17 @@ impl Actor {
     /// started.
     pub async fn open_outgoing(&self, open_request: OpenRequest<'_>) -> Result<(), zx::Status> {
         let outgoing_dir_clone = {
-            let guard = self.outgoing_dir.lock().await;
-            let (mut open_counter, outgoing_dir) = &*guard;
-            open_counter += 1;
-            if open_counter % LIVENESS_CHECK_FREQUENCY == 0 {
+            let mut guard = self.outgoing_dir.lock().await;
+            let (open_counter, outgoing_dir) = &mut *guard;
+            *open_counter += 1;
+            if *open_counter % LIVENESS_CHECK_FREQUENCY == 0 {
                 let mut sync_fut = outgoing_dir.sync().fuse();
-                let mut timer = pin!(fasync::Timer::new(std::time::Duration::from_millis(
-                    LIVENESS_CHECK_TIMEOUT_MS.try_into().expect("failed to usize to u64")
-                ))
-                .fuse());
+                let mut timer = pin!(
+                    fasync::Timer::new(std::time::Duration::from_millis(
+                        LIVENESS_CHECK_TIMEOUT_MS.try_into().expect("failed to usize to u64")
+                    ))
+                    .fuse()
+                );
                 select! {
                     _ = sync_fut => (),
                     _ = timer => {
@@ -331,13 +333,13 @@ mod tests {
     use cm_util::TaskGroup;
     use fidl_fuchsia_io as fio;
     use fuchsia_async::{self as fasync, TestExecutor};
+    use futures::StreamExt;
     use futures::channel::mpsc;
     use futures::lock::Mutex;
-    use futures::StreamExt;
     use moniker::Moniker;
+    use vfs::ToObjectRequest;
     use vfs::directory::entry::OpenRequest;
     use vfs::execution_scope::ExecutionScope;
-    use vfs::ToObjectRequest;
 
     use crate::bedrock::program::EscrowRequest;
     use crate::framework::controller;

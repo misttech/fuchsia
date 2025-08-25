@@ -19,7 +19,7 @@ group("tests") {
 }
 
 rustc_test("reboot_on_terminate_test_bin") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
@@ -37,7 +37,7 @@ rustc_test("reboot_on_terminate_test_bin") {
 
 rustc_binary("reboot_on_terminate_success_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//src/lib/fidl/rust/fidl",
@@ -55,7 +55,7 @@ rustc_binary("reboot_on_terminate_success_bin") {
 
 rustc_binary("reboot_on_terminate_policy_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//examples/components/routing/fidl:echo_rust",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -77,7 +77,7 @@ rustc_binary("reboot_on_terminate_policy_bin") {
 
 rustc_binary("crash_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = []
 
   source_root = "src/crash.rs"

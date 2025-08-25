@@ -6,8 +6,8 @@ use crate::{Capability, CapabilityBound};
 use derivative::Derivative;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use std::borrow::Borrow;
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 #[cfg(target_os = "fuchsia")]
@@ -206,7 +206,7 @@ impl Dict {
     /// Returns an iterator over a clone of the entries, sorted by key.
     ///
     /// If a capability is not cloneable, an error returned for the value.
-    pub fn enumerate(&self) -> impl Iterator<Item = (Key, Result<Capability, ()>)> {
+    pub fn enumerate(&self) -> impl Iterator<Item = (Key, Result<Capability, ()>)> + use<> {
         self.lock()
             .entries
             .iter()
@@ -216,12 +216,12 @@ impl Dict {
     }
 
     /// Returns an iterator over the keys, in sorted order.
-    pub fn keys(&self) -> impl Iterator<Item = Key> {
+    pub fn keys(&self) -> impl Iterator<Item = Key> + use<> {
         self.lock().entries.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>().into_iter()
     }
 
     /// Removes all entries from the Dict and returns them as an iterator.
-    pub fn drain(&self) -> impl Iterator<Item = (Key, Capability)> {
+    pub fn drain(&self) -> impl Iterator<Item = (Key, Capability)> + use<> {
         let DictInner { entries, update_notifiers, .. } = &mut *self.lock();
         let entries = std::mem::replace(entries, HybridMap::default());
         for (key, _) in entries.iter() {

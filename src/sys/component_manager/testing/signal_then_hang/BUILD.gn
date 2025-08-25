@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("signal_then_hang_bin") {
   name = "signal_then_hang"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/rust/zx",

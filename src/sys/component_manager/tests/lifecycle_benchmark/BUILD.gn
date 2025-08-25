@@ -9,7 +9,7 @@ import("//build/testing/perf/test.gni")
 
 rustc_binary("bin") {
   name = "component_lifecycle_benchmark"
-  edition = "2021"
+  edition = "2024"
 
   source_root = "src/main.rs"
   testonly = true

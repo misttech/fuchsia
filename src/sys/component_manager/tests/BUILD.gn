@@ -78,7 +78,7 @@ group("benchmarks") {
 rustc_binary("trigger_bin") {
   testonly = true
   name = "trigger"
-  edition = "2021"
+  edition = "2024"
   source_root = "trigger.rs"
   deps = [
     "//examples/components/routing/fidl:echo_rust",

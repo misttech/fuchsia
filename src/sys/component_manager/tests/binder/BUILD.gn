@@ -13,7 +13,7 @@ group("tests") {
 
 rustc_binary("looper_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   output_name = "looper"
   source_root = "src/looper.rs"
 
@@ -37,7 +37,7 @@ fuchsia_component("looper_component") {
 }
 
 rustc_test("binder_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "binder_integration_test"
   source_root = "src/binder_integration_test.rs"
 

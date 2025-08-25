@@ -106,7 +106,7 @@ impl<T> Node<T> {
                 *self = Node::Leaf(thing);
                 match self {
                     Node::Internal(_) => unreachable!(),
-                    Node::Leaf(ref mut t) => Ok(t),
+                    Node::Leaf(t) => Ok(t),
                 }
             }
         }
@@ -126,7 +126,7 @@ impl<T> Node<T> {
             },
             None => match self {
                 Node::Internal(_) => None,
-                Node::Leaf(ref mut n) => Some(n),
+                Node::Leaf(n) => Some(n),
             },
         }
     }
@@ -145,7 +145,7 @@ impl<T> Node<T> {
             },
             None => match self {
                 Node::Internal(_) => None,
-                Node::Leaf(ref n) => Some(n),
+                Node::Leaf(n) => Some(n),
             },
         }
     }

@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 # The `routing_test_helpers` library provides test harnesses for users of
 # the `routing` library.
 rustc_library("routing_test_helpers") {
-  edition = "2021"
+  edition = "2024"
 
   testonly = true
 

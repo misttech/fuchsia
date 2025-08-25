@@ -14,7 +14,7 @@ group("tests") {
 
 rustc_test("builtin_runner_test_bin") {
   name = "builtin_runner_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "builtin_runner_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -28,7 +28,7 @@ rustc_test("builtin_runner_test_bin") {
 
 rustc_binary("simple_elf_program_bin") {
   name = "simple_elf_program"
-  edition = "2021"
+  edition = "2024"
   source_root = "simple_elf_program.rs"
   sources = [ "simple_elf_program.rs" ]
 }

@@ -12,7 +12,7 @@ executable("exit_with_code") {
 
 rustc_test("exit_code_integration_test_bin") {
   name = "exit_code_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "integration_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",

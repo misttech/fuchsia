@@ -19,7 +19,7 @@ import("//tools/fidl/measure-tape/measure_tape.gni")
 
 _component_manager_bin = {
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   configs_to_add = [ "//build/config/rust:bootfs" ]
   if (!is_lto_variant) {

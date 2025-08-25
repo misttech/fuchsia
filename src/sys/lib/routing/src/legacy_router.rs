@@ -15,6 +15,7 @@
 //! You can also start walking from halfway in this chain, e.g. [route_from_offer],
 //! [route_from_expose].
 
+use crate::RegistrationDecl;
 use crate::capability_source::{
     AggregateCapability, AggregateMember, AnonymizedAggregateSource, BuiltinSource,
     CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
@@ -27,7 +28,6 @@ use crate::component_instance::{
 };
 use crate::error::RoutingError;
 use crate::mapper::DebugRouteMapper;
-use crate::RegistrationDecl;
 use cm_rust::{
     Availability, CapabilityDecl, CapabilityTypeName, ChildRef, ExposeDecl, ExposeDeclCommon,
     ExposeSource, ExposeTarget, FidlIntoNative, NativeIntoFidl, OfferDecl, OfferDeclCommon,
@@ -941,11 +941,7 @@ impl Offer {
                 RouteBundle::Single(offer) => Some(offer),
                 RouteBundle::Aggregate(offers) => {
                     // TODO(https://fxbug.dev/42124541): Visit routes in all aggregates.
-                    if offers.len() == 1 {
-                        Some(&offers[0])
-                    } else {
-                        None
-                    }
+                    if offers.len() == 1 { Some(&offers[0]) } else { None }
                 }
             };
             if let Some(visit_offer) = visit_offer {
@@ -1312,8 +1308,11 @@ where
             Self::Single(e) => e.availability(),
             Self::Aggregate(v) => {
                 assert!(
-                    v.iter().zip(v.iter().skip(1)).all(|(a, b)| a.availability() == b.availability()),
-                    "CM validation should ensure all aggregated capabilities have the same availability");
+                    v.iter()
+                        .zip(v.iter().skip(1))
+                        .all(|(a, b)| a.availability() == b.availability()),
+                    "CM validation should ensure all aggregated capabilities have the same availability"
+                );
                 v[0].availability()
             }
         }
@@ -1335,7 +1334,7 @@ impl<'a, T> Iterator for RouteBundleIter<'a, T> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(item) = self.inner_single.take() {
             Some(item)
-        } else if let Some(ref mut iter) = &mut self.inner_aggregate {
+        } else if let Some(iter) = &mut self.inner_aggregate {
             iter.next()
         } else {
             None
@@ -1381,11 +1380,7 @@ impl Expose {
                 RouteBundle::Single(expose) => Some(expose),
                 RouteBundle::Aggregate(exposes) => {
                     // TODO(https://fxbug.dev/42124541): Visit routes in all aggregates.
-                    if exposes.len() == 1 {
-                        Some(&exposes[0])
-                    } else {
-                        None
-                    }
+                    if exposes.len() == 1 { Some(&exposes[0]) } else { None }
                 }
             };
             if let Some(visit_expose) = visit_expose {
@@ -1538,7 +1533,7 @@ pub trait ExposeVisitor {
     /// Visit each [`ExposeDecl`] on the route.
     /// Returning an `Err` cancels visitation.
     fn visit(&mut self, moniker: &ExtendedMoniker, expose: &ExposeDecl)
-        -> Result<(), RoutingError>;
+    -> Result<(), RoutingError>;
 }
 
 /// Visitor pattern trait for visiting all [`CapabilityDecl`] during a route.

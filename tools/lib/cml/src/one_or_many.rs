@@ -184,7 +184,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(item) = self.inner_one.take() {
             Some(item)
-        } else if let Some(ref mut iter) = &mut self.inner_many {
+        } else if let Some(iter) = &mut self.inner_many {
             iter.next()
         } else {
             None
@@ -220,7 +220,7 @@ impl<T> Iterator for IntoIter<T> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(item) = self.inner_one.take() {
             Some(item)
-        } else if let Some(ref mut iter) = &mut self.inner_many {
+        } else if let Some(iter) = &mut self.inner_many {
             iter.next()
         } else {
             None

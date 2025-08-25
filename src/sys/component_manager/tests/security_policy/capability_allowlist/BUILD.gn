@@ -15,7 +15,7 @@ group("tests") {
 
 rustc_test("security_policy_capability_allowlist_integration_test_bin") {
   name = "security_policy_capability_allowlist_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "security_policy_capability_allowlist_integration_test.rs"
   deps = [
     ":test.policy_rust",
@@ -37,7 +37,7 @@ fidl("test.policy") {
 
 rustc_binary("policy_service_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "policy_service.rs"
   deps = [
     ":test.policy_rust",
@@ -52,7 +52,7 @@ rustc_binary("policy_service_bin") {
 
 rustc_binary("dir_service_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "dir_service.rs"
   deps = [
     "//src/lib/fuchsia-async",
@@ -66,7 +66,7 @@ rustc_binary("dir_service_bin") {
 
 rustc_binary("cap_getter_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "cap_getter.rs"
   deps = [
     ":test.policy_rust",

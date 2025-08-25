@@ -7,7 +7,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("builtin_dispatcher_component_bin") {
   name = "builtin_dispatcher_component_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "builtin_dispatcher_component.rs"
   deps = [
     "//examples/components/routing/fidl:echo_rust",

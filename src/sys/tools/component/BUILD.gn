@@ -13,7 +13,7 @@ rustc_library("component") {
     ":*",
     "../shared-multi-call-tool-binary:*",
   ]
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.dash:fuchsia.dash_rust",

@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("provider-bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "services_provider_test"
   deps = [
     "//examples/components/services/fidl:fuchsia.examples.services_rust",

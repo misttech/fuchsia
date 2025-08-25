@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 template("component_debug_lib") {
   rustc_library(target_name) {
     version = "0.1.0"
-    edition = "2021"
+    edition = "2024"
     with_unit_tests = true
 
     deps = [

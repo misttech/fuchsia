@@ -14,7 +14,7 @@ group("tests") {
 
 rustc_test("lifecycle_controller_test_bin") {
   name = "lifecycle_controller_test"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",

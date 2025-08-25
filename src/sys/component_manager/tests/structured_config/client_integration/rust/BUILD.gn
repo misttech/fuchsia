@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_binary("bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "structured_config_rust_receiver"
   sources = [ "src/main.rs" ]
@@ -49,7 +49,7 @@ fuchsia_structured_config_values("values") {
 }
 
 rustc_test("rust_sc_client_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/test.rs"
   sources = [ "src/test.rs" ]
   deps = [

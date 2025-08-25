@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "structured_config_rust_receiver_minimal_shards"
   sources = [ "src/main.rs" ]

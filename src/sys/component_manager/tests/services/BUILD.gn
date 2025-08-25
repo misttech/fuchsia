@@ -12,7 +12,7 @@ group("tests") {
 }
 
 rustc_binary("service-routing-branch-bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "service_routing_branch_bin"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -41,7 +41,7 @@ fuchsia_test_component("service-routing-branch-twocoll") {
 }
 
 rustc_test("service-routing-test-bin") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//examples/components/services/fidl:fuchsia.examples.services_rust",
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
@@ -76,7 +76,7 @@ fuchsia_test_component("service-routing-test") {
 }
 
 rustc_test("filtered-service-routing-test-bin") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
@@ -100,7 +100,7 @@ fuchsia_test_component("filtered-service-routing-test") {
 
 rustc_binary("service-routing-client-bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   output_name = "service_routing_client_bin"
   deps = [
     "//src/lib/fuchsia",
@@ -121,7 +121,7 @@ fuchsia_test_component("echo-service-client") {
 
 rustc_binary("multi_instance_echo_service_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   output_name = "multi_instance_echo_service_bin"
   deps = [
     "//src/lib/fuchsia",

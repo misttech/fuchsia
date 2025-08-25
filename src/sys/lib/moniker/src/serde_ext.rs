@@ -4,9 +4,9 @@
 
 use crate::child_name::ChildName;
 use crate::moniker::Moniker;
-use schemars::gen::SchemaGenerator;
+use schemars::r#gen::SchemaGenerator;
 use schemars::schema::Schema;
-use schemars::{schema_for, JsonSchema};
+use schemars::{JsonSchema, schema_for};
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 use std::fmt;

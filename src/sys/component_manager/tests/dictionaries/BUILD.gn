@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_test("dictionaries_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   sources = [ "src/lib.rs" ]
   deps = [
@@ -20,7 +20,7 @@ rustc_test("dictionaries_integration_test_bin") {
 rustc_binary("dict_trigger_bin") {
   testonly = true
   name = "dict_trigger"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//examples/components/routing/fidl:echo_rust",
     "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",

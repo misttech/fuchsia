@@ -28,7 +28,7 @@ fidl("componentmanager.test") {
 }
 
 rustc_binary("maintainer_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "maintainer.rs"
   name = "utc_time_maintainer_bin"
@@ -48,7 +48,7 @@ rustc_binary("maintainer_bin") {
 }
 
 rustc_binary("time_client_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "time_client.rs"
   name = "utc_time_client_bin"
@@ -66,7 +66,7 @@ rustc_binary("time_client_bin") {
 }
 
 rustc_test("integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "integration_test.rs"
   name = "utc_time_integration_test"
   deps = [

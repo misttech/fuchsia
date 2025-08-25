@@ -42,7 +42,7 @@ fuchsia_structured_config_values("values") {
 }
 
 rustc_test("cpp_sc_bad_values_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/test.rs"
   sources = [ "src/test.rs" ]
   deps = [

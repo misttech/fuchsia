@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 import("//sdk/ctf/build/ctf.gni")
 
 rustc_test("realm_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "src/integration_test.rs"
   sources = [ "src/integration_test.rs" ]
@@ -26,7 +26,7 @@ rustc_test("realm_integration_test_bin") {
 }
 
 rustc_test("realm_namespace_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "src/namespace_test.rs"
   sources = [ "src/namespace_test.rs" ]

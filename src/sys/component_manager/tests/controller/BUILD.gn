@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_test("controller_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   sources = [ "src/lib.rs" ]
   deps = [

@@ -25,7 +25,7 @@ use json5format::{FormatOptions, PathOption};
 use lazy_static::lazy_static;
 use maplit::{hashmap, hashset};
 use reference_doc::ReferenceDoc;
-use serde::{de, ser, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de, ser};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write;
@@ -42,7 +42,7 @@ pub use cm_types::{
 use error::Location;
 
 pub use crate::one_or_many::OneOrMany;
-pub use crate::translate::{compile, CompileOptions};
+pub use crate::translate::{CompileOptions, compile};
 pub use crate::validate::{CapabilityRequirements, MustUseRequirement, OfferToAllCapability};
 
 lazy_static! {
@@ -1507,7 +1507,7 @@ fn merge_from_other_field<T: std::cmp::PartialEq>(
     us: &mut Option<Vec<T>>,
     other: &mut Option<Vec<T>>,
 ) {
-    if let Some(ref mut ours) = us {
+    if let Some(ours) = us {
         if let Some(theirs) = other.take() {
             // Add their elements, ignoring dupes with ours
             for t in theirs {
@@ -1662,7 +1662,7 @@ impl Document {
                     return Err(Error::validate(format!(
                         "manifest include had a conflicting `program.runner`: {}",
                         include_path.display()
-                    )))
+                    )));
                 }
                 _ => Some(other_runner),
             }
@@ -2702,8 +2702,7 @@ impl<'de> de::Deserialize<'de> for Program {
 
         const EXPECTED_PROGRAM: &'static str =
             "a JSON object that includes a `runner` string property";
-        const EXPECTED_RUNNER: &'static str =
-            "a non-empty `runner` string property no more than 255 characters in length \
+        const EXPECTED_RUNNER: &'static str = "a non-empty `runner` string property no more than 255 characters in length \
             that consists of [A-Za-z0-9_.-] and starts with [A-Za-z0-9_]";
 
         impl<'de> de::Visitor<'de> for Visitor {
@@ -5362,12 +5361,14 @@ mod tests {
         );
 
         // different protocols
-        assert!(!offer_to_all_would_duplicate(
-            &offer_to_all,
-            &offer,
-            &Name::from_str("something").unwrap()
-        )
-        .unwrap());
+        assert!(
+            !offer_to_all_would_duplicate(
+                &offer_to_all,
+                &offer,
+                &Name::from_str("something").unwrap()
+            )
+            .unwrap()
+        );
 
         let offer = create_offer(
             "fuchsia.logger.LogSink",
@@ -5376,12 +5377,14 @@ mod tests {
         );
 
         // different targets
-        assert!(!offer_to_all_would_duplicate(
-            &offer_to_all,
-            &offer,
-            &Name::from_str("something").unwrap()
-        )
-        .unwrap());
+        assert!(
+            !offer_to_all_would_duplicate(
+                &offer_to_all,
+                &offer,
+                &Name::from_str("something").unwrap()
+            )
+            .unwrap()
+        );
 
         let mut offer = create_offer(
             "fuchsia.logger.LogSink",
@@ -5392,12 +5395,14 @@ mod tests {
         offer.r#as = Some(Name::from_str("FakeLog").unwrap());
 
         // target has alias
-        assert!(!offer_to_all_would_duplicate(
-            &offer_to_all,
-            &offer,
-            &Name::from_str("something").unwrap()
-        )
-        .unwrap());
+        assert!(
+            !offer_to_all_would_duplicate(
+                &offer_to_all,
+                &offer,
+                &Name::from_str("something").unwrap()
+            )
+            .unwrap()
+        );
 
         let offer = create_offer(
             "fuchsia.logger.LogSink",
@@ -5405,12 +5410,14 @@ mod tests {
             OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
         );
 
-        assert!(offer_to_all_would_duplicate(
-            &offer_to_all,
-            &offer,
-            &Name::from_str("something").unwrap()
-        )
-        .unwrap());
+        assert!(
+            offer_to_all_would_duplicate(
+                &offer_to_all,
+                &offer,
+                &Name::from_str("something").unwrap()
+            )
+            .unwrap()
+        );
 
         let offer = create_offer(
             "fuchsia.logger.LogSink",
@@ -5418,12 +5425,14 @@ mod tests {
             OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
         );
 
-        assert!(offer_to_all_would_duplicate(
-            &offer_to_all,
-            &offer,
-            &Name::from_str("something").unwrap()
-        )
-        .is_err());
+        assert!(
+            offer_to_all_would_duplicate(
+                &offer_to_all,
+                &offer,
+                &Name::from_str("something").unwrap()
+            )
+            .is_err()
+        );
     }
 
     #[test_case(

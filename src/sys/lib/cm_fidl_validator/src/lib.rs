@@ -79,11 +79,7 @@ pub fn validate_value_spec(spec: &fdecl::ConfigValueSpec) -> Result<(), ErrorLis
         errors.push(Error::missing_field(DeclType::ConfigValueSpec, "value"));
     }
 
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(ErrorList::new(errors))
-    }
+    if errors.is_empty() { Ok(()) } else { Err(ErrorList::new(errors)) }
 }
 
 /// Validates Configuration Values Data.
@@ -116,11 +112,7 @@ pub fn validate_values_data(data: &fdecl::ConfigValuesData) -> Result<(), ErrorL
         errors.push(Error::missing_field(DeclType::ConfigValuesData, "checksum"));
     }
 
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(ErrorList::new(errors))
-    }
+    if errors.is_empty() { Ok(()) } else { Err(ErrorList::new(errors)) }
 }
 
 // `fdecl::Ref` is not hashable, so define this equivalent type for use in maps
@@ -166,11 +158,7 @@ fn validate_capabilities(
     }));
 
     ctx.validate_capability_decls(capabilities, as_builtin);
-    if ctx.errors.is_empty() {
-        Ok(())
-    } else {
-        Err(ErrorList::new(ctx.errors))
-    }
+    if ctx.errors.is_empty() { Ok(()) } else { Err(ErrorList::new(ctx.errors)) }
 }
 
 // Validate builtin capabilities.
@@ -202,11 +190,7 @@ pub fn validate_dynamic_child(child: &fdecl::Child) -> Result<(), ErrorList> {
         errors.push(Error::DynamicChildWithEnvironment);
     }
 
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(ErrorList { errs: errors })
-    }
+    if errors.is_empty() { Ok(()) } else { Err(ErrorList { errs: errors }) }
 }
 
 /// Validates an independent Child. Performs the same validation on it as `validate`. A
@@ -225,11 +209,7 @@ fn validate_child(
     if child.environment.is_some() {
         check_name(child.environment.as_ref(), DeclType::Child, "environment", &mut errors);
     }
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(ErrorList { errs: errors })
-    }
+    if errors.is_empty() { Ok(()) } else { Err(ErrorList { errs: errors }) }
 }
 
 /// Validates a collection of dynamic offers. Dynamic offers differ from static
@@ -410,11 +390,7 @@ impl<'a> ValidationContext<'a> {
             self.errors.push(Error::dependency_cycle(e.format_cycle()));
         }
 
-        if self.errors.is_empty() {
-            Ok(())
-        } else {
-            Err(self.errors)
-        }
+        if self.errors.is_empty() { Ok(()) } else { Err(self.errors) }
     }
 
     /// Collects all the environment names, watching for duplicates.
@@ -1166,8 +1142,8 @@ impl<'a> ValidationContext<'a> {
             DeclType::RunnerRegistration,
         );
         // If the source is `self`, ensure we have a corresponding Runner.
-        if let (Some(fdecl::Ref::Self_(_)), Some(ref name)) =
-            (&runner_registration.source, &runner_registration.source_name)
+        if let (Some(fdecl::Ref::Self_(_)), Some(name)) =
+            (&runner_registration.source, runner_registration.source_name.as_ref())
         {
             if !self.all_runners.contains(name as &str) {
                 self.errors.push(Error::invalid_runner(
@@ -1467,7 +1443,9 @@ impl<'a> ValidationContext<'a> {
                     o.target_name.as_ref(),
                 );
 
-                if let (Some(fdecl::Ref::Self_(_)), Some(ref name)) = (&o.source, &o.source_name) {
+                if let (Some(fdecl::Ref::Self_(_)), Some(name)) =
+                    (&o.source, o.source_name.as_ref())
+                {
                     if !self.all_protocols.contains(&name as &str) {
                         self.errors.push(Error::invalid_field(decl, "source"));
                     }
@@ -1636,13 +1614,9 @@ impl<'a> ValidationContext<'a> {
     // valid aggregate expose declarations.
     fn validate_expose_group(&mut self, exposes: &'a Vec<fdecl::Expose>) {
         let mut expose_groups: HashMap<_, Vec<fdecl::ExposeService>> = HashMap::new();
-        let service_exposes = exposes.into_iter().filter_map(|o| {
-            if let fdecl::Expose::Service(s) = o {
-                Some(s)
-            } else {
-                None
-            }
-        });
+        let service_exposes = exposes
+            .into_iter()
+            .filter_map(|o| if let fdecl::Expose::Service(s) = o { Some(s) } else { None });
         for expose in service_exposes {
             let key = Self::make_group_key(expose.target_name.as_ref(), expose.target.as_ref());
             if let Some(key) = key {
@@ -1908,13 +1882,9 @@ impl<'a> ValidationContext<'a> {
     // valid aggregate offer declarations.
     fn validate_offer_group(&mut self, offers: &'a Vec<fdecl::Offer>, offer_type: OfferType) {
         let mut offer_groups: HashMap<_, Vec<fdecl::OfferService>> = HashMap::new();
-        let service_offers = offers.into_iter().filter_map(|o| {
-            if let fdecl::Offer::Service(s) = o {
-                Some(s)
-            } else {
-                None
-            }
-        });
+        let service_offers = offers
+            .into_iter()
+            .filter_map(|o| if let fdecl::Offer::Service(s) = o { Some(s) } else { None });
         for offer in service_offers {
             let key = Self::make_group_key(offer.target_name.as_ref(), offer.target.as_ref());
             if let Some(key) = key {

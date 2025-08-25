@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("elf_runner") {
   name = "elf_runner"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     "//src/sys/component_manager/*",
@@ -95,7 +95,7 @@ fuchsia_test_component("elf_runner_tests_cmp") {
 }
 
 rustc_test("elf_runner_next_vdso_tests") {
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/logger.rs",
     "src/next_vdso_tests.rs",

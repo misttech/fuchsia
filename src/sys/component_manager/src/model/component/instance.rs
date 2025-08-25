@@ -148,9 +148,7 @@ impl InstanceState {
 
     pub fn get_resolved_state_mut(&mut self) -> Option<&mut ResolvedInstanceState> {
         match self {
-            InstanceState::Resolved(ref mut state) | InstanceState::Started(ref mut state, _) => {
-                Some(state)
-            }
+            InstanceState::Resolved(state) | InstanceState::Started(state, _) => Some(state),
             _ => None,
         }
     }
@@ -164,7 +162,7 @@ impl InstanceState {
 
     pub fn get_started_state_mut(&mut self) -> Option<&mut StartedInstanceState> {
         match self {
-            InstanceState::Started(_, ref mut state) => Some(state),
+            InstanceState::Started(_, state) => Some(state),
             _ => None,
         }
     }
@@ -899,7 +897,7 @@ impl ResolvedInstanceState {
     ) -> impl Iterator<Item = &'a UseDecl> {
         let mut paths = HashSet::new();
         iter.filter_map(move |use_decl| match use_decl {
-            UseDecl::EventStream(ref event_stream) => {
+            UseDecl::EventStream(event_stream) => {
                 if !paths.insert(event_stream.target_path.clone()) { None } else { Some(use_decl) }
             }
             _ => Some(use_decl),

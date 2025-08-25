@@ -5,7 +5,7 @@
 use crate::common::{extract_expected, gen_visit_str, ident_from_path};
 use maplit::hashset;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
-use quote::{quote, ToTokens, TokenStreamExt};
+use quote::{ToTokens, TokenStreamExt, quote};
 use std::collections::HashSet;
 use syn::punctuated::Punctuated;
 use syn::{Meta, Token};
@@ -235,17 +235,17 @@ pub fn impl_derive_ref(ast: syn::DeriveInput) -> Result<TokenStream2, syn::Error
                 }
                 if self.variants.contains("Named") {
                     tokens.append_all(quote! {
-                        #name::Named(ref n) => Self::Named(n),
+                        #name::Named(n) => Self::Named(n),
                     });
                 }
                 if self.variants.contains("Dictionary") {
                     tokens.append_all(quote! {
-                        #name::Dictionary(ref d) => Self::Dictionary(d),
+                        #name::Dictionary(d) => Self::Dictionary(d),
                     });
                 }
                 if self.variants.contains("OwnDictionary") {
                     tokens.append_all(quote! {
-                        #name::OwnDictionary(ref d) => Self::OwnDictionary(d),
+                        #name::OwnDictionary(d) => Self::OwnDictionary(d),
                     });
                 }
                 if self.variants.contains("All") {
@@ -388,7 +388,7 @@ fn parse_reference_attributes(ast: &syn::DeriveInput) -> Result<ReferenceAttribu
                             return Err(syn::Error::new_spanned(
                                 ast,
                                 "`reference` attribute must contain name-value pairs",
-                            ))?
+                            ))?;
                         }
                     }
                 }
