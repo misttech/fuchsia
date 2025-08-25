@@ -64,6 +64,7 @@ syscall_tests = [
   "sendfile_test",
   "setpriority_test",
   "signal_handling_test",
+  "signalfd_test",
   "socket_test",
   "suid_test",
   "sw_breakpoint_test",
