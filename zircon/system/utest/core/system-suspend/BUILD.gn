@@ -4,7 +4,11 @@
 
 source_set("system-suspend") {
   testonly = true
-  sources = [ "suspend.cc" ]
+  sources = [
+    "suspend.cc",
+    "wake-report-helpers.c",
+    "wake-reports.cc",
+  ]
   deps = [
     "..:needs-next",
     "//src/zircon/testing/standalone-test",
