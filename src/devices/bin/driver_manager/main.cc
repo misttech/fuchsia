@@ -35,9 +35,6 @@
 #include <memory>
 
 #include <fbl/unique_fd.h>
-#ifdef ENABLE_HEAPDUMP
-#include <heapdump/bind.h>
-#endif
 
 #include "src/devices/bin/driver_manager/devfs/devfs.h"
 #include "src/devices/bin/driver_manager/driver_development/driver_development_service.h"
@@ -71,10 +68,6 @@ void InitLogging(const driver_manager_config::Config& config) {
 }  // namespace
 
 int main(int argc, char** argv) {
-#ifdef ENABLE_HEAPDUMP
-  heapdump_bind_with_fdio();
-#endif
-
   zx_status_t status = StdoutToDebuglog::Init();
   if (status != ZX_OK) {
     fdf_log::info(

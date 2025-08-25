@@ -89,6 +89,11 @@ sdk_shared_library("instrumentation") {
   configs += [ "//build/config/lto:no-lto" ]
 }
 
+source_set("autobind") {
+  sources = [ "autobind.cc" ]
+  public_deps = [ ":instrumentation" ]
+}
+
 config("include") {
   visibility = [ ":*" ]
   include_dirs = [ "include" ]

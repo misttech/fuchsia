@@ -177,11 +177,7 @@ executable("driver_manager") {
 
 executable("driver_manager_with_heapdump") {
   forward_variables_from(_driver_manager_common, "*")
-  deps += [ "//src/performance/memory/heapdump/instrumentation" ]
-  if (!defined(defines)) {
-    defines = []
-  }
-  defines += [ "ENABLE_HEAPDUMP=true" ]
+  deps += [ "//src/performance/memory/heapdump/instrumentation:autobind" ]
 }
 
 fuchsia_component("component") {
