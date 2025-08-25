@@ -125,17 +125,8 @@ zx::result<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> Ufs::AcquireLeas
     return zx::error(result.status());
   }
   if (result->is_error()) {
-    switch (result->error_value()) {
-      case fuchsia_power_broker::LeaseError::kInternal:
-        FDF_LOG(ERROR, "Lease returned internal error.");
-        break;
-      case fuchsia_power_broker::LeaseError::kNotAuthorized:
-        FDF_LOG(ERROR, "Lease returned not authorized error.");
-        break;
-      default:
-        FDF_LOG(ERROR, "Lease returned unknown error.");
-        break;
-    }
+    FDF_LOG(ERROR, "Lease returned error: %s",
+            fdf_power::LeaseErrorToString(result->error_value()));
     return zx::error(ZX_ERR_INTERNAL);
   }
   if (!result->value()->lease_control.is_valid()) {

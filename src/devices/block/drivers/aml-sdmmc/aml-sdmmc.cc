@@ -77,17 +77,8 @@ zx_status_t AmlSdmmc::AcquireInitLease(
     return result.status();
   }
   if (result->is_error()) {
-    switch (result->error_value()) {
-      case fuchsia_power_broker::LeaseError::kInternal:
-        FDF_LOGL(ERROR, logger(), "Lease returned internal error.");
-        break;
-      case fuchsia_power_broker::LeaseError::kNotAuthorized:
-        FDF_LOGL(ERROR, logger(), "Lease returned not authorized error.");
-        break;
-      default:
-        FDF_LOGL(ERROR, logger(), "Lease returned unknown error.");
-        break;
-    }
+    FDF_LOGL(ERROR, logger(), "Lease returned error: %s",
+             fdf_power::LeaseErrorToString(result->error_value()));
     return ZX_ERR_INTERNAL;
   }
   if (!result->value()->lease_control.is_valid()) {

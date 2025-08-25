@@ -19,24 +19,6 @@
 #include "sdmmc-root-device.h"
 #include "tools/power_config/lib/cpp/power_config.h"
 
-namespace {
-
-std::pair<zx::error<zx_status_t>, const char*> MapLeaseError(
-    fuchsia_power_broker::LeaseError error) {
-  switch (error) {
-    case fuchsia_power_broker::LeaseError::kInternal:
-      return {zx::error(ZX_ERR_INTERNAL), "Internal error"};
-    case fuchsia_power_broker::LeaseError::kNotAuthorized:
-      return {zx::error(ZX_ERR_ACCESS_DENIED), "Not authorized"};
-    case fuchsia_power_broker::LeaseError::kInvalidLevel:
-      return {zx::error(ZX_ERR_INVALID_ARGS), "Invalid level"};
-    default:
-      return {zx::error(ZX_ERR_INTERNAL), "(unknown)"};
-  }
-}
-
-}  // namespace
-
 namespace sdmmc {
 
 using fuchsia_hardware_sdio::wire::SdioHwInfo;
@@ -671,9 +653,9 @@ zx::result<> SdioFunctionDevice::ConfigurePowerManagement() {
              result.error().FormatDescription().c_str());
     return zx::error(result.error().status());
   } else {
-    std::pair error = MapLeaseError(result->error_value());
-    FDF_LOGL(ERROR, logger(), "Failed to acquire lease: %s", error.second);
-    return error.first;
+    FDF_LOGL(ERROR, logger(), "Failed to acquire lease: %s",
+             fdf_power::LeaseErrorToString(result->error_value()));
+    return fdf_power::LeaseErrorToZxError(result->error_value());
   }
 
   return zx::ok();

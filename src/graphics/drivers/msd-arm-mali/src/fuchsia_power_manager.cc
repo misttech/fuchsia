@@ -140,17 +140,8 @@ zx_status_t FuchsiaPowerManager::AcquireLease(
     return result.status();
   }
   if (result->is_error()) {
-    switch (result->error_value()) {
-      case fuchsia_power_broker::LeaseError::kInternal:
-        MAGMA_LOG(ERROR, "Lease returned internal error.");
-        break;
-      case fuchsia_power_broker::LeaseError::kNotAuthorized:
-        MAGMA_LOG(ERROR, "Lease returned not authorized error.");
-        break;
-      default:
-        MAGMA_LOG(ERROR, "Lease returned unknown error.");
-        break;
-    }
+    MAGMA_LOG(ERROR, "Lease returned error: %s",
+              fdf_power::LeaseErrorToString(result->error_value()));
     return ZX_ERR_INTERNAL;
   }
   if (!result->value()->lease_control.is_valid()) {
