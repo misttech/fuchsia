@@ -18,6 +18,8 @@
 #include <kernel/thread.h>
 #include <kernel/timer.h>
 
+class SuspendWakeupTimer;  // fwd decl
+
 //
 // Platform Independent Per-CPU Idle/Power Thread
 //
@@ -156,12 +158,12 @@ class IdlePowerThread final {
 
   using WakeResult = wake_vector::WakeResult;
   using WakeEvent = wake_vector::WakeEvent;
-
   friend WakeEvent;
 
   static WakeResult WakeBootCpu();
   static WakeResult TriggerSystemWakeEvent();
   static void AcknowledgeSystemWakeEvent();
+  static void ResumeFromTimerIrq(zx_instant_boot_t now, zx_instant_boot_t resume_at);
 
   // This function does different things depending on the current_cpu and current_state.
   //
@@ -204,7 +206,7 @@ class IdlePowerThread final {
 
   // A timer on the boot timeline used to resume the system at the given boot time if no other wake
   // events occur by then.
-  inline static Timer resume_timer_ TA_GUARDED(TransitionLock::Get()){ZX_CLOCK_BOOT};
+  static ktl::unique_ptr<SuspendWakeupTimer> resume_timer_;
 
   // A bespoke wake vector used by the resume timer handler to wake the system when the resume boot
   // time is reached.

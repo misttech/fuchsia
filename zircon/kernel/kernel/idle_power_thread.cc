@@ -10,6 +10,7 @@
 #include <lib/affine/ratio.h>
 #include <lib/fit/defer.h>
 #include <lib/ktrace.h>
+#include <lib/suspend_wakeup_timer.h>
 #include <lib/userabi/vdso.h>
 #include <platform.h>
 #include <zircon/errors.h>
@@ -29,6 +30,34 @@
 #include <lk/init.h>
 #include <object/interrupt_dispatcher.h>
 #include <platform/timer.h>
+
+// Note: Do NOT attempt to make this inline static.  The storage needs to be
+// explicitly declared in idle_power_thread.cc.
+//
+// Why?
+//
+// idle_power_thread.h declares the IdlePowerThread class, and this header is
+// included by several other libraries (in particular, lib/syscalls).  The IPT
+// class also declares this pointer as a static member of the class.  The
+// libraries which include the IPT header cannot automatically pick up a
+// dependency on `lib/suspend_wakeup_timer`, so we need to explicitly not
+// include the SWT header in the IPT header.  Instead, we just fwd declare
+// SuspendWakeupTimer.
+//
+// But... If we declare `resume_timer_` to be an inline static member of
+// IdlePowerThread, then every translation unit which includes
+// `idle_power_thread.h` (directly or indirectly) will need to generate a
+// destructor for the `unique_ptr`, triggering template expansion (duplicates
+// will be sorted out at link time).  In the clang standard implementation of
+// the unique_ptr d'tor, there is a static assert which asserts that the
+// `sizeof(T)` is > 0, but if we have only fwd declared SuspendWakeupTimer,
+// `sizeof(T)` cannot be evaluated and we fail to build.
+//
+// So: do not declare the storage as inline.  Instead, simply mark the storage
+// as static, and explicitly declare the storage in this translation unit where
+// we can safely include the definition of SuspendWakeupTimer, generating the
+// proper unique_ptr d'tor in this TU specifically.
+ktl::unique_ptr<SuspendWakeupTimer> IdlePowerThread::resume_timer_;
 
 namespace {
 
@@ -54,7 +83,7 @@ constexpr const char* ToString(IdlePowerThread::State state) {
   return ToInternedString(state).string();
 }
 
-}  // anonymous namespace
+}  // namespace
 
 void IdlePowerThread::UpdateMonotonicClock(cpu_num_t current_cpu,
                                            const StateMachine& current_state) {
@@ -191,6 +220,12 @@ int IdlePowerThread::Run(void* arg) {
 
       if (state.current == State::Suspend) {
         ktrace::Scope trace = KTRACE_CPU_BEGIN_SCOPE("kernel:sched", "suspend");
+
+        // Make sure our resume_timer_ has been started if we are the BOOT_CPU and it has a deadline
+        // set.
+        if (arch_curr_cpu_num() == BOOT_CPU_ID) {
+          resume_timer_->EnsureStarted();
+        }
 
         if (platform_supports_suspend_cpu()) {
           zx_status_t status = platform_suspend_cpu(PlatformAllowDomainPowerDown::Yes);
@@ -368,23 +403,7 @@ zx_status_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_t resu
     // Set the resume timer before suspending the boot CPU.
     if (resume_at != ZX_TIME_INFINITE) {
       dprintf(INFO, "Setting boot CPU to resume at time %" PRId64 "\n", resume_at);
-      resume_timer_.SetOneshot(
-          resume_at,
-          +[](Timer* timer, zx_instant_boot_t now, void* resume_at_ptr) {
-            // Verify this handler is running in the correct context.
-            DEBUG_ASSERT(arch_curr_cpu_num() == BOOT_CPU_ID);
-
-            const WakeResult wake_result = resume_timer_wake_vector_->wake_event.Trigger();
-            const char* message_prefix = wake_result == WakeResult::SuspendAborted
-                                             ? "Wakeup before suspend completed. Aborting suspend"
-                                             : "Resuming boot CPU";
-
-            const zx_duration_boot_t resume_delta =
-                zx_time_sub_time(now, *static_cast<zx_instant_boot_t*>(resume_at_ptr));
-            dprintf(INFO, "%s at time %" PRId64 ", %" PRId64 "ns after target resume time.\n",
-                    message_prefix, now, resume_delta);
-          },
-          &resume_at);
+      resume_timer_->SetResumeDeadline(resume_at);
     } else {
       // TODO(eieio): Check that at least one wake source is configured if no resume time is set.
       // Maybe this check needs require at least one wake source if the resume time is too far in
@@ -394,13 +413,12 @@ zx_status_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_t resu
 
     dprintf(INFO, "Attempting to suspend boot CPU...\n");
 
-    // Suspend the boot CPU to finalize the active CPU suspend operation.
     IdlePowerThread& boot_idle_power_thread = percpu::Get(BOOT_CPU_ID).idle_power_thread;
     const TransitionResult active_to_suspend_result = boot_idle_power_thread.TransitionFromTo(
         State::Active, State::Suspend, suspend_timeout_at.when());
 
     // Cancel the resume timer in case it wasn't the reason for the wakeup.
-    resume_timer_.Cancel();
+    resume_timer_->CancelTimer();
 
     switch (active_to_suspend_result.status) {
       case ZX_ERR_TIMED_OUT:
@@ -526,6 +544,20 @@ void IdlePowerThread::AcknowledgeSystemWakeEvent() {
   DEBUG_ASSERT_MSG(previous_pending_wake_events != 0, "Pending wake event count underflow!");
 }
 
+void IdlePowerThread::ResumeFromTimerIrq(zx_instant_boot_t now, zx_instant_boot_t resume_at) {
+  // Verify this handler is running in the correct context.
+  DEBUG_ASSERT(arch_curr_cpu_num() == BOOT_CPU_ID);
+
+  const WakeResult wake_result = resume_timer_wake_vector_->wake_event.Trigger();
+  const char* message_prefix = wake_result == WakeResult::SuspendAborted
+                                   ? "Wakeup before suspend completed. Aborting suspend"
+                                   : "Resuming boot CPU";
+
+  const zx_duration_boot_t resume_delta = zx_time_sub_time(now, resume_at);
+  dprintf(INFO, "%s at time %" PRId64 ", %" PRId64 "ns after target resume time.\n", message_prefix,
+          now, resume_delta);
+}
+
 void IdlePowerThread::ResumeTimerWakeVector::GetDiagnostics(
     WakeVector::Diagnostics& diagnostics_out) const {
   diagnostics_out.enabled = true;
@@ -533,9 +565,26 @@ void IdlePowerThread::ResumeTimerWakeVector::GetDiagnostics(
   diagnostics_out.PrintExtra("suspend timeout");
 }
 
-// Register the resume timer wake event after global ctors have initialized the global list.
-void IdlePowerThread::InitHook(uint level) { resume_timer_wake_vector_.Initialize(); }
-LK_INIT_HOOK(idle_power_thread, IdlePowerThread::InitHook, LK_INIT_LEVEL_EARLIEST)
+void IdlePowerThread::InitHook(uint level) {
+  switch (level) {
+    case LK_INIT_LEVEL_EARLIEST:
+      // Register the resume timer wake event after global ctors have initialized the global list.
+      resume_timer_wake_vector_.Initialize();
+      break;
+
+    case LK_INIT_LEVEL_PLATFORM: {
+      // Create the SuspendResumeTimer after platform drivers have been initialized.  This gives
+      // systems which use special timer HW to exit suspend a chance to detect and initialize their
+      // hardware before we start to use it.
+      Guard<Mutex> guard{TransitionLock::Get()};
+      resume_timer_ = SuspendWakeupTimer::Create(ResumeFromTimerIrq);
+      ASSERT((resume_timer_) != nullptr);
+      break;
+    }
+  }
+}
+LK_INIT_HOOK(idle_power_thread_earliest, IdlePowerThread::InitHook, LK_INIT_LEVEL_EARLIEST)
+LK_INIT_HOOK(idle_power_thread_platform, IdlePowerThread::InitHook, LK_INIT_LEVEL_PLATFORM)
 
 #include <lib/console.h>
 
