@@ -159,6 +159,12 @@ rustc_library("lib") {
   deps = fxfs_deps
   sources = fxfs_sources
   test_deps = fxfs_test_deps
+
+  # The test requires more than typical memory,
+  # so remote-build with a larger worker.
+  _concurrent_jobs = concurrent_jobs.rust_highmem
+  test_configs = _concurrent_jobs.configs
+  test_vars = _concurrent_jobs.vars
 }
 
 # This target includes additional hooks that are useful when
