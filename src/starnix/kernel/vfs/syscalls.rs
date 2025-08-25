@@ -3530,6 +3530,22 @@ mod arch32 {
         )
     }
 
+    pub fn sys_arch32_truncate64(
+        locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
+        user_path: UserCString,
+        _unused: SyscallArg,
+        length_low: u32,
+        length_high: u32,
+    ) -> Result<(), Errno> {
+        super::sys_truncate(
+            locked,
+            current_task,
+            user_path,
+            merge_low_and_high(length_low, length_high),
+        )
+    }
+
     pub fn sys_arch32_ftruncate64(
         locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
