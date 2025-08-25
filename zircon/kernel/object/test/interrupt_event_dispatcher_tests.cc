@@ -112,23 +112,21 @@ bool TestPendingWakeEventBlocksSuspend() {
 
   // Make sure suspend entry works before testing suspend abort due to pending wake events.
   zx_instant_boot_t resume_at = current_boot_time() + ZX_SEC(5);
-  zx_status_t status = IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
-  ASSERT_EQ(ZX_OK, status);
+  IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
 
   // Pend a wake event by issuing the IPI.
   const uint8_t vector = apic_io_fetch_irq_vector(gsi);
   apic_send_self_ipi(vector, DELIVERY_MODE_FIXED);
   ASSERT_EQ(1u, IdlePowerThread::pending_wake_events());
 
-  // Suspend entry should fail due to pending wake events.
+  // Suspend entry should immediately bounce out with pending wake events.
   resume_at = current_boot_time() + ZX_SEC(5);
-  status = IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
-  ASSERT_EQ(ZX_ERR_BAD_STATE, status);
+  IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
   ASSERT_EQ(1u, IdlePowerThread::pending_wake_events());
 
   // Wait for the interrupt to advance the state machine from TRIGGERED to NEEDACK.
   zx_instant_boot_t timestamp = 0;
-  status = interrupt.dispatcher()->WaitForInterrupt(&timestamp);
+  zx_status_t status = interrupt.dispatcher()->WaitForInterrupt(&timestamp);
   ASSERT_EQ(ZX_OK, status);
   ASSERT_EQ(1u, IdlePowerThread::pending_wake_events());
 
@@ -139,26 +137,23 @@ bool TestPendingWakeEventBlocksSuspend() {
 
   // Suspend entry should succeed again.
   resume_at = current_boot_time() + ZX_SEC(5);
-  status = IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
-  ASSERT_EQ(ZX_OK, status);
+  IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
 
   // Check that a pending wake event is acknowledged if the interrupt event dispatcher is destroyed
   // without an explicit acknowledgment.
   apic_send_self_ipi(vector, DELIVERY_MODE_FIXED);
   ASSERT_EQ(1u, IdlePowerThread::pending_wake_events());
 
-  // Suspend entry should fail due to pending wake events.
+  // Suspend entry should immediately bounce out with pending wake events.
   resume_at = current_boot_time() + ZX_SEC(5);
-  status = IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
-  ASSERT_EQ(ZX_ERR_BAD_STATE, status);
+  IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
 
   interrupt.reset();
   ASSERT_EQ(0u, IdlePowerThread::pending_wake_events());
 
   // Suspend entry should succeed.
   resume_at = current_boot_time() + ZX_SEC(5);
-  status = IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
-  ASSERT_EQ(ZX_OK, status);
+  IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
 #endif
 
   END_TEST;

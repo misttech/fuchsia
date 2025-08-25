@@ -318,7 +318,7 @@ IdlePowerThread::TransitionResult IdlePowerThread::TransitionFromTo(State expect
   return {ZX_OK, expected_state};
 }
 
-zx_status_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_t resume_at) {
+zx_instant_boot_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_t resume_at) {
   // Prevent re-entrant calls to suspend.
   Guard<Mutex> guard{TransitionLock::Get()};
 
@@ -328,9 +328,10 @@ zx_status_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_t resu
   DEBUG_ASSERT(!timer_is_monotonic_paused());
   auto ensure_mono_not_paused = fit::defer([] { DEBUG_ASSERT(!timer_is_monotonic_paused()); });
 
-  const zx_instant_boot_t suspend_request_boot_time = current_boot_time();
-  if (resume_at < suspend_request_boot_time) {
-    return ZX_ERR_TIMED_OUT;
+  const zx_instant_boot_t suspend_start_time = current_boot_time();
+  if (resume_at < suspend_start_time) {
+    resume_timer_wake_vector_->wake_event.Strobe();
+    return suspend_start_time;
   }
 
   // Conditionally set the global suspended flag so that other subsystems can act appropriately
@@ -347,10 +348,10 @@ zx_status_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_t resu
 
       // TODO(https://fxbug.dev/348668110): Revisit this logging.  Still needed?
       printf("begin dump of pending wake events\n");
-      WakeEvent::Dump(stdout, suspend_request_boot_time);
+      WakeEvent::Dump(stdout, suspend_start_time);
       printf("end dump of pending wake events\n");
 
-      return ZX_ERR_BAD_STATE;
+      return suspend_start_time;
     }
   }
 
@@ -444,10 +445,11 @@ zx_status_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_t resu
     }
 
     dprintf(INFO, "Wake events triggered after/during suspend:\n");
-    WakeEvent::Dump(stdout, suspend_request_boot_time);
+    WakeEvent::Dump(stdout, suspend_start_time);
 
     // Ack the suspend timeout wake event after reporting wake event diagnostics.
-    resume_timer_wake_vector_->wake_event.Acknowledge();
+    using AckBehavior = wake_vector::WakeEvent::AckBehavior;
+    resume_timer_wake_vector_->wake_event.Acknowledge(AckBehavior::ClearSignaled);
 
     // If the boot CPU is in the Wakeup state, set it to Active.
     StateMachine expected = kWakeup;
@@ -477,7 +479,7 @@ zx_status_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_t resu
   DEBUG_ASSERT(cpus_to_resume == 0);
 
   dprintf(INFO, "Done resuming non-boot CPUs.\n");
-  return ZX_OK;
+  return suspend_start_time;
 }
 
 IdlePowerThread::WakeResult IdlePowerThread::WakeBootCpu() {
@@ -548,7 +550,7 @@ void IdlePowerThread::ResumeFromTimerIrq(zx_instant_boot_t now, zx_instant_boot_
   // Verify this handler is running in the correct context.
   DEBUG_ASSERT(arch_curr_cpu_num() == BOOT_CPU_ID);
 
-  const WakeResult wake_result = resume_timer_wake_vector_->wake_event.Trigger();
+  const WakeResult wake_result = resume_timer_wake_vector_->wake_event.Trigger(now);
   const char* message_prefix = wake_result == WakeResult::SuspendAborted
                                    ? "Wakeup before suspend completed. Aborting suspend"
                                    : "Resuming boot CPU";
@@ -623,7 +625,8 @@ static int cmd_suspend(int argc, const cmd_args* argv, uint32_t flags) {
     }
 
     const zx_instant_boot_t resume_at = zx_time_add_duration(current_boot_time(), delay);
-    return IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
+    IdlePowerThread::TransitionAllActiveToSuspend(resume_at);
+    return ZX_OK;
   }
 
   if (!strcmp(argv[1].str, "wake-events")) {

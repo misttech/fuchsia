@@ -64,10 +64,15 @@ TEST(SystemSuspend, ResourceValidation) {
   zx::event event;
   ASSERT_OK(zx::event::create(0, &event));
 
-  // The suspend call validates the resource before proceeding, errors associated with other
-  // conditions means validation succeeded.
-  EXPECT_EQ(ZX_ERR_TIMED_OUT, zx_system_suspend_enter(resource_result->get(), ZX_TIME_INFINITE_PAST,
-                                                      0, nullptr, nullptr, 0, nullptr));
+  // Confirm that calls to suspend_enter succeed when we pass the proper resource.  We are not
+  // actually going to suspend here, as our deadline is INFINITE_PAST, but if we bothered to request
+  // a wake-source report and check its results, we'd see that the system-wide deadline wake source
+  // had fired and prevented our suspend.  We'll confirm this during the TimeoutIsPast tests.
+  EXPECT_OK(zx_system_suspend_enter(resource_result->get(), ZX_TIME_INFINITE_PAST, 0, nullptr,
+                                    nullptr, 0, nullptr));
+
+  // Try to pass a handle to an event as our resource, instead of the actual resource token.  Our
+  // call should fail and the error should be WRONG_TYPE.
   EXPECT_EQ(ZX_ERR_WRONG_TYPE, zx_system_suspend_enter(event.get(), ZX_TIME_INFINITE_PAST, 0,
                                                        nullptr, nullptr, 0, nullptr));
 
@@ -81,13 +86,47 @@ TEST(SystemSuspend, TimeoutIsPast) {
   const zx::result resource_result = GetSystemCpuResource();
   ASSERT_OK(resource_result.status_value());
 
+  zx_wake_source_report_header_t hdr;
+  std::array<zx_wake_source_report_entry_t, 4> entries;
+  uint32_t actual_entries;
+
+  auto ResetReport = [&]() {
+    ::memset(&hdr, 0, sizeof(hdr));
+    for (zx_wake_source_report_entry_t& entry : entries) {
+      ::memset(&entry, 0, sizeof(entry));
+    }
+    actual_entries = 0;
+  };
+
+  auto VerifyTimeout = [&]() {
+    ASSERT_LE(actual_entries, entries.size());
+
+    bool found_timeout = false;
+    for (uint32_t i = 0; i < actual_entries; ++i) {
+      if (entries[i].koid == ZX_KOID_KERNEL) {
+        found_timeout = true;
+        break;
+      }
+    }
+
+    EXPECT_TRUE(found_timeout);
+  };
+
   const zx::time_boot almost_now = zx::clock::get_boot() - zx::nsec(1);
-  EXPECT_EQ(ZX_ERR_TIMED_OUT, zx_system_suspend_enter(resource_result->get(), almost_now.get(), 0,
-                                                      nullptr, nullptr, 0, nullptr));
-  EXPECT_EQ(ZX_ERR_TIMED_OUT, zx_system_suspend_enter(resource_result->get(), ZX_TIME_INFINITE_PAST,
-                                                      0, nullptr, nullptr, 0, nullptr));
-  EXPECT_EQ(ZX_ERR_TIMED_OUT,
-            zx_system_suspend_enter(resource_result->get(), 0, 0, nullptr, nullptr, 0, nullptr));
+  ResetReport();
+  EXPECT_OK(zx_system_suspend_enter(resource_result->get(), almost_now.get(), 0, &hdr,
+                                    entries.data(), entries.size(), &actual_entries));
+  VerifyTimeout();
+
+  ResetReport();
+  EXPECT_OK(zx_system_suspend_enter(resource_result->get(), ZX_TIME_INFINITE_PAST, 0, &hdr,
+                                    entries.data(), entries.size(), &actual_entries));
+  VerifyTimeout();
+
+  ResetReport();
+  EXPECT_OK(zx_system_suspend_enter(resource_result->get(), 0, 0, &hdr, entries.data(),
+                                    entries.size(), &actual_entries));
+  VerifyTimeout();
 }
 
 TEST(SystemSuspend, SuspendAndResumeByTimer) {

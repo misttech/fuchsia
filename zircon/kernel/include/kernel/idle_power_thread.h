@@ -97,12 +97,11 @@ class IdlePowerThread final {
   // CPUs that are Offline before suspend will remain Offline after resume until explicitly
   // transitioned to Active.
   //
-  // Returns:
-  //  - ZX_OK if active CPU suspend succeeded and then resumed.
-  //  - ZX_ERR_TIMED_OUT when resume_at is in the past before transitioning to suspend.
-  //  - ZX_ERR_BAD_STATE if there is a pending wake event when attempting to transition to suspend.
-  static zx_status_t TransitionAllActiveToSuspend(zx_instant_boot_t resume_at = ZX_TIME_INFINITE)
-      TA_EXCL(TransitionLock::Get());
+  // Returns:  The boot-time at which the suspend operation is formally considered to have started.
+  // This value can be used in conjunction with timestamps recorded in wake events to decide whether
+  // a wake vector became signaled before suspend had formally started, or not.
+  static zx_instant_boot_t TransitionAllActiveToSuspend(
+      zx_instant_boot_t resume_at = ZX_TIME_INFINITE) TA_EXCL(TransitionLock::Get());
 
   // Implements the run loop executed by the CPU's idle/power thread.
   static int Run(void* arg);

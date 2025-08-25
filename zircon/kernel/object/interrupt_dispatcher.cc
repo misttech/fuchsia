@@ -6,6 +6,7 @@
 
 #include "object/interrupt_dispatcher.h"
 
+#include <lib/affine/ratio.h>
 #include <platform.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/syscalls/port.h>
@@ -62,9 +63,36 @@ ktl::optional<zx_status_t> InterruptDispatcher::BeginWaitForInterrupt(zx_time_t*
         return event_.Unsignal();
 
       case InterruptState::NEEDACK:
-        if (is_wake_vector()) {
-          wake_event_.Acknowledge();
+        // We are in the NEEDACK state and have been waiting for a thread to
+        // block on this object to serve as our Ack signal.  _If_ we are an
+        // edge triggered interrupt, it is possible that we were signaled (by
+        // hardware) once again after unblocking the time before.  If that has
+        // happened, we will have a non-zero value stored in timestamp_, meaning
+        // that there is another IRQ pending.
+        //
+        // So, if there is a pending IRQ, consume the timestamp, clear the
+        // signal, and do not block our thread (as if we were in the TRIGGERED
+        // state).  Otherwise, unmask our interrupt at the proper point in the
+        // sequence, change to the waiting state, and block our thread.
+        if (timestamp_) {
+          // if we are a wake vector and our consuming a pending interrupt, then
+          // make sure that our wake event remains signaled as we record the
+          // acknowledgement event.
+          if (is_wake_vector()) {
+            wake_event_.Acknowledge(wake_vector::WakeEvent::AckBehavior::RemainSignaled);
+          }
+
+          *out_timestamp = timestamp_;
+          timestamp_ = 0;
+          return event_.Unsignal();
+        } else {
+          // There is no pending interrupt.  If we are a wake vector, ack our wake event and clear
+          // its signaled state.
+          if (is_wake_vector()) {
+            wake_event_.Acknowledge(wake_vector::WakeEvent::AckBehavior::ClearSignaled);
+          }
         }
+
         if (flags_ & INTERRUPT_UNMASK_PREWAIT) {
           UnmaskInterrupt();
         } else if (flags_ & INTERRUPT_UNMASK_PREWAIT_UNLOCKED) {
@@ -113,37 +141,60 @@ bool InterruptDispatcher::SendPacketLocked(zx_time_t timestamp) {
 }
 
 zx_status_t InterruptDispatcher::Trigger(zx_time_t timestamp) {
-  if (!(flags_ & INTERRUPT_VIRTUAL))
+  if (!(flags_ & INTERRUPT_VIRTUAL)) {
     return ZX_ERR_BAD_STATE;
+  }
 
   // Use preempt disable for correctness to prevent rescheduling when waking a
   // thread while holding the spinlock.
   AutoPreemptDisabler preempt_disable;
   Guard<SpinLock, IrqSave> guard{&spinlock_};
 
+  // Nothing to do if this interrupt has been destroyed and is waiting to be
+  // cleaned up.
+  if (state_ == InterruptState::DESTROYED) {
+    return ZX_ERR_CANCELED;
+  }
+
   // only record timestamp if this is the first signal since we started waiting
   if (!timestamp_) {
     timestamp_ = timestamp;
   }
-  if (state_ == InterruptState::DESTROYED) {
-    return ZX_ERR_CANCELED;
+
+  if (is_wake_vector()) {
+    // If this interrupt is configured to use Monotonic timestamps, then we need
+    // to capture a new boot timestamp to use as the trigger time for the wake
+    // vector.  There is no way (nor will there ever be a way) to convert (after
+    // initial capture) from monotonic time to boot time, or vice versa.
+    const zx_instant_boot_t boot_time_trigger =
+        ((options_ & INTERRUPT_TIMESTAMP_MONO) == 0) ? timestamp : current_boot_time();
+    wake_event_.Trigger(boot_time_trigger);
   }
+
   if (state_ == InterruptState::NEEDACK && port_dispatcher_) {
     // Cannot trigger a interrupt without ACK
     // only record timestamp if this is the first signal since we started waiting
     return ZX_OK;
   }
 
-  if (is_wake_vector()) {
-    wake_event_.Trigger();
-  }
-
   if (port_dispatcher_) {
-    SendPacketLocked(timestamp);
-    state_ = InterruptState::NEEDACK;
+    // Only send a packet if we are not already in the NEEDACK state.  If we are
+    // already in NEEDACK, the packet will be sent as soon as the user
+    // explicitly acks the interrupt.
+    if (state_ != InterruptState::NEEDACK) {
+      SendPacketLocked(timestamp);
+      state_ = InterruptState::NEEDACK;
+    }
   } else {
     Signal();
-    state_ = InterruptState::TRIGGERED;
+
+    // Do not change state to TRIGGERED if we are in the NEEDACK state.  We
+    // recorded a timestamp (above) which is the signal to a calling thread that
+    // we are in the signaled state, and as soon as a thread blocks on the
+    // object again, we will deliver the interrupt to them.
+    if (state_ != InterruptState::NEEDACK) {
+      state_ = InterruptState::TRIGGERED;
+    }
   }
   return ZX_OK;
 }
@@ -155,32 +206,47 @@ void InterruptDispatcher::InterruptHandler() {
   AutoPreemptDisabler preempt_disable;
   Guard<SpinLock, IrqSave> guard{&spinlock_};
 
+  const CurrentTicksObservation trigger_time = timer_current_mono_and_boot_ticks();
+  ktl::optional<zx_instant_boot_t> boot_trigger_time;
+
   // only record timestamp if this is the first IRQ since we started waiting
   if (!timestamp_) {
     if (flags_ & INTERRUPT_TIMESTAMP_MONO) {
-      timestamp_ = current_mono_time();
+      timestamp_ = timer_get_ticks_to_time_ratio().Scale(trigger_time.mono_now);
     } else {
-      timestamp_ = current_boot_time();
+      boot_trigger_time = timestamp_ = timer_get_ticks_to_time_ratio().Scale(trigger_time.boot_now);
     }
   }
-  if (state_ == InterruptState::NEEDACK && port_dispatcher_) {
-    return;
+
+  // If we are a wake vector, trigger the wake event which will wake the system
+  // if suspended and prevent entering suspend until acknowledged.
+  if (is_wake_vector()) {
+    wake_event_.Trigger(boot_trigger_time.has_value()
+                            ? boot_trigger_time.value()
+                            : timer_get_ticks_to_time_ratio().Scale(trigger_time.boot_now));
   }
+
   if (port_dispatcher_) {
-    SendPacketLocked(timestamp_);
-    state_ = InterruptState::NEEDACK;
+    // Only send a packet if we are not already in the NEEDACK state.  If we are
+    // already in NEEDACK, the packet will be sent as soon as the user
+    // explicitly acks the interrupt.
+    if (state_ != InterruptState::NEEDACK) {
+      SendPacketLocked(timestamp_);
+      state_ = InterruptState::NEEDACK;
+    }
   } else {
     if (flags_ & INTERRUPT_MASK_POSTWAIT) {
       MaskInterrupt();
     }
     Signal();
-    state_ = InterruptState::TRIGGERED;
-  }
-  if (is_wake_vector() &&
-      (state_ == InterruptState::TRIGGERED || state_ == InterruptState::NEEDACK)) {
-    // Trigger the wake event which will wake the system if suspended and prevent entering suspend
-    // until acknowledged.
-    wake_event_.Trigger();
+
+    // Do not change state to TRIGGERED if we are in the NEEDACK state.  We
+    // recorded a timestamp (above) which is the signal to a calling thread that
+    // we are in the signaled state, and as soon as a thread blocks on the
+    // object again, we will deliver the interrupt to them.
+    if (state_ != InterruptState::NEEDACK) {
+      state_ = InterruptState::TRIGGERED;
+    }
   }
 }
 
@@ -287,18 +353,18 @@ zx::result<InterruptDispatcher::PostAckState> InterruptDispatcher::AckInternal()
     if (port_dispatcher_ == nullptr && !(flags_ & INTERRUPT_ALLOW_ACK_WITHOUT_PORT_FOR_TEST)) {
       return zx::error(ZX_ERR_BAD_STATE);
     }
+
     if (state_ == InterruptState::DESTROYED) {
       return zx::error(ZX_ERR_CANCELED);
     }
+
     if (state_ == InterruptState::NEEDACK) {
-      if (is_wake_vector()) {
-        wake_event_.Acknowledge();
-      }
       if (flags_ & INTERRUPT_UNMASK_PREWAIT) {
         UnmaskInterrupt();
       } else if (flags_ & INTERRUPT_UNMASK_PREWAIT_UNLOCKED) {
         defer_unmask = true;
       }
+
       if (timestamp_) {
         if (!SendPacketLocked(timestamp_)) {
           // We cannot queue another packet here.
@@ -308,8 +374,22 @@ zx::result<InterruptDispatcher::PostAckState> InterruptDispatcher::AckInternal()
           // interrupt was ACK'd
           return zx::error(ZX_ERR_BAD_STATE);
         }
+
+        // If we are a wake vector, record our last_ack timestamp, but do not
+        // clear the signaled state.  We just sent a new port packet, so there
+        // is another interrupt signal on its way to user mode.
+        if (is_wake_vector()) {
+          wake_event_.Acknowledge(wake_vector::WakeEvent::AckBehavior::RemainSignaled);
+        }
+
         post_ack_state = PostAckState::Retriggered;
       } else {
+        // There are no other interrupt pending right now.  If we are a wake
+        // vector, ack our wake event clearing the signaled state in the
+        // process, then return to the IDLE state.
+        if (is_wake_vector()) {
+          wake_event_.Acknowledge(wake_vector::WakeEvent::AckBehavior::ClearSignaled);
+        }
         state_ = InterruptState::IDLE;
       }
     }

@@ -10,6 +10,7 @@ zx_library("wake-vector") {
   sources = [ "wake-vector.cc" ]
   deps = [
     "//zircon/kernel/lib/ktl",
+    "//zircon/kernel/lib/user_copy",
     "//zircon/system/ulib/affine",
   ]
 }

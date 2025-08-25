@@ -732,7 +732,59 @@ zx_status_t sys_system_suspend_enter(zx_handle_t resource, zx_instant_boot_t res
     return validate_status;
   }
 
-  return IdlePowerThread::TransitionAllActiveToSuspend(resume_deadline);
+  // Make sure that any flags passed by the user are defined.
+  constexpr uint64_t kValidFlags =
+      ZX_SYSTEM_SUSPEND_OPTION_DISCARD | ZX_SYSTEM_SUSPEND_OPTION_REPORT_ONLY;
+  if (options & ~kValidFlags) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  // The event parameters need to be "consistent".  IOW - if someone wants
+  // entries, they need to pass a buffer with at least enough room for 1 event,
+  // and a pointer to a u32 to hold the number of entries returned.  If they
+  // don't, then the pointers should be nullptr, and the num_entries should be
+  // zero.
+  const bool wants_entries = (out_entries.get() != nullptr);
+  if ((wants_entries != (num_entries > 0)) ||
+      (wants_entries != (actual_entries.get() != nullptr))) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  // Additionally, if the user passes space for entries, they have to have passed
+  // room for a report header as well.  It is OK to get a report header without
+  // any entries, but not the other way around.
+  const bool wants_report = (out_header.get() != nullptr);
+  if (wants_entries && !wants_report) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  // If the user has asked us to discard wake entries for wake vectors which are
+  // currently ack'ed, do so now.
+  if (options & ZX_SYSTEM_SUSPEND_OPTION_DISCARD) {
+    wake_vector::WakeEvent::DiscardWakeEventReport();
+  }
+
+  // If the user has asked us to only generate a report (but not actually try to
+  // suspend), make sure they (at least) passed us a buffer to hold a report
+  // header, then generate the report and get out.
+  if (options & ZX_SYSTEM_SUSPEND_OPTION_REPORT_ONLY) {
+    if (!wants_report) {
+      return ZX_ERR_INVALID_ARGS;
+    }
+
+    return wake_vector::WakeEvent::GenerateWakeEventReport(
+        ZX_TIME_INFINITE, out_header, out_entries, num_entries, actual_entries);
+  }
+
+  // Finally, attempt to drop into suspend.  Then, if the user asked for a wake
+  // event report, generate one for them.
+  const zx_instant_boot_t suspend_start_time =
+      IdlePowerThread::TransitionAllActiveToSuspend(resume_deadline);
+  if (wants_report) {
+    return wake_vector::WakeEvent::GenerateWakeEventReport(
+        suspend_start_time, out_header, out_entries, num_entries, actual_entries);
+  }
+  return ZX_OK;
 }
 
 zx_status_t sys_system_set_processor_power_domain(
