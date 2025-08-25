@@ -29,17 +29,10 @@ class DisplayEngineEventsInterface {
 
   virtual void OnDisplayAdded(display::DisplayId display_id,
                               cpp20::span<const display::ModeAndId> preferred_modes,
-                              cpp20::span<const display::PixelFormat> pixel_formats);
+                              cpp20::span<const display::PixelFormat> pixel_formats) = 0;
   virtual void OnDisplayRemoved(display::DisplayId display_id) = 0;
   virtual void OnDisplayVsync(display::DisplayId display_id, zx::time_monotonic timestamp,
                               display::DriverConfigStamp config_stamp) = 0;
-
-  // OOT drivers must not use the EDID display API.
-  // The interface is not stabilized and will change.
-  virtual void OnDisplayAdded(display::DisplayId display_id,
-                              cpp20::span<const display::ModeAndId> preferred_modes,
-                              cpp20::span<const uint8_t> edid_bytes,
-                              cpp20::span<const display::PixelFormat> pixel_formats) = 0;
 
   // OOT drivers must not use the capture API.
   // The interface is not stabilized and will change.

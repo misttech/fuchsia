@@ -46,7 +46,7 @@ constexpr fdf_arena_tag_t kArenaTag = 'DISP';
 
 void DisplayEngineEventsFidl::OnDisplayAdded(
     display::DisplayId display_id, cpp20::span<const display::ModeAndId> preferred_modes,
-    cpp20::span<const uint8_t> edid_bytes, cpp20::span<const display::PixelFormat> pixel_formats) {
+    cpp20::span<const display::PixelFormat> pixel_formats) {
   ZX_DEBUG_ASSERT(preferred_modes.size() <= kMaxPreferredModes);
   ZX_DEBUG_ASSERT(pixel_formats.size() <= kMaxPixelFormats);
 
@@ -66,14 +66,11 @@ void DisplayEngineEventsFidl::OnDisplayAdded(
     fidl_pixel_formats_buffer[i] = pixel_formats[i].ToFidl();
   }
 
-  ZX_DEBUG_ASSERT(edid_bytes.size() <= edid_buffer_.max_size());
-  std::copy(edid_bytes.begin(), edid_bytes.end(), edid_buffer_.begin());
-
   fuchsia_hardware_display_engine::wire::RawDisplayInfo fidl_display_info = {
       .display_id = display_id.ToFidl(),
       .preferred_modes = fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(
           fidl_preferred_modes_buffer.data(), preferred_modes.size()),
-      .edid_bytes = fidl::VectorView<uint8_t>::FromExternal(edid_buffer_.data(), edid_bytes.size()),
+      .edid_bytes = {},
       .pixel_formats = fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(
           fidl_pixel_formats_buffer.data(), pixel_formats.size()),
   };

@@ -77,7 +77,6 @@ class TestDisplayEngineListener : public display::DisplayEngineEventsInterface {
   // display::DisplayEngineEventsInterface:
   void OnDisplayAdded(display::DisplayId display_id,
                       cpp20::span<const display::ModeAndId> preferred_modes,
-                      cpp20::span<const uint8_t> edid_bytes,
                       cpp20::span<const display::PixelFormat> pixel_formats) override {
     display_added_.Signal();
   }

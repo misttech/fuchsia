@@ -140,27 +140,6 @@ constexpr std::array<uint8_t, Size> CreateArithmeticProgression(size_t starting_
   return result;
 }
 
-TEST_F(DisplayEngineEventsFidlTest, OnDisplayAddedWithEdidBytes) {
-  static constexpr display::DisplayId kDisplayId(42);
-  static constexpr cpp20::span<const display::ModeAndId> kEmptyPreferredModes;
-  static constexpr std::array<uint8_t, 256> kEdidBytes = CreateArithmeticProgression<256>(0);
-  static constexpr cpp20::span<const display::PixelFormat> kEmptyPixelFormats;
-
-  mock_->ExpectOnDisplayAdded(
-      [&](fuchsia_hardware_display_engine::wire::EngineListenerOnDisplayAddedRequest* request,
-          fdf::Arena& arena,
-          fdf::WireServer<fuchsia_hardware_display_engine::EngineListener>::
-              OnDisplayAddedCompleter::Sync& completer) {
-        fuchsia_hardware_display_engine::wire::RawDisplayInfo& display_info = request->display_info;
-
-        EXPECT_EQ(42u, display_info.display_id.value);
-        EXPECT_THAT(display_info.preferred_modes, ::testing::IsEmpty());
-        EXPECT_THAT(display_info.edid_bytes, ::testing::ElementsAreArray(kEdidBytes));
-        EXPECT_THAT(display_info.pixel_formats, ::testing::IsEmpty());
-      });
-  interface_.OnDisplayAdded(kDisplayId, kEmptyPreferredModes, kEdidBytes, kEmptyPixelFormats);
-}
-
 TEST_F(DisplayEngineEventsFidlTest, OnDisplayAddedWithPixelFormats) {
   static constexpr display::DisplayId kDisplayId(42);
   static constexpr cpp20::span<const display::ModeAndId> kEmptyPreferredModes;
@@ -186,74 +165,6 @@ TEST_F(DisplayEngineEventsFidlTest, OnDisplayAddedWithPixelFormats) {
                     ::testing::ElementsAreArray(kExpectedFidlPixelFormats));
       });
   interface_.OnDisplayAdded(kDisplayId, kEmptyPreferredModes, kPixelFormats);
-}
-
-TEST_F(DisplayEngineEventsFidlTest, OnDisplayAddedWithPreferredModeAndEdidBytesAndPixelFormats) {
-  static constexpr display::DisplayId kDisplayId(42);
-  static constexpr std::array<uint8_t, 256> kEdidBytes = CreateArithmeticProgression<256>(0);
-  static constexpr display::ModeAndId kPreferredModes[] = {
-      display::ModeAndId({
-          .id = display::ModeId(1),
-          .mode = display::Mode({
-              .active_width = 640,
-              .active_height = 480,
-              .refresh_rate_millihertz = 60'000,
-          }),
-      }),
-      display::ModeAndId({
-          .id = display::ModeId(2),
-          .mode = display::Mode({
-              .active_width = 640,
-              .active_height = 480,
-              .refresh_rate_millihertz = 30'000,
-          }),
-      }),
-      display::ModeAndId({
-          .id = display::ModeId(3),
-          .mode = display::Mode({
-              .active_width = 800,
-              .active_height = 600,
-              .refresh_rate_millihertz = 30'000,
-          }),
-      }),
-  };
-  static constexpr display::PixelFormat kPixelFormats[] = {
-      display::PixelFormat::kB8G8R8A8, display::PixelFormat::kR8G8B8A8,
-      display::PixelFormat::kR8G8B8, display::PixelFormat::kB8G8R8};
-
-  static constexpr fuchsia_images2::wire::PixelFormat kExpectedFidlPixelFormats[] = {
-      kPixelFormats[0].ToFidl(), kPixelFormats[1].ToFidl(), kPixelFormats[2].ToFidl(),
-      kPixelFormats[3].ToFidl()};
-
-  mock_->ExpectOnDisplayAdded(
-      [&](fuchsia_hardware_display_engine::wire::EngineListenerOnDisplayAddedRequest* request,
-          fdf::Arena& arena,
-          fdf::WireServer<fuchsia_hardware_display_engine::EngineListener>::
-              OnDisplayAddedCompleter::Sync& completer) {
-        fuchsia_hardware_display_engine::wire::RawDisplayInfo& display_info = request->display_info;
-
-        EXPECT_EQ(42u, display_info.display_id.value);
-
-        ASSERT_EQ(3u, display_info.preferred_modes.size());
-
-        EXPECT_EQ(640u, display_info.preferred_modes[0].active_area.width);
-        EXPECT_EQ(480u, display_info.preferred_modes[0].active_area.height);
-        EXPECT_EQ(60'000u, display_info.preferred_modes[0].refresh_rate_millihertz);
-
-        EXPECT_EQ(640u, display_info.preferred_modes[1].active_area.width);
-        EXPECT_EQ(480u, display_info.preferred_modes[1].active_area.height);
-        EXPECT_EQ(30'000u, display_info.preferred_modes[1].refresh_rate_millihertz);
-
-        EXPECT_EQ(800u, display_info.preferred_modes[2].active_area.width);
-        EXPECT_EQ(600u, display_info.preferred_modes[2].active_area.height);
-        EXPECT_EQ(30'000u, display_info.preferred_modes[2].refresh_rate_millihertz);
-
-        EXPECT_THAT(display_info.edid_bytes, ::testing::ElementsAreArray(kEdidBytes));
-
-        EXPECT_THAT(display_info.pixel_formats,
-                    ::testing::ElementsAreArray(kExpectedFidlPixelFormats));
-      });
-  interface_.OnDisplayAdded(kDisplayId, kPreferredModes, kEdidBytes, kPixelFormats);
 }
 
 TEST_F(DisplayEngineEventsFidlTest, OnDisplayAddedWithNoListener) {

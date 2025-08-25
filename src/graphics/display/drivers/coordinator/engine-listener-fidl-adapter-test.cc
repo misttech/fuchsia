@@ -25,7 +25,6 @@
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 #include "src/graphics/display/lib/api-types/cpp/mode.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
-#include "src/graphics/display/lib/edid-values/edid-values.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace display_coordinator {
@@ -77,7 +76,6 @@ TEST_F(EngineListenerFidlAdapterTest, OnDisplayAdded) {
               {.active_width = 1024, .active_height = 768, .refresh_rate_millihertz = 60'000}),
       }},
   };
-  static constexpr std::span<const uint8_t> kEdidBytes = edid::kDellP2719hEdid;
 
   libsync::Completion completion;
   mock_engine_listener_.ExpectOnDisplayAdded([&](std::unique_ptr<AddedDisplayInfo> info) {
@@ -93,11 +91,10 @@ TEST_F(EngineListenerFidlAdapterTest, OnDisplayAdded) {
     EXPECT_EQ(preferred_mode.active_area().height(), 768);
     EXPECT_EQ(preferred_mode.refresh_rate_millihertz(), 60'000);
 
-    EXPECT_THAT(info->edid_bytes, ::testing::ElementsAreArray(kEdidBytes));
     completion.Signal();
   });
 
-  events_.OnDisplayAdded(kDisplayId, kPreferredModes, kEdidBytes, kPixelFormats);
+  events_.OnDisplayAdded(kDisplayId, kPreferredModes, kPixelFormats);
   completion.Wait();
 }
 
