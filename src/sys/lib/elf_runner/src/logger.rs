@@ -8,14 +8,12 @@ use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_logger as flogger;
 use fuchsia_component::client::connect::connect_to_named_protocol_at_dir_root;
 use futures::FutureExt;
-use lazy_static::lazy_static;
 use log::warn;
 use namespace::Namespace;
 use std::future::Future;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref SVC_DIRECTORY_PATH: NamespacePath = "/svc".parse().unwrap();
-}
+static SVC_DIRECTORY_PATH: LazyLock<NamespacePath> = LazyLock::new(|| "/svc".parse().unwrap());
 
 pub fn create_namespace_logger(
     ns: &Namespace,

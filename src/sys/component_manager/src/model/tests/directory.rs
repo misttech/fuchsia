@@ -10,11 +10,11 @@ use cm_rust_testing::*;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use futures::channel::mpsc;
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
+use vfs::ObjectRequestRef;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::execution_scope::ExecutionScope;
 use vfs::remote::RemoteLike;
-use vfs::ObjectRequestRef;
 use zx::AsHandleRef;
 
 use crate::model::actions::{ActionsManager, DestroyAction};
@@ -116,9 +116,8 @@ async fn starting_directory_using_target_component_does_not_start_source() {
 async fn open_requests_go_to_the_same_directory_connection() {
     let test = build_realm().await;
 
-    lazy_static! {
-        static ref OPEN_FLAGS: fio::Flags = fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY;
-    }
+    static OPEN_FLAGS: LazyLock<fio::Flags> =
+        LazyLock::new(|| fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY);
 
     // A directory that notifies via the sender whenever it is opened.
     struct MockDir(mpsc::Sender<()>);

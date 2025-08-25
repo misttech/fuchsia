@@ -2,25 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl_fuchsia_boot as fboot;
 use fuchsia_zbi::ZbiType::StorageBootfsFactory;
 use fuchsia_zbi::{ZbiParser, ZbiParserError, ZbiResult};
 use futures::prelude::*;
-use lazy_static::lazy_static;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use zx::{self as zx, HandleBased};
 
-lazy_static! {
-    // The default rights for an immutable VMO. For details see
-    // https://fuchsia.dev/fuchsia-src/reference/syscalls/vmo_create#description.
-    static ref IMMUTABLE_VMO_RIGHTS: zx::Rights = zx::Rights::DUPLICATE
+// The default rights for an immutable VMO. For details see
+// https://fuchsia.dev/fuchsia-src/reference/syscalls/vmo_create#description.
+static IMMUTABLE_VMO_RIGHTS: LazyLock<zx::Rights> = LazyLock::new(|| {
+    zx::Rights::DUPLICATE
         | zx::Rights::TRANSFER
         | zx::Rights::READ
         | zx::Rights::MAP
-        | zx::Rights::GET_PROPERTY;
-}
+        | zx::Rights::GET_PROPERTY
+});
 
 #[derive(Debug)]
 struct FactoryItem {

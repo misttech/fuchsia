@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use darling::{ast, FromDeriveInput, FromField, FromMeta, FromVariant};
+use darling::{FromDeriveInput, FromField, FromMeta, FromVariant, ast};
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
-use syn::{parse_macro_input, Ident, Type};
+use syn::{Ident, Type, parse_macro_input};
 
 const PATHS_DELIM: &str = ",";
 
@@ -165,9 +165,7 @@ fn fidl_decl_derive_impl(input: syn::DeriveInput) -> TokenStream {
             let t = quote! {
                 impl SourcePath for #ident {
                     fn source_path(&self) -> BorrowedSeparatedPath<'_> {
-                        lazy_static::lazy_static! {
-                            static ref DOT: RelativePath = RelativePath::dot();
-                        }
+                        static DOT: LazyLock<RelativePath> = LazyLock::new(|| RelativePath::dot());
                         #[cfg(fuchsia_api_level_at_least = "HEAD")]
                         let dirname = &self.source_dictionary;
                         #[cfg(fuchsia_api_level_less_than = "HEAD")]
@@ -189,9 +187,7 @@ fn fidl_decl_derive_impl(input: syn::DeriveInput) -> TokenStream {
             let t = quote! {
                 impl SourcePath for #ident {
                     fn source_path(&self) -> BorrowedSeparatedPath<'_> {
-                        lazy_static::lazy_static! {
-                            static ref DOT: RelativePath = RelativePath::dot();
-                        }
+                        static DOT: LazyLock<RelativePath> = LazyLock::new(|| RelativePath::dot());
                         BorrowedSeparatedPath {
                             dirname: &*DOT,
                             basename: &self.source_name,

@@ -7,14 +7,14 @@ use cm_types::NamespacePath;
 use fidl::endpoints::ServerEnd;
 use fidl::epitaph::ChannelEpitaphExt;
 use fidl::prelude::*;
-use fuchsia_runtime::{job_default, HandleInfo, HandleType};
+use fuchsia_runtime::{HandleInfo, HandleType, job_default};
 use futures::future::{BoxFuture, Either};
 use futures::prelude::*;
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
 use futures::stream::BoxStream;
-use lazy_static::lazy_static;
 use log::*;
 use namespace::Namespace;
+use std::sync::LazyLock;
 use thiserror::Error;
 use zx::{self as zx, HandleBased, Status};
 use {
@@ -22,9 +22,7 @@ use {
     fidl_fuchsia_io as fio, fidl_fuchsia_process as fproc, fuchsia_async as fasync,
 };
 
-lazy_static! {
-    pub static ref PKG_PATH: NamespacePath = "/pkg".parse().unwrap();
-}
+pub static PKG_PATH: LazyLock<NamespacePath> = LazyLock::new(|| "/pkg".parse().unwrap());
 
 /// Object implementing this type can be killed by calling kill function.
 #[async_trait]
@@ -468,7 +466,7 @@ mod tests {
     use anyhow::Error;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
-    use fidl::endpoints::{create_endpoints, create_proxy, ClientEnd};
+    use fidl::endpoints::{ClientEnd, create_endpoints, create_proxy};
     use fidl_fuchsia_component_runner::{self as fcrunner, ComponentControllerProxy};
     use fuchsia_runtime::{HandleInfo, HandleType};
     use futures::future::BoxFuture;
@@ -773,8 +771,8 @@ mod tests {
             options: zx::ProcessOptions,
         }
 
-        fn start_launcher(
-        ) -> Result<(fproc::LauncherProxy, oneshot::Receiver<FakeLauncherServiceResults>), Error>
+        fn start_launcher()
+        -> Result<(fproc::LauncherProxy, oneshot::Receiver<FakeLauncherServiceResults>), Error>
         {
             let (launcher_proxy, server_end) = create_proxy::<fproc::LauncherMarker>();
             let (sender, receiver) = oneshot::channel();

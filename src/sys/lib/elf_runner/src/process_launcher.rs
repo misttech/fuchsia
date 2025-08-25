@@ -8,14 +8,13 @@ use cm_types::NamespacePath;
 use fidl_connector::Connect;
 use fuchsia_runtime::{HandleInfo, HandleInfoError};
 use futures::prelude::*;
-use lazy_static::lazy_static;
 use log::warn;
 use process_builder::{
     BuiltProcess, NamespaceEntry, ProcessBuilder, ProcessBuilderError, StartupHandle,
 };
 use std::ffi::CString;
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use zx::{self as zx, AsHandleRef, sys};
 use {fidl_fuchsia_process as fproc, fuchsia_async as fasync};
@@ -381,9 +380,7 @@ impl Connect for NamespaceConnector {
     type Proxy = fproc::LauncherProxy;
 
     fn connect(&self) -> Result<Self::Proxy, anyhow::Error> {
-        lazy_static! {
-            static ref PATH: NamespacePath = "/svc".parse().unwrap();
-        };
+        static PATH: LazyLock<NamespacePath> = LazyLock::new(|| "/svc".parse().unwrap());
         let svc = self.namespace.get(&PATH).ok_or_else(|| {
             NamespaceConnectorError::MissingSvcInNamespace(self.namespace.paths())
         })?;

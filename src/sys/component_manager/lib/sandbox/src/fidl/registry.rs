@@ -3,19 +3,16 @@
 // found in the LICENSE file.
 
 use crate::{Capability, RemoteError};
-use fidl::handle::{AsHandleRef, EventPair, Signals};
 use fidl::HandleRef;
+use fidl::handle::{AsHandleRef, EventPair, Signals};
 use fuchsia_async as fasync;
 use futures::FutureExt;
-use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use zx::Koid;
 
-lazy_static! {
-    static ref REGISTRY: Mutex<Registry> = Mutex::new(Registry::default());
-}
+static REGISTRY: LazyLock<Mutex<Registry>> = LazyLock::new(|| Mutex::new(Registry::default()));
 
 /// Given a reference to a handle, returns a copy of a capability from the registry that was added
 /// with the handle's koid.

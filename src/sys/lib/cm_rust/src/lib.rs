@@ -10,6 +10,7 @@ use cm_types::{AllowedOffers, BorrowedSeparatedPath, LongName, Name, Path, Relat
 use from_enum::FromEnum;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::Hash;
+use std::sync::LazyLock;
 use std::{fmt, mem};
 use strum_macros::EnumIter;
 use thiserror::Error;
@@ -105,11 +106,7 @@ impl NativeIntoFidl<String> for RelativePath {
 
 impl NativeIntoFidl<Option<String>> for RelativePath {
     fn native_into_fidl(self) -> Option<String> {
-        if self.is_dot() {
-            None
-        } else {
-            Some(self.to_string())
-        }
+        if self.is_dot() { None } else { Some(self.to_string()) }
     }
 }
 
@@ -1413,7 +1410,9 @@ impl FidlIntoNative<ConfigValueType> for fdecl::ConfigType {
                 {
                     s
                 } else {
-                    panic!("Unexpected constraint on String layout type for config field. Expected MaxSize.");
+                    panic!(
+                        "Unexpected constraint on String layout type for config field. Expected MaxSize."
+                    );
                 };
                 ConfigValueType::String { max_size }
             }
@@ -1423,7 +1422,9 @@ impl FidlIntoNative<ConfigValueType> for fdecl::ConfigType {
                 {
                     c
                 } else {
-                    panic!("Unexpected constraint on Vector layout type for config field. Expected MaxSize.");
+                    panic!(
+                        "Unexpected constraint on Vector layout type for config field. Expected MaxSize."
+                    );
                 };
                 let mut parameters =
                     self.parameters.expect("Config field must have parameters set");
@@ -1432,7 +1433,9 @@ impl FidlIntoNative<ConfigValueType> for fdecl::ConfigType {
                 {
                     nested_type.fidl_into_native()
                 } else {
-                    panic!("Unexpected parameter on Vector layout type for config field. Expected NestedType.");
+                    panic!(
+                        "Unexpected parameter on Vector layout type for config field. Expected NestedType."
+                    );
                 };
                 ConfigValueType::Vector { max_count, nested_type }
             }

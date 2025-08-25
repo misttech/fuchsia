@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use cm_types::Name;
 use fidl::endpoints::{ControlHandle as _, Responder as _};
 use fuchsia_fs::file;
@@ -10,18 +10,17 @@ use fuchsia_fs::file::ReadError;
 use fuchsia_fs::node::OpenError;
 use fuchsia_zbi::{ZbiParser, ZbiResult, ZbiType};
 use futures::prelude::*;
-use lazy_static::lazy_static;
 use log::info;
-use std::collections::hash_map::Iter;
 use std::collections::HashMap;
+use std::collections::hash_map::Iter;
 use std::env;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use zx_status::Status;
 use {fidl_fuchsia_boot as fboot, fidl_fuchsia_io as fio};
 
-lazy_static! {
-    static ref BOOT_ARGS_CAPABILITY_NAME: Name = "fuchsia.boot.Arguments".parse().unwrap();
-}
+#[allow(dead_code)]
+static BOOT_ARGS_CAPABILITY_NAME: LazyLock<Name> =
+    LazyLock::new(|| "fuchsia.boot.Arguments".parse().unwrap());
 
 const BOOT_CONFIG_FILE: &str = "/boot/config/additional_boot_args";
 
@@ -216,11 +215,7 @@ impl Arguments {
     }
 
     fn var(&self, var: String) -> Result<&str, env::VarError> {
-        if let Some(v) = self.vars.get(&var) {
-            Ok(&v)
-        } else {
-            Err(env::VarError::NotPresent)
-        }
+        if let Some(v) = self.vars.get(&var) { Ok(&v) } else { Err(env::VarError::NotPresent) }
     }
 
     fn vars<'a>(&'a self) -> Iter<'_, String, String> {
@@ -311,34 +306,35 @@ mod tests {
         write(&config, data.clone()).await.unwrap();
 
         // Invalid config file.
-        assert!(Arguments::new_from_sources(
-            Env::mock_new(HashMap::new()),
-            None,
-            None,
-            Some(config)
-        )
-        .await
-        .is_err());
+        assert!(
+            Arguments::new_from_sources(Env::mock_new(HashMap::new()), None, None, Some(config))
+                .await
+                .is_err()
+        );
 
         // Invalid cmdline args.
-        assert!(Arguments::new_from_sources(
-            Env::mock_new(HashMap::new()),
-            Some(vec![ZbiResult { bytes: data.clone(), extra: 0 }]),
-            None,
-            None
-        )
-        .await
-        .is_err());
+        assert!(
+            Arguments::new_from_sources(
+                Env::mock_new(HashMap::new()),
+                Some(vec![ZbiResult { bytes: data.clone(), extra: 0 }]),
+                None,
+                None
+            )
+            .await
+            .is_err()
+        );
 
         // Invalid image args.
-        assert!(Arguments::new_from_sources(
-            Env::mock_new(HashMap::new()),
-            None,
-            Some(vec![ZbiResult { bytes: data.clone(), extra: 0 }]),
-            None
-        )
-        .await
-        .is_err());
+        assert!(
+            Arguments::new_from_sources(
+                Env::mock_new(HashMap::new()),
+                None,
+                Some(vec![ZbiResult { bytes: data.clone(), extra: 0 }]),
+                None
+            )
+            .await
+            .is_err()
+        );
     }
 
     #[fuchsia::test]

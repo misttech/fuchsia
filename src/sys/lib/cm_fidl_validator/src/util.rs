@@ -154,16 +154,16 @@ mod tests {
 
     use super::*;
     use cm_types::{MAX_LONG_NAME_LENGTH, MAX_NAME_LENGTH};
-    use lazy_static::lazy_static;
     use proptest::prelude::*;
     use regex::Regex;
+    use std::sync::LazyLock;
     use url::Url;
 
     mod path {
         use cm_types::{MAX_NAME_LENGTH, MAX_PATH_LENGTH};
-        use lazy_static::lazy_static;
         use proptest::prelude::*;
         use regex::Regex;
+        use std::sync::LazyLock;
 
         pub fn is_path_valid(s: &str) -> bool {
             if !ROUGH_PATH_REGEX.is_match(s) {
@@ -187,20 +187,18 @@ mod tests {
             s.split("/").all(|v| v != "." && v != ".." && v.len() <= MAX_NAME_LENGTH)
         }
 
-        lazy_static! {
-            static ref ROUGH_PATH_REGEX_STR: String = format!("(/{})+", super::NAME_REGEX_STR);
-            static ref ROUGH_PATH_REGEX: Regex =
-                Regex::new(&("^".to_string() + &ROUGH_PATH_REGEX_STR + "$")).unwrap();
-        }
+        static ROUGH_PATH_REGEX_STR: LazyLock<String> =
+            LazyLock::new(|| format!("(/{})+", super::NAME_REGEX_STR));
+        static ROUGH_PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(&("^".to_string() + &ROUGH_PATH_REGEX_STR as &str + "$")).unwrap()
+        });
     }
 
     const NAME_REGEX_STR: &str = r"[0-9a-zA-Z_][0-9a-zA-Z_\-\.]*";
 
-    lazy_static! {
-        static ref NAME_REGEX: Regex =
-            Regex::new(&("^".to_string() + NAME_REGEX_STR + "$")).unwrap();
-        static ref A_BASE_URL: Url = Url::parse("relative:///").unwrap();
-    }
+    static NAME_REGEX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(&("^".to_string() + NAME_REGEX_STR + "$")).unwrap());
+    static A_BASE_URL: LazyLock<Url> = LazyLock::new(|| Url::parse("relative:///").unwrap());
 
     proptest! {
         #[test]

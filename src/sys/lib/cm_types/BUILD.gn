@@ -13,7 +13,6 @@ rustc_library("cm_types") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/storage/lib/vfs/rust/name",
     "//third_party/rust_crates:flyweights",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:url",

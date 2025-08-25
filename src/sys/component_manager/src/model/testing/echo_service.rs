@@ -5,11 +5,9 @@
 use cm_types::Name;
 use fidl_fidl_examples_routing_echo::{EchoRequest, EchoRequestStream};
 use futures::TryStreamExt;
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
-lazy_static! {
-    pub static ref ECHO_CAPABILITY: Name = "builtin.Echo".parse().unwrap();
-}
+pub static ECHO_CAPABILITY: LazyLock<Name> = LazyLock::new(|| "builtin.Echo".parse().unwrap());
 
 pub struct EchoProtocol;
 

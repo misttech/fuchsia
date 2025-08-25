@@ -7,30 +7,28 @@ use crate::model::component::instance::ResolvedInstanceState;
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::model::Model;
 use crate::model::routing::{self, BedrockRouteRequest, Route, RoutingError};
+use ::routing::RouteRequest as LegacyRouteRequest;
 use ::routing::capability_source::{CapabilitySource, InternalCapability};
 use ::routing::component_instance::ComponentInstanceInterface;
-use ::routing::RouteRequest as LegacyRouteRequest;
 use async_trait::async_trait;
 use cm_rust::{ExposeDecl, NativeIntoFidl, SourceName, UseDecl};
 use cm_types::{Name, RelativePath};
 use errors::{ActionError, StartActionError};
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
-use futures::future::join_all;
 use futures::TryStreamExt;
-use lazy_static::lazy_static;
+use futures::future::join_all;
 use log::warn;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
 use sandbox::{Capability, RouterResponse};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_sys2 as fsys,
 };
 
-lazy_static! {
-    static ref CAPABILITY_NAME: Name = fsys::RouteValidatorMarker::PROTOCOL_NAME.parse().unwrap();
-}
+static CAPABILITY_NAME: LazyLock<Name> =
+    LazyLock::new(|| fsys::RouteValidatorMarker::PROTOCOL_NAME.parse().unwrap());
 
 impl RouteValidatorCapabilityProvider {
     async fn validate(

@@ -10,22 +10,22 @@ use ::routing::RouteRequest;
 use async_trait::async_trait;
 use cm_types::Name;
 use errors::ModelError;
-
-use lazy_static::lazy_static;
 use log::warn;
 use routing::capability_source::InternalCapability;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref BINDER_SERVICE: Name = "fuchsia.component.Binder".parse().unwrap();
-    static ref DEBUG_REQUEST: RouteRequest = RouteRequest::UseProtocol(cm_rust::UseProtocolDecl {
+static BINDER_SERVICE: LazyLock<Name> =
+    LazyLock::new(|| "fuchsia.component.Binder".parse().unwrap());
+static DEBUG_REQUEST: LazyLock<RouteRequest> = LazyLock::new(|| {
+    RouteRequest::UseProtocol(cm_rust::UseProtocolDecl {
         source: cm_rust::UseSource::Framework,
         source_name: BINDER_SERVICE.clone(),
         source_dictionary: Default::default(),
         target_path: cm_types::Path::new("/null").unwrap(),
         dependency_type: cm_rust::DependencyType::Strong,
         availability: Default::default(),
-    });
-}
+    })
+});
 
 /// Implementation of `fuchsia.component.Binder` FIDL protocol.
 struct BinderCapabilityProvider {
@@ -117,15 +117,15 @@ mod tests {
     use fidl::client::Client;
     use fidl::encoding::DefaultFuchsiaResourceDialect;
     use fidl::handle::AsyncChannel;
-    use futures::lock::Mutex;
     use futures::StreamExt;
+    use futures::lock::Mutex;
     use hooks::EventType;
     use moniker::Moniker;
     use std::sync::Arc;
+    use vfs::ToObjectRequest;
     use vfs::directory::entry::OpenRequest;
     use vfs::execution_scope::ExecutionScope;
     use vfs::path::Path as VfsPath;
-    use vfs::ToObjectRequest;
     use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio};
 
     struct BinderCapabilityTestFixture {

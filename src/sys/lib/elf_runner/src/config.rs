@@ -144,36 +144,35 @@ mod tests {
         AllowlistEntryBuilder, ChildPolicyAllowlists, JobPolicyAllowlists, SecurityPolicy,
     };
     use fidl_fuchsia_data as fdata;
-    use lazy_static::lazy_static;
     use moniker::Moniker;
     use std::collections::HashMap;
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
     use test_case::test_case;
 
     const BINARY_KEY: &str = "binary";
     const TEST_BINARY: &str = "test_binary";
 
-    lazy_static! {
-        static ref TEST_MONIKER: Moniker = Moniker::root();
-        static ref PERMISSIVE_SECURITY_POLICY: Arc<SecurityPolicy> = Arc::new(SecurityPolicy {
+    static TEST_MONIKER: LazyLock<Moniker> = LazyLock::new(|| Moniker::root());
+    static PERMISSIVE_SECURITY_POLICY: LazyLock<Arc<SecurityPolicy>> = LazyLock::new(|| {
+        Arc::new(SecurityPolicy {
             job_policy: JobPolicyAllowlists {
                 ambient_mark_vmo_exec: vec![AllowlistEntryBuilder::build_exact_from_moniker(
-                    &TEST_MONIKER
-                ),],
+                    &TEST_MONIKER,
+                )],
                 main_process_critical: vec![AllowlistEntryBuilder::build_exact_from_moniker(
-                    &TEST_MONIKER
-                ),],
+                    &TEST_MONIKER,
+                )],
                 create_raw_processes: vec![AllowlistEntryBuilder::build_exact_from_moniker(
-                    &TEST_MONIKER
-                ),],
+                    &TEST_MONIKER,
+                )],
             },
             capability_policy: HashMap::new(),
             debug_capability_policy: HashMap::new(),
             child_policy: ChildPolicyAllowlists { reboot_on_terminate: vec![] },
-        });
-        static ref RESTRICTIVE_SECURITY_POLICY: Arc<SecurityPolicy> =
-            Arc::new(SecurityPolicy::default());
-    }
+        })
+    });
+    static RESTRICTIVE_SECURITY_POLICY: LazyLock<Arc<SecurityPolicy>> =
+        LazyLock::new(|| Arc::new(SecurityPolicy::default()));
 
     #[test_case("forward_stdout_to", new_string("log"), ElfProgramConfig { stdout_sink: StreamSink::Log, ..default_valid_config()} ; "when_stdout_log")]
     #[test_case("forward_stdout_to", new_string("none"), ElfProgramConfig { stdout_sink: StreamSink::None, ..default_valid_config()} ; "when_stdout_none")]

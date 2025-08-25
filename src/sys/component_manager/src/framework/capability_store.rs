@@ -8,15 +8,12 @@ use ::routing::capability_source::InternalCapability;
 use async_trait::async_trait;
 use cm_types::Name;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
-use lazy_static::lazy_static;
 use log::*;
 use std::sync::LazyLock;
 use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
 
-lazy_static! {
-    static ref CAPABILITY_NAME: Name =
-        fsandbox::CapabilityStoreMarker::PROTOCOL_NAME.parse().unwrap();
-}
+static CAPABILITY_NAME: LazyLock<Name> =
+    LazyLock::new(|| fsandbox::CapabilityStoreMarker::PROTOCOL_NAME.parse().unwrap());
 
 static RECEIVER_SCOPE: LazyLock<fasync::Scope> = LazyLock::new(|| fasync::Scope::new());
 

@@ -2,22 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::{ProtocolMarker, ServerEnd};
 use fuchsia_component::client::connect_to_protocol_at_path;
 use futures::task::{Context, Poll};
-use futures::{ready, TryFuture};
-use lazy_static::lazy_static;
+use futures::{TryFuture, ready};
 use pin_project_lite::pin_project;
 use std::collections::VecDeque;
+use std::sync::LazyLock;
 use thiserror::Error;
 use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio};
 
-lazy_static! {
-    /// The path of the static event stream that, by convention, synchronously listens for
-    /// Resolved events.
-    pub static ref START_COMPONENT_TREE_STREAM: String = "StartComponentTree".into();
-}
+/// The path of the static event stream that, by convention, synchronously listens for
+/// Resolved events.
+pub static START_COMPONENT_TREE_STREAM: LazyLock<String> =
+    LazyLock::new(|| "StartComponentTree".into());
 
 /// Returns the string name for the given `event_type`
 pub fn event_name(event_type: &fcomponent::EventType) -> String {

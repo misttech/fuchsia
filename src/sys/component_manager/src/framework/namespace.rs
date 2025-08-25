@@ -8,22 +8,21 @@ use ::routing::capability_source::InternalCapability;
 use async_trait::async_trait;
 use cm_types::{Name, Path};
 use fidl::endpoints::{self, DiscoverableProtocolMarker, ServerEnd};
-use futures::channel::mpsc::{unbounded, UnboundedSender};
+use futures::channel::mpsc::{UnboundedSender, unbounded};
 use futures::prelude::*;
-use lazy_static::lazy_static;
 use log::warn;
 use namespace::NamespaceError;
 use sandbox::Capability;
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
+use std::sync::LazyLock;
 use vfs::execution_scope::ExecutionScope;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_sandbox as fsandbox,
     fuchsia_async as fasync,
 };
 
-lazy_static! {
-    static ref CAPABILITY_NAME: Name = fcomponent::NamespaceMarker::PROTOCOL_NAME.parse().unwrap();
-}
+static CAPABILITY_NAME: LazyLock<Name> =
+    LazyLock::new(|| fcomponent::NamespaceMarker::PROTOCOL_NAME.parse().unwrap());
 
 struct NamespaceCapabilityProvider {
     namespace_scope: ExecutionScope,

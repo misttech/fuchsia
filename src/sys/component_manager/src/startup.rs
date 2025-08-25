@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use cm_types::Url;
 
 // Used when component manager is started with the "--boot" flag by userboot.
@@ -109,16 +109,15 @@ impl Arguments {
 #[cfg(all(test, not(feature = "src_model_tests")))]
 mod tests {
     use super::*;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref CONFIG_FILENAME: fn() -> String = || String::from("foo");
-        static ref CONFIG_FLAG: fn() -> String = || String::from("--config");
-        static ref BOOT_FLAG: fn() -> String = || String::from("--boot");
-        static ref DUMMY_URL: fn() -> Url =
-            || Url::new("fuchsia-pkg://fuchsia.com/pkg#meta/component.cm".to_owned()).unwrap();
-        static ref DUMMY_URL_AS_STR: fn() -> String = || DUMMY_URL().as_str().to_owned();
-    }
+    static CONFIG_FILENAME: LazyLock<String> = LazyLock::new(|| String::from("foo"));
+    static CONFIG_FLAG: LazyLock<String> = LazyLock::new(|| String::from("--config"));
+    static BOOT_FLAG: LazyLock<String> = LazyLock::new(|| String::from("--boot"));
+    static DUMMY_URL: LazyLock<Url> = LazyLock::new(|| {
+        Url::new("fuchsia-pkg://fuchsia.com/pkg#meta/component.cm".to_owned()).unwrap()
+    });
+    static DUMMY_URL_AS_STR: LazyLock<String> = LazyLock::new(|| DUMMY_URL.as_str().to_owned());
 
     #[fuchsia::test]
     fn no_arguments() {
@@ -127,13 +126,13 @@ mod tests {
 
     #[fuchsia::test]
     fn no_config_file() {
-        assert!(Arguments::new(vec![DUMMY_URL_AS_STR(),]).is_err());
-        assert!(Arguments::new(vec![CONFIG_FLAG(),]).is_err());
+        assert!(Arguments::new(vec![DUMMY_URL_AS_STR.clone(),]).is_err());
+        assert!(Arguments::new(vec![CONFIG_FLAG.clone(),]).is_err());
     }
 
     #[fuchsia::test]
     fn multiple_component_urls() {
-        assert!(Arguments::new(vec![DUMMY_URL_AS_STR(), DUMMY_URL_AS_STR(),]).is_err());
+        assert!(Arguments::new(vec![DUMMY_URL_AS_STR.clone(), DUMMY_URL_AS_STR.clone(),]).is_err());
     }
 
     #[fuchsia::test]
@@ -141,45 +140,57 @@ mod tests {
         let unknown_flag = || String::from("--unknown");
 
         assert!(Arguments::new(vec![unknown_flag()]).is_err());
-        assert!(Arguments::new(vec![unknown_flag(), DUMMY_URL_AS_STR()]).is_err());
-        assert!(Arguments::new(vec![DUMMY_URL_AS_STR(), unknown_flag()]).is_err());
+        assert!(Arguments::new(vec![unknown_flag(), DUMMY_URL_AS_STR.clone()]).is_err());
+        assert!(Arguments::new(vec![DUMMY_URL_AS_STR.clone(), unknown_flag()]).is_err());
     }
 
     #[fuchsia::test]
     fn bad_component_url() {
         let bad_url = || String::from("not a valid url");
 
-        assert!(Arguments::new(vec![CONFIG_FLAG(), CONFIG_FILENAME(), bad_url(),]).is_err());
-        assert!(Arguments::new(vec![bad_url(), CONFIG_FLAG(), CONFIG_FILENAME(),]).is_err());
+        assert!(
+            Arguments::new(vec![CONFIG_FLAG.clone(), CONFIG_FILENAME.clone(), bad_url(),]).is_err()
+        );
+        assert!(
+            Arguments::new(vec![bad_url(), CONFIG_FLAG.clone(), CONFIG_FILENAME.clone(),]).is_err()
+        );
     }
 
     #[fuchsia::test]
     fn parse_arguments() {
         let expected_arguments = Arguments {
-            config: CONFIG_FILENAME(),
-            root_component_url: Some(DUMMY_URL()),
+            config: CONFIG_FILENAME.clone(),
+            root_component_url: Some(DUMMY_URL.clone()),
             ..Default::default()
         };
 
         // Single positional argument with no options is parsed correctly.
         assert_eq!(
-            Arguments::new(vec![CONFIG_FLAG(), CONFIG_FILENAME(), DUMMY_URL_AS_STR()])
-                .expect("Unexpected error with just URL"),
+            Arguments::new(vec![
+                CONFIG_FLAG.clone(),
+                CONFIG_FILENAME.clone(),
+                DUMMY_URL_AS_STR.clone()
+            ])
+            .expect("Unexpected error with just URL"),
             expected_arguments
         );
 
         // Options are parsed correctly and do not depend on order.
         assert_eq!(
-            Arguments::new(vec![DUMMY_URL_AS_STR(), CONFIG_FLAG(), CONFIG_FILENAME()])
-                .expect("Unexpected error with option"),
+            Arguments::new(vec![
+                DUMMY_URL_AS_STR.clone(),
+                CONFIG_FLAG.clone(),
+                CONFIG_FILENAME.clone()
+            ])
+            .expect("Unexpected error with option"),
             expected_arguments
         );
 
         // Parses argument with root component url omitted.
         assert_eq!(
-            Arguments::new(vec![CONFIG_FLAG(), CONFIG_FILENAME()])
+            Arguments::new(vec![CONFIG_FLAG.clone(), CONFIG_FILENAME.clone()])
                 .expect("Unexpected error with no URL"),
-            Arguments { config: CONFIG_FILENAME(), ..Default::default() }
+            Arguments { config: CONFIG_FILENAME.clone(), ..Default::default() }
         );
     }
 
@@ -193,7 +204,7 @@ mod tests {
         };
 
         assert_eq!(
-            Arguments::new(vec![BOOT_FLAG()]).expect("Failed to parse arguments"),
+            Arguments::new(vec![BOOT_FLAG.clone()]).expect("Failed to parse arguments"),
             expected_arguments
         );
     }

@@ -7,8 +7,7 @@
 //! and deserialization implementations that perform the required validation.
 
 use flyweights::FlyStr;
-use lazy_static::lazy_static;
-use serde::{de, ser, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de, ser};
 use std::borrow::Borrow;
 use std::ffi::CString;
 use std::fmt::{self, Display};
@@ -16,15 +15,15 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::LazyLock;
 use std::{cmp, iter};
 use thiserror::Error;
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
-lazy_static! {
-    /// A default base URL from which to parse relative component URL
-    /// components.
-    static ref DEFAULT_BASE_URL: url::Url = url::Url::parse("relative:///").unwrap();
-}
+/// A default base URL from which to parse relative component URL
+/// components.
+static DEFAULT_BASE_URL: LazyLock<url::Url> =
+    LazyLock::new(|| url::Url::parse("relative:///").unwrap());
 
 /// Generate `impl From` for two trivial enums with identical values, allowing
 /// converting to/from each other.
@@ -635,11 +634,7 @@ impl fmt::Debug for NamespacePath {
 
 impl fmt::Display for NamespacePath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !self.0.is_dot() {
-            write!(f, "/{}", self.0)
-        } else {
-            write!(f, "/")
-        }
+        if !self.0.is_dot() { write!(f, "/{}", self.0) } else { write!(f, "/") }
     }
 }
 
@@ -825,9 +820,10 @@ impl<'de> de::Deserialize<'de> for Path {
             where
                 E: de::Error,
             {
-                s.parse().map_err(|err| {
-                    match err {
-                    ParseError::InvalidValue | ParseError::InvalidSegment | ParseError::NoLeadingSlash => E::invalid_value(
+                s.parse().map_err(|err| match err {
+                    ParseError::InvalidValue
+                    | ParseError::InvalidSegment
+                    | ParseError::NoLeadingSlash => E::invalid_value(
                         de::Unexpected::Str(s),
                         &"a path with leading `/` and non-empty segments, where each segment is no \
                         more than fuchsia.io/MAX_NAME_LENGTH bytes in length, cannot be . or .., \
@@ -841,7 +837,6 @@ impl<'de> de::Deserialize<'de> for Path {
                     e => {
                         panic!("unexpected parse error: {:?}", e);
                     }
-                }
                 })
             }
         }
@@ -916,11 +911,7 @@ impl RelativePath {
     }
 
     pub fn to_path_buf(&self) -> PathBuf {
-        if self.is_dot() {
-            PathBuf::new()
-        } else {
-            PathBuf::from(self.to_string())
-        }
+        if self.is_dot() { PathBuf::new() } else { PathBuf::from(self.to_string()) }
     }
 
     // Attaches the path `other` to the end of `self`. Returns `true` on success, and false

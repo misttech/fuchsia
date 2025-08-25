@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use ::routing::RouteRequest;
 use anyhow::Context;
@@ -13,7 +13,6 @@ use errors::CapabilityProviderError;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_component as fcomponent;
 use futures::TryStreamExt;
-use lazy_static::lazy_static;
 use log::warn;
 use moniker::{ExtendedMoniker, Moniker};
 use routing::capability_source::InternalCapability;
@@ -26,17 +25,18 @@ use crate::model::component::WeakComponentInstance;
 use crate::model::routing::report_routing_failure;
 use crate::model::token::{InstanceRegistry, InstanceToken};
 
-lazy_static! {
-    static ref INTROSPECTOR_SERVICE: Name = "fuchsia.component.Introspector".parse().unwrap();
-    static ref DEBUG_REQUEST: RouteRequest = RouteRequest::UseProtocol(cm_rust::UseProtocolDecl {
+static INTROSPECTOR_SERVICE: LazyLock<Name> =
+    LazyLock::new(|| "fuchsia.component.Introspector".parse().unwrap());
+static DEBUG_REQUEST: LazyLock<RouteRequest> = LazyLock::new(|| {
+    RouteRequest::UseProtocol(cm_rust::UseProtocolDecl {
         source: cm_rust::UseSource::Framework,
         source_name: INTROSPECTOR_SERVICE.clone(),
         source_dictionary: Default::default(),
         target_path: cm_types::Path::new("/null").unwrap(),
         dependency_type: cm_rust::DependencyType::Strong,
         availability: Default::default(),
-    });
-}
+    })
+});
 
 struct IntrospectorCapability {
     scope_moniker: Moniker,
@@ -115,32 +115,30 @@ impl FrameworkCapability for IntrospectorFrameworkCapability {
         scope: WeakComponentInstance,
         target: WeakComponentInstance,
     ) -> Box<dyn CapabilityProvider> {
-        lazy_static! {
-            static ref MEMORY_MONITOR: Moniker =
-                Moniker::parse_str("/core/memory_monitor2").unwrap();
-            /// Moniker for integration tests.
-            static ref RECEIVER: Moniker =
-                Moniker::parse_str("/receiver").unwrap();
-            static ref ELF_TEST_RUNNER: Moniker =
-                Moniker::parse_str("/core/testing/elf_test_runner").unwrap();
-            static ref FUZZ_TEST_RUNNER: Moniker =
-                Moniker::parse_str("/core/testing/fuzz_test_runner").unwrap();
-            static ref GO_TEST_RUNNER: Moniker =
-                Moniker::parse_str("/core/testing/go_test_runner").unwrap();
-            static ref GTEST_TEST_RUNNER: Moniker =
-                Moniker::parse_str("/core/testing/gunit_runner").unwrap();
-            static ref GUNIT_TEST_RUNNER: Moniker =
-                Moniker::parse_str("/core/testing/gunit_runner").unwrap();
-            static ref RUST_TEST_RUNNER: Moniker =
-                Moniker::parse_str("/core/testing/rust_test_runner").unwrap();
-            static ref STARNIX_TEST_RUNNER: Moniker =
-                Moniker::parse_str("/core/testing/starnix_test_runner").unwrap();
-            static ref ZXTEST_TEST_RUNNER: Moniker =
-                Moniker::parse_str("/core/testing/zxtest_runner").unwrap();
-            static ref TEST_REALMS: Moniker =
-                Moniker::parse_str("/core/testing").unwrap();
-            static ref STARNIX_TESTS: Name = "starnix-tests".parse().unwrap();
-        };
+        static MEMORY_MONITOR: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/memory_monitor2").unwrap());
+        /// Moniker for integration tests.
+        static RECEIVER: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/receiver").unwrap());
+        static ELF_TEST_RUNNER: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/testing/elf_test_runner").unwrap());
+        static FUZZ_TEST_RUNNER: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/testing/fuzz_test_runner").unwrap());
+        static GO_TEST_RUNNER: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/testing/go_test_runner").unwrap());
+        static GTEST_TEST_RUNNER: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/testing/gunit_runner").unwrap());
+        static GUNIT_TEST_RUNNER: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/testing/gunit_runner").unwrap());
+        static RUST_TEST_RUNNER: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/testing/rust_test_runner").unwrap());
+        static STARNIX_TEST_RUNNER: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/testing/starnix_test_runner").unwrap());
+        static ZXTEST_TEST_RUNNER: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/testing/zxtest_runner").unwrap());
+        static TEST_REALMS: LazyLock<Moniker> =
+            LazyLock::new(|| Moniker::parse_str("/core/testing").unwrap());
+        static STARNIX_TESTS: LazyLock<Name> = LazyLock::new(|| "starnix-tests".parse().unwrap());
         // TODO(https://fxbug.dev/318904493): Temporary workaround to prevent other components from
         // using `Introspector` while improvements to framework capability allowlists are under way.
         //

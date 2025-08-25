@@ -79,7 +79,6 @@ rustc_library("sandbox") {
       "//sdk/rust/zx",
       "//src/lib/fuchsia-async",
       "//src/storage/lib/vfs/rust:vfs",
-      "//third_party/rust_crates:lazy_static",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:scopeguard",
     ]

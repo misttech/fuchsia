@@ -7,8 +7,8 @@ use crate::fidl::registry::{self, try_from_handle_in_registry};
 use crate::{Capability, ConversionError, Dict, RemotableCapability, RemoteError};
 use fidl::AsHandleRef;
 use fidl_fuchsia_component_sandbox as fsandbox;
-use futures::channel::oneshot;
 use futures::FutureExt;
+use futures::channel::oneshot;
 use log::warn;
 use std::sync::{Arc, Mutex, Weak};
 use vfs::directory::entry::DirectoryEntry;
@@ -186,30 +186,28 @@ impl RemotableCapability for Dict {
 mod tests {
     use super::*;
     use crate::dict::{
-        BorrowedKey, HybridMap, Key, HYBRID_SWITCH_INSERTION_LEN, HYBRID_SWITCH_REMOVAL_LEN,
+        BorrowedKey, HYBRID_SWITCH_INSERTION_LEN, HYBRID_SWITCH_REMOVAL_LEN, HybridMap, Key,
     };
-    use crate::{serve_capability_store, Data, Dict, DirEntry, Handle, Unit};
+    use crate::{Data, Dict, DirEntry, Handle, Unit, serve_capability_store};
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, create_proxy_and_stream, Proxy, ServerEnd};
+    use fidl::endpoints::{Proxy, ServerEnd, create_proxy, create_proxy_and_stream};
     use fidl::handle::{Channel, HandleBased, Status};
     use fuchsia_fs::directory;
     use futures::StreamExt;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
     use std::{fmt, iter};
     use test_case::test_case;
     use test_util::Counter;
     use vfs::directory::entry::{
-        serve_directory, DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest,
+        DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest, serve_directory,
     };
     use vfs::execution_scope::ExecutionScope;
     use vfs::path::Path;
     use vfs::remote::RemoteLike;
-    use vfs::{pseudo_directory, ObjectRequestRef};
+    use vfs::{ObjectRequestRef, pseudo_directory};
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
-    lazy_static! {
-        static ref CAP_KEY: Key = "Cap".parse().unwrap();
-    }
+    static CAP_KEY: LazyLock<Key> = LazyLock::new(|| "Cap".parse().unwrap());
 
     #[derive(Debug, Clone, Copy)]
     enum TestType {
@@ -1635,7 +1633,7 @@ mod tests {
                 Some(Ok(fuchsia_fs::directory::WatchMessage { event, filename: _ }))
                     if event == fuchsia_fs::directory::WatchEvent::IDLE =>
                 {
-                    break
+                    break;
                 }
                 other_message => panic!("unexpected message: {:?}", other_message),
             }

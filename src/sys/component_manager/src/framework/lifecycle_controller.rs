@@ -13,19 +13,16 @@ use cm_types::Name;
 use errors::ModelError;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use futures::prelude::*;
-use lazy_static::lazy_static;
 use log::warn;
 use moniker::{ChildName, Moniker, MonikerError};
-use std::sync::Weak;
+use std::sync::{LazyLock, Weak};
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_sys2 as fsys,
 };
 
-lazy_static! {
-    static ref CAPABILITY_NAME: Name =
-        fsys::LifecycleControllerMarker::PROTOCOL_NAME.parse().unwrap();
-}
+static CAPABILITY_NAME: LazyLock<Name> =
+    LazyLock::new(|| fsys::LifecycleControllerMarker::PROTOCOL_NAME.parse().unwrap());
 
 struct LifecycleControllerCapabilityProvider {
     model: Weak<Model>,
@@ -315,7 +312,7 @@ fn join_monikers(scope_moniker: &Moniker, moniker_str: &str) -> Result<Moniker, 
 mod tests {
     use super::*;
     use crate::model::actions::test_utils::{is_discovered, is_resolved, is_shutdown};
-    use crate::model::testing::test_helpers::{lifecycle_controller, TestEnvironmentBuilder};
+    use crate::model::testing::test_helpers::{TestEnvironmentBuilder, lifecycle_controller};
     use cm_rust_testing::*;
     use fidl_fuchsia_component_decl::{ChildRef, CollectionRef};
     use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl};

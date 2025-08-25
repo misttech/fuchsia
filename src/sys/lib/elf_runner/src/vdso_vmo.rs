@@ -4,8 +4,8 @@
 
 use crate::error::VdsoError;
 use fuchsia_runtime::{HandleInfo, HandleType, take_startup_handle};
-use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use zx::{self as zx, AsHandleRef, HandleBased};
 
 fn take_vdso_vmos() -> Result<HashMap<zx::Name, zx::Vmo>, VdsoError> {
@@ -21,10 +21,8 @@ fn take_vdso_vmos() -> Result<HashMap<zx::Name, zx::Vmo>, VdsoError> {
 }
 
 pub fn get_vdso_vmo(name: &zx::Name) -> Result<zx::Vmo, VdsoError> {
-    lazy_static! {
-        static ref VMOS: HashMap<zx::Name, zx::Vmo> =
-            take_vdso_vmos().expect("Failed to take vDSO VMOs");
-    }
+    static VMOS: LazyLock<HashMap<zx::Name, zx::Vmo>> =
+        LazyLock::new(|| take_vdso_vmos().expect("Failed to take vDSO VMOs"));
     if let Some(vmo) = VMOS.get(name) {
         vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)
             .map_err(|status| VdsoError::CouldNotDuplicate { name: *name, status })

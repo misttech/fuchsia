@@ -14,26 +14,24 @@ use cm_types::{Name, Url};
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl::prelude::*;
 use futures::StreamExt;
-use lazy_static::lazy_static;
 use log::warn;
 use measure_tape_for_instance::Measurable;
 use moniker::Moniker;
 use router_error::Explain;
 use routing::component_instance::{ComponentInstanceInterface, ResolvedInstanceInterface};
 use routing::resolving::ComponentAddress;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
+use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::directory::entry_container::Directory;
-use vfs::ToObjectRequest;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
 use {
     fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_runner as fcrunner,
     fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
 };
 
-lazy_static! {
-    static ref CAPABILITY_NAME: Name = fsys::RealmQueryMarker::PROTOCOL_NAME.parse().unwrap();
-}
+static CAPABILITY_NAME: LazyLock<Name> =
+    LazyLock::new(|| fsys::RealmQueryMarker::PROTOCOL_NAME.parse().unwrap());
 
 // Number of bytes the header of a vector occupies in a fidl message.
 // TODO(https://fxbug.dev/42181010): This should be a constant in a FIDL library.
@@ -677,7 +675,7 @@ mod tests {
     use crate::model::component::StartReason;
     use crate::model::start::Start;
     use crate::model::testing::test_helpers::{
-        config_override, new_config_decl, TestEnvironmentBuilder, TestModelResult,
+        TestEnvironmentBuilder, TestModelResult, config_override, new_config_decl,
     };
     use assert_matches::assert_matches;
     use cm_rust::*;

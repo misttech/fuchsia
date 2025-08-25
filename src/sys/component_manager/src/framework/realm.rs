@@ -12,27 +12,25 @@ use anyhow::Error;
 use async_trait::async_trait;
 use cm_config::RuntimeConfig;
 use cm_rust::FidlIntoNative;
-use cm_types::{Name, FLAGS_MAX_POSSIBLE_RIGHTS};
+use cm_types::{FLAGS_MAX_POSSIBLE_RIGHTS, Name};
 use errors::OpenExposedDirError;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use futures::prelude::*;
-use lazy_static::lazy_static;
 use log::{debug, error, warn};
 use moniker::{ChildName, Moniker};
 use std::cmp;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
+use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
-use vfs::ToObjectRequest;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_sandbox as fsandbox,
     fidl_fuchsia_io as fio, fuchsia_async as fasync,
 };
 
-lazy_static! {
-    static ref CAPABILITY_NAME: Name = fcomponent::RealmMarker::PROTOCOL_NAME.parse().unwrap();
-}
+static CAPABILITY_NAME: LazyLock<Name> =
+    LazyLock::new(|| fcomponent::RealmMarker::PROTOCOL_NAME.parse().unwrap());
 
 struct RealmCapabilityProvider {
     scope_moniker: Moniker,

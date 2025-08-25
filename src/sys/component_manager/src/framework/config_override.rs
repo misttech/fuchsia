@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::sync::Weak;
+use std::sync::{LazyLock, Weak};
 
 use async_trait::async_trait;
 use cm_rust::FidlIntoNative;
 use cm_types::Name;
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServerEnd};
 use futures::StreamExt;
-use lazy_static::lazy_static;
 use log::warn;
 use moniker::Moniker;
 use routing::capability_source::InternalCapability;
@@ -19,9 +18,8 @@ use crate::capability::{CapabilityProvider, FrameworkCapability, InternalCapabil
 use crate::model::component::WeakComponentInstance;
 use crate::model::model::Model;
 
-lazy_static! {
-    static ref CAPABILITY_NAME: Name = fsys::ConfigOverrideMarker::PROTOCOL_NAME.parse().unwrap();
-}
+static CAPABILITY_NAME: LazyLock<Name> =
+    LazyLock::new(|| fsys::ConfigOverrideMarker::PROTOCOL_NAME.parse().unwrap());
 
 /// A type which implements the fuchsia.sys2.ConfigOverride FIDL protocol.
 #[derive(Clone)]
@@ -52,7 +50,10 @@ impl ConfigOverride {
                     responder.send(result)
                 }
                 fsys::ConfigOverrideRequest::_UnknownMethod { ordinal, method_type, .. } => {
-                    warn!("{} received request for unknown method with ordinal {ordinal} and method type {method_type:?}", fsys::ConfigOverrideMarker::DEBUG_NAME);
+                    warn!(
+                        "{} received request for unknown method with ordinal {ordinal} and method type {method_type:?}",
+                        fsys::ConfigOverrideMarker::DEBUG_NAME
+                    );
                     Ok(())
                 }
             };
@@ -158,7 +159,7 @@ async fn unset_structured_config(
 mod tests {
     use super::*;
     use crate::model::testing::test_helpers::{
-        config_override, lifecycle_controller, new_config_decl, TestEnvironmentBuilder,
+        TestEnvironmentBuilder, config_override, lifecycle_controller, new_config_decl,
     };
     use cm_rust::{ConfigSingleValue, ConfigValue, NativeIntoFidl};
     use cm_rust_testing::*;

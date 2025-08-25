@@ -73,21 +73,20 @@ mod tests {
     use crate::model::component::{ComponentInstance, WeakComponentInstance, WeakExtendedInstance};
     use crate::model::context::ModelContext;
     use crate::model::environment::Environment;
-    use anyhow::{format_err, Error};
+    use anyhow::{Error, format_err};
     use assert_matches::assert_matches;
     use async_trait::async_trait;
     use cm_rust::NativeIntoFidl;
     use cm_rust_testing::new_decl_from_json;
     use hooks::Hooks;
-    use lazy_static::lazy_static;
     use moniker::Moniker;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::environment::{DebugRegistry, RunnerRegistry};
     use routing::resolving::{
-        read_and_validate_config_values, read_and_validate_manifest, ComponentResolutionContext,
+        ComponentResolutionContext, read_and_validate_config_values, read_and_validate_manifest,
     };
     use serde_json::json;
-    use std::sync::{Mutex, Weak};
+    use std::sync::{LazyLock, Mutex, Weak};
     use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_mem as fmem};
 
     #[derive(Debug)]
@@ -352,8 +351,8 @@ mod tests {
         registry.register("fuchsia-boot".to_string(), Arc::new(resolver_b));
     }
 
-    lazy_static! {
-        static ref COMPONENT_DECL: cm_rust::ComponentDecl = new_decl_from_json(json!(
+    static COMPONENT_DECL: LazyLock<cm_rust::ComponentDecl> = LazyLock::new(|| {
+        new_decl_from_json(json!(
         {
             "include": [ "syslog/client.shard.cml" ],
             "program": {
@@ -394,8 +393,8 @@ mod tests {
             "facets": {
                 "author": "Fuchsia",
             }}))
-        .expect("failed to construct manifest");
-    }
+        .expect("failed to construct manifest")
+    });
 
     #[fuchsia::test]
     fn test_read_and_validate_manifest() {
@@ -568,8 +567,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_from_relative_path_component_url_with_fuchsia_boot_component_instance(
-    ) -> Result<(), Error> {
+    async fn test_from_relative_path_component_url_with_fuchsia_boot_component_instance()
+    -> Result<(), Error> {
         let expected_urls_and_contexts = vec![
             ResolveState::new(
                 "fuchsia-boot:///package#meta/comp.cm",
@@ -632,8 +631,8 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_from_relative_path_component_url_with_cast_component_instance(
-    ) -> Result<(), Error> {
+    async fn test_from_relative_path_component_url_with_cast_component_instance()
+    -> Result<(), Error> {
         let expected_urls_and_contexts = vec![
             ResolveState::new(
                 "cast:00000000/package#meta/comp.cm",

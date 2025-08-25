@@ -51,7 +51,6 @@ rustc_library("elf_runner") {
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:thiserror",
   ]
@@ -116,7 +115,6 @@ rustc_test("elf_runner_next_vdso_tests") {
     "//src/sys/lib/namespace",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:log",
   ]
 }
