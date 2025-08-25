@@ -473,6 +473,48 @@ enum AccessType { Read, Write };
 // Checks whether the provided access segfaults.
 testing::AssertionResult TestThatAccessSegfaults(void *test_address, AccessType type);
 
+// A means of unblocking some other thread or process that is waiting (or may in the
+// future wait) on a corresponding `Holder`.
+class Poker {
+ public:
+  explicit Poker(fbl::unique_fd pipe_write_side);
+  Poker(Poker &&o);
+  Poker &operator=(Poker &&o);
+  Poker(const Poker &) = delete;
+  Poker &operator=(const Poker &) = delete;
+  void poke();
+
+ private:
+  fbl::unique_fd pipe_write_side_;
+};
+
+// A means of blocking until some other thread or process uses a corresponding `Poker`
+// to indicate that some desired state has been reached and further blocking is no longer
+// necessary.
+class Holder {
+ public:
+  explicit Holder(fbl::unique_fd pipe_read_side);
+  Holder(Holder &&o);
+  Holder &operator=(Holder &&o);
+  Holder(const Holder &) = delete;
+  Holder &operator=(const Holder &) = delete;
+  void hold();
+
+ private:
+  fbl::unique_fd pipe_read_side_;
+};
+
+// A simple IPC synchronization mechanism for use in multithread and multiprocess
+// tests.
+struct Rendezvous {
+  Poker poker;
+  Holder holder;
+};
+
+// Constructs a new pipe-backed `Poker`-`Holder` pair for synchronization of two
+// threads or processes.
+Rendezvous MakeRendezvous();
+
 }  // namespace test_helper
 
 #endif  // SRC_STARNIX_TESTS_SYSCALLS_CPP_TEST_HELPER_H_

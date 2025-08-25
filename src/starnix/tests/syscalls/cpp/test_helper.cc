@@ -562,4 +562,46 @@ void ScopedMount::Unmount() {
   }
 }
 
+Poker::Poker(fbl::unique_fd pipe_write_side) : pipe_write_side_(std::move(pipe_write_side)) {}
+
+Poker::Poker(Poker &&o) : pipe_write_side_(std::move(o.pipe_write_side_)) {}
+
+Poker &Poker::operator=(Poker &&o) {
+  pipe_write_side_ = std::move(o.pipe_write_side_);
+  return *this;
+}
+
+void Poker::poke() {
+  char clog[] = "clog";  // This data will enter but never leave the pipe.
+  SAFE_SYSCALL(write(pipe_write_side_.get(), clog, sizeof(clog)));
+  SAFE_SYSCALL(pipe_write_side_.reset());
+}
+
+Holder::Holder(fbl::unique_fd pipe_read_side) : pipe_read_side_(std::move(pipe_read_side)) {}
+
+Holder::Holder(Holder &&o) : pipe_read_side_(std::move(o.pipe_read_side_)) {}
+
+Holder &Holder::operator=(Holder &&o) {
+  pipe_read_side_ = std::move(o.pipe_read_side_);
+  return *this;
+}
+
+void Holder::hold() {
+  int pipe_read_side_fd = pipe_read_side_.get();
+  fd_set read_fds;
+  FD_ZERO(&read_fds);
+  FD_SET(pipe_read_side_fd, &read_fds);
+  SAFE_SYSCALL(select(pipe_read_side_fd + 1, &read_fds, nullptr, nullptr, nullptr));
+}
+
+Rendezvous MakeRendezvous() {
+  static_assert(sizeof(int) == sizeof(fbl::unique_fd));
+  fbl::unique_fd unique_fds[2];
+  SAFE_SYSCALL(pipe(reinterpret_cast<int *>(&unique_fds)));
+  return {
+      .poker = Poker(std::move(unique_fds[1])),
+      .holder = Holder(std::move(unique_fds[0])),
+  };
+}
+
 }  // namespace test_helper

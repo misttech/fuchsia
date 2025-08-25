@@ -39,67 +39,8 @@ void Become(uid_t user_uid, uid_t effective_user_uid) {
   SAFE_SYSCALL(setresuid(user_uid, effective_user_uid, user_uid));
 }
 
-class Poker {
- public:
-  explicit Poker(fbl::unique_fd pipe_write_side) : pipe_write_side_(std::move(pipe_write_side)) {}
-  Poker(Poker&& o) : pipe_write_side_(std::move(o.pipe_write_side_)) {}
-  Poker& operator=(Poker&& o) {
-    pipe_write_side_ = std::move(o.pipe_write_side_);
-    return *this;
-  }
-  Poker(const Poker&) = delete;
-  Poker& operator=(const Poker&) = delete;
-
-  void poke() {
-    char clog[] = "clog";  // This data will enter but never leave the pipe.
-    SAFE_SYSCALL(write(pipe_write_side_.get(), clog, sizeof(clog)));
-    SAFE_SYSCALL(pipe_write_side_.reset());
-  }
-
- private:
-  fbl::unique_fd pipe_write_side_;
-};
-
-class Holder {
- public:
-  explicit Holder(fbl::unique_fd pipe_read_side) : pipe_read_side_(std::move(pipe_read_side)) {}
-  Holder(Holder&& o) : pipe_read_side_(std::move(o.pipe_read_side_)) {}
-  Holder& operator=(Holder&& o) {
-    pipe_read_side_ = std::move(o.pipe_read_side_);
-    return *this;
-  }
-  Holder(const Holder&) = delete;
-  Holder& operator=(const Holder&) = delete;
-
-  void hold() {
-    int pipe_read_side_fd = pipe_read_side_.get();
-    fd_set read_fds;
-    FD_ZERO(&read_fds);
-    FD_SET(pipe_read_side_fd, &read_fds);
-    SAFE_SYSCALL(select(pipe_read_side_fd + 1, &read_fds, nullptr, nullptr, nullptr));
-  }
-
- private:
-  fbl::unique_fd pipe_read_side_;
-};
-
-struct Rendezvous {
-  Poker poker;
-  Holder holder;
-};
-
-Rendezvous MakeRendezvous() {
-  static_assert(sizeof(int) == sizeof(fbl::unique_fd));
-  fbl::unique_fd unique_fds[2];
-  SAFE_SYSCALL(pipe(reinterpret_cast<int*>(&unique_fds)));
-  return {
-      .poker = Poker(std::move(unique_fds[1])),
-      .holder = Holder(std::move(unique_fds[0])),
-  };
-}
-
-pid_t SpawnTarget(test_helper::ForkHelper& fork_helper, Poker ready, Holder complete,
-                  fit::function<void()> prepare) {
+pid_t SpawnTarget(test_helper::ForkHelper& fork_helper, test_helper::Poker ready,
+                  test_helper::Holder complete, fit::function<void()> prepare) {
   return fork_helper.RunInForkedProcess([ready = std::move(ready), complete = std::move(complete),
                                          prepare = std::move(prepare)]() mutable {
     prepare();
@@ -272,8 +213,8 @@ TEST(GetPriorityTest, NonRootCanGetNicenessOfEuidUnfriendlyProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid = SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder),
                                  []() { Become(kUser2Uid, kUser2Uid); });
@@ -300,8 +241,8 @@ TEST(SetPriorityTest, NonRootCanSetNicenessOfEuidFriendlyProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -348,8 +289,8 @@ TEST(SetPriorityTest, NonRootCannotSetNicenessOfEuidUnfriendlyProcess) {
   constexpr int kTargetNiceness = 19;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -415,8 +356,8 @@ TEST(SetPriorityTest, RootCanExceedRLimits) {
   constexpr int kNicenessRlimitMax = kNicenessRlimitCur + 2;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -451,8 +392,8 @@ TEST(SetPriorityTest, NonRootCannotExceedRLimits) {
   constexpr int kNicenessRlimitMax = kNicenessRlimitCur + 5;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -500,8 +441,8 @@ TEST(SetPriorityTest, MaintainingAndIncreasingNicenessAllowedDespiteExceededRLim
   constexpr int kNicenessRlimitMax = kNicenessRlimitCur + 4;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -563,8 +504,8 @@ TEST(SetPriorityTest, RLimitedAndEuidUnfriendly) {
   constexpr int kBeyondRlimitNiceness = -3;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -610,7 +551,7 @@ TEST(SchedGetSchedulerTest, RootCanGetSchedulerOfRootOwnedProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid = fork_helper.RunInForkedProcess(
       [complete = std::move(complete.holder)]() mutable { complete.hold(); });
@@ -626,8 +567,8 @@ TEST(SchedGetSchedulerTest, RootCanGetSchedulerOfNonRootOwnedProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid = SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder),
                                  []() { Become(kUser1Uid, kUser1Uid); });
@@ -660,7 +601,7 @@ TEST(SchedGetSchedulerTest, NonRootCanGetSchedulerOfEuidFriendlyProcess) {
     Become(kUser1Uid, kUser1Uid);
 
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
     pid_t target_pid = target_process_fork_helper.RunInForkedProcess(
         [complete = std::move(complete.holder)]() mutable { complete.hold(); });
@@ -677,8 +618,8 @@ TEST(SchedGetSchedulerTest, NonRootCanGetSchedulerOfEuidUnfriendlyProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid = SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder),
                                  []() { Become(kUser2Uid, kUser2Uid); });
@@ -893,7 +834,7 @@ TEST(SchedSetSchedulerTest, RootCanSetSchedulerOfRootOwnedProcess) {
 
   test_helper::ForkHelper().RunInForkedProcess([]() {
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
     pid_t target_pid = target_process_fork_helper.RunInForkedProcess(
         [complete = std::move(complete.holder)]() mutable { complete.hold(); });
@@ -911,8 +852,8 @@ TEST(SchedSetSchedulerTest, RootCanSetSchedulerOfNonRootOwnedProcess) {
 
   test_helper::ForkHelper().RunInForkedProcess([]() {
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous ready = MakeRendezvous();
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
     pid_t target_pid =
         SpawnTarget(target_process_fork_helper, std::move(ready.poker), std::move(complete.holder),
@@ -951,8 +892,8 @@ TEST(SchedSetSchedulerTest, NonRootCanSetSchedulerOfEuidFriendlyProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -984,8 +925,8 @@ TEST(SchedSetSchedulerTest, NonRootCannotSetSchedulerOfEuidUnfriendlyProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -1054,8 +995,8 @@ TEST(SchedSetSchedulerTest, RootCanExceedRLimits) {
   constexpr int kRtpriorityRlimitMax = kRtpriorityRlimitCur + 17;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -1085,8 +1026,8 @@ TEST(SchedSetSchedulerTest, NonRootCannotExceedRLimits) {
   constexpr int kRtpriorityRlimitMax = kRtpriorityRlimitCur + 11;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -1175,8 +1116,8 @@ TEST(SchedSetSchedulerTest, MaintainingAndDecreasingPriorityAllowedDespiteExceed
   constexpr int kRtpriorityRlimitMax = kRtpriorityRlimitCur + 19;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -1256,8 +1197,8 @@ TEST(SchedSetSchedulerTest, RLimitedAndEuidUnfriendly) {
   constexpr int kRtpriorityRlimitMax = kRtpriorityRlimitCur + 4;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -1360,7 +1301,7 @@ TEST(SchedSetSchedulerTest, ResetOnForkShiftsToNonRealTimePolicy) {
     Become(kUser1Uid, kUser1Uid);
 
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
     pid_t target_pid = target_process_fork_helper.RunInForkedProcess(
         [complete = std::move(complete.holder)]() mutable { complete.hold(); });
@@ -1383,7 +1324,7 @@ TEST(SchedSetSchedulerTest, ResetOnForkShiftsToNonRealTimePolicyEvenForRoot) {
     // No transition to an ordinary user here; we remain root!
 
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
     pid_t target_pid = target_process_fork_helper.RunInForkedProcess(
         [complete = std::move(complete.holder)]() mutable { complete.hold(); });
@@ -1407,7 +1348,7 @@ TEST(SchedSetSchedulerTest, ResetOnForkZeroesNegativeNiceness) {
     Become(kUser1Uid, kUser1Uid);
 
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
     pid_t target_pid = target_process_fork_helper.RunInForkedProcess(
         [complete = std::move(complete.holder)]() mutable { complete.hold(); });
@@ -1435,7 +1376,7 @@ TEST(SchedSetSchedulerTest, ResetOnForkPreservesPositiveNiceness) {
     Become(kUser1Uid, kUser1Uid);
 
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
     pid_t target_pid = target_process_fork_helper.RunInForkedProcess(
         [complete = std::move(complete.holder)]() mutable { complete.hold(); });
 
@@ -1464,7 +1405,7 @@ TEST(SchedGetParamTest, RootCanGetParamOfRootOwnedProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid = fork_helper.RunInForkedProcess(
       [complete = std::move(complete.holder)]() mutable { complete.hold(); });
@@ -1484,8 +1425,8 @@ TEST(SchedGetParamTest, RootCanGetParamOfNonRootOwnedProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid = SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder),
                                  []() { Become(kUser1Uid, kUser1Uid); });
@@ -1526,7 +1467,7 @@ TEST(SchedGetParamTest, NonRootCanGetParamOfEuidFriendlyProcess) {
     Become(kUser1Uid, kUser1Uid);
 
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
     pid_t target_pid = target_process_fork_helper.RunInForkedProcess(
         [complete = std::move(complete.holder)]() mutable { complete.hold(); });
@@ -1547,8 +1488,8 @@ TEST(SchedGetParamTest, NonRootCanGetParamOfEuidUnfriendlyProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid = SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder),
                                  []() { Become(kUser2Uid, kUser2Uid); });
@@ -1708,8 +1649,8 @@ TEST(SchedSetParamTest, InvalidArgumentAndEuidUnfriendly) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -1761,7 +1702,7 @@ TEST(SchedSetParamTest, RootCanSetParamOfRootOwnedProcess) {
 
   test_helper::ForkHelper().RunInForkedProcess([]() {
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
     pid_t target_pid = target_process_fork_helper.RunInForkedProcess(
         [complete = std::move(complete.holder)]() mutable { complete.hold(); });
@@ -1779,8 +1720,8 @@ TEST(SchedSetParamTest, RootCanSetParamOfNonRootOwnedProcess) {
 
   test_helper::ForkHelper().RunInForkedProcess([]() {
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous ready = MakeRendezvous();
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
     pid_t target_pid =
         SpawnTarget(target_process_fork_helper, std::move(ready.poker), std::move(complete.holder),
@@ -1819,8 +1760,8 @@ TEST(SchedSetParamTest, NonRootCanSetParamOfEuidFriendlyProcess) {
   }
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -1857,8 +1798,8 @@ TEST(SchedSetParamTest, NonRootCannotSetParamOfEuidUnfriendlyProcess) {
   int max_priority = SAFE_SYSCALL(sched_get_priority_max(kPolicyVariant));
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid = SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder),
                                  [min_priority]() {
@@ -1910,8 +1851,8 @@ TEST(SchedSetParamTest, RootCanExceedRLimits) {
   int rtpriority_rlimit_max = rtpriority_rlimit_cur + 8;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid = SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder),
                                  [rtpriority_rlimit_cur, rtpriority_rlimit_max]() {
@@ -1943,8 +1884,8 @@ TEST(SchedSetParamTest, NonRootCannotExceedRLimits) {
   int rtpriority_rlimit_max = rtpriority_rlimit_cur + 7;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid = SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder),
                                  [min_priority, rtpriority_rlimit_cur, rtpriority_rlimit_max]() {
@@ -2147,8 +2088,8 @@ TEST(SuccessivePoliciesTest, UnusedNicenessIsStillSubjectToRLimit) {
   constexpr int kNicenessRlimitMax = kNicenessRlimitCur + 3;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -2214,8 +2155,8 @@ TEST(SuccessivePoliciesTest, ChangingPolicyWhenExceedingNicenessRLimitAllowedExc
   constexpr int kNicenessRlimitMax = kNicenessRlimitCur + 23;
 
   test_helper::ForkHelper fork_helper;
-  Rendezvous ready = MakeRendezvous();
-  Rendezvous complete = MakeRendezvous();
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous complete = test_helper::MakeRendezvous();
 
   pid_t target_pid =
       SpawnTarget(fork_helper, std::move(ready.poker), std::move(complete.holder), []() {
@@ -2360,7 +2301,7 @@ TEST(SuccessivePoliciesTest, UnusedNegativeNicenessIsStillZeroedByResetOnFork) {
     SAFE_SYSCALL(sched_setscheduler(0, SCHED_FIFO | SCHED_RESET_ON_FORK, &param));
 
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
     pid_t target_pid = target_process_fork_helper.RunInForkedProcess(
         [complete = std::move(complete.holder)]() mutable { complete.hold(); });
 
@@ -2397,7 +2338,7 @@ TEST(SuccessivePoliciesTest, UnusedPositiveNicenessIsZeroedDuringResetOnFork) {
     SAFE_SYSCALL(sched_setscheduler(0, SCHED_RR | SCHED_RESET_ON_FORK, &param));
 
     test_helper::ForkHelper target_process_fork_helper;
-    Rendezvous complete = MakeRendezvous();
+    test_helper::Rendezvous complete = test_helper::MakeRendezvous();
     pid_t target_pid = target_process_fork_helper.RunInForkedProcess(
         [complete = std::move(complete.holder)]() mutable { complete.hold(); });
 
