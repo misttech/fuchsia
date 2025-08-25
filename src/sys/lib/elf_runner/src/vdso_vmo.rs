@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::error::VdsoError;
-use fuchsia_runtime::{take_startup_handle, HandleInfo, HandleType};
+use fuchsia_runtime::{HandleInfo, HandleType, take_startup_handle};
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use zx::{self as zx, AsHandleRef, HandleBased};

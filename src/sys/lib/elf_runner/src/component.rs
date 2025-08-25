@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Job;
 use crate::config::ElfProgramConfig;
 use crate::runtime_dir::RuntimeDirectory;
-use crate::Job;
 use async_trait::async_trait;
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_component_runner::ComponentControllerOnEscrowRequest;
 use fidl_fuchsia_process_lifecycle::{LifecycleEvent, LifecycleProxy};
-use futures::future::{join_all, BoxFuture, FutureExt};
-use futures::stream::BoxStream;
 use futures::StreamExt;
+use futures::future::{BoxFuture, FutureExt, join_all};
+use futures::stream::BoxStream;
 use log::{error, warn};
 use moniker::Moniker;
 use runner::component::Controllable;
@@ -173,7 +173,9 @@ impl ElfComponent {
 impl Controllable for ElfComponent {
     async fn kill(&mut self) {
         if self.info().main_process_critical {
-            warn!("killing a component with 'main_process_critical', so this will also kill component_manager and all of its components");
+            warn!(
+                "killing a component with 'main_process_critical', so this will also kill component_manager and all of its components"
+            );
         }
         self.info()
             .job
@@ -198,7 +200,9 @@ impl Controllable for ElfComponent {
                     // This is a bit strange because there's no process, but there is a lifecycle
                     // channel. Since there is no process it seems like killing it can't kill
                     // component manager.
-                    warn!("killing job of component with 'main_process_critical' set because component has lifecycle channel, but no process main process.");
+                    warn!(
+                        "killing job of component with 'main_process_critical' set because component has lifecycle channel, but no process main process."
+                    );
                     self.info().job.top().kill().unwrap_or_else(|error| {
                         error!(error:%; "failed killing job for component with no lifecycle channel")
                     });

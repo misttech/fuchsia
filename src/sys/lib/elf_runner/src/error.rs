@@ -101,7 +101,9 @@ impl StartInfoError {
 /// Errors from parsing the component `program` section to `ElfProgramConfig`.
 #[derive(Debug, Clone, Error)]
 pub enum ProgramError {
-    #[error("`is_shared_process` cannot be enabled without also enabling `job_policy_create_raw_processes`")]
+    #[error(
+        "`is_shared_process` cannot be enabled without also enabling `job_policy_create_raw_processes`"
+    )]
     SharedProcessRequiresJobPolicy,
     #[error("failed to parse: {_0}")]
     Parse(#[source] runner::StartInfoProgramError),

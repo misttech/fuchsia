@@ -12,8 +12,8 @@ use {
     fuchsia_async as fasync,
 };
 
-use crate::component::ElfComponentInfo;
 use crate::ComponentSet;
+use crate::component::ElfComponentInfo;
 
 pub struct MemoryReporter {
     server: AttributionServerHandle,

@@ -8,10 +8,10 @@ use pseudo_fs::{
     LazyPseudoDirectory, LazyPseudoDirectoryState, PseudoDirectory, PseudoFile, ToPseudoDirectory,
 };
 use std::sync::Arc;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::{DirectoryEntry, OpenRequest};
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
-use vfs::ToObjectRequest;
 
 // Simple directory type which is used to implement `ComponentStartInfo.runtime_directory`.
 pub struct RuntimeDirectory(Arc<LazyPseudoDirectory<RuntimeDirectoryInfo>>);

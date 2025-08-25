@@ -17,7 +17,7 @@ use std::ffi::CString;
 use std::fmt::Debug;
 use std::sync::Arc;
 use thiserror::Error;
-use zx::{self as zx, sys, AsHandleRef};
+use zx::{self as zx, AsHandleRef, sys};
 use {fidl_fuchsia_process as fproc, fuchsia_async as fasync};
 
 /// Internal error type for ProcessLauncher which conveniently wraps errors that might
@@ -415,8 +415,7 @@ mod tests {
                 LogInfo {
                     style: LogStyle::JobKilled,
                     job_info: "job was killed (retcode -1024)".to_string(),
-                    message:
-                        "Process operation failed because the parent job was killed. This is expected."
+                    message: "Process operation failed because the parent job was killed. This is expected."
                 }
             );
         }

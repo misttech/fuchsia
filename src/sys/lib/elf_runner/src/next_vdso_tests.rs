@@ -8,10 +8,10 @@ mod logger;
 
 use anyhow::{Context, Error};
 use fake_log_sink::FakeLogSink;
-use fidl::endpoints::{create_endpoints, DiscoverableProtocolMarker, RequestStream};
+use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream, create_endpoints};
 use fidl_fuchsia_logger::{LogSinkMarker, LogSinkRequestStream};
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
-use futures::{try_join, StreamExt};
+use futures::{StreamExt, try_join};
 use logger::{LogWriter, OutputLevel, SyslogWriter};
 use namespace::Namespace;
 use std::sync::Arc;
@@ -82,8 +82,8 @@ async fn read_message_from_syslog(
 
 /// Create a new local fs and install a mock LogSink service into.
 /// Returns the created directory and corresponding namespace entries.
-fn create_fs_with_mock_logsink(
-) -> Result<(MockServiceFs<'static>, Vec<fcrunner::ComponentNamespaceEntry>), Error> {
+fn create_fs_with_mock_logsink()
+-> Result<(MockServiceFs<'static>, Vec<fcrunner::ComponentNamespaceEntry>), Error> {
     let (dir_client, dir_server) = create_endpoints::<fio::DirectoryMarker>();
 
     let mut dir = ServiceFs::new_local();

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::config::StreamSink;
-use super::logger::{create_namespace_logger, LogWriter, OutputLevel, SyslogWriter};
+use super::logger::{LogWriter, OutputLevel, SyslogWriter, create_namespace_logger};
 use diagnostics_log::Publisher;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::StreamExt;
@@ -108,10 +108,10 @@ async fn drain_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::{format_err, Context, Error};
+    use anyhow::{Context, Error, format_err};
     use fuchsia_async::Task;
     use futures::channel::mpsc;
-    use futures::{try_join, FutureExt, SinkExt};
+    use futures::{FutureExt, SinkExt, try_join};
     use rand::distr::{Alphanumeric, SampleString as _};
     use rand::rng;
 
@@ -251,7 +251,11 @@ mod tests {
             socket.write(message.as_bytes()).context("Failed to write to socket")?;
         match bytes_written == message.len() {
             true => Ok(()),
-            false => Err(format_err!("Bytes written to socket doesn't match len of message. Message len = {}. Bytes written = {}", message.len(), bytes_written)),
+            false => Err(format_err!(
+                "Bytes written to socket doesn't match len of message. Message len = {}. Bytes written = {}",
+                message.len(),
+                bytes_written
+            )),
         }
     }
 

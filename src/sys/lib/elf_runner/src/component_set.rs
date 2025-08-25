@@ -167,8 +167,8 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::task::Poll;
 
-    use crate::runtime_dir::RuntimeDirectory;
     use crate::Job;
+    use crate::runtime_dir::RuntimeDirectory;
 
     #[test]
     fn test_add_remove_component() {

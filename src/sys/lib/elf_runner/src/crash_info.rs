@@ -103,7 +103,10 @@ impl CrashRecords {
             .find(|(_, record)| &record.koid == thread_koid)
             .map(|(i, _)| i);
         if index_to_remove.is_none() {
-            warn!("crash introspection failed to provide attribution for the crashed thread with koid {:?}", thread_koid);
+            warn!(
+                "crash introspection failed to provide attribution for the crashed thread with koid {:?}",
+                thread_koid
+            );
         }
         index_to_remove.map(|i| records_guard.remove(i).crash_info)
     }
