@@ -12,6 +12,9 @@
 #include <lib/zx/vmo.h>
 #include <zircon/types.h>
 
+#include <optional>
+
+#include <fbl/vector.h>
 #include <region-alloc/region-alloc.h>
 
 #include "src/graphics/display/drivers/intel-display/ddi-physical-layer-manager.h"
@@ -24,15 +27,17 @@
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-layer.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-and-id.h"
+#include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 
 namespace intel_display {
 
 class Controller;
 
 struct AddedDisplayInfo {
+  static constexpr int kMaxPreferredModes = 32;
+
   display::DisplayId display_id;
   fbl::Vector<display::ModeAndId> preferred_modes;
-  fbl::Vector<uint8_t> edid;
 };
 
 class DisplayDevice {
@@ -54,8 +59,7 @@ class DisplayDevice {
 
   virtual ~DisplayDevice();
 
-  void ApplyConfiguration(const display::DisplayTiming& display_timing,
-                          const display::ColorConversion& color_conversion,
+  void ApplyConfiguration(display::ModeId mode_id, const display::ColorConversion& color_conversion,
                           cpp20::span<const display::DriverLayer> layers,
                           display::DriverConfigStamp config_stamp);
 
@@ -114,6 +118,14 @@ class DisplayDevice {
 
   virtual AddedDisplayInfo CreateAddedDisplayInfo() = 0;
 
+  // Returns the display timing corresponding to the given `mode_id`.
+  //
+  // Returns nullopt if `mode_id` doesn't correspond to any timing parameters
+  // supported by this display.
+  //
+  // `mode_id` must be valid.
+  virtual std::optional<display::DisplayTiming> GetDisplayTiming(display::ModeId mode_id) const = 0;
+
  protected:
   // Attempts to initialize the ddi.
   virtual bool InitDdi() = 0;
@@ -140,6 +152,11 @@ class DisplayDevice {
                                   TranscoderId transcoder_id) = 0;
   virtual bool PipeConfigEpilogue(const display::DisplayTiming& mode, PipeId pipe_id,
                                   TranscoderId transcoder_id) = 0;
+
+  // Validates that a basic layer configuration can be supported for the
+  // given modes of this display.
+  bool CheckDisplayLimits(display::DisplayTiming display_timing,
+                          cpp20::span<const display::DriverLayer> layers);
 
   fdf::MmioBuffer* mmio_space() const;
 

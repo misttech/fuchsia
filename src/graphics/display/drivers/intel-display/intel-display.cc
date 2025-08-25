@@ -19,7 +19,7 @@
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zbi-format/graphics.h>
 #include <lib/zbitl/items/graphics.h>
-#include <lib/zx/channel.h>
+#include <lib/zx/clock.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
@@ -45,6 +45,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <bind/fuchsia/sysmem/heap/cpp/bind.h>
@@ -52,7 +53,6 @@
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
-#include <fbl/static_vector.h>
 #include <fbl/vector.h>
 
 #include "src/graphics/display/drivers/intel-display/clock/cdclk.h"
@@ -78,16 +78,20 @@
 #include "src/graphics/display/drivers/intel-display/registers.h"
 #include "src/graphics/display/drivers/intel-display/tiling.h"
 #include "src/graphics/display/lib/api-types/cpp/color-conversion.h"
+#include "src/graphics/display/lib/api-types/cpp/config-check-result.h"
 #include "src/graphics/display/lib/api-types/cpp/coordinate-transformation.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
+#include "src/graphics/display/lib/api-types/cpp/driver-capture-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-layer.h"
+#include "src/graphics/display/lib/api-types/cpp/engine-info.h"
 #include "src/graphics/display/lib/api-types/cpp/image-buffer-usage.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 #include "src/graphics/display/lib/api-types/cpp/image-tiling-type.h"
+#include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
 #include "src/graphics/display/lib/driver-utils/poll-until.h"
 #include "src/lib/fxl/strings/string_printf.h"
@@ -196,7 +200,7 @@ void Controller::HandleHotplug(DdiId ddi_id, bool long_pulse) {
 
   const AddedDisplayInfo added_display_info = new_device_ptr->CreateAddedDisplayInfo();
   engine_events_.OnDisplayAdded(added_display_info.display_id, added_display_info.preferred_modes,
-                                added_display_info.edid, kPixelFormatTypes);
+                                kPixelFormatTypes);
 }
 
 void Controller::HandlePipeVsync(PipeId pipe_id, zx::time_monotonic timestamp) {
@@ -781,8 +785,7 @@ display::EngineInfo Controller::CompleteCoordinatorConnection() {
     for (const std::unique_ptr<DisplayDevice>& display_device : display_devices_) {
       const AddedDisplayInfo added_display_info = display_device->CreateAddedDisplayInfo();
       engine_events_.OnDisplayAdded(added_display_info.display_id,
-                                    added_display_info.preferred_modes, added_display_info.edid,
-                                    kPixelFormatTypes);
+                                    added_display_info.preferred_modes, kPixelFormatTypes);
     }
   }
 
@@ -1546,19 +1549,10 @@ display::ConfigCheckResult Controller::CheckConfiguration(
     display::ColorConversion color_conversion, cpp20::span<const display::DriverLayer> layers) {
   fbl::AutoLock lock(&display_lock_);
 
-  if (!std::holds_alternative<display::DisplayTiming>(display_mode)) {
-    return display::ConfigCheckResult::kUnsupportedDisplayModes;
-  }
-  const display::DisplayTiming display_timing = std::get<display::DisplayTiming>(display_mode);
-
   std::array<display::DisplayId, PipeIds<registers::Platform::kKabyLake>().size()>
       display_allocated_to_pipe;
   if (!CalculatePipeAllocation(display_id, display_allocated_to_pipe)) {
     return display::ConfigCheckResult::kTooManyDisplays;
-  }
-
-  if (!CheckDisplayLimits(display_id, display_timing, layers)) {
-    return display::ConfigCheckResult::kUnsupportedDisplayModes;
   }
 
   DisplayDevice* display = nullptr;
@@ -1571,6 +1565,20 @@ display::ConfigCheckResult Controller::CheckConfiguration(
   if (display == nullptr) {
     fdf::info("Got config with no display - assuming hotplug and skipping");
     return display::ConfigCheckResult::kOk;
+  }
+
+  if (!std::holds_alternative<display::ModeId>(display_mode)) {
+    return display::ConfigCheckResult::kUnsupportedDisplayModes;
+  }
+  const display::ModeId mode_id = std::get<display::ModeId>(display_mode);
+  std::optional<display::DisplayTiming> get_timing_result = display->GetDisplayTiming(mode_id);
+  if (!get_timing_result.has_value()) {
+    return display::ConfigCheckResult::kUnsupportedDisplayModes;
+  }
+  display::DisplayTiming display_timing = std::move(get_timing_result).value();
+
+  if (!CheckDisplayLimits(display_id, display_timing, layers)) {
+    return display::ConfigCheckResult::kUnsupportedDisplayModes;
   }
 
   // This overrides all checks about multi-layers.
@@ -1763,8 +1771,8 @@ void Controller::ApplyConfiguration(
   display::DisplayId fake_vsync_display_ids[kMaximumConnectedDisplayCount];
   size_t fake_vsync_size = 0;
 
-  ZX_DEBUG_ASSERT(std::holds_alternative<display::DisplayTiming>(display_mode));
-  const display::DisplayTiming display_timing = std::get<display::DisplayTiming>(display_mode);
+  ZX_DEBUG_ASSERT(std::holds_alternative<display::ModeId>(display_mode));
+  const display::ModeId mode_id = std::get<display::ModeId>(display_mode);
 
   ReallocatePlaneBuffers(display_id, layers,
                          /* reallocate_pipes */ pipe_manager_->PipeReallocated());
@@ -1778,7 +1786,7 @@ void Controller::ApplyConfiguration(
       }
       continue;
     }
-    display->ApplyConfiguration(display_timing, color_conversion, layers, driver_config_stamp);
+    display->ApplyConfiguration(mode_id, color_conversion, layers, driver_config_stamp);
 
     // The hardware only gives vsyncs if at least one plane is enabled, so
     // fake one if we need to, to inform the client that we're done with the

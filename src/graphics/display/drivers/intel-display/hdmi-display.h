@@ -12,6 +12,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+
+#include <fbl/vector.h>
 
 #include "src/graphics/display/drivers/intel-display/ddi-physical-layer-manager.h"
 #include "src/graphics/display/drivers/intel-display/display-device.h"
@@ -20,6 +23,7 @@
 #include "src/graphics/display/drivers/intel-display/i2c/gmbus-i2c.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
+#include "src/graphics/display/lib/edid/edid.h"
 
 namespace intel_display {
 
@@ -52,10 +56,17 @@ class HdmiDisplay final : public DisplayDevice {
 
   AddedDisplayInfo CreateAddedDisplayInfo() override;
 
+  std::optional<display::DisplayTiming> GetDisplayTiming(display::ModeId mode_id) const override;
+
  private:
   GMBusI2c& gmbus_i2c_;
 
-  fbl::Vector<uint8_t> edid_bytes_;
+  // Initialized in `Query()`.
+  std::optional<edid::Edid> edid_;
+
+  // Initialized in `Query()`.
+  // The timing parameter at index `k` corresponds to ModeId `k+1`.
+  fbl::Vector<display::DisplayTiming> timings_;
 };
 
 }  // namespace intel_display

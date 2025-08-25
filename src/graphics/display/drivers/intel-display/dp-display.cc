@@ -5,21 +5,35 @@
 #include "src/graphics/display/drivers/intel-display/dp-display.h"
 
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/fit/function.h>
+#include <lib/fit/result.h>
+#include <lib/fpromise/result.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
+#include <zircon/syscalls.h>
+#include <zircon/time.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <utility>
 
+#include <fbl/alloc_checker.h>
 #include <fbl/string_printf.h>
+#include <fbl/vector.h>
+#include <hwreg/bitfields.h>
 
 #include "src/graphics/display/drivers/intel-display/ddi-physical-layer-manager.h"
+#include "src/graphics/display/drivers/intel-display/ddi-physical-layer.h"
+#include "src/graphics/display/drivers/intel-display/display-device.h"
+#include "src/graphics/display/drivers/intel-display/display-timing-mode-conversion.h"
+#include "src/graphics/display/drivers/intel-display/dpcd.h"
 #include "src/graphics/display/drivers/intel-display/dpll.h"
 #include "src/graphics/display/drivers/intel-display/edid-reader.h"
 #include "src/graphics/display/drivers/intel-display/hardware-common.h"
@@ -31,8 +45,12 @@
 #include "src/graphics/display/drivers/intel-display/registers-ddi.h"
 #include "src/graphics/display/drivers/intel-display/registers-transcoder.h"
 #include "src/graphics/display/drivers/intel-display/registers-typec.h"
+#include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
+#include "src/graphics/display/lib/api-types/cpp/mode-and-id.h"
+#include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 #include "src/graphics/display/lib/driver-utils/poll-until.h"
+#include "src/graphics/display/lib/edid/edid.h"
 
 namespace intel_display {
 namespace {
@@ -1325,7 +1343,21 @@ bool DpDisplay::Query() {
     fdf::error("Failed to read E-EDID: {}", read_extended_edid_result);
     return false;
   }
-  edid_bytes_ = std::move(read_extended_edid_result).value();
+  fit::result<const char*, edid::Edid> edid_result =
+      edid::Edid::Create(std::move(read_extended_edid_result).value());
+  if (edid_result.is_error()) {
+    fdf::error("Failed to create EDID instance: {}", edid_result.error_value());
+    return false;
+  }
+  edid_ = std::move(edid_result).value();
+
+  zx::result<fbl::Vector<display::DisplayTiming>> timings_result =
+      edid_->GetSupportedDisplayTimings();
+  if (timings_result.is_error()) {
+    fdf::error("Failed to get supported display timings: {}", timings_result);
+    return false;
+  }
+  timings_ = std::move(timings_result).value();
 
   uint8_t last = static_cast<uint8_t>(capabilities_->supported_link_rates_mbps().size() - 1);
   fdf::info("Found {} monitor (max link rate: {} MHz, lane count: {})",
@@ -1871,17 +1903,30 @@ int32_t DpDisplay::LoadPixelRateForTranscoderKhz(TranscoderId transcoder_id) {
 }
 
 AddedDisplayInfo DpDisplay::CreateAddedDisplayInfo() {
-  fbl::Vector<uint8_t> edid;
+  fbl::Vector<display::ModeAndId> preferred_modes;
+  size_t preferred_modes_size =
+      std::min(timings_.size(), size_t{AddedDisplayInfo::kMaxPreferredModes});
   fbl::AllocChecker alloc_checker;
-  edid.resize(edid_bytes_.size(), &alloc_checker);
+  preferred_modes.reserve(preferred_modes_size, &alloc_checker);
   ZX_ASSERT(alloc_checker.check());
-  std::ranges::copy(edid_bytes_, edid.begin());
 
+  for (uint16_t i = 0; i < preferred_modes_size; ++i) {
+    preferred_modes.push_back({{.id = display::ModeId(i + 1), .mode = ToDisplayMode(timings_[i])}});
+  }
   return AddedDisplayInfo{
       .display_id = id(),
-      .preferred_modes = {},
-      .edid = std::move(edid),
+      .preferred_modes = std::move(preferred_modes),
   };
+}
+
+std::optional<display::DisplayTiming> DpDisplay::GetDisplayTiming(display::ModeId mode_id) const {
+  ZX_DEBUG_ASSERT(mode_id != display::kInvalidModeId);
+  int index = int{mode_id.value()} - 1;
+  ZX_DEBUG_ASSERT(index >= 0);
+  if (static_cast<size_t>(index) >= timings_.size()) {
+    return std::nullopt;
+  }
+  return timings_[index];
 }
 
 }  // namespace intel_display

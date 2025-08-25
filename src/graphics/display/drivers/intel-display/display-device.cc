@@ -11,6 +11,7 @@
 
 #include <cfloat>
 #include <cstdint>
+#include <optional>
 #include <tuple>
 #include <utility>
 
@@ -28,6 +29,7 @@
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-layer.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
+#include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 
 namespace intel_display {
 
@@ -150,10 +152,17 @@ bool DisplayDevice::CheckNeedsModeset(const display::DisplayTiming& mode) {
   return !controller()->dpll_manager()->DdiPllMatchesConfig(ddi_id(), desired_pll_config);
 }
 
-void DisplayDevice::ApplyConfiguration(const display::DisplayTiming& display_timing,
+void DisplayDevice::ApplyConfiguration(display::ModeId mode_id,
                                        const display::ColorConversion& color_conversion,
                                        cpp20::span<const display::DriverLayer> layers,
                                        display::DriverConfigStamp config_stamp) {
+  std::optional<display::DisplayTiming> display_timing_result = GetDisplayTiming(mode_id);
+  if (!display_timing_result) {
+    fdf::error("Display {}: Invalid mode_id {}", id().value(), mode_id.value());
+    return;
+  }
+  const display::DisplayTiming display_timing = std::move(display_timing_result).value();
+
   if (CheckNeedsModeset(display_timing)) {
     if (pipe_) {
       // TODO(https://fxbug.dev/42067272): When ApplyConfiguration() early returns on the

@@ -6,24 +6,26 @@
 
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
-#include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
-#include <vector>
+#include <optional>
 
 #include <gtest/gtest.h>
 
 #include "src/graphics/display/drivers/intel-display/ddi-physical-layer-manager.h"
+#include "src/graphics/display/drivers/intel-display/display-device.h"
 #include "src/graphics/display/drivers/intel-display/dpll.h"
+#include "src/graphics/display/drivers/intel-display/hardware-common.h"
 #include "src/graphics/display/drivers/intel-display/intel-display.h"
 #include "src/graphics/display/drivers/intel-display/pci-ids.h"
 #include "src/graphics/display/drivers/intel-display/pipe.h"
-#include "src/graphics/display/drivers/intel-display/registers-ddi.h"
-#include "src/graphics/display/drivers/intel-display/registers-pipe.h"
+#include "src/graphics/display/drivers/intel-display/power.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-fidl.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/display-timing.h"
+#include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 
 namespace intel_display {
 
@@ -69,8 +71,10 @@ class FakeDisplay final : public DisplayDevice {
     return AddedDisplayInfo{
         .display_id = id(),
         .preferred_modes = {},
-        .edid = {},
     };
+  }
+  std::optional<display::DisplayTiming> GetDisplayTiming(display::ModeId mode_id) const override {
+    return std::nullopt;
   }
 
  private:

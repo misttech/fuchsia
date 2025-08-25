@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 #include "src/graphics/display/drivers/intel-display/dp-aux-channel.h"
 #include "src/graphics/display/drivers/intel-display/dpcd.h"

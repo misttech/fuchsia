@@ -11,6 +11,9 @@
 #include <zircon/types.h>
 
 #include <cstdint>
+#include <optional>
+
+#include <fbl/vector.h>
 
 #include "src/graphics/display/drivers/intel-display/ddi-physical-layer.h"
 #include "src/graphics/display/drivers/intel-display/display-device.h"
@@ -19,6 +22,8 @@
 #include "src/graphics/display/drivers/intel-display/dpcd.h"
 #include "src/graphics/display/drivers/intel-display/pch-engine.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
+#include "src/graphics/display/lib/api-types/cpp/display-timing.h"
+#include "src/graphics/display/lib/edid/edid.h"
 
 namespace intel_display {
 
@@ -44,6 +49,7 @@ class DpDisplay final : public DisplayDevice {
   bool InitWithDdiPllConfig(const DdiPllConfig& pll_config) final;
 
   AddedDisplayInfo CreateAddedDisplayInfo() override;
+  std::optional<display::DisplayTiming> GetDisplayTiming(display::ModeId mode_id) const override;
 
   uint8_t lane_count() const { return dp_lane_count_; }
   uint32_t link_rate_mhz() const { return dp_link_rate_mhz_; }
@@ -143,8 +149,12 @@ class DpDisplay final : public DisplayDevice {
   // The backlight brightness coefficient, in the range [min brightness, 1].
   double backlight_brightness_ = 1.0f;
 
-  // Valid iff successfully initialized via Query().
-  fbl::Vector<uint8_t> edid_bytes_;
+  // Initialized in `Query()`.
+  std::optional<edid::Edid> edid_;
+
+  // Initialized in `Query()`.
+  // The timing parameter at index `k` corresponds to ModeId `k+1`.
+  fbl::Vector<display::DisplayTiming> timings_;
 
   // Debug
   inspect::Node inspect_node_;
