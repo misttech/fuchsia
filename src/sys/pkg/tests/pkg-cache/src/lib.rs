@@ -14,7 +14,7 @@ use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_inspect::reader::DiagnosticsHierarchy;
 use fuchsia_merkle::Hash;
-use fuchsia_pkg_testing::{get_inspect_hierarchy, BlobContents, Package};
+use fuchsia_pkg_testing::{BlobContents, Package, get_inspect_hierarchy};
 use fuchsia_sync::Mutex;
 use futures::future::BoxFuture;
 use futures::prelude::*;
@@ -876,7 +876,7 @@ where
             pkgfs: fuchsia_fs::directory::open_directory_async(
                 realm_instance.root.get_exposed_dir(),
                 "pkgfs",
-                fio::PERM_READABLE | fio::PERM_WRITABLE | fio::PERM_EXECUTABLE,
+                fio::PERM_READABLE | fio::PERM_EXECUTABLE,
             )
             .expect("open pkgfs"),
         };
