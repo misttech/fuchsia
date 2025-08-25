@@ -62,13 +62,22 @@ const TIMER_SLACK_DURATION: zx::MonotonicDuration = zx::MonotonicDuration::from_
 
 // Rights used when duplicating the UTC clock handle.
 //
+// Formed out of:
+// * `zx::Rights::BASIC`, but
+// * with `zx::Rights::WRITE` stripped (UTC clock is normally read-only), and
+// * with `zx::Rights::INSPECT` added (so that `ZX_INFO_CLOCK_MAPPED_SIZE` can be queried).
+//
+// Rather than subtracting `WRITE` from `BASIC`, we build the rights explicitly to avoid
+// including unintended rights by accident.
+//
 // The bitwise `|` operator for `bitflags` is implemented through the `std::ops::BitOr` trait,
 // which cannot be used in a const context. The workaround is to bitwise OR the raw bits.
 const DUPLICATE_CLOCK_RIGHTS: zx::Rights = zx::Rights::from_bits_truncate(
-    zx::Rights::READ.bits()
-        | zx::Rights::WAIT.bits()
-        | zx::Rights::DUPLICATE.bits()
-        | zx::Rights::TRANSFER.bits()
+    zx::Rights::READ.bits() // BASIC
+        | zx::Rights::WAIT.bits() // BASIC
+        | zx::Rights::DUPLICATE.bits() // BASIC
+        | zx::Rights::TRANSFER.bits() // BASIC
+        | zx::Rights::INSPECT.bits()
         // Allows calls to zx_clock_read_mappable and zx_clock_get_details_mappable.
         // Since "regular" read and details only require READ, and mappable read
         // and details read the clock the same way, it seems safe to include MAP
