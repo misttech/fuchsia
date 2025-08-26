@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use ffx_command_error::{bug, user_error, FfxContext, Result};
+use ffx_command_error::{FfxContext, Result, bug, user_error};
 use fuchsia_audio::dai::DaiFormat;
 use zx_status::Status;
-use {fidl_fuchsia_audio_device as fadevice, fidl_fuchsia_hardware_audio as fhaudio, zx_types};
+use {fidl_fuchsia_audio_device as fadevice, fidl_fuchsia_hardware_audio as fhaudio};
 
 #[async_trait]
 pub trait DeviceControl {
@@ -211,7 +211,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl_test_util::spawn_stream_handler;
     use fuchsia_audio::dai::{DaiFrameFormat, DaiFrameFormatStandard, DaiSampleFormat};
-    use fuchsia_audio::format::{SampleSize, BITS_16, BITS_32};
+    use fuchsia_audio::format::{BITS_16, BITS_32, SampleSize};
     use std::sync::{Arc, Mutex};
 
     const TEST_CODEC_START_TIME: zx_types::zx_time_t = 123;

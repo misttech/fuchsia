@@ -5,7 +5,8 @@
 use crate::{connect, serde_ext};
 use camino::Utf8PathBuf;
 use fac::{DEFAULT_DAI_INTERCONNECT_ELEMENT_ID, DEFAULT_RING_BUFFER_ELEMENT_ID};
-use ffx_command_error::{bug, user_error, FfxContext as _, Result};
+use ffx_command_error::{FfxContext as _, Result, bug, user_error};
+use fuchsia_audio::Registry;
 use fuchsia_audio::dai::{
     DaiFormatSet, DaiFrameFormat, DaiFrameFormatClocking, DaiFrameFormatJustification,
 };
@@ -20,10 +21,9 @@ use fuchsia_audio::sigproc::{
     EqualizerElementState, Gain, GainElementState, Topology, TypeSpecificElement,
     TypeSpecificElementState, VendorSpecific, VendorSpecificElementState,
 };
-use fuchsia_audio::Registry;
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use prettytable::{cell, format, row, Table};
+use prettytable::{Table, cell, format, row};
 use serde::ser::SerializeSeq;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
@@ -33,7 +33,6 @@ use {
     fidl_fuchsia_audio_controller as fac, fidl_fuchsia_audio_device as fadevice,
     fidl_fuchsia_hardware_audio as fhaudio,
     fidl_fuchsia_hardware_audio_signalprocessing as fhaudio_sigproc, fidl_fuchsia_io as fio,
-    zx_types,
 };
 
 lazy_static! {
@@ -269,7 +268,7 @@ impl Display for ChannelSetsText<'_> {
                 channel_set.attributes.len(),
                 if channel_set.attributes.len() == 1 { "channel" } else { "channels" }
             );
-            let value = ChannelSetText(&channel_set);
+            let value = ChannelSetText(channel_set);
             table.add_row(row!(key, value));
         }
         table.fmt(f)
@@ -285,7 +284,7 @@ impl Display for ChannelSetText<'_> {
         table.set_format(*TABLE_FORMAT_NESTED_COMPACT);
         for (idx, attributes) in self.0.attributes.iter().enumerate() {
             let key = format!("Channel {}:", idx + 1);
-            let value = ChannelAttributesText(&attributes);
+            let value = ChannelAttributesText(attributes);
             table.add_row(row!(key, value));
         }
         table.fmt(f)
@@ -1334,7 +1333,7 @@ impl HardwareInfo {
         &self,
     ) -> Option<BTreeMap<fadevice::ElementId, Vec<PcmFormatSet>>> {
         fn supported_formats_to_pcm_format_sets(
-            supported_formats: &Vec<fhaudio::SupportedFormats>,
+            supported_formats: &[fhaudio::SupportedFormats],
         ) -> Vec<PcmFormatSet> {
             supported_formats
                 .iter()
@@ -1377,7 +1376,7 @@ impl HardwareInfo {
         &self,
     ) -> Option<BTreeMap<fadevice::ElementId, Vec<DaiFormatSet>>> {
         fn dai_supported_formats_to_dai_format_sets(
-            dai_supported_formats: &Vec<fhaudio::DaiSupportedFormats>,
+            dai_supported_formats: &[fhaudio::DaiSupportedFormats],
         ) -> Vec<DaiFormatSet> {
             dai_supported_formats
                 .iter()
@@ -1538,7 +1537,7 @@ impl Info {
     pub fn plug_event(&self) -> Option<PlugEvent> {
         match self {
             Info::Hardware(hw_info) => hw_info.plug_event(),
-            Info::Registry(registry_info) => registry_info.plug_event.clone(),
+            Info::Registry(registry_info) => registry_info.plug_event,
         }
     }
 

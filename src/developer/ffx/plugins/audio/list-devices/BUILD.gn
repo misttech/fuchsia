@@ -12,7 +12,6 @@ ffx_plugin("ffx_audio_listdevices") {
   with_unit_tests = true
   args_with_unit_tests = true
 
-  args_sources = [ "src/args.rs" ]
   args_deps = [
     "//src/developer/ffx/core:lib",
     "//third_party/rust_crates:argh",
@@ -29,5 +28,10 @@ ffx_plugin("ffx_audio_listdevices") {
     "//third_party/rust_crates:async-trait",
   ]
 
+  args_sources = [ "src/args.rs" ]
+
   sources = [ "src/lib.rs" ]
+
+  ## Uncomment this line, to enable all lints during local development.
+  # configs = [ "//build/config/rust/lints:clippy_warn_all" ]
 }

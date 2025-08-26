@@ -33,8 +33,8 @@ pub struct RecordCommand {
     #[argh(
         option,
         description = "purpose of the stream being recorded. \
-        Accepted values: BACKGROUND, FOREGROUND, SYSTEM-AGENT, COMMUNICATION, ULTRASOUND, \
-        or LOOPBACK. Default: COMMUNICATION.",
+Accepted values: BACKGROUND, FOREGROUND, SYSTEM-AGENT, COMMUNICATION, ULTRASOUND, or LOOPBACK. \
+Default: COMMUNICATION.",
         from_str_fn(str_to_usage),
         default = "AudioCaptureUsageExtended::Communication(fmedia::AudioCaptureUsage2::Communication)"
     )]
@@ -43,18 +43,18 @@ pub struct RecordCommand {
     #[argh(
         option,
         description = "buffer size (bytes) to allocate on device VMO. \
-        Used to retrieve audio data from AudioCapturer. \
-        Defaults to size to hold 1 second of audio data."
+Used to retrieve audio data from AudioCapturer. \
+Defaults to size to hold 1 second of audio data."
     )]
     pub buffer_size: Option<u64>,
 
     #[argh(
         option,
-        description = "explicitly set the capturer's reference clock. By default, \
-        SetReferenceClock is not called, which leads to a flexible clock. \
-        Options include: 'flexible', 'monotonic', and 'custom,<rate adjustment>,<offset>' where \
-        rate adjustment and offset are integers. To set offset without rate adjustment, pass 0 \
-        in place of rate adjustment.",
+        description = "explicitly set the capturer's reference clock. \
+By default, SetReferenceClock is not called, which leads to a flexible clock. \
+Options include: 'flexible', 'monotonic', and 'custom,<rate adjustment>,<offset>' where rate \
+adjustment and offset are integers. \
+To set offset without rate adjustment, pass 0 in place of rate adjustment.",
         from_str_fn(str_to_clock),
         default = "fac::ClockType::Flexible(fac::Flexible)"
     )]
@@ -98,8 +98,8 @@ fn str_to_usage(src: &str) -> Result<AudioCaptureUsageExtended, String> {
         "ULTRASOUND" => Ok(AudioCaptureUsageExtended::Ultrasound),
         "LOOPBACK" => Ok(AudioCaptureUsageExtended::Loopback),
         _ => Err(String::from(
-            "Couldn't parse usage. Expected one of:
-        BACKGROUND, FOREGROUND, SYSTEM-AGENT, COMMUNICATION, ULTRASOUND, or LOOPBACK",
+            "Couldn't parse usage. \
+Expected one of: BACKGROUND, FOREGROUND, SYSTEM-AGENT, COMMUNICATION, ULTRASOUND, or LOOPBACK",
         )),
     }
 }
@@ -110,4 +110,32 @@ fn parse_duration(value: &str) -> Result<Duration, String> {
 
 fn str_to_clock(value: &str) -> Result<fac::ClockType, String> {
     fuchsia_audio::str_to_clock(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_str_to_usage() {
+        assert_eq!(
+            str_to_usage("BACKGROUND").unwrap(),
+            AudioCaptureUsageExtended::Background(fmedia::AudioCaptureUsage2::Background)
+        );
+        assert_eq!(
+            str_to_usage("foreground").unwrap(),
+            AudioCaptureUsageExtended::Foreground(fmedia::AudioCaptureUsage2::Foreground)
+        );
+        assert_eq!(
+            str_to_usage("SYSTEM-AGENT").unwrap(),
+            AudioCaptureUsageExtended::SystemAgent(fmedia::AudioCaptureUsage2::SystemAgent)
+        );
+        assert_eq!(
+            str_to_usage("communication").unwrap(),
+            AudioCaptureUsageExtended::Communication(fmedia::AudioCaptureUsage2::Communication)
+        );
+        assert_eq!(str_to_usage("ULTRASOUND").unwrap(), AudioCaptureUsageExtended::Ultrasound);
+        assert_eq!(str_to_usage("loopback").unwrap(), AudioCaptureUsageExtended::Loopback);
+        assert!(str_to_usage("invalid").is_err());
+    }
 }

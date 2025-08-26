@@ -4,8 +4,8 @@
 
 //! Helpers to serialize fuchsia_audio types with serde.
 
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use fuchsia_audio::dai::{DaiFormatSet, DaiFrameFormat, DaiSampleFormat};
 use fuchsia_audio::device::{ClockDomain, GainCapabilities, GainState, PlugEvent, PlugState};
 use fuchsia_audio::format::SampleType;
@@ -21,7 +21,7 @@ use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 use {
     fidl_fuchsia_audio_device as fadevice,
-    fidl_fuchsia_hardware_audio_signalprocessing as fhaudio_sigproc, zx_types,
+    fidl_fuchsia_hardware_audio_signalprocessing as fhaudio_sigproc,
 };
 
 /// Serialize an value that can be converted to a string to the string.

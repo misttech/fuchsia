@@ -23,4 +23,7 @@ rustc_library("ffx_audio_common") {
   ]
 
   sources = [ "src/lib.rs" ]
+
+  ## Uncomment this line, to enable all lints during local development.
+  # configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }

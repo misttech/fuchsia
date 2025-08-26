@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::control::{self as control, DeviceControl};
-use ffx_command_error::{bug, return_bug, FfxContext as _, Result};
+use ffx_command_error::{FfxContext as _, Result, bug, return_bug};
 use fidl::endpoints::create_proxy;
 use fuchsia_audio::device::Selector;
 use {
@@ -136,7 +136,7 @@ pub async fn connect_device_control(
             let control_creator =
                 control_creator.ok_or_else(|| bug!("ControlCreator is not available"))?;
             let control =
-                connect_registry_control(&control_creator, registry_selector.token_id()).await?;
+                connect_registry_control(control_creator, registry_selector.token_id()).await?;
             Box::new(control::Registry(control))
         }
     };

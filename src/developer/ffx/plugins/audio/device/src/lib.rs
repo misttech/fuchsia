@@ -10,14 +10,14 @@ use async_trait::async_trait;
 use blocking::Unblock;
 use fac::DEFAULT_RING_BUFFER_ELEMENT_ID;
 use ffx_audio_device_args::{DeviceCommand, RecordCommand, SetCommand, SetSubCommand, SubCommand};
-use ffx_command_error::{user_error, Result};
+use ffx_command_error::{Result, user_error};
 use ffx_optional_moniker::{exposed_dir, optional_moniker};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxContext, FfxMain, FfxTool};
-use fidl::endpoints::{create_proxy, ServerEnd};
 use fidl::HandleBased;
-use fuchsia_audio::device::Selector;
+use fidl::endpoints::{ServerEnd, create_proxy};
 use fuchsia_audio::Registry;
+use fuchsia_audio::device::Selector;
 use futures::{AsyncWrite, FutureExt};
 use serde::Serialize;
 use std::io::{Read, Write};
@@ -106,7 +106,7 @@ impl FfxMain for DeviceTool {
                 let reader: Box<dyn Read + Send + 'static> = match &play_command.file {
                     Some(input_file_path) => {
                         let file =
-                            std::fs::File::open(&input_file_path).with_user_message(|| {
+                            std::fs::File::open(input_file_path).with_user_message(|| {
                                 format!("Failed to open file \"{input_file_path}\"")
                             })?;
                         Box::new(file)
@@ -375,9 +375,9 @@ mod tests {
     use ffx_audio_common::tests::SINE_WAV;
     use ffx_writer::{SimpleWriter, TestBuffer, TestBuffers};
     use fidl_fuchsia_audio_controller as fac;
+    use fuchsia_audio::Format;
     use fuchsia_audio::device::DevfsSelector;
     use fuchsia_audio::format::SampleType;
-    use fuchsia_audio::Format;
     use futures::AsyncWriteExt;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -522,8 +522,9 @@ mod tests {
         )
         .await?;
 
-        let expected_result_output =
-            format!("Successfully recorded 123 bytes of audio. \nPackets processed: 123 \nLate wakeups: Unavailable\n");
+        let expected_result_output = format!(
+            "Successfully recorded 123 bytes of audio. \nPackets processed: 123 \nLate wakeups: Unavailable\n"
+        );
         let stderr = test_buffers.into_stderr_str();
         assert_eq!(stderr, expected_result_output);
 

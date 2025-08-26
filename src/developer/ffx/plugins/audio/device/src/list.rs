@@ -4,11 +4,11 @@
 
 use ffx_audio_device_args::DeviceCommand;
 use ffx_command_error::{FfxContext as _, Result};
+use fuchsia_audio::Registry;
 use fuchsia_audio::device::{
     DevfsSelector, HardwareType as HardwareDeviceType, Info as DeviceInfo, Selector,
     Type as DeviceType,
 };
-use fuchsia_audio::Registry;
 use serde::{Serialize, Serializer};
 use std::fmt::Display;
 use {
@@ -67,8 +67,7 @@ impl QueryExt for DevfsSelector {
             is_match = is_match && (name == &self.0.name);
         }
         if let Some(device_type) = &query.device_type {
-            is_match =
-                is_match && (fac::DeviceType::from(device_type.clone()) == self.0.device_type);
+            is_match = is_match && (fac::DeviceType::from(*device_type) == self.0.device_type);
         }
         is_match
     }
@@ -95,7 +94,7 @@ impl TryFrom<&DeviceCommand> for DeviceQuery {
 
     fn try_from(cmd: &DeviceCommand) -> Result<Self, Self::Error> {
         let name = cmd.name.clone();
-        let token_id = cmd.token_id.clone();
+        let token_id = cmd.token_id;
         let device_type = cmd
             .device_type
             .map(|hw_type| DeviceType::try_from((hw_type, cmd.device_direction)))

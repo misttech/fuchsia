@@ -15,7 +15,7 @@
     }
   ],
   "notes": [
-    "Format parameters: Some commands take a --format=<format> argument for describing audio PCM format.\nThe <format> argument has the pattern: <SampleRate>,<SampleType>,<Channels>\n        SampleRate: Integer\n        SampleType options: uint8, int16, int32, float32\n        Channels: <uint>ch\n\n    example: --format=48000,float32,2ch"
+    "Format parameters: Some commands take a '--format <format>' argument for describing audio PCM format.\nThe <format> argument has the pattern: <SampleRate>,<SampleType>,<Channels>\n        SampleRate: Integer\n        SampleType options: uint8, int16, int32, float32\n        Channels: <uint>ch\n\n    example: --format 48000,float32,2ch"
   ],
   "commands": [],
   "positionals": [],

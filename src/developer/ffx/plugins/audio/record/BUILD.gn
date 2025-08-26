@@ -9,6 +9,7 @@ ffx_plugin("ffx_audio_record") {
   version = "0.1.0"
   edition = "2021"
   with_unit_tests = true
+  args_with_unit_tests = true
 
   args_deps = [
     "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust",
@@ -32,6 +33,7 @@ ffx_plugin("ffx_audio_record") {
     "//third_party/rust_crates:blocking",
     "//third_party/rust_crates:futures",
   ]
+
   test_deps = [
     "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
     "//src/developer/ffx/lib/writer:lib",
@@ -41,4 +43,7 @@ ffx_plugin("ffx_audio_record") {
   args_sources = [ "src/args.rs" ]
 
   sources = [ "src/lib.rs" ]
+
+  ## Uncomment this line, to enable all lints during local development.
+  # configs = [ "//build/config/rust/lints:clippy_warn_all" ]
 }

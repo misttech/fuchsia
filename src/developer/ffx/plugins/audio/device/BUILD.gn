@@ -19,17 +19,6 @@ ffx_plugin("ffx_audio_device") {
     "//third_party/rust_crates:argh",
   ]
 
-  args_sources = [ "src/args.rs" ]
-
-  sources = [
-    "src/connect.rs",
-    "src/control.rs",
-    "src/info.rs",
-    "src/lib.rs",
-    "src/list.rs",
-    "src/serde_ext.rs",
-  ]
-
   deps = [
     "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust",
     "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust",
@@ -71,4 +60,18 @@ ffx_plugin("ffx_audio_device") {
     "//third_party/rust_crates:tempfile",
     "//third_party/rust_crates:test-case",
   ]
+
+  args_sources = [ "src/args.rs" ]
+
+  sources = [
+    "src/connect.rs",
+    "src/control.rs",
+    "src/info.rs",
+    "src/lib.rs",
+    "src/list.rs",
+    "src/serde_ext.rs",
+  ]
+
+  ## Uncomment this line, to enable all lints during local development.
+  # configs = [ "//build/config/rust/lints:clippy_warn_all" ]
 }

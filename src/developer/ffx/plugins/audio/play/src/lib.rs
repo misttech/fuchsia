@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use ffx_audio_common::PlayResult;
 use ffx_audio_play_args::{AudioRenderUsageExtended, PlayCommand};
@@ -30,7 +30,7 @@ impl FfxMain for PlayTool {
         let (play_remote, play_local) = fidl::Socket::create_datagram();
         let reader: Box<dyn Read + Send + 'static> = match &self.cmd.file {
             Some(input_file_path) => {
-                let file = std::fs::File::open(&input_file_path)
+                let file = std::fs::File::open(input_file_path)
                     .map_err(|e| anyhow!("Error trying to open file \"{input_file_path}\": {e}"))?;
                 Box::new(file)
             }
@@ -96,7 +96,7 @@ async fn play_impl(
                 result
                     .bytes_processed
                     .map(|bytes| bytes.to_string())
-                    .unwrap_or_else(|| format!("Unavailable"))
+                    .unwrap_or_else(|| "Unavailable".to_string())
             })
         })
         .map_err(Into::<anyhow::Error>::into)
