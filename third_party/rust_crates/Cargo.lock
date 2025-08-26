@@ -2986,7 +2986,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87f5ec2493a61ac0506c0f4199f99070cbe83857b0337006a30f3e6719b8ef58"
 dependencies = [
  "lock_api",
- "parking_lot_core 0.9.9",
+ "parking_lot_core 0.9.11",
 ]
 
 [[package]]
@@ -3005,13 +3005,13 @@ dependencies = [
 
 [[package]]
 name = "parking_lot_core"
-version = "0.9.9"
+version = "0.9.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c42a9226546d68acdd9c0a280d17ce19bfe27a46bf68784e4066115788d008e"
+checksum = "bc838d2a56b5b1a6c25f55575dfc605fabb63bb2365f6c2353ef9159aa69e4a5"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
- "redox_syscall 0.4.1",
+ "redox_syscall 0.5.17",
  "smallvec",
  "windows-targets",
 ]
@@ -3754,7 +3754,12 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.4.1"
+version = "0.5.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5407465600fb0548f1442edf71dd20683c6ed326200ace4b1ef0763521bb3b77"
+dependencies = [
+ "bitflags 2.9.1",
+]
 
 [[package]]
 name = "redox_termios"
@@ -5457,7 +5462,7 @@ version = "0.59.0"
 
 [[package]]
 name = "windows-targets"
-version = "0.48.5"
+version = "0.52.6"
 
 [[package]]
 name = "winnow"
@@ -5590,3 +5595,8 @@ version = "2.0.1+zstd.1.5.6"
 dependencies = [
  "libc",
 ]
+
+[[patch.unused]]
+name = "redox_syscall"
+version = "0.4.1"
+

@@ -410,7 +410,7 @@ windows-sys-0_45_0 = { package = "windows-sys", path = "empty/windows-sys-0.45.0
 windows-sys-0_48_0 = { package = "windows-sys", path = "empty/windows-sys-0.48.0" }
 windows-sys-0_52_0 = { package = "windows-sys", path = "empty/windows-sys-0.52.0" }
 windows-sys-0_59_0 = { package = "windows-sys", path = "empty/windows-sys-0.59.0" }
-windows-targets-0_48_5 = { package = "windows-targets", path = "empty/windows-targets-0.48.5" }
+windows-targets-0_52_6 = { package = "windows-targets", path = "empty/windows-targets-0.52.6" }
 # keep-sorted end
 
 ### Forks: vendored crates whose code doesn't match the upstream version
@@ -809,7 +809,7 @@ configs = ["//third_party/boringssl/rust:osslconf"]
 # Funnel usage of parking_lot through fuchsia_sync.
 visibility = ["//src/lib/fuchsia-sync", "//third_party/rust_crates:*"]
 
-[gn.package.parking_lot_core."0.9.9"]
+[gn.package.parking_lot_core."0.9.11"]
 rustflags = []
 
 [gn.package.paste."1.0.15"]
