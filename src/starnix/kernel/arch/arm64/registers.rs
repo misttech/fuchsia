@@ -167,19 +167,28 @@ impl RegisterState {
         offset: usize,
         f: &mut dyn FnMut(&mut u64),
     ) -> Result<(), Errno> {
+        let is_arch32: bool = self.is_arch32();
         let reg_offset = |index: usize| -> usize {
             memoffset::offset_of!(user_regs_struct, regs)
                 + index * LongPtr::size_of_object_for(self)
         };
+        let mut final_f = |v: &mut u64| {
+            if is_arch32 {
+                *v = *v & (u32::MAX as u64);
+                f(v);
+                *v = *v & (u32::MAX as u64);
+            } else {
+                f(v)
+            }
+        };
 
-        let is_arch32: bool = self.is_arch32();
         if offset >= std::mem::size_of::<user_regs_struct>() {
             return error!(EINVAL);
         }
         if offset == memoffset::offset_of!(user_regs_struct, sp)
             || (offset == reg_offset(13) && is_arch32)
         {
-            f(&mut self.real_registers.sp);
+            final_f(&mut self.real_registers.sp);
             // For arm, sp is register 13
             if is_arch32 {
                 self.real_registers.r[13] = self.real_registers.sp;
@@ -187,16 +196,16 @@ impl RegisterState {
         } else if offset == memoffset::offset_of!(user_regs_struct, pc)
             || (offset == reg_offset(15) && is_arch32)
         {
-            f(&mut self.real_registers.pc);
+            final_f(&mut self.real_registers.pc);
             // For arm, pc is register 15
             if is_arch32 {
                 self.real_registers.r[15] = self.real_registers.pc;
             }
         } else if offset == memoffset::offset_of!(user_regs_struct, pstate) {
-            f(&mut self.real_registers.cpsr);
+            final_f(&mut self.real_registers.cpsr);
         } else if offset == reg_offset(30) || (offset == reg_offset(14) && is_arch32) {
             // The 30th register is stored as lr in self.real_registers
-            f(&mut self.real_registers.lr);
+            final_f(&mut self.real_registers.lr);
             if is_arch32 {
                 // The 14th register is stored as lr in self.real_registers for
                 // arm
@@ -204,7 +213,7 @@ impl RegisterState {
             }
         } else if offset % LongPtr::align_of_object_for(self) == 0 {
             let index = offset / LongPtr::size_of_object_for(self);
-            f(&mut self.real_registers.r[index])
+            final_f(&mut self.real_registers.r[index])
         } else {
             return error!(EINVAL);
         };
