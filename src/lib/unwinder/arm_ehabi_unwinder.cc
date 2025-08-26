@@ -18,11 +18,13 @@ Error ArmEhAbiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
   }
 
   uint64_t pc = 0;
-  auto e = current.regs.GetPC(pc);
+  if (auto err = current.regs.GetPC(pc); err.has_err()) {
+    return err;
+  }
 
   CfiModuleInfo* info;
-  if (auto e = cfi_unwinder_->GetCfiModuleInfoForPc(pc, &info); e.has_err()) {
-    return e;
+  if (auto err = cfi_unwinder_->GetCfiModuleInfoForPc(pc, &info); err.has_err()) {
+    return err;
   }
 
   switch (info->module.size) {
