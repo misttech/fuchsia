@@ -4,9 +4,10 @@
 
 use crate::fifo_cache::FifoCache;
 use crate::policy::{AccessDecision, IoctlAccessDecision};
+use crate::security_server::SecurityServerBackend;
 use crate::sync::Mutex;
-use crate::{FsNodeClass, KernelClass, NullessByteStr, ObjectClass, SecurityId, SecurityServer};
-use std::sync::{Arc, Weak};
+use crate::{FsNodeClass, KernelClass, NullessByteStr, ObjectClass, SecurityId};
+use std::sync::Arc;
 
 pub use crate::fifo_cache::CacheStats;
 
@@ -85,7 +86,7 @@ struct IoctlAccessQueryArgs {
 pub(super) struct FifoQueryCache<D: Query> {
     access_cache: FifoCache<AccessQueryArgs, AccessQueryResult>,
     ioctl_access_cache: FifoCache<IoctlAccessQueryArgs, IoctlAccessDecision>,
-    delegate: D,
+    delegate: Arc<D>,
 }
 
 impl<D: Query> FifoQueryCache<D> {
@@ -97,7 +98,7 @@ impl<D: Query> FifoQueryCache<D> {
     /// # Panics
     ///
     /// This will panic if called with a `capacity` of zero.
-    pub fn new(delegate: D, capacity: usize) -> Self {
+    pub fn new(delegate: Arc<D>, capacity: usize) -> Self {
         assert!(capacity > 0, "cannot instantiate fixed access vector cache of size 0");
         let ioctl_access_cache_capacity =
             (Self::IOCTL_CAPACITY_MULTIPLIER * (capacity as f32)) as usize;
@@ -229,11 +230,6 @@ impl<D: Query> FifoQueryCache<D> {
         true
     }
 
-    pub fn set_delegate(&mut self, mut delegate: D) -> D {
-        std::mem::swap(&mut self.delegate, &mut delegate);
-        delegate
-    }
-
     /// Returns true if the main access decision cache has reached capacity.
     #[cfg(test)]
     fn access_cache_is_full(&self) -> bool {
@@ -247,27 +243,23 @@ impl<D: Query> FifoQueryCache<D> {
     }
 }
 
+/// Default size of an access vector cache shared by all threads in the system.
+const DEFAULT_SHARED_SIZE: usize = 1000;
+
 /// An access vector cache.
 #[derive(Clone)]
 pub(super) struct AccessVectorCache {
-    cache: Arc<Mutex<FifoQueryCache<Weak<SecurityServer>>>>,
+    cache: Arc<Mutex<FifoQueryCache<SecurityServerBackend>>>,
 }
 
 impl AccessVectorCache {
-    /// Constructs an access vector cache that delegates to `delegate`.
-    pub fn new(delegate: FifoQueryCache<Weak<SecurityServer>>) -> Self {
-        Self { cache: Arc::new(Mutex::new(delegate)) }
+    pub fn new(backend: Arc<SecurityServerBackend>) -> Self {
+        let cache = FifoQueryCache::new(backend, DEFAULT_SHARED_SIZE);
+        Self { cache: Arc::new(Mutex::new(cache)) }
     }
 
     pub fn cache_stats(&self) -> CacheStats {
         self.cache.lock().cache_stats()
-    }
-
-    pub fn set_stateful_cache_delegate(
-        &self,
-        delegate: Weak<SecurityServer>,
-    ) -> Weak<SecurityServer> {
-        self.cache.lock().set_delegate(delegate)
     }
 
     pub fn reset(&self) -> bool {
@@ -325,107 +317,6 @@ impl Query for AccessVectorCache {
     }
 }
 
-impl<Q: Query> Query for Weak<Q> {
-    fn compute_access_decision(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        target_class: ObjectClass,
-    ) -> AccessDecision {
-        self.upgrade()
-            .map(|q| q.compute_access_decision(source_sid, target_sid, target_class))
-            .unwrap_or_default()
-    }
-
-    fn compute_new_fs_node_sid(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-    ) -> Result<SecurityId, anyhow::Error> {
-        self.upgrade()
-            .map(|q| q.compute_new_fs_node_sid(source_sid, target_sid, fs_node_class))
-            .unwrap_or(Err(anyhow::anyhow!("weak reference failed to resolve")))
-    }
-
-    fn compute_new_fs_node_sid_with_name(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-        fs_node_name: NullessByteStr<'_>,
-    ) -> Option<SecurityId> {
-        let delegate = self.upgrade()?;
-        delegate.compute_new_fs_node_sid_with_name(
-            source_sid,
-            target_sid,
-            fs_node_class,
-            fs_node_name,
-        )
-    }
-
-    fn compute_ioctl_access_decision(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        target_class: ObjectClass,
-        ioctl_prefix: u8,
-    ) -> IoctlAccessDecision {
-        self.upgrade()
-            .map(|q| {
-                q.compute_ioctl_access_decision(source_sid, target_sid, target_class, ioctl_prefix)
-            })
-            .unwrap_or(IoctlAccessDecision::DENY_ALL)
-    }
-}
-
-/// Default size of an access vector cache shared by all threads in the system.
-const DEFAULT_SHARED_SIZE: usize = 1000;
-
-/// Composite access vector cache manager that delegates queries to the security server and
-/// owns a shared cache of size `DEFAULT_SHARED_SIZE`.
-pub(super) struct AvcManager {
-    shared_cache: AccessVectorCache,
-}
-
-impl AvcManager {
-    /// Constructs a [`AvcManager`] that initially has no security server delegate (i.e., will default
-    /// to deny all requests).
-    pub fn new() -> Self {
-        Self {
-            shared_cache: AccessVectorCache::new(FifoQueryCache::new(
-                Weak::new(),
-                DEFAULT_SHARED_SIZE,
-            )),
-        }
-    }
-
-    /// Sets the security server delegate that is consulted when there is no cache hit on a query.
-    pub fn set_security_server(
-        &self,
-        security_server: Weak<SecurityServer>,
-    ) -> Weak<SecurityServer> {
-        self.shared_cache.set_stateful_cache_delegate(security_server)
-    }
-
-    /// Returns a shared reference to the shared cache managed by this manager. This operation does
-    /// not copy the cache, but it does perform an atomic operation to update a reference count.
-    pub fn get_shared_cache(&self) -> &AccessVectorCache {
-        &self.shared_cache
-    }
-
-    /// Resets caches owned by this manager. If owned caches delegate to a security server that is
-    /// reloading its policy, the security server must reload its policy (and start serving the new
-    /// policy) *before* invoking `AvcManager::reset()` on any managers that delegate to that security
-    /// server. This is because the [`AvcManager`]-managed caches are consulted by [`Query`] clients
-    /// *before* the security server; performing reload/reset in the reverse order could move stale
-    /// queries into reset caches before policy reload is complete.
-    pub fn reset(&self) -> bool {
-        self.shared_cache.reset();
-        true
-    }
-}
-
 /// Test constants and helpers shared by `tests` and `starnix_tests`.
 #[cfg(test)]
 mod testing {
@@ -469,6 +360,10 @@ mod tests {
     }
 
     impl TestDelegate {
+        fn new() -> Arc<Self> {
+            Arc::new(Self::default())
+        }
+
         fn query_count(&self) -> usize {
             self.query_count.load(Ordering::Relaxed)
         }
@@ -518,7 +413,7 @@ mod tests {
 
     #[test]
     fn fixed_access_vector_cache_add_entry() {
-        let mut avc = FifoQueryCache::<_>::new(TestDelegate::default(), TEST_CAPACITY);
+        let mut avc = FifoQueryCache::<_>::new(TestDelegate::new(), TEST_CAPACITY);
         assert_eq!(0, avc.delegate.query_count());
         assert_eq!(
             AccessVector::ALL,
@@ -545,7 +440,7 @@ mod tests {
 
     #[test]
     fn fixed_access_vector_cache_reset() {
-        let mut avc = FifoQueryCache::<_>::new(TestDelegate::default(), TEST_CAPACITY);
+        let mut avc = FifoQueryCache::<_>::new(TestDelegate::new(), TEST_CAPACITY);
 
         avc.reset();
         assert_eq!(false, avc.access_cache_is_full());
@@ -569,7 +464,7 @@ mod tests {
 
     #[test]
     fn fixed_access_vector_cache_fill() {
-        let mut avc = FifoQueryCache::<_>::new(TestDelegate::default(), TEST_CAPACITY);
+        let mut avc = FifoQueryCache::<_>::new(TestDelegate::new(), TEST_CAPACITY);
 
         for sid in unique_sids(avc.access_cache.capacity()) {
             avc.compute_access_decision(sid, A_TEST_SID.clone(), KernelClass::Process.into());
@@ -590,7 +485,7 @@ mod tests {
 
     #[test]
     fn fixed_access_vector_cache_full_miss() {
-        let mut avc = FifoQueryCache::<_>::new(TestDelegate::default(), TEST_CAPACITY);
+        let mut avc = FifoQueryCache::<_>::new(TestDelegate::new(), TEST_CAPACITY);
 
         // Make the test query, which will trivially miss.
         avc.compute_access_decision(
@@ -640,7 +535,7 @@ mod tests {
 
     #[test]
     fn access_vector_cache_ioctl_hit() {
-        let mut avc = FifoQueryCache::<_>::new(TestDelegate::default(), TEST_CAPACITY);
+        let mut avc = FifoQueryCache::<_>::new(TestDelegate::new(), TEST_CAPACITY);
         assert_eq!(0, avc.delegate.query_count());
         assert_eq!(
             XpermsBitmap::ALL,
@@ -669,7 +564,7 @@ mod tests {
 
     #[test]
     fn access_vector_cache_ioctl_miss() {
-        let mut avc = FifoQueryCache::<_>::new(TestDelegate::default(), TEST_CAPACITY);
+        let mut avc = FifoQueryCache::<_>::new(TestDelegate::new(), TEST_CAPACITY);
 
         // Make the test query, which will trivially miss.
         avc.compute_ioctl_access_decision(
