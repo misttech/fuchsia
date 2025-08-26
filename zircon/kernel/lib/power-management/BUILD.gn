@@ -4,6 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/components/fuchsia_unittest_package.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/test.gni")
 
@@ -49,7 +50,7 @@ group("tests") {
     deps = [ ":power-management-kunittests" ]
   } else {
     testonly = true
-    deps = [ ":power-management-unittests($host_toolchain)" ]
+    deps = [ ":power-management-unittests-package" ]
   }
 }
 
@@ -74,4 +75,10 @@ test("power-management-unittests") {
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]
+}
+
+fuchsia_unittest_package("power-management-unittests-package") {
+  manifest = "meta/power-management-unittests.cml"
+  package_name = "power-management-unittests"
+  deps = [ ":power-management-unittests" ]
 }
