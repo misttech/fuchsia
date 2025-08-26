@@ -353,6 +353,7 @@ LogSettingsBuilder& LogSettingsBuilder::DisableInterestListener() {
   return *this;
 }
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 // Disables waiting for the initial interest from Archivist.
 // The level specified in SetMinLogSeverity or INFO will be used
 // as the default.
@@ -363,7 +364,6 @@ LogSettingsBuilder& LogSettingsBuilder::DisableWaitForInitialInterest() {
   return *this;
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 LogSettingsBuilder& LogSettingsBuilder::WithSeverityChangedListener(
     void (*callback)(fuchsia_logging::RawLogSeverity severity)) {
   settings_.severity_change_callback = callback;
