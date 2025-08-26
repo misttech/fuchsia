@@ -157,8 +157,10 @@ impl<D: Query> FifoQueryCache<D> {
         } else {
             let access_decision =
                 self.delegate.compute_access_decision(source_sid, target_sid, target_class);
-            self.access_cache
-                .insert(query_args, AccessQueryResult { access_decision, new_file_sid: None })
+            self.access_cache.insert(
+                query_args.clone(),
+                AccessQueryResult { access_decision, new_file_sid: None },
+            )
         };
 
         if let Some(new_file_sid) = query_result.new_file_sid {
@@ -167,7 +169,11 @@ impl<D: Query> FifoQueryCache<D> {
             let new_file_sid =
                 self.delegate.compute_new_fs_node_sid(source_sid, target_sid, fs_node_class);
             if let Ok(new_file_sid) = new_file_sid {
-                query_result.new_file_sid = Some(new_file_sid);
+                let updated_query_result = AccessQueryResult {
+                    access_decision: query_result.access_decision.clone(),
+                    new_file_sid: Some(new_file_sid),
+                };
+                self.access_cache.replace(query_args, updated_query_result);
             }
             new_file_sid
         }

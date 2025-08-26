@@ -5,6 +5,7 @@
 use indexmap::IndexMap;
 use std::hash::Hash;
 use std::ops::Add;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Describes the performance statistics of a cache implementation.
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -39,6 +40,29 @@ impl Add for &CacheStats {
     }
 }
 
+#[derive(Default, Debug)]
+struct AtomicCacheStats {
+    lookups: AtomicU64,
+    hits: AtomicU64,
+    misses: AtomicU64,
+    allocs: AtomicU64,
+    reclaims: AtomicU64,
+    frees: AtomicU64,
+}
+
+impl AtomicCacheStats {
+    fn snapshot(&self) -> CacheStats {
+        CacheStats {
+            lookups: self.lookups.load(Ordering::Relaxed),
+            hits: self.hits.load(Ordering::Relaxed),
+            misses: self.misses.load(Ordering::Relaxed),
+            allocs: self.allocs.load(Ordering::Relaxed),
+            reclaims: self.reclaims.load(Ordering::Relaxed),
+            frees: self.frees.load(Ordering::Relaxed),
+        }
+    }
+}
+
 /// Associative FIFO cache with capacity defined at creation.
 ///
 /// Lookups in the cache are O(1), as are evictions.
@@ -49,7 +73,7 @@ pub(super) struct FifoCache<A: Hash + Eq, R> {
     cache: IndexMap<A, R>,
     capacity: usize,
     oldest_index: usize,
-    stats: CacheStats,
+    stats: AtomicCacheStats,
 }
 
 impl<A: Hash + Eq, R> FifoCache<A, R> {
@@ -62,7 +86,7 @@ impl<A: Hash + Eq, R> FifoCache<A, R> {
             cache: IndexMap::with_capacity(capacity + 1),
             capacity,
             oldest_index: 0,
-            stats: CacheStats::default(),
+            stats: AtomicCacheStats::default(),
         }
     }
 
@@ -77,28 +101,39 @@ impl<A: Hash + Eq, R> FifoCache<A, R> {
         self.capacity
     }
 
-    /// Searches the cache and returns the index of a [`QueryAndResult`] matching
-    /// the given `source_sid`, `target_sid`, and `target_class` (or returns `None`).
+    /// Searches the cache and returns a reference to the result `R` matching
+    /// the given `query_args` (or returns `None`).
     #[inline]
-    pub fn get(&mut self, query_args: &A) -> Option<&mut R> {
-        self.stats.lookups += 1;
+    pub fn get(&self, query_args: &A) -> Option<&R> {
+        self.stats.lookups.fetch_add(1, Ordering::Relaxed);
 
-        let result = self.cache.get_mut(query_args);
+        let result = self.cache.get(query_args);
 
         if result.is_some() {
-            self.stats.hits += 1;
+            self.stats.hits.fetch_add(1, Ordering::Relaxed);
         } else {
-            self.stats.misses += 1;
+            self.stats.misses.fetch_add(1, Ordering::Relaxed);
         }
 
         result
+    }
+
+    /// Replaces the entry for the specified `query` with the specified `result`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the specified `query` is not already in the cache.
+    pub fn replace(&mut self, query: A, result: R) {
+        let old_result = self.cache.insert(query, result);
+        // We must be replacing an existing entry.
+        assert!(old_result.is_some());
     }
 
     /// Inserts the specified `query` and `result` into the cache, evicting the oldest existing
     /// entry if capacity has been reached.
     #[inline]
     pub fn insert(&mut self, query: A, result: R) -> &mut R {
-        self.stats.allocs += 1;
+        self.stats.allocs.fetch_add(1, Ordering::Relaxed);
 
         // If the cache is already full then it will be necessary to evict an existing entry.
         // Eviction is performed after inserting the new entry, to allow the eviction operation to
@@ -114,7 +149,7 @@ impl<A: Hash + Eq, R> FifoCache<A, R> {
             assert_eq!(index, self.capacity);
 
             self.cache.swap_remove_index(self.oldest_index);
-            self.stats.reclaims += 1;
+            self.stats.reclaims.fetch_add(1, Ordering::Relaxed);
 
             index = self.oldest_index;
 
@@ -128,6 +163,6 @@ impl<A: Hash + Eq, R> FifoCache<A, R> {
     }
 
     pub fn cache_stats(&self) -> CacheStats {
-        self.stats.clone()
+        self.stats.snapshot()
     }
 }
