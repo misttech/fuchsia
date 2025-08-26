@@ -41,7 +41,7 @@ impl fidl::endpoints::ProtocolMarker for ChildMarker {
 
 pub trait ChildProxyInterface: Send + Sync {
     fn r#first(&self, request: fidl::endpoints::ServerEnd<ParentMarker>)
-        -> Result<(), fidl::Error>;
+    -> Result<(), fidl::Error>;
     fn r#second(
         &self,
         request: fidl::endpoints::ServerEnd<ParentMarker>,
@@ -330,7 +330,7 @@ impl futures::Stream for ChildRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -453,7 +453,7 @@ impl fidl::endpoints::ProtocolMarker for ParentMarker {
 
 pub trait ParentProxyInterface: Send + Sync {
     fn r#first(&self, request: fidl::endpoints::ServerEnd<ParentMarker>)
-        -> Result<(), fidl::Error>;
+    -> Result<(), fidl::Error>;
 }
 #[derive(Debug)]
 #[cfg(target_os = "fuchsia")]
@@ -709,7 +709,7 @@ impl futures::Stream for ParentRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -847,12 +847,11 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<ParentMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
-        fidl::encoding::Encode<ChildSecondRequest, fidl::encoding::DefaultFuchsiaResourceDialect>
+    > fidl::encoding::Encode<ChildSecondRequest, fidl::encoding::DefaultFuchsiaResourceDialect>
         for (T0,)
     {
         #[inline]
@@ -959,12 +958,11 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<ParentMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
-        fidl::encoding::Encode<ParentFirstRequest, fidl::encoding::DefaultFuchsiaResourceDialect>
+    > fidl::encoding::Encode<ParentFirstRequest, fidl::encoding::DefaultFuchsiaResourceDialect>
         for (T0,)
     {
         #[inline]

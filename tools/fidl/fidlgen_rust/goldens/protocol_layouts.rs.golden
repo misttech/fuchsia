@@ -989,27 +989,15 @@ impl MainProtocolEvent {
     }
     #[allow(irrefutable_let_patterns)]
     pub fn into_on_import(self) -> Option<fidl_test_protocollayouts_imported::ImportUnionPayload> {
-        if let MainProtocolEvent::OnImport { payload } = self {
-            Some((payload))
-        } else {
-            None
-        }
+        if let MainProtocolEvent::OnImport { payload } = self { Some((payload)) } else { None }
     }
     #[allow(irrefutable_let_patterns)]
     pub fn into_on_local(self) -> Option<LocalUnionPayload> {
-        if let MainProtocolEvent::OnLocal { payload } = self {
-            Some((payload))
-        } else {
-            None
-        }
+        if let MainProtocolEvent::OnLocal { payload } = self { Some((payload)) } else { None }
     }
     #[allow(irrefutable_let_patterns)]
     pub fn into_on_anon(self) -> Option<MainProtocolOnAnonRequest> {
-        if let MainProtocolEvent::OnAnon { payload } = self {
-            Some((payload))
-        } else {
-            None
-        }
+        if let MainProtocolEvent::OnAnon { payload } = self { Some((payload)) } else { None }
     }
 
     /// Decodes a message buffer as a [`MainProtocolEvent`].
@@ -1136,7 +1124,7 @@ impl futures::Stream for MainProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -2476,7 +2464,7 @@ pub trait OpenProtocolProxyInterface: Send + Sync {
     fn r#flexible_two_way_no_error(&self, value: i32) -> Self::FlexibleTwoWayNoErrorResponseFut;
     type FlexibleTwoWayWithErrorResponseFut: std::future::Future<Output = Result<fidl_test_protocollayouts_imported::ComposedOpenProtocolFlexibleTwoWayWithErrorResult, fidl::Error>> + Send;
     fn r#flexible_two_way_with_error(&self, value: i32)
-        -> Self::FlexibleTwoWayWithErrorResponseFut;
+    -> Self::FlexibleTwoWayWithErrorResponseFut;
     fn r#strict_one_way(&self, value: i32) -> Result<(), fidl::Error>;
     type StrictTwoWayNoErrorResponseFut: std::future::Future<Output = Result<i32, fidl::Error>>
         + Send;
@@ -2924,19 +2912,11 @@ pub enum OpenProtocolEvent {
 impl OpenProtocolEvent {
     #[allow(irrefutable_let_patterns)]
     pub fn into_flexible_event(self) -> Option<i32> {
-        if let OpenProtocolEvent::FlexibleEvent { value } = self {
-            Some((value))
-        } else {
-            None
-        }
+        if let OpenProtocolEvent::FlexibleEvent { value } = self { Some((value)) } else { None }
     }
     #[allow(irrefutable_let_patterns)]
     pub fn into_strict_event(self) -> Option<i32> {
-        if let OpenProtocolEvent::StrictEvent { value } = self {
-            Some((value))
-        } else {
-            None
-        }
+        if let OpenProtocolEvent::StrictEvent { value } = self { Some((value)) } else { None }
     }
 
     /// Decodes a message buffer as a [`OpenProtocolEvent`].
@@ -3042,7 +3022,7 @@ impl futures::Stream for OpenProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 

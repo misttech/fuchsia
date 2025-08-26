@@ -148,10 +148,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<LocalStructPayload, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<LocalStructPayload, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -247,10 +247,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<MainProtocolOnAnonRequest, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<MainProtocolOnAnonRequest, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -349,10 +349,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<MainProtocolOneWayAnonRequest, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<MainProtocolOneWayAnonRequest, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -451,10 +451,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<MainProtocolTwoWayAnonRequest, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<MainProtocolTwoWayAnonRequest, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -553,10 +553,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<MainProtocolTwoWayAnonResponse, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<MainProtocolTwoWayAnonResponse, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -656,10 +656,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<MainProtocolTwoWayAnonWithErrorRequest, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<MainProtocolTwoWayAnonWithErrorRequest, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -759,10 +759,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<MainProtocolTwoWayAnonWithErrorResponse, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<MainProtocolTwoWayAnonWithErrorResponse, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(

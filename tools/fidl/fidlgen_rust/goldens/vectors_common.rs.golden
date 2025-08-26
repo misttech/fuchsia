@@ -64,13 +64,13 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::UnboundedVector<u8>, D>,
-            T1: fidl::encoding::Encode<
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::UnboundedVector<u8>, D>,
+        T1: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<fidl::encoding::UnboundedVector<bool>>,
                 D,
             >,
-        > fidl::encoding::Encode<ExampleUseOfVectors, D> for (T0, T1)
+    > fidl::encoding::Encode<ExampleUseOfVectors, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(

@@ -32,11 +32,7 @@ pub enum OneWayRequest {
 impl OneWayRequest {
     #[allow(irrefutable_let_patterns)]
     pub fn into_send_(self) -> Option<(Payload,)> {
-        if let OneWayRequest::Send_ { payload } = self {
-            Some((payload,))
-        } else {
-            None
-        }
+        if let OneWayRequest::Send_ { payload } = self { Some((payload,)) } else { None }
     }
 
     pub fn new_send_(self, payload: Payload) -> Self {

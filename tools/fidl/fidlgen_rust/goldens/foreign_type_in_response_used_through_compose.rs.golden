@@ -299,7 +299,7 @@ impl futures::Stream for TopRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -340,11 +340,7 @@ pub enum TopRequest {
 impl TopRequest {
     #[allow(irrefutable_let_patterns)]
     pub fn into_get_foo(self) -> Option<(TopGetFooResponder)> {
-        if let TopRequest::GetFoo { responder } = self {
-            Some((responder))
-        } else {
-            None
-        }
+        if let TopRequest::GetFoo { responder } = self { Some((responder)) } else { None }
     }
 
     /// Name of the method defined in FIDL

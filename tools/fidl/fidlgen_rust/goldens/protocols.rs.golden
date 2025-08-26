@@ -406,7 +406,7 @@ impl futures::Stream for AnotherDiscoverableProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -789,11 +789,7 @@ pub enum ChannelProtocolEvent {
 impl ChannelProtocolEvent {
     #[allow(irrefutable_let_patterns)]
     pub fn into_event_a(self) -> Option<(i64, i64)> {
-        if let ChannelProtocolEvent::EventA { a, b } = self {
-            Some((a, b))
-        } else {
-            None
-        }
+        if let ChannelProtocolEvent::EventA { a, b } = self { Some((a, b)) } else { None }
     }
 
     /// Decodes a message buffer as a [`ChannelProtocolEvent`].
@@ -889,7 +885,7 @@ impl futures::Stream for ChannelProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -1527,7 +1523,7 @@ impl futures::Stream for DiscoverableProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -1844,11 +1840,7 @@ pub enum HandleRightsProtocolEvent {
 impl HandleRightsProtocolEvent {
     #[allow(irrefutable_let_patterns)]
     pub fn into_an_event(self) -> Option<fidl::Socket> {
-        if let HandleRightsProtocolEvent::AnEvent { h } = self {
-            Some((h))
-        } else {
-            None
-        }
+        if let HandleRightsProtocolEvent::AnEvent { h } = self { Some((h)) } else { None }
     }
 
     /// Decodes a message buffer as a [`HandleRightsProtocolEvent`].
@@ -1944,7 +1936,7 @@ impl futures::Stream for HandleRightsProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -2463,7 +2455,7 @@ impl futures::Stream for ManyParametersRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -2914,7 +2906,7 @@ impl futures::Stream for MethodWithUnionRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -3310,7 +3302,7 @@ impl futures::Stream for PlatformServer_RequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -3396,7 +3388,7 @@ pub trait WithAndWithoutRequestResponseProxyInterface: Send + Sync {
     type WithRequestEmptyResponseResponseFut: std::future::Future<Output = Result<(), fidl::Error>>
         + Send;
     fn r#with_request_empty_response(&self, arg: &str)
-        -> Self::WithRequestEmptyResponseResponseFut;
+    -> Self::WithRequestEmptyResponseResponseFut;
     type WithRequestWithResponseResponseFut: std::future::Future<Output = Result<String, fidl::Error>>
         + Send;
     fn r#with_request_with_response(&self, arg: &str) -> Self::WithRequestWithResponseResponseFut;
@@ -3895,7 +3887,7 @@ impl futures::Stream for WithAndWithoutRequestResponseRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -4884,7 +4876,7 @@ impl futures::Stream for WithErrorSyntaxRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -5748,7 +5740,7 @@ impl futures::Stream for WithProtocolEndsRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -6189,7 +6181,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Socket,
                     { fidl::ObjectType::SOCKET.into_raw() },
@@ -6197,7 +6189,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             ChannelProtocolMutateSocketRequest,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -6308,7 +6300,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Socket,
                     { fidl::ObjectType::SOCKET.into_raw() },
@@ -6316,7 +6308,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             ChannelProtocolMutateSocketResponse,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -6427,7 +6419,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Handle,
                     { fidl::ObjectType::NONE.into_raw() },
@@ -6435,7 +6427,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             ChannelProtocolTakeHandleRequest,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -6546,7 +6538,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Socket,
                     { fidl::ObjectType::SOCKET.into_raw() },
@@ -6554,7 +6546,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             HandleRightsProtocolAnEventRequest,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -6665,7 +6657,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Socket,
                     { fidl::ObjectType::SOCKET.into_raw() },
@@ -6673,7 +6665,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             HandleRightsProtocolNoResponseMethodRequest,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -6784,7 +6776,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Socket,
                     { fidl::ObjectType::SOCKET.into_raw() },
@@ -6792,7 +6784,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             HandleRightsProtocolResponseMethodRequest,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -6903,7 +6895,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Socket,
                     { fidl::ObjectType::SOCKET.into_raw() },
@@ -6911,7 +6903,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             HandleRightsProtocolResponseMethodResponse,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -7013,15 +7005,15 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ClientEnd<DiscoverableProtocolMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T1: fidl::encoding::Encode<
+        T1: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<DiscoverableProtocolMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T2: fidl::encoding::Encode<
+        T2: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::Endpoint<
                         fidl::endpoints::ClientEnd<DiscoverableProtocolMarker>,
@@ -7029,7 +7021,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T3: fidl::encoding::Encode<
+        T3: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::Endpoint<
                         fidl::endpoints::ServerEnd<DiscoverableProtocolMarker>,
@@ -7037,7 +7029,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        > fidl::encoding::Encode<ProtocolEnds, fidl::encoding::DefaultFuchsiaResourceDialect>
+    > fidl::encoding::Encode<ProtocolEnds, fidl::encoding::DefaultFuchsiaResourceDialect>
         for (T0, T1, T2, T3)
     {
         #[inline]
@@ -7212,7 +7204,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Handle,
                     { fidl::ObjectType::NONE.into_raw() },
@@ -7220,7 +7212,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             WithErrorSyntaxHandleInResultResponse,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -7331,11 +7323,11 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ClientEnd<DiscoverableProtocolMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             WithProtocolEndsClientEndsRequest,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -7458,7 +7450,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::Endpoint<
                         fidl::endpoints::ClientEnd<DiscoverableProtocolMarker>,
@@ -7466,7 +7458,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             WithProtocolEndsClientEndsResponse,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -7595,7 +7587,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::Endpoint<
                         fidl::endpoints::ServerEnd<DiscoverableProtocolMarker>,
@@ -7603,7 +7595,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             WithProtocolEndsServerEndsRequest,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -7732,11 +7724,11 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<DiscoverableProtocolMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             WithProtocolEndsServerEndsResponse,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -7855,8 +7847,8 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<ProtocolEnds, fidl::encoding::DefaultFuchsiaResourceDialect>,
-        >
+        T0: fidl::encoding::Encode<ProtocolEnds, fidl::encoding::DefaultFuchsiaResourceDialect>,
+    >
         fidl::encoding::Encode<
             WithProtocolEndsStructContainingEndsRequest,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -7970,8 +7962,8 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<ProtocolEnds, fidl::encoding::DefaultFuchsiaResourceDialect>,
-        >
+        T0: fidl::encoding::Encode<ProtocolEnds, fidl::encoding::DefaultFuchsiaResourceDialect>,
+    >
         fidl::encoding::Encode<
             WithProtocolEndsStructContainingEndsResponse,
             fidl::encoding::DefaultFuchsiaResourceDialect,

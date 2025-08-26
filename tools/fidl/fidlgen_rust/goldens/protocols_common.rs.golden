@@ -383,10 +383,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<i64, D>,
-            T1: fidl::encoding::Encode<i64, D>,
-        > fidl::encoding::Encode<ChannelProtocolEventARequest, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<i64, D>,
+        T1: fidl::encoding::Encode<i64, D>,
+    > fidl::encoding::Encode<ChannelProtocolEventARequest, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -485,10 +485,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<i64, D>,
-            T1: fidl::encoding::Encode<i64, D>,
-        > fidl::encoding::Encode<ChannelProtocolMethodARequest, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<i64, D>,
+        T1: fidl::encoding::Encode<i64, D>,
+    > fidl::encoding::Encode<ChannelProtocolMethodARequest, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -587,10 +587,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<i64, D>,
-            T1: fidl::encoding::Encode<i64, D>,
-        > fidl::encoding::Encode<ChannelProtocolMethodBRequest, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<i64, D>,
+        T1: fidl::encoding::Encode<i64, D>,
+    > fidl::encoding::Encode<ChannelProtocolMethodBRequest, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -791,23 +791,23 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<bool, D>,
-            T1: fidl::encoding::Encode<bool, D>,
-            T2: fidl::encoding::Encode<bool, D>,
-            T3: fidl::encoding::Encode<bool, D>,
-            T4: fidl::encoding::Encode<bool, D>,
-            T5: fidl::encoding::Encode<bool, D>,
-            T6: fidl::encoding::Encode<bool, D>,
-            T7: fidl::encoding::Encode<bool, D>,
-            T8: fidl::encoding::Encode<bool, D>,
-            T9: fidl::encoding::Encode<bool, D>,
-            T10: fidl::encoding::Encode<bool, D>,
-            T11: fidl::encoding::Encode<bool, D>,
-            T12: fidl::encoding::Encode<bool, D>,
-            T13: fidl::encoding::Encode<bool, D>,
-            T14: fidl::encoding::Encode<bool, D>,
-        > fidl::encoding::Encode<ManyParametersFifteenRequest, D>
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<bool, D>,
+        T1: fidl::encoding::Encode<bool, D>,
+        T2: fidl::encoding::Encode<bool, D>,
+        T3: fidl::encoding::Encode<bool, D>,
+        T4: fidl::encoding::Encode<bool, D>,
+        T5: fidl::encoding::Encode<bool, D>,
+        T6: fidl::encoding::Encode<bool, D>,
+        T7: fidl::encoding::Encode<bool, D>,
+        T8: fidl::encoding::Encode<bool, D>,
+        T9: fidl::encoding::Encode<bool, D>,
+        T10: fidl::encoding::Encode<bool, D>,
+        T11: fidl::encoding::Encode<bool, D>,
+        T12: fidl::encoding::Encode<bool, D>,
+        T13: fidl::encoding::Encode<bool, D>,
+        T14: fidl::encoding::Encode<bool, D>,
+    > fidl::encoding::Encode<ManyParametersFifteenRequest, D>
         for (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14)
     {
         #[inline]
@@ -1018,9 +1018,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::OptionalUnion<TheUnion>, D>,
-        > fidl::encoding::Encode<MethodWithUnionUnionMethodResponse, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::OptionalUnion<TheUnion>, D>,
+    > fidl::encoding::Encode<MethodWithUnionUnionMethodResponse, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(
@@ -1117,9 +1117,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
-        > fidl::encoding::Encode<WithAndWithoutRequestResponseNoRequestWithResponseResponse, D>
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
+    > fidl::encoding::Encode<WithAndWithoutRequestResponseNoRequestWithResponseResponse, D>
         for (T0,)
     {
         #[inline]
@@ -1216,9 +1216,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
-        > fidl::encoding::Encode<WithAndWithoutRequestResponseOnWithResponseRequest, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
+    > fidl::encoding::Encode<WithAndWithoutRequestResponseOnWithResponseRequest, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(
@@ -1316,10 +1316,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
-        >
-        fidl::encoding::Encode<WithAndWithoutRequestResponseWithRequestEmptyResponseRequest, D>
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
+    > fidl::encoding::Encode<WithAndWithoutRequestResponseWithRequestEmptyResponseRequest, D>
         for (T0,)
     {
         #[inline]
@@ -1418,9 +1417,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
-        > fidl::encoding::Encode<WithAndWithoutRequestResponseWithRequestNoResponseRequest, D>
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
+    > fidl::encoding::Encode<WithAndWithoutRequestResponseWithRequestNoResponseRequest, D>
         for (T0,)
     {
         #[inline]
@@ -1521,9 +1520,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
-        > fidl::encoding::Encode<WithAndWithoutRequestResponseWithRequestWithResponseRequest, D>
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
+    > fidl::encoding::Encode<WithAndWithoutRequestResponseWithRequestWithResponseRequest, D>
         for (T0,)
     {
         #[inline]
@@ -1624,10 +1623,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
-        >
-        fidl::encoding::Encode<WithAndWithoutRequestResponseWithRequestWithResponseResponse, D>
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
+    > fidl::encoding::Encode<WithAndWithoutRequestResponseWithRequestWithResponseResponse, D>
         for (T0,)
     {
         #[inline]
@@ -1733,11 +1731,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<i64, D>,
-            T1: fidl::encoding::Encode<i64, D>,
-            T2: fidl::encoding::Encode<i64, D>,
-        > fidl::encoding::Encode<WithErrorSyntaxResponseAsStructResponse, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<i64, D>,
+        T1: fidl::encoding::Encode<i64, D>,
+        T2: fidl::encoding::Encode<i64, D>,
+    > fidl::encoding::Encode<WithErrorSyntaxResponseAsStructResponse, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(

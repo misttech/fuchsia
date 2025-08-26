@@ -87,10 +87,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u16, D>,
-            T1: fidl::encoding::Encode<u16, D>,
-        > fidl::encoding::Encode<TwoWayAddRequest, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u16, D>,
+        T1: fidl::encoding::Encode<u16, D>,
+    > fidl::encoding::Encode<TwoWayAddRequest, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(

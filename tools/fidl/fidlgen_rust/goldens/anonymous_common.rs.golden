@@ -642,11 +642,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<Op, D>,
-            T1: fidl::encoding::Encode<fidl::encoding::OptionalUnion<Expression>, D>,
-            T2: fidl::encoding::Encode<fidl::encoding::OptionalUnion<Expression>, D>,
-        > fidl::encoding::Encode<OverrideTest, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<Op, D>,
+        T1: fidl::encoding::Encode<fidl::encoding::OptionalUnion<Expression>, D>,
+        T2: fidl::encoding::Encode<fidl::encoding::OptionalUnion<Expression>, D>,
+    > fidl::encoding::Encode<OverrideTest, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(
@@ -765,10 +765,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<UnionMember, D>,
-            T1: fidl::encoding::Encode<TableMember, D>,
-        > fidl::encoding::Encode<SomeProtocolSomeMethodRequest, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<UnionMember, D>,
+        T1: fidl::encoding::Encode<TableMember, D>,
+    > fidl::encoding::Encode<SomeProtocolSomeMethodRequest, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(

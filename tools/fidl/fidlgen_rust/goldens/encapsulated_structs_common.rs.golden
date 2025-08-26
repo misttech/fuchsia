@@ -102,9 +102,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::Array<Int16Int8, 3>, D>,
-        > fidl::encoding::Encode<ArrayInt16Int8, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::Array<Int16Int8, 3>, D>,
+    > fidl::encoding::Encode<ArrayInt16Int8, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(
@@ -219,10 +219,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<i16, D>,
-            T1: fidl::encoding::Encode<i8, D>,
-        > fidl::encoding::Encode<Int16Int8, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<i16, D>,
+        T1: fidl::encoding::Encode<i8, D>,
+    > fidl::encoding::Encode<Int16Int8, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -324,10 +324,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<i8, D>,
-            T1: fidl::encoding::Encode<i32, D>,
-        > fidl::encoding::Encode<Int8Int32, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<i8, D>,
+        T1: fidl::encoding::Encode<i32, D>,
+    > fidl::encoding::Encode<Int8Int32, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -442,11 +442,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<Int16Int8, D>,
-            T1: fidl::encoding::Encode<Int8Int32, D>,
-            T2: fidl::encoding::Encode<ArrayInt16Int8, D>,
-        > fidl::encoding::Encode<StructPaddingTestStruct, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<Int16Int8, D>,
+        T1: fidl::encoding::Encode<Int8Int32, D>,
+        T2: fidl::encoding::Encode<ArrayInt16Int8, D>,
+    > fidl::encoding::Encode<StructPaddingTestStruct, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(

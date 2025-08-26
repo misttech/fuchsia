@@ -420,13 +420,13 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<i64, D>,
-            T1: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
-            T2: fidl::encoding::Encode<bool, D>,
-            T3: fidl::encoding::Encode<Enum, D>,
-            T4: fidl::encoding::Encode<Bits, D>,
-        > fidl::encoding::Encode<Struct, D> for (T0, T1, T2, T3, T4)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<i64, D>,
+        T1: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
+        T2: fidl::encoding::Encode<bool, D>,
+        T3: fidl::encoding::Encode<Enum, D>,
+        T4: fidl::encoding::Encode<Bits, D>,
+    > fidl::encoding::Encode<Struct, D> for (T0, T1, T2, T3, T4)
     {
         #[inline]
         unsafe fn encode(

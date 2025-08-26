@@ -199,11 +199,7 @@ pub enum InterfaceEvent {
 impl InterfaceEvent {
     #[allow(irrefutable_let_patterns)]
     pub fn into_on_event(self) -> Option<()> {
-        if let InterfaceEvent::OnEvent {} = self {
-            Some(())
-        } else {
-            None
-        }
+        if let InterfaceEvent::OnEvent {} = self { Some(()) } else { None }
     }
 
     /// Decodes a message buffer as a [`InterfaceEvent`].
@@ -298,7 +294,7 @@ impl futures::Stream for InterfaceRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 

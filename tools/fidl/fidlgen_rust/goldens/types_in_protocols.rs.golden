@@ -4427,7 +4427,7 @@ impl futures::Stream for ProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -5391,11 +5391,7 @@ impl ProtocolRequest {
 
     #[allow(irrefutable_let_patterns)]
     pub fn into_error_basic(self) -> Option<(ProtocolErrorBasicResponder)> {
-        if let ProtocolRequest::ErrorBasic { responder } = self {
-            Some((responder))
-        } else {
-            None
-        }
+        if let ProtocolRequest::ErrorBasic { responder } = self { Some((responder)) } else { None }
     }
 
     #[allow(irrefutable_let_patterns)]
@@ -8690,7 +8686,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Handle,
                     { fidl::ObjectType::NONE.into_raw() },
@@ -8698,7 +8694,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T1: fidl::encoding::Encode<
+        T1: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Vmo,
                     { fidl::ObjectType::VMO.into_raw() },
@@ -8706,18 +8702,18 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T2: fidl::encoding::Encode<
+        T2: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ClientEnd<ProtocolMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T3: fidl::encoding::Encode<
+        T3: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<ProtocolMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T4: fidl::encoding::Encode<ResourceStruct, fidl::encoding::DefaultFuchsiaResourceDialect>,
-            T5: fidl::encoding::Encode<ResourceTable, fidl::encoding::DefaultFuchsiaResourceDialect>,
-            T6: fidl::encoding::Encode<ResourceUnion, fidl::encoding::DefaultFuchsiaResourceDialect>,
-            T7: fidl::encoding::Encode<
+        T4: fidl::encoding::Encode<ResourceStruct, fidl::encoding::DefaultFuchsiaResourceDialect>,
+        T5: fidl::encoding::Encode<ResourceTable, fidl::encoding::DefaultFuchsiaResourceDialect>,
+        T6: fidl::encoding::Encode<ResourceUnion, fidl::encoding::DefaultFuchsiaResourceDialect>,
+        T7: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::HandleType<
                         fidl::Handle,
@@ -8727,7 +8723,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T8: fidl::encoding::Encode<
+        T8: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::HandleType<
                         fidl::Vmo,
@@ -8737,27 +8733,27 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T9: fidl::encoding::Encode<
+        T9: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::Endpoint<fidl::endpoints::ClientEnd<ProtocolMarker>>,
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T10: fidl::encoding::Encode<
+        T10: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<ProtocolMarker>>,
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T11: fidl::encoding::Encode<
+        T11: fidl::encoding::Encode<
                 fidl::encoding::Boxed<ResourceStruct>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T12: fidl::encoding::Encode<
+        T12: fidl::encoding::Encode<
                 fidl::encoding::OptionalUnion<ResourceUnion>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T13: fidl::encoding::Encode<
+        T13: fidl::encoding::Encode<
                 fidl::encoding::Array<
                     fidl::encoding::HandleType<
                         fidl::Handle,
@@ -8768,7 +8764,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T14: fidl::encoding::Encode<
+        T14: fidl::encoding::Encode<
                 fidl::encoding::Array<
                     fidl::encoding::HandleType<
                         fidl::Vmo,
@@ -8779,33 +8775,33 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T15: fidl::encoding::Encode<
+        T15: fidl::encoding::Encode<
                 fidl::encoding::Array<
                     fidl::encoding::Endpoint<fidl::endpoints::ClientEnd<ProtocolMarker>>,
                     5,
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T16: fidl::encoding::Encode<
+        T16: fidl::encoding::Encode<
                 fidl::encoding::Array<
                     fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<ProtocolMarker>>,
                     5,
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T17: fidl::encoding::Encode<
+        T17: fidl::encoding::Encode<
                 fidl::encoding::Array<ResourceStruct, 5>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T18: fidl::encoding::Encode<
+        T18: fidl::encoding::Encode<
                 fidl::encoding::Array<ResourceTable, 5>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T19: fidl::encoding::Encode<
+        T19: fidl::encoding::Encode<
                 fidl::encoding::Array<ResourceUnion, 5>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T20: fidl::encoding::Encode<
+        T20: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<
                     fidl::encoding::HandleType<
                         fidl::Handle,
@@ -8815,7 +8811,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T21: fidl::encoding::Encode<
+        T21: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<
                     fidl::encoding::HandleType<
                         fidl::Vmo,
@@ -8825,31 +8821,31 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T22: fidl::encoding::Encode<
+        T22: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<
                     fidl::encoding::Endpoint<fidl::endpoints::ClientEnd<ProtocolMarker>>,
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T23: fidl::encoding::Encode<
+        T23: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<
                     fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<ProtocolMarker>>,
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T24: fidl::encoding::Encode<
+        T24: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<ResourceStruct>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T25: fidl::encoding::Encode<
+        T25: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<ResourceTable>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T26: fidl::encoding::Encode<
+        T26: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<ResourceUnion>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        > fidl::encoding::Encode<Resource, fidl::encoding::DefaultFuchsiaResourceDialect>
+    > fidl::encoding::Encode<Resource, fidl::encoding::DefaultFuchsiaResourceDialect>
         for (
             T0,
             T1,

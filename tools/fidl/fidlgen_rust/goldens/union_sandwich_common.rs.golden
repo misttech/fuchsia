@@ -169,11 +169,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<UnionSize12Alignment4, D>,
-            T2: fidl::encoding::Encode<i32, D>,
-        > fidl::encoding::Encode<SandwichUnionSize12Alignment4, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<UnionSize12Alignment4, D>,
+        T2: fidl::encoding::Encode<i32, D>,
+    > fidl::encoding::Encode<SandwichUnionSize12Alignment4, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(
@@ -294,11 +294,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<UnionSize24Alignment8, D>,
-            T2: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<SandwichUnionSize24Alignment8, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<UnionSize24Alignment8, D>,
+        T2: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<SandwichUnionSize24Alignment8, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(
@@ -419,11 +419,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<UnionSize36Alignment4, D>,
-            T2: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<SandwichUnionSize36Alignment4, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<UnionSize36Alignment4, D>,
+        T2: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<SandwichUnionSize36Alignment4, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(
@@ -543,11 +543,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<UnionSize8Alignment4, D>,
-            T2: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<SandwichUnionSize8Alignment4, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<UnionSize8Alignment4, D>,
+        T2: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<SandwichUnionSize8Alignment4, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(
@@ -674,10 +674,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u64, D>,
-            T1: fidl::encoding::Encode<u64, D>,
-        > fidl::encoding::Encode<StructSize16Alignment8, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u64, D>,
+        T1: fidl::encoding::Encode<u64, D>,
+    > fidl::encoding::Encode<StructSize16Alignment8, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(

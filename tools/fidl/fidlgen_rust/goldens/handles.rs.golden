@@ -359,7 +359,7 @@ impl futures::Stream for SomeProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -505,7 +505,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Handle,
                     { fidl::ObjectType::NONE.into_raw() },
@@ -513,7 +513,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T1: fidl::encoding::Encode<
+        T1: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Bti,
                     { fidl::ObjectType::BTI.into_raw() },
@@ -521,7 +521,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T2: fidl::encoding::Encode<
+        T2: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Channel,
                     { fidl::ObjectType::CHANNEL.into_raw() },
@@ -529,7 +529,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T3: fidl::encoding::Encode<
+        T3: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Clock,
                     { fidl::ObjectType::CLOCK.into_raw() },
@@ -537,7 +537,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T4: fidl::encoding::Encode<
+        T4: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::DebugLog,
                     { fidl::ObjectType::DEBUGLOG.into_raw() },
@@ -545,7 +545,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T5: fidl::encoding::Encode<
+        T5: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Event,
                     { fidl::ObjectType::EVENT.into_raw() },
@@ -553,7 +553,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T6: fidl::encoding::Encode<
+        T6: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::EventPair,
                     { fidl::ObjectType::EVENTPAIR.into_raw() },
@@ -561,7 +561,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T7: fidl::encoding::Encode<
+        T7: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Exception,
                     { fidl::ObjectType::EXCEPTION.into_raw() },
@@ -569,7 +569,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T8: fidl::encoding::Encode<
+        T8: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Fifo,
                     { fidl::ObjectType::FIFO.into_raw() },
@@ -577,7 +577,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T9: fidl::encoding::Encode<
+        T9: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Guest,
                     { fidl::ObjectType::GUEST.into_raw() },
@@ -585,7 +585,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T10: fidl::encoding::Encode<
+        T10: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Interrupt,
                     { fidl::ObjectType::INTERRUPT.into_raw() },
@@ -593,7 +593,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T11: fidl::encoding::Encode<
+        T11: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Iob,
                     { fidl::ObjectType::IOB.into_raw() },
@@ -601,7 +601,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T12: fidl::encoding::Encode<
+        T12: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Iommu,
                     { fidl::ObjectType::IOMMU.into_raw() },
@@ -609,7 +609,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T13: fidl::encoding::Encode<
+        T13: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Job,
                     { fidl::ObjectType::JOB.into_raw() },
@@ -617,7 +617,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T14: fidl::encoding::Encode<
+        T14: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Msi,
                     { fidl::ObjectType::MSI.into_raw() },
@@ -625,7 +625,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T15: fidl::encoding::Encode<
+        T15: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Pager,
                     { fidl::ObjectType::PAGER.into_raw() },
@@ -633,7 +633,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T16: fidl::encoding::Encode<
+        T16: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Pmt,
                     { fidl::ObjectType::PMT.into_raw() },
@@ -641,7 +641,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T17: fidl::encoding::Encode<
+        T17: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Port,
                     { fidl::ObjectType::PORT.into_raw() },
@@ -649,7 +649,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T18: fidl::encoding::Encode<
+        T18: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Process,
                     { fidl::ObjectType::PROCESS.into_raw() },
@@ -657,7 +657,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T19: fidl::encoding::Encode<
+        T19: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Profile,
                     { fidl::ObjectType::PROFILE.into_raw() },
@@ -665,7 +665,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T20: fidl::encoding::Encode<
+        T20: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Resource,
                     { fidl::ObjectType::RESOURCE.into_raw() },
@@ -673,7 +673,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T21: fidl::encoding::Encode<
+        T21: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Socket,
                     { fidl::ObjectType::SOCKET.into_raw() },
@@ -681,7 +681,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T22: fidl::encoding::Encode<
+        T22: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Stream,
                     { fidl::ObjectType::STREAM.into_raw() },
@@ -689,7 +689,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T23: fidl::encoding::Encode<
+        T23: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::SuspendToken,
                     { fidl::ObjectType::SUSPEND_TOKEN.into_raw() },
@@ -697,7 +697,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T24: fidl::encoding::Encode<
+        T24: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Thread,
                     { fidl::ObjectType::THREAD.into_raw() },
@@ -705,7 +705,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T25: fidl::encoding::Encode<
+        T25: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Timer,
                     { fidl::ObjectType::TIMER.into_raw() },
@@ -713,7 +713,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T26: fidl::encoding::Encode<
+        T26: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Vcpu,
                     { fidl::ObjectType::VCPU.into_raw() },
@@ -721,7 +721,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T27: fidl::encoding::Encode<
+        T27: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Vmar,
                     { fidl::ObjectType::VMAR.into_raw() },
@@ -729,7 +729,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T28: fidl::encoding::Encode<
+        T28: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Vmo,
                     { fidl::ObjectType::VMO.into_raw() },
@@ -737,11 +737,11 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T29: fidl::encoding::Encode<
+        T29: fidl::encoding::Encode<
                 fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 5>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T30: fidl::encoding::Encode<
+        T30: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Handle,
                     { fidl::ObjectType::NONE.into_raw() },
@@ -749,7 +749,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T31: fidl::encoding::Encode<
+        T31: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Vmo,
                     { fidl::ObjectType::VMO.into_raw() },
@@ -757,19 +757,19 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T32: fidl::encoding::Encode<
+        T32: fidl::encoding::Encode<
                 fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 1>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T33: fidl::encoding::Encode<
+        T33: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ClientEnd<SomeProtocolMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T34: fidl::encoding::Encode<
+        T34: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<SomeProtocolMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        > fidl::encoding::Encode<Handles, fidl::encoding::DefaultFuchsiaResourceDialect>
+    > fidl::encoding::Encode<Handles, fidl::encoding::DefaultFuchsiaResourceDialect>
         for (
             T0,
             T1,

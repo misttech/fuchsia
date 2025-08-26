@@ -236,10 +236,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<i32, D>,
-            T1: fidl::encoding::Encode<i32, D>,
-        > fidl::encoding::Encode<SimpleProtocolAddRequest, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<i32, D>,
+        T1: fidl::encoding::Encode<i32, D>,
+    > fidl::encoding::Encode<SimpleProtocolAddRequest, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -423,9 +423,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::Optional<fidl::encoding::UnboundedString>, D>,
-        > fidl::encoding::Encode<StructWithNullableString, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::Optional<fidl::encoding::UnboundedString>, D>,
+    > fidl::encoding::Encode<StructWithNullableString, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(
@@ -518,9 +518,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::Boxed<Int32Wrapper>, D>,
-        > fidl::encoding::Encode<StructWithNullableStruct, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::Boxed<Int32Wrapper>, D>,
+    > fidl::encoding::Encode<StructWithNullableStruct, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(
@@ -609,9 +609,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::OptionalUnion<SimpleUnion>, D>,
-        > fidl::encoding::Encode<StructWithNullableUnion, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::OptionalUnion<SimpleUnion>, D>,
+    > fidl::encoding::Encode<StructWithNullableUnion, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(
@@ -700,12 +700,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<
-                fidl::encoding::Optional<fidl::encoding::UnboundedVector<i32>>,
-                D,
-            >,
-        > fidl::encoding::Encode<StructWithNullableVector, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::Optional<fidl::encoding::UnboundedVector<i32>>, D>,
+    > fidl::encoding::Encode<StructWithNullableVector, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(

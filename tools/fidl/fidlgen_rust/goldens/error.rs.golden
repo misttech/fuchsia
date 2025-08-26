@@ -304,7 +304,7 @@ impl futures::Stream for ExampleRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -348,11 +348,7 @@ pub enum ExampleRequest {
 impl ExampleRequest {
     #[allow(irrefutable_let_patterns)]
     pub fn into_foo(self) -> Option<(String, ExampleFooResponder)> {
-        if let ExampleRequest::Foo { s, responder } = self {
-            Some((s, responder))
-        } else {
-            None
-        }
+        if let ExampleRequest::Foo { s, responder } = self { Some((s, responder)) } else { None }
     }
 
     /// Name of the method defined in FIDL

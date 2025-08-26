@@ -209,10 +209,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u16, D>,
-            T1: fidl::encoding::Encode<u8, D>,
-        > fidl::encoding::Encode<Padding1ByteEnd, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u16, D>,
+        T1: fidl::encoding::Encode<u8, D>,
+    > fidl::encoding::Encode<Padding1ByteEnd, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -315,10 +315,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u8, D>,
-            T1: fidl::encoding::Encode<u16, D>,
-        > fidl::encoding::Encode<Padding1ByteMiddle, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u8, D>,
+        T1: fidl::encoding::Encode<u16, D>,
+    > fidl::encoding::Encode<Padding1ByteMiddle, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -424,11 +424,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u8, D>,
-            T1: fidl::encoding::Encode<u16, D>,
-            T2: fidl::encoding::Encode<u8, D>,
-        > fidl::encoding::Encode<Padding2ByteAlignmentLength6, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u8, D>,
+        T1: fidl::encoding::Encode<u16, D>,
+        T2: fidl::encoding::Encode<u8, D>,
+    > fidl::encoding::Encode<Padding2ByteAlignmentLength6, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(
@@ -551,10 +551,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u16, D>,
-        > fidl::encoding::Encode<Padding2ByteEnd, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u16, D>,
+    > fidl::encoding::Encode<Padding2ByteEnd, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -657,10 +657,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u16, D>,
-            T1: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<Padding2ByteMiddle, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u16, D>,
+        T1: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<Padding2ByteMiddle, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -763,10 +763,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u8, D>,
-        > fidl::encoding::Encode<Padding3ByteEnd, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u8, D>,
+    > fidl::encoding::Encode<Padding3ByteEnd, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -869,10 +869,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u8, D>,
-            T1: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<Padding3ByteMiddle, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u8, D>,
+        T1: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<Padding3ByteMiddle, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -979,12 +979,12 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u8, D>,
-            T2: fidl::encoding::Encode<u16, D>,
-            T3: fidl::encoding::Encode<u16, D>,
-        > fidl::encoding::Encode<Padding4ByteAlignmentLength12, D> for (T0, T1, T2, T3)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u8, D>,
+        T2: fidl::encoding::Encode<u16, D>,
+        T3: fidl::encoding::Encode<u16, D>,
+    > fidl::encoding::Encode<Padding4ByteAlignmentLength12, D> for (T0, T1, T2, T3)
     {
         #[inline]
         unsafe fn encode(
@@ -1109,10 +1109,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u64, D>,
-            T1: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<Padding4ByteEnd, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u64, D>,
+        T1: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<Padding4ByteEnd, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -1215,10 +1215,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<u64, D>,
-        > fidl::encoding::Encode<Padding4ByteMiddle, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<u64, D>,
+    > fidl::encoding::Encode<Padding4ByteMiddle, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -1321,11 +1321,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u64, D>,
-            T1: fidl::encoding::Encode<u16, D>,
-            T2: fidl::encoding::Encode<u8, D>,
-        > fidl::encoding::Encode<Padding5ByteEnd, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u64, D>,
+        T1: fidl::encoding::Encode<u16, D>,
+        T2: fidl::encoding::Encode<u8, D>,
+    > fidl::encoding::Encode<Padding5ByteEnd, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(
@@ -1433,11 +1433,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u16, D>,
-            T1: fidl::encoding::Encode<u8, D>,
-            T2: fidl::encoding::Encode<u64, D>,
-        > fidl::encoding::Encode<Padding5ByteMiddle, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u16, D>,
+        T1: fidl::encoding::Encode<u8, D>,
+        T2: fidl::encoding::Encode<u64, D>,
+    > fidl::encoding::Encode<Padding5ByteMiddle, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(
@@ -1545,10 +1545,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u64, D>,
-            T1: fidl::encoding::Encode<u16, D>,
-        > fidl::encoding::Encode<Padding6ByteEnd, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u64, D>,
+        T1: fidl::encoding::Encode<u16, D>,
+    > fidl::encoding::Encode<Padding6ByteEnd, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -1651,10 +1651,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u16, D>,
-            T1: fidl::encoding::Encode<u64, D>,
-        > fidl::encoding::Encode<Padding6ByteMiddle, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u16, D>,
+        T1: fidl::encoding::Encode<u64, D>,
+    > fidl::encoding::Encode<Padding6ByteMiddle, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -1757,10 +1757,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u64, D>,
-            T1: fidl::encoding::Encode<u8, D>,
-        > fidl::encoding::Encode<Padding7ByteEnd, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u64, D>,
+        T1: fidl::encoding::Encode<u8, D>,
+    > fidl::encoding::Encode<Padding7ByteEnd, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(
@@ -1863,10 +1863,10 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u8, D>,
-            T1: fidl::encoding::Encode<u64, D>,
-        > fidl::encoding::Encode<Padding7ByteMiddle, D> for (T0, T1)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u8, D>,
+        T1: fidl::encoding::Encode<u64, D>,
+    > fidl::encoding::Encode<Padding7ByteMiddle, D> for (T0, T1)
     {
         #[inline]
         unsafe fn encode(

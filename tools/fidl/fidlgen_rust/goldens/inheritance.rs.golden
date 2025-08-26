@@ -293,7 +293,7 @@ impl futures::Stream for SubRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -336,11 +336,7 @@ pub enum SubRequest {
 impl SubRequest {
     #[allow(irrefutable_let_patterns)]
     pub fn into_foo(self) -> Option<(String, SubFooResponder)> {
-        if let SubRequest::Foo { s, responder } = self {
-            Some((s, responder))
-        } else {
-            None
-        }
+        if let SubRequest::Foo { s, responder } = self { Some((s, responder)) } else { None }
     }
 
     /// Name of the method defined in FIDL
@@ -730,7 +726,7 @@ impl futures::Stream for Super_RequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -774,11 +770,7 @@ pub enum Super_Request {
 impl Super_Request {
     #[allow(irrefutable_let_patterns)]
     pub fn into_foo(self) -> Option<(String, Super_FooResponder)> {
-        if let Super_Request::Foo { s, responder } = self {
-            Some((s, responder))
-        } else {
-            None
-        }
+        if let Super_Request::Foo { s, responder } = self { Some((s, responder)) } else { None }
     }
 
     /// Name of the method defined in FIDL

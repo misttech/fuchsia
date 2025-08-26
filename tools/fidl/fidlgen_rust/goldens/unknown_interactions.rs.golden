@@ -1859,7 +1859,7 @@ impl futures::Stream for UnknownInteractionsAjarProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -4560,7 +4560,7 @@ impl futures::Stream for UnknownInteractionsClosedProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -8331,11 +8331,7 @@ pub enum UnknownInteractionsProtocolEvent {
 impl UnknownInteractionsProtocolEvent {
     #[allow(irrefutable_let_patterns)]
     pub fn into_strict_event(self) -> Option<()> {
-        if let UnknownInteractionsProtocolEvent::StrictEvent {} = self {
-            Some(())
-        } else {
-            None
-        }
+        if let UnknownInteractionsProtocolEvent::StrictEvent {} = self { Some(()) } else { None }
     }
     #[allow(irrefutable_let_patterns)]
     pub fn into_strict_event_fields(self) -> Option<i32> {
@@ -8367,11 +8363,7 @@ impl UnknownInteractionsProtocolEvent {
     }
     #[allow(irrefutable_let_patterns)]
     pub fn into_flexible_event(self) -> Option<()> {
-        if let UnknownInteractionsProtocolEvent::FlexibleEvent {} = self {
-            Some(())
-        } else {
-            None
-        }
+        if let UnknownInteractionsProtocolEvent::FlexibleEvent {} = self { Some(()) } else { None }
     }
     #[allow(irrefutable_let_patterns)]
     pub fn into_flexible_event_fields(self) -> Option<i32> {
@@ -8557,7 +8549,7 @@ impl futures::Stream for UnknownInteractionsProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 

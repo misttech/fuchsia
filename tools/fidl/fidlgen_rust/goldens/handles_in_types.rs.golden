@@ -270,7 +270,7 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Vmo,
                     { fidl::ObjectType::VMO.into_raw() },
@@ -278,7 +278,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T1: fidl::encoding::Encode<
+        T1: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<
                     fidl::encoding::HandleType<
                         fidl::Vmo,
@@ -288,7 +288,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T2: fidl::encoding::Encode<
+        T2: fidl::encoding::Encode<
                 fidl::encoding::Array<
                     fidl::encoding::HandleType<
                         fidl::Vmo,
@@ -299,7 +299,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T3: fidl::encoding::Encode<
+        T3: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<
                     fidl::encoding::Array<
                         fidl::encoding::HandleType<
@@ -312,9 +312,9 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T4: fidl::encoding::Encode<TableWithHandle, fidl::encoding::DefaultFuchsiaResourceDialect>,
-            T5: fidl::encoding::Encode<UnionWithHandle, fidl::encoding::DefaultFuchsiaResourceDialect>,
-        > fidl::encoding::Encode<HandlesInTypes, fidl::encoding::DefaultFuchsiaResourceDialect>
+        T4: fidl::encoding::Encode<TableWithHandle, fidl::encoding::DefaultFuchsiaResourceDialect>,
+        T5: fidl::encoding::Encode<UnionWithHandle, fidl::encoding::DefaultFuchsiaResourceDialect>,
+    > fidl::encoding::Encode<HandlesInTypes, fidl::encoding::DefaultFuchsiaResourceDialect>
         for (T0, T1, T2, T3, T4, T5)
     {
         #[inline]

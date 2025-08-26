@@ -89,24 +89,24 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<u32, fidl::encoding::DefaultFuchsiaResourceDialect>,
-            T1: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<u32, fidl::encoding::DefaultFuchsiaResourceDialect>,
+        T1: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<fidl::encoding::UnboundedString>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T2: fidl::encoding::Encode<
+        T2: fidl::encoding::Encode<
                 fidl::encoding::Vector<fidl::encoding::UnboundedString, 9>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T3: fidl::encoding::Encode<
+        T3: fidl::encoding::Encode<
                 fidl::encoding::Vector<fidl::encoding::UnboundedString, 5>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T4: fidl::encoding::Encode<
+        T4: fidl::encoding::Encode<
                 fidl::encoding::Vector<fidl_test_someotherlibrary::ReferenceMe, 5>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T5: fidl::encoding::Encode<
+        T5: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Channel,
                     { fidl::ObjectType::CHANNEL.into_raw() },
@@ -114,7 +114,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T6: fidl::encoding::Encode<
+        T6: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Channel,
                     { fidl::ObjectType::CHANNEL.into_raw() },
@@ -122,7 +122,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T7: fidl::encoding::Encode<
+        T7: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::HandleType<
                         fidl::Channel,
@@ -132,7 +132,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<ExampleOfUseOfAliases, fidl::encoding::DefaultFuchsiaResourceDialect>
         for (T0, T1, T2, T3, T4, T5, T6, T7)
     {

@@ -586,7 +586,7 @@ impl futures::Stream for ComposedProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -1901,19 +1901,11 @@ impl MainProtocolEvent {
     }
     #[allow(irrefutable_let_patterns)]
     pub fn into_on_local(self) -> Option<UnionPayload> {
-        if let MainProtocolEvent::OnLocal { payload } = self {
-            Some((payload))
-        } else {
-            None
-        }
+        if let MainProtocolEvent::OnLocal { payload } = self { Some((payload)) } else { None }
     }
     #[allow(irrefutable_let_patterns)]
     pub fn into_on_anon(self) -> Option<MainProtocolOnAnonRequest> {
-        if let MainProtocolEvent::OnAnon { payload } = self {
-            Some((payload))
-        } else {
-            None
-        }
+        if let MainProtocolEvent::OnAnon { payload } = self { Some((payload)) } else { None }
     }
 
     /// Decodes a message buffer as a [`MainProtocolEvent`].
@@ -2028,7 +2020,7 @@ impl futures::Stream for MainProtocolRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 

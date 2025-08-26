@@ -257,9 +257,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl_test_exampleusing__common::Empty, D>,
-        > fidl::encoding::Encode<ExampleProtocolMethodRequest, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl_test_exampleusing__common::Empty, D>,
+    > fidl::encoding::Encode<ExampleProtocolMethodRequest, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(

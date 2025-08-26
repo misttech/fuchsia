@@ -88,12 +88,12 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::MonotonicInstant, D>,
-            T1: fidl::encoding::Encode<fidl::BootInstant, D>,
-            T2: fidl::encoding::Encode<fidl::MonotonicTicks, D>,
-            T3: fidl::encoding::Encode<fidl::BootTicks, D>,
-        > fidl::encoding::Encode<AllInstants, D> for (T0, T1, T2, T3)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::MonotonicInstant, D>,
+        T1: fidl::encoding::Encode<fidl::BootInstant, D>,
+        T2: fidl::encoding::Encode<fidl::MonotonicTicks, D>,
+        T3: fidl::encoding::Encode<fidl::BootTicks, D>,
+    > fidl::encoding::Encode<AllInstants, D> for (T0, T1, T2, T3)
     {
         #[inline]
         unsafe fn encode(

@@ -934,9 +934,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::OptionalUnion<Union>, D>,
-        > fidl::encoding::Encode<NullableUnionStruct, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::OptionalUnion<Union>, D>,
+    > fidl::encoding::Encode<NullableUnionStruct, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(
@@ -1023,9 +1023,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::BoundedString<16>, D>,
-        > fidl::encoding::Encode<Pasta, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::BoundedString<16>, D>,
+    > fidl::encoding::Encode<Pasta, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(
@@ -1110,12 +1110,12 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<fidl::encoding::BoundedString<16>>,
                 D,
             >,
-        > fidl::encoding::Encode<Pizza, D> for (T0,)
+    > fidl::encoding::Encode<Pizza, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(
@@ -1207,9 +1207,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::OptionalUnion<OlderSimpleUnion>, D>,
-        > fidl::encoding::Encode<StructWithNullableUnion, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::OptionalUnion<OlderSimpleUnion>, D>,
+    > fidl::encoding::Encode<StructWithNullableUnion, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(
@@ -1396,8 +1396,10 @@ mod internal {
             )
         }
     }
-    unsafe impl<D: fidl::encoding::ResourceDialect, T0: fidl::encoding::Encode<StrictBoundedUnion, D>>
-        fidl::encoding::Encode<TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse, D>
+    unsafe impl<
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<StrictBoundedUnion, D>,
+    > fidl::encoding::Encode<TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse, D>
         for (T0,)
     {
         #[inline]
@@ -1484,11 +1486,11 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u32, D>,
-            T1: fidl::encoding::Encode<ExplicitFlexibleUnion, D>,
-            T2: fidl::encoding::Encode<u32, D>,
-        > fidl::encoding::Encode<UnionSandwich, D> for (T0, T1, T2)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u32, D>,
+        T1: fidl::encoding::Encode<ExplicitFlexibleUnion, D>,
+        T2: fidl::encoding::Encode<u32, D>,
+    > fidl::encoding::Encode<UnionSandwich, D> for (T0, T1, T2)
     {
         #[inline]
         unsafe fn encode(

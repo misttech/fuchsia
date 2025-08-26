@@ -484,24 +484,23 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::Array<u8, 5>, D>,
-            T1: fidl::encoding::Encode<fidl::encoding::Array<u16, 5>, D>,
-            T2: fidl::encoding::Encode<fidl::encoding::Array<u32, 5>, D>,
-            T3: fidl::encoding::Encode<fidl::encoding::Array<u64, 5>, D>,
-            T4: fidl::encoding::Encode<fidl::encoding::Array<i8, 5>, D>,
-            T5: fidl::encoding::Encode<fidl::encoding::Array<i16, 5>, D>,
-            T6: fidl::encoding::Encode<fidl::encoding::Array<i32, 5>, D>,
-            T7: fidl::encoding::Encode<fidl::encoding::Array<i64, 5>, D>,
-            T8: fidl::encoding::Encode<fidl::encoding::Array<f32, 5>, D>,
-            T9: fidl::encoding::Encode<fidl::encoding::Array<f64, 5>, D>,
-            T10: fidl::encoding::Encode<fidl::encoding::Array<fidl::encoding::UnboundedString, 5>, D>,
-            T11: fidl::encoding::Encode<
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::Array<u8, 5>, D>,
+        T1: fidl::encoding::Encode<fidl::encoding::Array<u16, 5>, D>,
+        T2: fidl::encoding::Encode<fidl::encoding::Array<u32, 5>, D>,
+        T3: fidl::encoding::Encode<fidl::encoding::Array<u64, 5>, D>,
+        T4: fidl::encoding::Encode<fidl::encoding::Array<i8, 5>, D>,
+        T5: fidl::encoding::Encode<fidl::encoding::Array<i16, 5>, D>,
+        T6: fidl::encoding::Encode<fidl::encoding::Array<i32, 5>, D>,
+        T7: fidl::encoding::Encode<fidl::encoding::Array<i64, 5>, D>,
+        T8: fidl::encoding::Encode<fidl::encoding::Array<f32, 5>, D>,
+        T9: fidl::encoding::Encode<fidl::encoding::Array<f64, 5>, D>,
+        T10: fidl::encoding::Encode<fidl::encoding::Array<fidl::encoding::UnboundedString, 5>, D>,
+        T11: fidl::encoding::Encode<
                 fidl::encoding::Array<fidl::encoding::Optional<fidl::encoding::UnboundedString>, 5>,
                 D,
             >,
-        > fidl::encoding::Encode<ArrayBasic, D>
-        for (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+    > fidl::encoding::Encode<ArrayBasic, D> for (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
     {
         #[inline]
         unsafe fn encode(
@@ -700,18 +699,15 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::Array<Bits, 5>, D>,
-            T1: fidl::encoding::Encode<fidl::encoding::Array<Enum, 5>, D>,
-            T2: fidl::encoding::Encode<fidl::encoding::Array<Struct, 5>, D>,
-            T3: fidl::encoding::Encode<fidl::encoding::Array<Table, 5>, D>,
-            T4: fidl::encoding::Encode<fidl::encoding::Array<Union, 5>, D>,
-            T5: fidl::encoding::Encode<fidl::encoding::Array<fidl::encoding::Boxed<Struct>, 5>, D>,
-            T6: fidl::encoding::Encode<
-                fidl::encoding::Array<fidl::encoding::OptionalUnion<Union>, 5>,
-                D,
-            >,
-        > fidl::encoding::Encode<ArrayCompound, D> for (T0, T1, T2, T3, T4, T5, T6)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::Array<Bits, 5>, D>,
+        T1: fidl::encoding::Encode<fidl::encoding::Array<Enum, 5>, D>,
+        T2: fidl::encoding::Encode<fidl::encoding::Array<Struct, 5>, D>,
+        T3: fidl::encoding::Encode<fidl::encoding::Array<Table, 5>, D>,
+        T4: fidl::encoding::Encode<fidl::encoding::Array<Union, 5>, D>,
+        T5: fidl::encoding::Encode<fidl::encoding::Array<fidl::encoding::Boxed<Struct>, 5>, D>,
+        T6: fidl::encoding::Encode<fidl::encoding::Array<fidl::encoding::OptionalUnion<Union>, 5>, D>,
+    > fidl::encoding::Encode<ArrayCompound, D> for (T0, T1, T2, T3, T4, T5, T6)
     {
         #[inline]
         unsafe fn encode(
@@ -847,21 +843,15 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::Array<fidl::encoding::Array<u8, 5>, 5>, D>,
-            T1: fidl::encoding::Encode<
-                fidl::encoding::Array<fidl::encoding::UnboundedVector<u8>, 5>,
-                D,
-            >,
-            T2: fidl::encoding::Encode<
-                fidl::encoding::UnboundedVector<fidl::encoding::Array<u8, 5>>,
-                D,
-            >,
-            T3: fidl::encoding::Encode<
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::Array<fidl::encoding::Array<u8, 5>, 5>, D>,
+        T1: fidl::encoding::Encode<fidl::encoding::Array<fidl::encoding::UnboundedVector<u8>, 5>, D>,
+        T2: fidl::encoding::Encode<fidl::encoding::UnboundedVector<fidl::encoding::Array<u8, 5>>, D>,
+        T3: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<fidl::encoding::UnboundedVector<u8>>,
                 D,
             >,
-        > fidl::encoding::Encode<ArrayVectorNested, D> for (T0, T1, T2, T3)
+    > fidl::encoding::Encode<ArrayVectorNested, D> for (T0, T1, T2, T3)
     {
         #[inline]
         unsafe fn encode(
@@ -1014,20 +1004,20 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<u8, D>,
-            T1: fidl::encoding::Encode<u16, D>,
-            T2: fidl::encoding::Encode<u32, D>,
-            T3: fidl::encoding::Encode<u64, D>,
-            T4: fidl::encoding::Encode<i8, D>,
-            T5: fidl::encoding::Encode<i16, D>,
-            T6: fidl::encoding::Encode<i32, D>,
-            T7: fidl::encoding::Encode<i64, D>,
-            T8: fidl::encoding::Encode<f32, D>,
-            T9: fidl::encoding::Encode<f64, D>,
-            T10: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
-            T11: fidl::encoding::Encode<fidl::encoding::Optional<fidl::encoding::UnboundedString>, D>,
-        > fidl::encoding::Encode<Basic, D> for (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<u8, D>,
+        T1: fidl::encoding::Encode<u16, D>,
+        T2: fidl::encoding::Encode<u32, D>,
+        T3: fidl::encoding::Encode<u64, D>,
+        T4: fidl::encoding::Encode<i8, D>,
+        T5: fidl::encoding::Encode<i16, D>,
+        T6: fidl::encoding::Encode<i32, D>,
+        T7: fidl::encoding::Encode<i64, D>,
+        T8: fidl::encoding::Encode<f32, D>,
+        T9: fidl::encoding::Encode<f64, D>,
+        T10: fidl::encoding::Encode<fidl::encoding::UnboundedString, D>,
+        T11: fidl::encoding::Encode<fidl::encoding::Optional<fidl::encoding::UnboundedString>, D>,
+    > fidl::encoding::Encode<Basic, D> for (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
     {
         #[inline]
         unsafe fn encode(
@@ -1202,15 +1192,15 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<Bits, D>,
-            T1: fidl::encoding::Encode<Enum, D>,
-            T2: fidl::encoding::Encode<Struct, D>,
-            T3: fidl::encoding::Encode<Table, D>,
-            T4: fidl::encoding::Encode<Union, D>,
-            T5: fidl::encoding::Encode<fidl::encoding::Boxed<Struct>, D>,
-            T6: fidl::encoding::Encode<fidl::encoding::OptionalUnion<Union>, D>,
-        > fidl::encoding::Encode<Compound, D> for (T0, T1, T2, T3, T4, T5, T6)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<Bits, D>,
+        T1: fidl::encoding::Encode<Enum, D>,
+        T2: fidl::encoding::Encode<Struct, D>,
+        T3: fidl::encoding::Encode<Table, D>,
+        T4: fidl::encoding::Encode<Union, D>,
+        T5: fidl::encoding::Encode<fidl::encoding::Boxed<Struct>, D>,
+        T6: fidl::encoding::Encode<fidl::encoding::OptionalUnion<Union>, D>,
+    > fidl::encoding::Encode<Compound, D> for (T0, T1, T2, T3, T4, T5, T6)
     {
         #[inline]
         unsafe fn encode(
@@ -1404,28 +1394,25 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::UnboundedVector<u8>, D>,
-            T1: fidl::encoding::Encode<fidl::encoding::UnboundedVector<u16>, D>,
-            T2: fidl::encoding::Encode<fidl::encoding::UnboundedVector<u32>, D>,
-            T3: fidl::encoding::Encode<fidl::encoding::UnboundedVector<u64>, D>,
-            T4: fidl::encoding::Encode<fidl::encoding::UnboundedVector<i8>, D>,
-            T5: fidl::encoding::Encode<fidl::encoding::UnboundedVector<i16>, D>,
-            T6: fidl::encoding::Encode<fidl::encoding::UnboundedVector<i32>, D>,
-            T7: fidl::encoding::Encode<fidl::encoding::UnboundedVector<i64>, D>,
-            T8: fidl::encoding::Encode<fidl::encoding::UnboundedVector<f32>, D>,
-            T9: fidl::encoding::Encode<fidl::encoding::UnboundedVector<f64>, D>,
-            T10: fidl::encoding::Encode<
-                fidl::encoding::UnboundedVector<fidl::encoding::UnboundedString>,
-                D,
-            >,
-            T11: fidl::encoding::Encode<
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::UnboundedVector<u8>, D>,
+        T1: fidl::encoding::Encode<fidl::encoding::UnboundedVector<u16>, D>,
+        T2: fidl::encoding::Encode<fidl::encoding::UnboundedVector<u32>, D>,
+        T3: fidl::encoding::Encode<fidl::encoding::UnboundedVector<u64>, D>,
+        T4: fidl::encoding::Encode<fidl::encoding::UnboundedVector<i8>, D>,
+        T5: fidl::encoding::Encode<fidl::encoding::UnboundedVector<i16>, D>,
+        T6: fidl::encoding::Encode<fidl::encoding::UnboundedVector<i32>, D>,
+        T7: fidl::encoding::Encode<fidl::encoding::UnboundedVector<i64>, D>,
+        T8: fidl::encoding::Encode<fidl::encoding::UnboundedVector<f32>, D>,
+        T9: fidl::encoding::Encode<fidl::encoding::UnboundedVector<f64>, D>,
+        T10: fidl::encoding::Encode<fidl::encoding::UnboundedVector<fidl::encoding::UnboundedString>, D>,
+        T11: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<
                     fidl::encoding::Optional<fidl::encoding::UnboundedString>,
                 >,
                 D,
             >,
-        > fidl::encoding::Encode<VectorBasic, D>
+    > fidl::encoding::Encode<VectorBasic, D>
         for (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
     {
         #[inline]
@@ -1641,21 +1628,18 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl::encoding::UnboundedVector<Bits>, D>,
-            T1: fidl::encoding::Encode<fidl::encoding::UnboundedVector<Enum>, D>,
-            T2: fidl::encoding::Encode<fidl::encoding::UnboundedVector<Struct>, D>,
-            T3: fidl::encoding::Encode<fidl::encoding::UnboundedVector<Table>, D>,
-            T4: fidl::encoding::Encode<fidl::encoding::UnboundedVector<Union>, D>,
-            T5: fidl::encoding::Encode<
-                fidl::encoding::UnboundedVector<fidl::encoding::Boxed<Struct>>,
-                D,
-            >,
-            T6: fidl::encoding::Encode<
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::UnboundedVector<Bits>, D>,
+        T1: fidl::encoding::Encode<fidl::encoding::UnboundedVector<Enum>, D>,
+        T2: fidl::encoding::Encode<fidl::encoding::UnboundedVector<Struct>, D>,
+        T3: fidl::encoding::Encode<fidl::encoding::UnboundedVector<Table>, D>,
+        T4: fidl::encoding::Encode<fidl::encoding::UnboundedVector<Union>, D>,
+        T5: fidl::encoding::Encode<fidl::encoding::UnboundedVector<fidl::encoding::Boxed<Struct>>, D>,
+        T6: fidl::encoding::Encode<
                 fidl::encoding::UnboundedVector<fidl::encoding::OptionalUnion<Union>>,
                 D,
             >,
-        > fidl::encoding::Encode<VectorCompound, D> for (T0, T1, T2, T3, T4, T5, T6)
+    > fidl::encoding::Encode<VectorCompound, D> for (T0, T1, T2, T3, T4, T5, T6)
     {
         #[inline]
         unsafe fn encode(
@@ -1813,28 +1797,25 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<
-                fidl::encoding::Optional<fidl::encoding::UnboundedVector<u8>>,
-                D,
-            >,
-            T1: fidl::encoding::Encode<
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl::encoding::Optional<fidl::encoding::UnboundedVector<u8>>, D>,
+        T1: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::UnboundedVector<fidl::encoding::UnboundedString>,
                 >,
                 D,
             >,
-            T2: fidl::encoding::Encode<
+        T2: fidl::encoding::Encode<
                 fidl::encoding::Optional<fidl::encoding::UnboundedVector<Struct>>,
                 D,
             >,
-            T3: fidl::encoding::Encode<
+        T3: fidl::encoding::Encode<
                 fidl::encoding::Optional<
                     fidl::encoding::UnboundedVector<fidl::encoding::Boxed<Struct>>,
                 >,
                 D,
             >,
-        > fidl::encoding::Encode<VectorOptional, D> for (T0, T1, T2, T3)
+    > fidl::encoding::Encode<VectorOptional, D> for (T0, T1, T2, T3)
     {
         #[inline]
         unsafe fn encode(

@@ -96,11 +96,11 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Boxed<Int16Int8>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T1: fidl::encoding::Encode<
+        T1: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
                     fidl::Handle,
                     { fidl::ObjectType::NONE.into_raw() },
@@ -108,7 +108,7 @@ mod internal {
                 >,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             NonInlineStructTestStruct,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -235,15 +235,15 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 StructPaddingTestStruct,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-            T1: fidl::encoding::Encode<
+        T1: fidl::encoding::Encode<
                 NonInlineStructTestStruct,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        > fidl::encoding::Encode<TopLevelStruct, fidl::encoding::DefaultFuchsiaResourceDialect>
+    > fidl::encoding::Encode<TopLevelStruct, fidl::encoding::DefaultFuchsiaResourceDialect>
         for (T0, T1)
     {
         #[inline]

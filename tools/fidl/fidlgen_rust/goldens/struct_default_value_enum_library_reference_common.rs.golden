@@ -62,9 +62,9 @@ mod internal {
         }
     }
     unsafe impl<
-            D: fidl::encoding::ResourceDialect,
-            T0: fidl::encoding::Encode<fidl_test_dependent__common::MyEnum, D>,
-        > fidl::encoding::Encode<Foo, D> for (T0,)
+        D: fidl::encoding::ResourceDialect,
+        T0: fidl::encoding::Encode<fidl_test_dependent__common::MyEnum, D>,
+    > fidl::encoding::Encode<Foo, D> for (T0,)
     {
         #[inline]
         unsafe fn encode(

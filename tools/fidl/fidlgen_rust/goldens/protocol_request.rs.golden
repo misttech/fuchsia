@@ -285,7 +285,7 @@ impl futures::Stream for ChildRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -752,7 +752,7 @@ impl futures::Stream for ParentRequestStream {
                     std::task::Poll::Ready(Err(e)) => {
                         return std::task::Poll::Ready(Some(Err(fidl::Error::ServerRequestRead(
                             e.into(),
-                        ))))
+                        ))));
                     }
                 }
 
@@ -842,11 +842,7 @@ pub enum ParentRequest {
 impl ParentRequest {
     #[allow(irrefutable_let_patterns)]
     pub fn into_get_child(self) -> Option<(ParentGetChildResponder)> {
-        if let ParentRequest::GetChild { responder } = self {
-            Some((responder))
-        } else {
-            None
-        }
+        if let ParentRequest::GetChild { responder } = self { Some((responder)) } else { None }
     }
 
     #[allow(irrefutable_let_patterns)]
@@ -1109,11 +1105,11 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<ChildMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             ParentGetChildRequestResponse,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -1225,11 +1221,11 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ClientEnd<ChildMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             ParentGetChildResponse,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -1341,11 +1337,11 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ClientEnd<ChildMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             ParentTakeChildRequest,
             fidl::encoding::DefaultFuchsiaResourceDialect,
@@ -1457,11 +1453,11 @@ mod internal {
         }
     }
     unsafe impl<
-            T0: fidl::encoding::Encode<
+        T0: fidl::encoding::Encode<
                 fidl::encoding::Endpoint<fidl::endpoints::ServerEnd<ChildMarker>>,
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >,
-        >
+    >
         fidl::encoding::Encode<
             ParentTakeChildRequestRequest,
             fidl::encoding::DefaultFuchsiaResourceDialect,
