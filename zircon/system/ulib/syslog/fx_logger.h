@@ -5,7 +5,7 @@
 #ifndef ZIRCON_SYSTEM_ULIB_SYSLOG_FX_LOGGER_H_
 #define ZIRCON_SYSTEM_ULIB_SYSLOG_FX_LOGGER_H_
 
-#include <lib/syslog/logger.h>
+#include <lib/syslog/internal/logger.h>
 #include <lib/zx/process.h>
 #include <lib/zx/socket.h>
 #include <lib/zx/thread.h>

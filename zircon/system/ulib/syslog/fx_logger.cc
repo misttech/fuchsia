@@ -6,8 +6,8 @@
 
 #include <fidl/fuchsia.logger/cpp/wire.h>
 #include <lib/syslog/cpp/macros.h>  //nogncheck
-#include <lib/syslog/logger.h>
-#include <lib/syslog/wire_format.h>
+#include <lib/syslog/internal/logger.h>
+#include <lib/syslog/internal/wire_format.h>
 #include <stdio.h>
 #include <zircon/assert.h>
 
@@ -173,7 +173,12 @@ zx_status_t fx_logger::VLogWriteToSocket(fx_log_severity_t severity, const char*
     if (file) {
       builder.WithFile(file, line);
     }
-    auto buffer = builder.WithMsg(fmt_string).WithSocket(this->socket_.get()).Build();
+    auto buffer = builder
+                      .WithMsg(fmt_string)
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+                      .WithSocket(this->socket_.get())
+#endif
+                      .Build();
     {
       fbl::AutoLock tag_lock(&tags_mutex_);
       for (const auto& tag : tags_) {
@@ -185,9 +190,17 @@ zx_status_t fx_logger::VLogWriteToSocket(fx_log_severity_t severity, const char*
     if (tag) {
       buffer.WriteKeyValue("tag", tag);
     }
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
     if (!buffer.Flush()) {
       return ZX_ERR_IO;
     }
+#else
+    cpp20::span<const uint8_t> span = buffer.EndRecord();
+    if (span.empty() ||
+        !fuchsia_logging::internal::FlushToSocket(zx::unowned_socket(this->socket_), span, {})) {
+      return ZX_ERR_IO;
+    }
+#endif
     return ZX_OK;
   }
 #if FUCHSIA_API_LEVEL_AT_LEAST(24)

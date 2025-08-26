@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.diagnostics/cpp/fidl.h>
-#include <lib/syslog/logger.h>
+#include <lib/syslog/internal/logger.h>
 
 #include <gtest/gtest.h>
 #include <sdk/lib/syslog/cpp/log_level.h>

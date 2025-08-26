@@ -1,5 +1,8 @@
 {
-  "pkg/syslog/include/lib/syslog/global.h": "d2c7ec0703efc5ecb585db3f7149239d",
-  "pkg/syslog/include/lib/syslog/logger.h": "3997378a342f25711c5f607a0d5ab38f",
-  "pkg/syslog/include/lib/syslog/wire_format.h": "a0898347fbde08832e36e7c69d1b7c00"
+  "pkg/syslog/include/lib/syslog/global.h": "969c24405b750669cacdbb18b69118b4",
+  "pkg/syslog/include/lib/syslog/internal/global.h": "7f2f394ac868c351b777e0cf96f18060",
+  "pkg/syslog/include/lib/syslog/internal/logger.h": "0550f1aba6f8f08dd5ec596abcd26523",
+  "pkg/syslog/include/lib/syslog/internal/wire_format.h": "d21baf471806727aaaf7c4b5b9f742fd",
+  "pkg/syslog/include/lib/syslog/logger.h": "cab3448edbaf2fbcb3e1085a4abb6bd5",
+  "pkg/syslog/include/lib/syslog/wire_format.h": "6a73642699b0999ae9e552efb6b78b55"
 }

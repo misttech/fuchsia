@@ -5,7 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fidl/fuchsia.logger/cpp/wire.h>
-#include <lib/syslog/global.h>
+#include <lib/syslog/internal/global.h>
 #include <lib/zx/socket.h>
 #include <poll.h>
 #include <stdlib.h>

@@ -4,8 +4,9 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <lib/syslog/global.h>
-#include <lib/syslog/wire_format.h>
+#include <lib/syslog/internal/global.h>
+#include <lib/syslog/internal/logger.h>
+#include <lib/syslog/internal/wire_format.h>
 #include <poll.h>
 #include <string.h>
 #include <unistd.h>
@@ -17,7 +18,6 @@
 #include <fbl/unique_fd.h>
 #include <zxtest/zxtest.h>
 
-#include "lib/syslog/logger.h"
 #include "src/lib/diagnostics/fake-log-sink/cpp/fake_log_sink.h"
 #include "zircon/system/ulib/syslog/helpers.h"
 

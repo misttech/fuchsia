@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/syslog/global.h>
+#include "lib/syslog/internal/global.h"
+
+#include <lib/syslog/internal/logger.h>
 #include <lib/zx/process.h>
 
 #include <memory>
 
 #include "export.h"
 #include "fx_logger.h"
-#include "lib/syslog/logger.h"
 
 namespace syslog_internal {
 

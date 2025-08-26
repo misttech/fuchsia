@@ -47,6 +47,9 @@ syslog_headers = [
   "lib/syslog/global.h",
   "lib/syslog/logger.h",
   "lib/syslog/wire_format.h",
+  "lib/syslog/internal/global.h",
+  "lib/syslog/internal/logger.h",
+  "lib/syslog/internal/wire_format.h",
 ]
 
 zx_library("syslog") {

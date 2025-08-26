@@ -5,7 +5,7 @@
 #ifndef ZIRCON_SYSTEM_ULIB_SYSLOG_HELPERS_H_
 #define ZIRCON_SYSTEM_ULIB_SYSLOG_HELPERS_H_
 
-#include <lib/syslog/logger.h>
+#include <lib/syslog/internal/logger.h>
 
 namespace syslog {
 namespace internal {
