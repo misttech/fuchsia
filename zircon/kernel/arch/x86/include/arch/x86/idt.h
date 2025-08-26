@@ -7,8 +7,11 @@
 #ifndef ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_IDT_H_
 #define ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_IDT_H_
 
-#include <assert.h>
 #include <zircon/compiler.h>
+
+#include <arch/x86.h>
+
+extern struct idt _idt_startup;
 
 struct idt_entry {
   uint32_t w0, w1;
@@ -38,6 +41,8 @@ enum idt_dpl {
   IDT_DPL2 = 2,
   IDT_DPL3 = 3,
 };
+
+extern "C" void load_startup_idt();
 
 /*
  * @brief Change an IDT entry
@@ -71,8 +76,7 @@ void idt_set_ist_index(struct idt *idt, uint8_t vec, uint8_t ist_idx);
  *
  * @param idt Pointer to the IDT to initialize
  */
-// Implemented in or assembly.
-extern "C" void idt_setup(struct idt *idt);
+void idt_setup(struct idt *idt);
 
 /*
  * @brief Setup the read-only remapping of the IDT.

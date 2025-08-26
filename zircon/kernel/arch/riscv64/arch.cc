@@ -54,8 +54,8 @@ void riscv64_init_percpu() {
 
 // Called in start.S prior to entering the main kernel.
 // Bootstraps the boot cpu as cpu 0 intrinsically, though it may have a nonzero hart.
-extern "C" void riscv64_boot_cpu_init(const PhysHandoff* handoff) {
-  uint32_t hart_id = static_cast<uint32_t>(handoff->arch_handoff.boot_hart_id);
+void riscv64_boot_cpu_init(const ArchPhysHandoff& arch_handoff) {
+  uint32_t hart_id = static_cast<uint32_t>(arch_handoff.boot_hart_id);
   riscv64_init_percpu();
   riscv64_mp_early_init_percpu(hart_id, 0);
 }

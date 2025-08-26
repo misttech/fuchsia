@@ -44,13 +44,6 @@
 
 #include <ktl/enforce.h>
 
-extern "C" {
-
-// Samples taken at the first instruction in the kernel.
-arch::EarlyTicks kernel_entry_ticks;
-
-}  // extern "C"
-
 KCOUNTER(platform_timer_set_counter, "platform.timer.set")
 KCOUNTER(platform_timer_cancel_counter, "platform.timer.cancel")
 

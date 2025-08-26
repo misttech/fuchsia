@@ -10,9 +10,6 @@
 #include <dev/timer.h>
 #include <platform/timer.h>
 
-// Setup by start.S
-arch::EarlyTicks kernel_entry_ticks;
-
 template <GetTicksSyncFlag Flags>
 inline zx_ticks_t platform_current_raw_ticks_synchronized() {
   // If the caller requested that the read of the current raw ticks be synchronized with respect to

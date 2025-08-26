@@ -116,34 +116,6 @@
   rep stosq
 #endif  // __has_feature(address_sanitizer)
 
-  // Before setting %gs.base to &bp_percpu, copy over the unsafe stack pointer
-  // and stack guard set by physboot (off the current %gs.base). The structure
-  // is otherwise statically initialized.
-  lea bp_percpu(%rip), %rax
-  mov %gs:ZX_TLS_UNSAFE_SP_OFFSET, %rdx
-  mov %gs:ZX_TLS_STACK_GUARD_OFFSET, %rcx
-  mov %rdx, ZX_TLS_UNSAFE_SP_OFFSET(%rax)
-  mov %rcx, ZX_TLS_STACK_GUARD_OFFSET(%rax)
-
-  // Now set %gs.base to &bp_percpu (still held by %rax).
-  mov %rax, %rdx
-  shr $32, %rdx
-  mov $X86_MSR_IA32_GS_BASE, %ecx
-  wrmsr
-
-  // Set up the idt
-  lea _idt_startup(%rip), %rdi
-  call idt_setup
-  call load_startup_idt
-
-  // Initialize CPUID value cache - and do so before functions (like
-  // x86_init_percpu) begin to access CPUID data.
-  call InitializeBootCpuid
-
-  // Assign this core CPU# 0 and initialize its per cpu state
-  xor %edi, %edi
-  call x86_init_percpu
-
   // Call the main module
   mov %r14, %rdi
   call lk_main

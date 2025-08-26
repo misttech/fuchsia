@@ -76,7 +76,6 @@ if (toolchain_base_environment == "kernel") {
       "sbi.cc",
       "secondary.S",
       "spinlock.cc",
-      "start.S",
       "thread.cc",
       "timer.cc",
       "user_copy_c.cc",

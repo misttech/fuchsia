@@ -176,6 +176,8 @@
     __val;                                                                      \
   })
 
+struct ArchPhysHandoff;
+
 // Register state layout used by riscv64_context_switch().
 struct alignas(16) riscv64_context_switch_frame {
   uint64_t ra;  // return address (x1)
@@ -219,6 +221,11 @@ extern void riscv64_software_exception();
 void platform_irq(iframe_t* frame);
 
 void riscv64_init_percpu();
+
+// Runs the boot cpu init routine with the boot hart id. This will do basic
+// initialization of the cpu such as initializing the main control registers
+// and loading the exception vector table and per cpu register.
+void riscv64_boot_cpu_init(const ArchPhysHandoff& arch_handoff);
 
 #define __wfi() __asm__ volatile("wfi" ::: "memory")
 

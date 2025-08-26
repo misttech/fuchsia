@@ -129,10 +129,9 @@ static_assert(sizeof(ktl::declval<x86_percpu>().interrupt_stacks.nmi) == INTERRU
 extern struct x86_percpu bp_percpu;
 extern struct x86_percpu *ap_percpus;
 
-// This needs to be run very early in the boot process from start.S and as
-// each CPU is brought up.
-// Called from assembly.
-extern "C" void x86_init_percpu(cpu_num_t cpu_num);
+// This needs to be run very early in the boot process from
+// ArchPostHandoffBootstrap() and as each CPU is brought up.
+void x86_init_percpu(cpu_num_t cpu_num);
 
 /* used to set the bootstrap processor's apic_id once the APIC is initialized */
 void x86_set_local_apic_id(uint32_t apic_id);

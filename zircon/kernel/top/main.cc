@@ -13,6 +13,7 @@
 
 #include <arch.h>
 #include <debug.h>
+#include <lib/arch/ticks.h>
 #include <lib/console.h>
 #include <lib/counters.h>
 #include <lib/cxxabi-dynamic-init/cxxabi-dynamic-init.h>
@@ -37,6 +38,13 @@
 #include <phys/handoff.h>
 #include <vm/init.h>
 #include <vm/vm.h>
+
+extern "C" {
+
+// Samples taken at the first instruction in the kernel.
+arch::EarlyTicks kernel_entry_ticks;
+
+}  // extern "C"
 
 static uint secondary_idle_thread_count;
 
@@ -66,6 +74,13 @@ bool ConstructorsCalled() { return lk_global_constructors_called(); }
 
 // called from arch code
 void lk_main(PhysHandoff* handoff) {
+  // TODO(https://fxbug.dev/42164859): There is still start.S bootstrap logic
+  // for x86 that cannot yet be moved into lk_main(), and so in that case
+  // entrypoint time sampling still happens there.
+#ifndef __x86_64__
+  kernel_entry_ticks = arch::EarlyTicks::Get();
+#endif
+
   PostHandoffBootstrap(handoff);
 
   // After PostHandoffBootstrap(), gPhysHandoff should now be set.

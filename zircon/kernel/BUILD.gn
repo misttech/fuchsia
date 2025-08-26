@@ -528,6 +528,13 @@ if (is_kernel) {
 
     ldflags = [ "-Wl,-T," + rebase_path(inputs[0], root_build_dir) ]
 
+    # TODO(https://fxbug.dev/42164859): There is still start.S bootstrap logic
+    # for x86 that cannot yet be moved into lk_main().
+    if (current_cpu != "x64") {
+      # PhysbootHandoff is the entrypoint symbol.
+      ldflags += [ "-Wl,--defsym,PhysbootHandoff=lk_main" ]
+    }
+
     assignments = kernel_defines + [
                     "KERNEL_GOT_TOLERANCE=$got_tolerance",
 

@@ -4,10 +4,36 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/arch/x86/boot-cpuid.h>
+#include <zircon/compiler.h>
+
+#include <arch/x86/idt.h>
+#include <arch/x86/mp.h>
 #include <phys/handoff.h>
 #include <vm/handoff-end.h>
 
-void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff) {
-  // TODO(https://fxbug.dev/42164859): Move tail of post-kASan-setup logic in
-  // start.S here.
+__NO_SAFESTACK void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff) {
+  // Before setting %gs.base to &bp_percpu, copy over the unsafe stack pointer
+  // and stack guard set by physboot. The structure is otherwise statically
+  // initialized.
+  //
+  // What physboot handed off was a temporary region of memory covering the
+  // subset of `x86_percpu` dealing in the thread ABI. So fake_percpu` is
+  // indeed fake, but accessing its `stack_guard` and `unsafe_sp` members is
+  // kosher.
+  struct x86_percpu* fake_percpu = x86_get_percpu();
+  bp_percpu.stack_guard = fake_percpu->stack_guard;
+  bp_percpu.kernel_unsafe_sp = fake_percpu->kernel_unsafe_sp;
+  write_msr(X86_MSR_IA32_GS_BASE, reinterpret_cast<uintptr_t>(&bp_percpu));
+
+  // Set up the idt
+  idt_setup(&_idt_startup);
+  load_startup_idt();
+
+  // Initialize CPUID value cache - and do so before functions (like
+  // x86_init_percpu) begin to access CPUID data.
+  arch::InitializeBootCpuid();
+
+  // Assign this core CPU# 0 and initialize its per cpu state
+  x86_init_percpu(0);
 }

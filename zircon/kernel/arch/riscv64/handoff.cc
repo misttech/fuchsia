@@ -4,9 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <arch/riscv64.h>
 #include <phys/handoff.h>
 #include <vm/handoff-end.h>
 
 void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff) {
-  // TODO(https://fxbug.dev/42164859): Move start.S logic here.
+  riscv64_boot_cpu_init(arch_handoff);
 }

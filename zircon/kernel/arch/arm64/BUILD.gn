@@ -128,7 +128,6 @@ if (toolchain_environment == "physmem" ||
       "secondary.S",
       "smccc.S",
       "spinlock.cc",
-      "start.S",
       "sysreg.cc",
       "thread.cc",
       "uarch.cc",

@@ -194,12 +194,12 @@ HandoffEnd::Elf CreatePhysElf(const PhysElfImage& image) {
 // This function is called first thing on kernel entry, so it should be
 // careful on what it assumes is present.
 void PostHandoffBootstrap(PhysHandoff* handoff) {
-  ZX_DEBUG_ASSERT(handoff);
-
   // Crucial set-up happens in ArchPostHandoffBootstrap() and it should happen
   // early. We take care to only sequence the simple setting of several,
-  // fundamental global variables before then.
+  // fundamental global variables before then, along with entrypoint time
+  // sampling.
 
+  ZX_DEBUG_ASSERT(handoff);
   gPhysHandoff = handoff;
 
   gBootOptions = gPhysHandoff->boot_options.get();

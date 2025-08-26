@@ -4,9 +4,27 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/arch/arm64/system.h>
+#include <lib/arch/cache.h>
+#include <lib/arch/intrin.h>
+
+#include <arch/arm64/mmu.h>
+#include <arch/arm64/mp.h>
 #include <phys/handoff.h>
 #include <vm/handoff-end.h>
 
 void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff) {
-  // TODO(https://fxbug.dev/42164859): Move start.S logic here.
+  // Clear any phys exception handlers.
+  arch::ArmVbarEl1::Write(uintptr_t{0});
+
+  // Disable trampoline page-table in ttbr0
+  arch::ArmTcrEl1::Write(MMU_TCR_FLAGS_KERNEL);
+
+  // Invalidate the entire TLB
+  arch::InvalidateLocalTlbs();
+  __dsb(ARM_MB_SY);
+  __isb(ARM_MB_SY);
+
+  // set the per cpu pointer for cpu 0
+  arm64_init_percpu_early();
 }
