@@ -212,7 +212,7 @@ zx_info_kmem_stats_t GetMemoryStats() {
   stats.vmo_reclaim_total_bytes = reclaim_counts.total * PAGE_SIZE;
   stats.vmo_reclaim_newest_bytes = reclaim_counts.newest * PAGE_SIZE;
   stats.vmo_reclaim_oldest_bytes = reclaim_counts.oldest * PAGE_SIZE;
-  stats.vmo_reclaim_disabled_bytes = queue_counts.high_priority;
+  stats.vmo_reclaim_disabled_bytes = queue_counts.high_priority * PAGE_SIZE;
 
   DiscardableVmoTracker::DiscardablePageCounts discardable_counts =
       DiscardableVmoTracker::DebugDiscardablePageCounts();
