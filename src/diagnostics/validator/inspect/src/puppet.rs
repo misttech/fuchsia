@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::PUPPET_MONIKER;
 use super::data::{self, Data, LazyNode};
 use super::metrics::Metrics;
-use super::PUPPET_MONIKER;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fuchsia_component::client as fclient;
 use serde::Serialize;
 use zx::{self as zx, Vmo};
@@ -67,6 +67,13 @@ impl Puppet {
             Some(_) => Ok(self.connection.fidl.act_lazy(lazy_action).await?),
             None => Ok(validate::TestResult::Unimplemented),
         }
+    }
+
+    pub async fn act_lazy_thread_local(
+        &mut self,
+        lazy_action: &mut validate::LazyAction,
+    ) -> Result<validate::TestResult, Error> {
+        Ok(self.connection.fidl.act_lazy_thread_local(lazy_action).await?)
     }
 
     pub async fn publish(&mut self) -> Result<validate::TestResult, Error> {
@@ -194,10 +201,10 @@ pub(crate) mod tests {
     use super::*;
     use crate::create_node;
     use anyhow::Context as _;
-    use fidl::endpoints::{create_proxy, RequestStream, ServerEnd};
+    use fidl::endpoints::{RequestStream, ServerEnd, create_proxy};
     use fidl_diagnostics_validate::{
         Action, CreateNode, CreateNumericProperty, InspectPuppetMarker, InspectPuppetRequest,
-        InspectPuppetRequestStream, Options, TestResult, Value, ROOT_ID,
+        InspectPuppetRequestStream, Options, ROOT_ID, TestResult, Value,
     };
     use fuchsia_async as fasync;
     use fuchsia_inspect::{Inspector, InspectorConfig, IntProperty, Node};
@@ -307,6 +314,9 @@ pub(crate) mod tests {
                             responder.send(TestResult::Unimplemented)?;
                         }
                         InspectPuppetRequest::Publish { responder } => {
+                            responder.send(TestResult::Unimplemented)?;
+                        }
+                        InspectPuppetRequest::ActLazyThreadLocal { responder, .. } => {
                             responder.send(TestResult::Unimplemented)?;
                         }
                         InspectPuppetRequest::_UnknownMethod { .. } => {}

@@ -187,6 +187,9 @@ async fn run_service(mut incoming: validate::InspectPuppetRequestStream) {
             validate::InspectPuppetRequest::ActLazy { responder, .. } => {
                 responder.send(validate::TestResult::Unimplemented).expect("send failed");
             }
+            validate::InspectPuppetRequest::ActLazyThreadLocal { responder, .. } => {
+                responder.send(validate::TestResult::Unimplemented).expect("send failed");
+            }
             validate::InspectPuppetRequest::_UnknownMethod { .. } => {}
         }
     }

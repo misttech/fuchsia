@@ -386,6 +386,47 @@ impl Node {
         self.record(property);
     }
 
+    /// Creates a new lazy child with the given `name` and `callback`.
+    /// `callback` will be invoked each time the component's Inspect is read.
+    /// `callback` is expected to create a new Inspector and return it;
+    /// its contents will be rooted at the intended location (the `self` node).
+    ///
+    /// The inspector referenced by this function should not be sent between threads,
+    /// or it may panic.
+    #[must_use]
+    pub fn create_lazy_child_with_thread_local<'a, F>(
+        &self,
+        name: impl Into<Cow<'a, str>>,
+        callback: F,
+    ) -> LazyNode
+    where
+        F: Fn() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
+    {
+        let fragile_callback = fragile::Fragile::new(callback);
+        self.create_lazy_child(name, move || {
+            let cb = fragile_callback.get();
+            cb()
+        })
+    }
+
+    /// Records a new lazy child with the given `name` and `callback`.
+    /// `callback` will be invoked each time the component's Inspect is read.
+    /// `callback` is expected to create a new Inspector and return it;
+    /// its contents will be rooted at the intended location (the `self` node).
+    ///
+    /// The inspector referenced by this function should not be sent between threads,
+    /// or it may panic.
+    pub fn record_lazy_child_with_thread_local<'a, F>(
+        &self,
+        name: impl Into<Cow<'a, str>>,
+        callback: F,
+    ) where
+        F: Fn() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
+    {
+        let property = self.create_lazy_child_with_thread_local(name.into(), callback);
+        self.record(property);
+    }
+
     /// Creates a new inline lazy node with the given `name` and `callback`.
     /// `callback` will be invoked each time the component's Inspect is read.
     /// `callback` is expected to create a new Inspector and return it;
@@ -424,6 +465,47 @@ impl Node {
         F: Fn() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> + Sync + Send + 'static,
     {
         let property = self.create_lazy_values(name.into(), callback);
+        self.record(property);
+    }
+
+    /// Creates a new inline lazy node with the given `name` and `callback`.
+    /// `callback` will be invoked each time the component's Inspect is read.
+    /// `callback` is expected to create a new Inspector and return it;
+    /// its contents will be rooted at the intended location (the `self` node).
+    ///
+    /// The inspector referenced by this function should not be sent between threads,
+    /// or it may panic.
+    #[must_use]
+    pub fn create_lazy_values_with_thread_local<'a, F>(
+        &self,
+        name: impl Into<Cow<'a, str>>,
+        callback: F,
+    ) -> LazyNode
+    where
+        F: Fn() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
+    {
+        let fragile_callback = fragile::Fragile::new(callback);
+        self.create_lazy_values(name, move || {
+            let cb = fragile_callback.get();
+            cb()
+        })
+    }
+
+    /// Records a new inline lazy node with the given `name` and `callback`.
+    /// `callback` will be invoked each time the component's Inspect is read.
+    /// `callback` is expected to create a new Inspector and return it;
+    /// its contents will be rooted at the intended location (the `self` node).
+    ///
+    /// The inspector referenced by this function should not be sent between threads,
+    /// or it may panic.
+    pub fn record_lazy_values_with_thread_local<'a, F>(
+        &self,
+        name: impl Into<Cow<'a, str>>,
+        callback: F,
+    ) where
+        F: Fn() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
+    {
+        let property = self.create_lazy_values_with_thread_local(name.into(), callback);
         self.record(property);
     }
 
@@ -571,8 +653,8 @@ impl InnerType for InnerNodeType {
 mod tests {
     use super::*;
     use crate::reader;
-    use crate::writer::testing_utils::{get_state, GetBlockExt};
     use crate::writer::ArrayProperty;
+    use crate::writer::testing_utils::{GetBlockExt, get_state};
     use diagnostics_assertions::{assert_data_tree, assert_json_diff};
     use futures::FutureExt;
     use inspect_format::BlockType;
@@ -656,6 +738,44 @@ mod tests {
                 "recorded-lazy-child": true,
             },
             "recorded-lazy-values": true,
+        });
+    }
+
+    #[fuchsia::test]
+    async fn lazy_child_with_thread_local() {
+        let inspector = Inspector::default();
+        inspector.root().record_lazy_child_with_thread_local("lazy-1", || {
+            async move {
+                let insp = Inspector::default();
+                insp.root().record_int("a", 1i64);
+                Ok(insp)
+            }
+            .boxed()
+        });
+
+        let result = reader::read(&inspector).await.unwrap();
+        assert_data_tree!(result, root: {
+            "lazy-1": {
+                "a": 1i64,
+            },
+        });
+    }
+
+    #[fuchsia::test]
+    async fn lazy_values_with_thread_local() {
+        let inspector = Inspector::default();
+        inspector.root().record_lazy_values_with_thread_local("lazy-1", || {
+            async move {
+                let insp = Inspector::default();
+                insp.root().record_int("a", 1i64);
+                Ok(insp)
+            }
+            .boxed()
+        });
+
+        let result = reader::read(&inspector).await.unwrap();
+        assert_data_tree!(result, root: {
+            "a": 1i64,
         });
     }
 
@@ -948,10 +1068,36 @@ mod tests {
 mod fuchsia_tests {
     use super::*;
     use crate::hierarchy::DiagnosticsHierarchy;
-    use crate::{reader, NumericProperty};
-    use diagnostics_assertions::assert_json_diff;
+    use crate::{NumericProperty, reader};
+    use diagnostics_assertions::{assert_data_tree, assert_json_diff};
+    use futures::FutureExt;
     use std::sync::Arc;
     use zx::{self as zx, AsHandleRef, Peered};
+
+    #[fuchsia::test(threads = 4)]
+    #[should_panic]
+    async fn lazy_child_with_thread_local_panic() {
+        let inspector = Inspector::default();
+        inspector.root().record_lazy_child_with_thread_local("lazy-1", || {
+            async move {
+                let insp = Inspector::default();
+                insp.root().record_int("a", 1i64);
+                Ok(insp)
+            }
+            .boxed()
+        });
+        loop {
+            let result = reader::read(&inspector).await.unwrap();
+            assert_data_tree!(result, root: {
+                "lazy-1": {
+                    "a": 1i64,
+                },
+            });
+            // Maybe thread hop. On host, this doesn't
+            // seem to work reliably.
+            fuchsia_async::yield_now().await;
+        }
+    }
 
     #[fuchsia::test]
     fn atomic_update_reader() {
