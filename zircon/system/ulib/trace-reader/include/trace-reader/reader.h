@@ -37,8 +37,6 @@ struct ProviderInfo;
 class TraceReader {
  public:
   // Called once for each record read by |ReadRecords|.
-  // TODO(jeffbrown): It would be nice to get rid of this by making |ReadRecords|
-  // return std::optional<Record> as an out parameter.
   using RecordConsumer = fit::function<void(Record)>;
 
   // Callback invoked when decoding errors are detected in the trace.
