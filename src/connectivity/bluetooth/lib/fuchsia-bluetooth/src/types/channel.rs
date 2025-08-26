@@ -97,6 +97,7 @@ pub struct Channel {
     flush_timeout: Arc<Mutex<Option<zx::MonotonicDuration>>>,
     audio_direction_ext: Option<bredr::AudioDirectionExtProxy>,
     l2cap_parameters_ext: Option<bredr::L2capParametersExtProxy>,
+    audio_offload_ext: Option<bredr::AudioOffloadExtProxy>,
     terminated: bool,
 }
 
@@ -116,6 +117,7 @@ impl Channel {
             flush_timeout: Arc::new(Mutex::new(None)),
             audio_direction_ext: None,
             l2cap_parameters_ext: None,
+            audio_offload_ext: None,
             terminated: false,
         }
     }
@@ -189,7 +191,7 @@ impl Channel {
             match (current, duration) {
                 (None, None) => return Ok(None),
                 (Some(old), Some(new)) if (old - new).into_millis().abs() < 2 => {
-                    return Ok(current)
+                    return Ok(current);
                 }
                 _ => {}
             };
@@ -204,6 +206,11 @@ impl Channel {
             *(flush_timeout.lock().unwrap()) = new_timeout.clone();
             Ok(new_timeout)
         }
+    }
+
+    /// Get a copy of the Audio Offload Proxy for this channel, if it exists
+    pub fn audio_offload(&self) -> Option<bredr::AudioOffloadExtProxy> {
+        self.audio_offload_ext.clone()
     }
 
     pub fn closed<'a>(&'a self) -> impl Future<Output = Result<(), zx::Status>> + 'a {
@@ -270,6 +277,7 @@ impl TryFrom<fidl_fuchsia_bluetooth_bredr::Channel> for Channel {
             )),
             audio_direction_ext: fidl.ext_direction.map(|e| e.into_proxy()),
             l2cap_parameters_ext: fidl.ext_l2cap.map(|e| e.into_proxy()),
+            audio_offload_ext: fidl.ext_audio_offload.map(|c| c.into_proxy()),
             terminated: false,
         })
     }
@@ -300,6 +308,16 @@ impl TryFrom<Channel> for bredr::Channel {
             .map_err(|_: bredr::L2capParametersExtProxy| {
                 Error::profile("l2cap parameters proxy in use")
             })?;
+        let ext_audio_offload = channel
+            .audio_offload_ext
+            .map(|proxy| {
+                let chan = proxy.into_channel()?;
+                Ok(ClientEnd::new(chan.into()))
+            })
+            .transpose()
+            .map_err(|_: bredr::AudioOffloadExtProxy| {
+                Error::profile("audio offload proxy in use")
+            })?;
         let flush_timeout =
             channel.flush_timeout.lock().unwrap().map(zx::MonotonicDuration::into_nanos);
         Ok(bredr::Channel {
@@ -309,6 +327,7 @@ impl TryFrom<Channel> for bredr::Channel {
             ext_direction,
             flush_timeout,
             ext_l2cap,
+            ext_audio_offload,
             ..Default::default()
         })
     }
@@ -606,5 +625,42 @@ mod tests {
 
         // Channel should have recorded the new flush timeout.
         assert_eq!(Some(zx::MonotonicDuration::from_millis(50)), channel.flush_timeout());
+    }
+
+    #[test]
+    fn test_audio_offload() {
+        let _exec = fasync::TestExecutor::new();
+
+        let (remote, _local) = zx::Socket::create_datagram();
+        let no_ext = bredr::Channel {
+            socket: Some(remote),
+            channel_mode: Some(fidl_bt::ChannelMode::Basic),
+            max_tx_sdu_size: Some(1004),
+            ..Default::default()
+        };
+        let channel = Channel::try_from(no_ext).unwrap();
+
+        assert!(channel.audio_offload().is_none());
+
+        let (remote, _local) = zx::Socket::create_datagram();
+        let (client_end, mut _audio_offload_ext_req_stream) =
+            create_request_stream::<bredr::AudioOffloadExtMarker>();
+        let ext = bredr::Channel {
+            socket: Some(remote),
+            channel_mode: Some(fidl_bt::ChannelMode::Basic),
+            max_tx_sdu_size: Some(1004),
+            ext_audio_offload: Some(client_end),
+            ..Default::default()
+        };
+
+        let channel = Channel::try_from(ext).unwrap();
+
+        let offload_ext = channel.audio_offload();
+        assert!(offload_ext.is_some());
+        // We can get the audio offload multiple times without dropping
+        assert!(channel.audio_offload().is_some());
+        // And with dropping
+        drop(offload_ext);
+        assert!(channel.audio_offload().is_some());
     }
 }
