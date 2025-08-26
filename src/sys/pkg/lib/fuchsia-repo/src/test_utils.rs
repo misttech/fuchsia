@@ -14,7 +14,7 @@ use fuchsia_url::RelativePackageUrl;
 use futures::io::AllowStdIo;
 use maplit::hashmap;
 use std::collections::HashSet;
-use std::fs::{create_dir, create_dir_all, File};
+use std::fs::{File, create_dir, create_dir_all};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use tuf::crypto::{Ed25519PrivateKey, HashAlgorithm};
@@ -331,14 +331,16 @@ pub async fn make_repo_dir(
             .iter()
             .map(|k| (k.public().key_id().clone(), k.public().clone()))
             .collect(),
-        vec![Delegation::new(
-            MetadataPath::new("delegation").unwrap(),
-            false,
-            1,
-            delegations_keys.iter().map(|k| k.public().key_id().clone()).collect(),
-            HashSet::from([TargetPath::new("some-delegated-target").unwrap()]),
-        )
-        .unwrap()],
+        vec![
+            Delegation::new(
+                MetadataPath::new("delegation").unwrap(),
+                false,
+                1,
+                delegations_keys.iter().map(|k| k.public().key_id().clone()).collect(),
+                HashSet::from([TargetPath::new("some-delegated-target").unwrap()]),
+            )
+            .unwrap(),
+        ],
     )
     .unwrap();
 

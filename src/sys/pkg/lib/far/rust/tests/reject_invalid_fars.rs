@@ -6,7 +6,7 @@
 
 use assert_matches::assert_matches;
 use fidl_fuchsia_io as fio;
-use fuchsia_archive::{ChunkType, Error, Reader, DIR_CHUNK_TYPE, DIR_NAMES_CHUNK_TYPE};
+use fuchsia_archive::{ChunkType, DIR_CHUNK_TYPE, DIR_NAMES_CHUNK_TYPE, Error, Reader};
 use std::fs::File;
 use std::path::Path;
 

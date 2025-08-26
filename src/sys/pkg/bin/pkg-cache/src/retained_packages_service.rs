@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::index::{set_retained_blobs, set_retained_index};
 use crate::PackageIndex;
+use crate::index::{set_retained_blobs, set_retained_index};
 use anyhow::Error;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_pkg::{
@@ -84,7 +84,7 @@ async fn collect_blob_ids(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl_fuchsia_pkg_ext::{serve_fidl_iterator_from_slice, BlobId};
+    use fidl_fuchsia_pkg_ext::{BlobId, serve_fidl_iterator_from_slice};
     use fuchsia_hash::Hash;
     use futures::Future;
 

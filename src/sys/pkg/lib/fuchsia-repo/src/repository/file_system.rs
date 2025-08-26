@@ -5,7 +5,7 @@
 use crate::range::{ContentRange, Range};
 use crate::repository::{Error, RepoProvider, RepoStorage, Resource};
 use crate::util::file_stream;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use delivery_blob::DeliveryBlobType;
 use fuchsia_async as fasync;
@@ -30,8 +30,8 @@ use tuf::repository::{
 #[cfg(not(target_os = "fuchsia"))]
 use {
     crate::repository::RepositorySpec,
-    futures::{stream::BoxStream, Stream, StreamExt as _},
-    notify::{recommended_watcher, RecursiveMode, Watcher as _},
+    futures::{Stream, StreamExt as _, stream::BoxStream},
+    notify::{RecursiveMode, Watcher as _, recommended_watcher},
     std::{
         ffi::OsStr,
         pin::Pin,

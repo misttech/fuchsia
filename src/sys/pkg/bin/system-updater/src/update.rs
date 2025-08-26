@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
 use fetch_url::fetch_url;
 use fidl::endpoints::ProtocolMarker as _;
@@ -10,10 +10,10 @@ use fuchsia_async::TimeoutExt as _;
 use fuchsia_hash::Hash;
 use fuchsia_sync::Mutex;
 use fuchsia_url::{AbsoluteComponentUrl, AbsolutePackageUrl, PinnedAbsolutePackageUrl};
+use futures::Future;
 use futures::channel::oneshot;
 use futures::future::FutureExt as _;
 use futures::stream::{FusedStream, StreamExt as _, TryStreamExt as _};
-use futures::Future;
 use include_str_from_working_dir::include_str_from_working_dir_env;
 use log::{error, info, warn};
 use std::collections::HashSet;
@@ -1607,11 +1607,7 @@ async fn get_image_buffer_if_hash_and_size_match(
             return None;
         }
     };
-    if buffer_hash == image_sha256 {
-        Some(buffer)
-    } else {
-        None
-    }
+    if buffer_hash == image_sha256 { Some(buffer) } else { None }
 }
 
 fn sha256_buffer(

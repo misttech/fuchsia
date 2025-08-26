@@ -85,8 +85,10 @@ mod tests {
             .iter()
             .map(|&i| now.checked_sub(Duration::from_secs(i)).unwrap())
             .collect();
-        assert!(UpdateCheckRateLimiter::with_recent_update_check_times(recent_update_check_times)
-            .should_rate_limit(now));
+        assert!(
+            UpdateCheckRateLimiter::with_recent_update_check_times(recent_update_check_times)
+                .should_rate_limit(now)
+        );
     }
 
     // Test that we should rate limit if update check times exceeds limit in long period.
@@ -100,8 +102,10 @@ mod tests {
         .iter()
         .map(|&i| now.checked_sub(Duration::from_secs(i)).unwrap())
         .collect();
-        assert!(UpdateCheckRateLimiter::with_recent_update_check_times(recent_update_check_times)
-            .should_rate_limit(now));
+        assert!(
+            UpdateCheckRateLimiter::with_recent_update_check_times(recent_update_check_times)
+                .should_rate_limit(now)
+        );
     }
 
     // Test that we should not rate limit if update check times is below the limit.
@@ -115,8 +119,10 @@ mod tests {
         .iter()
         .map(|&i| now.checked_sub(Duration::from_secs(i)).unwrap())
         .collect();
-        assert!(!UpdateCheckRateLimiter::with_recent_update_check_times(recent_update_check_times)
-            .should_rate_limit(now));
+        assert!(
+            !UpdateCheckRateLimiter::with_recent_update_check_times(recent_update_check_times)
+                .should_rate_limit(now)
+        );
     }
 
     #[test]

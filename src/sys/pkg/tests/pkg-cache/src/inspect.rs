@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use crate::{
-    blob_written, compress_and_write_blob, get_missing_blobs, replace_retained_packages,
-    write_meta_far, write_needed_blobs, TestEnv,
+    TestEnv, blob_written, compress_and_write_blob, get_missing_blobs, replace_retained_packages,
+    write_meta_far, write_needed_blobs,
 };
 use assert_matches::assert_matches;
-use diagnostics_assertions::{assert_data_tree, tree_assertion, AnyProperty};
+use diagnostics_assertions::{AnyProperty, assert_data_tree, tree_assertion};
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg::{self as fpkg, BlobInfo, NeededBlobsMarker};

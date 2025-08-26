@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{
-    get_system_image_hash, CachePackages, CachePackagesInitError, StaticPackages,
-    StaticPackagesInitError,
+    CachePackages, CachePackagesInitError, StaticPackages, StaticPackagesInitError,
+    get_system_image_hash,
 };
 use anyhow::Context as _;
 use fuchsia_hash::Hash;

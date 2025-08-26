@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::TCP_KEEPALIVE_TIMEOUT;
 use crate::repository::Repository;
 use crate::repository_manager::Stats;
-use crate::TCP_KEEPALIVE_TIMEOUT;
 use delivery_blob::DeliveryBlobType;
 use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
@@ -19,8 +19,8 @@ use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use http_uri_ext::HttpUriExt as _;
 use hyper::StatusCode;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use tuf::metadata::{MetadataPath, MetadataVersion, TargetPath};
 use zx::Status;
@@ -856,7 +856,9 @@ pub enum FetchError {
     #[error("could not create blob")]
     CreateBlob(#[source] pkg::cache::OpenBlobError),
 
-    #[error("Fetch of type {blob_type:?} delivery blob at {uri} failed: http request expected 200, got {code}")]
+    #[error(
+        "Fetch of type {blob_type:?} delivery blob at {uri} failed: http request expected 200, got {code}"
+    )]
     BadHttpStatus { code: hyper::StatusCode, uri: String, blob_type: DeliveryBlobType },
 
     #[error("repository has no configured mirrors")]
@@ -937,7 +939,9 @@ pub enum FetchError {
     #[error("Blob fetch of {uri}: http request expected Content-Range header")]
     MissingContentRangeHeader { uri: String },
 
-    #[error("Blob fetch of {uri}: http request for range {first_byte_pos}-{last_byte_pos} returned malformed Content-Range header: {header:?}")]
+    #[error(
+        "Blob fetch of {uri}: http request for range {first_byte_pos}-{last_byte_pos} returned malformed Content-Range header: {header:?}"
+    )]
     MalformedContentRangeHeader {
         #[source]
         e: resume::ContentRangeParseError,
@@ -947,7 +951,9 @@ pub enum FetchError {
         header: http::header::HeaderValue,
     },
 
-    #[error("Blob fetch of {uri}: http request returned Content-Range: {content_range:?} but expected: {expected:?}")]
+    #[error(
+        "Blob fetch of {uri}: http request returned Content-Range: {content_range:?} but expected: {expected:?}"
+    )]
     InvalidContentRangeHeader {
         uri: String,
         content_range: resume::HttpContentRange,
@@ -957,7 +963,9 @@ pub enum FetchError {
     #[error("Blob fetch of {uri}: exceeded resumption attempt limit of: {limit}")]
     ExceededResumptionAttemptLimit { uri: String, limit: u64 },
 
-    #[error("Blob fetch of {uri}: Content-Length: {content_length} and Content-Range: {content_range:?} are inconsistent")]
+    #[error(
+        "Blob fetch of {uri}: Content-Length: {content_length} and Content-Range: {content_range:?} are inconsistent"
+    )]
     ContentLengthContentRangeMismatch {
         uri: String,
         content_length: u64,
@@ -967,8 +975,8 @@ pub enum FetchError {
 
 impl From<&FetchError> for metrics::FetchBlobMigratedMetricDimensionResult {
     fn from(error: &FetchError) -> Self {
-        use metrics::FetchBlobMigratedMetricDimensionResult as EventCodes;
         use FetchError::*;
+        use metrics::FetchBlobMigratedMetricDimensionResult as EventCodes;
         match error {
             CreateBlob { .. } => EventCodes::CreateBlob,
             BadHttpStatus { code, .. } => match *code {

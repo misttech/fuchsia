@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{blob_written, compress_and_write_blob, get_missing_blobs, TestEnv};
+use crate::{TestEnv, blob_written, compress_and_write_blob, get_missing_blobs};
 use assert_matches::assert_matches;
 use fidl_fuchsia_pkg::{self as fpkg, NeededBlobsMarker};
 use fidl_fuchsia_pkg_ext::BlobId;
 use fidl_fuchsia_space::ErrorCode;
 use fuchsia_pkg_testing::{PackageBuilder, SystemImageBuilder};
 use futures::TryFutureExt as _;
-use mock_paver::{hooks as mphooks, MockPaverServiceBuilder, PaverEvent};
+use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
 use rand::prelude::*;
 use std::collections::BTreeSet;
 use zx::{self as zx, Status};

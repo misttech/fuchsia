@@ -17,10 +17,10 @@ use omaha_client::configuration::{Config, Updater};
 use omaha_client::cup_ecdsa::StandardCupv2Handler;
 use omaha_client::http_request::HttpRequest;
 use omaha_client::metrics::StubMetricsReporter;
-use omaha_client::protocol::request::OS;
 use omaha_client::protocol::Cohort;
+use omaha_client::protocol::request::OS;
 use omaha_client::state_machine::{
-    update_check, StateMachineBuilder, StateMachineEvent, UpdateCheckError,
+    StateMachineBuilder, StateMachineEvent, UpdateCheckError, update_check,
 };
 use omaha_client::storage::MemStorage;
 use omaha_client::time::StandardTimeSource;
@@ -142,7 +142,7 @@ mod tests {
     use crate::updater::for_tests::{UpdaterBuilder, UpdaterForTest, UpdaterResult};
     use fuchsia_pkg_testing::PackageBuilder;
 
-    use mock_paver::{hooks as mphooks, PaverEvent};
+    use mock_paver::{PaverEvent, hooks as mphooks};
     use omaha_client::http_request::mock::MockHttpRequest;
     use serde_json::json;
 
@@ -186,11 +186,13 @@ mod tests {
     }
 
     fn get_test_app_set() -> VecAppSet {
-        VecAppSet::new(vec![App::builder()
-            .id(TEST_APP_ID.to_owned())
-            .version([20200101, 0, 0, 0])
-            .cohort(Cohort::new(TEST_CHANNEL))
-            .build()])
+        VecAppSet::new(vec![
+            App::builder()
+                .id(TEST_APP_ID.to_owned())
+                .version([20200101, 0, 0, 0])
+                .cohort(Cohort::new(TEST_CHANNEL))
+                .build(),
+        ])
     }
 
     fn get_test_config() -> Config {

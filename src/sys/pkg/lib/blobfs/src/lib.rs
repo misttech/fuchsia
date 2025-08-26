@@ -8,7 +8,7 @@
 
 use fidl::endpoints::{Proxy as _, ServerEnd};
 use fuchsia_hash::{Hash, ParseHashError};
-use futures::{stream, StreamExt as _};
+use futures::{StreamExt as _, stream};
 use log::{error, info, warn};
 use std::collections::HashSet;
 use thiserror::Error;

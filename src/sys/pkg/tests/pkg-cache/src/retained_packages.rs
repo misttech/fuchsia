@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{
-    replace_retained_packages, verify_packages_cached, write_meta_far, write_needed_blobs, TestEnv,
+    TestEnv, replace_retained_packages, verify_packages_cached, write_meta_far, write_needed_blobs,
 };
 use assert_matches::assert_matches;
 use fidl_fuchsia_io as fio;

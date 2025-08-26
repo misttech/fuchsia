@@ -6,7 +6,7 @@ use crate::RelativeTo;
 use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::{slice, vec};
 use utf8_path::{path_relative_from_file, resolve_path_from_file};
 

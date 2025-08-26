@@ -6,8 +6,8 @@ use crate::CachePackagesInitError;
 use fuchsia_hash::Hash;
 use fuchsia_inspect::{self as finspect, ArrayProperty as _};
 use fuchsia_url::{AbsolutePackageUrl, PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
-use futures::future::BoxFuture;
 use futures::FutureExt as _;
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -81,9 +81,9 @@ impl CachePackages {
         self: &Arc<Self>,
         array_name: &'static str,
     ) -> impl Fn() -> BoxFuture<'static, Result<finspect::Inspector, anyhow::Error>>
-           + Send
-           + Sync
-           + 'static {
+    + Send
+    + Sync
+    + 'static {
         let this = Arc::downgrade(self);
         move || {
             let this = this.clone();
@@ -140,7 +140,7 @@ mod tests {
         let packages = CachePackages::from_json(file_contents).unwrap();
         let expected = vec![
             "fuchsia-pkg://foo.bar/qwe/0?hash=0000000000000000000000000000000000000000000000000000000000000000",
-            "fuchsia-pkg://foo.bar/rty/0?hash=1111111111111111111111111111111111111111111111111111111111111111"
+            "fuchsia-pkg://foo.bar/rty/0?hash=1111111111111111111111111111111111111111111111111111111111111111",
         ];
         assert!(packages.into_contents().map(|u| u.to_string()).eq(expected));
     }
@@ -168,10 +168,12 @@ mod tests {
     #[test]
     fn test_hash_for_package_returns_none() {
         let correct_hash = fuchsia_hash::Hash::from([0; 32]);
-        let packages = CachePackages::from_entries(vec![PinnedAbsolutePackageUrl::parse(
-            &format!("fuchsia-pkg://fuchsia.com/name?hash={correct_hash}"),
-        )
-        .unwrap()]);
+        let packages = CachePackages::from_entries(vec![
+            PinnedAbsolutePackageUrl::parse(&format!(
+                "fuchsia-pkg://fuchsia.com/name?hash={correct_hash}"
+            ))
+            .unwrap(),
+        ]);
         let wrong_hash = fuchsia_hash::Hash::from([1; 32]);
         assert_eq!(
             None,
@@ -193,10 +195,10 @@ mod tests {
     #[test]
     fn test_hash_for_package_returns_hashes() {
         let hash = fuchsia_hash::Hash::from([0; 32]);
-        let packages = CachePackages::from_entries(vec![PinnedAbsolutePackageUrl::parse(
-            &format!("fuchsia-pkg://fuchsia.com/name?hash={hash}"),
-        )
-        .unwrap()]);
+        let packages = CachePackages::from_entries(vec![
+            PinnedAbsolutePackageUrl::parse(&format!("fuchsia-pkg://fuchsia.com/name?hash={hash}"))
+                .unwrap(),
+        ]);
         assert_eq!(
             Some(hash),
             packages.hash_for_package(
@@ -215,10 +217,10 @@ mod tests {
     #[test]
     fn test_serialize() {
         let hash = fuchsia_hash::Hash::from([0; 32]);
-        let packages = CachePackages::from_entries(vec![PinnedAbsolutePackageUrl::parse(
-            &format!("fuchsia-pkg://foo.bar/qwe/0?hash={hash}"),
-        )
-        .unwrap()]);
+        let packages = CachePackages::from_entries(vec![
+            PinnedAbsolutePackageUrl::parse(&format!("fuchsia-pkg://foo.bar/qwe/0?hash={hash}"))
+                .unwrap(),
+        ]);
         let mut bytes = vec![];
 
         let () = packages.serialize(&mut bytes).unwrap();
@@ -237,10 +239,10 @@ mod tests {
     #[test]
     fn test_serialize_deserialize_round_trip() {
         let hash = fuchsia_hash::Hash::from([0; 32]);
-        let packages = CachePackages::from_entries(vec![PinnedAbsolutePackageUrl::parse(
-            &format!("fuchsia-pkg://foo.bar/qwe/0?hash={hash}"),
-        )
-        .unwrap()]);
+        let packages = CachePackages::from_entries(vec![
+            PinnedAbsolutePackageUrl::parse(&format!("fuchsia-pkg://foo.bar/qwe/0?hash={hash}"))
+                .unwrap(),
+        ]);
         let mut bytes = vec![];
 
         packages.serialize(&mut bytes).unwrap();

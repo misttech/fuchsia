@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{replace_retained_blobs, TestEnv};
+use crate::{TestEnv, replace_retained_blobs};
 use assert_matches::assert_matches;
 use fuchsia_pkg_testing::{PackageBuilder, SystemImageBuilder};
 

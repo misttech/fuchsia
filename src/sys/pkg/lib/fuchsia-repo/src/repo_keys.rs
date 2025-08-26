@@ -131,7 +131,7 @@ impl RepoKeys {
                 _ => {
                     return Err(ParseError::UnsupportedKeyTypeGeneration {
                         keytype: keytype.clone(),
-                    })
+                    });
                 }
             }
             Ok(keys)

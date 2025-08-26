@@ -8,7 +8,7 @@ use crate::util::read_stream_to_end;
 use bytes::Bytes;
 use fidl_fuchsia_pkg_ext::RepositoryConfig;
 use futures::future::ready;
-use futures::stream::{once, BoxStream, StreamExt};
+use futures::stream::{BoxStream, StreamExt, once};
 use std::io;
 
 /// [Resource] represents some resource as a stream of [Bytes] as provided from

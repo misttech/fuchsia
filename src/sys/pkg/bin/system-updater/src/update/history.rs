@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::update::{BuildInfo, SystemInfo, SOURCE_EPOCH_RAW};
-use anyhow::{anyhow, Error};
+use crate::update::{BuildInfo, SOURCE_EPOCH_RAW, SystemInfo};
+use anyhow::{Error, anyhow};
 use bounded_node::BoundedNode;
 use fidl_fuchsia_paver::{BootManagerProxy, DataSinkProxy};
 use fidl_fuchsia_update_installer_ext::{Options, State};
@@ -284,7 +284,7 @@ impl UpdateHistory {
 }
 
 mod serde_system_time {
-    use anyhow::{anyhow, Error};
+    use anyhow::{Error, anyhow};
     use serde::Deserialize;
     use std::time::{Duration, SystemTime};
 

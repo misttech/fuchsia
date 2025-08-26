@@ -9,7 +9,7 @@
 use futures::{AsyncRead, AsyncReadExt as _};
 use std::io::{self, Read};
 
-pub use fuchsia_hash::{Hash, HASH_SIZE};
+pub use fuchsia_hash::{HASH_SIZE, Hash};
 
 /// The size of a single block of data (or hashes), in bytes.
 pub const BLOCK_SIZE: usize = 8192;

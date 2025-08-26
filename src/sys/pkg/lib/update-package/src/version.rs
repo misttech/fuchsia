@@ -53,11 +53,7 @@ pub enum SystemVersion {
 impl SystemVersion {
     /// Returns true if this SystemVersion is an empty string.
     pub fn is_empty(&self) -> bool {
-        if let SystemVersion::Opaque(value) = self {
-            value.is_empty()
-        } else {
-            false
-        }
+        if let SystemVersion::Opaque(value) = self { value.is_empty() } else { false }
     }
 }
 

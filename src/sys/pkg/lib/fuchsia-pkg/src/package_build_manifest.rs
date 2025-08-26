@@ -5,7 +5,7 @@
 use crate::errors::PackageBuildManifestError;
 use fuchsia_url::validate_resource_path;
 use serde::{Deserialize, Serialize};
-use std::collections::{btree_map, BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, btree_map};
 use std::fs;
 use std::io::{self, Read};
 use std::path::Path;

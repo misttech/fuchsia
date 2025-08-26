@@ -58,10 +58,11 @@ impl ResolverService {
     /// Add a child node for the raw WorkQueue underlying the QueuedResolver.
     pub fn record_raw_queue(
         &self,
-        lazy_callback: impl Fn() -> BoxFuture<'static, Result<fuchsia_inspect::Inspector, anyhow::Error>>
-            + Send
-            + Sync
-            + 'static,
+        lazy_callback: impl Fn()
+            -> BoxFuture<'static, Result<fuchsia_inspect::Inspector, anyhow::Error>>
+        + Send
+        + Sync
+        + 'static,
     ) {
         let () = self._node.record_lazy_child("raw_queue", lazy_callback);
     }
@@ -88,7 +89,7 @@ pub struct PackageWithRewrittenUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
 
     #[fuchsia::test]

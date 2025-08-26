@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Error};
-use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
+use anyhow::{Context, Error, format_err};
 use fidl_contrib::ProtocolConnector;
+use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
 };

@@ -16,7 +16,7 @@ use {
     fuchsia_merkle::Hash,
     fuchsia_pkg_testing::{Package, RepositoryBuilder, SystemImageBuilder},
     futures::prelude::*,
-    lib::{extra_blob_contents, make_pkg_with_extra_blobs, TestEnvBuilder, EMPTY_REPO_PATH},
+    lib::{EMPTY_REPO_PATH, TestEnvBuilder, extra_blob_contents, make_pkg_with_extra_blobs},
     std::sync::Arc,
     vfs::ObjectRequest,
     zx::Status,

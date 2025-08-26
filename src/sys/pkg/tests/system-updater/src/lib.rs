@@ -8,32 +8,32 @@
 use self::SystemUpdaterInteraction::*;
 use ::update_package::images::AssetType;
 use ::update_package::manifest::{self, OtaManifestV1};
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use assert_matches::assert_matches;
 use blobfs_ramdisk::BlobfsRamdisk;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
 use fidl_fuchsia_update_installer_ext::{
-    start_update, Initiator, Options, UpdateAttempt, UpdateAttemptError,
+    Initiator, Options, UpdateAttempt, UpdateAttemptError, start_update,
 };
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_hash::Hash;
 use fuchsia_pkg_testing::{
-    make_current_epoch_json, make_epoch_json, make_packages_json, SOURCE_EPOCH,
+    SOURCE_EPOCH, make_current_epoch_json, make_epoch_json, make_packages_json,
 };
 use fuchsia_sync::Mutex;
 use fuchsia_url::AbsoluteComponentUrl;
 use futures::channel::oneshot;
 use futures::prelude::*;
 use mock_metrics::MockMetricEventLoggerFactory;
-use mock_paver::{hooks as mphooks, MockPaverService, MockPaverServiceBuilder, PaverEvent};
+use mock_paver::{MockPaverService, MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
 use mock_reboot::MockRebootService;
 use mock_resolver::MockResolverService;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir, File};
+use std::fs::{File, create_dir};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;

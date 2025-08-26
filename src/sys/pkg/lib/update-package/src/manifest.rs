@@ -4,9 +4,9 @@
 
 //! Structs for parsing an OTA manifest.
 
+use crate::SystemVersion;
 use crate::images::AssetType;
 use crate::update_mode::UpdateMode;
-use crate::SystemVersion;
 use serde::{Deserialize, Serialize};
 
 /// Returns structured OTA manifest data based on raw file contents.

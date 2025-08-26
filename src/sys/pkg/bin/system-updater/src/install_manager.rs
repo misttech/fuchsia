@@ -516,7 +516,7 @@ mod tests {
         NamespaceSystemInfo,
     };
     use async_trait::async_trait;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use event_queue::ClosedClient;
     use fidl_fuchsia_hardware_power_statecontrol::AdminMarker as PowerStateControlMarker;
     use fidl_fuchsia_paver::{BootManagerMarker, DataSinkMarker};

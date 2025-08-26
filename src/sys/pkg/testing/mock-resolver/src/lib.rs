@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_pkg::{
     self as fpkg, PackageResolverMarker, PackageResolverProxy, PackageResolverRequestStream,

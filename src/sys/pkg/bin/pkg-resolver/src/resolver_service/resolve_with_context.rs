@@ -117,8 +117,8 @@ enum ResolveWithContextError {
 
 impl ResolveWithContextError {
     fn to_fidl_err(&self) -> pkg::ResolveError {
-        use pkg::ResolveError as pErr;
         use ResolveWithContextError::*;
+        use pkg::ResolveError as pErr;
         match self {
             GetSubpackage(pkg::cache::GetSubpackageError::DoesNotExist) => pErr::PackageNotFound,
             InvalidContext(_) | EmptyContext => pErr::InvalidContext,

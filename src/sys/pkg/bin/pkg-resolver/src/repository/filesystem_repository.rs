@@ -1,7 +1,7 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::file::AsyncReader;
 use futures::future::BoxFuture;
@@ -416,9 +416,10 @@ mod tests {
 
         repo.switch_to_write_only_mode();
 
-        assert!(repo
-            .fetch_metadata(&MetadataPath::new("foo").unwrap(), MetadataVersion::None)
-            .await
-            .is_err());
+        assert!(
+            repo.fetch_metadata(&MetadataPath::new("foo").unwrap(), MetadataVersion::None)
+                .await
+                .is_err()
+        );
     }
 }

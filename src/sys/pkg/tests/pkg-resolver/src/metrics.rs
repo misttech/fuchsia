@@ -9,10 +9,10 @@ use {
     cobalt_sw_delivery_registry as metrics,
     fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload},
     fuchsia_pkg_testing::{
-        serve::{responder, HttpResponder},
         Package, PackageBuilder, RepositoryBuilder,
+        serve::{HttpResponder, responder},
     },
-    lib::{make_repo, make_repo_config, MountsBuilder, TestEnv, TestEnvBuilder, EMPTY_REPO_PATH},
+    lib::{EMPTY_REPO_PATH, MountsBuilder, TestEnv, TestEnvBuilder, make_repo, make_repo_config},
     std::sync::Arc,
 };
 

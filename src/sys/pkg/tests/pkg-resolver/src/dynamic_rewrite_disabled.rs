@@ -9,7 +9,7 @@
 use {
     fidl_fuchsia_pkg_rewrite_ext::{Rule, RuleConfig},
     lib::{
-        get_rules, mock_filesystem, DirOrProxy, EnableDynamicConfig, MountsBuilder, TestEnvBuilder,
+        DirOrProxy, EnableDynamicConfig, MountsBuilder, TestEnvBuilder, get_rules, mock_filesystem,
     },
     zx::Status,
 };

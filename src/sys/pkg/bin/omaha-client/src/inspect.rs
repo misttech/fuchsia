@@ -11,7 +11,7 @@ use omaha_client::app_set::AppSet;
 use omaha_client::common::{ProtocolState, UpdateCheckSchedule};
 use omaha_client::configuration::{Config, Updater};
 use omaha_client::protocol::request::OS;
-use omaha_client::state_machine::{update_check, UpdateCheckError};
+use omaha_client::state_machine::{UpdateCheckError, update_check};
 use std::collections::VecDeque;
 use std::time::SystemTime;
 
@@ -226,8 +226,8 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_inspect::Inspector;
     use omaha_client::common::{App, UserCounting};
-    use omaha_client::protocol::request::InstallSource;
     use omaha_client::protocol::Cohort;
+    use omaha_client::protocol::request::InstallSource;
     use omaha_client::state_machine;
     use std::time::Duration;
 

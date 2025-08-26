@@ -6,7 +6,7 @@
 use {
     assert_matches::assert_matches,
     fuchsia_pkg_testing::RepositoryBuilder,
-    lib::{make_pkg_with_extra_blobs, TestEnvBuilder, EMPTY_REPO_PATH},
+    lib::{EMPTY_REPO_PATH, TestEnvBuilder, make_pkg_with_extra_blobs},
     std::sync::Arc,
     zx::Status,
 };

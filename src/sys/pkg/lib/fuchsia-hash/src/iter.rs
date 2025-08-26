@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Hash, HASH_SIZE};
+use crate::{HASH_SIZE, Hash};
 
 /// Iterator over all 2^256 possible hash values. Not expected to be useful outside of tests.
 #[derive(Debug)]

@@ -6,7 +6,7 @@
 
 use crate::package::Package;
 use crate::serve::ServedRepositoryBuilder;
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use delivery_blob::DeliveryBlobType;
 use fidl_fuchsia_pkg_ext::{
     MirrorConfig, RepositoryConfig, RepositoryConfigBuilder, RepositoryKey,

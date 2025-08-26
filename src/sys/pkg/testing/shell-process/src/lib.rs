@@ -25,7 +25,7 @@
 
 use fdio::{SpawnAction, SpawnOptions};
 use fuchsia_async::{self as fasync};
-use fuchsia_runtime::{job_default, HandleInfo, HandleType};
+use fuchsia_runtime::{HandleInfo, HandleType, job_default};
 use futures::prelude::*;
 use libc::{STDERR_FILENO, STDOUT_FILENO};
 use std::ffi::{CStr, CString};

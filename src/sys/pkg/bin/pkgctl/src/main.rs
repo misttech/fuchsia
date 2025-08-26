@@ -11,10 +11,10 @@ use crate::args::{
     RuleDumpDynamicCommand, RuleListCommand, RuleReplaceCommand, RuleReplaceFileCommand,
     RuleReplaceJsonCommand, RuleReplaceSubCommand, RuleSubCommand,
 };
-use anyhow::{bail, format_err, Context as _};
+use anyhow::{Context as _, bail, format_err};
 use fetch_url::fetch_url;
 use fidl_fuchsia_pkg_rewrite::EngineMarker;
-use fidl_fuchsia_pkg_rewrite_ext::{do_transaction, Rule as RewriteRule, RuleConfig};
+use fidl_fuchsia_pkg_rewrite_ext::{Rule as RewriteRule, RuleConfig, do_transaction};
 use fidl_fuchsia_space::ManagerMarker as SpaceManagerMarker;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_url::RepositoryUrl;
@@ -83,9 +83,10 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
                         return Ok(3);
                     }
                     other_failure_status => {
-                        bail!("Cannot determine pkg status. Failed fuchsia.pkg.PackageResolver.GetHash with unexpected status: {:?}",
-                          other_failure_status
-                          );
+                        bail!(
+                            "Cannot determine pkg status. Failed fuchsia.pkg.PackageResolver.GetHash with unexpected status: {:?}",
+                            other_failure_status
+                        );
                     }
                 },
             };

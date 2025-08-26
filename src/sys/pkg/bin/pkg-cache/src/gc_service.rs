@@ -5,7 +5,7 @@
 use crate::base_packages::{BasePackages, CachePackages};
 use crate::index::PackageIndex;
 use crate::upgradable_packages::UpgradablePackages;
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use fidl_fuchsia_space::{
     ErrorCode as SpaceErrorCode, ManagerRequest as SpaceManagerRequest,
     ManagerRequestStream as SpaceManagerRequestStream,

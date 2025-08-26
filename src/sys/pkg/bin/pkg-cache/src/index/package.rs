@@ -117,9 +117,9 @@ impl PackageIndex {
     pub fn record_lazy_inspect(
         this: &Arc<async_lock::RwLock<Self>>,
     ) -> impl Fn() -> BoxFuture<'static, Result<finspect::Inspector, anyhow::Error>>
-           + Send
-           + Sync
-           + 'static {
+    + Send
+    + Sync
+    + 'static {
         let this = Arc::downgrade(this);
         move || {
             let this = this.clone();

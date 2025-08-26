@@ -25,7 +25,7 @@ pub(crate) use test::*;
 #[cfg(test)]
 mod test {
     use super::*;
-    use anyhow::{format_err, Context};
+    use anyhow::{Context, format_err};
     use fuchsia_component::client::connect_to_protocol_at;
 
     #[derive(Debug, Clone)]

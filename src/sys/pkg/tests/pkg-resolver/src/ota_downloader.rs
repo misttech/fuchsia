@@ -7,7 +7,7 @@ use assert_matches::assert_matches;
 use fidl_fuchsia_pkg as fpkg;
 use fuchsia_pkg_testing::RepositoryBuilder;
 use futures::StreamExt as _;
-use lib::{make_pkg_with_extra_blobs, TestEnvBuilder, EMPTY_REPO_PATH};
+use lib::{EMPTY_REPO_PATH, TestEnvBuilder, make_pkg_with_extra_blobs};
 use std::sync::Arc;
 
 #[fuchsia::test]

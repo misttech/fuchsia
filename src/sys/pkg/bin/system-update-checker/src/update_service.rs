@@ -702,8 +702,8 @@ mod tests {
     }
 
     #[fasync::run_singlethreaded(test)]
-    async fn test_check_now_monitor_already_in_progress_but_allow_attaching_to_existing_update_check(
-    ) {
+    async fn test_check_now_monitor_already_in_progress_but_allow_attaching_to_existing_update_check()
+     {
         let (blocking_update_checker, unblocker) = BlockingUpdateChecker::new_checker_and_sender();
         let proxy = spawn_update_service(
             FakeTargetChannelUpdater::new(),

@@ -5,7 +5,7 @@
 #[cfg(test)]
 pub(crate) mod for_tests {
     use crate::cache::for_tests::CacheForTest;
-    use anyhow::{anyhow, Error};
+    use anyhow::{Error, anyhow};
     use blobfs_ramdisk::BlobfsRamdisk;
     use fidl_fuchsia_pkg_ext::RepositoryConfigs;
     use fuchsia_component_test::{
@@ -214,7 +214,7 @@ pub(crate) mod for_tests {
 
 #[cfg(test)]
 pub mod tests {
-    use super::for_tests::{ResolverForTest, EMPTY_REPO_PATH};
+    use super::for_tests::{EMPTY_REPO_PATH, ResolverForTest};
     use anyhow::{Context, Error};
     use fuchsia_async as fasync;
     use fuchsia_component_test::RealmBuilder;

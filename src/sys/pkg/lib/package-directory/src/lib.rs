@@ -110,11 +110,7 @@ impl NonMetaStorageError {
 
 impl From<&NonMetaStorageError> for zx::Status {
     fn from(e: &NonMetaStorageError) -> Self {
-        if e.is_not_found_error() {
-            zx::Status::NOT_FOUND
-        } else {
-            zx::Status::INTERNAL
-        }
+        if e.is_not_found_error() { zx::Status::NOT_FOUND } else { zx::Status::INTERNAL }
     }
 }
 
@@ -369,8 +365,8 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fuchsia_hash::Hash;
-    use fuchsia_pkg_testing::blobfs::Fake as FakeBlobfs;
     use fuchsia_pkg_testing::PackageBuilder;
+    use fuchsia_pkg_testing::blobfs::Fake as FakeBlobfs;
     use futures::StreamExt;
     use vfs::directory::helper::DirectlyMutable;
 

@@ -284,11 +284,7 @@ fn parse_content_range(s: &[u8]) -> Result<ContentRange, Error> {
 
 /// Parse an optional integer.
 fn parse_optional_integer(s: &[u8]) -> Result<Option<u64>, Error> {
-    if s.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(parse_integer(s)?))
-    }
+    if s.is_empty() { Ok(None) } else { Ok(Some(parse_integer(s)?)) }
 }
 
 /// Parse an integer.
@@ -512,23 +508,39 @@ mod tests {
 
     #[test]
     fn test_content_length_contains_range_inclusive() {
-        assert!(ContentLength::new(1)
-            .contains_range(Range::Inclusive { first_byte_pos: 0, last_byte_pos: 0 }));
-        assert!(ContentLength::new(100)
-            .contains_range(Range::Inclusive { first_byte_pos: 0, last_byte_pos: 99 }));
-        assert!(ContentLength::new(100)
-            .contains_range(Range::Inclusive { first_byte_pos: 50, last_byte_pos: 60 }));
+        assert!(
+            ContentLength::new(1)
+                .contains_range(Range::Inclusive { first_byte_pos: 0, last_byte_pos: 0 })
+        );
+        assert!(
+            ContentLength::new(100)
+                .contains_range(Range::Inclusive { first_byte_pos: 0, last_byte_pos: 99 })
+        );
+        assert!(
+            ContentLength::new(100)
+                .contains_range(Range::Inclusive { first_byte_pos: 50, last_byte_pos: 60 })
+        );
 
-        assert!(!ContentLength::new(0)
-            .contains_range(Range::Inclusive { first_byte_pos: 0, last_byte_pos: 0 }));
-        assert!(!ContentLength::new(100)
-            .contains_range(Range::Inclusive { first_byte_pos: 0, last_byte_pos: 100 }));
-        assert!(!ContentLength::new(100)
-            .contains_range(Range::Inclusive { first_byte_pos: 95, last_byte_pos: 105 }));
-        assert!(!ContentLength::new(100)
-            .contains_range(Range::Inclusive { first_byte_pos: 95, last_byte_pos: 105 }));
-        assert!(!ContentLength::new(100)
-            .contains_range(Range::Inclusive { first_byte_pos: 105, last_byte_pos: 115 }));
+        assert!(
+            !ContentLength::new(0)
+                .contains_range(Range::Inclusive { first_byte_pos: 0, last_byte_pos: 0 })
+        );
+        assert!(
+            !ContentLength::new(100)
+                .contains_range(Range::Inclusive { first_byte_pos: 0, last_byte_pos: 100 })
+        );
+        assert!(
+            !ContentLength::new(100)
+                .contains_range(Range::Inclusive { first_byte_pos: 95, last_byte_pos: 105 })
+        );
+        assert!(
+            !ContentLength::new(100)
+                .contains_range(Range::Inclusive { first_byte_pos: 95, last_byte_pos: 105 })
+        );
+        assert!(
+            !ContentLength::new(100)
+                .contains_range(Range::Inclusive { first_byte_pos: 105, last_byte_pos: 115 })
+        );
     }
 
     #[test]

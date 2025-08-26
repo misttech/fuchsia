@@ -7,7 +7,7 @@
 
 //! Test utilities for starting a blobfs server.
 
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use delivery_blob::{CompressionMode, Type1Blob};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};

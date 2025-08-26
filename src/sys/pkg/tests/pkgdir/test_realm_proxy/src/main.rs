@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Error, Result};
+use anyhow::{Error, Result, bail};
 use blobfs_ramdisk::BlobfsRamdisk;
 use fidl::endpoints::{self, ServerEnd};
 use fidl_fuchsia_pkg_test::*;

@@ -5,7 +5,7 @@
 use crate::meta_as_dir::MetaAsDir;
 use crate::meta_subdir::MetaSubdir;
 use crate::non_meta_subdir::NonMetaSubdir;
-use crate::{usize_to_u64_safe, Error, NonMetaStorageError};
+use crate::{Error, NonMetaStorageError, usize_to_u64_safe};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use fuchsia_pkg::MetaContents;
@@ -18,7 +18,7 @@ use vfs::directory::immutable::connection::ImmutableConnection;
 use vfs::directory::traversal_position::TraversalPosition;
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::vmo::VmoFile;
-use vfs::{immutable_attributes, ObjectRequestRef, ProtocolsExt as _, ToObjectRequest as _};
+use vfs::{ObjectRequestRef, ProtocolsExt as _, ToObjectRequest as _, immutable_attributes};
 
 /// The root directory of Fuchsia package.
 #[derive(Debug)]
@@ -61,11 +61,7 @@ impl<S: crate::NonMetaStorage> RootDir<S> {
         dropper: Option<Box<dyn crate::OnRootDirDrop>>,
     ) -> Result<Self, Error> {
         let meta_far_vmo = non_meta_storage.get_blob_vmo(&hash).await.map_err(|e| {
-            if e.is_not_found_error() {
-                Error::MissingMetaFar
-            } else {
-                Error::OpenMetaFar(e)
-            }
+            if e.is_not_found_error() { Error::MissingMetaFar } else { Error::OpenMetaFar(e) }
         })?;
         let (meta_files, non_meta_files) = load_package_metadata(&meta_far_vmo)?;
 
@@ -128,7 +124,7 @@ impl<S: crate::NonMetaStorage> RootDir<S> {
         let contents = match self.read_file(fuchsia_pkg::MetaSubpackages::PATH).await {
             Ok(contents) => contents,
             Err(ReadFileError::NoFileAtPath { .. }) => {
-                return Ok(fuchsia_pkg::MetaSubpackages::default())
+                return Ok(fuchsia_pkg::MetaSubpackages::default());
             }
             Err(e) => Err(e)?,
         };
@@ -525,10 +521,10 @@ pub(crate) struct MetaFileLocation {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, Proxy as _};
+    use fidl::endpoints::{Proxy as _, create_proxy};
     use fuchsia_fs::directory::{DirEntry, DirentKind};
-    use fuchsia_pkg_testing::blobfs::Fake as FakeBlobfs;
     use fuchsia_pkg_testing::PackageBuilder;
+    use fuchsia_pkg_testing::blobfs::Fake as FakeBlobfs;
     use futures::TryStreamExt as _;
     use pretty_assertions::assert_eq;
     use std::io::Cursor;

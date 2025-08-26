@@ -8,12 +8,12 @@
 use {
     assert_matches::assert_matches,
     fuchsia_pkg_testing::{
-        serve::{responder, HttpResponder},
         Package, PackageBuilder, RepositoryBuilder,
+        serve::{HttpResponder, responder},
     },
     lib::{
-        extra_blob_contents, make_pkg_with_extra_blobs, TestEnvBuilder, EMPTY_REPO_PATH,
-        FILE_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING,
+        EMPTY_REPO_PATH, FILE_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING, TestEnvBuilder,
+        extra_blob_contents, make_pkg_with_extra_blobs,
     },
     std::sync::Arc,
 };

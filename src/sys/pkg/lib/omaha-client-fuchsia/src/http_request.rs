@@ -48,9 +48,9 @@ impl FuchsiaHyperHttpRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuchsia_hyper_test_support::TestServer;
     use fuchsia_hyper_test_support::fault_injection::{Hang, HangBody};
     use fuchsia_hyper_test_support::handler::StaticResponse;
-    use fuchsia_hyper_test_support::TestServer;
 
     /// Helper that constructs a Request for a given path on the given test server.
     fn make_request_for(server: &TestServer, path: &str) -> Request<Body> {

@@ -4,7 +4,7 @@
 
 use crate::metrics_util::tuf_error_as_update_tuf_client_event_code;
 use crate::repository::filesystem_repository::RWRepository;
-use crate::{clock, error, inspect_util, TCP_KEEPALIVE_TIMEOUT};
+use crate::{TCP_KEEPALIVE_TIMEOUT, clock, error, inspect_util};
 use anyhow::anyhow;
 use cobalt_sw_delivery_registry as metrics;
 use fidl_contrib::protocol_connector::ProtocolSender;

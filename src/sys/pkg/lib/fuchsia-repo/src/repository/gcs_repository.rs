@@ -12,7 +12,7 @@ use crate::range::{ContentLength, Range};
 use crate::repository::{Error, RepoProvider, RepositorySpec};
 use crate::resource::Resource;
 use crate::util::file_stream;
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use futures::future::BoxFuture;
 use futures::{AsyncRead, FutureExt as _, TryStreamExt as _};
 use hyper::header::CONTENT_LENGTH;
@@ -307,8 +307,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::repo_tests::{self, TestEnv as _};
     use crate::repository::FileSystemRepository;
+    use crate::repository::repo_tests::{self, TestEnv as _};
     use crate::test_utils::make_repo_dir;
     use crate::util::CHUNK_SIZE;
     use assert_matches::assert_matches;

@@ -6,13 +6,13 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::enum_variant_names)]
 
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use async_lock::RwLock as AsyncRwLock;
 use delivery_blob::DeliveryBlobType;
 use fdio::Namespace;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
-use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_contrib::ProtocolConnector;
+use fidl_contrib::protocol_connector::ProtocolSender;
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;

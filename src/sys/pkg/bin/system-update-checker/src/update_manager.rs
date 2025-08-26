@@ -2,22 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::apply::{apply_system_update, ApplyProgress, ApplyState};
+use crate::apply::{ApplyProgress, ApplyState, apply_system_update};
 use crate::channel::TargetChannelManager;
-use crate::check::{check_for_system_update, SystemUpdateStatus};
+use crate::check::{SystemUpdateStatus, check_for_system_update};
 use crate::completion_responder::CompletionResponderStateReactor;
 use crate::connect::ServiceConnect;
 use crate::update_monitor::{AttemptNotifier, StateNotifier, UpdateMonitor};
 use crate::update_service::{RealAttemptNotifier, RealStateNotifier};
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use async_generator::GeneratorState;
 use event_queue::ControlHandle;
 use fidl_fuchsia_update::{
     CheckNotStartedReason, CommitStatusProviderMarker, InstallationDeferralReason,
 };
 use fidl_fuchsia_update_ext::{
-    query_commit_status, CheckOptions, CommitStatus, Initiator, InstallationDeferredData,
-    InstallationErrorData, InstallationProgress, InstallingData, State, UpdateInfo,
+    CheckOptions, CommitStatus, Initiator, InstallationDeferredData, InstallationErrorData,
+    InstallationProgress, InstallingData, State, UpdateInfo, query_commit_status,
 };
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_hash::Hash;
@@ -688,7 +688,7 @@ pub(crate) mod tests {
     use fuchsia_async::{DurationExt, TimeoutExt};
     use fuchsia_sync::Mutex;
 
-    use futures::channel::mpsc::{channel, Receiver, Sender};
+    use futures::channel::mpsc::{Receiver, Sender, channel};
     use futures::lock::Mutex as AsyncMutex;
     use std::sync::atomic::{AtomicU64, Ordering};
 

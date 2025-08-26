@@ -99,7 +99,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
-    use mock_paver::{hooks as mphooks, MockPaverServiceBuilder, PaverEvent};
+    use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
     use std::sync::Arc;
 
     /// Test we should NOT verify and commit when when the device is in recovery.

@@ -7,11 +7,11 @@ use fidl_fuchsia_feedback::{
     FilingError,
 };
 use fuchsia_async::Task;
+use futures::TryStreamExt;
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
 use futures::prelude::*;
-use futures::TryStreamExt;
 use std::sync::Arc;
 
 pub use fidl_fuchsia_feedback::CrashReport;

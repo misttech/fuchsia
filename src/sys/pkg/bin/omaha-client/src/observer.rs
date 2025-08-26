@@ -4,7 +4,7 @@
 
 use crate::fidl::{CollaborativeRebootFromSvcDir, FidlServer, StateMachineController};
 use crate::inspect::{LastResultsNode, ProtocolStateNode, ScheduleNode};
-use crate::installer::{is_update_urgent, FuchsiaInstallError};
+use crate::installer::{FuchsiaInstallError, is_update_urgent};
 use anyhow::anyhow;
 use fidl_fuchsia_feedback::{CrashReporterMarker, CrashReporterProxy};
 use fuchsia_inspect::Node;
@@ -15,7 +15,7 @@ use omaha_client::clock;
 use omaha_client::common::{ProtocolState, UpdateCheckSchedule};
 use omaha_client::protocol::response::Response;
 use omaha_client::state_machine::{
-    update_check, InstallProgress, State, StateMachineEvent, UpdateCheckError,
+    InstallProgress, State, StateMachineEvent, UpdateCheckError, update_check,
 };
 use omaha_client::storage::Storage;
 use omaha_client::time::{StandardTimeSource, TimeSource};

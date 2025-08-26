@@ -6,8 +6,8 @@
 /// dynamic repository configs.
 use {
     lib::{
-        get_repos, make_repo, make_repo_config, mock_filesystem, DirOrProxy, EnableDynamicConfig,
-        MountsBuilder, TestEnvBuilder,
+        DirOrProxy, EnableDynamicConfig, MountsBuilder, TestEnvBuilder, get_repos, make_repo,
+        make_repo_config, mock_filesystem,
     },
     zx::Status,
 };

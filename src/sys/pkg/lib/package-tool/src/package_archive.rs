@@ -6,8 +6,8 @@ use crate::args::{
     PackageArchiveAddCommand, PackageArchiveCreateCommand, PackageArchiveEditCommand,
     PackageArchiveExtractCommand, PackageArchiveRemoveCommand,
 };
-use crate::{to_writer_json_pretty, write_depfile, BLOBS_JSON_NAME, PACKAGE_MANIFEST_NAME};
-use anyhow::{anyhow, Context as _, Result};
+use crate::{BLOBS_JSON_NAME, PACKAGE_MANIFEST_NAME, to_writer_json_pretty, write_depfile};
+use anyhow::{Context as _, Result, anyhow};
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_archive as far;
 use fuchsia_pkg::{PackageBuilder, PackageManifest, SubpackageInfo};
@@ -115,11 +115,7 @@ pub async fn cmd_package_archive_extract(cmd: PackageArchiveExtractCommand) -> R
         to_writer_json_pretty(file, package_manifest.blobs())?;
     }
 
-    if cmd.namespace {
-        populate_namespace(cmd.archive, cmd.out.into()).await
-    } else {
-        Ok(())
-    }
+    if cmd.namespace { populate_namespace(cmd.archive, cmd.out.into()).await } else { Ok(()) }
 }
 
 pub async fn cmd_package_archive_add(cmd: PackageArchiveAddCommand) -> Result<()> {

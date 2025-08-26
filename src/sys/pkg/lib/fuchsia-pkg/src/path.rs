@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::errors::ParsePackagePathError;
-pub use fuchsia_url::{PackageName, PackageVariant, MAX_PACKAGE_PATH_SEGMENT_BYTES};
+pub use fuchsia_url::{MAX_PACKAGE_PATH_SEGMENT_BYTES, PackageName, PackageVariant};
 
 /// A Fuchsia Package Path. Paths must currently be "{name}/{variant}".
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Hash)]

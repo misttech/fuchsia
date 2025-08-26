@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::update::{paver, BuildInfo, SystemInfo};
-use anyhow::{anyhow, Context as _};
+use crate::update::{BuildInfo, SystemInfo, paver};
+use anyhow::{Context as _, anyhow};
 use epoch::EpochFile;
 use fidl_fuchsia_paver::{Asset, BootManagerProxy, DataSinkProxy};
 use log::{error, info, warn};
@@ -279,8 +279,8 @@ mod tests {
     use crate::update::environment::NamespaceBuildInfo;
     use fidl_fuchsia_paver::Configuration;
     use fuchsia_hash::Hash;
-    use fuchsia_pkg_testing::{make_epoch_json, FakeUpdatePackage};
-    use mock_paver::{hooks as mphooks, MockPaverServiceBuilder};
+    use fuchsia_pkg_testing::{FakeUpdatePackage, make_epoch_json};
+    use mock_paver::{MockPaverServiceBuilder, hooks as mphooks};
     use omaha_client::version::Version as SemanticVersion;
     use pretty_assertions::assert_eq;
     use std::sync::Arc;

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl_fuchsia_update_installer::{InstallerMarker, InstallerProxy, RebootControllerMarker};
-use fidl_fuchsia_update_installer_ext::{self as installer, start_update, Options, StateId};
+use fidl_fuchsia_update_installer_ext::{self as installer, Options, StateId, start_update};
 use fuchsia_component::client::connect_to_protocol;
 use futures::prelude::*;
 

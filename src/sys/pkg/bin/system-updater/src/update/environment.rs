@@ -129,7 +129,7 @@ impl NamespaceBuildInfo {
             Ok(file) => file,
             Err(fuchsia_fs::node::OpenError::OpenError(zx::Status::NOT_FOUND)) => return Ok(None),
             Err(e) => {
-                return Err(e).with_context(|| format!("while opening /config/build-info/{name}"))
+                return Err(e).with_context(|| format!("while opening /config/build-info/{name}"));
             }
         };
 

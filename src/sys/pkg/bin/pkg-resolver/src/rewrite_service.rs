@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::rewrite_manager::{CommitError, RewriteManager};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use async_lock::RwLock;
 use fidl_fuchsia_pkg_rewrite::{
     EditTransactionRequest, EditTransactionRequestStream, EngineRequest, EngineRequestStream,

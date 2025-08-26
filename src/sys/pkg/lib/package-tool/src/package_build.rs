@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use crate::args::PackageBuildCommand;
-use crate::{to_writer_json_pretty, write_depfile, BLOBS_JSON_NAME, PACKAGE_MANIFEST_NAME};
+use crate::{BLOBS_JSON_NAME, PACKAGE_MANIFEST_NAME, to_writer_json_pretty, write_depfile};
 use anyhow::{Context as _, Result};
 use fuchsia_pkg::{
     PackageBuildManifest, PackageBuilder, SubpackagesBuildManifest, SubpackagesBuildManifestEntry,
     SubpackagesBuildManifestEntryKind,
 };
 use std::collections::BTreeSet;
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::io::{BufReader, BufWriter, Write};
 use tempfile::NamedTempFile;
 use tempfile_ext::NamedTempFileExt as _;

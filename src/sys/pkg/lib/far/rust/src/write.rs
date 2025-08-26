@@ -4,12 +4,12 @@
 
 use crate::name::validate_name;
 use crate::{
-    DirectoryEntry, Error, Index, IndexEntry, CONTENT_ALIGNMENT, DIRECTORY_ENTRY_LEN,
-    DIR_CHUNK_TYPE, DIR_NAMES_CHUNK_TYPE, INDEX_ENTRY_LEN, INDEX_LEN, MAGIC_INDEX_VALUE,
+    CONTENT_ALIGNMENT, DIR_CHUNK_TYPE, DIR_NAMES_CHUNK_TYPE, DIRECTORY_ENTRY_LEN, DirectoryEntry,
+    Error, INDEX_ENTRY_LEN, INDEX_LEN, Index, IndexEntry, MAGIC_INDEX_VALUE,
 };
 use std::collections::BTreeMap;
 use std::convert::TryInto as _;
-use std::io::{copy, Read, Write};
+use std::io::{Read, Write, copy};
 use zerocopy::IntoBytes as _;
 
 fn write_zeros(mut target: impl Write, count: usize) -> Result<(), Error> {

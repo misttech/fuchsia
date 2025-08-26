@@ -10,11 +10,11 @@
 use crate::range::{ContentRange, Range};
 use crate::repository::{Error, RepoProvider, RepositorySpec};
 use crate::resource::Resource;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use futures::future::BoxFuture;
 use futures::{AsyncRead, FutureExt as _, TryStreamExt as _};
-use hyper::client::connect::Connect;
 use hyper::client::Client;
+use hyper::client::connect::Connect;
 use hyper::header::{CONTENT_LENGTH, CONTENT_RANGE, RANGE};
 use hyper::{Body, Method, Request, StatusCode, Uri};
 use std::collections::BTreeSet;
@@ -233,7 +233,7 @@ mod tests {
     use assert_matches::assert_matches;
     use camino::Utf8Path;
     use fuchsia_async as fasync;
-    use fuchsia_hyper::{new_client, HyperConnector};
+    use fuchsia_hyper::{HyperConnector, new_client};
     use std::fs::File;
     use std::io::Write;
     use std::net::Ipv4Addr;

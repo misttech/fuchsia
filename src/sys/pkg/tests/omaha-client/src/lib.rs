@@ -6,7 +6,7 @@
 #![cfg(test)]
 use anyhow::anyhow;
 use assert_matches::assert_matches;
-use diagnostics_assertions::{assert_data_tree, tree_assertion, AnyProperty, TreeAssertion};
+use diagnostics_assertions::{AnyProperty, TreeAssertion, assert_data_tree, tree_assertion};
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
 use fidl_fuchsia_feedback::FileReportResults;
@@ -37,11 +37,11 @@ use mock_omaha_server::{
     OmahaResponse, OmahaServer, OmahaServerBuilder, PrivateKeyAndId, PrivateKeys,
     ResponseAndMetadata,
 };
-use mock_paver::{hooks as mphooks, MockPaverService, MockPaverServiceBuilder, PaverEvent};
+use mock_paver::{MockPaverService, MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
 use mock_reboot::MockRebootService;
 use mock_resolver::MockResolverService;
 use omaha_client::cup_ecdsa::test_support::{
-    make_default_private_key_for_test, RAW_PUBLIC_KEY_FOR_TEST,
+    RAW_PUBLIC_KEY_FOR_TEST, make_default_private_key_for_test,
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -745,7 +745,9 @@ pub mod fuchsia_update_config_optout {
                     OptOutRequest::Get { responder } => {
                         let value = *self.0.lock();
                         if let Err(e) = responder.send(value) {
-                            eprintln!("fuchsia_update_config_optout::Mock::serve() failed to send a response, possibly because the client is shut down: {e:?}");
+                            eprintln!(
+                                "fuchsia_update_config_optout::Mock::serve() failed to send a response, possibly because the client is shut down: {e:?}"
+                            );
                         }
                     }
                 }

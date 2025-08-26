@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use fuchsia_inspect as finspect;
 use fuchsia_merkle::Hash;
 use futures::future::BoxFuture;
@@ -204,9 +204,9 @@ impl<Marker: Send + Sync + 'static> FrozenIndex<Marker> {
     pub fn record_lazy_inspect(
         self: &Arc<Self>,
     ) -> impl Fn() -> BoxFuture<'static, Result<finspect::Inspector, anyhow::Error>>
-           + Send
-           + Sync
-           + 'static {
+    + Send
+    + Sync
+    + 'static {
         let this = Arc::downgrade(self);
         move || {
             let this = this.clone();

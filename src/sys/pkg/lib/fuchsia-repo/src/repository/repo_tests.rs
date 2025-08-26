@@ -74,10 +74,10 @@ macro_rules! repo_test_suite {
         mod repo_test_suite {
             use super::*;
             use assert_matches::assert_matches;
-            use futures::{stream, StreamExt};
+            use futures::{StreamExt, stream};
             use $crate::range::Range;
-            use $crate::repository::repo_tests::{read_blob, read_metadata};
             use $crate::repository::Error;
+            use $crate::repository::repo_tests::{read_blob, read_metadata};
 
             // Test to check that fetching a non-existing file returns a NotFound.
             #[fuchsia::test]

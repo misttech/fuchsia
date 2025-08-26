@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::DEFAULT_UPDATE_PACKAGE_URL;
 use crate::errors::{self, Error};
 use crate::update_manager::TargetChannelUpdater;
-use crate::DEFAULT_UPDATE_PACKAGE_URL;
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use fidl_fuchsia_paver::{
     self as fpaver, Asset, BootManagerMarker, DataSinkMarker, PaverMarker, PaverProxy,
 };
@@ -277,7 +277,7 @@ pub mod test_check_for_system_update_impl {
         PackageResolverResolveWithContextResult, PackageUrl,
     };
     use fuchsia_sync::Mutex;
-    use futures::{future, TryFutureExt, TryStreamExt};
+    use futures::{TryFutureExt, TryStreamExt, future};
     use maplit::hashmap;
     use mock_paver::MockPaverServiceBuilder;
     use std::collections::hash_map::HashMap;

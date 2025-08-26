@@ -4,14 +4,14 @@
 
 use anyhow::format_err;
 use assert_matches::assert_matches;
-use diagnostics_assertions::{assert_data_tree, tree_assertion, AnyProperty, PropertyAssertion};
+use diagnostics_assertions::{AnyProperty, PropertyAssertion, assert_data_tree, tree_assertion};
 use fidl_fuchsia_pkg_ext::RepositoryConfigBuilder;
 use fidl_fuchsia_pkg_rewrite_ext::{Rule, RuleConfig};
 use fuchsia_inspect::reader::Property;
 use fuchsia_pkg_testing::serve::responder;
 use fuchsia_pkg_testing::{PackageBuilder, RepositoryBuilder};
 use futures::FutureExt as _;
-use lib::{MountsBuilder, TestEnvBuilder, EMPTY_REPO_PATH};
+use lib::{EMPTY_REPO_PATH, MountsBuilder, TestEnvBuilder};
 use std::sync::Arc;
 
 #[fuchsia::test]
@@ -167,13 +167,9 @@ async fn package_and_blob_queues() {
     let env = TestEnvBuilder::new()
         .mounts(
             MountsBuilder::new()
-                .dynamic_rewrite_rules(RuleConfig::Version1(vec![Rule::new(
-                    "original.example.com",
-                    "rewritten.example.com",
-                    "/",
-                    "/",
-                )
-                .unwrap()]))
+                .dynamic_rewrite_rules(RuleConfig::Version1(vec![
+                    Rule::new("original.example.com", "rewritten.example.com", "/", "/").unwrap(),
+                ]))
                 .enable_dynamic_config(lib::EnableDynamicConfig {
                     enable_dynamic_configuration: true,
                 })

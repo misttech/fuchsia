@@ -1,11 +1,11 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl_fuchsia_paver::{BootManagerMarker, Configuration, PaverMarker, PaverProxy};
 use fidl_fuchsia_update_installer::{InstallerMarker, InstallerProxy, RebootControllerMarker};
 use fidl_fuchsia_update_installer_ext::options::{Initiator, Options};
-use fidl_fuchsia_update_installer_ext::{start_update, UpdateAttempt};
+use fidl_fuchsia_update_installer_ext::{UpdateAttempt, start_update};
 
 use futures::prelude::*;
 
@@ -113,7 +113,7 @@ impl Updater {
 #[cfg(test)]
 pub(crate) mod for_tests {
     use super::*;
-    use crate::resolver::for_tests::{ResolverForTest, EMPTY_REPO_PATH};
+    use crate::resolver::for_tests::{EMPTY_REPO_PATH, ResolverForTest};
     use blobfs_ramdisk::BlobfsRamdisk;
     use fidl_fuchsia_paver::PaverRequestStream;
     use fuchsia_component_test::{

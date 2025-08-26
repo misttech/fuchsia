@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fuchsia_archive::{ChunkType, DIR_CHUNK_TYPE, DIR_NAMES_CHUNK_TYPE, MAGIC_INDEX_VALUE};
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::io::Write;
 use std::path::PathBuf;
 

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::update::CommitAction;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use fidl_fuchsia_hardware_power_statecontrol::AdminProxy as PowerStateControlProxy;
 use fuchsia_async::{Task, TimeoutExt};
 use futures::prelude::*;

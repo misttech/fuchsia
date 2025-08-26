@@ -6,15 +6,15 @@
 
 use crate::app_set::FuchsiaAppSet;
 use crate::install_plan::{FuchsiaInstallPlan, UpdatePackageUrl};
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use fidl_connector::{Connect, ServiceReconnector};
 use fidl_fuchsia_pkg::{self as fpkg, CupData, CupMarker, CupProxy, WriteError};
 use fidl_fuchsia_update_installer::{
     InstallerMarker, InstallerProxy, RebootControllerMarker, RebootControllerProxy,
 };
 use fidl_fuchsia_update_installer_ext::{
-    start_update, FetchFailureReason, Initiator, MonitorUpdateAttemptError, Options,
-    PrepareFailureReason, State, StateId, UpdateAttemptError,
+    FetchFailureReason, Initiator, MonitorUpdateAttemptError, Options, PrepareFailureReason, State,
+    StateId, UpdateAttemptError, start_update,
 };
 use fuchsia_async as fasync;
 use fuchsia_url::PinnedAbsolutePackageUrl;
@@ -217,7 +217,7 @@ where
                         return Err(FuchsiaInstallError::InstallerFailureState(InstallerFailure {
                             state_name: state.name(),
                             reason: InstallerFailureReason::Internal,
-                        }))
+                        }));
                     }
                 }
             }
@@ -1060,7 +1060,9 @@ mod tests {
         let package1_app = App {
             update_check: Some(UpdateCheck {
                 manifest: Some(Manifest {
-                    packages: Packages::new(vec![Package::with_name("package1?hash=0000000000000000000000000000000000000000000000000000000000000000")]),
+                    packages: Packages::new(vec![Package::with_name(
+                        "package1?hash=0000000000000000000000000000000000000000000000000000000000000000",
+                    )]),
                     ..Manifest::default()
                 }),
                 ..UpdateCheck::ok([TEST_URL_BASE])
@@ -1076,7 +1078,9 @@ mod tests {
         let package3_app = App {
             update_check: Some(UpdateCheck {
                 manifest: Some(Manifest {
-                    packages: Packages::new(vec![Package::with_name("package3?hash=0000000000000000000000000000000000000000000000000000000000000000")]),
+                    packages: Packages::new(vec![Package::with_name(
+                        "package3?hash=0000000000000000000000000000000000000000000000000000000000000000",
+                    )]),
                     ..Manifest::default()
                 }),
                 ..UpdateCheck::ok([TEST_URL_BASE])
@@ -1128,7 +1132,9 @@ mod tests {
         let package_app = App {
             update_check: Some(UpdateCheck {
                 manifest: Some(Manifest {
-                    packages: Packages::new(vec![Package::with_name("some-package?hash=0000000000000000000000000000000000000000000000000000000000000000")]),
+                    packages: Packages::new(vec![Package::with_name(
+                        "some-package?hash=0000000000000000000000000000000000000000000000000000000000000000",
+                    )]),
                     ..Manifest::default()
                 }),
                 ..UpdateCheck::ok([TEST_URL_BASE])

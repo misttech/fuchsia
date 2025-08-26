@@ -60,7 +60,7 @@ impl Installer for IsolatedInstaller {
                 UpdatePackageUrl::Package(_) => {
                     return Err(IsolatedInstallError::InstallPlan(anyhow!(
                         "malformatted update_package_urls: expected System but received Package"
-                    )))
+                    )));
                 }
             };
             let () = self

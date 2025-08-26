@@ -242,7 +242,7 @@ impl<R> TestEnvBuilder<R> {
 
             let served_repo = Arc::clone(&repo).server().start().expect("serve repo");
             let config = RepositoryConfigs::Version1(vec![
-                served_repo.make_repo_config(TEST_REPO_URL.parse().expect("make repo config"))
+                served_repo.make_repo_config(TEST_REPO_URL.parse().expect("make repo config")),
             ]);
 
             let update_merkle = *update.as_package().hash();

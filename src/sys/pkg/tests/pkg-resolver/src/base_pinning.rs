@@ -8,7 +8,7 @@ use {
     fuchsia_pkg_testing::serve::responder,
     fuchsia_pkg_testing::{Package, PackageBuilder, RepositoryBuilder, SystemImageBuilder},
     futures::future,
-    lib::{TestEnvBuilder, EMPTY_REPO_PATH},
+    lib::{EMPTY_REPO_PATH, TestEnvBuilder},
     std::sync::Arc,
     zx::Status,
 };

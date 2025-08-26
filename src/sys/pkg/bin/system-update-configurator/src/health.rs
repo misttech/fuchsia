@@ -59,7 +59,7 @@ where
 mod tests {
     use super::*;
     use crate::bridge;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
 
     async fn verify_healthy(inspector: &Inspector) {

@@ -5,7 +5,7 @@
 //! Triggers a forced fdr by comparing the configured
 //! index against the stored index
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl_fuchsia_recovery::{FactoryResetMarker, FactoryResetProxy};
 use fidl_fuchsia_update_channel::{ProviderMarker, ProviderProxy};
 use fuchsia_component::client::connect_to_protocol;

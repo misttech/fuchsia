@@ -4,7 +4,7 @@
 
 use crate::channel::{CurrentChannelManager, TargetChannelManager};
 use crate::rate_limiter::RateLimiterMonotonic;
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use fidl_fuchsia_update_channel::{ProviderRequest, ProviderRequestStream};
 use fidl_fuchsia_update_channelcontrol::{ChannelControlRequest, ChannelControlRequestStream};
 

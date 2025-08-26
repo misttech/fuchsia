@@ -172,8 +172,11 @@ impl Mock {
                     control_handle: _,
                 })) => {
                     assert!(flags.contains(fio::PERM_READABLE));
-                    assert!(!flags
-                        .intersects(fio::Flags::PERM_WRITE_BYTES | fio::Flags::FLAG_MAYBE_CREATE));
+                    assert!(
+                        !flags.intersects(
+                            fio::Flags::PERM_WRITE_BYTES | fio::Flags::FLAG_MAYBE_CREATE
+                        )
+                    );
                     let path: Hash = path.parse().unwrap();
 
                     let stream =

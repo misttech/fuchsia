@@ -5,10 +5,10 @@
 use crate::installer::InstallResult;
 use crate::metrics::CobaltMetricsReporter;
 use crate::timer::FuchsiaTimer;
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use fidl_fuchsia_update::{CommitStatusProviderMarker, CommitStatusProviderProxy};
 use fidl_fuchsia_update_config::{OptOutMarker, OptOutPreference, OptOutProxy};
-use fidl_fuchsia_update_ext::{query_commit_status, CommitStatus};
+use fidl_fuchsia_update_ext::{CommitStatus, query_commit_status};
 use fuchsia_async::TimeoutExt;
 use fuchsia_component::client::connect_to_protocol;
 use futures::future::{BoxFuture, FutureExt};

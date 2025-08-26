@@ -83,9 +83,7 @@ pub enum Error {
     #[error("Bad length of directory names chunk, expected multiple of 8, found {0}")]
     InvalidDirectoryNamesChunkLen(u64),
 
-    #[error(
-        "Bad length of directory chunk, expected multiple of {DIRECTORY_ENTRY_LEN}, found {0}"
-    )]
+    #[error("Bad length of directory chunk, expected multiple of {DIRECTORY_ENTRY_LEN}, found {0}")]
     InvalidDirectoryChunkLen(u64),
 
     #[error(

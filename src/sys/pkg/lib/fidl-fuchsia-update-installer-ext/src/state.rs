@@ -792,11 +792,7 @@ impl TryFrom<fidl::State> for State {
 // TODO remove ambiguous mapping of 0 to/from None when the system-updater actually computes a
 // download size and emits bytes_downloaded information.
 fn none_or_some_nonzero(n: u64) -> Option<u64> {
-    if n == 0 {
-        None
-    } else {
-        Some(n)
-    }
+    if n == 0 { None } else { Some(n) }
 }
 
 /// An error encountered while decoding a [fidl_fuchsia_update_installer::UpdateInfo] into a

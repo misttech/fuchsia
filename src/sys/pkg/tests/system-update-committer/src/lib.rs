@@ -6,7 +6,7 @@
 
 use anyhow::anyhow;
 use assert_matches::assert_matches;
-use diagnostics_assertions::{assert_data_tree, AnyProperty};
+use diagnostics_assertions::{AnyProperty, assert_data_tree};
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
 use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
@@ -19,7 +19,7 @@ use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::prelude::*;
 use mock_health_verification::MockHealthVerificationService;
-use mock_paver::{hooks as mphooks, MockPaverService, MockPaverServiceBuilder, PaverEvent};
+use mock_paver::{MockPaverService, MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
 use mock_reboot::MockRebootService;
 use std::sync::Arc;
 use std::time::Duration;

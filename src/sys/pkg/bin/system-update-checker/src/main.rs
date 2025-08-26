@@ -20,7 +20,7 @@ mod update_service;
 use crate::channel_handler::ChannelHandler;
 use crate::completion_responder::{CompletionResponder, CompletionResponderFidlServer};
 use crate::update_service::{RealUpdateManager, UpdateService};
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use fidl_fuchsia_update::ListenerRequestStream;
 use fidl_fuchsia_update_channel::ProviderRequestStream;
 use fidl_fuchsia_update_channelcontrol::ChannelControlRequestStream;

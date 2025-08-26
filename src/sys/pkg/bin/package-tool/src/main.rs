@@ -8,10 +8,10 @@
 use anyhow::Result;
 use argh::FromArgs;
 use package_tool::{
-    cmd_package_archive_add, cmd_package_archive_create, cmd_package_archive_extract,
-    cmd_package_build, cmd_repo_create, cmd_repo_package_manifest_list, cmd_repo_publish,
     PackageArchiveAddCommand, PackageArchiveCreateCommand, PackageArchiveExtractCommand,
     PackageBuildCommand, RepoCreateCommand, RepoPMListCommand, RepoPublishCommand,
+    cmd_package_archive_add, cmd_package_archive_create, cmd_package_archive_extract,
+    cmd_package_build, cmd_repo_create, cmd_repo_package_manifest_list, cmd_repo_publish,
 };
 
 /// Package manipulation tool

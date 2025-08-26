@@ -4,7 +4,7 @@
 
 use crate::install_manager::InstallManagerControlHandle;
 use crate::update::{Config, ControlRequest, RebootController};
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use event_queue::{ClosedClient, Notify};
 use fidl_fuchsia_update_installer::{
     InstallerRequest, InstallerRequestStream, MonitorProxy, MonitorProxyInterface,

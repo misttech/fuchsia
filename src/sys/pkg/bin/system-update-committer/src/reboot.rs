@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use fidl_fuchsia_hardware_power_statecontrol::{
     AdminProxy as PowerStateControlProxy, RebootOptions, RebootReason2,
 };

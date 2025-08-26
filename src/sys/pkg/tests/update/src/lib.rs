@@ -601,8 +601,8 @@ async fn check_now_monitor_flag() {
         "Checking for an update.\n\
          State: CheckingForUpdates\n\
          State: InstallingUpdate(InstallingData { update: Some(UpdateInfo { version_available: Some(\"fake-versions\"), download_size: Some(4) }), installation_progress: Some(InstallationProgress { fraction_completed: Some(0.5) }) })\n",
-         "",
-         0,
+        "",
+        0,
     );
     env.assert_update_manager_called_with(vec![CapturedUpdateManagerRequest::CheckNow {
         options: fidl_update::CheckOptions {

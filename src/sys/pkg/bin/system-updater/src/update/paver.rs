@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use log::{info, warn};
 use {fidl_fuchsia_mem as fmem, fidl_fuchsia_paver as fpaver};
 
@@ -425,7 +425,7 @@ fn make_buffer(contents: impl AsRef<[u8]>) -> fmem::Buffer {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use mock_paver::{hooks as mphooks, MockPaverServiceBuilder, PaverEvent};
+    use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
     use std::sync::Arc;
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -869,7 +869,7 @@ mod tests {
 mod abr_not_supported_tests {
     use super::*;
     use assert_matches::assert_matches;
-    use mock_paver::{hooks as mphooks, MockPaverServiceBuilder, PaverEvent};
+    use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
     use std::sync::Arc;
 
     #[fuchsia_async::run_singlethreaded(test)]

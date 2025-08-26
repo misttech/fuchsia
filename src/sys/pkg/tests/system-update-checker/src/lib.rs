@@ -22,12 +22,12 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 use mock_health_verification::MockHealthVerificationService;
 use mock_installer::MockUpdateInstallerService;
-use mock_paver::{hooks as mphooks, MockPaverService, MockPaverServiceBuilder, PaverEvent};
+use mock_paver::{MockPaverService, MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
 use mock_resolver::MockResolverService;
 use mock_space::MockSpaceService;
 use pretty_assertions::assert_eq;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use tempfile::TempDir;
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_paver as fpaver, fidl_fuchsia_pkg as fpkg,
@@ -410,19 +410,20 @@ async fn test_update_manager_check_now_error_checking_for_update() {
 
     let (client_end, request_stream) = fidl::endpoints::create_request_stream();
 
-    assert!(env
-        .proxies
-        .update_manager
-        .check_now(
-            &fidl_fuchsia_update::CheckOptions {
-                initiator: Some(fidl_fuchsia_update::Initiator::User),
-                allow_attaching_to_existing_update_check: Some(true),
-                ..Default::default()
-            },
-            Some(client_end),
-        )
-        .await
-        .is_ok());
+    assert!(
+        env.proxies
+            .update_manager
+            .check_now(
+                &fidl_fuchsia_update::CheckOptions {
+                    initiator: Some(fidl_fuchsia_update::Initiator::User),
+                    allow_attaching_to_existing_update_check: Some(true),
+                    ..Default::default()
+                },
+                Some(client_end),
+            )
+            .await
+            .is_ok()
+    );
     assert_eq!(
         request_stream
             .map(|r| {

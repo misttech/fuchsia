@@ -29,7 +29,7 @@ pub use crate::meta_package::MetaPackage;
 pub use crate::meta_subpackages::MetaSubpackages;
 pub use crate::package_archive::PackageArchiveBuilder;
 pub use crate::package_build_manifest::PackageBuildManifest;
-pub use crate::package_builder::{PackageBuilder, ABI_REVISION_FILE_PATH};
+pub use crate::package_builder::{ABI_REVISION_FILE_PATH, PackageBuilder};
 pub use crate::package_directory::{
     LoadAbiRevisionError, LoadMetaContentsError, PackageDirectory, ReadHashError,
 };

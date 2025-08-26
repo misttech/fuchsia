@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use cobalt_sw_delivery_registry as metrics;
-use fuchsia_pkg_testing::serve::{responder, HttpRange};
+use fuchsia_pkg_testing::serve::{HttpRange, responder};
 use fuchsia_pkg_testing::{PackageBuilder, RepositoryBuilder};
 use futures::future::{BoxFuture, FutureExt as _};
 use hyper::{Body, Response};
-use lib::{TestEnvBuilder, EMPTY_REPO_PATH, FILE_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING};
+use lib::{EMPTY_REPO_PATH, FILE_SIZE_LARGE_ENOUGH_TO_TRIGGER_HYPER_BATCHING, TestEnvBuilder};
 use std::convert::TryInto as _;
 use std::sync::Arc;
 

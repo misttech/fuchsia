@@ -10,21 +10,21 @@ use {
     fidl_fuchsia_pkg_ext::CupData,
     fuchsia_async as fasync,
     fuchsia_pkg_testing::{
-        serve::responder, PackageBuilder, RepositoryBuilder, SystemImageBuilder,
+        PackageBuilder, RepositoryBuilder, SystemImageBuilder, serve::responder,
     },
     fuchsia_url::PinnedAbsolutePackageUrl,
     lib::{
-        get_cup_response_with_name, make_pkg_with_extra_blobs, MountsBuilder, TestEnvBuilder,
-        EMPTY_REPO_PATH,
+        EMPTY_REPO_PATH, MountsBuilder, TestEnvBuilder, get_cup_response_with_name,
+        make_pkg_with_extra_blobs,
     },
     omaha_client::{
         cup_ecdsa::{
+            Cupv2RequestHandler, PublicKeyId, StandardCupv2Handler,
             test_support::{
                 make_default_json_public_keys_for_test, make_default_public_key_id_for_test,
                 make_expected_signature_for_test, make_keys_for_test, make_public_keys_for_test,
                 make_standard_intermediate_for_test,
             },
-            Cupv2RequestHandler, PublicKeyId, StandardCupv2Handler,
         },
         protocol::request::Request,
     },

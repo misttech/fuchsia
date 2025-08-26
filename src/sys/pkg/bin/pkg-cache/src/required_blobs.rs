@@ -55,7 +55,7 @@ pub(crate) fn find_required_blobs_recursive<'a>(
                 return Err(FindRequiredBlobsError::CreateRootDir {
                     source: e,
                     meta_far: *meta_hash,
-                })
+                });
             }
         };
 
@@ -72,7 +72,7 @@ pub(crate) fn find_required_blobs_recursive<'a>(
                     return Err(FindRequiredBlobsError::InvalidSubpackagesManifest {
                         source: e,
                         meta_far: *meta_hash,
-                    })
+                    });
                 }
             },
         };

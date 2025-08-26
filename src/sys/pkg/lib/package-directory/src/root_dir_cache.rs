@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use fuchsia_inspect as finspect;
-use futures::future::BoxFuture;
 use futures::FutureExt as _;
+use futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
@@ -129,9 +129,9 @@ impl<S: crate::NonMetaStorage + Clone> RootDirCache<S> {
     pub fn record_lazy_inspect(
         &self,
     ) -> impl Fn() -> BoxFuture<'static, Result<finspect::Inspector, anyhow::Error>>
-           + Send
-           + Sync
-           + 'static {
+    + Send
+    + Sync
+    + 'static {
         let dirs = Arc::downgrade(&self.dirs);
         move || {
             let dirs = dirs.clone();
@@ -191,8 +191,8 @@ mod tests {
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
     use fidl_fuchsia_io as fio;
-    use fuchsia_pkg_testing::blobfs::Fake as FakeBlobfs;
     use fuchsia_pkg_testing::PackageBuilder;
+    use fuchsia_pkg_testing::blobfs::Fake as FakeBlobfs;
 
     #[fuchsia::test]
     async fn get_or_insert_new_entry() {

@@ -4,7 +4,7 @@
 
 #![allow(clippy::let_unit_value)]
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use async_trait::async_trait;
 use fidl_fuchsia_mem::Buffer;
 use fuchsia_sync::Mutex;

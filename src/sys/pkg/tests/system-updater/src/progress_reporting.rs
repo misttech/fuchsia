@@ -5,7 +5,7 @@
 use super::*;
 use assert_matches::assert_matches;
 use fidl_fuchsia_update_installer_ext::{
-    monitor_update, Progress, State, StateId, UpdateInfo, UpdateInfoAndProgress,
+    Progress, State, StateId, UpdateInfo, UpdateInfoAndProgress, monitor_update,
 };
 use pretty_assertions::assert_eq;
 use test_case::test_case;
@@ -383,7 +383,9 @@ async fn fail_additional_start_requests_when_not_compatible(
 pub fn assert_success_monitor_states(states: Vec<State>, ordering: &[StateId]) {
     let res = util::verify_monitor_states(&states, ordering, false);
     if let Err(e) = res {
-        panic!("Error received when verifying monitor states: {e:#}\nWant ordering: {ordering:#?}\nGot states:{states:#?}");
+        panic!(
+            "Error received when verifying monitor states: {e:#}\nWant ordering: {ordering:#?}\nGot states:{states:#?}"
+        );
     }
 }
 

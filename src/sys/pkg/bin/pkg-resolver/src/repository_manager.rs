@@ -5,10 +5,10 @@
 use crate::cache::{BlobFetcher, CacheError, MerkleForError, ToResolveError, ToResolveStatus};
 use crate::inspect_util::{self, InspectableRepositoryConfig};
 use crate::repository::Repository;
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
-use fidl_fuchsia_pkg_ext::{self as pkg, cache, BlobId, RepositoryConfig, RepositoryConfigs};
+use fidl_fuchsia_pkg_ext::{self as pkg, BlobId, RepositoryConfig, RepositoryConfigs, cache};
 use fuchsia_pkg::PackageDirectory;
 use fuchsia_sync::{Mutex, RwLock};
 use fuchsia_url::{AbsolutePackageUrl, RepositoryUrl};
@@ -17,7 +17,7 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::prelude::*;
 use log::{error, info};
 use std::collections::hash_map::Entry;
-use std::collections::{btree_set, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, btree_set};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -407,11 +407,7 @@ impl<S, N> RepositoryManagerBuilder<S, N> {
             .into_iter()
             .map(|(repo_url, config)| (repo_url, Arc::new(config)))
             .collect();
-        if errs.is_empty() {
-            Ok(self)
-        } else {
-            Err((self, errs))
-        }
+        if errs.is_empty() { Ok(self) } else { Err((self, errs)) }
     }
 
     /// Customize the repository manager with the persisted repository directory.
@@ -463,11 +459,7 @@ impl RepositoryManagerBuilder<UnsetCobaltSender, UnsetInspectNode> {
             data_proxy,
         };
 
-        if let Some(err) = err {
-            Err((builder, err))
-        } else {
-            Ok(builder)
-        }
+        if let Some(err) = err { Err((builder, err)) } else { Ok(builder) }
     }
 
     #[cfg(test)]

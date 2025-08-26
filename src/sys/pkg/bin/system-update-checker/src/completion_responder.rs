@@ -155,8 +155,8 @@ mod tests {
     use test_case::test_case;
 
     // Don't drop tasks until the end of the test.
-    fn setup_responder(
-    ) -> (CompletionResponderStateReactor, CompletionResponderFidlServer, fasync::Task<()>) {
+    fn setup_responder()
+    -> (CompletionResponderStateReactor, CompletionResponderFidlServer, fasync::Task<()>) {
         let (reactor, server, waiter) = CompletionResponder::build();
         let task = fasync::Task::local(waiter.wait_for_messages());
         (reactor, server, task)

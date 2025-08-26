@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::context_authenticator::ContextAuthenticator;
 use super::ResolverError;
+use super::context_authenticator::ContextAuthenticator;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::Context as _;
 use fidl::endpoints::Proxy as _;

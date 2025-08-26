@@ -5,7 +5,7 @@
 use anyhow::{Context as _, Result};
 use bytes::{Bytes, BytesMut};
 use camino::{Utf8Path, Utf8PathBuf};
-use futures::{stream, Stream, TryStreamExt as _};
+use futures::{Stream, TryStreamExt as _, stream};
 use std::cmp::min;
 use std::fs::{copy, create_dir_all};
 use std::io;

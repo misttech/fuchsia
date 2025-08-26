@@ -5,7 +5,7 @@
 use mundane::hash::{Digest, Hasher, Sha256};
 use std::mem::{size_of, size_of_val};
 
-use crate::{Hash, BLOCK_SIZE, HASH_SIZE};
+use crate::{BLOCK_SIZE, HASH_SIZE, Hash};
 
 pub(crate) const HASHES_PER_BLOCK: usize = BLOCK_SIZE / HASH_SIZE;
 

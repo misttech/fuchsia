@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _};
-use fidl::endpoints::{create_proxy, ClientEnd, Proxy};
+use anyhow::{Context as _, anyhow};
+use fidl::endpoints::{ClientEnd, Proxy, create_proxy};
 use fuchsia_component::client::connect_to_protocol;
 use futures::prelude::*;
 use log::warn;
@@ -186,8 +186,8 @@ enum ResolverError {
 
 impl From<&ResolverError> for fresolution::ResolverError {
     fn from(err: &ResolverError) -> Self {
-        use fresolution::ResolverError as ferr;
         use ResolverError::*;
+        use fresolution::ResolverError as ferr;
         match err {
             DirectoryProxyIntoChannel => ferr::Internal,
             InvalidUrl(_) => ferr::InvalidArgs,

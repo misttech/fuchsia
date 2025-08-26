@@ -154,7 +154,7 @@ impl<S: State> Attempt<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
     use std::time::Duration;
 

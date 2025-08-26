@@ -20,14 +20,14 @@ use fidl_fuchsia_pkg_rewrite::{
 };
 use fidl_fuchsia_pkg_rewrite_ext::Rule;
 use fuchsia_component::server::ServiceFs;
-use fuchsia_hyper_test_support::handler::StaticResponse;
 use fuchsia_hyper_test_support::TestServer;
+use fuchsia_hyper_test_support::handler::StaticResponse;
 use fuchsia_sync::Mutex;
 use fuchsia_url::RepositoryUrl;
 use futures::prelude::*;
 use http::Uri;
 use shell_process::ProcessOutput;
-use std::fs::{create_dir, File};
+use std::fs::{File, create_dir};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -820,9 +820,11 @@ async fn test_pkg_status_success() {
 
     let output = env.run_pkgctl(vec!["pkg-status", "the-url"]).await;
 
-    assert_stdout(&output,
-      "Package in registered TUF repo: yes (merkle=0000000000000000000000000000000000000000000000000000000000000000)\n\
-      Package on disk: yes\n");
+    assert_stdout(
+        &output,
+        "Package in registered TUF repo: yes (merkle=0000000000000000000000000000000000000000000000000000000000000000)\n\
+      Package on disk: yes\n",
+    );
     env.assert_only_package_resolver_and_package_cache_called_with(
         vec![CapturedPackageResolverRequest::GetHash { package_url: "the-url".into() }],
         vec![CapturedPackageCacheRequest::Get {
@@ -844,9 +846,11 @@ async fn test_pkg_status_fail_pkg_in_tuf_repo_but_not_on_disk() {
 
     let output = env.run_pkgctl(vec!["pkg-status", "the-url"]).await;
 
-    assert_stdout_disregard_errors(&output,
-      "Package in registered TUF repo: yes (merkle=0000000000000000000000000000000000000000000000000000000000000000)\n\
-      Package on disk: no\n");
+    assert_stdout_disregard_errors(
+        &output,
+        "Package in registered TUF repo: yes (merkle=0000000000000000000000000000000000000000000000000000000000000000)\n\
+      Package on disk: no\n",
+    );
     assert_eq!(output.return_code(), 2);
     env.assert_only_package_resolver_and_package_cache_called_with(
         vec![CapturedPackageResolverRequest::GetHash { package_url: "the-url".into() }],

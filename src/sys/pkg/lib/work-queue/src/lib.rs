@@ -23,7 +23,7 @@ use std::task::{Context, Poll};
 use thiserror::Error;
 
 mod state;
-use state::{make_canceled_receiver, TaskFuture, TaskVariants};
+use state::{TaskFuture, TaskVariants, make_canceled_receiver};
 
 /// Error type indicating a task failed because the queue was dropped before completing the task.
 #[derive(Debug, PartialEq, Eq, Clone, Error)]
@@ -211,11 +211,7 @@ where
                 }
             }
         }
-        if found {
-            Poll::Ready(Some(()))
-        } else {
-            Poll::Pending
-        }
+        if found { Poll::Ready(Some(())) } else { Poll::Pending }
     }
 
     fn do_work(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<K>> {
@@ -230,11 +226,7 @@ where
                 // futures can be pushed into it. Pushing new work on a terminated
                 // FuturesUnordered will cause is_terminated to return false, and polling the
                 // stream will start the task.
-                if this.pending.is_terminated() {
-                    Poll::Ready(None)
-                } else {
-                    Poll::Pending
-                }
+                if this.pending.is_terminated() { Poll::Ready(None) } else { Poll::Pending }
             }
             Poll::Ready(Some((key, res))) => {
                 let mut tasks = this.tasks.lock();
@@ -275,9 +267,9 @@ where
     pub fn record_lazy_inspect(
         &self,
     ) -> impl Fn() -> BoxFuture<'static, Result<fuchsia_inspect::Inspector, anyhow::Error>>
-           + Send
-           + Sync
-           + 'static {
+    + Send
+    + Sync
+    + 'static {
         let tasks = Arc::downgrade(&self.tasks);
         move || {
             let tasks = tasks.clone();
@@ -437,7 +429,7 @@ where
 mod tests {
     use super::*;
     use futures::channel::oneshot;
-    use futures::executor::{block_on, LocalSpawner};
+    use futures::executor::{LocalSpawner, block_on};
     use futures::task::{LocalSpawnExt, SpawnExt};
     use std::borrow::Borrow;
     use std::fmt;
@@ -491,11 +483,7 @@ mod tests {
 
     impl TryMerge for MergeEqual {
         fn try_merge(&mut self, other: Self) -> Result<(), Self> {
-            if self.0 == other.0 {
-                Ok(())
-            } else {
-                Err(other)
-            }
+            if self.0 == other.0 { Ok(()) } else { Err(other) }
         }
     }
 
@@ -691,10 +679,12 @@ mod tests {
             // wait for the test driver to resolve this work item and return the result it
             // provides.
             let (sender, receiver) = oneshot::channel();
-            assert!(running_tasks
-                .lock()
-                .insert(key, TestRunningTask::<C, O> { unblocker: sender, context })
-                .is_none());
+            assert!(
+                running_tasks
+                    .lock()
+                    .insert(key, TestRunningTask::<C, O> { unblocker: sender, context })
+                    .is_none()
+            );
             async move { receiver.await.unwrap() }
         };
 

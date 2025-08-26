@@ -154,9 +154,9 @@ mod tests {
     use fasync::OnSignals;
     use fuchsia_async as fasync;
     use mock_health_verification::MockHealthVerificationService;
-    use mock_paver::{hooks as mphooks, MockPaverServiceBuilder, PaverEvent};
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
     use zx::{AsHandleRef, Status};
 
     fn health_verification_and_call_count(

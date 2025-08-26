@@ -4,7 +4,7 @@
 
 use fidl_fuchsia_update_verify as fidl;
 use fuchsia_async::Task;
-use futures::{future, FutureExt as _, StreamExt as _};
+use futures::{FutureExt as _, StreamExt as _, future};
 use std::sync::Arc;
 
 pub trait Hook: Send + Sync {

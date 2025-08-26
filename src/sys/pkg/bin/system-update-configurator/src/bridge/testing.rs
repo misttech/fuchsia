@@ -6,8 +6,8 @@
 
 use super::{Bridge, BridgeError, OptOutPreference};
 use async_trait::async_trait;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Bridge impl that always returns an error.
 #[derive(Debug)]
@@ -69,11 +69,7 @@ impl Fake {
 #[async_trait(?Send)]
 impl Bridge for Fake {
     async fn get_opt_out(&self) -> Result<OptOutPreference, BridgeError> {
-        if self.error_toggle.get() {
-            Err(BridgeError::Busy)
-        } else {
-            Ok(self.value)
-        }
+        if self.error_toggle.get() { Err(BridgeError::Busy) } else { Ok(self.value) }
     }
 
     async fn set_opt_out(&mut self, value: OptOutPreference) -> Result<(), BridgeError> {

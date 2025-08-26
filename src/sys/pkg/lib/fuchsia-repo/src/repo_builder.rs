@@ -4,24 +4,24 @@
 
 use crate::repo_keys::RepoKeys;
 use crate::repository::RepoStorageProvider;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::{DateTime, Duration, Utc};
 use delivery_blob::DeliveryBlobType;
 use fuchsia_merkle::Hash;
 use fuchsia_pkg::{BlobInfo, PackageManifest, PackageManifestList, PackagePath, SubpackageInfo};
 use futures::stream::{StreamExt as _, TryStreamExt as _};
-use std::collections::{hash_map, BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map};
 use std::fs::{self, File};
 use std::future::Future;
 use std::os::unix::fs::MetadataExt;
 use std::pin::Pin;
 use tempfile::TempDir;
+use tuf::Database;
 use tuf::crypto::HashAlgorithm;
 use tuf::metadata::TargetPath;
 use tuf::pouf::Pouf1;
 use tuf::repo_builder::RepoBuilder as TufRepoBuilder;
-use tuf::Database;
 
 #[cfg(not(target_os = "fuchsia"))]
 use crate::repo_client::RepoClient;
@@ -1213,18 +1213,24 @@ mod tests {
 
         // Make sure we have targets for the named packages only.
         let trusted_targets = repo_client.database().trusted_targets().unwrap();
-        assert!(trusted_targets
-            .targets()
-            .get(&TargetPath::new(format!("{SUPERPACKAGE}/0")).unwrap())
-            .is_some());
-        assert!(trusted_targets
-            .targets()
-            .get(&TargetPath::new(format!("{NAMED_SUBPACKAGE}/0")).unwrap())
-            .is_some());
-        assert!(trusted_targets
-            .targets()
-            .get(&TargetPath::new(format!("{ANONYMOUS_SUBPACKAGE}/0")).unwrap())
-            .is_none());
+        assert!(
+            trusted_targets
+                .targets()
+                .get(&TargetPath::new(format!("{SUPERPACKAGE}/0")).unwrap())
+                .is_some()
+        );
+        assert!(
+            trusted_targets
+                .targets()
+                .get(&TargetPath::new(format!("{NAMED_SUBPACKAGE}/0")).unwrap())
+                .is_some()
+        );
+        assert!(
+            trusted_targets
+                .targets()
+                .get(&TargetPath::new(format!("{ANONYMOUS_SUBPACKAGE}/0")).unwrap())
+                .is_none()
+        );
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -1807,13 +1813,15 @@ mod tests {
         serde_json::to_writer(std::fs::File::create(&pkg2_manifest_path).unwrap(), &pkg2_manifest)
             .unwrap();
 
-        assert!(RepoBuilder::create(&repo, &repo_keys)
-            .add_package(pkg1_manifest_path)
-            .await
-            .unwrap()
-            .add_package(pkg2_manifest_path)
-            .await
-            .is_err());
+        assert!(
+            RepoBuilder::create(&repo, &repo_keys)
+                .add_package(pkg1_manifest_path)
+                .await
+                .unwrap()
+                .add_package(pkg2_manifest_path)
+                .await
+                .is_err()
+        );
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -1985,13 +1993,15 @@ mod tests {
         let archive_file2 = fs::File::create(archive_path2.clone()).unwrap();
         pkg2_manifest.archive(&pkg2_dir, &archive_file2).await.unwrap();
 
-        assert!(RepoBuilder::create(&repo, &repo_keys)
-            .add_package_archive(Utf8PathBuf::from_path_buf(archive_path1).unwrap())
-            .await
-            .unwrap()
-            .add_package_archive(Utf8PathBuf::from_path_buf(archive_path2).unwrap())
-            .await
-            .is_err());
+        assert!(
+            RepoBuilder::create(&repo, &repo_keys)
+                .add_package_archive(Utf8PathBuf::from_path_buf(archive_path1).unwrap())
+                .await
+                .unwrap()
+                .add_package_archive(Utf8PathBuf::from_path_buf(archive_path2).unwrap())
+                .await
+                .is_err()
+        );
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -2027,13 +2037,15 @@ mod tests {
         let archive_file1 = fs::File::create(archive_path1.clone()).unwrap();
         pkg1_manifest.archive(&pkg1_dir, &archive_file1).await.unwrap();
 
-        assert!(RepoBuilder::create(&repo, &repo_keys)
-            .add_package_archive(Utf8PathBuf::from_path_buf(archive_path1).unwrap())
-            .await
-            .unwrap()
-            .add_package(pkg2_manifest_path)
-            .await
-            .is_err());
+        assert!(
+            RepoBuilder::create(&repo, &repo_keys)
+                .add_package_archive(Utf8PathBuf::from_path_buf(archive_path1).unwrap())
+                .await
+                .unwrap()
+                .add_package(pkg2_manifest_path)
+                .await
+                .is_err()
+        );
     }
 
     #[fuchsia_async::run_singlethreaded(test)]

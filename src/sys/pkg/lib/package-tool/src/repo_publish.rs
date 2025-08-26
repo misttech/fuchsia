@@ -4,7 +4,7 @@
 
 use crate::args::{RepoPMListCommand, RepoPublishCommand};
 use crate::write_depfile;
-use anyhow::{anyhow, format_err, Context, Result};
+use anyhow::{Context, Result, anyhow, format_err};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::{TimeZone, Utc};
 use fuchsia_async as fasync;
@@ -20,13 +20,13 @@ use futures::{AsyncReadExt as _, StreamExt as _};
 use log::{error, info, warn};
 use product_bundle::get_repositories;
 use std::collections::BTreeSet;
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::io::{BufReader, BufWriter};
 use tempfile::TempDir;
+use tuf::Error as TufError;
 use tuf::metadata::{MetadataPath, MetadataVersion, RawSignedMetadata, RootMetadata};
 use tuf::pouf::Pouf1;
 use tuf::repository::RepositoryProvider as _;
-use tuf::Error as TufError;
 
 /// Time in seconds after which the attempt to get a lock file is considered failed.
 const LOCK_TIMEOUT_SEC: u64 = 2 * 60;
@@ -133,7 +133,9 @@ async fn repo_publish(cmd: &RepoPublishCommand) -> Result<()> {
             repo_path,
             cmdline
         );
-        log::warn!("NOTE: This will become an error by the end of 2025Q2, see https://fxbug.dev/371945605. Please migrate your use case before then.");
+        log::warn!(
+            "NOTE: This will become an error by the end of 2025Q2, see https://fxbug.dev/371945605. Please migrate your use case before then."
+        );
     }
 
     let lock_file = lock_repository(repo_path).await?;

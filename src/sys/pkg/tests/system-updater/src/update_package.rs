@@ -493,12 +493,18 @@ async fn fully_populated_images_manifest() {
 
     assert!(all_events_middle[1] == Gc);
 
-    assert!(all_events_middle
-        .contains(&PackageResolve(image_package_url_to_string("update-images-recovery", 3))));
-    assert!(all_events_middle
-        .contains(&PackageResolve(image_package_url_to_string("update-images-firmware", 5))));
-    assert!(all_events_middle
-        .contains(&PackageResolve(image_package_url_to_string("update-images-fuchsia", 9))));
+    assert!(
+        all_events_middle
+            .contains(&PackageResolve(image_package_url_to_string("update-images-recovery", 3)))
+    );
+    assert!(
+        all_events_middle
+            .contains(&PackageResolve(image_package_url_to_string("update-images-firmware", 5)))
+    );
+    assert!(
+        all_events_middle
+            .contains(&PackageResolve(image_package_url_to_string("update-images-fuchsia", 9)))
+    );
 }
 
 #[fasync::run_singlethreaded(test)]

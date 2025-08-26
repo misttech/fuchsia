@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, format_err, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, format_err};
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_hash::Hash;
 use fuchsia_pkg::{PackageManifest, PackageManifestList};
-use futures::channel::mpsc::{channel, Receiver};
+use futures::channel::mpsc::{Receiver, channel};
 use futures::executor::block_on;
 use futures::{SinkExt, Stream};
 use log::error;
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_batch_watcher::{BatchEvent, BatchWatcher, Error as BatchError};
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;

@@ -7,13 +7,13 @@
 use crate::serve::HttpResponder;
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
-use futures::future::{pending, ready, BoxFuture, Shared};
+use futures::future::{BoxFuture, Shared, pending, ready};
 use futures::prelude::*;
 use hyper::{Body, Request, Response, StatusCode};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 
 /// hyper::Request extension trait that makes writing `HttpResponder`s more convienent.
 pub trait RequestExt {

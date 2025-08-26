@@ -17,13 +17,13 @@ use fuchsia_sync::Mutex;
 use futures::future::FutureExt;
 use futures::prelude::*;
 use http::uri::Uri;
-use isolated_ota::{download_and_apply_update_with_updater, OmahaConfig, UpdateError};
+use isolated_ota::{OmahaConfig, UpdateError, download_and_apply_update_with_updater};
 use isolated_ota_env::{
-    expose_mock_paver, OmahaState, TestEnvBuilder, TestExecutor, TestParams, GLOBAL_SSL_CERTS_PATH,
+    GLOBAL_SSL_CERTS_PATH, OmahaState, TestEnvBuilder, TestExecutor, TestParams, expose_mock_paver,
 };
 use isolated_swd::updater::Updater;
 use mock_omaha_server::OmahaResponse;
-use mock_paver::{hooks as mphooks, PaverEvent};
+use mock_paver::{PaverEvent, hooks as mphooks};
 use pretty_assertions::assert_eq;
 use std::collections::BTreeSet;
 use vfs::directory::helper::DirectlyMutable as _;
@@ -341,11 +341,13 @@ pub async fn test_no_network() -> Result<(), Error> {
     let bad_mirror =
         MirrorConfigBuilder::new("http://does-not-exist.fuchsia.com".parse::<Uri>().unwrap())?
             .build();
-    let invalid_repo = RepositoryConfigs::Version1(vec![RepositoryConfigBuilder::new(
-        fuchsia_url::RepositoryUrl::parse_host("fuchsia.com".to_owned()).unwrap(),
-    )
-    .add_mirror(bad_mirror)
-    .build()]);
+    let invalid_repo = RepositoryConfigs::Version1(vec![
+        RepositoryConfigBuilder::new(
+            fuchsia_url::RepositoryUrl::parse_host("fuchsia.com".to_owned()).unwrap(),
+        )
+        .add_mirror(bad_mirror)
+        .build(),
+    ]);
 
     let env = TestEnvBuilder::new()
         .test_executor(IsolatedOtaTestExecutor::new())

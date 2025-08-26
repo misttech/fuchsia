@@ -11,7 +11,7 @@ use vfs::directory::immutable::connection::ImmutableConnection;
 use vfs::directory::traversal_position::TraversalPosition;
 use vfs::execution_scope::ExecutionScope;
 use vfs::path::Path as VfsPath;
-use vfs::{immutable_attributes, ObjectRequestRef, ProtocolsExt as _};
+use vfs::{ObjectRequestRef, ProtocolsExt as _, immutable_attributes};
 
 /// The pkgfs /ctl/validation directory, except it contains only the "missing" file (e.g. does not
 /// have the "present" file).

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use lib::{
-    generate_omaha_client_config, generate_pkg_resolver_config, Args, InputConfig,
-    PublicKeysByServiceUrl,
+    Args, InputConfig, PublicKeysByServiceUrl, generate_omaha_client_config,
+    generate_pkg_resolver_config,
 };
 use std::fs::File;
 use std::io::BufReader;

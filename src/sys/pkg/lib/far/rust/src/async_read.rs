@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{
-    DirectoryEntry, Error, Index, IndexEntry, DIRECTORY_ENTRY_LEN, DIR_CHUNK_TYPE,
-    DIR_NAMES_CHUNK_TYPE, INDEX_ENTRY_LEN, INDEX_LEN, MAGIC_INDEX_VALUE,
+    DIR_CHUNK_TYPE, DIR_NAMES_CHUNK_TYPE, DIRECTORY_ENTRY_LEN, DirectoryEntry, Error,
+    INDEX_ENTRY_LEN, INDEX_LEN, Index, IndexEntry, MAGIC_INDEX_VALUE,
 };
 use fuchsia_fs::file::{AsyncGetSize, AsyncGetSizeExt, AsyncReadAt, AsyncReadAtExt};
 use std::convert::TryInto as _;

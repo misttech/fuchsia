@@ -5,7 +5,7 @@
 use crate::range::Range;
 use crate::repository::{Error, RepoProvider, RepositorySpec};
 use crate::resource::Resource;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use chrono::{DateTime, Utc};
 use fidl_fuchsia_pkg_ext::{
     MirrorConfigBuilder, RepositoryConfig, RepositoryConfigBuilder, RepositoryKey,
@@ -22,6 +22,7 @@ use futures::{AsyncRead, AsyncReadExt as _, FutureExt as _, StreamExt as _, TryS
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug};
 use std::time::SystemTime;
+use tuf::Database;
 use tuf::client::{Client as TufClient, Config};
 use tuf::crypto::KeyType;
 use tuf::metadata::{
@@ -33,7 +34,6 @@ use tuf::repository::{
     EphemeralRepository, RepositoryProvider, RepositoryProvider as TufRepositoryProvider,
     RepositoryStorage as TufRepositoryStorage,
 };
-use tuf::Database;
 
 const LIST_PACKAGE_CONCURRENCY: usize = 5;
 
@@ -586,8 +586,8 @@ mod tests {
     use crate::repo_builder::RepoBuilder;
     use crate::repository::PmRepository;
     use crate::test_utils::{
-        make_pm_repository, make_readonly_empty_repository, repo_key, repo_private_key,
-        PKG1_BIN_HASH, PKG1_HASH, PKG1_LIB_HASH, PKG2_HASH,
+        PKG1_BIN_HASH, PKG1_HASH, PKG1_LIB_HASH, PKG2_HASH, make_pm_repository,
+        make_readonly_empty_repository, repo_key, repo_private_key,
     };
     use assert_matches::assert_matches;
     use camino::{Utf8Path, Utf8PathBuf};

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::error;
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use cobalt_sw_delivery_registry::{
     self as metrics, CreateTufClientMigratedMetricDimensionResult,
     UpdateTufClientMigratedMetricDimensionResult,
@@ -13,15 +13,15 @@ use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
 };
 use fuchsia_component::client::connect_to_protocol;
-use futures::{future, FutureExt as _};
+use futures::{FutureExt as _, future};
 use hyper::StatusCode;
 
 pub fn tuf_error_as_update_tuf_client_event_code(
     e: &error::TufOrTimeout,
 ) -> UpdateTufClientMigratedMetricDimensionResult {
+    use UpdateTufClientMigratedMetricDimensionResult as EventCodes;
     use error::TufOrTimeout::*;
     use tuf::error::Error::*;
-    use UpdateTufClientMigratedMetricDimensionResult as EventCodes;
     match e {
         Tuf(BadSignature(_)) => EventCodes::BadSignature,
         Tuf(Encoding(_)) => EventCodes::Encoding,
@@ -64,9 +64,9 @@ pub fn tuf_error_as_update_tuf_client_event_code(
 pub fn tuf_error_as_create_tuf_client_event_code(
     e: &error::TufOrTimeout,
 ) -> CreateTufClientMigratedMetricDimensionResult {
+    use CreateTufClientMigratedMetricDimensionResult as EventCodes;
     use error::TufOrTimeout::*;
     use tuf::error::Error::*;
-    use CreateTufClientMigratedMetricDimensionResult as EventCodes;
     match e {
         Tuf(BadSignature(_)) => EventCodes::BadSignature,
         Tuf(Encoding(_)) => EventCodes::Encoding,

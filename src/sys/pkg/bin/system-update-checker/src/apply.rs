@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::DEFAULT_UPDATE_PACKAGE_URL;
 use crate::errors::Error;
 use crate::update_manager::TargetChannelUpdater;
-use crate::DEFAULT_UPDATE_PACKAGE_URL;
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use fidl::endpoints::{Proxy, ServerEnd};
 use fidl_fuchsia_update_ext::Initiator;
 use fidl_fuchsia_update_installer::{
     InstallerMarker, InstallerProxy, RebootControllerMarker, RebootControllerProxy,
 };
 use fidl_fuchsia_update_installer_ext::{
-    self as installer, start_update, MonitorUpdateAttemptError, Options, State, StateId,
-    UpdateAttemptError,
+    self as installer, MonitorUpdateAttemptError, Options, State, StateId, UpdateAttemptError,
+    start_update,
 };
 use fuchsia_component::client::connect_to_protocol;
 use futures::future::BoxFuture;

@@ -20,14 +20,14 @@ use omaha_client::http_request::{Error, HttpRequest};
 use omaha_client::installer::stub::StubInstaller;
 use omaha_client::metrics::StubMetricsReporter;
 use omaha_client::policy::StubPolicyEngine;
-use omaha_client::protocol::request::OS;
 use omaha_client::protocol::Cohort;
+use omaha_client::protocol::request::OS;
 use omaha_client::state_machine::{
-    update_check, StateMachineBuilder, StateMachineEvent, UpdateCheckError,
+    StateMachineBuilder, StateMachineEvent, UpdateCheckError, update_check,
 };
 use omaha_client::storage::MemStorage;
-use omaha_client::time::timers::StubTimer;
 use omaha_client::time::StandardTimeSource;
+use omaha_client::time::timers::StubTimer;
 use std::error;
 use std::rc::Rc;
 use std::time::Duration;
@@ -94,11 +94,13 @@ fn main_inner(args: FakeOmahaClientArgs) -> Result<(), Box<dyn error::Error>> {
         service_url: args.server.to_string(),
         omaha_public_keys: Some(omaha_public_keys.clone()),
     };
-    let app_set = VecAppSet::new(vec![App::builder()
-        .id(args.app_id)
-        .version([20200101, 0, 0, 0])
-        .cohort(Cohort::new(&args.channel))
-        .build()]);
+    let app_set = VecAppSet::new(vec![
+        App::builder()
+            .id(args.app_id)
+            .version([20200101, 0, 0, 0])
+            .cohort(Cohort::new(&args.channel))
+            .build(),
+    ]);
 
     let state_machine = StateMachineBuilder::new(
         /*policy_engine=*/ StubPolicyEngine::new(StandardTimeSource),

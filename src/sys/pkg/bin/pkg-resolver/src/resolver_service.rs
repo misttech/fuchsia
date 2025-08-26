@@ -12,7 +12,7 @@ use crate::error::to_resolve_tool_error;
 use crate::repository_manager::GetPackageError::*;
 use crate::repository_manager::{GetPackageError, GetPackageHashError, RepositoryManager};
 use crate::rewrite_manager::RewriteManager;
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use async_lock::RwLock as AsyncRwLock;
 use async_trait::async_trait;
 use fidl::endpoints::ServerEnd;
@@ -77,11 +77,7 @@ impl work_queue::TryMerge for ResolveQueueContext {
     // Does not merge Contexts with differing GC protection. Clients depend on the different
     // GC protection behaviors.
     fn try_merge(&mut self, other: Self) -> Result<(), Self> {
-        if self.gc_protection == other.gc_protection {
-            Ok(())
-        } else {
-            Err(other)
-        }
+        if self.gc_protection == other.gc_protection { Ok(()) } else { Err(other) }
     }
 }
 

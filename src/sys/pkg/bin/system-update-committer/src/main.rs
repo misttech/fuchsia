@@ -5,7 +5,7 @@
 #![allow(clippy::let_unit_value)]
 
 use ::fidl::endpoints::RequestStream as _;
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use fidl_fuchsia_update_verify::HealthVerificationMarker;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;

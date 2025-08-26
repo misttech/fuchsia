@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{write_needed_blob, TestEnv};
+use crate::{TestEnv, write_needed_blob};
 use fidl_fuchsia_pkg::NeededBlobsMarker;
 use fidl_fuchsia_pkg_ext as pkg;
 use futures::StreamExt as _;
@@ -66,11 +66,12 @@ async fn write_blobs_concurrent() {
             let () = write_needed_blob(&needed_blobs, *hash, blob_content).await;
         })
         .await;
-    assert!(env
-        .blobfs
-        .list_blobs()
-        .unwrap()
-        .is_superset(&blobs.into_iter().map(|(hash, _)| hash).collect()));
+    assert!(
+        env.blobfs
+            .list_blobs()
+            .unwrap()
+            .is_superset(&blobs.into_iter().map(|(hash, _)| hash).collect())
+    );
 
     let () = env.stop().await;
 }

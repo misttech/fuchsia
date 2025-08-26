@@ -4,7 +4,7 @@
 
 #![allow(clippy::let_unit_value)]
 
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use fuchsia_component::server::ServiceFs;
 use futures::lock::Mutex;
 use futures::prelude::*;

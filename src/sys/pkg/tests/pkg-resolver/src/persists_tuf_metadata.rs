@@ -5,7 +5,7 @@
 #![cfg(test)]
 use fuchsia_pkg_testing::{Package, PackageBuilder, RepositoryBuilder, SystemImageBuilder};
 use lib::{
-    EnableDynamicConfig, MountsBuilder, PersistedReposConfig, TestEnvBuilder, EMPTY_REPO_PATH,
+    EMPTY_REPO_PATH, EnableDynamicConfig, MountsBuilder, PersistedReposConfig, TestEnvBuilder,
 };
 use std::sync::Arc;
 

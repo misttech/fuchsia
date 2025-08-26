@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{
-    blob_written, compress_and_write_blob, get_and_verify_package, get_and_verify_packages,
-    get_missing_blobs, TestEnv,
+    TestEnv, blob_written, compress_and_write_blob, get_and_verify_package,
+    get_and_verify_packages, get_missing_blobs,
 };
 use assert_matches::assert_matches;
 use fidl_fuchsia_io as fio;

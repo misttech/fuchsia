@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use crate::resolver_service::Resolver;
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use async_lock::RwLock as AsyncRwLock;
 use eager_package_config::pkg_resolver::{EagerPackageConfig, EagerPackageConfigs};
 use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
 use fidl_fuchsia_pkg::{self as fpkg, CupRequest, CupRequestStream, GetInfoError, WriteError};
-use fidl_fuchsia_pkg_ext::{cache, CupData, CupMissingField, ResolutionContext};
+use fidl_fuchsia_pkg_ext::{CupData, CupMissingField, ResolutionContext, cache};
 use fidl_fuchsia_pkg_internal::{PersistentEagerPackage, PersistentEagerPackages};
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_pkg::PackageDirectory;
@@ -21,8 +21,8 @@ use omaha_client::cup_ecdsa::{
 };
 use omaha_client::protocol::response::{App, Response};
 use omaha_client::version::Version;
-use p256::ecdsa::signature::Signature;
 use p256::ecdsa::DerSignature;
+use p256::ecdsa::signature::Signature;
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -276,7 +276,7 @@ impl<T: Resolver> EagerPackageManager<T> {
         {
             Ok(proxy) => proxy,
             Err(fuchsia_fs::node::OpenError::OpenError(s)) if s == zx::Status::NOT_FOUND => {
-                return Ok(HashMap::new())
+                return Ok(HashMap::new());
             }
             Err(e) => Err(e).context("while opening eager_packages.pf")?,
         };
@@ -695,9 +695,10 @@ mod tests {
     };
     use fuchsia_async as fasync;
     use omaha_client::cup_ecdsa::test_support::{
-        make_default_public_key_for_test, make_default_public_key_id_for_test,
-        make_default_public_keys_for_test, make_expected_signature_for_test, make_keys_for_test,
-        make_public_keys_for_test, make_standard_intermediate_for_test, RAW_PUBLIC_KEY_FOR_TEST,
+        RAW_PUBLIC_KEY_FOR_TEST, make_default_public_key_for_test,
+        make_default_public_key_id_for_test, make_default_public_keys_for_test,
+        make_expected_signature_for_test, make_keys_for_test, make_public_keys_for_test,
+        make_standard_intermediate_for_test,
     };
     use omaha_client::cup_ecdsa::{Cupv2RequestHandler, PublicKeyAndId, PublicKeyId};
     use omaha_client::protocol::request::Request;

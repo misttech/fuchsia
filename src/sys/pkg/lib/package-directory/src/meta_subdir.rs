@@ -11,7 +11,7 @@ use vfs::directory::entry::EntryInfo;
 use vfs::directory::immutable::connection::ImmutableConnection;
 use vfs::directory::traversal_position::TraversalPosition;
 use vfs::execution_scope::ExecutionScope;
-use vfs::{immutable_attributes, ObjectRequestRef, ToObjectRequest as _};
+use vfs::{ObjectRequestRef, ToObjectRequest as _, immutable_attributes};
 
 pub(crate) struct MetaSubdir<S: crate::NonMetaStorage> {
     root_dir: Arc<RootDir<S>>,
@@ -203,8 +203,8 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fuchsia_fs::directory::{DirEntry, DirentKind};
-    use fuchsia_pkg_testing::blobfs::Fake as FakeBlobfs;
     use fuchsia_pkg_testing::PackageBuilder;
+    use fuchsia_pkg_testing::blobfs::Fake as FakeBlobfs;
     use futures::prelude::*;
 
     struct TestEnv {

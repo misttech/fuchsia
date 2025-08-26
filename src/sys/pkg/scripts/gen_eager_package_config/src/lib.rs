@@ -174,9 +174,11 @@ pub fn generate_omaha_client_config(
             })
             .collect(),
     };
-    assert!(packages_by_service_url.is_empty(),
-      "There were service_url keys present in the input configs which did not have a corresponding keyconfig: {:?}",
-      packages_by_service_url.keys());
+    assert!(
+        packages_by_service_url.is_empty(),
+        "There were service_url keys present in the input configs which did not have a corresponding keyconfig: {:?}",
+        packages_by_service_url.keys()
+    );
     json
 }
 
@@ -212,7 +214,7 @@ pub fn generate_pkg_resolver_config(
 
 pub mod test_support {
     use super::*;
-    use omaha_client::cup_ecdsa::{test_support, PublicKeyId};
+    use omaha_client::cup_ecdsa::{PublicKeyId, test_support};
 
     pub fn make_key_config_for_test() -> PublicKeysByServiceUrl {
         let (_, public_key) = test_support::make_keys_for_test();

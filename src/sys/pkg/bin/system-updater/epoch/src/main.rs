@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Error};
 use epoch::EpochFile;
-use std::fs::{read_to_string, File};
+use std::fs::{File, read_to_string};
 
 mod args;
 mod history;

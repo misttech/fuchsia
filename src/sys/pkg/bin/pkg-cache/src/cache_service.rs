@@ -5,7 +5,7 @@
 use crate::base_packages::{BasePackages, CachePackages};
 use crate::index::PackageIndex;
 use crate::upgradable_packages::UpgradablePackages;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
 use fidl_contrib::protocol_connector::ProtocolSender;
@@ -16,7 +16,7 @@ use fidl_fuchsia_pkg::{
     PackageIndexIteratorRequestStream,
 };
 use fidl_fuchsia_pkg_ext::{
-    serve_fidl_iterator_from_slice, serve_fidl_iterator_from_stream, BlobId, BlobInfo,
+    BlobId, BlobInfo, serve_fidl_iterator_from_slice, serve_fidl_iterator_from_stream,
 };
 use fuchsia_async::Task;
 use fuchsia_cobalt_builders::MetricEventExt as _;
@@ -25,8 +25,8 @@ use fuchsia_inspect::{self as finspect, NumericProperty as _, Property as _, Str
 use futures::{FutureExt as _, TryFutureExt as _, TryStreamExt as _};
 use log::{error, warn};
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use zx::Status;
 use {cobalt_sw_delivery_registry as metrics, fidl_fuchsia_io as fio, fuchsia_trace as ftrace};
 
@@ -197,8 +197,8 @@ fn executability_status(
     base_packages: &BasePackages,
     package: fuchsia_hash::Hash,
 ) -> ExecutabilityStatus {
-    use system_image::ExecutabilityRestrictions::*;
     use ExecutabilityStatus::*;
+    use system_image::ExecutabilityRestrictions::*;
     let is_base = base_packages.is_package(package);
     match (is_base, executability_restrictions) {
         (true, _) => Allowed,
@@ -419,7 +419,7 @@ async fn write_blobs(
                     } else {
                         "open_blob or blob_written"
                     },
-                })
+                });
             }
         }
     }
@@ -737,7 +737,7 @@ async fn handle_open_blobs(
                     } else {
                         "open_blob or blob_written"
                     },
-                })
+                });
             }
             None => {
                 return Err(ServeNeededBlobsError::UnexpectedClose("handle_open_blobs"));
@@ -792,9 +792,9 @@ async fn open_blob(
         _ => false,
     };
 
+    use OpenBlobSuccess::*;
     use blobfs::CreateError::*;
     use fpkg::OpenBlobError as fErr;
-    use OpenBlobSuccess::*;
     let (fidl_resp, fn_ret) = match create_res {
         Ok(blob) => (Ok(Some(blob)), Ok(Needed)),
         Err(AlreadyExists) if is_readable => (Ok(None), Ok(AlreadyCached)),
@@ -2338,7 +2338,7 @@ mod serve_needed_blobs_tests {
 #[cfg(test)]
 mod get_handler_tests {
     use super::*;
-    use crate::{CobaltConnectedService, ProtocolConnector, COBALT_CONNECTOR_BUFFER_SIZE};
+    use crate::{COBALT_CONNECTOR_BUFFER_SIZE, CobaltConnectedService, ProtocolConnector};
 
     #[fuchsia::test]
     async fn everything_closed() {

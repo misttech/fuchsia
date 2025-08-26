@@ -128,11 +128,7 @@ pub async fn monitor_update(
 
     let attached = installer_proxy.monitor_update(attempt_id, monitor_client_end).await?;
 
-    if attached {
-        Ok(Some(monitor))
-    } else {
-        Ok(None)
-    }
+    if attached { Ok(Some(monitor)) } else { Ok(None) }
 }
 
 impl fmt::Debug for UpdateAttemptMonitor {

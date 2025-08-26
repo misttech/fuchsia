@@ -4,18 +4,18 @@
 
 use crate::update::config::Initiator;
 use crate::update::{AttemptError, FetchError, PrepareError, ResolveError, StageError};
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use cobalt_client::traits::AsEventCode;
 use cobalt_sw_delivery_registry as metrics;
-use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_contrib::ProtocolConnector;
+use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
 };
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_component::client::connect_to_protocol;
-use futures::future::{self, Future};
 use futures::FutureExt;
+use futures::future::{self, Future};
 use std::time::{Duration, Instant, SystemTime};
 
 // See $FUCHSIA_OUT_DIR/gen/src/sys/pkg/bin/amber/cobalt_sw_delivery_registry.rs for more info.

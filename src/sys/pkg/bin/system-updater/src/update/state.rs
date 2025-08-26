@@ -36,11 +36,7 @@ impl ProgressTracker {
     }
 
     fn as_fraction(&self) -> f32 {
-        if self.goal == 0 {
-            1.0
-        } else {
-            self.current as f32 / self.goal as f32
-        }
+        if self.goal == 0 { 1.0 } else { self.current as f32 / self.goal as f32 }
     }
 }
 

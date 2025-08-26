@@ -4,8 +4,8 @@
 
 use crate::cache::MerkleForError;
 use crate::metrics_util::tuf_error_as_create_tuf_client_event_code;
-use crate::{clock, error, inspect_util, TCP_KEEPALIVE_TIMEOUT};
-use anyhow::{anyhow, format_err, Context as _};
+use crate::{TCP_KEEPALIVE_TIMEOUT, clock, error, inspect_util};
+use anyhow::{Context as _, anyhow, format_err};
 use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
 use fuchsia_async::TimeoutExt as _;
@@ -162,10 +162,10 @@ impl Repository {
                 target_path
             ),
             Err(error::TufOrTimeout::Tuf(TufError::MetadataNotFound { path, version })) => {
-                return Err(MerkleForError::MetadataNotFound { path, version })
+                return Err(MerkleForError::MetadataNotFound { path, version });
             }
             Err(error::TufOrTimeout::Tuf(TufError::TargetNotFound(path))) => {
-                return Err(MerkleForError::TargetNotFound(path))
+                return Err(MerkleForError::TargetNotFound(path));
             }
             Err(other) => {
                 log::error!(
@@ -294,7 +294,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
     use fuchsia_pkg_testing::serve::{
-        responder, HttpResponder, ServedRepository, ServedRepositoryBuilder,
+        HttpResponder, ServedRepository, ServedRepositoryBuilder, responder,
     };
     use fuchsia_pkg_testing::{
         Package, PackageBuilder, Repository as TestRepository, RepositoryBuilder,
@@ -532,8 +532,8 @@ mod tests {
         );
     }
 
-    async fn make_repo_with_auto_and_watched_timestamp_metadata(
-    ) -> (TestEnv, ServedRepository, mpsc::UnboundedReceiver<()>, Repository) {
+    async fn make_repo_with_auto_and_watched_timestamp_metadata()
+    -> (TestEnv, ServedRepository, mpsc::UnboundedReceiver<()>, Repository) {
         let pkg = PackageBuilder::new("just-meta-far").build().await.expect("created pkg");
         let env = TestEnv::builder().add_package(&pkg).build().await;
         let (notify_on_request_responder, notified) = responder::NotifyWhenRequested::new();

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use fuchsia_pkg_testing::serve::responder;
 use fuchsia_pkg_testing::{PackageBuilder, RepositoryBuilder};
-use lib::{make_pkg_with_extra_blobs, TestEnvBuilder, EMPTY_REPO_PATH};
+use lib::{EMPTY_REPO_PATH, TestEnvBuilder, make_pkg_with_extra_blobs};
 use std::sync::Arc;
 use {cobalt_sw_delivery_registry as metrics, fidl_fuchsia_pkg as fpkg};
 

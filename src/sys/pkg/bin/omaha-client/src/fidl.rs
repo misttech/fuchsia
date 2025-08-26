@@ -5,7 +5,7 @@
 use crate::api_metrics::{ApiEvent, ApiMetricsReporter};
 use crate::app_set::FuchsiaAppSet;
 use crate::inspect::{AppsNode, StateNode};
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use channel_config::ChannelConfigs;
 use event_queue::{ClosedClient, ControlHandle, Event, EventQueue, Notify};
 use fidl::endpoints::{ClientEnd, ControlHandle as _};
@@ -524,7 +524,7 @@ where
                 }
             }
             Ok(StartUpdateCheckResponse::Throttled) => {
-                return Err(CheckNotStartedReason::Throttled)
+                return Err(CheckNotStartedReason::Throttled);
             }
             Err(state_machine::StateMachineGone) => return Err(CheckNotStartedReason::Internal),
         }
@@ -777,7 +777,9 @@ impl CompletionResponder {
             CompletionResponder::Waiting { notifiers } => {
                 for notifier in notifiers.drain(..) {
                     if let Err(e) = notifier.notify() {
-                        warn!("Received FIDL error notifying client of software update completion: {e:?}");
+                        warn!(
+                            "Received FIDL error notifying client of software update completion: {e:?}"
+                        );
                     }
                 }
                 *self = CompletionResponder::Satisfied;
@@ -807,10 +809,9 @@ impl CollaborativeRebootProvider for CollaborativeRebootFromSvcDir {
 
 #[cfg(test)]
 pub use stub::{
-    expect_perform_pending_reboot_once, expect_system_update_scheduled_once,
     FakeCollaborativeRebootInitiator, FakeCollaborativeRebootScheduler, FidlServerBuilder,
     MockOrRealStateMachineController, MockStateMachineController, NoCollaborativeReboot,
-    StubFidlServer,
+    StubFidlServer, expect_perform_pending_reboot_once, expect_system_update_scheduled_once,
 };
 
 #[cfg(test)]
@@ -1107,8 +1108,8 @@ mod stub {
     }
 
     impl FakeCollaborativeRebootScheduler {
-        pub fn new(
-        ) -> (futures::channel::oneshot::Receiver<CollaborativeRebootSchedulerRequestStream>, Self)
+        pub fn new()
+        -> (futures::channel::oneshot::Receiver<CollaborativeRebootSchedulerRequestStream>, Self)
         {
             let (sender, receiver) = futures::channel::oneshot::channel();
             (receiver, Self { sender: Some(sender) })
@@ -1164,8 +1165,8 @@ mod stub {
     }
 
     impl FakeCollaborativeRebootInitiator {
-        pub fn new(
-        ) -> (futures::channel::oneshot::Receiver<CollaborativeRebootInitiatorRequestStream>, Self)
+        pub fn new()
+        -> (futures::channel::oneshot::Receiver<CollaborativeRebootInitiatorRequestStream>, Self)
         {
             let (sender, receiver) = futures::channel::oneshot::channel();
             (receiver, Self { sender: Some(sender) })
@@ -1232,7 +1233,7 @@ mod tests {
     use fidl_fuchsia_update_verify::ComponentOtaHealthCheckMarker;
     use fuchsia_async::TestExecutor;
     use fuchsia_inspect::Inspector;
-    use futures::{pin_mut, TryStreamExt};
+    use futures::{TryStreamExt, pin_mut};
     use omaha_client::common::App;
     use omaha_client::protocol::Cohort;
     use std::task::Poll;

@@ -22,13 +22,13 @@ pub use crate::epoch::ParseEpochError;
 pub use crate::hash::HashError;
 pub use crate::image::OpenImageError;
 pub use crate::images::{
-    parse_image_packages_json, ImageMetadata, ImageMetadataError, ImagePackagesError,
-    ImagePackagesManifest, ImagePackagesManifestBuilder, ImagesMetadata, ResolveImagesError,
-    VerifyError, VersionedImagePackagesManifest, ZbiAndOptionalVbmetaMetadata,
+    ImageMetadata, ImageMetadataError, ImagePackagesError, ImagePackagesManifest,
+    ImagePackagesManifestBuilder, ImagesMetadata, ResolveImagesError, VerifyError,
+    VersionedImagePackagesManifest, ZbiAndOptionalVbmetaMetadata, parse_image_packages_json,
 };
 pub use crate::name::VerifyNameError;
 pub use crate::packages::{
-    parse_packages_json, serialize_packages_json, ParsePackageError, SerializePackageError,
+    ParsePackageError, SerializePackageError, parse_packages_json, serialize_packages_json,
 };
 pub use crate::update_mode::{ParseUpdateModeError, UpdateMode};
 pub use crate::version::{ReadVersionError, SystemVersion};
@@ -120,7 +120,9 @@ struct TestUpdatePackage {
 #[cfg(test)]
 impl TestUpdatePackage {
     #[cfg(not(target_os = "fuchsia"))]
-    compile_error!("Building tests for non-fuchsia targets requires a library to serve a temp dir using the fidl_fuchsia_io::Directory protocol");
+    compile_error!(
+        "Building tests for non-fuchsia targets requires a library to serve a temp dir using the fidl_fuchsia_io::Directory protocol"
+    );
 
     fn new() -> Self {
         let temp_dir = tempfile::tempdir().expect("/tmp to exist");
