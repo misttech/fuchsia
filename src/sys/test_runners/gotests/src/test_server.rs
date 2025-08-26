@@ -7,16 +7,15 @@ use fidl_fuchsia_test::{
     self as ftest, Invocation, Result_ as TestResult, RunListenerProxy, Status,
 };
 use fuchsia_runtime::{HandleInfo, HandleType};
-use futures::future::{abortable, AbortHandle, Future};
+use futures::future::{AbortHandle, Future, abortable};
 use futures::lock::Mutex;
-use futures::{stream, AsyncReadExt as _, FutureExt as _, StreamExt as _, TryStreamExt as _};
-use lazy_static::lazy_static;
+use futures::{AsyncReadExt as _, FutureExt as _, StreamExt as _, TryStreamExt as _, stream};
 use log::{debug, error};
 use namespace::NamespaceError;
 use regex::bytes::Regex;
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use test_runners_lib::cases::TestCaseInfo;
 use test_runners_lib::elf::{
     Component, ComponentError, EnumeratedTestCases, KernelError, MemoizedFutureContainer,
@@ -114,10 +113,9 @@ const NEWLINE: u8 = b'\n';
 const SOCKET_BUFFER_SIZE: usize = 4096;
 const BUF_THRESHOLD: usize = 2048;
 
-lazy_static! {
-    static ref RESTRICTED_FLAGS: HashSet<&'static str> =
-        vec!["-test.run", "-test.v", "-test.parallel", "-test.count"].into_iter().collect();
-}
+static RESTRICTED_FLAGS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    vec!["-test.run", "-test.v", "-test.parallel", "-test.count"].into_iter().collect()
+});
 
 impl TestServer {
     /// Creates new test server.
@@ -442,8 +440,8 @@ mod tests {
     use itertools::Itertools as _;
     use pretty_assertions::assert_eq;
     use test_runners_test_lib::{
-        assert_event_ord, collect_listener_event, names_to_invocation, test_component,
-        ListenerEvent,
+        ListenerEvent, assert_event_ord, collect_listener_event, names_to_invocation,
+        test_component,
     };
 
     async fn sample_test_component() -> Result<Arc<Component>, Error> {

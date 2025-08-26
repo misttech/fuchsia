@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 use test_runners_lib::elf::{Component, KernelError};
 use test_runners_lib::errors::*;
 use test_runners_lib::launch;
@@ -11,12 +11,10 @@ use test_runners_lib::logs::LoggerStream;
 use zx::{self as zx, HandleBased};
 use {fidl_fuchsia_process as fproc, fuchsia_runtime as runtime};
 
-lazy_static! {
-    static ref NEXT_VDSO: zx::Handle = {
-        runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))
-            .expect("failed to take next vDSO handle")
-    };
-}
+static NEXT_VDSO: LazyLock<zx::Handle> = LazyLock::new(|| {
+    runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))
+        .expect("failed to take next vDSO handle")
+});
 
 #[async_trait]
 pub trait ComponentLauncher: Sized + Sync + Send {

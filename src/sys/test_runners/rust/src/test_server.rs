@@ -4,15 +4,14 @@
 
 use async_trait::async_trait;
 use ftest::{Invocation, RunListenerProxy};
-use futures::future::{abortable, join3, AbortHandle, FutureExt as _};
+use futures::future::{AbortHandle, FutureExt as _, abortable, join3};
 use futures::lock::Mutex;
 use futures::prelude::*;
-use lazy_static::lazy_static;
 use log::{debug, error};
 use namespace::NamespaceError;
 use regex::Regex;
 use std::collections::HashSet;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use test_runners_lib::cases::TestCaseInfo;
 use test_runners_lib::elf::{
     Component, ComponentError, EnumeratedTestCases, KernelError, MemoizedFutureContainer,
@@ -27,12 +26,10 @@ use {
     fuchsia_runtime as runtime,
 };
 
-lazy_static! {
-    static ref VDSO_VMO: zx::Handle = {
-        runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))
-            .expect("failed to take vDSO handle")
-    };
-}
+static VDSO_VMO: LazyLock<zx::Handle> = LazyLock::new(|| {
+    runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))
+        .expect("failed to take vDSO handle")
+});
 
 type EnumeratedTestNames = Arc<HashSet<String>>;
 
@@ -165,10 +162,8 @@ impl SuiteServer for TestServer {
     }
 }
 
-lazy_static! {
-    static ref RESTRICTED_FLAGS: HashSet<&'static str> =
-        vec!["--nocapture", "--list"].into_iter().collect();
-}
+static RESTRICTED_FLAGS: LazyLock<HashSet<&'static str>> =
+    LazyLock::new(|| vec!["--nocapture", "--list"].into_iter().collect());
 
 impl TestServer {
     /// Creates new test server.
@@ -198,8 +193,8 @@ impl TestServer {
         async fn fetch(
             test_component: Arc<Component>,
             disabled_tests_future: impl Future<Output = Result<EnumeratedTestNames, EnumerationError>>
-                + Send
-                + 'static,
+            + Send
+            + 'static,
         ) -> Result<EnumeratedTestCases, EnumerationError> {
             let test_names = get_tests(test_component, TestFilter::AllTests).await?;
             let disabled_tests = disabled_tests_future.await?;
@@ -219,8 +214,8 @@ impl TestServer {
             test_component: Arc<Component>,
             tests_future_container: MemoizedFutureContainer<EnumeratedTestCases, EnumerationError>,
             disabled_tests_future: impl Future<Output = Result<EnumeratedTestNames, EnumerationError>>
-                + Send
-                + 'static,
+            + Send
+            + 'static,
         ) -> Result<EnumeratedTestCases, EnumerationError> {
             tests_future_container
                 .lock()
@@ -551,8 +546,8 @@ mod tests {
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use test_runners_test_lib::{
-        assert_event_ord, collect_listener_event, names_to_invocation, test_component,
-        ListenerEvent,
+        ListenerEvent, assert_event_ord, collect_listener_event, names_to_invocation,
+        test_component,
     };
 
     #[test]

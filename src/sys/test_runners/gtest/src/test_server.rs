@@ -8,17 +8,16 @@ use fidl::endpoints::Proxy;
 use fidl_fuchsia_test::{
     self as ftest, Invocation, Result_ as TestResult, RunListenerProxy, Status,
 };
-use futures::future::{abortable, join, AbortHandle, FutureExt as _};
+use futures::TryStreamExt;
+use futures::future::{AbortHandle, FutureExt as _, abortable, join};
 use futures::lock::Mutex;
 use futures::prelude::*;
-use futures::TryStreamExt;
 use gtest_runner_lib::parser::*;
-use lazy_static::lazy_static;
 use log::{debug, error, info, warn};
 use namespace::NamespaceError;
 use std::num::NonZeroUsize;
 use std::str::from_utf8;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use test_runners_lib::cases::TestCaseInfo;
 use test_runners_lib::elf::{
     Component, ComponentError, EnumeratedTestCases, FidlError, KernelError,
@@ -35,12 +34,10 @@ use {
 
 const DYNAMIC_SKIP_RESULT: &str = "SKIPPED";
 
-lazy_static! {
-    static ref NEXT_VDSO: zx::Handle = {
-        runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))
-            .expect("failed to take next vDSO handle")
-    };
-}
+static NEXT_VDSO: LazyLock<zx::Handle> = LazyLock::new(|| {
+    runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))
+        .expect("failed to take next vDSO handle")
+});
 
 /// Implements `fuchsia.test.Suite` and runs provided test.
 pub struct TestServer {
@@ -171,15 +168,15 @@ macro_rules! test_flag {
     };
 }
 
-lazy_static! {
-    static ref RESTRICTED_FLAGS: Vec<&'static str> = vec![
+static RESTRICTED_FLAGS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    vec![
         test_flag!("filter"),
         test_flag!("output"),
         test_flag!("also_run_disabled_tests"),
         test_flag!("list_tests"),
-        test_flag!("repeat")
-    ];
-}
+        test_flag!("repeat"),
+    ]
+});
 
 impl TestServer {
     /// Creates new test server.
@@ -674,8 +671,8 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::fs;
     use test_runners_test_lib::{
-        assert_event_ord, collect_listener_event, names_to_invocation, test_component,
-        ListenerEvent,
+        ListenerEvent, assert_event_ord, collect_listener_event, names_to_invocation,
+        test_component,
     };
     use uuid::Uuid;
 
