@@ -7,27 +7,27 @@ import("//tools/fidl/fidlc/testdata/fidl_golden_library.gni")
 standalone_libraries = [
   "anonymous.test.fidl",
   "arrays.test.fidl",
+  "bits_constants.test.fidl",
   "bits.test.fidl",
   "byte_and_bytes.test.fidl",
-  "bits_constants.test.fidl",
   "constants.test.fidl",
   "consts.test.fidl",
   "doc_comments.test.fidl",
   "driver_handle.test.fidl",
   "driver_one_way.test.fidl",
+  "driver_service.test.fidl",
   "driver_two_way.test.fidl",
   "empty_struct.test.fidl",
   "encapsulated_structs.test.fidl",
   "enum.test.fidl",
-  "driver_service.test.fidl",
   "error.test.fidl",
   "escaping.test.fidl",
   "experimental_maybe_from_alias.test.fidl",
   "experimental_zx_c_types.test.fidl",
-  "handles.test.fidl",
   "handles_in_types.test.fidl",
-  "inheritance.test.fidl",
+  "handles.test.fidl",
   "inheritance_with_recursive_decl.test.fidl",
+  "inheritance.test.fidl",
   "new_type.test.fidl",
   "nullable.test.fidl",
   "overlay.test.fidl",
@@ -42,11 +42,20 @@ standalone_libraries = [
   "table.test.fidl",
   "time.test.fidl",
   "types_in_protocols.test.fidl",
-  "union.test.fidl",
   "union_sandwich.test.fidl",
+  "union.test.fidl",
   "unknown_interactions.test.fidl",
   "vectors.test.fidl",
   "versions.test.fidl",
+]
+
+libaries_with_drivers = [
+  "driver_handle.test.fidl",
+  "driver_one_way.test.fidl",
+  "driver_service.test.fidl",
+  "driver_two_way.test.fidl",
+  "handles.test.fidl",
+  "unknown_interactions.test.fidl",
 ]
 
 foreach(filename, standalone_libraries) {
@@ -74,6 +83,10 @@ foreach(filename, standalone_libraries) {
 
     if (filename == "versions.test.fidl") {
       versioned = "test:1"
+    }
+
+    if (filter_include(libaries_with_drivers, [ filename ]) == [ filename ]) {
+      contains_drivers = true
     }
   }
 }

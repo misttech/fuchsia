@@ -133,6 +133,8 @@ fidl_testdata_info = [
       "fidlgen_go",
     ]
     host_build_denylist = [
+      "fidlgen_cpp",
+
       # Host-side FIDL doesn't support handles
       "fidlgen_rust_next",
     ]
@@ -140,6 +142,7 @@ fidl_testdata_info = [
   {
     name = "driver_one_way"
     target = "//tools/fidl/fidlc/testdata:test.driveroneway"
+    host_build_denylist = [ "fidlgen_cpp" ]
   },
   {
     name = "driver_service"
@@ -152,6 +155,8 @@ fidl_testdata_info = [
       "fidlgen_syzkaller",
     ]
     host_build_denylist = [
+      "fidlgen_cpp",
+
       # Host-side FIDL doesn't support handles
       "fidlgen_rust_next",
     ]
@@ -159,6 +164,7 @@ fidl_testdata_info = [
   {
     name = "driver_two_way"
     target = "//tools/fidl/fidlc/testdata:test.drivertwoway"
+    host_build_denylist = [ "fidlgen_cpp" ]
   },
   {
     name = "empty_struct"
@@ -230,6 +236,7 @@ fidl_testdata_info = [
       # TODO(https://fxbug.dev/362963403): fidlgen_rust_next doesn't support bindings denylists yet.
       "fidlgen_rust_next",
     ]
+    host_build_denylist = [ "fidlgen_cpp" ]
   },
   {
     name = "handles_in_types"
@@ -434,6 +441,7 @@ fidl_testdata_info = [
   {
     name = "unknown_interactions"
     target = "//tools/fidl/fidlc/testdata:test.unknowninteractions"
+    host_build_denylist = [ "fidlgen_cpp" ]
   },
   {
     name = "vectors"
