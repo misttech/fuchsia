@@ -17,6 +17,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/driver/compat/cpp/symbols.h>
 #include <lib/driver/testing/cpp/test_node.h>
 #include <lib/fdf/testing.h>
@@ -449,40 +450,6 @@ class TestSystemStateTransition
   fidl::ServerBindingGroup<fuchsia_system_state::SystemStateTransition> bindings_;
 };
 
-class TestLogSink : public fidl::testing::WireTestBase<flogger::LogSink> {
- public:
-  TestLogSink() = default;
-
-  ~TestLogSink() {
-    if (completer_) {
-      completer_->ReplySuccess({});
-    }
-  }
-
- private:
-  void ConnectStructured(ConnectStructuredRequestView request,
-                         ConnectStructuredCompleter::Sync& completer) override {
-    socket_ = std::move(request->socket);
-  }
-  void WaitForInterestChange(WaitForInterestChangeCompleter::Sync& completer) override {
-    if (first_call_) {
-      first_call_ = false;
-      completer.ReplySuccess({});
-    } else {
-      completer_ = completer.ToAsync();
-    }
-  }
-
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    printf("Not implemented: LogSink::%s\n", name.data());
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
-  }
-
-  zx::socket socket_;
-  bool first_call_ = true;
-  std::optional<WaitForInterestChangeCompleter::Async> completer_;
-};
-
 class IncomingNamespace {
  public:
   zx::result<> Start(std::string_view v1_driver_path, zx_status_t compat_file_response,
@@ -514,8 +481,10 @@ class IncomingNamespace {
     // Setup and bind "/svc" directory.
     {
       zx::result result = outgoing.AddUnmanagedProtocol<flogger::LogSink>(
-          [dispatcher](fidl::ServerEnd<flogger::LogSink> server) {
-            fidl::BindServer(dispatcher, std::move(server), std::make_unique<TestLogSink>());
+          [](fidl::ServerEnd<flogger::LogSink> server) {
+            // Forward log-sink.
+            ASSERT_EQ(component::Connect<flogger::LogSink>(std::move(server)).status_value(),
+                      ZX_OK);
           });
       if (result.is_error()) {
         return result.take_error();

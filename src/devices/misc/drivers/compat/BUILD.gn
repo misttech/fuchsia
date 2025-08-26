@@ -207,6 +207,7 @@ cc_test_executable("unittests") {
     "//sdk/lib/async-default",
     "//sdk/lib/async-testing",
     "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/compat/cpp:symbols",
     "//sdk/lib/driver/runtime/testing/cpp",
