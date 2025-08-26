@@ -327,7 +327,7 @@ notify = { version = "5.1.0", default-features = false, features = ["macos_fseve
 # pulled in automatically by tokio
 num_cpus = "1.16.0"
 # See b/42169853, not used for target-side code to avoid system-wide impact of yield in spinloops.
-parking_lot = "0.12.0"
+parking_lot = "0.12.4"
 petgraph = { version = "0.6.2" }
 proc-macro2 = { version = "1.0.97", features = ["span-locations"] }
 pulldown-cmark = { version = "0.9.3", features = ["serde"] }
@@ -805,7 +805,7 @@ configs = ["//third_party/boringssl/rust:osslconf"]
 [gn.package.openssl-sys."0.9.106"]
 # Has build script but no config needed.
 
-[gn.package.parking_lot."0.12.0"]
+[gn.package.parking_lot."0.12.4"]
 # Funnel usage of parking_lot through fuchsia_sync.
 visibility = ["//src/lib/fuchsia-sync", "//third_party/rust_crates:*"]
 

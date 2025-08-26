@@ -650,7 +650,7 @@ group("p256") {
 
 if (!(current_os == "fuchsia")) {
   group("parking_lot") {
-    public_deps = [ ":parking_lot-v0_12_0" ]
+    public_deps = [ ":parking_lot-v0_12_4" ]
   }
 }
 
@@ -3171,7 +3171,7 @@ rustc_library("bt-gatt-v0_0_1") {
   deps = []
   deps += [ ":bt-common-v0_0_1" ]
   deps += [ ":futures-v0_3_31" ]
-  deps += [ ":parking_lot-v0_12_0" ]
+  deps += [ ":parking_lot-v0_12_4" ]
   deps += [ ":thiserror-v2_0_12" ]
 
   rustenv = []
@@ -11481,19 +11481,19 @@ rustc_library("parking_lot-v0_11_1") {
   applicable_licenses = [ ":parking_lot-v0_11_1.license" ]
 }
 
-license("parking_lot-v0_12_0.license") {
+license("parking_lot-v0_12_4.license") {
   public_package_name = "parking_lot"
   license_files = [
-    "//third_party/rust_crates/vendor/parking_lot-0.12.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/parking_lot-0.12.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/parking_lot-0.12.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/parking_lot-0.12.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("parking_lot-v0_12_0") {
+rustc_library("parking_lot-v0_12_4") {
   crate_name = "parking_lot"
-  source_root = "//third_party/rust_crates/vendor/parking_lot-0.12.0/src/lib.rs"
-  output_name = "parking_lot-d9810ba0a454a15a"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/parking_lot-0.12.4/src/lib.rs"
+  output_name = "parking_lot-ac32ab64407af4de"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -11506,8 +11506,8 @@ rustc_library("parking_lot-v0_12_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d9810ba0a454a15a",
-    "-Cextra-filename=-d9810ba0a454a15a",
+    "-Cmetadata=ac32ab64407af4de",
+    "-Cextra-filename=-ac32ab64407af4de",
     "--cfg=feature=\"default\"",
   ]
 
@@ -11515,7 +11515,7 @@ rustc_library("parking_lot-v0_12_0") {
   visibility += [ "//src/lib/fuchsia-sync" ]
   visibility += [ "//third_party/rust_crates:*" ]
 
-  applicable_licenses = [ ":parking_lot-v0_12_0.license" ]
+  applicable_licenses = [ ":parking_lot-v0_12_4.license" ]
 }
 
 license("parking_lot_core-v0_8_3.license") {
@@ -18791,7 +18791,7 @@ rustc_library("tracing-mutex-v0_3_1") {
 
   deps = []
   deps += [ ":lock_api-v0_4_13" ]
-  deps += [ ":parking_lot-v0_12_0" ]
+  deps += [ ":parking_lot-v0_12_4" ]
 
   rustenv = []
 
@@ -18942,7 +18942,7 @@ rustc_library("trust-dns-resolver-v0_22_0") {
   deps += [ ":futures-util-v0_3_31" ]
   deps += [ ":lazy_static-v1_5_0" ]
   deps += [ ":lru-cache-v0_1_2" ]
-  deps += [ ":parking_lot-v0_12_0" ]
+  deps += [ ":parking_lot-v0_12_4" ]
   deps += [ ":smallvec-v1_15_1" ]
   deps += [ ":thiserror-v1_0_69" ]
   deps += [ ":tracing-v0_1_40" ]

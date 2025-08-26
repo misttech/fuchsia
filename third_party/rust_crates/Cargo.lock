@@ -498,7 +498,7 @@ version = "0.0.1"
 dependencies = [
  "bt-common",
  "futures",
- "parking_lot 0.12.0",
+ "parking_lot 0.12.4",
  "thiserror 2.0.12",
 ]
 
@@ -1612,7 +1612,7 @@ dependencies = [
  "openssl",
  "overload",
  "p256",
- "parking_lot 0.12.0",
+ "parking_lot 0.12.4",
  "paste",
  "pathdiff",
  "pem",
@@ -2981,9 +2981,9 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
-version = "0.12.0"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87f5ec2493a61ac0506c0f4199f99070cbe83857b0337006a30f3e6719b8ef58"
+checksum = "70d58bf43669b5795d1576d0641cfb6fbb2057bf629506267a92807158584a13"
 dependencies = [
  "lock_api",
  "parking_lot_core 0.9.11",
@@ -4997,7 +4997,7 @@ checksum = "d8055158a2720e5329dd2217b6fcc7ae35250baefd6bfab14ef7b012b6de8012"
 dependencies = [
  "autocfg 1.5.0",
  "lock_api",
- "parking_lot 0.12.0",
+ "parking_lot 0.12.4",
 ]
 
 [[package]]
@@ -5052,7 +5052,7 @@ dependencies = [
  "futures-util",
  "lazy_static",
  "lru-cache",
- "parking_lot 0.12.0",
+ "parking_lot 0.12.4",
  "smallvec",
  "thiserror 1.0.69",
  "tracing",
