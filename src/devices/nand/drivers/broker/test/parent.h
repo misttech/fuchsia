@@ -68,6 +68,4 @@ class ParentDevice {
   TestConfig config_;
 };
 
-extern ParentDevice* g_parent_device_;
-
 #endif  // SRC_DEVICES_NAND_DRIVERS_BROKER_TEST_PARENT_H_

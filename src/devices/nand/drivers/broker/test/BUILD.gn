@@ -12,7 +12,13 @@ source_set("common") {
 
   sources = [
     "broker-test.cc",
+    "broker-test.h",
     "parent.cc",
+    "parent.h",
+  ]
+  deps = [
+    "//src/lib/testing/predicates",
+    "//third_party/googletest:gmock",
   ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
@@ -20,17 +26,16 @@ source_set("common") {
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//sdk/fidl/fuchsia.nand:fuchsia.nand_cpp",
-    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm:static",
     "//sdk/lib/fdio",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
     "//src/storage/lib/ramdevice_client/cpp",
+    "//third_party/googletest:gtest",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
   ]
 }
 
@@ -47,7 +52,10 @@ test("nand-broker") {
 test("nandpart-broker") {
   output_name = "nandpart-broker-test"
   sources = [ "nandpart-main.cc" ]
-  deps = [ ":common" ]
+  deps = [
+    ":common",
+    "//sdk/lib/component/incoming/cpp",
+  ]
 
   # TODO(https://fxbug.dev/42176699): This target uses mutable tables which are deprecated,
   # rather than builders.

@@ -9,8 +9,9 @@
 
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <fbl/unique_fd.h>
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
+#include "broker-test.h"
 #include "parent.h"
 
 namespace {
@@ -166,7 +167,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  g_parent_device_ = &parent.value();
+  nand_broker_test::NandBrokerTest::SetParent(std::move(parent.value()));
 
-  return RUN_ALL_TESTS(argc, argv);
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
 }

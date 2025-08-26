@@ -10,8 +10,9 @@
 #include <zircon/status.h>
 
 #include <bind/fuchsia/platform/cpp/bind.h>
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
+#include "broker-test.h"
 #include "parent.h"
 
 constexpr fuchsia_hardware_nand::wire::Info kNandInfo = {
@@ -47,8 +48,6 @@ constexpr fuchsia_hardware_nand::wire::PartitionMap kPartitionMap = {
 // way to control what's going on is to have a place outside the test framework
 // that controls where to execute, as "creation / teardown" of the external
 // device happens at the process level.
-ParentDevice* g_parent_device_;
-
 int main(int argc, char** argv) {
   // Connect to DriverTestRealm.
   zx::result client_end = component::Connect<fuchsia_driver_test::Realm>();
@@ -114,7 +113,8 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  g_parent_device_ = &nandpart_parent.value();
+  nand_broker_test::NandBrokerTest::SetParent(std::move(parent.value()));
 
-  return RUN_ALL_TESTS(argc, argv);
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
 }
