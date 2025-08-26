@@ -236,7 +236,7 @@ Error ArmEhAbiParser::ParseInstructionsFromOffset(Memory* stack, uint32_t data, 
           // Pop registers from r4 thru r[4 + N] (inclusive).
           // N is encoded in the lower 3 bits. We'll create a register mask same as above, where
           // each bit corresponds the register index.
-          uint32_t n = byte & 0x3;
+          uint32_t n = byte & 0x7;
 
           // Add 1 to |n| to get 1 past the last register we want to include. After shifting,
           // subtract 1 to set all the lower bits to 1 and shift up by 4 so the mask ends with r4.
