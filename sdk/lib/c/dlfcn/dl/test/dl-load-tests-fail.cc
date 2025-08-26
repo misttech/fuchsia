@@ -10,12 +10,13 @@ using dl::testing::DlTests;
 TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes);
 
 using dl::testing::Found;
+using dl::testing::IsDepFileNotFoundErrMsg;
+using dl::testing::IsFileNotFoundErrMsg;
 using dl::testing::IsUndefinedSymbolErrMsg;
 using dl::testing::NotFound;
 using dl::testing::TestModule;
 using dl::testing::TestShlib;
 using dl::testing::TestSym;
-using ::testing::MatchesRegex;
 
 TYPED_TEST(DlTests, InvalidMode) {
   const std::string kRet17File = TestModule("ret17");
@@ -52,13 +53,7 @@ TYPED_TEST(DlTests, NotFound) {
   if constexpr (TestFixture::kCanMatchExactError) {
     EXPECT_EQ(open.error_value().take_str(), "does-not-exist.NotFound.module.so not found");
   } else {
-    EXPECT_THAT(
-        open.error_value().take_str(),
-        MatchesRegex(
-            // emitted by Fuchsia-musl
-            "Error loading shared library .*does-not-exist.NotFound.module.so: ZX_ERR_NOT_FOUND"
-            // emitted by Linux-glibc
-            "|.*does-not-exist.NotFound.module.so: cannot open shared object file: No such file or directory"));
+    EXPECT_THAT(open.error_value().take_str(), IsFileNotFoundErrMsg(kDoesNotExistFile));
   }
 }
 
@@ -103,13 +98,8 @@ TYPED_TEST(DlTests, MissingDependency) {
     EXPECT_EQ(open.error_value().take_str(),
               "cannot open dependency: libmissing-dep-dep.MissingDependency.so");
   } else {
-    EXPECT_THAT(
-        open.error_value().take_str(),
-        MatchesRegex(
-            // emitted by Fuchsia-musl
-            "Error loading shared library .*libmissing-dep-dep.MissingDependency.so: ZX_ERR_NOT_FOUND \\(needed by missing-dep.MissingDependency.module.so\\)"
-            // emitted by Linux-glibc
-            "|.*libmissing-dep-dep.MissingDependency.so: cannot open shared object file: No such file or directory"));
+    EXPECT_THAT(open.error_value().take_str(),
+                IsDepFileNotFoundErrMsg(kMissingDepFile, kMissingDepDepFile));
   }
 }
 
@@ -131,13 +121,8 @@ TYPED_TEST(DlTests, MissingTransitiveDependency) {
     EXPECT_EQ(open.error_value().take_str(),
               "cannot open dependency: libmissing-dep-dep.MissingTransitiveDependency.so");
   } else {
-    EXPECT_THAT(
-        open.error_value().take_str(),
-        MatchesRegex(
-            // emitted by Fuchsia-musl
-            "Error loading shared library .*libmissing-dep-dep.MissingTransitiveDependency.so: ZX_ERR_NOT_FOUND \\(needed by libhas-missing-dep.MissingTransitiveDependency.so\\)"
-            // emitted by Linux-glibc
-            "|.*libmissing-dep-dep.MissingTransitiveDependency.so: cannot open shared object file: No such file or directory"));
+    EXPECT_THAT(open.error_value().take_str(),
+                IsDepFileNotFoundErrMsg(kHasMissingDepFile, kMissingDepDepFile));
   }
 }
 

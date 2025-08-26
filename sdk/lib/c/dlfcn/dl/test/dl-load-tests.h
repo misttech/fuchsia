@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_DL_TEST_DL_LOAD_TESTS_H_
-#define LIB_DL_TEST_DL_LOAD_TESTS_H_
+#ifndef LIB_C_DLFCN_DL_TEST_DL_LOAD_TESTS_H_
+#define LIB_C_DLFCN_DL_TEST_DL_LOAD_TESTS_H_
 
 #include <format>
 #include <string>
@@ -79,6 +79,29 @@ MATCHER_P2(IsUndefinedSymbolErrMsg, symbol_name, module_name,
       arg, result_listener);
 }
 
+MATCHER_P(IsFileNotFoundErrMsg, file, std::format("error for missing file {}", file)) {
+  return ::testing::ExplainMatchResult(
+      ::testing::MatchesRegex(std::format(
+          // emitted by Fuchsia-musl
+          "Error loading shared library .*{}: ZX_ERR_NOT_FOUND"
+          // emitted by Linux-glibc
+          "|.*{}: cannot open shared object file: No such file or directory",
+          file, file)),
+      arg, result_listener);
+}
+
+MATCHER_P2(IsDepFileNotFoundErrMsg, file, dep_file,
+           std::format("error for missing dep file {} for {}", dep_file, file)) {
+  return ::testing::ExplainMatchResult(
+      ::testing::MatchesRegex(std::format(
+          // emitted by Fuchsia-musl
+          "Error loading shared library .*{}: ZX_ERR_NOT_FOUND \\(needed by {}\\)"
+          // emitted by Linux-glibc
+          "|.*{}: cannot open shared object file: No such file or directory",
+          dep_file, file, dep_file)),
+      arg, result_listener);
+}
+
 // These are a convenience functions to specify that a specific dependency
 // should or should not be found in the Needed set.
 
@@ -110,4 +133,4 @@ inline std::string TestShlib(std::string_view symbol) {
 
 }  // namespace dl::testing
 
-#endif  // LIB_DL_TEST_DL_LOAD_TESTS_H_
+#endif  // LIB_C_DLFCN_DL_TEST_DL_LOAD_TESTS_H_
