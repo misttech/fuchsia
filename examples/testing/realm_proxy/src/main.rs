@@ -7,7 +7,7 @@ use fuchsia_component::client::{
     connect_to_protocol, connect_to_protocol_at, connect_to_protocol_at_path,
 };
 use log::info;
-use realm_client::{extend_namespace, InstalledNamespace};
+use realm_client::{InstalledNamespace, extend_namespace};
 use {fidl_fidl_examples_routing_echo as fecho, fidl_test_echoserver as ftest};
 
 async fn create_realm(options: ftest::RealmOptions) -> Result<InstalledNamespace> {

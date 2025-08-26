@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use attribution_server::{AttributionServer, AttributionServerHandle, Observer, Publisher};
 use fidl::endpoints::{ControlHandle, RequestStream};
 use fuchsia_component::server::ServiceFs;
@@ -11,8 +11,8 @@ use futures::{StreamExt, TryStreamExt};
 use runner::component::{Controllable, Controller, StopInfo};
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use zx::AsHandleRef;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,

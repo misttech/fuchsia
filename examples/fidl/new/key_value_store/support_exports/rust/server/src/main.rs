@@ -8,11 +8,11 @@ use futures::prelude::*;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::cell::RefCell;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 // [START diff_1]
-use fidl::{persist, Vmo};
+use fidl::{Vmo, persist};
 use fidl_examples_keyvaluestore_supportexports::{
     ExportError, Exportable, Item, StoreRequest, StoreRequestStream, WriteError,
 };

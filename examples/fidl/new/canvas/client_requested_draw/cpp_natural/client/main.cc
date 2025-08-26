@@ -153,8 +153,8 @@ int main(int argc, const char** argv) {
     // [END diff_3]
   }
 
-  // TODO(https://fxbug.dev/42156498): We need to sleep here to make sure all logs get drained. Once the
-  // referenced bug has been resolved, we can remove the sleep.
+  // TODO(https://fxbug.dev/42156498): We need to sleep here to make sure all logs get drained. Once
+  // the referenced bug has been resolved, we can remove the sleep.
   sleep(2);
   return 0;
 }

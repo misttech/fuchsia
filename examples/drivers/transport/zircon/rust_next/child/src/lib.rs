@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{driver_register, Driver, DriverContext, Node, NodeBuilder, ServiceInstance};
+use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceInstance, driver_register};
 use fidl_next_fuchsia_hardware_i2c as i2c;
 use log::{error, info};
 use zx::Status;
@@ -23,7 +23,9 @@ impl Driver for ZirconChildDriver {
     const NAME: &str = "zircon_child_rust_next_driver";
 
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
-        info!("Binding node client. Every driver needs to do this for the driver to be considered loaded.");
+        info!(
+            "Binding node client. Every driver needs to do this for the driver to be considered loaded."
+        );
         let node = context.take_node()?;
 
         let mut device = get_i2c_device(&context).unwrap();

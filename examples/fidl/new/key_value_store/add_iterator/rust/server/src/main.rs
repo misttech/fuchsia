@@ -14,8 +14,8 @@ use fidl_examples_keyvaluestore_additerator::{
     StoreRequestStream, WriteError,
 };
 use fuchsia_async as fasync;
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::ops::Bound::*;
 use std::sync::{Arc, Mutex};
 // [END diff_1]

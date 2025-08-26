@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use fidl::endpoints::RequestStream as _;
 use fidl_examples_canvas_clientrequesteddraw::{
     BoundingBox, InstanceRequest, InstanceRequestStream, Point,

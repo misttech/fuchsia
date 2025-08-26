@@ -4,7 +4,7 @@
 
 use anyhow::Error;
 use diagnostics_data::{Data, Logs};
-use example_tester::{assert_filtered_logs_eq_to_golden, run_test, Client, Server, TestKind};
+use example_tester::{Client, Server, TestKind, assert_filtered_logs_eq_to_golden, run_test};
 use fidl::prelude::*;
 use fidl_examples_canvas_baseline::InstanceMarker;
 use fuchsia_async as fasync;

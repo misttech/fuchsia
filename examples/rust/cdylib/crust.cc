@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "examples/rust/cdylib/rust/crust.h"
+
 #include <gtest/gtest.h>
 
 TEST(DyLibTest, GetInt) { EXPECT_EQ(42, crust_get_int()); }

@@ -257,7 +257,7 @@ mod smart_pointers {
 
         let inner = number.into_inner(); // Detaches from inspect tree...
         assert_eq!(inner, 1340u16); // ...and returns the inner value.
-                                    // [END smart_pointers_ivalue]
+        // [END smart_pointers_ivalue]
 
         assert_data_tree!(inspector, root: {});
 

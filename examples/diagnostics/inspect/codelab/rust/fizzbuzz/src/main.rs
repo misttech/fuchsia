@@ -6,7 +6,7 @@ use anyhow::{Context, Error};
 use fidl_fuchsia_examples_inspect::{FizzBuzzRequest, FizzBuzzRequestStream};
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
-use fuchsia_inspect::{self as inspect, component, HistogramProperty, NumericProperty};
+use fuchsia_inspect::{self as inspect, HistogramProperty, NumericProperty, component};
 
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info};

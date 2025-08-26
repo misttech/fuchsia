@@ -5,8 +5,8 @@
 use anyhow::Context;
 use fidl_fidl_examples_routing_echo::{EchoRequest, EchoRequestStream};
 use fuchsia_component::server::ServiceFs;
-use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::NumericProperty;
+use fuchsia_inspect::health::Reporter;
 use futures::prelude::*;
 
 enum IncomingRequest {
@@ -85,7 +85,7 @@ async fn handle_echo_request(mut stream: EchoRequestStream, stats: &EchoConnecti
 
 #[cfg(test)]
 mod tests {
-    use super::{handle_echo_request, EchoConnectionStats};
+    use super::{EchoConnectionStats, handle_echo_request};
     use fidl_fidl_examples_routing_echo::EchoMarker;
 
     #[fuchsia::test]

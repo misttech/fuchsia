@@ -14,8 +14,8 @@ use {
     lazy_static::lazy_static,
     regex::Regex,
     std::cell::RefCell,
-    std::collections::hash_map::Entry,
     std::collections::HashMap,
+    std::collections::hash_map::Entry,
 };
 
 lazy_static! {

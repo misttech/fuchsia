@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use example_tester::{assert_logs_eq_to_golden, run_test, Client, Server, TestKind};
+use example_tester::{Client, Server, TestKind, assert_logs_eq_to_golden, run_test};
 use fidl::prelude::*;
 use fidl_examples_keyvaluestore_baseline::StoreMarker;
 use fuchsia_async as fasync;

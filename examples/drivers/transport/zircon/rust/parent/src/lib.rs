@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fdf_component::{
-    driver_register, Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer,
+    Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer, driver_register,
 };
 use fidl_fuchsia_hardware_i2c as i2c;
 use fuchsia_component::server::ServiceFs;
@@ -38,7 +38,9 @@ impl Driver for ZirconParentDriver {
     const NAME: &str = "zircon_parent_rust_driver";
 
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
-        info!("Binding node client. Every driver needs to do this for the driver to be considered loaded.");
+        info!(
+            "Binding node client. Every driver needs to do this for the driver to be considered loaded."
+        );
         let node = context.take_node()?;
 
         info!("Offering an i2c service in the outgoing directory");

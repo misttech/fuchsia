@@ -9,8 +9,8 @@ use futures::prelude::*;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::cell::RefCell;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 lazy_static! {
     static ref KEY_VALIDATION_REGEX: Regex =

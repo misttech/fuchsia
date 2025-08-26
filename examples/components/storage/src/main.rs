@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::{Inspector, Node};
@@ -97,7 +97,7 @@ fn write_file(path: &Path, value: u64) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use tempfile::TempDir;
     use test_case::test_case;
 

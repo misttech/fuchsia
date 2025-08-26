@@ -5,9 +5,9 @@
 // [START example_snippet]
 {
     include: [
+        "//src/sys/component_manager/tests/meta/use_elf_runner.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
-        "//src/sys/component_manager/tests/meta/use_elf_runner.shard.cml",
     ],
 
     // Information about the program to run.

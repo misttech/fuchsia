@@ -7,7 +7,7 @@ use inspect_rust_codelab_testing::{IntegrationTest, TestOptions};
 
 // [START include_test_stuff]
 use anyhow::format_err;
-use diagnostics_assertions::{assert_data_tree, AnyProperty};
+use diagnostics_assertions::{AnyProperty, assert_data_tree};
 use diagnostics_reader::{ArchiveReader, DiagnosticsHierarchy};
 // [END include_test_stuff]
 

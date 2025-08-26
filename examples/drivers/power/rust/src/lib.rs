@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{driver_register, Driver, DriverContext, Node};
+use fdf_component::{Driver, DriverContext, Node, driver_register};
 use fdf_power::{Suspendable, SuspendableDriver};
 use log::info;
 use zx::Status;

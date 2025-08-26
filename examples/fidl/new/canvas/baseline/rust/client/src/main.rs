@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use config::Config;
 use fidl_examples_canvas_baseline::{InstanceEvent, InstanceMarker, Point};
 use fuchsia_component::client::connect_to_protocol;

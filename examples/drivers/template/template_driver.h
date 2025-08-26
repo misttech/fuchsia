@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef EXAMPLES_DRIVERS_template_template_DRIVER_H_
-#define EXAMPLES_DRIVERS_template_template_DRIVER_H_
+#ifndef EXAMPLES_DRIVERS_TEMPLATE_TEMPLATE_DRIVER_H_
+#define EXAMPLES_DRIVERS_TEMPLATE_TEMPLATE_DRIVER_H_
 
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
@@ -35,4 +35,4 @@ class TemplateDriver : public fdf::DriverBase {
 
 }  // namespace template_driver
 
-#endif  // EXAMPLES_DRIVERS_template_template_DRIVER_H_
+#endif  // EXAMPLES_DRIVERS_TEMPLATE_TEMPLATE_DRIVER_H_

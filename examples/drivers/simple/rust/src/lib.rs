@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{driver_register, Driver, DriverContext, Node, NodeBuilder};
+use fdf_component::{Driver, DriverContext, Node, NodeBuilder, driver_register};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_driver_framework::NodeMarker;
 use log::info;
@@ -34,7 +34,9 @@ impl Driver for SimpleRustDriver {
             "outgoing namespace."
         ));
 
-        info!("Binding node client. Every driver needs to do this for the driver to be considered loaded.");
+        info!(
+            "Binding node client. Every driver needs to do this for the driver to be considered loaded."
+        );
         let node = context.take_node()?;
 
         info!("Creating an owned child node with a property");

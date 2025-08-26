@@ -7,7 +7,7 @@ use {
     anyhow::{Context, Error},
     fidl_fuchsia_examples_inspect::FizzBuzzMarker,
     fuchsia_component::{client, server::ServiceFs},
-    futures::{future::try_join, FutureExt, StreamExt},
+    futures::{FutureExt, StreamExt, future::try_join},
     log::info,
     // CODELAB: Use inspect.
 };
