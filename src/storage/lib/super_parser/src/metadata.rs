@@ -3,16 +3,15 @@
 // found in the LICENSE file.
 
 use crate::format::{
-    AdjustSlotSuffix, BlockDeviceFlags, METADATA_GEOMETRY_RESERVED_SIZE, MetadataBlockDevice,
-    MetadataExtent, MetadataGeometry, MetadataHeader, MetadataPartition, MetadataPartitionGroup,
-    MetadataTableDescriptor, PARTITION_RESERVED_BYTES, PartitionGroupFlags, ValidateTable,
+    AdjustSlotSuffix, METADATA_GEOMETRY_RESERVED_SIZE, MetadataBlockDevice, MetadataExtent,
+    MetadataGeometry, MetadataHeader, MetadataPartition, MetadataPartitionGroup,
+    MetadataTableDescriptor, PARTITION_RESERVED_BYTES, ValidateTable,
 };
 use anyhow::{Error, anyhow, ensure};
 use sha2::Digest;
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::{Deref, DerefMut, Range};
-use std::sync::Arc;
 use storage_device::Device;
 use zerocopy::{FromBytes, KnownLayout};
 
@@ -64,7 +63,7 @@ pub(crate) fn round_up_to_alignment(x: u64, alignment: u64) -> Result<u64, Error
     ensure!(alignment.count_ones() == 1, "alignment should be a power of 2");
     alignment
         .checked_mul(x.div_ceil(alignment))
-        .ok_or(anyhow!("overflow occurred when rounding up to nearest alignment"))
+        .ok_or_else(|| anyhow!("overflow occurred when rounding up to nearest alignment"))
 }
 
 // TODO(https://fxbug.dev/404952286): Add fuzzer to check for arithmetic overflows.
@@ -165,6 +164,10 @@ pub struct Metadata {
 }
 
 impl Metadata {
+    pub fn partitions(&self) -> &HashMap<String, MetadataPartition> {
+        &self.partitions
+    }
+
     /// Caller should indicate which slot_number to read from. For example, for an A/B device, there
     /// will be two variants of metadata: "slot_a" is stored at slot 0 and "slot_b" is stored at
     /// slot 1. For devices where there slot count is 0, metadata will be stored at slot 0.
@@ -219,7 +222,7 @@ impl Metadata {
         let partition_metadata = self
             .partitions
             .get(partition_name)
-            .ok_or(anyhow!("Could not find partition with name {partition_name}"))?;
+            .ok_or_else(|| anyhow!("Could not find partition with name {partition_name}"))?;
 
         let mut extent_locations = Vec::new();
         let first_extent_index = partition_metadata.first_extent_index;
@@ -405,11 +408,13 @@ impl Metadata {
 #[cfg(test)]
 mod tests {
     use crate::format::{
-        MetadataHeaderFlags, PartitionAttributes, RESERVED_AND_GEOMETRIES_SIZE, SECTOR_SIZE,
+        BlockDeviceFlags, MetadataHeaderFlags, PartitionAttributes, PartitionGroupFlags,
+        RESERVED_AND_GEOMETRIES_SIZE, SECTOR_SIZE,
     };
 
     use super::*;
     use std::path::Path;
+    use std::sync::Arc;
     use storage_device::fake_device::FakeDevice;
 
     const BLOCK_SIZE: u32 = 4096;

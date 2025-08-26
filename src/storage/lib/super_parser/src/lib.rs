@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-mod format;
-mod metadata;
+pub mod format;
+pub mod metadata;
 
 use crate::metadata::{SuperDeviceRange, SuperMetadata, round_up_to_alignment};
 use anyhow::{Error, anyhow, ensure};
@@ -41,12 +41,16 @@ impl SuperParser {
         })
     }
 
+    pub fn super_metadata(&self) -> &SuperMetadata {
+        &self.super_metadata
+    }
+
     /// Returns a vector of the used regions in-order, as a half-open Range(start..end). Note that
     /// the results would be more meaningful for extents with target type `TARGET_TYPE_LINEAR` as
     /// it implies that the extent is a dm-linear target which are made by concatenating linear
     /// regions (extents) of disk together. For `TARGET_TYPE_ZERO`, this would return [Range(0..0)].
     pub fn used_regions_in_bytes(&self) -> Vec<Range<u64>> {
-        self.used_regions.clone().into_iter().map(|r| r.into()).collect()
+        self.used_regions.iter().map(|r| (**r).clone()).collect()
     }
 
     /// Get a partition within super. Must specify the name of the sub-partition and which slot from
