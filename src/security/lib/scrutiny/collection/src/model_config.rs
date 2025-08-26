@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use camino::Utf8PathBuf;
+use delivery_blob::DeliveryBlobType;
 use product_bundle::ProductBundle;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -22,6 +23,8 @@ pub struct ModelConfig {
     pub update_package_path: PathBuf,
     /// Path to a directory of blobs.
     pub blobs_directory: PathBuf,
+    /// The delivery blob type for the blobs in 'blobs_directory'.
+    pub delivery_blob_type: DeliveryBlobType,
     /// Optional path to a component tree configuration used for customizing
     /// component tree data collection.
     pub component_tree_config_path: Option<PathBuf>,
@@ -58,7 +61,14 @@ impl ModelConfig {
             .repositories
             .get(0)
             .ok_or_else(|| anyhow!("The product bundle must have at least one repository"))?;
-        let blobs_directory = repository.blobs_path.clone().into_std_path_buf();
+
+        let delivery_blob_type = DeliveryBlobType::try_from(repository.delivery_blob_type)?;
+
+        let blobs_directory = repository
+            .blobs_path
+            .clone()
+            .into_std_path_buf()
+            .join(repository.delivery_blob_type.to_string());
 
         let update_package_hash = product_bundle
             .update_package_hash
@@ -68,6 +78,7 @@ impl ModelConfig {
         Ok(ModelConfig {
             update_package_path,
             blobs_directory,
+            delivery_blob_type,
             component_tree_config_path: None,
             is_recovery,
         })

@@ -14,9 +14,8 @@ use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::str::{from_utf8, FromStr};
+use std::str::{FromStr, from_utf8};
 use thiserror::Error;
 
 #[derive(Debug, Deserialize, Serialize, Error)]
@@ -24,7 +23,9 @@ use thiserror::Error;
 pub enum SystemImageError {
     #[error("additional boot config is missing the pkgfs cmd entry")]
     MissingPkgfsCmdEntry,
-    #[error("Unexpected number of pkgfs cmd entry arguments: expected {expected_len}; actual: {actual_len}")]
+    #[error(
+        "Unexpected number of pkgfs cmd entry arguments: expected {expected_len}; actual: {actual_len}"
+    )]
     UnexpectedPkgfsCmdLen { expected_len: usize, actual_len: usize },
     #[error("Unexpected pkgfs command: expected {expected_cmd}; actual {actual_cmd}")]
     UnexpectedPkgfsCmd { expected_cmd: String, actual_cmd: String },
@@ -39,7 +40,9 @@ pub enum PackageError {
     FailedToOpenPackage { package_path: PathBuf, io_error: String },
     #[error("Failed to read package file: {package_path}: {io_error}")]
     FailedToReadPackage { package_path: PathBuf, io_error: String },
-    #[error("Failed to verify package file: expected merkle root: {expected_merkle_root}; computed merkle root: {computed_merkle_root}")]
+    #[error(
+        "Failed to verify package file: expected merkle root: {expected_merkle_root}; computed merkle root: {computed_merkle_root}"
+    )]
     FailedToVerifyPackage { expected_merkle_root: Hash, computed_merkle_root: Hash },
 }
 
@@ -139,9 +142,10 @@ pub fn open_update_package<P: AsRef<Path>>(
     artifact_reader: &mut Box<dyn ArtifactReader>,
 ) -> Result<Utf8Reader<Box<dyn ReadSeek>>> {
     let update_package_path = update_package_path.as_ref();
-    let mut update_package_file = File::open(update_package_path).with_context(|| {
+    let mut update_package_file = artifact_reader.open(update_package_path).with_context(|| {
         format!("Failed to open update package meta.far at {:?}", update_package_path)
     })?;
+
     let update_package_hash = MerkleTree::from_reader(&mut update_package_file)
         .with_context(|| {
             format!(
@@ -324,14 +328,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_system_image_hash_string, verify_package_merkle, PackageError, SystemImageError,
-        META_CONTENTS_PATH, PKGFS_BINARY_PATH, PKGFS_CMD_ADDITIONAL_BOOT_CONFIG_KEY,
+        META_CONTENTS_PATH, PKGFS_BINARY_PATH, PKGFS_CMD_ADDITIONAL_BOOT_CONFIG_KEY, PackageError,
+        SystemImageError, extract_system_image_hash_string, verify_package_merkle,
     };
     use crate::artifact::ArtifactReader;
     use crate::io::ReadSeek;
-    use anyhow::{anyhow, Result};
+    use anyhow::{Result, anyhow};
     use fuchsia_archive::write as far_write;
-    use fuchsia_merkle::{Hash, HASH_SIZE};
+    use fuchsia_merkle::{HASH_SIZE, Hash};
     use maplit::{btreemap, hashmap};
     use std::collections::{BTreeMap, HashMap, HashSet};
     use std::io::{BufWriter, Cursor, Read};

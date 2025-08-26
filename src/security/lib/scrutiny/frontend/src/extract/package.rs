@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use fuchsia_archive::Utf8Reader as FarReader;
 use fuchsia_url::AbsolutePackageUrl;
 use scrutiny_collection::core::Packages;
@@ -48,8 +48,11 @@ impl PackageExtractController {
         output: impl AsRef<Path>,
     ) -> Result<Value> {
         let output = output.as_ref();
-        let mut artifact_reader =
-            FileArtifactReader::new(&PathBuf::new(), &model.config().blobs_directory());
+        let mut artifact_reader = FileArtifactReader::new(
+            &PathBuf::new(),
+            &model.config().blobs_directory(),
+            model.config().delivery_blob_type,
+        );
         let packages = &model.get::<Packages>()?.entries;
         for package in packages.iter() {
             if package.matches_url(&url) {

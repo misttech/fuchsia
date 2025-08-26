@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use scrutiny_collection::additional_boot_args::AdditionalBootConfigCollection;
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::static_packages::StaticPkgsCollection;
@@ -38,7 +38,10 @@ impl PreSigningController {
             .get::<AdditionalBootConfigCollection>()
             .context("Failed to get AdditionalBootConfigCollection")?;
         if boot_config_model.errors.len() > 0 {
-            return Err(anyhow!("Cannot validate additional boot args: AdditionalBootConfigCollector reported errors {:?}", boot_config_model.errors));
+            return Err(anyhow!(
+                "Cannot validate additional boot args: AdditionalBootConfigCollector reported errors {:?}",
+                boot_config_model.errors
+            ));
         }
 
         let boot_args_data = match boot_config_model.additional_boot_args.clone() {
@@ -49,7 +52,10 @@ impl PreSigningController {
         let static_pkgs =
             model.get::<StaticPkgsCollection>().context("Failed to get StaticPkgsCollection")?;
         if static_pkgs.errors.len() > 0 {
-            return Err(anyhow!("Cannot perform validations involving static packages: StaticPkgCollector reported errors {:?}", static_pkgs.errors));
+            return Err(anyhow!(
+                "Cannot perform validations involving static packages: StaticPkgCollector reported errors {:?}",
+                static_pkgs.errors
+            ));
         }
 
         let static_pkgs_map = static_pkgs.static_pkgs.clone().unwrap_or_else(HashMap::new);
@@ -64,8 +70,11 @@ impl PreSigningController {
         let zbi_data = model.get::<Zbi>().context("Failed to get ZbiCollection")?;
         let bootfs_files = &zbi_data.bootfs_files.bootfs_files;
 
-        let mut blobs_artifact_reader: Box<dyn ArtifactReader> =
-            Box::new(FileArtifactReader::new(&PathBuf::new(), &model.config().blobs_directory()));
+        let mut blobs_artifact_reader: Box<dyn ArtifactReader> = Box::new(FileArtifactReader::new(
+            &PathBuf::new(),
+            &model.config().blobs_directory(),
+            model.config().delivery_blob_type,
+        ));
 
         let validation_errors = build_checks::validate_build_checks(
             policy,

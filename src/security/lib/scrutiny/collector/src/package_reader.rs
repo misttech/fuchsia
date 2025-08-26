@@ -11,10 +11,9 @@ use fuchsia_url::PinnedAbsolutePackageUrl;
 use scrutiny_utils::artifact::ArtifactReader;
 use scrutiny_utils::io::ReadSeek;
 use scrutiny_utils::key_value::parse_key_value;
-use scrutiny_utils::package::{open_update_package, read_content_blob, META_CONTENTS_PATH};
+use scrutiny_utils::package::{META_CONTENTS_PATH, open_update_package, read_content_blob};
 use std::collections::HashSet;
 use std::ffi::OsStr;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use update_package::parse_packages_json;
@@ -91,10 +90,15 @@ impl PackageReader for PackagesFromUpdateReader {
 
     fn read_update_package_definition(&mut self) -> Result<PartialPackageDefinition> {
         self.deps.insert(self.update_package_path.clone());
-        let update_package = File::open(&self.update_package_path).with_context(|| {
-            format!("Failed to open update package: {:?}", self.update_package_path)
-        })?;
-        read_partial_package_definition(update_package)
+
+        let update_package: Box<dyn ReadSeek> =
+            self.blob_reader.open(&self.update_package_path).with_context(|| {
+                format!("reading from blob_reader: {}", self.update_package_path.display())
+            })?;
+
+        read_partial_package_definition(update_package).with_context(|| {
+            format!("reading update package: {}", self.update_package_path.display())
+        })
     }
 
     fn get_deps(&self) -> HashSet<PathBuf> {
@@ -191,8 +195,8 @@ mod tests {
     use crate::package_types::ComponentManifest;
     use fuchsia_archive::write;
     use fuchsia_url::{PackageName, PackageVariant, PinnedAbsolutePackageUrl};
-    use scrutiny_testing::artifact::MockArtifactReader;
     use scrutiny_testing::TEST_REPO_URL;
+    use scrutiny_testing::artifact::MockArtifactReader;
     use scrutiny_utils::package::META_CONTENTS_PATH;
     use std::collections::BTreeMap;
     use std::fs::File;

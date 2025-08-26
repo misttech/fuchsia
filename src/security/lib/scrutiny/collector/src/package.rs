@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use crate::package_reader::{
-    read_partial_package_definition, PackageReader, PackagesFromUpdateReader,
+    PackageReader, PackagesFromUpdateReader, read_partial_package_definition,
 };
 use crate::package_types::{ComponentManifest, PackageDefinition};
 use crate::package_utils::is_cf_v2_manifest;
-use anyhow::{anyhow, Context, Result};
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use anyhow::{Context, Result, anyhow};
 use base64::engine::Engine as _;
-use cm_fidl_analyzer::{match_absolute_pkg_urls, PkgUrlMatch};
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use cm_fidl_analyzer::{PkgUrlMatch, match_absolute_pkg_urls};
 use fidl::unpersist;
 use fidl_fuchsia_component_decl as fdecl;
 use fuchsia_merkle::Hash;
@@ -509,8 +509,11 @@ impl PackageDataCollector {
     pub fn collect(&self, model: Arc<DataModel>) -> Result<()> {
         let model_config = model.config();
         let blobs_directory = &model_config.blobs_directory();
-        let artifact_reader_for_artifact_reader =
-            FileArtifactReader::new(&PathBuf::new(), blobs_directory);
+        let artifact_reader_for_artifact_reader = FileArtifactReader::new(
+            &PathBuf::new(),
+            blobs_directory,
+            model_config.delivery_blob_type,
+        );
         let artifact_reader_for_package_reader = artifact_reader_for_artifact_reader.clone();
 
         let package_reader: Box<dyn PackageReader> = Box::new(PackagesFromUpdateReader::new(
@@ -536,15 +539,15 @@ pub mod tests {
     use crate::package::{Component, ComponentSource};
     use crate::package_reader::PackageReader;
     use crate::package_test_utils::{
-        create_model, create_test_cm_map, create_test_package_with_cms,
-        create_test_package_with_contents, MockPackageReader,
+        MockPackageReader, create_model, create_test_cm_map, create_test_package_with_cms,
+        create_test_package_with_contents,
     };
     use crate::package_types::{PackageDefinition, PartialPackageDefinition};
-    use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
     use base64::engine::Engine as _;
+    use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
     use cm_rust::{ComponentDecl, NativeIntoFidl};
     use fidl_fuchsia_component_decl as fdecl;
-    use fuchsia_hash::{Hash, HASH_SIZE};
+    use fuchsia_hash::{HASH_SIZE, Hash};
     use fuchsia_url::{AbsolutePackageUrl, PackageName, PackageVariant};
     use maplit::{hashmap, hashset};
     use scrutiny_collection::core::{Components, CoreDataDeps, ManifestData, Manifests, Packages};
@@ -595,26 +598,32 @@ pub mod tests {
             ..default_pkg()
         };
         // Match.
-        assert!(StaticPackageDescription::new(
-            &PackageName::from_str("alpha-beta_gamma9").unwrap(),
-            Some(&PackageVariant::zero()),
-            &Hash::from([0u8; HASH_SIZE])
-        )
-        .matches(&pkg_def_with_variant));
+        assert!(
+            StaticPackageDescription::new(
+                &PackageName::from_str("alpha-beta_gamma9").unwrap(),
+                Some(&PackageVariant::zero()),
+                &Hash::from([0u8; HASH_SIZE])
+            )
+            .matches(&pkg_def_with_variant)
+        );
         // Match with self variant None, input variant Some.
-        assert!(StaticPackageDescription::new(
-            &PackageName::from_str("alpha-beta_gamma9").unwrap(),
-            None,
-            &Hash::from([0u8; HASH_SIZE])
-        )
-        .matches(&pkg_def_with_variant));
+        assert!(
+            StaticPackageDescription::new(
+                &PackageName::from_str("alpha-beta_gamma9").unwrap(),
+                None,
+                &Hash::from([0u8; HASH_SIZE])
+            )
+            .matches(&pkg_def_with_variant)
+        );
         // Match with self variant Some, input variant None.
-        assert!(StaticPackageDescription::new(
-            &PackageName::from_str("alpha-beta_gamma9").unwrap(),
-            Some(&PackageVariant::zero()),
-            &Hash::from([0u8; HASH_SIZE])
-        )
-        .matches(&pkg_def_without_variant));
+        assert!(
+            StaticPackageDescription::new(
+                &PackageName::from_str("alpha-beta_gamma9").unwrap(),
+                Some(&PackageVariant::zero()),
+                &Hash::from([0u8; HASH_SIZE])
+            )
+            .matches(&pkg_def_without_variant)
+        );
         // Variant mismatch.
         assert!(
             StaticPackageDescription::new(

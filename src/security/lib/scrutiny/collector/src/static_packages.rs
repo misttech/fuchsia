@@ -15,12 +15,12 @@ use scrutiny_collection::static_packages::{StaticPkgsCollection, StaticPkgsError
 use scrutiny_utils::artifact::{ArtifactReader, FileArtifactReader};
 use scrutiny_utils::key_value::parse_key_value;
 use scrutiny_utils::package::{
-    extract_system_image_hash_string, verify_package_merkle, PackageError, PackageIndexContents,
+    PackageError, PackageIndexContents, extract_system_image_hash_string, verify_package_merkle,
 };
 use scrutiny_utils::url::from_package_name_variant_path;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::str::{from_utf8, FromStr};
+use std::str::{FromStr, from_utf8};
 use std::sync::Arc;
 
 static META_FAR_CONTENTS_LISTING_PATH: &str = "meta/contents";
@@ -246,8 +246,11 @@ impl StaticPkgsCollector {
             return Ok(());
         }
         let additional_boot_args = additional_boot_args_data.additional_boot_args.clone().unwrap();
-        let artifact_reader =
-            FileArtifactReader::new(&PathBuf::new(), &model_config.blobs_directory());
+        let artifact_reader = FileArtifactReader::new(
+            &PathBuf::new(),
+            &model_config.blobs_directory(),
+            model_config.delivery_blob_type,
+        );
         let data: StaticPkgsCollection =
             match collect_static_pkgs(additional_boot_args, Box::new(artifact_reader)) {
                 Ok(static_pkgs_data) => {
@@ -272,12 +275,12 @@ impl StaticPkgsCollector {
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_static_pkgs, ErrorWithDeps, StaticPkgsCollector, META_FAR_CONTENTS_LISTING_PATH,
-        STATIC_PKGS_LISTING_PATH,
+        ErrorWithDeps, META_FAR_CONTENTS_LISTING_PATH, STATIC_PKGS_LISTING_PATH,
+        StaticPkgsCollector, collect_static_pkgs,
     };
-    use anyhow::{anyhow, Context, Result};
+    use anyhow::{Context, Result, anyhow};
     use fuchsia_archive::write as far_write;
-    use fuchsia_merkle::{Hash, HASH_SIZE};
+    use fuchsia_merkle::{HASH_SIZE, Hash};
     use fuchsia_url::{PackageName, PackageVariant};
     use maplit::{btreemap, hashmap, hashset};
     use scrutiny_collection::additional_boot_args::{
@@ -419,7 +422,7 @@ mod tests {
         let result = collect_static_pkgs(additional_boot_args, Box::new(mock_artifact_reader));
         match result {
             Err(ErrorWithDeps { error: StaticPkgsError::MissingPkgfsCmdEntry { .. }, .. }) => {
-                return
+                return;
             }
             _ => panic!("Unexpected result: {:?}", result),
         };
@@ -434,7 +437,7 @@ mod tests {
         let result = collect_static_pkgs(additional_boot_args, Box::new(mock_artifact_reader));
         match result {
             Err(ErrorWithDeps { error: StaticPkgsError::UnexpectedPkgfsCmdLen { .. }, .. }) => {
-                return
+                return;
             }
             _ => panic!("Unexpected result: {:?}", result),
         };
@@ -453,7 +456,7 @@ mod tests {
         let result = collect_static_pkgs(additional_boot_args, Box::new(mock_artifact_reader));
         match result {
             Err(ErrorWithDeps { error: StaticPkgsError::UnexpectedPkgfsCmdLen { .. }, .. }) => {
-                return
+                return;
             }
             _ => panic!("Unexpected result: {:?}", result),
         };

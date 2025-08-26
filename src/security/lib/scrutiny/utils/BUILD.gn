@@ -76,6 +76,7 @@ if (is_host) {
     ]
     deps = [
       "//src/lib/fuchsia-url",
+      "//src/storage/lib/delivery_blob",
       "//src/sys/pkg/lib/far/rust:fuchsia-archive",
       "//src/sys/pkg/lib/fuchsia-hash",
       "//src/sys/pkg/lib/fuchsia-merkle",

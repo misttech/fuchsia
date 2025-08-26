@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use delivery_blob::DeliveryBlobType;
 use fuchsia_merkle::HASH_SIZE;
 use scrutiny_collection::core::ComponentSource;
 use scrutiny_collection::model::DataModel;
@@ -18,6 +19,7 @@ pub fn fake_model_config() -> ModelConfig {
     ModelConfig {
         update_package_path,
         blobs_directory,
+        delivery_blob_type: DeliveryBlobType::Reserved,
         component_tree_config_path: None,
         is_recovery: false,
     }

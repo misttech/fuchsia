@@ -4,7 +4,7 @@
 
 use crate::package_reader::{PackageReader, PackagesFromUpdateReader};
 use crate::package_types::PartialPackageDefinition;
-use anyhow::{anyhow, bail, format_err, Context, Result};
+use anyhow::{Context, Result, anyhow, bail, format_err};
 use fuchsia_hash::Hash;
 use fuchsia_url::{AbsolutePackageUrl, PackageName, PackageVariant};
 use log::{info, warn};
@@ -36,7 +36,11 @@ impl ZbiCollector {
     pub fn collect(&self, model: Arc<DataModel>) -> Result<()> {
         let model_config = model.config();
         let blobs_directory = &model_config.blobs_directory();
-        let artifact_reader = FileArtifactReader::new(&PathBuf::new(), blobs_directory);
+        let artifact_reader = FileArtifactReader::new(
+            &PathBuf::new(),
+            blobs_directory,
+            model_config.delivery_blob_type,
+        );
         let mut package_reader: Box<dyn PackageReader> = Box::new(PackagesFromUpdateReader::new(
             &model_config.update_package_path(),
             Box::new(artifact_reader.clone()),
@@ -102,11 +106,7 @@ fn extract_zbi_from_update_package(
 
     // Find the bootfs package index
     let bootfs_pkg_contents = bootfs_files.iter().find_map(|(file_name, data)| {
-        if file_name == BOOT_PACKAGE_INDEX {
-            Some(data)
-        } else {
-            None
-        }
+        if file_name == BOOT_PACKAGE_INDEX { Some(data) } else { None }
     });
     let bootfs_packages: Option<Result<PackageIndexContents>> = bootfs_pkg_contents.map(|data| {
         let bootfs_pkg_contents = std::str::from_utf8(&data)?;
@@ -202,10 +202,9 @@ mod tests {
         let collector = ZbiCollector {};
         collector.collect(data_model.clone()).unwrap();
         let collection = data_model.get::<Zbi>().unwrap();
-        assert!(collection
-            .bootfs_files
-            .bootfs_files
-            .contains_key(&"bin/component_manager".to_string()));
+        assert!(
+            collection.bootfs_files.bootfs_files.contains_key(&"bin/component_manager".to_string())
+        );
     }
 
     #[fuchsia::test]

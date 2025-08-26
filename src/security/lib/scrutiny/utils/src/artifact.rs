@@ -6,6 +6,7 @@ use crate::blobfs::{BlobFsReader, BlobFsReaderBuilder};
 use crate::fs::tempdir;
 use crate::io::{ReadSeek, TryClonableBufReaderFile, TryClone};
 use anyhow::{Context, Result, anyhow};
+use delivery_blob::DeliveryBlobType;
 use log::warn;
 use pathdiff::diff_paths;
 use std::collections::HashSet;
@@ -226,13 +227,18 @@ impl<TCRS: 'static + TryClone + Read + Seek + Send + Sync> From<Vec<BlobFsArtifa
 pub struct FileArtifactReader {
     build_path: PathBuf,
     artifact_path: PathBuf,
+    delivery_blob_type: DeliveryBlobType,
     deps: HashSet<PathBuf>,
 }
 
 impl FileArtifactReader {
     /// Construct a new artifact reader that tracks dependencies relative to
     /// `build_path` and reads artifacts relative to `artifact_path`.
-    pub fn new(build_path: &Path, artifact_path: &Path) -> Self {
+    pub fn new(
+        build_path: &Path,
+        artifact_path: &Path,
+        delivery_blob_type: DeliveryBlobType,
+    ) -> Self {
         let build_path = match build_path.canonicalize() {
             Ok(path) => path,
             Err(err) => {
@@ -253,7 +259,7 @@ impl FileArtifactReader {
                 artifact_path.to_path_buf()
             }
         };
-        Self { build_path, artifact_path, deps: HashSet::new() }
+        Self { build_path, artifact_path, delivery_blob_type, deps: HashSet::new() }
     }
 }
 
@@ -265,10 +271,23 @@ impl ArtifactReader for FileArtifactReader {
         let dep_path_string = dep_from_absolute(&self.build_path, &absolute_path_string)
             .context("Dep path conversion failed during read")?;
         self.deps.insert(dep_path_string);
-        Ok(Box::new(
-            fs::File::open(absolute_path_string)
-                .context("<FileArtifactReader as ArtifactReader>::open")?,
-        ))
+
+        Ok(match self.delivery_blob_type {
+            // Read-in and decompress delivery blobs
+            DeliveryBlobType::Type1 => {
+                let raw_blob_contents = fs::read(&absolute_path_string).map_err(|err| {
+                    anyhow!("Artifact read failed ({}): {}", &absolute_path_string, err.to_string())
+                })?;
+                let decompressed_contents = delivery_blob::decompress(&raw_blob_contents)?;
+                Box::new(std::io::Cursor::new(decompressed_contents))
+            }
+
+            // Directly open non-delivery blobs as-is
+            _ => Box::new(
+                fs::File::open(absolute_path_string)
+                    .context("<FileArtifactReader as ArtifactReader>::open")?,
+            ),
+        })
     }
 
     fn read_bytes(&mut self, path: &Path) -> Result<Vec<u8>> {
@@ -278,9 +297,19 @@ impl ArtifactReader for FileArtifactReader {
         let dep_path_string = dep_from_absolute(&self.build_path, &absolute_path_string)
             .context("Dep path conversion failed during read")?;
         self.deps.insert(dep_path_string);
-        Ok(fs::read(&absolute_path_string).map_err(|err| {
+
+        // First read in the blob
+        let raw_blob_contents = fs::read(&absolute_path_string).map_err(|err| {
             anyhow!("Artifact read failed ({}): {}", &absolute_path_string, err.to_string())
-        })?)
+        })?;
+
+        Ok(match self.delivery_blob_type {
+            // Decompress delivery blobs
+            DeliveryBlobType::Type1 => delivery_blob::decompress(raw_blob_contents.as_slice())?,
+
+            // Directly return non-delivery blobs as-is
+            _ => raw_blob_contents,
+        })
     }
 
     fn get_deps(&self) -> HashSet<PathBuf> {
@@ -371,6 +400,7 @@ fn dep_from_absolute<P1: AsRef<Path>, P2: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use super::{ArtifactReader, FileArtifactReader};
+    use delivery_blob::DeliveryBlobType;
     use maplit::hashset;
     use std::fs::{File, create_dir};
     use std::io::Write;
@@ -380,11 +410,29 @@ mod tests {
     #[test]
     fn test_basic() {
         let dir = tempdir().unwrap().into_path();
-        let mut loader = FileArtifactReader::new(&dir, &dir);
+        let mut loader = FileArtifactReader::new(&dir, &dir, DeliveryBlobType::Reserved);
         let mut file = File::create(dir.join("foo")).unwrap();
         file.write_all(b"test_data").unwrap();
         file.sync_all().unwrap();
         let result = loader.read_bytes(&Path::new("foo"));
+        assert_eq!(result.is_ok(), true);
+        let data = result.unwrap();
+        assert_eq!(data, b"test_data");
+    }
+
+    #[test]
+    fn test_compressed() {
+        let dir = tempdir().unwrap().into_path();
+
+        // Write out a delivery blob
+        let mut file = File::create(dir.join("foo")).unwrap();
+        delivery_blob::generate_to(DeliveryBlobType::Type1, b"test_data", &mut file).unwrap();
+        file.sync_all().unwrap();
+
+        // Load it using the matching DeliveryBlobType FileArtifactReader
+        let mut loader = FileArtifactReader::new(&dir, &dir, DeliveryBlobType::Type1);
+        let result = loader.read_bytes(&Path::new("foo"));
+
         assert_eq!(result.is_ok(), true);
         let data = result.unwrap();
         assert_eq!(data, b"test_data");
@@ -396,7 +444,8 @@ mod tests {
         let artifact_path_buf = build_path.join("artifacts");
         let artifact_path = artifact_path_buf.as_path();
         create_dir(&artifact_path).unwrap();
-        let mut loader = FileArtifactReader::new(&build_path, artifact_path);
+        let mut loader =
+            FileArtifactReader::new(&build_path, artifact_path, DeliveryBlobType::Reserved);
 
         let mut file = File::create(&artifact_path.join("foo")).unwrap();
         file.write_all(b"test_data").unwrap();
