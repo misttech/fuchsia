@@ -96,6 +96,9 @@ impl RebootReasons {
                 (_, fpower::RebootReason2::AndroidRescueParty) => {
                     FoldState::Direct(fpower::RebootReason::UserRequest)
                 }
+                (_, fpower::RebootReason2::AndroidCriticalProcessFailure) => {
+                    FoldState::Direct(fpower::RebootReason::UserRequest)
+                }
                 (_, fpower::RebootReason2::DeveloperRequest) => {
                     FoldState::Direct(fpower::RebootReason::UserRequest)
                 }

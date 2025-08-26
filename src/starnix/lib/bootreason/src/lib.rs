@@ -40,6 +40,7 @@ pub fn get_android_bootreason() -> Result<&'static str, Error> {
         Some(RebootReason::NetstackMigration) => return Ok("reboot,normal"),
         Some(RebootReason::AndroidUnexpectedReason) => return Ok("reboot,normal"),
         Some(RebootReason::AndroidRescueParty) => return Ok("reboot,rescueparty"),
+        Some(RebootReason::AndroidCriticalProcessFailure) => return Ok("reboot,userspace_failed"),
         Some(RebootReason::__SourceBreaking { .. }) => return Ok("reboot,normal"),
         None => return Ok("reboot,unknown"),
     }

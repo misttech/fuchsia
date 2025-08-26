@@ -241,6 +241,8 @@ RebootReason FromGracefulRebootReason(const GracefulRebootReason& reason) {
       return RebootReason::kAndroidUnexpectedReason;
     case GracefulRebootReason::kAndroidRescueParty:
       return RebootReason::kAndroidRescueParty;
+    case GracefulRebootReason::kAndroidCriticalProcessFailure:
+      return RebootReason::kAndroidCriticalProcessFailure;
     case GracefulRebootReason::kDeveloperRequest:
       return RebootReason::kDeveloperRequest;
     case GracefulRebootReason::kNotSet:

@@ -47,6 +47,7 @@ enum class RebootReason {
   kNetstackMigration,
   kAndroidUnexpectedReason,
   kAndroidRescueParty,
+  kAndroidCriticalProcessFailure,
   kDeveloperRequest,
 };
 

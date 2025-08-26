@@ -145,28 +145,38 @@ pub fn sys_reboot(
             } else {
                 // TODO(https://391585107): Loop through all the arguments and
                 // generate a list of reboot reasons.
-                let reboot_reason = if reboot_args.contains(&&b"ota_update"[..])
-                    || reboot_args.contains(&&b"System update during setup"[..])
-                {
-                    fpower::RebootReason2::SystemUpdate
-                } else if reboot_args.contains(&&b"shell"[..]) {
-                    fpower::RebootReason2::DeveloperRequest
-                } else if reboot_args.contains(&&b"RescueParty"[..])
-                    || reboot_args.contains(&&b"rescueparty"[..])
-                {
-                    fpower::RebootReason2::AndroidRescueParty
-                } else if reboot_args == [b""] // args empty? splitting "" returns [""], not []
+
+                let reboot_reason =
+                    if let Some(arg) = reboot_args.iter().find(|arg| arg.ends_with(b"-failed")) {
+                        let process_name =
+                            String::from_utf8_lossy(arg.strip_suffix(b"-failed").unwrap());
+                        // This log message is load-bearing server-side as it's used to
+                        // extract the critical process responsible for the reboot.
+                        // Please notify //src/developer/forensics/OWNERS upon changing.
+                        log_info!("Android critical process '{}' failed, rebooting", process_name);
+                        fpower::RebootReason2::AndroidCriticalProcessFailure
+                    } else if reboot_args.contains(&&b"ota_update"[..])
+                        || reboot_args.contains(&&b"System update during setup"[..])
+                    {
+                        fpower::RebootReason2::SystemUpdate
+                    } else if reboot_args.contains(&&b"shell"[..]) {
+                        fpower::RebootReason2::DeveloperRequest
+                    } else if reboot_args.contains(&&b"RescueParty"[..])
+                        || reboot_args.contains(&&b"rescueparty"[..])
+                    {
+                        fpower::RebootReason2::AndroidRescueParty
+                    } else if reboot_args == [b""] // args empty? splitting "" returns [""], not []
                     || reboot_args.contains(&&b"userrequested"[..])
-                {
-                    fpower::RebootReason2::UserRequest
-                } else {
-                    log_warn!("Unknown reboot args: {arg_bytes:?}");
-                    track_stub!(
-                        TODO("https://fxbug.dev/322874610"),
-                        "unknown reboot args, see logs for strings"
-                    );
-                    fpower::RebootReason2::AndroidUnexpectedReason
-                };
+                    {
+                        fpower::RebootReason2::UserRequest
+                    } else {
+                        log_warn!("Unknown reboot args: {arg_bytes:?}");
+                        track_stub!(
+                            TODO("https://fxbug.dev/322874610"),
+                            "unknown reboot args, see logs for strings"
+                        );
+                        fpower::RebootReason2::AndroidUnexpectedReason
+                    };
 
                 log_info!("Rebooting... reason: {:?}", reboot_reason);
                 proxy.perform_reboot(

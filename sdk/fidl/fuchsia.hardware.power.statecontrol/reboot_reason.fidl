@@ -90,4 +90,8 @@ type RebootReason2 = flexible enum {
     /// Android called for the "RescueParty".
     @available(added=NEXT)
     ANDROID_RESCUE_PARTY = 14;
+
+    /// A critical Android process failed.
+    @available(added=NEXT)
+    ANDROID_CRITICAL_PROCESS_FAILURE = 15;
 };

@@ -134,6 +134,10 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     @available(added=NEXT)
     ANDROID_RESCUE_PARTY = 23;
 
+    /// The device rebooted because one of Android critical processes failed.
+    @available(added=NEXT)
+    ANDROID_CRITICAL_PROCESS_FAILURE = 24;
+
     // ///////////////////////////////////////////////////////////////////////////////////////////
     // Planned reboot reasons
     // |planned| has a value of true in LastReboot above.

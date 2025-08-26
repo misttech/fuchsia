@@ -33,6 +33,7 @@ constexpr char kOutOfMemory[] = "OUT OF MEMORY";
 constexpr char kReasonNetstackMigration[] = "NETSTACK MIGRATION";
 constexpr char kAndroidUnexpectedReason[] = "ANDROID UNEXPECTED REASON";
 constexpr char kAndroidRescueParty[] = "ANDROID RESCUE PARTY";
+constexpr char kAndroidCriticalProcessFailure[] = "ANDROID CRITICAL PROCESS FAILURE";
 constexpr char kDeveloperRequest[] = "DEVELOPER REQUEST";
 constexpr char kReasonNotSupported[] = "NOT SUPPORTED";
 constexpr char kReasonNotParseable[] = "NOT PARSEABLE";
@@ -77,6 +78,8 @@ std::string ToString(const GracefulRebootReason reason) {
       return kAndroidUnexpectedReason;
     case GracefulRebootReason::kAndroidRescueParty:
       return kAndroidRescueParty;
+    case GracefulRebootReason::kAndroidCriticalProcessFailure:
+      return kAndroidCriticalProcessFailure;
     case GracefulRebootReason::kDeveloperRequest:
       return kDeveloperRequest;
     case GracefulRebootReason::kNotSupported:
@@ -113,6 +116,8 @@ GracefulRebootReason FromString(const std::string_view reason) {
     return GracefulRebootReason::kAndroidUnexpectedReason;
   } else if (reason == kAndroidRescueParty) {
     return GracefulRebootReason::kAndroidRescueParty;
+  } else if (reason == kAndroidCriticalProcessFailure) {
+    return GracefulRebootReason::kAndroidCriticalProcessFailure;
   } else if (reason == kDeveloperRequest) {
     return GracefulRebootReason::kDeveloperRequest;
   } else if (reason == kReasonNotSupported) {
@@ -154,6 +159,7 @@ std::string ToFileContent(const std::vector<GracefulRebootReason>& reasons) {
       case GracefulRebootReason::kNetstackMigration:
       case GracefulRebootReason::kAndroidUnexpectedReason:
       case GracefulRebootReason::kAndroidRescueParty:
+      case GracefulRebootReason::kAndroidCriticalProcessFailure:
       case GracefulRebootReason::kDeveloperRequest:
       case GracefulRebootReason::kNotSupported:
         reason_string = ToString(reason);
@@ -240,6 +246,8 @@ GracefulRebootReason FromReason(
       return GracefulRebootReason::kAndroidUnexpectedReason;
     case RebootReason2::ANDROID_RESCUE_PARTY:
       return GracefulRebootReason::kAndroidRescueParty;
+    case RebootReason2::ANDROID_CRITICAL_PROCESS_FAILURE:
+      return GracefulRebootReason::kAndroidCriticalProcessFailure;
     case RebootReason2::DEVELOPER_REQUEST:
       return GracefulRebootReason::kDeveloperRequest;
     default:

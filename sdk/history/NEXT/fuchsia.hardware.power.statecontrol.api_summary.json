@@ -146,6 +146,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.hardware.power.statecontrol/RebootReason2.ANDROID_CRITICAL_PROCESS_FAILURE",
+        "value": "15"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.hardware.power.statecontrol/RebootReason2.ANDROID_RESCUE_PARTY",
         "value": "14"
     },

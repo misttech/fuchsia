@@ -60,6 +60,8 @@ std::string ToString(const RebootReason reason) {
       return "ANDROID UNEXPECTED REASON";
     case RebootReason::kAndroidRescueParty:
       return "ANDROID RESCUE PARTY";
+    case RebootReason::kAndroidCriticalProcessFailure:
+      return "ANDROID CRITICAL PROCESS FAILURE";
     case RebootReason::kDeveloperRequest:
       return "DEVELOPER REQUEST";
   }
@@ -84,6 +86,7 @@ bool IsCrash(const RebootReason reason) {
     case RebootReason::kUnexpectedReasonGraceful:
     case RebootReason::kAndroidUnexpectedReason:
     case RebootReason::kAndroidRescueParty:
+    case RebootReason::kAndroidCriticalProcessFailure:
       return true;
     case RebootReason::kUserRequest:
     case RebootReason::kSystemUpdate:
@@ -114,6 +117,7 @@ bool IsFatal(const RebootReason reason) {
     case RebootReason::kUnexpectedReasonGraceful:
     case RebootReason::kAndroidUnexpectedReason:
     case RebootReason::kAndroidRescueParty:
+    case RebootReason::kAndroidCriticalProcessFailure:
       return true;
     case RebootReason::kUserRequest:
     case RebootReason::kSystemUpdate:
@@ -143,6 +147,7 @@ std::optional<bool> OptionallyGraceful(const RebootReason reason) {
     case RebootReason::kNetstackMigration:
     case RebootReason::kAndroidUnexpectedReason:
     case RebootReason::kAndroidRescueParty:
+    case RebootReason::kAndroidCriticalProcessFailure:
     case RebootReason::kDeveloperRequest:
       return true;
     case RebootReason::kCold:
@@ -184,6 +189,7 @@ std::optional<bool> OptionallyPlanned(const RebootReason reason) {
     case RebootReason::kRootJobTermination:
     case RebootReason::kAndroidUnexpectedReason:
     case RebootReason::kAndroidRescueParty:
+    case RebootReason::kAndroidCriticalProcessFailure:
     case RebootReason::kDeveloperRequest:
       return false;
     case RebootReason::kNotParseable:
@@ -239,6 +245,8 @@ cobalt::LastRebootReason ToCobaltLastRebootReason(RebootReason reason) {
       return cobalt::LastRebootReason::kAndroidUnexpectedReason;
     case RebootReason::kAndroidRescueParty:
       return cobalt::LastRebootReason::kAndroidRescueParty;
+    case RebootReason::kAndroidCriticalProcessFailure:
+      return cobalt::LastRebootReason::kAndroidCriticalProcessFailure;
     case RebootReason::kDeveloperRequest:
       return cobalt::LastRebootReason::kDeveloperRequest;
   }
@@ -284,6 +292,8 @@ std::string ToCrashSignature(const RebootReason reason,
       return "fuchsia-reboot-android-unexpected-reason";
     case RebootReason::kAndroidRescueParty:
       return "fuchsia-reboot-android-rescue-party";
+    case RebootReason::kAndroidCriticalProcessFailure:
+      return "fuchsia-reboot-android-critical-process-failure";
     case RebootReason::kUserRequest:
     case RebootReason::kSystemUpdate:
     case RebootReason::kZbiSwap:
@@ -319,6 +329,7 @@ std::string ToCrashProgramName(const RebootReason reason) {
       return "system";
     case RebootReason::kAndroidUnexpectedReason:
     case RebootReason::kAndroidRescueParty:
+    case RebootReason::kAndroidCriticalProcessFailure:
       return "android";
     case RebootReason::kUserRequest:
     case RebootReason::kSystemUpdate:
@@ -378,6 +389,8 @@ std::optional<fuchsia::feedback::RebootReason> ToFidlRebootReason(const RebootRe
       return fuchsia::feedback::RebootReason::ANDROID_UNEXPECTED_REASON;
     case RebootReason::kAndroidRescueParty:
       return fuchsia::feedback::RebootReason::ANDROID_RESCUE_PARTY;
+    case RebootReason::kAndroidCriticalProcessFailure:
+      return fuchsia::feedback::RebootReason::ANDROID_CRITICAL_PROCESS_FAILURE;
     case RebootReason::kDeveloperRequest:
       return fuchsia::feedback::RebootReason::DEVELOPER_REQUEST;
     case RebootReason::kNotParseable:

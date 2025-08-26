@@ -66,6 +66,8 @@ std::string LastRebootReasonAnnotation(const RebootLog& reboot_log) {
       return "android unexpected reason";
     case FuchsiaRebootReason::ANDROID_RESCUE_PARTY:
       return "android rescue party";
+    case FuchsiaRebootReason::ANDROID_CRITICAL_PROCESS_FAILURE:
+      return "android critical process failure";
     case FuchsiaRebootReason::DEVELOPER_REQUEST:
       return "developer request";
     default:
