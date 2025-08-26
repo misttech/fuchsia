@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::access_vector_cache::{AvcManager, CacheStats, Query, Reset};
+use crate::access_vector_cache::{AvcManager, CacheStats, Query};
 use crate::exceptions_config::ExceptionsConfig;
 use crate::permission_check::PermissionCheck;
 use crate::policy::metadata::HandleUnknown;

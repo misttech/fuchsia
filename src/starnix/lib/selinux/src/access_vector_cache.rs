@@ -60,127 +60,6 @@ pub(super) trait Query {
     ) -> IoctlAccessDecision;
 }
 
-/// An interface for computing the rights permitted to a source accessing a target of a particular
-/// SELinux object type.
-pub trait QueryMut {
-    /// Computes the [`AccessDecision`] permitted to `source_sid` for accessing `target_sid`, an
-    /// object of type `target_class`.
-    fn compute_access_decision(
-        &mut self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        target_class: ObjectClass,
-    ) -> AccessDecision;
-
-    /// Returns the security identifier (SID) with which to label a new `fs_node_class` instance
-    /// created by `source_sid` in a parent directory labeled `target_sid` should be labeled,
-    /// if no more specific SID was specified by `compute_new_fs_node_sid_with_name()`, based on
-    /// the file's name.
-    fn compute_new_fs_node_sid(
-        &mut self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-    ) -> Result<SecurityId, anyhow::Error>;
-
-    /// Returns the security identifier (SID) with which to label a new `fs_node_class` instance of
-    /// name `fs_node_name`, created by `source_sid` in a parent directory labeled `target_sid`.
-    /// If no filename-transition rules exist for the specified `fs_node_name` then `None` is
-    /// returned.
-    fn compute_new_fs_node_sid_with_name(
-        &mut self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-        fs_node_name: NullessByteStr<'_>,
-    ) -> Option<SecurityId>;
-
-    /// Computes the [`IoctlAccessDecision`] permitted to `source_sid` for accessing `target_sid`,
-    /// an object of of type `target_class`, for ioctls with high byte `ioctl_prefix`.
-    fn compute_ioctl_access_decision(
-        &mut self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        target_class: ObjectClass,
-        ioctl_prefix: u8,
-    ) -> IoctlAccessDecision;
-}
-
-impl<Q: Query> QueryMut for Q {
-    fn compute_access_decision(
-        &mut self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        target_class: ObjectClass,
-    ) -> AccessDecision {
-        (self as &dyn Query).compute_access_decision(source_sid, target_sid, target_class)
-    }
-
-    fn compute_new_fs_node_sid(
-        &mut self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-    ) -> Result<SecurityId, anyhow::Error> {
-        (self as &dyn Query).compute_new_fs_node_sid(source_sid, target_sid, fs_node_class)
-    }
-
-    fn compute_new_fs_node_sid_with_name(
-        &mut self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-        fs_node_name: NullessByteStr<'_>,
-    ) -> Option<SecurityId> {
-        (self as &dyn Query).compute_new_fs_node_sid_with_name(
-            source_sid,
-            target_sid,
-            fs_node_class,
-            fs_node_name,
-        )
-    }
-
-    fn compute_ioctl_access_decision(
-        &mut self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        target_class: ObjectClass,
-        ioctl_prefix: u8,
-    ) -> IoctlAccessDecision {
-        (self as &dyn Query).compute_ioctl_access_decision(
-            source_sid,
-            target_sid,
-            target_class,
-            ioctl_prefix,
-        )
-    }
-}
-
-/// An interface for emptying caches that store [`Query`] input/output pairs. This interface
-/// requires implementers to update state via interior mutability.
-pub(super) trait Reset {
-    /// Removes all entries from this cache and any reset delegate caches encapsulated in this
-    /// cache. Returns true only if the cache is still valid after reset.
-    fn reset(&self) -> bool;
-}
-
-/// An interface for emptying caches that store [`Query`] input/output pairs.
-pub(super) trait ResetMut {
-    /// Removes all entries from this cache and any reset delegate caches encapsulated in this
-    /// cache. Returns true only if the cache is still valid after reset.
-    fn reset(&mut self) -> bool;
-}
-
-impl<R: Reset> ResetMut for R {
-    fn reset(&mut self) -> bool {
-        (self as &dyn Reset).reset()
-    }
-}
-
-pub(super) trait ProxyMut<D> {
-    fn set_delegate(&mut self, delegate: D) -> D;
-}
-
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct AccessQueryArgs {
     source_sid: SecurityId,
@@ -203,13 +82,13 @@ struct IoctlAccessQueryArgs {
 }
 
 /// Thread-hostile associative cache with capacity defined at construction and FIFO eviction.
-pub(super) struct FifoQueryCache<D> {
+pub(super) struct FifoQueryCache<D: Query> {
     access_cache: FifoCache<AccessQueryArgs, AccessQueryResult>,
     ioctl_access_cache: FifoCache<IoctlAccessQueryArgs, IoctlAccessDecision>,
     delegate: D,
 }
 
-impl<D> FifoQueryCache<D> {
+impl<D: Query> FifoQueryCache<D> {
     // The multiplier used to compute the ioctl access cache capacity from the main cache capacity.
     const IOCTL_CAPACITY_MULTIPLIER: f32 = 0.25;
 
@@ -240,21 +119,7 @@ impl<D> FifoQueryCache<D> {
         &self.access_cache.cache_stats() + &self.ioctl_access_cache.cache_stats()
     }
 
-    /// Returns true if the main access decision cache has reached capacity.
-    #[cfg(test)]
-    fn access_cache_is_full(&self) -> bool {
-        self.access_cache.is_full()
-    }
-
-    /// Returns true if the ioctl access decision cache has reached capacity.
-    #[cfg(test)]
-    fn ioctl_access_cache_is_full(&self) -> bool {
-        self.ioctl_access_cache.is_full()
-    }
-}
-
-impl<D: QueryMut> QueryMut for FifoQueryCache<D> {
-    fn compute_access_decision(
+    pub fn compute_access_decision(
         &mut self,
         source_sid: SecurityId,
         target_sid: SecurityId,
@@ -277,7 +142,7 @@ impl<D: QueryMut> QueryMut for FifoQueryCache<D> {
         access_decision
     }
 
-    fn compute_new_fs_node_sid(
+    pub fn compute_new_fs_node_sid(
         &mut self,
         source_sid: SecurityId,
         target_sid: SecurityId,
@@ -308,7 +173,7 @@ impl<D: QueryMut> QueryMut for FifoQueryCache<D> {
         }
     }
 
-    fn compute_new_fs_node_sid_with_name(
+    pub fn compute_new_fs_node_sid_with_name(
         &mut self,
         source_sid: SecurityId,
         target_sid: SecurityId,
@@ -323,7 +188,7 @@ impl<D: QueryMut> QueryMut for FifoQueryCache<D> {
         )
     }
 
-    fn compute_ioctl_access_decision(
+    pub fn compute_ioctl_access_decision(
         &mut self,
         source_sid: SecurityId,
         target_sid: SecurityId,
@@ -351,20 +216,28 @@ impl<D: QueryMut> QueryMut for FifoQueryCache<D> {
 
         ioctl_access_decision
     }
-}
 
-impl<D> ResetMut for FifoQueryCache<D> {
-    fn reset(&mut self) -> bool {
+    pub fn reset(&mut self) -> bool {
         self.access_cache = FifoCache::with_capacity(self.access_cache.capacity());
         self.ioctl_access_cache = FifoCache::with_capacity(self.ioctl_access_cache.capacity());
         true
     }
-}
 
-impl<D> ProxyMut<D> for FifoQueryCache<D> {
-    fn set_delegate(&mut self, mut delegate: D) -> D {
+    pub fn set_delegate(&mut self, mut delegate: D) -> D {
         std::mem::swap(&mut self.delegate, &mut delegate);
         delegate
+    }
+
+    /// Returns true if the main access decision cache has reached capacity.
+    #[cfg(test)]
+    fn access_cache_is_full(&self) -> bool {
+        self.access_cache.is_full()
+    }
+
+    /// Returns true if the ioctl access decision cache has reached capacity.
+    #[cfg(test)]
+    fn ioctl_access_cache_is_full(&self) -> bool {
+        self.ioctl_access_cache.is_full()
     }
 }
 
@@ -389,6 +262,10 @@ impl AccessVectorCache {
         delegate: Weak<SecurityServer>,
     ) -> Weak<SecurityServer> {
         self.cache.lock().set_delegate(delegate)
+    }
+
+    pub fn reset(&self) -> bool {
+        self.cache.lock().reset()
     }
 }
 
@@ -439,68 +316,6 @@ impl Query for AccessVectorCache {
             target_class,
             ioctl_prefix,
         )
-    }
-}
-
-impl Reset for AccessVectorCache {
-    fn reset(&self) -> bool {
-        self.cache.lock().reset()
-    }
-}
-
-impl<Q: Query> Query for Arc<Q> {
-    fn compute_access_decision(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        target_class: ObjectClass,
-    ) -> AccessDecision {
-        self.as_ref().compute_access_decision(source_sid, target_sid, target_class)
-    }
-
-    fn compute_new_fs_node_sid(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-    ) -> Result<SecurityId, anyhow::Error> {
-        self.as_ref().compute_new_fs_node_sid(source_sid, target_sid, fs_node_class)
-    }
-
-    fn compute_new_fs_node_sid_with_name(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        fs_node_class: FsNodeClass,
-        fs_node_name: NullessByteStr<'_>,
-    ) -> Option<SecurityId> {
-        self.as_ref().compute_new_fs_node_sid_with_name(
-            source_sid,
-            target_sid,
-            fs_node_class,
-            fs_node_name,
-        )
-    }
-
-    fn compute_ioctl_access_decision(
-        &self,
-        source_sid: SecurityId,
-        target_sid: SecurityId,
-        target_class: ObjectClass,
-        ioctl_prefix: u8,
-    ) -> IoctlAccessDecision {
-        self.as_ref().compute_ioctl_access_decision(
-            source_sid,
-            target_sid,
-            target_class,
-            ioctl_prefix,
-        )
-    }
-}
-
-impl<R: Reset> Reset for Arc<R> {
-    fn reset(&self) -> bool {
-        self.as_ref().reset()
     }
 }
 
@@ -558,12 +373,6 @@ impl<Q: Query> Query for Weak<Q> {
     }
 }
 
-impl<R: Reset> Reset for Weak<R> {
-    fn reset(&self) -> bool {
-        self.upgrade().as_deref().map(Reset::reset).unwrap_or(false)
-    }
-}
-
 /// Default size of an access vector cache shared by all threads in the system.
 const DEFAULT_SHARED_SIZE: usize = 1000;
 
@@ -598,16 +407,14 @@ impl AvcManager {
     pub fn get_shared_cache(&self) -> &AccessVectorCache {
         &self.shared_cache
     }
-}
 
-impl Reset for AvcManager {
     /// Resets caches owned by this manager. If owned caches delegate to a security server that is
     /// reloading its policy, the security server must reload its policy (and start serving the new
     /// policy) *before* invoking `AvcManager::reset()` on any managers that delegate to that security
     /// server. This is because the [`AvcManager`]-managed caches are consulted by [`Query`] clients
     /// *before* the security server; performing reload/reset in the reverse order could move stale
     /// queries into reset caches before policy reload is complete.
-    fn reset(&self) -> bool {
+    pub fn reset(&self) -> bool {
         self.shared_cache.reset();
         true
     }
@@ -700,12 +507,6 @@ mod tests {
         ) -> IoctlAccessDecision {
             self.query_count.fetch_add(1, Ordering::Relaxed);
             IoctlAccessDecision::ALLOW_ALL
-        }
-    }
-
-    impl Reset for TestDelegate {
-        fn reset(&self) -> bool {
-            true
         }
     }
 
