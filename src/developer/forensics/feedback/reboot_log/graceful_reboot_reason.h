@@ -34,6 +34,7 @@ enum class GracefulRebootReason {
   // fully migrated to Netstack3.
   kNetstackMigration,
   kAndroidUnexpectedReason,
+  kAndroidRescueParty,
   kDeveloperRequest,
   kNotSupported,
   kNotParseable,

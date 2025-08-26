@@ -151,6 +151,10 @@ pub fn sys_reboot(
                     fpower::RebootReason2::SystemUpdate
                 } else if reboot_args.contains(&&b"shell"[..]) {
                     fpower::RebootReason2::DeveloperRequest
+                } else if reboot_args.contains(&&b"RescueParty"[..])
+                    || reboot_args.contains(&&b"rescueparty"[..])
+                {
+                    fpower::RebootReason2::AndroidRescueParty
                 } else if reboot_args == [b""] // args empty? splitting "" returns [""], not []
                     || reboot_args.contains(&&b"userrequested"[..])
                 {

@@ -86,4 +86,8 @@ type RebootReason2 = flexible enum {
     /// An Android-initiated reboot reason that Starnix doesn't recognize
     @available(added=28)
     ANDROID_UNEXPECTED_REASON = 12;
+
+    /// Android called for the "RescueParty".
+    @available(added=NEXT)
+    ANDROID_RESCUE_PARTY = 14;
 };

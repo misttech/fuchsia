@@ -130,6 +130,10 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     @available(added=28)
     ANDROID_UNEXPECTED_REASON = 21;
 
+    /// The device rebooted because Android called for the "RescueParty".
+    @available(added=NEXT)
+    ANDROID_RESCUE_PARTY = 23;
+
     // ///////////////////////////////////////////////////////////////////////////////////////////
     // Planned reboot reasons
     // |planned| has a value of true in LastReboot above.
