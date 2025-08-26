@@ -7,6 +7,7 @@
 
 #include <lib/zx/handle.h>
 #include <lib/zx/object.h>
+#include <lib/zx/result.h>
 #include <zircon/availability.h>
 #include <zircon/syscalls/iob.h>
 
@@ -31,6 +32,13 @@ class iob final : public object<iob> {
 
   static zx_status_t create(uint64_t options, zx_iob_region_t* regions, uint32_t region_count,
                             iob* endpoint0, iob* endpoint1) ZX_AVAILABLE_SINCE(14);
+
+  // Perfms a mediated write to an IOBuffer region. See
+  // https://fuchsia.dev/reference/syscalls/iob_writev.
+  zx::result<> writev(zx_iob_write_options_t options, uint32_t region_index,
+                      const zx_iovec_t* vector, size_t vector_count) const ZX_AVAILABLE_SINCE(28) {
+    return zx::make_result(zx_iob_writev(get(), options, region_index, vector, vector_count));
+  }
 } ZX_AVAILABLE_SINCE(14);
 
 typedef unowned<iob> unowned_iob ZX_AVAILABLE_SINCE(14);
