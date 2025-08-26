@@ -4,11 +4,13 @@
 
 //! `cmc` is the Component Manifest Compiler.
 
-use anyhow::Error;
 use cmc::{opts, run_cmc};
 use structopt::StructOpt;
 
-fn main() -> Result<(), Error> {
+fn main() {
     let opt = opts::Opt::from_args();
-    run_cmc(opt)
+    if let Err(e) = run_cmc(opt) {
+        println!("{e}");
+        std::process::exit(1);
+    }
 }
