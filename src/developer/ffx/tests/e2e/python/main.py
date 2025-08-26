@@ -26,10 +26,10 @@ class FfxTest(ffxtestcase.FfxTestCase):
             f"stdout is unexpectedly empty: {output}",
         )
 
-    def test_get_ssh_address_includes_port(self) -> None:
-        """Test `ffx target get-ssh-address` output returns as expected."""
+    def test_target_list_includes_port(self) -> None:
+        """Test `ffx target list` output returns as expected."""
         # NOTE: This test fails if the device under test is an user-mode networking emulator.
-        output = self.dut.ffx.run(["target", "get-ssh-address", "-t", "5"])
+        output = self.dut.ffx.run(["target", "list", "--format", "a"])
         asserts.assert_true(
             ":22" in output, f"expected stdout to contain ':22',got {output}"
         )

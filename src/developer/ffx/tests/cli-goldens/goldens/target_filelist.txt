@@ -18,7 +18,6 @@ ffx/target/fastboot/reboot.golden
 ffx/target/fastboot/sparse.golden
 ffx/target/fastboot/stage.golden
 ffx/target/flash.golden
-ffx/target/get-ssh-address.golden
 ffx/target/get-time.golden
 ffx/target/list.golden
 ffx/target/off.golden

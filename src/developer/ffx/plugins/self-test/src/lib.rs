@@ -51,15 +51,15 @@ pub async fn selftest(cmd: SelftestCommand) -> Result<()> {
         daemon::test_no_autostart,
         daemon::test_isolate_cleanup,
         daemon::test_cleanup_on_signal,
-        target::test_manual_add_get_ssh_address,
-        target::test_manual_add_get_ssh_address_late_add,
+        target::test_manual_add_target_list,
+        target::test_manual_add_target_list_late_add,
     ];
 
     let mut target_tests = tests![
         // TODO(bbosak): re-enable once proactive-logging is disabled (https://fxbug.dev/42076295)
         // log::include_log::test_log_run_normal,
         component::include_target::test_list,
-        target::include_target::test_get_ssh_address_includes_port,
+        target::include_target::test_target_list_includes_port,
         target::include_target::test_target_show
     ];
 
