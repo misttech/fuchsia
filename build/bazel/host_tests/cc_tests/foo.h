@@ -5,6 +5,9 @@
 #ifndef BUILD_BAZEL_HOST_TESTS_CC_TESTS_FOO_H_
 #define BUILD_BAZEL_HOST_TESTS_CC_TESTS_FOO_H_
 
+// The attribute is required to ensure the foo() symbol is
+// visibly when the library is linked into a shared library.
 extern int foo();
+__attribute__((visibility("default")))
 
 #endif  // BUILD_BAZEL_HOST_TESTS_CC_TESTS_FOO_H_

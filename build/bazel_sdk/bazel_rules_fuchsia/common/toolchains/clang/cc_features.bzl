@@ -389,6 +389,9 @@ def get_default_compile_flags_feature(
 
         # See https://skia.googlesource.com/skia/+/620de5ac9f6b/toolchain/mac_toolchain_config.bzl
         default_conlyflags += [
+            # Access <stdbool.h> from C. See https://fxbug.dev/440934285
+            "-isystem",
+            "{}/lib/clang/{}/include".format(toolchain_dir, clang_info.short_version),
             # Access C library headers.
             "-isystem",
             "{}/usr/include".format(macos_sdk_path),

@@ -29,3 +29,8 @@ cc_shared_library(
     name = "foo_shared",
     deps = [":foo"],
 )
+
+cc_test(
+    name = "stdbool_c_test",
+    srcs = ["main_stdbool.c"],
+)
