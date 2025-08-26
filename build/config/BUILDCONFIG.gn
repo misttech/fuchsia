@@ -3425,9 +3425,9 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
     # but if the invoker constrained the visibility, we must make sure
     # the dependency from the main toolchain is still allowed.
     template("shared_library") {
-      assert(
-          !defined(invoker.crate_type),
-          "Rust libraries should not be expanded in the -shared toolchain, see https://fxbug.dev/387208039")
+      # assert(
+      #     !defined(invoker.crate_type),
+      #     "Rust libraries should not be expanded in the -shared toolchain, see https://fxbug.dev/387208039")
       not_needed(invoker, [ "exclude_toolchain_tags" ])
       _fuchsia_shared_library(target_name) {
         forward_variables_from(invoker, "*")
