@@ -62,18 +62,18 @@ pub trait TableControllerProxy<I: FidlMulticastAdminIpExt> {
 pub trait FidlMulticastAdminIpExt: Ip {
     /// Protocol Marker for the multicast routing table controller.
     type TableControllerMarker: fidl::endpoints::DiscoverableProtocolMarker<
-        RequestStream = Self::TableControllerRequestStream,
-        Proxy = Self::TableControllerProxy,
-    >;
+            RequestStream = Self::TableControllerRequestStream,
+            Proxy = Self::TableControllerProxy,
+        >;
     /// Request Stream for the multicast routing table controller.
     type TableControllerRequestStream: fidl::endpoints::RequestStream<
-        Ok: Send + Into<TableControllerRequest<Self>>,
-        ControlHandle: Send + TerminalEventControlHandle<TableControllerCloseReason>,
-        Item = Result<
-            <Self::TableControllerRequestStream as TryStream>::Ok,
-            <Self::TableControllerRequestStream as TryStream>::Error,
-        >,
-    >;
+            Ok: Send + Into<TableControllerRequest<Self>>,
+            ControlHandle: Send + TerminalEventControlHandle<TableControllerCloseReason>,
+            Item = Result<
+                <Self::TableControllerRequestStream as TryStream>::Ok,
+                <Self::TableControllerRequestStream as TryStream>::Error,
+            >,
+        >;
     type TableControllerProxy: fidl::endpoints::Proxy + TableControllerProxy<Self>;
     /// The Unicast Source and Multicast Destination address tuple.
     type Addresses: Into<UnicastSourceAndMulticastDestination<Self>>;

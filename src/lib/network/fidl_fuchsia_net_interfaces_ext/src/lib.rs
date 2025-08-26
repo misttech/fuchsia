@@ -276,11 +276,7 @@ impl PositiveMonotonicInstant {
     /// Returns the the positive nanoseconds value from the monotonic timestamp
     /// in nanoseconds, if it's positive.
     pub const fn from_nanos(v: i64) -> Option<Self> {
-        if v > 0 {
-            Some(Self(v))
-        } else {
-            None
-        }
+        if v > 0 { Some(Self(v)) } else { None }
     }
 
     /// Returns true if `self` is equal to `INFINITE_FUTURE`.
@@ -918,8 +914,8 @@ pub struct NoInterest;
 mod interest {
     use super::*;
 
-    use std::hash::Hash;
     use Debug;
+    use std::hash::Hash;
 
     /// A trait that parameterizes interest in fields from interfaces watcher.
     ///
@@ -1131,8 +1127,8 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use fidl_fuchsia_net as fnet;
-    use futures::task::Poll;
     use futures::FutureExt as _;
+    use futures::task::Poll;
     use net_declare::fidl_subnet;
     use std::cell::RefCell;
     use std::convert::TryInto as _;

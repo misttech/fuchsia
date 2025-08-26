@@ -734,7 +734,7 @@ impl TryFrom<fnet_filter::Action> for Action {
                     fnet_filter::TransparentProxy_::__SourceBreaking { .. } => {
                         return Err(FidlConversionError::UnknownUnionVariant(
                             type_names::TRANSPARENT_PROXY,
-                        ))
+                        ));
                     }
                 }))
             }
@@ -1240,9 +1240,7 @@ pub enum CommitError {
     RuleWithInvalidMatcher(RuleId),
     #[error("rule has an action that is invalid for its routine: {0:?}")]
     RuleWithInvalidAction(RuleId),
-    #[error(
-        "rule has a TransparentProxy action but not a valid transport protocol matcher: {0:?}"
-    )]
+    #[error("rule has a TransparentProxy action but not a valid transport protocol matcher: {0:?}")]
     TransparentProxyWithInvalidMatcher(RuleId),
     #[error(
         "rule has a Redirect action that specifies a destination port but not a valid transport \

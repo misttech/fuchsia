@@ -42,11 +42,7 @@ mod witness {
         /// Creates a new [`ErrorValue`] from `v`, returning `Some` if `v` has
         /// the MSB set, matching the protocol definition.
         pub const fn new(v: u32) -> Option<Self> {
-            if v & Self::ERROR_MASK != 0 {
-                Some(Self(v))
-            } else {
-                None
-            }
+            if v & Self::ERROR_MASK != 0 { Some(Self(v)) } else { None }
         }
     }
 

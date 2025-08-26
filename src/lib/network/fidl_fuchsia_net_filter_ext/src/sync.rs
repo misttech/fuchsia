@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{
-    handle_change_validation_result, handle_commit_result, Change, CommitError,
-    ControllerCreationError, ControllerId, PushChangesError,
+    Change, CommitError, ControllerCreationError, ControllerId, PushChangesError,
+    handle_change_validation_result, handle_commit_result,
 };
 use fidl::marker::SourceBreaking;
 use fidl_fuchsia_net_filter as fnet_filter;

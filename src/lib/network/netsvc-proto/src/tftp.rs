@@ -64,11 +64,7 @@ mod witness {
     impl<B: zerocopy::SplitByteSlice> NonEmptyValidStr<B> {
         /// Creates a new [`NonEmptyValidStr`] iff `str` is not empty.
         pub(super) fn new(str: ValidStr<B>) -> Option<Self> {
-            if str.as_str().is_empty() {
-                None
-            } else {
-                Some(Self(str))
-            }
+            if str.as_str().is_empty() { None } else { Some(Self(str)) }
         }
     }
 

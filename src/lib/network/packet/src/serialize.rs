@@ -14,10 +14,10 @@ use arrayvec::ArrayVec;
 use zerocopy::SplitByteSlice;
 
 use crate::{
-    canonicalize_range, take_back, take_back_mut, take_front, take_front_mut,
     AsFragmentedByteSlice, Buffer, BufferView, BufferViewMut, ContiguousBuffer, EmptyBuf,
     FragmentedBuffer, FragmentedBufferMut, FragmentedBytes, FragmentedBytesMut, GrowBuffer,
     GrowBufferMut, ParsablePacket, ParseBuffer, ParseBufferMut, ReusableBuffer, ShrinkBuffer,
+    canonicalize_range, take_back, take_back_mut, take_front, take_front_mut,
 };
 
 /// Either of two buffers.
@@ -1819,7 +1819,7 @@ impl<B: GrowBuffer + ShrinkBuffer> Serializer for TruncatingSerializer<B> {
                 TruncateDirection::DiscardFront => self.buffer.shrink_front(excess_bytes),
                 TruncateDirection::DiscardBack => self.buffer.shrink_back(excess_bytes),
                 TruncateDirection::NoTruncating => {
-                    return Err((SerializeError::SizeLimitExceeded, self))
+                    return Err((SerializeError::SizeLimitExceeded, self));
                 }
             }
         }
@@ -1873,7 +1873,7 @@ impl<B: GrowBuffer + ShrinkBuffer> Serializer for TruncatingSerializer<B> {
                     (true, TruncateDirection::DiscardFront) => src.slice(discarded_bytes..),
                     (true, TruncateDirection::DiscardBack) => src.slice(..truncated_size),
                     (true, TruncateDirection::NoTruncating) => {
-                        return Err(SerializeError::SizeLimitExceeded)
+                        return Err(SerializeError::SizeLimitExceeded);
                     }
                 };
                 dst.copy_from(&src);
@@ -2517,11 +2517,7 @@ mod tests {
     #[test]
     fn test_either_into_inner() {
         fn ret_either(a: u32, b: u32, c: bool) -> Either<u32, u32> {
-            if c {
-                Either::A(a)
-            } else {
-                Either::B(b)
-            }
+            if c { Either::A(a) } else { Either::B(b) }
         }
 
         assert_eq!(ret_either(1, 2, true).into_inner(), 1);
@@ -2883,48 +2879,53 @@ mod tests {
             // test since it tests the case when the size limit is exactly
             // sufficient. A previous version of this code had a bug where a
             // packet which fit the size limit exactly would be rejected.
-            assert!(ser
-                .clone()
-                .wrap_in_verifying(pb, false)
-                .with_size_limit_verifying(3, false)
-                .serialize_vec_outer()
-                .is_ok());
+            assert!(
+                ser.clone()
+                    .wrap_in_verifying(pb, false)
+                    .with_size_limit_verifying(3, false)
+                    .serialize_vec_outer()
+                    .is_ok()
+            );
             // Test that a more-than-large-enough size limit of 4 is OK.
-            assert!(ser
-                .clone()
-                .wrap_in_verifying(pb, false)
-                .with_size_limit_verifying(4, false)
-                .serialize_vec_outer()
-                .is_ok());
+            assert!(
+                ser.clone()
+                    .wrap_in_verifying(pb, false)
+                    .with_size_limit_verifying(4, false)
+                    .serialize_vec_outer()
+                    .is_ok()
+            );
             // Test that the inner size limit of 1 only applies to the inner
             // serializer, and so is still OK even though the outer serializer
             // consumes 3 bytes total.
-            assert!(ser
-                .clone()
-                .with_size_limit_verifying(1, false)
-                .wrap_in_verifying(pb, false)
-                .with_size_limit_verifying(3, false)
-                .serialize_vec_outer()
-                .is_ok());
+            assert!(
+                ser.clone()
+                    .with_size_limit_verifying(1, false)
+                    .wrap_in_verifying(pb, false)
+                    .with_size_limit_verifying(3, false)
+                    .serialize_vec_outer()
+                    .is_ok()
+            );
             // Test that the inner size limit of 0 is exceeded by the inner
             // serializer's 1 byte length.
-            assert!(ser
-                .clone()
-                .with_size_limit_verifying(0, false)
-                .wrap_in_verifying(pb, false)
-                .serialize_vec_outer()
-                .is_err());
+            assert!(
+                ser.clone()
+                    .with_size_limit_verifying(0, false)
+                    .wrap_in_verifying(pb, false)
+                    .serialize_vec_outer()
+                    .is_err()
+            );
             // Test that a size limit which would be exceeded by the
             // encapsulating layer is rejected by Nested's implementation. If
             // this doesn't work properly, then the size limit should underflow,
             // resulting in a panic (see the Nested implementation of
             // Serialize).
-            assert!(ser
-                .clone()
-                .wrap_in_verifying(pb, false)
-                .with_size_limit_verifying(1, false)
-                .serialize_vec_outer()
-                .is_err());
+            assert!(
+                ser.clone()
+                    .wrap_in_verifying(pb, false)
+                    .with_size_limit_verifying(1, false)
+                    .serialize_vec_outer()
+                    .is_err()
+            );
         }
 
         // We use this as an InnerPacketBuilder which consumes 1 byte of body.

@@ -15,7 +15,7 @@ use {
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
 };
 
-use crate::{impl_responder, FidlRouteIpExt, Responder, TableId};
+use crate::{FidlRouteIpExt, Responder, TableId, impl_responder};
 
 /// Route set creation errors.
 #[derive(Clone, Debug, Error)]

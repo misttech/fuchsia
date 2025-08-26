@@ -12,10 +12,10 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_net_ext::IntoExt as _;
-use futures::{pin_mut, Future, FutureExt, Stream, StreamExt as _, TryStreamExt as _};
+use futures::{Future, FutureExt, Stream, StreamExt as _, TryStreamExt as _, pin_mut};
 use net_declare::fidl_ip_v4_with_prefix;
-use net_types::ip::{Ipv4, Ipv4Addr};
 use net_types::SpecifiedAddr;
+use net_types::ip::{Ipv4, Ipv4Addr};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
@@ -292,7 +292,7 @@ impl ClientExt for fnet_dhcp::ClientProxy {
                     | fnet_dhcp::ClientExitReason::AddressRemovedByUser
                     | fnet_dhcp::ClientExitReason::AddressStateProviderError
                     | fnet_dhcp::ClientExitReason::UnableToOpenSocket => {
-                        return Err(Error::WrongExitReason(reason))
+                        return Err(Error::WrongExitReason(reason));
                     }
                     fnet_dhcp::ClientExitReason::GracefulShutdown => Some(()),
                 }),
@@ -543,7 +543,7 @@ pub mod testutil {
 
 #[cfg(test)]
 mod test {
-    use crate::{ClientExt as _, Error, DEFAULT_ADDR_PREFIX};
+    use crate::{ClientExt as _, DEFAULT_ADDR_PREFIX, Error};
 
     use std::collections::HashSet;
     use std::num::NonZeroU64;
@@ -552,7 +552,7 @@ mod test {
     use fidl::endpoints::RequestStream;
     use fidl_fuchsia_net_ext::IntoExt as _;
     use futures::channel::oneshot;
-    use futures::{join, pin_mut, FutureExt as _, StreamExt as _};
+    use futures::{FutureExt as _, StreamExt as _, join, pin_mut};
     use net_declare::net_ip_v4;
     use net_types::ip::{Ip, Ipv4, Ipv4Addr};
     use net_types::{SpecifiedAddr, SpecifiedAddress as _, Witness as _};

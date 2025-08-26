@@ -118,8 +118,8 @@ pub async fn serve_state_request<'a, I: FidlRouteIpExt>(
 
 /// Provides a stream of watcher events such that the stack appears to contain
 /// no routes and never installs any.
-pub fn empty_watch_event_stream<'a, I: FidlRouteIpExt>(
-) -> impl Stream<Item = Vec<I::WatchEvent>> + 'a {
+pub fn empty_watch_event_stream<'a, I: FidlRouteIpExt>()
+-> impl Stream<Item = Vec<I::WatchEvent>> + 'a {
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct Wrap<I: FidlRouteIpExt>(I::WatchEvent);
@@ -140,8 +140,8 @@ pub mod admin {
     use futures::{Stream, StreamExt as _, TryStreamExt as _};
     use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
 
-    use crate::admin::{FidlRouteAdminIpExt, RouteSetRequest, RouteTableRequest};
     use crate::Responder;
+    use crate::admin::{FidlRouteAdminIpExt, RouteSetRequest, RouteTableRequest};
 
     /// Provides a RouteTable implementation that provides one RouteSet and
     /// then panics on subsequent invocations. Returns the request stream for
@@ -352,8 +352,8 @@ pub mod rules {
     use futures::{Stream, StreamExt as _, TryStreamExt as _};
     use net_types::ip::{GenericOverIp, Ip};
 
-    use crate::rules::{FidlRuleAdminIpExt, FidlRuleIpExt, RuleSetRequest, RuleTableRequest};
     use crate::Responder;
+    use crate::rules::{FidlRuleAdminIpExt, FidlRuleIpExt, RuleSetRequest, RuleTableRequest};
 
     // Responds to the given `Watch` request with the given batch of events.
     fn handle_watch<I: FidlRuleIpExt>(
@@ -405,8 +405,8 @@ pub mod rules {
 
     /// Provides a stream of watcher events such that the stack appears to contain
     /// no routes and never installs any.
-    pub fn empty_watch_event_stream<'a, I: FidlRuleIpExt>(
-    ) -> impl Stream<Item = Vec<I::RuleEvent>> + 'a {
+    pub fn empty_watch_event_stream<'a, I: FidlRuleIpExt>()
+    -> impl Stream<Item = Vec<I::RuleEvent>> + 'a {
         #[derive(GenericOverIp)]
         #[generic_over_ip(I, Ip)]
         struct Wrap<I: FidlRuleIpExt>(I::RuleEvent);

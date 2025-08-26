@@ -19,7 +19,7 @@ use {
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
 };
 
-use crate::{impl_responder, FidlRouteIpExt, Responder, SliceResponder, WatcherCreationError};
+use crate::{FidlRouteIpExt, Responder, SliceResponder, WatcherCreationError, impl_responder};
 
 /// Observation extension for the rules part of `fuchsia.net.routes` FIDL API.
 pub trait FidlRuleIpExt: Ip {
@@ -259,19 +259,19 @@ pub trait FidlRuleAdminIpExt: Ip {
     type RuleSetRequestStream: fidl::endpoints::RequestStream<Ok: Send, ControlHandle: Send>;
     /// The responder for AddRule requests.
     type RuleSetAddRuleResponder: Responder<
-        Payload = Result<(), fnet_routes_admin::RuleSetError>,
-        ControlHandle = Self::RuleSetControlHandle,
-    >;
+            Payload = Result<(), fnet_routes_admin::RuleSetError>,
+            ControlHandle = Self::RuleSetControlHandle,
+        >;
     /// The responder for RemoveRule requests.
     type RuleSetRemoveRuleResponder: Responder<
-        Payload = Result<(), fnet_routes_admin::RuleSetError>,
-        ControlHandle = Self::RuleSetControlHandle,
-    >;
+            Payload = Result<(), fnet_routes_admin::RuleSetError>,
+            ControlHandle = Self::RuleSetControlHandle,
+        >;
     /// The responder for AuthenticateForRouteTable requests.
     type RuleSetAuthenticateForRouteTableResponder: Responder<
-        Payload = Result<(), fnet_routes_admin::AuthenticateForRouteTableError>,
-        ControlHandle = Self::RuleSetControlHandle,
-    >;
+            Payload = Result<(), fnet_routes_admin::AuthenticateForRouteTableError>,
+            ControlHandle = Self::RuleSetControlHandle,
+        >;
     /// The control handle for RuleTable protocols.
     type RuleTableControlHandle: fidl::endpoints::ControlHandle + Send + Clone;
     /// The control handle for RuleSet protocols.
@@ -929,11 +929,13 @@ pub async fn close_rule_set<I: Ip + FidlRuleAdminIpExt>(
         |CloseInput { rule_set }| rule_set.close(),
     );
 
-    assert!(rule_set
-        .on_closed()
-        .await
-        .expect("failed to wait for signals")
-        .contains(fidl::Signals::CHANNEL_PEER_CLOSED));
+    assert!(
+        rule_set
+            .on_closed()
+            .await
+            .expect("failed to wait for signals")
+            .contains(fidl::Signals::CHANNEL_PEER_CLOSED)
+    );
 
     result
 }

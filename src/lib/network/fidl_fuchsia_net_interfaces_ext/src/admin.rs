@@ -396,8 +396,8 @@ impl Control {
     }
 
     /// Creates a new `Control` and its `ServerEnd`.
-    pub fn create_endpoints(
-    ) -> Result<(Self, fidl::endpoints::ServerEnd<fnet_interfaces_admin::ControlMarker>), fidl::Error>
+    pub fn create_endpoints()
+    -> Result<(Self, fidl::endpoints::ServerEnd<fnet_interfaces_admin::ControlMarker>), fidl::Error>
     {
         let (proxy, server_end) = fidl::endpoints::create_proxy();
         Ok((Self::new(proxy), server_end))
@@ -528,12 +528,12 @@ mod test {
     use std::task::Poll;
 
     use super::{
-        assignment_state_stream, or_terminal_event, proof_from_grant, AddressStateProviderError,
-        TerminalError,
+        AddressStateProviderError, TerminalError, assignment_state_stream, or_terminal_event,
+        proof_from_grant,
     };
     use assert_matches::assert_matches;
-    use fidl::prelude::*;
     use fidl::Rights;
+    use fidl::prelude::*;
     use fnet_interfaces_admin::InterfaceRemovedReason;
     use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
     use test_case::test_case;

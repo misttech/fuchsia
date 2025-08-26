@@ -543,7 +543,7 @@ impl<I: Ip> TryFrom<Route<I>> for fnet_stack::ForwardingEntry {
                 return Err(NetTypeConversionError::UnknownUnionVariant(match I::VERSION {
                     net_types::ip::IpVersion::V4 => ROUTE_ACTION_V4_UNKNOWN_VARIANT_TAG,
                     net_types::ip::IpVersion::V6 => ROUTE_ACTION_V6_UNKNOWN_VARIANT_TAG,
-                }))
+                }));
             }
             RouteAction::Forward(target) => target,
         };

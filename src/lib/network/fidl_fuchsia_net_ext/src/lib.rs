@@ -9,7 +9,7 @@ use std::fmt::Display;
 
 use fidl_fuchsia_net as fidl;
 
-use net_types::{ethernet, ip, Witness as _};
+use net_types::{Witness as _, ethernet, ip};
 use paste::paste;
 
 /// Extension trait to provides access to FIDL types.

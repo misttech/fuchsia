@@ -330,11 +330,7 @@ macro_rules! impl_records_counter_and_context_for_uxxx {
             }
 
             fn result_for_end_of_records(&self) -> Result<(), TooFewRecordsErr> {
-                if *self == 0 {
-                    Ok(())
-                } else {
-                    Err(TooFewRecordsErr)
-                }
+                if *self == 0 { Ok(()) } else { Err(TooFewRecordsErr) }
             }
         }
 

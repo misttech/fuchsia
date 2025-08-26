@@ -115,11 +115,7 @@ pub struct LogPacketBuilder<'a> {
 
 impl<'a> LogPacketBuilder<'a> {
     pub fn new(seqno: u32, nodename: &'a str) -> Option<Self> {
-        if nodename.len() <= MAX_NODENAME_LENGTH {
-            Some(Self { seqno, nodename })
-        } else {
-            None
-        }
+        if nodename.len() <= MAX_NODENAME_LENGTH { Some(Self { seqno, nodename }) } else { None }
     }
 }
 

@@ -351,7 +351,11 @@ mod tests {
                 assert_eq!(got_reachable, want_reachable);
             } else {
                 if got.is_some() {
-                    panic!("got {:?} from reachability stream after event {:?}, want None as reachability status should not have changed", got, event);
+                    panic!(
+                        "got {:?} from reachability stream after event {:?}, \
+                        want None as reachability status should not have changed",
+                        got, event
+                    );
                 }
             }
         }
