@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use assert_matches::assert_matches;
 use fidl::endpoints::{ControlHandle as _, ProtocolMarker, RequestStream, Responder as _};
-use fidl_fuchsia_net_interfaces_admin::ProofOfInterfaceAuthorization;
+use fidl_fuchsia_net_resources::ProofOfInterfaceAuthorization;
 use fnet_routes_ext::admin::{FidlRouteAdminIpExt, RouteSetRequest, RouteTableRequest};
 use fnet_routes_ext::{FidlRouteIpExt, Responder as _};
 use futures::channel::{mpsc, oneshot};

@@ -7,6 +7,7 @@ library fuchsia.net.interfaces.admin;
 using fuchsia.net;
 using fuchsia.hardware.network;
 using fuchsia.net.interfaces;
+using fuchsia.net.resources;
 using zx;
 
 /// NudConfiguration for an interface.
@@ -129,19 +130,6 @@ type Configuration = table {
             };
         };
     };
-};
-
-/// A credential passed into the `fuchsia.net.*` family of APIs to authenticate
-/// access to a particular interface. The Netstack only needs the ability to
-/// inspect the token's basic info when proving that the client is authorized
-/// to access a resource.
-type ProofOfInterfaceAuthorization = resource struct {
-    /// The ID of the interface this credential is authenticating.
-    interface_id fuchsia.net.InterfaceId;
-    /// The EVENT providing authentication over this interface.
-    // TODO(https://fxbug.dev/42079239): We want to restrict the rights to None, but currently
-    // there are issues in FIDL or zither preventing us from naming the constant.
-    token zx.Handle:<EVENT, 0>;
 };
 
 /// Options for creating an interface.
@@ -312,20 +300,15 @@ closed protocol Control {
     ///
     /// The credential contains a [`zx::handle::EVENT`], whose entangled
     /// partner is held by the server. This credential can be converted into a
-    /// [`ProofOfInterfaceAuthorization`] and then passed into `fuchsia.net.*`
-    /// API calls to prove ownership of this interface. The `EVENT` is
-    /// stable throughout the lifetime of the interface. Clients may duplicate
-    /// this `EVENT` to make multiple API calls, or transfer the `EVENT`
-    /// to other clients.
+    /// [`fuchsia.net.resources/ProofOfInterfaceAuthorization`] and then passed
+    /// into `fuchsia.net.*` API calls to prove ownership of this interface. The
+    /// `EVENT` is stable throughout the lifetime of the interface. Clients may
+    /// duplicate this `EVENT` to make multiple API calls, or transfer the
+    /// `EVENT` to other clients.
     ///
     /// - response `credential` the authorization credential for this interface.
     strict GetAuthorizationForInterface() -> (resource struct {
-        credential @generated_name("GrantForInterfaceAuthorization") resource struct {
-            /// The ID of the interface this credential is authenticating.
-            interface_id fuchsia.net.InterfaceId;
-            /// The EVENT providing authentication over this interface.
-            token zx.Handle:<EVENT, zx.Rights.TRANSFER | zx.Rights.DUPLICATE>;
-        };
+        credential fuchsia.net.resources.GrantForInterfaceAuthorization;
     });
 
     /// Initiates interface removal.

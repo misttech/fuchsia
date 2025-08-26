@@ -40,7 +40,7 @@ use std::pin::pin;
 use assert_matches::assert_matches;
 use fidl::endpoints::{ProtocolMarker, ServerEnd};
 use fidl_fuchsia_net_interfaces_ext::{NotPositiveMonotonicInstantError, PositiveMonotonicInstant};
-use fnet_interfaces_admin::GrantForInterfaceAuthorization;
+use fnet_resources::GrantForInterfaceAuthorization;
 use futures::future::{FusedFuture as _, OptionFuture};
 use futures::stream::FusedStream as _;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _, TryStreamExt as _};
@@ -62,7 +62,8 @@ use {
     fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
     fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fuchsia_async as fasync,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_resources as fnet_resources, fuchsia_async as fasync,
 };
 
 use crate::bindings::devices::{

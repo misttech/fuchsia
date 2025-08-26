@@ -9,7 +9,7 @@
 // LINT.IfChange
 library fuchsia.net.routes.admin;
 
-using fuchsia.net.interfaces.admin;
+using fuchsia.net.resources;
 using fuchsia.net.routes;
 
 /// Vends isolated administrative access to the system's IPv4 routing table.
@@ -55,7 +55,7 @@ closed protocol RouteTableProviderV4 {
     ///
     /// Calling detach on the route table is a no-op.
     strict GetInterfaceLocalTable(resource struct {
-        credential fuchsia.net.interfaces.admin.ProofOfInterfaceAuthorization;
+        credential fuchsia.net.resources.ProofOfInterfaceAuthorization;
     }) -> (resource struct {
         route_table client_end:RouteTableV4;
     }) error GetInterfaceLocalTableError;
@@ -86,7 +86,7 @@ closed protocol RouteSetV4 {
     ///
     /// + request `interface` the authentication credential for an interface.
     strict AuthenticateForInterface(resource struct {
-        credential fuchsia.net.interfaces.admin.ProofOfInterfaceAuthorization;
+        credential fuchsia.net.resources.ProofOfInterfaceAuthorization;
     }) -> () error AuthenticateForInterfaceError;
 
     /// Adds a route to this route set.

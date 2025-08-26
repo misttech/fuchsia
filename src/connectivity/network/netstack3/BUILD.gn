@@ -29,6 +29,7 @@ common_deps = [
   "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust",
   "//sdk/fidl/fuchsia.net.ndp:fuchsia.net.ndp_rust",
   "//sdk/fidl/fuchsia.net.neighbor:fuchsia.net.neighbor_rust",
+  "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_rust",
   "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust",
   "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes_rust",
   "//sdk/fidl/fuchsia.net.routes.admin:fuchsia.net.routes.admin_rust",

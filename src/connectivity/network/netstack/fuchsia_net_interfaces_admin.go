@@ -23,6 +23,7 @@ import (
 	"fidl/fuchsia/net"
 	"fidl/fuchsia/net/interfaces"
 	"fidl/fuchsia/net/interfaces/admin"
+	"fidl/fuchsia/net/resources"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
@@ -249,15 +250,15 @@ func (ci *adminControlImpl) Remove(fidl.Context) (admin.ControlRemoveResult, err
 	return admin.ControlRemoveResultWithResponse(admin.ControlRemoveResponse{}), nil
 }
 
-func (ci *adminControlImpl) GetAuthorizationForInterface(fidl.Context) (admin.GrantForInterfaceAuthorization, error) {
+func (ci *adminControlImpl) GetAuthorizationForInterface(fidl.Context) (resources.GrantForInterfaceAuthorization, error) {
 	nicInfo := ci.getNICContext()
 
 	token, err := nicInfo.authorizationToken.Duplicate(zx.RightTransfer | zx.RightDuplicate)
 	if err != nil {
-		return admin.GrantForInterfaceAuthorization{}, err
+		return resources.GrantForInterfaceAuthorization{}, err
 	}
 
-	return admin.GrantForInterfaceAuthorization{InterfaceId: uint64(nicInfo.nicid), Token: token}, nil
+	return resources.GrantForInterfaceAuthorization{InterfaceId: uint64(nicInfo.nicid), Token: token}, nil
 }
 
 func propertiesToLifetimes(properties admin.AddressProperties) stack.AddressLifetimes {

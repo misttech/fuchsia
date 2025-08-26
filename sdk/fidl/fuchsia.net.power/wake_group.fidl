@@ -4,7 +4,7 @@
 @available(added=HEAD)
 library fuchsia.net.power;
 
-using fuchsia.net;
+using fuchsia.net.resources;
 using fuchsia.power.system;
 
 type Empty = struct {};
@@ -79,6 +79,6 @@ closed protocol WakeGroupProvider {
         /// networking resources (such as sockets) to the group.
         ///
         /// Always present.
-        1: token fuchsia.net.WakeGroupToken;
+        1: token fuchsia.net.resources.WakeGroupToken;
     });
 };

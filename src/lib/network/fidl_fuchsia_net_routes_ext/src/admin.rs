@@ -11,7 +11,7 @@ use futures::future::Either;
 use net_types::ip::{GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6};
 use thiserror::Error;
 use {
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin, fidl_fuchsia_net_root as fnet_root,
+    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_root as fnet_root,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
 };
 
@@ -328,7 +328,7 @@ pub enum RouteTableProviderRequest<I: Ip + FidlRouteAdminIpExt> {
     /// Request to get the interface-local route table.
     GetInterfaceLocalTable {
         /// The credentials for the interface.
-        credential: fnet_interfaces_admin::ProofOfInterfaceAuthorization,
+        credential: fnet_resources::ProofOfInterfaceAuthorization,
         /// Responder to return the local table.
         responder: I::GetInterfaceLocalTableResponder,
     },
@@ -413,7 +413,7 @@ pub fn new_route_table<I: Ip + FidlRouteAdminIpExt>(
 /// or `RouteTableProviderV6` proxy.
 pub async fn get_interface_local_table<I: Ip + FidlRouteAdminIpExt>(
     route_table_provider_proxy: &<I::RouteTableProviderMarker as ProtocolMarker>::Proxy,
-    credential: fnet_interfaces_admin::ProofOfInterfaceAuthorization,
+    credential: fnet_resources::ProofOfInterfaceAuthorization,
 ) -> Result<
     Result<
         <I::RouteTableMarker as ProtocolMarker>::Proxy,
@@ -425,7 +425,7 @@ pub async fn get_interface_local_table<I: Ip + FidlRouteAdminIpExt>(
     #[generic_over_ip(I, Ip)]
     struct Input<'a, I: FidlRouteAdminIpExt> {
         route_table_provider_proxy: &'a <I::RouteTableProviderMarker as ProtocolMarker>::Proxy,
-        credential: fnet_interfaces_admin::ProofOfInterfaceAuthorization,
+        credential: fnet_resources::ProofOfInterfaceAuthorization,
     }
 
     #[derive(GenericOverIp)]
@@ -552,13 +552,13 @@ pub async fn remove_route<I: Ip + FidlRouteAdminIpExt + FidlRouteIpExt>(
 /// `RouteSetV6` proxy.
 pub async fn authenticate_for_interface<I: Ip + FidlRouteAdminIpExt + FidlRouteIpExt>(
     route_set: &<I::RouteSetMarker as ProtocolMarker>::Proxy,
-    credential: fnet_interfaces_admin::ProofOfInterfaceAuthorization,
+    credential: fnet_resources::ProofOfInterfaceAuthorization,
 ) -> Result<Result<(), fnet_routes_admin::AuthenticateForInterfaceError>, fidl::Error> {
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct AuthenticateForInterfaceInput<'a, I: FidlRouteAdminIpExt + FidlRouteIpExt> {
         route_set: &'a <I::RouteSetMarker as ProtocolMarker>::Proxy,
-        credential: fnet_interfaces_admin::ProofOfInterfaceAuthorization,
+        credential: fnet_resources::ProofOfInterfaceAuthorization,
     }
 
     I::map_ip_in(
@@ -662,7 +662,7 @@ pub enum RouteSetRequest<I: FidlRouteAdminIpExt> {
     /// Authenticates the route set for managing routes on an interface.
     AuthenticateForInterface {
         /// The credential proving authorization for this interface.
-        credential: fnet_interfaces_admin::ProofOfInterfaceAuthorization,
+        credential: fnet_resources::ProofOfInterfaceAuthorization,
         /// The responder for this request.
         responder: I::RouteSetAuthenticateForInterfaceResponder,
     },

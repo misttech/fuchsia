@@ -10,7 +10,8 @@ use futures::{Future, FutureExt as _, Stream, StreamExt as _, TryStreamExt as _}
 use thiserror::Error;
 use {
     fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin, zx_status as zx,
+    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
+    fidl_fuchsia_net_resources as fnet_resources, zx_status as zx,
 };
 
 /// Error type when using a [`fnet_interfaces_admin::AddressStateProviderProxy`].
@@ -148,8 +149,8 @@ type ControlEventStreamFutureToReason =
         ),
     ) -> Result<Option<fnet_interfaces_admin::InterfaceRemovedReason>, fidl::Error>;
 
-/// Convert [`fnet_interfaces_admin::GrantForInterfaceAuthorization`] to
-/// [`fnet_interfaces_admin::ProofOfInterfaceAuthorization`] with fewer
+/// Convert [`fnet_resources::GrantForInterfaceAuthorization`] to
+/// [`fnet_resources::ProofOfInterfaceAuthorization`] with fewer
 /// permissions.
 ///
 /// # Panics
@@ -158,15 +159,15 @@ type ControlEventStreamFutureToReason =
 /// need not worry about this if providing a grant received from
 /// [`GetAuthorizationForInterface`].
 pub fn proof_from_grant(
-    grant: &fnet_interfaces_admin::GrantForInterfaceAuthorization,
-) -> fnet_interfaces_admin::ProofOfInterfaceAuthorization {
-    let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } = grant;
+    grant: &fnet_resources::GrantForInterfaceAuthorization,
+) -> fnet_resources::ProofOfInterfaceAuthorization {
+    let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } = grant;
 
     // The handle duplication is expected to succeed since the input
     // `GrantFromInterfaceAuthorization` is retrieved directly from FIDL and has
     // `zx::Rights::DUPLICATE`. Failure may occur if memory is limited, but this
     // problem cannot be easily resolved via userspace.
-    fnet_interfaces_admin::ProofOfInterfaceAuthorization {
+    fnet_resources::ProofOfInterfaceAuthorization {
         interface_id: *interface_id,
         token: token.duplicate_handle(Rights::TRANSFER).unwrap(),
     }
@@ -314,7 +315,7 @@ impl Control {
     pub async fn get_authorization_for_interface(
         &self,
     ) -> Result<
-        fnet_interfaces_admin::GrantForInterfaceAuthorization,
+        fnet_resources::GrantForInterfaceAuthorization,
         TerminalError<fnet_interfaces_admin::InterfaceRemovedReason>,
     > {
         self.or_terminal_event(self.proxy.get_authorization_for_interface()).await
@@ -527,10 +528,6 @@ impl From<NetstackManagedRoutesDesignation>
 mod test {
     use std::task::Poll;
 
-    use super::{
-        AddressStateProviderError, TerminalError, assignment_state_stream, or_terminal_event,
-        proof_from_grant,
-    };
     use assert_matches::assert_matches;
     use fidl::Rights;
     use fidl::prelude::*;
@@ -541,6 +538,8 @@ mod test {
         fidl_fuchsia_net_interfaces as fnet_interfaces,
         fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin, zx_status as zx,
     };
+
+    use super::*;
 
     // Test that the terminal event is observed when the server closes its end.
     #[fuchsia_async::run_singlethreaded(test)]
@@ -909,12 +908,12 @@ mod test {
         // [`ProofOfInterfaceAuthorization`], since only `zx::Rights::DUPLICATE` and
         // `zx::Rights::TRANSFER` is required.
         let event = fidl::Event::create();
-        let grant = fnet_interfaces_admin::GrantForInterfaceAuthorization {
+        let grant = fnet_resources::GrantForInterfaceAuthorization {
             interface_id: Default::default(),
             token: event,
         };
 
-        let fnet_interfaces_admin::ProofOfInterfaceAuthorization { interface_id, token } =
+        let fnet_resources::ProofOfInterfaceAuthorization { interface_id, token } =
             proof_from_grant(&grant);
         assert_eq!(interface_id, Default::default());
         assert_matches!(token.basic_info(), Ok(info) if info.rights == Rights::TRANSFER);

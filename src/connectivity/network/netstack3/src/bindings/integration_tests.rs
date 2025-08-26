@@ -34,8 +34,9 @@ use {
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
     fidl_fuchsia_net_multicast_admin as fnet_multicast_admin,
     fidl_fuchsia_net_multicast_ext as fnet_multicast_ext, fidl_fuchsia_net_ndp as fnet_ndp,
-    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
+    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_resources as fnet_resources,
+    fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_netemul_network as net,
     fidl_fuchsia_posix_socket as fposix_socket,
     fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
@@ -217,11 +218,11 @@ impl TestStack {
 
         let control = self.get_interface_control(authenticate_nicid);
 
-        let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+        let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
             control.get_authorization_for_interface().await.expect("should succeed");
         fnet_routes_ext::admin::authenticate_for_interface::<I>(
             &route_set,
-            fnet_interfaces_admin::ProofOfInterfaceAuthorization { interface_id, token },
+            fnet_resources::ProofOfInterfaceAuthorization { interface_id, token },
         )
         .await
         .expect("FIDL error while authenticating route set for interface")
@@ -1560,10 +1561,10 @@ async fn shutdown_with_open_resources_routes(detach_route_table: bool) {
         let (main_route_set, server_end) = fidl::endpoints::create_proxy();
         main_route_table.new_route_set(server_end).expect("calling new_route_set");
 
-        let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+        let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
             if_control.get_authorization_for_interface().await.expect("get authorization");
         main_route_set
-            .authenticate_for_interface(fnet_interfaces_admin::ProofOfInterfaceAuthorization {
+            .authenticate_for_interface(fnet_resources::ProofOfInterfaceAuthorization {
                 interface_id,
                 token,
             })
@@ -1587,10 +1588,10 @@ async fn shutdown_with_open_resources_routes(detach_route_table: bool) {
 
         let (route_set, server_end) = fidl::endpoints::create_proxy();
         route_table.new_route_set(server_end).expect("calling new_route_set");
-        let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+        let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
             if_control.get_authorization_for_interface().await.expect("get authorization");
         route_set
-            .authenticate_for_interface(fnet_interfaces_admin::ProofOfInterfaceAuthorization {
+            .authenticate_for_interface(fnet_resources::ProofOfInterfaceAuthorization {
                 interface_id,
                 token,
             })

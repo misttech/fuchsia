@@ -6,6 +6,7 @@ library fuchsia.posix.socket;
 
 using fuchsia.net;
 using fuchsia.net.interfaces;
+using fuchsia.net.resources;
 using fuchsia.net.tcp;
 using fuchsia.posix;
 using fuchsia.unknown;
@@ -1213,7 +1214,7 @@ type SocketCreationOptions = resource table {
     /// If absent, the socket is not added to any wake group. If the token
     /// provided does not correspond to an existing wake group, socket creation
     /// fails with `fuchsia.posix/Errno.EINVAL`.
-    2: group fuchsia.net.WakeGroupToken;
+    2: group fuchsia.net.resources.WakeGroupToken;
 };
 
 /// Provider implements the POSIX sockets API.

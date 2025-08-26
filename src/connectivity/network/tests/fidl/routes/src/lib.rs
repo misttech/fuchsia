@@ -35,8 +35,8 @@ use test_case::test_case;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use {
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, zx_status,
 };
 
@@ -1131,12 +1131,12 @@ async fn interface_local_route_table_initial_routes<
     let route_table_provider = realm
         .connect_to_protocol::<I::RouteTableProviderMarker>()
         .expect("connect to routes State");
-    let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+    let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
         interface.get_authorization().await.expect("failed to get authorization");
 
     let local_table = fnet_routes_ext::admin::get_interface_local_table::<I>(
         &route_table_provider,
-        fnet_interfaces_admin::ProofOfInterfaceAuthorization { interface_id, token },
+        fnet_resources::ProofOfInterfaceAuthorization { interface_id, token },
     )
     .await
     .expect("fidl")
@@ -1205,12 +1205,12 @@ async fn interface_local_route_table_ndp_routes(name: &str, on_link_route: bool)
     let route_table_provider = realm
         .connect_to_protocol::<<Ipv6 as FidlRouteAdminIpExt>::RouteTableProviderMarker>()
         .expect("connect to routes State");
-    let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+    let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
         interface.get_authorization().await.expect("failed to get authorization");
 
     let local_table = fnet_routes_ext::admin::get_interface_local_table::<Ipv6>(
         &route_table_provider,
-        fnet_interfaces_admin::ProofOfInterfaceAuthorization { interface_id, token },
+        fnet_resources::ProofOfInterfaceAuthorization { interface_id, token },
     )
     .await
     .expect("fidl")

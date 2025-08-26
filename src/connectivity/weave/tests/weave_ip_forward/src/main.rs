@@ -1,12 +1,12 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fuchsia_component::client;
 use log::info;
 use net_declare::fidl_ip_v6_with_prefix;
 use net_types::ip::Ipv6;
-use prettytable::{cell, format, row, Table};
+use prettytable::{Table, cell, format, row};
 use std::collections::HashMap;
 use std::io::{Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -14,8 +14,8 @@ use std::pin::pin;
 use structopt::StructOpt;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_root as fnet_root,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_root as fnet_root,
     fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fuchsia_async as fasync,
 };
@@ -75,13 +75,13 @@ async fn add_route_table_entry(
     nicid: u64,
 ) -> Result<(), Error> {
     let control = get_interface_control(root_interfaces, nicid)?;
-    let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } = control
+    let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } = control
         .get_authorization_for_interface()
         .await
         .context("error getting interface authorization")?;
 
     route_set
-        .authenticate_for_interface(fnet_interfaces_admin::ProofOfInterfaceAuthorization {
+        .authenticate_for_interface(fnet_resources::ProofOfInterfaceAuthorization {
             interface_id,
             token,
         })
@@ -110,11 +110,7 @@ async fn add_route_table_entry(
         .context("FIDL error adding route")?
         .map_err(|e| anyhow::anyhow!("error adding route: {e:?}"))?;
 
-    if !newly_added {
-        Err(anyhow::anyhow!("route {route:?} already existed"))
-    } else {
-        Ok(())
-    }
+    if !newly_added { Err(anyhow::anyhow!("route {route:?} already existed")) } else { Ok(()) }
 }
 
 async fn run_fuchsia_node() -> Result<(), Error> {
@@ -195,8 +191,10 @@ async fn run_fuchsia_node() -> Result<(), Error> {
     let ipv6_routing_table = {
         let state_v6 = client::connect_to_protocol::<fnet_routes::StateV6Marker>()
             .context("connect to protocol")?;
-        let stream = pin!(fnet_routes_ext::event_stream_from_state::<Ipv6>(&state_v6)
-            .context("failed to connect to watcher")?);
+        let stream = pin!(
+            fnet_routes_ext::event_stream_from_state::<Ipv6>(&state_v6)
+                .context("failed to connect to watcher")?
+        );
         fnet_routes_ext::collect_routes_until_idle::<_, Vec<_>>(stream)
             .await
             .context("failed to get routing table")?

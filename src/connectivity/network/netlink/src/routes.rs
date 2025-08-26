@@ -11,12 +11,11 @@ use std::hash::{Hash, Hasher};
 use std::num::{NonZeroU32, NonZeroU64};
 
 use fidl::endpoints::ProtocolMarker;
-use fidl_fuchsia_net_interfaces_admin::{
-    self as fnet_interfaces_admin, ProofOfInterfaceAuthorization,
-};
 use fidl_fuchsia_net_routes_admin::RouteSetError;
 use {
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_root as fnet_root,
+    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_root as fnet_root,
     fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_ext as fnet_routes_ext,
 };
 
@@ -390,7 +389,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
         #[generic_over_ip(I, Ip)]
         struct AuthorizeInputs<'a, I: fnet_routes_ext::admin::FidlRouteAdminIpExt> {
             route_set_proxy: &'a <I::RouteSetMarker as fidl::endpoints::ProtocolMarker>::Proxy,
-            proof: ProofOfInterfaceAuthorization,
+            proof: fnet_resources::ProofOfInterfaceAuthorization,
         }
 
         let authorize_fut = I::map_ip_in(
@@ -3195,7 +3194,7 @@ mod tests {
                                 responder,
                             } => {
                                 let token = fidl::Event::create();
-                                let grant = fnet_interfaces_admin::GrantForInterfaceAuthorization {
+                                let grant = fnet_resources::GrantForInterfaceAuthorization {
                                     interface_id: DEV1 as u64,
                                     token,
                                 };

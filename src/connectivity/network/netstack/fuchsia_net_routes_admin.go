@@ -19,7 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 
 	fuchsianet "fidl/fuchsia/net"
-	"fidl/fuchsia/net/interfaces/admin"
+	"fidl/fuchsia/net/resources"
 	fnetRoutes "fidl/fuchsia/net/routes"
 	routesAdmin "fidl/fuchsia/net/routes/admin"
 )
@@ -242,7 +242,7 @@ func bindV6RouteSet(ch zx.Channel, rs routeSet[fuchsianet.Ipv6Address]) error {
 	return nil
 }
 
-func validateInterfaceCredential(ns *Netstack, clientCredential admin.ProofOfInterfaceAuthorization) bool {
+func validateInterfaceCredential(ns *Netstack, clientCredential resources.ProofOfInterfaceAuthorization) bool {
 	nsIfInfo, ok := ns.stack.NICInfo()[tcpip.NICID(clientCredential.InterfaceId)]
 	if !ok {
 		// A NIC not existing should be transformed into INVALID_AUTHENTICATION,
@@ -307,7 +307,7 @@ func (r *routeSetV4Impl) AddRoute(ctx_ fidl.Context, fidlRoute fnetRoutes.RouteV
 	return result, nil
 }
 
-func (r *routeSetV4Impl) AuthenticateForInterface(ctx_ fidl.Context, credential admin.ProofOfInterfaceAuthorization) (routesAdmin.RouteSetV4AuthenticateForInterfaceResult, error) {
+func (r *routeSetV4Impl) AuthenticateForInterface(ctx_ fidl.Context, credential resources.ProofOfInterfaceAuthorization) (routesAdmin.RouteSetV4AuthenticateForInterfaceResult, error) {
 	defer func() {
 		// Close credential token to prevent resource leaks.
 		if err := credential.Token.Close(); err != nil {
@@ -408,7 +408,7 @@ func (r *routeSetV6Impl) AddRoute(ctx_ fidl.Context, fidlRoute fnetRoutes.RouteV
 	return result, nil
 }
 
-func (r *routeSetV6Impl) AuthenticateForInterface(ctx_ fidl.Context, credential admin.ProofOfInterfaceAuthorization) (routesAdmin.RouteSetV6AuthenticateForInterfaceResult, error) {
+func (r *routeSetV6Impl) AuthenticateForInterface(ctx_ fidl.Context, credential resources.ProofOfInterfaceAuthorization) (routesAdmin.RouteSetV6AuthenticateForInterfaceResult, error) {
 	defer func() {
 		// Close credential token to prevent resource leaks.
 		if err := credential.Token.Close(); err != nil {

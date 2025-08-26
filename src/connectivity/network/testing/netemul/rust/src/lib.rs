@@ -23,14 +23,14 @@ use fidl_fuchsia_net_ext::{self as fnet_ext};
 use fidl_fuchsia_net_interfaces_ext::admin::Control;
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext};
 use fnet_ext::{FromExt as _, IntoExt as _};
-use fnet_interfaces_admin::GrantForInterfaceAuthorization;
 use zx::AsHandleRef;
 use {
     fidl_fuchsia_hardware_network as fnetwork, fidl_fuchsia_io as fio, fidl_fuchsia_net as fnet,
     fidl_fuchsia_net_dhcp as fnet_dhcp, fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
+    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_resources as fnet_resources,
+    fidl_fuchsia_net_root as fnet_root, fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_stack as fnet_stack,
     fidl_fuchsia_netemul as fnetemul, fidl_fuchsia_netemul_network as fnetemul_network,
     fidl_fuchsia_posix_socket as fposix_socket, fidl_fuchsia_posix_socket_ext as fposix_socket_ext,
@@ -1351,7 +1351,9 @@ impl<'a> TestInterface<'a> {
     }
 
     /// Returns the authorization token for this interface.
-    pub async fn get_authorization(&self) -> Result<GrantForInterfaceAuthorization> {
+    pub async fn get_authorization(
+        &self,
+    ) -> Result<fnet_resources::GrantForInterfaceAuthorization> {
         Ok(self.control.get_authorization_for_interface().await?)
     }
 
@@ -1690,11 +1692,11 @@ impl<'a> TestInterface<'a> {
         );
 
         let route_set = proxy_fut.await;
-        let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+        let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
             self.get_authorization().await.expect("get interface grant");
         fnet_routes_ext::admin::authenticate_for_interface::<I>(
             &route_set,
-            fnet_interfaces_admin::ProofOfInterfaceAuthorization { interface_id, token },
+            fnet_resources::ProofOfInterfaceAuthorization { interface_id, token },
         )
         .await
         .expect("authentication should not have FIDL error")

@@ -9,24 +9,24 @@ use fidl_fuchsia_net_dhcp_ext::{self as fnet_dhcp_ext, ClientProviderExt as _};
 use fidl_fuchsia_net_ext::FromExt as _;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_name as fnet_name,
+    fidl_fuchsia_net_resources as fnet_resources,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
 };
 
 use anyhow::Context as _;
 use async_utils::stream::{StreamMap, Tagged, WithTag as _};
-use dns_server_watcher::{DnsServers, DnsServersUpdateSource, DEFAULT_DNS_PORT};
+use dns_server_watcher::{DEFAULT_DNS_PORT, DnsServers, DnsServersUpdateSource};
 use fuchsia_async::TimeoutExt as _;
+use futures::FutureExt;
 use futures::channel::oneshot;
 use futures::stream::StreamExt as _;
-use futures::FutureExt;
 use log::{info, warn};
-use net_types::ip::Ipv4Addr;
 use net_types::SpecifiedAddr;
+use net_types::ip::Ipv4Addr;
 use zx::HandleBased;
 
-use crate::{dns, errors, network, InterfaceId};
+use crate::{InterfaceId, dns, errors, network};
 
 #[derive(Debug)]
 pub(super) struct ClientState {
@@ -127,7 +127,7 @@ pub(super) async fn start_client(
     interface_name: &str,
     client_provider: &fnet_dhcp::ClientProviderProxy,
     route_set_provider: &fnet_routes_admin::RouteTableV4Proxy,
-    interface_admin_auth: &fnet_interfaces_admin::GrantForInterfaceAuthorization,
+    interface_admin_auth: &fnet_resources::GrantForInterfaceAuthorization,
     configuration_streams: &mut ConfigurationStreamMap,
 ) -> Result<ClientState, errors::Error> {
     info!("starting DHCPv4 client for {} (id={})", interface_name, interface_id);
@@ -137,11 +137,11 @@ pub(super) async fn start_client(
 
     route_set_provider.new_route_set(server_end).expect("create new route set");
 
-    let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id: id, token } =
+    let fnet_resources::GrantForInterfaceAuthorization { interface_id: id, token } =
         interface_admin_auth;
 
     route_set
-        .authenticate_for_interface(fnet_interfaces_admin::ProofOfInterfaceAuthorization {
+        .authenticate_for_interface(fnet_resources::ProofOfInterfaceAuthorization {
             interface_id: *id,
             token: token
                 .duplicate_handle(zx::Rights::TRANSFER)

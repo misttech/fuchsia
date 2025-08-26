@@ -42,6 +42,7 @@ use {
     fidl_fuchsia_net_masquerade as fnet_masquerade, fidl_fuchsia_net_name as fnet_name,
     fidl_fuchsia_net_ndp as fnet_ndp, fidl_fuchsia_net_policy_properties as fnp_properties,
     fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
+    fidl_fuchsia_net_resources as fnet_resources,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin, fidl_fuchsia_net_stack as fnet_stack,
     fidl_fuchsia_net_virtualization as fnet_virtualization, fuchsia_async as fasync,
 };
@@ -457,7 +458,7 @@ struct HostInterfaceState {
     dhcpv6_client_state: Option<dhcpv6::ClientState>,
     // The PD configuration to use for the DHCPv6 client on this interface.
     dhcpv6_pd_config: Option<fnet_dhcpv6::PrefixDelegationConfig>,
-    interface_admin_auth: fnet_interfaces_admin::GrantForInterfaceAuthorization,
+    interface_admin_auth: fnet_resources::GrantForInterfaceAuthorization,
     interface_naming_id: interface::InterfaceNamingIdentifier,
 }
 
@@ -1778,7 +1779,7 @@ impl<'a> NetCfg<'a> {
         dhcpv4_client: &mut Dhcpv4ClientState,
         dhcpv4_client_provider: Option<&fnet_dhcp::ClientProviderProxy>,
         route_set_provider: &fnet_routes_admin::RouteTableV4Proxy,
-        interface_admin_auth: &fnet_interfaces_admin::GrantForInterfaceAuthorization,
+        interface_admin_auth: &fnet_resources::GrantForInterfaceAuthorization,
         configuration_streams: &mut dhcpv4::ConfigurationStreamMap,
     ) -> Result<(), errors::Error> {
         *dhcpv4_client = match dhcpv4_client_provider {
@@ -1811,7 +1812,7 @@ impl<'a> NetCfg<'a> {
         control: &fnet_interfaces_ext::admin::Control,
         lookup_admin: &fnet_name::LookupAdminProxy,
         route_set_provider: &fnet_routes_admin::RouteTableV4Proxy,
-        interface_admin_auth: &fnet_interfaces_admin::GrantForInterfaceAuthorization,
+        interface_admin_auth: &fnet_resources::GrantForInterfaceAuthorization,
     ) -> Result<(), errors::Error> {
         if online {
             Self::handle_dhcpv4_client_start(
@@ -4101,7 +4102,7 @@ mod tests {
             .into_get_authorization_for_interface()
             .expect("should be interface authorization request");
         responder
-            .send(fnet_interfaces_admin::GrantForInterfaceAuthorization {
+            .send(fnet_resources::GrantForInterfaceAuthorization {
                 interface_id: INTERFACE_ID.get(),
                 token: zx::Event::create(),
             })

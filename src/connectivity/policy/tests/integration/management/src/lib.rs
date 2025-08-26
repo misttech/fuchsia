@@ -15,8 +15,8 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 
 use fidl_fuchsia_net_ext::IntoExt as _;
-use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
+use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_posix_socket::{self as fposix_socket, OptionalUint32};
 use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
 use {
@@ -26,7 +26,8 @@ use {
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
     fidl_fuchsia_net_masquerade as fnet_masquerade,
-    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy, fidl_fuchsia_net_root as fnet_root,
+    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
+    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_root as fnet_root,
     fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext,
     fidl_fuchsia_netemul_network as fnetemul_network,
@@ -52,14 +53,14 @@ use netstack_testing_common::realms::{
     TestSandboxExt,
 };
 use netstack_testing_common::{
-    dhcpv4 as dhcpv4_helper, try_all, try_any, wait_for_component_stopped, Result,
-    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
+    ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, Result,
+    dhcpv4 as dhcpv4_helper, try_all, try_any, wait_for_component_stopped,
 };
 use netstack_testing_macros::netstack_test;
 use packet::{EmptyBuf, InnerPacketBuilder as _, ParsablePacket as _, Serializer as _};
 use packet_formats::ethernet::{
-    EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
-    ETHERNET_MIN_BODY_LEN_NO_TAG,
+    ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
+    EthernetFrameLengthCheck,
 };
 use packet_formats::ip::{IpProto, Ipv6Proto};
 use packet_formats::ipv6::Ipv6PacketBuilder;
@@ -67,8 +68,8 @@ use packet_formats::testutil::parse_ip_packet;
 use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpParseArgs};
 use packet_formats_dhcp::v6 as dhcpv6;
 use policy_testing_common::{
-    add_default_route, add_device_to_devfs, verify_interface_added, with_netcfg_owned_device,
-    NetcfgOwnedDeviceArgs,
+    NetcfgOwnedDeviceArgs, add_default_route, add_device_to_devfs, verify_interface_added,
+    with_netcfg_owned_device,
 };
 use test_case::test_case;
 
@@ -477,11 +478,13 @@ async fn test_install_only_no_provisioning<M: Manager, N: Netstack>(name: &str) 
                         }
                     });
                 let mut stream = pin!(stream);
-                assert!(stream
-                    .next()
-                    .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT.after_now(), || None)
-                    .await
-                    .is_none());
+                assert!(
+                    stream
+                        .next()
+                        .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT.after_now(), || None)
+                        .await
+                        .is_none()
+                );
             }
             .boxed_local()
         },
@@ -496,7 +499,7 @@ async fn test_install_only_no_provisioning<M: Manager, N: Netstack>(name: &str) 
 async fn test_install_with_local_table<M: Manager>(name: &str) {
     async fn assert_local_table_exists<I: FidlRouteAdminIpExt + FidlRouteIpExt>(
         realm: &TestRealm<'_>,
-        grant: &fnet_interfaces_admin::GrantForInterfaceAuthorization,
+        grant: &fnet_resources::GrantForInterfaceAuthorization,
     ) {
         let provider =
             realm.connect_to_protocol::<I::RouteTableProviderMarker>().expect("failed to connect");
@@ -1951,11 +1954,13 @@ async fn disable_interface_while_having_dhcpv6_prefix<M: Manager, N: Netstack>(n
                 // When netcfg had the issue that this regression test covers,
                 // it would panic while handling the interface-disabled event.
                 // This manifests as a test failure due to error log severity.
-                assert!(control
-                    .disable()
-                    .await
-                    .expect("disable should not have FIDL error")
-                    .expect("disable should succeed"));
+                assert!(
+                    control
+                        .disable()
+                        .await
+                        .expect("disable should not have FIDL error")
+                        .expect("disable should succeed")
+                );
 
                 fnet_interfaces_ext::wait_interface_with_id(
                     interface_event_stream,
@@ -1991,33 +1996,35 @@ async fn wait_for_socket_mark<F>(
 ) where
     F: Future<Output = Result<component_events::events::Stopped>> + Unpin + FusedFuture,
 {
-    let mut wait_for_mark = pin!(async {
-        let mut attempt = 0;
-        loop {
-            let socket = posix_socket
-                .stream_socket(
-                    fposix_socket::Domain::Ipv4,
-                    fposix_socket::StreamSocketProtocol::Tcp,
-                )
-                .await
-                .expect("stream socket")
-                .expect("create socket")
-                .into_proxy();
-            let mark = socket.get_mark(socket_option_mark()).await.expect("failed to get mark");
+    let mut wait_for_mark = pin!(
+        async {
+            let mut attempt = 0;
+            loop {
+                let socket = posix_socket
+                    .stream_socket(
+                        fposix_socket::Domain::Ipv4,
+                        fposix_socket::StreamSocketProtocol::Tcp,
+                    )
+                    .await
+                    .expect("stream socket")
+                    .expect("create socket")
+                    .into_proxy();
+                let mark = socket.get_mark(socket_option_mark()).await.expect("failed to get mark");
 
-            println!("attempt {} got socket mark {:?}", attempt, mark);
+                println!("attempt {} got socket mark {:?}", attempt, mark);
 
-            if mark == Ok(*expect) {
-                return Ok::<(), anyhow::Error>(());
+                if mark == Ok(*expect) {
+                    return Ok::<(), anyhow::Error>(());
+                }
+
+                attempt += 1;
             }
-
-            attempt += 1;
         }
-    }
-    .map_err(anyhow::Error::from)
-    .on_timeout(timeout.after_now(), || Err(anyhow::anyhow!("timed out")))
-    .map(|r| r.context("failed to stream socket with specified mark"))
-    .fuse());
+        .map_err(anyhow::Error::from)
+        .on_timeout(timeout.after_now(), || Err(anyhow::anyhow!("timed out")))
+        .map(|r| r.context("failed to stream socket with specified mark"))
+        .fuse()
+    );
     futures::select! {
         wait_for_mark_res = wait_for_mark => {
             match wait_for_mark_res {
@@ -2647,11 +2654,7 @@ async fn test_masquerade_lifetime<N: Netstack, M: Manager>(name: &str, setup: Ma
     fuchsia_backoff::retry_or_last_error(std::iter::repeat(WAIT).take(MAX_ATTEMPTS), || async {
         let port = port.fetch_add(1, Ordering::Relaxed);
         let actual_ip = get_src_ip(SocketAddr::from((server_ip, port)), &client, &server).await;
-        if actual_ip == client_ip {
-            Ok(())
-        } else {
-            Err(actual_ip)
-        }
+        if actual_ip == client_ip { Ok(()) } else { Err(actual_ip) }
     })
     .await
     .expect("IP does not match client")
@@ -2701,11 +2704,9 @@ async fn test_masquerade_multiple_controllers<N: Netstack, M: Manager>(
 
     // Verify the first masquerade configuration.
     assert_eq!(client1_ip, get_src_ip(SocketAddr::from((server_ip, 8080)), client1, server).await);
-    assert!(!masq_control1
-        .set_enabled(true)
-        .await
-        .expect("set enabled fidl")
-        .expect("set enabled"));
+    assert!(
+        !masq_control1.set_enabled(true).await.expect("set enabled fidl").expect("set enabled")
+    );
     assert_eq!(router_ip, get_src_ip(SocketAddr::from((server_ip, 8081)), client1, server).await);
 
     // Creating a second controller with the same configuration should get
@@ -2743,19 +2744,15 @@ async fn test_masquerade_multiple_controllers<N: Netstack, M: Manager>(
 
     // Verify the second masquerade configuration.
     assert_eq!(client2_ip, get_src_ip(SocketAddr::from((server_ip, 8083)), client2, server).await);
-    assert!(!masq_control2
-        .set_enabled(true)
-        .await
-        .expect("set enabled fidl")
-        .expect("set enabled"));
+    assert!(
+        !masq_control2.set_enabled(true).await.expect("set enabled fidl").expect("set enabled")
+    );
     assert_eq!(router_ip, get_src_ip(SocketAddr::from((server_ip, 8084)), client2, server).await);
 
     // Disable the first masquerade configuration.
-    assert!(masq_control1
-        .set_enabled(false)
-        .await
-        .expect("set enabled fidl")
-        .expect("set enabled"));
+    assert!(
+        masq_control1.set_enabled(false).await.expect("set enabled fidl").expect("set enabled")
+    );
     assert_eq!(client1_ip, get_src_ip(SocketAddr::from((server_ip, 8085)), client1, server).await);
 
     // Verify the second masquerade configuration is unaffected.
@@ -2863,10 +2860,12 @@ async fn dhcpv4_client_restarts_after_delay() {
                 dhcpv4_helper::set_server_settings(
                     &server_proxy,
                     config.dhcp_parameters().into_iter().chain([
-                        fnet_dhcp::Parameter::BoundDeviceNames(vec![server_iface
-                            .get_interface_name()
-                            .await
-                            .expect("get interface name should succeed")]),
+                        fnet_dhcp::Parameter::BoundDeviceNames(vec![
+                            server_iface
+                                .get_interface_name()
+                                .await
+                                .expect("get interface name should succeed"),
+                        ]),
                         fnet_dhcp::Parameter::Lease(fnet_dhcp::LeaseLength {
                             // short enough to expire during this test, which
                             // will prompt the client to go into Renewing state,
@@ -2884,9 +2883,10 @@ async fn dhcpv4_client_restarts_after_delay() {
                     .connect_to_protocol::<fnet_routes::StateV4Marker>()
                     .expect("connect to routes state");
 
-                let mut routes_event_stream =
-                    pin!(fnet_routes_ext::event_stream_from_state::<Ipv4>(&routes_state)
-                        .expect("routes event stream"));
+                let mut routes_event_stream = pin!(
+                    fnet_routes_ext::event_stream_from_state::<Ipv4>(&routes_state)
+                        .expect("routes event stream")
+                );
 
                 // Collect the current route table state prior to starting
                 // the DHCP server so that we ensure the default route the
@@ -2976,19 +2976,17 @@ async fn dhcpv4_client_restarts_after_delay() {
                     fidl::endpoints::create_proxy::<fnet_routes_admin::RouteSetV4Marker>();
                 root_routes.global_route_set(server_end).expect("create global RouteSetV4");
 
-                let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+                let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
                     client_interface_control
                         .get_authorization_for_interface()
                         .await
                         .expect("get authorization");
 
                 global_route_set
-                    .authenticate_for_interface(
-                        fnet_interfaces_admin::ProofOfInterfaceAuthorization {
-                            interface_id,
-                            token,
-                        },
-                    )
+                    .authenticate_for_interface(fnet_resources::ProofOfInterfaceAuthorization {
+                        interface_id,
+                        token,
+                    })
                     .await
                     .expect("authenticate for interface should not see FIDL error")
                     .expect("authenticate for interface should succeed");

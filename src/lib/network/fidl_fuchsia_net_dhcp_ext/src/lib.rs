@@ -19,7 +19,8 @@ use net_types::ip::{Ipv4, Ipv4Addr};
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_dhcp as fnet_dhcp,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext,
 };
@@ -453,20 +454,16 @@ pub mod testutil {
             DhcpClientTask {
                 client: client.clone(),
                 task: fasync::Task::spawn(async move {
-                    let fnet_interfaces_admin::GrantForInterfaceAuthorization {
-                        interface_id,
-                        token,
-                    } = control
-                        .get_authorization_for_interface()
-                        .await
-                        .expect("get interface authorization");
+                    let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
+                        control
+                            .get_authorization_for_interface()
+                            .await
+                            .expect("get interface authorization");
                     route_set
-                        .authenticate_for_interface(
-                            fnet_interfaces_admin::ProofOfInterfaceAuthorization {
-                                interface_id,
-                                token,
-                            },
-                        )
+                        .authenticate_for_interface(fnet_resources::ProofOfInterfaceAuthorization {
+                            interface_id,
+                            token,
+                        })
                         .await
                         .expect("authenticate should not have FIDL error")
                         .expect("authenticate should succeed");

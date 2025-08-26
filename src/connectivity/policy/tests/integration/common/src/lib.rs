@@ -11,15 +11,14 @@ use futures::future::{FutureExt as _, LocalBoxFuture};
 use net_types::ip::{self as net_types_ip, Ip};
 use netemul::{TestEndpoint, TestNetwork, TestRealm};
 use netstack_testing_common::realms::{
-    constants, KnownServiceProvider, Manager, ManagerConfig, Netstack, SocketProxyType,
-    TestRealmExt, TestSandboxExt,
+    KnownServiceProvider, Manager, ManagerConfig, Netstack, SocketProxyType, TestRealmExt,
+    TestSandboxExt, constants,
 };
 use netstack_testing_common::{
-    interfaces, wait_for_component_stopped, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
+    ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, interfaces, wait_for_component_stopped,
 };
 use {
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
+    fidl_fuchsia_net_interfaces as fnet_interfaces, fidl_fuchsia_net_resources as fnet_resources,
     fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_netemul_network as fnetemul_network,
 };
 
@@ -173,7 +172,7 @@ where
     let client_interface_control =
         realm.interface_control(if_id).expect("get client interface Control");
 
-    let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+    let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
         client_interface_control
             .get_authorization_for_interface()
             .await
@@ -181,7 +180,7 @@ where
 
     fnet_routes_ext::admin::authenticate_for_interface::<I>(
         route_set,
-        fnet_interfaces_admin::ProofOfInterfaceAuthorization { interface_id, token },
+        fnet_resources::ProofOfInterfaceAuthorization { interface_id, token },
     )
     .await
     .expect("authenticate for interface should not see FIDL error")

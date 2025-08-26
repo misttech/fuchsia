@@ -31,8 +31,8 @@ use std::pin::pin;
 use test_case::{test_case, test_matrix};
 use zx::HandleBased as _;
 use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_routes as fnet_routes,
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
+    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin, fidl_fuchsia_net_stack as fnet_stack,
 };
 
@@ -550,7 +550,7 @@ async fn add_route_with_multiple_route_sets<
 
     async fn authenticate<I: FidlRouteAdminIpExt + FidlRouteIpExt>(
         proxy: &<I::RouteSetMarker as ProtocolMarker>::Proxy,
-        grant: &fidl_fuchsia_net_interfaces_admin::GrantForInterfaceAuthorization,
+        grant: &fnet_resources::GrantForInterfaceAuthorization,
     ) {
         let proof = fnet_interfaces_ext::admin::proof_from_grant(grant);
         fnet_routes_ext::admin::authenticate_for_interface::<I>(&proxy, proof)
@@ -1292,7 +1292,7 @@ async fn interface_authorization_fails_with_invalid_token<
     };
 
     let proof = match invalid_proof_kind {
-        InvalidProofKind::ClientGenerated => fnet_interfaces_admin::ProofOfInterfaceAuthorization {
+        InvalidProofKind::ClientGenerated => fnet_resources::ProofOfInterfaceAuthorization {
             token: zx::Event::create(),
             interface_id: interface.id(),
         },
@@ -1301,14 +1301,14 @@ async fn interface_authorization_fails_with_invalid_token<
                 second_interface.get_authorization().await.expect("getting grant should succeed");
 
             // Note that the token comes from a different interface than the ID.
-            fnet_interfaces_admin::ProofOfInterfaceAuthorization {
+            fnet_resources::ProofOfInterfaceAuthorization {
                 token: grant.token,
                 interface_id: interface.id(),
             }
         }
         InvalidProofKind::BadInterface => {
             let grant = interface.get_authorization().await.expect("getting grant should succeed");
-            fnet_interfaces_admin::ProofOfInterfaceAuthorization {
+            fnet_resources::ProofOfInterfaceAuthorization {
                 token: grant.token,
                 interface_id: interface.id() + 1000,
             }
@@ -2047,13 +2047,13 @@ async fn default_no_interface_local_route_table<I: Ip + FidlRouteIpExt + FidlRou
     let route_table_provider = realm
         .connect_to_protocol::<I::RouteTableProviderMarker>()
         .expect("connect to routes State");
-    let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+    let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
         interface.get_authorization().await.expect("failed to get authorization");
     // By default interface does not have a local route table.
     assert_matches!(
         fnet_routes_ext::admin::get_interface_local_table::<I>(
             &route_table_provider,
-            fnet_interfaces_admin::ProofOfInterfaceAuthorization {
+            fnet_resources::ProofOfInterfaceAuthorization {
                 interface_id,
                 token: token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate"),
             }
@@ -2065,7 +2065,7 @@ async fn default_no_interface_local_route_table<I: Ip + FidlRouteIpExt + FidlRou
     assert_matches!(
         fnet_routes_ext::admin::get_interface_local_table::<I>(
             &route_table_provider,
-            fnet_interfaces_admin::ProofOfInterfaceAuthorization { interface_id: 10000, token },
+            fnet_resources::ProofOfInterfaceAuthorization { interface_id: 10000, token },
         )
         .await,
         Ok(Err(fnet_routes_admin::GetInterfaceLocalTableError::InvalidAuthentication))
@@ -2074,7 +2074,7 @@ async fn default_no_interface_local_route_table<I: Ip + FidlRouteIpExt + FidlRou
     assert_matches!(
         fnet_routes_ext::admin::get_interface_local_table::<I>(
             &route_table_provider,
-            fnet_interfaces_admin::ProofOfInterfaceAuthorization {
+            fnet_resources::ProofOfInterfaceAuthorization {
                 interface_id,
                 token: zx::Event::create()
             },
@@ -2097,12 +2097,12 @@ async fn interface_local_route_table<I: Ip + FidlRouteIpExt + FidlRouteAdminIpEx
     let route_table_provider = realm
         .connect_to_protocol::<I::RouteTableProviderMarker>()
         .expect("connect to routes State");
-    let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+    let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
         interface.get_authorization().await.expect("failed to get authorization");
 
     let local_table = fnet_routes_ext::admin::get_interface_local_table::<I>(
         &route_table_provider,
-        fnet_interfaces_admin::ProofOfInterfaceAuthorization { interface_id, token },
+        fnet_resources::ProofOfInterfaceAuthorization { interface_id, token },
     )
     .await
     .expect("calling interface local table")
@@ -2196,12 +2196,12 @@ async fn interface_local_route_table_outlasts_interface<
     let route_table_provider = realm
         .connect_to_protocol::<I::RouteTableProviderMarker>()
         .expect("connect to routes State");
-    let fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token } =
+    let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
         if_1.get_authorization().await.expect("failed to get authorization");
 
     let local_table = fnet_routes_ext::admin::get_interface_local_table::<I>(
         &route_table_provider,
-        fnet_interfaces_admin::ProofOfInterfaceAuthorization { interface_id, token },
+        fnet_resources::ProofOfInterfaceAuthorization { interface_id, token },
     )
     .await
     .expect("calling interface local table")

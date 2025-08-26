@@ -13,6 +13,7 @@ rustc_library("fidl_fuchsia_net_interfaces_ext") {
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust",
     "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
+    "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_rust",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/connectivity/lib/net-types",

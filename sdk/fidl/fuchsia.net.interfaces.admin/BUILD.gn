@@ -15,6 +15,7 @@ fidl("fuchsia.net.interfaces.admin") {
     "//sdk/fidl/fuchsia.hardware.network",
     "//sdk/fidl/fuchsia.net",
     "//sdk/fidl/fuchsia.net.interfaces",
+    "//sdk/fidl/fuchsia.net.resources",
     "//zircon/vdso/zx",
   ]
 

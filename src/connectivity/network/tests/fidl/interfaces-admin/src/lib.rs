@@ -9,7 +9,7 @@ mod blackhole;
 use assert_matches::assert_matches;
 use fidl_fuchsia_hardware_network::{self as fhardware_network, FrameType};
 use fidl_fuchsia_net_ext::IntoExt;
-use finterfaces_admin::GrantForInterfaceAuthorization;
+use fidl_fuchsia_net_resources::GrantForInterfaceAuthorization;
 use fnet_interfaces_ext::admin::TerminalError;
 use fuchsia_async::net::{DatagramSocket, UdpSocket};
 use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _, Timer};

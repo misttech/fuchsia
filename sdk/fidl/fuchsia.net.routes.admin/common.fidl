@@ -11,8 +11,8 @@ using zx;
 /// set.
 type AuthenticateForInterfaceError = flexible enum {
     /// The provided
-    /// [`fuchsia.net.interfaces.admin/ProofOfinterfaceAuthorization`] was
-    /// invalid. This may happen if:
+    /// [`fuchsia.net.resources/ProofOfinterfaceAuthorization`] was invalid.
+    /// This may happen if:
     ///   - the provided proof's `interface_id' is unknown to the system,
     ///   - the provided proof's `token` is unknown to the system, or
     ///   - the provided proof`s `token` is not associated with the proof's
@@ -24,8 +24,8 @@ type AuthenticateForInterfaceError = flexible enum {
 /// Error type returned when failing to get a local route table for an interface.
 type GetInterfaceLocalTableError = flexible enum {
     /// The provided
-    /// [`fuchsia.net.interfaces.admin/ProofOfinterfaceAuthorization`] was
-    /// invalid. This may happen if:
+    /// [`fuchsia.net.resources/ProofOfinterfaceAuthorization`] was invalid.
+    /// This may happen if:
     ///   - the provided proof's `interface_id' is unknown to the system,
     ///   - the provided proof's `token` is unknown to the system, or
     ///   - the provided proof`s `token` is not associated with the proof's

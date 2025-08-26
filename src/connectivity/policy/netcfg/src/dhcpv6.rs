@@ -18,7 +18,7 @@ use futures::future::TryFutureExt as _;
 use futures::stream::{Stream, TryStreamExt as _};
 use log::warn;
 
-use crate::{dns, errors, network, DnsServerWatchers, InterfaceId};
+use crate::{DnsServerWatchers, InterfaceId, dns, errors, network};
 
 // TODO(https://fxbug.dev/329099228): Switch to using DUID-LLT and persisting it to disk.
 pub(super) fn duid(mac: fnet_ext::MacAddress) -> fnet_dhcpv6::Duid {
@@ -380,12 +380,11 @@ impl PrefixProviderHandler {
 
 #[cfg(test)]
 mod tests {
-    use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
-
+    use fidl_fuchsia_net_resources as fnet_resources;
     use net_declare::{fidl_socket_addr_v6, net_subnet_v6};
     use test_case::test_case;
 
-    use crate::interface::{generate_identifier, InterfaceNamingIdentifier, ProvisioningType};
+    use crate::interface::{InterfaceNamingIdentifier, ProvisioningType, generate_identifier};
     use crate::{DeviceClass, HostInterfaceState, InterfaceConfigState, InterfaceState};
 
     use super::*;
@@ -409,7 +408,7 @@ mod tests {
             dhcpv6_pd_config: Option<fnet_dhcpv6::PrefixDelegationConfig>,
             dhcpv6_client_state: Option<ClientState>,
             provisioning: ProvisioningType,
-            interface_admin_auth: fnet_interfaces_admin::GrantForInterfaceAuthorization,
+            interface_admin_auth: fnet_resources::GrantForInterfaceAuthorization,
         ) -> Self {
             Self {
                 control,
@@ -426,8 +425,8 @@ mod tests {
         }
     }
 
-    fn fake_interface_grant() -> fnet_interfaces_admin::GrantForInterfaceAuthorization {
-        fnet_interfaces_admin::GrantForInterfaceAuthorization {
+    fn fake_interface_grant() -> fnet_resources::GrantForInterfaceAuthorization {
+        fnet_resources::GrantForInterfaceAuthorization {
             interface_id: 0,
             token: zx::Event::create(),
         }

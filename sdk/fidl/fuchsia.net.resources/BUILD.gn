@@ -4,10 +4,17 @@
 
 import("//build/fidl/fidl.gni")
 
-fidl("fuchsia.net.power") {
-  sources = [ "wake_group.fidl" ]
+fidl("fuchsia.net.resources") {
+  sdk_category = "prebuilt"
+  sdk_area = "Netstack"
+  stable = true
+
+  sources = [ "resources.fidl" ]
+
   public_deps = [
-    "//sdk/fidl/fuchsia.net.resources",
-    "//sdk/fidl/fuchsia.power.system",
+    "//sdk/fidl/fuchsia.net",
+    "//zircon/vdso/zx",
   ]
+
+  enable_hlcpp = true
 }

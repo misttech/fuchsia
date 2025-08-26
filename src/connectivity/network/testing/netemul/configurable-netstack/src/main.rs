@@ -17,7 +17,8 @@ use {
     fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_netemul as fnetemul,
+    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_routes_ext as fnet_routes_ext,
+    fidl_fuchsia_netemul as fnetemul,
 };
 
 #[fuchsia_async::run_singlethreaded]
@@ -304,7 +305,7 @@ async fn configure_interface(
             I: Ip + fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
         >(
             gateway: <I::Addr as fnet_ext::NetTypesIpAddressExt>::Fidl,
-            fnet_interfaces_admin::GrantForInterfaceAuthorization { interface_id, token }: fnet_interfaces_admin::GrantForInterfaceAuthorization,
+            fnet_resources::GrantForInterfaceAuthorization { interface_id, token }: fnet_resources::GrantForInterfaceAuthorization,
         ) -> Result<(), InterfaceConfigError>
         where
             <I as Ip>::Addr: fnet_ext::NetTypesIpAddressExt,
@@ -320,7 +321,7 @@ async fn configure_interface(
                 .context("create global route set")?;
             fnet_routes_ext::admin::authenticate_for_interface::<I>(
                 &global_route_set,
-                fnet_interfaces_admin::ProofOfInterfaceAuthorization { interface_id, token },
+                fnet_resources::ProofOfInterfaceAuthorization { interface_id, token },
             )
             .await
             .context("FIDL error authenticating for interface")?
