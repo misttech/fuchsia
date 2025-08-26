@@ -63,7 +63,6 @@ func generateBuildFiles(dir string) {
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("%s failed: %s", cmd.Args, err)
 	}
-	exportTestData(dir)
 }
 
 // Regenerates the Rust bindings.
@@ -102,7 +101,7 @@ func updateReadMe(dir string, sha1 []byte) {
 }
 
 func main() {
-	commit := flag.String("commit", "origin/master", "Upstream commit-ish to check out")
+	commit := flag.String("commit", "origin/main", "Upstream commit-ish to check out")
 
 	flag.Parse()
 
