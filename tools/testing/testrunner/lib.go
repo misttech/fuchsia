@@ -446,7 +446,7 @@ func runAndOutputTests(
 		}
 		testIndex++
 
-		if againstDevice() && !result.Passed() {
+		if !result.Passed() {
 			shouldRunHealthCheck = true
 		}
 		if shouldKeepGoing(test.Test, result, test.totalDuration) {
@@ -498,6 +498,10 @@ func againstDevice() bool {
 func runHealthCheck(ctx context.Context, t Tester) error {
 	if err := t.Reconnect(ctx); err == nil {
 		return nil
+	} else if !againstDevice() {
+		// Power-cycling doesn't apply for emulators
+		// so just return the error if we fail to reconnect.
+		return err
 	}
 	r := &subprocess.Runner{Env: os.Environ()}
 	if err := setPowerState(ctx, r, "cycle"); err != nil {
