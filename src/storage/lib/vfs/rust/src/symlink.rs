@@ -6,7 +6,6 @@
 
 use crate::common::{
     decode_extended_attribute_value, encode_extended_attribute_value, extended_attributes_sender,
-    inherit_rights_for_clone, send_on_open_with_error,
 };
 use crate::execution_scope::ExecutionScope;
 use crate::name::parse_name;
@@ -99,8 +98,16 @@ impl<T: Symlink> Connection<T> {
     // Returns true if the connection should terminate.
     async fn handle_request(&mut self, req: fio::SymlinkRequest) -> Result<bool, fidl::Error> {
         match req {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             fio::SymlinkRequest::DeprecatedClone { flags, object, control_handle: _ } => {
-                self.handle_deprecated_clone(flags, object).await;
+                crate::common::send_on_open_with_error(
+                    flags.contains(fio::OpenFlags::DESCRIBE),
+                    object,
+                    Status::NOT_SUPPORTED,
+                );
             }
             fio::SymlinkRequest::Clone { request, control_handle: _ } => {
                 self.handle_clone(ServerEnd::new(request.into_channel())).await;
@@ -224,30 +231,6 @@ impl<T: Symlink> Connection<T> {
             }
         }
         Ok(false)
-    }
-
-    async fn handle_deprecated_clone(
-        &mut self,
-        flags: fio::OpenFlags,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) {
-        let flags = match inherit_rights_for_clone(fio::OpenFlags::RIGHT_READABLE, flags) {
-            Ok(updated) => updated,
-            Err(status) => {
-                send_on_open_with_error(
-                    flags.contains(fio::OpenFlags::DESCRIBE),
-                    server_end,
-                    status,
-                );
-                return;
-            }
-        };
-        flags
-            .to_object_request(server_end)
-            .handle_async(async |object_request| {
-                Self::create(self.scope.clone(), self.symlink.clone(), flags, object_request).await
-            })
-            .await;
     }
 
     async fn handle_clone(&mut self, server_end: ServerEnd<fio::SymlinkMarker>) {

@@ -4,7 +4,7 @@
 
 use crate::common::{
     decode_extended_attribute_value, encode_extended_attribute_value, extended_attributes_sender,
-    inherit_rights_for_clone, io1_to_io2_attrs,
+    io1_to_io2_attrs,
 };
 use crate::execution_scope::ExecutionScope;
 use crate::file::common::new_connection_validate_options;
@@ -16,7 +16,7 @@ use crate::object_request::{
 };
 use crate::protocols::ToFileOptions;
 use crate::request_handler::{RequestHandler, RequestListener};
-use crate::{ObjectRequestRef, ProtocolsExt, ToObjectRequest};
+use crate::{ObjectRequestRef, ProtocolsExt};
 use anyhow::Error;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_io as fio;
@@ -552,9 +552,17 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
     /// that operate on the connection-specific buffer.
     async fn handle_request(&mut self, req: fio::FileRequest) -> Result<ConnectionState, Error> {
         match req {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             fio::FileRequest::DeprecatedClone { flags, object, control_handle: _ } => {
                 trace::duration!(c"storage", c"File::DeprecatedClone");
-                self.handle_deprecated_clone(flags, object).await;
+                crate::common::send_on_open_with_error(
+                    flags.contains(fio::OpenFlags::DESCRIBE),
+                    object,
+                    Status::NOT_SUPPORTED,
+                );
             }
             fio::FileRequest::Clone { request, control_handle: _ } => {
                 trace::duration!(c"storage", c"File::Clone");
@@ -850,30 +858,6 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
         Ok(ConnectionState::Alive)
     }
 
-    async fn handle_deprecated_clone(
-        &mut self,
-        flags: fio::OpenFlags,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) {
-        flags
-            .to_object_request(server_end)
-            .handle_async(async |object_request| {
-                let options =
-                    inherit_rights_for_clone(self.options.to_io1(), flags)?.to_file_options()?;
-
-                let connection = Self {
-                    scope: self.scope.clone(),
-                    file: self.file.clone_connection(options)?,
-                    options,
-                };
-
-                let requests = object_request.take().into_request_stream(&connection).await?;
-                self.scope.spawn(RequestListener::new(requests, Some(connection)));
-                Ok(())
-            })
-            .await;
-    }
-
     fn handle_clone(&mut self, server_end: ServerEnd<fio::FileMarker>) {
         let connection = match self.file.clone_connection(self.options) {
             Ok(file) => Self { scope: self.scope.clone(), file, options: self.options },
@@ -1157,6 +1141,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + IoOpHandler> Representa
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ToObjectRequest;
     use crate::directory::entry::{EntryInfo, GetEntryInfo};
     use crate::node::Node;
     use assert_matches::assert_matches;

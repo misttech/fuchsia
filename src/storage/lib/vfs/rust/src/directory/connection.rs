@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::common::{inherit_rights_for_clone, send_on_open_with_error};
+use crate::common::send_on_open_with_error;
 use crate::directory::common::check_child_connection_flags;
 use crate::directory::entry_container::{Directory, DirectoryWatcher};
 use crate::directory::traversal_position::TraversalPosition;
@@ -80,9 +80,17 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
         request: fio::DirectoryRequest,
     ) -> Result<ConnectionState, Error> {
         match request {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             fio::DirectoryRequest::DeprecatedClone { flags, object, control_handle: _ } => {
                 trace::duration!(c"storage", c"Directory::DeprecatedClone");
-                self.handle_deprecated_clone(flags, object);
+                crate::common::send_on_open_with_error(
+                    flags.contains(fio::OpenFlags::DESCRIBE),
+                    object,
+                    Status::NOT_SUPPORTED,
+                );
             }
             fio::DirectoryRequest::Clone { request, control_handle: _ } => {
                 trace::duration!(c"storage", c"Directory::Clone");
@@ -326,23 +334,6 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             fio::DirectoryRequest::_UnknownMethod { .. } => (),
         }
         Ok(ConnectionState::Alive)
-    }
-
-    fn handle_deprecated_clone(
-        &self,
-        flags: fio::OpenFlags,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) {
-        let describe = flags.intersects(fio::OpenFlags::DESCRIBE);
-        let flags = match inherit_rights_for_clone(self.options.to_io1(), flags) {
-            Ok(updated) => updated,
-            Err(status) => {
-                send_on_open_with_error(describe, server_end, status);
-                return;
-            }
-        };
-
-        self.directory.clone().deprecated_open(self.scope.clone(), flags, Path::dot(), server_end);
     }
 
     fn handle_clone(&mut self, object: fidl::Channel) {
