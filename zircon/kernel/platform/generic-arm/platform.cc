@@ -158,13 +158,13 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
+  const bool might_power_down = psci_might_powerdown();
+
   const PsciCpuSuspendMaxScope max_scope = static_cast<bool>(allow_domain)
                                                ? PsciCpuSuspendMaxScope::CpuAndMore
                                                : PsciCpuSuspendMaxScope::CpuOnly;
-  const uint32_t power_state = psci_get_cpu_suspend_power_state(max_scope);
-  const bool is_power_down = psci_is_powerdown_power_state(power_state);
 
-  if (is_power_down) {
+  if (might_power_down) {
     lockup_percpu_shutdown();
     platform_suspend_timer_curr_cpu();
     suspend_interrupts_curr_cpu();
@@ -174,12 +174,12 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
           arch_curr_cpu_num(), current_boot_time());
 
   // The following call may not return for an arbitrartily long time.
-  const PsciCpuSuspendResult result = psci_cpu_suspend(power_state);
+  const PsciCpuSuspendResult result = psci_cpu_suspend(max_scope);
   LTRACEF("psci_cpu_suspend for cpu-%u, status %d\n", arch_curr_cpu_num(), result.status_value());
 
   DEBUG_ASSERT(arch_ints_disabled());
 
-  if (is_power_down) {
+  if (might_power_down) {
     zx_status_t status = resume_interrupts_curr_cpu();
     DEBUG_ASSERT_MSG(status == ZX_OK, "resume_interrupts_curr_cpu: %d", status);
     status = platform_resume_timer_curr_cpu();

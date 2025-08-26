@@ -13,6 +13,7 @@
 #include <arch/arm64.h>
 #include <arch/arm64/smccc.h>
 #include <dev/psci.h>
+#include <ktl/atomic.h>
 #include <pdev/power.h>
 #include <vm/handoff-end.h>
 
@@ -20,38 +21,7 @@
 
 namespace {
 
-// Indicates that PSCI CPU_SUSPEND is supported for this device.
-//
-// When supported, this variable contains the power_state value to be passed in a CPU_SUSPEND call.
-// When not supported, this variable contains ktl::nullopt.
-//
-// Requirements for PSCI CPU_SUSPEND support:
-//
-// * The device has PSCI version 1.0 or better, and
-// * PSCI FEATURES reports that CPU_ CPU_SUSPEND is supported, and
-// * ZBI contains a supported CPU suspend state configuration.
-//
-// The ZBI-supplied CPU suspend state configuration is considered supported if it contains at least
-// one entry where:
-//
-//   * No unknown flags are specified, and
-//   * ZBI_ARM_PSCI_CPU_SUSPEND_STATE_FLAGS_TARGETS_POWER_DOMAIN is not set.
-ktl::optional<uint32_t> cpu_suspend_power_state_target_cpu;
-
-// Optionally contains a PSCI CPU_SUSPEND power_state value that targets a power domain (think
-// cluster or whole system).  Will only contain a value if |cpu_suspend_power_state_target_cpu|
-// contains a value.
-ktl::optional<uint32_t> cpu_suspend_power_state_target_power_domain;
-
 bool psci_set_suspend_mode_supported = false;
-
-// Specifies which power_state format is used by this PSCI implementation.
-enum class PowerStateFormat {
-  Unknown,
-  Original,  // Section 5.4.2.1 of "Arm Power State Coordination Interface", DEN0022F.b.
-  Extended,  // Section 5.4.2.2 of "Arm Power State Coordination Interface", DEN0022F.b.
-};
-PowerStateFormat power_state_format;
 
 // The number of PSCI CPU_SUSPEND calls that completed successfully and resulted in a powered down
 // state.
@@ -72,6 +42,189 @@ uint64_t reboot_args[3] = {0, 0, 0};
 uint64_t reboot_bootloader_args[3] = {0, 0, 0};
 uint64_t reboot_recovery_args[3] = {0, 0, 0};
 uint32_t reset_command = PSCI64_SYSTEM_RESET;
+
+// Specifies which power_state format is used by this PSCI implementation.
+enum class PowerStateFormat {
+  Unknown,
+  Original,  // Section 5.4.2.1 of "Arm Power State Coordination Interface", DEN0022F.b.
+  Extended,  // Section 5.4.2.2 of "Arm Power State Coordination Interface", DEN0022F.b.
+};
+PowerStateFormat power_state_format;
+
+// Returns true iff |power_state| is a "powerdown" power_state (as opposed to a
+// standby or retention state).
+bool psci_is_powerdown_power_state(uint32_t power_state) {
+  switch (power_state_format) {
+    case PowerStateFormat::Original:
+      // In the original format, StateType is bit-16.  If StateType is 1, it's a powerdown state.
+      return (power_state & (1 << 16)) != 0;
+    case PowerStateFormat::Extended:
+      // In the extended format, StateType is bit-30.
+      return (power_state & (1 << 30)) != 0;
+    default:
+      panic("unknown power_state_format %u", static_cast<uint32_t>(power_state_format));
+  };
+}
+
+// SuspendDomain has two jobs.  First, it keeps track of the CPUs that are part of a given "power
+// domain" (in the PSCI CPU_SUSPEND sense).  Second, it provides the correct power state value for a
+// given CPU_SUSPEND operation based on the current state of the domain.
+//
+// SuspendDomain is designed to handle race conditions associated with current CPU_SUSPEND
+// operations that might otherwise result in the domain being "left on" when it should not be.
+// Note, even with SuspendDomain, some race conditions exist, however, the PSCI implementation is
+// designed to handle these by denying invalid CPU_SUSPEND requests with PSCI_DENIED.  See section
+// 6.2 of "Arm Power State Coordination Interface", DEN0022F.b.
+//
+// When a CPU is powered on, it must be registered with its SuspendDomain instance.  Likewise, just
+// before it's powered off, it must be unregistered.
+//
+// An instance of SuspendDomain is safe for concurrent use (i.e. it's thread-safe).
+class SuspendDomain {
+ public:
+  SuspendDomain() = default;
+
+  // Initializes this instance with the given, optional, power state values.  An instance must be
+  // initialized exactly once.
+  //
+  // If no value is provided for |power_state_target_cpu|, suspend support will be disabled.  See
+  // |IsCpuSuspendSupported|.
+  //
+  // It is an error to provide a value for |power_state_target_power_domain|, without also providing
+  // a value for |power_state_target_cpu|.
+  void Init(ktl::optional<uint32_t> power_state_target_cpu,
+            ktl::optional<uint32_t> power_state_target_power_domain) {
+    DEBUG_ASSERT(power_state_target_cpu.has_value() ||
+                 !power_state_target_power_domain.has_value());
+
+    DEBUG_ASSERT(target_cpu_ == ktl::nullopt);
+    target_cpu_ = power_state_target_cpu;
+    target_cpu_is_powerdown_state_ =
+        target_cpu_.has_value() ? psci_is_powerdown_power_state(power_state_target_cpu.value())
+                                : false;
+
+    DEBUG_ASSERT(target_power_domain_ == ktl::nullopt);
+    target_power_domain_ = power_state_target_power_domain;
+    target_power_domain_is_powerdown_state_ =
+        target_power_domain_.has_value()
+            ? psci_is_powerdown_power_state(power_state_target_power_domain.value())
+            : false;
+  }
+
+  // Registers a CPU with this instance.
+  //
+  // This method should be called once for each CPU shortly after it is powered on.
+  void RegisterCpu() {
+    [[maybe_unused]] uint32_t count = count_.fetch_add(1, ktl::memory_order_relaxed);
+    DEBUG_ASSERT(count < SMP_MAX_CPUS);
+  }
+
+  // Unregisters a CPU with this instance.
+  //
+  // This method should be called once for each CPU just before it is powered off.
+  void UnregisterCpu() {
+    [[maybe_unused]] uint32_t count = count_.fetch_add(-1, ktl::memory_order_relaxed);
+    DEBUG_ASSERT(count > 0);
+  }
+
+  // Returns true if PSCI CPU_SUSPEND is supported for this domain.
+  //
+  // Requirements for PSCI CPU_SUSPEND support:
+  //
+  // * The device has PSCI version 1.0 or better, and
+  // * PSCI FEATURES reports that CPU_ CPU_SUSPEND is supported, and
+  // * ZBI contains a supported CPU suspend state configuration.
+  //
+  // The ZBI-supplied CPU suspend state configuration is considered supported if it contains at
+  // least one entry where:
+  //
+  //   * No unknown flags are specified, and
+  //   * ZBI_ARM_PSCI_CPU_SUSPEND_STATE_FLAGS_TARGETS_POWER_DOMAIN is not set.
+  bool IsCpuSuspendSupported() const { return target_cpu_.has_value(); }
+
+  // Returns true if a call to CPU_SUSPEND might result in a powerdown state.
+  bool SuspendMightPowerdown() const {
+    return target_cpu_is_powerdown_state_ || target_power_domain_is_powerdown_state_;
+  }
+
+  // An RAII helper intended to be instantiated in a scope just before issuing a PSCI CPU_SUSPEND.
+  // Used to obtain the "best" power state value given the number of currently
+  // running-but-not-yet-suspended CPUs for the domain.
+  //
+  // E.g.
+  //
+  // {
+  //   SuspendDomain::Guard(domain, max_scope);
+  //   psci_do_suspend(..., guard.power_state(), ...);
+  // }
+  //
+  class Guard {
+   public:
+    // Construct a Guard for the given |domain|.
+    //
+    // |max_scope| controls whether the value returned by |power_state()| applies to just the
+    // calling CPU or to the enclosing power domain.
+    Guard(SuspendDomain& domain, PsciCpuSuspendMaxScope max_scope);
+    ~Guard();
+
+    // Returns the "best" power state value for the PSCI CPU_SUSPEND in the calling scope.
+    uint32_t power_state() const { return power_state_; }
+
+    Guard(Guard&&) = delete;
+    Guard& operator=(Guard&&) = delete;
+    Guard(const Guard&) = delete;
+    Guard& operator=(const Guard&) = delete;
+
+   private:
+    SuspendDomain& domain_;
+    uint32_t power_state_;
+  };
+
+  SuspendDomain(SuspendDomain&&) = delete;
+  SuspendDomain& operator=(SuspendDomain&&) = delete;
+  SuspendDomain(const SuspendDomain&) = delete;
+  SuspendDomain& operator=(const SuspendDomain&) = delete;
+
+ private:
+  friend class Guard;
+
+  // When supported, this variable contains a power_state value to be passed in a CPU_SUSPEND call.
+  // When not supported, this variable contains ktl::nullopt.
+  ktl::optional<uint32_t> target_cpu_;
+
+  // Optionally contains a PSCI CPU_SUSPEND power_state value that targets a power domain (think
+  // cluster or whole system).  Will only contain a value if |target_cpu_| contains a value.
+  ktl::optional<uint32_t> target_power_domain_;
+
+  // The number of powered-on-but-not-suspended CPUs.
+  ktl::atomic<uint32_t> count_{};
+
+  // Whether |target_cpu_| is present and is a powerdown state.
+  bool target_cpu_is_powerdown_state_{};
+
+  // Whether |targetpower_domain_| is present and is a powerdown state.
+  bool target_power_domain_is_powerdown_state_{};
+};
+
+SuspendDomain::Guard::Guard(SuspendDomain& domain, PsciCpuSuspendMaxScope max_scope)
+    : domain_(domain) {
+  DEBUG_ASSERT(domain.IsCpuSuspendSupported());
+
+  uint32_t count = domain_.count_.fetch_add(-1, ktl::memory_order_relaxed);
+  DEBUG_ASSERT(count >= 1);
+
+  if (count == 1 && max_scope == PsciCpuSuspendMaxScope::CpuAndMore &&
+      domain_.target_power_domain_.has_value()) {
+    power_state_ = domain_.target_power_domain_.value();
+  } else {
+    DEBUG_ASSERT(domain_.target_cpu_.has_value());
+    power_state_ = domain_.target_cpu_.value();
+  }
+}
+
+SuspendDomain::Guard::~Guard() { domain_.count_.fetch_add(1, ktl::memory_order_relaxed); }
+
+SuspendDomain gSuspendDomain;
 
 zx_status_t psci_status_to_zx_status(uint64_t psci_result);
 zx_status_t psci_status_to_zx_status(uint64_t psci_result) {
@@ -109,7 +262,6 @@ uint64_t psci_smc_call(uint32_t function, uint64_t arg0, uint64_t arg1, uint64_t
 uint64_t psci_hvc_call(uint32_t function, uint64_t arg0, uint64_t arg1, uint64_t arg2) {
   return arm_smccc_hvc(function, arg0, arg1, arg2, 0, 0, 0, 0).x0;
 }
-
 using psci_call_proc = uint64_t (*)(uint32_t, uint64_t, uint64_t, uint64_t);
 
 psci_call_proc do_psci_call = psci_smc_call;
@@ -132,6 +284,9 @@ void parse_cpu_suspend_power_states(ktl::span<const zbi_dcfg_arm_psci_cpu_suspen
           power_state_format == PowerStateFormat::Original ? "original" : "extended");
   dprintf(INFO, "PSCI power_states:\n");
 
+  ktl::optional<uint32_t> target_cpu;
+  ktl::optional<uint32_t> target_power_domain;
+
   // Iterate over every element.  The elements are in no particular order.  The last-one-wins
   // behavior of this loop is somewhat arbitrary.
   for (const zbi_dcfg_arm_psci_cpu_suspend_state_t& elem : config) {
@@ -150,11 +305,15 @@ void parse_cpu_suspend_power_states(ktl::span<const zbi_dcfg_arm_psci_cpu_suspen
     }
 
     if ((elem.flags & ZBI_ARM_PSCI_CPU_SUSPEND_STATE_FLAGS_TARGETS_POWER_DOMAIN) == 0) {
-      cpu_suspend_power_state_target_cpu = elem.power_state;
+      target_cpu = elem.power_state;
     } else {
-      cpu_suspend_power_state_target_power_domain = elem.power_state;
+      target_power_domain = elem.power_state;
     }
   }
+
+  // Initialize the one and only suspend domain and register the calling CPU.
+  gSuspendDomain.Init(target_cpu, target_power_domain);
+  gSuspendDomain.RegisterCpu();
 }
 
 }  // anonymous namespace
@@ -210,47 +369,19 @@ uint32_t psci_get_version() {
 
 /* powers down the calling cpu - only returns if call fails */
 zx_status_t psci_cpu_off() {
+  gSuspendDomain.UnregisterCpu();
   return psci_status_to_zx_status(do_psci_call(PSCI64_CPU_OFF, 0, 0, 0));
 }
 
 zx_status_t psci_cpu_on(uint64_t mpid, paddr_t entry, uint64_t context) {
   LTRACEF("CPU_ON mpid %#" PRIx64 ", entry %#" PRIx64 "\n", mpid, entry);
+  gSuspendDomain.RegisterCpu();
   return psci_status_to_zx_status(do_psci_call(PSCI64_CPU_ON, mpid, entry, context));
 }
 
-uint32_t psci_get_cpu_suspend_power_state(PsciCpuSuspendMaxScope max_scope) {
-  LTRACEF("psci_get_cpu_suspend_power_state max_scope=%d\n", static_cast<int>(max_scope));
+bool psci_might_powerdown() { return gSuspendDomain.SuspendMightPowerdown(); }
 
-  DEBUG_ASSERT(arch_ints_disabled());
-
-  // By convention, when suspending the entire system, higher layers (like IdlePowerThread) will
-  // make sure that the boot CPU is the last one to enter CPU_SUSPEND.  So if the calling CPU is the
-  // boot CPU, and we have a power_state that targets the power domain, use that.  Otherwise, use a
-  // power_state that targets this CPU.
-  if (max_scope == PsciCpuSuspendMaxScope::CpuAndMore &&
-      cpu_suspend_power_state_target_power_domain.has_value() &&
-      arch_curr_cpu_num() == BOOT_CPU_ID) {
-    return cpu_suspend_power_state_target_power_domain.value();
-  }
-
-  return cpu_suspend_power_state_target_cpu.value();
-}
-
-bool psci_is_powerdown_power_state(uint32_t power_state) {
-  DEBUG_ASSERT(power_state_format != PowerStateFormat::Unknown);
-  switch (power_state_format) {
-    case PowerStateFormat::Original:
-      // In the original format, StateType is bit-16.  If StateType is 1, it's a powerdown state.
-      return (power_state & (1 << 16)) != 0;
-    case PowerStateFormat::Extended:
-      // In the extended format, StateType is bit-30.
-      return (power_state & (1 << 30)) != 0;
-    default:
-      panic("unknown power_state_format %u", static_cast<uint32_t>(power_state_format));
-  };
-}
-
-PsciCpuSuspendResult psci_cpu_suspend(uint32_t power_state) {
+PsciCpuSuspendResult psci_cpu_suspend(PsciCpuSuspendMaxScope max_scope) {
   LTRACE_ENTRY;
 
   DEBUG_ASSERT(arch_ints_disabled());
@@ -260,15 +391,21 @@ PsciCpuSuspendResult psci_cpu_suspend(uint32_t power_state) {
   }
 
   const paddr_t entry_pa = KernelPhysicalAddressOf<arm64_secondary_start>();
-
   psci_cpu_resume_context context{};
+  int64_t result;
+  uint32_t power_state;
 
-  LTRACEF("cpu %u, psci_call_routine 0x%" PRIx64 ", power_state 0x%x, entry 0x%" PRIx64
-          ", context %p\n",
-          arch_curr_cpu_num(), reinterpret_cast<uintptr_t>(do_psci_call), power_state, entry_pa,
-          &context);
+  {
+    SuspendDomain::Guard guard(gSuspendDomain, max_scope);
+    power_state = guard.power_state();
 
-  const int64_t result = psci_do_suspend(do_psci_call, power_state, entry_pa, &context);
+    LTRACEF("cpu %u, psci_call_routine 0x%" PRIx64 ", power_state 0x%x, entry 0x%" PRIx64
+            ", context %p\n",
+            arch_curr_cpu_num(), reinterpret_cast<uintptr_t>(do_psci_call), power_state, entry_pa,
+            &context);
+    result = psci_do_suspend(do_psci_call, power_state, entry_pa, &context);
+  }
+
   if (result > 0) {
     // We took the "long way" and restored CPU context from a powerdown state.
     kcounter_add(counter_psci_cpu_suspend_powered_down, 1);
@@ -345,7 +482,7 @@ zx_status_t psci_set_suspend_mode(psci_suspend_mode mode) {
 
 bool psci_is_set_suspend_mode_supported() { return psci_set_suspend_mode_supported; }
 
-bool psci_is_cpu_suspend_supported() { return cpu_suspend_power_state_target_cpu.has_value(); }
+bool psci_is_cpu_suspend_supported() { return gSuspendDomain.IsCpuSuspendSupported(); }
 
 void PsciInit(const zbi_dcfg_arm_psci_driver_t& config,
               ktl::span<const zbi_dcfg_arm_psci_cpu_suspend_state_t> psci_cpu_suspend_config) {
