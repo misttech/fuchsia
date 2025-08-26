@@ -6,26 +6,26 @@ import("//build/zircon/zx_library.gni")
 
 zx_library("operation") {
   sources = [ "operation.cc" ]
+  public_deps = [ "//sdk/lib/stdcompat" ]
   deps = [
     "//zircon/system/ulib/fbl",
     "//zircon/third_party/ulib/safemath",
   ]
 
   sdk = "source"
-  sdk_headers = [
-    "storage/operation/operation.h",
-    "storage/operation/unbuffered_operation.h",
-    "storage/operation/unbuffered_operations_builder.h",
-  ]
-
-  public_deps = [
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//zircon/system/ulib/zx",
-  ]
+  sdk_headers = [ "storage/operation/operation.h" ]
 
   if (is_fuchsia) {
+    sdk_headers += [
+      "storage/operation/unbuffered_operation.h",
+      "storage/operation/unbuffered_operations_builder.h",
+    ]
     sources += [ "unbuffered_operations_builder.cc" ]
-    public_deps += [ "//zircon/system/ulib/fbl" ]
+    public_deps += [
+      "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+      "//zircon/system/ulib/fbl",
+      "//zircon/system/ulib/zx",
+    ]
     deps += [
       "//sdk/lib/fdio",
       "//sdk/lib/fit",

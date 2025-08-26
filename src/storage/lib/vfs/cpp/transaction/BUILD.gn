@@ -15,7 +15,6 @@ static_library("transaction") {
     "transaction_handler.h",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_c",
     "//zircon/system/ulib/storage/buffer",
     "//zircon/system/ulib/storage/operation",
   ]
@@ -27,7 +26,10 @@ static_library("transaction") {
   if (is_fuchsia) {
     public += [ "device_transaction_handler.h" ]
     sources += [ "device_transaction_handler.cc" ]
-    public_deps += [ "//src/storage/lib/block_client/cpp:interface" ]
+    public_deps += [
+      "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_c",
+      "//src/storage/lib/block_client/cpp:interface",
+    ]
     deps += [
       "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_c",
       "//src/storage/lib/trace:cpp",

@@ -5,7 +5,9 @@
 #ifndef STORAGE_OPERATION_OPERATION_H_
 #define STORAGE_OPERATION_OPERATION_H_
 
+#ifdef __Fuchsia__
 #include <fuchsia/hardware/block/driver/c/banjo.h>
+#endif
 #include <lib/stdcompat/span.h>
 
 #include <cstdint>

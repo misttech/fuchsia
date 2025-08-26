@@ -5,7 +5,6 @@
 #ifndef SRC_STORAGE_LIB_VFS_CPP_TRANSACTION_BUFFERED_OPERATIONS_BUILDER_H_
 #define SRC_STORAGE_LIB_VFS_CPP_TRANSACTION_BUFFERED_OPERATIONS_BUILDER_H_
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <zircon/types.h>
 
 #include <cstddef>
@@ -16,6 +15,8 @@
 #include <storage/operation/operation.h>
 
 #ifdef __Fuchsia__
+#include <fuchsia/hardware/block/driver/c/banjo.h>
+
 #include <utility>
 
 #include <storage/buffer/owned_vmoid.h>
@@ -34,13 +35,13 @@ class BorrowedBuffer : public storage::BlockBuffer {
 #ifdef __Fuchsia__
   explicit BorrowedBuffer(vmoid_t vmoid) : vmoid_(vmoid) {}
 
-  vmoid_t vmoid() const final { return vmoid_; }
+  uint16_t vmoid() const final { return vmoid_; }
   void* Data(size_t index) final { return nullptr; }
   const void* Data(size_t index) const final { return nullptr; }
+  zx_handle_t Vmo() const final { return ZX_HANDLE_INVALID; }
 #else
   explicit BorrowedBuffer(void* data) : data_(data) {}
 
-  vmoid_t vmoid() const final { return 0; }
   void* Data(size_t index) final {
     ZX_ASSERT(index == 0);
     return data_;
@@ -52,7 +53,6 @@ class BorrowedBuffer : public storage::BlockBuffer {
 #endif
 
   size_t capacity() const final { return 0; }
-  zx_handle_t Vmo() const final { return ZX_HANDLE_INVALID; }
   uint32_t BlockSize() const final { return 0; }
 
  private:

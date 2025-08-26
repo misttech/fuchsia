@@ -5,7 +5,11 @@
 #ifndef STORAGE_BUFFER_BLOCK_BUFFER_H_
 #define STORAGE_BUFFER_BLOCK_BUFFER_H_
 
+#ifdef __Fuchsia__
 #include <fuchsia/hardware/block/driver/c/banjo.h>
+#endif
+
+#include <zircon/types.h>
 
 #include <cstdint>
 
@@ -24,12 +28,14 @@ class BlockBuffer {
   // Returns the size of each data block handled by this buffer.
   virtual uint32_t BlockSize() const = 0;
 
+#ifdef __Fuchsia__
   // Returns the vmoid of the underlying BlockBuffer, if one exists.
   virtual vmoid_t vmoid() const = 0;
 
   // Returns a handle to the underlying VMO, if one exists. Ownership of the VMO
   // is not being transferred to the caller.
   virtual zx_handle_t Vmo() const = 0;
+#endif
 
   // Returns data starting at block |index| in the buffer.
   virtual void* Data(size_t index) = 0;

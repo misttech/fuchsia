@@ -30,10 +30,13 @@ if (is_fuchsia && toolchain_base_environment != "kernel") {
 }
 
 group("headers") {
-  public_deps = [
-    ":zircon-headers",
-    "//zircon/vdso:public",
-  ]
+  public_deps = [ ":zircon-headers" ]
+
+  # TODO(https://fxbug.dev/440966579): We should not be depending on the VDSO
+  # for the x64 host build.
+  if (is_fuchsia || current_toolchain == host_toolchain) {
+    public_deps += [ "//zircon/vdso:public" ]
+  }
   if (!is_fuchsia && !is_kernel) {
     public_deps += [ "//zircon/system/public" ]
   }

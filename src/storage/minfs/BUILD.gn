@@ -68,7 +68,6 @@ static_library("minfs") {
     "//zircon/system/ulib/zx",
   ]
   deps = [
-    "//sdk/lib/async:async-cpp",
     "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp",
     "//src/storage/fvm",
@@ -124,6 +123,7 @@ static_library("minfs") {
       "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
       "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
       "//sdk/lib/async",
+      "//sdk/lib/async:async-cpp",
       "//sdk/lib/async-default",
       "//sdk/lib/async-loop",
       "//sdk/lib/async-loop:async-loop-default",

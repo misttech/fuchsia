@@ -147,9 +147,6 @@ sdk_source_set("wire") {
   }
 
   public_deps = [
-    # synchronization_checker.h has #include <lib/async/cpp/sequence_checker.h>
-    "//sdk/lib/async:async-cpp",
-
     # <lib/fidl/cpp/wire/wire_messaging.h> has #include <lib/fit/function.h>.
     "//sdk/lib/fit",
 
@@ -168,6 +165,9 @@ sdk_source_set("wire") {
 
   if (is_fuchsia) {
     public_deps += [
+      # synchronization_checker.h has #include <lib/async/cpp/sequence_checker.h>
+      "//sdk/lib/async:async-cpp",
+
       # <lib/fidl/cpp/wire/async_binding.h> has #include <lib/async/dispatcher.h>
       "//sdk/lib/async",
 
