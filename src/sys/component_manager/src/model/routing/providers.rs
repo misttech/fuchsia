@@ -7,12 +7,12 @@ use crate::model::component::WeakComponentInstance;
 use async_trait::async_trait;
 use clonable_error::ClonableError;
 use cm_rust::{Availability, CapabilityTypeName};
-use cm_types::{Name, FLAGS_MAX_POSSIBLE_RIGHTS};
+use cm_types::{FLAGS_MAX_POSSIBLE_RIGHTS, Name};
 use cm_util::TaskGroup;
 use errors::{CapabilityProviderError, OpenError};
 use moniker::Moniker;
 use router_error::RouterError;
-use routing::bedrock::request_metadata::{Metadata, METADATA_KEY_TYPE};
+use routing::bedrock::request_metadata::Metadata;
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
 use routing::{DictExt, GenericRouterResponse};
@@ -67,12 +67,7 @@ impl CapabilityProvider for DefaultComponentCapabilityProvider {
             })
             .into());
         };
-        metadata
-            .insert(
-                cm_types::Name::new(METADATA_KEY_TYPE).unwrap(),
-                sandbox::Capability::Data(sandbox::Data::String(porcelain_type.to_string().into())),
-            )
-            .unwrap();
+        metadata.set_metadata(*porcelain_type);
         metadata.set_metadata(Availability::Transitional);
         let resp = source
             .get_program_output_dict()
@@ -104,7 +99,7 @@ impl CapabilityProvider for DefaultComponentCapabilityProvider {
                     type_name: *porcelain_type,
                     moniker: source.moniker.clone().into(),
                 }
-                .into())
+                .into());
             }
         };
         let entry = capability

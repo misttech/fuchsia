@@ -13,12 +13,12 @@ use fidl::endpoints::create_proxy;
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::directory::readdir;
 use fuchsia_sync::Mutex;
+use futures::StreamExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use router_error::RouterError;
 use routing::bedrock::aggregate_router::AggregateSource;
-use routing::bedrock::request_metadata::{Metadata, METADATA_KEY_TYPE};
+use routing::bedrock::request_metadata::Metadata;
 use routing::capability_source::{
     AggregateInstance, AnonymizedAggregateSource, CapabilitySource,
     FilteredAggregateProviderSource, ServiceInstance,
@@ -30,9 +30,9 @@ use sandbox::{
 };
 use std::cmp::Ordering;
 use std::sync::Arc;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::{OpenRequest, SubNode};
 use vfs::execution_scope::ExecutionScope;
-use vfs::ToObjectRequest;
 
 #[derive(Debug, Clone)]
 enum AnonymizedOrFiltered {
@@ -79,12 +79,7 @@ impl sandbox::Routable<DirEntry> for AggregateRouter {
             request
         } else {
             let metadata = Dict::new();
-            metadata
-                .insert(
-                    Name::new(METADATA_KEY_TYPE).unwrap(),
-                    Capability::Data(Data::String(self.porcelain_type.to_string().into())),
-                )
-                .expect("failed to build default metadata?");
+            metadata.set_metadata(self.porcelain_type);
             metadata.set_metadata(self.availability);
             Request { target: self.component.clone().into(), metadata }
         };
@@ -140,7 +135,7 @@ impl AggregateRouter {
         let mut anonymized_aggregate_source = match &self.capability_source {
             AnonymizedOrFiltered::AnonymizedAggregate(source) => source.clone(),
             AnonymizedOrFiltered::FilteredAggregateProvider(source) => {
-                return CapabilitySource::FilteredAggregateProvider(source.clone())
+                return CapabilitySource::FilteredAggregateProvider(source.clone());
             }
         };
 
@@ -361,11 +356,15 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
                 let child_name = match instance {
                     AggregateInstance::Child(name) => name,
                     AggregateInstance::Parent | AggregateInstance::Self_ => {
-                        panic!("found a parent or self in a collection? this is impossible, and surely a bug");
+                        panic!(
+                            "found a parent or self in a collection? this is impossible, and surely a bug"
+                        );
                     }
                 };
                 if child_name.collection().is_none() {
-                    panic!("found a static child in a collection? this is impossible, and surely a bug");
+                    panic!(
+                        "found a static child in a collection? this is impossible, and surely a bug"
+                    );
                 }
                 let child_instance = {
                     let component = self.component.upgrade()?;
@@ -416,7 +415,7 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
                             actual: format!("{:?}", other_type),
                             expected: "Router<DirEntry>".to_string(),
                             moniker: self.component.moniker.clone().into(),
-                        })
+                        });
                     }
                 }
             }

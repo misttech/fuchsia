@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bedrock::request_metadata::{
-    InheritRights, IntermediateRights, METADATA_KEY_TYPE, Metadata,
-};
+use crate::bedrock::request_metadata::{InheritRights, IntermediateRights, Metadata};
 use crate::component_instance::{ComponentInstanceInterface, WeakExtendedInstanceInterface};
 use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
 use crate::rights::{Rights, RightsWalker};
@@ -12,10 +10,10 @@ use crate::subdir::SubDir;
 use crate::walk_state::WalkStateUnit;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
-use cm_types::{Availability, Name};
+use cm_types::Availability;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use sandbox::{Capability, CapabilityBound, Data, Dict, Request, Routable, Router, RouterResponse};
+use sandbox::{Capability, CapabilityBound, Dict, Request, Routable, Router, RouterResponse};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
@@ -84,12 +82,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
                 Err(RouterError::InvalidArgs)?;
             }
             let metadata = Dict::new();
-            metadata
-                .insert(
-                    Name::new(METADATA_KEY_TYPE).unwrap(),
-                    Capability::Data(Data::String(porcelain_type.to_string().into())),
-                )
-                .expect("failed to build default metadata?");
+            metadata.set_metadata(*porcelain_type);
             metadata.set_metadata(*availability);
             if let Some(rights) = rights {
                 metadata.set_metadata(*rights);
@@ -139,25 +132,16 @@ fn check_porcelain_type(
     request: &Request,
     expected_type: CapabilityTypeName,
 ) -> Result<(), RouterError> {
-    let Capability::Data(Data::String(capability_type)) = request
-        .metadata
-        .get(&cm_types::Name::new(METADATA_KEY_TYPE).unwrap())
-        .map_err(|()| RoutingError::BedrockNotCloneable { moniker: moniker.clone() })?
-        .ok_or_else(|| RoutingError::BedrockMissingCapabilityType {
-            moniker: moniker.clone(),
+    let capability_type: CapabilityTypeName = request.metadata.get_metadata().ok_or_else(|| {
+        RoutingError::BedrockMissingCapabilityType {
             type_name: expected_type.to_string(),
-        })?
-    else {
-        return Err(RoutingError::BedrockNotPresentInDictionary {
             moniker: moniker.clone(),
-            name: String::from("type"),
         }
-        .into());
-    };
-    if *capability_type != expected_type.to_string() {
+    })?;
+    if capability_type != expected_type {
         Err(RoutingError::BedrockWrongCapabilityType {
             moniker: moniker.clone(),
-            actual: capability_type.into(),
+            actual: capability_type.to_string(),
             expected: expected_type.to_string(),
         })?;
     }
@@ -436,12 +420,7 @@ pub fn metadata_for_porcelain_type(
         {
             let v = Arc::new(move |availability: Availability| {
                 let metadata = Dict::new();
-                metadata
-                    .insert(
-                        Name::new(METADATA_KEY_TYPE).unwrap(),
-                        Capability::Data(Data::String(typename.to_string().into())),
-                    )
-                    .expect("failed to build default metadata?");
+                metadata.set_metadata(typename);
                 metadata.set_metadata(availability);
                 metadata
             });
@@ -589,12 +568,7 @@ mod tests {
             .error_reporter(TestErrorReporter::new())
             .build();
         let metadata = Dict::new();
-        metadata
-            .insert(
-                Name::new(METADATA_KEY_TYPE).unwrap(),
-                Capability::Data(Data::String(CapabilityTypeName::Protocol.to_string().into())),
-            )
-            .unwrap();
+        metadata.set_metadata(CapabilityTypeName::Protocol);
         metadata.set_metadata(Availability::Optional);
 
         let capability = proxy
@@ -658,12 +632,7 @@ mod tests {
             .error_reporter(reporter)
             .build();
         let metadata = Dict::new();
-        metadata
-            .insert(
-                Name::new(METADATA_KEY_TYPE).unwrap(),
-                Capability::Data(Data::String(CapabilityTypeName::Service.to_string().into())),
-            )
-            .unwrap();
+        metadata.set_metadata(CapabilityTypeName::Service);
         metadata.set_metadata(Availability::Optional);
 
         let error = proxy
@@ -701,12 +670,7 @@ mod tests {
             .error_reporter(reporter)
             .build();
         let metadata = Dict::new();
-        metadata
-            .insert(
-                Name::new(METADATA_KEY_TYPE).unwrap(),
-                Capability::Data(Data::String(CapabilityTypeName::Protocol.to_string().into())),
-            )
-            .unwrap();
+        metadata.set_metadata(CapabilityTypeName::Protocol);
         metadata.set_metadata(Availability::Required);
 
         let error = proxy

@@ -2,23 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::str::FromStr;
+
 use crate::rights::Rights;
 use crate::subdir::SubDir;
-use cm_rust::Availability;
+use cm_rust::{Availability, CapabilityTypeName};
 use fidl::{persist, unpersist};
 use sandbox::{Capability, Data, Dict, DictKey};
 use {
     fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_sandbox as fsandbox,
     fidl_fuchsia_io as fio,
 };
-
-/// A route request metadata key for the capability type.
-pub const METADATA_KEY_TYPE: &'static str = "type";
-
-/// The capability type value for a protocol.
-pub const TYPE_PROTOCOL: &'static str = "protocol";
-pub const TYPE_DICTIONARY: &'static str = "dictionary";
-pub const TYPE_CONFIG: &'static str = "configuration";
 
 /// A type which has accessors for route request metadata of type T.
 pub trait Metadata<T> {
@@ -30,6 +24,36 @@ pub trait Metadata<T> {
 
     /// Retrieves the subdir metadata from `self`, if present.
     fn get_metadata(&self) -> Option<T>;
+}
+
+impl Metadata<CapabilityTypeName> for Dict {
+    const KEY: &'static str = "type";
+
+    fn set_metadata(&self, value: CapabilityTypeName) {
+        let key = DictKey::new(<Self as Metadata<CapabilityTypeName>>::KEY)
+            .expect("dict key creation failed unexpectedly");
+        match self.insert(key, Capability::Data(Data::String(value.to_string().into()))) {
+            // When an entry already exists for a key in a Dict, insert() will
+            // still replace that entry with the new value, even though it
+            // returns an ItemAlreadyExists error. As a result, we can treat
+            // ItemAlreadyExists as a success case.
+            Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
+            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+        }
+    }
+
+    fn get_metadata(&self) -> Option<CapabilityTypeName> {
+        let key = DictKey::new(<Self as Metadata<CapabilityTypeName>>::KEY)
+            .expect("dict key creation failed unexpectedly");
+        let capability = self.get(&key).ok()??;
+        match capability {
+            Capability::Data(Data::String(capability_type_name)) => {
+                CapabilityTypeName::from_str(&capability_type_name).ok()
+            }
+            _ => None,
+        }
+    }
 }
 
 impl Metadata<Availability> for Dict {
@@ -221,12 +245,7 @@ impl Metadata<SubDir> for Dict {
 /// Returns a `Dict` containing Router Request metadata specifying a Protocol porcelain type.
 pub fn protocol_metadata(availability: cm_types::Availability) -> sandbox::Dict {
     let metadata = sandbox::Dict::new();
-    metadata
-        .insert(
-            cm_types::Name::new(METADATA_KEY_TYPE).unwrap(),
-            sandbox::Capability::Data(sandbox::Data::String(TYPE_PROTOCOL.into())),
-        )
-        .unwrap();
+    metadata.set_metadata(CapabilityTypeName::Protocol);
     metadata.set_metadata(availability);
     metadata
 }
@@ -234,12 +253,7 @@ pub fn protocol_metadata(availability: cm_types::Availability) -> sandbox::Dict 
 /// Returns a `Dict` containing Router Request metadata specifying a Dictionary porcelain type.
 pub fn dictionary_metadata(availability: cm_types::Availability) -> sandbox::Dict {
     let metadata = sandbox::Dict::new();
-    metadata
-        .insert(
-            cm_types::Name::new(METADATA_KEY_TYPE).unwrap(),
-            sandbox::Capability::Data(sandbox::Data::String(TYPE_DICTIONARY.into())),
-        )
-        .unwrap();
+    metadata.set_metadata(CapabilityTypeName::Dictionary);
     metadata.set_metadata(availability);
     metadata
 }
@@ -251,14 +265,7 @@ pub fn directory_metadata(
     subdir: Option<SubDir>,
 ) -> sandbox::Dict {
     let metadata = sandbox::Dict::new();
-    metadata
-        .insert(
-            cm_types::Name::new(METADATA_KEY_TYPE).unwrap(),
-            sandbox::Capability::Data(sandbox::Data::String(
-                cm_rust::CapabilityTypeName::Directory.to_string().into(),
-            )),
-        )
-        .unwrap();
+    metadata.set_metadata(CapabilityTypeName::Directory);
     if let Some(subdir) = subdir {
         metadata.set_metadata(subdir);
     }
@@ -278,12 +285,7 @@ pub fn directory_metadata(
 /// Returns a `Dict` containing Router Request metadata specifying a Config porcelain type.
 pub fn config_metadata(availability: cm_types::Availability) -> sandbox::Dict {
     let metadata = sandbox::Dict::new();
-    metadata
-        .insert(
-            cm_types::Name::new(METADATA_KEY_TYPE).unwrap(),
-            sandbox::Capability::Data(sandbox::Data::String(TYPE_CONFIG.into())),
-        )
-        .unwrap();
+    metadata.set_metadata(CapabilityTypeName::Config);
     metadata.set_metadata(availability);
     metadata
 }
@@ -291,14 +293,7 @@ pub fn config_metadata(availability: cm_types::Availability) -> sandbox::Dict {
 /// Returns a `Dict` containing Router Request metadata specifying a Runner porcelain type.
 pub fn runner_metadata(availability: cm_types::Availability) -> sandbox::Dict {
     let metadata = sandbox::Dict::new();
-    metadata
-        .insert(
-            cm_types::Name::new(METADATA_KEY_TYPE).unwrap(),
-            sandbox::Capability::Data(sandbox::Data::String(
-                cm_rust::CapabilityTypeName::Runner.to_string().into(),
-            )),
-        )
-        .unwrap();
+    metadata.set_metadata(CapabilityTypeName::Runner);
     metadata.set_metadata(availability);
     metadata
 }
@@ -306,14 +301,7 @@ pub fn runner_metadata(availability: cm_types::Availability) -> sandbox::Dict {
 /// Returns a `Dict` Containing Router Request metadata specifying a Resolver porcelain type.
 pub fn resolver_metadata(availability: cm_types::Availability) -> sandbox::Dict {
     let metadata = sandbox::Dict::new();
-    metadata
-        .insert(
-            cm_types::Name::new(METADATA_KEY_TYPE).unwrap(),
-            sandbox::Capability::Data(sandbox::Data::String(
-                cm_rust::CapabilityTypeName::Resolver.to_string().into(),
-            )),
-        )
-        .unwrap();
+    metadata.set_metadata(CapabilityTypeName::Resolver);
     metadata.set_metadata(availability);
     metadata
 }
@@ -321,14 +309,7 @@ pub fn resolver_metadata(availability: cm_types::Availability) -> sandbox::Dict 
 /// Returns a `Dict` Containing Router Request metadata specifying a Service porcelain type.
 pub fn service_metadata(availability: cm_types::Availability) -> sandbox::Dict {
     let metadata = sandbox::Dict::new();
-    metadata
-        .insert(
-            cm_types::Name::new(METADATA_KEY_TYPE).unwrap(),
-            sandbox::Capability::Data(sandbox::Data::String(
-                cm_rust::CapabilityTypeName::Service.to_string().into(),
-            )),
-        )
-        .unwrap();
+    metadata.set_metadata(CapabilityTypeName::Service);
     metadata.set_metadata(availability);
     metadata
 }
@@ -338,14 +319,7 @@ pub fn event_stream_metadata(
     route_metadata: finternal::EventStreamRouteMetadata,
 ) -> sandbox::Dict {
     let metadata = sandbox::Dict::new();
-    metadata
-        .insert(
-            cm_types::Name::new(METADATA_KEY_TYPE).unwrap(),
-            sandbox::Capability::Data(sandbox::Data::String(
-                cm_rust::CapabilityTypeName::EventStream.to_string().into(),
-            )),
-        )
-        .unwrap();
+    metadata.set_metadata(CapabilityTypeName::EventStream);
     metadata.set_metadata(availability);
     metadata.set_metadata(route_metadata);
     metadata

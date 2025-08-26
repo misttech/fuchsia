@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bedrock::request_metadata::METADATA_KEY_TYPE;
+use crate::bedrock::request_metadata::Metadata;
 use crate::error::RoutingError;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
-use cm_types::{IterablePath, Name, RelativePath};
+use cm_types::{IterablePath, RelativePath};
 use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
@@ -416,10 +416,7 @@ pub(super) fn request_with_dictionary_replacement(
     request: Option<&Request>,
 ) -> Result<Option<Request>, RoutingError> {
     Ok(request.as_ref().map(|r| r.try_clone()).transpose()?.map(|r| {
-        let _ = r.metadata.insert(
-            Name::new(METADATA_KEY_TYPE).unwrap(),
-            Capability::Data(Data::String(CapabilityTypeName::Dictionary.to_string().into())),
-        );
+        let _ = r.metadata.set_metadata(CapabilityTypeName::Dictionary);
         r
     }))
 }
