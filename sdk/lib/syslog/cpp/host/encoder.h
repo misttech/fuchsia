@@ -45,7 +45,7 @@ struct MsgHeader {
 
   void WriteChar(const char value) {
     if (!RemainingSpace()) {
-      buffer->Flush();
+      [[maybe_unused]] zx::result<> result = FlushToGlobalLogger(*buffer);
       offset = reinterpret_cast<char*>(buffer->data());
       WriteString("CONTINUATION: ");
     }
@@ -69,7 +69,7 @@ struct MsgHeader {
   }
 
   void FlushAndReset() {
-    buffer->Flush();
+    [[maybe_unused]] zx::result<> result = FlushToGlobalLogger(*buffer);
     offset = reinterpret_cast<char*>(buffer->data());
   }
 

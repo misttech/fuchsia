@@ -116,9 +116,6 @@ class LogBuffer final {
   // Encodes a boolean value
   void Encode(KeyValue<const char*, bool> value) { WriteKeyValue(value.key(), value.value()); }
 
-  // Writes the log.
-  bool Flush();
-
   uint64_t* data() { return data_; }
 
   uint64_t* record_state() { return record_state_; }

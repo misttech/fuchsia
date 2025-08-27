@@ -72,6 +72,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       } break;
     }
   }
-  buffer.Flush();
+  [[maybe_unused]] zx::result<> result = fuchsia_logging::FlushToGlobalLogger(buffer);
   return 0;
 }

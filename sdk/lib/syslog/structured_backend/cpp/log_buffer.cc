@@ -4,6 +4,7 @@
 
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/zx/clock.h>
+#include <lib/zx/socket.h>
 #include <stdlib.h>
 
 namespace fuchsia_logging {
@@ -468,12 +469,15 @@ std::string_view StripDots(std::string_view path) {
 
 namespace internal {
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 void SetFlushCallback(LogBuffer& buffer, internal::FlushCallback flush_callback) {
   buffer.flush_callback_ = std::move(flush_callback);
 }
+#endif
 
-bool FlushToSocket(zx::unowned_socket socket, cpp20::span<const uint8_t> data,
+bool FlushToSocket(zx_handle_t socket_handle, cpp20::span<const uint8_t> data,
                    FlushConfig flush_config) {
+  zx::unowned_socket socket(socket_handle);
   zx_status_t status;
   while (true) {
     status = socket->write(0, data.data(), data.size(), nullptr);
@@ -500,15 +504,17 @@ bool FlushToSocket(zx::unowned_socket socket, cpp20::span<const uint8_t> data,
 
 }  // namespace internal
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 void LogBuffer::BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
                             unsigned int line, std::optional<std::string_view> message,
                             zx::unowned_socket socket, uint32_t dropped_count, zx_koid_t pid,
                             zx_koid_t tid) {
   BeginRecord(severity, file_name, line, message, dropped_count, pid, tid);
   internal::SetFlushCallback(*this, [socket](cpp20::span<const uint8_t> data, FlushConfig config) {
-    return internal::FlushToSocket(zx::unowned_socket(socket), data, config);
+    return internal::FlushToSocket(socket->get(), data, config);
   });
 }
+#endif
 
 void LogBuffer::BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
                             unsigned int line, std::optional<std::string_view> message,
@@ -603,6 +609,7 @@ void LogBuffer::WriteKeyValue(std::string_view key, bool value) {
   encoder.AppendArgumentValue(*state, value);
 }
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 bool LogBuffer::FlushRecord(FlushConfig flush_config) {
   auto span = EndRecord();
   if (span.empty() || !flush_callback_) {
@@ -610,6 +617,7 @@ bool LogBuffer::FlushRecord(FlushConfig flush_config) {
   }
   return flush_callback_(span, flush_config);
 }
+#endif
 
 cpp20::span<const uint8_t> LogBuffer::EndRecord() {
   auto* state = RecordState::CreatePtr(&data_);

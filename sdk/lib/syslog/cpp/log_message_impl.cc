@@ -71,7 +71,11 @@ LogMessage::~LogMessage() {
   if (tag_) {
     buffer.WriteKeyValue("tag", tag_);
   }
+#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   buffer.Flush();
+#else
+  [[maybe_unused]] zx::result<> result = FlushToGlobalLogger(buffer);
+#endif
   if (severity_ >= fuchsia_logging::LogSeverity::Fatal) {
     if (condition_) {
       std::cerr << "Check failed: " << condition_ << ". ";

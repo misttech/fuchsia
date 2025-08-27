@@ -98,15 +98,4 @@ void LogBuffer::WriteKeyValue(std::string_view key, bool value) {
   WriteKeyValueLegacy(this, key, value);
 }
 
-bool LogBuffer::Flush() {
-  auto header = internal::MsgHeader::CreatePtr(this);
-  *(header->offset++) = 0;
-  if (header->user_tag) {
-    auto tag = header->user_tag;
-    std::cerr << "[" << tag << "] ";
-  }
-  std::cerr << reinterpret_cast<const char*>(this->data()) << std::endl;
-  return true;
-}
-
 }  // namespace fuchsia_logging

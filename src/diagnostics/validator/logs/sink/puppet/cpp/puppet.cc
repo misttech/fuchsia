@@ -66,7 +66,7 @@ class Puppet : public fuchsia::validate::logs::LogSinkPuppet {
             break;
         }
       }
-      buffer.Flush();
+      [[maybe_unused]] zx::result<> result = fuchsia_logging::FlushToGlobalLogger(buffer);
     }
     callback();
   }
@@ -93,7 +93,7 @@ int main(int argc, const char** argv) {
             }
             auto builder = fuchsia_logging::LogBufferBuilder(severity);
             auto buffer = builder.WithFile(__FILE__, __LINE__).WithMsg("Changed severity").Build();
-            buffer.Flush();
+            [[maybe_unused]] zx::result<> result = fuchsia_logging::FlushToGlobalLogger(buffer);
           });
   log_settings.BuildAndInitialize();
   Puppet puppet(sys::ComponentContext::CreateAndServeOutgoingDirectory());

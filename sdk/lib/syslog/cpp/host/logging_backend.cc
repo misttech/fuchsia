@@ -196,4 +196,15 @@ LogBuffer LogBufferBuilder::Build() {
   return buffer;
 }
 
+zx::result<> FlushToGlobalLogger(LogBuffer& buffer) {
+  auto header = internal::MsgHeader::CreatePtr(&buffer);
+  *(header->offset++) = 0;
+  if (header->user_tag) {
+    auto tag = header->user_tag;
+    std::cerr << "[" << tag << "] ";
+  }
+  std::cerr << reinterpret_cast<const char*>(buffer.data()) << std::endl;
+  return zx::ok();
+}
+
 }  // namespace fuchsia_logging

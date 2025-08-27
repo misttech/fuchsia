@@ -189,29 +189,26 @@ void BeginRecord(LogBuffer* buffer, fuchsia_logging::RawLogSeverity severity,
                  internal::NullSafeStringView file, unsigned int line,
                  internal::NullSafeStringView msg, internal::NullSafeStringView condition) {
   BeginRecordInternal(buffer, severity, file, line, msg, condition);
-  internal::SetFlushCallback(*buffer, [](cpp20::span<const uint8_t> data, FlushConfig config) {
 #if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
-    zx::unowned_socket socket(std::get<0>(GlobalStateLock()->descriptor()));
-    return internal::FlushToSocket(std::move(socket), data, config);
-#else
-    //  We ignore `block_if_full` because we won't be supporting it with IOBuffers which is coming
-    //  soon.
-    return internal::FuchsiaLogWrite(internal::FuchsiaLogGetGlobalLogger(GetDefaultSettings),
-                                     data.data(), data.size()) == ZX_OK;
-#endif
+  internal::SetFlushCallback(*buffer, [](cpp20::span<const uint8_t> data, FlushConfig config) {
+    return internal::FlushToSocket(std::get<0>(GlobalStateLock()->descriptor()).get(), data,
+                                   config);
   });
+#endif
 }
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 void BeginRecordWithSocket(LogBuffer* buffer, fuchsia_logging::RawLogSeverity severity,
                            internal::NullSafeStringView file_name, unsigned int line,
                            internal::NullSafeStringView msg, internal::NullSafeStringView condition,
                            zx_handle_t socket) {
   BeginRecordInternal(buffer, severity, file_name, line, msg, condition);
-  internal::SetFlushCallback(
-      *buffer, [socket](cpp20::span<const uint8_t> data, FlushConfig config) {
-        return internal::FlushToSocket(zx::unowned_socket(socket), data, config);
-      });
+  internal::SetFlushCallback(*buffer,
+                             [socket](cpp20::span<const uint8_t> data, FlushConfig config) {
+                               return internal::FlushToSocket(socket, data, config);
+                             });
 }
+#endif
 
 void SetLogSettings(const fuchsia_logging::LogSettings& settings) {
 #if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
@@ -337,6 +334,14 @@ internal::LogState::LogState(const fuchsia_logging::LogSettings& settings)
   Connect();
 }
 
+#else
+
+zx::result<> FlushToGlobalLogger(LogBuffer& buffer) {
+  std::span<const uint8_t> data = buffer.EndRecord();
+  return zx::make_result(internal::FuchsiaLogWrite(
+      internal::FuchsiaLogGetGlobalLogger(GetDefaultSettings), data.data(), data.size()));
+}
+
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
 
 // Sets the default log severity. If not explicitly set,
@@ -411,13 +416,16 @@ RawLogSeverity GetMinLogSeverity() { return GlobalStateLock()->min_severity(); }
 
 LogBuffer LogBufferBuilder::Build() {
   LogBuffer buffer;
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   if (socket_) {
     fuchsia_logging::BeginRecordWithSocket(
         &buffer, severity_,
         fuchsia_logging::internal::NullSafeStringView::CreateFromOptional(file_name_), line_,
         fuchsia_logging::internal::NullSafeStringView::CreateFromOptional(msg_),
         fuchsia_logging::internal::NullSafeStringView::CreateFromOptional(condition_), socket_);
-  } else {
+  } else
+#endif
+  {
     fuchsia_logging::BeginRecord(
         &buffer, severity_,
         fuchsia_logging::internal::NullSafeStringView::CreateFromOptional(file_name_), line_,

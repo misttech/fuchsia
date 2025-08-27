@@ -320,14 +320,14 @@ TEST_F(LoggingFixture, BackendDirect) {
     auto buffer =
         builder.WithFile("foo.cc", 42).WithMsg("Log message").WithCondition("condition").Build();
     buffer.WriteKeyValue("tag", "fake tag");
-    buffer.Flush();
+    EXPECT_EQ(FlushToGlobalLogger(buffer).status_value(), ZX_OK);
   }
   LogBufferBuilder builder(LogSeverity::Error);
   auto buffer =
       builder.WithMsg("fake message").WithCondition("condition").WithFile("foo.cc", 42).Build();
   buffer.WriteKeyValue("tag", "fake tag");
   buffer.WriteKeyValue("foo", static_cast<int64_t>(42));
-  buffer.Flush();
+  EXPECT_EQ(FlushToGlobalLogger(buffer).status_value(), ZX_OK);
 
   std::string log = ReadLogs(state);
   EXPECT_THAT(log, HasSubstr("ERROR: [foo.cc(42)] Check failed: condition. Log message\n"));

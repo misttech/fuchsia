@@ -196,8 +196,7 @@ zx_status_t fx_logger::VLogWriteToSocket(fx_log_severity_t severity, const char*
     }
 #else
     cpp20::span<const uint8_t> span = buffer.EndRecord();
-    if (span.empty() ||
-        !fuchsia_logging::internal::FlushToSocket(zx::unowned_socket(this->socket_), span, {})) {
+    if (span.empty() || !fuchsia_logging::internal::FlushToSocket(this->socket_.get(), span, {})) {
       return ZX_ERR_IO;
     }
 #endif

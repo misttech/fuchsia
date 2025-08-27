@@ -1,8 +1,8 @@
 {
   "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/fuchsia_syslog.h": "561215ef164adb68b3fda3164f8a9467",
-  "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/log_buffer.h": "7932143f12a15dbde60467224aef3c95",
+  "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/log_buffer.h": "1a4df9b9bc5f2130b968bf02b39e7fa5",
   "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/log_connection.h": "df01fbc6ae94f1784aa48e01131c97ca",
   "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/logger.h": "557de0dad128f06a914ad8978d66534e",
-  "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/raw_log_settings.h": "60647005428ca7935adb904acd48a62f",
+  "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/cpp/raw_log_settings.h": "35a2dfd015514260fa413732933f4bde",
   "pkg/syslog_structured_backend/include/lib/syslog/structured_backend/fuchsia_syslog.h": "f62ead8ca86595ef4ba043f38251b7a5"
 }

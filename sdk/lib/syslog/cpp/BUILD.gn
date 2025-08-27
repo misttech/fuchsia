@@ -23,7 +23,10 @@ if (is_fuchsia) {
 }
 
 target(target_type, "cpp") {
-  public_deps = [ "//sdk/lib/fit-promise" ]
+  public_deps = [
+    "//sdk/lib/fit-promise",
+    "//zircon/system/ulib/zx",
+  ]
 
   sources = [
     "log_level.h",
@@ -59,7 +62,6 @@ target(target_type, "cpp") {
     public_deps += [
       "//sdk/lib/async-loop:async-loop-cpp",
       "//sdk/lib/syslog/structured_backend",
-      "//zircon/system/ulib/zx",
     ]
   } else {
     sources += [

@@ -21,9 +21,6 @@
 // logging commands to fuzz the structured logging backend.
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  zx::socket output;
-  zx::socket input;
-  zx::socket::create(0, &input, &output);
   FuzzedDataProvider provider(data, size);
   enum class OP : uint8_t {
     kStringField,
@@ -45,7 +42,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   auto pid = provider.ConsumeIntegral<zx_koid_t>();
   auto tid = provider.ConsumeIntegral<zx_koid_t>();
   auto condition = provider.ConsumeRandomLengthString();
-  buffer.BeginRecord(severity, file.data(), line, msg.data(), output.borrow(), 0, pid, tid);
+  buffer.BeginRecord(severity, file.data(), line, msg.data(), 0, pid, tid);
   while (provider.remaining_bytes()) {
     auto op = provider.ConsumeEnum<OP>();
     auto key = provider.ConsumeRandomLengthString();
@@ -78,6 +75,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         break;
     }
   }
-  buffer.FlushRecord();
+  buffer.EndRecord();
   return 0;
 }

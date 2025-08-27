@@ -108,14 +108,14 @@ TEST(StructuredLogging, BackendDirect) {
     LogBufferBuilder builder(LogSeverity::Warn);
     auto buffer =
         builder.WithFile("foo.cc", 42).WithCondition("condition").WithMsg("fake tag").Build();
-    buffer.Flush();
+    [[maybe_unused]] zx::result<> result = fuchsia_logging::FlushToGlobalLogger(buffer);
   }
   LogBufferBuilder builder(LogSeverity::Warn);
   auto buffer =
       builder.WithFile("foo.cc", 42).WithCondition("condition").WithMsg("fake tag").Build();
   buffer.WriteKeyValue("foo", static_cast<int64_t>(42));
   buffer.WriteKeyValue("bar", true);
-  ASSERT_TRUE(buffer.Flush());
+  ASSERT_EQ(fuchsia_logging::FlushToGlobalLogger(buffer).status_value(), ZX_OK);
   // TODO(https://fxbug.dev/42135333): Figure out how to verify this appropriately.
 }
 
@@ -128,7 +128,7 @@ TEST(StructuredLogging, Overflow) {
     LogBufferBuilder builder(LogSeverity::Warn);
     auto buffer =
         builder.WithFile("foo.cc", 42).WithCondition("condition").WithMsg("fake tag").Build();
-    buffer.Flush();
+    [[maybe_unused]] zx::result<> result = fuchsia_logging::FlushToGlobalLogger(buffer);
   }
   LogBufferBuilder builder(LogSeverity::Warn);
   auto buffer =
@@ -136,7 +136,7 @@ TEST(StructuredLogging, Overflow) {
   buffer.WriteKeyValue("foo", static_cast<int64_t>(42));
   buffer.WriteKeyValue("bar", very_large_string.data());
 
-  ASSERT_FALSE(buffer.Flush());
+  ASSERT_EQ(fuchsia_logging::FlushToGlobalLogger(buffer).status_value(), ZX_ERR_INVALID_ARGS);
 }
 
 TEST(StructuredLogging, LOGS) {
@@ -145,65 +145,6 @@ TEST(StructuredLogging, LOGS) {
   str.resize(1000 * 5000);
   memset(str.data(), 's', str.size() - 1);
   FX_LOGS(INFO) << str;
-}
-
-TEST(StructuredLogging, SocketLimit) {
-  zx::socket local, remote;
-  ASSERT_EQ(zx::socket::create(ZX_SOCKET_DATAGRAM, &local, &remote), ZX_OK);
-
-  std::atomic<bool> writer_finished = false;
-  const size_t kNumMessages = 5000;
-  constexpr std::string_view kTestMessage = "test message";
-
-  std::thread writer_thread([&]() {
-    for (size_t i = 0; i < kNumMessages; ++i) {
-      LogBuffer buffer;
-      buffer.BeginRecord(LogSeverity::Info, {}, 0, kTestMessage, zx::unowned_socket(remote), 0, 0,
-                         0);
-      if (!buffer.FlushRecord({.block_if_full = true})) {
-        break;
-      }
-    }
-    writer_finished = true;
-  });
-
-  // Give the writer a chance to fill the buffer and block.
-  zx::nanosleep(zx::deadline_after(zx::msec(250)));
-  ASSERT_FALSE(writer_finished.load());
-
-  size_t total_bytes_read = 0;
-  std::vector<char> read_buffer(65536);
-
-  // Read from the socket until the writer is done.
-  while (!writer_finished.load()) {
-    size_t bytes_read;
-    zx_status_t status = local.read(0, read_buffer.data(), read_buffer.size(), &bytes_read);
-    if (status == ZX_ERR_SHOULD_WAIT) {
-      local.wait_one(ZX_SOCKET_READABLE | ZX_SOCKET_PEER_CLOSED, zx::deadline_after(zx::msec(200)),
-                     nullptr);
-      continue;
-    }
-    ASSERT_EQ(status, ZX_OK);
-    total_bytes_read += bytes_read;
-  }
-
-  writer_thread.join();
-
-  // Drain any remaining messages.
-  while (true) {
-    size_t bytes_read;
-    zx_status_t status = local.read(0, read_buffer.data(), read_buffer.size(), &bytes_read);
-    if (status == ZX_ERR_SHOULD_WAIT) {
-      break;
-    }
-    if (status != ZX_OK) {
-      ASSERT_EQ(status, ZX_ERR_PEER_CLOSED);
-      break;
-    }
-    total_bytes_read += bytes_read;
-  }
-  // 100KB should far exceed the capacity in a datagram socket.
-  EXPECT_GE(total_bytes_read, kNumMessages * kTestMessage.size());
 }
 
 }  // namespace fuchsia_logging

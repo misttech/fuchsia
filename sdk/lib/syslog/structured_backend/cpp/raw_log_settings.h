@@ -18,7 +18,7 @@ struct RawLogSettings {
   const char* const* tags = nullptr;
   size_t tags_count = 0;
   async_dispatcher_t* dispatcher = nullptr;
-  void (*severity_change_callback)(void* context, uint8_t severity) = nullptr;
+  void (*severity_change_callback)(void* context, FuchsiaLogSeverity severity) = nullptr;
   void* severity_change_callback_context = nullptr;
   uint64_t reserved[10] = {};
 };
