@@ -40,6 +40,9 @@ ffx_plugin("ffx_product_create") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:camino",
+    "//third_party/rust_crates:pathdiff",
     "//third_party/rust_crates:tempfile",
   ]
+
+  test_deps = [ "//third_party/rust_crates:serial_test" ]
 }
