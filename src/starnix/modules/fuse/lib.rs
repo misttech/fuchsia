@@ -773,6 +773,12 @@ impl FileOps for FuseFileObject {
         let is_dir = file.node().is_dir();
         {
             let mut connection = self.connection.lock();
+            log_error!(
+                "FuseFileObject::close: fh = {}, is_dir = {}, connection state = {:?}",
+                self.open_out.fh,
+                is_dir,
+                connection.state
+            );
             if let Err(e) = connection.execute_operation(
                 locked,
                 current_task,
@@ -796,7 +802,13 @@ impl FileOps for FuseFileObject {
         current_task: &CurrentTask,
     ) {
         let node = Self::get_fuse_node(file);
-        if let Err(e) = self.connection.lock().execute_operation(
+        let mut connection = self.connection.lock();
+        log_error!(
+            "FuseFileObject::flush: fh = {}, connection state = {:?}",
+            self.open_out.fh,
+            connection.state
+        );
+        if let Err(e) = connection.execute_operation(
             locked,
             current_task,
             node,
