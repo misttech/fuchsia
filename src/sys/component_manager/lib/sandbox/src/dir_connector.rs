@@ -8,13 +8,55 @@ use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use futures::channel::mpsc;
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+
+/// These are the flags which may always be set when opening something through a DirConnector. See
+/// the comment on [`DirConnectable::maximum_flags`] for more information.
+static ALWAYS_ALLOWED_FLAGS: LazyLock<fio::Flags> = LazyLock::new(|| {
+    fio::Flags::PROTOCOL_SERVICE
+        | fio::Flags::PROTOCOL_NODE
+        | fio::Flags::PROTOCOL_DIRECTORY
+        | fio::Flags::PROTOCOL_FILE
+        | fio::Flags::PROTOCOL_SYMLINK
+        | fio::Flags::FLAG_SEND_REPRESENTATION
+        | fio::Flags::FLAG_MAYBE_CREATE
+        | fio::Flags::FLAG_MUST_CREATE
+        | fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY
+        | fio::Flags::FILE_APPEND
+        | fio::Flags::FILE_TRUNCATE
+});
 
 /// Types that implement [`DirConnectable`] let the holder send directory channels
-/// to them.
+/// to them. Any `DirConnectable` should be wrapped in a [`DirConnector`].
 pub trait DirConnectable: Send + Sync + Debug {
-    // TODO: not all implementers use all parameters in this method. This
-    // suggests the API is wrong and should be revised.
+    /// Returns the maximum set of flags that may be passed to this DirConnectable. For example, to
+    /// disallow calling `send` with write permissions, this function could return
+    /// `fidl_fuchsia_io::PERM_READABLE`.
+    ///
+    /// The following flags are always permitted, regardless of the returned value:
+    ///
+    /// - `fidl_fuchsia_io::Flags::PROTOCOL_SERVICE`
+    /// - `fidl_fuchsia_io::Flags::PROTOCOL_NODE`
+    /// - `fidl_fuchsia_io::Flags::PROTOCOL_DIRECTORY`
+    /// - `fidl_fuchsia_io::Flags::PROTOCOL_FILE`
+    /// - `fidl_fuchsia_io::Flags::PROTOCOL_SYMLINK`
+    /// - `fidl_fuchsia_io::Flags::FLAG_SEND_REPRESENTATION`
+    /// - `fidl_fuchsia_io::Flags::FLAG_MAYBE_CREATE`
+    /// - `fidl_fuchsia_io::Flags::FLAG_MUST_CREATE`
+    /// - `fidl_fuchsia_io::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY`
+    /// - `fidl_fuchsia_io::Flags::FILE_APPEND`
+    /// - `fidl_fuchsia_io::Flags::FILE_TRUNCATE`
+    ///
+    /// If the returned value does not contain the set of flags
+    /// `fidl_fuchsia_io::INHERITED_WRITE_PERMISSIONS`, then
+    /// `fidl_fuchsia_io::Flags::PERM_INHERIT_WRITE` will be stripped from any flags passed to
+    /// `send` if it is set.
+    ///
+    /// If the returned value does not contain the flag
+    /// `fidl_fuchsia_io::Flags::PERM_INHERIT_EXECUTE`, then `fidl_fuchsia_io::Flags::PERM_EXECUTE`
+    /// will be stripped from any flags passed to `send` if it is set.
+    fn maximum_flags(&self) -> fio::Flags;
+
     fn send(
         &self,
         dir: ServerEnd<fio::DirectoryMarker>,
@@ -24,6 +66,10 @@ pub trait DirConnectable: Send + Sync + Debug {
 }
 
 impl DirConnectable for mpsc::UnboundedSender<ServerEnd<fio::DirectoryMarker>> {
+    fn maximum_flags(&self) -> fio::Flags {
+        fio::Flags::empty()
+    }
+
     fn send(
         &self,
         dir: ServerEnd<fio::DirectoryMarker>,
@@ -70,13 +116,41 @@ impl DirConnector {
         &self,
         dir: ServerEnd<fio::DirectoryMarker>,
         subdir: RelativePath,
-        flags: Option<fio::Flags>,
+        mut flags: Option<fio::Flags>,
     ) -> Result<(), ()> {
+        if let Some(flags) = flags.as_mut() {
+            let mut maximum_flags_and_always_allowed =
+                self.inner.maximum_flags() | *ALWAYS_ALLOWED_FLAGS;
+            if flags.contains(fio::Flags::PERM_INHERIT_WRITE) {
+                if !maximum_flags_and_always_allowed.contains(
+                    fio::Flags::from_bits(fio::INHERITED_WRITE_PERMISSIONS.bits()).unwrap(),
+                ) {
+                    flags.remove(fio::Flags::PERM_INHERIT_WRITE);
+                } else {
+                    maximum_flags_and_always_allowed.insert(fio::Flags::PERM_INHERIT_WRITE);
+                }
+            }
+            if flags.contains(fio::Flags::PERM_INHERIT_EXECUTE) {
+                if !maximum_flags_and_always_allowed.contains(fio::Flags::PERM_EXECUTE) {
+                    flags.remove(fio::Flags::PERM_INHERIT_EXECUTE);
+                } else {
+                    maximum_flags_and_always_allowed.insert(fio::Flags::PERM_INHERIT_EXECUTE);
+                }
+            }
+            if !maximum_flags_and_always_allowed.contains(*flags) {
+                // The caller has requested greater permissions than is allowed.
+                return Err(());
+            }
+        }
         self.inner.send(dir, subdir, flags)
     }
 }
 
 impl DirConnectable for DirConnector {
+    fn maximum_flags(&self) -> fio::Flags {
+        self.inner.maximum_flags()
+    }
+
     fn send(
         &self,
         channel: ServerEnd<fio::DirectoryMarker>,
@@ -95,6 +169,10 @@ struct DirectoryProxyForwarder {
 }
 
 impl DirConnectable for DirectoryProxyForwarder {
+    fn maximum_flags(&self) -> fio::Flags {
+        self.flags
+    }
+
     fn send(
         &self,
         server_end: ServerEnd<fio::DirectoryMarker>,
@@ -125,6 +203,7 @@ mod tests {
     use fidl::endpoints;
     use fidl::handle::{HandleBased, Rights};
     use fidl_fuchsia_component_sandbox as fsandbox;
+    use futures::StreamExt;
 
     // NOTE: sending-and-receiving tests are written in `receiver.rs`.
 
@@ -160,6 +239,117 @@ mod tests {
         // The Receiver should receive two channels, one from each connector.
         for _ in 0..2 {
             let _ch = receiver.receive().await.unwrap();
+        }
+    }
+
+    #[fuchsia::test]
+    async fn flags_check() {
+        #[derive(Debug)]
+        struct DirConnectableStruct {
+            maximum_flags: fio::Flags,
+            sender: mpsc::UnboundedSender<Option<fio::Flags>>,
+        }
+        impl DirConnectable for DirConnectableStruct {
+            fn maximum_flags(&self) -> fio::Flags {
+                self.maximum_flags
+            }
+            fn send(
+                &self,
+                _dir: ServerEnd<fio::DirectoryMarker>,
+                _subdir: RelativePath,
+                flags: Option<fio::Flags>,
+            ) -> Result<(), ()> {
+                self.sender.unbounded_send(flags).unwrap();
+                Ok(())
+            }
+        }
+
+        let (sender, mut receiver) = mpsc::unbounded();
+        let dc1 = DirConnector::new_sendable(DirConnectableStruct {
+            maximum_flags: fio::PERM_READABLE,
+            sender: sender.clone(),
+        });
+
+        for (input_flags, expected_output_flags) in [
+            (None, None),
+            (Some(fio::PERM_READABLE), Some(fio::PERM_READABLE)),
+            (
+                Some(fio::PERM_READABLE | fio::Flags::FLAG_MUST_CREATE),
+                Some(fio::PERM_READABLE | fio::Flags::FLAG_MUST_CREATE),
+            ),
+            (
+                Some(fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE),
+                Some(fio::PERM_READABLE | fio::Flags::PROTOCOL_FILE),
+            ),
+            (Some(fio::PERM_READABLE | fio::Flags::PERM_INHERIT_WRITE), Some(fio::PERM_READABLE)),
+            (Some(fio::PERM_READABLE | fio::Flags::PERM_INHERIT_EXECUTE), Some(fio::PERM_READABLE)),
+        ] {
+            let (_client, server) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+            assert_eq!(
+                Ok(()),
+                dc1.send(server, RelativePath::dot(), input_flags),
+                "failed to send input {input_flags:?}"
+            );
+            assert_eq!(expected_output_flags, receiver.next().await.unwrap());
+        }
+
+        let dc2 = DirConnector::new_sendable(DirConnectableStruct {
+            maximum_flags: fio::PERM_READABLE | fio::PERM_WRITABLE,
+            sender: sender.clone(),
+        });
+        for (input_flags, expected_output_flags) in [
+            (Some(fio::PERM_WRITABLE), Some(fio::PERM_WRITABLE)),
+            (
+                Some(fio::PERM_READABLE | fio::Flags::PERM_INHERIT_WRITE),
+                Some(fio::PERM_READABLE | fio::Flags::PERM_INHERIT_WRITE),
+            ),
+            (Some(fio::PERM_READABLE | fio::Flags::PERM_INHERIT_EXECUTE), Some(fio::PERM_READABLE)),
+        ] {
+            let (_client, server) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+            assert_eq!(
+                Ok(()),
+                dc2.send(server, RelativePath::dot(), input_flags),
+                "failed to send input {input_flags:?}"
+            );
+            assert_eq!(expected_output_flags, receiver.next().await.unwrap());
+        }
+
+        let dc3 = DirConnector::new_sendable(DirConnectableStruct {
+            maximum_flags: fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+            sender: sender.clone(),
+        });
+        for (input_flags, expected_output_flags) in [
+            (Some(fio::PERM_EXECUTABLE), Some(fio::PERM_EXECUTABLE)),
+            (Some(fio::PERM_READABLE | fio::Flags::PERM_INHERIT_WRITE), Some(fio::PERM_READABLE)),
+            (
+                Some(fio::PERM_READABLE | fio::Flags::PERM_INHERIT_EXECUTE),
+                Some(fio::PERM_READABLE | fio::Flags::PERM_INHERIT_EXECUTE),
+            ),
+        ] {
+            let (_client, server) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+            assert_eq!(
+                Ok(()),
+                dc3.send(server, RelativePath::dot(), input_flags),
+                "failed to send input {input_flags:?}"
+            );
+            assert_eq!(expected_output_flags, receiver.next().await.unwrap());
+        }
+
+        for (maximum_flags, input_flags) in [
+            (fio::PERM_READABLE, fio::PERM_READABLE | fio::PERM_EXECUTABLE),
+            (fio::PERM_READABLE | fio::PERM_WRITABLE, fio::PERM_EXECUTABLE),
+            (fio::PERM_READABLE | fio::PERM_EXECUTABLE, fio::PERM_WRITABLE),
+        ] {
+            let dc = DirConnector::new_sendable(DirConnectableStruct {
+                maximum_flags,
+                sender: sender.clone(),
+            });
+            let (_client, server) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+            assert_eq!(
+                Err(()),
+                dc.send(server, RelativePath::dot(), Some(input_flags)),
+                "unexpectedly succeeded at sending input {input_flags:?}"
+            );
         }
     }
 }
