@@ -523,8 +523,9 @@ Error CfiParser::Step(Memory* stack, RegisterID return_address_register, const R
   }
 
   if (auto maybe_32bit = TryConvertRegistersTo32Bit(current, next)) {
+    // When transitioning to 32bit code, we should always be coming from Starnix code, and therefore
+    // always recover both LR and PC, so we don't need to override |return_address_register| here.
     next = *maybe_32bit;
-    return_address_register = RegisterID::kArm32_lr;
   }
 
   // By definition, the CFA is the stack pointer at the call site, so restoring SP means setting it

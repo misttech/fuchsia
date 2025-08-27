@@ -134,6 +134,7 @@ Error ArmEhAbiParser::Step(Memory* stack, const Registers& current, Registers& n
     // Undefined LR register usually means the end of unwinding. This is not considered an error.
     if (uint64_t return_address; next.GetReturnAddress(return_address).ok()) {
       err = next.SetPC(return_address);
+      next.Unset(RegisterID::kArm32_lr);
     } else {
       err = Error("Could not set PC from LR!");
     }
