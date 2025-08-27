@@ -777,13 +777,6 @@ struct RemoteDirReceiver {
 }
 
 impl DirConnectable for RemoteDirReceiver {
-    fn maximum_flags(&self) -> fio::Flags {
-        // Asking a DirConnector implemented outside of component manager for its maximum allowed
-        // rights isn't part of the FIDL contract, so those DirConnectors will have to implement
-        // rights checking on their own.
-        fio::PERM_READABLE | fio::PERM_WRITABLE | fio::PERM_EXECUTABLE
-    }
-
     fn send(
         &self,
         server_end: ServerEnd<fio::DirectoryMarker>,

@@ -134,10 +134,6 @@ impl LaunchTaskOnReceive {
         }
 
         impl DirConnectable for TaskAndTarget {
-            fn maximum_flags(&self) -> fio::Flags {
-                self.allowed_flags
-            }
-
             fn send(
                 &self,
                 dir: ServerEnd<fio::DirectoryMarker>,

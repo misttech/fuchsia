@@ -232,10 +232,6 @@ fn use_directory_or_storage(
 
     #[async_trait]
     impl DirConnectable for DirectorySender {
-        fn maximum_flags(&self) -> fio::Flags {
-            self.allowed_flags
-        }
-
         fn send(
             &self,
             server: ServerEnd<fio::DirectoryMarker>,
