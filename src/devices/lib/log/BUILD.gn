@@ -16,6 +16,7 @@ source_set("log") {
 
   deps = [
     "//sdk/lib/component/incoming/cpp",
+    "//src/lib/stdformat",
     "//zircon/system/ulib/fbl",
   ]
 

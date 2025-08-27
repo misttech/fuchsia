@@ -5,6 +5,7 @@
 #include "log.h"
 
 #include <fidl/fuchsia.logger/cpp/fidl.h>
+#include <fidl/fuchsia.logger/cpp/wire_types.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
@@ -13,7 +14,7 @@
 
 #include <fbl/no_destructor.h>
 
-#include "fidl/fuchsia.logger/cpp/wire_types.h"
+#include "src/lib/stdformat/print.h"
 
 namespace fdf_log {
 namespace {
@@ -274,6 +275,13 @@ array_output_iterator(std::array<T, N>&, size_t&) -> array_output_iterator<T, N>
 void Logger::vlog(FuchsiaLogSeverity severity, const char* tag, const char* file, int line,
                   std::string_view fmt, std::format_args args) {
   if (severity < GetSeverity()) {
+    return;
+  }
+  if (use_stdout_) {
+    // We rely on line buffering to ensure this is a single syscall.
+    cpp23::print("[driver_manager.cm]: {}: ", SeverityToString(severity));
+    cpp23::internal::vprint(stdout, fmt, args);
+    fputc('\n', stdout);
     return;
   }
   constexpr size_t kFormatStringLength = 1024;
