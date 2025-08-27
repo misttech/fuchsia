@@ -89,6 +89,14 @@ class Evictor {
     uint64_t non_loaned_total() const { return pager_backed + discardable + compressed; }
   };
 
+  // Result returned from eviction methods indicating what they performed and why they returned.
+  // Provides by the count of how many different items were evicted, which could be more or less
+  // than requested, as well as whether any free memory target was achieved.
+  struct EvictionResult {
+    EvictedPageCounts counts = {};
+    bool free_target_reached = false;
+  };
+
   Evictor();
   ~Evictor();
 
@@ -104,16 +112,17 @@ class Evictor {
 
   // Evict from a user specified external |target| which is only used for this eviction attempt and
   // does not interfere with the |eviction_target_|.
-  EvictedPageCounts EvictFromExternalTarget(EvictionTarget target);
+  EvictionResult EvictFromExternalTarget(EvictionTarget target);
 
   // Performs a synchronous request to evict until free memory equals |free_mem_start| (in bytes)
-  // and at least |min_mem_to_free| (in bytes) has been reclaimed. The return value is the number of
-  // pages evicted. The |eviction_level| is a rough control that maps to how old a page needs to be
-  // for being considered for eviction. This may acquire arbitrary vmo and aspace locks.
-  uint64_t EvictSynchronous(uint64_t min_mem_to_free, uint64_t free_mem_target,
-                            EvictionLevel eviction_level = EvictionLevel::OnlyOldest,
-                            Output output = Output::NoPrint,
-                            TriggerReason reason = TriggerReason::Other);
+  // and at least |min_mem_to_free| (in bytes) has been reclaimed. The return value is an
+  // EvictionResult detailing exactly what was evicted and whether the free_mem_target was achieved.
+  // The |eviction_level| is a rough control that maps to how old a page needs to be for being
+  // considered for eviction. This may acquire arbitrary vmo and aspace locks.
+  EvictionResult EvictSynchronous(uint64_t min_mem_to_free, uint64_t free_mem_target,
+                                  EvictionLevel eviction_level = EvictionLevel::OnlyOldest,
+                                  Output output = Output::NoPrint,
+                                  TriggerReason reason = TriggerReason::Other);
 
   // Reclaim memory until free memory equals the |free_mem_target| (in bytes) and at least
   // |min_mem_to_free| (in bytes) has been reclaimed. Reclamation will happen asynchronously on the
@@ -170,15 +179,15 @@ class Evictor {
   EvictedPageCounts EvictFromPreloadedTarget();
 
   // Helper for EvictFromPreloadedTarget and EvictFromExternalTarget.
-  EvictedPageCounts EvictFromTargetInternal(EvictionTarget target);
+  EvictionResult EvictFromTargetInternal(EvictionTarget target);
 
   // Evict until |min_pages_to_evict| have been evicted and there are at least |free_pages_target|
   // free pages on the system. Note that the eviction operation here is one-shot, i.e. as soon as
   // the targets are met, eviction will stop and the function will return. Returns the number of
   // discardable and pager-backed pages evicted and pages compressed. This may acquire arbitrary vmo
   // and aspace locks.
-  EvictedPageCounts EvictUntilTargetsMet(uint64_t min_pages_to_evict, uint64_t free_pages_target,
-                                         EvictionLevel level) TA_EXCL(lock_);
+  EvictionResult EvictUntilTargetsMet(uint64_t min_pages_to_evict, uint64_t free_pages_target,
+                                      EvictionLevel level) TA_EXCL(lock_);
 
   // Evict the requested number of |target_pages| from vmos by querying the page queues. The
   // returned struct has the number of pages evicted. The |eviction_level|

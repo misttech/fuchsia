@@ -228,9 +228,11 @@ void MemoryWatchdog::WorkerThread() {
       // in the out of memory state.
       while (mem_event_idx_ == PressureLevel::kOutOfMemory) {
         uint64_t evicted_pages =
-            pmm_evictor()->EvictSynchronous(MB * gBootOptions->oom_eviction_delta_at_oom_mb, 0,
-                                            Evictor::EvictionLevel::IncludeNewest,
-                                            Evictor::Output::NoPrint, Evictor::TriggerReason::OOM);
+            pmm_evictor()
+                ->EvictSynchronous(MB * gBootOptions->oom_eviction_delta_at_oom_mb, 0,
+                                   Evictor::EvictionLevel::IncludeNewest, Evictor::Output::NoPrint,
+                                   Evictor::TriggerReason::OOM)
+                .counts.non_loaned_total();
         if (evicted_pages == 0) {
           printf("memory-pressure: found no pages to evict\n");
           break;

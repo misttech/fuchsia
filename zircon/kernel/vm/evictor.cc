@@ -282,7 +282,7 @@ void Evictor::CombineEvictionTarget(EvictionTarget target) {
   eviction_target_.print_counts = eviction_target_.print_counts || target.print_counts;
 }
 
-Evictor::EvictedPageCounts Evictor::EvictFromExternalTarget(Evictor::EvictionTarget target) {
+Evictor::EvictionResult Evictor::EvictFromExternalTarget(Evictor::EvictionTarget target) {
   return EvictFromTargetInternal(target);
 }
 
@@ -293,28 +293,26 @@ Evictor::EvictedPageCounts Evictor::EvictFromPreloadedTarget() {
     Guard<MonitoredSpinLock, IrqSave> guard{&lock_, SOURCE_TAG};
     target = eviction_target_;
   }
-  EvictedPageCounts counts = EvictFromTargetInternal(target);
+  EvictionResult result = EvictFromTargetInternal(target);
   {
     Guard<MonitoredSpinLock, IrqSave> guard{&lock_, SOURCE_TAG};
-    uint64_t total = counts.non_loaned_total();
+    uint64_t total = result.counts.non_loaned_total();
     // Clear the eviction target but retain any min pages that we might still need to free in a
     // subsequent eviction attempt.
     eviction_target_ = {};
     eviction_target_.min_pages_to_free =
         (total < target.min_pages_to_free) ? target.min_pages_to_free - total : 0;
   }
-  return counts;
+  return result.counts;
 }
 
-Evictor::EvictedPageCounts Evictor::EvictFromTargetInternal(Evictor::EvictionTarget target) {
-  EvictedPageCounts total_evicted_counts = {};
-
+Evictor::EvictionResult Evictor::EvictFromTargetInternal(Evictor::EvictionTarget target) {
   if (!target.pending) {
-    return total_evicted_counts;
+    return EvictionResult{};
   }
 
   const uint64_t free_pages_before = CountFreePages();
-  total_evicted_counts =
+  EvictionResult result =
       EvictUntilTargetsMet(target.min_pages_to_free, target.free_pages_target, target.level);
   const uint64_t free_pages_after = CountFreePages();
 
@@ -329,22 +327,22 @@ Evictor::EvictedPageCounts Evictor::EvictFromTargetInternal(Evictor::EvictionTar
     constexpr size_t kBufSize = 56;
     char buf[kBufSize] __UNINITIALIZED = "\0";
     size_t buf_len = 0;
-    if (total_evicted_counts.pager_backed > 0) {
-      buf_len += snprintf(buf + buf_len, kBufSize - buf_len, " pager:%zu%s",
-                          format_val(total_evicted_counts.pager_backed),
-                          format_unit(total_evicted_counts.pager_backed));
+    if (result.counts.pager_backed > 0) {
+      buf_len +=
+          snprintf(buf + buf_len, kBufSize - buf_len, " pager:%zu%s",
+                   format_val(result.counts.pager_backed), format_unit(result.counts.pager_backed));
     }
-    if (total_evicted_counts.discardable > 0) {
+    if (result.counts.discardable > 0) {
       ASSERT(buf_len < kBufSize);
-      buf_len += snprintf(buf + buf_len, kBufSize - buf_len, " discardable:%zu%s",
-                          format_val(total_evicted_counts.discardable),
-                          format_unit(total_evicted_counts.discardable));
+      buf_len +=
+          snprintf(buf + buf_len, kBufSize - buf_len, " discardable:%zu%s",
+                   format_val(result.counts.discardable), format_unit(result.counts.discardable));
     }
-    if (total_evicted_counts.compressed > 0) {
+    if (result.counts.compressed > 0) {
       ASSERT(buf_len < kBufSize);
-      buf_len += snprintf(buf + buf_len, kBufSize - buf_len, " compressed:%zu%s",
-                          format_val(total_evicted_counts.compressed),
-                          format_unit(total_evicted_counts.compressed));
+      buf_len +=
+          snprintf(buf + buf_len, kBufSize - buf_len, " compressed:%zu%s",
+                   format_val(result.counts.compressed), format_unit(result.counts.compressed));
     }
     if (buf_len > 0) {
       printf("[EVICT]:%s free:%zuM->%zuM\n", buf, free_pages_before * PAGE_SIZE / MB,
@@ -353,19 +351,20 @@ Evictor::EvictedPageCounts Evictor::EvictFromTargetInternal(Evictor::EvictionTar
   }
 
   if (target.oom_trigger) {
-    pager_backed_pages_evicted_oom.Add(static_cast<int64_t>(total_evicted_counts.pager_backed));
-    compression_evicted_oom.Add(static_cast<int64_t>(total_evicted_counts.compressed));
-    discardable_pages_evicted_oom.Add(static_cast<int64_t>(total_evicted_counts.discardable));
+    pager_backed_pages_evicted_oom.Add(static_cast<int64_t>(result.counts.pager_backed));
+    compression_evicted_oom.Add(static_cast<int64_t>(result.counts.compressed));
+    discardable_pages_evicted_oom.Add(static_cast<int64_t>(result.counts.discardable));
   }
 
-  return total_evicted_counts;
+  return result;
 }
 
-uint64_t Evictor::EvictSynchronous(uint64_t min_mem_to_free, uint64_t free_mem_target,
-                                   EvictionLevel eviction_level, Output output,
-                                   TriggerReason reason) {
+Evictor::EvictionResult Evictor::EvictSynchronous(uint64_t min_mem_to_free,
+                                                  uint64_t free_mem_target,
+                                                  EvictionLevel eviction_level, Output output,
+                                                  TriggerReason reason) {
   if (!IsEvictionEnabled()) {
-    return 0;
+    return EvictionResult{};
   }
   EvictionTarget target = {
       .pending = true,
@@ -376,8 +375,8 @@ uint64_t Evictor::EvictSynchronous(uint64_t min_mem_to_free, uint64_t free_mem_t
       .oom_trigger = (reason == TriggerReason::OOM),
   };
 
-  auto evicted_counts = EvictFromExternalTarget(target);
-  return evicted_counts.non_loaned_total();
+  auto eviction_result = EvictFromExternalTarget(target);
+  return eviction_result;
 }
 
 void Evictor::EvictAsynchronous(uint64_t min_mem_to_free, uint64_t free_mem_target,
@@ -396,43 +395,44 @@ void Evictor::EvictAsynchronous(uint64_t min_mem_to_free, uint64_t free_mem_targ
   eviction_signal_.Signal();
 }
 
-Evictor::EvictedPageCounts Evictor::EvictUntilTargetsMet(uint64_t min_pages_to_evict,
-                                                         uint64_t free_pages_target,
-                                                         EvictionLevel level) {
-  EvictedPageCounts total_evicted_counts = {};
+Evictor::EvictionResult Evictor::EvictUntilTargetsMet(uint64_t min_pages_to_evict,
+                                                      uint64_t free_pages_target,
+                                                      EvictionLevel level) {
   if (!IsEvictionEnabled()) {
-    return total_evicted_counts;
+    return EvictionResult{};
   }
+
+  EvictionResult cumulative_result = {};
 
   // Lock the eviction attempts so that we don't overshoot the free pages target.
   Guard<Mutex> evict_guard{&eviction_lock_};
 
-  uint64_t total_non_loaned_pages_freed = 0;
-
   while (true) {
     const uint64_t free_pages = CountFreePages();
     uint64_t pages_to_free = 0;
-    if (total_non_loaned_pages_freed < min_pages_to_evict) {
-      pages_to_free = min_pages_to_evict - total_non_loaned_pages_freed;
-    } else if (free_pages < free_pages_target) {
-      pages_to_free = free_pages_target - free_pages;
+    // Need to evict at least min_pages_to_evict, and then potentially up to the free_pages_target.
+    if (cumulative_result.counts.non_loaned_total() < min_pages_to_evict) {
+      pages_to_free = min_pages_to_evict - cumulative_result.counts.non_loaned_total();
+    }
+    if (free_pages < free_pages_target) {
+      pages_to_free = ktl::max(free_pages_target - free_pages, pages_to_free);
     } else {
+      cumulative_result.free_target_reached = true;
+    }
+    if (pages_to_free == 0) {
       // The targets have been met. No more eviction is required right now.
       break;
     }
 
     EvictedPageCounts pages_freed = EvictPageQueues(pages_to_free, level);
-    const uint64_t non_loaned_evicted = pages_freed.non_loaned_total();
-    total_evicted_counts += pages_freed;
-    total_non_loaned_pages_freed += non_loaned_evicted;
-
     // Should we fail to free any pages then we give up and consider the eviction request complete.
-    if (non_loaned_evicted == 0) {
+    if (pages_freed.non_loaned_total() == 0) {
       break;
     }
+    cumulative_result.counts += pages_freed;
   }
 
-  return total_evicted_counts;
+  return cumulative_result;
 }
 
 Evictor::EvictedPageCounts Evictor::EvictPageQueues(uint64_t target_pages,

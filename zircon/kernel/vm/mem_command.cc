@@ -43,9 +43,11 @@ static int cmd_oom(int argc, const cmd_args* argv) {
   // from becoming classified as evictable, and then evict anything that is already considered.
   printf("Disabling VM scanner\n");
   scanner_push_disable_count();
-  uint64_t pages_evicted = pmm_evictor()->EvictSynchronous(
-      /*min_mem_to_free=*/UINT64_MAX, /*free_mem_target=*/0, Evictor::EvictionLevel::IncludeNewest,
-      Evictor::Output::NoPrint);
+  uint64_t pages_evicted =
+      pmm_evictor()
+          ->EvictSynchronous(/*min_mem_to_free=*/UINT64_MAX, /*free_mem_target=*/0,
+                             Evictor::EvictionLevel::IncludeNewest, Evictor::Output::NoPrint)
+          .counts.non_loaned_total();
   if (pages_evicted > 0) {
     printf("Leaked %" PRIu64 " pages from eviction\n", pages_evicted);
   }
