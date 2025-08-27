@@ -13,6 +13,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
     "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_rust",
+    "//sdk/fidl/fuchsia.recovery.android:fuchsia.recovery.android_rust",
     "//sdk/rust/zx",
     "//src/graphics/lib/compute/rive-rs",
     "//src/lib/fuchsia",
@@ -24,6 +25,7 @@ rustc_binary("bin") {
     "//src/sys/pkg/lib/isolated-swd",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:euclid",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
   test_deps = []

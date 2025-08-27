@@ -18,6 +18,9 @@
             url: "#meta/pkg.cm",
         },
     ],
+    capabilities: [
+        { protocol: "fuchsia.recovery.android.Updater" },
+    ],
     use: [
         {
             protocol: [
@@ -60,6 +63,12 @@
             ],
             from: "parent",
             to: "#pkg-recovery",
+        },
+    ],
+    expose: [
+        {
+            protocol: "fuchsia.recovery.android.Updater",
+            from: "self",
         },
     ],
 }

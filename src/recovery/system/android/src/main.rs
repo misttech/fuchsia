@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Error;
+use anyhow::{Context as _, Error};
 use carnelian::app::ViewCreationParameters;
 use carnelian::color::Color;
 use carnelian::drawing::{DisplayRotation, FontFace};
@@ -20,7 +20,13 @@ use carnelian::{
 };
 use euclid::size2;
 use fidl_fuchsia_input_report::ConsumerControlButton;
+use fidl_fuchsia_recovery_android::{UpdaterRequest, UpdaterRequestStream};
 use fuchsia_async as fasync;
+use fuchsia_component::server::ServiceFs;
+use futures::channel::mpsc;
+use futures::lock::Mutex;
+use futures::{SinkExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
+use std::sync::Arc;
 
 mod menu;
 use menu::Menu;
@@ -40,11 +46,18 @@ const MENU_SELECTED_COLOR: Color = Color::white();
 
 struct RecoveryAppAssistant {
     display_rotation: DisplayRotation,
+    sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
 }
 
 impl RecoveryAppAssistant {
-    fn new(display_rotation: DisplayRotation) -> Self {
-        Self { display_rotation }
+    fn new(
+        display_rotation: DisplayRotation,
+        sideload_request_receiver: mpsc::Receiver<UpdaterRequest>,
+    ) -> Self {
+        Self {
+            display_rotation,
+            sideload_request_receiver: Arc::new(Mutex::new(sideload_request_receiver)),
+        }
     }
 }
 
@@ -57,7 +70,11 @@ impl AppAssistant for RecoveryAppAssistant {
         &mut self,
         params: ViewCreationParameters,
     ) -> Result<ViewAssistantPtr, Error> {
-        Ok(Box::new(RecoveryViewAssistant::new(params.view_key, params.app_sender)?))
+        Ok(Box::new(RecoveryViewAssistant::new(
+            params.view_key,
+            params.app_sender,
+            Arc::clone(&self.sideload_request_receiver),
+        )?))
     }
 
     fn filter_config(&mut self, config: &mut carnelian::app::Config) {
@@ -79,10 +96,15 @@ struct RecoveryViewAssistant {
     waiting_for_confirmation: bool,
     // tuple of touch contact id, start location, current location
     active_contact: Option<(input::touch::ContactId, IntPoint, IntPoint)>,
+    sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
 }
 
 impl RecoveryViewAssistant {
-    fn new(view_key: ViewKey, app_sender: AppSender) -> Result<RecoveryViewAssistant, Error> {
+    fn new(
+        view_key: ViewKey,
+        app_sender: AppSender,
+        sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
+    ) -> Result<RecoveryViewAssistant, Error> {
         let font_face = recovery_ui::font::get_default_font_face().clone();
         let logo_file = load_rive(LOGO_IMAGE_PATH).ok();
         let product = std::fs::read_to_string("/config/build-info/product").unwrap_or_default();
@@ -106,6 +128,7 @@ impl RecoveryViewAssistant {
             message: None,
             waiting_for_confirmation: false,
             active_contact: None,
+            sideload_request_receiver,
         })
     }
 
@@ -134,7 +157,7 @@ impl RecoveryViewAssistant {
                 self.view_sender.queue_message(RecoveryMessages::RebootBootloader);
             }
             menu::MenuItem::Sideload => {
-                self.log("Applying update from ADB...");
+                self.log("Now send the package you want to apply to the device with \"adb sideload <filename>\"...");
                 self.view_sender.queue_message(RecoveryMessages::Sideload);
             }
             menu::MenuItem::PowerOff => {
@@ -513,11 +536,25 @@ impl ViewAssistant for RecoveryViewAssistant {
             }
             RecoveryMessages::Sideload => {
                 let view_sender = self.view_sender.clone();
+                let sideload_request_receiver = Arc::clone(&self.sideload_request_receiver);
                 fasync::Task::local(async move {
-                    if let Err(e) = update::apply_update().await {
+                    let mut receiver = sideload_request_receiver.lock().await;
+                    let Some(request) = receiver.next().await else {
+                        log::error!("Sideload request sender dropped");
+                        return;
+                    };
+                    let UpdaterRequest::Update { manifest_url, responder } = request;
+
+                    view_sender.queue_message(RecoveryMessages::Log(format!(
+                        "Applying update from ADB..."
+                    )));
+                    if let Err(e) = update::apply_update(&manifest_url).await {
                         view_sender.queue_message(RecoveryMessages::Log(format!(
                             "Failed to apply update: {e:#}"
                         )));
+                    }
+                    if let Err(e) = responder.send() {
+                        log::error!("Error sending response for Update: {e:?}");
                     }
                     view_sender.queue_message(RecoveryMessages::TaskDone);
                 })
@@ -561,6 +598,16 @@ enum RecoveryMessages {
     WipeData,
 }
 
+async fn run_updater_service(
+    mut stream: UpdaterRequestStream,
+    mut sender: mpsc::Sender<UpdaterRequest>,
+) -> Result<(), Error> {
+    while let Some(request) = stream.try_next().await.context("updater request stream")? {
+        sender.send(request).await.context("send request to UI task")?;
+    }
+    Ok(())
+}
+
 #[fuchsia::main]
 fn main() -> Result<(), Error> {
     log::info!("recovery-android started.");
@@ -580,7 +627,21 @@ fn main() -> Result<(), Error> {
 
     App::run(Box::new(move |_| {
         Box::pin(async move {
-            let assistant = Box::new(RecoveryAppAssistant::new(display_rotation));
+            let (sideload_request_sender, sideload_request_receiver) = mpsc::channel(1);
+
+            let mut fs = ServiceFs::new_local();
+            fs.dir("svc").add_fidl_service(move |stream| {
+                let sender = sideload_request_sender.clone();
+                fasync::Task::local(run_updater_service(stream, sender).unwrap_or_else(|e| {
+                    log::error!("Updater service failed: {e:#}");
+                }))
+                .detach()
+            });
+            fs.take_and_serve_directory_handle()?;
+            fasync::Task::local(fs.collect()).detach();
+
+            let assistant =
+                Box::new(RecoveryAppAssistant::new(display_rotation, sideload_request_receiver));
             Ok::<AppAssistantPtr, Error>(assistant)
         })
     }))

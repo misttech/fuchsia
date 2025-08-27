@@ -8,5 +8,10 @@
             from: "#network",
             to: "#adb-services",
         },
+        {
+            protocol: "fuchsia.recovery.android.Updater",
+            from: "#system_recovery",
+            to: "#adb-services",
+        },
     ],
 }

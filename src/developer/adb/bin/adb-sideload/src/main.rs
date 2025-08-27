@@ -4,7 +4,9 @@
 
 use anyhow::{Context as _, Error};
 use fidl_fuchsia_hardware_adb::{ProviderMarker, ProviderRequest, ProviderRequestStream};
+use fidl_fuchsia_recovery_android::UpdaterMarker;
 use fuchsia_async as fasync;
+use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_fs::file::{AsyncReadAt, AsyncReadAtExt as _};
 use futures::{StreamExt as _, TryFutureExt as _};
@@ -56,9 +58,12 @@ impl SideloadServer {
                     http_server::start_server(archive).context("Failed to start http server")?;
                 let server_task = fasync::Task::spawn(server_fut);
                 log::info!("http server listening on port {}", addr.port());
-                // TODO(https://fxbug.dev/419106573): send the port to recovery-android, and then wait
-                // for a signal that update is done.
-                let () = futures::future::pending().await;
+                let updater = connect_to_protocol::<UpdaterMarker>()
+                    .context("Failed to connect to updater")?;
+                updater
+                    .update(&format!("http://localhost:{}/ota_manifest.json", addr.port()))
+                    .await?;
+                log::info!("Shutting down http server");
                 let far = close_fn();
                 let () = server_task.await.context("server task")?;
                 let far =

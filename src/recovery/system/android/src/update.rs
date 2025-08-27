@@ -5,11 +5,7 @@
 use anyhow::{Context, Error};
 use isolated_swd::updater::Updater;
 
-pub async fn apply_update() -> Result<(), Error> {
+pub async fn apply_update(url: &str) -> Result<(), Error> {
     let mut updater = Updater::new().context("Failed to create updater")?;
-    // TODO(https://fxbug.dev/419106573): get the server address from adb sideload
-    updater
-        .install_update(Some(&"http://localhost:8083/ota_manifest.json".parse().unwrap()))
-        .await
-        .context("Failed to apply update")
+    updater.install_update(Some(&url.parse()?)).await.context("Failed to apply update")
 }

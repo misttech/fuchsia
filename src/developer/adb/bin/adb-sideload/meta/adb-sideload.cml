@@ -15,6 +15,10 @@
             protocol: "fuchsia.posix.socket.Provider",
             from: "parent",
         },
+        {
+            protocol: "fuchsia.recovery.android.Updater",
+            from: "parent",
+        },
     ],
     expose: [
         {

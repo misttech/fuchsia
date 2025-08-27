@@ -12,6 +12,7 @@ rustc_binary("adb-sideload") {
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.adb:fuchsia.hardware.adb_rust",
+    "//sdk/fidl/fuchsia.recovery.android:fuchsia.recovery.android_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fidl_server",
