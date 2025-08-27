@@ -55,12 +55,11 @@ mod arch32 {
     use crate::task::CurrentTask;
     use crate::task::syscalls::do_clone;
     use linux_uapi::clone_args;
-    use starnix_logging::track_stub;
     use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::errors::Errno;
     use starnix_uapi::signals::SIGCHLD;
     use starnix_uapi::user_address::UserAddress;
-    use starnix_uapi::{CLONE_VFORK, CLONE_VM, tid_t};
+    use starnix_uapi::{CLONE_VFORK, CLONE_VM, error, tid_t};
 
     #[allow(non_snake_case)]
     pub fn sys_arch32_ARM_set_tls(
@@ -75,13 +74,17 @@ mod arch32 {
     #[allow(non_snake_case)]
     pub fn sys_arch32_ARM_cacheflush(
         _locked: &mut Locked<Unlocked>,
-        _current_task: &mut CurrentTask,
-        _start_addr: UserAddress,
-        _end_addr: UserAddress,
+        current_task: &mut CurrentTask,
+        start_addr: UserAddress,
+        end_addr: UserAddress,
         _: u64,
     ) -> Result<(), Errno> {
-        track_stub!(TODO("https://fxbug.dev/415739883"), "Implement ARM_cacheflush syscall");
-        Ok(())
+        // start_addr and end_addr should represent a range of addresses within the 32 bit
+        // address range.
+        if end_addr < start_addr {
+            return error!(EINVAL);
+        }
+        current_task.mm()?.cache_flush(start_addr..end_addr)
     }
 
     pub fn sys_arch32_vfork(

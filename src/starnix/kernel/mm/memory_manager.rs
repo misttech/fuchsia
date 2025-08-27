@@ -2194,6 +2194,29 @@ impl MemoryManagerState {
             }
         }
     }
+
+    fn cache_flush(&self, range: Range<UserAddress>) -> Result<(), Errno> {
+        let mut addr = range.start;
+        let size = range.end - range.start;
+        for (mapping, len) in self.get_contiguous_mappings_at(addr, size)? {
+            if !mapping.can_read() {
+                return error!(EFAULT);
+            }
+            // SAFETY: This is operating on a readable restricted mode mapping and will not fault.
+            zx::Status::ok(unsafe {
+                zx::sys::zx_cache_flush(
+                    addr.ptr() as *const u8,
+                    len,
+                    zx::sys::ZX_CACHE_FLUSH_DATA | zx::sys::ZX_CACHE_FLUSH_INSN,
+                )
+            })
+            .map_err(impossible_error)?;
+
+            addr = (addr + len).unwrap(); // unwrap since we're iterating within the address space.
+        }
+        // Did we flush the entire range?
+        if addr != range.end { error!(EFAULT) } else { Ok(()) }
+    }
 }
 
 fn create_user_vmar(vmar: &zx::Vmar, vmar_info: &zx::VmarInfo) -> Result<zx::Vmar, zx::Status> {
@@ -2467,6 +2490,11 @@ impl MemoryManager {
     /// Obtain a reference to this memory manager that can be used from another thread.
     pub fn as_remote(self: &Arc<Self>) -> RemoteMemoryManager {
         RemoteMemoryManager::new(self.clone())
+    }
+
+    /// Performs a data and instruction cache flush over the given address range.
+    pub fn cache_flush(&self, range: Range<UserAddress>) -> Result<(), Errno> {
+        self.state.read().cache_flush(range)
     }
 }
 

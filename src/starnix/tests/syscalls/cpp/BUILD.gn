@@ -53,6 +53,7 @@ syscall_tests = [
   "aspace_test",
   "binder_test",
   "bpf_test",
+  "cache_flush_test",
   "capabilities_test",
   "cgroup_freezer_test",
   "cgroup_test",
