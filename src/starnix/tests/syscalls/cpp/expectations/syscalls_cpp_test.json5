@@ -52,9 +52,6 @@
                 // TODO(https://fxbug.dev/399939974): Re-enable after one-big vmo is enabled
                 "ProcessMemoryReleaseTest.SuccessfulRelease",
 
-                // TODO(https://fxbug.dev/438263380)
-                "TimerFD.RealtimeAlarm",
-
                 // TODO(https://fxbug.dev/441300776)
                 "PerfEventOpenTest.MmapFirstRecordPageIsValid",
             ],

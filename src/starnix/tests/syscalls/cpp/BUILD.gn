@@ -391,6 +391,9 @@ generated_expectations_file("syscalls_cpp_test_expectations") {
     "expectations/syscalls_cpp_test.json5",
     "expectations/syscalls_cpp_test_${current_cpu}.json5",
   ]
+  if (current_toolchain == target_linux_arch32_toolchain) {
+    includes += [ "expectations/syscalls_cpp_test_arch32.json5" ]
+  }
 }
 
 generated_expectations_file("linux_cpp_test_expectations") {
