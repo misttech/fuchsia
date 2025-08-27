@@ -41,7 +41,7 @@ pub enum Response {
     Error,
 }
 
-/// Scheduling a hrtimer with this deadline will expire it.
+/// Scheduling a hrtimer with this deadline will expire it immediately.
 pub const MAGIC_EXPIRE_DEADLINE: i64 = 424242;
 
 /// Makes sure that a dropped responder is properly responded to.
@@ -80,6 +80,140 @@ fn signal_handle<H: HandleBased>(
     })
 }
 
+// Describes specific handler variants. Variants are only slightly different, which makes it
+// sensible to unify.
+enum HandlerVariant {
+    SetAndWait {
+        responder: fta::WakeAlarmsSetAndWaitResponder,
+    },
+    Set {
+        responder: fta::WakeAlarmsSetResponder,
+        notifier: fidl::endpoints::ClientEnd<fta::NotifierMarker>,
+    },
+}
+
+async fn handle_set_like_method(
+    method_name: &str,
+    message_counter: &zx::Counter,
+    responders: &mut HashMap<String, ResponderCleanup>,
+    deadline: zx::BootInstant,
+    mode: fta::SetMode,
+    alarm_id: String,
+    response_type: &Response,
+    handler_variant: HandlerVariant,
+) {
+    log::debug!(
+        "serve_fake_wake_alarms: {}: alarm_id: {:?}: deadline: {:?}",
+        method_name,
+        alarm_id,
+        deadline
+    );
+    defer! {
+        if let fta::SetMode::NotifySetupDone(setup_done) = mode {
+            // Caller blocks until this event is signaled.
+            signal_handle(&setup_done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).unwrap();
+        }
+    };
+    match response_type {
+        // Two possibilities: a "magic" expire deadline, which expires right away, or
+        // a "never" expiring deadline, regardless of the actual specified deadline.
+        Response::Delayed => {
+            if deadline.into_nanos() == MAGIC_EXPIRE_DEADLINE {
+                log::debug!(
+                    "serve_fake_wake_alarms: {method_name}: responding immediately to magic deadline"
+                );
+                // If any responders are removed, then add one return
+                // message for each.
+                let r_count_before = responders.len();
+                responders.retain(|k, _| *k != alarm_id);
+                let r_count_after = responders.len();
+
+                message_counter
+                    .add(
+                        (r_count_before - r_count_after).try_into().expect("should be convertible"),
+                    )
+                    .expect("add to message_counter");
+                let (_, peer) = zx::EventPair::create();
+                message_counter.add(1).expect("add 1 to message counter");
+                match handler_variant {
+                    HandlerVariant::SetAndWait { responder } => {
+                        responder.send(Ok(peer)).expect("send FIDL response");
+                    }
+                    HandlerVariant::Set { responder, notifier } => {
+                        responder.send(Ok(())).unwrap();
+                        notifier
+                            .into_proxy()
+                            .notify(&alarm_id, peer)
+                            .expect("send Notify FIDL request");
+                    }
+                }
+            } else {
+                log::debug!("serve_fake_wake_alarms: {method_name}: will not respond");
+                let removed = match handler_variant {
+                    HandlerVariant::SetAndWait { responder } => responders.insert(
+                        alarm_id.clone(),
+                        ResponderCleanup { alarm_id, responder: Some(responder), notifier: None },
+                    ),
+                    HandlerVariant::Set { responder, notifier } => {
+                        responder.send(Ok(())).unwrap();
+                        responders.insert(
+                            alarm_id.clone(),
+                            ResponderCleanup {
+                                alarm_id,
+                                responder: None,
+                                notifier: Some(notifier),
+                            },
+                        )
+                    }
+                };
+                // If some responder was removed, add a return message for it to the message
+                // counter.
+                if let Some(_) = removed {
+                    message_counter.add(1).unwrap();
+                }
+            }
+        }
+        Response::Immediate => {
+            // Manufacture a token to return, not relevant for the unit tests,
+            // so no functionality attributed to it.
+            let (_ignored, fake_lease) = zx::EventPair::create();
+            message_counter.add(1).unwrap();
+
+            match handler_variant {
+                HandlerVariant::SetAndWait { responder } => {
+                    responder.send(Ok(fake_lease)).expect("infallible");
+                }
+                HandlerVariant::Set { responder, notifier } => {
+                    responder.send(Ok(())).expect("send FIDL response");
+                    notifier
+                        .into_proxy()
+                        .notify(&alarm_id, fake_lease)
+                        .expect("send Notify FIDL request");
+                }
+            }
+            log::debug!("serve_fake_wake_alarms: {method_name}: test fake responded immediately");
+        }
+        Response::Error => {
+            message_counter.add(1).unwrap();
+            match handler_variant {
+                HandlerVariant::SetAndWait { responder } => {
+                    responder.send(Err(fta::WakeAlarmsError::Unspecified)).expect("infallible");
+                }
+                HandlerVariant::Set { responder, notifier } => {
+                    // Even if the end result is an error, the responder gets an OK, but
+                    // the notifier is told there was an error.
+                    responder.send(Ok(())).expect("send FIDL response");
+                    notifier
+                        .into_proxy()
+                        .notify_error(&alarm_id, fta::WakeAlarmsError::Unspecified)
+                        .expect("infallible");
+                }
+            }
+            log::debug!("serve_fake_wake_alarms: {method_name}: Responded with error");
+        }
+    }
+}
+
 /// Serves a fake `fuchsia.time.alarms/Wake` API. The behavior is simplistic when compared to
 /// the "real" implementation in that it never actually expires alarms on its own, and has
 /// fixed behavior for each scheduled alarm, which is selected at the beginning of the test.
@@ -113,73 +247,17 @@ pub async fn serve_fake_wake_alarms(
 
                 match request {
                     fta::WakeAlarmsRequest::SetAndWait { mode, responder, alarm_id, deadline } => {
-                        log::debug!(
-                            "serve_fake_wake_alarms: SetAndWait: alarm_id: {:?}: deadline: {:?}",
+                        handle_set_like_method(
+                            "set_and_wait",
+                            &message_counter,
+                            &mut responders,
+                            deadline,
+                            mode,
                             alarm_id,
-                            deadline
-                        );
-                        defer! {
-                            if let fta::SetMode::NotifySetupDone(setup_done) = mode {
-                                // Caller blocks until this event is signaled.
-                                signal_handle(&setup_done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).unwrap();
-                            }
-                        };
-                        match response_type {
-                            Response::Delayed => {
-                                // Just don't respond, forever.
-                                log::debug!("serve_fake_wake_alarms: SetAndWait: will not respond");
-                                // A special value that causes alarm expiry.
-                                if deadline.into_nanos() == MAGIC_EXPIRE_DEADLINE {
-                                    // If any responders are removed, then add one return
-                                    // message for each.
-                                    let r_count_before = responders.len();
-                                    responders.retain(|k, _| *k != alarm_id);
-                                    let r_count_after = responders.len();
-
-                                    message_counter
-                                        .add(
-                                            (r_count_before - r_count_after)
-                                                .try_into()
-                                                .expect("should be convertible"),
-                                        )
-                                        .expect("add to message_counter");
-                                    let (_, peer) = zx::EventPair::create();
-                                    message_counter.add(1).expect("add 1 to message counter");
-                                    responder.send(Ok(peer)).expect("send FIDL response");
-                                } else {
-                                    let removed = responders.insert(
-                                        alarm_id.clone(),
-                                        ResponderCleanup {
-                                            alarm_id,
-                                            responder: Some(responder),
-                                            notifier: None,
-                                        },
-                                    );
-                                    // If a responder was removed, add a return message for it.
-                                    if let Some(_) = removed {
-                                        message_counter.add(1).unwrap();
-                                    }
-                                }
-                            }
-                            Response::Immediate => {
-                                // Manufacture a token to return, not relevant for the test.
-                                let (_ignored, fake_lease) = zx::EventPair::create();
-                                message_counter.add(1).unwrap();
-                                responder.send(Ok(fake_lease)).expect("infallible");
-                                log::debug!(
-                                    "serve_fake_wake_alarms: SetAndWait: test fake responded immediately"
-                                );
-                            }
-                            Response::Error => {
-                                message_counter.add(1).unwrap();
-                                responder
-                                    .send(Err(fta::WakeAlarmsError::Unspecified))
-                                    .expect("infallible");
-                                log::debug!(
-                                    "serve_fake_wake_alarms: SetAndWait: Responded with error"
-                                );
-                            }
-                        }
+                            &response_type,
+                            HandlerVariant::SetAndWait { responder },
+                        )
+                        .await;
                     }
                     fta::WakeAlarmsRequest::Set {
                         notifier,
@@ -188,80 +266,17 @@ pub async fn serve_fake_wake_alarms(
                         alarm_id,
                         responder,
                     } => {
-                        log::debug!(
-                            "serve_fake_wake_alarms: Set: alarm_id: {:?}: deadline: {:?}",
+                        handle_set_like_method(
+                            "set",
+                            &message_counter,
+                            &mut responders,
+                            deadline,
+                            mode,
                             alarm_id,
-                            deadline
-                        );
-                        defer! {
-                            if let fta::SetMode::NotifySetupDone(setup_done) = mode {
-                                // Caller blocks until this event is signaled.
-                                signal_handle(&setup_done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).unwrap();
-                            }
-                        };
-                        match response_type {
-                            Response::Delayed => {
-                                // Just don't respond, forever.
-                                log::debug!("serve_fake_wake_alarms: Set: will not respond");
-                                // A special value that causes alarm expiry.
-                                if deadline.into_nanos() == MAGIC_EXPIRE_DEADLINE {
-                                    responder.send(Ok(())).expect("send FIDL response");
-
-                                    // If any responders are removed, then add one return
-                                    // message for each.
-                                    let r_count_before = responders.len();
-                                    responders.retain(|k, _| *k != alarm_id);
-                                    let r_count_after = responders.len();
-
-                                    message_counter
-                                        .add(
-                                            (r_count_before - r_count_after)
-                                                .try_into()
-                                                .expect("should be convertible"),
-                                        )
-                                        .expect("add to message_counter");
-                                    let (_, peer) = zx::EventPair::create();
-                                    message_counter.add(1).expect("add 1 to message counter");
-                                    notifier
-                                        .into_proxy()
-                                        .notify(&alarm_id, peer)
-                                        .expect("send Notify FIDL request");
-                                } else {
-                                    let removed = responders.insert(
-                                        alarm_id.clone(),
-                                        ResponderCleanup {
-                                            alarm_id,
-                                            responder: None,
-                                            notifier: Some(notifier),
-                                        },
-                                    );
-                                    // If a responder was removed, add a return message for it.
-                                    if let Some(_) = removed {
-                                        message_counter.add(1).unwrap();
-                                    }
-                                }
-                            }
-                            Response::Immediate => {
-                                // Manufacture a token to return, not relevant for the test.
-                                let (_ignored, fake_lease) = zx::EventPair::create();
-                                message_counter.add(1).unwrap();
-                                responder.send(Ok(())).expect("send FIDL response");
-                                notifier
-                                    .into_proxy()
-                                    .notify(&alarm_id, fake_lease)
-                                    .expect("send Notify FIDL request");
-                                log::debug!(
-                                    "serve_fake_wake_alarms: Set: test fake responded immediately"
-                                );
-                            }
-                            Response::Error => {
-                                message_counter.add(1).unwrap();
-                                responder
-                                    .send(Err(fta::WakeAlarmsError::Unspecified))
-                                    .expect("infallible");
-                                log::debug!("serve_fake_wake_alarms: Set: Responded with error");
-                            }
-                        }
+                            &response_type,
+                            HandlerVariant::Set { responder, notifier },
+                        )
+                        .await;
                     }
                     fta::WakeAlarmsRequest::Cancel { alarm_id, .. } => {
                         let r_count_before = responders.len();
