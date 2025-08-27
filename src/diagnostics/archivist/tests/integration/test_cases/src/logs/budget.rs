@@ -4,15 +4,9 @@
 
 use crate::{test_topology, utils};
 use diagnostics_reader::{ArchiveReader, RetryConfig};
+use fidl_fuchsia_archivist_test as ftest;
 use fidl_fuchsia_diagnostics_types::Severity;
 use futures::StreamExt;
-use std::time::Duration;
-use {fidl_fuchsia_archivist_test as ftest, fuchsia_async as fasync};
-
-// This should match the default time defined in shared_buffer, but that
-// value can't be directly depended on due to CTF constraints at the time
-// of writing. Archivist depends on a HEAD-only API.
-const DEFAULT_ARCHIVIST_SLEEP_TIME: Duration = Duration::from_millis(200);
 
 const SPAM_COUNT: usize = 1001;
 
@@ -92,8 +86,6 @@ async fn test_budget() {
             for message in expected.drain(..) {
                 assert_eq!(message, observed_logs.next().await.unwrap().msg().unwrap());
             }
-
-            fasync::Timer::new(DEFAULT_ARCHIVIST_SLEEP_TIME).await;
         }
     }
 

@@ -14,15 +14,15 @@ use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
 use fuchsia_async as fasync;
 use fuchsia_async::condition::{Condition, ConditionGuard, WakerEntry};
 use fuchsia_sync::Mutex;
-use futures::channel::oneshot;
 use futures::Stream;
+use futures::channel::oneshot;
 use log::debug;
 use pin_project::{pin_project, pinned_drop};
-use ring_buffer::{self, ring_buffer_record_len, RingBuffer};
+use ring_buffer::{self, RingBuffer, ring_buffer_record_len};
 use std::collections::VecDeque;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut, Range};
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -799,6 +799,9 @@ impl ContainerBuffer {
 
     /// Returns a cursor.
     pub fn cursor(&self, mode: StreamMode) -> Option<Cursor> {
+        // NOTE: It is not safe to use on_inactive in this function because this function can be
+        // called whilst locks are held which are the same locks that the on_inactive notification
+        // uses.
         let mut inner = InnerGuard::new(&self.shared_buffer);
         let Some(mut container) = inner.containers.get_mut(self.container_id) else {
             // We've hit a race where the container has terminated.
@@ -947,7 +950,7 @@ impl Stream for Cursor {
         let mut inner = InnerGuard::new(this.buffer);
 
         let mut head = inner.ring_buffer.head();
-        inner.update_message_ids(head);
+        inner.check_space(head);
 
         let mut container = match inner.containers.get(*this.container_id) {
             None => return Poll::Ready(None),
@@ -1146,12 +1149,12 @@ struct Socket {
 
 #[cfg(test)]
 mod tests {
-    use super::{create_ring_buffer, SharedBuffer, SharedBufferOptions};
+    use super::{SharedBuffer, SharedBufferOptions, create_ring_buffer};
     use crate::logs::shared_buffer::LazyItem;
     use crate::logs::stats::LogStreamStats;
     use crate::logs::testing::make_message;
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl_fuchsia_diagnostics::StreamMode;
     use fuchsia_async as fasync;
     use fuchsia_async::TimeoutExt;
@@ -1160,12 +1163,12 @@ mod tests {
     use futures::channel::mpsc;
     use futures::future::OptionFuture;
     use futures::stream::{FuturesUnordered, StreamExt as _};
-    use futures::{poll, FutureExt};
+    use futures::{FutureExt, poll};
     use ring_buffer::MAX_MESSAGE_SIZE;
     use std::future::poll_fn;
     use std::pin::pin;
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::task::Poll;
     use std::time::Duration;
 
@@ -1285,23 +1288,33 @@ mod tests {
         let mut cursor = pin!(container_buffer.cursor(StreamMode::Snapshot).unwrap());
 
         let mut j;
-        assert_matches!(cursor.next().await,
-        Some(LazyItem::Next(item)) => {
-            j = item.timestamp().into_nanos();
-            let msg = make_message(&format!("{j}"),
-                                   None,
-                                   item.timestamp());
-            assert_eq!(&*item, &msg);
-        });
+        let mut item = cursor.next().await;
+        // Calling `cursor.next()` can cause messages to be rolled out, so skip those if that has
+        // happened.
+        if let Some(LazyItem::ItemsRolledOut(_, _)) = item {
+            item = cursor.next().await;
+        }
+        assert_matches!(
+            item,
+            Some(LazyItem::Next(item)) => {
+                j = item.timestamp().into_nanos();
+                let msg = make_message(&format!("{j}"),
+                                       None,
+                                       item.timestamp());
+                assert_eq!(&*item, &msg);
+            }
+        );
 
         j += 1;
         while j != i {
-            assert_matches!(cursor.next().await,
-            Some(LazyItem::Next(item)) => {
-                assert_eq!(&*item, &make_message(&format!("{j}"),
-                                                 None,
-                                                 item.timestamp()));
-            });
+            assert_matches!(
+                cursor.next().await,
+                Some(LazyItem::Next(item)) => {
+                    assert_eq!(&*item, &make_message(&format!("{j}"),
+                                                     None,
+                                                     item.timestamp()));
+                }
+            );
             j += 1;
         }
 
