@@ -5,8 +5,8 @@
 use super::super::task::JoinHandle;
 use super::atomic_future::{AbortAndDetachResult, AtomicFutureHandle};
 use super::common::{Executor, TaskHandle};
-use crate::condition::{Condition, ConditionGuard, WakerEntry};
 use crate::EHandle;
+use crate::condition::{Condition, ConditionGuard, WakerEntry};
 use fuchsia_sync::Mutex;
 use futures::Stream;
 use pin_project_lite::pin_project;
@@ -22,7 +22,7 @@ use std::mem::{self, ManuallyDrop};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
-use std::task::{ready, Context, Poll, Waker};
+use std::task::{Context, Poll, Waker, ready};
 use std::{fmt, hash};
 
 //
@@ -1184,7 +1184,7 @@ mod state {
                 self.on_task_removed(1);
                 if !task.is_detached() {
                     let maybe_waker = self.results.task_did_finish(task);
-                    self.1 .0.extend(maybe_waker);
+                    self.1.0.extend(maybe_waker);
                 }
             }
         }
@@ -1204,7 +1204,7 @@ mod state {
 
         fn on_task_removed(&mut self, num_wakers_hint: usize) {
             if self.all_tasks.is_empty() {
-                ScopeState::on_last_task_removed(&mut self.0, num_wakers_hint, &mut self.1 .0)
+                ScopeState::on_last_task_removed(&mut self.0, num_wakers_hint, &mut self.1.0)
             }
         }
 
@@ -1626,16 +1626,16 @@ mod tests {
 
     use super::*;
     use crate::{
-        yield_now, EHandle, LocalExecutor, SendExecutorBuilder, SpawnableFuture, Task,
-        TestExecutor, Timer,
+        EHandle, LocalExecutor, SendExecutorBuilder, SpawnableFuture, Task, TestExecutor, Timer,
+        yield_now,
     };
     use fuchsia_sync::{Condvar, Mutex};
     use futures::channel::mpsc;
     use futures::{FutureExt, StreamExt};
     use std::future::pending;
-    use std::pin::{pin, Pin};
-    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+    use std::pin::{Pin, pin};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
     use std::task::{Context, Poll};
     use std::time::Duration;
 
@@ -2345,26 +2345,33 @@ mod tests {
     #[test]
     fn test_cancel_waits() {
         let mut executor = SendExecutorBuilder::new().num_threads(2).build();
-        let running = Arc::new((Mutex::new(false), Condvar::new()));
+        let state = Arc::new((Mutex::new(0), Condvar::new()));
         let task = {
-            let running = running.clone();
+            let state = state.clone();
             executor.root_scope().compute(async move {
-                *running.0.lock() = true;
-                running.1.notify_all();
+                *state.0.lock() = 1;
+                state.1.notify_all();
+                // Wait till the other task has noticed we changed state to 1.
+                state.1.wait_while(&mut state.0.lock(), |state| *state == 1);
                 std::thread::sleep(std::time::Duration::from_millis(10));
-                *running.0.lock() = false;
+                *state.0.lock() = 3;
                 "foo"
             })
         };
         executor.run(async move {
-            {
-                let mut guard = running.0.lock();
-                while !*guard {
-                    running.1.wait(&mut guard);
+            state.1.wait_while(&mut state.0.lock(), |state| {
+                if *state == 1 {
+                    // Tell the other task we've noticed state 1.
+                    *state = 2;
+                    false
+                } else {
+                    true
                 }
-            }
+            });
+            state.1.notify_all();
             assert_eq!(task.abort().await, Some("foo"));
-            assert!(!*running.0.lock());
+            // The other task should have finished and set state to 3.
+            assert_eq!(*state.0.lock(), 3);
         });
     }
 
