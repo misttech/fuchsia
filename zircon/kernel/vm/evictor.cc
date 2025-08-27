@@ -296,7 +296,7 @@ Evictor::EvictedPageCounts Evictor::EvictFromPreloadedTarget() {
   EvictedPageCounts counts = EvictFromTargetInternal(target);
   {
     Guard<MonitoredSpinLock, IrqSave> guard{&lock_, SOURCE_TAG};
-    uint64_t total = counts.compressed + counts.discardable + counts.pager_backed;
+    uint64_t total = counts.non_loaned_total();
     // Clear the eviction target but retain any min pages that we might still need to free in a
     // subsequent eviction attempt.
     eviction_target_ = {};
@@ -377,7 +377,7 @@ uint64_t Evictor::EvictSynchronous(uint64_t min_mem_to_free, uint64_t free_mem_t
   };
 
   auto evicted_counts = EvictFromExternalTarget(target);
-  return evicted_counts.pager_backed + evicted_counts.discardable + evicted_counts.compressed;
+  return evicted_counts.non_loaned_total();
 }
 
 void Evictor::EvictAsynchronous(uint64_t min_mem_to_free, uint64_t free_mem_target,
@@ -422,8 +422,7 @@ Evictor::EvictedPageCounts Evictor::EvictUntilTargetsMet(uint64_t min_pages_to_e
     }
 
     EvictedPageCounts pages_freed = EvictPageQueues(pages_to_free, level);
-    const uint64_t non_loaned_evicted =
-        pages_freed.pager_backed + pages_freed.compressed + pages_freed.discardable;
+    const uint64_t non_loaned_evicted = pages_freed.non_loaned_total();
     total_evicted_counts += pages_freed;
     total_non_loaned_pages_freed += non_loaned_evicted;
 
@@ -452,7 +451,7 @@ Evictor::EvictedPageCounts Evictor::EvictPageQueues(uint64_t target_pages,
   ReclaimFailureStats failure_stats;
   // Evict until we've counted enough pages to hit the target_pages. Explicitly do not consider
   // pager_backed_loaned towards our total, as loaned pages do not go to the free memory pool.
-  while (counts.pager_backed + counts.compressed + counts.discardable < target_pages) {
+  while (counts.non_loaned_total() < target_pages) {
     // Use the helper to perform a single 'step' of eviction.
     auto reclaimed = EvictPageQueuesHelper(compression, eviction_level);
     // An empty return from the helper indicates that there are no more eviction candidates, so
