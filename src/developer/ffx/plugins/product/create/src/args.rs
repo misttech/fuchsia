@@ -44,10 +44,10 @@ ffx product-bundle create minimal.arm64
     ",
     example = "\
     // Create a minimal.arm64 product bundle using prebuilts in CIPD.
-ffx product-bundle create
-    --platform 29.20250812.5.1
-    --product-config cipd://fuchsia/assembly/products/minimal@version:29.20250812.5.1
-    --board-config cipd://fuchsia/assembly/boards/arm64@latest
+ffx product-bundle create \\
+    --platform 29.20250826.6.1 \\
+    --product-config minimal \\
+    --board-config cipd://fuchsia/assembly/boards/arm64@29.20250826.6.1
     "
 )]
 pub struct CreateCommand {
