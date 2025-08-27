@@ -54,6 +54,9 @@
 
                 // TODO(https://fxbug.dev/438263380)
                 "TimerFD.RealtimeAlarm",
+
+                // TODO(https://fxbug.dev/441300776)
+                "PerfEventOpenTest.MmapFirstRecordPageIsValid",
             ],
         },
         {
