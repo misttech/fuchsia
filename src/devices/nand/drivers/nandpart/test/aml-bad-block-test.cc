@@ -216,14 +216,12 @@ TEST(AmlBadBlockTest, GetBadBlockListTest) {
       .table_entries = table_entries,
   };
 
-  fbl::RefPtr<BadBlock> bad_block;
-  zx_status_t status = BadBlock::Create(MakeBadBlockConfig(&context), &bad_block);
-  ASSERT_OK(status);
+  zx::result bad_block = BadBlock::Create(MakeBadBlockConfig(&context));
+  ASSERT_OK(bad_block);
 
-  fbl::Array<uint32_t> bad_blocks;
-  status = bad_block->GetBadBlockList(4, 10, &bad_blocks);
-  ASSERT_OK(status);
-  EXPECT_EQ(bad_blocks.size(), 0);
+  zx::result bad_blocks = bad_block->GetBadBlockList(4, 10);
+  ASSERT_OK(bad_blocks);
+  EXPECT_EQ(bad_blocks.value().size(), 0u);
 }
 
 TEST(AmlBadBlockTest, GetBadBlockListWithEntriesTest) {
@@ -236,17 +234,15 @@ TEST(AmlBadBlockTest, GetBadBlockListWithEntriesTest) {
       .table_entries = table_entries,
   };
 
-  fbl::RefPtr<BadBlock> bad_block;
-  zx_status_t status = BadBlock::Create(MakeBadBlockConfig(&context), &bad_block);
-  ASSERT_OK(status);
+  zx::result bad_block = BadBlock::Create(MakeBadBlockConfig(&context));
+  ASSERT_OK(bad_block);
 
   auto check_expected = [&bad_block](uint32_t start_block, uint32_t end_block,
                                      fbl::Vector<uint32_t> expected) {
-    fbl::Array<uint32_t> bad_blocks;
-    zx_status_t status = bad_block->GetBadBlockList(start_block, end_block, &bad_blocks);
-    ASSERT_OK(status);
-    ASSERT_EQ(bad_blocks.size(), expected.size());
-    EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(bad_blocks.data()),
+    zx::result bad_blocks = bad_block->GetBadBlockList(start_block, end_block);
+    ASSERT_OK(bad_blocks);
+    ASSERT_EQ(bad_blocks->size(), expected.size());
+    EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(bad_blocks->data()),
                     reinterpret_cast<uint8_t*>(expected.data()), expected.size() * sizeof(uint32_t),
                     "");
   };
@@ -271,14 +267,12 @@ TEST(AmlBadBlockTest, FindBadBlockSecondBlockTest) {
       .table_entries = table_entries,
   };
 
-  fbl::RefPtr<BadBlock> bad_block;
-  zx_status_t status = BadBlock::Create(MakeBadBlockConfig(&context), &bad_block);
-  ASSERT_OK(status);
+  zx::result bad_block = BadBlock::Create(MakeBadBlockConfig(&context));
+  ASSERT_OK(bad_block);
 
-  fbl::Array<uint32_t> bad_blocks;
-  status = bad_block->GetBadBlockList(4, 10, &bad_blocks);
-  ASSERT_OK(status);
-  ASSERT_EQ(bad_blocks.size(), 4);
+  zx::result bad_blocks = bad_block->GetBadBlockList(4, 10);
+  ASSERT_OK(bad_blocks);
+  ASSERT_EQ(bad_blocks.value().size(), 4u);
 }
 
 TEST(AmlBadBlockTest, FindBadBlockLastBlockTest) {
@@ -297,14 +291,12 @@ TEST(AmlBadBlockTest, FindBadBlockLastBlockTest) {
       .table_entries = table_entries,
   };
 
-  fbl::RefPtr<BadBlock> bad_block;
-  zx_status_t status = BadBlock::Create(MakeBadBlockConfig(&context), &bad_block);
-  ASSERT_OK(status);
+  zx::result bad_block = BadBlock::Create(MakeBadBlockConfig(&context));
+  ASSERT_OK(bad_block);
 
-  fbl::Array<uint32_t> bad_blocks;
-  status = bad_block->GetBadBlockList(4, 10, &bad_blocks);
-  ASSERT_OK(status);
-  ASSERT_EQ(bad_blocks.size(), 4);
+  zx::result bad_blocks = bad_block->GetBadBlockList(4, 10);
+  ASSERT_OK(bad_blocks);
+  ASSERT_EQ(bad_blocks.value().size(), 4u);
 }
 
 TEST(AmlBadBlockTest, MarkBlockBadTest) {
@@ -316,16 +308,14 @@ TEST(AmlBadBlockTest, MarkBlockBadTest) {
       .table_entries = table_entries,
   };
 
-  fbl::RefPtr<BadBlock> bad_block;
-  zx_status_t status = BadBlock::Create(MakeBadBlockConfig(&context), &bad_block);
-  ASSERT_OK(status);
+  zx::result bad_block = BadBlock::Create(MakeBadBlockConfig(&context));
+  ASSERT_OK(bad_block);
 
-  status = bad_block->MarkBlockBad(8);
+  bad_block->MarkBlockBad(8);
 
-  fbl::Array<uint32_t> bad_blocks;
-  status = bad_block->GetBadBlockList(4, 10, &bad_blocks);
-  ASSERT_OK(status);
-  EXPECT_EQ(bad_blocks.size(), 1);
+  zx::result bad_blocks = bad_block->GetBadBlockList(4, 10);
+  ASSERT_OK(bad_blocks);
+  EXPECT_EQ(bad_blocks.value().size(), 1u);
 
   // Validate that a new table entry was inserted.
   const auto it = table_entries.find_if(
@@ -349,14 +339,12 @@ TEST(AmlBadBlockTest, FindBadBlockLastPageInvalidTest) {
       .table_entries = table_entries,
   };
 
-  fbl::RefPtr<BadBlock> bad_block;
-  zx_status_t status = BadBlock::Create(MakeBadBlockConfig(&context), &bad_block);
-  ASSERT_OK(status);
+  zx::result bad_block = BadBlock::Create(MakeBadBlockConfig(&context));
+  ASSERT_OK(bad_block);
 
-  fbl::Array<uint32_t> bad_blocks;
-  status = bad_block->GetBadBlockList(4, 10, &bad_blocks);
-  ASSERT_OK(status);
-  ASSERT_EQ(bad_blocks.size(), 3);
+  zx::result bad_blocks = bad_block->GetBadBlockList(4, 10);
+  ASSERT_OK(bad_blocks);
+  ASSERT_EQ(bad_blocks.value().size(), 3u);
 
   // Validate that a new table entry was inserted.
   const auto it = table_entries.find_if(
@@ -378,11 +366,10 @@ TEST(AmlBadBlockTest, FindBadBlockNoValidTest) {
       .table_entries = table_entries,
   };
 
-  fbl::RefPtr<BadBlock> bad_block;
-  zx_status_t status = BadBlock::Create(MakeBadBlockConfig(&context), &bad_block);
-  ASSERT_OK(status);
+  zx::result bad_block = BadBlock::Create(MakeBadBlockConfig(&context));
+  ASSERT_OK(bad_block);
 
-  status = bad_block->MarkBlockBad(4);
+  zx_status_t status = bad_block->MarkBlockBad(4);
   ASSERT_NE(status, ZX_OK);
 }
 
@@ -400,14 +387,12 @@ TEST(AmlBadBlockTest, FindBadBlockBigHoleTest) {
       .table_entries = table_entries,
   };
 
-  fbl::RefPtr<BadBlock> bad_block;
-  zx_status_t status = BadBlock::Create(MakeBadBlockConfig(&context), &bad_block);
-  ASSERT_OK(status);
+  zx::result bad_block = BadBlock::Create(MakeBadBlockConfig(&context));
+  ASSERT_OK(bad_block);
 
-  fbl::Array<uint32_t> bad_blocks;
-  status = bad_block->GetBadBlockList(4, 10, &bad_blocks);
-  ASSERT_OK(status);
-  ASSERT_EQ(bad_blocks.size(), 1);
+  zx::result bad_blocks = bad_block->GetBadBlockList(4, 10);
+  ASSERT_OK(bad_blocks);
+  ASSERT_EQ(bad_blocks.value().size(), 1u);
 }
 
 TEST(AmlBadBlockTest, MarkBlockBadFullBlockTest) {
@@ -420,16 +405,14 @@ TEST(AmlBadBlockTest, MarkBlockBadFullBlockTest) {
       .table_entries = table_entries,
   };
 
-  fbl::RefPtr<BadBlock> bad_block;
-  zx_status_t status = BadBlock::Create(MakeBadBlockConfig(&context), &bad_block);
-  ASSERT_OK(status);
+  zx::result bad_block = BadBlock::Create(MakeBadBlockConfig(&context));
+  ASSERT_OK(bad_block);
 
-  status = bad_block->MarkBlockBad(8);
+  bad_block->MarkBlockBad(8);
 
-  fbl::Array<uint32_t> bad_blocks;
-  status = bad_block->GetBadBlockList(4, 10, &bad_blocks);
-  ASSERT_OK(status);
-  EXPECT_EQ(bad_blocks.size(), 1);
+  zx::result bad_blocks = bad_block->GetBadBlockList(4, 10);
+  ASSERT_OK(bad_blocks);
+  EXPECT_EQ(bad_blocks.value().size(), 1u);
 
   // Validate that a new table entry was inserted.
   const auto it = table_entries.find_if([](const TableNode& node) {
@@ -449,14 +432,12 @@ TEST(AmlBadBlockTest, BootloaderQuirkTest) {
       .table_entries = table_entries,
   };
 
-  fbl::RefPtr<BadBlock> bad_block;
-  zx_status_t status = BadBlock::Create(MakeBadBlockConfig(&context), &bad_block);
-  ASSERT_OK(status);
+  zx::result bad_block = BadBlock::Create(MakeBadBlockConfig(&context));
+  ASSERT_OK(bad_block);
 
-  fbl::Array<uint32_t> bad_blocks;
-  status = bad_block->GetBadBlockList(4, 10, &bad_blocks);
-  ASSERT_OK(status);
-  ASSERT_EQ(bad_blocks.size(), 3);
+  zx::result bad_blocks = bad_block->GetBadBlockList(4, 10);
+  ASSERT_OK(bad_blocks);
+  ASSERT_EQ(bad_blocks.value().size(), 3u);
 }
 
 }  // namespace

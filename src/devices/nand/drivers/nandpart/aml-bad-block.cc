@@ -9,11 +9,7 @@
 #include <lib/sync/completion.h>
 #include <stdlib.h>
 
-#include <utility>
-
 #include <fbl/algorithm.h>
-#include <fbl/alloc_checker.h>
-#include <fbl/auto_lock.h>
 
 namespace nand {
 
@@ -32,39 +28,43 @@ void CompletionCallback(void* cookie, zx_status_t status, nand_operation_t* op) 
   zxlogf(DEBUG, "Completion status: %d", status);
   ctx->status = status;
   sync_completion_signal(ctx->completion_event);
-  return;
 }
 
 }  // namespace
 
-zx_status_t AmlBadBlock::Create(Config config, fbl::RefPtr<BadBlock>* out) {
+zx::result<std::shared_ptr<AmlBadBlock>> AmlBadBlock::Create(Config config) {
   // Query parent to get its nand_info_t and size for nand_operation_t.
   nand_info_t nand_info;
   size_t parent_op_size;
   config.nand_proto.ops->query(config.nand_proto.ctx, &nand_info, &parent_op_size);
 
-  // Allocate nand_op.
-  fbl::AllocChecker ac;
-  fbl::Array<uint8_t> nand_op(new (&ac) uint8_t[parent_op_size], parent_op_size);
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
+  if (nand_info.page_size == 0) {
+    zxlogf(ERROR, "Page size cannot be zero");
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
+
+  if (nand_info.num_blocks == 0) {
+    zxlogf(ERROR, "Number of blocks cannot be zero");
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  std::vector<uint8_t> nand_op(parent_op_size, 0);
 
   // Allocate VMOs.
   const uint32_t table_len = fbl::round_up(nand_info.num_blocks, nand_info.page_size);
   zx::vmo data_vmo;
   zx_status_t status = zx::vmo::create(table_len, 0, &data_vmo);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "nandpart: Failed to create VMO for bad block table");
-    return status;
+    zxlogf(ERROR, "Failed to create VMO for bad block table: %s", zx_status_get_string(status));
+    return zx::error(status);
   }
 
   const uint32_t bbt_page_count = table_len / nand_info.page_size;
   zx::vmo oob_vmo;
   status = zx::vmo::create(sizeof(OobMetadata) * bbt_page_count, 0, &oob_vmo);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "nandpart: Failed to create VMO for oob metadata");
-    return status;
+    zxlogf(ERROR, "Failed to create VMO for oob metadata: %s", zx_status_get_string(status));
+    return zx::error(status);
   }
 
   // Map them.
@@ -72,27 +72,24 @@ zx_status_t AmlBadBlock::Create(Config config, fbl::RefPtr<BadBlock>* out) {
   uintptr_t vaddr_table;
   status = zx::vmar::root_self()->map(kPermissions, 0, data_vmo, 0, table_len, &vaddr_table);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "nandpart: Failed to map VMO for bad block table");
-    return status;
+    zxlogf(ERROR, "Failed to map VMO for bad block table: %s", zx_status_get_string(status));
+    return zx::error(status);
   }
 
   uintptr_t vaddr_oob;
   status = zx::vmar::root_self()->map(kPermissions, 0, oob_vmo, 0,
                                       sizeof(OobMetadata) * bbt_page_count, &vaddr_oob);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "nandpart: Failed to map VMO for oob metadata");
-    return status;
+    zxlogf(ERROR, "Failed to map VMO for oob metadata: %s", zx_status_get_string(status));
+    return zx::error(status);
   }
 
-  // Construct all the things.
-  *out = fbl::MakeRefCountedChecked<AmlBadBlock>(
-      &ac, std::move(data_vmo), std::move(oob_vmo), std::move(nand_op), config, nand_info,
-      reinterpret_cast<BlockStatus*>(vaddr_table), table_len,
-      reinterpret_cast<OobMetadata*>(vaddr_oob));
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-  return ZX_OK;
+  std::span<BlockStatus> bad_block_table(reinterpret_cast<BlockStatus*>(vaddr_table), table_len);
+  std::span<OobMetadata> oob_(reinterpret_cast<OobMetadata*>(vaddr_oob), bbt_page_count);
+  auto bad_block =
+      std::make_unique<AmlBadBlock>(std::move(data_vmo), std::move(oob_vmo), std::move(nand_op),
+                                    config, nand_info, bad_block_table, oob_);
+  return zx::ok(std::move(bad_block));
 }
 
 zx_status_t AmlBadBlock::EraseBlock(uint32_t block) {
@@ -113,40 +110,43 @@ zx_status_t AmlBadBlock::GetNewBlock() {
   for (;;) {
     // Find a block with the least number of PE cycles.
     uint16_t least_pe_cycles = UINT16_MAX;
-    uint32_t index = kBlockListMax;
-    for (uint32_t i = 0; i < kBlockListMax; i++) {
-      if (block_list_[i].valid && &block_list_[i] != block_entry_ &&
-          block_list_[i].program_erase_cycles < least_pe_cycles) {
-        least_pe_cycles = block_list_[i].program_erase_cycles;
+    std::optional<size_t> index;
+    for (size_t i = 0; i < block_list_.size(); i++) {
+      const BlockListEntry& block_entry = block_list_[i];
+      if (block_entry.valid &&
+          (!block_entry_index_.has_value() || i != block_entry_index_.value()) &&
+          block_entry.program_erase_cycles < least_pe_cycles) {
+        least_pe_cycles = block_entry.program_erase_cycles;
         index = i;
       }
     }
-    if (index == kBlockListMax) {
-      zxlogf(ERROR, "nandpart: Unable to find a valid block to store BBT into");
+    if (!index.has_value()) {
+      zxlogf(ERROR, "Unable to find a valid block to store BBT into");
       return ZX_ERR_NOT_FOUND;
     }
+    BlockListEntry& block_entry = block_list_[index.value()];
 
     // Make sure we aren't trying to write to a bad block.
-    const uint32_t block = block_list_[index].block;
+    const uint32_t block = block_entry.block;
     if (bad_block_table_[block] != kNandBlockGood) {
       // Try again.
-      block_list_[index].valid = false;
+      block_entry.valid = false;
       continue;
     }
 
     // Erase the block before using it.
     const zx_status_t status = EraseBlock(block);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "nandpart: Failed to erase block %u, marking bad", block);
+      zxlogf(ERROR, "Failed to erase block %u, marking bad", block);
       // Mark the block as bad and try again.
       bad_block_table_[block] = kNandBlockBad;
-      block_list_[index].valid = false;
+      block_entry.valid = false;
       continue;
     }
 
-    zxlogf(INFO, "nandpart: Moving BBT to block %u", block);
-    block_entry_ = &block_list_[index];
-    block_list_[index].program_erase_cycles++;
+    zxlogf(INFO, "Moving BBT to block %u", block);
+    block_entry_index_.emplace(index.value());
+    block_entry.program_erase_cycles++;
     page_ = 0;
     return ZX_OK;
   }
@@ -172,39 +172,53 @@ zx_status_t AmlBadBlock::WritePages(uint32_t nand_page, uint32_t num_pages) {
 }
 
 zx_status_t AmlBadBlock::WriteBadBlockTable(bool use_new_block) {
-  ZX_DEBUG_ASSERT(bad_block_table_len_ % nand_info_.page_size == 0);
-  const uint32_t bbt_page_count = bad_block_table_len_ / nand_info_.page_size;
+  const uint32_t bbt_page_count = BbtPageCount();
 
   for (;;) {
-    if (use_new_block || bad_block_table_[block_entry_->block] != kNandBlockGood ||
-        page_ + bbt_page_count >= nand_info_.pages_per_block) {
-      // Current BBT is in a bad block, or it is full, so we must find a new one.
-      use_new_block = false;
-      zxlogf(INFO, "nandpart: Finding a new block to store BBT into");
-      const zx_status_t status = GetNewBlock();
-      if (status != ZX_OK) {
-        return status;
+    {
+      if (!block_entry_index_.has_value()) {
+        zxlogf(ERROR, "Missing block entry");
+        return ZX_ERR_BAD_STATE;
+      }
+      const BlockListEntry& block_entry = block_list_[block_entry_index_.value()];
+      if (use_new_block || bad_block_table_[block_entry.block] != kNandBlockGood ||
+          page_ + bbt_page_count >= nand_info_.pages_per_block) {
+        // Current BBT is in a bad block, or it is full, so we must find a new one.
+        use_new_block = false;
+        zxlogf(INFO, "Finding a new block to store BBT into");
+        const zx_status_t status = GetNewBlock();
+        if (status != ZX_OK) {
+          return status;
+        }
       }
     }
 
-    // Perform write.
-    for (auto* oob = oob_; oob < oob_ + bbt_page_count; oob++) {
-      oob->magic = kBadBlockTableMagic;
-      oob->program_erase_cycles = block_entry_->program_erase_cycles;
-      oob->generation = generation_;
-    }
+    {
+      if (!block_entry_index_.has_value()) {
+        zxlogf(ERROR, "Missing block entry");
+        return ZX_ERR_BAD_STATE;
+      }
+      const BlockListEntry& block_entry = block_list_[block_entry_index_.value()];
+      // Perform write.
+      for (size_t i = 0; i < bbt_page_count; ++i) {
+        OobMetadata& oob = oob_[i];
+        oob.magic = kBadBlockTableMagic;
+        oob.program_erase_cycles = block_entry.program_erase_cycles;
+        oob.generation = generation_;
+      }
 
-    const uint32_t block = block_entry_->block;
-    const uint32_t nand_page = (block * nand_info_.pages_per_block) + page_;
-    const zx_status_t status = WritePages(nand_page, bbt_page_count);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "nandpart: BBT write failed. Marking %u bad and trying again", block);
-      bad_block_table_[block] = kNandBlockBad;
-      continue;
+      const uint32_t block = block_entry.block;
+      const uint32_t nand_page = (block * nand_info_.pages_per_block) + page_;
+      const zx_status_t status = WritePages(nand_page, bbt_page_count);
+      if (status != ZX_OK) {
+        zxlogf(ERROR, "BBT write failed. Marking %u bad and trying again", block);
+        bad_block_table_[block] = kNandBlockBad;
+        continue;
+      }
+      zxlogf(DEBUG, "BBT write to block %u pages [%u, %u) successful", block, page_,
+             page_ + bbt_page_count);
+      break;
     }
-    zxlogf(DEBUG, "nandpart: BBT write to block %u pages [%u, %u) successful", block, page_,
-           page_ + bbt_page_count);
-    break;
   }
 
   page_ += bbt_page_count;
@@ -231,30 +245,28 @@ zx_status_t AmlBadBlock::ReadPages(uint32_t nand_page, uint32_t num_pages) {
 }
 
 zx_status_t AmlBadBlock::FindBadBlockTable() {
-  zxlogf(DEBUG, "nandpart: Finding bad block table");
+  zxlogf(DEBUG, "Finding bad block table");
 
   if (sizeof(OobMetadata) > nand_info_.oob_size) {
-    zxlogf(ERROR, "nandpart: OOB is too small. Need %zu, found %u", sizeof(OobMetadata),
-           nand_info_.oob_size);
+    zxlogf(ERROR, "OOB is too small. Need %zu, found %u", sizeof(OobMetadata), nand_info_.oob_size);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  zxlogf(DEBUG, "nandpart: Starting in block %u. Ending in block %u.", config_.table_start_block(),
+  zxlogf(DEBUG, "Starting in block %u. Ending in block %u.", config_.table_start_block(),
          config_.table_end_block());
 
   const uint32_t blocks = config_.table_end_block() - config_.table_start_block();
-  if (blocks == 0 || blocks > kBlockListMax) {
+  if (blocks == 0 || blocks > block_list_.size()) {
     // Driver assumption that no more than |kBlockListMax| blocks will be dedicated for BBT use.
     zxlogf(ERROR, "Unsupported number of blocks used for BBT.");
     return ZX_ERR_NOT_SUPPORTED;
   }
 
   // First find the block the BBT lives in.
-  ZX_DEBUG_ASSERT(bad_block_table_len_ % nand_info_.page_size == 0);
-  const uint32_t bbt_page_count = bad_block_table_len_ / nand_info_.page_size;
+  const uint32_t bbt_page_count = BbtPageCount();
 
-  int8_t valid_blocks = 0;
-  block_entry_ = NULL;
+  size_t valid_blocks = 0;
+  block_entry_index_.reset();
   uint32_t block = config_.table_start_block();
   for (; block <= config_.table_end_block(); block++) {
     //  Attempt to read up to 6 entries to see if block is valid.
@@ -267,7 +279,7 @@ zx_status_t AmlBadBlock::FindBadBlockTable() {
       // This block is untrustworthy. Do not add it to the block list.
       // TODO(surajmalhotra): Should we somehow mark this block as bad or
       // try erasing it?
-      zxlogf(ERROR, "nandpart: Unable to read any pages in block %u", block);
+      zxlogf(ERROR, "Unable to read any pages in block %u", block);
       continue;
     }
 
@@ -277,36 +289,37 @@ zx_status_t AmlBadBlock::FindBadBlockTable() {
     block_list_[valid_blocks].valid = true;
 
     // If block has valid BBT entries, see if it has the latest entries.
-    if (oob_->magic == kBadBlockTableMagic) {
-      if (oob_->generation >= generation_) {
+    if (oob_[0].magic == kBadBlockTableMagic) {
+      if (oob_[0].generation >= generation_) {
         zxlogf(DEBUG, "Block %u has valid BBT entries!", block);
-        block_entry_ = &block_list_[valid_blocks];
-        generation_ = oob_->generation;
+        block_entry_index_.emplace(valid_blocks);
+        generation_ = oob_[0].generation;
       }
-      block_list_[valid_blocks].program_erase_cycles = oob_->program_erase_cycles;
-    } else if (oob_->magic == 0xFFFFFFFF) {
+      block_list_[valid_blocks].program_erase_cycles = oob_[0].program_erase_cycles;
+    } else if (oob_[0].magic == 0xFFFFFFFF) {
       // Page is erased.
       block_list_[valid_blocks].program_erase_cycles = 0;
     } else {
       zxlogf(ERROR, "Block %u is neither erased, nor contains a valid entry!", block);
-      block_list_[valid_blocks].program_erase_cycles = oob_->program_erase_cycles;
+      block_list_[valid_blocks].program_erase_cycles = oob_[0].program_erase_cycles;
     }
 
     valid_blocks++;
   }
 
-  if (block_entry_ == NULL) {
-    zxlogf(ERROR, "nandpart: No valid BBT entries found!");
+  if (!block_entry_index_.has_value()) {
+    zxlogf(ERROR, "No valid BBT entries found!");
     // TODO(surajmalhotra): Initialize the BBT by reading the factory bad
     // blocks.
     return ZX_ERR_INTERNAL;
   }
 
-  for (size_t idx = valid_blocks - 1; idx < kBlockListMax; idx++) {
+  for (size_t idx = valid_blocks - 1; idx < block_list_.size(); idx++) {
     block_list_[idx].valid = false;
   }
 
-  zxlogf(DEBUG, "nandpart: Finding last BBT in block %u", block_entry_->block);
+  const BlockListEntry& block_entry = block_list_[block_entry_index_.value()];
+  zxlogf(DEBUG, "Finding last BBT in block %u", block_entry.block);
 
   // Next find the last valid BBT entry in block.
   bool found_one = false;
@@ -317,19 +330,19 @@ zx_status_t AmlBadBlock::FindBadBlockTable() {
     zx_status_t status = ZX_OK;
     // Check that all pages in current bbt_page_count are valid.
     zxlogf(DEBUG, "Reading pages [%u, %u)", page, page + bbt_page_count);
-    const uint32_t nand_page = block_entry_->block * nand_info_.pages_per_block + page;
+    const uint32_t nand_page = (block_entry.block * nand_info_.pages_per_block) + page;
     status = ReadPages(nand_page, bbt_page_count);
     if (status != ZX_OK) {
       // It's fine for entries to be unreadable as long as future ones are
       // readable.
-      zxlogf(DEBUG, "nandpart: Unable to read page %u", page);
+      zxlogf(DEBUG, "Unable to read page %u", page);
       latest_entry_bad = true;
       continue;
     }
-    for (uint32_t i = 0; i < bbt_page_count; i++) {
-      if ((oob_ + i)->magic != kBadBlockTableMagic) {
+    for (size_t i = 0; i < bbt_page_count; i++) {
+      if (oob_[i].magic != kBadBlockTableMagic) {
         // Last BBT entry in table was found, so quit looking at future entries.
-        zxlogf(DEBUG, "nandpart: Page %u does not contain valid BBT entry", page + i);
+        zxlogf(DEBUG, "Page %lu does not contain valid BBT entry", page + i);
         break_loop = true;
         break;
       }
@@ -342,33 +355,33 @@ zx_status_t AmlBadBlock::FindBadBlockTable() {
     latest_entry_bad = false;
     found_one = true;
     page_ = page;
-    generation_ = static_cast<uint16_t>(oob_->generation + 1);
+    generation_ = static_cast<uint16_t>(oob_[0].generation + 1);
   }
 
   if (!found_one) {
-    zxlogf(ERROR, "nandpart: Unable to find a valid copy of the bad block table");
+    zxlogf(ERROR, "Unable to find a valid copy of the bad block table");
     return ZX_ERR_NOT_FOUND;
   }
 
   if (page + bbt_page_count <= nand_info_.pages_per_block || latest_entry_bad) {
     // Last iteration failed to read valid copy of BBT (that's how loop exited),
     // so we need to reread the BBT.
-    const uint32_t nand_page = block_entry_->block * nand_info_.pages_per_block + page_;
+    const uint32_t nand_page = (block_entry.block * nand_info_.pages_per_block) + page_;
     const zx_status_t status = ReadPages(nand_page, bbt_page_count);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "nandpart: Unable to re-read latest copy of bad block table");
+      zxlogf(ERROR, "Unable to re-read latest copy of bad block table");
       return status;
     }
-    for (uint32_t i = 0; i < bbt_page_count; i++) {
-      if ((oob_ + i)->magic != kBadBlockTableMagic) {
-        zxlogf(ERROR, "nandpart: Latest copy of bad block table no longer valid?");
+    for (size_t i = 0; i < bbt_page_count; i++) {
+      if (oob_[i].magic != kBadBlockTableMagic) {
+        zxlogf(ERROR, "Latest copy of bad block table no longer valid?");
         return ZX_ERR_INTERNAL;
       }
     }
 
     if (latest_entry_bad) {
-      zxlogf(ERROR, "nandpart: Latest entry in block %u is invalid. Moving bad block file.",
-             block_entry_->block);
+      zxlogf(ERROR, "Latest entry in block %u is invalid. Moving bad block file.",
+             block_entry.block);
       constexpr bool kUseNewBlock = true;
       const zx_status_t status = WriteBadBlockTable(kUseNewBlock);
       if (status != ZX_OK) {
@@ -376,8 +389,7 @@ zx_status_t AmlBadBlock::FindBadBlockTable() {
       }
     } else {
       // Page needs to point to next available slot.
-      zxlogf(INFO, "nandpart: Latest BBT entry found in pages [%u, %u)", page_,
-             page + bbt_page_count);
+      zxlogf(INFO, "Latest BBT entry found in pages [%u, %u)", page_, page + bbt_page_count);
       page_ += bbt_page_count;
     }
   }
@@ -386,21 +398,21 @@ zx_status_t AmlBadBlock::FindBadBlockTable() {
   return ZX_OK;
 }
 
-zx_status_t AmlBadBlock::GetBadBlockList(uint32_t first_block, uint32_t last_block,
-                                         fbl::Array<uint32_t>* bad_blocks) {
+zx::result<std::vector<uint32_t>> AmlBadBlock::GetBadBlockList(uint32_t first_block,
+                                                               uint32_t last_block) {
   // Account for an off-by-one error in the bootloader.
   last_block++;
 
-  fbl::AutoLock al(&lock_);
+  const std::lock_guard lock(lock_);
   if (!table_valid_) {
     const zx_status_t status = FindBadBlockTable();
     if (status != ZX_OK) {
-      return status;
+      return zx::error(status);
     }
   }
 
   if (first_block >= nand_info_.num_blocks || last_block > nand_info_.num_blocks) {
-    return ZX_ERR_INVALID_ARGS;
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   // Scan BBT for bad block list.
@@ -413,29 +425,23 @@ zx_status_t AmlBadBlock::GetBadBlockList(uint32_t first_block, uint32_t last_blo
 
   // Early return if no bad blocks found.
   if (bad_block_count == 0) {
-    bad_blocks->reset();
-    return ZX_OK;
+    return zx::ok(std::vector<uint32_t>());
   }
 
-  // Allocate array and copy list.
-  fbl::AllocChecker ac;
-  bad_blocks->reset(new (&ac) uint32_t[bad_block_count], bad_block_count);
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  bad_block_count = 0;
+  // Copy list.
+  std::vector<uint32_t> bad_blocks;
+  bad_blocks.reserve(bad_block_count);
   for (uint32_t block = first_block; block < last_block; block++) {
     if (bad_block_table_[block] != kNandBlockGood) {
-      (*bad_blocks)[bad_block_count++] = block;
+      bad_blocks.emplace_back(block);
     }
   }
 
-  return ZX_OK;
+  return zx::ok(std::move(bad_blocks));
 }
 
 zx_status_t AmlBadBlock::MarkBlockBad(uint32_t block) {
-  fbl::AutoLock al(&lock_);
+  const std::lock_guard lock(lock_);
   if (!table_valid_) {
     const zx_status_t status = FindBadBlockTable();
     if (status != ZX_OK) {
@@ -455,6 +461,11 @@ zx_status_t AmlBadBlock::MarkBlockBad(uint32_t block) {
 
   constexpr bool kNoUseNewBlock = false;
   return WriteBadBlockTable(kNoUseNewBlock);
+}
+
+uint32_t AmlBadBlock::BbtPageCount() const {
+  ZX_DEBUG_ASSERT(bad_block_table_.size() % nand_info_.page_size == 0);
+  return static_cast<uint32_t>(bad_block_table_.size()) / nand_info_.page_size;
 }
 
 }  // namespace nand

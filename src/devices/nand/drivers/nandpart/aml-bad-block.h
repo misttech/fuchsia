@@ -14,9 +14,6 @@
 
 #include <utility>
 
-#include <fbl/array.h>
-#include <fbl/ref_ptr.h>
-
 #include "bad-block.h"
 
 namespace nand {
@@ -34,49 +31,40 @@ class AmlBadBlock : public BadBlock {
     uint16_t generation;
   };
 
-  static zx_status_t Create(Config config, fbl::RefPtr<BadBlock>* out);
+  using BlockStatus = uint8_t;
 
-  zx_status_t GetBadBlockList(uint32_t first_block, uint32_t last_block,
-                              fbl::Array<uint32_t>* bad_blocks) override;
+  static zx::result<std::shared_ptr<AmlBadBlock>> Create(Config config);
+
+  AmlBadBlock(zx::vmo data_vmo, zx::vmo oob_vmo, std::vector<uint8_t> nand_op, Config& config,
+              nand_info_t nand_info, std::span<BlockStatus> table, std::span<OobMetadata> oob)
+      : BadBlock(std::move(data_vmo), std::move(oob_vmo), std::move(nand_op)),
+        config_(config.bad_block_config),
+        nand_proto_(config.nand_proto),
+        nand_(&nand_proto_),
+        nand_info_(nand_info),
+        oob_(oob),
+        bad_block_table_(table) {}
+
+  ~AmlBadBlock() override {
+    zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(oob_.data()), oob_.size_bytes());
+    zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(bad_block_table_.data()),
+                                 bad_block_table_.size_bytes());
+  }
+
+  zx::result<std::vector<uint32_t>> GetBadBlockList(uint32_t first_block,
+                                                    uint32_t last_block) override;
   zx_status_t MarkBlockBad(uint32_t block) override;
 
  private:
-  friend class fbl::RefPtr<AmlBadBlock>;
-  friend class fbl::internal::MakeRefCountedHelper<AmlBadBlock>;
-
-  typedef uint8_t BlockStatus;
   constexpr static BlockStatus kNandBlockGood = 0;
   constexpr static BlockStatus kNandBlockBad = 1;
   constexpr static BlockStatus kNandBlockFactoryBad = 2;
-
-  constexpr static size_t kBlockListMax = 8;
 
   struct BlockListEntry {
     uint32_t block;
     int16_t program_erase_cycles;
     bool valid;
   };
-
-  AmlBadBlock(zx::vmo data_vmo, zx::vmo oob_vmo, fbl::Array<uint8_t> nand_op, Config config,
-              nand_info_t nand_info, BlockStatus* table, uint32_t table_len, OobMetadata* oob)
-      : BadBlock(std::move(data_vmo), std::move(oob_vmo), std::move(nand_op)),
-        config_(config.bad_block_config),
-        nand_proto_(config.nand_proto),
-        nand_(&nand_proto_),
-        nand_info_(nand_info),
-        block_entry_(nullptr),
-        page_(0),
-        generation_(0),
-        table_valid_(false),
-        oob_(oob),
-        bad_block_table_(table),
-        bad_block_table_len_(table_len) {}
-
-  ~AmlBadBlock() override {
-    zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(oob_), sizeof(OobMetadata));
-    zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(bad_block_table_),
-                                 bad_block_table_len_);
-  }
 
   // Synchronously erase a block.
   zx_status_t EraseBlock(uint32_t block) TA_REQ(lock_);
@@ -96,28 +84,35 @@ class AmlBadBlock : public BadBlock {
   // Finds BBT and reads it into memory from NAND.
   zx_status_t FindBadBlockTable(void) TA_REQ(lock_);
 
+  uint32_t BbtPageCount() const;
+
   // Top level config.
   const fuchsia_hardware_nand::BadBlockConfig config_;
   // Parent nand protocol implementation.
   nand_protocol_t nand_proto_;
   ddk::NandProtocolClient nand_;
   const nand_info_t nand_info_;
+
   // Information about blocks which store BBT entries.
-  BlockListEntry block_list_[kBlockListMax];
-  // Block with most recent valid BBT entry.
-  BlockListEntry* block_entry_;
+  std::array<BlockListEntry, 8> block_list_;
+
+  // Index of the block with most recent valid BBT entry.
+  std::optional<size_t> block_entry_index_;
+
   // The first page for the last valid BBT entry in above block.
-  uint32_t page_;
+  uint32_t page_ = 0;
+
   // Generation ID of newest BBT entry.
-  uint16_t generation_;
+  uint16_t generation_ = 0;
+
   // Whether the table is valid.
-  bool table_valid_;
+  bool table_valid_ = false;
+
   // OOB metadata appended to end of table. Backed by oob_vmo.
-  OobMetadata* oob_;
+  std::span<OobMetadata> oob_;
+
   // Copy of latest BBT. Each byte 1:1 maps to a block. Backed by data_vmo.
-  BlockStatus* bad_block_table_;
-  // Size of bad block table, rounded up to |nand_info_.page_size| multiple.
-  uint32_t bad_block_table_len_;
+  std::span<BlockStatus> bad_block_table_;
 };
 }  // namespace nand
 

@@ -51,7 +51,7 @@ class NandPartDevice : public DeviceType,
 
  private:
   explicit NandPartDevice(zx_device_t* parent, const nand_protocol_t& nand_proto,
-                          fbl::RefPtr<BadBlock> bad_block, size_t parent_op_size,
+                          std::shared_ptr<BadBlock> bad_block, size_t parent_op_size,
                           const nand_info_t& nand_info, uint32_t erase_block_start)
       : DeviceType(parent),
         nand_proto_(nand_proto),
@@ -74,9 +74,9 @@ class NandPartDevice : public DeviceType,
   uint32_t erase_block_start_;
   // Device specific bad block info. Shared between all devices for a given
   // parent device.
-  fbl::RefPtr<BadBlock> bad_block_;
+  std::shared_ptr<BadBlock> bad_block_;
   // Cached list of bad blocks for this partition. Lazily instantiated.
-  fbl::Array<uint32_t> bad_block_list_;
+  std::vector<uint32_t> bad_blocks_;
   uint32_t extra_partition_copy_count_;
 };
 

@@ -93,11 +93,10 @@ zx_status_t NandPartDevice::Create(void* ctx, zx_device_t* parent) {
       .bad_block_config = nand_config->bad_block_config(),
       .nand_proto = nand_proto,
   };
-  fbl::RefPtr<BadBlock> bad_block;
-  auto status = BadBlock::Create(config, &bad_block);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "nandpart: Failed to create BadBlock object");
-    return status;
+  zx::result bad_block = BadBlock::Create(config);
+  if (bad_block.is_error()) {
+    zxlogf(ERROR, "Failed to create BadBlock object: %s", bad_block.status_string());
+    return bad_block.status_value();
   }
 
   // Query parent for partition map.
@@ -110,7 +109,7 @@ zx_status_t NandPartDevice::Create(void* ctx, zx_device_t* parent) {
   auto& pmap = metadata.value();
 
   // Sanity check partition map and transform into expected form.
-  status = SanitizePartitionMap(pmap, nand_info);
+  zx_status_t status = SanitizePartitionMap(pmap, nand_info);
   if (status != ZX_OK) {
     return status;
   }
@@ -130,7 +129,7 @@ zx_status_t NandPartDevice::Create(void* ctx, zx_device_t* parent) {
 
     fbl::AllocChecker ac;
     std::unique_ptr<NandPartDevice> device(
-        new (&ac) NandPartDevice(parent, nand_proto, bad_block, parent_op_size, nand_info,
+        new (&ac) NandPartDevice(parent, nand_proto, bad_block.value(), parent_op_size, nand_info,
                                  static_cast<uint32_t>(part.first_block())));
     if (!ac.check()) {
       continue;
@@ -219,21 +218,22 @@ zx_status_t NandPartDevice::NandGetFactoryBadBlockList(uint32_t* bad_blocks, siz
 zx_status_t NandPartDevice::BadBlockGetBadBlockList(uint32_t* bad_block_list,
                                                     size_t bad_block_list_len,
                                                     size_t* bad_block_count) {
-  if (!bad_block_list_) {
-    const zx_status_t status = bad_block_->GetBadBlockList(
-        erase_block_start_, erase_block_start_ + nand_info_.num_blocks - 1, &bad_block_list_);
-    if (status != ZX_OK) {
-      return status;
+  if (bad_blocks_.empty()) {
+    zx::result bad_blocks = bad_block_->GetBadBlockList(
+        erase_block_start_, erase_block_start_ + nand_info_.num_blocks - 1);
+    if (bad_blocks.is_error()) {
+      return bad_blocks.status_value();
     }
-    for (uint32_t i = 0; i < bad_block_list_.size(); i++) {
-      bad_block_list_[i] -= erase_block_start_;
+    bad_blocks_ = std::move(bad_blocks.value());
+    for (uint32_t& bad_block : bad_blocks_) {
+      bad_block -= erase_block_start_;
     }
   }
 
-  *bad_block_count = bad_block_list_.size();
+  *bad_block_count = bad_blocks_.size();
   zxlogf(DEBUG, "nandpart: %s: Bad block count: %zu", name(), *bad_block_count);
 
-  if (bad_block_list_len == 0 || bad_block_list_.size() == 0) {
+  if (bad_block_list_len == 0 || bad_blocks_.size() == 0) {
     return ZX_OK;
   }
   if (bad_block_list == NULL) {
@@ -241,7 +241,7 @@ zx_status_t NandPartDevice::BadBlockGetBadBlockList(uint32_t* bad_block_list,
   }
 
   const size_t size = sizeof(uint32_t) * std::min(*bad_block_count, bad_block_list_len);
-  memcpy(bad_block_list, bad_block_list_.data(), size);
+  memcpy(bad_block_list, bad_blocks_.data(), size);
   return ZX_OK;
 }
 
@@ -251,7 +251,7 @@ zx_status_t NandPartDevice::BadBlockMarkBlockBad(uint32_t block) {
   }
 
   // First, invalidate our cached copy.
-  bad_block_list_.reset();
+  bad_blocks_.clear();
 
   // Second, "write-through" to actually persist.
   block += erase_block_start_;
