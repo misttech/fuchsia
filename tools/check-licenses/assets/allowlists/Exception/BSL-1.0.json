@@ -65,6 +65,13 @@
             ],
             "bug": "",
             "notes": []
+          },
+          {
+            "projects": [
+              "third_party/github.com/ridiculousfish/libdivide"
+            ],
+            "bug": "",
+            "notes": []
           }
         ]
       }

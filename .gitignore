@@ -185,6 +185,9 @@ tables_generator_tests_*.txt
 !/third_party/github.com/jd/
 !/third_party/github.com/jd/tenacity
 /third_party/github.com/jd/tenacity/src
+!/third_party/github.com/ridiculousfish/
+!/third_party/github.com/ridiculousfish/libdivide
+/third_party/github.com/ridiculousfish/libdivide/src
 !/third_party/pylibs/coverage
 /third_party/pylibs/coverage/src
 !/third_party/pylibs/mypy
