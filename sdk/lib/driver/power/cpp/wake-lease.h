@@ -44,11 +44,11 @@ class ManualWakeLease : public fidl::WireServer<fuchsia_power_system::SuspendBlo
   // this instance is dropped.
   //
   // Returns `true` if one of the following is true:
-  //   * It was not necessary to take a system wake lease at this time because
-  //     the system is resumed
-  //   * A system wake lease was acquired
-  //   * A system wake lease was previously acquired
-  // Returns `false` if it was necessary to acquire a system wake lease, but
+  //   * It was not necessary to take a SAG wake lease at this time because the
+  //     system is resumed
+  //   * A SAG wake lease was acquired
+  //   * A SAG wake lease was previously acquired
+  // Returns `false` if it was necessary to acquire a SAG wake lease, but
   // an error occurred during acquisition. In this case, the `ManualWakeLease`
   // instance should be replaced with a new one.
   bool Start(bool ignore_system_state = false);
@@ -59,7 +59,7 @@ class ManualWakeLease : public fidl::WireServer<fuchsia_power_system::SuspendBlo
   // the wake lease currently currently held, if any.
   zx::result<zx::eventpair> End();
 
-  // Stores the wake lease in the instance. The wake lease will be retained
+  // Stores the SAG wake lease in the instance. The wake lease will be retained
   // until `End` or `TakeWakeLease` is called.
   void DepositWakeLease(zx::eventpair wake_lease);
 
@@ -67,16 +67,17 @@ class ManualWakeLease : public fidl::WireServer<fuchsia_power_system::SuspendBlo
   //
   // Returns ZX_ERR_BAD_HANDLE if we don't currently have a wake lease.
   // IMPORTANT: This does not implicitly call `End()`, meaning that at the next
-  // system transition to suspend, this class will take a wake lease and cause
-  // the suspend to abort.
+  // system transition to suspend, this class will take a SAG wake lease and
+  // cause the suspend to abort.
   zx::result<zx::eventpair> TakeWakeLease();
 
-  // Get a duplicate of the stored wake lease. Returns ZX_ERR_BAD_HANDLE if we don't currently have
-  // a wake lease.
+  // Get a duplicate of the stored SAG wake lease. Returns ZX_ERR_BAD_HANDLE if
+  // we don't currently have a wake lease.
   zx::result<zx::eventpair> GetWakeLeaseCopy();
 
-  // fuchsia.power.system/SuspendBlocker implementation. This is used to avoid creating
-  // wake leases in cases where the system is resumed and `HandleInterrupt` is called.
+  // fuchsia.power.system/SuspendBlocker implementation. This is used to avoid
+  // creatingwake leases in cases where the system is resumed and `HandleInterrupt`
+  // is called.
   void AfterResume(AfterResumeCompleter::Sync& completer) override;
 
   void BeforeSuspend(BeforeSuspendCompleter::Sync& completer) override;
@@ -111,8 +112,8 @@ class ManualWakeLease : public fidl::WireServer<fuchsia_power_system::SuspendBlo
 };
 
 // Wrapper around usage of fuchsia.power.system/ActivityGovernor.AcquireWakeLease. The wrapper
-// reduces wake lease creation by allow callers to set timeout after which to drop the lease and
-// provides mechanisms to extend that timeout.
+// reduces SAG wake lease creation by allowing callers to set timeout after which to drop the
+// lease and provides mechanisms to extend that timeout.
 class TimeoutWakeLease {
  public:
   // If |log| is set to true, logs will be emitted when acquiring leases and when lease times out.
@@ -122,39 +123,42 @@ class TimeoutWakeLease {
                    inspect::Node* parent_node = nullptr, bool log = false);
 
   // Ensure that the system stays awake until the timeout is reached. To accomplish this we either:
-  //   * obtain a wake lease immediately if the system is currently suspended
-  //   * obtain a wake lease in the future if the system begins suspension before the timeout is
-  //     reached
-  // If a wake lease is acquired, it is dropped when the timeout is reached. The timeout may be
-  // extended by additional calls to `HandleInterrupt`. If the system is not suspended and does not
-  // attempt suspension during the timeout period, no wake lease is obtained.
+  //   * obtain a SAG wake lease immediately if the system is currently suspended
+  //   * obtain a SAG wake lease in the future if the system begins suspension before the timeout
+  //     is reached
+  // If a SAG wake lease is acquired, it is dropped when the timeout is reached. The timeout may be
+  // extended by additional calls to `HandleInterrupt` or `AcquireWakeLease`. If the system is not
+  // suspended and does not attempt suspension during the timeout period, no wake lease is obtained.
   //
   // Ideally this is only called after we wake up due to an interrupt. Note that a duration is
   // taken because the deadline is computed once the lease is acquired, rather than at the point
   // this method is called.
+  //
+  // Returns `false` if it was necessary to obtain a SAG wake lease and it failed to do so. Returns
+  // `true` if it already had a wake lease or if it did not and it succeeded in obtaining one.
   bool HandleInterrupt(zx::duration timeout);
 
-  // Acquire a wake lease and automatically drop it after the specified timeout. If a lease was
-  // still held from an earlier invocation, it will be extended until the new timeout.
-  // Note that a duration is taken because the deadline is computed once the lease is acquired,
-  // rather than at the point this method is called.
+  // Acquire a SAG wake lease and automatically drop it after the specified timeout. If a lease was
+  // still already held, it will be extended until the new timeout. Note that a duration is taken
+  // because the deadline is computed once the SAG lease is acquired,rather than at the point this
+  // method is called.
   //
-  // Returns `false` if it was necessary to obtain a wake lease and it failed to do so. Returns
+  // Returns `false` if it was necessary to obtain a SAG wake lease and it failed to do so. Returns
   // `true` if it already had a wake lease or if it did not and it succeeded in obtaining one.
   bool AcquireWakeLease(zx::duration timeout);
 
-  // Provide a wake lease which will be dropped either:
-  //   * immediately if there is already a wake lease with a later deadline
+  // Provide a SAG wake lease to the `TimeWakeLease` which will be dropped either:
+  //   * immediately if there is already a SAG wake lease with a later deadline
   //   * at the specified deadline
-  // In the latter case any previous lease held by this object is dropped immediately.
+  // In the latter case any previous SAG lease held by this object is dropped immediately.
   void DepositWakeLease(zx::eventpair wake_lease, zx::time timeout_deadline);
 
-  // Cancel timeout and take the wake lease. Returns ZX_ERR_BAD_HANDLE if we don't currently have a
-  // wake lease.
+  // Cancel timeout and take the SAG wake lease. Returns ZX_ERR_BAD_HANDLE if we don't currently
+  // have a wake lease.
   zx::result<zx::eventpair> TakeWakeLease();
 
-  // Get a duplicate of the stored wake lease. Returns ZX_ERR_BAD_HANDLE if we don't currently have
-  // a wake lease.
+  // Get a duplicate of the stored SAG wake lease. Returns ZX_ERR_BAD_HANDLE if we don't currently
+  // have a SAG wake lease.
   zx::result<zx::eventpair> GetWakeLeaseCopy();
 
   // Get the time our next timeout will occur. If there is no currently active
@@ -182,7 +186,7 @@ class TimeoutWakeLease {
 };
 
 // `WakeLease` wraps a WakeLease. When `WakeLease`
-// destructs, the underlying system wake lease, if any currently held, is
+// destructs, the underlying SAG wake lease, if any currently held, is
 // dropped.
 class WakeLease {
  public:
