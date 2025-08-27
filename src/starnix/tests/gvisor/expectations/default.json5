@@ -331,7 +331,6 @@
                 "PrivateFutexTest.WakeOp0Or",
                 "PrivateFutexTest.WakeOp0Andn",
                 "PrivateFutexTest.WakeOp0Xor",
-                "SharedPrivate/PrivateAndSharedFutexTest.PITryLock/*",
 
                 // getdents_test
                 "GetdentsTest/0.TooLargeSize",
@@ -1191,6 +1190,9 @@
 
                 // TODO(https://fxbug.dev/439576932): Investigate and re-enable, seems to be timing out.
                 "PtraceTest.ExecvePtraceLockStress",
+
+                // TODO(https://fxbug.dev/361175318): FUTEX_TRYLOCK_PI is not supported yet
+                "SharedPrivate/PrivateAndSharedFutexTest.PITryLock*",
             ],
         },
     ],
