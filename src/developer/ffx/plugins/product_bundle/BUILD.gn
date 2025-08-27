@@ -10,18 +10,8 @@ ffx_plugin("ffx_product_bundle") {
   version = "0.1.0"
   edition = "2021"
 
-  plugin_deps = [
-    "//src/developer/ffx/plugins/product/create:ffx_product_create",
-    "//src/developer/ffx/plugins/product/create_old:ffx_product_create_old",
-    "//src/developer/ffx/plugins/product/download:ffx_product_download",
-    "//src/developer/ffx/plugins/product/get_artifacts:ffx_product_get_artifacts",
-    "//src/developer/ffx/plugins/product/get_image_path:ffx_product_get_image_path",
-    "//src/developer/ffx/plugins/product/get_repository:ffx_product_get_repository",
-    "//src/developer/ffx/plugins/product/get_version:ffx_product_get_version",
-    "//src/developer/ffx/plugins/product/list:ffx_product_list",
-    "//src/developer/ffx/plugins/product/lookup:ffx_product_lookup",
-    "//src/developer/ffx/plugins/product/show:ffx_product_show",
-  ]
+  plugin_deps =
+      [ "//src/developer/ffx/plugins/product/create:ffx_product_create" ]
 
   args_sources = [ "src/args.rs" ]
   args_deps = [
