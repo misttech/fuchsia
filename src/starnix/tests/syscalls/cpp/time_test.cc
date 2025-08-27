@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <sys/syscall.h>
 #include <sys/time.h>
 
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
@@ -43,6 +44,15 @@ TEST(TimeTest, GetTimeOfDayNullTvSomeTz) __attribute__((no_sanitize("nonnull-att
 #pragma GCC diagnostic ignored "-Wnonnull"
   ASSERT_THAT(gettimeofday(nullptr, &tz), SyscallSucceeds());
 #pragma GCC diagnostic pop
+}
+
+TEST(TimeTest, GetTimeOfDaySyscallVsVDSO) {
+  struct timeval tv1, tv2, tv3;
+  ASSERT_THAT(gettimeofday(&tv1, nullptr), SyscallSucceeds());
+  ASSERT_THAT(syscall(SYS_gettimeofday, &tv2, nullptr), SyscallSucceeds());
+  ASSERT_THAT(gettimeofday(&tv3, nullptr), SyscallSucceeds());
+  EXPECT_LE(std::make_pair(tv1.tv_sec, tv1.tv_usec), std::make_pair(tv2.tv_sec, tv2.tv_usec));
+  EXPECT_LE(std::make_pair(tv2.tv_sec, tv2.tv_usec), std::make_pair(tv3.tv_sec, tv3.tv_usec));
 }
 
 TEST(TimeTest, GetTimeOfDaySomeTvNullTz) {

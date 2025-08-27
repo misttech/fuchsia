@@ -11,6 +11,7 @@ config("arm") {
     "-mhwdiv=arm,thumb",
     "-mfloat-abi=hard",
     "-mtune=generic",
+    "-fforce-enable-int128",
   ]
   ldflags = cflags
   asmflags = cflags
