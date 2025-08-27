@@ -18,6 +18,7 @@ rustc_library_with_features("netstack3-base") {
     "src/context.rs",
     "src/convert.rs",
     "src/counters.rs",
+    "src/data_notifier.rs",
     "src/data_structures.rs",
     "src/data_structures/rcu.rs",
     "src/data_structures/ref_counted_hash_map.rs",

@@ -9,14 +9,17 @@
 use std::pin::pin;
 
 use assert_matches::assert_matches;
-use fidl::AsHandleRef;
-use fidl::endpoints::{DiscoverableProtocolMarker as _, ServiceMarker as _};
+use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _, ServiceMarker as _};
+use fidl::{AsHandleRef, HandleBased as _};
 use fuchsia_async::TimeoutExt as _;
 use futures::stream::FusedStream;
-use futures::{Stream, StreamExt as _};
+use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, Stream, StreamExt as _};
 use net_declare::{fidl_subnet, std_socket_addr_v6};
+use netemul::RealmTcpStream as _;
 use netstack_testing_common::ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT;
-use netstack_testing_common::realms::{KnownServiceProvider, NetstackVersion};
+use netstack_testing_common::realms::{
+    KnownServiceProvider, Netstack3, NetstackVersion, TestSandboxExt as _,
+};
 use netstack_testing_macros::netstack_test;
 use packet::ParsablePacket as _;
 use packet_formats::ip::{IpPacket, IpProto, Ipv6Proto};
@@ -27,7 +30,8 @@ use {
     fidl_fuchsia_hardware_network as fhardware_network,
     fidl_fuchsia_hardware_power_suspend as fhsuspend,
     fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_ext as finterfaces_ext, fidl_fuchsia_net_tun as fnet_tun,
+    fidl_fuchsia_net_interfaces_ext as finterfaces_ext, fidl_fuchsia_net_power as fnet_power,
+    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_tun as fnet_tun,
     fidl_fuchsia_netemul as fnetemul, fidl_fuchsia_posix_socket as fposix_socket,
     fidl_fuchsia_power_broker as fpower_broker, fidl_fuchsia_power_system as fpower_system,
     fidl_test_sagcontrol as fsagcontrol, fidl_test_suspendcontrol as ftest_suspendcontrol,
@@ -480,4 +484,184 @@ async fn rx_lease_drops(name: &str, netstack_suspend_enabled: bool) {
         .expect("getting inspect property");
         assert_eq!(property.uint(), Some(expect_inspect_value));
     }
+}
+
+#[netstack_test]
+async fn wake_group_tcp_socket(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let provider = realm
+        .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
+        .expect("connect to protocol");
+    let (wake_group, server_end) = fidl::endpoints::create_endpoints();
+    let fnet_power::CreateWakeGroupResponse { token, .. } = provider
+        .create_wake_group(&fnet_power::WakeGroupOptions::default(), server_end)
+        .await
+        .expect("create wake group");
+    let fnet_resources::WakeGroupToken { token } =
+        token.expect("netstack must provide wake group token");
+
+    let socket = realm
+        .stream_socket_with_options(
+            fposix_socket::Domain::Ipv4,
+            fposix_socket::StreamSocketProtocol::Tcp,
+            fposix_socket::SocketCreationOptions {
+                group: Some(fnet_resources::WakeGroupToken {
+                    token: token
+                        .duplicate_handle(zx::Rights::TRANSFER | zx::Rights::DUPLICATE)
+                        .expect("duplicate wake group handle"),
+                }),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("create stream socket");
+    let server_addr =
+        std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 8080);
+    socket.bind(&server_addr.into()).expect("bind server socket");
+    socket.listen(1).expect("listen on server socket");
+    let listener =
+        fasync::net::TcpListener::from_std(socket.into()).expect("socket2 into async listener");
+
+    let (mut client, mut server) = futures::future::join(
+        async {
+            fasync::net::TcpStream::connect_in_realm(&realm, server_addr)
+                .await
+                .expect("connect to server")
+        },
+        async {
+            let (_, stream, from) = listener.accept().await.expect("accept incoming connection");
+            assert_eq!(from.ip(), std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+            stream
+        },
+    )
+    .await;
+
+    // Subscribe to be woken up when data arrives.
+    let wake_group = wake_group.into_proxy();
+    let mut fut = wake_group.wait_for_data();
+    assert_matches!((&mut fut).now_or_never(), None);
+
+    // If we send some data but have not yet armed the hanging get, we will not be
+    // notified.
+    const PAYLOAD: &'static str = "hello, world!";
+    let write_count = client.write(PAYLOAD.as_bytes()).await.expect("send payload to server");
+    assert_eq!(write_count, PAYLOAD.as_bytes().len());
+
+    assert_matches!((&mut fut).now_or_never(), None);
+
+    let mut buf = [0u8; PAYLOAD.as_bytes().len()];
+    let read_count = server.read(&mut buf).await.expect("read payload from client");
+    assert_eq!(read_count, PAYLOAD.as_bytes().len());
+    assert_eq!(&buf[..read_count], PAYLOAD.as_bytes());
+
+    // If we arm the hanging get, incoming data should notify the wake group.
+    wake_group.arm().await.expect("arm hanging get");
+
+    let write_count = client.write(PAYLOAD.as_bytes()).await.expect("send payload to server");
+    assert_eq!(write_count, PAYLOAD.as_bytes().len());
+
+    let fnet_power::WakeGroupWaitForDataResponse { source, .. } = fut.await.expect("wait for data");
+    let source = source.expect("netstack should specify wake source");
+    assert_eq!(source, fnet_power::WakeSource::Data(fnet_power::Empty {}));
+
+    let read_count = server.read(&mut buf).await.expect("read payload from client");
+    assert_eq!(read_count, PAYLOAD.as_bytes().len());
+    assert_eq!(&buf[..read_count], PAYLOAD.as_bytes());
+
+    // Closing the wake group channel will remove the wake group, but the socket can
+    // still be used after the wake group it was attached to has become defunct.
+    drop(wake_group);
+
+    let write_count = client.write(PAYLOAD.as_bytes()).await.expect("send payload to server");
+    assert_eq!(write_count, PAYLOAD.as_bytes().len());
+    let read_count = server.read(&mut buf).await.expect("read payload from client");
+    assert_eq!(read_count, PAYLOAD.as_bytes().len());
+    assert_eq!(&buf[..read_count], PAYLOAD.as_bytes());
+}
+
+#[netstack_test]
+async fn wake_group_hanging_get_called_when_pending(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let provider = realm
+        .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
+        .expect("connect to protocol");
+    let (wake_group, server_end) = fidl::endpoints::create_endpoints();
+    let _response = provider
+        .create_wake_group(&fnet_power::WakeGroupOptions::default(), server_end)
+        .await
+        .expect("create wake group");
+
+    let wake_group = wake_group.into_proxy();
+
+    // Call `WaitForData` twice and observe the protocol close.
+    assert_matches!(
+        futures::future::join(wake_group.wait_for_data(), wake_group.wait_for_data()).await,
+        (
+            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
+            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
+        )
+    );
+    assert!(wake_group.is_closed());
+}
+
+#[netstack_test]
+async fn wake_group_hanging_get_called_when_armed(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let provider = realm
+        .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
+        .expect("connect to protocol");
+    let (wake_group, server_end) = fidl::endpoints::create_endpoints();
+    let _response = provider
+        .create_wake_group(&fnet_power::WakeGroupOptions::default(), server_end)
+        .await
+        .expect("create wake group");
+
+    let wake_group = wake_group.into_proxy();
+    let fut = wake_group.wait_for_data();
+    wake_group.arm().await.expect("arm hanging get");
+
+    // Call `WaitForData` again and observe the protocol close.
+    assert_matches!(
+        futures::future::join(fut, wake_group.wait_for_data()).await,
+        (
+            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
+            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
+        )
+    );
+    assert!(wake_group.is_closed());
+}
+
+#[netstack_test]
+async fn wake_group_arm_called_when_armed(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+
+    let provider = realm
+        .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
+        .expect("connect to protocol");
+    let (wake_group, server_end) = fidl::endpoints::create_endpoints();
+    let _response = provider
+        .create_wake_group(&fnet_power::WakeGroupOptions::default(), server_end)
+        .await
+        .expect("create wake group");
+
+    let wake_group = wake_group.into_proxy();
+    let fut = wake_group.wait_for_data();
+    wake_group.arm().await.expect("arm hanging get");
+
+    // Call `Arm` again and observe the protocol close.
+    assert_matches!(
+        futures::future::join(fut, wake_group.arm()).await,
+        (
+            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
+            Err(fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }),
+        )
+    );
+    assert!(wake_group.is_closed());
 }

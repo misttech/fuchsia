@@ -29,6 +29,7 @@ common_deps = [
   "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust",
   "//sdk/fidl/fuchsia.net.ndp:fuchsia.net.ndp_rust",
   "//sdk/fidl/fuchsia.net.neighbor:fuchsia.net.neighbor_rust",
+  "//sdk/fidl/fuchsia.net.power:fuchsia.net.power_rust",
   "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_rust",
   "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust",
   "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes_rust",
@@ -50,7 +51,6 @@ common_deps = [
   "//src/connectivity/lib/packet-formats",
   "//src/connectivity/network/lib/diagnostics-traits",
   "//src/connectivity/network/lib/explicit",
-  "//src/connectivity/network/lib/todo_unused",
   "//src/lib/async-utils",
   "//src/lib/debug/rust",
   "//src/lib/diagnostics/inspect/rust",
@@ -173,6 +173,7 @@ common_sources = [
   "src/bindings/util/data_available.rs",
   "src/bindings/util/result_ext.rs",
   "src/bindings/util/scope_ext.rs",
+  "src/bindings/waker.rs",
   "src/main.rs",
 ]
 

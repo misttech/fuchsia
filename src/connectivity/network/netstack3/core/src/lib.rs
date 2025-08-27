@@ -257,9 +257,9 @@ pub use context::{CoreCtx, UnlockedCoreCtx};
 pub use inspect::Inspector;
 pub use marker::{BindingsContext, BindingsTypes, CoreContext, IpBindingsContext, IpExt};
 pub use netstack3_base::{
-    CtxPair, DeferredResourceRemovalContext, EventContext, InstantBindingsTypes, InstantContext,
-    MapDerefExt, ReferenceNotifiers, RngContext, SettingsContext, TimerBindingsTypes, TimerContext,
-    TxMetadata, TxMetadataBindingsTypes,
+    CtxPair, DataNotifier, DataNotifierTypes, DeferredResourceRemovalContext, EventContext,
+    InstantBindingsTypes, InstantContext, MapDerefExt, ReferenceNotifiers, RngContext,
+    SettingsContext, TimerBindingsTypes, TimerContext, TxMetadata, TxMetadataBindingsTypes,
 };
 pub use state::{StackState, StackStateBuilder};
 pub use time::{AtomicInstant, Instant, TimerId};

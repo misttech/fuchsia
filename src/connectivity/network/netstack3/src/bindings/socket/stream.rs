@@ -254,11 +254,15 @@ impl<I: IpExt + IpSockAddrExt> worker::SocketWorkerHandler for BindingData<I> {
             }) => {
                 let Self { id, .. } = self;
 
-                if group.is_some() {
-                    // TODO(https://fxbug.dev/434262947): support TCP sockets in wake groups.
-                    warn!(
-                        "stream sockets do not support wake groups, but one was provided for {id:?}"
-                    );
+                if let Some(group) = group {
+                    let group = crate::bindings::waker::WakeGroupId::from(group);
+                    if let Some(notifier) = ctx.bindings_ctx().wake_groups.get_data_notifier(&group)
+                    {
+                        debug!("attaching socket {id:?} to wake group {group:?}");
+                        ctx.api().tcp().set_data_notifier(&id, notifier);
+                    } else {
+                        warn!("could not attach socket to nonexistent wake group {group:?}");
+                    }
                 }
 
                 for (domain, mark) in

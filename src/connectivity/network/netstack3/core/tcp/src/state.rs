@@ -17,9 +17,9 @@ use assert_matches::assert_matches;
 use derivative::Derivative;
 use explicit::ResultExt as _;
 use netstack3_base::{
-    Control, HandshakeOptions, IcmpErrorCode, Instant, Mss, Options, Payload, PayloadLen as _,
-    ResetOptions, SackBlocks, Segment, SegmentHeader, SegmentOptions, SeqNum, UnscaledWindowSize,
-    WindowScale, WindowSize,
+    Control, DataNotifier, HandshakeOptions, IcmpErrorCode, Instant, Mss, Options, Payload,
+    PayloadLen as _, ResetOptions, SackBlocks, Segment, SegmentHeader, SegmentOptions, SeqNum,
+    UnscaledWindowSize, WindowScale, WindowSize,
 };
 use netstack3_trace::{TraceResourceId, trace_instant};
 use packet_formats::utils::NonZeroDuration;
@@ -2331,6 +2331,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             max_syn_retries: _,
             ip_options: _,
         }: &SocketOptions,
+        data_notifier: &impl DataNotifier,
         defunct: bool,
     ) -> (Option<Segment<()>>, Option<BP::PassiveOpen>, DataAcked, NewlyClosed)
     where
@@ -2867,6 +2868,11 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             let nwritten = buffer.write_at(offset, &data);
                             let readable = assembler.insert(seg_seq..seg_seq + nwritten);
                             buffer.make_readable(readable, assembler.has_outstanding());
+
+                            // TODO(https://fxbug.dev/440396857): fix the race condition where
+                            // incoming data may not have been written into the zircon socket before
+                            // the client is notified of the data being available.
+                            data_notifier.notify();
                         }
                         RecvBufferState::Closed { nxt, .. } => *nxt = seg_seq + data.len(),
                     }
@@ -3869,7 +3875,8 @@ mod test {
                 incoming,
                 now,
                 options,
-                false, /* defunct */
+                &None::<()>, /* data_notifier */
+                false,       /* defunct */
             );
             (segment, passive_open)
         }
@@ -6091,7 +6098,8 @@ mod test {
                 Segment::ack(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(u16::MAX)),
                 clock.now(),
                 socket_options,
-                false, /* defunct */
+                &None::<()>, /* data_notifier */
+                false,       /* defunct */
             ),
             (None, None, DataAcked::No, NewlyClosed::No)
         );
@@ -6513,6 +6521,7 @@ mod test {
                         zero_window_ack,
                         clock.now(),
                         &socket_options,
+                        &None::<()>, /* data_notifier */
                         false,
                     ),
                     (None, None, DataAcked::No, _newly_closed)
@@ -6634,7 +6643,8 @@ mod test {
                 ),
                 clock.now(),
                 &socket_options,
-                false, /* defunct */
+                &None::<()>, /* data_notifier */
+                false,       /* defunct */
             ),
             (None, None, DataAcked::No, NewlyClosed::No)
         );
@@ -6675,7 +6685,8 @@ mod test {
                 ),
                 clock.now(),
                 &socket_options,
-                false, /* defunct */
+                &None::<()>, /* data_notifier */
+                false,       /* defunct */
             ),
             (None, None, DataAcked::No, NewlyClosed::No)
         );
@@ -6699,7 +6710,8 @@ mod test {
                 ),
                 clock.now(),
                 &socket_options,
-                false, /* defunct */
+                &None::<()>, /* data_notifier */
+                false,       /* defunct */
             ),
             (
                 Some(Segment::ack(
@@ -6753,7 +6765,8 @@ mod test {
                 ),
                 clock.now(),
                 &socket_options,
-                false, /* defunct */
+                &None::<()>, /* data_notifier */
+                false,       /* defunct */
             ),
             (
                 Some(Segment::ack_with_options(
@@ -6794,7 +6807,8 @@ mod test {
                 ),
                 clock.now(),
                 &socket_options,
-                false, /* defunct */
+                &None::<()>, /* data_notifier */
+                false,       /* defunct */
             ),
             (
                 Some(Segment::ack(
@@ -6820,7 +6834,8 @@ mod test {
                 ),
                 clock.now(),
                 &socket_options,
-                false, /* defunct */
+                &None::<()>, /* data_notifier */
+                false,       /* defunct */
             ),
             (
                 Some(Segment::ack(
@@ -8251,6 +8266,7 @@ mod test {
                     ack.clone(),
                     clock.now(),
                     &socket_options,
+                    &None::<()>, /* data_notifier */
                     false,
                 );
             assert_eq!(seg, None);
@@ -8346,6 +8362,7 @@ mod test {
                 ack,
                 clock.now(),
                 &socket_options,
+                &None::<()>, /* data_notifier */
                 false,
             );
         assert_eq!(seg, None);
@@ -8517,6 +8534,7 @@ mod test {
                         seg,
                         clock.now(),
                         &socket_options,
+                        &None::<()>, /* data_notifier */
                         false,
                     );
 
@@ -8675,6 +8693,7 @@ mod test {
                 seg,
                 clock.now(),
                 &socket_options,
+                &None::<()>, /* data_notifier */
                 false
             ),
             (None, None, DataAcked::Yes, NewlyClosed::No)
@@ -8712,6 +8731,7 @@ mod test {
                 seg,
                 clock.now(),
                 &socket_options,
+                &None::<()>, /* data_notifier */
                 false
             ),
             (None, None, DataAcked::No, NewlyClosed::No)
@@ -8788,6 +8808,7 @@ mod test {
                     ack,
                     clock.now(),
                     &socket_options,
+                    &None::<()>, /* data_notifier */
                     false
                 ),
                 (None, None, DataAcked::Yes, NewlyClosed::No)

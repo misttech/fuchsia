@@ -793,6 +793,26 @@ impl<'a> TestRealm<'a> {
         Ok(fdio::create_fd(sock.into()).context("failed to create fd")?.into())
     }
 
+    /// Creates a Stream [`socket2::Socket`] backed by the implementation of
+    /// `fuchsia.posix.socket/Provider` in this realm.
+    pub async fn stream_socket_with_options(
+        &self,
+        domain: fposix_socket::Domain,
+        proto: fposix_socket::StreamSocketProtocol,
+        options: fposix_socket::SocketCreationOptions,
+    ) -> Result<socket2::Socket> {
+        let socket_provider = self
+            .connect_to_protocol::<fposix_socket::ProviderMarker>()
+            .context("failed to connect to socket provider")?;
+        let sock = socket_provider
+            .stream_socket_with_options(domain, proto, options)
+            .await
+            .context("failed to call socket")?
+            .map_err(|e| std::io::Error::from_raw_os_error(e.into_primitive()))
+            .context("failed to create socket")?;
+
+        Ok(fdio::create_fd(sock.into()).context("failed to create fd")?.into())
+    }
     /// Shuts down the realm.
     ///
     /// It is often useful to call this method to ensure that the realm

@@ -52,10 +52,10 @@ use netstack3_base::socketmap::{IterShadows as _, SocketMap};
 use netstack3_base::sync::RwLock;
 use netstack3_base::{
     AnyDevice, BidirectionalConverter as _, ContextPair, Control, CoreTimerContext,
-    CoreTxMetadataContext, CtxPair, DeferredResourceRemovalContext, DeviceIdContext,
-    EitherDeviceId, ExistsError, HandleableTimer, IcmpErrorCode, Inspector, InspectorDeviceExt,
-    InspectorExt, InstantBindingsTypes, IpDeviceAddr, IpExt, LocalAddressError, Mark, MarkDomain,
-    Mss, OwnedOrRefsBidirectionalConverter, PayloadLen as _, PortAllocImpl,
+    CoreTxMetadataContext, CtxPair, DataNotifierTypes, DeferredResourceRemovalContext,
+    DeviceIdContext, EitherDeviceId, ExistsError, HandleableTimer, IcmpErrorCode, Inspector,
+    InspectorDeviceExt, InspectorExt, InstantBindingsTypes, IpDeviceAddr, IpExt, LocalAddressError,
+    Mark, MarkDomain, Mss, OwnedOrRefsBidirectionalConverter, PayloadLen as _, PortAllocImpl,
     ReferenceNotifiersExt as _, RemoveResourceResult, ResourceCounterContext as _, RngContext,
     Segment, SeqNum, SettingsContext, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
     TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
@@ -460,7 +460,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
 /// +-------------------------------+
 
 pub trait TcpBindingsTypes:
-    InstantBindingsTypes + TimerBindingsTypes + TxMetadataBindingsTypes + 'static
+    InstantBindingsTypes + TimerBindingsTypes + TxMetadataBindingsTypes + DataNotifierTypes + 'static
 {
     /// Receive buffer used by TCP.
     type ReceiveBuffer: ReceiveBuffer + Send + Sync;
@@ -1651,6 +1651,10 @@ pub struct TcpSocketState<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBin
     ip_options: I::DualStackIpOptions,
     // All other options.
     socket_options: SocketOptions,
+    // A notifier, the receiver of which is held by Bindings, that allows the socket
+    // to indicate when data is available for the client to read from the socket's
+    // receive buffer.
+    notifier: Option<BT::Notifier>,
 }
 
 #[derive(Derivative)]
@@ -1884,6 +1888,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpSocket
                 socket_state,
                 ip_options: Default::default(),
                 socket_options,
+                notifier: None,
             }),
             counters: Default::default(),
         });
@@ -1896,6 +1901,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpSocket
     >(
         init: F,
         socket_options: SocketOptions,
+        notifier: Option<BT::Notifier>,
     ) -> (Self, PrimaryRc<I, D, BT>) {
         let primary = PrimaryRc::new_cyclic(move |weak| {
             let socket_state = init(WeakTcpSocketId(weak));
@@ -1904,6 +1910,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpSocket
                     socket_state,
                     ip_options: Default::default(),
                     socket_options,
+                    notifier,
                 }),
                 counters: Default::default(),
             }
@@ -2346,7 +2353,7 @@ where
 
         let (core_ctx, bindings_ctx) = self.contexts();
         let result = core_ctx.with_socket_mut_transport_demux(id, |core_ctx, socket_state| {
-            let TcpSocketState { socket_state, ip_options, socket_options: _ } = socket_state;
+            let TcpSocketState { socket_state, ip_options, socket_options: _, notifier: _ } = socket_state;
             let Unbound { bound_device, buffer_sizes, sharing, socket_extra } =
                 match socket_state {
                     TcpSocketStateInner::Unbound(u) => u,
@@ -2540,7 +2547,8 @@ where
     ) -> Result<(), ListenError> {
         debug!("listen on {id:?} with backlog {backlog}");
         self.core_ctx().with_socket_mut_transport_demux(id, |core_ctx, socket_state| {
-            let TcpSocketState { socket_state, ip_options: _, socket_options: _ } = socket_state;
+            let TcpSocketState { socket_state, ip_options: _, socket_options: _, notifier: _ } =
+                socket_state;
             let (listener, listener_sharing, addr) = match socket_state {
                 TcpSocketStateInner::Bound(BoundSocketState::Listener((l, sharing, addr))) => {
                     match l {
@@ -2597,7 +2605,8 @@ where
         AcceptError,
     > {
         let (conn_id, client_buffers) = self.core_ctx().with_socket_mut(id, |socket_state| {
-            let TcpSocketState { socket_state, ip_options: _, socket_options: _ } = socket_state;
+            let TcpSocketState { socket_state, ip_options: _, socket_options: _, notifier: _ } =
+                socket_state;
             debug!("accept on {id:?}");
             let Listener { backlog: _, buffer_sizes: _, accept_queue } = match socket_state {
                 TcpSocketStateInner::Bound(BoundSocketState::Listener((
@@ -2621,7 +2630,7 @@ where
 
         let remote_addr =
             self.core_ctx().with_socket_mut_and_converter(&conn_id, |socket_state, _converter| {
-                let TcpSocketState { socket_state, ip_options: _, socket_options: _ } =
+                let TcpSocketState { socket_state, ip_options: _, socket_options: _, notifier: _ } =
                     socket_state;
                 let conn_and_addr = assert_matches!(
                     socket_state,
@@ -2658,7 +2667,8 @@ where
         let (core_ctx, bindings_ctx) = self.contexts();
         let result =
             core_ctx.with_socket_mut_isn_transport_demux(id, |core_ctx, socket_state, isn| {
-                let TcpSocketState { socket_state, ip_options, socket_options } = socket_state;
+                let TcpSocketState { socket_state, ip_options, socket_options, notifier: _ } =
+                    socket_state;
                 debug!("connect on {id:?} to {remote_ip:?}:{remote_port}");
                 let remote_ip = DualStackRemoteIp::<I, _>::new(remote_ip);
                 let (local_addr, sharing, buffer_sizes, socket_extra) = match socket_state {
@@ -2906,7 +2916,8 @@ where
         let (core_ctx, bindings_ctx) = self.contexts();
         let (destroy, pending) =
             core_ctx.with_socket_mut_transport_demux(&id, |core_ctx, socket_state| {
-                let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+                let TcpSocketState { socket_state, ip_options: _, socket_options, notifier: _ } =
+                    socket_state;
                 match socket_state {
                     TcpSocketStateInner::Unbound(_) => (true, None),
                     TcpSocketStateInner::Bound(BoundSocketState::Listener((
@@ -3181,7 +3192,7 @@ where
         let (core_ctx, bindings_ctx) = self.contexts();
         let (result, pending) =
             core_ctx.with_socket_mut_transport_demux(id, |core_ctx, socket_state| {
-                let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+                let TcpSocketState { socket_state, ip_options: _, socket_options, notifier: _  } = socket_state;
                 match socket_state {
                     TcpSocketStateInner::Unbound(_) => Err(NoConnection),
                     TcpSocketStateInner::Bound(BoundSocketState::Connected {
@@ -3371,7 +3382,7 @@ where
         let (core_ctx, bindings_ctx) = self.contexts();
         core_ctx.with_socket_mut_transport_demux(
             id,
-            |core_ctx, TcpSocketState { socket_state, ip_options: _, socket_options }| {
+            |core_ctx, TcpSocketState { socket_state, ip_options: _, socket_options, notifier:_  }| {
                 let conn = match socket_state {
                     TcpSocketStateInner::Unbound(_) => return,
                     TcpSocketStateInner::Bound(bound) => match bound {
@@ -3538,7 +3549,8 @@ where
         let weak_device = new_device.as_ref().map(|d| d.downgrade());
         core_ctx.with_socket_mut_transport_demux(id, move |core_ctx, socket_state| {
             debug!("set device on {id:?} to {new_device:?}");
-            let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+            let TcpSocketState { socket_state, ip_options: _, socket_options, notifier: _ } =
+                socket_state;
             match socket_state {
                 TcpSocketStateInner::Unbound(unbound) => {
                     unbound.bound_device = weak_device;
@@ -3698,7 +3710,8 @@ where
     ) -> SocketInfo<I::Addr, <C::CoreContext as DeviceIdContext<AnyDevice>>::WeakDeviceId> {
         self.core_ctx().with_socket_and_converter(
             id,
-            |TcpSocketState { socket_state, ip_options: _, socket_options: _ }, _converter| {
+            |TcpSocketState { socket_state, ip_options: _, socket_options: _, notifier: _ },
+             _converter| {
                 match socket_state {
                     TcpSocketStateInner::Unbound(unbound) => SocketInfo::Unbound(unbound.into()),
                     TcpSocketStateInner::Bound(BoundSocketState::Connected {
@@ -3725,7 +3738,8 @@ where
     pub fn do_send(&mut self, conn_id: &TcpApiSocketId<I, C>) {
         let (core_ctx, bindings_ctx) = self.contexts();
         core_ctx.with_socket_mut_transport_demux(conn_id, |core_ctx, socket_state| {
-            let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+            let TcpSocketState { socket_state, ip_options: _, socket_options, notifier: _ } =
+                socket_state;
             let (conn, timer) = assert_matches!(
                 socket_state,
                 TcpSocketStateInner::Bound(BoundSocketState::Connected {
@@ -3800,7 +3814,7 @@ where
         let bindings_ctx_alias = &mut *bindings_ctx;
         let closed_and_defunct =
             core_ctx.with_socket_mut_transport_demux(&id, move |core_ctx, socket_state| {
-                let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+                let TcpSocketState { socket_state, ip_options: _, socket_options, notifier: _  } = socket_state;
                 let id = id_alias;
                 trace_duration!(c"tcp::handle_timer", "id" => id.trace_id());
                 let bindings_ctx = bindings_ctx_alias;
@@ -3928,7 +3942,9 @@ where
         let (core_ctx, _) = self.contexts();
         core_ctx.with_socket_mut(
             id,
-            |TcpSocketState { socket_state: _, ip_options: _, socket_options }| f(socket_options),
+            |TcpSocketState { socket_state: _, ip_options: _, socket_options, notifier: _ }| {
+                f(socket_options)
+            },
         )
     }
 
@@ -3938,10 +3954,12 @@ where
         id: &TcpApiSocketId<I, C>,
         f: F,
     ) -> R {
-        self.core_ctx()
-            .with_socket(id, |TcpSocketState { socket_state: _, ip_options: _, socket_options }| {
+        self.core_ctx().with_socket(
+            id,
+            |TcpSocketState { socket_state: _, ip_options: _, socket_options, notifier: _ }| {
                 f(socket_options)
-            })
+            },
+        )
     }
 
     /// Set the size of the send buffer for this socket and future derived
@@ -3981,7 +3999,8 @@ where
             false => SharingState::Exclusive,
         };
         self.core_ctx().with_socket_mut_transport_demux(id, |core_ctx, socket_state| {
-            let TcpSocketState { socket_state, ip_options: _, socket_options: _ } = socket_state;
+            let TcpSocketState { socket_state, ip_options: _, socket_options: _, notifier: _ } =
+                socket_state;
             match socket_state {
                 TcpSocketStateInner::Unbound(unbound) => {
                     unbound.sharing = new_sharing;
@@ -4022,15 +4041,17 @@ where
     pub fn reuseaddr(&mut self, id: &TcpApiSocketId<I, C>) -> bool {
         self.core_ctx().with_socket(
             id,
-            |TcpSocketState { socket_state, ip_options: _, socket_options: _ }| match socket_state {
-                TcpSocketStateInner::Unbound(Unbound { sharing, .. })
-                | TcpSocketStateInner::Bound(
-                    BoundSocketState::Connected { sharing, .. }
-                    | BoundSocketState::Listener((_, ListenerSharingState { sharing, .. }, _)),
-                ) => match sharing {
-                    SharingState::Exclusive => false,
-                    SharingState::ReuseAddress => true,
-                },
+            |TcpSocketState { socket_state, ip_options: _, socket_options: _, notifier: _ }| {
+                match socket_state {
+                    TcpSocketStateInner::Unbound(Unbound { sharing, .. })
+                    | TcpSocketStateInner::Bound(
+                        BoundSocketState::Connected { sharing, .. }
+                        | BoundSocketState::Listener((_, ListenerSharingState { sharing, .. }, _)),
+                    ) => match sharing {
+                        SharingState::Exclusive => false,
+                        SharingState::ReuseAddress => true,
+                    },
+                }
             },
         )
     }
@@ -4046,7 +4067,7 @@ where
     ) -> Result<bool, NotDualStackCapableError> {
         self.core_ctx().with_socket_mut_transport_demux(
             id,
-            |core_ctx, TcpSocketState { socket_state: _, ip_options, socket_options: _ }| {
+            |core_ctx, TcpSocketState { socket_state: _, ip_options, socket_options: _ , notifier: _ }| {
                 match core_ctx {
                     MaybeDualStack::NotDualStack(_) => Err(NotDualStackCapableError),
                     MaybeDualStack::DualStack((core_ctx, _converter)) => {
@@ -4067,6 +4088,22 @@ where
         self.with_socket_options(id, |options| *options.ip_options.marks.get(domain))
     }
 
+    /// Sets the socket's data notifier, which allows the socket to notify Bindings
+    /// when data is available for the client to read from the socket's receive
+    /// buffer.
+    pub fn set_data_notifier(
+        &mut self,
+        id: &TcpApiSocketId<I, C>,
+        notifier: <C::BindingsContext as DataNotifierTypes>::Notifier,
+    ) {
+        self.core_ctx().with_socket_mut(
+            id,
+            |TcpSocketState { notifier: socket_notifier, .. }| {
+                *socket_notifier = Some(notifier);
+            },
+        )
+    }
+
     /// Sets the `dual_stack_enabled` option value.
     pub fn set_dual_stack_enabled(
         &mut self,
@@ -4078,7 +4115,8 @@ where
         value: bool,
     ) -> Result<(), SetDualStackEnabledError> {
         self.core_ctx().with_socket_mut_transport_demux(id, |core_ctx, socket_state| {
-            let TcpSocketState { socket_state, ip_options, socket_options: _ } = socket_state;
+            let TcpSocketState { socket_state, ip_options, socket_options: _, notifier: _ } =
+                socket_state;
             match core_ctx {
                 MaybeDualStack::NotDualStack(_) => Err(NotDualStackCapableError.into()),
                 MaybeDualStack::DualStack((core_ctx, _converter)) => match socket_state {
@@ -4103,7 +4141,8 @@ where
         error: IcmpErrorCode,
     ) {
         let destroy = core_ctx.with_socket_mut_transport_demux(&id, |core_ctx, socket_state| {
-            let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+            let TcpSocketState { socket_state, ip_options: _, socket_options, notifier: _ } =
+                socket_state;
             let (conn_and_addr, timer) = assert_matches!(
                 socket_state,
                 TcpSocketStateInner::Bound(
@@ -4330,7 +4369,8 @@ where
     /// Gets the last error on the connection.
     pub fn get_socket_error(&mut self, id: &TcpApiSocketId<I, C>) -> Option<ConnectionError> {
         self.core_ctx().with_socket_mut_and_converter(id, |socket_state, converter| {
-            let TcpSocketState { socket_state, ip_options: _, socket_options: _ } = socket_state;
+            let TcpSocketState { socket_state, ip_options: _, socket_options: _, notifier: _ } =
+                socket_state;
             match socket_state {
                 TcpSocketStateInner::Unbound(_)
                 | TcpSocketStateInner::Bound(BoundSocketState::Listener(_)) => None,
@@ -4463,7 +4503,8 @@ where
                         IpVersion::V6 => "IPv6",
                     },
                 );
-                let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+                let TcpSocketState { socket_state, ip_options: _, socket_options, notifier: _ } =
+                    socket_state;
                 node.delegate_inspectable(&socket_options.ip_options.marks);
                 match socket_state {
                     TcpSocketStateInner::Unbound(_) => {
@@ -4645,7 +4686,8 @@ fn close_pending_sockets<I, CC, BC>(
 {
     for conn_id in pending {
         core_ctx.with_socket_mut_transport_demux(&conn_id, |core_ctx, socket_state| {
-            let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+            let TcpSocketState { socket_state, ip_options: _, socket_options, notifier: _ } =
+                socket_state;
             let (conn_and_addr, timer) = assert_matches!(
                 socket_state,
                 TcpSocketStateInner::Bound(BoundSocketState::Connected{
@@ -5949,6 +5991,10 @@ mod tests {
 
     impl<D: FakeStrongDeviceId> TxMetadataBindingsTypes for TcpBindingsCtx<D> {
         type TxMetadata = FakeTxMetadata;
+    }
+
+    impl<D: FakeStrongDeviceId> DataNotifierTypes for TcpBindingsCtx<D> {
+        type Notifier = ();
     }
 
     impl<D: FakeStrongDeviceId> TcpBindingsTypes for TcpBindingsCtx<D> {

@@ -542,7 +542,7 @@ where
     H: IpHeaderInfo<WireI>,
 {
     core_ctx.with_socket_mut_transport_demux(conn_id, |core_ctx, socket_state| {
-        let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+        let TcpSocketState { socket_state, ip_options: _, socket_options, notifier } = socket_state;
 
         match run_socket_ingress_filter(
             bindings_ctx,
@@ -610,6 +610,7 @@ where
                     conn_id,
                     demux_conn_id,
                     socket_options,
+                    notifier,
                     conn,
                     timer,
                     incoming.into(),
@@ -623,6 +624,7 @@ where
                     conn_id,
                     demux_conn_id,
                     socket_options,
+                    notifier,
                     conn,
                     timer,
                     incoming.into(),
@@ -645,6 +647,7 @@ fn try_handle_incoming_for_connection<SockI, WireI, CC, BC, DC>(
     conn_id: &TcpSocketId<SockI, CC::WeakDeviceId, BC>,
     demux_id: WireI::DemuxSocketId<CC::WeakDeviceId, BC>,
     socket_options: &SocketOptions,
+    data_notifier: &Option<BC::Notifier>,
     conn: &mut Connection<SockI, WireI, CC::WeakDeviceId, BC>,
     timer: &mut BC::Timer,
     incoming: Segment<&[u8]>,
@@ -696,6 +699,7 @@ where
         incoming,
         bindings_ctx.now(),
         socket_options,
+        data_notifier,
         *defunct,
     );
 
@@ -990,6 +994,7 @@ where
 
     let ip_options = TcpIpSockOptions { marks: *marks, ..socket_state.socket_options.ip_options };
     let socket_options = SocketOptions { ip_options, ..socket_state.socket_options };
+    let notifier = socket_state.notifier.clone();
 
     let bound_device = bound_device.as_ref().map(|d| d.as_ref());
     let ip_sock = match core_ctx.new_ip_socket(
@@ -1056,6 +1061,7 @@ where
         incoming.into(),
         bindings_ctx.now(),
         &SocketOptions::default(),
+        &notifier,
         false, /* defunct */
     );
     let reply = assert_matches!(
@@ -1134,6 +1140,7 @@ where
                         })
                     },
                     socket_options,
+                    notifier,
                 );
                 (make_demux_id(id.clone()), (primary, id))
             }) {

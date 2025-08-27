@@ -11,6 +11,8 @@ use std::task::Poll;
 use futures::Future;
 use futures::task::AtomicWaker;
 
+use crate::bindings::BindingsCtx;
+
 #[derive(Debug, Default)]
 struct DataAvailable {
     available: AtomicBool,
@@ -20,7 +22,6 @@ struct DataAvailable {
 /// The notifier side of the underlying data availability signal.
 ///
 /// Notifiers can be cloned to allow for multiple current producers.
-#[todo_unused::todo_unused("https://fxbug.dev/434261016")]
 #[derive(Debug, Clone)]
 pub struct DataNotifier {
     inner: Arc<DataAvailable>,
@@ -32,7 +33,6 @@ impl DataNotifier {
     /// If the watcher is not currently waiting, the notification will have no
     /// effect until the watcher starts waiting. Multiple notifications are
     /// coalesced.
-    #[todo_unused::todo_unused("https://fxbug.dev/434261016")]
     pub fn notify(&self) {
         let DataAvailable { available, waker } = &*self.inner;
 
@@ -43,11 +43,20 @@ impl DataNotifier {
     }
 }
 
+impl netstack3_core::DataNotifierTypes for BindingsCtx {
+    type Notifier = DataNotifier;
+}
+
+impl netstack3_core::DataNotifier for DataNotifier {
+    fn notify(&self) {
+        self.notify();
+    }
+}
+
 /// The receiver side of the underlying data availability signal.
 ///
 /// The watcher is used to wait for notifications from one or more
 /// [`DataNotifier`]s.
-#[todo_unused::todo_unused("https://fxbug.dev/434261016")]
 #[derive(Debug)]
 pub struct DataWatcher {
     inner: Arc<DataAvailable>,
@@ -55,7 +64,6 @@ pub struct DataWatcher {
 
 impl DataWatcher {
     /// Creates a new watcher and notifier pair.
-    #[todo_unused::todo_unused("https://fxbug.dev/434261016")]
     pub fn new() -> (Self, DataNotifier) {
         let watcher = DataWatcher { inner: Arc::new(DataAvailable::default()) };
         let notifier = DataNotifier { inner: Arc::clone(&watcher.inner) };
@@ -68,7 +76,6 @@ impl DataWatcher {
     /// To be clear, this method clears any previous notification, and the returned
     /// future will only complete the *next* time [`DataNotifier::notify`] is
     /// called.
-    #[todo_unused::todo_unused("https://fxbug.dev/434261016")]
     pub fn reset_and_wait(&mut self) -> impl Future<Output = ()> + use<'_> {
         let DataAvailable { available, waker } = &*self.inner;
 

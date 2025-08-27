@@ -50,6 +50,7 @@ use crate::bindings::{BindingsCtx, LifetimeExt as _, routes};
 mod data_available;
 mod result_ext;
 mod scope_ext;
+pub(crate) use data_available::*;
 pub(crate) use result_ext::*;
 pub(crate) use scope_ext::*;
 

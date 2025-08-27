@@ -46,6 +46,7 @@ mod stack_fidl_worker;
 mod time;
 mod timers;
 mod util;
+mod waker;
 
 use std::fmt::Debug;
 use std::ops::Deref;
@@ -396,6 +397,7 @@ pub(crate) struct BindingsCtxInner {
     counters: BindingsCounters,
     ebpf_manager: EbpfManager,
     power: PowerWorkerSink,
+    wake_groups: waker::WakeGroups,
     settings: Settings,
 }
 
@@ -420,6 +422,7 @@ impl BindingsCtxInner {
             counters: Default::default(),
             ebpf_manager: Default::default(),
             power,
+            wake_groups: waker::WakeGroups::default(),
             settings: Settings::new(interface_config),
         }
     }
@@ -1233,6 +1236,7 @@ pub(crate) enum Service {
     Stack(fidl_fuchsia_net_stack::StackRequestStream),
     SettingsControl(fidl_fuchsia_net_settings::ControlRequestStream),
     SettingsState(fidl_fuchsia_net_settings::StateRequestStream),
+    WakeGroupProvider(fidl_fuchsia_net_power::WakeGroupProviderRequestStream),
 }
 
 impl NetstackSeed {
@@ -1582,6 +1586,10 @@ impl NetstackSeed {
                 Service::SettingsState(control) => services_handle
                     .spawn_request_stream_handler(control, |rs| {
                         settings::serve_state(netstack.ctx.clone(), rs)
+                    }),
+                Service::WakeGroupProvider(waker) => services_handle
+                    .spawn_request_stream_handler(waker, |rs| {
+                        netstack.ctx.bindings_ctx().wake_groups.clone().serve_provider(rs)
                     }),
             })
             .collect::<()>();
