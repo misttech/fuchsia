@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use assert_matches::assert_matches;
-use fidl::endpoints::{Proxy, ServerEnd};
+use fidl::endpoints::Proxy as _;
 use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions, MerkleTreeBuilder};
 use fxfs_testing::TestFixture;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
 use syncio::{
-    zxio, zxio_fsverity_descriptor_t, zxio_node_attr_has_t, zxio_node_attributes_t, SeekOrigin,
-    SelinuxContextAttr, XattrSetMode, Zxio, ZxioOpenOptions, ZXIO_ROOT_HASH_LENGTH,
+    SeekOrigin, SelinuxContextAttr, XattrSetMode, ZXIO_ROOT_HASH_LENGTH, Zxio, ZxioOpenOptions,
+    zxio, zxio_fsverity_descriptor_t, zxio_node_attr_has_t, zxio_node_attributes_t,
 };
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::execution_scope::ExecutionScope;
@@ -19,7 +19,7 @@ use vfs::node::Node;
 use vfs::path::Path;
 use vfs::remote::RemoteLike;
 use vfs::symlink::Symlink;
-use vfs::{pseudo_directory, ObjectRequestRef};
+use vfs::{ObjectRequestRef, pseudo_directory};
 use zx::{self as zx, HandleBased, Status};
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -220,16 +220,6 @@ async fn test_read_link_error() {
     }
 
     impl RemoteLike for ErrorSymlink {
-        fn deprecated_open(
-            self: Arc<Self>,
-            _scope: ExecutionScope,
-            _flags: fio::OpenFlags,
-            _path: Path,
-            _server_end: ServerEnd<fio::NodeMarker>,
-        ) {
-            panic!("fuchsia.io/Directory.DeprecatedOpen should not be used in these tests.")
-        }
-
         fn open(
             self: Arc<Self>,
             scope: ExecutionScope,
