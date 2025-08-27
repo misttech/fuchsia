@@ -120,7 +120,7 @@ is_fvm=1
 image_source="$(fx-fvm-find-raw-source)"
 if [[ -z "${image_source}" ]]; then
   is_fvm=0
-  image_source="$(fx-command-run list-build-artifacts --name fuchsia.fxfs_sparse --type blk --allow-empty images)"
+  image_source="$(fx-command-run list-build-artifacts --name storage-full --type fxfs-blk --allow-empty images)"
 fi
 
 args=(
