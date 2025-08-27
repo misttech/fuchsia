@@ -33,6 +33,7 @@ source_set("tests") {
     "gparena_tests.cc",
     "name_tests.cc",
     "object_tracker_tests.cc",
+    "paged_view_tests.cc",
   ]
 
   deps = [
