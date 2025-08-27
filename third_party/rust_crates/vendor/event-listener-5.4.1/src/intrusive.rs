@@ -1,20 +1,31 @@
-//! libstd-based implementation of `event-listener`.
+//! Intrusive linked list-based implementation of `event-listener`.
 //!
-//! This implementation crates an intrusive linked list of listeners.
+//! This implementation crates an intrusive linked list of listeners. This list
+//! is secured using either a libstd mutex or a critical section.
 
 use crate::notify::{GenericNotify, Internal, Notification};
 use crate::sync::atomic::Ordering;
 use crate::sync::cell::{Cell, UnsafeCell};
-use crate::sync::{Mutex, MutexGuard};
 use crate::{RegisterResult, State, TaskRef};
+
+#[cfg(feature = "critical-section")]
+use core::cell::RefCell;
+#[cfg(all(feature = "std", not(feature = "critical-section")))]
+use core::ops::{Deref, DerefMut};
 
 use core::marker::PhantomPinned;
 use core::mem;
-use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 use core::ptr::NonNull;
 
-pub(super) struct List<T>(Mutex<Inner<T>>);
+pub(super) struct List<T>(
+    /// libstd-based implementation uses a normal Muetx to secure the data.
+    #[cfg(all(feature = "std", not(feature = "critical-section")))]
+    crate::sync::Mutex<Inner<T>>,
+    /// Critical-section-based implementation uses a CS cell that wraps a RefCell.
+    #[cfg(feature = "critical-section")]
+    critical_section::Mutex<RefCell<Inner<T>>>,
+);
 
 struct Inner<T> {
     /// The head of the linked list.
@@ -36,67 +47,141 @@ struct Inner<T> {
 impl<T> List<T> {
     /// Create a new, empty event listener list.
     pub(super) fn new() -> Self {
-        Self(Mutex::new(Inner {
+        let inner = Inner {
             head: None,
             tail: None,
             next: None,
             len: 0,
             notified: 0,
-        }))
+        };
+
+        #[cfg(feature = "critical-section")]
+        {
+            Self(critical_section::Mutex::new(RefCell::new(inner)))
+        }
+
+        #[cfg(not(feature = "critical-section"))]
+        Self(crate::sync::Mutex::new(inner))
     }
 
     /// Get the total number of listeners without blocking.
+    #[cfg(all(feature = "std", not(feature = "critical-section")))]
     pub(crate) fn try_total_listeners(&self) -> Option<usize> {
         self.0.try_lock().ok().map(|list| list.len)
     }
 
+    /// Get the total number of listeners without blocking.
+    #[cfg(feature = "critical-section")]
+    pub(crate) fn try_total_listeners(&self) -> Option<usize> {
+        Some(self.total_listeners())
+    }
+
     /// Get the total number of listeners with blocking.
+    #[cfg(all(feature = "std", not(feature = "critical-section")))]
     pub(crate) fn total_listeners(&self) -> usize {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).len
+    }
+
+    /// Get the total number of listeners with blocking.
+    #[cfg(feature = "critical-section")]
+    #[allow(unused)]
+    pub(crate) fn total_listeners(&self) -> usize {
+        critical_section::with(|cs| self.0.borrow(cs).borrow().len)
     }
 }
 
 impl<T> crate::Inner<T> {
-    fn lock(&self) -> ListLock<'_, '_, T> {
-        ListLock {
+    #[cfg(all(feature = "std", not(feature = "critical-section")))]
+    fn with_inner<R>(&self, f: impl FnOnce(&mut Inner<T>) -> R) -> R {
+        struct ListLock<'a, 'b, T> {
+            lock: crate::sync::MutexGuard<'a, Inner<T>>,
+            inner: &'b crate::Inner<T>,
+        }
+
+        impl<T> Deref for ListLock<'_, '_, T> {
+            type Target = Inner<T>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.lock
+            }
+        }
+
+        impl<T> DerefMut for ListLock<'_, '_, T> {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.lock
+            }
+        }
+
+        impl<T> Drop for ListLock<'_, '_, T> {
+            fn drop(&mut self) {
+                update_notified(&self.inner.notified, &self.lock);
+            }
+        }
+
+        let mut list = ListLock {
             inner: self,
             lock: self.list.0.lock().unwrap_or_else(|e| e.into_inner()),
+        };
+        f(&mut list)
+    }
+
+    #[cfg(feature = "critical-section")]
+    fn with_inner<R>(&self, f: impl FnOnce(&mut Inner<T>) -> R) -> R {
+        struct ListWrapper<'a, T> {
+            inner: &'a crate::Inner<T>,
+            list: &'a mut Inner<T>,
         }
+
+        impl<T> Drop for ListWrapper<'_, T> {
+            fn drop(&mut self) {
+                update_notified(&self.inner.notified, self.list);
+            }
+        }
+
+        critical_section::with(move |cs| {
+            let mut list = self.list.0.borrow_ref_mut(cs);
+            let wrapper = ListWrapper {
+                inner: self,
+                list: &mut *list,
+            };
+
+            f(wrapper.list)
+        })
     }
 
     /// Add a new listener to the list.
     pub(crate) fn insert(&self, mut listener: Pin<&mut Option<Listener<T>>>) {
-        let mut inner = self.lock();
+        self.with_inner(|inner| {
+            listener.as_mut().set(Some(Listener {
+                link: UnsafeCell::new(Link {
+                    state: Cell::new(State::Created),
+                    prev: Cell::new(inner.tail),
+                    next: Cell::new(None),
+                }),
+                _pin: PhantomPinned,
+            }));
+            let listener = listener.as_pin_mut().unwrap();
 
-        listener.as_mut().set(Some(Listener {
-            link: UnsafeCell::new(Link {
-                state: Cell::new(State::Created),
-                prev: Cell::new(inner.tail),
-                next: Cell::new(None),
-            }),
-            _pin: PhantomPinned,
-        }));
-        let listener = listener.as_pin_mut().unwrap();
+            {
+                let entry_guard = listener.link.get();
+                // SAFETY: We are locked, so we can access the inner `link`.
+                let entry = unsafe { entry_guard.deref() };
 
-        {
-            let entry_guard = listener.link.get();
-            // SAFETY: We are locked, so we can access the inner `link`.
-            let entry = unsafe { entry_guard.deref() };
+                // Replace the tail with the new entry.
+                match inner.tail.replace(entry.into()) {
+                    None => inner.head = Some(entry.into()),
+                    Some(t) => unsafe { t.as_ref().next.set(Some(entry.into())) },
+                };
+            }
 
-            // Replace the tail with the new entry.
-            match mem::replace(&mut inner.tail, Some(entry.into())) {
-                None => inner.head = Some(entry.into()),
-                Some(t) => unsafe { t.as_ref().next.set(Some(entry.into())) },
-            };
-        }
+            // If there are no unnotified entries, this is the first one.
+            if inner.next.is_none() {
+                inner.next = inner.tail;
+            }
 
-        // If there are no unnotified entries, this is the first one.
-        if inner.next.is_none() {
-            inner.next = inner.tail;
-        }
-
-        // Bump the entry count.
-        inner.len += 1;
+            // Bump the entry count.
+            inner.len += 1;
+        });
     }
 
     /// Remove a listener from the list.
@@ -105,13 +190,13 @@ impl<T> crate::Inner<T> {
         listener: Pin<&mut Option<Listener<T>>>,
         propagate: bool,
     ) -> Option<State<T>> {
-        self.lock().remove(listener, propagate)
+        self.with_inner(|inner| inner.remove(listener, propagate))
     }
 
     /// Notifies a number of entries.
     #[cold]
     pub(crate) fn notify(&self, notify: impl Notification<Tag = T>) -> usize {
-        self.lock().notify(notify)
+        self.with_inner(|inner| inner.notify(notify))
     }
 
     /// Register a task to be notified when the event is triggered.
@@ -123,41 +208,42 @@ impl<T> crate::Inner<T> {
         mut listener: Pin<&mut Option<Listener<T>>>,
         task: TaskRef<'_>,
     ) -> RegisterResult<T> {
-        let mut inner = self.lock();
-        let entry_guard = match listener.as_mut().as_pin_mut() {
-            Some(listener) => listener.link.get(),
-            None => return RegisterResult::NeverInserted,
-        };
-        // SAFETY: We are locked, so we can access the inner `link`.
-        let entry = unsafe { entry_guard.deref() };
+        self.with_inner(|inner| {
+            let entry_guard = match listener.as_mut().as_pin_mut() {
+                Some(listener) => listener.link.get(),
+                None => return RegisterResult::NeverInserted,
+            };
+            // SAFETY: We are locked, so we can access the inner `link`.
+            let entry = unsafe { entry_guard.deref() };
 
-        // Take out the state and check it.
-        match entry.state.replace(State::NotifiedTaken) {
-            State::Notified { tag, .. } => {
-                // We have been notified, remove the listener.
-                inner.remove(listener, false);
-                RegisterResult::Notified(tag)
+            // Take out the state and check it.
+            match entry.state.replace(State::NotifiedTaken) {
+                State::Notified { tag, .. } => {
+                    // We have been notified, remove the listener.
+                    inner.remove(listener, false);
+                    RegisterResult::Notified(tag)
+                }
+
+                State::Task(other_task) => {
+                    // Only replace the task if it's different.
+                    entry.state.set(State::Task({
+                        if !task.will_wake(other_task.as_task_ref()) {
+                            task.into_task()
+                        } else {
+                            other_task
+                        }
+                    }));
+
+                    RegisterResult::Registered
+                }
+
+                _ => {
+                    // We have not been notified, register the task.
+                    entry.state.set(State::Task(task.into_task()));
+                    RegisterResult::Registered
+                }
             }
-
-            State::Task(other_task) => {
-                // Only replace the task if it's different.
-                entry.state.set(State::Task({
-                    if !task.will_wake(other_task.as_task_ref()) {
-                        task.into_task()
-                    } else {
-                        other_task
-                    }
-                }));
-
-                RegisterResult::Registered
-            }
-
-            _ => {
-                // We have not been notified, register the task.
-                entry.state.set(State::Task(task.into_task()));
-                RegisterResult::Registered
-            }
-        }
+        })
     }
 }
 
@@ -274,38 +360,15 @@ impl<T> Inner<T> {
     }
 }
 
-struct ListLock<'a, 'b, T> {
-    lock: MutexGuard<'a, Inner<T>>,
-    inner: &'b crate::Inner<T>,
-}
+fn update_notified<T>(slot: &crate::sync::atomic::AtomicUsize, list: &Inner<T>) {
+    // Update the notified count.
+    let notified = if list.notified < list.len {
+        list.notified
+    } else {
+        usize::MAX
+    };
 
-impl<T> Deref for ListLock<'_, '_, T> {
-    type Target = Inner<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.lock
-    }
-}
-
-impl<T> DerefMut for ListLock<'_, '_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.lock
-    }
-}
-
-impl<T> Drop for ListLock<'_, '_, T> {
-    fn drop(&mut self) {
-        let list = &mut **self;
-
-        // Update the notified count.
-        let notified = if list.notified < list.len {
-            list.notified
-        } else {
-            usize::MAX
-        };
-
-        self.inner.notified.store(notified, Ordering::Release);
-    }
+    slot.store(notified, Ordering::Release);
 }
 
 pub(crate) struct Listener<T> {
@@ -358,15 +421,15 @@ mod tests {
         inner.insert(listen2.as_mut());
         inner.insert(listen3.as_mut());
 
-        assert_eq!(inner.lock().len, 3);
+        assert_eq!(inner.list.try_total_listeners(), Some(3));
 
         // Remove one.
         assert_eq!(inner.remove(listen2, false), Some(State::Created));
-        assert_eq!(inner.lock().len, 2);
+        assert_eq!(inner.list.try_total_listeners(), Some(2));
 
         // Remove another.
         assert_eq!(inner.remove(listen1, false), Some(State::Created));
-        assert_eq!(inner.lock().len, 1);
+        assert_eq!(inner.list.try_total_listeners(), Some(1));
     }
 
     #[test]

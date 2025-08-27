@@ -3,7 +3,7 @@ name = "event-listener"
 # When publishing a new version:
 # - Update CHANGELOG.md
 # - Create "v5.x.y" git tag
-version = "5.3.1"
+version = "5.4.1"
 authors = ["Stjepan Glavina <stjepang@gmail.com>", "John Nunley <dev@notgull.net>"]
 edition = "2021"
 rust-version = "1.60"
@@ -29,6 +29,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
 [dependencies]
 concurrent-queue = { version = "2.4.0", default-features = false }
+critical-section = { version = "1.2.0", default-features = false, optional = true }
 pin-project-lite = "0.2.12"
 portable-atomic-util = { version = "0.2.0", default-features = false, optional = true, features = ["alloc"] }
 
@@ -45,12 +46,13 @@ default-features = false
 optional = true
 
 [dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
 futures-lite = "2.0.0"
 try-lock = "0.2.5"
 waker-fn = "1"
 
 [dev-dependencies.criterion]
-version = "0.5"
+version = "0.7"
 default-features = false
 features = ["cargo_bench_support"]
 

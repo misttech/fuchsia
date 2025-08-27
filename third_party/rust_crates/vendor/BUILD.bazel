@@ -859,14 +859,14 @@ alias(
 )
 
 alias(
-    name = "event-listener-5.3.1",
-    actual = "//third_party/rust_crates/vendor/event-listener-5.3.1:event_listener",
+    name = "event-listener-5.4.1",
+    actual = "//third_party/rust_crates/vendor/event-listener-5.4.1:event_listener",
     tags = ["manual"],
 )
 
 alias(
     name = "event-listener",
-    actual = "//third_party/rust_crates/vendor/event-listener-5.3.1:event_listener",
+    actual = "//third_party/rust_crates/vendor/event-listener-5.4.1:event_listener",
     tags = ["manual"],
 )
 

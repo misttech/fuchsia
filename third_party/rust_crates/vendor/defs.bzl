@@ -352,7 +352,7 @@ _NORMAL_DEPENDENCIES = {
             "either": Label("//third_party/rust_crates/vendor/either-1.15.0:either"),
             "elliptic-curve": Label("//third_party/rust_crates/vendor/elliptic-curve-0.12.3:elliptic_curve"),
             "eui48": Label("//third_party/rust_crates/vendor/eui48-1.1.0:eui48"),
-            "event-listener": Label("//third_party/rust_crates/vendor/event-listener-5.3.1:event_listener"),
+            "event-listener": Label("//third_party/rust_crates/vendor/event-listener-5.4.1:event_listener"),
             "fancy-regex": Label("//third_party/rust_crates/vendor/fancy-regex-0.8.0:fancy_regex"),
             "fatfs": Label("//third_party/rust_crates/vendor/fatfs-0.3.6:fatfs"),
             "flate2": Label("//third_party/rust_crates/vendor/flate2-1.1.1:flate2"),

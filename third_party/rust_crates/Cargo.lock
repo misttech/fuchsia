@@ -1283,9 +1283,9 @@ checksum = "f7531096570974c3a9dcf9e4b8e1cede1ec26cf5046219fb3b9d897503b9be59"
 
 [[package]]
 name = "event-listener"
-version = "5.3.1"
+version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6032be9bd27023a771701cc49f9f053c751055f71efb2e0ae5c15809093675ba"
+checksum = "e13b66accf52311f30a0db42147dadea9850cb48cd070028831ae5f5d4b856ab"
 dependencies = [
  "concurrent-queue",
  "parking",
@@ -1537,7 +1537,7 @@ dependencies = [
  "enumn",
  "euclid",
  "eui48",
- "event-listener 5.3.1",
+ "event-listener 5.4.1",
  "fancy-regex",
  "fatfs",
  "flagset",

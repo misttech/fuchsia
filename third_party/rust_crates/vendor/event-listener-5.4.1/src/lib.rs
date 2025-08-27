@@ -14,6 +14,7 @@
 //! Wait until another thread sets a boolean flag:
 //!
 //! ```
+//! # #[cfg(not(target_family = "wasm"))] { // Listener::wait is unavailable on WASM
 //! use std::sync::atomic::{AtomicBool, Ordering};
 //! use std::sync::Arc;
 //! use std::thread;
@@ -58,16 +59,21 @@
 //!     // Wait for a notification and continue the loop.
 //!     listener.wait();
 //! }
+//! # }
 //! ```
 //!
 //! # Features
 //!
 //! - The `std` feature (enabled by default) enables the use of the Rust standard library. Disable it for `no_std`
-//! support
+//!   support.
+//!
+//! - The `critical-section` feature enables usage of the [`critical-section`] crate to enable a
+//!   more efficient implementation of `event-listener` for `no_std` platforms.
 //!
 //! - The `portable-atomic` feature enables the use of the [`portable-atomic`] crate to provide
 //!   atomic operations on platforms that don't support them.
 //!
+//! [`critical-section`]: https://crates.io/crates/critical-section
 //! [`portable-atomic`]: https://crates.io/crates/portable-atomic
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -85,8 +91,14 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std as alloc;
 
-#[cfg_attr(feature = "std", path = "std.rs")]
-#[cfg_attr(not(feature = "std"), path = "no_std.rs")]
+#[cfg_attr(
+    any(feature = "std", feature = "critical-section"),
+    path = "intrusive.rs"
+)]
+#[cfg_attr(
+    not(any(feature = "std", feature = "critical-section")),
+    path = "slab.rs"
+)]
 mod sys;
 
 mod notify;
@@ -755,7 +767,7 @@ pub trait Listener<T = ()>: Future<Output = T> + __sealed::Sealed {
 
     /// Blocks until a notification is received or a timeout is reached.
     ///
-    /// Returns `true` if a notification was received.
+    /// Returns `Some` if a notification was received.
     ///
     /// # Examples
     ///
@@ -980,6 +992,7 @@ forward_impl_to_listener! { T => EventListener<T> }
 /// of [`EventListener`].
 ///
 /// ```
+/// # #[cfg(not(target_family = "wasm"))] { // Listener::wait is unavailable on WASM
 /// use std::sync::atomic::{AtomicBool, Ordering};
 /// use std::sync::Arc;
 /// use std::thread;
@@ -1025,6 +1038,7 @@ forward_impl_to_listener! { T => EventListener<T> }
 ///     // Wait for a notification and continue the loop.
 ///     listener.wait();
 /// }
+/// # }
 /// ```
 #[macro_export]
 macro_rules! listener {
@@ -1359,7 +1373,8 @@ mod sync {
     #[cfg(feature = "portable-atomic")]
     pub(super) use portable_atomic_util::Arc;
 
-    #[cfg(all(feature = "std", not(loom)))]
+    #[allow(unused)]
+    #[cfg(all(feature = "std", not(feature = "critical-section"), not(loom)))]
     pub(super) use std::sync::{Mutex, MutexGuard};
     #[cfg(all(feature = "std", not(target_family = "wasm"), not(loom)))]
     pub(super) use std::thread_local;

@@ -2,7 +2,7 @@
 //!
 //! This mutex exposes both blocking and async methods for acquiring a lock.
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
 mod example {
     #![allow(dead_code)]
 
@@ -37,7 +37,10 @@ mod example {
 
         /// Attempts to acquire a lock.
         fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
-            self.data.try_lock().map(MutexGuard)
+            self.data.try_lock().map(|l| MutexGuard {
+                lock_ops: &self.lock_ops,
+                locked: Some(l),
+            })
         }
 
         /// Blocks until a lock is acquired.
@@ -107,19 +110,29 @@ mod example {
     }
 
     /// A guard holding a lock.
-    struct MutexGuard<'a, T>(Locked<'a, T>);
+    struct MutexGuard<'a, T> {
+        lock_ops: &'a Event,
+        locked: Option<Locked<'a, T>>,
+    }
 
     impl<T> Deref for MutexGuard<'_, T> {
         type Target = T;
 
         fn deref(&self) -> &T {
-            &self.0
+            self.locked.as_deref().unwrap()
         }
     }
 
     impl<T> DerefMut for MutexGuard<'_, T> {
         fn deref_mut(&mut self) -> &mut T {
-            &mut self.0
+            self.locked.as_deref_mut().unwrap()
+        }
+    }
+
+    impl<T> Drop for MutexGuard<'_, T> {
+        fn drop(&mut self) {
+            self.locked = None;
+            self.lock_ops.notify(1);
         }
     }
 
@@ -158,7 +171,7 @@ mod example {
     }
 }
 
-#[cfg(target_family = "wasm")]
+#[cfg(any(target_family = "wasm", not(feature = "std")))]
 mod example {
     pub(super) fn entry() {
         println!("This example is not supported on wasm yet.");

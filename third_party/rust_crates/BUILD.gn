@@ -302,7 +302,7 @@ group("eui48") {
 }
 
 group("event-listener") {
-  public_deps = [ ":event-listener-v5_3_1" ]
+  public_deps = [ ":event-listener-v5_4_1" ]
 }
 
 group("fancy-regex") {
@@ -6072,19 +6072,19 @@ rustc_library("event-listener-v2_5_1") {
   applicable_licenses = [ ":event-listener-v2_5_1.license" ]
 }
 
-license("event-listener-v5_3_1.license") {
+license("event-listener-v5_4_1.license") {
   public_package_name = "event_listener"
   license_files = [
-    "//third_party/rust_crates/vendor/event-listener-5.3.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/event-listener-5.3.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/event-listener-5.4.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/event-listener-5.4.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("event-listener-v5_3_1") {
+rustc_library("event-listener-v5_4_1") {
   crate_name = "event_listener"
   source_root =
-      "//third_party/rust_crates/vendor/event-listener-5.3.1/src/lib.rs"
-  output_name = "event_listener-c172a3bc39537b04"
+      "//third_party/rust_crates/vendor/event-listener-5.4.1/src/lib.rs"
+  output_name = "event_listener-d20650aff37f322f"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -6101,8 +6101,8 @@ rustc_library("event-listener-v5_3_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=c172a3bc39537b04",
-    "-Cextra-filename=-c172a3bc39537b04",
+    "-Cmetadata=d20650aff37f322f",
+    "-Cextra-filename=-d20650aff37f322f",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"parking\"",
     "--cfg=feature=\"std\"",
@@ -6110,7 +6110,7 @@ rustc_library("event-listener-v5_3_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":event-listener-v5_3_1.license" ]
+  applicable_licenses = [ ":event-listener-v5_4_1.license" ]
 }
 
 license("fancy-regex-v0_8_0.license") {
