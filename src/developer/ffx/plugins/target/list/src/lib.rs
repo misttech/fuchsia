@@ -8,13 +8,11 @@ use async_trait::async_trait;
 use errors::{ffx_bail, ffx_bail_with_code};
 use ffx_config::EnvironmentContext;
 use ffx_list_args::{AddressTypes, ListCommand};
-use ffx_target::{KnockError, TargetInfoQuery};
+use ffx_target::TargetInfoQuery;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{deferred, Deferred, FfxMain, FfxTool};
+use fho::{Deferred, FfxMain, FfxTool, deferred};
 use fidl_fuchsia_developer_ffx as ffx;
-use fuchsia_async::TimeoutExt;
-use futures::{StreamExt, TryStreamExt};
-use std::time::Duration;
+use futures::TryStreamExt;
 use target_formatter::{JsonTarget, JsonTargetFormatter, TargetFormatter};
 use target_holders::daemon_protocol;
 
@@ -54,7 +52,14 @@ impl FfxMain for ListTool {
             || self.context.get_direct_connection_mode()
             || !ffx_target::is_discovery_enabled(&self.context).await
         {
-            local_list_targets(&self.context, &cmd).await?
+            ffx_target::list_targets(
+                &self.context,
+                cmd.nodename.clone(),
+                !cmd.no_usb,
+                !cmd.no_mdns,
+                !cmd.no_probe,
+            )
+            .await?
         } else {
             list_targets(self.tc_proxy.await?, &cmd).await?
         };
@@ -125,116 +130,6 @@ async fn show_targets(
     Ok(())
 }
 
-const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
-
-async fn try_get_target_info(
-    spec: TargetInfoQuery,
-    context: &EnvironmentContext,
-) -> Result<(ffx::RemoteControlState, Option<String>, Option<String>), KnockError> {
-    let mut resolution = ffx_target::resolve_target_address(&spec, context)
-        .await
-        .map_err(|e| KnockError::CriticalError(e.into()))?;
-    let (rcs_state, pc, bc) = match resolution.identify(context).await {
-        Ok(id_result) => (
-            ffx::RemoteControlState::Up,
-            id_result.product_config.clone(),
-            id_result.board_config.clone(),
-        ),
-        _ => (ffx::RemoteControlState::Down, None, None),
-    };
-    Ok((rcs_state, pc, bc))
-}
-
-async fn get_target_info(
-    context: &EnvironmentContext,
-    addrs: &[addr::TargetAddr],
-) -> Result<(ffx::RemoteControlState, Option<String>, Option<String>)> {
-    let ssh_timeout: u64 =
-        ffx_config::get("target.host_pipe_ssh_timeout").unwrap_or(DEFAULT_SSH_TIMEOUT_MS);
-    let ssh_timeout = Duration::from_millis(ssh_timeout);
-    for addr in addrs {
-        // An address is, conveniently, a valid target spec as well
-        let spec = if addr.port().filter(|x| *x != 0).is_none() {
-            format!("{addr}")
-        } else {
-            format!("{addr}:{}", addr.port().unwrap())
-        };
-        log::debug!("Trying to make a connection to spec {spec:?}");
-
-        match try_get_target_info(spec.into(), context)
-            .on_timeout(ssh_timeout, || {
-                Err(KnockError::NonCriticalError(anyhow::anyhow!("knock_rcs() timed out")))
-            })
-            .await
-        {
-            Ok(res) => {
-                return Ok(res);
-            }
-            Err(KnockError::NonCriticalError(e)) => {
-                log::debug!("Could not connect to {addr:?}: {e:?}");
-                continue;
-            }
-            e => {
-                log::debug!("Got error {e:?} when trying to connect to {addr:?}");
-                return Ok((ffx::RemoteControlState::Unknown, None, None));
-            }
-        }
-    }
-    Ok((ffx::RemoteControlState::Down, None, None))
-}
-
-// Convert the handle to a TargetInfo, filling in the information from the target if we are
-// asked to make a connection to RCS.
-async fn handle_to_info(
-    context: &EnvironmentContext,
-    handle: discovery::TargetHandle,
-    connect_to_target: bool,
-) -> Result<ffx::TargetInfo> {
-    let (rcs_state, product_config, board_config) =
-        if let discovery::TargetState::Product { ref addrs, .. } = handle.state {
-            // A let-chain would be cleaner, but they are only available in Rust 2024
-            if connect_to_target {
-                get_target_info(context, addrs).await?
-            } else {
-                (ffx::RemoteControlState::Unknown, None, None)
-            }
-        } else {
-            (ffx::RemoteControlState::Unknown, None, None)
-        };
-    let info: ffx::TargetInfo = handle.into();
-    Ok(ffx::TargetInfo { rcs_state: Some(rcs_state), board_config, product_config, ..info })
-}
-
-async fn local_list_targets(
-    ctx: &EnvironmentContext,
-    cmd: &ListCommand,
-) -> Result<Vec<ffx::TargetInfo>> {
-    let stream = get_handle_stream(cmd, ctx).await?;
-    let targets = handles_to_infos(stream, ctx, !cmd.no_probe).await?;
-    Ok(targets)
-}
-
-async fn handles_to_infos(
-    stream: impl futures::Stream<Item = discovery::TargetHandle>,
-    ctx: &EnvironmentContext,
-    connect: bool,
-) -> Result<Vec<fidl_fuchsia_developer_ffx::TargetInfo>> {
-    let info_futures = stream.then(|t| handle_to_info(ctx, t, connect));
-    let infos: Vec<Result<ffx::TargetInfo>> = info_futures.collect().await;
-    let targets = infos.into_iter().collect::<Result<Vec<ffx::TargetInfo>>>()?;
-    Ok(targets)
-}
-
-async fn get_handle_stream(
-    cmd: &ListCommand,
-    ctx: &EnvironmentContext,
-) -> Result<impl futures::Stream<Item = discovery::TargetHandle>> {
-    let name = cmd.nodename.clone();
-    let query = TargetInfoQuery::from(name);
-    let stream = ffx_target::get_discovery_stream(query, !cmd.no_usb, !cmd.no_mdns, ctx).await?;
-    Ok(stream)
-}
-
 async fn list_targets(
     tc_proxy: ffx::TargetCollectionProxy,
     cmd: &ListCommand,
@@ -283,12 +178,13 @@ pub async fn emit_device_stats_event(num_devices: usize, query: &Option<String>)
     )
     .await;
 } ///////////////////////////////////////////////////////////////////////////////
-  // tests
+// tests
 
 #[cfg(test)]
 mod test {
     use super::*;
     use addr::TargetAddr;
+    use ffx_command::{Ffx, FfxCommandLine};
     use ffx_list_args::Format;
     use ffx_writer::TestBuffers;
     use fidl_fuchsia_developer_ffx as ffx;
@@ -587,24 +483,6 @@ mod test {
         Ok(())
     }
 
-    #[fuchsia::test]
-    async fn test_serial_addresses() {
-        // USB targets should have an empty list of addresses, not None
-        let env = ffx_config::test_init().await.unwrap();
-        let handle = discovery::TargetHandle {
-            node_name: Some("nodename".to_string()),
-            state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
-                serial_number: "12345678".to_string(),
-                connection_state: discovery::FastbootConnectionState::Usb,
-            }),
-            manual: false,
-        };
-        let stream = futures::stream::once(async { handle });
-        let targets = handles_to_infos(stream, &env.context, true).await;
-        let targets = targets.unwrap();
-        assert_ne!(targets[0].addresses, None);
-    }
-
     async fn build_list_tool(
         cmd: ListCommand,
         env: &ffx_config::TestEnv,
@@ -622,9 +500,8 @@ mod test {
 
     #[fuchsia::test]
     async fn test_command_target() {
-        let ffx_cmd =
-            ffx_command::Ffx { target: Some(String::from("mytarget")), ..Default::default() };
-        let ffx_cmd_line = ffx_command::FfxCommandLine { global: ffx_cmd, ..Default::default() };
+        let ffx_cmd = Ffx { target: Some(String::from("mytarget")), ..Default::default() };
+        let ffx_cmd_line = FfxCommandLine { global: ffx_cmd, ..Default::default() };
         let env = ffx_config::test_init().await.unwrap();
         let fho_env = fho::FhoEnvironment::new(&env.context, &ffx_cmd_line);
         let tool = build_list_tool(ListCommand::default(), &env, fho_env).await;
@@ -634,7 +511,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_command_target_preserves_arg() {
-        let ffx_cmd_line = ffx_command::FfxCommandLine::default();
+        let ffx_cmd_line = FfxCommandLine::default();
         let env = ffx_config::test_init().await.unwrap();
         let fho_env = fho::FhoEnvironment::new(&env.context, &ffx_cmd_line);
         let list_cmd =
@@ -642,30 +519,5 @@ mod test {
         let tool = build_list_tool(list_cmd, &env, fho_env).await;
         let cmd = tool.update_from_target();
         assert_eq!(cmd.nodename, Some(String::from("mytarget")));
-    }
-
-    #[fuchsia::test]
-    async fn test_handle_to_info_address_sorting() {
-        let env = ffx_config::test_init().await.unwrap();
-        let non_link_local_addr: TargetAddr = "[2001:db8::1]:0".parse().unwrap();
-        let link_local_addr: TargetAddr = "[fe80::1]:0".parse().unwrap();
-
-        let handle = discovery::TargetHandle {
-            node_name: Some("test-node".to_string()),
-            state: discovery::TargetState::Product {
-                addrs: vec![non_link_local_addr.clone(), link_local_addr.clone()],
-                serial: None,
-            },
-            manual: false,
-        };
-
-        let info = handle_to_info(&env.context, handle, false).await.unwrap();
-
-        let addrs = info.addresses.unwrap();
-        assert_eq!(addrs.len(), 2);
-        let addrs: Vec<TargetAddr> = addrs.into_iter().map(|a| a.into()).collect();
-        // The link-local address should come first.
-        assert_eq!(addrs[0], link_local_addr);
-        assert_eq!(addrs[1], non_link_local_addr);
     }
 }

@@ -30,6 +30,7 @@ use mockall::predicate::*;
 
 pub mod connection;
 pub mod fho;
+pub mod list;
 pub mod ssh_connector;
 
 mod fdomain_transport;
@@ -41,6 +42,7 @@ pub use connection::{Connection, ConnectionError};
 pub use discovery::desc::{Description, FastbootInterface};
 pub use discovery::query::TargetInfoQuery;
 pub use fidl_pipe::{FidlPipe, create_overnet_socket};
+pub use list::list_targets;
 pub use resolve::{
     DefaultTargetResolver, Resolution, TargetResolver, get_discovery_stream,
     maybe_locally_resolve_target_spec, mock_stream, resolve_target_address, resolve_target_query,
