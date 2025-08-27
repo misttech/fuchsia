@@ -1513,13 +1513,6 @@ which is almost certainly a mistake: {}",
                     &format!("\"{}\" runner source", &registration.runner),
                     &AnyRef::from(&registration.from),
                 )?;
-
-                // Ensure there are no cycles, such as a resolver in an environment being assigned
-                // to a child which the resolver depends on.
-                if let Some(source) = DependencyNode::registration_ref(&registration.from) {
-                    let target = DependencyNode::Named(&environment.name);
-                    self.add_strong_dep(source, target);
-                }
             }
         }
 
@@ -1541,12 +1534,6 @@ which is almost certainly a mistake: {}",
                     &format!("\"{}\" resolver source", &registration.resolver),
                     &AnyRef::from(&registration.from),
                 )?;
-                // Ensure there are no cycles, such as a resolver in an environment being assigned
-                // to a child which the resolver depends on.
-                if let Some(source) = DependencyNode::registration_ref(&registration.from) {
-                    let target = DependencyNode::Named(&environment.name);
-                    self.add_strong_dep(source, target);
-                }
             }
         }
 
@@ -1554,13 +1541,6 @@ which is almost certainly a mistake: {}",
             for debug in debug_capabilities {
                 self.protocol_from_self_checker(debug).validate("registered as debug")?;
                 self.validate_from_clause("debug", debug, &None, &None)?;
-                // Ensure there are no cycles, such as a debug capability in an environment being
-                // assigned to the child which is providing the capability.
-                for source in self.expand_source_dependencies(debug.names(), &(&debug.from).into())
-                {
-                    let target = DependencyNode::Named(&environment.name);
-                    self.add_strong_dep(source, target);
-                }
             }
         }
         Ok(())
@@ -1845,17 +1825,6 @@ impl<'a> DependencyNode<'a> {
             OfferToRef::Named(name) => DependencyNode::Named(name),
             OfferToRef::All => panic!(r#"offer to "all" may not be in Dependency Graph"#),
             OfferToRef::OwnDictionary(name) => DependencyNode::Named(name),
-        }
-    }
-
-    fn registration_ref(ref_: &'a RegistrationRef) -> Option<DependencyNode<'a>> {
-        match ref_ {
-            RegistrationRef::Named(name) => Some(DependencyNode::Named(name)),
-            RegistrationRef::Self_ => Some(DependencyNode::Self_),
-
-            // We don't care about cycles with the parent, because those will be resolved when the
-            // parent manifest is validated.
-            RegistrationRef::Parent => None,
         }
     }
 }
