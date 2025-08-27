@@ -758,15 +758,22 @@ def _fetch_remote_tests_json_for_builder(builder: str) -> str:
         fuchsia_directory, "prebuilt", "tools", "gsutil", "gsutil"
     )
 
-    build_id = subprocess.check_output(
-        [lkg_tool, "build", "-builder", builder],
-        text=True,
-    ).strip()
+    try:
+        build_id = subprocess.check_output(
+            [lkg_tool, "build", "-builder", builder],
+            text=True,
+        ).strip()
+    except:
+        print(
+            f"Warning: Failed to fetch the build id of last known good build for builder {builder}, please check the builder name passed in."
+        )
+        return ""
 
+    tests_json_url = f"gs://fuchsia-artifacts-internal/builds/{build_id}/build_api/tests.json"
     gsutil_command = [
         gsutil_tool,
         "cat",
-        f"gs://fuchsia-artifacts-internal/builds/{build_id}/build_api/tests.json",
+        tests_json_url,
     ]
 
     clean_builder_name = builder.replace("/", "_")
@@ -775,7 +782,13 @@ def _fetch_remote_tests_json_for_builder(builder: str) -> str:
     )
 
     with open(output_filename, "w") as f:
-        subprocess.run(gsutil_command, check=True, stdout=f)
+        try:
+            subprocess.run(gsutil_command, check=True, stdout=f)
+        except:
+            print(
+                f"Warning: Failed to fetch {tests_json_url}, please check the GCS bucket to validate the path."
+            )
+            return ""
 
     return output_filename
 
@@ -805,6 +818,7 @@ def collect_remote_tests_jsons(
             _fetch_remote_tests_json_for_builder, all_builders
         )
 
+    remote_tests_jsons = [x for x in remote_tests_jsons if x]
     return remote_tests_jsons
 
 
