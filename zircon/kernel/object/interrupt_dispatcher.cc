@@ -48,6 +48,8 @@ ktl::optional<zx_status_t> InterruptDispatcher::BeginWaitForInterrupt(zx_time_t*
   bool defer_unmask = false;
 
   {
+    // Disable preemption to ensure we don't trigger a reschedule while holding this spinlock.
+    AutoPreemptDisabler preempt_disable;
     Guard<SpinLock, IrqSave> guard{&spinlock_};
     if (port_dispatcher_) {
       return ZX_ERR_BAD_STATE;
