@@ -3209,6 +3209,10 @@ void VmCowPages::LookupCursor::EstablishCursor() {
   if (IsCursorValid()) {
     return;
   }
+  // Release any lock held from any previous cursor. As per the comment on InvalidateCursor, the
+  // lock is dropped here to ensure that up until the next page is required, the caller can assume
+  // the lock of the owning VMO is held.
+  owner_info_.owner.release();
 
   // Ensure still in the valid range.
   DEBUG_ASSERT(offset_ < end_offset_);

@@ -1705,7 +1705,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 //   can be given use |GiveAllocList|.
 //
 // The VMO lock *must* be held contiguously from the call to GetLookupCursorLocked over the entire
-// usage of this object.
+// usage of this object. Callers can assume that for any vm_page_t* that is returned that the lock
+// of the owner of that page is held up until the next operation performed on the cursor.
 class VmCowPages::LookupCursor {
  public:
   ~LookupCursor() {
@@ -1895,7 +1896,9 @@ class VmCowPages::LookupCursor {
   // Invalidates the owner, so that the next page will have to perform the lookup again, walking up
   // the hierarchy if needed.
   void InvalidateCursor() {
-    owner_info_.owner.release();
+    // Mark the cursor as invalid, but do not drop the owner lock. This ensures that the up until
+    // the next page lookup is performed the lock for the owner of the page most recently returned
+    // remains held.
     is_valid_ = false;
   }
 
