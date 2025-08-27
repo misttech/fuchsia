@@ -16,8 +16,8 @@ use fidl_fuchsia_developer_ffx::{
 use fidl_fuchsia_developer_remotecontrol::{RemoteControlMarker, RemoteControlProxy};
 use fidl_fuchsia_net as net;
 use fuchsia_async::Timer;
-use futures::future::{pending, Either};
-use futures::{select, Future, FutureExt, TryStreamExt};
+use futures::future::{Either, pending};
+use futures::{Future, FutureExt, TryStreamExt, select};
 use log::{debug, info};
 use std::net::IpAddr;
 use std::time::Duration;
@@ -40,11 +40,11 @@ mod target_connector;
 pub use connection::{Connection, ConnectionError};
 pub use discovery::desc::{Description, FastbootInterface};
 pub use discovery::query::TargetInfoQuery;
-pub use fidl_pipe::{create_overnet_socket, FidlPipe};
+pub use fidl_pipe::{FidlPipe, create_overnet_socket};
 pub use resolve::{
-    get_discovery_stream, maybe_locally_resolve_target_spec, mock_stream, resolve_target_address,
-    resolve_target_query, resolve_target_query_to_info, resolve_target_query_with,
-    resolve_target_query_with_sources, DefaultTargetResolver, Resolution, TargetResolver,
+    DefaultTargetResolver, Resolution, TargetResolver, get_discovery_stream,
+    maybe_locally_resolve_target_spec, mock_stream, resolve_target_address, resolve_target_query,
+    resolve_target_query_to_info,
 };
 pub use target_connector::{
     FDomainConnection, OvernetConnection, TargetConnection, TargetConnectionError, TargetConnector,
@@ -87,7 +87,7 @@ pub async fn get_remote_proxy(
                     ffx::TargetConnectionError::KeyVerificationFailure
                     | ffx::TargetConnectionError::InvalidArgument
                     | ffx::TargetConnectionError::PermissionDenied => {
-                        break Err(anyhow::Error::new(e))
+                        break Err(anyhow::Error::new(e));
                     }
                     _ => {
                         let retry_info =
@@ -607,7 +607,7 @@ mod test {
     use super::*;
     use ffx_command_error::bug;
     use ffx_config::macro_deps::serde_json::Value;
-    use ffx_config::{test_env, test_init, ConfigLevel};
+    use ffx_config::{ConfigLevel, test_env, test_init};
     use futures_lite::future::{pending, ready};
     use tempfile::tempdir;
 
@@ -765,13 +765,15 @@ mod test {
     #[fuchsia::test]
     async fn test_bad_timeout() {
         let env = test_init().await.unwrap();
-        assert!(knock_target_daemonless(
-            &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
-            &env.context,
-            Some(rcs::RCS_KNOCK_TIMEOUT)
-        )
-        .await
-        .is_err());
+        assert!(
+            knock_target_daemonless(
+                &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
+                &env.context,
+                Some(rcs::RCS_KNOCK_TIMEOUT)
+            )
+            .await
+            .is_err()
+        );
     }
 
     #[fuchsia::test]

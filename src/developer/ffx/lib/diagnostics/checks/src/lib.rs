@@ -332,7 +332,7 @@ where
             let sources = sources_from_query(&input);
             // There should be some kind of error here if the device resolves to an empty array.
             notify_for_discovery_sources(self.ctx, sources, notifier)?;
-            let resolver = R::with_sources(sources);
+            let resolver = R::default();
             let mut targets = resolver.resolve_target_query(input, self.ctx).await?;
             if targets.is_empty() {
                 return Err(anyhow::anyhow!("Unable to find any devices"));
@@ -609,17 +609,10 @@ mod test {
     static MOCK_HANDLES: std::sync::LazyLock<Arc<Mutex<Vec<TargetHandle>>>> =
         std::sync::LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 
-    struct MockResolver(DiscoverySources);
+    #[derive(Default)]
+    struct MockResolver;
 
     impl TargetResolver for MockResolver {
-        fn with_sources(sources: DiscoverySources) -> Self {
-            Self(sources)
-        }
-
-        fn sources(&self) -> DiscoverySources {
-            self.0
-        }
-
         #[allow(refining_impl_trait)]
         fn discovery_stream(
             &self,

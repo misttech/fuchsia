@@ -99,13 +99,7 @@ async fn locally_resolve_target_spec<T: TargetResolver>(
 /// Implementors of this trait are responsible for searching for targets,
 /// handling ambiguity, and returning a `Resolution` object that can be used
 /// to connect to the target.
-pub trait TargetResolver {
-    /// Sets the discovery sources of the resolver.
-    fn with_sources(sources: DiscoverySources) -> Self;
-
-    /// Gets the discovery sources of the resolver.
-    fn sources(&self) -> DiscoverySources;
-
+pub trait TargetResolver: Default {
     /// Gets a stream of handles from the resolver's sources that match the query
     fn discovery_stream(
         &self,
@@ -259,8 +253,6 @@ pub mod mock_stream {
 mock! {
     TargetResolver{}
     impl TargetResolver for TargetResolver {
-        fn with_sources(sources: DiscoverySources) -> Self;
-        fn sources(&self) -> DiscoverySources;
         #[allow(refining_impl_trait)]
         fn discovery_stream(
             &self,
@@ -287,16 +279,8 @@ pub async fn resolve_target_query(
     query: TargetInfoQuery,
     ctx: &EnvironmentContext,
 ) -> Result<Vec<TargetHandle>> {
-    resolve_target_query_with_sources(
-        query,
-        ctx,
-        DiscoverySources::MDNS
-            | DiscoverySources::USB_FASTBOOT
-            | DiscoverySources::MANUAL
-            | DiscoverySources::EMULATOR
-            | DiscoverySources::FASTBOOT_FILE,
-    )
-    .await
+    log::debug!("Resolving query: {query:#?}");
+    DefaultTargetResolver::default().resolve_target_query(query, ctx).await
 }
 
 // Return a Stream of TargetHandles that come from the specified sources,
@@ -323,7 +307,7 @@ fn get_discovery_stream_with_sources(
     let discovery_delay = ctx.get(CONFIG_LOCAL_DISCOVERY_TIMEOUT).unwrap_or(2000);
     let delay = Duration::from_millis(discovery_delay);
     let discovery = DiscoveryBuilder::default()
-        .with_source(sources)
+        .set_source(sources)
         .with_fastboot_devices_file_path(fastboot_file_path)
         .with_emulator_instance_root(emu_instance_root)
         .notify_added(true)
@@ -529,33 +513,6 @@ pub async fn resolve_target_query_to_info(
     targets.into_iter().collect::<Result<Vec<ffx::TargetInfo>>>()
 }
 
-pub async fn resolve_target_query_with(
-    query: TargetInfoQuery,
-    ctx: &EnvironmentContext,
-    usb: bool,
-    mdns: bool,
-) -> Result<Vec<TargetHandle>> {
-    let mut sources =
-        DiscoverySources::MANUAL | DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
-    if usb {
-        sources = sources | DiscoverySources::USB_FASTBOOT;
-    }
-    if mdns {
-        sources = sources | DiscoverySources::MDNS;
-    }
-    resolve_target_query_with_sources(query, ctx, sources).await
-}
-
-pub async fn resolve_target_query_with_sources(
-    query: TargetInfoQuery,
-    ctx: &EnvironmentContext,
-    sources: DiscoverySources,
-) -> Result<Vec<TargetHandle>> {
-    log::debug!("Resolving query: {:#?} with sources: {:#?}", query, sources);
-    // Get nodename, in case we're trying to find an exact match
-    DefaultTargetResolver::with_sources(sources).resolve_target_query(query, ctx).await
-}
-
 /// Attempts to resolve the query into a target's ssh-able address. It is an error
 /// if it the query doesn't match exactly one target.
 // Perhaps refactor as connect_to_target() -> Result<Connection>, since that seems
@@ -567,16 +524,8 @@ pub async fn resolve_target_address(
     DefaultTargetResolver::default().resolve_target_address(target_spec, ctx).await
 }
 
-#[derive(Clone, Copy)]
-pub struct DefaultTargetResolver {
-    sources: DiscoverySources,
-}
-
-impl Default for DefaultTargetResolver {
-    fn default() -> Self {
-        Self::with_sources(DiscoverySources::all())
-    }
-}
+#[derive(Clone, Copy, Default)]
+pub struct DefaultTargetResolver;
 
 /// Return a stream of handles matching the query. If a target
 /// matches the query exactly (i.e. the query is the full name
@@ -603,20 +552,12 @@ pub async fn get_discovery_stream(
 }
 
 impl TargetResolver for DefaultTargetResolver {
-    fn with_sources(sources: DiscoverySources) -> Self {
-        Self { sources }
-    }
-
-    fn sources(&self) -> DiscoverySources {
-        self.sources
-    }
-
     fn discovery_stream(
         &self,
         query: TargetInfoQuery,
         ctx: EnvironmentContext,
     ) -> Result<impl futures::Stream<Item = TargetHandle>> {
-        get_discovery_stream_with_sources(query, self.sources, ctx)
+        get_discovery_stream_with_sources(query, DiscoverySources::all(), ctx)
     }
 
     async fn resolve_target_query(
@@ -979,7 +920,6 @@ mod test {
         let name_spec = TargetInfoQuery::NodenameOrSerial(name.clone());
         let (sa, addr_spec) = get_addr_and_spec();
         let th = make_target_handle_for_product(&name, sa);
-        resolver.expect_sources().return_once(move || DiscoverySources::all());
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver
             .expect_discovery_stream()
@@ -1006,7 +946,6 @@ mod test {
             }),
             manual: false,
         };
-        resolver.expect_sources().return_once(move || DiscoverySources::all());
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver
             .expect_discovery_stream()
@@ -1027,7 +966,6 @@ mod test {
         let (sa, _) = get_addr_and_spec();
         let th1 = make_target_handle_for_product(&name, sa);
         let th2 = make_target_handle_for_product(&name, sa);
-        resolver.expect_sources().return_once(move || DiscoverySources::all());
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver
             .expect_discovery_stream()
@@ -1048,7 +986,6 @@ mod test {
         let first_spec = TargetInfoQuery::First;
         let (sa, addr_spec) = get_addr_and_spec();
         let th = make_target_handle_for_product("foo", sa);
-        resolver.expect_sources().return_once(move || DiscoverySources::all());
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver
             .expect_discovery_stream()
@@ -1067,7 +1004,6 @@ mod test {
         let (sa, _) = get_addr_and_spec();
         let th1 = make_target_handle_for_product(&name, sa);
         let th2 = make_target_handle_for_product(&name, sa);
-        resolver.expect_sources().return_once(move || DiscoverySources::all());
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver
             .expect_discovery_stream()

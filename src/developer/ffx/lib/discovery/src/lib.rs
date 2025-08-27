@@ -83,6 +83,7 @@ impl DiscoveryBuilder {
         self
     }
 
+    #[cfg(test)]
     pub fn with_source(mut self, source: DiscoverySources) -> Self {
         self.sources.insert(source);
         self
