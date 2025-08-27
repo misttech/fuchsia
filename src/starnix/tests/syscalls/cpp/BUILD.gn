@@ -8,14 +8,41 @@ import("//build/testing/host_test.gni")
 import("//build/testing/host_test_data.gni")
 import("//src/lib/testing/expectation/generated_expectations_file.gni")
 import("//src/starnix/build/args.gni")
-import("//src/starnix/build/starnix_container_config_component.gni")
 import("//src/starnix/kernel/starnix.gni")
 import("//src/starnix/tests/build/starnix_linux_test_component.gni")
 import("//src/starnix/tests/environments.gni")
 import("//src/starnix/tests/starnix_test_subpackages.gni")
+import("//src/starnix/tests/syscalls/cpp/syscall_test.gni")
 
-# We want to use a newer sysroot than is available by default in $host_toolchain.
-_host_linux_toolchain = "//build/toolchain:linux_$host_cpu"
+syscall_tests_deps = [
+  # go/keep-sorted start
+  # go/keep-sorted end
+]
+
+syscall_tests_resources = [
+  # go/keep-sorted start
+
+  ":fuse_overlayfs",
+  ":simple_ext4_image",
+
+  # go/keep-sorted end
+]
+
+syscall_tests_executables = [
+  # go/keep-sorted start
+
+  ":extended_pstate_initial_state_child",
+  ":ptrace_test_exec_child",
+  ":signal_handling_test_exec_child",
+  ":suid_test_exec_child",
+  ":syscall_test_exec_child",
+  "test_programs:clone_exec_helper",
+  "test_programs:print_helper",
+  "test_programs:signal_handling_test_exec_parent_after_exit",
+  "test_programs:signal_handling_test_exec_parent_before_exit",
+
+  # go/keep-sorted end
+]
 
 # syscall tests that can be run on both arch32 and arch64.
 syscall_tests = [
@@ -197,45 +224,6 @@ group("tests") {
   }
 }
 
-if (is_host) {
-  host_test_data("host_runtime_deps") {
-    sources = [
-      get_label_info(
-              ":extended_pstate_initial_state_child($_host_linux_toolchain)",
-              "root_out_dir") + "/extended_pstate_initial_state_child",
-      get_label_info(":syscall_test_exec_child($_host_linux_toolchain)",
-                     "root_out_dir") + "/syscall_test_exec_child",
-      get_label_info(":ptrace_test_exec_child($_host_linux_toolchain)",
-                     "root_out_dir") + "/ptrace_test_exec_child",
-      get_label_info(":signal_handling_test_exec_child($_host_linux_toolchain)",
-                     "root_out_dir") + "/signal_handling_test_exec_child",
-      get_label_info(":suid_test_exec_child($_host_linux_toolchain)",
-                     "root_out_dir") + "/suid_test_exec_child",
-      get_label_info("test_programs:print_helper($_host_linux_toolchain)",
-                     "root_out_dir") + "/print_helper",
-      get_label_info("test_programs:clone_exec_helper($_host_linux_toolchain)",
-                     "root_out_dir") + "/clone_exec_helper",
-      get_label_info(
-              "test_programs:signal_handling_test_exec_parent_before_exit($_host_linux_toolchain)",
-              "root_out_dir") + "/signal_handling_test_exec_parent_before_exit",
-      get_label_info(
-              ":test_programs:signal_handling_test_exec_parent_after_exit($_host_linux_toolchain)",
-              "root_out_dir") + "/signal_handling_test_exec_parent_after_exit",
-    ]
-    deps = [
-      ":extended_pstate_initial_state_child($_host_linux_toolchain)",
-      ":ptrace_test_exec_child($_host_linux_toolchain)",
-      ":signal_handling_test_exec_child($_host_linux_toolchain)",
-      ":suid_test_exec_child($_host_linux_toolchain)",
-      ":syscall_test_exec_child($_host_linux_toolchain)",
-      "test_programs:clone_exec_helper($_host_linux_toolchain)",
-      "test_programs:print_helper($_host_linux_toolchain)",
-      "test_programs:signal_handling_test_exec_parent_after_exit($_host_linux_toolchain)",
-      "test_programs:signal_handling_test_exec_parent_before_exit($_host_linux_toolchain)",
-    ]
-  }
-}
-
 source_set("test_utils") {
   testonly = true
 
@@ -290,207 +278,21 @@ config("march") {
   }
 }
 
-template("syscall_test") {
-  test_name = invoker.test_name
-  _disable_sanitizers_on_host = false
-  if (defined(invoker.disable_sanitizers_on_host)) {
-    _disable_sanitizers_on_host = invoker.disable_sanitizers_on_host
-  }
-
-  _test_sources = []
-  if (defined(invoker.sources)) {
-    _test_sources = invoker.sources
-  } else {
-    _test_sources = [ "${test_name}.cc" ]
-  }
-
-  _container_config = {
-  }
-  if (defined(invoker.container_config)) {
-    _container_config = invoker.container_config
-  }
-
-  _container_config_component = "${target_name}_config"
-  starnix_container_config_component(_container_config_component) {
-    config = _container_config
-  }
-
-  _container_config_shard_label = "${_container_config_component}_shard"
-  _container_config_shard = "${target_gen_dir}/${target_name}_config.shard.cml"
-  starnix_container_config_offers(_container_config_shard_label) {
-    output = _container_config_shard
-    offer_from = "#config"
-    offer_to = "#container"
-  }
-
-  # Generate the manifest
-  _manifest_label = "${target_name}.cml"
-  _manifest_file = "$target_gen_dir/${_manifest_label}"
-  generated_file(_manifest_label) {
-    outputs = [ _manifest_file ]
-    output_conversion = "json"
-    _program = {
-      binary = "data/tests/${test_name}_bin"
-    }
-
-    # If we're targeting a different kernel, the binary should be prefixed with the target kernel,
-    # and we'll add a field to the program to indicate the target kernel. This field will later be
-    # consumed within the Starnix test runner to handle as appropriate.
-    if (defined(invoker.test_target_kernel)) {
-      _program.binary =
-          "data/tests/${invoker.test_target_kernel}_${test_name}_bin"
-      _program.test_target_kernel = invoker.test_target_kernel
-    }
-    contents = {
-      include = [
-        rebase_path(_container_config_shard, root_build_dir),
-        "//src/starnix/tests/syscalls/cpp/meta/syscalls_cpp_test.cml",
-      ]
-      program = _program
-      children = [
-        {
-          name = "config"
-          url = "#meta/${_container_config_component}.cm"
-        },
-      ]
-    }
-
-    deps = [ ":${_container_config_shard_label}" ]
-  }
-
-  _target_test_label = "${target_name}_bin"
-  _host_test_label = "starnix_${target_name}_host"
-  if (is_linux) {
-    _test_deps = [
-      ":test_utils",
-      "//sdk/lib/fit",
-      "//src/lib/fxl",
-      "//src/lib/fxl/test:gtest_main",
-      "//third_party/googletest:gmock",
-      "//third_party/googletest:gtest",
-      "//zircon/system/ulib/fbl",
-    ]
-    if (current_cpu != "arm") {
-      _test_deps += [ "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp" ]
-    }
-    _test_configs = [
-      "//build/config:rtti",
-      "//build/config:thread_safety_annotations",
-
-      # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings
-      "//build/config:Wno-vla-cxx-extension",
-
-      # TODO(b/307959737): Compile syscall test on target with the bionic toolchain and then move this
-      # to the bionic toolchain.
-      ":march",
-
-      # TODO(b/331282813): 'ENODATA' is deprecated in ISO C++, disable the warning for now.
-      "//build/config:Wno-deprecated-pragma",
-    ]
-
-    test(_target_test_label) {
-      # TODO(https://fxbug.dev/297293167) enable ASan instrumentation for Linux binaries in Starnix
-      exclude_toolchain_tags = [ "instrumented" ]
-      sources = _test_sources
-      deps = _test_deps
-      configs += _test_configs
-    }
-
-    test(_host_test_label) {
-      if (_disable_sanitizers_on_host) {
-        exclude_toolchain_tags = [ "instrumented" ]
-      }
-      sources = _test_sources
-      deps = _test_deps
-      configs += _test_configs
-    }
-  } else {
-    not_needed([
-                 "_target_test_label",
-                 "_host_test_label",
-                 "_disable_sanitizers_on_host",
-               ])
-  }
-
-  if (is_host) {
-    host_test("starnix_${target_name}_baseline") {
-      binary_path =
-          get_label_info(":${_host_test_label}($_host_linux_toolchain)",
-                         "root_out_dir") + "/$_host_test_label"
-      deps = [
-        ":${_host_test_label}($_host_linux_toolchain)",
-        ":host_runtime_deps",
-      ]
-    }
-  }
-
-  starnix_linux_test_component(target_name) {
-    test_label = ":${_target_test_label}"
-    test_binary = _target_test_label
-    manifest = _manifest_file
-    deps = [
-      ":${_manifest_label}",
-      ":fuse_overlayfs",
-      ":ptrace_test_exec_child_resource($target_linux_toolchain)",
-      ":signal_handling_test_exec_child_resource($target_linux_toolchain)",
-      ":simple_ext4_image",
-      ":suid_test_exec_child_resource($target_linux_toolchain)",
-      ":syscall_test_exec_child_resource($target_linux_toolchain)",
-      "test_programs:clone_exec_helper_resource($target_linux_toolchain)",
-      "test_programs:print_helper_resource($target_linux_toolchain)",
-      "test_programs:signal_handling_test_exec_parent_after_exit_resource($target_linux_toolchain)",
-      "test_programs:signal_handling_test_exec_parent_before_exit_resource($target_linux_toolchain)",
-    ]
-    uses_expectations = true
-    generated_expectations = ":syscalls_cpp_test_expectations"
-    test_type = "starnix"
-
-    if (defined(invoker.custom_expectations)) {
-      generated_expectations = invoker.custom_expectations
-    }
-  }
-
-  if (starnix_enable_arch32) {
-    starnix_linux_test_component("${target_name}_arch32") {
-      test_toolchain = target_linux_arch32_toolchain
-      test_label = ":${_target_test_label}"
-      test_binary = _target_test_label
-      manifest = _manifest_file
-      deps = [
-        ":${_manifest_label}",
-        ":fuse_overlayfs",
-        ":ptrace_test_exec_child_resource($target_linux_arch32_toolchain)",
-        ":signal_handling_test_exec_child_resource($target_linux_arch32_toolchain)",
-        ":simple_ext4_image",
-        ":suid_test_exec_child_resource($target_linux_arch32_toolchain)",
-        ":syscall_test_exec_child_resource($target_linux_arch32_toolchain)",
-        "test_programs:clone_exec_helper_resource($target_linux_arch32_toolchain)",
-        "test_programs:print_helper_resource($target_linux_arch32_toolchain)",
-        "test_programs:signal_handling_test_exec_parent_after_exit_resource($target_linux_arch32_toolchain)",
-        "test_programs:signal_handling_test_exec_parent_before_exit_resource($target_linux_arch32_toolchain)",
-      ]
-      uses_expectations = true
-      generated_expectations =
-          ":syscalls_cpp_test_expectations($target_linux_arch32_toolchain)"
-      test_type = "starnix"
-
-      if (defined(invoker.custom_expectations)) {
-        generated_expectations =
-            "($invoker.custom_expectations)($target_linux_arch32_toolchain)"
-      }
-    }
-  }
-}
-
 foreach(test_name, syscall_tests) {
   syscall_test(test_name) {
     test_name = test_name
+    deps = syscall_tests_deps
+    resources = syscall_tests_resources
+    executables = syscall_tests_executables
   }
 }
 
 foreach(test_def, syscall_tests_etc) {
   syscall_test(test_def.name) {
     test_name = test_def.name
+    deps = syscall_tests_deps
+    resources = syscall_tests_resources
+    executables = syscall_tests_executables
     forward_variables_from(test_def, "*", [ "name" ])
   }
 }
@@ -543,13 +345,6 @@ if (is_linux) {
     deps = [ ":test_utils" ]
   }
 
-  resource("ptrace_test_exec_child_resource") {
-    testonly = true
-    sources = [ "$root_out_dir/ptrace_test_exec_child" ]
-    outputs = [ "data/tests/deps/ptrace_test_exec_child" ]
-    deps = [ ":ptrace_test_exec_child" ]
-  }
-
   executable("signal_handling_test_exec_child") {
     testonly = true
     emit_tool_path = false
@@ -561,13 +356,6 @@ if (is_linux) {
       "coverage",
     ]
     deps = [ ":test_utils" ]
-  }
-
-  resource("signal_handling_test_exec_child_resource") {
-    testonly = true
-    sources = [ "$root_out_dir/signal_handling_test_exec_child" ]
-    outputs = [ "data/tests/deps/signal_handling_test_exec_child" ]
-    deps = [ ":signal_handling_test_exec_child" ]
   }
 
   executable("syscall_test_exec_child") {
@@ -583,13 +371,6 @@ if (is_linux) {
     deps = [ ":test_utils" ]
   }
 
-  resource("syscall_test_exec_child_resource") {
-    testonly = true
-    sources = [ "$root_out_dir/syscall_test_exec_child" ]
-    outputs = [ "data/tests/deps/syscall_test_exec_child" ]
-    deps = [ ":syscall_test_exec_child" ]
-  }
-
   executable("suid_test_exec_child") {
     testonly = true
     emit_tool_path = false
@@ -602,23 +383,6 @@ if (is_linux) {
     ]
     deps = [ ":test_utils" ]
   }
-
-  resource("suid_test_exec_child_resource") {
-    testonly = true
-    sources = [ "$root_out_dir/suid_test_exec_child" ]
-    outputs = [ "data/tests/deps/suid_test_exec_child" ]
-    deps = [ ":suid_test_exec_child" ]
-  }
-}
-
-resource("extended_pstate_initial_state_child_resource") {
-  testonly = true
-  binary_name = "extended_pstate_initial_state_child"
-  exe_label = ":${binary_name}"
-  out_dir = get_label_info(exe_label, "root_out_dir")
-  sources = [ "${out_dir}/${binary_name}" ]
-  outputs = [ "data/tests/deps/${binary_name}" ]
-  deps = [ exe_label ]
 }
 
 generated_expectations_file("syscalls_cpp_test_expectations") {
@@ -642,6 +406,9 @@ if (starnix_linux_syscall_tests) {
   foreach(test_name, syscall_tests) {
     syscall_test("linux_${test_name}") {
       test_name = test_name
+      deps = syscall_tests_deps
+      resources = syscall_tests_resources
+      executables = syscall_tests_executables
       test_target_kernel = "linux"
       custom_expectations = ":linux_cpp_test_expectations"
     }
@@ -650,6 +417,9 @@ if (starnix_linux_syscall_tests) {
   foreach(test_def, syscall_tests_etc) {
     syscall_test("linux_${test_def.name}") {
       test_name = test_def.name
+      deps = syscall_tests_deps
+      resources = syscall_tests_resources
+      executables = syscall_tests_executables
       forward_variables_from(test_def, "*", [ "name" ])
       test_target_kernel = "linux"
       custom_expectations = ":linux_cpp_test_expectations"
@@ -673,10 +443,7 @@ if (starnix_linux_syscall_tests) {
       subpackages += [ "//src/ui/testing/test_ui_stack:test-ui-stack" ]
     }
 
-    deps += [
-      ":extended_pstate_initial_state_child_resource($target_linux_toolchain)",
-      "//src/lib/testing/expectation:expectation_comparer",
-    ]
+    deps += [ "//src/lib/testing/expectation:expectation_comparer" ]
 
     test_specs = {
       # TODO(https://fxbug.dev/319150842): GCE doesn't support Vulkan, so, for now, just disable all
@@ -711,10 +478,7 @@ fuchsia_test_package("starnix_syscalls_cpp_tests") {
     subpackages += [ "//src/ui/testing/test_ui_stack:test-ui-stack" ]
   }
 
-  deps += [
-    ":extended_pstate_initial_state_child_resource($target_linux_toolchain)",
-    "//src/lib/testing/expectation:expectation_comparer",
-  ]
+  deps += [ "//src/lib/testing/expectation:expectation_comparer" ]
 
   test_specs = {
     # TODO(https://fxbug.dev/319150842): GCE doesn't support Vulkan, so, for now, just disable all
@@ -749,10 +513,7 @@ if (starnix_enable_arch32) {
       subpackages += [ "//src/ui/testing/test_ui_stack:test-ui-stack" ]
     }
 
-    deps += [
-      ":extended_pstate_initial_state_child_resource($target_linux_arch32_toolchain)",
-      "//src/lib/testing/expectation:expectation_comparer",
-    ]
+    deps += [ "//src/lib/testing/expectation:expectation_comparer" ]
 
     test_specs = {
       # TODO(https://fxbug.dev/319150842): GCE doesn't support Vulkan, so, for now, just disable all

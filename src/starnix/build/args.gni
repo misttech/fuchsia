@@ -53,4 +53,7 @@ declare_args() {
   # an isolated Linux VM. This flag should often be used in conjunction with virtualization enabled,
   # instructions can be found at fuchsia.dev/fuchsia-src/development/virtualization/get_started
   starnix_linux_syscall_tests = false
+
+  # We want to use a newer sysroot than is available by default in $host_toolchain.
+  starnix_host_linux_toolchain = "//build/toolchain:linux_$host_cpu"
 }
