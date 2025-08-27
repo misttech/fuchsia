@@ -174,6 +174,11 @@ type AddressParameters = table {
     /// will be installed through the interface the address is being added to.
     /// If the address is removed for any reason, the route will also be
     /// removed.
+    ///
+    /// The subnet route is always installed in the main table (see
+    /// https://fxbug.dev/42074223#c13 for more details). In the future, we
+    /// should allow the user of this API to specify where the route should be
+    /// installed and provide proof of access.
     @deprecated(
             "TODO(https://fxbug.dev/42074223): Do not use this without consulting with the Netstack team.")
     3: add_subnet_route bool;
