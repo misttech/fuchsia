@@ -9,7 +9,6 @@ pub mod component_instance;
 pub mod config;
 pub mod environment;
 pub mod error;
-pub mod event;
 pub mod legacy_router;
 pub mod mapper;
 pub mod path;
@@ -64,7 +63,7 @@ use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, zx_status as 
 
 pub use bedrock::dict_ext::{DictExt, GenericRouterResponse};
 pub use bedrock::lazy_get::LazyGet;
-pub use bedrock::weak_instance_token_ext::{test_invalid_instance_token, WeakInstanceTokenExt};
+pub use bedrock::weak_instance_token_ext::{WeakInstanceTokenExt, test_invalid_instance_token};
 pub use bedrock::with_porcelain::WithPorcelain;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

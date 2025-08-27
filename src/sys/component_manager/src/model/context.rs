@@ -108,16 +108,7 @@ impl ModelContext {
         &self.inspector
     }
 
-    pub async fn init_internal_capabilities(
-        &self,
-        b: Vec<Box<dyn BuiltinCapability>>,
-        f: Vec<Box<dyn FrameworkCapability>>,
-    ) {
-        {
-            let mut builtin_capabilities = self.builtin_capabilities.lock();
-            assert!(builtin_capabilities.is_none(), "already initialized");
-            *builtin_capabilities = Some(b);
-        }
+    pub async fn init_internal_capabilities(&self, f: Vec<Box<dyn FrameworkCapability>>) {
         {
             let mut framework_capabilities = self.framework_capabilities.lock();
             assert!(framework_capabilities.is_none(), "already initialized");

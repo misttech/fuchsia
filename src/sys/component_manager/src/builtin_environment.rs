@@ -26,7 +26,7 @@ use crate::builtin::runner::{BuiltinRunner, BuiltinRunnerFactory};
 use crate::builtin::svc_stash_provider::SvcStashCapability;
 use crate::builtin::system_controller::SystemController;
 use crate::builtin::time::{UtcInstantMaintainer, create_utc_clock};
-use crate::capability::{self, BuiltinCapability, FrameworkCapability};
+use crate::capability::{self, FrameworkCapability};
 use crate::framework::binder::BinderFrameworkCapability;
 use crate::framework::capability_store::CapabilityStore;
 use crate::framework::config_override::ConfigOverride;
@@ -37,14 +37,10 @@ use crate::framework::pkg_dir::PkgDirectoryFrameworkCapability;
 use crate::framework::realm::Realm;
 use crate::framework::realm_query::RealmQuery;
 use crate::framework::route_validator::RouteValidatorFrameworkCapability;
-use crate::inspect_sink_provider::InspectSinkProvider;
 use crate::model::component::manager::ComponentManagerInstance;
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::environment::Environment;
 use crate::model::event_logger::EventLogger;
-use crate::model::events::registry::EventRegistry;
-use crate::model::events::source_factory::{EventSourceFactory, EventSourceFactoryCapability};
-use crate::model::events::stream_provider::EventStreamProvider;
 use crate::model::events::use_router::EventStreamUseRouter;
 use crate::model::model::{Model, ModelParams};
 use crate::model::resolver::{Resolver, ResolverRegistry};
@@ -937,17 +933,8 @@ pub struct BuiltinEnvironment {
     pub config_override: Option<ConfigOverride>,
     pub realm_query: Option<RealmQuery>,
     pub lifecycle_controller: Option<LifecycleController>,
-    // TODO(https://fxbug.dev/332389972): Remove or explain #[allow(dead_code)].
-    #[allow(dead_code)]
-    pub event_registry: Arc<EventRegistry>,
     pub capability_store: CapabilityStore,
     pub stop_notifier: Arc<RootStopNotifier>,
-    // TODO(https://fxbug.dev/332389972): Remove or explain #[allow(dead_code)].
-    #[allow(dead_code)]
-    pub inspect_sink_provider: Arc<InspectSinkProvider>,
-    // TODO(https://fxbug.dev/332389972): Remove or explain #[allow(dead_code)].
-    #[allow(dead_code)]
-    pub event_stream_provider: Arc<EventStreamProvider>,
     // TODO(https://fxbug.dev/332389972): Remove or explain #[allow(dead_code)].
     #[allow(dead_code)]
     pub event_logger: Option<Arc<EventLogger>>,
@@ -1569,49 +1556,24 @@ impl BuiltinEnvironment {
 
         root_input_builder.add_event_stream_capabilities();
 
-        // Set up the Inspect sink provider.
-        let inspect_sink_provider = Arc::new(InspectSinkProvider::new(params.inspector.clone()));
-
         // Set up OtaHealthVerification service.
         let ota_health_verification_svc = OtaHealthVerification::new(
             runtime_config.health_check.monikers.clone(),
             Arc::downgrade(&top_instance),
-            inspect_sink_provider.inspector().root().create_child("ota_health_verification"),
+            params.inspector.root().create_child("ota_health_verification"),
         );
         root_input_builder.add_builtin_protocol_if_enabled::<fupdate::HealthVerificationMarker>(
             move |stream| ota_health_verification_svc.clone().serve(stream).boxed(),
         );
 
-        // Set up the event registry.
-        let event_registry = {
-            let mut event_registry = EventRegistry::new(Arc::downgrade(&top_instance));
-            event_registry.register_synthesis_provider(
-                EventType::CapabilityRequested,
-                inspect_sink_provider.clone(),
-            );
-            Arc::new(event_registry)
-        };
-        let event_stream_provider =
-            Arc::new(EventStreamProvider::new(Arc::downgrade(&event_registry)));
-        let event_source_factory = EventSourceFactory::new(
-            Arc::downgrade(&top_instance),
-            Arc::downgrade(&event_registry),
-            Arc::downgrade(&event_stream_provider),
-        );
-
-        let mut builtin_capabilities: Vec<Box<dyn BuiltinCapability>> =
-            vec![Box::new(EventSourceFactoryCapability::new(event_source_factory.clone()))];
-
         // Set up the boot resolver so it is routable from "above root".
         if let Some((component_resolver, package_resolver)) = boot_resolvers {
-            let c = component_resolver.clone();
             root_input_builder.add_builtin_protocol_if_enabled::<fresolution::ResolverMarker>(
                 move |stream| {
-                    let c = c.clone();
+                    let c = component_resolver.clone();
                     async move { c.serve(stream).await.map_err(|e| format_err!("{e:?}")) }.boxed()
                 },
             );
-            builtin_capabilities.push(Box::new(component_resolver));
 
             if let Some(package_resolver) = package_resolver {
                 root_input_builder
@@ -1638,9 +1600,6 @@ impl BuiltinEnvironment {
         let root_component_input = root_input_builder.build();
         let model = Model::new(params, root_component_input.clone()).await?;
 
-        model.root().hooks.install(event_registry.hooks());
-        model.root().hooks.install(event_stream_provider.hooks());
-
         let capability_store = CapabilityStore::new();
         let mut framework_capabilities: Vec<Box<dyn FrameworkCapability>> = vec![
             Box::new(Realm::new(Arc::downgrade(&model), runtime_config.clone())),
@@ -1651,13 +1610,7 @@ impl BuiltinEnvironment {
             Box::new(capability_store.clone()),
             Box::new(Namespace::new()),
             Box::new(PkgDirectoryFrameworkCapability::new()),
-            Box::new(EventSourceFactoryCapability::new(event_source_factory.clone())),
         ];
-
-        // Set up the builtin runners.
-        for runner in builtin_runners {
-            builtin_capabilities.push(Box::new(runner));
-        }
 
         let event_logger = if runtime_config.log_all_events {
             let event_logger = Arc::new(EventLogger::new());
@@ -1700,10 +1653,7 @@ impl BuiltinEnvironment {
                 .push(Box::new(RouteValidatorFrameworkCapability::new(Arc::downgrade(&model))));
         }
 
-        model
-            .context()
-            .init_internal_capabilities(builtin_capabilities, framework_capabilities)
-            .await;
+        model.context().init_internal_capabilities(framework_capabilities).await;
 
         // Set up the Component Tree Diagnostics runtime statistics.
         let inspector = model.context().inspector();
@@ -1735,11 +1685,8 @@ impl BuiltinEnvironment {
             config_override,
             realm_query,
             lifecycle_controller,
-            event_registry,
             capability_store,
             stop_notifier,
-            inspect_sink_provider,
-            event_stream_provider,
             event_logger,
             component_tree_stats,
             _component_lifecycle_time_stats: component_lifecycle_time_stats,
@@ -1964,11 +1911,6 @@ impl BuiltinEnvironment {
             }
             Err(e) => info!("Unable to open Registry server for tracing: {}", e),
         }
-    }
-
-    #[cfg(all(test, feature = "src_model_tests"))]
-    pub fn inspector(&self) -> &Inspector {
-        self.inspect_sink_provider.inspector()
     }
 }
 

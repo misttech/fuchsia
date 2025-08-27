@@ -9,19 +9,19 @@ mod tests {
     use crate::model::start::Start;
     use crate::model::testing::routing_test_helpers::{RoutingTest, RoutingTestBuilder};
     use crate::model::testing::test_helpers::{
-        component_decl_with_test_runner, ActionsTest, ComponentInfo,
+        ActionsTest, ComponentInfo, component_decl_with_test_runner,
     };
     use ::routing_test_helpers::component_id_index::make_index_file;
     use cm_rust_testing::*;
     use component_id_index::InstanceId;
     use diagnostics::escrow::DurationStats;
     use diagnostics::lifecycle::ComponentLifecycleTimeStats;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty, HistogramAssertion};
+    use diagnostics_assertions::{AnyProperty, HistogramAssertion, assert_data_tree};
     use diagnostics_hierarchy::DiagnosticsHierarchy;
     use fidl::endpoints::ServerEnd;
     use fuchsia_inspect::DiagnosticsHierarchyGetter;
-    use futures::channel::mpsc;
     use futures::StreamExt;
+    use futures::channel::mpsc;
     use hooks::EventType;
     use inspect::{ExponentialHistogramParams, LinearHistogramParams};
     use moniker::Moniker;
@@ -90,7 +90,7 @@ mod tests {
         let koid =
             fuchsia_runtime::job_default().basic_info().expect("got basic info").koid.raw_koid();
 
-        let hierarchy = test.builtin_environment.inspector().get_diagnostics_hierarchy().await;
+        let hierarchy = test.model.context().inspector().get_diagnostics_hierarchy().await;
         let (timestamps, cpu_times, queue_times) =
             get_data(&hierarchy, "<component_manager>", Some(&koid.to_string()));
         assert_eq!(timestamps.len(), 1);
@@ -330,7 +330,7 @@ mod tests {
             .build()
             .await;
 
-        let inspector = test.builtin_environment.inspector();
+        let inspector = test.model.context().inspector();
         assert_data_tree!(inspector, root: contains {
             component_id_index: {
                 "a": format!("{instance_id}"),

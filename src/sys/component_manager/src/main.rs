@@ -37,7 +37,6 @@ mod builtin_environment;
 mod capability;
 mod constants;
 mod framework;
-mod inspect_sink_provider;
 mod model;
 mod root_stop_notifier;
 mod runner;
