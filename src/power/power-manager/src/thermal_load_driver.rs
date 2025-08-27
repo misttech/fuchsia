@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::common_utils::get_current_timestamp;
 use crate::log_if_err;
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use crate::platform_metrics::PlatformMetric;
 use crate::temperature_handler::{TemperatureFilter, TemperatureReadings};
 use crate::types::{Celsius, Nanoseconds, Seconds, ThermalLoad};
-use anyhow::{format_err, Error, Result};
+use anyhow::{Error, Result, format_err};
 use async_trait::async_trait;
 use fuchsia_inspect::{self as inspect, Property};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
@@ -432,7 +431,7 @@ impl TemperatureInput {
         call_count: &mut u32,
         log_for_test: bool,
     ) -> Result<(Nanoseconds, TemperatureReadings)> {
-        let time = get_current_timestamp();
+        let time = Nanoseconds(fuchsia_async::BootInstant::now().into_nanos());
         self.temperature_filter.get_temperature(time).await.map(|temperature| {
             if log_for_test {
                 if *call_count % 5 == 0 {
@@ -520,7 +519,7 @@ impl TemperatureHistoryInspect {
 mod tests {
     use super::*;
     use crate::message::Message;
-    use crate::test::mock_node::{create_dummy_node, MessageMatcher, MockNode, MockNodeMaker};
+    use crate::test::mock_node::{MessageMatcher, MockNode, MockNodeMaker, create_dummy_node};
     use crate::{msg_eq, msg_ok_return};
     use diagnostics_assertions::assert_data_tree;
     use std::task::Poll::Ready;
@@ -538,13 +537,13 @@ mod tests {
                 config_file.iter().filter(|n| n["type"] == "ThermalLoadDriver");
 
             for node in thermal_load_driver_nodes {
-                let temperature_handler_node_deps = node["dependencies"].as_object().unwrap()
-                    ["temperature_handler_node_names"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|node_name| node_name.as_str().unwrap())
-                    .collect::<Vec<_>>();
+                let temperature_handler_node_deps =
+                    node["dependencies"].as_object().unwrap()["temperature_handler_node_names"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|node_name| node_name.as_str().unwrap())
+                        .collect::<Vec<_>>();
                 let temperature_config_node_refs = node["config"]["temperature_input_configs"]
                     .as_array()
                     .unwrap()
