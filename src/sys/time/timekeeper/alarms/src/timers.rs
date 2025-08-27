@@ -458,8 +458,9 @@ impl Heap {
         let utc_empty = self.utc_timers.is_empty();
         let empty = self.active_timers.is_empty();
 
-        assert!(
-            empty == boot_empty && utc_empty,
+        assert_eq!(
+            empty,
+            boot_empty && utc_empty,
             "broken invariant: {boot_empty},{utc_empty},{empty}"
         );
         empty
