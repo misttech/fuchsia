@@ -402,37 +402,55 @@ Evictor::EvictionResult Evictor::EvictUntilTargetsMet(uint64_t min_pages_to_evic
     return EvictionResult{};
   }
 
-  EvictionResult cumulative_result = {};
+  // Helper to read the total_evicted_ counts under the lock.
+  auto read_counts = [&]() {
+    Guard<Mutex> guard{&eviction_lock_};
+    return total_evicted_;
+  };
 
-  // Lock the eviction attempts so that we don't overshoot the free pages target.
-  Guard<Mutex> evict_guard{&eviction_lock_};
+  // Take a snapshot of the eviction counts at the beginning of our attempts.
+  const EvictedPageCounts starting_counts = read_counts();
 
+  bool free_target_reached = false;
   while (true) {
+    // Lock the eviction attempts so that we don't overshoot the free pages target.
+    Guard<Mutex> evict_guard{&eviction_lock_};
+
+    const uint64_t pages_freed_so_far =
+        total_evicted_.non_loaned_total() - starting_counts.non_loaned_total();
+
     const uint64_t free_pages = CountFreePages();
     uint64_t pages_to_free = 0;
     // Need to evict at least min_pages_to_evict, and then potentially up to the free_pages_target.
-    if (cumulative_result.counts.non_loaned_total() < min_pages_to_evict) {
-      pages_to_free = min_pages_to_evict - cumulative_result.counts.non_loaned_total();
+    if (pages_freed_so_far < min_pages_to_evict) {
+      pages_to_free = min_pages_to_evict - pages_freed_so_far;
     }
     if (free_pages < free_pages_target) {
       pages_to_free = ktl::max(free_pages_target - free_pages, pages_to_free);
     } else {
-      cumulative_result.free_target_reached = true;
+      free_target_reached = true;
     }
     if (pages_to_free == 0) {
       // The targets have been met. No more eviction is required right now.
       break;
     }
 
+    // Cap the number of pages to free so that we do not monopolize the eviction_lock_, ensuring
+    // that parallel attempts at achieving different eviction outcomes do not unnecessarily block
+    // each other.
+    pages_to_free = ktl::min(128ul, pages_to_free);
+
     EvictedPageCounts pages_freed = EvictPageQueues(pages_to_free, level);
     // Should we fail to free any pages then we give up and consider the eviction request complete.
     if (pages_freed.non_loaned_total() == 0) {
       break;
     }
-    cumulative_result.counts += pages_freed;
+    total_evicted_ += pages_freed;
   }
 
-  return cumulative_result;
+  // Return the difference of the current eviction counts compared to when we started.
+  return EvictionResult{.counts = read_counts() - starting_counts,
+                        .free_target_reached = free_target_reached};
 }
 
 Evictor::EvictedPageCounts Evictor::EvictPageQueues(uint64_t target_pages,

@@ -86,6 +86,13 @@ class Evictor {
       compressed += counts.compressed;
       return *this;
     }
+    EvictedPageCounts operator-(const EvictedPageCounts &counts) const {
+      return EvictedPageCounts{
+          .pager_backed = pager_backed - counts.pager_backed,
+          .pager_backed_loaned = pager_backed_loaned - counts.pager_backed_loaned,
+          .discardable = discardable - counts.discardable,
+          .compressed = compressed - counts.compressed};
+    }
     uint64_t non_loaned_total() const { return pager_backed + discardable + compressed; }
   };
 
@@ -184,8 +191,10 @@ class Evictor {
   // Evict until |min_pages_to_evict| have been evicted and there are at least |free_pages_target|
   // free pages on the system. Note that the eviction operation here is one-shot, i.e. as soon as
   // the targets are met, eviction will stop and the function will return. Returns the number of
-  // discardable and pager-backed pages evicted and pages compressed. This may acquire arbitrary vmo
-  // and aspace locks.
+  // discardable and pager-backed pages evicted and pages compressed during the execution of this
+  // method. These counts include all parallel invocations of this method and could be higher than
+  // requested if there was another eviction happening. This may acquire arbitrary vmo and aspace
+  // locks.
   EvictionResult EvictUntilTargetsMet(uint64_t min_pages_to_evict, uint64_t free_pages_target,
                                       EvictionLevel level) TA_EXCL(lock_);
 
@@ -220,6 +229,10 @@ class Evictor {
   // Mutex that enforces only one eviction attempt to be active at any time. This prevents us from
   // overshooting the free memory targets required by various simultaneous eviction requests.
   DECLARE_MUTEX(Evictor) eviction_lock_;
+
+  // Tracks the total amount of evictions performed by EvictUntilTargetsMet. This allows parallel
+  // evictions to combine their eviction progress instead of acting serially.
+  EvictedPageCounts total_evicted_ TA_GUARDED(eviction_lock_) = {};
 
   // Use MonitoredSpinLock to provide lockup detector diagnostics for the critical sections
   // protected by this lock.
