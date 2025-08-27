@@ -331,7 +331,8 @@ impl OverlayNode {
             let lower = self.lower.as_ref().expect("lower is expected when upper is missing");
             let parent = self.parent.as_ref().expect("Parent is expected when upper is missing");
             let parent_upper = parent.ensure_upper(locked, current_task)?;
-            let name = lower.entry().local_name();
+            let state = lower.entry().read();
+            let name = state.local_name();
             let info = {
                 let info = lower.entry().node.info();
                 info.clone()
@@ -348,7 +349,7 @@ impl OverlayNode {
                     parent_upper.create_entry(
                         locked,
                         current_task,
-                        name.as_ref(),
+                        name,
                         |locked, dir, mount, name| {
                             dir.create_symlink(
                                 locked,

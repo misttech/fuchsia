@@ -600,7 +600,7 @@ impl MemoryManagerState {
             // Take the lock on directory entry while holding the one on the mm state to ensure any
             // wrong ordering will trigger the tracing-mutex at the right call site.
             if let MappingName::File(file) = &name {
-                let _l1 = file.name.entry.parent();
+                let _l1 = file.name.entry.read();
             }
         }
 

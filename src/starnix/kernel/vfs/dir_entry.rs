@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::mutable_state::{state_accessor, state_implementation};
 use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::{
@@ -9,6 +10,7 @@ use crate::vfs::{
     MountInfo, Mounts, NamespaceNode, UnlinkKind, path,
 };
 use bitflags::bitflags;
+use macro_rules_attribute::apply;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, RwLock, RwLockWriteGuard};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::{ENOENT, Errno};
@@ -45,7 +47,7 @@ bitflags! {
     }
 }
 
-struct DirEntryState {
+pub struct DirEntryState {
     /// The parent DirEntry.
     ///
     /// The DirEntry tree has strong references from child-to-parent and weak
@@ -69,6 +71,22 @@ struct DirEntryState {
 
     /// Whether the entry has filesystems mounted on top of it.
     has_mounts: bool,
+}
+
+#[apply(state_implementation!)]
+impl DirEntryState<Base = DirEntry> {
+    pub fn local_name(&self) -> &FsStr {
+        self.local_name.as_ref()
+    }
+
+    pub fn parent(&self) -> &Option<DirEntryHandle> {
+        &self.parent
+    }
+
+    /// Whether this directory entry has been removed from the tree.
+    pub fn is_dead(&self) -> bool {
+        self.is_dead
+    }
 }
 
 pub trait DirEntryOps: Send + Sync + 'static {
@@ -150,6 +168,8 @@ type DirEntryChildren = BTreeMap<FsString, Weak<DirEntry>>;
 pub type DirEntryHandle = Arc<DirEntry>;
 
 impl DirEntry {
+    state_accessor!(DirEntry, state);
+
     #[allow(clippy::let_and_return)]
     pub fn new_uncached(
         node: FsNodeHandle,
@@ -237,27 +257,6 @@ impl DirEntry {
         DirEntryLockedChildren { entry: self, children: self.children.write() }
     }
 
-    /// The name that this node's parent calls this node.
-    ///
-    /// If this node is mounted in a namespace, the parent of this node in that
-    /// namespace might have a different name for the point in the namespace at
-    /// which this node is mounted.
-    pub fn local_name(&self) -> FsString {
-        self.state.read().local_name.clone()
-    }
-
-    /// The parent DirEntry object.
-    ///
-    /// Returns None if this DirEntry is the root of its file system.
-    ///
-    /// Be aware that the root of one file system might be mounted as a child
-    /// in another file system. For that reason, consider walking the
-    /// NamespaceNode tree (which understands mounts) rather than the DirEntry
-    /// tree.
-    pub fn parent(&self) -> Option<DirEntryHandle> {
-        self.state.read().parent.clone()
-    }
-
     /// The parent DirEntry object or this DirEntry if this entry is the root.
     ///
     /// Useful when traversing up the tree if you always want to find a parent
@@ -268,12 +267,7 @@ impl DirEntry {
     /// NamespaceNode tree (which understands mounts) rather than the DirEntry
     /// tree.
     pub fn parent_or_self(self: &DirEntryHandle) -> DirEntryHandle {
-        self.state.read().parent.as_ref().unwrap_or(self).clone()
-    }
-
-    /// Whether this directory entry has been removed from the tree.
-    pub fn is_dead(&self) -> bool {
-        self.state.read().is_dead
+        self.read().parent().as_ref().unwrap_or(self).clone()
     }
 
     /// Whether the given name has special semantics as a directory entry.
@@ -564,7 +558,8 @@ impl DirEntry {
                 // We found |other|.
                 return true;
             }
-            if let Some(next) = current.parent() {
+            let parent = current.read().parent().clone();
+            if let Some(next) = parent {
                 current = next;
             } else {
                 // We reached the root of the file system.
@@ -657,7 +652,7 @@ impl DirEntry {
             {
                 let mut current = Some(new_parent.clone());
                 while let Some(entry) = current {
-                    current = entry.parent();
+                    current = entry.read().parent().clone();
                     new_parent_ancestor_list.push(entry);
                 }
             }
@@ -950,26 +945,28 @@ impl DirEntry {
         self.children
             .read()
             .values()
-            .filter_map(|child| Weak::upgrade(child).map(|c| c.local_name()))
+            .filter_map(|child| Weak::upgrade(child).map(|c| c.read().local_name().to_owned()))
             .collect()
     }
 
     fn internal_remove_child(&self, child: &DirEntry) {
-        let local_name = child.local_name();
         let mut children = self.children.write();
-        if let Some(weak_child) = children.get(&local_name) {
+        let state = child.read();
+        let local_name = state.local_name();
+        if let Some(weak_child) = children.get(local_name) {
             // If this entry is occupied, we need to check whether child is
             // the current occupant. If so, we should remove the entry
             // because the child no longer exists.
             if std::ptr::eq(weak_child.as_ptr(), child) {
-                children.remove(&local_name);
+                children.remove(local_name);
             }
         }
     }
 
     /// Notifies watchers on the current node and its parent about an event.
     pub fn notify(&self, event_mask: InotifyMask) {
-        self.notify_watchers(event_mask, self.is_dead());
+        let is_dead = self.read().is_dead();
+        self.notify_watchers(event_mask, is_dead);
     }
 
     /// Notifies watchers on the current node and its parent about an event.
@@ -982,8 +979,11 @@ impl DirEntry {
 
     fn notify_watchers(&self, event_mask: InotifyMask, is_dead: bool) {
         let mode = self.node.info().mode;
-        if let Some(parent) = self.parent() {
-            parent.node.notify(event_mask, 0, self.local_name().as_ref(), mode, is_dead);
+        {
+            let state = self.read();
+            if let Some(parent) = state.parent() {
+                parent.node.notify(event_mask, 0, state.local_name(), mode, is_dead);
+            }
         }
         self.node.notify(event_mask, 0, Default::default(), mode, is_dead);
     }
@@ -995,8 +995,9 @@ impl DirEntry {
             // Notify about link change only if there is already a hardlink.
             self.node.notify(InotifyMask::ATTRIB, 0, Default::default(), mode, false);
         }
-        if let Some(parent) = self.parent() {
-            parent.node.notify(InotifyMask::CREATE, 0, self.local_name().as_ref(), mode, false);
+        let state = self.read();
+        if let Some(parent) = state.parent() {
+            parent.node.notify(InotifyMask::CREATE, 0, state.local_name(), mode, false);
         }
     }
 
@@ -1010,8 +1011,9 @@ impl DirEntry {
             self.node.notify(InotifyMask::ATTRIB, 0, Default::default(), mode, false);
         }
 
-        if let Some(parent) = self.parent() {
-            parent.node.notify(InotifyMask::DELETE, 0, self.local_name().as_ref(), mode, false);
+        let state = self.read();
+        if let Some(parent) = state.parent() {
+            parent.node.notify(InotifyMask::DELETE, 0, state.local_name(), mode, false);
         }
 
         // This check is incorrect if there's another hard link to this FsNode that isn't in
@@ -1151,14 +1153,14 @@ impl<'a> DirEntryLockedChildren<'a> {
 impl fmt::Debug for DirEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut parents = vec![];
-        let mut maybe_parent = self.parent();
+        let mut maybe_parent = self.read().parent().clone();
         while let Some(parent) = maybe_parent {
-            parents.push(parent.local_name().to_string());
-            maybe_parent = parent.parent();
+            parents.push(parent.read().local_name().to_string());
+            maybe_parent = parent.read().parent().clone();
         }
         let mut builder = f.debug_struct("DirEntry");
         builder.field("id", &(self as *const DirEntry));
-        builder.field("local_name", &self.local_name());
+        builder.field("local_name", &self.read().local_name().to_string());
         if !parents.is_empty() {
             builder.field("parents", &parents);
         }

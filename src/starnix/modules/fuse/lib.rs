@@ -1117,9 +1117,13 @@ impl DirEntryOps for FuseDirEntry {
 
         // Perform a lookup on this entry's parent FUSE node to revalidate this
         // entry.
-        let parent = dir_entry.parent().expect("non-root nodes always has a parent");
+        let (parent, name) = {
+            let state = dir_entry.read();
+            let parent = state.parent().clone().expect("non-root nodes always has a parent");
+            let name = state.local_name().to_owned();
+            (parent, name)
+        };
         let parent = FuseNode::from_node(&parent.node);
-        let name = dir_entry.local_name();
         let FuseEntryOutExtended {
             arg:
                 uapi::fuse_entry_out {

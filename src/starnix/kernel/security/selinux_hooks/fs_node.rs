@@ -17,8 +17,6 @@ use crate::task::CurrentTask;
 use crate::vfs::{
     Anon, DirEntryHandle, FsNode, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp,
 };
-use bstr::BStr;
-
 use selinux::policy::{AccessVector, AccessVectorComputer, FsUseType};
 use selinux::{
     CommonFilePermission, CommonFsNodePermission, DirPermission, FileClass, FileSystemLabel,
@@ -43,9 +41,19 @@ fn get_fs_relative_path(dir_entry: &DirEntryHandle) -> FsString {
     let mut path_builder = PathBuilder::new();
     let mut current_dir = dir_entry.clone();
 
-    while let Some(parent) = current_dir.parent() {
-        path_builder.prepend_element(&BStr::new(&current_dir.local_name()));
-        current_dir = parent;
+    loop {
+        let parent = {
+            let state = current_dir.read();
+            if state.parent().is_some() {
+                path_builder.prepend_element(state.local_name());
+            }
+            state.parent().clone()
+        };
+        if let Some(parent) = parent {
+            current_dir = parent;
+        } else {
+            break;
+        }
     }
     path_builder.build_absolute()
 }
@@ -99,8 +107,8 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     // If the parent has a from-task label then propagate it to the new node,  rather than applying
     // the filesystem's labeling scheme. This allows nodes in per-process and per-task directories
     // in "proc" to inherit the task's label.
-    let parent = dir_entry.parent();
-    if let Some(parent) = parent {
+    let parent = dir_entry.read().parent().clone();
+    if let Some(ref parent) = parent {
         let parent_node = &parent.node;
         if let FsNodeLabel::FromTask { weak_task } = parent_node.security_state.lock().label.clone()
         {
@@ -147,7 +155,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                         ),
                         Ok(ValueOrSize::Size(_)) => None,
                         Err(err) => {
-                            if err.code == ENODATA && dir_entry.parent().is_none() {
+                            if err.code == ENODATA && parent.is_none() {
                                 // The root node of xattr-labeled filesystems should be labeled at
                                 // creation in principle. Distinguishing creation of the root of the
                                 // filesystem from re-instantiation of the `FsNode` representing an
@@ -201,13 +209,14 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                     // the filesystem sid if they don't have a parent node).
                     // TODO: https://fxbug.dev/381275592 - Use the SID from the creating task,
                     // rather than current_task!
-                    let name = dir_entry.local_name();
+                    let state = dir_entry.read();
+                    let name = state.local_name();
                     return fs_node_init_on_create(
                         security_server,
                         current_task,
                         fs_node,
-                        dir_entry.parent().as_ref().map(|x| &**x.node),
-                        name.as_slice().into(),
+                        parent.as_ref().map(|x| &**x.node),
+                        name,
                     )
                     .map(|_| ());
                 }
@@ -1268,6 +1277,7 @@ mod tests {
         self, TEST_FILE_NAME, spawn_kernel_with_selinux_hooks_test_policy_and_run,
     };
     use super::*;
+    use bstr::BStr;
 
     use crate::testing::spawn_kernel_and_run;
     use crate::vfs::XattrOp;

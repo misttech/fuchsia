@@ -820,14 +820,24 @@ impl DynamicFileSource for ProcMountinfoFile {
         // Returns path to the `dir` from the root of the file system.
         fn path_from_fs_root(dir: &DirEntryHandle) -> FsString {
             let mut path = PathBuilder::new();
-            if dir.is_dead() {
+            if dir.read().is_dead() {
                 // Return `/foo/dir//deleted` if the dir was deleted.
                 path.prepend_element("/deleted".into());
             }
             let mut current = dir.clone();
-            while let Some(next) = current.parent() {
-                path.prepend_element(current.local_name().as_ref());
-                current = next
+            loop {
+                let parent = {
+                    let state = current.read();
+                    if state.parent().is_some() {
+                        path.prepend_element(state.local_name());
+                    }
+                    state.parent().clone()
+                };
+                if let Some(next) = parent {
+                    current = next
+                } else {
+                    break;
+                }
             }
             path.build_absolute()
         }
@@ -1374,7 +1384,8 @@ impl NamespaceNode {
     /// filesystem to another.
     pub fn parent(&self) -> Option<NamespaceNode> {
         let mountpoint_or_self = self.escape_mount();
-        Some(mountpoint_or_self.with_new_entry(mountpoint_or_self.entry.parent()?))
+        let parent = mountpoint_or_self.entry.read().parent().clone()?;
+        Some(mountpoint_or_self.with_new_entry(parent))
     }
 
     /// Returns the parent, but does not escape mounts i.e. returns None if this node
@@ -1383,7 +1394,7 @@ impl NamespaceNode {
         if let Ok(_) = self.mount_if_root() {
             return None;
         }
-        self.entry.parent()
+        self.entry.read().parent().clone()
     }
 
     /// Whether this namespace node is a descendant of the given node.
@@ -1477,12 +1488,12 @@ impl NamespaceNode {
             let root = root.escape_mount();
             while current != root {
                 if let Some(parent) = current.parent() {
-                    path.prepend_element(current.entry.local_name().as_ref());
+                    path.prepend_element(current.entry.read().local_name());
                     current = parent.escape_mount();
                 } else {
                     // This node hasn't intersected with the custom root and has reached the namespace root.
                     let mut absolute_path = path.build_absolute();
-                    if self.entry.is_dead() {
+                    if self.entry.read().is_dead() {
                         absolute_path.extend_from_slice(b" (deleted)");
                     }
 
@@ -1492,13 +1503,13 @@ impl NamespaceNode {
         } else {
             // No custom root, so travel up the tree to the namespace root.
             while let Some(parent) = current.parent() {
-                path.prepend_element(current.entry.local_name().as_ref());
+                path.prepend_element(current.entry.read().local_name());
                 current = parent.escape_mount();
             }
         }
 
         let mut absolute_path = path.build_absolute();
-        if self.entry.is_dead() {
+        if self.entry.read().is_dead() {
             absolute_path.extend_from_slice(b" (deleted)");
         }
 

@@ -1951,7 +1951,7 @@ impl FileObject {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let locked = locked.cast_locked::<FileOpsCore>();
-        if self.name.entry.is_dead() {
+        if self.name.entry.read().is_dead() {
             return error!(ENOENT);
         }
 
