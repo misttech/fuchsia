@@ -36,10 +36,27 @@ pub enum CommandStatus {
         #[serde(flatten)]
         address: ServerInfo,
     },
+    /// Debug message
+    Message { message: String },
     /// Unexpected error with string.
     UnexpectedError { error_message: String },
     /// A known kind of error that can be reported usefully to the user
     UserError { error_message: String },
+}
+
+impl std::fmt::Display for CommandStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let msg = match self {
+            Self::Ok { address } => {
+                format!("Serving over addresss: {:?}", address)
+            }
+            Self::Message { message } => message.to_string(),
+            Self::UnexpectedError { error_message } | Self::UserError { error_message } => {
+                error_message.to_string()
+            }
+        };
+        write!(f, "{}", msg)
+    }
 }
 
 #[derive(FfxTool)]

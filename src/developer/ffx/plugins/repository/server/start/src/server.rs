@@ -2,14 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::ServerStartTool;
-use crate::server_impl::{get_repo_base_name, serve_impl};
+use crate::server_impl::{ServeStarted, get_repo_base_name, serve_impl};
+use crate::{CommandStatus, ServerStartTool};
+use anyhow::anyhow;
 use ffx_command_error::{Result, bug, user_error};
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
+use ffx_writer::ToolIO;
 use fho::{Deferred, FfxMain};
 use fidl_fuchsia_pkg_ext::{RepositoryRegistrationAliasConflictMode, RepositoryStorageType};
+use futures::StreamExt;
 use pkg::{PkgServerInstanceInfo, PkgServerInstances, ServerMode};
+use std::io::Write;
 use std::net::SocketAddr;
 use std::time::Duration;
 use target_connector::Connector;
@@ -72,19 +76,44 @@ pub async fn run_foreground_server(
     target_spec: Deferred<TargetInfoQueryHolder>,
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     host_addr: Deferred<HostAddrHolder>,
-    w: <ServerStartTool as FfxMain>::Writer,
+    mut w: <ServerStartTool as FfxMain>::Writer,
     mode: ServerMode,
 ) -> Result<()> {
-    Box::pin(serve_impl(
+    let (mut tx, mut rx) = futures::channel::mpsc::unbounded();
+    let drain_task = async {
+        while let Some(msg) = rx.next().await {
+            let _ = w.item(&CommandStatus::Message { message: format!("{}", msg) });
+        }
+    };
+    let main_task = Box::pin(serve_impl(
         target_spec,
         rcs_proxy_connector,
         host_addr,
         start_cmd,
         context,
-        w.simple_writer(),
         mode,
-    ))
-    .await
+        &mut tx,
+    ));
+    let (_, res) = futures::join!(drain_task, main_task);
+    let res = res?;
+    // Write the message.
+    match res {
+        ServeStarted::AlreadyRunning { address, repo_path, name } => {
+            writeln!(
+                w,
+                "A server named {} is already serving on address {} the repo path: {}",
+                name, address, repo_path,
+            )
+            .map_err(|e| bug!(e))?;
+        }
+        ServeStarted::Started { address, repo_path } => {
+            let s = format!("Serving repository '{repo_path}' over address '{}'.", address);
+            w.item(&CommandStatus::Message { message: s.clone() })
+                .map_err(|e| anyhow!("Failed to write to output: {:?}", e))?;
+            log::info!("{}", s);
+        }
+    };
+    Ok(())
 }
 
 pub(crate) async fn wait_for_start(

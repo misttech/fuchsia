@@ -9,7 +9,7 @@ use camino::Utf8Path;
 use ffx_command_error::{Result, return_user_error};
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
-use ffx_target::{RcsKnocker, TargetInfoQuery};
+use ffx_target::{KnockError, RcsKnocker, TargetInfoQuery};
 use ffx_target_net::TargetTcpStream;
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_pkg::RepositoryManagerMarker;
@@ -19,11 +19,11 @@ use fidl_fuchsia_pkg_ext::{
 use fidl_fuchsia_pkg_rewrite::EngineMarker;
 use fuchsia_repo::manager::RepositoryManager;
 use fuchsia_repo::server::ConnectionStream;
-use futures::channel::mpsc;
+use futures::channel::mpsc::{self, UnboundedSender};
 use futures::{FutureExt, SinkExt, Stream, StreamExt, pin_mut, select};
 use pkg::repo;
 use std::collections::BTreeSet;
-use std::io::Write;
+use std::net::SocketAddr;
 use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,12 +40,12 @@ async fn connect_to_target(
     host_address: Option<String>,
     aliases: Vec<String>,
     storage_type: Option<RepositoryStorageType>,
-    repo_server_listen_addr: std::net::SocketAddr,
-    connect_timeout: Duration,
+    repo_server_listen_addr: SocketAddr,
+    connect_timeout: std::time::Duration,
     repo_manager: Arc<RepositoryManager>,
     rcs_proxy: &RemoteControlProxy,
     alias_conflict_mode: RepositoryRegistrationAliasConflictMode,
-    tunnel_addr: std::net::SocketAddr,
+    tunnel_addr: SocketAddr,
 ) -> Result<impl Stream<Item = anyhow::Result<TargetTcpStream>>, anyhow::Error> {
     let repo_proxy = rcs::connect_to_protocol::<RepositoryManagerMarker>(
         connect_timeout,
@@ -116,8 +116,8 @@ async fn inner_connect_loop(
     target_spec: &TargetInfoQuery,
     rcs_proxy: &Connector<RemoteControlProxyHolder>,
     knocker: &impl RcsKnocker,
+    tx: &mut mpsc::UnboundedSender<ConnectEvent>,
     host_address: Option<String>,
-    writer: &mut impl Write,
     tunnel_addr: core::net::SocketAddr,
     connection_sink: &mut mpsc::UnboundedSender<anyhow::Result<ConnectionStream>>,
 ) -> Result<()> {
@@ -163,34 +163,37 @@ async fn inner_connect_loop(
     match connection {
         Ok(proxy_stream) => {
             let s = match target_spec_from_rcs_proxy {
-                Some(t) => format!(
-                    "Serving repository '{repo_path}' to target '{t}' over address '{}'.",
-                    server_addr
-                ),
+                Some(ref t) => ConnectEvent::StartServeToTarget {
+                    repo_path: repo_path.to_string(),
+                    target: t.to_string(),
+                    addr: server_addr,
+                },
                 None => {
-                    format!("Serving repository '{repo_path}' over address '{server_addr}'.")
+                    ConnectEvent::StartServe { repo_path: repo_path.to_string(), addr: server_addr }
                 }
             };
-            if let Err(e) = writeln!(writer, "{}", s) {
-                log::error!("Failed to write to output: {:?}", e);
-            }
             log::info!("{}", s);
+            if let Err(e) = tx.send(s).await {
+                log::warn!("Error sending start serve message: {}", e);
+            }
 
             let mut timer_knock = pin!(
                 async {
                     loop {
                         fuchsia_async::Timer::new(std::time::Duration::from_secs(10)).await;
                         match knocker.knock_rcs(target_spec, ctx).await {
-                            Ok(()) => {
+                            Ok(_) => {
                                 // Nothing to do, continue checking connection
                             }
                             Err(e) => {
-                                let s =
-                                    format!("Connection to target lost, retrying. Error: {}", e);
-                                if let Err(e) = writeln!(writer, "{}", s) {
-                                    log::error!("Failed to write to output: {:?}", e);
-                                }
+                                let s = ConnectEvent::LostConnection { knock_error: e };
                                 log::warn!("{}", s);
+                                if let Err(send_err) = tx.send(s).await {
+                                    log::warn!(
+                                        "Error sending lost connection message: {}",
+                                        send_err
+                                    );
+                                }
                                 break;
                             }
                         }
@@ -220,6 +223,33 @@ async fn inner_connect_loop(
     Ok(())
 }
 
+#[derive(Debug)]
+pub(crate) enum ConnectEvent {
+    StartServeToTarget { repo_path: String, target: String, addr: SocketAddr },
+    StartServe { repo_path: String, addr: SocketAddr },
+    LostConnection { knock_error: KnockError },
+}
+
+impl std::fmt::Display for ConnectEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LostConnection { knock_error } => {
+                write!(f, "Connection to target lost, retrying. Error: {}", knock_error)
+            }
+            Self::StartServe { repo_path, addr } => {
+                write!(f, "Serving repository '{}' over address '{}'.", repo_path, addr)
+            }
+            Self::StartServeToTarget { repo_path, target, addr } => {
+                write!(
+                    f,
+                    "Serving repository '{}' to target '{}' over address '{}'.",
+                    repo_path, target, addr
+                )
+            }
+        }
+    }
+}
+
 pub(crate) async fn main_connect_loop(
     ctx: &EnvironmentContext,
     cmd: &StartCommand,
@@ -230,9 +260,9 @@ pub(crate) async fn main_connect_loop(
     mut loop_stop_rx: futures::channel::mpsc::Receiver<()>,
     target_spec: &TargetInfoQuery,
     rcs_proxy: Connector<RemoteControlProxyHolder>,
-    knocker: impl RcsKnocker,
+    knocker: &impl RcsKnocker,
+    tx: &mut UnboundedSender<ConnectEvent>,
     host_address: Option<String>,
-    writer: &mut (impl Write + 'static),
     tunnel_addr: core::net::SocketAddr,
     mut connection_sink: mpsc::UnboundedSender<anyhow::Result<ConnectionStream>>,
 ) -> Result<()> {
@@ -265,9 +295,9 @@ pub(crate) async fn main_connect_loop(
             &repo_manager,
             target_spec,
             &rcs_proxy,
-            &knocker,
+            knocker,
+            tx,
             host_address.clone(),
-            writer,
             tunnel_addr,
             &mut connection_sink,
         )
