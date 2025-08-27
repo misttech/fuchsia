@@ -181,23 +181,53 @@ void MergeMmapedModules(std::vector<debug_ipc::Module>& modules,
     visited_modules.insert(mod.base);
   }
 
-  for (const auto& region : mmaps) {
-    if (region.base < end_of_last_module) {
+  for (size_t current_map_index = 0; current_map_index < mmaps.size(); current_map_index++) {
+    const auto& current_region = mmaps[current_map_index];
+    std::optional<ElfSegInfo> opt_info = get_elf_info_for_base(current_region.base);
+    if (!opt_info) {
+      continue;
+    }
+
+    if (current_region.base < end_of_last_module) {
       continue;
     }
 
     // With `-fuse-ld=ld -z noseparate-code`, ELF headers live together with the text section.
-    if (region.write) {
+    if (current_region.write) {
       continue;
     }
 
-    std::optional<ElfSegInfo> opt_info = get_elf_info_for_base(region.base);
-    if (!opt_info) {
-      continue;
-    }
-    for (auto& phdr : opt_info->segment_headers) {
+    size_t next_map_index = current_map_index + 1;
+    for (size_t phdr_index = 0; phdr_index < opt_info->segment_headers.size(); phdr_index++) {
+      const auto& phdr = opt_info->segment_headers[phdr_index];
       if (phdr.p_type == PT_LOAD) {
-        end_of_last_module = region.base + phdr.p_vaddr + phdr.p_memsz;
+        // Inspect the next mappings after the current one to check that the starting addrs match.
+        // This is important to distinguish when a single module has been broken up to discontiguous
+        // mappings so that |end_of_last_module| doesn't cause us to ignore any modules that have
+        // been placed in the intermediate mappings.
+        //
+        // An example of this looks something like this:
+        //      Start              End  Prot   Size   Koid       Offset  Cmt.Pgs  Name
+        // 0xdfe52000       0xdfe6e000  r-x    112K  82411          0x0        0  blob-7736e79f
+        // 0xdfe78000       0xdfe7a000  rw-      8K  83515          0x0        1  starnix-anon
+        // 0xdfe7a000       0xdfe7c000  rw-      8K  83473          0x0        2  starnix-anon
+        // 0xdfe7c000       0xdfe7d000  r--      4K   1093          0x0        0  time_values
+        // 0xdfe7d000       0xdfe7e000  r--      4K  81533          0x0        1  starnix:vsdo
+        // 0xdfe7e000       0xdfe80000  r-x      8K  83468          0x0        0  blob-814b69fa
+        // 0xdfe80000       0xdfe82000  r--      8K  83467          0x0        2  data:blob-7736e79f
+        // 0xdfe82000       0xdfe83000  rw-      4K  83467       0x2000        1  data:blob-7736e79f
+        //
+        // Notice how blob-7736e79f has an interleaved module, namely blob-814b69fa. We want to make
+        // sure the end_of_last_module stops at 0xdfe6e000 in this example, rather than purely
+        // looking at phdrs to see the actual end of this module at 0xdfe83000.
+        if (phdr_index > 0 && end_of_last_module != 0 && next_map_index < mmaps.size()) {
+          uint64_t phdr_start = current_region.base + phdr.p_vaddr;
+          const auto& next_region = mmaps[next_map_index++];
+          if (next_region.base != phdr_start) {
+            break;
+          }
+        }
+        end_of_last_module = current_region.base + phdr.p_vaddr + phdr.p_memsz;
       }
     }
 
@@ -205,16 +235,18 @@ void MergeMmapedModules(std::vector<debug_ipc::Module>& modules,
     // already found with "method 1" above. This must be AFTER the end_of_last_module is updated,
     // otherwise, anything inserted from "method 1" won't be counted as covering its address range
     // and the next item could be a duplicate.
-    if (!visited_modules.insert(region.base).second) {
+    if (!visited_modules.insert(current_region.base).second) {
       continue;
     }
 
-    std::string name = region.name;
+    std::string name = current_region.name;
     if (auto soname = opt_info->so_name) {
       name = *soname;
     }
-    modules.push_back(debug_ipc::Module{
-        .name = std::move(name), .base = region.base, .build_id = std::move(opt_info->build_id)});
+
+    modules.push_back(debug_ipc::Module{.name = std::move(name),
+                                        .base = current_region.base,
+                                        .build_id = std::move(opt_info->build_id)});
   }
 }
 
