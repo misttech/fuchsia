@@ -910,7 +910,7 @@ impl FileOps for IoUringFileObject {
             IORING_OFF_SQES => self.queue.sq_entries.clone(),
             _ => return error!(EINVAL),
         };
-        current_task.mm().ok_or_else(|| errno!(EINVAL))?.map_memory(
+        current_task.mm()?.map_memory(
             addr,
             memory,
             0,

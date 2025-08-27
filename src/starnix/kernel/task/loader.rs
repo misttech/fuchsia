@@ -583,8 +583,8 @@ pub fn load_executable(
     resolved_elf: ResolvedElf,
     original_path: &CStr,
 ) -> Result<ThreadStartInfo, Errno> {
-    let mm = current_task.mm().ok_or_else(|| errno!(EINVAL))?;
-    let main_elf = load_elf(resolved_elf.file, resolved_elf.memory, mm, LoadElfUsage::MainElf)?;
+    let mm = current_task.mm()?;
+    let main_elf = load_elf(resolved_elf.file, resolved_elf.memory, &mm, LoadElfUsage::MainElf)?;
     mm.initialize_brk_origin(
         main_elf.arch_width,
         UserAddress::from_ptr(main_elf.file_base)
@@ -593,7 +593,7 @@ pub fn load_executable(
     )?;
     let interp_elf = resolved_elf
         .interp
-        .map(|interp| load_elf(interp.file, interp.memory, mm, LoadElfUsage::Interpreter))
+        .map(|interp| load_elf(interp.file, interp.memory, &mm, LoadElfUsage::Interpreter))
         .transpose()?;
 
     let entry_elf = interp_elf.as_ref().unwrap_or(&main_elf);
@@ -893,7 +893,7 @@ mod tests {
         current_task
             .mm()
             .unwrap()
-            .snapshot_to(locked, current2.mm().unwrap())
+            .snapshot_to(locked, &current2.mm().unwrap())
             .expect("failed to snapshot mm");
 
         assert_eq!(

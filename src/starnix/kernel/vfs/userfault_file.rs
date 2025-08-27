@@ -104,7 +104,7 @@ impl UserFaultFile {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let mm = current_task.mm().ok_or_else(|| errno!(EINVAL))?;
+        let mm = current_task.mm()?;
         let inner = Arc::new(UserFault::new(Arc::downgrade(&mm)));
         mm.register_uffd(&inner);
         Ok(Anon::new_file(
@@ -279,9 +279,10 @@ impl FileOps for UserFaultFile {
             UFFDIO_COPY => {
                 let arg: UserRef<uffdio_copy> = arg.into();
                 let mut request = current_task.read_object(arg)?;
+                let mm = current_task.mm()?;
                 let ioctl_res = self.inner.op_copy(
                     locked,
-                    current_task.mm().unwrap(),
+                    &mm,
                     request.src.into(),
                     request.dst.into(),
                     request.len,

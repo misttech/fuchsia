@@ -1231,7 +1231,7 @@ mod tests {
                     .insert(service_name.clone(), remote_controller_client);
                 let fs = init_task.fs().clone();
                 let kernel = init_task.kernel().clone();
-                let memory_manager = init_task.mm().cloned();
+                let memory_manager = init_task.mm().ok();
 
                 // Simulate the remote binder user process.
                 let starnix_thread = std::thread::Builder::new()

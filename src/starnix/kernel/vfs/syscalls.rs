@@ -2504,8 +2504,7 @@ fn do_epoll_pwait(
     // for common pointer errors. When we catch bad pointers after the wait is complete when the
     // memory is actually written, the events will be lost. This check is not a guarantee.
     current_task
-        .mm()
-        .ok_or_else(|| errno!(EINVAL))?
+        .mm()?
         .check_plausible(events.addr(), max_events * std::mem::size_of::<EpollEvent>())?;
 
     let active_events = if !user_sigmask.is_null() {
@@ -3110,11 +3109,7 @@ pub fn sys_io_submit(
     if nr == 0 {
         return Ok(0);
     }
-    let ctx = current_task
-        .mm()
-        .ok_or_else(|| errno!(EINVAL))?
-        .get_aio_context(ctx_id.into())
-        .ok_or_else(|| errno!(EINVAL))?;
+    let ctx = current_task.mm()?.get_aio_context(ctx_id.into()).ok_or_else(|| errno!(EINVAL))?;
 
     // `iocbpp` is an array of addresses to iocb's.
     let mut num_submitted: i32 = 0;
@@ -3155,11 +3150,7 @@ pub fn sys_io_getevents(
     let max_results = nr as usize;
     let deadline = deadline_after_timespec(current_task, user_timeout)?;
 
-    let ctx = current_task
-        .mm()
-        .ok_or_else(|| errno!(EINVAL))?
-        .get_aio_context(ctx_id.into())
-        .ok_or_else(|| errno!(EINVAL))?;
+    let ctx = current_task.mm()?.get_aio_context(ctx_id.into()).ok_or_else(|| errno!(EINVAL))?;
     let events = ctx.get_events(current_task, min_results, max_results, deadline)?;
     current_task.write_objects(events_ref, &events)?;
 
@@ -3174,11 +3165,7 @@ pub fn sys_io_cancel(
     _result: UserRef<io_event>,
 ) -> Result<(), Errno> {
     let iocb = current_task.read_multi_arch_object(user_iocb)?;
-    let ctx = current_task
-        .mm()
-        .ok_or_else(|| errno!(EINVAL))?
-        .get_aio_context(ctx_id.into())
-        .ok_or_else(|| errno!(EINVAL))?;
+    let ctx = current_task.mm()?.get_aio_context(ctx_id.into()).ok_or_else(|| errno!(EINVAL))?;
 
     ctx.cancel(current_task, iocb, user_iocb)?;
     // TODO: Correctly handle return. If the operation is successfully canceled, the event should be copied into the memory pointed to by result without being placed into the completion queue.
@@ -3191,8 +3178,7 @@ pub fn sys_io_destroy(
     current_task: &CurrentTask,
     ctx_id: aio_context_t,
 ) -> Result<(), Errno> {
-    let aio_context =
-        current_task.mm().ok_or_else(|| errno!(EINVAL))?.destroy_aio_context(ctx_id.into())?;
+    let aio_context = current_task.mm()?.destroy_aio_context(ctx_id.into())?;
     std::mem::drop(aio_context);
     Ok(())
 }

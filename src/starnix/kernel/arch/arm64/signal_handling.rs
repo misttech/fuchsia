@@ -121,9 +121,7 @@ impl SignalStackFrame {
         } else {
             task.kernel().vdso.sigreturn_offset
         };
-        let sigreturn_addr = task.mm().ok_or_else(|| errno!(EINVAL))?.state.read().vdso_base.ptr()
-            as u64
-            + vdso_sigreturn_offset;
+        let sigreturn_addr = task.mm()?.state.read().vdso_base.ptr() as u64 + vdso_sigreturn_offset;
         registers.lr = sigreturn_addr;
         if arch_width.is_arch32() {
             registers.r[14] = registers.lr;

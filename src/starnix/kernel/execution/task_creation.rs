@@ -433,7 +433,7 @@ where
         OwnedRef::share(system_task.thread_group()),
         None,
         FdTable::default(),
-        system_task.mm().cloned(),
+        system_task.mm().ok(),
         system_task.fs(),
         system_task.real_creds(),
         Arc::clone(&system_task.abstract_socket_namespace),

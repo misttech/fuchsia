@@ -334,7 +334,7 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
             None
         };
 
-        current_task.mm().ok_or_else(|| errno!(EINVAL))?.map_memory(
+        current_task.mm()?.map_memory(
             addr,
             memory,
             memory_offset,

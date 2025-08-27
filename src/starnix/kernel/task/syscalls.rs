@@ -1015,20 +1015,18 @@ pub fn sys_prctl(
                 }
                 Some(name)
             };
-            current_task
-                .mm()
-                .ok_or_else(|| errno!(EINVAL))?
-                .set_mapping_name(addr, length, name)?;
+            current_task.mm()?.set_mapping_name(addr, length, name)?;
             Ok(().into())
         }
         PR_SET_DUMPABLE => {
-            let mut dumpable =
-                current_task.mm().ok_or_else(|| errno!(EINVAL))?.dumpable.lock(locked);
+            let mm = current_task.mm()?;
+            let mut dumpable = mm.dumpable.lock(locked);
             *dumpable = if arg2 == 1 { DumpPolicy::User } else { DumpPolicy::Disable };
             Ok(().into())
         }
         PR_GET_DUMPABLE => {
-            let dumpable = current_task.mm().ok_or_else(|| errno!(EINVAL))?.dumpable.lock(locked);
+            let mm = current_task.mm()?;
+            let dumpable = mm.dumpable.lock(locked);
             Ok(match *dumpable {
                 DumpPolicy::Disable => 0.into(),
                 DumpPolicy::User => 1.into(),
@@ -1383,7 +1381,8 @@ where
             // The stack size is fixed at the moment, but
             // if MAP_GROWSDOWN is implemented this should
             // report the limit that it can be grown.
-            let mm_state = target_task.mm().ok_or_else(|| errno!(EINVAL))?.state.read();
+            let mm = target_task.mm()?;
+            let mm_state = mm.state.read();
             let stack_size = mm_state.stack_size as u64;
             rlimit { rlim_cur: stack_size, rlim_max: stack_size }
         }
@@ -1950,10 +1949,9 @@ pub fn sys_kcmp(
             obfuscate_arc(&task1.thread_group().signal_actions)
                 .cmp(&obfuscate_arc(&task2.thread_group().signal_actions)),
         )),
-        KcmpResource::VM => Ok(encode_ordering(
-            obfuscate_arc(task1.mm().ok_or_else(|| errno!(EINVAL))?)
-                .cmp(&obfuscate_arc(task2.mm().ok_or_else(|| errno!(EINVAL))?)),
-        )),
+        KcmpResource::VM => {
+            Ok(encode_ordering(obfuscate_arc(&task1.mm()?).cmp(&obfuscate_arc(&task2.mm()?))))
+        }
         _ => error!(EINVAL),
     }
 }

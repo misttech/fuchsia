@@ -14,7 +14,7 @@ use starnix_uapi::math::round_down_to_increment;
 use starnix_uapi::signals::SigSet;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
-    self as uapi, errno, error, sigaction_t, sigaltstack, sigcontext, siginfo_t, ucontext,
+    self as uapi, error, sigaction_t, sigaltstack, sigcontext, siginfo_t, ucontext,
 };
 
 /// The size of the red zone.
@@ -83,9 +83,7 @@ impl SignalStackFrame {
         };
 
         let vdso_sigreturn_offset = task.kernel().vdso.sigreturn_offset;
-        let sigreturn_addr = task.mm().ok_or_else(|| errno!(EINVAL))?.state.read().vdso_base.ptr()
-            as u64
-            + vdso_sigreturn_offset;
+        let sigreturn_addr = task.mm()?.state.read().vdso_base.ptr() as u64 + vdso_sigreturn_offset;
         registers.ra = sigreturn_addr;
 
         let v_registers_addr = stack_pointer.ptr()

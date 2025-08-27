@@ -368,7 +368,7 @@ mod tests {
         memory.write(&bytes, 0).unwrap();
 
         let payload = VmsplicePayload::new(
-            Arc::downgrade(mm),
+            Arc::downgrade(&mm),
             VmsplicePayloadSegment {
                 addr_offset: UserAddress::NULL,
                 length: (page_size * NUM_PAGES) as usize,

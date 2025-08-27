@@ -2295,7 +2295,7 @@ impl MemoryManager {
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        debug_assert!(self.has_same_address_space(current_task.mm().unwrap()));
+        debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
             profile_duration!("UsercopyRead");
@@ -2320,7 +2320,7 @@ impl MemoryManager {
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        debug_assert!(self.has_same_address_space(current_task.mm().unwrap()));
+        debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
             profile_duration!("UsercopyReadPartialUntilNull");
@@ -2349,7 +2349,7 @@ impl MemoryManager {
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        debug_assert!(self.has_same_address_space(current_task.mm().unwrap()));
+        debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
             profile_duration!("UsercopyReadPartial");
@@ -2378,7 +2378,7 @@ impl MemoryManager {
         addr: UserAddress,
         bytes: &[u8],
     ) -> Result<usize, Errno> {
-        debug_assert!(self.has_same_address_space(current_task.mm().unwrap()));
+        debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
             profile_duration!("UsercopyWrite");
@@ -2406,7 +2406,7 @@ impl MemoryManager {
         addr: UserAddress,
         bytes: &[u8],
     ) -> Result<usize, Errno> {
-        debug_assert!(self.has_same_address_space(current_task.mm().unwrap()));
+        debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
             profile_duration!("UsercopyWritePartial");
@@ -2431,7 +2431,7 @@ impl MemoryManager {
         addr: UserAddress,
         length: usize,
     ) -> Result<usize, Errno> {
-        debug_assert!(self.has_same_address_space(current_task.mm().unwrap()));
+        debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         {
             let page_size = *PAGE_SIZE as usize;
@@ -2481,7 +2481,7 @@ pub struct MemoryManager {
     pub base_addr: UserAddress,
 
     /// The futexes in this address space.
-    pub futex: FutexTable<PrivateFutexKey>,
+    pub futex: Arc<FutexTable<PrivateFutexKey>>,
 
     /// Mutable state for the memory manager.
     pub state: RwLock<MemoryManagerState>,
@@ -2526,7 +2526,7 @@ impl MemoryManager {
         MemoryManager {
             root_vmar,
             base_addr: UserAddress::from_ptr(user_vmar_info.base),
-            futex: FutexTable::<PrivateFutexKey>::default(),
+            futex: Arc::<FutexTable<PrivateFutexKey>>::default(),
             state: RwLock::new(MemoryManagerState {
                 user_vmar,
                 user_vmar_info,
@@ -3950,7 +3950,7 @@ impl SequenceFileSource for ProcMapsFile {
         sink: &mut DynamicFileBuf,
     ) -> Result<Option<UserAddress>, Errno> {
         let task = Task::from_weak(&self.0)?;
-        let Some(mm) = task.mm() else {
+        let Ok(mm) = task.mm() else {
             return Ok(None);
         };
         let state = mm.state.read();
@@ -3975,7 +3975,7 @@ impl DynamicFileSource for ProcSmapsFile {
         let page_size_kb = *PAGE_SIZE / 1024;
         let task = Task::from_weak(&self.0)?;
         // /proc/<pid>/smaps is empty for kthreads
-        let Some(mm) = task.mm() else {
+        let Ok(mm) = task.mm() else {
             return Ok(());
         };
         let state = mm.state.read();
@@ -4890,7 +4890,7 @@ mod tests {
 
         let mut released_mappings = ReleasedMappings::default();
         let mut mm_state = mm.state.write();
-        let unmap_result = mm_state.unmap(mm, addr, *PAGE_SIZE as usize, &mut released_mappings);
+        let unmap_result = mm_state.unmap(&mm, addr, *PAGE_SIZE as usize, &mut released_mappings);
         assert!(unmap_result.is_ok());
         assert_eq!(released_mappings.len(), 1);
         released_mappings.finalize(mm_state);
@@ -4908,7 +4908,7 @@ mod tests {
         let mut released_mappings = ReleasedMappings::default();
         let mut mm_state = mm.state.write();
         let unmap_result =
-            mm_state.unmap(mm, addr, (*PAGE_SIZE * 3) as usize, &mut released_mappings);
+            mm_state.unmap(&mm, addr, (*PAGE_SIZE * 3) as usize, &mut released_mappings);
         assert!(unmap_result.is_ok());
         assert_eq!(released_mappings.len(), 2);
         released_mappings.finalize(mm_state);
@@ -5449,7 +5449,7 @@ mod tests {
             .expect("map failed");
 
         let target = create_task(locked, &kernel, "another-task");
-        mm.snapshot_to(locked, target.mm().unwrap()).expect("snapshot_to failed");
+        mm.snapshot_to(locked, &target.mm().unwrap()).expect("snapshot_to failed");
 
         // Make sure it has what we wrote.
         let buf = target.read_memory_to_vec(addr, 3).expect("read_memory failed");
@@ -5534,7 +5534,8 @@ mod tests {
         .unwrap();
 
         {
-            let state = current_task.mm().unwrap().state.read();
+            let mm = current_task.mm().unwrap();
+            let state = mm.state.read();
 
             // The name should apply to both mappings.
             let (_, mapping) = state.mappings.get(first_mapping_addr).unwrap();
@@ -5576,7 +5577,8 @@ mod tests {
 
         // Despite returning an error, the prctl should still assign a name to the region at the start of the region.
         {
-            let state = current_task.mm().unwrap().state.read();
+            let mm = current_task.mm().unwrap();
+            let state = mm.state.read();
 
             let (_, mapping) = state.mappings.get(mapping_addr).unwrap();
             assert_eq!(mapping.name(), MappingName::Vma("foo".into()));
@@ -5615,7 +5617,8 @@ mod tests {
         // Unlike a range which starts within a mapping and extends past the end, this should not assign
         // a name to any mappings.
         {
-            let state = current_task.mm().unwrap().state.read();
+            let mm = current_task.mm().unwrap();
+            let state = mm.state.read();
 
             let (_, mapping) = state.mappings.get(second_page).unwrap();
             assert_eq!(mapping.name(), MappingName::None);
@@ -5649,7 +5652,8 @@ mod tests {
 
         // This should split the mapping into 3 pieces with the second piece having the name "foo"
         {
-            let state = current_task.mm().unwrap().state.read();
+            let mm = current_task.mm().unwrap();
+            let state = mm.state.read();
 
             let (_, mapping) = state.mappings.get(mapping_addr).unwrap();
             assert_eq!(mapping.name(), MappingName::None);
@@ -5691,11 +5695,12 @@ mod tests {
         current_task
             .mm()
             .unwrap()
-            .snapshot_to(locked, target.mm().unwrap())
+            .snapshot_to(locked, &target.mm().unwrap())
             .expect("snapshot_to failed");
 
         {
-            let state = target.mm().unwrap().state.read();
+            let mm = target.mm().unwrap();
+            let state = mm.state.read();
 
             let (_, mapping) = state.mappings.get(mapping_addr).unwrap();
             assert_eq!(mapping.name(), MappingName::Vma("foo".into()));

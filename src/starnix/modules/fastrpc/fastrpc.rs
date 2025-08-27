@@ -583,8 +583,7 @@ impl FastRPCFile {
         idx: usize,
     ) -> Result<(u64, zx::Vmo), Errno> {
         let (mm_vmo, mm_offset) = current_task
-            .mm()
-            .ok_or_else(|| errno!(EINVAL))?
+            .mm()?
             .get_mapping_memory(buf.pv.into(), ProtectionFlags::READ | ProtectionFlags::WRITE)?;
 
         if let Some(fd_vmo) =

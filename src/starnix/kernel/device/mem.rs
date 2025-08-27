@@ -22,12 +22,12 @@ use starnix_logging::{Level, log_info, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
+use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::vfs::FdEvents;
-use starnix_uapi::{errno, error};
 use std::mem::MaybeUninit;
 use zx::{
     cprng_draw_uninit, {self as zx},
@@ -139,7 +139,7 @@ impl FileOps for DevZero {
 
         options |= MappingOptions::ANONYMOUS;
 
-        current_task.mm().ok_or_else(|| errno!(EINVAL))?.map_memory(
+        current_task.mm()?.map_memory(
             addr,
             memory,
             memory_offset,

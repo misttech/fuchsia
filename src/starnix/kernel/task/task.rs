@@ -1061,8 +1061,8 @@ impl Task {
 
     pub fn has_same_address_space(&self, other: &Self) -> bool {
         match (self.mm(), other.mm()) {
-            (Some(this), Some(other)) => Arc::ptr_eq(this, other),
-            (None, None) => true,
+            (Ok(this), Ok(other)) => Arc::ptr_eq(&this, &other),
+            (Err(_), Err(_)) => true,
             _ => false,
         }
     }
@@ -1270,8 +1270,9 @@ impl Task {
         self.fs.as_ref().is_some_and(|fs| Arc::strong_count(&*fs.read()) > 1usize)
     }
 
-    pub fn mm(&self) -> Option<&Arc<MemoryManager>> {
-        self.mm.as_ref()
+    #[track_caller]
+    pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
+        self.mm.as_ref().map(Clone::clone).ok_or_else(|| errno!(EINVAL))
     }
 
     pub fn unshare_fs(&self) {
@@ -1405,7 +1406,7 @@ impl Task {
 
     pub fn read_argv(&self, max_len: usize) -> Result<Vec<FsString>, Errno> {
         // argv is empty for kthreads
-        let Some(mm) = self.mm() else {
+        let Ok(mm) = self.mm() else {
             return Ok(vec![]);
         };
         let (argv_start, argv_end) = {
@@ -1419,7 +1420,7 @@ impl Task {
 
     pub fn read_env(&self, max_len: usize) -> Result<Vec<FsString>, Errno> {
         // environment is empty for kthreads
-        let Some(mm) = self.mm() else { return Ok(vec![]) };
+        let Ok(mm) = self.mm() else { return Ok(vec![]) };
         let (env_start, env_end) = {
             let mm_state = mm.state.read();
             (mm_state.environ_start, mm_state.environ_end)
@@ -1588,7 +1589,7 @@ impl MemoryAccessor for Task {
         // is being read from a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
         // so we need to go through the VMO.
-        self.mm().ok_or_else(|| errno!(EINVAL))?.syscall_read_memory(addr, bytes)
+        self.mm()?.syscall_read_memory(addr, bytes)
     }
 
     fn read_memory_partial_until_null_byte<'a>(
@@ -1600,9 +1601,7 @@ impl MemoryAccessor for Task {
         // is being read from a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
         // so we need to go through the VMO.
-        self.mm()
-            .ok_or_else(|| errno!(EINVAL))?
-            .syscall_read_memory_partial_until_null_byte(addr, bytes)
+        self.mm()?.syscall_read_memory_partial_until_null_byte(addr, bytes)
     }
 
     fn read_memory_partial<'a>(
@@ -1614,7 +1613,7 @@ impl MemoryAccessor for Task {
         // is being read from a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
         // so we need to go through the VMO.
-        self.mm().ok_or_else(|| errno!(EINVAL))?.syscall_read_memory_partial(addr, bytes)
+        self.mm()?.syscall_read_memory_partial(addr, bytes)
     }
 
     fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
@@ -1622,7 +1621,7 @@ impl MemoryAccessor for Task {
         // is being written to a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
         // so we need to go through the VMO.
-        self.mm().ok_or_else(|| errno!(EINVAL))?.syscall_write_memory(addr, bytes)
+        self.mm()?.syscall_write_memory(addr, bytes)
     }
 
     fn write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
@@ -1630,7 +1629,7 @@ impl MemoryAccessor for Task {
         // is being written to a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
         // so we need to go through the VMO.
-        self.mm().ok_or_else(|| errno!(EINVAL))?.syscall_write_memory_partial(addr, bytes)
+        self.mm()?.syscall_write_memory_partial(addr, bytes)
     }
 
     fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
@@ -1638,13 +1637,13 @@ impl MemoryAccessor for Task {
         // is being zeroed from a task different than the `CurrentTask`. When
         // this `Task` is not current, its address space is not mapped
         // so we need to go through the VMO.
-        self.mm().ok_or_else(|| errno!(EINVAL))?.syscall_zero(addr, length)
+        self.mm()?.syscall_zero(addr, length)
     }
 }
 
 impl TaskMemoryAccessor for Task {
     fn maximum_valid_address(&self) -> Option<UserAddress> {
-        self.mm().map(|mm| mm.maximum_valid_user_address)
+        self.mm().map(|mm| mm.maximum_valid_user_address).ok()
     }
 }
 

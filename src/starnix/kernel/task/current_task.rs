@@ -1073,7 +1073,7 @@ impl CurrentTask {
 
         // Passing arch32 information here ensures the replacement memory
         // layout matches the elf being executed.
-        let mm = self.mm().ok_or_else(|| errno!(EINVAL))?;
+        let mm = self.mm()?;
         mm.exec(resolved_elf.file.name.to_passive(), resolved_elf.arch_width)
             .map_err(|status| from_status_like_fdio!(status))?;
 
@@ -1333,7 +1333,7 @@ impl CurrentTask {
                 }
             };
 
-            let Some(mm) = self.mm() else {
+            let Ok(mm) = self.mm() else {
                 log_error!("Asked to notify robust list futexes in system task.");
                 return;
             };
@@ -1381,7 +1381,7 @@ impl CurrentTask {
                 let status =
                     zx::Status::from_raw(report.context.synth_code as zx::sys::zx_status_t);
                 let report = decode_page_fault_exception_report(report);
-                if let Some(mm) = self.mm() {
+                if let Ok(mm) = self.mm() {
                     mm.handle_page_fault(locked, report, status)
                 } else {
                     panic!(
@@ -1592,7 +1592,7 @@ impl CurrentTask {
                 TaskInfo {
                     thread: None,
                     thread_group: OwnedRef::share(self.thread_group()),
-                    memory_manager: self.mm().cloned(),
+                    memory_manager: self.mm().ok(),
                 }
             } else {
                 // Drop the lock on this task before entering `create_zircon_process`, because it will
@@ -1694,9 +1694,7 @@ impl CurrentTask {
                 // We do not support running threads in the same process with different
                 // MemoryManagers.
                 assert!(!clone_thread);
-                self.mm()
-                    .ok_or_else(|| errno!(EINVAL))?
-                    .snapshot_to(locked, child.mm().ok_or_else(|| errno!(EINVAL))?)?;
+                self.mm()?.snapshot_to(locked, &child.mm()?)?;
             }
 
             if clone_parent_settid {
@@ -1715,9 +1713,7 @@ impl CurrentTask {
             // the same MemoryManager. Instead, we implement a rough approximation of that behavior
             // by making a copy-on-write clone of the memory from the original process.
             if clone_vm && !clone_thread {
-                self.mm()
-                    .ok_or_else(|| errno!(EINVAL))?
-                    .snapshot_to(locked, child.mm().ok_or_else(|| errno!(EINVAL))?)?;
+                self.mm()?.snapshot_to(locked, &child.mm()?)?;
             }
 
             child.thread_state = self.thread_state.snapshot();
@@ -1976,7 +1972,7 @@ impl CurrentTask {
         //      PR_SET_DUMPABLE in prctl(2)), and the caller does not have
         //      the CAP_SYS_PTRACE capability in the user namespace of the
         //      target process.
-        let dumpable = *target.mm().ok_or_else(|| errno!(EINVAL))?.dumpable.lock(locked);
+        let dumpable = *target.mm()?.dumpable.lock(locked);
         if dumpable != DumpPolicy::User {
             security::check_task_capable(self, CAP_SYS_PTRACE)?;
         }
@@ -2032,7 +2028,7 @@ impl MemoryAccessor for CurrentTask {
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        self.mm().ok_or_else(|| errno!(EINVAL))?.unified_read_memory(self, addr, bytes)
+        self.mm()?.unified_read_memory(self, addr, bytes)
     }
 
     fn read_memory_partial_until_null_byte<'a>(
@@ -2040,9 +2036,7 @@ impl MemoryAccessor for CurrentTask {
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        self.mm()
-            .ok_or_else(|| errno!(EINVAL))?
-            .unified_read_memory_partial_until_null_byte(self, addr, bytes)
+        self.mm()?.unified_read_memory_partial_until_null_byte(self, addr, bytes)
     }
 
     fn read_memory_partial<'a>(
@@ -2050,25 +2044,25 @@ impl MemoryAccessor for CurrentTask {
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        self.mm().ok_or_else(|| errno!(EINVAL))?.unified_read_memory_partial(self, addr, bytes)
+        self.mm()?.unified_read_memory_partial(self, addr, bytes)
     }
 
     fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        self.mm().ok_or_else(|| errno!(EINVAL))?.unified_write_memory(self, addr, bytes)
+        self.mm()?.unified_write_memory(self, addr, bytes)
     }
 
     fn write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        self.mm().ok_or_else(|| errno!(EINVAL))?.unified_write_memory_partial(self, addr, bytes)
+        self.mm()?.unified_write_memory_partial(self, addr, bytes)
     }
 
     fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
-        self.mm().ok_or_else(|| errno!(EINVAL))?.unified_zero(self, addr, length)
+        self.mm()?.unified_zero(self, addr, length)
     }
 }
 
 impl TaskMemoryAccessor for CurrentTask {
     fn maximum_valid_address(&self) -> Option<UserAddress> {
-        self.mm().map(|mm| mm.maximum_valid_user_address)
+        self.mm().ok().map(|mm| mm.maximum_valid_user_address)
     }
 }
 

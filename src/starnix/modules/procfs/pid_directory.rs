@@ -177,7 +177,7 @@ impl FsNodeOps for TaskDirectoryNode {
             b"exe" => Box::new(CallbackSymlinkNode::new({
                 move || {
                     let task = Task::from_weak(&task_weak)?;
-                    if let Some(node) = task.mm().and_then(|mm| mm.executable_node()) {
+                    if let Some(node) = task.mm().ok().and_then(|mm| mm.executable_node()) {
                         Ok(SymlinkTarget::Node(node))
                     } else {
                         error!(ENOENT)
@@ -733,7 +733,7 @@ impl DynamicFileSource for CmdlineFile {
             return Ok(());
         };
         // /proc/<pid>/cmdline doesn't contain anything for kthreads
-        let Some(mm) = task.mm() else {
+        let Ok(mm) = task.mm() else {
             return Ok(());
         };
         let (start, end) = {
@@ -756,7 +756,7 @@ impl DynamicFileSource for EnvironFile {
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let task = Task::from_weak(&self.0)?;
         // /proc/<pid>/environ doesn't contain anything for kthreads
-        let Some(mm) = task.mm() else {
+        let Ok(mm) = task.mm() else {
             return Ok(());
         };
         let (start, end) = {
@@ -779,7 +779,7 @@ impl DynamicFileSource for AuxvFile {
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let task = Task::from_weak(&self.0)?;
         // /proc/<pid>/auxv doesn't contain anything for kthreads
-        let Some(mm) = task.mm() else {
+        let Ok(mm) = task.mm() else {
             return Ok(());
         };
         let (start, end) = {
@@ -1113,7 +1113,7 @@ impl DynamicFileSource for StatFile {
             ) as u64;
         }
 
-        if let Some(mm) = task.mm() {
+        if let Ok(mm) = task.mm() {
             let mem_stats = mm.get_stats();
             let page_size = *PAGE_SIZE as usize;
             vsize = mem_stats.vm_size;
@@ -1148,7 +1148,7 @@ impl StatmFile {
 }
 impl DynamicFileSource for StatmFile {
     fn generate(&self, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
-        let mem_stats = if let Some(mm) = Task::from_weak(&self.0)?.mm() {
+        let mem_stats = if let Ok(mm) = Task::from_weak(&self.0)?.mm() {
             mm.get_stats()
         } else {
             Default::default()
@@ -1248,7 +1248,7 @@ impl DynamicFileSource for StatusFile {
         }
 
         if let Some(task) = task {
-            if let Some(mm) = task.mm() {
+            if let Ok(mm) = task.mm() {
                 let mem_stats = mm.get_stats();
                 writeln!(sink, "VmSize:\t{} kB", mem_stats.vm_size / 1024)?;
                 writeln!(sink, "VmLck:\t{} kB", mem_stats.vm_lck / 1024)?;

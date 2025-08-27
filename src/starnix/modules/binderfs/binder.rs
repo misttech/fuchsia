@@ -5040,7 +5040,7 @@ impl BinderDriver {
         let memory = Arc::new(MemoryObject::from(vmo));
 
         // Map the VMO into the binder process' address space.
-        let mm = current_task.mm().ok_or_else(|| errno!(EINVAL))?;
+        let mm = current_task.mm()?;
         let user_address = mm.map_memory(
             addr,
             memory.clone(),

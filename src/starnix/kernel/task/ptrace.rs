@@ -1185,7 +1185,7 @@ where
         return error!(EPERM);
     }
 
-    if *tracee.mm().ok_or_else(|| errno!(EINVAL))?.dumpable.lock(locked) == DumpPolicy::Disable {
+    if *tracee.mm()?.dumpable.lock(locked) == DumpPolicy::Disable {
         return error!(EPERM);
     }
 

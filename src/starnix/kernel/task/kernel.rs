@@ -199,7 +199,7 @@ pub struct Kernel {
     pub iptables: OrderedRwLock<IpTables, KernelIpTables>,
 
     /// The futexes shared across processes.
-    pub shared_futexes: FutexTable<SharedFutexKey>,
+    pub shared_futexes: Arc<FutexTable<SharedFutexKey>>,
 
     /// The default UTS namespace for all tasks.
     ///
@@ -416,7 +416,7 @@ impl Kernel {
             container_namespace,
             remote_block_device_registry: Default::default(),
             iptables,
-            shared_futexes: FutexTable::<SharedFutexKey>::default(),
+            shared_futexes: Arc::<FutexTable<SharedFutexKey>>::default(),
             root_uts_ns: Arc::new(RwLock::new(UtsNamespace::default())),
             vdso: Vdso::new(),
             vdso_arch32: Vdso::new_arch32(),
@@ -758,8 +758,8 @@ impl Kernel {
 
             let tasks_node = tg_node.create_child("tasks");
             for task in tasks {
-                if let Some(mm) = task.mm() {
-                    if mms_summarized.insert(Arc::as_ptr(mm) as usize) {
+                if let Ok(mm) = task.mm() {
+                    if mms_summarized.insert(Arc::as_ptr(&mm) as usize) {
                         mm.summarize(&mut mm_summary);
                     }
                 }

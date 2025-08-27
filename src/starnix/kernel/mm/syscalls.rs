@@ -164,13 +164,7 @@ where
     if flags & MAP_ANONYMOUS != 0 {
         trace_duration!(CATEGORY_STARNIX_MM, c"AnonymousMmap");
         profile_duration!("AnonymousMmap");
-        current_task.mm().ok_or_else(|| errno!(EINVAL))?.map_anonymous(
-            addr,
-            length,
-            prot_flags,
-            options,
-            MappingName::None,
-        )
+        current_task.mm()?.map_anonymous(addr, length, prot_flags, options, MappingName::None)
     } else {
         trace_duration!(CATEGORY_STARNIX_MM, c"FileBackedMmap");
         profile_duration!("FileBackedMmap");
@@ -200,12 +194,7 @@ pub fn sys_mprotect(
         track_stub!(TODO("https://fxbug.dev/322874672"), "mprotect parse protection", prot);
         errno!(EINVAL)
     })?;
-    current_task.mm().ok_or_else(|| errno!(EINVAL))?.protect(
-        current_task,
-        addr,
-        length,
-        prot_flags,
-    )?;
+    current_task.mm()?.protect(current_task, addr, length, prot_flags)?;
     Ok(())
 }
 
@@ -219,14 +208,8 @@ pub fn sys_mremap(
     new_addr: UserAddress,
 ) -> Result<UserAddress, Errno> {
     let flags = MremapFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL))?;
-    let addr = current_task.mm().ok_or_else(|| errno!(EINVAL))?.remap(
-        current_task,
-        addr,
-        old_length,
-        new_length,
-        flags,
-        new_addr,
-    )?;
+    let addr =
+        current_task.mm()?.remap(current_task, addr, old_length, new_length, flags, new_addr)?;
     Ok(addr)
 }
 
@@ -236,7 +219,7 @@ pub fn sys_munmap(
     addr: UserAddress,
     length: usize,
 ) -> Result<(), Errno> {
-    current_task.mm().ok_or_else(|| errno!(EINVAL))?.unmap(addr, length)?;
+    current_task.mm()?.unmap(addr, length)?;
     Ok(())
 }
 
@@ -249,7 +232,7 @@ pub fn sys_msync(
 ) -> Result<(), Errno> {
     track_stub!(TODO("https://fxbug.dev/322874588"), "msync");
 
-    let mm = current_task.mm().ok_or_else(|| errno!(EINVAL))?;
+    let mm = current_task.mm()?;
 
     // Perform some basic validation of the address range given to satisfy gvisor tests that
     // use msync as a way to probe whether a page is mapped or not.
@@ -271,7 +254,7 @@ pub fn sys_madvise(
     length: usize,
     advice: u32,
 ) -> Result<(), Errno> {
-    current_task.mm().ok_or_else(|| errno!(EINVAL))?.madvise(current_task, addr, length, advice)?;
+    current_task.mm()?.madvise(current_task, addr, length, advice)?;
     Ok(())
 }
 
@@ -293,7 +276,7 @@ pub fn sys_brk(
     current_task: &CurrentTask,
     addr: UserAddress,
 ) -> Result<UserAddress, Errno> {
-    current_task.mm().ok_or_else(|| errno!(EINVAL))?.set_brk(locked, current_task, addr)
+    current_task.mm()?.set_brk(locked, current_task, addr)
 }
 
 pub fn sys_process_vm_readv(
@@ -414,8 +397,9 @@ pub fn sys_process_mrelease(
         return error!(EINVAL);
     }
 
-    let mm = task.mm().ok_or_else(|| errno!(EINVAL))?.state.write();
-    mm.mrelease()
+    let mm = task.mm()?;
+    let mm_state = mm.state.write();
+    mm_state.mrelease()
 }
 
 pub fn sys_membarrier(
@@ -727,8 +711,9 @@ pub fn sys_mlock2(
 
     let on_fault = flags & MLOCK_ONFAULT as u64 != 0;
 
-    let mm = current_task.mm().ok_or_else(|| errno!(EINVAL))?;
-    mm.state.write().mlock(current_task, locked, addr, length, on_fault)
+    let mm = current_task.mm()?;
+    let mut mm_state = mm.state.write();
+    mm_state.mlock(current_task, locked, addr, length, on_fault)
 }
 
 pub fn sys_munlock(
@@ -737,8 +722,9 @@ pub fn sys_munlock(
     addr: UserAddress,
     length: usize,
 ) -> Result<(), Errno> {
-    let mm = current_task.mm().ok_or_else(|| errno!(EINVAL))?;
-    mm.state.write().munlock(current_task, addr, length)
+    let mm = current_task.mm()?;
+    let mut mm_state = mm.state.write();
+    mm_state.munlock(current_task, addr, length)
 }
 
 pub fn sys_mlockall(
@@ -780,7 +766,7 @@ mod arch32 {
     use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::errors::Errno;
     use starnix_uapi::user_address::UserRef;
-    use starnix_uapi::{errno, error, uapi};
+    use starnix_uapi::{error, uapi};
 
     pub fn sys_arch32_set_robust_list(
         _locked: &mut Locked<Unlocked>,
@@ -817,7 +803,7 @@ mod arch32 {
         if !addr.is_lower_32bit() || length >= (1 << 32) {
             return error!(EINVAL);
         }
-        current_task.mm().ok_or_else(|| errno!(EINVAL))?.unmap(addr, length)?;
+        current_task.mm()?.unmap(addr, length)?;
         Ok(())
     }
 

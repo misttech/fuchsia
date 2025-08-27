@@ -54,8 +54,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         // If the addr is remapped, we will read stale data, but we will not miss a futex wake.
         // Acquire ordering to synchronize with userspace modifications to the value on other
         // threads.
-        let loaded_value =
-            current_task.mm().ok_or_else(|| errno!(EINVAL))?.atomic_load_u32_acquire(addr)?;
+        let loaded_value = current_task.mm()?.atomic_load_u32_acquire(addr)?;
         if value != loaded_value {
             return error!(EAGAIN);
         }
@@ -103,8 +102,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         // If the addr is remapped, we will read stale data, but we will not miss a futex wake.
         // Acquire ordering to synchronize with userspace modifications to the value on other
         // threads.
-        let loaded_value =
-            current_task.mm().ok_or_else(|| errno!(EINVAL))?.atomic_load_u32_acquire(addr)?;
+        let loaded_value = current_task.mm()?.atomic_load_u32_acquire(addr)?;
         if value != loaded_value {
             return error!(EAGAIN);
         }
@@ -165,8 +163,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         if let Some(expected) = expected_value {
             // Use acquire ordering here to synchronize with mutex impls that store w/ release
             // ordering.
-            let value =
-                current_task.mm().ok_or_else(|| errno!(EINVAL))?.atomic_load_u32_acquire(addr)?;
+            let value = current_task.mm()?.atomic_load_u32_acquire(addr)?;
             if value != expected {
                 return error!(EAGAIN);
             }
@@ -217,7 +214,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         let key = Key::get(current_task, addr)?;
 
         let tid = current_task.get_tid() as u32;
-        let mm = current_task.mm().ok_or_else(|| errno!(EINVAL))?;
+        let mm = current_task.mm()?;
 
         // Use a relaxed ordering because the compare/exchange below creates a synchronization
         // point with userspace threads in the success case. No synchronization is required in
@@ -295,7 +292,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         let addr = FutexAddress::try_from(addr)?;
         let mut state = self.state.lock(locked);
         let tid = current_task.get_tid() as u32;
-        let mm = current_task.mm().ok_or_else(|| errno!(EINVAL))?;
+        let mm = current_task.mm()?;
 
         let key = Key::get(current_task, addr)?;
 
@@ -416,7 +413,7 @@ impl FutexTable<SharedFutexKey> {
 
 pub trait FutexKey: Sized + Ord + Hash + Clone {
     fn get(task: &Task, addr: FutexAddress) -> Result<Self, Errno>;
-    fn get_table_from_task(task: &Task) -> Result<&FutexTable<Self>, Errno>;
+    fn get_table_from_task(task: &Task) -> Result<Arc<FutexTable<Self>>, Errno>;
 }
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq, Ord, PartialOrd)]
@@ -429,8 +426,8 @@ impl FutexKey for PrivateFutexKey {
         Ok(PrivateFutexKey { addr })
     }
 
-    fn get_table_from_task(task: &Task) -> Result<&FutexTable<Self>, Errno> {
-        Ok(&task.mm().ok_or_else(|| errno!(EINVAL))?.futex)
+    fn get_table_from_task(task: &Task) -> Result<Arc<FutexTable<Self>>, Errno> {
+        Ok(task.mm()?.futex.clone())
     }
 }
 
@@ -444,15 +441,12 @@ pub struct SharedFutexKey {
 
 impl FutexKey for SharedFutexKey {
     fn get(task: &Task, addr: FutexAddress) -> Result<Self, Errno> {
-        let (memory, offset) = task
-            .mm()
-            .ok_or_else(|| errno!(EINVAL))?
-            .get_mapping_memory(addr.into(), ProtectionFlags::READ)?;
+        let (memory, offset) = task.mm()?.get_mapping_memory(addr.into(), ProtectionFlags::READ)?;
         Ok(SharedFutexKey::new(&memory, offset))
     }
 
-    fn get_table_from_task(task: &Task) -> Result<&FutexTable<Self>, Errno> {
-        Ok(&task.kernel().shared_futexes)
+    fn get_table_from_task(task: &Task) -> Result<Arc<FutexTable<Self>>, Errno> {
+        Ok(task.kernel().shared_futexes.clone())
     }
 }
 
