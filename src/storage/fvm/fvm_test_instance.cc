@@ -279,12 +279,19 @@ class ComponentFvmInstance : public FvmInstance {
   void TearDown() override {}
 
   void CreateRamdisk(uint64_t block_size, uint64_t block_count) override {
+    if (!vmo_) {
+      ASSERT_OK(zx::vmo::create(block_size * block_count, 0, &vmo_));
+    }
+    zx::vmo duplicate_vmo;
+    ASSERT_OK(vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_vmo));
     // This will also cause the destructor to run for any previous device.
-    device_ = std::make_unique<block_server::FakeServer>(block_server::PartitionInfo{
-        .block_count = block_count,
-        .block_size = static_cast<uint32_t>(block_size),
-        .max_transfer_size = 524288,
-    });
+    device_ = std::make_unique<block_server::FakeServer>(
+        block_server::PartitionInfo{
+            .block_count = block_count,
+            .block_size = static_cast<uint32_t>(block_size),
+            .max_transfer_size = 524288,
+        },
+        std::move(duplicate_vmo));
     auto [block_client, block_server] =
         fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
     block_ = fidl::ClientEnd<fuchsia_hardware_block::Block>(block_client.TakeChannel());
@@ -320,7 +327,20 @@ class ComponentFvmInstance : public FvmInstance {
     StartFvm();
   }
 
-  void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) override {}
+  void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) override {
+    if (fvm_) {
+      ASSERT_OK(fvm_->Unmount());
+      ASSERT_OK(component_.DestroyChild());
+      fvm_ = {};
+    }
+
+    zx::vmo vmo;
+    ASSERT_OK(vmo_.create_child(ZX_VMO_CHILD_SNAPSHOT, 0, block_count * block_size, &vmo));
+    vmo_ = std::move(vmo);
+
+    CreateRamdisk(block_size, block_count);
+    StartFvm();
+  }
 
   fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() const override {
     EXPECT_TRUE(fvm_);
@@ -374,6 +394,7 @@ class ComponentFvmInstance : public FvmInstance {
   }
 
  private:
+  zx::vmo vmo_;
   std::unique_ptr<block_server::FakeServer> device_;
   fidl::ClientEnd<fuchsia_hardware_block::Block> block_;
   fs_management::FsComponent component_ =

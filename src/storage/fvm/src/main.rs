@@ -83,7 +83,7 @@ struct Header {
 }
 
 impl Header {
-    fn allocation_size(&self) -> Result<usize, Error> {
+    fn used_allocation_table_size(&self) -> Result<usize, Error> {
         self.pslice_count
             .checked_mul(std::mem::size_of::<SliceEntry>() as u64)
             .and_then(|n| n.checked_next_multiple_of(BLOCK_SIZE))
@@ -103,6 +103,13 @@ impl Header {
     /// Returns the offset where the data starts.
     fn data_start(&self) -> u64 {
         (BLOCK_SIZE + self.vpartition_table_size + self.allocation_table_size) * 2
+    }
+
+    fn max_allocation_table_entries(&self) -> u64 {
+        // The 0 indexed slice in the allocation table is unused, but is included in the table size
+        // because it is still written to disk as an empty slice entry. When calculating the number
+        // of available table entries we don't count it, hence subtracting 1.
+        (self.allocation_table_size / std::mem::size_of::<SliceEntry>() as u64).saturating_sub(1)
     }
 }
 
@@ -182,6 +189,28 @@ struct Inner {
     assigned_slice_count: u64,
 }
 
+impl Inner {
+    async fn write_new_metadata_to(
+        &mut self,
+        device: &RemoteBlockClient,
+        mut new_metadata: Metadata,
+    ) -> Result<(), Error> {
+        new_metadata.header.generation = new_metadata
+            .header
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| anyhow!(zx::Status::BAD_STATE))?;
+
+        let new_slot = 1 - self.slot;
+        new_metadata.write(device, new_metadata.header.offset_for_slot(new_slot)).await?;
+
+        self.slot = new_slot;
+        self.metadata = new_metadata;
+
+        Ok(())
+    }
+}
+
 #[derive(Default)]
 struct PartitionState {
     mappings: Vec<Mapping>,
@@ -214,7 +243,7 @@ impl Metadata {
 
         // Read the vpartition and allocation table.
         // TODO(https://fxbug.dev/357467643): Check sizes
-        let allocation_size = header.allocation_size()?;
+        let allocation_size = header.used_allocation_table_size()?;
         let part_table_size = header.vpartition_table_size as usize;
 
         let mut buffer = vec![0; part_table_size + allocation_size];
@@ -262,7 +291,7 @@ impl Metadata {
 
         let mut buffer = AlignedMem::<Header>::new(
             (BLOCK_SIZE + self.header.vpartition_table_size) as usize
-                + self.header.allocation_size()?,
+                + self.header.used_allocation_table_size()?,
         );
         let (header, _) = Header::mut_from_prefix(&mut buffer).unwrap();
         *header = self.header;
@@ -306,8 +335,8 @@ impl Metadata {
         partition_index: u16,
         mut logical_slice: u64,
         mut count: u64,
-        max_slice: u64,
     ) -> Result<Vec<Mapping>, zx::Status> {
+        let max_slice = self.header.pslice_count;
         let partition = self.partitions.get_mut(&partition_index).unwrap();
         partition.slices = partition
             .slices
@@ -350,7 +379,7 @@ impl Fvm {
     pub async fn open(client: RemoteBlockClient) -> Result<Self, Error> {
         ensure!(BLOCK_SIZE as u32 % client.block_size() == 0, zx::Status::NOT_SUPPORTED);
 
-        let (slot, metadata) = {
+        let mut inner = {
             let mut header_block = AlignedMem::<Header>::new(BLOCK_SIZE as usize);
             client.read_at(MutableBufferSlice::Memory(&mut header_block), 0).await?;
 
@@ -364,15 +393,46 @@ impl Fvm {
 
             let metadata_b = Metadata::read(&header_block, &client, secondary_offset).await;
 
-            Self::pick_metadata(metadata_a, metadata_b).ok_or_else(|| {
-                warn!("No valid metadata");
-                anyhow!("No valid metadata")
-            })?
+            let (slot, metadata) =
+                Self::pick_metadata(metadata_a, metadata_b).ok_or_else(|| {
+                    warn!("No valid metadata");
+                    anyhow!("No valid metadata")
+                })?;
+            Inner {
+                slot: slot as u8,
+                metadata,
+                partition_state: HashMap::new(),
+                assigned_slice_count: 0,
+            }
         };
 
+        // It's possible the disk size is larger than we knew. This might happen if the original
+        // preallocated metadata had some size set when the image was created but the device it is
+        // flashed to has a larger disk than that. If we notice this happen, we need to expand the
+        // number of physical slices available up to whatever maximum the metadata allows for.
+        {
+            let header = &inner.metadata.header;
+            let device_size = client.block_count() * client.block_size() as u64;
+            let start_offset = header.data_start();
+            let max_data_slices_for_disk = device_size
+                .checked_sub(start_offset)
+                .ok_or_else(|| anyhow!("Disk is too small for fvm volume"))?
+                / header.slice_size;
+            let slices_for_disk =
+                std::cmp::min(max_data_slices_for_disk, header.max_allocation_table_entries());
+            if slices_for_disk > header.pslice_count {
+                // We need to update the pslice count in the header and then use that going forward.
+                let mut new_metadata = inner.metadata.clone();
+                new_metadata.header.pslice_count = slices_for_disk;
+                new_metadata.header.fvm_partition_size =
+                    header.data_start() + slices_for_disk * header.slice_size;
+                new_metadata.allocations.resize(slices_for_disk as usize, SliceEntry(0));
+                inner.write_new_metadata_to(&client, new_metadata).await?;
+            }
+        }
+
         // Build the mappings.
-        let mut partition_state = HashMap::<u16, PartitionState>::new();
-        let mut assigned_slice_count = 0;
+        let metadata = &inner.metadata;
         for (physical_slice, allocation) in metadata.allocations.iter().enumerate() {
             let partition_index = allocation.partition_index();
             let slice = allocation.logical_slice();
@@ -384,8 +444,8 @@ impl Fvm {
                 warn!("Slice entry points to free partition: 0x{:x?}", allocation.0);
                 continue;
             };
-            assigned_slice_count += 1;
-            let mappings = &mut partition_state.entry(partition_index).or_default().mappings;
+            inner.assigned_slice_count += 1;
+            let mappings = &mut inner.partition_state.entry(partition_index).or_default().mappings;
             let mut bad_mapping = false;
             match mappings.binary_search_by(|m: &Mapping| m.from.start.cmp(&slice)) {
                 Ok(_) => bad_mapping = true,
@@ -424,7 +484,7 @@ impl Fvm {
         info!(
             "Mounted fvm, slice size {} ({}/{} allocated) partitions: {:?}",
             metadata.header.slice_size,
-            assigned_slice_count,
+            inner.assigned_slice_count,
             metadata.header.pslice_count,
             metadata.partitions.iter().map(|(_, e)| e.name()).collect::<Vec<_>>()
         );
@@ -436,12 +496,7 @@ impl Fvm {
         Ok(Self {
             device: Arc::new(Device::new(client).await?),
             slice_blocks,
-            inner: async_lock::RwLock::new(Inner {
-                slot: slot as u8,
-                metadata,
-                partition_state,
-                assigned_slice_count,
-            }),
+            inner: async_lock::RwLock::new(inner),
         })
     }
 
@@ -543,8 +598,6 @@ impl Fvm {
         slices: u32,
         name_str: &str,
     ) -> Result<u16, Error> {
-        // TODO(https://fxbug.dev/357467643): Handle growing pslice_count.
-
         ensure!(slices > 0, zx::Status::INVALID_ARGS);
         let name_len = name_str.as_bytes().len();
         ensure!(name_len <= 24, zx::Status::INVALID_ARGS);
@@ -572,8 +625,6 @@ impl Fvm {
         let mut new_metadata = inner.metadata.clone();
 
         // Allocate slices:
-        let max_slice = self.max_slice(&new_metadata);
-
         let mut name = [0; 24];
         name[..name_len].copy_from_slice(name_str.as_bytes());
         new_metadata
@@ -581,7 +632,7 @@ impl Fvm {
             .insert(proposed, PartitionEntry { type_guid, guid, slices: 0, flags: 0, name });
 
         let slices = slices as u64;
-        let mappings = new_metadata.allocate_slices(proposed, 0, slices, max_slice)?;
+        let mappings = new_metadata.allocate_slices(proposed, 0, slices)?;
 
         let mut inner = self
             .write_new_metadata(inner, new_metadata)
@@ -594,30 +645,13 @@ impl Fvm {
         Ok(proposed)
     }
 
-    fn max_slice(&self, metadata: &Metadata) -> u64 {
-        (self.device.block_count() * self.device.block_size() as u64 - metadata.header.data_start())
-            / metadata.header.slice_size
-    }
-
     async fn write_new_metadata<'a>(
         &self,
         inner: async_lock::RwLockUpgradableReadGuard<'a, Inner>,
-        mut new_metadata: Metadata,
+        new_metadata: Metadata,
     ) -> Result<async_lock::RwLockWriteGuard<'a, Inner>, Error> {
-        new_metadata.header.generation = new_metadata
-            .header
-            .generation
-            .checked_add(1)
-            .ok_or_else(|| anyhow!(zx::Status::BAD_STATE))?;
-
-        let new_slot = 1 - inner.slot;
-        new_metadata.write(&self.device, new_metadata.header.offset_for_slot(new_slot)).await?;
-
         let mut inner = async_lock::RwLockUpgradableReadGuard::upgrade(inner).await;
-
-        inner.slot = new_slot;
-        inner.metadata = new_metadata;
-
+        inner.write_new_metadata_to(&self.device, new_metadata).await?;
         Ok(inner)
     }
 
@@ -629,7 +663,6 @@ impl Fvm {
         let mappings = &partition_state.mappings;
 
         let mut new_metadata = inner.metadata.clone();
-        let max_slice = self.max_slice(&new_metadata);
         let mut new_mappings = Vec::new();
         let mut next_slice = 0;
         let mut allocated = 0;
@@ -643,7 +676,6 @@ impl Fvm {
                     partition_index,
                     next_slice,
                     count,
-                    max_slice,
                 )?);
                 allocated += count;
             }
@@ -651,12 +683,7 @@ impl Fvm {
         }
         if next_slice < slices {
             let count = slices - next_slice;
-            new_mappings.push(new_metadata.allocate_slices(
-                partition_index,
-                next_slice,
-                count,
-                max_slice,
-            )?);
+            new_mappings.push(new_metadata.allocate_slices(partition_index, next_slice, count)?);
             allocated += count;
         }
 
@@ -687,12 +714,11 @@ impl Fvm {
 
     async fn get_info(&self) -> fvolume::VolumeManagerInfo {
         let inner = self.inner.read().await;
-        let slice_count = self.max_slice(&inner.metadata);
         fvolume::VolumeManagerInfo {
             slice_size: inner.metadata.header.slice_size,
-            slice_count: slice_count,
+            slice_count: inner.metadata.header.pslice_count,
             assigned_slice_count: inner.assigned_slice_count,
-            maximum_slice_count: slice_count,
+            maximum_slice_count: inner.metadata.header.max_allocation_table_entries(),
             max_virtual_slice: MAX_SLICE_COUNT,
         }
     }
@@ -1101,7 +1127,6 @@ impl Component {
                     }))?;
                 }
                 VolumesRequest::GetInfo { responder } => {
-                    log::info!("Get info");
                     responder.send(Ok(Some(&self.fvm().get_info().await)))?;
                 }
             }
@@ -1810,13 +1835,8 @@ impl Interface for PartitionInterface {
         }
 
         let mut new_metadata = inner.metadata.clone();
-        let max_slice = self.fvm.max_slice(&new_metadata);
-        let new_mappings = new_metadata.allocate_slices(
-            self.partition_index,
-            start_slice,
-            slice_count,
-            max_slice,
-        )?;
+        let new_mappings =
+            new_metadata.allocate_slices(self.partition_index, start_slice, slice_count)?;
 
         let mut inner =
             self.fvm.write_new_metadata(inner, new_metadata).await.map_err(map_to_status)?;
@@ -2039,7 +2059,7 @@ mod tests {
     use fuchsia_fs::directory::{open_directory, readdir};
     use std::collections::HashSet;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use vmo_backed_block_server::{
         InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
     };
@@ -3140,13 +3160,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_flush_after_metadata_write() {
-        let flush_called = Arc::new(AtomicBool::new(false));
+        let flush_called = Arc::new(AtomicU64::new(0));
 
-        struct Observer(Arc<AtomicBool>);
+        struct Observer(Arc<AtomicU64>);
 
         impl vmo_backed_block_server::Observer for Observer {
             fn flush(&self) {
-                self.0.store(true, Ordering::Relaxed);
+                self.0.fetch_add(1, Ordering::Relaxed);
             }
         }
 
@@ -3170,7 +3190,9 @@ mod tests {
         let volumes_proxy =
             connect_to_protocol_at_dir_svc::<VolumesMarker>(&fixture.outgoing_dir).unwrap();
 
-        assert!(!flush_called.load(Ordering::Relaxed));
+        // Because we added an extra slice worth of space to the disk, initialization writes the
+        // metadata once to update the maximum number of physical slices available.
+        assert_eq!(flush_called.load(Ordering::Relaxed), 1);
 
         let (_dir_proxy, dir_server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         volumes_proxy
@@ -3187,7 +3209,7 @@ mod tests {
             .expect("create failed (FIDL)")
             .expect("create failed");
 
-        assert!(flush_called.load(Ordering::Relaxed));
+        assert_eq!(flush_called.load(Ordering::Relaxed), 2);
     }
 
     #[fuchsia::test]
@@ -3466,5 +3488,81 @@ mod tests {
             .await
             .expect("check blob failed (FIDL)")
             .expect("check blob failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_volume_manager_info_golden_fvm_disk_size_change() {
+        let contents = std::fs::read("/pkg/data/golden-fvm.blk").unwrap();
+
+        let info_small_disk = {
+            let fake_server = Arc::new(
+                VmoBackedServerOptions {
+                    block_size: BLOCK_SIZE,
+                    initial_contents: InitialContents::FromBuffer(&contents),
+                    ..Default::default()
+                }
+                .build()
+                .unwrap(),
+            );
+
+            let fixture = Fixture::from_fake_server(fake_server).await;
+
+            let volumes_proxy =
+                connect_to_protocol_at_dir_svc::<VolumesMarker>(&fixture.outgoing_dir).unwrap();
+
+            volumes_proxy
+                .get_info()
+                .await
+                .expect("get info failed (FIDL)")
+                .expect("get info failed")
+                .expect("get info returned no info")
+        };
+
+        let info_larger_disk = {
+            let fake_server = Arc::new(
+                VmoBackedServerOptions {
+                    block_size: BLOCK_SIZE,
+                    initial_contents: InitialContents::FromCapacityAndBuffer(
+                        (contents.len() as u64 + SLICE_SIZE) / BLOCK_SIZE as u64,
+                        &contents,
+                    ),
+                    ..Default::default()
+                }
+                .build()
+                .unwrap(),
+            );
+
+            let fixture = Fixture::from_fake_server(fake_server).await;
+
+            let volumes_proxy =
+                connect_to_protocol_at_dir_svc::<VolumesMarker>(&fixture.outgoing_dir).unwrap();
+
+            volumes_proxy
+                .get_info()
+                .await
+                .expect("get info failed (FIDL)")
+                .expect("get info failed")
+                .expect("get info returned no info")
+        };
+
+        // The disk has space for one more slice so it reports that now.
+        assert_eq!(info_small_disk.slice_count + 1, info_larger_disk.slice_count);
+
+        // All the other info should be the same.
+        assert_eq!(info_small_disk.slice_size, info_larger_disk.slice_size);
+        assert_eq!(info_small_disk.assigned_slice_count, info_larger_disk.assigned_slice_count);
+        assert_eq!(info_small_disk.maximum_slice_count, info_larger_disk.maximum_slice_count);
+        assert_eq!(info_small_disk.max_virtual_slice, info_larger_disk.max_virtual_slice);
+
+        // We also sanity check some of the values while trying not to be a change detector. The
+        // golden image starts with all it's slices allocated to two partitions, so before changing
+        // size it should be equal, and afterward it should be off by one.
+        assert_eq!(info_small_disk.assigned_slice_count, info_small_disk.slice_count);
+        assert_eq!(info_larger_disk.assigned_slice_count + 1, info_larger_disk.slice_count);
+
+        // Also, slice_count <= maximum_slice_count <= max_virtual_slice == MAX_SLICE_COUNT
+        assert!(info_small_disk.slice_count <= info_small_disk.maximum_slice_count);
+        assert!(info_small_disk.maximum_slice_count <= info_small_disk.max_virtual_slice);
+        assert_eq!(info_small_disk.max_virtual_slice, super::MAX_SLICE_COUNT);
     }
 }
