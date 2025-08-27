@@ -274,8 +274,8 @@ void arm64_fpu_handler(iframe_t* iframe, uint exception_flags, uint32_t esr) {
 }
 
 void arm64_instruction_abort_handler(iframe_t* iframe, uint exception_flags, uint32_t esr) {
-  /* read the FAR register */
-  uint64_t far = __arm_rsr64("far_el1");
+  // Read the FAR, stripping any tag.  During an instruction abort the top eight bits are UNKNOWN.
+  uint64_t far = arch_detag_ptr(__arm_rsr64("far_el1"));
   uint32_t ec = BITS_SHIFT(esr, 31, 26);
   uint32_t iss = BITS(esr, 24, 0);
   uint32_t dfsc = BITS(iss, 5, 0);
@@ -309,8 +309,6 @@ void arm64_instruction_abort_handler(iframe_t* iframe, uint exception_flags, uin
   DEBUG_ASSERT(arch_num_spinlocks_held() == 0);
   arch_enable_ints();
   zx_status_t err;
-  DEBUG_ASSERT(far == arch_detag_ptr(far) &&
-               "Expected the FAR to be untagged for an instruction abort");
   // Check for accessed fault and update the counters accordingly.
   if (is_access) {
     DEBUG_ASSERT((pf_flags & VMM_PF_FLAG_ACCESS) != 0);
