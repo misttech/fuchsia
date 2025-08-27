@@ -8,6 +8,11 @@ use crate::runtime::DurationExt;
 use std::ops;
 
 /// A time relative to the executor's clock.
+///
+/// # Panics
+///
+/// If there is no executor set up. For example if used in a context that is not
+/// bound to an executor, calling `now()` would panic.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
 pub struct MonotonicInstant(zx::MonotonicInstant);
@@ -118,6 +123,11 @@ impl DurationExt for zx::MonotonicDuration {
 }
 
 /// A time relative to the executor's clock on the boot timeline.
+///
+/// # Panics
+///
+/// If there is no executor set up. For example if used in a context that is not
+/// bound to an executor, calling `now()` would panic.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
 pub struct BootInstant(zx::BootInstant);
