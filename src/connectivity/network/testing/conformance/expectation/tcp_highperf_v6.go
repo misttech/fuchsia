@@ -57,7 +57,7 @@ var tcpHighperfV6Expectations map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseN
 	{7, 21}: Pass,
 	{7, 22}: Pass,
 	{7, 23}: Pass,
-	{7, 24}: Fail,
+	{7, 24}: Pass,
 }
 
 var tcpHighperfV6ExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumber]outcome.Outcome{
