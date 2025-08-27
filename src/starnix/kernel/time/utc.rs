@@ -78,8 +78,13 @@ impl UtcClock {
         self.current_transform.apply(boot_time)
     }
 
-    pub fn estimate_boot_deadline(&self, utc: UtcInstant) -> zx::BootInstant {
-        self.current_transform.apply_inverse(utc)
+    /// Estimates the boot time corresponding to `utc`.
+    ///
+    /// # Returns
+    /// - zx::BootInstant: estimated boot time;
+    /// - bool: true if the system UTC clock has been started.
+    pub fn estimate_boot_deadline(&self, utc: UtcInstant) -> (zx::BootInstant, bool) {
+        (self.current_transform.apply_inverse(utc), self.real_utc_clock_started)
     }
 
     fn poll_transform(&mut self) {
@@ -133,7 +138,13 @@ pub fn utc_now() -> UtcInstant {
     (*UTC_CLOCK).lock().now()
 }
 
-pub fn estimate_boot_deadline_from_utc(utc: UtcInstant) -> zx::BootInstant {
+/// Estimates the boot time corresponding to `utc`, based on the currently
+/// operating Starnix UTC clock.
+///
+/// # Returns
+/// - zx::BootInstant: estimated boot time;
+/// - bool: true if the system UTC clock has been started.
+pub fn estimate_boot_deadline_from_utc(utc: UtcInstant) -> (zx::BootInstant, bool) {
     #[cfg(test)]
     {
         if let Some(test_time) = UTC_CLOCK_OVERRIDE_FOR_TESTING.with(|cell| {
@@ -141,7 +152,7 @@ pub fn estimate_boot_deadline_from_utc(utc: UtcInstant) -> zx::BootInstant {
                 test_clock.get_details().unwrap().reference_to_synthetic.apply_inverse(utc)
             })
         }) {
-            return test_time;
+            return (test_time, true);
         }
     }
     (*UTC_CLOCK).lock().estimate_boot_deadline(utc)

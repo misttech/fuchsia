@@ -651,7 +651,7 @@ fn do_futex_wait_with_restart<Key: FutexKey>(
         }
         TargetTime::RealTime(utc_deadline) => {
             // We convert real time deadlines to boot time deadlines since we cannot wait using a UTC deadline.
-            let boot_deadline = estimate_boot_deadline_from_utc(utc_deadline);
+            let (boot_deadline, _) = estimate_boot_deadline_from_utc(utc_deadline);
             let timer_slack = current_task.read().get_timerslack();
             futexes.wait_boot(locked, current_task, addr, value, mask, boot_deadline, timer_slack)
         }

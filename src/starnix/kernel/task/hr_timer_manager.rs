@@ -174,7 +174,7 @@ struct TimerState {
     /// The task that waits for the timer to expire.
     task: fasync::Task<()>,
     /// The desired deadline for the timer.
-    deadline: zx::BootInstant,
+    deadline: TargetTime,
 }
 
 impl std::fmt::Display for TimerState {
@@ -360,8 +360,8 @@ impl HrTimerManager {
                         format!(
                             "{:?} -> {:?} ns (remains: {:?} ns)",
                             k,
-                            v.into_nanos(),
-                            (v - now).into_nanos()
+                            v.estimate_boot().unwrap().into_nanos(),
+                            (v.estimate_boot().unwrap() - now).into_nanos()
                         ),
                     );
                 }
@@ -497,7 +497,7 @@ impl HrTimerManager {
         guard: &mut MutexGuard<'_, HrTimerManagerState>,
         timer_id: zx::Koid,
         task: fasync::Task<()>,
-        deadline: zx::BootInstant,
+        deadline: TargetTime,
         prev_len: usize,
     ) {
         guard
@@ -631,7 +631,7 @@ impl HrTimerManager {
                     // ensure that even though we do not `.await` on this future, a request to
                     // schedule a wake alarm based on this timer will be sent.
                     let request_fut = device_async_proxy.set_and_wait(
-                        new_timer_node.deadline,
+                        new_timer_node.deadline.estimate_boot().unwrap(),
                         fta::SetMode::NotifySetupDone(duplicate_handle(&setup_event)?),
                         &wake_alarm_id,
                     );
@@ -775,13 +775,13 @@ impl HrTimerManager {
         self: &HrTimerManagerHandle,
         guard: &mut MutexGuard<'_, HrTimerManagerState>,
         event_type: InspectHrTimerEvent,
-        deadline: Option<zx::BootInstant>,
+        deadline: Option<TargetTime>,
     ) {
         guard.inspect_node.add_entry(move |node| {
             node.record_string("type", event_type.to_string());
             node.record_int("created_at", zx::BootInstant::get().into_nanos());
             if let Some(deadline) = deadline {
-                node.record_int("deadline", deadline.into_nanos());
+                node.record_int("deadline", deadline.estimate_boot().unwrap().into_nanos());
             }
         });
     }
@@ -793,10 +793,10 @@ impl HrTimerManager {
         self: &HrTimerManagerHandle,
         wake_source: Option<Weak<dyn OnWakeOps>>,
         new_timer: &HrTimerHandle,
-        deadline: zx::BootInstant,
+        deadline: TargetTime,
     ) -> Result<(), Errno> {
         log_debug!("add_timer: entry: {new_timer:?}, deadline: {deadline:?}");
-        ftrace::duration!(c"alarms", c"starnix:add_timer", "deadline" => deadline.into_nanos());
+        ftrace::duration!(c"alarms", c"starnix:add_timer", "deadline" => deadline.estimate_boot().unwrap().into_nanos());
         ftrace::flow_step!(c"alarms", c"hrtimer_lifecycle", new_timer.trace_id());
 
         let counter = self.lock().get_counter();
@@ -928,7 +928,9 @@ impl TimerOps for HrTimerHandle {
         current_task.kernel().hrtimer_manager.add_timer(
             source,
             self,
-            deadline.estimate_boot().ok_or_else(|| errno!(EINVAL))?,
+            TargetTime::BootInstant(deadline.estimate_boot().ok_or_else(|| errno!(EINVAL))?),
+            // TODO: b/437984687 - implement:
+            //deadline.into_resolved_utc_deadline(),
         )?;
         Ok(())
     }
@@ -949,7 +951,7 @@ impl TimerOps for HrTimerHandle {
 #[derive(Clone, Debug)]
 struct HrTimerNode {
     /// The deadline of the associated `HrTimer`.
-    deadline: zx::BootInstant,
+    deadline: TargetTime,
 
     /// The source where initiated this `HrTimer`.
     ///
@@ -964,7 +966,7 @@ struct HrTimerNode {
 
 impl HrTimerNode {
     fn new(
-        deadline: zx::BootInstant,
+        deadline: TargetTime,
         wake_source: Option<Weak<dyn OnWakeOps>>,
         hr_timer: HrTimerHandle,
     ) -> Self {
@@ -1295,9 +1297,9 @@ mod tests {
         let timer2 = HrTimer::new();
         let timer3 = HrTimer::new();
 
-        hrtimer_manager.add_timer(None, &timer1, zx::BootInstant::from_nanos(1)).unwrap();
-        hrtimer_manager.add_timer(None, &timer2, zx::BootInstant::from_nanos(2)).unwrap();
-        hrtimer_manager.add_timer(None, &timer3, zx::BootInstant::from_nanos(3)).unwrap();
+        hrtimer_manager.add_timer(None, &timer1, zx::BootInstant::from_nanos(1).into()).unwrap();
+        hrtimer_manager.add_timer(None, &timer2, zx::BootInstant::from_nanos(2).into()).unwrap();
+        hrtimer_manager.add_timer(None, &timer3, zx::BootInstant::from_nanos(3).into()).unwrap();
 
         wait_signaled(&timer1.event()).await.unwrap();
         wait_signaled(&timer2.event()).await.unwrap();
@@ -1315,7 +1317,7 @@ mod tests {
             init_hr_timer_manager(Response::Delayed).await;
         let timer = HrTimer::new();
 
-        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1)).unwrap();
+        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
 
         assert_eq!(
             counter.wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
@@ -1328,7 +1330,7 @@ mod tests {
         let (hrtimer_manager, _starnix_task, counter) =
             init_hr_timer_manager(Response::Error).await;
         let timer = HrTimer::new();
-        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1)).unwrap();
+        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
         assert_eq!(
             counter.wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
             zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
@@ -1341,12 +1343,12 @@ mod tests {
             init_hr_timer_manager(Response::Delayed).await;
         let timer = HrTimer::new();
 
-        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1)).unwrap();
-        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(2)).unwrap();
+        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(1).into()).unwrap();
+        hrtimer_manager.add_timer(None, &timer, zx::BootInstant::from_nanos(2).into()).unwrap();
 
         // Force alarm expiry.
         hrtimer_manager
-            .add_timer(None, &timer, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE))
+            .add_timer(None, &timer, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
             .unwrap();
         wait_signaled(&timer.event()).await.unwrap();
 
@@ -1365,14 +1367,14 @@ mod tests {
         let timer1 = HrTimer::new();
         *timer1.is_interval.lock() = true;
         hrtimer_manager
-            .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE))
+            .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
             .unwrap();
         wait_signaled(&timer1.event()).await.unwrap();
 
         // Schedule a regular timer and let it expire.
         let timer2 = HrTimer::new();
         hrtimer_manager
-            .add_timer(None, &timer2, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE))
+            .add_timer(None, &timer2, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
             .unwrap();
         wait_signaled(&timer2.event()).await.unwrap();
 
@@ -1394,7 +1396,7 @@ mod tests {
         let timer1 = HrTimer::new();
         *timer1.is_interval.lock() = true;
         hrtimer_manager
-            .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE))
+            .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
             .unwrap();
         wait_signaled(&timer1.event()).await.unwrap();
 
@@ -1407,7 +1409,7 @@ mod tests {
         // Schedule the same timer again. This time around we do not wait for it to expire,
         // but cancel the timer instead.
         const DURATION_100S: zx::BootDuration = zx::BootDuration::from_seconds(100);
-        let deadline2 = fasync::BootInstant::after(DURATION_100S);
+        let deadline2: zx::BootInstant = fasync::BootInstant::after(DURATION_100S).into();
         hrtimer_manager.add_timer(None, &timer1, deadline2.into()).unwrap();
 
         hrtimer_manager.remove_timer(&timer1).unwrap();
@@ -1427,7 +1429,7 @@ mod tests {
         let timer1 = HrTimer::new();
         *timer1.is_interval.lock() = true;
         hrtimer_manager
-            .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE))
+            .add_timer(None, &timer1, zx::BootInstant::from_nanos(MAGIC_EXPIRE_DEADLINE).into())
             .unwrap();
         wait_signaled(&timer1.event()).await.unwrap();
 
@@ -1436,7 +1438,7 @@ mod tests {
             zx::WaitResult::Ok(zx::Signals::COUNTER_POSITIVE)
         );
         const DURATION_100S: zx::BootDuration = zx::BootDuration::from_seconds(100);
-        let deadline2 = fasync::BootInstant::after(DURATION_100S);
+        let deadline2: zx::BootInstant = fasync::BootInstant::after(DURATION_100S).into();
         hrtimer_manager.add_timer(None, &timer1, deadline2.into()).unwrap();
         // No pause between start and stop has led to flakes before.
         hrtimer_manager.remove_timer(&timer1).unwrap();

@@ -58,6 +58,12 @@ pub enum TargetTime {
     BootInstant(zx::BootInstant),
 }
 
+impl From<zx::BootInstant> for TargetTime {
+    fn from(value: zx::BootInstant) -> Self {
+        Self::BootInstant(value)
+    }
+}
+
 impl TargetTime {
     pub fn is_zero(&self) -> bool {
         0 == match self {
@@ -78,9 +84,34 @@ impl TargetTime {
     pub fn estimate_boot(&self) -> Option<zx::BootInstant> {
         match self {
             TargetTime::BootInstant(t) => Some(*t),
-            TargetTime::RealTime(t) => Some(utc::estimate_boot_deadline_from_utc(*t)),
+            TargetTime::RealTime(t) => {
+                let (boot_instant, _) = utc::estimate_boot_deadline_from_utc(*t);
+                Some(boot_instant)
+            }
             // It's not possible to estimate how long suspensions will be.
             TargetTime::Monotonic(_) => None,
+        }
+    }
+
+    /// Attempts to resolve a deadline based on UTC.
+    ///
+    /// If the UTC clock is started, the UTC deadline is deemed accurate and retained. If not, then
+    /// we emulate the deadline by mapping the fake UTC timestamp to the boot timeline. Such
+    /// alarm will *not* move with the UTC timeline changes.
+    pub fn into_resolved_utc_deadline(self) -> TargetTime {
+        match self {
+            orig @ TargetTime::RealTime(t) => {
+                let (boot_instant, started) = utc::estimate_boot_deadline_from_utc(t);
+                if started {
+                    orig
+                } else {
+                    // If the Fuchsia UTC clock is not started yet, emulate with
+                    // the boot timeline. This allows placing a timer on the UTC
+                    // timeline even if Fuchsia UTC clock has not been started.
+                    TargetTime::BootInstant(boot_instant)
+                }
+            }
+            other @ _ => other,
         }
     }
 

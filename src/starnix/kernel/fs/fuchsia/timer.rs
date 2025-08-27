@@ -70,10 +70,12 @@ impl TimerOps for BootZxTimer {
             TargetTime::BootInstant(t) => {
                 self.timer.set(t, timerslack).map_err(|status| from_status_like_fdio!(status))?
             }
-            TargetTime::RealTime(t) => self
-                .timer
-                .set(estimate_boot_deadline_from_utc(t), timerslack)
-                .map_err(|status| from_status_like_fdio!(status))?,
+            TargetTime::RealTime(t) => {
+                let (boot_instant, _) = estimate_boot_deadline_from_utc(t);
+                self.timer
+                    .set(boot_instant, timerslack)
+                    .map_err(|status| from_status_like_fdio!(status))?
+            }
             TargetTime::Monotonic(_) => return error!(EINVAL),
         }
         Ok(())

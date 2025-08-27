@@ -153,7 +153,8 @@ impl IntervalTimer {
                     TargetTime::Monotonic(t) => fuchsia_async::Timer::new(t).await,
                     TargetTime::BootInstant(t) => fuchsia_async::Timer::new(t).await,
                     TargetTime::RealTime(t) => {
-                        fuchsia_async::Timer::new(estimate_boot_deadline_from_utc(t)).await
+                        let (deadline_boot, _) = estimate_boot_deadline_from_utc(t);
+                        fuchsia_async::Timer::new(deadline_boot).await
                     }
                 }
             };

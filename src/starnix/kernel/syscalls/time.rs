@@ -279,7 +279,7 @@ fn clock_nanosleep_relative_to_utc(
         // Compute boot deadline that corresponds to the UTC clocks's current transformation to
         // boot. This may have changed while we were sleeping so check again on every
         // iteration.
-        let boot_deadline =
+        let (boot_deadline, _) =
             crate::time::utc::estimate_boot_deadline_from_utc(clock_deadline_absolute);
         clock_nanosleep_boot_with_deadline(
             locked,
