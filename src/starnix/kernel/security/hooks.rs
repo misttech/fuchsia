@@ -217,10 +217,8 @@ pub fn sb_eat_lsm_opts(
     mount_params: &mut MountParams,
 ) -> Result<FileSystemMountOptions, Errno> {
     track_hook_duration!(c"security.hooks.sb_eat_lsm_opts");
-    if let Some(state) = &kernel.security_state.state {
-        if state.server.has_policy() {
-            return selinux_hooks::superblock::sb_eat_lsm_opts(mount_params);
-        }
+    if kernel.security_state.state.is_some() {
+        return selinux_hooks::superblock::sb_eat_lsm_opts(mount_params);
     }
     Ok(FileSystemMountOptions::default())
 }
