@@ -47,13 +47,13 @@ impl FileOps for TraceMarkerFile {
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         fuchsia_trace::duration!(CATEGORY_TRACE_META, c"Write atrace event");
-        let mut bytes = data.read_all()?;
-        // The TraceEvent struct appends a new line to the trace data unconditionally, so
-        // remove the trailing newline if here to avoid generating empty events when reading.
-        if bytes.ends_with(&['\n' as u8]) {
-            bytes.truncate(bytes.len() - 1);
-        }
         if self.queue.is_enabled() {
+            let mut bytes = data.read_all()?;
+            // The TraceEvent struct appends a new line to the trace data unconditionally, so
+            // remove the trailing newline if here to avoid generating empty events when reading.
+            if bytes.ends_with(&['\n' as u8]) {
+                bytes.truncate(bytes.len() - 1);
+            }
             let trace_event = TraceEvent::new(
                 // This pid is a Kernel pid (do not confuse with userspace pid aka tgid), so we use
                 // the task thread id, the pid and tid are equal when the thread is the "main thread"
@@ -63,7 +63,9 @@ impl FileOps for TraceMarkerFile {
                 bytes.len(),
             );
             self.queue.push_event(trace_event, &bytes)?;
+            Ok(bytes.len())
+        } else {
+            Ok(data.available())
         }
-        return Ok(bytes.len());
     }
 }
