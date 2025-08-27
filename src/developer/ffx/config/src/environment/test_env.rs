@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tempfile::{NamedTempFile, TempDir};
 
 use super::{EnvVars, EnvironmentKind, ExecutableKind};
@@ -151,9 +151,7 @@ impl Drop for TestEnv {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref TEST_LOCK: Arc<async_lock::Mutex<()>> = Arc::default();
-}
+static TEST_LOCK: LazyLock<Arc<async_lock::Mutex<()>>> = LazyLock::new(Arc::default);
 
 #[derive(Debug, Default)]
 pub struct TestEnvBuilder {

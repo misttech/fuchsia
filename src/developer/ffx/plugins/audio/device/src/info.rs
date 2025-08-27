@@ -22,12 +22,12 @@ use fuchsia_audio::sigproc::{
     TypeSpecificElementState, VendorSpecific, VendorSpecificElementState,
 };
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use prettytable::{Table, cell, format, row};
 use serde::ser::SerializeSeq;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write};
+use std::sync::LazyLock;
 use zx_status::Status;
 use {
     fidl_fuchsia_audio_controller as fac, fidl_fuchsia_audio_device as fadevice,
@@ -35,27 +35,28 @@ use {
     fidl_fuchsia_hardware_audio_signalprocessing as fhaudio_sigproc, fidl_fuchsia_io as fio,
 };
 
-lazy_static! {
-    // No padding, no borders.
-    pub static ref TABLE_FORMAT_EMPTY: format::TableFormat = format::FormatBuilder::new().build();
+// No padding, no borders.
+pub static TABLE_FORMAT_EMPTY: LazyLock<format::TableFormat> =
+    LazyLock::new(|| format::FormatBuilder::new().build());
 
-    // Left padding, used for the outer table.
-    pub static ref TABLE_FORMAT_NORMAL: format::TableFormat = format::FormatBuilder::new().padding(2, 0).build();
+// Left padding, used for the outer table.
+pub static TABLE_FORMAT_NORMAL: LazyLock<format::TableFormat> =
+    LazyLock::new(|| format::FormatBuilder::new().padding(2, 0).build());
 
-    // With borders, used nested tables.
-    pub static ref TABLE_FORMAT_NESTED: format::TableFormat = format::FormatBuilder::new()
+// With borders, used nested tables.
+pub static TABLE_FORMAT_NESTED: LazyLock<format::TableFormat> = LazyLock::new(|| {
+    format::FormatBuilder::new()
         .borders('│')
         .separators(&[format::LinePosition::Top], format::LineSeparator::new('─', '┬', '┌', '┐'))
         .separators(&[format::LinePosition::Bottom], format::LineSeparator::new('─', '┴', '└', '┘'))
         .indent(2)
         .padding(1, 1)
-        .build();
+        .build()
+});
 
-    // Right padding, no borders.
-    pub static ref TABLE_FORMAT_NESTED_COMPACT: format::TableFormat = format::FormatBuilder::new()
-        .column_separator(' ')
-        .build();
-}
+// Right padding, no borders.
+pub static TABLE_FORMAT_NESTED_COMPACT: LazyLock<format::TableFormat> =
+    LazyLock::new(|| format::FormatBuilder::new().column_separator(' ').build());
 
 /// Formatter for a byte slice as hex digits in groups of 16 bits, separated by spaces.
 struct HexBytesText<'a>(&'a [u8]);
@@ -1830,84 +1831,108 @@ mod test {
 
     const VENDOR_SPECIFIC_DATA: &[u8] = b"Hello\x01world.";
 
-    lazy_static! {
-        pub static ref TEST_INFO_RESULT: InfoResult = InfoResult {
-            token_id: Some(TOKEN_ID),
-            device_path: Some(Utf8PathBuf::from("/dev/class/audio-input/0c8301e0")),
-            unique_id: Some(UniqueInstanceId([
-                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
-                0x0e, 0x0f,
-            ])),
-            manufacturer: Some("Test manufacturer".to_string()),
-            product_name: Some("Test product".to_string()),
-            gain_state: Some(GainState {
-                gain_db: -3.0_f32,
-                muted: Some(false),
-                agc_enabled: Some(false),
-            }),
-            gain_capabilities: Some(GainCapabilities {
-                min_gain_db: -100.0_f32,
-                max_gain_db: 0.0_f32,
-                gain_step_db: 0.0_f32,
-                can_mute: Some(true),
-                can_agc: Some(false),
-            }),
-            plug_event: Some(PlugEvent {
-                state: fadevice::PlugState::Plugged.into(),
-                time: 123456789,
-            }),
-            plug_detect_capabilities: Some(fadevice::PlugDetectCapabilities::Hardwired.into()),
-            clock_domain: Some(ClockDomain(fhaudio::CLOCK_DOMAIN_MONOTONIC)),
-            supported_dai_formats: Some({
-                let mut map = BTreeMap::new();
-                map.insert(
-                    DEFAULT_DAI_INTERCONNECT_ELEMENT_ID,
-                    vec![fhaudio::DaiSupportedFormats {
-                        number_of_channels: vec![1, 2],
-                        sample_formats: vec![
-                            fhaudio::DaiSampleFormat::PcmSigned,
-                            fhaudio::DaiSampleFormat::PcmUnsigned,
-                        ],
-                        frame_formats: vec![
-                            fhaudio::DaiFrameFormat::FrameFormatStandard(
-                                fhaudio::DaiFrameFormatStandard::StereoLeft,
-                            ),
-                            fhaudio::DaiFrameFormat::FrameFormatStandard(
-                                fhaudio::DaiFrameFormatStandard::StereoRight,
-                            ),
-                        ],
-                        frame_rates: vec![16000, 22050, 32000, 44100, 48000, 88200, 96000],
-                        bits_per_slot: vec![32],
-                        bits_per_sample: vec![8, 16],
-                    }
-                    .into()],
-                );
-                map.insert(
-                    123,
-                    vec![fhaudio::DaiSupportedFormats {
-                        number_of_channels: vec![1],
-                        sample_formats: vec![fhaudio::DaiSampleFormat::PcmFloat],
-                        frame_formats: vec![fhaudio::DaiFrameFormat::FrameFormatCustom(
-                            fhaudio::DaiFrameFormatCustom {
-                                left_justified: false,
-                                sclk_on_raising: true,
-                                frame_sync_sclks_offset: 1,
-                                frame_sync_size: 2,
-                            },
-                        )],
-                        frame_rates: vec![16000, 22050, 32000, 44100, 48000, 88200, 96000],
-                        bits_per_slot: vec![16, 32],
-                        bits_per_sample: vec![16],
-                    }
-                    .into()],
-                );
-                map
-            }),
-            supported_ring_buffer_formats: Some({
-                let mut map = BTreeMap::new();
-                map.insert(
-                    DEFAULT_RING_BUFFER_ELEMENT_ID,
-                    vec![PcmFormatSet {
+    pub static TEST_INFO_RESULT: LazyLock<InfoResult> = LazyLock::new(|| {
+        InfoResult {
+        token_id: Some(TOKEN_ID),
+        device_path: Some(Utf8PathBuf::from("/dev/class/audio-input/0c8301e0")),
+        unique_id: Some(UniqueInstanceId([
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+            0x0e, 0x0f,
+        ])),
+        manufacturer: Some("Test manufacturer".to_string()),
+        product_name: Some("Test product".to_string()),
+        gain_state: Some(GainState {
+            gain_db: -3.0_f32,
+            muted: Some(false),
+            agc_enabled: Some(false),
+        }),
+        gain_capabilities: Some(GainCapabilities {
+            min_gain_db: -100.0_f32,
+            max_gain_db: 0.0_f32,
+            gain_step_db: 0.0_f32,
+            can_mute: Some(true),
+            can_agc: Some(false),
+        }),
+        plug_event: Some(PlugEvent {
+            state: fadevice::PlugState::Plugged.into(),
+            time: 123456789,
+        }),
+        plug_detect_capabilities: Some(fadevice::PlugDetectCapabilities::Hardwired.into()),
+        clock_domain: Some(ClockDomain(fhaudio::CLOCK_DOMAIN_MONOTONIC)),
+        supported_dai_formats: Some({
+            let mut map = BTreeMap::new();
+            map.insert(
+                DEFAULT_DAI_INTERCONNECT_ELEMENT_ID,
+                vec![fhaudio::DaiSupportedFormats {
+                    number_of_channels: vec![1, 2],
+                    sample_formats: vec![
+                        fhaudio::DaiSampleFormat::PcmSigned,
+                        fhaudio::DaiSampleFormat::PcmUnsigned,
+                    ],
+                    frame_formats: vec![
+                        fhaudio::DaiFrameFormat::FrameFormatStandard(
+                            fhaudio::DaiFrameFormatStandard::StereoLeft,
+                        ),
+                        fhaudio::DaiFrameFormat::FrameFormatStandard(
+                            fhaudio::DaiFrameFormatStandard::StereoRight,
+                        ),
+                    ],
+                    frame_rates: vec![16000, 22050, 32000, 44100, 48000, 88200, 96000],
+                    bits_per_slot: vec![32],
+                    bits_per_sample: vec![8, 16],
+                }
+                .into()],
+            );
+            map.insert(
+                123,
+                vec![fhaudio::DaiSupportedFormats {
+                    number_of_channels: vec![1],
+                    sample_formats: vec![fhaudio::DaiSampleFormat::PcmFloat],
+                    frame_formats: vec![fhaudio::DaiFrameFormat::FrameFormatCustom(
+                        fhaudio::DaiFrameFormatCustom {
+                            left_justified: false,
+                            sclk_on_raising: true,
+                            frame_sync_sclks_offset: 1,
+                            frame_sync_size: 2,
+                        },
+                    )],
+                    frame_rates: vec![16000, 22050, 32000, 44100, 48000, 88200, 96000],
+                    bits_per_slot: vec![16, 32],
+                    bits_per_sample: vec![16],
+                }
+                .into()],
+            );
+            map
+        }),
+        supported_ring_buffer_formats: Some({
+            let mut map = BTreeMap::new();
+            map.insert(
+                DEFAULT_RING_BUFFER_ELEMENT_ID,
+                vec![PcmFormatSet {
+                    channel_sets: vec![
+                        ChannelSet::try_from(vec![ChannelAttributes::default()]).unwrap(),
+                        ChannelSet::try_from(vec![
+                            ChannelAttributes::default(),
+                            ChannelAttributes::default(),
+                        ])
+                        .unwrap(),
+                    ],
+                    sample_types: vec![SampleType::Int16],
+                    frame_rates: vec![16000, 22050, 32000, 44100, 48000, 88200, 96000],
+                }],
+            );
+            map.insert(
+                123,
+                vec![
+                    PcmFormatSet {
+                        channel_sets: vec![ChannelSet::try_from(vec![
+                            ChannelAttributes::default(),
+                        ])
+                        .unwrap()],
+                        sample_types: vec![SampleType::Uint8, SampleType::Int16],
+                        frame_rates: vec![16000, 22050, 32000],
+                    },
+                    PcmFormatSet {
                         channel_sets: vec![
                             ChannelSet::try_from(vec![ChannelAttributes::default()]).unwrap(),
                             ChannelSet::try_from(vec![
@@ -1916,356 +1941,332 @@ mod test {
                             ])
                             .unwrap(),
                         ],
-                        sample_types: vec![SampleType::Int16],
-                        frame_rates: vec![16000, 22050, 32000, 44100, 48000, 88200, 96000],
-                    }],
-                );
-                map.insert(
-                    123,
-                    vec![
-                        PcmFormatSet {
-                            channel_sets: vec![ChannelSet::try_from(vec![
-                                ChannelAttributes::default(),
-                            ])
-                            .unwrap()],
-                            sample_types: vec![SampleType::Uint8, SampleType::Int16],
-                            frame_rates: vec![16000, 22050, 32000],
-                        },
-                        PcmFormatSet {
-                            channel_sets: vec![
-                                ChannelSet::try_from(vec![ChannelAttributes::default()]).unwrap(),
-                                ChannelSet::try_from(vec![
-                                    ChannelAttributes::default(),
-                                    ChannelAttributes::default(),
-                                ])
-                                .unwrap(),
-                            ],
-                            sample_types: vec![SampleType::Float32],
-                            frame_rates: vec![44100, 48000, 88200, 96000],
-                        },
-                    ],
-                );
-                map
-            }),
-            topologies: Some(vec![
-                Topology { id: INPUT_ONLY_TOPOLOGY_ID, edge_pairs: vec![INPUT_EDGE_PAIR] },
-                Topology {
-                    id: FULL_DUPLEX_TOPOLOGY_ID,
-                    edge_pairs: vec![INPUT_EDGE_PAIR, OUTPUT_EDGE_PAIR,]
-                },
-                Topology { id: OUTPUT_ONLY_TOPOLOGY_ID, edge_pairs: vec![OUTPUT_EDGE_PAIR,] },
-                Topology {
-                    id: OUTPUT_WITH_MUTE_TOPOLOGY_ID,
-                    edge_pairs: vec![RB_TO_MUTE_EDGE_PAIR, MUTE_TO_DAI_EDGE_PAIR]
-                },
-            ]),
-            topology_id: Some(FULL_DUPLEX_TOPOLOGY_ID),
-            element_with_states: Some(vec![
-                ElementWithState {
-                    element: Element {
-                        id: SOURCE_DAI_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::DaiInterconnect,
-                        type_specific: Some(TypeSpecificElement::DaiInterconnect(DaiInterconnect {
-                            plug_detect_capabilities:
-                                fhaudio_sigproc::PlugDetectCapabilities::CanAsyncNotify
-                        })),
-                        description: Some("Source DAI interconnect element".to_string()),
-                        can_stop: Some(true),
-                        can_bypass: Some(false)
+                        sample_types: vec![SampleType::Float32],
+                        frame_rates: vec![44100, 48000, 88200, 96000],
                     },
-                    state: Some(ElementState {
-                        type_specific: Some(TypeSpecificElementState::DaiInterconnect(DaiInterconnectElementState {
-                            plug_state: fuchsia_audio::sigproc::PlugState {
-                                plugged: true,
-                                plug_state_time: 123456789,
+                ],
+            );
+            map
+        }),
+        topologies: Some(vec![
+            Topology { id: INPUT_ONLY_TOPOLOGY_ID, edge_pairs: vec![INPUT_EDGE_PAIR] },
+            Topology {
+                id: FULL_DUPLEX_TOPOLOGY_ID,
+                edge_pairs: vec![INPUT_EDGE_PAIR, OUTPUT_EDGE_PAIR,]
+            },
+            Topology { id: OUTPUT_ONLY_TOPOLOGY_ID, edge_pairs: vec![OUTPUT_EDGE_PAIR,] },
+            Topology {
+                id: OUTPUT_WITH_MUTE_TOPOLOGY_ID,
+                edge_pairs: vec![RB_TO_MUTE_EDGE_PAIR, MUTE_TO_DAI_EDGE_PAIR]
+            },
+        ]),
+        topology_id: Some(FULL_DUPLEX_TOPOLOGY_ID),
+        element_with_states: Some(vec![
+            ElementWithState {
+                element: Element {
+                    id: SOURCE_DAI_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::DaiInterconnect,
+                    type_specific: Some(TypeSpecificElement::DaiInterconnect(DaiInterconnect {
+                        plug_detect_capabilities:
+                            fhaudio_sigproc::PlugDetectCapabilities::CanAsyncNotify
+                    })),
+                    description: Some("Source DAI interconnect element".to_string()),
+                    can_stop: Some(true),
+                    can_bypass: Some(false)
+                },
+                state: Some(ElementState {
+                    type_specific: Some(TypeSpecificElementState::DaiInterconnect(DaiInterconnectElementState {
+                        plug_state: fuchsia_audio::sigproc::PlugState {
+                            plugged: true,
+                            plug_state_time: 123456789,
+                        },
+                        external_delay_ns: Some(5000),
+                    })),
+                    vendor_specific_data: None,
+                    started: true,
+                    bypassed: None,
+                    turn_on_delay_ns: Some(0),
+                    turn_off_delay_ns: Some(0),
+                    processing_delay_ns: Some(0),
+                }),
+            },
+            ElementWithState {
+                element: Element {
+                    id: DEST_DAI_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::DaiInterconnect,
+                    type_specific: Some(TypeSpecificElement::DaiInterconnect(DaiInterconnect {
+                        plug_detect_capabilities:
+                            fhaudio_sigproc::PlugDetectCapabilities::CanAsyncNotify
+                    })),
+                    description: Some("Destination DAI interconnect element".to_string()),
+                    can_stop: Some(true),
+                    can_bypass: Some(false)
+                },
+                state: None,
+            },
+            ElementWithState {
+                element: Element {
+                    id: SOURCE_RB_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::RingBuffer,
+                    type_specific: None,
+                    description: Some("Source ring buffer element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: Some(false)
+                },
+                state: None,
+            },
+            ElementWithState {
+                element: Element {
+                    id: DEST_RB_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::RingBuffer,
+                    type_specific: None,
+                    description: Some("Destination ring buffer element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: None
+                },
+                state: None,
+            },
+            ElementWithState {
+                element: Element {
+                    id: MUTE_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::Mute,
+                    type_specific: None,
+                    description: Some("Mute element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: Some(true)
+                },
+                state: None,
+            },
+            // The elements below are not part of any topology.
+            // They're included to test info output for all element types.
+            ElementWithState {
+                element: Element {
+                    id: VENDOR_SPECIFIC_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::VendorSpecific,
+                    type_specific: Some(TypeSpecificElement::VendorSpecific(VendorSpecific{})),
+                    description: Some("Vendor specific element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: Some(true)
+                },
+                state: Some(ElementState {
+                    type_specific: Some(TypeSpecificElementState::VendorSpecific(VendorSpecificElementState {})),
+                    vendor_specific_data: Some(VENDOR_SPECIFIC_DATA.to_vec()),
+                    started: true,
+                    bypassed: Some(false),
+                    turn_on_delay_ns: Some(12),
+                    turn_off_delay_ns: Some(34),
+                    processing_delay_ns: Some(56),
+                }),
+            },
+            ElementWithState {
+                element: Element {
+                    id: CONNECTION_POINT_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::ConnectionPoint,
+                    type_specific: None,
+                    description: Some("Connection point element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: Some(false)
+                },
+                state: None,
+            },
+            ElementWithState {
+                element: Element {
+                    id: GAIN_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::Gain,
+                    type_specific: Some(TypeSpecificElement::Gain(Gain {
+                        type_: fhaudio_sigproc::GainType::Decibels,
+                        domain: Some(fhaudio_sigproc::GainDomain::Digital),
+                        range: GainRange { min: -100.0, max: 0.0, min_step: 1.0 },
+                    })),
+                    description: Some("Gain element".to_string()),
+                    can_stop: None,
+                    can_bypass: Some(true)
+                },
+                state: Some(ElementState {
+                    type_specific: Some(TypeSpecificElementState::Gain(GainElementState { gain: -3.0 })),
+                    vendor_specific_data: None,
+                    started: true,
+                    bypassed: Some(false),
+                    turn_on_delay_ns: Some(0),
+                    turn_off_delay_ns: Some(0),
+                    processing_delay_ns: Some(0),
+                }),
+            },
+            ElementWithState {
+                element: Element {
+                    id: AGC_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::AutomaticGainControl,
+                    type_specific: None,
+                    description: Some("Automatic gain control element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: Some(true)
+                },
+                state: None,
+            },
+            ElementWithState {
+                element: Element {
+                    id: AGL_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::AutomaticGainLimiter,
+                    type_specific: None,
+                    description: Some("Automatic gain limiter element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: Some(true)
+                },
+                state: None,
+            },
+            ElementWithState {
+                element: Element {
+                    id: DYNAMICS_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::Dynamics,
+                    type_specific: Some(TypeSpecificElement::Dynamics(Dynamics {
+                        bands: vec![DynamicsBand { id: 1 }, DynamicsBand { id: 2 }],
+                        supported_controls: Some(
+                            fhaudio_sigproc::DynamicsSupportedControls::KNEE_WIDTH
+                                | fhaudio_sigproc::DynamicsSupportedControls::ATTACK
+                                | fhaudio_sigproc::DynamicsSupportedControls::RELEASE
+                                | fhaudio_sigproc::DynamicsSupportedControls::OUTPUT_GAIN
+                                | fhaudio_sigproc::DynamicsSupportedControls::INPUT_GAIN
+                                | fhaudio_sigproc::DynamicsSupportedControls::LOOKAHEAD
+                                | fhaudio_sigproc::DynamicsSupportedControls::LEVEL_TYPE
+                                | fhaudio_sigproc::DynamicsSupportedControls::LINKED_CHANNELS
+                                | fhaudio_sigproc::DynamicsSupportedControls::THRESHOLD_TYPE,
+                        ),
+                    })),
+                    description: Some("Dynamics element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: Some(true)
+                },
+                state: Some(ElementState {
+                    type_specific: Some(TypeSpecificElementState::Dynamics(DynamicsElementState {
+                        band_states: vec![
+                            DynamicsBandState {
+                                id: 1,
+                                min_frequency: 0,
+                                max_frequency: 24_000,
+                                threshold_db: -6.0,
+                                threshold_type: fhaudio_sigproc::ThresholdType::Above,
+                                ratio: 3.0,
+                                knee_width_db: Some(1.0),
+                                attack: Some(10),
+                                release: Some(300),
+                                output_gain_db: Some(1.0),
+                                input_gain_db: Some(2.0),
+                                level_type: Some(fhaudio_sigproc::LevelType::Peak),
+                                lookahead: Some(15),
+                                linked_channels: Some(true),
                             },
-                            external_delay_ns: Some(5000),
-                        })),
-                        vendor_specific_data: None,
-                        started: true,
-                        bypassed: None,
-                        turn_on_delay_ns: Some(0),
-                        turn_off_delay_ns: Some(0),
-                        processing_delay_ns: Some(0),
-                    }),
+                            DynamicsBandState {
+                                id: 2,
+                                min_frequency: 100,
+                                max_frequency: 20000,
+                                threshold_db: 3.0,
+                                threshold_type: fhaudio_sigproc::ThresholdType::Above,
+                                ratio: 10.0,
+                                knee_width_db: Some(6.0),
+                                attack: Some(1),
+                                release: Some(100),
+                                output_gain_db: Some(0.0),
+                                input_gain_db: Some(0.0),
+                                level_type: Some(fhaudio_sigproc::LevelType::Rms),
+                                lookahead: Some(5),
+                                linked_channels: Some(false),
+                            },
+                        ],
+                    })),
+                    vendor_specific_data: None,
+                    started: true,
+                    bypassed: Some(false),
+                    turn_on_delay_ns: Some(0),
+                    turn_off_delay_ns: Some(0),
+                    processing_delay_ns: Some(0),
+                }),
+            },
+            ElementWithState {
+                element: Element {
+                    id: DELAY_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::Delay,
+                    type_specific: None,
+                    description: Some("Delay element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: Some(true)
                 },
-                ElementWithState {
-                    element: Element {
-                        id: DEST_DAI_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::DaiInterconnect,
-                        type_specific: Some(TypeSpecificElement::DaiInterconnect(DaiInterconnect {
-                            plug_detect_capabilities:
-                                fhaudio_sigproc::PlugDetectCapabilities::CanAsyncNotify
-                        })),
-                        description: Some("Destination DAI interconnect element".to_string()),
-                        can_stop: Some(true),
-                        can_bypass: Some(false)
-                    },
-                    state: None,
-                },
-                ElementWithState {
-                    element: Element {
-                        id: SOURCE_RB_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::RingBuffer,
-                        type_specific: None,
-                        description: Some("Source ring buffer element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: Some(false)
-                    },
-                    state: None,
-                },
-                ElementWithState {
-                    element: Element {
-                        id: DEST_RB_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::RingBuffer,
-                        type_specific: None,
-                        description: Some("Destination ring buffer element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: None
-                    },
-                    state: None,
-                },
-                ElementWithState {
-                    element: Element {
-                        id: MUTE_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::Mute,
-                        type_specific: None,
-                        description: Some("Mute element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: Some(true)
-                    },
-                    state: None,
-                },
-                // The elements below are not part of any topology.
-                // They're included to test info output for all element types.
-                ElementWithState {
-                    element: Element {
-                        id: VENDOR_SPECIFIC_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::VendorSpecific,
-                        type_specific: Some(TypeSpecificElement::VendorSpecific(VendorSpecific{})),
-                        description: Some("Vendor specific element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: Some(true)
-                    },
-                    state: Some(ElementState {
-                        type_specific: Some(TypeSpecificElementState::VendorSpecific(VendorSpecificElementState {})),
-                        vendor_specific_data: Some(VENDOR_SPECIFIC_DATA.to_vec()),
-                        started: true,
-                        bypassed: Some(false),
-                        turn_on_delay_ns: Some(12),
-                        turn_off_delay_ns: Some(34),
-                        processing_delay_ns: Some(56),
-                    }),
-                },
-                ElementWithState {
-                    element: Element {
-                        id: CONNECTION_POINT_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::ConnectionPoint,
-                        type_specific: None,
-                        description: Some("Connection point element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: Some(false)
-                    },
-                    state: None,
-                },
-                ElementWithState {
-                    element: Element {
-                        id: GAIN_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::Gain,
-                        type_specific: Some(TypeSpecificElement::Gain(Gain {
-                            type_: fhaudio_sigproc::GainType::Decibels,
-                            domain: Some(fhaudio_sigproc::GainDomain::Digital),
-                            range: GainRange { min: -100.0, max: 0.0, min_step: 1.0 },
-                        })),
-                        description: Some("Gain element".to_string()),
-                        can_stop: None,
-                        can_bypass: Some(true)
-                    },
-                    state: Some(ElementState {
-                        type_specific: Some(TypeSpecificElementState::Gain(GainElementState { gain: -3.0 })),
-                        vendor_specific_data: None,
-                        started: true,
-                        bypassed: Some(false),
-                        turn_on_delay_ns: Some(0),
-                        turn_off_delay_ns: Some(0),
-                        processing_delay_ns: Some(0),
-                    }),
-                },
-                ElementWithState {
-                    element: Element {
-                        id: AGC_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::AutomaticGainControl,
-                        type_specific: None,
-                        description: Some("Automatic gain control element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: Some(true)
-                    },
-                    state: None,
-                },
-                ElementWithState {
-                    element: Element {
-                        id: AGL_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::AutomaticGainLimiter,
-                        type_specific: None,
-                        description: Some("Automatic gain limiter element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: Some(true)
-                    },
-                    state: None,
-                },
-                ElementWithState {
-                    element: Element {
-                        id: DYNAMICS_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::Dynamics,
-                        type_specific: Some(TypeSpecificElement::Dynamics(Dynamics {
-                            bands: vec![DynamicsBand { id: 1 }, DynamicsBand { id: 2 }],
+                state: None,
+            },
+            ElementWithState {
+                element: Element {
+                    id: EQUALIZER_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::Equalizer,
+                    type_specific: Some(TypeSpecificElement::Equalizer(
+                        Equalizer {
+                            bands: vec![
+                                EqualizerBand { id: 1 },
+                                EqualizerBand { id: 2 },
+                            ],
                             supported_controls: Some(
-                                fhaudio_sigproc::DynamicsSupportedControls::KNEE_WIDTH
-                                    | fhaudio_sigproc::DynamicsSupportedControls::ATTACK
-                                    | fhaudio_sigproc::DynamicsSupportedControls::RELEASE
-                                    | fhaudio_sigproc::DynamicsSupportedControls::OUTPUT_GAIN
-                                    | fhaudio_sigproc::DynamicsSupportedControls::INPUT_GAIN
-                                    | fhaudio_sigproc::DynamicsSupportedControls::LOOKAHEAD
-                                    | fhaudio_sigproc::DynamicsSupportedControls::LEVEL_TYPE
-                                    | fhaudio_sigproc::DynamicsSupportedControls::LINKED_CHANNELS
-                                    | fhaudio_sigproc::DynamicsSupportedControls::THRESHOLD_TYPE,
+                                fhaudio_sigproc::EqualizerSupportedControls::CAN_CONTROL_FREQUENCY
+                                    | fhaudio_sigproc::EqualizerSupportedControls::CAN_CONTROL_Q
+                                    | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_PEAK
+                                    | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_NOTCH
+                                    | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_LOW_CUT
+                                    | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_HIGH_CUT
+                                    | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_LOW_SHELF
+                                    | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_HIGH_SHELF
                             ),
-                        })),
-                        description: Some("Dynamics element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: Some(true)
-                    },
-                    state: Some(ElementState {
-                        type_specific: Some(TypeSpecificElementState::Dynamics(DynamicsElementState {
-                            band_states: vec![
-                                DynamicsBandState {
-                                    id: 1,
-                                    min_frequency: 0,
-                                    max_frequency: 24_000,
-                                    threshold_db: -6.0,
-                                    threshold_type: fhaudio_sigproc::ThresholdType::Above,
-                                    ratio: 3.0,
-                                    knee_width_db: Some(1.0),
-                                    attack: Some(10),
-                                    release: Some(300),
-                                    output_gain_db: Some(1.0),
-                                    input_gain_db: Some(2.0),
-                                    level_type: Some(fhaudio_sigproc::LevelType::Peak),
-                                    lookahead: Some(15),
-                                    linked_channels: Some(true),
-                                },
-                                DynamicsBandState {
-                                    id: 2,
-                                    min_frequency: 100,
-                                    max_frequency: 20000,
-                                    threshold_db: 3.0,
-                                    threshold_type: fhaudio_sigproc::ThresholdType::Above,
-                                    ratio: 10.0,
-                                    knee_width_db: Some(6.0),
-                                    attack: Some(1),
-                                    release: Some(100),
-                                    output_gain_db: Some(0.0),
-                                    input_gain_db: Some(0.0),
-                                    level_type: Some(fhaudio_sigproc::LevelType::Rms),
-                                    lookahead: Some(5),
-                                    linked_channels: Some(false),
-                                },
-                            ],
-                        })),
-                        vendor_specific_data: None,
-                        started: true,
-                        bypassed: Some(false),
-                        turn_on_delay_ns: Some(0),
-                        turn_off_delay_ns: Some(0),
-                        processing_delay_ns: Some(0),
-                    }),
+                            can_disable_bands: Some(false),
+                            min_frequency: 10,
+                            max_frequency: 20_000,
+                            max_q: Some(2.5),
+                            min_gain_db: Some(-24.0),
+                            max_gain_db: Some(24.0),
+                        }
+                    )),
+                    description: Some("Equalizer element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: Some(true)
                 },
-                ElementWithState {
-                    element: Element {
-                        id: DELAY_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::Delay,
-                        type_specific: None,
-                        description: Some("Delay element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: Some(true)
-                    },
-                    state: None,
+                state: Some(ElementState {
+                    type_specific: Some(TypeSpecificElementState::Equalizer(EqualizerElementState {
+                        band_states: vec![
+                            EqualizerBandState {
+                                id: 1,
+                                type_: Some(fhaudio_sigproc::EqualizerBandType::Peak),
+                                frequency: Some(300),
+                                q: Some(2.0),
+                                gain_db: Some(3.0),
+                                enabled: Some(true),
+                            },
+                            EqualizerBandState {
+                                id: 2,
+                                type_: Some(fhaudio_sigproc::EqualizerBandType::HighCut),
+                                frequency: Some(10_000),
+                                q: Some(10.0),
+                                gain_db: None,
+                                enabled: None,
+                            },
+                        ],
+                    })),
+                    vendor_specific_data: None,
+                    started: true,
+                    bypassed: Some(false),
+                    turn_on_delay_ns: Some(0),
+                    turn_off_delay_ns: Some(0),
+                    processing_delay_ns: Some(0),
+                }),
+            },
+            ElementWithState {
+                element: Element {
+                    id: SRC_ELEMENT_ID,
+                    type_: fhaudio_sigproc::ElementType::SampleRateConversion,
+                    type_specific: None,
+                    description: Some("Sample rate conversion element".to_string()),
+                    can_stop: Some(false),
+                    can_bypass: Some(true)
                 },
-                ElementWithState {
-                    element: Element {
-                        id: EQUALIZER_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::Equalizer,
-                        type_specific: Some(TypeSpecificElement::Equalizer(
-                            Equalizer {
-                                bands: vec![
-                                    EqualizerBand { id: 1 },
-                                    EqualizerBand { id: 2 },
-                                ],
-                                supported_controls: Some(
-                                    fhaudio_sigproc::EqualizerSupportedControls::CAN_CONTROL_FREQUENCY
-                                        | fhaudio_sigproc::EqualizerSupportedControls::CAN_CONTROL_Q
-                                        | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_PEAK
-                                        | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_NOTCH
-                                        | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_LOW_CUT
-                                        | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_HIGH_CUT
-                                        | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_LOW_SHELF
-                                        | fhaudio_sigproc::EqualizerSupportedControls::SUPPORTS_TYPE_HIGH_SHELF
-                                ),
-                                can_disable_bands: Some(false),
-                                min_frequency: 10,
-                                max_frequency: 20_000,
-                                max_q: Some(2.5),
-                                min_gain_db: Some(-24.0),
-                                max_gain_db: Some(24.0),
-                            }
-                        )),
-                        description: Some("Equalizer element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: Some(true)
-                    },
-                    state: Some(ElementState {
-                        type_specific: Some(TypeSpecificElementState::Equalizer(EqualizerElementState {
-                            band_states: vec![
-                                EqualizerBandState {
-                                    id: 1,
-                                    type_: Some(fhaudio_sigproc::EqualizerBandType::Peak),
-                                    frequency: Some(300),
-                                    q: Some(2.0),
-                                    gain_db: Some(3.0),
-                                    enabled: Some(true),
-                                },
-                                EqualizerBandState {
-                                    id: 2,
-                                    type_: Some(fhaudio_sigproc::EqualizerBandType::HighCut),
-                                    frequency: Some(10_000),
-                                    q: Some(10.0),
-                                    gain_db: None,
-                                    enabled: None,
-                                },
-                            ],
-                        })),
-                        vendor_specific_data: None,
-                        started: true,
-                        bypassed: Some(false),
-                        turn_on_delay_ns: Some(0),
-                        turn_off_delay_ns: Some(0),
-                        processing_delay_ns: Some(0),
-                    }),
-                },
-                ElementWithState {
-                    element: Element {
-                        id: SRC_ELEMENT_ID,
-                        type_: fhaudio_sigproc::ElementType::SampleRateConversion,
-                        type_specific: None,
-                        description: Some("Sample rate conversion element".to_string()),
-                        can_stop: Some(false),
-                        can_bypass: Some(true)
-                    },
-                    state: None,
-                },
-            ]),
-        };
+                state: None,
+            },
+        ]),
     }
+    });
 
     #[test]
     fn test_info_result_table() {

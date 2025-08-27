@@ -6,15 +6,14 @@ use crate::check::PreflightCheckResult::*;
 use crate::check::{PreflightCheck, PreflightCheckResult};
 use crate::command_runner::CommandRunner;
 use crate::config::*;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
-lazy_static! {
-    // Regex to check whether /proc/cpuinfo indicates either VT-x or AMD-V virtualization extensions.
-    static ref CPU_VIRTUALIZATION_RE: Regex = Regex::new(r"(?m)^flags\s*:.*\b(vmx|svm)\b").unwrap();
-}
+// Regex to check whether /proc/cpuinfo indicates either VT-x or AMD-V virtualization extensions.
+static CPU_VIRTUALIZATION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^flags\s*:.*\b(vmx|svm)\b").unwrap());
 
 static NO_CPU_VIRT_MESSAGE: &str = "CPU does not support virtualization. This \
 will prevent emulator acceleration from working with the Fuchsia emulator.";

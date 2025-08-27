@@ -53,7 +53,6 @@ rustc_library("ffx_fuzz") {
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:glob",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:regex",
     "//third_party/rust_crates:rustyline",
     "//third_party/rust_crates:serde_json",

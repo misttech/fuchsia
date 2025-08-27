@@ -6,14 +6,14 @@ use crate::api::value::{ConfigValue, ValueStrategy};
 use ::errors::ffx_bail;
 use analytics::metrics_state::MetricsStatus;
 use analytics::{set_new_opt_in_status, show_status_message};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use api::value::TryConvert;
 use core::fmt;
 use futures::future::LocalBoxFuture;
 use std::fmt::Debug;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 pub mod api;
 pub mod environment;
@@ -32,18 +32,16 @@ pub use aliases::{
     is_analytics_disabled, is_mdns_autoconnect_disabled, is_mdns_discovery_disabled,
     is_usb_discovery_disabled,
 };
-pub use api::query::{ConfigQuery, SelectMode};
 pub use api::ConfigError;
+pub use api::query::{ConfigQuery, SelectMode};
 pub use config_macros::FfxConfigBacked;
 
-pub use environment::{test_env, test_init, Environment, EnvironmentContext, TestEnv};
+pub use environment::{Environment, EnvironmentContext, TestEnv, test_env, test_init};
 pub use paths::get_state_base as get_state_base_path;
 pub use sdk::{self, Sdk, SdkRoot};
 pub use storage::{AssertNoEnv, AssertNoEnvError, ConfigMap};
 
-lazy_static::lazy_static! {
-    static ref ENV: Mutex<Option<EnvironmentContext>> = Mutex::default();
-}
+static ENV: LazyLock<Mutex<Option<EnvironmentContext>>> = LazyLock::new(|| Mutex::default());
 
 #[doc(hidden)]
 pub mod macro_deps {
@@ -150,7 +148,9 @@ pub fn global_env() -> Result<Environment> {
 pub fn init(context: &EnvironmentContext) -> Result<()> {
     let mut env_lock = ENV.lock().unwrap();
     if env_lock.is_some() {
-        anyhow::bail!("Attempted to set the global environment more than once in a process invocation, outside of a test");
+        anyhow::bail!(
+            "Attempted to set the global environment more than once in a process invocation, outside of a test"
+        );
     }
     env_lock.replace(context.clone());
     Ok(())
@@ -254,17 +254,17 @@ pub fn get_log_dirs() -> Result<Vec<String>> {
 pub fn print_log_hint<W: std::io::Write>(writer: &mut W) {
     let msg = match get_log_dirs() {
         Ok(log_dirs) if log_dirs.len() == 1 => format!(
-                "More information may be available in ffx host logs in directory:\n    {}",
-                log_dirs[0]
-            ),
+            "More information may be available in ffx host logs in directory:\n    {}",
+            log_dirs[0]
+        ),
         Ok(log_dirs) => format!(
-                "More information may be available in ffx host logs in directories:\n    {}",
-                log_dirs.join("\n    ")
-            ),
+            "More information may be available in ffx host logs in directories:\n    {}",
+            log_dirs.join("\n    ")
+        ),
         Err(err) => format!(
-                "More information may be available in ffx host logs, but ffx failed to retrieve configured log file locations. Error:\n    {}",
-                err,
-            ),
+            "More information may be available in ffx host logs, but ffx failed to retrieve configured log file locations. Error:\n    {}",
+            err,
+        ),
     };
     if writeln!(writer, "{}", msg).is_err() {
         println!("{}", msg);
@@ -301,7 +301,7 @@ mod test {
     // This is to get the FfxConfigBacked derive to compile, as it
     // creates a token stream referencing `ffx_config` on the inside.
     use crate::{self as ffx_config};
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::collections::HashSet;
     use std::fs;
 

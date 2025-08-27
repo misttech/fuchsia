@@ -20,7 +20,6 @@ rustc_library(
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:itertools",
-        "//third_party/rust_crates/vendor:lazy_static",
         "//third_party/rust_crates/vendor:libc",
         "//third_party/rust_crates/vendor:regex",
         "//third_party/rust_crates/vendor:tokio",

@@ -8,11 +8,10 @@ use crate::command_runner::CommandRunner;
 use crate::config::*;
 use anyhow::Result;
 use async_trait::async_trait;
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
-static NO_TUNTAP_MESSAGE: &str =
-    "Did not find a tuntap device named 'qemu' for the current user. This will prevent you from \
+static NO_TUNTAP_MESSAGE: &str = "Did not find a tuntap device named 'qemu' for the current user. This will prevent you from \
 enabling network access for the emulator. You can see all existing devices by executing \
 `ip tuntap show`";
 static NO_TUNTAP_RESOLUTION_MESSAGE: &str = "\
@@ -24,10 +23,9 @@ static SUCCESS_MESSAGE_LINUX: &str = "Found tuntap device named 'qemu' for curre
 static SUCCESS_MESSAGE_MACOS: &str =
     "MacOS supports Fuchsia emulator networking requirements out of the box";
 
-lazy_static! {
-    // Regex to match the output of `ip tuntap list` looking for a tuntap named "qemu".
-    static ref TUNTAP_RE: Regex = Regex::new(r"qemu: tap.* persist user (\d+)").unwrap();
-}
+// Regex to match the output of `ip tuntap list` looking for a tuntap named "qemu".
+static TUNTAP_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"qemu: tap.* persist user (\d+)").unwrap());
 
 pub struct EmuNetworking<'a> {
     command_runner: &'a CommandRunner,

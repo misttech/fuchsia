@@ -8,7 +8,7 @@ mod fuchsia_map;
 mod processes_data;
 mod write_human_readable_output;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
 use ffx_config::global_env_context;
 use ffx_process_args::{Args, ProcessCommand, Task};
@@ -340,63 +340,62 @@ mod tests {
     use futures::AsyncWriteExt;
     use target_holders::fake_proxy;
 
-    lazy_static::lazy_static! {
-    static ref EXPECTED_PROCESSES_DATA: raw::ProcessesData = raw::ProcessesData{
-        processes: vec![
-            raw::Process {
-                koid: 1,
-                name: "process1".to_string(),
-                objects: vec![
-                    raw::KernelObject {
-                        object_type: 4,
-                        koid: 78,
-                        related_koid: 79,
-                        peer_owner_koid: 2,
-                    },
-                    raw::KernelObject {
-                        object_type: 4,
-                        koid: 52,
-                        related_koid: 53,
-                        peer_owner_koid: 0,
-                    },
-                    raw::KernelObject {
-                        object_type: 17,
-                        koid: 36,
-                        related_koid: 0,
-                        peer_owner_koid: 0,
-                    },
-                ],
-            },
-            raw::Process {
-                koid: 2,
-                name: "process2".to_string(),
-                objects: vec![
-                    raw::KernelObject {
-                        object_type: 19,
-                        koid: 28,
-                        related_koid: 0,
-                        peer_owner_koid: 0,
-                    },
-                    raw::KernelObject {
-                        object_type: 14,
-                        koid: 95,
-                        related_koid: 96,
-                        peer_owner_koid: 0,
-                    },
-                    raw::KernelObject {
-                        object_type: 4,
-                        koid: 79,
-                        related_koid: 78,
-                        peer_owner_koid: 1,
-                    },
-                ],
-            },
-        ],
-    };
-
-    static ref DATA_WRITTEN_BY_PROCESS_EXPLORER: Vec<u8> = serde_json::to_vec(&*EXPECTED_PROCESSES_DATA).unwrap();
-
-    }
+    use std::sync::LazyLock;
+    static EXPECTED_PROCESSES_DATA: LazyLock<raw::ProcessesData> =
+        LazyLock::new(|| raw::ProcessesData {
+            processes: vec![
+                raw::Process {
+                    koid: 1,
+                    name: "process1".to_string(),
+                    objects: vec![
+                        raw::KernelObject {
+                            object_type: 4,
+                            koid: 78,
+                            related_koid: 79,
+                            peer_owner_koid: 2,
+                        },
+                        raw::KernelObject {
+                            object_type: 4,
+                            koid: 52,
+                            related_koid: 53,
+                            peer_owner_koid: 0,
+                        },
+                        raw::KernelObject {
+                            object_type: 17,
+                            koid: 36,
+                            related_koid: 0,
+                            peer_owner_koid: 0,
+                        },
+                    ],
+                },
+                raw::Process {
+                    koid: 2,
+                    name: "process2".to_string(),
+                    objects: vec![
+                        raw::KernelObject {
+                            object_type: 19,
+                            koid: 28,
+                            related_koid: 0,
+                            peer_owner_koid: 0,
+                        },
+                        raw::KernelObject {
+                            object_type: 14,
+                            koid: 95,
+                            related_koid: 96,
+                            peer_owner_koid: 0,
+                        },
+                        raw::KernelObject {
+                            object_type: 4,
+                            koid: 79,
+                            related_koid: 78,
+                            peer_owner_koid: 1,
+                        },
+                    ],
+                },
+            ],
+        });
+    static DATA_WRITTEN_BY_PROCESS_EXPLORER: LazyLock<Vec<u8>> =
+        LazyLock::new(|| serde_json::to_vec(&*EXPECTED_PROCESSES_DATA).unwrap());
 
     use fidl_fuchsia_process_explorer::QueryRequest;
 

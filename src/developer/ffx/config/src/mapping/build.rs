@@ -4,19 +4,17 @@
 
 use std::path::Path;
 
-use crate::mapping::{postprocess, preprocess, replace_regex};
 use crate::EnvironmentContext;
-use lazy_static::lazy_static;
+use crate::mapping::{postprocess, preprocess, replace_regex};
 use regex::Regex;
 use serde_json::Value;
+use std::sync::LazyLock;
 
 /// Replaces `$BUILD_DIR` with the path to the current environment context's
 /// build directory. If there's no build directory set in the current context,
 /// the value will be skipped.
 pub(crate) fn build(ctx: &EnvironmentContext, value: Value) -> Option<Value> {
-    lazy_static! {
-        static ref REGEX: Regex = Regex::new(r"\$(BUILD_DIR)").unwrap();
-    }
+    static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$(BUILD_DIR)").unwrap());
 
     let Some(s) = preprocess(&value) else { return Some(value) };
     let build_dir = ctx.build_dir().and_then(Path::to_str);

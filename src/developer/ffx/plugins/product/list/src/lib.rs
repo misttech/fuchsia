@@ -13,7 +13,6 @@ use ffx_product_list_args::ListCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool, bug, return_user_error};
 use gcs::gs_url::split_gs_url;
-use lazy_static::lazy_static;
 use maplit::hashmap;
 use omaha_client::version::Version;
 use pbms::{AuthFlowChoice, list_from_gcs, string_from_url};
@@ -22,24 +21,26 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Write, stderr, stdin, stdout};
 use std::str::FromStr;
+use std::sync::LazyLock;
 use structured_ui::{Notice, Presentation};
 
 const PB_MANIFEST_NAME: &'static str = "product_bundles.json";
 const CONFIG_BASE_URLS: &'static str = "pbms.base_urls";
 
-lazy_static! {
-    static ref BRANCH_TO_PREFIX_MAPPING: HashMap<&'static str, &'static str> = hashmap! {
-        "f12" => "12.20230611.1",
-        "f13" => "13.20230724.3",
-        "f14" => "14.202308",
-        "f15" => "15.20231018.3",
-        "f16" => "16.20231130.3",
-        "f17" => "17.20240122.0",
-        "f18" => "18.20240225.3",
-        "f19" => "19.20240327.3",
-        "LATEST" => "20",
-    };
-}
+static BRANCH_TO_PREFIX_MAPPING: LazyLock<HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| {
+        hashmap! {
+            "f12" => "12.20230611.1",
+            "f13" => "13.20230724.3",
+            "f14" => "14.202308",
+            "f15" => "15.20231018.3",
+            "f16" => "16.20231130.3",
+            "f17" => "17.20240122.0",
+            "f18" => "18.20240225.3",
+            "f19" => "19.20240327.3",
+            "LATEST" => "20",
+        }
+    });
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct ProductBundle {

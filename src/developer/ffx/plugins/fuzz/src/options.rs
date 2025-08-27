@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{Error, Result, anyhow, bail};
 use fidl_fuchsia_fuzzer as fuzz;
 use fuchsia_fuzzctl::constants::*;
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
 /// Names of allowable fuzzer options corresponding to `fuchsia.fuzzer.Options`.
 pub const NAMES: &[&str] = &[
@@ -214,15 +214,20 @@ fn format_duration(nanos: Option<i64>) -> String {
 }
 
 fn parse_duration(value: &str) -> Result<i64> {
-    lazy_static! {
-        static ref NANOS_RE: Regex = Regex::new("^(\\d+(?:\\.\\d+)?)ns$").unwrap();
-        static ref MICROS_RE: Regex = Regex::new("^(\\d+(?:\\.\\d+)?)us$").unwrap();
-        static ref MILLIS_RE: Regex = Regex::new("^(\\d+(?:\\.\\d+)?)ms$").unwrap();
-        static ref SECONDS_RE: Regex = Regex::new("^(\\d+(?:\\.\\d+)?)s?$").unwrap();
-        static ref MINUTES_RE: Regex = Regex::new("^(\\d+(?:\\.\\d+)?)m$").unwrap();
-        static ref HOURS_RE: Regex = Regex::new("^(\\d+(?:\\.\\d+)?)h$").unwrap();
-        static ref DAYS_RE: Regex = Regex::new("^(\\d+(?:\\.\\d+)?)d$").unwrap();
-    }
+    static NANOS_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new("^(\\d+(?:\\.\\d+)?)ns$").unwrap());
+    static MICROS_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new("^(\\d+(?:\\.\\d+)?)us$").unwrap());
+    static MILLIS_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new("^(\\d+(?:\\.\\d+)?)ms$").unwrap());
+    static SECONDS_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new("^(\\d+(?:\\.\\d+)?)s?$").unwrap());
+    static MINUTES_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new("^(\\d+(?:\\.\\d+)?)m$").unwrap());
+    static HOURS_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new("^(\\d+(?:\\.\\d+)?)h$").unwrap());
+    static DAYS_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new("^(\\d+(?:\\.\\d+)?)d$").unwrap());
     let value = strip_quotes(value);
     if let Some(captures) = NANOS_RE.captures(&value) {
         let ns = captures[1].parse::<f64>().map_err(Error::msg)?;
@@ -266,12 +271,12 @@ fn format_size(bytes: Option<u64>) -> String {
 }
 
 fn parse_size(value: &str) -> Result<u64> {
-    lazy_static! {
-        static ref B_RE: Regex = Regex::new("^(\\d+(\\.\\d+)?)b$").unwrap();
-        static ref KB_RE: Regex = Regex::new("^(\\d+(\\.\\d+)?)kb$").unwrap();
-        static ref MB_RE: Regex = Regex::new("^(\\d+(\\.\\d+)?)(mb)?$").unwrap();
-        static ref GB_RE: Regex = Regex::new("^(\\d+(\\.\\d+)?)gb$").unwrap();
-    }
+    static B_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new("^(\\d+(\\.\\d+)?)b$").unwrap());
+    static KB_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new("^(\\d+(\\.\\d+)?)kb$").unwrap());
+    static MB_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new("^(\\d+(\\.\\d+)?)(mb)?$").unwrap());
+    static GB_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new("^(\\d+(\\.\\d+)?)gb$").unwrap());
+
     let value = strip_quotes(value);
     if let Some(captures) = B_RE.captures(&value) {
         let b = captures[1].parse::<f64>().map_err(Error::msg)?;

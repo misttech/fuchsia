@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mapping::{postprocess, preprocess, replace_regex};
 use crate::EnvironmentContext;
-use lazy_static::lazy_static;
+use crate::mapping::{postprocess, preprocess, replace_regex};
 use regex::Regex;
 use serde_json::Value;
 use std::path::Path;
+use std::sync::LazyLock;
 
 fn find_workspace_root(mut current: &Path) -> Option<&Path> {
     loop {
@@ -23,9 +23,8 @@ fn find_workspace_root(mut current: &Path) -> Option<&Path> {
 /// with a WORKSPACE or WORKSPACE.bazel file in it. If it doesn't find one,
 /// this value will be skipped.
 pub(crate) fn workspace(ctx: &EnvironmentContext, value: Value) -> Option<Value> {
-    lazy_static! {
-        static ref REGEX: Regex = Regex::new(r"\$(FIND_WORKSPACE_ROOT)").unwrap();
-    }
+    static REGEX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\$(FIND_WORKSPACE_ROOT)").unwrap());
 
     let Some(s) = preprocess(&value).filter(|s| REGEX.is_match(s)) else { return Some(value) };
     let workspace_root = find_workspace_root(ctx.project_root()?).and_then(Path::to_str)?;
@@ -38,7 +37,7 @@ pub(crate) fn workspace(ctx: &EnvironmentContext, value: Value) -> Option<Value>
 mod test {
     use std::fs::File;
 
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
 
     use crate::environment::ExecutableKind;
     use ffx_config_domain::ConfigDomain;

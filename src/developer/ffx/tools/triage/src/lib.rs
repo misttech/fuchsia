@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use errors::FfxError;
 use ffx_writer::{MachineWriter, ToolIO as _};
-use fho::{deferred, AvailabilityFlag, Deferred, FfxMain, FfxTool};
+use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, deferred};
 use fidl_fuchsia_feedback::DataProviderProxy;
 use fuchsia_triage::{
-    analyze, analyze_structured, ActionResultFormatter, ActionTagDirective, TriageOutput,
+    ActionResultFormatter, ActionTagDirective, TriageOutput, analyze, analyze_structured,
 };
 use std::env;
 use std::io::Write;
@@ -138,10 +138,10 @@ mod tests {
     use super::*;
     use ffx_writer::{Format, TestBuffers};
     use fidl_fuchsia_feedback::{DataProviderRequest, Snapshot};
-    use lazy_static::lazy_static;
     use std::collections::HashMap;
     use std::fs;
     use std::path::Path;
+    use std::sync::LazyLock;
     use target_holders::fake_proxy;
 
     macro_rules! test_file {
@@ -171,8 +171,8 @@ mod tests {
         };
     }
 
-    lazy_static! {
-        static ref TEST_DATA_MAP: HashMap<&'static str, &'static str> = test_data!{
+    static TEST_DATA_MAP: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+        test_data! {
             // Test config files
             configs:
                 "annotation_tests.triage", "error_rate.triage", "log_tests.triage",
@@ -182,8 +182,8 @@ mod tests {
             // Test snapshot files
             snapshots:
                 "inspect.json", "annotations.json"
-        };
-    }
+        }
+    });
 
     fn setup_fake_data_provider_server() -> DataProviderProxy {
         fake_proxy(move |req| match req {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use async_lock::Mutex;
 use async_trait::async_trait;
 use fidl_fuchsia_developer_ffx as ffx;
@@ -10,7 +10,7 @@ use fidl_fuchsia_net::{IpAddress, Ipv4Address, Ipv6Address};
 use fuchsia_async::{Task, Timer};
 use futures::FutureExt;
 use mdns::protocol as dns;
-use netext::{get_mcast_interfaces, IsLocalAddr};
+use netext::{IsLocalAddr, get_mcast_interfaces};
 use packet::{InnerPacketBuilder, ParseBuffer};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::unix::prelude::AsRawFd;
 use std::rc::{Rc, Weak};
+use std::sync::LazyLock;
 use std::time::Duration;
 use timeout::timeout;
 use tokio::net::UdpSocket;
@@ -426,7 +427,9 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
                     let rcv_task =
                         Task::local(recv_loop(sock, mdns_protocol.clone(), checker.clone()));
                     if recv_ipv4_task.is_some() {
-                        log::warn!("the IpV4 listen socket was none but we had a task receiving data on it. Replacing the old task")
+                        log::warn!(
+                            "the IpV4 listen socket was none but we had a task receiving data on it. Replacing the old task"
+                        )
                     }
                     recv_ipv4_task.replace(rcv_task);
                     should_log_v4_listen_error = true;
@@ -453,7 +456,9 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
                     let rcv_task =
                         Task::local(recv_loop(sock, mdns_protocol.clone(), checker.clone()));
                     if recv_ipv6_task.is_some() {
-                        log::warn!("the IpV6 listen socket was none but we had a task receiving data on it. Replacing the old task")
+                        log::warn!(
+                            "the IpV6 listen socket was none but we had a task receiving data on it. Replacing the old task"
+                        )
                     }
                     recv_ipv6_task.replace(rcv_task);
                     should_log_v6_listen_error = true;
@@ -746,7 +751,11 @@ async fn recv_loop(
         // contains address information about user mode networking being used by an emulator
         // instance.
         if !contains_source_address(&addr, &msg) && !contains_txt_response(&msg) {
-            log::debug!("Socket: {:#?} skipping message as it does not contain source address {} or does not contain txt resposne", sock, addr);
+            log::debug!(
+                "Socket: {:#?} skipping message as it does not contain source address {} or does not contain txt resposne",
+                sock,
+                addr
+            );
             continue;
         }
 
@@ -783,13 +792,9 @@ fn construct_query_buf(service: &str) -> Box<[u8]> {
     buf.into_boxed_slice()
 }
 
-lazy_static::lazy_static! {
-    static ref QUERY_BUF: [Box<[u8]>; 2] =
-    [
-        (construct_query_buf("_fuchsia._udp.local")),
-        (construct_query_buf("_fastboot._tcp.local")),
-    ];
-}
+static QUERY_BUF: LazyLock<[Box<[u8]>; 2]> = LazyLock::new(|| {
+    [(construct_query_buf("_fuchsia._udp.local")), (construct_query_buf("_fastboot._tcp.local"))]
+});
 
 // query_loop broadcasts an mdns query on sock every interval.
 async fn query_loop(sock: Rc<UdpSocket>, interval: Duration, mdns_port: u16) {

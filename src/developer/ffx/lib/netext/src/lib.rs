@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use futures::Stream;
 use itertools::Itertools;
-use nix::ifaddrs::{getifaddrs, InterfaceAddress};
+use nix::ifaddrs::{InterfaceAddress, getifaddrs};
 use nix::net::if_::InterfaceFlags;
 use nix::sys::socket::{SockaddrLike, SockaddrStorage};
 use regex::Regex;
@@ -16,7 +16,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::task::{Context, Poll};
 use tokio::net::{TcpListener, TcpStream, UnixListener, UnixStream};
 
@@ -459,11 +459,7 @@ pub fn name_to_scope_id(name: &str) -> u32 {
 fn name_to_scope_id_checked(name: &str) -> Result<u32> {
     let s = CString::new(name)?;
     let idx = unsafe { libc::if_nametoindex(s.as_ptr()) };
-    if idx == 0 {
-        bail!("'{name}' is not a valid network interface name.")
-    } else {
-        Ok(idx)
-    }
+    if idx == 0 { bail!("'{name}' is not a valid network interface name.") } else { Ok(idx) }
 }
 
 /// Takes a string and attempts to parse it into the relevant parts of an address.
@@ -498,11 +494,13 @@ fn name_to_scope_id_checked(name: &str) -> Result<u32> {
 ///
 /// The returned scope could also be a stringified integer, and should be verified.
 pub fn parse_address_parts(addr_str: &str) -> Result<(IpAddr, Option<&str>, Option<u16>)> {
-    lazy_static::lazy_static! {
-        static ref V6_BRACKET: Regex = Regex::new(r"^\[([^\]]+?[:]{1,2}[^\]]+)\](:\d+)?$").unwrap();
-        static ref V4_PORT: Regex = Regex::new(r"^(\d+\.\d+\.\d+\.\d+)(:\d+)?$").unwrap();
-        static ref WITH_SCOPE: Regex = Regex::new(r"^([^%]+)%([^%/ ]+)$").unwrap();
-    }
+    static V6_BRACKET: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^\[([^\]]+?[:]{1,2}[^\]]+)\](:\d+)?$").unwrap());
+    static V4_PORT: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^(\d+\.\d+\.\d+\.\d+)(:\d+)?$").unwrap());
+    static WITH_SCOPE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^([^%]+)%([^%/ ]+)$").unwrap());
+
     let (addr, port) =
         if let Some(caps) = V6_BRACKET.captures(addr_str).or_else(|| V4_PORT.captures(addr_str)) {
             (caps.get(1).map(|x| x.as_str()).unwrap(), caps.get(2).map(|x| x.as_str()))
@@ -651,16 +649,20 @@ mod tests {
             }
             assert!(interfaces.iter().find(|iface| iface.name == exiface.interface_name).is_some());
             if let Some(exaddr) = exiface.address {
-                assert!(interfaces
-                    .iter()
-                    .find(|iface| {
-                        iface
-                            .addrs
-                            .iter()
-                            .find(|addr| **addr == sockaddr_storage_to_socket_addr(exaddr).unwrap())
-                            .is_some()
-                    })
-                    .is_some());
+                assert!(
+                    interfaces
+                        .iter()
+                        .find(|iface| {
+                            iface
+                                .addrs
+                                .iter()
+                                .find(|addr| {
+                                    **addr == sockaddr_storage_to_socket_addr(exaddr).unwrap()
+                                })
+                                .is_some()
+                        })
+                        .is_some()
+                );
             }
         }
     }

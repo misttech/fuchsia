@@ -5,12 +5,12 @@
 use anyhow::{Context as _, Result};
 use log::LevelFilter;
 use logging::{FfxLog, FfxLogSink, Filter, FormatOpts, LogSinkTrait, TargetsFilter, TestWriter};
-use std::fs::{create_dir_all, remove_file, rename, File, OpenOptions};
+use std::fs::{File, OpenOptions, create_dir_all, remove_file, rename};
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLock};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, RwLock};
 
 use crate::EnvironmentContext;
 
@@ -72,9 +72,7 @@ pub const LOG_BASENAME: &str = "ffx";
 
 static LOG_ENABLED_FLAG: AtomicBool = AtomicBool::new(true);
 
-lazy_static::lazy_static! {
-    pub static ref LOGGING_ID: u64 = generate_id();
-}
+pub static LOGGING_ID: LazyLock<u64> = LazyLock::new(generate_id);
 
 pub fn disable_stdio_logging() {
     LOG_ENABLED_FLAG.store(false, Ordering::Relaxed);

@@ -209,46 +209,50 @@ mod tests {
     use futures::AsyncWriteExt;
     use target_holders::fake_proxy;
 
-    lazy_static::lazy_static! {
-        static ref EXPECTED_CAPTURE: raw::Capture = raw::Capture{
-            time: 0,
-            kernel: raw::Kernel{
-                total: 0,
-                free: 0,
-                wired: 0,
-                total_heap: 0,
-                free_heap: 0,
-                vmo: 0,
-                vmo_pager_total: 0,
-                vmo_pager_newest: 0,
-                vmo_pager_oldest: 0,
-                vmo_discardable_locked: 0,
-                vmo_discardable_unlocked: 0,
-                mmu: 0,
-                ipc: 0,
-                other: 0,
-                zram_compressed_total: None,
-                zram_fragmentation: None,
-                zram_uncompressed: None
-            },
-            kmem_stats_compression: Default::default(),
-            processes: vec![
-                raw::Process::Headers(raw::ProcessHeaders::default()),
-                raw::Process::Data(raw::ProcessData{koid: 2, name: "process1".to_string(), vmos: vec![1, 2, 3]}),
-                raw::Process::Data(raw::ProcessData{koid: 3, name: "process2".to_string(), vmos: vec![2, 3, 4]}),
-            ],
-            vmo_names: vec!["name1".to_string(), "name2".to_string()],
-            vmos: vec![],
-        };
-
-        static ref EXPECTED_OUTPUT: raw::MemoryMonitorOutput = raw::MemoryMonitorOutput{
-            capture: EXPECTED_CAPTURE.clone(),
-            buckets_definitions: vec![]
-        };
-
-        static ref DATA_WRITTEN_BY_MEMORY_MONITOR: Vec<u8> = serde_json::to_vec(&*EXPECTED_OUTPUT).unwrap();
-
-    }
+    use std::sync::LazyLock;
+    static EXPECTED_CAPTURE: LazyLock<raw::Capture> = LazyLock::new(|| raw::Capture {
+        time: 0,
+        kernel: raw::Kernel {
+            total: 0,
+            free: 0,
+            wired: 0,
+            total_heap: 0,
+            free_heap: 0,
+            vmo: 0,
+            vmo_pager_total: 0,
+            vmo_pager_newest: 0,
+            vmo_pager_oldest: 0,
+            vmo_discardable_locked: 0,
+            vmo_discardable_unlocked: 0,
+            mmu: 0,
+            ipc: 0,
+            other: 0,
+            zram_compressed_total: None,
+            zram_fragmentation: None,
+            zram_uncompressed: None,
+        },
+        kmem_stats_compression: Default::default(),
+        processes: vec![
+            raw::Process::Headers(raw::ProcessHeaders::default()),
+            raw::Process::Data(raw::ProcessData {
+                koid: 2,
+                name: "process1".to_string(),
+                vmos: vec![1, 2, 3],
+            }),
+            raw::Process::Data(raw::ProcessData {
+                koid: 3,
+                name: "process2".to_string(),
+                vmos: vec![2, 3, 4],
+            }),
+        ],
+        vmo_names: vec!["name1".to_string(), "name2".to_string()],
+        vmos: vec![],
+    });
+    static EXPECTED_OUTPUT: LazyLock<raw::MemoryMonitorOutput> = LazyLock::new(|| {
+        raw::MemoryMonitorOutput { capture: EXPECTED_CAPTURE.clone(), buckets_definitions: vec![] }
+    });
+    static DATA_WRITTEN_BY_MEMORY_MONITOR: LazyLock<Vec<u8>> =
+        LazyLock::new(|| serde_json::to_vec(&*EXPECTED_OUTPUT).unwrap());
 
     fn create_fake_collector_proxy() -> CollectorProxy {
         fake_proxy(move |req| match req {

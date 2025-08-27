@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mapping::{postprocess, preprocess, replace_regex as replace};
 use crate::EnvironmentContext;
+use crate::mapping::{postprocess, preprocess, replace_regex as replace};
 use anyhow::anyhow;
-use lazy_static::lazy_static;
 use regex::Regex;
 use serde_json::Value;
+use std::sync::LazyLock;
 
 // Succeeds if every environment variable ("$ENV") exists -- including
 // zero env variables. If there are any mentioned that _don't_ exist, then
@@ -29,9 +29,7 @@ fn check(ctx: &EnvironmentContext, value: &String, regex: &Regex) -> bool {
     true
 }
 
-lazy_static! {
-    static ref REGEX: Regex = Regex::new(r"\$([A-Z][A-Z0-9_]*)").unwrap();
-}
+static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$([A-Z][A-Z0-9_]*)").unwrap());
 
 /// Replaces an env var (if it is one) with `Some(v)`, else `None`. Not to be confused with
 /// `env_var` which can return `Some(v)` even if something has not been replaced by an env
@@ -79,8 +77,8 @@ pub fn env_var_strict(value: Value) -> Option<Value> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::environment::ExecutableKind;
     use crate::ConfigMap;
+    use crate::environment::ExecutableKind;
 
     #[test]
     fn test_env_var_mapper() {

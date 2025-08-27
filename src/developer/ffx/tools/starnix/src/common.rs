@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use component_debug::cli;
 use fidl_fuchsia_developer_remotecontrol as rc;
 use fidl_fuchsia_starnix_container::{ControllerMarker, ControllerProxy};
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 use target_connector::Connector;
 use target_holders::RemoteControlProxyHolder;
 
@@ -15,12 +15,10 @@ const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Returns the moniker for the container in the session, if there is one.
 async fn find_session_container(rcs_proxy: &rc::RemoteControlProxy) -> Result<String> {
-    lazy_static! {
-        // Example: core/session-manager/session:session/elements:5udqa81zlypamvgu/container
-        static ref SESSION_CONTAINER: Regex =
-            Regex::new(r"^core/session-manager/session:session/elements:\w+/container$")
-                .unwrap();
-    }
+    // Example: core/session-manager/session:session/elements:5udqa81zlypamvgu/container
+    static SESSION_CONTAINER: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^core/session-manager/session:session/elements:\w+/container$").unwrap()
+    });
 
     let query_proxy =
         rcs::root_realm_query(&rcs_proxy, TIMEOUT).await.context("opening realm query")?;

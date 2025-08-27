@@ -6,32 +6,36 @@ use crate::check::PreflightCheckResult::*;
 use crate::check::{PreflightCheck, PreflightCheckResult};
 use crate::command_runner::CommandRunner;
 use crate::config::*;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
-lazy_static! {
-    // Regex to extract video cards on Linux. Matches output strings from `lspci` like:
-    // 18:00.0 VGA compatible controller: NVIDIA Corporation GP107GL [Quadro P1000] (rev a1)
-    static ref LINUX_GRAPHICS_CARDS_RE: Regex = Regex::new("(?m)^..:.... VGA compatible controller: (.+)$").unwrap();
+// Regex to extract video cards on Linux. Matches output strings from `lspci` like:
+// 18:00.0 VGA compatible controller: NVIDIA Corporation GP107GL [Quadro P1000] (rev a1)
+static LINUX_GRAPHICS_CARDS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("(?m)^..:.... VGA compatible controller: (.+)$").unwrap());
 
-    // Regex to match the supported video cards on Linux. Includes:
-    // * NVIDIA Corporation Quadro-based cards
-    // * Vulkan capable Intel graphics cards
-    static ref LINUX_SUPPORTED_CARDS_RE: Regex = Regex::new(r"^(?:Intel .*(?:HD|UHD|Iris|Iris Pro|Iris Plus) Graphics P?\d{3} .*|Intel .*Iris Xe Graphics.*|NVIDIA.+Quadro.+)$").unwrap();
+// Regex to match the supported video cards on Linux. Includes:
+// * NVIDIA Corporation Quadro-based cards
+// * Vulkan capable Intel graphics cards
+static LINUX_SUPPORTED_CARDS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:Intel .*(?:HD|UHD|Iris|Iris Pro|Iris Plus) Graphics P?\d{3} .*|Intel .*Iris Xe Graphics.*|NVIDIA.+Quadro.+)$")
+        .unwrap()
+});
 
-    // Regex to extract graphics cards on MacOS. Matches output strings from `system_profiler` like:
-    // Chipset Model: Intel UHD Graphics 630
-    // Chipset Model: Radeon Pro 555X
-    static ref MACOS_GRAPHICS_CARDS_RE: Regex = Regex::new(r"(?m)^\s+Chipset Model: (.+)$").unwrap();
+// Regex to extract graphics cards on MacOS. Matches output strings from `system_profiler` like:
+// Chipset Model: Intel UHD Graphics 630
+// Chipset Model: Radeon Pro 555X
+static MACOS_GRAPHICS_CARDS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s+Chipset Model: (.+)$").unwrap());
 
-    // Regex to match supported graphics cards on MacOS. Examples:
-    // Intel UHD Graphics 630
-    // Intel Iris Plus Graphics 655
-    // Radeon Pro 555X
-    static ref MACOS_SUPPORTED_CARDS_RE: Regex = Regex::new(r"^(?:Intel (?:U?HD|Iris)|Radeon Pro).+$").unwrap();
-}
+// Regex to match supported graphics cards on MacOS. Examples:
+// Intel UHD Graphics 630
+// Intel Iris Plus Graphics 655
+// Radeon Pro 555X
+static MACOS_SUPPORTED_CARDS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:Intel (?:U?HD|Iris)|Radeon Pro).+$").unwrap());
 
 static NVIDIA_REQ_DRIVER_VERSION: (u32, u32) = (440, 100);
 
@@ -72,11 +76,11 @@ pub fn macos_find_graphics_cards(command_runner: &CommandRunner) -> Result<Vec<S
         (command_runner)(&vec!["system_profiler", "SPDisplaysDataType"])?;
     if !status.success() {
         return Err(anyhow!(
-                "Could not exec `system_profiler SPDisplaysDataType`: exited with code {}, stdout: {}, stderr: {}",
-                status.code(),
-                stdout,
-                stderr
-            ));
+            "Could not exec `system_profiler SPDisplaysDataType`: exited with code {}, stdout: {}, stderr: {}",
+            status.code(),
+            stdout,
+            stderr
+        ));
     }
 
     Ok(MACOS_GRAPHICS_CARDS_RE
@@ -139,8 +143,13 @@ impl<'a> FemuGraphics<'a> {
                     if driver_version >= NVIDIA_REQ_DRIVER_VERSION {
                         Success(format!("Found supported graphics hardware: {}", cards.join(", ")))
                     } else {
-                        Warning(format!("Found supported graphics hardware but nVidia driver version {}.{} is older than required version {}.{}. Download the required version at https://www.nvidia.com/download/driverResults.aspx/160175",
-                            driver_version.0, driver_version.1, NVIDIA_REQ_DRIVER_VERSION.0, NVIDIA_REQ_DRIVER_VERSION.1))
+                        Warning(format!(
+                            "Found supported graphics hardware but nVidia driver version {}.{} is older than required version {}.{}. Download the required version at https://www.nvidia.com/download/driverResults.aspx/160175",
+                            driver_version.0,
+                            driver_version.1,
+                            NVIDIA_REQ_DRIVER_VERSION.0,
+                            NVIDIA_REQ_DRIVER_VERSION.1
+                        ))
                     }
                 }
                 Err(e) => Warning(format!(

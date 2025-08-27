@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mapping::replace;
 use crate::EnvironmentContext;
-use lazy_static::lazy_static;
+use crate::mapping::replace;
 use regex::Regex;
 use serde_json::Value;
+use std::sync::LazyLock;
 
 pub(crate) fn runtime(ctx: &EnvironmentContext, value: Value) -> Option<Value> {
-    lazy_static! {
-        static ref REGEX: Regex = Regex::new(r"\$(RUNTIME)").unwrap();
-    }
+    static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$(RUNTIME)").unwrap());
 
     replace(&*REGEX, || ctx.get_runtime_path(), value)
 }
@@ -21,8 +19,8 @@ pub(crate) fn runtime(ctx: &EnvironmentContext, value: Value) -> Option<Value> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::environment::ExecutableKind;
     use crate::ConfigMap;
+    use crate::environment::ExecutableKind;
 
     #[test]
     fn test_mapper() {
