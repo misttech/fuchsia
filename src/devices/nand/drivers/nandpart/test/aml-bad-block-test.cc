@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "aml-bad-block.h"
+#include "src/devices/nand/drivers/nandpart/aml-bad-block.h"
 
 #include <fuchsia/hardware/nand/c/banjo.h>
+#include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/vmar.h>
 #include <zircon/types.h>
@@ -16,9 +17,11 @@
 #include <fbl/intrusive_hash_table.h>
 #include <fbl/intrusive_single_list.h>
 #include <fbl/vector.h>
-#include <zxtest/zxtest.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
-#include "bad-block.h"
+#include "src/devices/nand/drivers/nandpart/bad-block.h"
+#include "src/lib/testing/predicates/status.h"
 
 namespace nand {
 namespace {
@@ -51,7 +54,7 @@ class TableNode : public fbl::SinglyLinkedListable<std::unique_ptr<TableNode>> {
   uint16_t generation_;
   fbl::Vector<uint32_t> bad_blocks_;
 
-  TableNode(NandPage id, bool valid = true, uint16_t generation = count_++)
+  explicit TableNode(NandPage id, bool valid = true, uint16_t generation = count_++)
       : id_(id), valid_(valid), generation_(generation) {}
 
   TableNode(NandPage id, fbl::Vector<uint32_t> bad_blocks, bool valid = true,
@@ -207,7 +210,12 @@ BadBlock::Config MakeBadBlockConfig(Context* ctx) {
   };
 }
 
-TEST(AmlBadBlockTest, GetBadBlockListTest) {
+class AmlBadBlockTest : public ::testing::Test {
+ private:
+  fdf_testing::ScopedGlobalLogger logger_{FUCHSIA_LOG_INFO};
+};
+
+TEST_F(AmlBadBlockTest, GetBadBlockListTest) {
   TableNode::ResetCount();
   TableEntries table_entries;
   table_entries.insert_or_replace(std::make_unique<TableNode>(0));
@@ -224,7 +232,7 @@ TEST(AmlBadBlockTest, GetBadBlockListTest) {
   EXPECT_EQ(bad_blocks.value().size(), 0u);
 }
 
-TEST(AmlBadBlockTest, GetBadBlockListWithEntriesTest) {
+TEST_F(AmlBadBlockTest, GetBadBlockListWithEntriesTest) {
   TableNode::ResetCount();
   TableEntries table_entries;
   table_entries.insert_or_replace(std::make_unique<TableNode>(0));
@@ -238,21 +246,18 @@ TEST(AmlBadBlockTest, GetBadBlockListWithEntriesTest) {
   ASSERT_OK(bad_block);
 
   auto check_expected = [&bad_block](uint32_t start_block, uint32_t end_block,
-                                     fbl::Vector<uint32_t> expected) {
+                                     std::span<const uint32_t> expected) {
     zx::result bad_blocks = bad_block->GetBadBlockList(start_block, end_block);
     ASSERT_OK(bad_blocks);
-    ASSERT_EQ(bad_blocks->size(), expected.size());
-    EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(bad_blocks->data()),
-                    reinterpret_cast<uint8_t*>(expected.data()), expected.size() * sizeof(uint32_t),
-                    "");
+    ASSERT_THAT(bad_blocks.value(), ::testing::ElementsAreArray(expected));
   };
-  ASSERT_NO_FATAL_FAILURE(check_expected(4, 10, {4, 8}));
-  ASSERT_NO_FATAL_FAILURE(check_expected(5, 10, {8}));
-  ASSERT_NO_FATAL_FAILURE(check_expected(4, 7, {4}));
+  ASSERT_NO_FATAL_FAILURE(check_expected(4, 10, std::array<uint32_t, 2>{4, 8}));
+  ASSERT_NO_FATAL_FAILURE(check_expected(5, 10, std::array<uint32_t, 1>{8}));
+  ASSERT_NO_FATAL_FAILURE(check_expected(4, 7, std::array<uint32_t, 1>{4}));
   ASSERT_NO_FATAL_FAILURE(check_expected(9, 11, {}));
 }
 
-TEST(AmlBadBlockTest, FindBadBlockSecondBlockTest) {
+TEST_F(AmlBadBlockTest, FindBadBlockSecondBlockTest) {
   TableNode::ResetCount();
   TableEntries table_entries;
   fbl::Vector<uint32_t> bad_blocks_1 = {4, 6};
@@ -275,7 +280,7 @@ TEST(AmlBadBlockTest, FindBadBlockSecondBlockTest) {
   ASSERT_EQ(bad_blocks.value().size(), 4u);
 }
 
-TEST(AmlBadBlockTest, FindBadBlockLastBlockTest) {
+TEST_F(AmlBadBlockTest, FindBadBlockLastBlockTest) {
   TableNode::ResetCount();
   TableEntries table_entries;
   fbl::Vector<uint32_t> bad_blocks_1 = {4, 6};
@@ -299,7 +304,7 @@ TEST(AmlBadBlockTest, FindBadBlockLastBlockTest) {
   ASSERT_EQ(bad_blocks.value().size(), 4u);
 }
 
-TEST(AmlBadBlockTest, MarkBlockBadTest) {
+TEST_F(AmlBadBlockTest, MarkBlockBadTest) {
   TableNode::ResetCount();
   TableEntries table_entries;
   table_entries.insert_or_replace(std::make_unique<TableNode>(0));
@@ -323,7 +328,7 @@ TEST(AmlBadBlockTest, MarkBlockBadTest) {
   ASSERT_TRUE(it != table_entries.end());
 }
 
-TEST(AmlBadBlockTest, FindBadBlockLastPageInvalidTest) {
+TEST_F(AmlBadBlockTest, FindBadBlockLastPageInvalidTest) {
   TableNode::ResetCount();
   TableEntries table_entries;
   fbl::Vector<uint32_t> bad_blocks_1 = {4, 6};
@@ -352,7 +357,7 @@ TEST(AmlBadBlockTest, FindBadBlockLastPageInvalidTest) {
   ASSERT_TRUE(it != table_entries.end());
 }
 
-TEST(AmlBadBlockTest, FindBadBlockNoValidTest) {
+TEST_F(AmlBadBlockTest, FindBadBlockNoValidTest) {
   TableNode::ResetCount();
   TableEntries table_entries;
   for (uint32_t block = 0; block < 4; block++) {
@@ -373,7 +378,7 @@ TEST(AmlBadBlockTest, FindBadBlockNoValidTest) {
   ASSERT_NE(status, ZX_OK);
 }
 
-TEST(AmlBadBlockTest, FindBadBlockBigHoleTest) {
+TEST_F(AmlBadBlockTest, FindBadBlockBigHoleTest) {
   TableNode::ResetCount();
   TableEntries table_entries;
   table_entries.insert_or_replace(std::make_unique<TableNode>(kPagesPerBlock * 3));
@@ -395,7 +400,7 @@ TEST(AmlBadBlockTest, FindBadBlockBigHoleTest) {
   ASSERT_EQ(bad_blocks.value().size(), 1u);
 }
 
-TEST(AmlBadBlockTest, MarkBlockBadFullBlockTest) {
+TEST_F(AmlBadBlockTest, MarkBlockBadFullBlockTest) {
   TableNode::ResetCount();
   TableEntries table_entries;
   for (uint32_t i = 0; i < kPagesPerBlock; i++) {
@@ -422,7 +427,7 @@ TEST(AmlBadBlockTest, MarkBlockBadFullBlockTest) {
   ASSERT_TRUE(it != table_entries.end());
 }
 
-TEST(AmlBadBlockTest, BootloaderQuirkTest) {
+TEST_F(AmlBadBlockTest, BootloaderQuirkTest) {
   TableNode::ResetCount();
   TableEntries table_entries;
   fbl::Vector<uint32_t> bad_blocks_1 = {8, 9, 10, 11, 12};

@@ -8,35 +8,33 @@
 #include <fuchsia/hardware/badblock/cpp/banjo.h>
 #include <fuchsia/hardware/nand/c/banjo.h>
 #include <fuchsia/hardware/nand/cpp/banjo.h>
-#include <lib/ddk/device.h>
+#include <lib/driver/compat/cpp/banjo_server.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <zircon/types.h>
-
-#include <utility>
-
-#include <ddktl/device.h>
-#include <fbl/array.h>
-#include <fbl/macros.h>
-#include <fbl/ref_ptr.h>
 
 #include "bad-block.h"
 
 namespace nand {
 
-class NandPartDevice;
-using DeviceType = ddk::Device<NandPartDevice, ddk::GetProtocolable>;
-
-class NandPartDevice : public DeviceType,
-                       public ddk::NandProtocol<NandPartDevice, ddk::base_protocol>,
+class NandPartDevice : public ddk::NandProtocol<NandPartDevice>,
                        public ddk::BadBlockProtocol<NandPartDevice> {
  public:
-  // Spawns device nodes based on parent node.
-  static zx_status_t Create(void* ctx, zx_device_t* parent);
+  explicit NandPartDevice(const nand_protocol_t& nand_proto, std::shared_ptr<BadBlock> bad_block,
+                          size_t parent_op_size, const nand_info_t& nand_info,
+                          uint32_t erase_block_start, std::string name)
+      : nand_proto_(nand_proto),
+        nand_(&nand_proto_),
+        parent_op_size_(parent_op_size),
+        nand_info_(nand_info),
+        erase_block_start_(erase_block_start),
+        bad_block_(std::move(bad_block)),
+        name_(std::move(name)) {}
 
-  zx_status_t Bind(const char* name, uint32_t copy_count);
-
-  // Device protocol implementation.
-  zx_status_t DdkGetProtocol(uint32_t proto_id, void* protocol);
-  void DdkRelease() { delete this; }
+  zx::result<> Init(uint32_t copy_count,
+                    fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
+                    const std::optional<std::string>& node_name,
+                    const std::shared_ptr<fdf::Namespace>& incoming,
+                    const std::shared_ptr<fdf::OutgoingDirectory>& outgoing);
 
   // nand protocol implementation.
   void NandQuery(nand_info_t* info_out, size_t* nand_op_size_out);
@@ -50,19 +48,6 @@ class NandPartDevice : public DeviceType,
   zx_status_t BadBlockMarkBlockBad(uint32_t block);
 
  private:
-  explicit NandPartDevice(zx_device_t* parent, const nand_protocol_t& nand_proto,
-                          std::shared_ptr<BadBlock> bad_block, size_t parent_op_size,
-                          const nand_info_t& nand_info, uint32_t erase_block_start)
-      : DeviceType(parent),
-        nand_proto_(nand_proto),
-        nand_(&nand_proto_),
-        parent_op_size_(parent_op_size),
-        nand_info_(nand_info),
-        erase_block_start_(erase_block_start),
-        bad_block_(std::move(bad_block)) {}
-
-  DISALLOW_COPY_ASSIGN_AND_MOVE(NandPartDevice);
-
   nand_protocol_t nand_proto_;
   ddk::NandProtocolClient nand_;
 
@@ -78,6 +63,28 @@ class NandPartDevice : public DeviceType,
   // Cached list of bad blocks for this partition. Lazily instantiated.
   std::vector<uint32_t> bad_blocks_;
   uint32_t extra_partition_copy_count_;
+
+  const std::string name_;
+
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
+
+  compat::BanjoServer nand_server_{ZX_PROTOCOL_NAND, this, &nand_protocol_ops_};
+  compat::BanjoServer bad_block_server_{ZX_PROTOCOL_BAD_BLOCK, this, &bad_block_protocol_ops_};
+  compat::SyncInitializedDeviceServer compat_server_;
+};
+
+class Driver : public fdf::DriverBase {
+ public:
+  static constexpr std::string_view kDriverName = "nandpart";
+
+  Driver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+
+  // fdf::DriverBase implementation.
+  zx::result<> Start() override;
+
+ private:
+  std::vector<std::unique_ptr<NandPartDevice>> devices_;
 };
 
 }  // namespace nand

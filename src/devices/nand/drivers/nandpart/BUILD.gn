@@ -26,28 +26,27 @@ source_set("common") {
     "nandpart.h",
   ]
   deps = [
-    "//sdk/banjo/fuchsia.hardware.badblock:fuchsia.hardware.badblock_banjo_cpp",
-    "//sdk/lib/stdcompat",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.nand:fuchsia.nand_cpp",
     "//src/devices/lib/dev-operation",
-    "//src/devices/lib/driver",
+    "//src/devices/lib/driver:driver_runtime",
+    "//src/lib/ddk:ddk_metadata",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
   ]
   public_deps = [
+    "//sdk/banjo/fuchsia.hardware.badblock:fuchsia.hardware.badblock_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.nand:fuchsia.hardware.nand_banjo_cpp",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
 }
 
 fuchsia_cc_driver("nandpart-driver") {
-  legacy = true
   output_name = "nandpart"
   configs += [
     "//build/config:all_source",
@@ -76,17 +75,20 @@ test("nandpart-test-bin") {
   output_name = "nandpart-test"
   sources = [
     "test/aml-bad-block-test.cc",
+    "test/nandpart-test.cc",
     "test/nandpart-utils-test.cc",
   ]
-  include_dirs = [ "." ]
   deps = [
     ":common",
+    "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/driver/testing/cpp:scoped_global_logger",
     "//sdk/lib/fdio",
-    "//src/devices/testing/no_ddk",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
+    "//third_party/googletest:gmock",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
-    "//zircon/system/ulib/zxtest",
   ]
 }
 
@@ -94,6 +96,9 @@ fuchsia_unittest_package("nandpart-test") {
   deps = [ ":nandpart-test-bin" ]
   test_specs = {
     environments = basic_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
   }
 }
 

@@ -4,7 +4,7 @@
 
 #include "nandpart-utils.h"
 
-#include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/stdcompat/bit.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zbi-format/partition.h>
@@ -21,7 +21,7 @@
 zx_status_t SanitizePartitionMap(fuchsia_boot_metadata::PartitionMap& pmap,
                                  const nand_info_t& nand_info) {
   if (!pmap.partitions().has_value() || pmap.partitions().value().empty()) {
-    zxlogf(ERROR, "Missing partitions");
+    fdf::error("Missing partitions");
     return ZX_ERR_INTERNAL;
   }
 
@@ -44,20 +44,20 @@ zx_status_t SanitizePartitionMap(fuchsia_boot_metadata::PartitionMap& pmap,
     const auto& left = partitions[i - 1];
     const auto& right = partitions[i];
     if (left.last_block() >= right.first_block()) {
-      zxlogf(ERROR, "Partition %s [%lu, %lu] overlaps partition %s [%lu, %lu]", left.name().c_str(),
-             left.first_block(), left.last_block(), right.name().c_str(), right.first_block(),
-             right.last_block());
+      fdf::error("Partition {} [{}, {}] overlaps partition {} [{}, {}]", left.name().c_str(),
+                 left.first_block(), left.last_block(), right.name().c_str(), right.first_block(),
+                 right.last_block());
       return ZX_ERR_INTERNAL;
     }
   }
 
   // 4) All partitions must start at an erase block boundary.
-  const size_t erase_block_size = nand_info.page_size * nand_info.pages_per_block;
+  const uint32_t erase_block_size = nand_info.page_size * nand_info.pages_per_block;
   ZX_DEBUG_ASSERT(cpp20::has_single_bit(erase_block_size));
   const int block_shift = ffs(static_cast<int>(erase_block_size)) - 1;
 
   if (!pmap.block_size().has_value()) {
-    zxlogf(ERROR, "Partition map missing block size");
+    fdf::error("Partition map missing block size");
     return ZX_ERR_INTERNAL;
   }
   auto block_size = pmap.block_size().value();
@@ -68,8 +68,7 @@ zx_status_t SanitizePartitionMap(fuchsia_boot_metadata::PartitionMap& pmap,
 
       if (fbl::round_down(first_byte_offset, erase_block_size) != first_byte_offset ||
           fbl::round_down(last_byte_offset, erase_block_size) != last_byte_offset) {
-        zxlogf(ERROR, "Partition %s size is not a multiple of erase_block_size",
-               part.name().c_str());
+        fdf::error("Partition {} size is not a multiple of erase_block_size", part.name().c_str());
         return ZX_ERR_INTERNAL;
       }
       part.first_block() = first_byte_offset >> block_shift;
