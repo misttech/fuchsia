@@ -34,6 +34,10 @@ class FvmDriverTest : public zxtest::Test {
 
   void StartFVM() { instance_->StartFvm(); }
 
+  void RestartFVMWithNewDiskSize(uint64_t block_size, uint64_t block_count) {
+    instance_->RestartFvmWithNewDiskSize(block_size, block_count);
+  }
+
   void CreateFVM(uint64_t block_size, uint64_t block_count, uint64_t slice_size) {
     instance_->CreateFvm(block_size, block_count, slice_size);
   }
@@ -217,11 +221,8 @@ TEST_F(FvmDriverTest, TestAbortDriverLoadSmallDevice) {
   ASSERT_FALSE(resp->is_ok());
   ASSERT_EQ(resp->error_value(), ZX_ERR_INTERNAL);
 
-  CreateRamdisk(kBlockSize, kFvmPartitionSize / kBlockSize);
-  fs_management::FvmInitWithSize(ramdisk_block_interface(), kFvmPartitionSize, kSliceSize);
-
-  // Make sure it starts successfully. This asserts on failures.
-  StartFVM();
+  // Resize the disk and make sure it starts successfully. This asserts on failures.
+  RestartFVMWithNewDiskSize(kBlockSize, kFvmPartitionSize / kBlockSize);
 }
 
 }  // namespace

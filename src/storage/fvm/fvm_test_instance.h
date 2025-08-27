@@ -81,6 +81,10 @@ class FvmInstance {
   // Rebinds or restarts the FVM instance.
   virtual void RestartFvm() = 0;
 
+  // Create a new ramdisk with a new total size. The block size must be the same as the existing
+  // block size. This will start the disk and the fvm after recreating the disk.
+  virtual void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) = 0;
+
   // Get general info about fvm.
   virtual fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() const = 0;
 
@@ -107,6 +111,7 @@ class DriverFvmInstance : public FvmInstance {
   void CreateFvm(uint64_t block_size, uint64_t block_count, uint64_t slice_size) override;
   void StartFvm() override;
   void RestartFvm() override;
+  void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) override;
   fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() const override;
   zx::result<std::unique_ptr<BlockConnector>> AllocatePartition(
       const AllocatePartitionRequest& request) const override;
@@ -126,6 +131,7 @@ class DriverFvmInstance : public FvmInstance {
   std::unique_ptr<component_testing::RealmRoot> realm_;
   fbl::unique_fd devfs_root_;
   ramdisk_client_t* ramdisk_ = nullptr;
+  zx::vmo vmo_;
 };
 
 std::unique_ptr<FvmInstance> CreateFvmInstance(FvmImplementation impl);

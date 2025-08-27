@@ -14,7 +14,8 @@
 #include <zxtest/zxtest.h>
 
 #include "src/storage/fvm/format.h"
-#include "src/storage/fvm/test_support.h"
+#include "src/storage/fvm/fvm_test_instance.h"
+#include "src/storage/lib/block_client/cpp/remote_block_device.h"
 
 namespace fvm {
 namespace {
@@ -27,210 +28,260 @@ constexpr uint64_t kDataSizeInBlocks = 10;
 constexpr uint64_t kDataSize = kTestBlockSize * kDataSizeInBlocks;
 
 constexpr char kPartitionName[] = "partition-name";
-constexpr uint8_t kPartitionUniqueGuid[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-                                            0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
-constexpr uint8_t kPartitionTypeGuid[] = {0xAA, 0xFF, 0xBB, 0x00, 0x33, 0x44, 0x88, 0x99,
-                                          0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17};
+constexpr uuid::Uuid kPartitionUniqueGuid = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                                             0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+constexpr uuid::Uuid kPartitionTypeGuid = {0xAA, 0xFF, 0xBB, 0x00, 0x33, 0x44, 0x88, 0x99,
+                                           0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17};
 constexpr uint64_t kPartitionSliceCount = 1;
 
-struct GrowParams {
-  // random seed.
-  unsigned int seed;
-
-  // Target size of the ramdisk.
-  uint64_t target_size;
-
-  // The expected format info at each step.
-  Header format;
-
-  // Attempt to allocate, read and write to new slices.
-  bool validate_new_slices;
-};
-
-void GrowFvm(const fbl::unique_fd& devfs_root, const GrowParams& params,
-             std::unique_ptr<RamdiskRef>& ramdisk, std::unique_ptr<FvmAdapter>& fvm_adapter) {
-  std::unique_ptr<VPartitionAdapter> vpartition = nullptr;
-  ASSERT_OK(fvm_adapter->AddPartition(devfs_root, kPartitionName, Guid(kPartitionUniqueGuid),
-                                      Guid(kPartitionTypeGuid), kPartitionSliceCount, &vpartition),
-            "Failed to add partition.");
-  ASSERT_TRUE(vpartition);
-
-  // Get current state of the FVM.
-  VolumeManagerInfo before_grow_info;
-  ASSERT_OK(fvm_adapter->Query(&before_grow_info));
-  ASSERT_EQ(kSliceSize, before_grow_info.slice_size);
-  ASSERT_EQ(kPartitionSliceCount, before_grow_info.assigned_slice_count);
-
-  unsigned int initial_seed = params.seed;
-  auto random_data = MakeRandomBuffer(kDataSize, &initial_seed);
-  ASSERT_NO_FATAL_FAILURE(vpartition->WriteAt(random_data, 0));
-
-  // Clone the device to a new ramdisk with the specified target size.
-  zx::result new_ramdisk = ramdisk->Clone(params.target_size);
-  ASSERT_EQ(new_ramdisk.status_value(), ZX_OK);
-
-  // This will destroy the old ramdisk.
-  ramdisk = *std::move(new_ramdisk);
-
-  // Bind a new FVM to the new device.
-  fvm_adapter = FvmAdapter::Bind(devfs_root, ramdisk.get());
-  ASSERT_NE(fvm_adapter, nullptr);
-
-  // Find the partition on the new device.  This will try and destroy the old partition which no
-  // longer exists but that doesn't matter.
-  vpartition = VPartitionAdapter::Create(devfs_root, kPartitionName, Guid(kPartitionUniqueGuid),
-                                         Guid(kPartitionTypeGuid));
-  ASSERT_NE(vpartition, nullptr);
-  vpartition->WaitUntilVisible();
-
-  // Get stats after growth.
-  VolumeManagerInfo after_grow_info;
-  ASSERT_OK(fvm_adapter->Query(&after_grow_info));
-  ASSERT_TRUE(IsConsistentAfterGrowth(before_grow_info, after_grow_info));
-  ASSERT_EQ(params.format.pslice_count, after_grow_info.slice_count);
-  // Data should still be present.
-  ASSERT_NO_FATAL_FAILURE(vpartition->CheckContentsAt(random_data, 0));
-
-  // Verify new slices can be allocated, written to and read from.
-  if (params.validate_new_slices) {
-    ASSERT_OK(vpartition->Extend(kPartitionSliceCount,
-                                 after_grow_info.slice_count - kPartitionSliceCount));
-
-    auto random_data_2 = MakeRandomBuffer(kDataSize, &initial_seed);
-    uint64_t offset = (params.format.pslice_count - 1) * kSliceSize;
-    ASSERT_NO_FATAL_FAILURE(vpartition->WriteAt(random_data_2, offset));
-    ASSERT_NO_FATAL_FAILURE(vpartition->CheckContentsAt(random_data_2, offset));
+void CheckWrite(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, size_t off,
+                std::span<uint8_t> buf) {
+  for (unsigned char& i : buf) {
+    i = static_cast<uint8_t>(rand());
   }
+  ASSERT_OK(block_client::SingleWriteBytes(device, buf.data(), buf.size(), off));
+}
 
-  ASSERT_OK(vpartition->Destroy());
+void CheckRead(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, size_t off,
+               std::span<const uint8_t> in) {
+  std::vector<uint8_t> out(in.size());
+  ASSERT_OK(block_client::SingleReadBytes(device, out.data(), out.size(), off));
+  ASSERT_EQ(memcmp(in.data(), out.data(), in.size()), 0);
+}
+
+void CheckWriteReadBlock(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> device, size_t block,
+                         size_t count) {
+  const fidl::WireResult result = fidl::WireCall(device)->GetInfo();
+  ASSERT_OK(result.status());
+  const fit::result response = result.value();
+  ASSERT_TRUE(response.is_ok(), "%s", zx_status_get_string(response.error_value()));
+  const fuchsia_hardware_block::wire::BlockInfo& block_info = response.value()->info;
+  size_t len = block_info.block_size * count;
+  size_t off = block_info.block_size * block;
+  std::vector<uint8_t> in(len);
+  ASSERT_NO_FATAL_FAILURE(CheckWrite(device, off, in));
+  ASSERT_NO_FATAL_FAILURE(CheckRead(device, off, in));
 }
 
 class FvmResizeTest : public zxtest::Test {
  protected:
   void SetUp() override {
-    loop_ = std::make_unique<async::Loop>(&kAsyncLoopConfigNoAttachToCurrentThread);
-    loop_->StartThread();
-
-    auto realm_builder = component_testing::RealmBuilder::Create();
-    driver_test_realm::Setup(realm_builder);
-    realm_ =
-        std::make_unique<component_testing::RealmRoot>(realm_builder.Build(loop_->dispatcher()));
-
-    zx::result dtr = realm_->component().Connect<fuchsia_driver_test::Realm>();
-    ASSERT_OK(dtr.status_value());
-    fidl::Arena arena;
-    auto args_builder = fuchsia_driver_test::wire::RealmArgs::Builder(arena);
-    args_builder.root_driver("fuchsia-boot:///platform-bus#meta/platform-bus.cm");
-    args_builder.software_devices(std::vector{
-        fuchsia_driver_test::wire::SoftwareDevice{
-            .device_name = "ram-disk",
-            .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_RAM_DISK,
-        },
-    });
-    fidl::WireResult result = fidl::WireCall(*dtr)->Start(args_builder.Build());
-    ASSERT_OK(result.status());
-    ASSERT_TRUE(result.value().is_ok());
-
-    auto [devfs_client, server] = fidl::Endpoints<fuchsia_io::Node>::Create();
-    fidl::UnownedClientEnd<fuchsia_io::Directory> exposed(
-        realm_->component().exposed().unowned_channel());
-    ASSERT_OK(fidl::WireCall(exposed)
-                  ->Open("dev-topological", fuchsia_io::kPermReadable, {}, server.TakeChannel())
-                  .status());
-    ASSERT_OK(
-        fdio_fd_create(devfs_client.TakeChannel().release(), devfs_root_.reset_and_get_address()));
+    instance_ = std::make_unique<fvm::DriverFvmInstance>();
+    instance_->SetUp();
   }
 
-  const fbl::unique_fd& devfs_root_fd() const { return devfs_root_; }
+  void TearDown() override { instance_->TearDown(); }
+
+  void RestartFvmWithNewDiskSize(uint64_t block_count) {
+    instance_->RestartFvmWithNewDiskSize(kTestBlockSize, block_count);
+  }
+
+  zx::result<std::unique_ptr<fvm::BlockConnector>> AllocatePartition(
+      const fvm::AllocatePartitionRequest& request) {
+    return instance_->AllocatePartition(request);
+  }
+
+  zx::result<std::unique_ptr<fvm::BlockConnector>> OpenPartition(std::string_view label) {
+    return instance_->OpenPartition(label);
+  }
+
+  fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() {
+    return instance_->GetFvmInfo();
+  }
+
+  void CreateGrowableFvm(uint64_t initial_block_count, uint64_t max_block_count) {
+    instance_->CreateRamdisk(kTestBlockSize, initial_block_count);
+    ASSERT_OK(fs_management::FvmInitPreallocated(instance_->GetRamdiskPartition(),
+                                                 initial_block_count * kTestBlockSize,
+                                                 max_block_count * kTestBlockSize, kSliceSize));
+    instance_->StartFvm();
+  }
+
+  static void ExtendVolume(fidl::UnownedClientEnd<fuchsia_hardware_block_volume::Volume> volume,
+                           uint64_t start_slice, uint64_t slice_count) {
+    const fidl::WireResult result = fidl::WireCall(volume)->Extend(start_slice, slice_count);
+    ASSERT_OK(result.status());
+    const fidl::WireResponse response = result.value();
+    ASSERT_OK(response.status);
+  }
 
  private:
-  std::unique_ptr<async::Loop> loop_;
-  std::unique_ptr<component_testing::RealmRoot> realm_;
-  fbl::unique_fd devfs_root_;
+  std::unique_ptr<fvm::FvmInstance> instance_;
 };
 
 TEST_F(FvmResizeTest, PreallocatedMetadataGrowsCorrectly) {
   constexpr uint64_t kInitialBlockCount = (50 * kSliceSize) / kTestBlockSize;
   constexpr uint64_t kMaxBlockCount = (4 << 10) * kSliceSize / kTestBlockSize;
-
-  std::unique_ptr<RamdiskRef> ramdisk =
-      RamdiskRef::Create(devfs_root_fd(), kTestBlockSize, kInitialBlockCount);
-  ASSERT_TRUE(ramdisk);
-  std::unique_ptr<FvmAdapter> fvm =
-      FvmAdapter::CreateGrowable(devfs_root_fd(), kTestBlockSize, kInitialBlockCount,
-                                 kMaxBlockCount, kSliceSize, ramdisk.get());
-  ASSERT_TRUE(fvm);
-
-  GrowParams params;
-  params.target_size = kMaxBlockCount * kTestBlockSize;
-  // Data stays the same size, so there are no new slices.
-  params.validate_new_slices = true;
-  params.format =
+  Header expected =
       Header::FromDiskSize(fvm::kMaxUsablePartitions, kMaxBlockCount * kTestBlockSize, kSliceSize);
-  params.seed = zxtest::Runner::GetInstance()->options().seed;
 
-  ASSERT_NO_FATAL_FAILURE(GrowFvm(devfs_root_fd(), params, ramdisk, fvm));
+  ASSERT_NO_FATAL_FAILURE(CreateGrowableFvm(kInitialBlockCount, kMaxBlockCount));
+  zx::result vp = AllocatePartition({.slice_count = kPartitionSliceCount,
+                                     .type = kPartitionTypeGuid,
+                                     .guid = kPartitionUniqueGuid,
+                                     .name = kPartitionName});
+  ASSERT_OK(vp);
+
+  {
+    auto info = GetFvmInfo();
+    ASSERT_EQ(kSliceSize, info.slice_size);
+    ASSERT_EQ(kPartitionSliceCount, info.assigned_slice_count);
+    // The disk is smaller than our eventual target so it reports less possible slices.
+    ASSERT_LT(info.slice_count, expected.pslice_count);
+  }
+
+  std::vector<uint8_t> buf(kDataSize);
+  ASSERT_NO_FATAL_FAILURE(CheckWrite(vp->as_block(), 0, buf));
+
+  vp = {};
+  ASSERT_NO_FATAL_FAILURE(RestartFvmWithNewDiskSize(kMaxBlockCount));
+
+  {
+    auto info = GetFvmInfo();
+    // Other info should be the same
+    ASSERT_EQ(kSliceSize, info.slice_size);
+    ASSERT_EQ(kPartitionSliceCount, info.assigned_slice_count);
+    // The new total possible slice count should be our expected slice count.
+    ASSERT_EQ(info.slice_count, expected.pslice_count);
+  }
+
+  vp = OpenPartition(kPartitionName);
+  ASSERT_OK(vp);
+  // The original data we wrote is still there
+  ASSERT_NO_FATAL_FAILURE(CheckRead(vp->as_block(), 0, buf));
+
+  // Now we can extend to fill the rest of the available space, beyond our initial size.
+  ASSERT_NO_FATAL_FAILURE(ExtendVolume(vp->as_volume(), kPartitionSliceCount,
+                                       expected.pslice_count - kPartitionSliceCount));
+  size_t block_offset = (expected.pslice_count - 1) * kSliceSize / kBlockSize;
+  ASSERT_NO_FATAL_FAILURE(CheckWriteReadBlock(vp->as_block(), block_offset, kDataSizeInBlocks));
 }
 
 TEST_F(FvmResizeTest, PreallocatedMetadataGrowsAsMuchAsPossible) {
   constexpr uint64_t kInitialBlockCount = (50 * kSliceSize) / kTestBlockSize;
-  constexpr uint64_t kMaxBlockCount = (4 << 10) * kSliceSize / kTestBlockSize;
-
-  std::unique_ptr<RamdiskRef> ramdisk =
-      RamdiskRef::Create(devfs_root_fd(), kTestBlockSize, kInitialBlockCount);
-  ASSERT_TRUE(ramdisk);
-  std::unique_ptr<FvmAdapter> fvm =
-      FvmAdapter::CreateGrowable(devfs_root_fd(), kTestBlockSize, kInitialBlockCount,
-                                 kMaxBlockCount, kSliceSize, ramdisk.get());
-  ASSERT_TRUE(fvm);
-
+  constexpr uint64_t kMaxBlockCount = (1 << 10) * kSliceSize / kTestBlockSize;
   // Compute the expected header information. This is the header computed for the original slice
   // size, expanded by as many slices as possible.
   Header expected =
       Header::FromDiskSize(kMaxUsablePartitions, kMaxBlockCount * kTestBlockSize, kSliceSize);
   expected.SetSliceCount(expected.GetAllocationTableAllocatedEntryCount());
 
-  GrowParams params;
-  // This defines a target size much larger than our header could handle so the resize will max
-  // out the slices in the headeer.
-  params.target_size = 2 * expected.fvm_partition_size;
-  // Data stays the same size, so there are no new slices.
-  params.validate_new_slices = false;
-  params.format = expected;
-  params.seed = zxtest::Runner::GetInstance()->options().seed;
+  ASSERT_NO_FATAL_FAILURE(CreateGrowableFvm(kInitialBlockCount, kMaxBlockCount));
+  zx::result vp = AllocatePartition({.slice_count = kPartitionSliceCount,
+                                     .type = kPartitionTypeGuid,
+                                     .guid = kPartitionUniqueGuid,
+                                     .name = kPartitionName});
+  ASSERT_OK(vp);
 
-  ASSERT_NO_FATAL_FAILURE(GrowFvm(devfs_root_fd(), params, ramdisk, fvm));
+  {
+    auto info = GetFvmInfo();
+    ASSERT_EQ(kSliceSize, info.slice_size);
+    ASSERT_EQ(kPartitionSliceCount, info.assigned_slice_count);
+    // The disk is smaller than our eventual target so it reports less possible slices.
+    ASSERT_LT(info.slice_count, expected.pslice_count);
+  }
+
+  std::vector<uint8_t> buf(kDataSize);
+  ASSERT_NO_FATAL_FAILURE(CheckWrite(vp->as_block(), 0, buf));
+
+  vp = {};
+  // This defines a ramdisk size much larger than our header could handle so the resize will max
+  // out the slices in the header.
+  constexpr uint64_t kLargeBlockCount = (2 << 10) * kSliceSize / kTestBlockSize;
+  ASSERT_NO_FATAL_FAILURE(RestartFvmWithNewDiskSize(kLargeBlockCount));
+
+  {
+    auto info = GetFvmInfo();
+    // Other info should be the same
+    ASSERT_EQ(kSliceSize, info.slice_size);
+    ASSERT_EQ(kPartitionSliceCount, info.assigned_slice_count);
+    // The new total possible slice count should be our expected slice count, despite the larger
+    // disk space available.
+    ASSERT_EQ(info.slice_count, expected.pslice_count);
+    // In fact, it should be the maximum number of slices possible for the size of the allocation
+    // table, which is also reported.
+    ASSERT_EQ(info.slice_count, info.maximum_slice_count);
+  }
+
+  vp = OpenPartition(kPartitionName);
+  ASSERT_OK(vp);
+  // The original data we wrote is still there
+  ASSERT_NO_FATAL_FAILURE(CheckRead(vp->as_block(), 0, buf));
+
+  // Now we can extend to fill the rest of the available space, beyond our initial size.
+  ASSERT_NO_FATAL_FAILURE(ExtendVolume(vp->as_volume(), kPartitionSliceCount,
+                                       expected.pslice_count - kPartitionSliceCount));
+  size_t block_offset = (expected.pslice_count - 1) * kSliceSize / kBlockSize;
+  ASSERT_NO_FATAL_FAILURE(CheckWriteReadBlock(vp->as_block(), block_offset, kDataSizeInBlocks));
 }
 
 TEST_F(FvmResizeTest, PreallocatedMetadataRemainsValidInPartialGrowths) {
   constexpr uint64_t kInitialBlockCount = (50 * kSliceSize) / kTestBlockSize;
   constexpr uint64_t kMidBlockCount = (4 << 10) * kSliceSize / kTestBlockSize;
   constexpr uint64_t kMaxBlockCount = (8 << 10) * kSliceSize / kTestBlockSize;
+  Header expected_mid =
+      Header::FromDiskSize(kMaxUsablePartitions, kMidBlockCount * kTestBlockSize, kSliceSize);
+  Header expected_max =
+      Header::FromDiskSize(kMaxUsablePartitions, kMaxBlockCount * kTestBlockSize, kSliceSize);
 
-  std::unique_ptr<RamdiskRef> ramdisk =
-      RamdiskRef::Create(devfs_root_fd(), kTestBlockSize, kInitialBlockCount);
-  ASSERT_TRUE(ramdisk);
-  std::unique_ptr<FvmAdapter> fvm =
-      FvmAdapter::CreateGrowable(devfs_root_fd(), kTestBlockSize, kInitialBlockCount,
-                                 kMaxBlockCount, kSliceSize, ramdisk.get());
-  ASSERT_TRUE(fvm);
+  ASSERT_NO_FATAL_FAILURE(CreateGrowableFvm(kInitialBlockCount, kMaxBlockCount));
+  zx::result vp = AllocatePartition({.slice_count = kPartitionSliceCount,
+                                     .type = kPartitionTypeGuid,
+                                     .guid = kPartitionUniqueGuid,
+                                     .name = kPartitionName});
+  ASSERT_OK(vp);
 
-  GrowParams params;
-  params.target_size = kMidBlockCount * kTestBlockSize;
-  // Data stays the same size, so there are no new slices.
-  params.validate_new_slices = true;
-  params.format =
-      Header::FromGrowableDiskSize(kMaxUsablePartitions, kMidBlockCount * kTestBlockSize,
-                                   kMaxBlockCount * kTestBlockSize, kSliceSize);
-  params.seed = zxtest::Runner::GetInstance()->options().seed;
+  {
+    auto info = GetFvmInfo();
+    ASSERT_EQ(kSliceSize, info.slice_size);
+    ASSERT_EQ(kPartitionSliceCount, info.assigned_slice_count);
+    // The disk is smaller than our eventual target so it reports less possible slices.
+    ASSERT_LT(info.slice_count, expected_mid.pslice_count);
+    ASSERT_LT(info.slice_count, expected_max.pslice_count);
+  }
 
-  ASSERT_NO_FATAL_FAILURE(GrowFvm(devfs_root_fd(), params, ramdisk, fvm));
+  std::vector<uint8_t> buf(kDataSize);
+  ASSERT_NO_FATAL_FAILURE(CheckWrite(vp->as_block(), 0, buf));
 
-  params.format =
-      Header::FromGrowableDiskSize(kMaxUsablePartitions, kMaxBlockCount * kTestBlockSize,
-                                   kMaxBlockCount * kTestBlockSize, kSliceSize);
-  params.target_size = kMaxBlockCount * kTestBlockSize;
-  ASSERT_NO_FATAL_FAILURE(GrowFvm(devfs_root_fd(), params, ramdisk, fvm));
+  vp = {};
+  ASSERT_NO_FATAL_FAILURE(RestartFvmWithNewDiskSize(kMidBlockCount));
+
+  {
+    auto info = GetFvmInfo();
+    ASSERT_EQ(kSliceSize, info.slice_size);
+    ASSERT_EQ(kPartitionSliceCount, info.assigned_slice_count);
+    // The disk is now the midpoint size, so it has the midpoint slice amount.
+    ASSERT_EQ(info.slice_count, expected_mid.pslice_count);
+    ASSERT_LT(info.slice_count, expected_max.pslice_count);
+  }
+
+  vp = OpenPartition(kPartitionName);
+  ASSERT_OK(vp);
+  // The original data we wrote is still there.
+  ASSERT_NO_FATAL_FAILURE(CheckRead(vp->as_block(), 0, buf));
+
+  vp = {};
+  ASSERT_NO_FATAL_FAILURE(RestartFvmWithNewDiskSize(kMaxBlockCount));
+
+  {
+    auto info = GetFvmInfo();
+    ASSERT_EQ(kSliceSize, info.slice_size);
+    ASSERT_EQ(kPartitionSliceCount, info.assigned_slice_count);
+    // The disk is now the maximum size, so it has the maximum slice amount.
+    ASSERT_GT(info.slice_count, expected_mid.pslice_count);
+    ASSERT_EQ(info.slice_count, expected_max.pslice_count);
+  }
+
+  vp = OpenPartition(kPartitionName);
+  ASSERT_OK(vp);
+  // The original data we wrote is still there.
+  ASSERT_NO_FATAL_FAILURE(CheckRead(vp->as_block(), 0, buf));
+
+  // Now we can extend to fill the rest of the available space, beyond our initial size.
+  ASSERT_NO_FATAL_FAILURE(ExtendVolume(vp->as_volume(), kPartitionSliceCount,
+                                       expected_max.pslice_count - kPartitionSliceCount));
+  size_t block_offset = (expected_max.pslice_count - 1) * kSliceSize / kBlockSize;
+  ASSERT_NO_FATAL_FAILURE(CheckWriteReadBlock(vp->as_block(), block_offset, kDataSizeInBlocks));
 }
 
 }  // namespace

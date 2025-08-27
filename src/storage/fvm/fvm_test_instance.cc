@@ -100,8 +100,18 @@ void DriverFvmInstance::TearDown() { ASSERT_OK(ramdisk_destroy(ramdisk_)); }
 void DriverFvmInstance::CreateRamdisk(uint64_t block_size, uint64_t block_count) {
   if (ramdisk_ != nullptr) {
     ASSERT_OK(ramdisk_destroy(ramdisk_));
+    // We assume if the caller didn't destroy the ramdisk itself it wants a completely new disk.
+    vmo_ = {};
   }
-  ASSERT_OK(ramdisk_create_at(devfs_root().get(), block_size, block_count, &ramdisk_));
+  if (!vmo_) {
+    ASSERT_OK(zx::vmo::create(block_size * block_count, 0, &vmo_));
+  }
+  zx::vmo duplicate_vmo;
+  ASSERT_OK(vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_vmo));
+  static uint8_t type_guid[16] = {0};
+  ASSERT_OK(ramdisk_create_at_from_vmo_with_params(devfs_root().get(), duplicate_vmo.release(),
+                                                   block_size, type_guid, sizeof(type_guid),
+                                                   &ramdisk_));
 }
 
 void DriverFvmInstance::CreateFvm(uint64_t block_size, uint64_t block_count, uint64_t slice_size) {
@@ -127,6 +137,24 @@ void DriverFvmInstance::RestartFvm() {
   ASSERT_TRUE(resp->is_ok());
 
   ASSERT_OK(device_watcher::RecursiveWaitForFile(devfs_root().get(), GetFvmPath().c_str()));
+}
+
+void DriverFvmInstance::RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) {
+  auto resp = fidl::WireCall(GetRamdiskPartition())->GetInfo();
+  ASSERT_OK(resp.status());
+  ASSERT_TRUE(resp->is_ok());
+  uint32_t found_block_size = resp->value()->info.block_size;
+  ASSERT_EQ(found_block_size, block_size);
+
+  ASSERT_OK(ramdisk_destroy(ramdisk_));
+  ramdisk_ = nullptr;
+
+  zx::vmo vmo;
+  ASSERT_OK(vmo_.create_child(ZX_VMO_CHILD_SNAPSHOT, 0, block_count * block_size, &vmo));
+  vmo_ = std::move(vmo);
+
+  CreateRamdisk(block_size, block_count);
+  StartFvm();
 }
 
 fuchsia_hardware_block_volume::wire::VolumeManagerInfo DriverFvmInstance::GetFvmInfo() const {
@@ -267,7 +295,6 @@ class ComponentFvmInstance : public FvmInstance {
     CreateRamdisk(block_size, block_count);
     ASSERT_OK(fs_management::FvmInitPreallocated(GetRamdiskPartition(), block_count * block_size,
                                                  block_count * block_size, slice_size));
-    slice_size_ = slice_size;
     StartFvm();
   }
 
@@ -280,6 +307,8 @@ class ComponentFvmInstance : public FvmInstance {
         fidl::ClientEnd<fuchsia_hardware_block::Block>(block_client.TakeChannel()), component_, {});
     ASSERT_OK(fs);
     fvm_ = std::make_unique<fs_management::StartedMultiVolumeFilesystem>(std::move(*fs));
+    auto info = GetFvmInfo();
+    slice_size_ = info.slice_size;
   }
 
   void RestartFvm() override {
@@ -291,7 +320,10 @@ class ComponentFvmInstance : public FvmInstance {
     StartFvm();
   }
 
+  void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) override {}
+
   fuchsia_hardware_block_volume::wire::VolumeManagerInfo GetFvmInfo() const override {
+    EXPECT_TRUE(fvm_);
     zx::result volumes =
         component::ConnectAt<fuchsia_fs_startup::Volumes>(fvm_->ServiceDirectory());
     EXPECT_OK(volumes);
