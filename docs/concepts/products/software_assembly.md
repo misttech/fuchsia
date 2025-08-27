@@ -129,19 +129,16 @@ fuchsia_product_configuration(
 For a complete example, see the [`getting-started`][getting-started-repo]
 repository.
 
-**Command Line Interface** (experimental):
+**Command Line Interface**:
 
 ```shell {:.devsite-disable-click-to-copy}
-ffx product create --platform 28.20250718.3.1 \
-                   --product-config <PATH/TO/MY_PRODUCT_CONFIG> \
-                   --board-config cipd://fuchsia/assembly/boards/x64@28.20250718.3.1 \
-                   --out my_product_bundle
+ffx product-bundle create --platform 28.20250718.3.1 \
+                          --product-config <PATH/TO/MY_PRODUCT_CONFIG> \
+                          --board-config cipd://fuchsia/assembly/boards/x64@version:28.20250718.3.1
 ```
 
-The [`ffx product create`][ffx-product-create] command can be run to produce
+The [`ffx product-bundle create`][ffx-product-bundle-create] command can be run to produce
 a new product bundle using already built platform, board, and product artifacts.
-This command replaces the entire contents of the directory specified in the
-`--out` flag, rather than updating the existing contents.
 
 ## Size and scrutiny {:#size-and-scrutiny}
 
@@ -441,7 +438,7 @@ polluting the git-tree using [developer overrides][developer-overrides].
 [cipd-boards]: https://chrome-infra-packages.appspot.com/p/fuchsia/assembly/boards
 [fuchsia-product-bundle]: https://fuchsia.dev/reference/bazel_sdk/fuchsia_product_bundle
 [getting-started-repo]: https://fuchsia.googlesource.com/sdk-samples/getting-started
-[ffx-product-create]: https://fuchsia.dev/reference/tools/sdk/ffx#ffx_product_create
+[ffx-product-bundle-create]: https://fuchsia.dev/reference/tools/sdk/ffx#ffx_product-bundle_create
 [size-check]: https://fuchsia.dev/reference/bazel_sdk/fuchsia_product_size_check
 [scrutiny]: https://fuchsia.dev/reference/bazel_sdk/fuchsia_scrutiny_config
 [config-schema]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/lib/assembly/config_schema/
