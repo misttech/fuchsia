@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_diagnostics_validate::{Action, LazyAction, LinkDisposition, ROOT_ID, Value, ValueType};
+use fidl_diagnostics_validate::{Action, LazyAction, LinkDisposition, Value, ValueType, ROOT_ID};
 
 pub enum Step {
     Actions(Vec<Action>),
     LazyActions(Vec<LazyAction>),
-    ActLazyThreadLocalActions(Vec<LazyAction>),
     WithMetrics(Vec<Action>, String),
 }
 
@@ -35,51 +34,7 @@ pub fn real_trials() -> Vec<Trial> {
         deletions_trial(),
         lazy_nodes_trial(),
         repeated_names(),
-        act_lazy_thread_local_trial(),
     ]
-}
-
-fn act_lazy_thread_local_trial() -> Trial {
-    Trial {
-        name: "ActLazyThreadLocal".into(),
-        steps: vec![Step::ActLazyThreadLocalActions(vec![
-            // Create sibling node with same name and same content
-            crate::create_lazy_node!(
-                parent: ROOT_ID,
-                id: 1,
-                name: "child",
-                disposition: LinkDisposition::Child,
-                actions: vec![crate::create_bytes_property!(parent: ROOT_ID, id: 1, name: "child_bytes",value: vec!(3u8, 4u8))]
-            ),
-            crate::create_lazy_node!(
-                parent: ROOT_ID,
-                id: 2,
-                name: "child",
-                disposition: LinkDisposition::Child,
-                actions: vec![crate::create_bytes_property!(parent: ROOT_ID, id: 1, name: "child_bytes",value: vec!(3u8, 4u8))]
-            ),
-            crate::delete_lazy_node!(id: 1),
-            crate::delete_lazy_node!(id: 2),
-            // Recreate child node with new values
-            crate::create_lazy_node!(
-                parent: ROOT_ID,
-                id: 1,
-                name: "child",
-                disposition: LinkDisposition::Child,
-                actions: vec![crate::create_bytes_property!(parent: ROOT_ID, id: 1, name: "child_bytes_new",value: vec!(1u8, 2u8))]
-            ),
-            crate::delete_lazy_node!(id: 1),
-            // Create child node with inline disposition
-            crate::create_lazy_node!(
-                parent: ROOT_ID,
-                id: 1,
-                name: "inline_child",
-                disposition: LinkDisposition::Inline,
-                actions: vec![crate::create_bytes_property!(parent: ROOT_ID, id: 1, name: "inline_child",value: vec!(1u8, 2u8))]
-            ),
-            crate::delete_lazy_node!(id: 1),
-        ])],
-    }
 }
 
 fn basic_node() -> Trial {

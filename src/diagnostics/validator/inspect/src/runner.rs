@@ -4,8 +4,8 @@
 
 use super::data::Data;
 use super::trials::{self, Step};
-use super::{PUPPET_MONIKER, puppet, results};
-use anyhow::{Error, bail};
+use super::{puppet, results, PUPPET_MONIKER};
+use anyhow::{bail, Error};
 use diagnostics_reader::{ArchiveReader, ComponentSelector};
 use fidl_diagnostics_validate as validate;
 
@@ -80,17 +80,6 @@ async fn run_trial(
             }
             Step::LazyActions(actions) => {
                 run_lazy_actions(actions, data, puppet, &trial.name, step_index, results).await?
-            }
-            Step::ActLazyThreadLocalActions(actions) => {
-                run_act_lazy_thread_local_actions(
-                    actions,
-                    data,
-                    puppet,
-                    &trial.name,
-                    step_index,
-                    results,
-                )
-                .await?
             }
         };
         if step_result == StepResult::Stop {
@@ -176,63 +165,6 @@ async fn run_lazy_actions(
             );
         }
         match puppet.apply_lazy(action).await {
-            Err(e) => {
-                bail!(
-                    "Puppet-apply_lazy error in trial {}, step {}, action {}: {:?} ",
-                    trial_name,
-                    step_index,
-                    action_number,
-                    e
-                );
-            }
-            Ok(validate::TestResult::Ok) => {}
-            Ok(validate::TestResult::Unimplemented) => {
-                results.unimplemented(puppet.printable_name(), action);
-                return Ok(StepResult::Stop);
-            }
-            Ok(bad_result) => {
-                bail!(
-                    "In trial {}, puppet {} reported action {:?} was {:?}",
-                    trial_name,
-                    puppet.printable_name(),
-                    action,
-                    bad_result
-                );
-            }
-        }
-        try_compare(
-            data,
-            puppet,
-            trial_name,
-            step_index as i32,
-            Some(action),
-            action_number as i32,
-            results,
-        )
-        .await?;
-    }
-    Ok(StepResult::Continue)
-}
-
-async fn run_act_lazy_thread_local_actions(
-    actions: &mut [validate::LazyAction],
-    data: &mut Data,
-    puppet: &mut puppet::Puppet,
-    trial_name: &str,
-    step_index: usize,
-    results: &mut results::Results,
-) -> Result<StepResult, Error> {
-    for (action_number, action) in actions.iter_mut().enumerate() {
-        if let Err(e) = data.apply_lazy(action) {
-            bail!(
-                "Local-apply_lazy error in trial {}, step {}, action {}: {:?} ",
-                trial_name,
-                step_index,
-                action_number,
-                e
-            );
-        }
-        match puppet.act_lazy_thread_local(action).await {
             Err(e) => {
                 bail!(
                     "Puppet-apply_lazy error in trial {}, step {}, action {}: {:?} ",
@@ -359,8 +291,8 @@ async fn try_compare<ActionType: std::fmt::Debug>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::trials::Trial;
     use crate::trials::tests::trial_with_action;
+    use crate::trials::Trial;
     use crate::*;
     use fidl_diagnostics_validate::*;
 
@@ -402,15 +334,11 @@ mod tests {
             let mut data = Data::new();
             run_trial(&mut puppet, &mut data, &mut uint_create_delete, &mut results).await.unwrap();
         }
-        assert!(
-            !results
-                .to_json()
-                .contains(&format!("{}: CreateProperty(Int)", puppet.printable_name()))
-        );
-        assert!(
-            results
-                .to_json()
-                .contains(&format!("{}: CreateProperty(Uint)", puppet.printable_name()))
-        );
+        assert!(!results
+            .to_json()
+            .contains(&format!("{}: CreateProperty(Int)", puppet.printable_name())));
+        assert!(results
+            .to_json()
+            .contains(&format!("{}: CreateProperty(Uint)", puppet.printable_name())));
     }
 }

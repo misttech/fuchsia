@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Error, format_err};
+use anyhow::{format_err, Context as _, Error};
 use fidl::endpoints::create_request_stream;
 use fidl_diagnostics_validate::*;
 use fidl_fuchsia_inspect::TreeMarker;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_inspect::hierarchy::*;
 /// Rust Puppet, receiving commands to drive the Rust Inspect library.
 ///
 /// This code doesn't check for illegal commands such as deleting a node
@@ -15,10 +16,9 @@ use fuchsia_component::server::ServiceFs;
 /// within the Validator program by running the command sequence against the
 /// local ("data::Data") implementation before sending them to the puppets.
 use fuchsia_inspect::Property as UsablePropertyTrait;
-use fuchsia_inspect::hierarchy::*;
 use fuchsia_inspect::*;
 use futures::prelude::*;
-use inspect_runtime::{TreeServerSendPreference, service};
+use inspect_runtime::{service, TreeServerSendPreference};
 use log::{error, info, warn};
 use std::collections::HashMap;
 use zx::HandleBased;
@@ -133,7 +133,7 @@ impl Actor {
                     (Property::Uint(p), Value::UintT(v)) => p.set(v),
                     (Property::Double(p), Value::DoubleT(v)) => p.set(v),
                     unexpected => {
-                        return Err(format_err!("Illegal types {:?} for SetNumber", unexpected));
+                        return Err(format_err!("Illegal types {:?} for SetNumber", unexpected))
                     }
                 };
             }
@@ -149,7 +149,7 @@ impl Actor {
                         p.add(v);
                     }
                     unexpected => {
-                        return Err(format_err!("Illegal types {:?} for AddNumber", unexpected));
+                        return Err(format_err!("Illegal types {:?} for AddNumber", unexpected))
                     }
                 };
             }
@@ -168,26 +168,26 @@ impl Actor {
                         return Err(format_err!(
                             "Illegal types {:?} for SubtractNumber",
                             unexpected
-                        ));
+                        ))
                     }
                 };
             }
             Action::SetString(SetString { id, value }) => match self.find_property(id)? {
                 Property::String(p) => p.set(&value),
                 unexpected => {
-                    return Err(format_err!("Illegal property {:?} for SetString", unexpected));
+                    return Err(format_err!("Illegal property {:?} for SetString", unexpected))
                 }
             },
             Action::SetBytes(SetBytes { id, value }) => match self.find_property(id)? {
                 Property::Bytes(p) => p.set(&value),
                 unexpected => {
-                    return Err(format_err!("Illegal property {:?} for SetBytes", unexpected));
+                    return Err(format_err!("Illegal property {:?} for SetBytes", unexpected))
                 }
             },
             Action::SetBool(SetBool { id, value }) => match self.find_property(id)? {
                 Property::Bool(p) => p.set(value),
                 unexpected => {
-                    return Err(format_err!("Illegal property {:?} for SetBool", unexpected));
+                    return Err(format_err!("Illegal property {:?} for SetBool", unexpected))
                 }
             },
             Action::CreateArrayProperty(CreateArrayProperty {
@@ -227,7 +227,7 @@ impl Actor {
                         p.set(index as usize, v);
                     }
                     unexpected => {
-                        return Err(format_err!("Illegal types {:?} for ArraySet", unexpected));
+                        return Err(format_err!("Illegal types {:?} for ArraySet", unexpected))
                     }
                 };
             }
@@ -237,7 +237,7 @@ impl Actor {
                     (Property::UintArray(p), Value::UintT(v)) => p.add(index as usize, v),
                     (Property::DoubleArray(p), Value::DoubleT(v)) => p.add(index as usize, v),
                     unexpected => {
-                        return Err(format_err!("Illegal types {:?} for ArrayAdd", unexpected));
+                        return Err(format_err!("Illegal types {:?} for ArrayAdd", unexpected))
                     }
                 };
             }
@@ -247,10 +247,7 @@ impl Actor {
                     (Property::UintArray(p), Value::UintT(v)) => p.subtract(index as usize, v),
                     (Property::DoubleArray(p), Value::DoubleT(v)) => p.subtract(index as usize, v),
                     unexpected => {
-                        return Err(format_err!(
-                            "Illegal types {:?} for ArraySubtract",
-                            unexpected
-                        ));
+                        return Err(format_err!("Illegal types {:?} for ArraySubtract", unexpected))
                     }
                 };
             }
@@ -294,7 +291,7 @@ impl Actor {
                             return Err(format_err!(
                                 "Illegal types {:?} for CreateLinearHistogram",
                                 unexpected
-                            ));
+                            ))
                         }
                     },
                 );
@@ -361,7 +358,7 @@ impl Actor {
                             return Err(format_err!(
                                 "Illegal types {:?} for CreateExponentialHistogram",
                                 unexpected
-                            ));
+                            ))
                         }
                     },
                 );
@@ -375,7 +372,7 @@ impl Actor {
                     (Property::UintExponentialHistogram(p), Value::UintT(v)) => p.insert(v),
                     (Property::DoubleExponentialHistogram(p), Value::DoubleT(v)) => p.insert(v),
                     unexpected => {
-                        return Err(format_err!("Illegal types {:?} for Insert", unexpected));
+                        return Err(format_err!("Illegal types {:?} for Insert", unexpected))
                     }
                 };
             }
@@ -403,7 +400,7 @@ impl Actor {
                         return Err(format_err!(
                             "Illegal types {:?} for InsertMultiple",
                             unexpected
-                        ));
+                        ))
                     }
                 };
             }
@@ -427,30 +424,6 @@ impl Actor {
             }) => {
                 let parent = self.find_parent(parent)?;
                 let lazy_child = Self::create_lazy_node(parent, name, disposition, actions)?;
-                self.lazy_children.insert(id, lazy_child);
-            }
-            LazyAction::DeleteLazyNode(DeleteLazyNode { id }) => {
-                self.lazy_children.remove(&id);
-            }
-            _ => {
-                return Err(format_err!("Unknown lazy action {:?}", lazy_action));
-            }
-        }
-        Ok(())
-    }
-
-    fn act_lazy_thread_local(&mut self, lazy_action: LazyAction) -> Result<(), Error> {
-        match lazy_action {
-            LazyAction::CreateLazyNode(CreateLazyNode {
-                parent,
-                id,
-                name,
-                disposition,
-                actions,
-            }) => {
-                let parent = self.find_parent(parent)?;
-                let lazy_child =
-                    Self::create_thread_unsafe_lazy_node(parent, name, disposition, actions)?;
                 self.lazy_children.insert(id, lazy_child);
             }
             LazyAction::DeleteLazyNode(DeleteLazyNode { id }) => {
@@ -497,31 +470,6 @@ impl Actor {
         Ok(match disposition {
             LinkDisposition::Child => parent.create_lazy_child(&name, callback),
             LinkDisposition::Inline => parent.create_lazy_values(&name, callback),
-        })
-    }
-
-    fn create_thread_unsafe_lazy_node(
-        parent: &Node,
-        name: String,
-        disposition: LinkDisposition,
-        actions: Vec<Action>,
-    ) -> Result<LazyNode, Error> {
-        let mut actor = Actor::new(Inspector::default());
-        for action in actions.into_iter() {
-            if let Err(err) = actor.act(action) {
-                return Err(format_err!("Failed to perform action on lazy node: {:?}", err));
-            }
-        }
-
-        let callback = move || {
-            let _ = &actor;
-            let clone = actor.inspector.clone();
-            async move { Ok(clone) }.boxed()
-        };
-
-        Ok(match disposition {
-            LinkDisposition::Child => parent.create_lazy_child_with_thread_local(&name, callback),
-            LinkDisposition::Inline => parent.create_lazy_values_with_thread_local(&name, callback),
         })
     }
 }
@@ -590,20 +538,6 @@ async fn run_driver_service(
                         Ok(()) => TestResult::Ok,
                         Err(error) => {
                             warn!("ActLazy saw illegal condition {:?}", error);
-                            TestResult::Illegal
-                        }
-                    }
-                } else {
-                    TestResult::Illegal
-                };
-                responder.send(result)?;
-            }
-            InspectPuppetRequest::ActLazyThreadLocal { lazy_action, responder } => {
-                let result = if let Some(a) = &mut actor_maybe {
-                    match a.act_lazy_thread_local(lazy_action) {
-                        Ok(()) => TestResult::Ok,
-                        Err(error) => {
-                            warn!("ActLazyThreadLocal saw illegal condition {:?}", error);
                             TestResult::Illegal
                         }
                     }

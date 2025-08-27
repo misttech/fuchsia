@@ -310,11 +310,4 @@ open protocol InspectPuppet {
     }) -> (struct {
         result TestResult;
     });
-
-    /// Checks that !Send lazy values work correctly, using a LazyAction similar to ActLazy.
-    flexible ActLazyThreadLocal(struct {
-        lazy_action LazyAction;
-    }) -> (struct {
-        result TestResult;
-    });
 };
