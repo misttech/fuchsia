@@ -4231,6 +4231,65 @@ mod tests {
                 Error::dependency_cycle("{{child a -> child b -> capability dict -> child a}}"),
             ])),
         },
+        test_validate_use_dependency_cycle_with_dictionary => {
+            input = fdecl::Component {
+                offers: Some(vec![
+                    fdecl::Offer::Dictionary(fdecl::OfferDictionary {
+                        source: Some(fdecl::Ref::Self_(fdecl::SelfRef {})),
+                        source_name: Some("dict".into()),
+                        target: Some(fdecl::Ref::Child(fdecl::ChildRef {
+                            name: "a".into(),
+                            collection: None,
+                        })),
+                        target_name: Some("dict".into()),
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        ..Default::default()
+                    }),
+                    fdecl::Offer::Protocol(fdecl::OfferProtocol {
+                        source: Some(fdecl::Ref::Self_(fdecl::SelfRef {})),
+                        source_name: Some("1".into()),
+                        target: Some(fdecl::Ref::Capability(fdecl::CapabilityRef {
+                            name: "dict".into(),
+                        })),
+                        target_name: Some("1".into()),
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        ..Default::default()
+                    }),
+                ]),
+                children: Some(vec![
+                    fdecl::Child {
+                        name: Some("a".into()),
+                        url: Some("fuchsia-pkg://child".into()),
+                        startup: Some(fdecl::StartupMode::Lazy),
+                        ..Default::default()
+                    },
+                ]),
+                uses: Some(vec![
+                        fdecl::Use::Protocol(fdecl::UseProtocol {
+                            dependency_type: Some(fdecl::DependencyType::Strong),
+                            source: Some(fdecl::Ref::Child(fdecl::ChildRef{ name: "a".to_string(), collection: None})),
+                            source_name: Some("2".to_string()),
+                            target_path: Some("/svc/foo".into()),
+                            ..Default::default()
+                        }),
+                ]),
+                capabilities: Some(vec![
+                    fdecl::Capability::Dictionary(fdecl::Dictionary {
+                        name: Some("dict".into()),
+                        ..Default::default()
+                    }),
+                    fdecl::Capability::Protocol(fdecl::Protocol {
+                        name: Some("1".to_string()),
+                        source_path: Some("/path".to_string()),
+                        ..Default::default()
+                    }),
+                ]),
+                ..Default::default()
+            },
+            result = Err(ErrorList::new(vec![
+                Error::dependency_cycle("{{self -> capability dict -> child a -> self}}"),
+            ])),
+        },
         test_validate_use_from_child_offer_to_child_weak_cycle => {
             input = {
                 fdecl::Component {

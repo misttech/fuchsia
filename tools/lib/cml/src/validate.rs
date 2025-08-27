@@ -11,7 +11,6 @@ use crate::{
     RootDictionaryRef, SourceAvailability, Use, UseFromRef, offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
-use directed_graph::DirectedGraph;
 use itertools::Either;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
@@ -150,7 +149,6 @@ struct ValidationContext<'a> {
     all_configs: HashSet<&'a BorrowedName>,
     all_environment_names: HashSet<&'a BorrowedName>,
     all_capability_names: HashSet<&'a BorrowedName>,
-    strong_dependencies: DirectedGraph<DependencyNode<'a>>,
 }
 
 // Facet key for fuchsia.test
@@ -184,7 +182,6 @@ impl<'a> ValidationContext<'a> {
             all_configs: HashSet::new(),
             all_environment_names: HashSet::new(),
             all_capability_names: HashSet::new(),
-            strong_dependencies: DirectedGraph::new(),
         }
     }
 
@@ -326,17 +323,6 @@ impl<'a> ValidationContext<'a> {
 
         // Validate "config"
         self.validate_config(&self.document.config)?;
-
-        // Check for dependency cycles
-        match self.strong_dependencies.topological_sort() {
-            Ok(_) => {}
-            Err(e) => {
-                return Err(Error::validate(format!(
-                    "Strong dependency cycles were found. Break the cycle by removing a dependency or marking an offer as weak. Cycles: {}",
-                    e.format_cycle()
-                )));
-            }
-        }
 
         // Check that required offers are present
         self.validate_required_offer_decls()?;
@@ -1002,17 +988,6 @@ which is almost certainly a mistake: {}",
                     }
                 }
             }
-
-            // Collect strong dependencies. We'll check for dependency cycles after all offer
-            // declarations are validated.
-            for from in offer.from.iter() {
-                if offer_dependency(offer) == DependencyType::Strong {
-                    for source in self.expand_source_dependencies(offer.names(), &from.into()) {
-                        let target = DependencyNode::offer_to_ref(to);
-                        self.add_strong_dep(source, target);
-                    }
-                }
-            }
         }
 
         // Validate `from` (done last because this validation depends on the capability type, which
@@ -1113,71 +1088,6 @@ which is almost certainly a mistake: {}",
         }
 
         Ok(())
-    }
-
-    fn expand_source_dependencies(
-        &self,
-        names: Vec<&'a BorrowedName>,
-        source: &AnyRef<'a>,
-    ) -> Vec<DependencyNode<'a>> {
-        let mut sources = vec![];
-        match source {
-            AnyRef::Self_ => {
-                let mut has_named = false;
-                for name in names {
-                    if self.all_dictionaries.contains_key(name)
-                        || self.all_storages.contains_key(name)
-                    {
-                        sources.push(DependencyNode::Named(name));
-                        has_named = true;
-                    }
-                }
-                if !has_named {
-                    sources.push(DependencyNode::Self_);
-                }
-            }
-            AnyRef::Dictionary(d) => {
-                let mut has_named = false;
-                match d.root {
-                    RootDictionaryRef::Self_ => {
-                        let dictionary_name = d.path.iter_segments().next().unwrap();
-                        if self.all_dictionaries.contains_key(&*dictionary_name) {
-                            // This should be true, if the cml didn't contain a syntax error that
-                            // omitted the definition for `dictionary_name`.
-                            sources.push(DependencyNode::Named(dictionary_name));
-                            has_named = true;
-                        }
-                    }
-                    _ => {}
-                }
-                if !has_named {
-                    if let Some(s) = DependencyNode::from_dictionary_ref(d) {
-                        sources.push(s);
-                    }
-                }
-            }
-            AnyRef::Named(n) => {
-                sources.push(DependencyNode::Named(n));
-            }
-            AnyRef::Parent | AnyRef::Void | AnyRef::Framework | AnyRef::Debug => {}
-            AnyRef::OwnDictionary(_) => unreachable!("can't be a source"),
-        }
-        sources
-    }
-
-    /// Adds a strong dependency between two nodes in the dependency graph between `source` and
-    /// `target`.
-    ///
-    /// `name` is the name of the capability being routed (if applicable).
-    fn add_strong_dep(&mut self, source: DependencyNode<'a>, target: DependencyNode<'a>) {
-        match (source, target) {
-            (DependencyNode::Self_, DependencyNode::Self_) => {
-                // `self` dependencies (e.g. `use from self`) are allowed.
-            }
-            (source, target) => {
-                self.strong_dependencies.add_edge(source, target);
-            }
-        }
     }
 
     /// Validates that the from clause:
@@ -1802,40 +1712,6 @@ where
         }
     }
     Ok(())
-}
-
-/// A node in the DependencyGraph. This enum is used to differentiate between node types.
-#[derive(Copy, Clone, Hash, Ord, Debug, PartialOrd, PartialEq, Eq)]
-enum DependencyNode<'a> {
-    Named(&'a BorrowedName),
-    Self_,
-}
-
-impl<'a> DependencyNode<'a> {
-    fn from_dictionary_ref(d: &'a DictionaryRef) -> Option<DependencyNode<'a>> {
-        match &d.root {
-            RootDictionaryRef::Named(name) => Some(DependencyNode::Named(name)),
-            RootDictionaryRef::Self_ => Some(DependencyNode::Self_),
-            RootDictionaryRef::Parent => None,
-        }
-    }
-
-    fn offer_to_ref(ref_: &'a OfferToRef) -> DependencyNode<'a> {
-        match ref_ {
-            OfferToRef::Named(name) => DependencyNode::Named(name),
-            OfferToRef::All => panic!(r#"offer to "all" may not be in Dependency Graph"#),
-            OfferToRef::OwnDictionary(name) => DependencyNode::Named(name),
-        }
-    }
-}
-
-impl<'a> fmt::Display for DependencyNode<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DependencyNode::Self_ => write!(f, "self"),
-            DependencyNode::Named(name) => write!(f, "#{}", name),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -4721,97 +4597,6 @@ mod tests {
                 }),
             Err(Error::Validate { err, .. }) if err.starts_with("Dependency can only be provided for")
         ),
-        test_cml_offer_dependency_cycle(
-            json!({
-                    "offer": [
-                        {
-                            "protocol": "fuchsia.logger.Log",
-                            "from": "#a",
-                            "to": [ "#b" ],
-                            "dependency": "strong"
-                        },
-                        {
-                            "directory": "data",
-                            "from": "#b",
-                            "to": [ "#c" ],
-                        },
-                        {
-                            "protocol": "ethernet",
-                            "from": "#c",
-                            "to": [ "#a" ],
-                        },
-                        {
-                            "runner": "elf",
-                            "from": "#b",
-                            "to": [ "#d" ],
-                        },
-                        {
-                            "resolver": "http",
-                            "from": "#d",
-                            "to": [ "#b" ],
-                        },
-                    ],
-                    "children": [
-                        {
-                            "name": "a",
-                            "url": "fuchsia-pkg://fuchsia.com/a#meta/a.cm"
-                        },
-                        {
-                            "name": "b",
-                            "url": "fuchsia-pkg://fuchsia.com/b#meta/b.cm"
-                        },
-                        {
-                            "name": "c",
-                            "url": "fuchsia-pkg://fuchsia.com/b#meta/c.cm"
-                        },
-                        {
-                            "name": "d",
-                            "url": "fuchsia-pkg://fuchsia.com/b#meta/d.cm"
-                        },
-                    ]
-                }),
-            Err(Error::Validate {
-                err,
-                ..
-            }) if &err ==
-                "Strong dependency cycles were found. Break the cycle by removing a \
-                dependency or marking an offer as weak. Cycles: \
-                {{#a -> #b -> #c -> #a}, {#b -> #d -> #b}}"
-        ),
-        test_cml_offer_weak_dependency_cycle(
-            json!({
-                    "offer": [
-                        {
-                            "protocol": "fuchsia.logger.Log",
-                            "from": "#child_a",
-                            "to": [ "#child_b" ],
-                            "dependency": "weak"
-                        },
-                        {
-                            "service": "fuchsia.service.Test",
-                            "from": "#child_a",
-                            "to": [ "#child_b" ],
-                            "dependency": "weak"
-                        },
-                        {
-                            "directory": "data",
-                            "from": "#child_b",
-                            "to": [ "#child_a" ],
-                        },
-                    ],
-                    "children": [
-                        {
-                            "name": "child_a",
-                            "url": "fuchsia-pkg://fuchsia.com/child_a#meta/child_a.cm"
-                        },
-                        {
-                            "name": "child_b",
-                            "url": "fuchsia-pkg://fuchsia.com/child_b#meta/child_b.cm"
-                        },
-                    ]
-                }),
-            Ok(())
-        ),
 
         // children
         test_cml_children(
@@ -7168,124 +6953,6 @@ mod tests {
                 ],
             }),
             Err(Error::Validate { err, .. }) if &err == "\"offer\" has dictionary target \"self/dict\" but \"dict\" sets \"path\". Therefore, it is a dynamic dictionary that does not allow offers into it."
-        ),
-        test_cml_offer_dependency_cycle_from_dictionary(
-            json!({
-                    "offer": [
-                        {
-                            "protocol": "1",
-                            "from": "#a/in/dict",
-                            "to": [ "#b" ],
-                            "dependency": "strong"
-                        },
-                        {
-                            "directory": "2",
-                            "from": "#b/in/dict",
-                            "to": [ "#a" ],
-                        },
-                    ],
-                    "children": [
-                        {
-                            "name": "a",
-                            "url": "fuchsia-pkg://fuchsia.com/a#meta/a.cm"
-                        },
-                        {
-                            "name": "b",
-                            "url": "fuchsia-pkg://fuchsia.com/b#meta/b.cm"
-                        },
-                    ]
-                }),
-            Err(Error::Validate {
-                err,
-                ..
-            }) if &err ==
-                "Strong dependency cycles were found. Break the cycle by removing a \
-                dependency or marking an offer as weak. Cycles: \
-                {{#a -> #b -> #a}}"
-        ),
-        test_cml_offer_dependency_cycle_with_dictionary(
-            json!({
-                "capabilities": [
-                    {
-                        "dictionary": "dict",
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "a",
-                        "url": "#meta/a.cm",
-                    },
-                    {
-                        "name": "b",
-                        "url": "#meta/b.cm",
-                    },
-                ],
-                "offer": [
-                    {
-                        "dictionary": "dict",
-                        "from": "self",
-                        "to": "#a",
-                    },
-                    {
-                        "protocol": "1",
-                        "from": "#b",
-                        "to": "self/dict",
-                    },
-                    {
-                        "protocol": "2",
-                        "from": "#a",
-                        "to": "#b",
-                    },
-                ],
-            }),
-            Err(Error::Validate {
-                err,
-                ..
-            }) if &err ==
-                "Strong dependency cycles were found. Break the cycle by removing a \
-                dependency or marking an offer as weak. Cycles: {{#a -> #b -> #dict -> #a}}"
-        ),
-        test_cml_offer_dependency_cycle_with_dictionary_indirect(
-            json!({
-                "capabilities": [
-                    {
-                        "dictionary": "dict",
-                    },
-                ],
-                "children": [
-                    {
-                        "name": "a",
-                        "url": "#meta/a.cm",
-                    },
-                    {
-                        "name": "b",
-                        "url": "#meta/b.cm",
-                    },
-                ],
-                "offer": [
-                    {
-                        "protocol": "3",
-                        "from": "self/dict",
-                        "to": "#a",
-                    },
-                    {
-                        "protocol": "1",
-                        "from": "#b",
-                        "to": "self/dict",
-                    },
-                    {
-                        "protocol": "2",
-                        "from": "#a",
-                        "to": "#b",
-                    },
-                ],
-            }),
-            Err(Error::Validate {
-                err,
-                ..
-            }) if &err ==
-                "Strong dependency cycles were found. Break the cycle by removing a \
-                dependency or marking an offer as weak. Cycles: {{#a -> #b -> #dict -> #a}}"
         ),
     }}
 
