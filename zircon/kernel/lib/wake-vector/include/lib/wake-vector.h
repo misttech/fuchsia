@@ -203,10 +203,10 @@ class WakeEvent : public fbl::ContainableBaseClasses<
   // Strobe handles this operation, without needing to expose any locks to make it possible to
   // atomically Trigger/Acknowledge the object.  For all other wake source objects in the system,
   // explicit calls to Trigger and Acknowledge are what should be used.
-  WakeResult Strobe() TA_EXCL(PendingListLock::Get()) {
+  WakeResult Strobe(zx_instant_boot_t trigger_time = current_boot_time())
+      TA_EXCL(PendingListLock::Get()) {
     AnnotatedAutoPreemptDisabler preempt_disabler;
     Guard<SpinLock, IrqSave> pending_guard{PendingListLock::Get()};
-    const zx_instant_boot_t trigger_time = current_boot_time();
     const WakeResult result = TriggerLocked(trigger_time);
     AcknowledgeLocked(trigger_time, AckBehavior::ClearSignaled);
     return result;

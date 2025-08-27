@@ -447,10 +447,6 @@ zx_instant_boot_t IdlePowerThread::TransitionAllActiveToSuspend(zx_instant_boot_
     dprintf(INFO, "Wake events triggered after/during suspend:\n");
     WakeEvent::Dump(stdout, suspend_start_time);
 
-    // Ack the suspend timeout wake event after reporting wake event diagnostics.
-    using AckBehavior = wake_vector::WakeEvent::AckBehavior;
-    resume_timer_wake_vector_->wake_event.Acknowledge(AckBehavior::ClearSignaled);
-
     // If the boot CPU is in the Wakeup state, set it to Active.
     StateMachine expected = kWakeup;
     const bool succeeded = boot_idle_power_thread.CompareExchangeState(expected, kActive);
@@ -550,7 +546,7 @@ void IdlePowerThread::ResumeFromTimerIrq(zx_instant_boot_t now, zx_instant_boot_
   // Verify this handler is running in the correct context.
   DEBUG_ASSERT(arch_curr_cpu_num() == BOOT_CPU_ID);
 
-  const WakeResult wake_result = resume_timer_wake_vector_->wake_event.Trigger(now);
+  const WakeResult wake_result = resume_timer_wake_vector_->wake_event.Strobe(now);
   const char* message_prefix = wake_result == WakeResult::SuspendAborted
                                    ? "Wakeup before suspend completed. Aborting suspend"
                                    : "Resuming boot CPU";
