@@ -620,31 +620,6 @@ struct DevfsDevice {
 
 // TODO(https://fxbug.dev/326325522): This is an abuse of directories.
 impl RemoteLike for DevfsDevice {
-    fn deprecated_open(
-        self: Arc<Self>,
-        _scope: vfs::execution_scope::ExecutionScope,
-        _flags: fidl_fuchsia_io::OpenFlags,
-        path: vfs::path::Path,
-        server_end: ServerEnd<fidl_fuchsia_io::NodeMarker>,
-    ) {
-        // If we are opening the device directly we get the device protocol.
-        if path.is_dot() || path.is_empty() {
-            let () = self
-                .device
-                .serve_device(server_end.into_channel().into())
-                .unwrap_or_else(|e| error!("failed to serve device on path {}: {}", self.path, e));
-            return;
-        }
-        // If we are opening "device_controller" then we get fuchsia.device/Controller.
-        if path.as_ref() == "device_controller" {
-            let () = self.device.serve_controller(server_end.into_channel().into()).unwrap_or_else(
-                |e| error!("failed to serve controller on path {}: {}", self.path, e),
-            );
-            return;
-        }
-        error!("failed to serve device or controller: Bad path {}", path.as_ref());
-    }
-
     fn open(
         self: Arc<Self>,
         _scope: vfs::execution_scope::ExecutionScope,
