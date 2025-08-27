@@ -1,0 +1,290 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+//! A fake server library for the protocol `fidl.fuchsia.time.alarms/WakeAlarms`, for reuse in the
+//! unit tests of clients of `WakeAlarm`.
+//!
+//! It serves a simplified but somewhat functional flavor of the `WakeAlarms` FIDL API, which
+//! covers the needs of unit tests we identified so far. This is not a fully-fledged
+//! implementation, so be sure to verify that what it does is enough for your purposes.
+//!
+//! If you need a fully capable server component for tests, see
+//! `//src/sys/time/testing/wake-alarms` instead.
+//!
+//! Include the library as follows. In `BUILD.gn`:
+//! ```ignore
+//! deps = [
+//!     "//src/sys/time/testing/fake-wake-alarms:lib",
+//! ]
+//! ```
+//!
+//! In rust code:
+//! ```ignore
+//! use fake_wake_alarms::*; // Or use items by name.
+//! ```
+
+use fidl_fuchsia_time_alarms as fta;
+use futures::stream::StreamExt;
+use scopeguard::defer;
+use std::collections::HashMap;
+use zx::{self as zx, HandleBased};
+
+/// Configure the response of [serve_fake_wake_alarms].
+#[derive(Debug, Copy, Clone)]
+pub enum Response {
+    /// Respond immediately, without waiting.
+    Immediate,
+    /// Delay a response, sometimes controlled by additional values.
+    Delayed,
+    /// Respond with an error.
+    Error,
+}
+
+/// Scheduling a hrtimer with this deadline will expire it.
+pub const MAGIC_EXPIRE_DEADLINE: i64 = 424242;
+
+/// Makes sure that a dropped responder is properly responded to.
+pub struct ResponderCleanup {
+    alarm_id: String,
+    responder: Option<fta::WakeAlarmsSetAndWaitResponder>,
+    notifier: Option<fidl::endpoints::ClientEnd<fta::NotifierMarker>>,
+}
+
+impl Drop for ResponderCleanup {
+    fn drop(&mut self) {
+        if let Some(responder) = self.responder.take() {
+            log::debug!("dropping responder: {responder:?}");
+            responder
+                .send(Err(fta::WakeAlarmsError::Dropped))
+                .expect("should be able to respond to a FIDL message")
+        }
+        if let Some(notifier) = self.notifier.take() {
+            log::debug!("dropping notifier: {notifier:?}");
+            notifier
+                .into_proxy()
+                .notify_error(&self.alarm_id, fta::WakeAlarmsError::Dropped)
+                .expect("should be able to respond to a FIDL message")
+        }
+    }
+}
+
+fn signal_handle<H: HandleBased>(
+    handle: &H,
+    clear_mask: zx::Signals,
+    set_mask: zx::Signals,
+) -> Result<(), zx::Status> {
+    handle.signal_handle(clear_mask, set_mask).map_err(|err| {
+        log::error!("while signaling handle: {err:?}: clear: {clear_mask:?}, set: {set_mask:?}");
+        err
+    })
+}
+
+/// Serves a fake `fuchsia.time.alarms/Wake` API. The behavior is simplistic when compared to
+/// the "real" implementation in that it never actually expires alarms on its own, and has
+/// fixed behavior for each scheduled alarm, which is selected at the beginning of the test.
+///
+/// Despite this, we can use it to check a number of correctness scenarios with unit tests.
+///
+/// This allows us to remove the flakiness that may arise from the use of real time, and also
+/// avoid the complications of fake time.  If you want an alarm that expires, schedule it with
+/// a deadline of `MAGIC_EXPIRE_DEADLINE` above, and call this with `response_type ==
+/// Response::Delayed`.
+pub async fn serve_fake_wake_alarms(
+    message_counter: zx::Counter,
+    response_type: Response,
+    mut stream: fta::WakeAlarmsRequestStream,
+    once: bool,
+) {
+    log::warn!("serve_fake_wake_alarms: serving loop entry. response_type={:?}", response_type);
+    let mut responders: HashMap<String, ResponderCleanup> = HashMap::new();
+    if once {
+        return;
+    }
+
+    while let Some(maybe_request) = stream.next().await {
+        match maybe_request {
+            Ok(request) => {
+                log::debug!(
+                    "serve_fake_wake_alarms: request: {:?}; response_type: {:?}",
+                    request,
+                    response_type
+                );
+
+                match request {
+                    fta::WakeAlarmsRequest::SetAndWait { mode, responder, alarm_id, deadline } => {
+                        log::debug!(
+                            "serve_fake_wake_alarms: SetAndWait: alarm_id: {:?}: deadline: {:?}",
+                            alarm_id,
+                            deadline
+                        );
+                        defer! {
+                            if let fta::SetMode::NotifySetupDone(setup_done) = mode {
+                                // Caller blocks until this event is signaled.
+                                signal_handle(&setup_done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).unwrap();
+                            }
+                        };
+                        match response_type {
+                            Response::Delayed => {
+                                // Just don't respond, forever.
+                                log::debug!("serve_fake_wake_alarms: SetAndWait: will not respond");
+                                // A special value that causes alarm expiry.
+                                if deadline.into_nanos() == MAGIC_EXPIRE_DEADLINE {
+                                    // If any responders are removed, then add one return
+                                    // message for each.
+                                    let r_count_before = responders.len();
+                                    responders.retain(|k, _| *k != alarm_id);
+                                    let r_count_after = responders.len();
+
+                                    message_counter
+                                        .add(
+                                            (r_count_before - r_count_after)
+                                                .try_into()
+                                                .expect("should be convertible"),
+                                        )
+                                        .expect("add to message_counter");
+                                    let (_, peer) = zx::EventPair::create();
+                                    message_counter.add(1).expect("add 1 to message counter");
+                                    responder.send(Ok(peer)).expect("send FIDL response");
+                                } else {
+                                    let removed = responders.insert(
+                                        alarm_id.clone(),
+                                        ResponderCleanup {
+                                            alarm_id,
+                                            responder: Some(responder),
+                                            notifier: None,
+                                        },
+                                    );
+                                    // If a responder was removed, add a return message for it.
+                                    if let Some(_) = removed {
+                                        message_counter.add(1).unwrap();
+                                    }
+                                }
+                            }
+                            Response::Immediate => {
+                                // Manufacture a token to return, not relevant for the test.
+                                let (_ignored, fake_lease) = zx::EventPair::create();
+                                message_counter.add(1).unwrap();
+                                responder.send(Ok(fake_lease)).expect("infallible");
+                                log::debug!(
+                                    "serve_fake_wake_alarms: SetAndWait: test fake responded immediately"
+                                );
+                            }
+                            Response::Error => {
+                                message_counter.add(1).unwrap();
+                                responder
+                                    .send(Err(fta::WakeAlarmsError::Unspecified))
+                                    .expect("infallible");
+                                log::debug!(
+                                    "serve_fake_wake_alarms: SetAndWait: Responded with error"
+                                );
+                            }
+                        }
+                    }
+                    fta::WakeAlarmsRequest::Set {
+                        notifier,
+                        deadline,
+                        mode,
+                        alarm_id,
+                        responder,
+                    } => {
+                        log::debug!(
+                            "serve_fake_wake_alarms: Set: alarm_id: {:?}: deadline: {:?}",
+                            alarm_id,
+                            deadline
+                        );
+                        defer! {
+                            if let fta::SetMode::NotifySetupDone(setup_done) = mode {
+                                // Caller blocks until this event is signaled.
+                                signal_handle(&setup_done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).unwrap();
+                            }
+                        };
+                        match response_type {
+                            Response::Delayed => {
+                                // Just don't respond, forever.
+                                log::debug!("serve_fake_wake_alarms: Set: will not respond");
+                                // A special value that causes alarm expiry.
+                                if deadline.into_nanos() == MAGIC_EXPIRE_DEADLINE {
+                                    responder.send(Ok(())).expect("send FIDL response");
+
+                                    // If any responders are removed, then add one return
+                                    // message for each.
+                                    let r_count_before = responders.len();
+                                    responders.retain(|k, _| *k != alarm_id);
+                                    let r_count_after = responders.len();
+
+                                    message_counter
+                                        .add(
+                                            (r_count_before - r_count_after)
+                                                .try_into()
+                                                .expect("should be convertible"),
+                                        )
+                                        .expect("add to message_counter");
+                                    let (_, peer) = zx::EventPair::create();
+                                    message_counter.add(1).expect("add 1 to message counter");
+                                    notifier
+                                        .into_proxy()
+                                        .notify(&alarm_id, peer)
+                                        .expect("send Notify FIDL request");
+                                } else {
+                                    let removed = responders.insert(
+                                        alarm_id.clone(),
+                                        ResponderCleanup {
+                                            alarm_id,
+                                            responder: None,
+                                            notifier: Some(notifier),
+                                        },
+                                    );
+                                    // If a responder was removed, add a return message for it.
+                                    if let Some(_) = removed {
+                                        message_counter.add(1).unwrap();
+                                    }
+                                }
+                            }
+                            Response::Immediate => {
+                                // Manufacture a token to return, not relevant for the test.
+                                let (_ignored, fake_lease) = zx::EventPair::create();
+                                message_counter.add(1).unwrap();
+                                responder.send(Ok(())).expect("send FIDL response");
+                                notifier
+                                    .into_proxy()
+                                    .notify(&alarm_id, fake_lease)
+                                    .expect("send Notify FIDL request");
+                                log::debug!(
+                                    "serve_fake_wake_alarms: Set: test fake responded immediately"
+                                );
+                            }
+                            Response::Error => {
+                                message_counter.add(1).unwrap();
+                                responder
+                                    .send(Err(fta::WakeAlarmsError::Unspecified))
+                                    .expect("infallible");
+                                log::debug!("serve_fake_wake_alarms: Set: Responded with error");
+                            }
+                        }
+                    }
+                    fta::WakeAlarmsRequest::Cancel { alarm_id, .. } => {
+                        let r_count_before = responders.len();
+                        responders.retain(|k, _| *k != alarm_id);
+                        let r_count_after = responders.len();
+                        message_counter
+                            .add((r_count_before - r_count_after).try_into().unwrap())
+                            .unwrap();
+
+                        log::debug!("serve_fake_wake_alarms: Cancel: {}", alarm_id);
+                    }
+                    fta::WakeAlarmsRequest::SetUtc { .. } => {
+                        panic!("Not implemented: b/437984687");
+                    }
+                    fta::WakeAlarmsRequest::_UnknownMethod { .. } => unreachable!(),
+                }
+            }
+            Err(e) => {
+                // This may or may not be an error, depending on what you wanted
+                // to test.
+                log::warn!("alarms::serve: error in request: {:?}", e);
+            }
+        }
+    }
+    log::warn!("serve_fake_wake_alarms: exiting");
+}

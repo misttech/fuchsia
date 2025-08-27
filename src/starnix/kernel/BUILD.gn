@@ -446,6 +446,7 @@ rustc_library("starnix_core") {
     "//src/lib/test_util",
     "//src/storage/ext4/tests:test_img",
     "//src/storage/fxfs/platform:fxfs-testing",
+    "//src/sys/time/testing/fake-wake-alarms:lib",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:test-case",

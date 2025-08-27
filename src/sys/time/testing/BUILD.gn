@@ -13,6 +13,7 @@ group("testing") {
     ":timekeeper_integration",
     "example",
     "fake-hrtimer",
+    "fake-wake-alarms",
     "realm-proxy",
     "wake-alarms",
   ]
