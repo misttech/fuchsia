@@ -713,3 +713,8 @@
 	url = https://fuchsia.googlesource.com/third_party/github.com/nedbat/coveragepy
 	name = third_party/pylibs/coverage
 	ignore = all
+[submodule "third_party/github.com/ridiculousfish/libdivide/src"]
+	path = third_party/github.com/ridiculousfish/libdivide/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/ridiculousfish/libdivide
+	name = third_party/github.com/ridiculousfish/libdivide
+	ignore = all
