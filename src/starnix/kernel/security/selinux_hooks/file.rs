@@ -249,8 +249,7 @@ pub(in crate::security) fn check_file_fcntl_access(
     } else if old_flags.can_write() {
         // If a file is opened with the WRITE and APPEND permissions, only the APPEND permission is
         // checked. Now that the append flag was cleared we need to check the WRITE permission.
-        todo_has_fs_node_permissions(
-            TODO_DENY!("https://fxbug.dev/385121365", "Enforce file_permission() checks"),
+        has_fs_node_permissions(
             &security_server.as_permission_check(),
             current_task,
             subject_sid,
