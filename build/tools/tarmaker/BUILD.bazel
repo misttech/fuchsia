@@ -1,0 +1,29 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+go_library(
+    name = "lib",
+    srcs = [
+        "main.go",
+        "pargzip.go",
+    ],
+    target_compatible_with = HOST_CONSTRAINTS,
+)
+
+go_binary(
+    name = "tarmaker",
+    embed = [":lib"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "tarmaker_tests",
+    srcs = ["pargzip_test.go"],
+    embed = [":lib"],
+    target_compatible_with = HOST_CONSTRAINTS,
+)
