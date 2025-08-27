@@ -291,6 +291,9 @@ pub async fn serve_fake_wake_alarms(
                     fta::WakeAlarmsRequest::SetUtc { .. } => {
                         panic!("Not implemented: b/437984687");
                     }
+                    fta::WakeAlarmsRequest::SetAndWaitUtc { .. } => {
+                        panic!("Not implemented: b/437984687");
+                    }
                     fta::WakeAlarmsRequest::_UnknownMethod { .. } => unreachable!(),
                 }
             }

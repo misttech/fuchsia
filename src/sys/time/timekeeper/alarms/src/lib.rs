@@ -431,6 +431,7 @@ async fn handle_request(
     request: fta::WakeAlarmsRequest,
 ) {
     match request {
+        fta::WakeAlarmsRequest::SetAndWaitUtc { .. } => todo!(),
         fta::WakeAlarmsRequest::SetAndWait { deadline, mode, alarm_id, responder } => {
             // Since responder is consumed by the happy path and the error path, but not both,
             // and because the responder does not implement Default, this is a way to

@@ -90,6 +90,29 @@
     },
     {
         "kind": "struct/member",
+        "name": "fuchsia.time.alarms/SetAndWaitUtcArgs.alarm_id",
+        "ordinal": "3",
+        "type": "string:128"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.time.alarms/SetAndWaitUtcArgs.deadline",
+        "ordinal": "1",
+        "type": "fuchsia.time.alarms/InstantUtc"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.time.alarms/SetAndWaitUtcArgs.mode",
+        "ordinal": "2",
+        "type": "fuchsia.time.alarms/SetMode"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.time.alarms/SetAndWaitUtcArgs",
+        "resourceness": "resource"
+    },
+    {
+        "kind": "struct/member",
         "name": "fuchsia.time.alarms/SetArgs.alarm_id",
         "ordinal": "4",
         "type": "string:128"
@@ -188,6 +211,16 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.time.alarms/WakeAlarms.SetAndWaitUtc",
+        "strictness": "flexible",
+        "ordinal": "5667390026403037721",
+        "direction": "two_way",
+        "request": "fuchsia.time.alarms/SetAndWaitUtcArgs",
+        "response": "fuchsia.time.alarms/WakeAlarms_SetAndWaitUtc_Response",
+        "error": "fuchsia.time.alarms/WakeAlarmsError"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.time.alarms/WakeAlarms.SetUtc",
         "strictness": "flexible",
         "ordinal": "3749569155270746564",
@@ -237,6 +270,17 @@
         "name": "fuchsia.time.alarms/WakeAlarmsError",
         "strictness": "flexible",
         "type": "uint32"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.time.alarms/WakeAlarms_SetAndWaitUtc_Response.keep_alive",
+        "ordinal": "1",
+        "type": "zx/Handle:<EVENTPAIR,zx.DUPLICATE,zx.TRANSFER,zx.WAIT>"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.time.alarms/WakeAlarms_SetAndWaitUtc_Response",
+        "resourceness": "resource"
     },
     {
         "kind": "struct/member",

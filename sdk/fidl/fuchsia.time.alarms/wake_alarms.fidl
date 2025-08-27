@@ -66,13 +66,21 @@ open protocol WakeAlarms {
     /// causes that scheduled alarm to be canceled before the new alarm is
     /// scheduled.
     ///
-    /// The call to `SetAndWait` returns when the alarm fires, an error
-    /// occurs, or the alarm is canceled.
-    ///
     /// ## Return value
     ///
     /// * `keep_alive`: A handle that prevents the system from suspending as
     ///   long as it is held.
+    ///
+    /// The call to `SetAndWait` returns when the alarm fires, an error occurs,
+    /// or the alarm is canceled. This return style is required for some
+    /// clients, such as Starnix, which rely on FIDL response tallying to guide
+    /// their power management strategy.
+    ///
+    /// As an example, under Starnix, a response to this request will cause a
+    /// Starnix container to be unsuspended ("woken up"). This is a critical
+    /// behavior for suspend correctness under Starnix. Using the [Notifier]
+    /// approach would side-step this mechanism and result in incorrect wake
+    /// behavior under Starnix.
     ///
     /// ## Protocol Errors
     ///
@@ -221,6 +229,35 @@ open protocol WakeAlarms {
         /// that alarm.
         alarm_id AlarmId;
     }) -> () error WakeAlarmsError;
+
+    /// Similar to [SetAndWait], except the alarm is scheduled on the UTC
+    /// timeline.
+    ///
+    /// Refer to [SetAndWait] documentation for the functionality details, and
+    /// especially see the section "Return value" for the return value
+    /// subtleties.
+    @available(added=NEXT)
+    SetAndWaitUtc(@generated_name("SetAndWaitUtcArgs") resource struct {
+        /// The deadline at which the timer is supposed to fire. This
+        /// corresponds to a time instant on the UTC timeline.
+        deadline InstantUtc;
+
+        /// Optional mode that allows the API to support a number of use cases.
+        mode SetMode;
+
+        /// A unique identifier for the alarm.
+        ///
+        /// A unique value of `AlarmId` must be picked for each unique alarm
+        /// within a single FIDL connection's scope.
+        ///
+        /// Supplying an `alarm_id` for an already scheduled alarm reschedules
+        /// that alarm.
+        alarm_id AlarmId;
+    }) -> (resource struct {
+        /// Used by the caller to ensure a minimum time slice for useful work,
+        /// before the system may suspend again.
+        keep_alive fuchsia.power.system.LeaseToken;
+    }) error WakeAlarmsError;
 };
 
 /// [Notifier] is used to notify when a wake alarm fires.
