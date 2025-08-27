@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::BTreeMap;
 
 const DEFAULT_CONFIG: &str = include_str!("../default_ssh_config");
@@ -84,7 +84,7 @@ impl SshConfig {
     }
 
     /// New config instance with defaults loaded.
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, ParseSshConfigError> {
         let mut me = Self::empty();
         me.read_default_config(DEFAULT_CONFIG)?;
         Ok(me)
@@ -124,7 +124,7 @@ impl SshConfig {
         Ok(())
     }
 
-    fn read_default_config(&mut self, config_contents: &str) -> Result<()> {
+    fn read_default_config(&mut self, config_contents: &str) -> Result<(), ParseSshConfigError> {
         for mut l in config_contents.lines() {
             l = l.trim();
             match l {
@@ -140,16 +140,29 @@ impl SshConfig {
                         } else if IGNORED_KEYS.contains(&key) {
                             log::info!("ignoring ssh config key {key}");
                         } else {
-                            bail!("Unknown configuration key \"{key}\" in {l}");
+                            return Err(ParseSshConfigError::UnknownConfigurationKey {
+                                key: key.to_string(),
+                                line: l.to_string(),
+                            });
                         }
                     } else {
-                        bail!("Invalid configuration line [{l}");
+                        return Err(ParseSshConfigError::InvalidConfigurationLine {
+                            line: l.to_string(),
+                        });
                     }
                 }
             }
         }
         Ok(())
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ParseSshConfigError {
+    #[error("Invalid configuration line [{line}")]
+    InvalidConfigurationLine { line: String },
+    #[error("Unknown configuration key  \"{key}\" in {line}")]
+    UnknownConfigurationKey { key: String, line: String },
 }
 
 #[cfg(test)]
