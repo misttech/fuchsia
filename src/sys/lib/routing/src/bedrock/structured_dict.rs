@@ -5,10 +5,10 @@
 use crate::DictExt;
 use cm_types::{BorrowedName, IterablePath, Name};
 use fidl_fuchsia_component_sandbox as fsandbox;
-use lazy_static::lazy_static;
 use sandbox::{Capability, Dict};
 use std::fmt;
 use std::marker::PhantomData;
+use std::sync::LazyLock;
 
 /// This trait is implemented by types that wrap a [Dict] and wish to present an abstracted
 /// interface over the [Dict].
@@ -92,25 +92,23 @@ impl<T: StructuredDict> From<StructuredDictMap<T>> for Dict {
 }
 
 // Dictionary keys for different kinds of sandboxes.
-lazy_static! {
-    /// Dictionary of capabilities from or to the parent.
-    static ref PARENT: Name = "parent".parse().unwrap();
+/// Dictionary of capabilities from or to the parent.
+static PARENT: LazyLock<Name> = LazyLock::new(|| "parent".parse().unwrap());
 
-    /// Dictionary of capabilities from a component's environment.
-    static ref ENVIRONMENT: Name = "environment".parse().unwrap();
+/// Dictionary of capabilities from a component's environment.
+static ENVIRONMENT: LazyLock<Name> = LazyLock::new(|| "environment".parse().unwrap());
 
-    /// Dictionary of debug capabilities in a component's environment.
-    static ref DEBUG: Name = "debug".parse().unwrap();
+/// Dictionary of debug capabilities in a component's environment.
+static DEBUG: LazyLock<Name> = LazyLock::new(|| "debug".parse().unwrap());
 
-    /// Dictionary of runner capabilities in a component's environment.
-    static ref RUNNERS: Name = "runners".parse().unwrap();
+/// Dictionary of runner capabilities in a component's environment.
+static RUNNERS: LazyLock<Name> = LazyLock::new(|| "runners".parse().unwrap());
 
-    /// Dictionary of resolver capabilities in a component's environment.
-    static ref RESOLVERS: Name = "resolvers".parse().unwrap();
+/// Dictionary of resolver capabilities in a component's environment.
+static RESOLVERS: LazyLock<Name> = LazyLock::new(|| "resolvers".parse().unwrap());
 
-    /// Dictionary of capabilities the component exposes to the framework.
-    static ref FRAMEWORK: Name = "framework".parse().unwrap();
-}
+/// Dictionary of capabilities the component exposes to the framework.
+static FRAMEWORK: LazyLock<Name> = LazyLock::new(|| "framework".parse().unwrap());
 
 /// Contains the capabilities component receives from its parent and environment. Stored as a
 /// [Dict] containing two nested [Dict]s for the parent and environment.

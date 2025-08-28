@@ -25,7 +25,6 @@ use fidl::endpoints::DiscoverableProtocolMarker;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use log::warn;
 use moniker::{ChildName, Moniker};
 use router_error::RouterError;
@@ -57,11 +56,9 @@ pub struct EventStreamSourceRouter {
 pub type EventStreamUseRouterFn<C> =
     dyn Fn(&Arc<C>, Vec<EventStreamSourceRouter>) -> Router<Connector>;
 
-lazy_static! {
-    static ref NAMESPACE: Name = "namespace".parse().unwrap();
-    static ref RUNNER: Name = "runner".parse().unwrap();
-    static ref CONFIG: Name = "config".parse().unwrap();
-}
+static NAMESPACE: LazyLock<Name> = LazyLock::new(|| "namespace".parse().unwrap());
+static RUNNER: LazyLock<Name> = LazyLock::new(|| "runner".parse().unwrap());
+static CONFIG: LazyLock<Name> = LazyLock::new(|| "config".parse().unwrap());
 
 /// All capabilities that are available to a component's program.
 #[derive(Debug, Clone)]

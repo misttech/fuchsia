@@ -6,8 +6,7 @@ use crate::component_instance::{ComponentInstanceInterface, ExtendedInstanceInte
 use crate::error::ComponentInstanceError;
 use anyhow::Error;
 use clonable_error::ClonableError;
-use lazy_static::lazy_static;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use url::Url;
 use version_history::AbiRevision;
@@ -18,11 +17,10 @@ use cm_rust::{FidlIntoNative, NativeIntoFidl};
 
 /// The prefix for relative URLs internally represented as url::Url.
 const RELATIVE_URL_PREFIX: &str = "relative:///";
-lazy_static! {
-    /// A default base URL from which to parse relative component URL
-    /// components.
-    static ref RELATIVE_URL_BASE: Url = Url::parse(RELATIVE_URL_PREFIX).unwrap();
-}
+/// A default base URL from which to parse relative component URL
+/// components.
+static RELATIVE_URL_BASE: LazyLock<Url> =
+    LazyLock::new(|| Url::parse(RELATIVE_URL_PREFIX).unwrap());
 
 /// The response returned from a Resolver. This struct is derived from the FIDL
 /// [`fuchsia.component.resolution.Component`][fidl_fuchsia_component_resolution::Component]
