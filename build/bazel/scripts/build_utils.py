@@ -257,6 +257,102 @@ assert not is_likely_content_hash_path("/src/.build-id/log.txt")
 LogFunc = T.Callable[[str], None]
 
 
+class TimeProfile(object):
+    """Track duration of generation/build steps' start and end times.
+
+    Usage is:
+      1) Create instance.
+
+      2) Call start() when starting a new step. Repeat as many times as needed.
+
+      3) Optionally call stop() when a step has completed. Useful if some
+         unrelated work needs to happen after the next start() call.
+
+      4) Call print() to print a table detailing the timings of all
+         steps over a given threshold.
+    """
+
+    def __init__(
+        self,
+        log: None | LogFunc = None,
+        now: None | T.Callable[[], float] = None,
+    ) -> None:
+        """Constructor.
+
+        Args:
+            log: An optional callable that can be used to print step descriptions
+               when start() is called.
+            now: An optional callable that can be used to return the current time
+               in seconds. Default is to use time.time. Only used for tests.
+        """
+        self._now = now if now else time.time
+        self._start_time = self._now()
+        self._steps: list[tuple[float, float, str]] = []
+        self._log = log
+
+    def start(self, name: str, description: str = "") -> None:
+        """Start a new regeneration step (and stop the current one if any)
+
+        Args:
+            name: Step name (used in final print() output)
+            description: Optional step description. Will be sent to the log
+               if one was provided in the constructor.
+        """
+        if description and self._log:
+            self._log(description)
+        cur_time = self._close_last_step()
+        self._steps.append((cur_time, 0, name))
+
+    def stop(self) -> None:
+        """Stop the current step (record its end time)."""
+        self._close_last_step()
+
+    def _close_last_step(self) -> float:
+        cur_time = self._now()
+        if self._steps:
+            start_time, end_time, name = self._steps[-1]
+            if end_time == 0:
+                end_time = cur_time
+                self._steps[-1] = (start_time, end_time, name)
+        return cur_time
+
+    def to_json_timings(self) -> dict[str, float]:
+        """Generate a JSON object detailing the durtaion of each step.
+
+        Returns:
+           A dictionary mapping step names to durations in seconds.
+           Keys are ordered according to step execution.
+        """
+        self._close_last_step()
+        return {
+            name: end_time - start_time
+            for start_time, end_time, name in self._steps
+        }
+
+    def print(self, short_step_threshold: float = 0.0) -> None:
+        """Print timings results for all recorded steps.
+
+        Args:
+            short_step_threshold: A threshold in seconds. Any step
+                that was faster than this will be omitted from the
+                output.
+        """
+        self._close_last_step()
+        if short_step_threshold:
+            print(
+                "Timing results for regeneration steps slower than %.1f seconds:"
+                % short_step_threshold
+            )
+        else:
+            print("Timing results for all regeneration steps:")
+        for step in self._steps:
+            start_time, end_time, name = step
+            duration = end_time - start_time
+            if duration < short_step_threshold:
+                continue
+            print("%5.2fs   %s" % (end_time - start_time, name))
+
+
 def log_stderr(msg: str) -> None:
     """A LogFunc implementation that prints messages to stderr."""
     print(msg, file=sys.stderr)

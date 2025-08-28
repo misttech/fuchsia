@@ -13,7 +13,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import time
 import typing as T
 from pathlib import Path
 
@@ -106,82 +105,6 @@ def generate_bazel_content_hash_files(
         result |= fstate.get_input_file_paths()
 
     return result
-
-
-class TimeProfile(object):
-    """Track regeneration steps' start and end times.
-
-    Usage is:
-      1) Create instance.
-
-      2) Call start() when starting a new step. Repeat as many times as needed.
-
-      3) Optionally call stop() when a step has completed. Useful if some
-         unrelated work needs to happen after the next start() call.
-
-      4) Call print() to print a table detailing the timings of all
-         steps over a given threshold.
-    """
-
-    def __init__(self, log: None | T.Callable[[str], None] = None) -> None:
-        """Constructor.
-
-        Args:
-            log: An optional callable that can be used to print step descriptions
-               when start() is called.
-        """
-        self._start_time = time.time()
-        self._steps: list[tuple[float, float, str]] = []
-        self._log = log
-
-    def start(self, name: str, description: str = "") -> None:
-        """Start a new regeneration step (and stop the current one if any)
-
-        Args:
-            name: Step name (used in final print() output)
-            description: Optional step description. Will be sent to the log
-               if one was provided in the constructor.
-        """
-        if description and self._log:
-            self._log(description)
-        cur_time = self._close_last_step()
-        self._steps.append((cur_time, 0, name))
-
-    def stop(self) -> None:
-        """Stop the current step (record its end time)."""
-        self._close_last_step()
-
-    def _close_last_step(self) -> float:
-        cur_time = time.time()
-        if self._steps:
-            start_time, end_time, name = self._steps[-1]
-            if end_time == 0:
-                end_time = cur_time
-                self._steps[-1] = (start_time, end_time, name)
-        return cur_time
-
-    def print(self, short_step_threshold: float = 0.0) -> None:
-        """Print timings results for all recorded steps.
-
-        Args:
-            short_step_threshold: A threshold in seconds. Any step
-                that was faster than this will be omitted from the
-                output.
-        """
-        self._close_last_step()
-        if short_step_threshold:
-            print(
-                "Timing results for regeneration steps slower than %.1f seconds:"
-                % short_step_threshold
-            )
-        else:
-            print("Timing results for all regeneration steps:")
-        for step in self._steps:
-            start_time, end_time, name = step
-            duration = end_time - start_time
-            if duration < short_step_threshold:
-                continue
-            print("%5.2fs   %s" % (end_time - start_time, name))
 
 
 def main() -> int:
@@ -340,7 +263,7 @@ def main() -> int:
         if args.quiet:
             gn_cmd_args += ["-q"]
 
-        time_profile = TimeProfile(log=log)
+        time_profile = build_utils.TimeProfile(log=log)
 
         time_profile.start(
             "gn gen", "Running gn gen to rebuild Ninja manifest..."

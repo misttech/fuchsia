@@ -282,6 +282,101 @@ class IsLikelyContentHashPath(unittest.TestCase):
             )
 
 
+class TestCurrentTime(object):
+    """A mock time.time() implementation used for TimeProfileTest.
+
+    Initial time is always 100 seconds, first call is 10 seconds
+    """
+
+    def __init__(self):
+        self._current_time = 100.0
+
+    def reset(self):
+        self._current_time = 100.0
+
+    def increment(self, increment: float) -> None:
+        self._current_time += increment
+
+    def __call__(self) -> float:
+        return self._current_time
+
+
+class TimeProfileTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._now = TestCurrentTime()
+
+    def test_empty(self) -> None:
+        p = build_utils.TimeProfile(now=self._now)
+        self.assertDictEqual(p.to_json_timings(), {})
+
+    def test_single_step(self) -> None:
+        now = self._now
+
+        # Verifies that if time does not increment, duration is 0.
+        p = build_utils.TimeProfile(now=now)
+        p.start("first_step", "A first step")
+        self.assertDictEqual(p.to_json_timings(), {"first_step": 0})
+
+        # Increment time by 10 seconds after start(), then calls to_json_timings()
+        # directly without a stop() call.
+        now.reset()
+        p = build_utils.TimeProfile(now=self._now)
+        p.start("first_step_again", "Another first step")
+        now.increment(10)
+        self.assertDictEqual(p.to_json_timings(), {"first_step_again": 10.0})
+
+        # Same as above, but calls stop() before increment time again.
+        now.reset()
+        p = build_utils.TimeProfile(now=self._now)
+        p.start("first_step_again", "Another first step")
+        now.increment(10)
+        p.stop()
+        now.increment(20)
+        self.assertDictEqual(p.to_json_timings(), {"first_step_again": 10.0})
+
+    def test_multiple_steps(self) -> None:
+        now = self._now
+        p = build_utils.TimeProfile(now=now)
+        p.start("first", "First step")
+        now.increment(20)
+        p.start("second", "Second step")
+        now.increment(10)
+        p.stop()
+        now.increment(10)
+        p.start("third", "Third step")
+        now.increment(40)
+        p.stop()
+        now.increment(1000)
+
+        self.assertDictEqual(
+            p.to_json_timings(),
+            {
+                "first": 20,
+                "second": 10,
+                "third": 40,
+            },
+        )
+
+    def test_log(self) -> None:
+        now = self._now
+
+        log_messages = []
+
+        def log(msg: str) -> None:
+            log_messages.append(msg)
+
+        p = build_utils.TimeProfile(now=now, log=log)
+        p.start("first", "first message")
+        now.increment(10)
+        p.start("second", "second message")
+        now.increment(10)
+        p.start("third", "third message")
+
+        self.assertListEqual(
+            log_messages, ["first message", "second message", "third message"]
+        )
+
+
 class TestBazelLauncher(BazelLauncher):
     """A BazelLauncher sub-class used to mock subprocess invocation.
 
