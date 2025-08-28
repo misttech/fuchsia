@@ -367,26 +367,6 @@ impl Credentials {
         }
     }
 
-    /// Compares the user ID of `self` to that of `other`.
-    ///
-    /// Used to check whether a task can signal another.
-    ///
-    /// From https://man7.org/linux/man-pages/man2/kill.2.html:
-    ///
-    /// > For a process to have permission to send a signal, it must either be
-    /// > privileged (under Linux: have the CAP_KILL capability in the user
-    /// > namespace of the target process), or the real or effective user ID of
-    /// > the sending process must equal the real or saved set- user-ID of the
-    /// > target process.
-    ///
-    /// Returns true if the credentials are considered to have the same user ID.
-    pub fn has_same_uid(&self, other: &Credentials) -> bool {
-        self.euid == other.saved_uid
-            || self.euid == other.uid
-            || self.uid == other.uid
-            || self.uid == other.saved_uid
-    }
-
     pub fn is_superuser(&self) -> bool {
         self.euid == 0
     }

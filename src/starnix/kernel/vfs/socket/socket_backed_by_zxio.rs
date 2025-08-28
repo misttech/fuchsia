@@ -124,7 +124,10 @@ impl ZxioBackedSocket {
         protocol: SocketProtocol,
     ) -> Result<ZxioBackedSocket, Errno> {
         let marks = if current_task.kernel().features.netstack_mark {
-            &mut [ZxioSocketMark::so_mark(0), ZxioSocketMark::uid(current_task.current_creds().uid)]
+            &mut [
+                ZxioSocketMark::so_mark(0),
+                ZxioSocketMark::uid(current_task.with_current_creds(|creds| creds.uid)),
+            ]
         } else {
             &mut [][..]
         };

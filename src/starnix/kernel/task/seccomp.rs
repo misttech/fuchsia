@@ -405,9 +405,7 @@ impl SeccompState {
     // audit log.  Also, it does not match the Linux format.  Still, the machinery
     // is in place for when we have to support it for real.
     fn log_action(task: &CurrentTask, syscall: &Syscall) {
-        let creds = task.current_creds();
-        let uid = creds.uid;
-        let gid = creds.gid;
+        let (uid, gid) = task.with_current_creds(|creds| (creds.uid, creds.gid));
         let comm_r = task.command();
         let comm = if let Ok(c) = comm_r.to_str() { c } else { "???" };
 

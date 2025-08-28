@@ -1588,7 +1588,7 @@ impl ThreadGroup {
                 code: SI_USER as i32,
                 detail: SignalDetail::Kill {
                     pid: current_task.thread_group().leader,
-                    uid: current_task.current_creds().uid,
+                    uid: current_task.with_current_creds(|creds| creds.uid),
                 },
                 ..SignalInfo::default(signal)
             };
@@ -1613,7 +1613,7 @@ impl ThreadGroup {
             code: SI_USER as i32,
             detail: SignalDetail::Kill {
                 pid: current_task.thread_group().leader,
-                uid: current_task.current_creds().uid,
+                uid: current_task.with_current_creds(|creds| creds.uid),
             },
             ..SignalInfo::default(signal)
         };

@@ -425,9 +425,11 @@ impl CurrentTask {
     /// setpriority(2), more ambiguous language at sched_setscheduler(2), and no
     /// particular specification at sched_setparam(2).
     fn is_euid_friendly_with(&self, target_task: &Task) -> bool {
-        let self_creds = self.current_creds();
-        let target_task_creds = target_task.real_creds();
-        self_creds.euid == target_task_creds.uid || self_creds.euid == target_task_creds.euid
+        let (target_uid, target_euid) =
+            target_task.with_real_creds(|creds| (creds.uid, creds.euid));
+        self.with_current_creds(|self_creds| {
+            self_creds.euid == target_uid || self_creds.euid == target_euid
+        })
     }
 }
 
@@ -435,16 +437,24 @@ impl CurrentTask {
 // CAP_SETUID capability bypasses these checks and allows setting any uid to any integer. Likewise
 // for gids.
 fn new_uid_allowed(current_task: &CurrentTask, uid: uid_t) -> bool {
-    uid == current_task.current_creds().uid
-        || uid == current_task.current_creds().euid
-        || uid == current_task.current_creds().saved_uid
+    // is_task_capable_noaudit also acquires the credentials lock, so we need to copy the data we need
+    // and release it before calling is_task_capable_noaudit.
+    let (current_uid, current_euid, current_saved_uid) =
+        current_task.with_current_creds(|creds| (creds.uid, creds.euid, creds.saved_uid));
+    uid == current_uid
+        || uid == current_euid
+        || uid == current_saved_uid
         || security::is_task_capable_noaudit(current_task, CAP_SETUID)
 }
 
 fn new_gid_allowed(current_task: &CurrentTask, gid: gid_t) -> bool {
-    gid == current_task.current_creds().gid
-        || gid == current_task.current_creds().egid
-        || gid == current_task.current_creds().saved_gid
+    // is_task_capable_noaudit also acquires the credentials lock, so we need to copy the data we need
+    // and release it before calling is_task_capable_noaudit.
+    let (current_gid, current_egid, current_saved_gid) =
+        current_task.with_current_creds(|creds| (creds.gid, creds.egid, creds.saved_gid));
+    gid == current_gid
+        || gid == current_egid
+        || gid == current_saved_gid
         || security::is_task_capable_noaudit(current_task, CAP_SETGID)
 }
 
@@ -452,14 +462,14 @@ pub fn sys_getuid(
     _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
 ) -> Result<uid_t, Errno> {
-    Ok(current_task.current_creds().uid)
+    Ok(current_task.with_current_creds(|creds| creds.uid))
 }
 
 pub fn sys_getgid(
     _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
 ) -> Result<gid_t, Errno> {
-    Ok(current_task.current_creds().gid)
+    Ok(current_task.with_current_creds(|creds| creds.gid))
 }
 
 pub fn sys_setuid(
@@ -513,14 +523,14 @@ pub fn sys_geteuid(
     _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
 ) -> Result<uid_t, Errno> {
-    Ok(current_task.current_creds().euid)
+    Ok(current_task.with_current_creds(|creds| creds.euid))
 }
 
 pub fn sys_getegid(
     _locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
 ) -> Result<gid_t, Errno> {
-    Ok(current_task.current_creds().egid)
+    Ok(current_task.with_current_creds(|creds| creds.egid))
 }
 
 pub fn sys_setfsuid(
@@ -564,11 +574,12 @@ pub fn sys_getresuid(
     euid_addr: UserRef<uid_t>,
     suid_addr: UserRef<uid_t>,
 ) -> Result<(), Errno> {
-    let creds = current_task.current_creds();
-    current_task.write_object(ruid_addr, &creds.uid)?;
-    current_task.write_object(euid_addr, &creds.euid)?;
-    current_task.write_object(suid_addr, &creds.saved_uid)?;
-    Ok(())
+    current_task.with_current_creds(|creds| {
+        current_task.write_object(ruid_addr, &creds.uid)?;
+        current_task.write_object(euid_addr, &creds.euid)?;
+        current_task.write_object(suid_addr, &creds.saved_uid)?;
+        Ok(())
+    })
 }
 
 pub fn sys_getresgid(
@@ -578,11 +589,12 @@ pub fn sys_getresgid(
     egid_addr: UserRef<gid_t>,
     sgid_addr: UserRef<gid_t>,
 ) -> Result<(), Errno> {
-    let creds = current_task.current_creds();
-    current_task.write_object(rgid_addr, &creds.gid)?;
-    current_task.write_object(egid_addr, &creds.egid)?;
-    current_task.write_object(sgid_addr, &creds.saved_gid)?;
-    Ok(())
+    current_task.with_current_creds(|creds| {
+        current_task.write_object(rgid_addr, &creds.gid)?;
+        current_task.write_object(egid_addr, &creds.egid)?;
+        current_task.write_object(sgid_addr, &creds.saved_gid)?;
+        Ok(())
+    })
 }
 
 pub fn sys_setreuid(
@@ -1068,9 +1080,8 @@ pub fn sys_prctl(
             current_task.thread_group().write().allowed_ptracers = allowed_ptracers;
             Ok(().into())
         }
-        PR_GET_KEEPCAPS => {
-            Ok(current_task.current_creds().securebits.contains(SecureBits::KEEP_CAPS).into())
-        }
+        PR_GET_KEEPCAPS => Ok(current_task
+            .with_current_creds(|creds| creds.securebits.contains(SecureBits::KEEP_CAPS).into())),
         PR_SET_KEEPCAPS => {
             if arg2 != 0 && arg2 != 1 {
                 return error!(EINVAL);
@@ -1129,7 +1140,7 @@ pub fn sys_prctl(
             Ok(().into())
         }
         PR_GET_SECUREBITS => {
-            let value = current_task.current_creds().securebits.bits();
+            let value = current_task.with_current_creds(|creds| creds.securebits.bits());
             Ok(value.into())
         }
         PR_SET_SECUREBITS => {
@@ -1146,8 +1157,8 @@ pub fn sys_prctl(
             Ok(().into())
         }
         PR_CAPBSET_READ => {
-            let has_cap =
-                current_task.current_creds().cap_bounding.contains(Capabilities::try_from(arg2)?);
+            let cap = Capabilities::try_from(arg2)?;
+            let has_cap = current_task.with_current_creds(|creds| creds.cap_bounding.contains(cap));
             Ok(has_cap.into())
         }
         PR_CAPBSET_DROP => {
@@ -1192,7 +1203,8 @@ pub fn sys_prctl(
                     Ok(().into())
                 }
                 PR_CAP_AMBIENT_IS_SET => {
-                    let has_cap = current_task.current_creds().cap_ambient.contains(capability_arg);
+                    let has_cap = current_task
+                        .with_current_creds(|creds| creds.cap_ambient.contains(capability_arg));
                     Ok(has_cap.into())
                 }
                 PR_CAP_AMBIENT_CLEAR_ALL => {
@@ -1348,14 +1360,26 @@ where
     // * the same `uid`, `euid`, `saved_uid`, `gid`, `egid`, `saved_gid` as the target.
     // * the CAP_SYS_RESOURCE
     if current_task.get_pid() != target_task.get_pid() {
-        let current_creds = current_task.current_creds();
-        let target_creds = target_task.real_creds();
-        if current_creds.uid != target_creds.uid
-            || current_creds.euid != target_creds.euid
-            || current_creds.saved_uid != target_creds.saved_uid
-            || current_creds.gid != target_creds.gid
-            || current_creds.egid != target_creds.egid
-            || current_creds.saved_gid != target_creds.saved_gid
+        let (target_uid, target_euid, target_saved_uid, target_gid, target_egid, target_saved_gid) =
+            target_task.with_real_creds(|creds| {
+                (creds.uid, creds.euid, creds.saved_uid, creds.gid, creds.egid, creds.saved_gid)
+            });
+        let (
+            current_uid,
+            current_euid,
+            current_saved_uid,
+            current_gid,
+            current_egid,
+            current_saved_gid,
+        ) = current_task.with_current_creds(|creds| {
+            (creds.uid, creds.euid, creds.saved_uid, creds.gid, creds.egid, creds.saved_gid)
+        });
+        if current_uid != target_uid
+            || current_euid != target_euid
+            || current_saved_uid != target_saved_uid
+            || current_gid != target_gid
+            || current_egid != target_egid
+            || current_saved_gid != target_saved_gid
         {
             security::check_task_capable(current_task, CAP_SYS_RESOURCE)?;
         }
@@ -1645,14 +1669,15 @@ pub fn sys_getgroups(
     if size > NGROUPS_MAX as usize {
         return error!(EINVAL);
     }
-    let creds = current_task.current_creds();
-    if size != 0 {
-        if size < creds.groups.len() {
-            return error!(EINVAL);
+    current_task.with_current_creds(|creds| {
+        if size != 0 {
+            if size < creds.groups.len() {
+                return error!(EINVAL);
+            }
+            current_task.write_memory(groups_addr, creds.groups.as_slice().as_bytes())?;
         }
-        current_task.write_memory(groups_addr, creds.groups.as_slice().as_bytes())?;
-    }
-    Ok(creds.groups.len())
+        Ok(creds.groups.len())
+    })
 }
 
 pub fn sys_setsid(

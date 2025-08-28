@@ -2200,7 +2200,7 @@ impl FuseKernelMessage {
         nodeid: u64,
         operation: FuseOperation,
     ) -> Result<Self, Errno> {
-        let creds = current_task.current_creds();
+        let (uid, gid) = current_task.with_current_creds(|creds| (creds.uid, creds.gid));
         Ok(Self {
             header: uapi::fuse_in_header {
                 len: u32::try_from(std::mem::size_of::<uapi::fuse_in_header>() + operation.len())
@@ -2208,8 +2208,8 @@ impl FuseKernelMessage {
                 opcode: operation.opcode(),
                 unique,
                 nodeid,
-                uid: creds.uid,
-                gid: creds.gid,
+                uid,
+                gid,
                 pid: current_task.get_tid() as u32,
                 __bindgen_anon_1: Default::default(),
             },

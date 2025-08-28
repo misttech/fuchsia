@@ -1249,6 +1249,13 @@ impl Task {
         self.persistent_info.real_creds().clone()
     }
 
+    pub fn with_real_creds<B, F>(&self, f: F) -> B
+    where
+        F: FnOnce(&Credentials) -> B,
+    {
+        f(&self.persistent_info.real_creds())
+    }
+
     pub fn ptracer_task(&self) -> WeakRef<Task> {
         let ptracer = {
             let state = self.read();
@@ -1440,7 +1447,7 @@ impl Task {
     }
 
     pub fn real_fscred(&self) -> FsCred {
-        self.real_creds().as_fscred()
+        self.with_real_creds(|creds| creds.as_fscred())
     }
 
     /// Interrupts the current task.

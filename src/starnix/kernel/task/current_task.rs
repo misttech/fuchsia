@@ -288,13 +288,26 @@ impl CurrentTask {
         }
     }
 
+    pub fn with_current_creds<B, F>(&self, f: F) -> B
+    where
+        F: FnOnce(&Credentials) -> B,
+    {
+        match self.overridden_creds.borrow().as_ref() {
+            Some(x) => f(&x.creds),
+            None => self.with_real_creds(f),
+        }
+    }
+
     pub fn current_fscred(&self) -> FsCred {
-        self.current_creds().as_fscred()
+        self.with_current_creds(|creds| creds.as_fscred())
     }
 
     pub fn current_ucred(&self) -> ucred {
-        let creds = self.current_creds();
-        ucred { pid: self.get_pid(), uid: creds.uid, gid: creds.gid }
+        self.with_current_creds(|creds| ucred {
+            pid: self.get_pid(),
+            uid: creds.uid,
+            gid: creds.gid,
+        })
     }
 
     /// Save the current creds and security state, alter them by calling `alter_creds`, then call
@@ -1937,15 +1950,16 @@ impl CurrentTask {
         //      next step.  (Most APIs that check the caller's UID and GID
         //      use the effective IDs.  For historical reasons, the
         //      PTRACE_MODE_REALCREDS check uses the real IDs instead.)
-        let creds = self.current_creds();
-        let (uid, gid) = if mode.contains(PTRACE_MODE_FSCREDS) {
-            let fscred = creds.as_fscred();
-            (fscred.uid, fscred.gid)
-        } else if mode.contains(PTRACE_MODE_REALCREDS) {
-            (creds.uid, creds.gid)
-        } else {
-            unreachable!();
-        };
+        let (uid, gid) = self.with_current_creds(|creds| {
+            if mode.contains(PTRACE_MODE_FSCREDS) {
+                let fscred = creds.as_fscred();
+                (fscred.uid, fscred.gid)
+            } else if mode.contains(PTRACE_MODE_REALCREDS) {
+                (creds.uid, creds.gid)
+            } else {
+                unreachable!();
+            }
+        });
 
         // (3)  Deny access if neither of the following is true:
         //
@@ -1998,9 +2012,23 @@ impl CurrentTask {
             return Ok(());
         }
 
-        let self_creds = self.current_creds();
-
-        if self_creds.has_same_uid(&target.real_creds()) {
+        let (target_uid, target_saved_uid) =
+            target.with_real_creds(|creds| (creds.uid, creds.saved_uid));
+        if self.with_current_creds(|creds| {
+            // From https://man7.org/linux/man-pages/man2/kill.2.html:
+            //
+            // > For a process to have permission to send a signal, it must either be
+            // > privileged (under Linux: have the CAP_KILL capability in the user
+            // > namespace of the target process), or the real or effective user ID of
+            // > the sending process must equal the real or saved set- user-ID of the
+            // > target process.
+            //
+            // Returns true if the credentials are considered to have the same user ID.
+            creds.euid == target_saved_uid
+                || creds.euid == target_uid
+                || creds.uid == target_uid
+                || creds.uid == target_saved_uid
+        }) {
             return Ok(());
         }
 

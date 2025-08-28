@@ -886,7 +886,7 @@ pub fn is_task_capable_noaudit(
     capability: starnix_uapi::auth::Capabilities,
 ) -> bool {
     track_hook_duration!(c"security.hooks.is_task_capable_noaudit");
-    return current_task.current_creds().has_capability(capability)
+    return current_task.with_current_creds(|c| c.has_capability(capability))
         && if_selinux_else(
             current_task,
             |security_server| {
@@ -907,7 +907,7 @@ pub fn check_task_capable(
     capability: starnix_uapi::auth::Capabilities,
 ) -> Result<(), Errno> {
     track_hook_duration!(c"security.hooks.check_task_capable");
-    if !current_task.current_creds().has_capability(capability) {
+    if !current_task.with_current_creds(|creds| creds.has_capability(capability)) {
         return error!(EPERM);
     }
     if_selinux_else_default_ok(current_task, |security_server| {
@@ -1711,7 +1711,7 @@ where
             )
         },
         |locked| {
-            if current_task.current_creds().has_capability(CAP_SYS_ADMIN) {
+            if current_task.with_current_creds(|creds| creds.has_capability(CAP_SYS_ADMIN)) {
                 fs_node.ops().set_xattr(
                     locked.cast_locked::<FileOpsCore>(),
                     fs_node,
