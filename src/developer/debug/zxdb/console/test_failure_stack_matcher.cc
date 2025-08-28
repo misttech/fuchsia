@@ -15,8 +15,12 @@ TestFailureStackMatcher::TestFailureStackMatcher()
   // Descriptions may be duplicated so if a particular framework has multiple failure paths, they
   // may all be added with the same description.
   pretty_stack_manager_->SetMatchers({
+      // This matches Rust tests when an "assert_eq" fails.
       PrettyStackManager::StackGlob("Rust test assertion",
                                     {PrettyFrameGlob::Func("core::panicking::assert_failed<*>")}),
+      // And this matches a plain old "assert".
+      PrettyStackManager::StackGlob("Rust test assertion",
+                                    {PrettyFrameGlob::Func("core::panicking::panic")}),
       PrettyStackManager::StackGlob(
           "gTest test assertion",
           {PrettyFrameGlob::Func("testing::internal::AssertHelper::operator=")}),

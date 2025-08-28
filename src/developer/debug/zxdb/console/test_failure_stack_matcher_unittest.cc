@@ -47,7 +47,7 @@ std::vector<std::unique_ptr<Frame>> GetGtestFrames() {
   return frames;
 }
 
-std::vector<std::unique_ptr<Frame>> GetRustFrames() {
+std::vector<std::unique_ptr<Frame>> GetRustAssertEqFrames() {
   std::vector<std::unique_ptr<Frame>> frames;
   frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001, "__abort_impl__",
                                                FileLine("file1.rs", 23)));
@@ -88,6 +88,35 @@ std::vector<std::unique_ptr<Frame>> GetRustFrames() {
   return frames;
 }
 
+std::vector<std::unique_ptr<Frame>> GetRustAssertFrames() {
+  std::vector<std::unique_ptr<Frame>> frames;
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001, "__abort_impl__",
+                                               FileLine("file1.rs", 23)));
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x1002, 0x2002, FileLine("file2.rs", 23),
+      std::vector<std::string>{"std", "sys", "pal", "unix", "abort_internal"}));
+  frames.push_back(
+      std::make_unique<MockFrame>(nullptr, nullptr, 0x1003, 0x2003, FileLine("file3.rs", 23),
+                                  std::vector<std::string>{"std", "process", "abort"}));
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x2004, 0x2004, FileLine("file4.rs", 23),
+      std::vector<std::string>{"test", "run_test_in_spawned_subprocess"}));
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x3004, 0x3004, FileLine("file4.rs", 23),
+      std::vector<std::string>{"std", "panicking", "begin_panic_handler"}));
+  frames.push_back(
+      std::make_unique<MockFrame>(nullptr, nullptr, 0x4004, 0x4004, FileLine("file4.rs", 23),
+                                  std::vector<std::string>{"core", "panicking", "panic_fmt"}));
+  frames.push_back(
+      std::make_unique<MockFrame>(nullptr, nullptr, 0x5004, 0x5004, FileLine("file4.rs", 23),
+                                  std::vector<std::string>{"core", "panicking", "panic"}));
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x1006, 0x2006, FileLine("file6.rs", 23),
+      std::vector<std::string>{"fuchsia_test", "test", "empty_multithreaded_test_with_result",
+                               "test_entry_point"}));
+  return frames;
+}
+
 }  // namespace
 
 TEST(TestFailureStackMatcher, MatchGtest) {
@@ -103,17 +132,30 @@ TEST(TestFailureStackMatcher, MatchGtest) {
   ASSERT_EQ(matcher.Match(stack), 2u);
 }
 
-TEST(TestFailureStackMatcher, MatchRust) {
+TEST(TestFailureStackMatcher, MatchRustAssertEq) {
   Session session;
   MockStackDelegate delegate(&session);
   Stack stack(&delegate);
   delegate.set_stack(&stack);
 
-  stack.SetFramesForTest(GetRustFrames(), true);
+  stack.SetFramesForTest(GetRustAssertEqFrames(), true);
 
   TestFailureStackMatcher matcher;
 
   ASSERT_EQ(matcher.Match(stack), 11u);
+}
+
+TEST(TestFailureStackMatcher, MatchRustAssert) {
+  Session session;
+  MockStackDelegate delegate(&session);
+  Stack stack(&delegate);
+  delegate.set_stack(&stack);
+
+  stack.SetFramesForTest(GetRustAssertFrames(), true);
+
+  TestFailureStackMatcher matcher;
+
+  ASSERT_EQ(matcher.Match(stack), 7u);
 }
 
 TEST(TestFailureStackMatcher, NoMatch) {
