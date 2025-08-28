@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::agent::AgentCreator;
 use crate::audio::types::{AudioInfo, AudioSettingSource, AudioStream, AudioStreamType};
 use crate::audio::{build_audio_default_settings, create_default_modified_counters};
 use crate::base::SettingType;
@@ -162,7 +163,7 @@ async fn test_volume_restore() {
     let storage_factory = InMemoryStorageFactory::with_initial_data(&stored_info);
     assert!(EnvironmentBuilder::new(Rc::new(storage_factory))
         .service(Box::new(ServiceRegistry::serve(service_registry)))
-        .agents(vec![AgentType::Restore.into()])
+        .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
         .fidl_interfaces(&[Interface::Audio])
         .audio_configuration(default_settings)
         .spawn_nested(ENV_NAME)
@@ -226,7 +227,7 @@ async fn test_persisted_values_applied_at_start() {
 
     let env = EnvironmentBuilder::new(Rc::new(storage_factory))
         .service(ServiceRegistry::serve(service_registry))
-        .agents(vec![AgentType::Restore.into()])
+        .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
         .fidl_interfaces(&[Interface::Audio])
         .audio_configuration(default_settings)
         .spawn_and_get_protocol_connector(ENV_NAME)
@@ -383,7 +384,7 @@ async fn test_invalid_stream_fails() {
     let storage_factory = InMemoryStorageFactory::with_initial_data(&test_audio_info);
     let env = EnvironmentBuilder::new(Rc::new(storage_factory))
         .service(ServiceRegistry::serve(service_registry))
-        .agents(vec![AgentType::Restore.into()])
+        .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
         .fidl_interfaces(&[Interface::Audio])
         .audio_configuration(default_settings)
         .spawn_and_get_protocol_connector(ENV_NAME)

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::accessibility::types::AccessibilityInfo;
+use crate::agent::AgentCreator;
 use crate::base::{get_all_setting_types, SettingInfo, SettingType, UnknownInfo};
 use crate::config::base::AgentType;
 use crate::handler::base::{ContextBuilder, Request};
@@ -69,7 +70,7 @@ macro_rules! verify_handle {
     ($spawn:expr) => {
         assert!(EnvironmentBuilder::new(Rc::new(InMemoryStorageFactory::new()))
             .handler(SettingType::Unknown, Box::new($spawn))
-            .agents(vec![AgentType::Restore.into()])
+            .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
             .settings(&[SettingType::Unknown])
             .spawn_nested(ENV_NAME)
             .await

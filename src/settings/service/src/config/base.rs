@@ -97,16 +97,17 @@ macro_rules! create_agent {
     };
 }
 
-impl From<AgentType> for AgentCreator {
-    fn from(agent_type: AgentType) -> AgentCreator {
+impl AgentCreator {
+    pub(crate) fn from_type(agent_type: AgentType) -> Option<AgentCreator> {
         use crate::agent::*;
-        match agent_type {
+        Some(match agent_type {
             AgentType::CameraWatcher => {
                 create_agent!(camera_watcher, camera_watcher::CameraWatcherAgent::create)
             }
             AgentType::Earcons => create_agent!(earcons, earcons::agent::Agent::create),
             AgentType::MediaButtons => {
-                create_agent!(media_buttons, media_buttons::MediaButtonsAgent::create)
+                // Handled in service/lib.rs
+                return None;
             }
             AgentType::Restore => create_agent!(restore_agent, restore_agent::RestoreAgent::create),
             AgentType::InspectExternalApis => create_agent!(
@@ -125,6 +126,6 @@ impl From<AgentType> for AgentCreator {
                 setting_values,
                 inspect::setting_values::SettingValuesInspectAgent::create
             ),
-        }
+        })
     }
 }

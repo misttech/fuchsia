@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::agent::AgentCreator;
 use crate::base::SettingType;
 use crate::config::base::{AgentType, ControllerFlag};
 use crate::config::default_settings::DefaultSetting;
@@ -99,7 +100,7 @@ async fn validate_restore_with_storage_controller(
 
     let env = EnvironmentBuilder::new(Rc::new(storage_factory))
         .service(Box::new(ServiceRegistry::serve(service_registry)))
-        .agents(vec![AgentType::Restore.into()])
+        .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
         .fidl_interfaces(&[Interface::Display(display::InterfaceFlags::BASE)])
         .display_configuration(default_settings())
         .spawn_and_get_protocol_connector(ENV_NAME)
@@ -179,7 +180,7 @@ fn validate_restore_with_brightness_controller(
 
         assert!(EnvironmentBuilder::new(Rc::new(storage_factory))
             .service(Box::new(ServiceRegistry::serve(service_registry)))
-            .agents(vec![AgentType::Restore.into()])
+            .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
             .fidl_interfaces(&[Interface::Display(display::InterfaceFlags::BASE)])
             .flags(&[ControllerFlag::ExternalBrightnessControl])
             .display_configuration(default_settings())

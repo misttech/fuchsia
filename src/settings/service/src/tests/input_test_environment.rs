@@ -6,6 +6,7 @@ use crate::agent::AgentCreator;
 use crate::base::SettingType;
 use crate::config::base::AgentType;
 use crate::config::default_settings::DefaultSetting;
+use crate::event::media_buttons;
 use crate::handler::base::{Context, GenerateHandler};
 use crate::handler::setting_handler::persist::ClientProxy;
 use crate::handler::setting_handler::{BoxedController, ClientImpl};
@@ -15,17 +16,20 @@ use crate::input::input_controller::InputController;
 use crate::input::input_device_configuration::InputConfiguration;
 use crate::input::types::InputInfoSources;
 use crate::inspect::config_logger::InspectConfigLogger;
-use crate::service::message::Delegate;
 use crate::storage::testing::InMemoryStorageFactory;
 use crate::tests::fakes::camera3_service::Camera3Service;
 use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
 use crate::tests::fakes::service_registry::ServiceRegistry;
-
-use crate::{Environment, EnvironmentBuilder};
+use crate::{
+    AgentConfiguration, EnabledInterfacesConfiguration, Environment, EnvironmentBuilder,
+    ServiceConfiguration, ServiceFlags,
+};
 
 use fidl_fuchsia_settings::{InputMarker, InputProxy};
 use fuchsia_inspect::component;
+use futures::channel::mpsc::UnboundedSender;
 use futures::lock::Mutex;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 const ENV_NAME: &str = "settings_service_input_test_environment";
@@ -39,9 +43,6 @@ pub(crate) struct TestInputEnvironment {
 
     /// For watching, connecting to, and making requests on the camera device.
     pub(crate) camera3_service: Rc<Mutex<Camera3Service>>,
-
-    /// For listening on service messages, particularly media buttons events.
-    pub(crate) delegate: Delegate,
 }
 
 pub(crate) struct TestInputEnvironmentBuilder {
@@ -53,6 +54,9 @@ pub(crate) struct TestInputEnvironmentBuilder {
 
     /// The list of agents to include.
     agents: Vec<AgentType>,
+
+    /// The list of additional media_button_event listeners.
+    media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
 }
 
 impl TestInputEnvironmentBuilder {
@@ -61,6 +65,7 @@ impl TestInputEnvironmentBuilder {
             starting_input_info_sources: None,
             input_device_config: None,
             agents: vec![AgentType::Restore, AgentType::MediaButtons],
+            media_buttons_event_txs: vec![],
         }
     }
 
@@ -77,6 +82,14 @@ impl TestInputEnvironmentBuilder {
         input_device_config: InputConfiguration,
     ) -> Self {
         self.input_device_config = Some(input_device_config);
+        self
+    }
+
+    pub(crate) fn add_media_buttons_event_tx(
+        mut self,
+        tx: UnboundedSender<media_buttons::Event>,
+    ) -> Self {
+        self.media_buttons_event_txs.push(tx);
         self
     }
 
@@ -97,9 +110,17 @@ impl TestInputEnvironmentBuilder {
         service_registry.lock().await.register_service(camera3_service_handle.clone());
 
         let mut environment_builder = EnvironmentBuilder::new(Rc::clone(&storage_factory))
+            // Need to add media buttons via configuration so channels get routed.
+            .configuration(ServiceConfiguration::from(
+                AgentConfiguration { agent_types: [AgentType::MediaButtons].into() },
+                EnabledInterfacesConfiguration::with_interfaces(HashSet::new()),
+                ServiceFlags::default(),
+            ))
             .input_configuration(default_settings())
             .service(Box::new(ServiceRegistry::serve(service_registry)))
-            .agents(self.agents.into_iter().map(AgentCreator::from).collect::<Vec<_>>())
+            // media buttons filtered from `from_type`.
+            .agents(self.agents.into_iter().filter_map(AgentCreator::from_type).collect::<Vec<_>>())
+            .media_buttons_event_txs(self.media_buttons_event_txs)
             .fidl_interfaces(&[Interface::Input]);
 
         if let Some(config) = self.input_device_config {
@@ -132,7 +153,7 @@ impl TestInputEnvironmentBuilder {
             environment_builder = environment_builder.handler(SettingType::Input, generate_handler);
         }
 
-        let Environment { connector, delegate, .. } =
+        let Environment { connector, .. } =
             environment_builder.spawn_nested(ENV_NAME).await.unwrap();
 
         let input_service = connector
@@ -144,7 +165,6 @@ impl TestInputEnvironmentBuilder {
             input_service,
             input_button_service: input_button_service_handle,
             camera3_service: camera3_service_handle,
-            delegate,
         }
     }
 }

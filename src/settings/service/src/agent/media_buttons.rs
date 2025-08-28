@@ -13,10 +13,27 @@ use crate::message::base::Audience;
 use crate::service_context::ServiceContext;
 use crate::{service, trace_guard};
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
+use futures::channel::mpsc::UnboundedSender;
 use futures::StreamExt;
 use std::collections::HashSet;
 use std::rc::Rc;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
+
+use super::{AgentCreator, CreationFunc};
+
+pub(crate) fn create_registrar(
+    event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+) -> AgentCreator {
+    AgentCreator {
+        debug_id: "MediaButtonsAgent",
+        create: CreationFunc::Dynamic(Rc::new(move |context| {
+            let event_txs = event_txs.clone();
+            Box::pin(async move {
+                MediaButtonsAgent::create(context, event_txs).await;
+            })
+        })),
+    }
+}
 
 /// Setting types that the media buttons agent will send media button events to, if they're
 /// available on the device.
@@ -25,6 +42,7 @@ fn get_event_setting_types() -> HashSet<SettingType> {
 }
 
 pub(crate) struct MediaButtonsAgent {
+    event_txs: Vec<UnboundedSender<media_buttons::Event>>,
     publisher: Publisher,
     messenger: service::message::Messenger,
 
@@ -33,8 +51,12 @@ pub(crate) struct MediaButtonsAgent {
 }
 
 impl MediaButtonsAgent {
-    pub(crate) async fn create(context: AgentContext) {
+    pub(crate) async fn create(
+        context: AgentContext,
+        event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+    ) {
         let mut agent = MediaButtonsAgent {
+            event_txs,
             publisher: context.get_publisher(),
             messenger: context.create_messenger().await.expect("media button messenger created"),
             recipient_settings: context
@@ -75,6 +97,7 @@ impl MediaButtonsAgent {
         }
 
         let event_handler = EventHandler {
+            event_txs: self.event_txs.clone(),
             publisher: self.publisher.clone(),
             messenger: self.messenger.clone(),
             recipient_settings: self.recipient_settings.clone(),
@@ -92,6 +115,7 @@ impl MediaButtonsAgent {
 }
 
 struct EventHandler {
+    event_txs: Vec<UnboundedSender<media_buttons::Event>>,
     publisher: Publisher,
     messenger: service::message::Messenger,
     recipient_settings: HashSet<SettingType>,
@@ -109,6 +133,10 @@ impl EventHandler {
     where
         E: Copy + Into<media_buttons::Event> + Into<Request> + std::fmt::Debug,
     {
+        for tx in &self.event_txs {
+            let _ = tx.unbounded_send(event.into());
+        }
+
         self.publisher.send_event(Event::MediaButtons(event.into()));
         let setting_request: Request = event.into();
 
@@ -145,6 +173,7 @@ mod tests {
         create_messenger_and_publisher, create_messenger_and_publisher_from_hub,
         create_receptor_for_setting_type,
     };
+    use futures::channel::mpsc;
 
     // Tests that the initialization lifespan is not handled.
     #[fuchsia::test(allow_stalls = false)]
@@ -153,8 +182,12 @@ mod tests {
         let (messenger, publisher) = create_messenger_and_publisher().await;
 
         // Construct the agent.
-        let mut agent =
-            MediaButtonsAgent { publisher, messenger, recipient_settings: HashSet::new() };
+        let mut agent = MediaButtonsAgent {
+            event_txs: vec![],
+            publisher,
+            messenger,
+            recipient_settings: HashSet::new(),
+        };
 
         // Try to initiatate the initialization lifespan.
         let result = agent
@@ -174,8 +207,12 @@ mod tests {
         let (messenger, publisher) = create_messenger_and_publisher().await;
 
         // Construct the agent.
-        let mut agent =
-            MediaButtonsAgent { publisher, messenger, recipient_settings: HashSet::new() };
+        let mut agent = MediaButtonsAgent {
+            event_txs: vec![],
+            publisher,
+            messenger,
+            recipient_settings: HashSet::new(),
+        };
 
         let service_context = Rc::new(ServiceContext::new(
             // Create a service registry without a media buttons interface.
@@ -208,8 +245,12 @@ mod tests {
         let handler_receptor: Receptor =
             create_receptor_for_setting_type(&service_message_hub, target_setting_type).await;
 
+        let (tx1, rx1) = mpsc::unbounded();
+        let (tx2, rx2) = mpsc::unbounded();
+
         // Make all setting types available.
         let event_handler = EventHandler {
+            event_txs: vec![tx1, tx2],
             publisher,
             messenger,
             recipient_settings: vec![target_setting_type].into_iter().collect(),
@@ -229,11 +270,15 @@ mod tests {
         let mut agent_received_media_buttons = false;
 
         let mut received_events: usize = 0;
+        let mut received_channel_events: usize = 0;
 
         let fused_event = event_receptor.fuse();
         let fused_handler = handler_receptor.fuse();
-        futures::pin_mut!(fused_event, fused_handler);
+        let fused_rx1 = rx1.fuse();
+        let fused_rx2 = rx2.fuse();
+        futures::pin_mut!(fused_event, fused_handler, fused_rx1, fused_rx2);
 
+        drop(event_handler);
         // Loop over the select so we can handle the messages as they come in. When all messages
         // have been handled, due to the messengers being deleted above, the complete branch should
         // be hit to break out of the loop.
@@ -245,7 +290,7 @@ mod tests {
                             event::Event::MediaButtons(event))), _) = message
                     {
                         match event {
-                            event::media_buttons::Event::OnButton(
+                            media_buttons::Event::OnButton(
                                 MediaButtons{..}
                             ) => {
                                 agent_received_media_buttons = true;
@@ -264,6 +309,24 @@ mod tests {
                         received_events += 1;
                     }
                 }
+                message = fused_rx1.select_next_some() => {
+                    match message {
+                        media_buttons::Event::OnButton(
+                            MediaButtons{..}
+                        ) => {
+                            received_channel_events += 1;
+                        }
+                    }
+                }
+                message = fused_rx2.select_next_some() => {
+                    match message {
+                        media_buttons::Event::OnButton(
+                            MediaButtons{..}
+                        ) => {
+                            received_channel_events += 1;
+                        }
+                    }
+                }
                 complete => break,
             }
         }
@@ -272,6 +335,8 @@ mod tests {
 
         // setting should have received one event for both mic and camera.
         assert_eq!(received_events, 1);
+        // channels should have received one event each for both mic and camera.
+        assert_eq!(received_channel_events, 2);
     }
 
     // Tests that events are not sent to unavailable settings.
@@ -286,8 +351,12 @@ mod tests {
             create_receptor_for_setting_type(&service_message_hub, SettingType::Unknown).await;
 
         // Declare all settings as unavailable so that no events are sent.
-        let event_handler =
-            EventHandler { publisher, messenger, recipient_settings: HashSet::new() };
+        let event_handler = EventHandler {
+            event_txs: vec![],
+            publisher,
+            messenger,
+            recipient_settings: HashSet::new(),
+        };
 
         // Send the events
         event_handler.handle_event(

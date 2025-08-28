@@ -19,6 +19,7 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ProtocolConnector;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObjLocal};
 use fuchsia_inspect::component;
+use futures::channel::mpsc::UnboundedSender;
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 #[cfg(test)]
@@ -45,6 +46,7 @@ use crate::config::base::{AgentType, ControllerFlag};
 use crate::config::default_settings::DefaultSetting;
 use crate::display::display_controller::{DisplayController, ExternalBrightnessControl};
 use crate::do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
+use crate::event::media_buttons;
 use crate::factory_reset::factory_reset_controller::FactoryResetController;
 use crate::handler::base::GenerateHandler;
 use crate::handler::setting_handler::persist::Handler as DataHandler;
@@ -230,6 +232,7 @@ pub struct EnvironmentBuilder<'a, T: StorageFactory<Storage = DeviceStorage>> {
     audio_configuration: Option<DefaultSetting<AudioInfo, &'static str>>,
     input_configuration: Option<DefaultSetting<InputConfiguration, &'static str>>,
     light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
+    media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
 }
 
 impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<'a, T> {
@@ -254,6 +257,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             audio_configuration: None,
             input_configuration: None,
             light_configuration: None,
+            media_buttons_event_txs: vec![],
         }
     }
 
@@ -389,6 +393,14 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         self
     }
 
+    pub fn media_buttons_event_txs(
+        mut self,
+        media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+    ) -> Self {
+        self.media_buttons_event_txs.extend(media_buttons_event_txs);
+        self
+    }
+
     /// Prepares an environment so that it may be spawned. This ensures that all necessary
     /// components are spawned and ready to handle events and FIDL requests.
     async fn prepare_env(
@@ -517,11 +529,26 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             handler_factory.register(setting_type, handler);
         }
 
-        let agent_blueprints = if agent_types.is_empty() {
-            self.agent_blueprints
+        let media_buttons_registrar = agent_types
+            .contains(&AgentType::MediaButtons)
+            .then(|| agent::media_buttons::create_registrar(self.media_buttons_event_txs));
+
+        // If any of there are any agent types that require AgentCreator::from_type to be
+        // constructed, then use that constructor. Otherwise just use the agent blueprints.
+        let mut agent_blueprints = if agent_types.iter().any(|t| match t {
+            // Does not require AgentCreator::from_type
+            AgentType::MediaButtons => false,
+            // Does require AgentCreator::from_type
+            _ => true,
+        }) {
+            agent_types.into_iter().filter_map(AgentCreator::from_type).collect()
         } else {
-            agent_types.into_iter().map(AgentCreator::from).collect()
+            self.agent_blueprints
         };
+
+        if let Some(registrar) = media_buttons_registrar {
+            agent_blueprints.push(registrar);
+        }
 
         let job_manager_signature = Manager::spawn(&delegate).await;
         let job_seeder = Seeder::new(&delegate, job_manager_signature).await;

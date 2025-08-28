@@ -50,7 +50,7 @@ async fn test_media_buttons_proxied() {
 
     // Create the agent context and agent.
     let context = Context::new(agent_receptor, service_hub, HashSet::new()).await;
-    MediaButtonsAgent::create(context).await;
+    MediaButtonsAgent::create(context, vec![]).await;
 
     // Setup the fake services.
     let (service_registry, fake_services) = create_services().await;
