@@ -23,6 +23,7 @@ var (
 		// and is called bootserver instead of bootserver_new.
 		"bootserver_new": "bootserver",
 		"ffx":            "ffx",
+		"ffx-package":    "ffx-package",
 		"device-finder":  "device-finder",
 		"pbtool":         "pbtool",
 		"symbolize":      "symbolize",

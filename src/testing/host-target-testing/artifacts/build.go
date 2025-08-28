@@ -157,6 +157,20 @@ func (b *ArtifactsBuild) GetFfx(
 		return nil, fmt.Errorf("failed to download ffxPath: %w", err)
 	}
 
+	// Ignore error, not all builds upload ffx-package subtools
+	if err := b.archive.download(
+		ctx,
+		b.id,
+		false,
+		b.buildDir,
+		[]string{relativeFfxPath + "-package"},
+	); err == nil {
+		// Make ffx-package executable.
+		if err := os.Chmod(ffxPath+"-package", os.ModePerm); err != nil {
+			return nil, fmt.Errorf("failed to make ffx-package executable: %w", err)
+		}
+	}
+
 	// Make ffx executable.
 	if err := os.Chmod(ffxPath, os.ModePerm); err != nil {
 		return nil, fmt.Errorf("failed to make ffxPath executable: %w", err)
