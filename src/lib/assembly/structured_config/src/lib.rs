@@ -119,6 +119,7 @@ static SUPPORTED_RUNNERS: &[&str] = &[
     "elf_test_create_raw_processes_ambient_exec_runner",
     "gtest_runner",
     "starnix",
+    "zxtest_runner",
 ];
 
 /// Validate a component manifest given access to the contents of its `/pkg` directory.
