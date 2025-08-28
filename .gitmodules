@@ -388,11 +388,6 @@
 	url = https://chromium.googlesource.com/chromium/mini_chromium
 	name = chromium/mini_chromium
 	ignore = all
-[submodule "third_party/antlion"]
-	path = third_party/antlion
-	url = https://fuchsia.googlesource.com/antlion
-	name = antlion
-	ignore = all
 [submodule "third_party/crashpad/src"]
 	path = third_party/crashpad/src
 	url = https://fuchsia.googlesource.com/third_party/crashpad
