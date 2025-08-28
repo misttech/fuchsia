@@ -461,7 +461,10 @@ impl Heap {
         assert_eq!(
             empty,
             boot_empty && utc_empty,
-            "broken invariant: {boot_empty},{utc_empty},{empty}"
+            "broken invariant: {boot_empty},{utc_empty},{empty}:\n\tactive_timers={:?}\n\tboot_timers={:?}\n\tutc_timers={:?}",
+            self.active_timers,
+            self.boot_timers,
+            self.utc_timers,
         );
         empty
     }
