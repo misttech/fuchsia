@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_build_info//:args.bzl", "build_info_version")
 load(
     "@rules_fuchsia//fuchsia:assembly.bzl",
     "BUILD_TYPES",
@@ -30,6 +31,7 @@ fuchsia_product_configuration(
             "feature_set_level": "utility",
         },
     },
+    version = build_info_version,
 )
 
 fuchsia_product(
