@@ -4,6 +4,7 @@
 
 use super::listener_logger::ListenerInspectLogger;
 use crate::service_context::ExternalServiceEvent;
+use anyhow::{anyhow, Error};
 use futures::channel::mpsc::UnboundedSender;
 use std::cell::Cell;
 use std::marker::PhantomData;
@@ -170,4 +171,32 @@ pub enum InspectEvent {
     // TODO(https://fxbug.dev/42166874) Remove allow once used
     #[allow(dead_code)]
     External(ExternalServiceEvent),
+}
+
+#[derive(Clone)]
+// TODO(https://fxbug.dev/42166874) Remove allow once used
+#[allow(dead_code)]
+pub struct SettingValuePublisher<T> {
+    tx: UnboundedSender<InspectEvent>,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> SettingValuePublisher<T> {
+    pub fn new(tx: UnboundedSender<InspectEvent>) -> Self {
+        Self { tx, _phantom: PhantomData }
+    }
+}
+
+impl<T> SettingValuePublisher<T>
+where
+    T: Nameable + std::fmt::Debug,
+{
+    pub fn publish(&self, value: &T) -> Result<(), Error> {
+        self.tx
+            .unbounded_send(InspectEvent::SettingValue {
+                setting: T::NAME,
+                value: format!("{value:?}"),
+            })
+            .map_err(|e| anyhow!("Unable to send setting_value update: {e:?}"))
+    }
 }
