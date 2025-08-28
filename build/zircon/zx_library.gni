@@ -18,8 +18,8 @@ import("//build/toolchain/toolchain_environment.gni")
 #
 # * When building with a Zircon-specific toolchain, it will create a source_set()
 #   if the global `is_kernel` is true (meaning building part of the kernel), or
-#   a static_library() target otherwise. The values of `sdk`, `sdk_area`,
-#   `sdk_headers`, `sdk_headers_for_internal_use`, `sdk_name`,
+#   a static_library() target otherwise. The values of `public`, `sdk`,
+#   `sdk_area`, `sdk_headers`, `sdk_headers_for_internal_use`, `sdk_name`,
 #   `sdk_publishable`, and `stable` will be ignored entirely.
 #
 #   This will also create a :headers sub-target, a group used to give access
@@ -85,8 +85,15 @@ import("//build/toolchain/toolchain_environment.gni")
 #     "internal". Not allowed otherwise.
 #     TODO(https://fxbug.dev/333125197): Remove this parameter.
 #
+#   public
+#     Optional: It or `sdk_headers` is required, except if the global
+#     `is_kernel` is true. Mutually exclusive with `sdk_headers`.
+#     This must list all the public header files for the library.
+#     Unlike `sdk_headers`, paths are not relative to `include/`.
+#
 #   sdk_headers
-#     Optional: Required, except if the global `is_kernel` is true.
+#     Optional: It or `public` is required, except if the global
+#     `is_kernel` is true. Mutually exclusive with `public`.
 #     This must list all the public header files in the library's `include/`
 #     directory; names should be relative to `include/`. Despite the name,
 #     this parameter is not specific to SDK targets (those specifying
@@ -116,6 +123,7 @@ template("zx_library") {
   # They must be used or explicitly forwarded when appropriate.
   # TODO(https://fxbug.dev/333125197): Remove when removing the parameters.
   unforwarded_params = [
+    "public",
     "sdk",
     "sdk_area",
     "sdk_headers",
@@ -124,13 +132,14 @@ template("zx_library") {
     "sdk_publishable",
     "stable",
   ]
-  assert(!defined(invoker.public), "Use `sdk_headers` instead.")
+
+  assert(!defined(invoker.public) || !defined(invoker.sdk_headers),
+         "`public` and `sdk_headers` are mutually exclusive.")
 
   # Ensure SDK-specific parameters are only specified for libraries in the SDK.
   # The following "sdk" parameters are always allowed:
   # * `sdk` is required for the `zircon_toolchain=false` case.
-  # * `sdk_headers` is used instead of "public" to specify public headers only
-  #   in the `zircon_toolchain=false` case.
+  # * `sdk_headers` is often used instead of "public".
   assert(defined(invoker.sdk_publishable) ||
          (!defined(invoker.sdk_area) &&
           !defined(invoker.sdk_headers_for_internal_use) &&
@@ -346,7 +355,8 @@ template("zx_library") {
     }
 
     _has_public_headers =
-        defined(invoker.sdk_headers) && invoker.sdk_headers != []
+        (defined(invoker.public) && invoker.public != []) ||
+        (defined(invoker.sdk_headers) && invoker.sdk_headers != [])
 
     target(target_type, main_target_name) {
       forward_variables_from(invoker,
@@ -375,9 +385,13 @@ template("zx_library") {
       }
 
       if (_has_public_headers) {
-        public = []
-        foreach(header, invoker.sdk_headers) {
-          public += [ "include/$header" ]
+        if (defined(invoker.public)) {
+          public = invoker.public
+        } else {
+          public = []
+          foreach(header, invoker.sdk_headers) {
+            public += [ "include/$header" ]
+          }
         }
       }
 

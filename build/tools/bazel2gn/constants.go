@@ -43,8 +43,9 @@ var bazelRuleToGNTemplate = map[string]string{
 	"cc_library": "source_set",
 
 	// IDK & SDK
-	"idk_cc_source_library": "sdk_source_set",
-	"sdk_host_tool":         "sdk_host_tool",
+	"idk_cc_source_library":    "sdk_source_set",
+	"idk_cc_source_library_zx": "zx_library", // With `sdk="source`.
+	"sdk_host_tool":            "sdk_host_tool",
 
 	// Other
 	"install_host_tools": "install_host_tools",
@@ -71,7 +72,7 @@ var commonAttrMap = map[string]string{
 // ccAttrMap maps from attribute names in Bazel CC rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
 var ccAttrMap = map[string]string{
-	"copts":               "configs",
+	"copts":               "configs", // Strings are converted to configs by `bazelCOptToGNConfig()`.
 	"deps":                "public_deps",
 	"implementation_deps": "deps",
 }
@@ -85,10 +86,8 @@ var rustAttrMap = map[string]string{
 // idkAttrMap maps from attribute name in Bazel IDK rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
 var idkAttrMap = map[string]string{
-	"api_area":            "sdk_area",
-	"deps":                "public_deps",
-	"idk_name":            "sdk_name",
-	"implementation_deps": "deps",
+	"api_area": "sdk_area",
+	"idk_name": "sdk_name",
 
 	// These are not identical because files in `hdrs_for_internal_use` need
 	// to be added to GN's `public` as well. This takes care of populating
@@ -96,6 +95,19 @@ var idkAttrMap = map[string]string{
 	// to `public`.
 	"hdrs_for_internal_use": "sdk_headers_for_internal_use",
 }
+
+// Maps from attribute name in Bazel IDK rules to GN `zx_library()` parameter
+// names for attributes unique to `zx_library()`. Use `idkZxAttrMap` instead.
+// This map only includes attributes that have different names in Bazel and GN.
+var zxAttrMap = map[string]string{
+	"category": "sdk_publishable",
+}
+
+// idkAttrMap maps from attribute name in Bazel IDK C++ rules to GN parameter names.
+var idkCcAttrMap = mustMergeMaps(idkAttrMap, ccAttrMap)
+
+// idkAttrMap maps from attribute name in Bazel IDK C++ ZX rules to GN parameter names.
+var idkZxAttrMap = mustMergeMaps(idkCcAttrMap, zxAttrMap)
 
 // A mapping from Bazel rule names to attribute mappings.
 // Attribute mappings map from Bazel rule attributes that use different names in GN.
@@ -111,7 +123,8 @@ var attrMapsByRules = map[string]map[string]string{
 	"rustc_library":   rustAttrMap,
 
 	// IDK
-	"idk_cc_source_library": idkAttrMap,
+	"idk_cc_source_library":    idkCcAttrMap,
+	"idk_cc_source_library_zx": idkZxAttrMap,
 }
 
 // These identifiers with the same meanings are represented differently in Bazel

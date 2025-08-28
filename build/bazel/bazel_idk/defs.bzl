@@ -417,7 +417,7 @@ def idk_cc_source_library(
         build_as_static = False,  # buildifier: disable=unused-variable - For GN conversion only.
         public_configs = [],  # buildifier: disable=unused-variable - For GN conversion only.
         **kwargs):
-    """Defines a C++_source library that can be exported to an IDK.
+    """Defines a C++ source library that can be exported to an IDK.
 
     Args:
         name: The name of the underlying `cc_library` target. Required.
@@ -624,7 +624,8 @@ def idk_cc_source_library(
     # The atom's visibility should allow IDK contents/definition rules to depend
     # on the atom in addition to the visibility of the underlying library.
     # The built-in visibility labels cannot be used in combination with other
-    # labels so handle them specificcally.
+    # labels so handle them specifically.
+    # TODO(https://fxbug.dev/431287514): Support package `default_visibility`.
     if "//visibility:public" in visibility:
         atom_visibility = visibility
     else:
@@ -661,3 +662,43 @@ def idk_cc_source_library(
     # TODO(https://fxbug.dev/417305295):Implement the //sdk:sdk_source_set_list
     # build API module and merge with the GN data.
     # sdk_source_set_sources = all_source_files
+
+def idk_cc_source_library_zx(
+        name,
+        idk_name,
+        category,
+        stable,
+        api_area,
+        hdrs,
+        sdk,  # buildifier: disable=unused-variable - For GN conversion only.
+        **kwargs):
+    """Defines a C++ source library that can be exported to an IDK and will be a zx_library() in GN.
+
+    Args:
+        name: See idk_cc_source_library().
+        idk_name: See idk_cc_source_library().
+        category: See idk_cc_source_library().
+            Converted to `sdk_publishable` in `zx_library()`.
+        stable: See idk_cc_source_library().
+        api_area: See idk_cc_source_library().
+        hdrs:  See idk_cc_source_library().
+            GN equivalent: `sdk_headers`
+            GN note: Unlike the GN template, the "include/" part of the path
+            must be specified.
+        sdk: Must always be "source". Unused in Bazel, for GN conversion only.
+        **kwargs: Additional arguments for idk_cc_source_library().
+    """
+    if sdk != "source":
+        fail('`sdk` must be "source".')
+    if "sdk_headers" in kwargs:
+        fail('`sdk_headers` is not supported. Headers for the IDK must be specified in `public`. Note that "include/" must be included in the paths in `public`.')
+
+    idk_cc_source_library(
+        name,
+        idk_name,
+        category,
+        stable,
+        api_area,
+        hdrs,
+        **kwargs
+    )

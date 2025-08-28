@@ -347,7 +347,7 @@ func TestIDKConversion(t *testing.T) {
 		wantGN string
 	}{
 		{
-			name: "Simple C++ targets",
+			name: "IDK C++ source library",
 			bazel: `load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
 
 idk_cc_source_library(
@@ -368,6 +368,55 @@ idk_cc_source_library(
 	sdk_area = "Media"
 	category = "partner"
 	sdk_name = "foobar"
+	stable = true
+	public = [
+		"include/lib/foobar/foobar_defs.h",
+	]
+	sdk_headers_for_internal_use = [
+		"path/to/internal.h",
+	]
+	public += sdk_headers_for_internal_use
+	public_configs = [
+		":foo_include",
+	]
+	public_deps = [
+		"//path/to/public_deps",
+	]
+	deps = [
+		"//path/to/implementation_deps",
+	]
+	visibility = [
+		"*",
+	]
+}`,
+		},
+		{
+			name: "IDK C++ source library for Zircon library",
+			// This test case should be identical to the one for
+			// `idk_cc_source_library()` except for `sdk_publishable` in the
+			// expectation and `sdk` the input and expectation.
+			bazel: `load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library_zx")
+
+idk_cc_source_library_zx(
+	name = "foo",
+	api_area = "Media",
+	category = "partner",
+	idk_name = "foobar",
+	sdk = "source",
+	stable = True,
+	hdrs = ["include/lib/foobar/foobar_defs.h"],
+	hdrs_for_internal_use = ["path/to/internal.h"],
+	public_configs = [":foo_include"],
+	deps = ["//path/to/public_deps"],
+	implementation_deps = ["//path/to/implementation_deps"],
+	visibility = [ "//visibility:public" ],
+)
+`,
+			wantGN: `zx_library("foo") {
+	sdk_area = "Media"
+	sdk_publishable = "partner"
+	sdk_name = "foobar"
+	sdk = "source"
 	stable = true
 	public = [
 		"include/lib/foobar/foobar_defs.h",
