@@ -507,7 +507,7 @@ pub mod example_protocol {
                     <___T as ::fidl_next::Transport>::SendBuffer,
                     Encoded = ::fidl_next_test_exampleusing::WireEmpty,
                 >,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+            ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -515,17 +515,16 @@ pub mod example_protocol {
                 self.method_with(Method { arg })
             }
 
-            pub fn method_with<___R>(
-                &self,
-                request: ___R,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+            pub fn method_with<___R>(&self, request: ___R) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = crate::WireExampleProtocolMethodRequest,
                     >,
             {
-                self.sender.send_one_way(6023439637367187273, request)
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(6023439637367187273, request),
+                )
             }
         }
 

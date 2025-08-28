@@ -43,7 +43,6 @@ impl i2c::DeviceServerHandler<fidl_next::fuchsia::zx::Channel> for DeviceServer 
                     read_data: vec![vec![0x1u8, 0x2, 0x3]],
                 }),
             )
-            .unwrap()
             .await
             .unwrap();
     }
@@ -58,7 +57,6 @@ impl i2c::DeviceServerHandler<fidl_next::fuchsia::zx::Channel> for DeviceServer 
                 sender,
                 Ok::<_, i32>(i2c::DeviceGetNameResponse { name: "rust i2c server".to_string() }),
             )
-            .unwrap()
             .await
             .unwrap();
     }

@@ -7841,32 +7841,26 @@ pub mod test_protocol {
         {
             pub fn strict_union_hence_response_may_be_stack_allocated(
                 &self,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<
-                    '_,
-                    super::StrictUnionHenceResponseMayBeStackAllocated,
-                    ___T,
-                >,
-                ::fidl_next::EncodeError,
+            ) -> ::fidl_next::TwoWayFuture<
+                '_,
+                super::StrictUnionHenceResponseMayBeStackAllocated,
+                ___T,
             > {
-                self.sender
-                    .send_two_way(6628358876445129155, ())
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(6628358876445129155, ()),
+                )
             }
 
             pub fn flexible_union_hence_response_must_be_heap_allocated(
                 &self,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<
-                    '_,
-                    super::FlexibleUnionHenceResponseMustBeHeapAllocated,
-                    ___T,
-                >,
-                ::fidl_next::EncodeError,
+            ) -> ::fidl_next::TwoWayFuture<
+                '_,
+                super::FlexibleUnionHenceResponseMustBeHeapAllocated,
+                ___T,
             > {
-                self.sender
-                    .send_two_way(7588545459451501794, ())
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(7588545459451501794, ()),
+                )
             }
         }
 

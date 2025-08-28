@@ -37,7 +37,6 @@ impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServ
     ) {
         responder
             .respond(sender, CalculatorAddResponse { sum: *request.a + *request.b })
-            .unwrap()
             .await
             .unwrap();
     }
@@ -50,7 +49,6 @@ impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServ
     ) {
         responder
             .respond(sender, CalculatorSubtractResponse { difference: *request.a - *request.b })
-            .unwrap()
             .await
             .unwrap();
     }
@@ -63,7 +61,6 @@ impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServ
     ) {
         responder
             .respond(sender, CalculatorMultiplyResponse { product: *request.a * *request.b })
-            .unwrap()
             .await
             .unwrap();
     }
@@ -79,7 +76,6 @@ impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServ
                 sender,
                 CalculatorDivideResponse { quotient: *request.dividend / *request.divisor },
             )
-            .unwrap()
             .await
             .unwrap();
     }
@@ -92,7 +88,6 @@ impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServ
     ) {
         responder
             .respond(sender, CalculatorPowResponse { power: request.base.powf(*request.exponent) })
-            .unwrap()
             .await
             .unwrap();
     }
@@ -138,7 +133,7 @@ mod tests {
         let sender = spawn_client_sender_detached(client_end);
         let server_task = pin!(async move { Server::new(server_end).run(CalculatorServer).await });
 
-        let future = sender.add(4.5, 3.2).unwrap();
+        let future = sender.add(4.5, 3.2);
         futures::select! {
             actual = future.fuse() => {
                 let actual = actual.expect("Add proxy didn't return value.");
@@ -156,7 +151,7 @@ mod tests {
         let sender = spawn_client_sender_detached(client_end);
         let server_task = pin!(Server::new(server_end).run(CalculatorServer));
 
-        let future = sender.subtract(7.7, 3.2).unwrap();
+        let future = sender.subtract(7.7, 3.2);
         futures::select! {
             actual = future.fuse() => {
                 let actual = actual.expect("Subtract proxy didn't return value.");
@@ -174,7 +169,7 @@ mod tests {
         let sender = spawn_client_sender_detached(client_end);
         let server_task = pin!(Server::new(server_end).run(CalculatorServer));
 
-        let future = sender.multiply(1.5, 2.0).unwrap();
+        let future = sender.multiply(1.5, 2.0);
         futures::select! {
             actual = future.fuse() => {
                 let actual = actual.expect("Multiply proxy didn't return value.");
@@ -192,7 +187,7 @@ mod tests {
         let sender = spawn_client_sender_detached(client_end);
         let server_task = pin!(Server::new(server_end).run(CalculatorServer));
 
-        let future = sender.divide(2.0, 4.0).unwrap();
+        let future = sender.divide(2.0, 4.0);
         futures::select! {
             actual = future.fuse() => {
                 let actual = actual.expect("Divide proxy didn't return value.");
@@ -210,7 +205,7 @@ mod tests {
         let sender = spawn_client_sender_detached(client_end);
         let server_task = pin!(Server::new(server_end).run(CalculatorServer));
 
-        let future = sender.pow(3.0, 4.0).unwrap();
+        let future = sender.pow(3.0, 4.0);
         futures::select! {
             actual = future.fuse() => {
                 let actual = actual.expect("Pow proxy didn't return value.");

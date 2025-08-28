@@ -410,10 +410,10 @@ pub mod interface {
             ___T: ::fidl_next::Transport,
         {
             #[doc = " method comment #1\n\n method comment #3\n"]
-            pub fn method(
-                &self,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError> {
-                self.sender.send_one_way(5017051197196532121, ())
+            pub fn method(&self) -> ::fidl_next::SendFuture<'_, ___T> {
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(5017051197196532121, ()),
+                )
             }
         }
 
@@ -428,10 +428,8 @@ pub mod interface {
             ___T: ::fidl_next::Transport,
         {
             #[doc = " event comment #1\n\n event comment #3\n"]
-            pub fn on_event(
-                &self,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError> {
-                self.sender.send_event(28780186509098736, ())
+            pub fn on_event(&self) -> ::fidl_next::SendFuture<'_, ___T> {
+                ::fidl_next::SendFuture::from_untyped(self.sender.send_event(28780186509098736, ()))
             }
         }
     }

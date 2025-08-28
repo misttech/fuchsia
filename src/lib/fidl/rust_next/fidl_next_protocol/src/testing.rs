@@ -61,7 +61,9 @@ pub async fn test_close_on_drop<T: Transport + 'static>(client_end: T, server_en
         .send_two_way(42, "Ping")
         .expect("client failed to encode request")
         .await
-        .expect("client failed to send request and receive response")
+        .expect("client failed to send request")
+        .await
+        .expect("client failed to receive response")
         .decode::<WireString<'_>>()
         .expect("failed to decode response");
     assert_eq!(&**message, "Pong");
@@ -147,7 +149,9 @@ pub async fn test_two_way<T: Transport + 'static>(client_end: T, server_end: T) 
         .send_two_way(42, "Ping")
         .expect("client failed to encode request")
         .await
-        .expect("client failed to send request and receive response")
+        .expect("client failed to send request")
+        .await
+        .expect("client failed to receive response")
         .decode::<WireString<'_>>()
         .expect("failed to decode response");
     assert_eq!(&**message, "Pong");
@@ -197,27 +201,38 @@ pub async fn test_multiple_two_way<T: Transport + 'static>(client_end: T, server
     let client_task = Task::spawn(client.run_sender());
     let server_task = Task::spawn(Server::new(server_end).run(TestServer));
 
-    let send_one = client_sender.send_two_way(1, "One").expect("client failed to encode request");
-    let send_two = client_sender.send_two_way(2, "Two").expect("client failed to encode request");
-    let send_three =
-        client_sender.send_two_way(3, "Three").expect("client failed to encode request");
+    let send_one = client_sender
+        .send_two_way(1, "One")
+        .expect("client failed to encode request")
+        .await
+        .expect("client failed to send request");
+    let send_two = client_sender
+        .send_two_way(2, "Two")
+        .expect("client failed to encode request")
+        .await
+        .expect("client failed to send request");
+    let send_three = client_sender
+        .send_two_way(3, "Three")
+        .expect("client failed to encode request")
+        .await
+        .expect("client failed to send request");
     let (response_one, response_two, response_three) =
         futures::join!(send_one, send_two, send_three);
 
     let message_one = response_one
-        .expect("client failed to send request and receive response")
+        .expect("client failed to receive response")
         .decode::<WireString<'_>>()
         .expect("failed to decode response");
     assert_eq!(&**message_one, "One");
 
     let message_two = response_two
-        .expect("client failed to send request and receive response")
+        .expect("client failed to receive response")
         .decode::<WireString<'_>>()
         .expect("failed to decode response");
     assert_eq!(&**message_two, "Two");
 
     let message_three = response_three
-        .expect("client failed to send request and receive response")
+        .expect("client failed to receive response")
         .decode::<WireString<'_>>()
         .expect("failed to decode response");
     assert_eq!(&**message_three, "Three");

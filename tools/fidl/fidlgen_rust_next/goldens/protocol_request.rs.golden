@@ -798,26 +798,18 @@ pub mod parent {
         where
             ___T: ::fidl_next::Transport,
         {
-            pub fn get_child(
-                &self,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::GetChild, ___T>,
-                ::fidl_next::EncodeError,
-            > {
-                self.sender
-                    .send_two_way(881818649151440699, ())
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+            pub fn get_child(&self) -> ::fidl_next::TwoWayFuture<'_, super::GetChild, ___T> {
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(881818649151440699, ()),
+                )
             }
 
             pub fn get_child_request(
                 &self,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::GetChildRequest, ___T>,
-                ::fidl_next::EncodeError,
-            > {
-                self.sender
-                    .send_two_way(1096855814967598201, ())
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+            ) -> ::fidl_next::TwoWayFuture<'_, super::GetChildRequest, ___T> {
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(1096855814967598201, ()),
+                )
             }
 
             pub fn take_child(
@@ -830,7 +822,7 @@ pub mod parent {
                         ::fidl_next::fuchsia::WireChannel,
                     >,
                 >,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+            ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -839,17 +831,16 @@ pub mod parent {
                 self.take_child_with(TakeChild { c })
             }
 
-            pub fn take_child_with<___R>(
-                &self,
-                request: ___R,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+            pub fn take_child_with<___R>(&self, request: ___R) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = crate::WireParentTakeChildRequest,
                     >,
             {
-                self.sender.send_one_way(4470101341872267920, request)
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(4470101341872267920, request),
+                )
             }
 
             pub fn take_child_request(
@@ -862,7 +853,7 @@ pub mod parent {
                         ::fidl_next::fuchsia::WireChannel,
                     >,
                 >,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+            ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -874,14 +865,16 @@ pub mod parent {
             pub fn take_child_request_with<___R>(
                 &self,
                 request: ___R,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+            ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = crate::WireParentTakeChildRequestRequest,
                     >,
             {
-                self.sender.send_one_way(2333981071306416007, request)
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(2333981071306416007, request),
+                )
             }
         }
 

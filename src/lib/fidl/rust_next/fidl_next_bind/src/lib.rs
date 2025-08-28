@@ -32,6 +32,7 @@ mod endpoint;
 mod error;
 #[cfg(feature = "fuchsia")]
 pub mod fuchsia;
+mod future;
 mod protocol;
 mod server;
 mod service;
@@ -44,6 +45,7 @@ pub use self::compat::*;
 pub use self::decoded::*;
 pub use self::endpoint::*;
 pub use self::error::*;
+pub use self::future::*;
 pub use self::protocol::*;
 pub use self::server::*;
 pub use self::service::*;

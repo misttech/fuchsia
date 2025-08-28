@@ -39,7 +39,7 @@ impl<T: Transport + 'static> CalculatorServerHandler<T> for MyCalculatorServer {
         self.last_result = Some(sum);
 
         let response = Flexible::Ok(CalculatorAddResponse { sum });
-        let _ = responder.respond(&sender, response).unwrap().await;
+        let _ = responder.respond(&sender, response).await;
     }
 
     async fn divide(
@@ -60,7 +60,7 @@ impl<T: Transport + 'static> CalculatorServerHandler<T> for MyCalculatorServer {
             FlexibleResult::Err(DivisionError::DivideByZero)
         };
 
-        let _ = responder.respond(&sender, response).unwrap().await;
+        let _ = responder.respond(&sender, response).await;
     }
 
     async fn clear(&mut self, _: &ServerSender<Calculator, T>) {
@@ -111,11 +111,7 @@ async fn create_endpoints() -> (
 }
 
 async fn add(client_sender: &ClientSender<Calculator, Endpoint>) {
-    let result = client_sender
-        .add(16, 26)
-        .expect("failed to encode add request")
-        .await
-        .expect("failed to send, receive, or decode response to add request");
+    let result = client_sender.add(16, 26).await.expect("failed to send or receive request");
     let response = result.ok().expect("add request failed with an error");
 
     assert_eq!(response.sum, 42);
@@ -123,33 +119,25 @@ async fn add(client_sender: &ClientSender<Calculator, Endpoint>) {
 
 async fn divide(client_sender: &ClientSender<Calculator, Endpoint>) {
     // Normal division
-    let result = client_sender
-        .divide(100, 3)
-        .expect("failed to encode divide request")
-        .await
-        .expect("failed to send, receive, or decode response to divide request");
+    let result = client_sender.divide(100, 3).await.expect("failed to send or receive request");
     let response = result.ok().expect("divide request failed with an error");
 
     assert_eq!(response.quotient, 33);
     assert_eq!(response.remainder, 1);
 
     // Cause an error
-    let result = client_sender
-        .divide(42, 0)
-        .expect("failed to encode divide request")
-        .await
-        .expect("failed to send, receive, or decode response to divide request");
+    let result = client_sender.divide(42, 0).await.expect("failed to send or receive request");
 
     let error = result.err().expect("divide request succeeded unexpectedly");
     assert_eq!(DivisionError::DivideByZero, (*error).into());
 }
 
 async fn clear(client_sender: &ClientSender<Calculator, Endpoint>) {
-    client_sender.clear().unwrap().await.unwrap();
+    client_sender.clear().await.expect("failed to send request");
 }
 
 async fn on_error(server_sender: &ServerSender<Calculator, Endpoint>) {
-    server_sender.on_error(100u32).unwrap().await.unwrap();
+    server_sender.on_error(100u32).await.expect("failed to send event");
 }
 
 #[fuchsia_async::run_singlethreaded]

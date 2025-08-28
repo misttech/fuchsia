@@ -1008,15 +1008,10 @@ pub mod allowed {
         where
             ___T: ::fidl_next::Transport,
         {
-            pub fn denied(
-                &self,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::Denied, ___T>,
-                ::fidl_next::EncodeError,
-            > {
-                self.sender
-                    .send_two_way(3826178105137551123, ())
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+            pub fn denied(&self) -> ::fidl_next::TwoWayFuture<'_, super::Denied, ___T> {
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(3826178105137551123, ()),
+                )
             }
         }
 
@@ -2306,7 +2301,7 @@ pub mod denied {
                     <___T as ::fidl_next::Transport>::SendBuffer,
                     Encoded = crate::WireShouldNeverAppearInAnyBinding3,
                 >,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+            ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -2324,14 +2319,16 @@ pub mod denied {
             pub fn should_never_appear_in_any_binding_with<___R>(
                 &self,
                 request: ___R,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+            ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = crate::WireDeniedShouldNeverAppearInAnyBindingRequest<'static>,
                     >,
             {
-                self.sender.send_one_way(5338181991150205725, request)
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(5338181991150205725, request),
+                )
             }
         }
 
@@ -5857,10 +5854,7 @@ pub mod deny_each_binding {
                     <___T as ::fidl_next::Transport>::SendBuffer,
                     Encoded = bool,
                 >,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenyCpp, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyCpp, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -5871,19 +5865,16 @@ pub mod deny_each_binding {
             pub fn only_deny_cpp_with<___R>(
                 &self,
                 request: ___R,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenyCpp, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyCpp, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = crate::WireDenyEachBindingOnlyDenyCppRequest,
                     >,
             {
-                self.sender
-                    .send_two_way(2957648440141224850, request)
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(2957648440141224850, request),
+                )
             }
 
             pub fn only_deny_dart(
@@ -5893,10 +5884,7 @@ pub mod deny_each_binding {
                     <___T as ::fidl_next::Transport>::SendBuffer,
                     Encoded = bool,
                 >,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenyDart, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyDart, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -5907,19 +5895,16 @@ pub mod deny_each_binding {
             pub fn only_deny_dart_with<___R>(
                 &self,
                 request: ___R,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenyDart, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyDart, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = crate::WireDenyEachBindingOnlyDenyDartRequest,
                     >,
             {
-                self.sender
-                    .send_two_way(8446571910689294295, request)
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(8446571910689294295, request),
+                )
             }
 
             pub fn only_deny_go(
@@ -5929,10 +5914,7 @@ pub mod deny_each_binding {
                     <___T as ::fidl_next::Transport>::SendBuffer,
                     Encoded = bool,
                 >,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenyGo, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyGo, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -5943,19 +5925,16 @@ pub mod deny_each_binding {
             pub fn only_deny_go_with<___R>(
                 &self,
                 request: ___R,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenyGo, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyGo, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = crate::WireDenyEachBindingOnlyDenyGoRequest,
                     >,
             {
-                self.sender
-                    .send_two_way(7311125300308839833, request)
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(7311125300308839833, request),
+                )
             }
 
             pub fn only_deny_python(
@@ -5965,10 +5944,7 @@ pub mod deny_each_binding {
                     <___T as ::fidl_next::Transport>::SendBuffer,
                     Encoded = bool,
                 >,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenyPython, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyPython, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -5979,19 +5955,16 @@ pub mod deny_each_binding {
             pub fn only_deny_python_with<___R>(
                 &self,
                 request: ___R,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenyPython, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyPython, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = crate::WireDenyEachBindingOnlyDenyPythonRequest,
                     >,
             {
-                self.sender
-                    .send_two_way(3010747198252652930, request)
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(3010747198252652930, request),
+                )
             }
 
             pub fn only_deny_rust(
@@ -6001,10 +5974,7 @@ pub mod deny_each_binding {
                     <___T as ::fidl_next::Transport>::SendBuffer,
                     Encoded = bool,
                 >,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenyRust, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyRust, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -6015,19 +5985,16 @@ pub mod deny_each_binding {
             pub fn only_deny_rust_with<___R>(
                 &self,
                 request: ___R,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenyRust, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenyRust, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = crate::WireDenyEachBindingOnlyDenyRustRequest,
                     >,
             {
-                self.sender
-                    .send_two_way(3719805222870932662, request)
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(3719805222870932662, request),
+                )
             }
 
             pub fn only_deny_syzkaller(
@@ -6037,10 +6004,7 @@ pub mod deny_each_binding {
                     <___T as ::fidl_next::Transport>::SendBuffer,
                     Encoded = bool,
                 >,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenySyzkaller, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenySyzkaller, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -6051,19 +6015,16 @@ pub mod deny_each_binding {
             pub fn only_deny_syzkaller_with<___R>(
                 &self,
                 request: ___R,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::OnlyDenySyzkaller, ___T>,
-                ::fidl_next::EncodeError,
-            >
+            ) -> ::fidl_next::TwoWayFuture<'_, super::OnlyDenySyzkaller, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = crate::WireDenyEachBindingOnlyDenySyzkallerRequest,
                     >,
             {
-                self.sender
-                    .send_two_way(2319043834522757514, request)
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(2319043834522757514, request),
+                )
             }
         }
 
@@ -6392,7 +6353,7 @@ pub mod imports_same_name_context {
                     <___T as ::fidl_next::Transport>::SendBuffer,
                     Encoded = ::fidl_next_test_dependent::WireOnlyAppearsInImportingLibrary,
                 >,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+            ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
@@ -6403,26 +6364,28 @@ pub mod imports_same_name_context {
             pub fn always_denied_with<___R>(
                 &self,
                 request: ___R,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+            ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
                         Encoded = ::fidl_next_test_dependent::WireContainsDeniedAlwaysDeniedRequest,
                     >,
             {
-                self.sender.send_one_way(6808317417318106526, request)
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(6808317417318106526, request),
+                )
             }
 
-            pub fn unattributed(
-                &self,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError> {
-                self.sender.send_one_way(475191379775102607, ())
+            pub fn unattributed(&self) -> ::fidl_next::SendFuture<'_, ___T> {
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(475191379775102607, ()),
+                )
             }
 
-            pub fn always_appears_in_importing_library(
-                &self,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError> {
-                self.sender.send_one_way(2914965219653596920, ())
+            pub fn always_appears_in_importing_library(&self) -> ::fidl_next::SendFuture<'_, ___T> {
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(2914965219653596920, ()),
+                )
             }
         }
 

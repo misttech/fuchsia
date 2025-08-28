@@ -385,10 +385,10 @@ pub mod protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            pub fn foo(
-                &self,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError> {
-                self.sender.send_one_way(6231434419097198905, ())
+            pub fn foo(&self) -> ::fidl_next::SendFuture<'_, ___T> {
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(6231434419097198905, ()),
+                )
             }
         }
 

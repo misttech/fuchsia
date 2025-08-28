@@ -6,10 +6,10 @@ use core::future::Future;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
-use fidl_next_codec::{Encode, EncodeError};
-use fidl_next_protocol::{self as protocol, ProtocolError, SendFuture, ServerHandler, Transport};
+use fidl_next_codec::Encode;
+use fidl_next_protocol::{self as protocol, ProtocolError, ServerHandler, Transport};
 
-use crate::{Method, Protocol, ServerEnd};
+use crate::{Method, Protocol, SendFuture, ServerEnd};
 
 /// A strongly typed server sender.
 #[repr(transparent)]
@@ -196,12 +196,12 @@ impl<M> Responder<M> {
         self,
         sender: &'s ServerSender<P, T>,
         response: R,
-    ) -> Result<SendFuture<'s, T>, EncodeError>
+    ) -> SendFuture<'s, T>
     where
         T: Transport,
         M: Method<Protocol = P>,
         R: Encode<T::SendBuffer, Encoded = M::Response>,
     {
-        sender.sender.send_response(self.responder, M::ORDINAL, response)
+        SendFuture::from_untyped(sender.sender.send_response(self.responder, M::ORDINAL, response))
     }
 }

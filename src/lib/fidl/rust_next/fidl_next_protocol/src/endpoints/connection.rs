@@ -426,7 +426,7 @@ impl<T: NonBlockingTransport> SendFuture<'_, T> {
                 Err(self.connection.get_termination_reason().unwrap_or(ProtocolError::Stopped))
             }
             SendFutureState::Terminated { error } => Err(error),
-            SendFutureState::Finished => panic!("SendFuture polled after finishing"),
+            SendFutureState::Finished => panic!("SendFuture polled after returning `Poll::Ready`"),
         }
     }
 }

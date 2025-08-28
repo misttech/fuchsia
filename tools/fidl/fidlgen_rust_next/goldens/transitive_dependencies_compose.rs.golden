@@ -46,15 +46,10 @@ pub mod top {
         where
             ___T: ::fidl_next::Transport,
         {
-            pub fn get_foo(
-                &self,
-            ) -> Result<
-                ::fidl_next::ResponseFuture<'_, super::GetFoo, ___T>,
-                ::fidl_next::EncodeError,
-            > {
-                self.sender
-                    .send_two_way(2618685789258237543, ())
-                    .map(::fidl_next::ResponseFuture::from_untyped)
+            pub fn get_foo(&self) -> ::fidl_next::TwoWayFuture<'_, super::GetFoo, ___T> {
+                ::fidl_next::TwoWayFuture::from_untyped(
+                    self.sender.send_two_way(2618685789258237543, ()),
+                )
             }
         }
 

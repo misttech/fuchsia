@@ -14,6 +14,9 @@ rustc_library("fidl_next_bind") {
     "src/decoded.rs",
     "src/endpoint.rs",
     "src/error.rs",
+    "src/future/mod.rs",
+    "src/future/send.rs",
+    "src/future/two_way.rs",
     "src/lib.rs",
     "src/protocol.rs",
     "src/server.rs",
@@ -22,6 +25,7 @@ rustc_library("fidl_next_bind") {
   deps = [
     "//src/lib/fidl/rust_next/fidl_next_codec",
     "//src/lib/fidl/rust_next/fidl_next_protocol",
+    "//third_party/rust_crates:pin-project",
     "//third_party/rust_crates:thiserror",
   ]
   features = []

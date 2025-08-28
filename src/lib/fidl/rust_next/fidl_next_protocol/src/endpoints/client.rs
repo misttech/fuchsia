@@ -6,7 +6,7 @@
 
 use core::future::Future;
 use core::pin::Pin;
-use core::task::{Context, Poll};
+use core::task::{Context, Poll, ready};
 use std::sync::{Arc, Mutex};
 
 use fidl_next_codec::{Encode, EncodeError, EncoderExt};
@@ -65,7 +65,7 @@ impl<T: Transport> ClientSender<T> {
         &self,
         ordinal: u64,
         request: M,
-    ) -> Result<ResponseFuture<'_, T>, EncodeError>
+    ) -> Result<TwoWayRequestFuture<'_, T>, EncodeError>
     where
         M: Encode<T::SendBuffer>,
     {
@@ -73,11 +73,9 @@ impl<T: Transport> ClientSender<T> {
 
         // Send with txid = index + 1 because indices start at 0.
         match self.send_message(index + 1, ordinal, request) {
-            Ok(future) => Ok(ResponseFuture {
-                inner: &self.inner,
-                index,
-                state: ResponseFutureState::Sending(future),
-            }),
+            Ok(send_future) => {
+                Ok(TwoWayRequestFuture { inner: &self.inner, index: Some(index), send_future })
+            }
             Err(e) => {
                 self.inner.responses.lock().unwrap().free(index);
                 Err(e)
@@ -107,91 +105,89 @@ impl<T: Transport> Clone for ClientSender<T> {
     }
 }
 
-enum ResponseFutureState<'a, T: Transport> {
-    Sending(SendFuture<'a, T>),
-    Receiving,
-    // We store the completion state locally so that we can free the locker
-    // during poll, instead of waiting until the future is dropped.
-    Completed,
-}
-
-/// A future for a request pending a response.
-pub struct ResponseFuture<'a, T: Transport> {
+/// A future for a pending response to a two-way message.
+pub struct TwoWayResponseFuture<'a, T: Transport> {
     inner: &'a ClientSenderInner<T>,
-    index: u32,
-    state: ResponseFutureState<'a, T>,
+    index: Option<u32>,
 }
 
-impl<T: Transport> Drop for ResponseFuture<'_, T> {
+impl<T: Transport> Drop for TwoWayResponseFuture<'_, T> {
     fn drop(&mut self) {
-        let mut responses = self.inner.responses.lock().unwrap();
-        match self.state {
-            // SAFETY: The future was canceled before it could be sent. The transaction ID was never
-            // used, so it's safe to immediately reuse.
-            ResponseFutureState::Sending(_) => responses.free(self.index),
-            ResponseFutureState::Receiving => {
-                if responses.get(self.index).unwrap().cancel() {
-                    responses.free(self.index);
-                }
+        // If `index` is `Some`, then we still need to free our locker.
+        if let Some(index) = self.index {
+            let mut responses = self.inner.responses.lock().unwrap();
+            if responses.get(index).unwrap().cancel() {
+                responses.free(index);
             }
-            // We already freed the slot when we completed.
-            ResponseFutureState::Completed => (),
         }
     }
 }
 
-impl<T: Transport> ResponseFuture<'_, T> {
-    fn poll_receiving(&mut self, cx: &mut Context<'_>) -> Poll<<Self as Future>::Output> {
-        let mut responses = self.inner.responses.lock().unwrap();
-        let ready = if let Some(ready) = responses.get(self.index).unwrap().read(cx.waker()) {
+impl<T: Transport> Future for TwoWayResponseFuture<'_, T> {
+    type Output = Result<T::RecvBuffer, ProtocolError<T::Error>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = Pin::into_inner(self);
+        let Some(index) = this.index else {
+            panic!("TwoWayResponseFuture polled after returning `Poll::Ready`");
+        };
+
+        let mut responses = this.inner.responses.lock().unwrap();
+        let ready = if let Some(ready) = responses.get(index).unwrap().read(cx.waker()) {
             Ok(ready)
-        } else if let Some(termination_reason) = self.inner.connection.get_termination_reason() {
+        } else if let Some(termination_reason) = this.inner.connection.get_termination_reason() {
             Err(termination_reason)
         } else {
             return Poll::Pending;
         };
 
-        responses.free(self.index);
-        self.state = ResponseFutureState::Completed;
+        responses.free(index);
+        this.index = None;
         Poll::Ready(ready)
     }
 }
 
-impl<T: Transport> Future for ResponseFuture<'_, T> {
-    type Output = Result<T::RecvBuffer, ProtocolError<T::Error>>;
+/// A future for a sending a two-way FIDL message.
+pub struct TwoWayRequestFuture<'a, T: Transport> {
+    inner: &'a ClientSenderInner<T>,
+    index: Option<u32>,
+    send_future: SendFuture<'a, T>,
+}
+
+impl<T: Transport> Drop for TwoWayRequestFuture<'_, T> {
+    fn drop(&mut self) {
+        if let Some(index) = self.index {
+            let mut responses = self.inner.responses.lock().unwrap();
+
+            // The future was canceled before it could be sent. The transaction
+            // ID was never used, so it's safe to immediately reuse.
+            responses.free(index);
+        }
+    }
+}
+
+impl<'a, T: Transport> Future for TwoWayRequestFuture<'a, T> {
+    type Output = Result<TwoWayResponseFuture<'a, T>, ProtocolError<T::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // SAFETY: We treat the state as pinned as long as it is sending.
         let this = unsafe { Pin::into_inner_unchecked(self) };
 
-        match &mut this.state {
-            ResponseFutureState::Sending(future) => {
-                // SAFETY: Because the state is sending, we always treat its
-                // future as pinned.
-                let pinned = unsafe { Pin::new_unchecked(future) };
-                match pinned.poll(cx) {
-                    // The send has not completed yet. Leave the state as
-                    // sending.
-                    Poll::Pending => Poll::Pending,
-                    Poll::Ready(Ok(())) => {
-                        // The send succeeded. Change the state to receiving
-                        // and poll receiving.
-                        this.state = ResponseFutureState::Receiving;
-                        this.poll_receiving(cx)
-                    }
-                    Poll::Ready(Err(e)) => {
-                        // The send failed. Set our state to completed and free
-                        // the locker.
-                        this.state = ResponseFutureState::Completed;
-                        this.inner.responses.lock().unwrap().free(this.index);
-                        Poll::Ready(Err(e))
-                    }
-                }
-            }
-            ResponseFutureState::Receiving => this.poll_receiving(cx),
-            // We could reach here if this future is polled after completion, but that's not
-            // supposed to happen.
-            ResponseFutureState::Completed => unreachable!(),
+        let Some(index) = this.index else {
+            panic!("TwoWayRequestFuture polled after returning `Poll::Ready`");
+        };
+
+        // SAFETY: `send_future` is structurally pinned.
+        let send_future = unsafe { Pin::new_unchecked(&mut this.send_future) };
+
+        let result = ready!(send_future.poll(cx));
+        this.index = None;
+        if let Err(error) = result {
+            // The send failed. Free the locker and return an error.
+            this.inner.responses.lock().unwrap().free(index);
+            Poll::Ready(Err(error))
+        } else {
+            Poll::Ready(Ok(TwoWayResponseFuture { inner: this.inner, index: Some(index) }))
         }
     }
 }

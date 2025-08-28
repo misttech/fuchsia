@@ -31,8 +31,7 @@ impl Driver for ZirconChildDriver {
         let device = get_i2c_device(&context).unwrap();
         let device_sender = device.sender().clone();
         fuchsia_async::Task::spawn(async { device.run_sender().await.unwrap() }).detach();
-        let device_name =
-            device_sender.get_name().unwrap().await.unwrap().unwrap().name.to_string();
+        let device_name = device_sender.get_name().await.unwrap().unwrap().name.to_string();
         info!("i2c device name: {device_name}");
 
         info!("Adding child node with i2c device name as a property value");

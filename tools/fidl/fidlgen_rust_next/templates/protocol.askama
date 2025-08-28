@@ -210,7 +210,7 @@ pub mod {{ module_name }} {
                                         Encoded = {{ self.static_wire_type(member.ty) }},
                                     >,
                                 {% endfor %}
-                            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+                            ) -> ::fidl_next::SendFuture<'_, ___T>
                             where
                                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::encoder::InternalHandleEncoder,
                                 {% if !is_static %}
@@ -233,20 +233,24 @@ pub mod {{ module_name }} {
                             pub fn {{ method_name }}_with<___R>(
                                 &self,
                                 request: ___R,
-                            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+                            ) -> ::fidl_next::SendFuture<'_, ___T>
                             where
                                 ___R: ::fidl_next::Encode<
                                     <___T as ::fidl_next::Transport>::SendBuffer,
                                     Encoded = {{ self.static_wire_type(request) }},
                                 >,
                             {
-                                self.sender.send_one_way({{ method.ordinal }}, request)
+                                ::fidl_next::SendFuture::from_untyped(
+                                    self.sender.send_one_way({{ method.ordinal }}, request)
+                                )
                             }
                         {% else %}
                             pub fn {{ method_name }}(
                                 &self,
-                            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError> {
-                                self.sender.send_one_way({{ method.ordinal }}, ())
+                            ) -> ::fidl_next::SendFuture<'_, ___T> {
+                                ::fidl_next::SendFuture::from_untyped(
+                                    self.sender.send_one_way({{ method.ordinal }}, ())
+                                )
                             }
                         {% endif %}
                     {% when ProtocolMethodKind::TwoWay %}
@@ -262,10 +266,7 @@ pub mod {{ module_name }} {
                                         Encoded = {{ self.static_wire_type(member.ty) }},
                                     >,
                                 {% endfor %}
-                            ) -> Result<
-                                ::fidl_next::ResponseFuture<'_, super::{{ method_type_name }}, ___T>,
-                                ::fidl_next::EncodeError,
-                            >
+                            ) -> ::fidl_next::TwoWayFuture<'_, super::{{ method_type_name }}, ___T>
                             where
                                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::encoder::InternalHandleEncoder,
                                 {% if !is_static %}
@@ -288,28 +289,24 @@ pub mod {{ module_name }} {
                             pub fn {{ method_name }}_with<___R>(
                                 &self,
                                 request: ___R,
-                            ) -> Result<
-                                ::fidl_next::ResponseFuture<'_, super::{{ method_type_name }}, ___T>,
-                                ::fidl_next::EncodeError,
-                            >
+                            ) -> ::fidl_next::TwoWayFuture<'_, super::{{ method_type_name }}, ___T>
                             where
                                 ___R: ::fidl_next::Encode<
                                     <___T as ::fidl_next::Transport>::SendBuffer,
                                     Encoded = {{ self.static_wire_type(request) }},
                                 >,
                             {
-                                self.sender.send_two_way({{ method.ordinal }}, request)
-                                    .map(::fidl_next::ResponseFuture::from_untyped)
+                                ::fidl_next::TwoWayFuture::from_untyped(
+                                    self.sender.send_two_way({{ method.ordinal }}, request)
+                                )
                             }
                         {% else %}
                             pub fn {{ method_name }}(
                                 &self,
-                            ) -> Result<
-                                ::fidl_next::ResponseFuture<'_, super::{{ method_type_name }}, ___T>,
-                                ::fidl_next::EncodeError,
-                            > {
-                                self.sender.send_two_way({{ method.ordinal }}, ())
-                                    .map(::fidl_next::ResponseFuture::from_untyped)
+                            ) -> ::fidl_next::TwoWayFuture<'_, super::{{ method_type_name }}, ___T> {
+                                ::fidl_next::TwoWayFuture::from_untyped(
+                                    self.sender.send_two_way({{ method.ordinal }}, ())
+                                )
                             }
                         {% endif %}
                     {% when ProtocolMethodKind::Event %}
@@ -344,7 +341,7 @@ pub mod {{ module_name }} {
                                     Encoded = {{ self.static_wire_type(member.ty) }},
                                 >,
                             {% endfor %}
-                        ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+                        ) -> ::fidl_next::SendFuture<'_, ___T>
                         where
                             <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::encoder::InternalHandleEncoder,
                             {% if !is_static %}
@@ -368,20 +365,24 @@ pub mod {{ module_name }} {
                         pub fn {{ method_name }}_with<___R>(
                             &self,
                             request: ___R,
-                        ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError>
+                        ) -> ::fidl_next::SendFuture<'_, ___T>
                         where
                             ___R: ::fidl_next::Encode<
                                 <___T as ::fidl_next::Transport>::SendBuffer,
                                 Encoded = <super::{{ method_type_name }} as ::fidl_next::Method>::Response,
                             >,
                         {
-                            self.sender.send_event({{ method.ordinal }}, request)
+                            ::fidl_next::SendFuture::from_untyped(
+                                self.sender.send_event({{ method.ordinal }}, request)
+                            )
                         }
                     {% else %}
                         pub fn {{ method_name }}(
                             &self,
-                        ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError> {
-                            self.sender.send_event({{ method.ordinal }}, ())
+                        ) -> ::fidl_next::SendFuture<'_, ___T> {
+                            ::fidl_next::SendFuture::from_untyped(
+                                self.sender.send_event({{ method.ordinal }}, ())
+                            )
                         }
                     {% endif %}
                 {% endif %}

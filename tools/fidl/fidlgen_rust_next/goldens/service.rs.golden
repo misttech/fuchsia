@@ -82,10 +82,10 @@ pub mod first_protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            pub fn method_on_first(
-                &self,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError> {
-                self.sender.send_one_way(6352548393671797041, ())
+            pub fn method_on_first(&self) -> ::fidl_next::SendFuture<'_, ___T> {
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(6352548393671797041, ()),
+                )
             }
         }
 
@@ -405,10 +405,10 @@ pub mod second_protocol {
         where
             ___T: ::fidl_next::Transport,
         {
-            pub fn method_on_second(
-                &self,
-            ) -> Result<::fidl_next::SendFuture<'_, ___T>, ::fidl_next::EncodeError> {
-                self.sender.send_one_way(8121179205110225988, ())
+            pub fn method_on_second(&self) -> ::fidl_next::SendFuture<'_, ___T> {
+                ::fidl_next::SendFuture::from_untyped(
+                    self.sender.send_one_way(8121179205110225988, ()),
+                )
             }
         }
 

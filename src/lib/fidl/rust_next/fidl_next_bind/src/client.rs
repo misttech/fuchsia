@@ -5,13 +5,10 @@
 use core::future::Future;
 use core::marker::PhantomData;
 use core::ops::Deref;
-use core::pin::Pin;
-use core::task::{Context, Poll};
 
-use fidl_next_codec::{Decode, DecoderExt as _};
 use fidl_next_protocol::{self as protocol, ClientHandler, IgnoreEvents, ProtocolError, Transport};
 
-use crate::{ClientEnd, Error, Method, Protocol, Response};
+use crate::{ClientEnd, Protocol};
 
 /// A strongly typed client sender.
 #[repr(transparent)]
@@ -151,43 +148,5 @@ impl<P, T: Transport> Client<P, T> {
     /// Runs the client, ignoring any incoming events.
     pub async fn run_sender(self) -> Result<(), ProtocolError<T::Error>> {
         self.client.run(IgnoreEvents).await.map(|_| ())
-    }
-}
-
-/// A strongly typed response future.
-pub struct ResponseFuture<
-    'a,
-    M,
-    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T: Transport,
-> {
-    future: protocol::ResponseFuture<'a, T>,
-    _method: PhantomData<M>,
-}
-
-impl<'a, M, T: Transport> ResponseFuture<'a, M, T> {
-    /// Creates a new response future from an untyped response future.
-    pub fn from_untyped(future: protocol::ResponseFuture<'a, T>) -> Self {
-        Self { future, _method: PhantomData }
-    }
-}
-
-impl<M, T> Future for ResponseFuture<'_, M, T>
-where
-    M: Method,
-    M::Response: Decode<T::RecvBuffer>,
-    T: Transport,
-{
-    type Output = Result<Response<M, T>, Error<T::Error>>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // SAFETY: `self` is pinned, and `future` is a subfield of `self`, so `future` will not be
-        // moved.
-        let future = unsafe { self.map_unchecked_mut(|this| &mut this.future) };
-        if let Poll::Ready(ready) = future.poll(cx)? {
-            Poll::Ready(ready.decode().map_err(Error::Decode))
-        } else {
-            Poll::Pending
-        }
     }
 }

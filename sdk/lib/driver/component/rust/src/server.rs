@@ -267,12 +267,11 @@ mod tests {
 
             client_sender
                 .start(fidl_next_fuchsia_driver_framework::DriverStartArgs::default())
-                .unwrap()
                 .await
                 .unwrap()
                 .unwrap();
 
-            client_sender.stop().unwrap().await.unwrap();
+            client_sender.stop().await.unwrap();
             client_exit_rx.await.unwrap();
 
             unsafe {

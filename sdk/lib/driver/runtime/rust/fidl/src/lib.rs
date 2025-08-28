@@ -458,7 +458,6 @@ mod test {
                     &sender,
                     Result::<_, i32>::Ok(DeviceGetHardwareIdResponse { response: 4004 }),
                 )
-                .unwrap()
                 .await
                 .unwrap();
         }
@@ -471,7 +470,7 @@ mod test {
             let event = Event::create();
             event.signal_handle(Signals::empty(), Signals::USER_0).unwrap();
             let response = DeviceGetEventResponse { event };
-            responder.respond(&sender, response).unwrap().await.unwrap();
+            responder.respond(&sender, response).await.unwrap();
         }
     }
 
@@ -504,18 +503,13 @@ mod test {
                 .unwrap();
 
             {
-                let res = client_sender.get_hardware_id().unwrap().await.unwrap();
+                let res = client_sender.get_hardware_id().await.unwrap();
                 let hardware_id = res.unwrap();
                 assert_eq!(hardware_id.response, 4004);
             }
 
             {
-                let res = client_sender
-                    .get_event()
-                    .unwrap()
-                    .await
-                    .unwrap()
-                    .take::<DeviceGetEventResponse>();
+                let res = client_sender.get_event().await.unwrap().take::<DeviceGetEventResponse>();
 
                 // wait for the event on a fuchsia_async executor
                 let mut executor = fuchsia_async::LocalExecutor::new();
