@@ -683,6 +683,11 @@ class Puppet : public dv::InspectPuppet {
     }
   }
 
+  void ActLazyThreadLocal(LazyAction lazy_action, ActLazyThreadLocalCallback callback) override {
+    callback(dv::InspectPuppet_ActLazyThreadLocal_Result::WithResponse(
+        dv::InspectPuppet_ActLazyThreadLocal_Response(TestResult::UNIMPLEMENTED)));
+  }
+
   void handle_unknown_method(uint64_t ordinal, bool method_has_response) override {}
 
  private:
