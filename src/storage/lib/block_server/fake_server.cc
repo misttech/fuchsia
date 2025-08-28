@@ -14,7 +14,7 @@ class FakeServer::FakeInterface : public Interface {
   FakeInterface(const FakeServer& server, zx::vmo data, uint64_t block_size)
       : server_(server), data_(std::move(data)), block_size_(block_size) {
     uint64_t size;
-    ZX_ASSERT(data.get_size(&size) == ZX_OK);
+    ZX_ASSERT(data_.get_size(&size) == ZX_OK);
     ZX_ASSERT(size % block_size_ == 0);
   }
   FakeInterface(const FakeServer& server, uint64_t blocks, uint64_t block_size)
