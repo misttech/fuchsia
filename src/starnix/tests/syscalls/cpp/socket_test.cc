@@ -33,6 +33,7 @@
 #include <linux/if_packet.h>
 #include <linux/if_tun.h>
 #include <linux/ipv6.h>
+#include <linux/netfilter/x_tables.h>
 #include <linux/rtnetlink.h>
 
 #include "fault_test.h"
@@ -51,6 +52,16 @@
 #define __NR_memfd_create 385
 #endif
 #endif  // !defined(__NR_memfd_create)
+
+// `IPT_SO_GET_REVISION_TARGET` is defined in `linux/netfilter_ipv4/ip_tables.h`,
+// but that header is not usable with `clang` due to broken pointer math in
+// `ipt_get_target()`. Bionic's version of that header is usable.
+#if defined(__BIONIC__)
+#include <linux/netfilter_ipv4/ip_tables.h>
+#else
+#define IPT_BASE_CTL 64
+#define IPT_SO_GET_REVISION_TARGET (IPT_BASE_CTL + 3)
+#endif
 
 TEST(UnixSocket, ReadAfterClose) {
   int fds[2];
@@ -1308,4 +1319,27 @@ TEST_F(BpfTest, SoAttachFilter) {
   SendPacketAndCheckReceived(AF_INET6, kTestDstPortIpv6, true);
   SendPacketAndCheckReceived(AF_INET, kTestDstPortIpv6, false);
   SendPacketAndCheckReceived(AF_INET6, kTestDstPortIpv4, false);
+}
+
+TEST(IpTables, IpTablesAdminCap) {
+  if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
+    GTEST_SKIP() << "Need CAP_NET_ADMIN to access iptables";
+  }
+
+  fbl::unique_fd sock;
+  ASSERT_TRUE(sock = fbl::unique_fd(socket(AF_INET, SOCK_RAW, IPPROTO_ICMP))) << strerror(errno);
+
+  struct xt_get_revision optval = {};
+  strncpy(optval.name, "REDIRECT", sizeof(optval.name));
+  optval.revision = 0;
+
+  socklen_t optval_size = sizeof(optval);
+  ASSERT_EQ(getsockopt(sock.get(), SOL_IP, IPT_SO_GET_REVISION_TARGET, &optval, &optval_size), 0);
+
+  test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+
+  ASSERT_EQ(getsockopt(sock.get(), SOL_IP, IPT_SO_GET_REVISION_TARGET, &optval, &optval_size), -1);
+  EXPECT_EQ(errno, EPERM);
+
+  test_helper::SetCapabilityEffective(CAP_NET_ADMIN);
 }

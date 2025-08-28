@@ -915,7 +915,12 @@ pub fn sys_getsockopt(
     let mut optval = current_task.read_memory_to_vec(user_optval, optlen as usize)?;
 
     let result = if socket.domain.is_inet() && IpTables::can_handle_getsockopt(level, optname) {
-        current_task.kernel().iptables.read(locked).getsockopt(socket, optname, optval.clone())
+        current_task.kernel().iptables.read(locked).getsockopt(
+            current_task,
+            socket,
+            optname,
+            optval.clone(),
+        )
     } else {
         socket.getsockopt(locked, current_task, level, optname, optlen as u32)
     };

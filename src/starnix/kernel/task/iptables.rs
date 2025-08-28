@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::socket::iptables_utils::{self, write_string_to_ascii_buffer};
 use crate::vfs::socket::{SockOptValue, SocketDomain, SocketHandle, SocketType};
@@ -13,6 +14,7 @@ use fidl_fuchsia_net_filter_ext::{
 use fuchsia_component::client::connect_to_protocol_sync;
 use itertools::Itertools;
 use starnix_logging::{log_warn, track_stub};
+use starnix_uapi::auth::CAP_NET_ADMIN;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::iptables_flags::NfIpHooks;
 use starnix_uapi::{
@@ -475,10 +477,13 @@ impl IpTables {
 
     pub fn getsockopt(
         &self,
+        current_task: &CurrentTask,
         socket: &SocketHandle,
         optname: u32,
         mut optval: Vec<u8>,
     ) -> Result<Vec<u8>, Errno> {
+        security::check_task_capable(current_task, CAP_NET_ADMIN)?;
+
         if optval.is_empty() {
             return error!(EINVAL);
         }
@@ -588,6 +593,8 @@ impl IpTables {
         optname: u32,
         optval: SockOptValue,
     ) -> Result<(), Errno> {
+        security::check_task_capable(current_task, CAP_NET_ADMIN)?;
+
         let mut bytes = optval.to_vec(current_task)?;
         match optname {
             // Replaces the [`IpTable`] specified by `user_opt`.
