@@ -626,10 +626,10 @@
              attributes="debug-symbols,debug-symbols-x64"/>
     <package name="fuchsia/drivers/wlan/intel/iwlwifi/x86_64"
              path="prebuilt/drivers/wlan/intel/iwlwifi"
-             version="git_revision:4ddb95d4dde7aca14f2d4e772415bffb54fedbdd"/>
+             version="git_revision:6fa0a4ef76bd48c762421a146cca78d489f42fc7"/>
     <package name="fuchsia/drivers/wlan/intel/iwlwifi/debug-symbols-x86_64"
              path="prebuilt/.build-id"
-             version="git_revision:4ddb95d4dde7aca14f2d4e772415bffb54fedbdd"
+             version="git_revision:6fa0a4ef76bd48c762421a146cca78d489f42fc7"
              attributes="debug-symbols,debug-symbols-x64"/>
     <package name="fuchsia/drivers/rtc/pcf8563/arm64"
              path="prebuilt/drivers/rtc/pcf8563"
