@@ -17,10 +17,7 @@ rustc_library("fuchsia-bootfs") {
     "//third_party/rust_crates:zerocopy",
   ]
 
-  test_deps = [
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:lazy_static",
-  ]
+  test_deps = [ "//third_party/rust_crates:anyhow" ]
 
   sources = [
     "src/bootfs.rs",

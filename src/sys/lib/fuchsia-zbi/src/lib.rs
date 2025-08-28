@@ -4,23 +4,21 @@
 
 use fuchsia_zbi_abi::{ZBI_ALIGNMENT_BYTES, ZBI_FLAGS_CRC32};
 
-use lazy_static::lazy_static;
 use log::info;
 use std::collections::{HashMap, HashSet};
 use std::mem::size_of;
+use std::sync::LazyLock;
 use thiserror::Error;
 use zerocopy::Ref;
 
 pub use fuchsia_zbi_abi::{
-    zbi_container_header, zbi_header_t, ZbiType, ZBI_CONTAINER_MAGIC, ZBI_FLAGS_VERSION,
-    ZBI_ITEM_MAGIC, ZBI_ITEM_NO_CRC32,
+    ZBI_CONTAINER_MAGIC, ZBI_FLAGS_VERSION, ZBI_ITEM_MAGIC, ZBI_ITEM_NO_CRC32, ZbiType,
+    zbi_container_header, zbi_header_t,
 };
 
 const ZBI_HEADER_SIZE: usize = size_of::<zbi_header_t>();
 
-lazy_static! {
-    static ref PAGE_SIZE: u32 = zx::system_get_page_size();
-}
+static PAGE_SIZE: LazyLock<u32> = LazyLock::new(|| zx::system_get_page_size());
 
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum ZbiParserError {
@@ -476,8 +474,8 @@ impl ZbiParser {
 mod tests {
     use super::*;
     use anyhow::Error;
-    use zerocopy::byteorder::little_endian::U32;
     use zerocopy::IntoBytes;
+    use zerocopy::byteorder::little_endian::U32;
 
     fn check_item_bytes(builder: &ZbiBuilder, parser: &ZbiParser) {
         for (zbi_type, items) in &parser.items {

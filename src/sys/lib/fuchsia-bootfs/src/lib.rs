@@ -5,8 +5,8 @@
 pub mod bootfs;
 
 use bootfs::{
-    zbi_bootfs_dirent_t, zbi_bootfs_header_t, ZBI_BOOTFS_MAGIC, ZBI_BOOTFS_MAX_NAME_LEN,
-    ZBI_BOOTFS_PAGE_SIZE,
+    ZBI_BOOTFS_MAGIC, ZBI_BOOTFS_MAX_NAME_LEN, ZBI_BOOTFS_PAGE_SIZE, zbi_bootfs_dirent_t,
+    zbi_bootfs_header_t,
 };
 use byteorder::{ByteOrder, LittleEndian};
 
@@ -261,10 +261,10 @@ impl<'parser> Iterator for BootfsParserIterator<'parser> {
 mod tests {
     use super::*;
     use anyhow::Error;
-    use lazy_static::lazy_static;
     use std::collections::HashMap;
     use std::fs::File;
     use std::io::prelude::*;
+    use std::sync::LazyLock;
     use zx::HandleBased;
 
     static GOLDEN_DIR: &str = "/pkg/data/golden/";
@@ -281,18 +281,16 @@ mod tests {
         map.insert(filename.to_string(), file_buffer);
     }
 
-    lazy_static! {
-        static ref GOLDEN_FILES: HashMap<String, Vec<u8>> = {
-            let mut m = HashMap::new();
-            read_file_into_hashmap(GOLDEN_DIR, "dir/empty", &mut m);
-            read_file_into_hashmap(GOLDEN_DIR, "dir/lorem.txt", &mut m);
-            read_file_into_hashmap(GOLDEN_DIR, "dir/simple-copy.txt", &mut m);
-            read_file_into_hashmap(GOLDEN_DIR, "empty", &mut m);
-            read_file_into_hashmap(GOLDEN_DIR, "random.dat", &mut m);
-            read_file_into_hashmap(GOLDEN_DIR, "simple.txt", &mut m);
-            m
-        };
-    }
+    static GOLDEN_FILES: LazyLock<HashMap<String, Vec<u8>>> = LazyLock::new(|| {
+        let mut m = HashMap::new();
+        read_file_into_hashmap(GOLDEN_DIR, "dir/empty", &mut m);
+        read_file_into_hashmap(GOLDEN_DIR, "dir/lorem.txt", &mut m);
+        read_file_into_hashmap(GOLDEN_DIR, "dir/simple-copy.txt", &mut m);
+        read_file_into_hashmap(GOLDEN_DIR, "empty", &mut m);
+        read_file_into_hashmap(GOLDEN_DIR, "random.dat", &mut m);
+        read_file_into_hashmap(GOLDEN_DIR, "simple.txt", &mut m);
+        m
+    });
 
     fn read_file_to_vmo(path: &str) -> Result<zx::Vmo, Error> {
         let mut file_buffer = Vec::new();

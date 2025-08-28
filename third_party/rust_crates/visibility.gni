@@ -116,8 +116,6 @@ lazy_static_visibility = [
   "//src/session/lib/realm_management:*",
   "//src/storage/fxfs/platform:*",
   "//src/storage/lib/block_client/rust:*",
-  "//src/sys/lib/fuchsia-bootfs:*",
-  "//src/sys/lib/fuchsia-zbi:*",
   "//src/sys/pkg/lib/tuf:*",
   "//src/testing/end_to_end/antlion/*",
   "//src/testing/fidl/intl_property_manager:*",
