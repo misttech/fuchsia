@@ -14,8 +14,8 @@ can spot simple mistakes before code review!
    ```sh
    jiri update -gc # if you haven't updated in a while
    fx set workstation_eng_paused.qemu-x64 \
-      --with-host //third_party/antlion:e2e_tests \
-      --with-host //third_party/antlion:tests
+      --with-host //src/testing/end_to_end/antlion:e2e_tests \
+      --with-host //src/testing/end_to_end/antlion:tests
    fx build # if you haven't built in a while
    ```
 
@@ -34,17 +34,17 @@ can spot simple mistakes before code review!
 4. In a separate terminal, run a test
 
    ```sh
-   fx test --e2e --output //third_party/antlion:sl4f_sanity_test
+   fx test --e2e --output //src/testing/end_to_end/antlion:sl4f_sanity_test
    ```
 
 ## Using a specified config file
 
 ```sh
-fx test --e2e --output //third_party/antlion:sl4f_sanity_test -- --config-override $(pwd)/config.yaml
+fx test --e2e --output //src/testing/end_to_end/antlion:sl4f_sanity_test -- --config-override $(pwd)/config.yaml
 ```
 
 ## Testing
 
 ```sh
-fx test --output //third_party/antlion/runner:runner_test
+fx test --output //src/testing/end_to_end/antlion/runner:runner_test
 ```

@@ -65,7 +65,7 @@ pub(crate) struct Controllers {
 #[derive(Clone, Debug, Serialize)]
 /// A Fuchsia device for use with antlion as defined by [fuchsia_device.py].
 ///
-/// [fuchsia_device.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/antlion/packages/antlion/controllers/fuchsia_device.py
+/// [fuchsia_device.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/antlion/packages/antlion/controllers/fuchsia_device.py
 pub(crate) struct Fuchsia {
     pub mdns_name: String,
     pub ip: IpAddr,
@@ -102,7 +102,7 @@ fn default_pdu_device() -> String {
 #[derive(Clone, Debug, Serialize)]
 /// Declares an access point for use with antlion as defined by [access_point.py].
 ///
-/// [access_point.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/antlion/packages/antlion/controllers/access_point.py
+/// [access_point.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/antlion/packages/antlion/controllers/access_point.py
 pub(crate) struct AccessPoint {
     pub wan_interface: String,
     pub ssh_config: SshConfig,
@@ -138,7 +138,7 @@ pub(crate) struct AttenuatorRef {
 #[serde(rename_all = "PascalCase")]
 /// Declares an attenuator for use with antlion as defined by [attenuator.py].
 ///
-/// [access_point.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/antlion/packages/antlion/controllers/attenuator.py
+/// [access_point.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/antlion/packages/antlion/controllers/attenuator.py
 pub(crate) struct Attenuator {
     pub model: String,
     pub instrument_count: u8,
@@ -150,7 +150,7 @@ pub(crate) struct Attenuator {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 /// Declares a power distribution unit for use with antlion as defined by [pdu.py].
 ///
-/// [pdu.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/antlion/packages/antlion/controllers/pdu.py
+/// [pdu.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/antlion/packages/antlion/controllers/pdu.py
 pub(crate) struct Pdu {
     pub device: String,
     pub host: IpAddr,
@@ -159,7 +159,7 @@ pub(crate) struct Pdu {
 #[derive(Clone, Debug, Serialize)]
 /// Declares an iPerf3 server for use with antlion as defined by [iperf_server.py].
 ///
-/// [iperf_server.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/antlion/packages/antlion/controllers/iperf_server.py
+/// [iperf_server.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/antlion/packages/antlion/controllers/iperf_server.py
 pub(crate) struct IPerfServer {
     pub ssh_config: SshConfig,
     pub port: u16,

@@ -297,7 +297,6 @@
                     "third_party/crashpad/src/third_party/lss",
                     "third_party/crashpad/src/third_party/mini_chromium",
                     "third_party/crashpad/src/third_party/zlib",
-                    "third_party/antlion/third_party/github.com/jd/tenacity",
                     "third_party/crashpad/src/third_party/edo",
                     "third_party/crashpad/src/third_party/googletest",
                     "third_party/crashpad/src/third_party/gyp",

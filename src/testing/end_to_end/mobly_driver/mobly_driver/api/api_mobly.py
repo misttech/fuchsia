@@ -144,7 +144,7 @@ def new_testbed_config(
                   {
                     "wan_interface": "eth0",
                     "ssh_config": {
-                      "ssh_binary_path": host_x64/test_data/third_party/antlion/tests/wlan_policy/hidden_networks_test/ssh
+                      "ssh_binary_path": host_x64/test_data/src/testing/end_to_end/antlion/tests/wlan_policy/hidden_networks_test/ssh
                       "host": "192.168.42.11",
                       "user": "root",
                       "identity_file": "/etc/botanist/keys/chrome_os_testing_rsa"
