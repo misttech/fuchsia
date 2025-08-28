@@ -13,6 +13,7 @@ use core::convert::TryFrom;
 use fuchsia_async as fasync;
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
+use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::StorageFactory as StorageFactoryTrait;
 use std::borrow::Cow;
 use std::marker::PhantomData;
@@ -512,6 +513,48 @@ pub mod persist {
             }
 
             panic!("Did not get a write response");
+        }
+
+        // TODO(https://fxbug.dev/42166874) Remove allow once used
+        #[allow(dead_code)]
+        pub(crate) async fn storage_write<T>(
+            &self,
+            store: &DeviceStorage,
+            info: T,
+            id: ftrace::Id,
+        ) -> Result<UpdateState, ControllerError>
+        where
+            T: Into<SettingInfo> + DeviceStorageCompatible,
+            for<'a> &'a T: Into<SettingType>,
+        {
+            let setting_type = (&info).into();
+            let fst = format!("{setting_type:?}");
+            let guard = trace_guard!(
+                id,
+                c"write_setting send",
+                "setting_type" => fst.as_str()
+            );
+            let result = store.write::<T>(&info).await;
+            drop(guard);
+
+            trace!(
+                id,
+                c"write_setting receive",
+                "setting_type" => fst.as_str()
+            );
+            if let Ok(UpdateState::Updated) = result {
+                trace!(
+                    id,
+                    c"write_setting notify",
+                    "setting_type" => fst.as_str()
+                );
+                self.notify(Event::Changed(info.into())).await;
+            }
+
+            result.map_err(|e| {
+                log::error!("Failed to write setting: {:?}", e);
+                ControllerError::WriteFailure(setting_type)
+            })
         }
     }
 
