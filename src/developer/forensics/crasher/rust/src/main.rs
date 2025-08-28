@@ -85,4 +85,20 @@ mod tests {
     fn test_should_fail() {
         assert_eq!(0, 1);
     }
+
+    #[fuchsia::test]
+    async fn test_should_fail_async() {
+        async {
+            assert_eq!(0, 1);
+        }
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_should_pass_async() {
+        async {
+            assert_eq!(0, 0);
+        }
+        .await;
+    }
 }

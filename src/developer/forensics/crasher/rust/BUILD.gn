@@ -24,6 +24,9 @@ rustc_binary("crasher_exe") {
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:argh",
   ]
+
+  # For the #[fuchsia::test] attribute.
+  test_deps = [ "//src/lib/fuchsia" ]
 }
 
 # Because the test package is declared in another file.
