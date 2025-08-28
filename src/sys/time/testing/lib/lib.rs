@@ -705,7 +705,7 @@ pub fn new_clock() -> Arc<zx::SyntheticClock> {
 
 /// Create a new clock with backstop time set to `BACKSTOP_TIME`.
 pub fn new_nonshareable_clock() -> zx::SyntheticClock {
-    zx::SyntheticClock::create(zx::ClockOpts::empty(), Some(*BACKSTOP_TIME)).unwrap()
+    zx::SyntheticClock::create(zx::ClockOpts::MAPPABLE, Some(*BACKSTOP_TIME)).unwrap()
 }
 
 fn zx_time_to_rtc_time(zx_time: zx::SyntheticInstant) -> fidl_fuchsia_hardware_rtc::Time {
