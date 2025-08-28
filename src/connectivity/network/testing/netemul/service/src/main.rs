@@ -295,7 +295,7 @@ async fn create_realm_instance(
                     .capability(
                         Capability::directory("diagnostics")
                             .path("/diagnostics")
-                            .rights(fio::Operations::CONNECT)
+                            .rights(fio::R_STAR_DIR)
                             .as_(diagnostics_name.clone()),
                     )
                     .from(&child_ref)
