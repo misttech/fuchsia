@@ -43,6 +43,17 @@ class UsbEpServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint>
     return zx::ok(registered_vmos_.at(buffer.vmo_id().value()));
   }
 
+  struct CurrentRequest {
+    RequestVariant req;
+    uint8_t* buffer;  // So that it doesn't have to be recalculated every time
+    size_t offset = 0;
+    const size_t length;  // So that it doesn't have to be recalculated every time
+
+    uint8_t* ptr() { return buffer + offset; }
+    size_t todo() const { return length - offset; }
+  };
+  std::optional<CurrentRequest> current_req_;
+
   // pending_reqs_: Requests not processed yet.
   std::queue<RequestVariant> pending_reqs_;
 

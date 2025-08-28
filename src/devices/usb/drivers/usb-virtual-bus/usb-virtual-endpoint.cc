@@ -96,6 +96,10 @@ void UsbEpServer::QueueRequest(RequestVariant req) {
 }
 
 void UsbEpServer::CommonCancelAll() {
+  if (current_req_) {
+    RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, current_req_->req);
+    current_req_.reset();
+  }
   while (!pending_reqs_.empty()) {
     RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, pending_reqs_.front());
     pending_reqs_.pop();
@@ -213,60 +217,94 @@ void UsbVirtualEp::ProcessRequests() {
     return;
   }
 
-  struct complete_request_t {
-    complete_request_t(RequestVariant request, zx_status_t status, size_t actual)
-        : request(std::move(request)), status(status), actual(actual) {}
+  auto get_cur_req = [this](bool is_host) {
+    UsbEpServer& server = is_host ? host_ : device_;
 
-    RequestVariant request;
-    zx_status_t status;
-    size_t actual;
+    if (!server.current_req_ && !server.pending_reqs_.empty()) {
+      RequestVariant req = std::move(server.pending_reqs_.front());
+      server.pending_reqs_.pop();
+
+      zx::result buffer = GetBuffer(req, fit::bind_member(&server, &UsbEpServer::GetMapped));
+      if (buffer.is_error()) {
+        FDF_LOG(ERROR, "Failed to get buffer %s", buffer.status_string());
+        server.RequestComplete(buffer.error_value(), 0, req);
+        return;
+      }
+
+      size_t length = GetLength(req);
+      server.current_req_.emplace(UsbEpServer::CurrentRequest{
+          .req = std::move(req),
+          .buffer = reinterpret_cast<uint8_t*>(*buffer),
+          .length = length,
+      });
+    }
   };
-  std::queue<complete_request_t> host_complete_reqs_pending;
-  std::queue<complete_request_t> device_complete_reqs_pending;
 
   // Data transfer between device/host
-  while (!host_.pending_reqs_.empty() && !device_.pending_reqs_.empty()) {
-    auto device_req = std::move(device_.pending_reqs_.front());
-    device_.pending_reqs_.pop();
-    auto host_req = std::move(host_.pending_reqs_.front());
-    host_.pending_reqs_.pop();
+  while (true) {
+    // Get requests
+    get_cur_req(false);
+    get_cur_req(true);
 
-    size_t length = std::min(GetLength(host_req), GetLength(device_req));
-    zx::result host_buffer = GetBuffer(host_req, fit::bind_member(&host_, &UsbEpServer::GetMapped));
-    if (host_buffer.is_error()) {
-      FDF_LOG(ERROR, "Failed to get host buffer %s", host_buffer.status_string());
-      host_complete_reqs_pending.emplace(std::move(host_req), host_buffer.error_value(), 0);
-      device_complete_reqs_pending.emplace(std::move(device_req), host_buffer.error_value(), 0);
-      return;
-    }
-    zx::result device_buffer =
-        GetBuffer(device_req, fit::bind_member(&device_, &UsbEpServer::GetMapped));
-    if (device_buffer.is_error()) {
-      FDF_LOG(ERROR, "Failed to get device buffer %s", device_buffer.status_string());
-      host_complete_reqs_pending.emplace(std::move(host_req), device_buffer.error_value(), 0);
-      device_complete_reqs_pending.emplace(std::move(device_req), device_buffer.error_value(), 0);
-      return;
+    if (!host_.current_req_ || !device_.current_req_) {
+      break;
     }
 
+    // Transfer data
+    const size_t to_do = std::min(host_.current_req_->todo(), device_.current_req_->todo());
     if (is_out()) {
-      std::memcpy(*device_buffer, *host_buffer, length);
+      std::memcpy(device_.current_req_->ptr(), host_.current_req_->ptr(), to_do);
     } else {
-      std::memcpy(*host_buffer, *device_buffer, length);
+      std::memcpy(host_.current_req_->ptr(), device_.current_req_->ptr(), to_do);
     }
-    host_complete_reqs_pending.emplace(std::move(host_req), ZX_OK, length);
-    device_complete_reqs_pending.emplace(std::move(device_req), ZX_OK, length);
-  }
 
-  while (!host_complete_reqs_pending.empty()) {
-    auto& complete = host_complete_reqs_pending.front();
-    host_.RequestComplete(complete.status, complete.actual, complete.request);
-    host_complete_reqs_pending.pop();
-  }
+    // Complete requests
+    const bool host_done = (host_.current_req_->offset += to_do) == host_.current_req_->length;
+    const bool device_done =
+        (device_.current_req_->offset += to_do) == device_.current_req_->length;
 
-  while (!device_complete_reqs_pending.empty()) {
-    auto& complete = device_complete_reqs_pending.front();
-    device_.RequestComplete(complete.status, complete.actual, complete.request);
-    device_complete_reqs_pending.pop();
+    const bool expected_data_transferred = host_done && device_done;
+    // TODO(b/395946042): Support cases that need to send ZLP.
+    const bool zlp = false;
+
+    if (expected_data_transferred) {
+      // Transferred exactly the requested amount
+      host_.RequestComplete(ZX_OK, host_.current_req_->offset, host_.current_req_->req);
+      device_.RequestComplete(ZX_OK, device_.current_req_->offset, device_.current_req_->req);
+      host_.current_req_.reset();
+      device_.current_req_.reset();
+    } else if (!host_done && device_done) {
+      if (is_in() && ((device_.current_req_->offset % max_packet_size_) != 0 || zlp)) {
+        // Non max packet size aligned transfer or ZLP. End early.
+        host_.RequestComplete(ZX_OK, host_.current_req_->offset, host_.current_req_->req);
+        device_.RequestComplete(ZX_OK, device_.current_req_->offset, device_.current_req_->req);
+        host_.current_req_.reset();
+        device_.current_req_.reset();
+      } else {
+        // Host has more to transfer to device. It's ok, just transfer on the next request.
+        device_.RequestComplete(ZX_OK, device_.current_req_->offset, device_.current_req_->req);
+        device_.current_req_.reset();
+      }
+    } else if (host_done && !device_done) {
+      if (is_in()) {
+        // IN: This is an error. Device should not send more than requested to the host.
+        host_.RequestComplete(ZX_ERR_IO_OVERRUN, 0, host_.current_req_->req);
+        device_.RequestComplete(ZX_ERR_IO_OVERRUN, 0, device_.current_req_->req);
+        host_.current_req_.reset();
+        device_.current_req_.reset();
+      } else {
+        // OUT: Device wants to read more from host. It's OK, just tell the device we only have so
+        // much.
+        host_.RequestComplete(ZX_OK, host_.current_req_->offset, host_.current_req_->req);
+        device_.RequestComplete(ZX_OK, device_.current_req_->offset, device_.current_req_->req);
+        host_.current_req_.reset();
+        device_.current_req_.reset();
+      }
+    } else {
+      ZX_ASSERT_MSG(false,
+                    "Impossible state: to_do calculation error. host_done: %d, device_done: %d",
+                    host_done, device_done);
+    }
   }
 }
 

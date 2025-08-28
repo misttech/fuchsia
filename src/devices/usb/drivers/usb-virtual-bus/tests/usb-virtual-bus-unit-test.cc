@@ -14,8 +14,11 @@
 namespace usb_virtual_bus {
 
 namespace fdci = fuchsia_hardware_usb_dci;
+namespace fhci = fuchsia_hardware_usb_hci;
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace frequest = fuchsia_hardware_usb_request;
+
+const size_t kMaxPacketSize = 16;
 
 class FakeUsbBus : public ddk::UsbBusInterfaceProtocol<FakeUsbBus> {
  public:
@@ -65,7 +68,6 @@ class EndpointHandler : public fidl::SyncEventHandler<fendpoint::Endpoint> {
         const auto& data = *event.completion()[0].request()->data();
         ASSERT_EQ(data.size(), 1UL);
         ASSERT_EQ(data[0].offset(), 0UL);
-        ASSERT_EQ(data[0].size(), data_size);
         ASSERT_EQ(data[0].buffer()->Which(), frequest::Buffer::Tag::kData);
         for (size_t i = 0; i < data_size; i++) {
           ASSERT_EQ(data[0].buffer()->data().value()[i], static_cast<uint8_t>(i));
@@ -84,7 +86,6 @@ class EndpointHandler : public fidl::SyncEventHandler<fendpoint::Endpoint> {
         const auto& data = *event.completion()[0].request()->data();
         ASSERT_EQ(data.size(), 1UL);
         ASSERT_EQ(data[0].offset(), 0UL);
-        ASSERT_EQ(data[0].size(), data_size);
         ASSERT_EQ(data[0].buffer()->Which(), frequest::Buffer::Tag::kVmoId);
         ASSERT_EQ(data[0].buffer()->vmo_id().value(), 1UL);
         for (size_t i = 0; i < data_size; i++) {
@@ -200,27 +201,43 @@ class UsbVirtualBusTest : public testing::Test {
     driver_test().RunInDriverContext([&](UsbVirtualBus& driver) { driver.FinishConnect(); });
   }
 
-  template <typename Service, typename... Args>
-  fidl::ClientEnd<fendpoint::Endpoint> ConnectToEndpoint(Args... args) {
-    auto controler = driver_test().Connect<typename Service::Device>();
-    EXPECT_TRUE(controler.is_ok());
+  template <typename Service>
+  fidl::ClientEnd<fendpoint::Endpoint> ConnectToEndpoint(uint8_t ep_addr) {
+    auto controller = driver_test().Connect<typename Service::Device>();
+    EXPECT_TRUE(controller.is_ok());
+
+    if constexpr (std::is_same<Service, fdci::UsbDciService>::value) {
+      // Device needs to configure endpoint and set max_packet_size_
+      auto result =
+          fidl::WireCall(*controller)
+              ->ConfigureEndpoint(
+                  {.b_endpoint_address = ep_addr, .w_max_packet_size = kMaxPacketSize}, {});
+      EXPECT_TRUE(result.ok());
+      EXPECT_TRUE(result->is_ok());
+    }
 
     auto [client_end, server_end] = fidl::Endpoints<fendpoint::Endpoint>::Create();
-    auto connect_result =
-        fidl::WireCall(*controler)->ConnectToEndpoint(args..., std::move(server_end));
-    EXPECT_TRUE(connect_result.ok());
-    EXPECT_TRUE(connect_result->is_ok());
+    if constexpr (std::is_same<Service, fdci::UsbDciService>::value) {
+      auto result = fidl::WireCall(*controller)->ConnectToEndpoint(ep_addr, std::move(server_end));
+      EXPECT_TRUE(result.ok());
+      EXPECT_TRUE(result->is_ok());
+    } else {
+      auto result =
+          fidl::WireCall(*controller)->ConnectToEndpoint(0, ep_addr, std::move(server_end));
+      EXPECT_TRUE(result.ok());
+      EXPECT_TRUE(result->is_ok());
+    };
     return std::move(client_end);
   }
 
-  // Registers one VMO at VMO ID = 1
+  // Registers one VMO
   std::pair<uint8_t*, zx::vmo> RegisterVmo(fidl::SyncClient<fendpoint::Endpoint>& client,
-                                           size_t data_size) {
+                                           size_t data_size, size_t id = 1) {
     auto result = client->RegisterVmos(
-        std::vector<fendpoint::VmoInfo>{{fendpoint::VmoInfo().id(1).size(data_size)}});
+        std::vector<fendpoint::VmoInfo>{{fendpoint::VmoInfo().id(id).size(data_size)}});
     EXPECT_TRUE(result.is_ok());
     EXPECT_EQ(result->vmos().size(), 1UL);
-    EXPECT_EQ(result->vmos()[0].id(), 1UL);
+    EXPECT_EQ(result->vmos()[0].id(), id);
     zx::vmo vmo = std::move(*result->vmos()[0].vmo());
     zx_vaddr_t mapped_addr;
     EXPECT_EQ(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, data_size,
@@ -340,7 +357,7 @@ TEST_F(UsbVirtualBusTest, BanjoOutRequestTest) {
     dci_req_size = driver.device()->UsbDciGetRequestSize();
   });
 
-  static constexpr size_t kDataSize = 256;
+  static constexpr size_t kDataSize = 14;
   const uint8_t kEpAddr = 1 | USB_DIR_OUT;
   usb_request_t *host_req, *dev_req;
   ASSERT_EQ(usb_request_alloc(&host_req, kDataSize, kEpAddr, hci_req_size), ZX_OK);
@@ -410,7 +427,7 @@ TEST_F(UsbVirtualBusTest, BanjoInRequestTest) {
     dci_req_size = driver.device()->UsbDciGetRequestSize();
   });
 
-  static constexpr size_t kDataSize = 256;
+  static constexpr size_t kDataSize = 14;
   const uint8_t kEpAddr = 2 | USB_DIR_OUT;
   usb_request_t *host_req, *dev_req;
   ASSERT_EQ(usb_request_alloc(&host_req, kDataSize, kEpAddr, hci_req_size), ZX_OK);
@@ -472,7 +489,7 @@ TEST_F(UsbVirtualBusTest, FidlControlRequestTest) {
   EnableAndConnect();
 
   fidl::SyncClient<fendpoint::Endpoint> ep_client(
-      ConnectToEndpoint<fuchsia_hardware_usb_hci::UsbHciService>(0, static_cast<uint8_t>(0)));
+      ConnectToEndpoint<fhci::UsbHciService>(static_cast<uint8_t>(0)));
   EndpointHandler event_handler;
 
   // Direct data transfer
@@ -531,14 +548,12 @@ TEST_F(UsbVirtualBusTest, FidlOutRequestTest) {
   EnableAndConnect();
 
   const uint8_t kEpAddr = 1 | USB_DIR_OUT;
-  fidl::SyncClient<fendpoint::Endpoint> host_ep(
-      ConnectToEndpoint<fuchsia_hardware_usb_hci::UsbHciService>(0, kEpAddr));
+  fidl::SyncClient<fendpoint::Endpoint> host_ep(ConnectToEndpoint<fhci::UsbHciService>(kEpAddr));
   EndpointHandler host_event_handler;
-  fidl::SyncClient<fendpoint::Endpoint> device_ep(
-      ConnectToEndpoint<fuchsia_hardware_usb_dci::UsbDciService>(kEpAddr));
+  fidl::SyncClient<fendpoint::Endpoint> device_ep(ConnectToEndpoint<fdci::UsbDciService>(kEpAddr));
   EndpointHandler device_event_handler;
 
-  static constexpr size_t kDataSize = 256;
+  static constexpr size_t kDataSize = 14;
   auto [device_data, device_vmo] = RegisterVmo(device_ep, kDataSize);
 
   {
@@ -582,14 +597,12 @@ TEST_F(UsbVirtualBusTest, FidlInRequestTest) {
   EnableAndConnect();
 
   const uint8_t kEpAddr = 2 | USB_DIR_IN;
-  fidl::SyncClient<fendpoint::Endpoint> host_ep(
-      ConnectToEndpoint<fuchsia_hardware_usb_hci::UsbHciService>(0, kEpAddr));
+  fidl::SyncClient<fendpoint::Endpoint> host_ep(ConnectToEndpoint<fhci::UsbHciService>(kEpAddr));
   EndpointHandler host_event_handler;
-  fidl::SyncClient<fendpoint::Endpoint> device_ep(
-      ConnectToEndpoint<fuchsia_hardware_usb_dci::UsbDciService>(kEpAddr));
+  fidl::SyncClient<fendpoint::Endpoint> device_ep(ConnectToEndpoint<fdci::UsbDciService>(kEpAddr));
   EndpointHandler device_event_handler;
 
-  static constexpr size_t kDataSize = 256;
+  static constexpr size_t kDataSize = kMaxPacketSize;
   {
     std::vector<frequest::Request> requests;
     std::vector<frequest::BufferRegion> buffer;
@@ -632,13 +645,293 @@ TEST_F(UsbVirtualBusTest, FidlInRequestTest) {
   ASSERT_TRUE(device_ep.HandleOneEvent(device_event_handler).ok());
 }
 
+TEST_F(UsbVirtualBusTest, FidlOutRequestUnderflowTransferTest) {
+  EnableAndConnect();
+
+  const uint8_t kEpAddr = 1 | USB_DIR_OUT;
+  fidl::SyncClient<fendpoint::Endpoint> host_ep(ConnectToEndpoint<fhci::UsbHciService>(kEpAddr));
+  EndpointHandler host_event_handler;
+  fidl::SyncClient<fendpoint::Endpoint> device_ep(ConnectToEndpoint<fdci::UsbDciService>(kEpAddr));
+  EndpointHandler device_event_handler;
+
+  static constexpr size_t kDeviceDataSize = 14;
+  static constexpr size_t kHostDataSize = 12;
+  auto [device_data, device_vmo] = RegisterVmo(device_ep, kDeviceDataSize);
+
+  {
+    std::vector<frequest::Request> requests;
+    std::vector<frequest::BufferRegion> buffer;
+    buffer.emplace_back().buffer(frequest::Buffer::WithVmoId(1)).offset(0).size(kDeviceDataSize);
+    requests.emplace_back(
+        std::move(frequest::Request()
+                      .information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo()))
+                      .data(std::move(buffer))));
+
+    ASSERT_TRUE(device_ep->QueueRequests(std::move(requests)).is_ok());
+  }
+
+  auto [host_data, host_vmo] = RegisterVmo(host_ep, kHostDataSize);
+  for (size_t i = 0; i < kHostDataSize; i++) {
+    static_cast<uint8_t*>(host_data)[i] = static_cast<uint8_t>(i);
+  }
+
+  {
+    std::vector<frequest::Request> requests;
+    std::vector<frequest::BufferRegion> buffer;
+    buffer.emplace_back().buffer(frequest::Buffer::WithVmoId(1)).offset(0).size(kHostDataSize);
+    requests.emplace_back(
+        std::move(frequest::Request()
+                      .information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo()))
+                      .data(std::move(buffer))));
+
+    ASSERT_TRUE(host_ep->QueueRequests(std::move(requests)).is_ok());
+  }
+
+  host_event_handler.ExpectOnCompletion(EndpointHandler::ExpectOnCompletionVmo(kHostDataSize));
+  ASSERT_TRUE(host_ep.HandleOneEvent(host_event_handler).ok());
+
+  device_event_handler.ExpectOnCompletion(
+      EndpointHandler::ExpectOnCompletionVmo(kHostDataSize, device_data));
+  ASSERT_TRUE(device_ep.HandleOneEvent(device_event_handler).ok());
+}
+
+TEST_F(UsbVirtualBusTest, FidlInRequestShortTransferTest) {
+  EnableAndConnect();
+
+  const uint8_t kEpAddr = 2 | USB_DIR_IN;
+  fidl::SyncClient<fendpoint::Endpoint> host_ep(ConnectToEndpoint<fhci::UsbHciService>(kEpAddr));
+  EndpointHandler host_event_handler;
+  fidl::SyncClient<fendpoint::Endpoint> device_ep(ConnectToEndpoint<fdci::UsbDciService>(kEpAddr));
+  EndpointHandler device_event_handler;
+
+  static constexpr size_t kHostDataSize = 18;
+  static constexpr size_t kDeviceDataSize = 14;
+
+  {
+    std::vector<frequest::Request> requests;
+    std::vector<frequest::BufferRegion> buffer;
+    buffer.emplace_back()
+        .buffer(frequest::Buffer::WithData(std::vector<uint8_t>(kHostDataSize)))
+        .offset(0)
+        .size(kHostDataSize);
+    requests.emplace_back(
+        std::move(frequest::Request()
+                      .information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo()))
+                      .data(std::move(buffer))));
+
+    ASSERT_TRUE(host_ep->QueueRequests(std::move(requests)).is_ok());
+  }
+
+  {
+    std::vector<frequest::Request> requests;
+    std::vector<frequest::BufferRegion> buffer;
+    std::vector<uint8_t> data(kDeviceDataSize);
+    for (size_t i = 0; i < kDeviceDataSize; i++) {
+      data[i] = static_cast<uint8_t>(i);
+    }
+    buffer.emplace_back()
+        .buffer(frequest::Buffer::WithData(std::move(data)))
+        .offset(0)
+        .size(kDeviceDataSize);
+    requests.emplace_back(
+        std::move(frequest::Request()
+                      .information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo()))
+                      .data(std::move(buffer))));
+
+    ASSERT_TRUE(device_ep->QueueRequests(std::move(requests)).is_ok());
+  }
+
+  host_event_handler.ExpectOnCompletion(
+      EndpointHandler::ExpectOnCompletionDirect(kDeviceDataSize, true));
+  ASSERT_TRUE(host_ep.HandleOneEvent(host_event_handler).ok());
+
+  device_event_handler.ExpectOnCompletion(
+      EndpointHandler::ExpectOnCompletionDirect(kDeviceDataSize, false));
+  ASSERT_TRUE(device_ep.HandleOneEvent(device_event_handler).ok());
+}
+
+TEST_F(UsbVirtualBusTest, FidlInRequestOverrunTest) {
+  EnableAndConnect();
+
+  const uint8_t kEpAddr = 2 | USB_DIR_IN;
+  fidl::SyncClient<fendpoint::Endpoint> host_ep(ConnectToEndpoint<fhci::UsbHciService>(kEpAddr));
+  EndpointHandler host_event_handler;
+  fidl::SyncClient<fendpoint::Endpoint> device_ep(ConnectToEndpoint<fdci::UsbDciService>(kEpAddr));
+  EndpointHandler device_event_handler;
+
+  static constexpr size_t kHostDataSize = 14;
+  static constexpr size_t kDeviceDataSize = 15;
+
+  {
+    std::vector<frequest::Request> requests;
+    std::vector<frequest::BufferRegion> buffer;
+    buffer.emplace_back()
+        .buffer(frequest::Buffer::WithData(std::vector<uint8_t>(kHostDataSize)))
+        .offset(0)
+        .size(kHostDataSize);
+    requests.emplace_back(
+        std::move(frequest::Request()
+                      .information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo()))
+                      .data(std::move(buffer))));
+
+    ASSERT_TRUE(host_ep->QueueRequests(std::move(requests)).is_ok());
+  }
+
+  {
+    std::vector<frequest::Request> requests;
+    std::vector<frequest::BufferRegion> buffer;
+    std::vector<uint8_t> data(kDeviceDataSize);
+    for (size_t i = 0; i < kDeviceDataSize; i++) {
+      data[i] = static_cast<uint8_t>(i);
+    }
+    buffer.emplace_back()
+        .buffer(frequest::Buffer::WithData(std::move(data)))
+        .offset(0)
+        .size(kDeviceDataSize);
+    requests.emplace_back(
+        std::move(frequest::Request()
+                      .information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo()))
+                      .data(std::move(buffer))));
+
+    ASSERT_TRUE(device_ep->QueueRequests(std::move(requests)).is_ok());
+  }
+
+  auto expect_overrun = [](fidl::Event<fendpoint::Endpoint::OnCompletion>& event) {
+    ASSERT_EQ(event.completion().size(), 1UL);
+    ASSERT_EQ(event.completion()[0].status(), ZX_ERR_IO_OVERRUN);
+    ASSERT_EQ(event.completion()[0].transfer_size(), 0);
+  };
+
+  host_event_handler.ExpectOnCompletion(expect_overrun);
+  ASSERT_TRUE(host_ep.HandleOneEvent(host_event_handler).ok());
+
+  device_event_handler.ExpectOnCompletion(expect_overrun);
+  ASSERT_TRUE(device_ep.HandleOneEvent(device_event_handler).ok());
+}
+
+TEST_F(UsbVirtualBusTest, FidlOutRequestMultipleDeviceRequestsTest) {
+  EnableAndConnect();
+
+  const uint8_t kEpAddr = 1 | USB_DIR_OUT;
+  fidl::SyncClient<fendpoint::Endpoint> host_ep(ConnectToEndpoint<fhci::UsbHciService>(kEpAddr));
+  EndpointHandler host_event_handler;
+  fidl::SyncClient<fendpoint::Endpoint> device_ep(ConnectToEndpoint<fdci::UsbDciService>(kEpAddr));
+  EndpointHandler device_event_handler;
+
+  static constexpr size_t kHostDataSize = kMaxPacketSize + 5;
+  static constexpr size_t kDeviceDataSize = kMaxPacketSize;
+
+  auto [host_data, host_vmo] = RegisterVmo(host_ep, kHostDataSize);
+  for (size_t i = 0; i < kHostDataSize; i++) {
+    static_cast<uint8_t*>(host_data)[i] = static_cast<uint8_t>(i);
+  }
+
+  {
+    std::vector<frequest::Request> requests;
+    std::vector<frequest::BufferRegion> buffer;
+    buffer.emplace_back().buffer(frequest::Buffer::WithVmoId(1)).offset(0).size(kHostDataSize);
+    requests.emplace_back(
+        std::move(frequest::Request()
+                      .information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo()))
+                      .data(std::move(buffer))));
+    ASSERT_TRUE(host_ep->QueueRequests(std::move(requests)).is_ok());
+  }
+
+  auto [device_data1, device_vmo1] = RegisterVmo(device_ep, kDeviceDataSize, 1);
+  auto [device_data2, device_vmo2] = RegisterVmo(device_ep, kDeviceDataSize, 2);
+
+  device_event_handler.ExpectOnCompletion(
+      EndpointHandler::ExpectOnCompletionVmo(kDeviceDataSize, nullptr));
+  device_event_handler.ExpectOnCompletion(EndpointHandler::ExpectOnCompletionVmo(5, nullptr));
+  for (size_t i = 0; i < 2; i++) {
+    std::vector<frequest::Request> requests;
+    std::vector<frequest::BufferRegion> buffer;
+    buffer.emplace_back()
+        .buffer(frequest::Buffer::WithVmoId(i + 1))
+        .offset(0)
+        .size(kDeviceDataSize);
+    requests.emplace_back(
+        std::move(frequest::Request()
+                      .information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo()))
+                      .data(std::move(buffer))));
+    ASSERT_TRUE(device_ep->QueueRequests(std::move(requests)).is_ok());
+
+    ASSERT_TRUE(device_ep.HandleOneEvent(device_event_handler).ok());
+  }
+
+  host_event_handler.ExpectOnCompletion(EndpointHandler::ExpectOnCompletionVmo(kHostDataSize));
+  ASSERT_TRUE(host_ep.HandleOneEvent(host_event_handler).ok());
+
+  // Verify data
+  for (size_t i = 0; i < kDeviceDataSize; i++) {
+    ASSERT_EQ(device_data1[i], static_cast<uint8_t>(i));
+  }
+  for (size_t i = 0; i < 5; i++) {
+    ASSERT_EQ(device_data2[i], static_cast<uint8_t>(i + kDeviceDataSize));
+  }
+}
+
+TEST_F(UsbVirtualBusTest, FidlInRequestMultipleDeviceRequestsTest) {
+  EnableAndConnect();
+
+  const uint8_t kEpAddr = 2 | USB_DIR_IN;
+  fidl::SyncClient<fendpoint::Endpoint> host_ep(ConnectToEndpoint<fhci::UsbHciService>(kEpAddr));
+  EndpointHandler host_event_handler;
+  fidl::SyncClient<fendpoint::Endpoint> device_ep(ConnectToEndpoint<fdci::UsbDciService>(kEpAddr));
+  EndpointHandler device_event_handler;
+
+  static constexpr size_t kHostDataSize = kMaxPacketSize + 5;
+  static constexpr size_t kDeviceDataSize = kMaxPacketSize;
+
+  {
+    std::vector<frequest::Request> requests;
+    std::vector<frequest::BufferRegion> buffer;
+    buffer.emplace_back()
+        .buffer(frequest::Buffer::WithData(std::vector<uint8_t>(kHostDataSize)))
+        .offset(0)
+        .size(kHostDataSize);
+    requests.emplace_back(
+        std::move(frequest::Request()
+                      .information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo()))
+                      .data(std::move(buffer))));
+    ASSERT_TRUE(host_ep->QueueRequests(std::move(requests)).is_ok());
+  }
+
+  size_t kDataTransferSize[] = {kDeviceDataSize, 5};
+  for (size_t i = 0; i < 2; i++) {
+    std::vector<frequest::Request> requests;
+    std::vector<frequest::BufferRegion> buffer;
+    std::vector<uint8_t> data(kDataTransferSize[i]);
+    for (size_t j = 0; j < kDataTransferSize[i]; j++) {
+      data[j] = static_cast<uint8_t>(i * kDeviceDataSize + j);
+    }
+    buffer.emplace_back()
+        .buffer(frequest::Buffer::WithData(std::move(data)))
+        .offset(0)
+        .size(kDataTransferSize[i]);
+    requests.emplace_back(
+        std::move(frequest::Request()
+                      .information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo()))
+                      .data(std::move(buffer))));
+    ASSERT_TRUE(device_ep->QueueRequests(std::move(requests)).is_ok());
+
+    device_event_handler.ExpectOnCompletion(
+        EndpointHandler::ExpectOnCompletionDirect(kDataTransferSize[i], false));
+    ASSERT_TRUE(device_ep.HandleOneEvent(device_event_handler).ok());
+  }
+
+  host_event_handler.ExpectOnCompletion(
+      EndpointHandler::ExpectOnCompletionDirect(kHostDataSize, true));
+  ASSERT_TRUE(host_ep.HandleOneEvent(host_event_handler).ok());
+}
+
 TEST_F(UsbVirtualBusTest, QueueControlRequestBeforeConnectTest) {
   auto enable_result = virtual_bus()->Enable();
   ASSERT_TRUE(enable_result.ok());
   ASSERT_EQ(enable_result->status, ZX_OK);
 
   fidl::SyncClient<fendpoint::Endpoint> ep_client(
-      ConnectToEndpoint<fuchsia_hardware_usb_hci::UsbHciService>(0, static_cast<uint8_t>(0)));
+      ConnectToEndpoint<fhci::UsbHciService>(static_cast<uint8_t>(0)));
   EndpointHandler event_handler;
 
   {
@@ -669,11 +962,10 @@ TEST_F(UsbVirtualBusTest, QueueNormalRequestBeforeConnectedTest) {
   ASSERT_EQ(enable_result->status, ZX_OK);
 
   const uint8_t kEpAddr = 2 | USB_DIR_IN;
-  fidl::SyncClient<fendpoint::Endpoint> ep_client(
-      ConnectToEndpoint<fuchsia_hardware_usb_hci::UsbHciService>(0, kEpAddr));
+  fidl::SyncClient<fendpoint::Endpoint> ep_client(ConnectToEndpoint<fhci::UsbHciService>(kEpAddr));
   EndpointHandler event_handler;
 
-  static constexpr size_t kDataSize = 256;
+  static constexpr size_t kDataSize = 14;
   {
     std::vector<frequest::Request> requests;
     std::vector<frequest::BufferRegion> buffer;
@@ -701,7 +993,7 @@ TEST_F(UsbVirtualBusTest, UnexpectedDisconnectDuringControlTest) {
   EnableAndConnect();
 
   fidl::SyncClient<fendpoint::Endpoint> ep_client(
-      ConnectToEndpoint<fuchsia_hardware_usb_hci::UsbHciService>(0, static_cast<uint8_t>(0)));
+      ConnectToEndpoint<fhci::UsbHciService>(static_cast<uint8_t>(0)));
   EndpointHandler event_handler;
 
   {
@@ -739,11 +1031,10 @@ TEST_F(UsbVirtualBusTest, UnexpectedDisconnectDuringHostNormalTest) {
   EnableAndConnect();
 
   const uint8_t kEpAddr = 2 | USB_DIR_IN;
-  fidl::SyncClient<fendpoint::Endpoint> ep_client(
-      ConnectToEndpoint<fuchsia_hardware_usb_hci::UsbHciService>(0, kEpAddr));
+  fidl::SyncClient<fendpoint::Endpoint> ep_client(ConnectToEndpoint<fhci::UsbHciService>(kEpAddr));
   EndpointHandler event_handler;
 
-  static constexpr size_t kDataSize = 256;
+  static constexpr size_t kDataSize = 14;
   {
     std::vector<frequest::Request> requests;
     std::vector<frequest::BufferRegion> buffer;
@@ -777,11 +1068,10 @@ TEST_F(UsbVirtualBusTest, UnexpectedDisconnectDuringDeviceNormalTest) {
   EnableAndConnect();
 
   const uint8_t kEpAddr = 2 | USB_DIR_IN;
-  fidl::SyncClient<fendpoint::Endpoint> ep_client(
-      ConnectToEndpoint<fuchsia_hardware_usb_dci::UsbDciService>(kEpAddr));
+  fidl::SyncClient<fendpoint::Endpoint> ep_client(ConnectToEndpoint<fdci::UsbDciService>(kEpAddr));
   EndpointHandler event_handler;
 
-  static constexpr size_t kDataSize = 256;
+  static constexpr size_t kDataSize = 14;
   {
     std::vector<frequest::Request> requests;
     std::vector<frequest::BufferRegion> buffer;
