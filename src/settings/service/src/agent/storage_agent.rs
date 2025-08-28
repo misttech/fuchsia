@@ -8,7 +8,6 @@
 use std::borrow::Borrow;
 use std::rc::Rc;
 
-use fidl::Persistable;
 use futures::stream::{FuturesUnordered, StreamFuture};
 use futures::StreamExt;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
@@ -25,7 +24,6 @@ use crate::factory_reset::types::FactoryResetInfo;
 use crate::input::types::InputInfoSources;
 use crate::intl::types::IntlInfo;
 use crate::keyboard::types::KeyboardInfo;
-use crate::light::types::LightInfo;
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::message::receptor::Receptor;
 use crate::night_mode::types::NightModeInfo;
@@ -35,52 +33,39 @@ use crate::setup::types::SetupInfo;
 use crate::storage::{Error, Payload, StorageInfo, StorageRequest, StorageResponse, StorageType};
 use crate::{payload_convert, trace, trace_guard};
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageConvertible};
-use settings_storage::fidl_storage::{DefaultDispatcher, FidlStorage, FidlStorageConvertible};
 use settings_storage::storage_factory::StorageFactory;
 use settings_storage::UpdateState;
 
-pub(crate) fn create_registrar<T, F>(
-    device_storage_factory: Rc<T>,
-    fidl_storage_factory: Rc<F>,
-) -> AgentCreator
+pub(crate) fn create_registrar<T>(device_storage_factory: Rc<T>) -> AgentCreator
 where
     T: StorageFactory<Storage = DeviceStorage> + 'static,
-    F: StorageFactory<Storage = FidlStorage> + 'static,
 {
     AgentCreator {
         debug_id: "StorageAgent",
         create: CreationFunc::Dynamic(Rc::new(move |context| {
             let device_storage_factory = device_storage_factory.clone();
-            let fidl_storage_factory = fidl_storage_factory.clone();
             Box::pin(async move {
-                StorageAgent::create(context, device_storage_factory, fidl_storage_factory).await;
+                StorageAgent::create(context, device_storage_factory).await;
             })
         })),
     }
 }
 
-pub(crate) struct StorageAgent<T, F>
+pub(crate) struct StorageAgent<T>
 where
     T: StorageFactory<Storage = DeviceStorage>,
-    F: StorageFactory<Storage = FidlStorage>,
 {
     /// The factory for creating a messenger to receive messages.
     delegate: service::message::Delegate,
     device_storage_factory: Rc<T>,
-    fidl_storage_factory: Rc<F>,
 }
 
-impl<T, F> StorageAgent<T, F>
+impl<T> StorageAgent<T>
 where
     T: StorageFactory<Storage = DeviceStorage> + 'static,
-    F: StorageFactory<Storage = FidlStorage> + 'static,
 {
-    async fn create(context: Context, device_storage_factory: Rc<T>, fidl_storage_factory: Rc<F>) {
-        let mut storage_agent = StorageAgent {
-            delegate: context.delegate,
-            device_storage_factory,
-            fidl_storage_factory,
-        };
+    async fn create(context: Context, device_storage_factory: Rc<T>) {
+        let mut storage_agent = StorageAgent { delegate: context.delegate, device_storage_factory };
 
         let unordered = FuturesUnordered::new();
         unordered.push(context.receptor.into_future());
@@ -97,10 +82,8 @@ where
         id: ftrace::Id,
         mut unordered: FuturesUnordered<StreamFuture<Receptor>>,
     ) {
-        let storage_management = StorageManagement {
-            device_storage_factory: Rc::clone(&self.device_storage_factory),
-            fidl_storage_factory: Rc::clone(&self.fidl_storage_factory),
-        };
+        let storage_management =
+            StorageManagement { device_storage_factory: Rc::clone(&self.device_storage_factory) };
         while let Some((event, stream)) = unordered.next().await {
             let event = if let Some(event) = event {
                 event
@@ -163,7 +146,6 @@ into_storage_info!(AccessibilityInfo => SettingInfo);
 into_storage_info!(AudioInfo => SettingInfo);
 into_storage_info!(DisplayInfo => SettingInfo);
 into_storage_info!(FactoryResetInfo => SettingInfo);
-into_storage_info!(LightInfo => SettingInfo);
 into_storage_info!(DoNotDisturbInfo => SettingInfo);
 into_storage_info!(InputInfoSources => SettingInfo);
 into_storage_info!(IntlInfo => SettingInfo);
@@ -172,19 +154,16 @@ into_storage_info!(NightModeInfo => SettingInfo);
 into_storage_info!(PrivacyInfo => SettingInfo);
 into_storage_info!(SetupInfo => SettingInfo);
 
-struct StorageManagement<T, F>
+struct StorageManagement<T>
 where
     T: StorageFactory<Storage = DeviceStorage>,
-    F: StorageFactory<Storage = FidlStorage>,
 {
     device_storage_factory: Rc<T>,
-    fidl_storage_factory: Rc<F>,
 }
 
-impl<T, F> StorageManagement<T, F>
+impl<T> StorageManagement<T>
 where
     T: StorageFactory<Storage = DeviceStorage>,
-    F: StorageFactory<Storage = FidlStorage>,
 {
     async fn read<S>(&self, id: ftrace::Id, responder: service::message::MessageClient)
     where
@@ -228,42 +207,6 @@ where
         )));
     }
 
-    async fn fidl_read<S>(&self, id: ftrace::Id, responder: service::message::MessageClient)
-    where
-        S: FidlStorageConvertible + Into<StorageInfo>,
-        S::Storable: Persistable,
-        S::Loader: DefaultDispatcher<S>,
-    {
-        let guard = trace_guard!(id, c"get fidl store");
-        let store = self.fidl_storage_factory.get_store().await;
-        drop(guard);
-
-        let guard = trace_guard!(id, c"get data");
-        let storable: S = store.get::<S>().await;
-        drop(guard);
-
-        let guard = trace_guard!(id, c"reply");
-        // Ignore the receptor result.
-        let _ = responder.reply(Payload::Response(StorageResponse::Read(storable.into())).into());
-        drop(guard);
-    }
-
-    async fn fidl_write<S>(&self, data: S, responder: service::message::MessageClient)
-    where
-        S: FidlStorageConvertible,
-        S::Storable: Persistable,
-    {
-        let update_result = {
-            let store = self.fidl_storage_factory.get_store().await;
-            store.write::<S>(data).await.map_err(|e| Error { message: format!("{e:?}") })
-        };
-
-        // Ignore the receptor result.
-        let _ = responder.reply(service::Payload::Storage(Payload::Response(
-            StorageResponse::Write(update_result),
-        )));
-    }
-
     async fn handle_request(
         &self,
         storage_request: StorageRequest,
@@ -287,7 +230,7 @@ where
                     SettingType::Input => self.read::<InputInfoSources>(id, responder).await,
                     SettingType::Intl => self.read::<IntlInfo>(id, responder).await,
                     SettingType::Keyboard => self.read::<KeyboardInfo>(id, responder).await,
-                    SettingType::Light => self.fidl_read::<LightInfo>(id, responder).await,
+                    SettingType::Light => panic!("Light goes directly to storage"),
                     SettingType::NightMode => self.read::<NightModeInfo>(id, responder).await,
                     SettingType::Privacy => self.read::<PrivacyInfo>(id, responder).await,
                     SettingType::Setup => self.read::<SetupInfo>(id, responder).await,
@@ -308,7 +251,7 @@ where
                 SettingInfo::Input(info) => self.write(info, responder).await,
                 SettingInfo::Intl(info) => self.write(info, responder).await,
                 SettingInfo::Keyboard(info) => self.write(info, responder).await,
-                SettingInfo::Light(info) => self.fidl_write(info, responder).await,
+                SettingInfo::Light(_) => panic!("Light goes directly to storage"),
                 SettingInfo::NightMode(info) => self.write(info, responder).await,
                 SettingInfo::Privacy(info) => self.write(info, responder).await,
                 SettingInfo::Setup(info) => self.write(info, responder).await,

@@ -7,7 +7,7 @@ use crate::config::default_settings::DefaultSetting;
 use crate::handler::base::Request;
 use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
 use crate::handler::setting_handler::{
-    controller, ControllerError, ControllerStateResult, SettingHandlerResult,
+    self, controller, ControllerError, ControllerStateResult, SettingHandlerResult,
 };
 use crate::input::MediaButtons;
 use crate::light::light_hardware_configuration::DisableConditions;
@@ -19,9 +19,11 @@ use fidl_fuchsia_hardware_light::{Info, LightMarker, LightProxy};
 use fidl_fuchsia_settings_storage::LightGroups;
 use futures::lock::Mutex;
 use settings_storage::fidl_storage::{FidlStorage, FidlStorageConvertible};
-use settings_storage::storage_factory::{NoneT, StorageAccess};
+use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
+use settings_storage::UpdateState;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 /// Used as the argument field in a ControllerError::InvalidArgument to signal the FIDL handler to
@@ -64,7 +66,7 @@ impl From<LightInfo> for SettingInfo {
     }
 }
 
-pub struct LightController {
+pub struct LightController<F> {
     /// Provides access to common resources and functionality for controllers.
     client: ClientProxy,
 
@@ -80,28 +82,37 @@ pub struct LightController {
     /// hardware values, so restoring does not bring the values back into memory. The data needs to
     /// be cached at this layer so we don't lose track of them.
     data_cache: Rc<Mutex<Option<LightInfo>>>,
+
+    /// Disk storage for light setting. Stores in fidl format.
+    store: Rc<FidlStorage>,
+
+    // Marker type for StorageFactory. Needed to manage storage factory in CreateWithAsync impl.
+    _phantom: PhantomData<F>,
 }
 
-impl StorageAccess for LightController {
+impl<F> StorageAccess for LightController<F> {
     type Storage = FidlStorage;
     type Data = LightInfo;
     const STORAGE_KEY: &'static str = LightInfo::KEY;
 }
 
 #[async_trait(?Send)]
-impl data_controller::CreateWithAsync for LightController {
-    type Data = Rc<Mutex<DefaultSetting<LightHardwareConfiguration, &'static str>>>;
+impl<F> data_controller::CreateWithAsync for LightController<F>
+where
+    F: StorageFactory<Storage = FidlStorage>,
+{
+    type Data = (Rc<F>, Rc<Mutex<DefaultSetting<LightHardwareConfiguration, &'static str>>>);
     async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
-        let light_hardware_config = data.lock().await.load_default_value().map_err(|_| {
+        let light_hardware_config = data.1.lock().await.load_default_value().map_err(|_| {
             ControllerError::InitFailure("Invalid default light hardware config".into())
         })?;
 
-        LightController::create_with_config(client, light_hardware_config).await
+        LightController::create_with_config(client, data.0.as_ref(), light_hardware_config).await
     }
 }
 
 #[async_trait(?Send)]
-impl controller::Handle for LightController {
+impl<F> controller::Handle for LightController<F> {
     async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
         match request {
             Request::Restore => {
@@ -135,10 +146,14 @@ impl controller::Handle for LightController {
 }
 
 /// Controller for processing requests surrounding the Light protocol.
-impl LightController {
+impl<F> LightController<F>
+where
+    F: StorageFactory<Storage = FidlStorage>,
+{
     /// Alternate constructor that allows specifying a configuration.
     pub(crate) async fn create_with_config(
         client: ClientProxy,
+        storage_factory: &F,
         light_hardware_config: Option<LightHardwareConfiguration>,
     ) -> Result<Self, ControllerError> {
         let light_proxy = client
@@ -155,12 +170,15 @@ impl LightController {
             client,
             light_proxy,
             light_hardware_config,
+            store: storage_factory.get_store().await,
             data_cache: Rc::new(Mutex::new(None)),
+            _phantom: PhantomData,
         })
     }
+}
 
+impl<F> LightController<F> {
     async fn set(&self, name: String, state: Vec<LightState>) -> SettingHandlerResult {
-        let id = fuchsia_trace::Id::new();
         let mut light_info = self.data_cache.lock().await;
         // TODO(https://fxbug.dev/42058901) Deduplicate the code here and in mic_mute if possible.
         if light_info.is_none() {
@@ -215,7 +233,14 @@ impl LightController {
         // After the main validations, write the state to the hardware.
         self.write_light_group_to_hardware(group, &state).await?;
 
-        let _ = self.client.write_setting(current.clone().into(), id).await?;
+        let state = self.store.write(current.clone()).await.map_err(|e| {
+            log::error!("Failed to write light info on set: {e:?}");
+            ControllerError::WriteFailure(SettingType::Light)
+        })?;
+        if let UpdateState::Updated = state {
+            self.client.notify(setting_handler::Event::Changed(current.clone().into())).await;
+        }
+
         Ok(Some(current.clone().into()))
     }
 
@@ -279,7 +304,6 @@ impl LightController {
     }
 
     async fn on_mic_mute(&self, mic_mute: bool) -> SettingHandlerResult {
-        let id = fuchsia_trace::Id::new();
         let mut light_info = self.data_cache.lock().await;
         if light_info.is_none() {
             drop(light_info);
@@ -300,7 +324,14 @@ impl LightController {
             light.enabled = mic_mute;
         }
 
-        let _ = self.client.write_setting(current.clone().into(), id).await?;
+        let state = self.store.write(current.clone()).await.map_err(|e| {
+            log::error!("Failed to write light info on mic mute: {e:?}");
+            ControllerError::WriteFailure(SettingType::Light)
+        })?;
+        if let UpdateState::Updated = state {
+            self.client.notify(setting_handler::Event::Changed(current.clone().into())).await;
+        }
+
         Ok(Some(current.clone().into()))
     }
 
@@ -324,8 +355,7 @@ impl LightController {
         &self,
         config: LightHardwareConfiguration,
     ) -> Result<LightInfo, ControllerError> {
-        let id = fuchsia_trace::Id::new();
-        let current = self.client.read_setting::<LightInfo>(id).await;
+        let current = self.store.get::<LightInfo>().await;
         let mut light_groups: HashMap<String, LightGroup> = HashMap::new();
         for group_config in config.light_groups {
             let mut light_state: Vec<LightState> = Vec::new();
@@ -376,8 +406,7 @@ impl LightController {
             )
         })?;
 
-        let id = fuchsia_trace::Id::new();
-        let mut current = self.client.read_setting::<LightInfo>(id).await;
+        let mut current = self.store.get::<LightInfo>().await;
         for i in 0..num_lights {
             let info = call_async!(self.light_proxy => get_info(i))
                 .await
@@ -485,18 +514,20 @@ mod tests {
     use crate::handler::setting_handler::ClientImpl;
     use crate::light::types::{LightInfo, LightState, LightType, LightValue};
     use crate::message::base::MessengerType;
-    use crate::storage::{Payload as StoragePayload, StorageRequest, StorageResponse};
+    use crate::storage::testing::InMemoryFidlStorageFactory;
     use crate::tests::fakes::hardware_light_service::HardwareLightService;
     use crate::tests::fakes::service_registry::ServiceRegistry;
-    use crate::{service, Address, LightController, ServiceContext, SettingType};
+    use crate::{service, LightController, ServiceContext, SettingType};
     use futures::lock::Mutex;
-    use settings_storage::UpdateState;
     use std::rc::Rc;
 
     // Verify that a set call without a restore call succeeds. This can happen when the controller
     // is shutdown after inactivity and is brought up again to handle the set call.
-    #[fuchsia::test(allow_stalls = false)]
+    #[fuchsia::test()]
     async fn test_set_before_restore() {
+        let storage_factory = InMemoryFidlStorageFactory::new();
+        storage_factory.initialize_storage::<LightInfo>().await;
+
         let message_hub = service::MessageHub::create_hub();
 
         // Create the messenger that the client proxy uses to send messages.
@@ -533,49 +564,13 @@ mod tests {
             SettingType::Light,
         );
 
-        // Create a fake storage receptor used to receive and respond to storage messages.
-        let (_, mut storage_receptor) = message_hub
-            .create(MessengerType::Addressable(Address::Storage))
-            .await
-            .expect("Unable to create agent messenger");
-
-        // Spawn a task that mimics the storage agent by responding to read/write calls.
-        fuchsia_async::Task::local(async move {
-            loop {
-                if let Ok((payload, message_client)) = storage_receptor.next_payload().await {
-                    if let Ok(StoragePayload::Request(storage_request)) =
-                        StoragePayload::try_from(payload)
-                    {
-                        match storage_request {
-                            StorageRequest::Read(_, _) => {
-                                // Just respond with the default value as we're not testing storage.
-                                let _ = message_client.reply(service::Payload::Storage(
-                                    StoragePayload::Response(StorageResponse::Read(
-                                        LightInfo::default().into(),
-                                    )),
-                                ));
-                            }
-                            StorageRequest::Write(_, _) => {
-                                // Just respond with Unchanged as we're not testing storage.
-                                let _ = message_client.reply(service::Payload::Storage(
-                                    StoragePayload::Response(StorageResponse::Write(Ok(
-                                        UpdateState::Unchanged,
-                                    ))),
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        })
-        .detach();
-
         let client_proxy = ClientProxy::new(Rc::new(base_proxy), SettingType::Light).await;
 
         // Create the light controller.
-        let light_controller = LightController::create_with_config(client_proxy, None)
-            .await
-            .expect("Failed to create light controller");
+        let light_controller =
+            LightController::create_with_config(client_proxy, &storage_factory, None)
+                .await
+                .expect("Failed to create light controller");
 
         // Call set and verify it succeeds.
         let _ = light_controller
@@ -590,8 +585,11 @@ mod tests {
 
     // Verify that an on_mic_mute event without a restore call succeeds. This can happen when the
     // controller is shutdown after inactivity and is brought up again to handle the set call.
-    #[fuchsia::test(allow_stalls = false)]
+    #[fuchsia::test()]
     async fn test_on_mic_mute_before_restore() {
+        let storage_factory = InMemoryFidlStorageFactory::new();
+        storage_factory.initialize_storage::<LightInfo>().await;
+
         let message_hub = service::MessageHub::create_hub();
 
         // Create the messenger that the client proxy uses to send messages.
@@ -628,49 +626,13 @@ mod tests {
             SettingType::Light,
         );
 
-        // Create a fake storage receptor used to receive and respond to storage messages.
-        let (_, mut storage_receptor) = message_hub
-            .create(MessengerType::Addressable(Address::Storage))
-            .await
-            .expect("Unable to create agent messenger");
-
-        // Spawn a task that mimics the storage agent by responding to read/write calls.
-        fuchsia_async::Task::local(async move {
-            loop {
-                if let Ok((payload, message_client)) = storage_receptor.next_payload().await {
-                    if let Ok(StoragePayload::Request(storage_request)) =
-                        StoragePayload::try_from(payload)
-                    {
-                        match storage_request {
-                            StorageRequest::Read(_, _) => {
-                                // Just respond with the default value as we're not testing storage.
-                                let _ = message_client.reply(service::Payload::Storage(
-                                    StoragePayload::Response(StorageResponse::Read(
-                                        LightInfo::default().into(),
-                                    )),
-                                ));
-                            }
-                            StorageRequest::Write(_, _) => {
-                                // Just respond with Unchanged as we're not testing storage.
-                                let _ = message_client.reply(service::Payload::Storage(
-                                    StoragePayload::Response(StorageResponse::Write(Ok(
-                                        UpdateState::Unchanged,
-                                    ))),
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        })
-        .detach();
-
         let client_proxy = ClientProxy::new(Rc::new(base_proxy), SettingType::Light).await;
 
         // Create the light controller.
-        let light_controller = LightController::create_with_config(client_proxy, None)
-            .await
-            .expect("Failed to create light controller");
+        let light_controller =
+            LightController::create_with_config(client_proxy, &storage_factory, None)
+                .await
+                .expect("Failed to create light controller");
 
         // Call on_mic_mute and verify it succeeds.
         let _ = light_controller.on_mic_mute(false).await.expect("Set call failed");

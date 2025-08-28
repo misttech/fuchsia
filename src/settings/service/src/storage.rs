@@ -306,8 +306,6 @@ pub(crate) mod testing {
     }
 
     /// Storage that does not write to disk, for testing.
-    // TODO(https://fxbug.dev/XYZ) Remove allow once used.
-    #[allow(dead_code)]
     pub(crate) struct InMemoryFidlStorageFactory {
         initial_data: HashMap<&'static str, Vec<u8>>,
         fidl_storage_cache: Mutex<InitializationState<(Rc<FidlStorage>, tempfile::TempDir)>>,

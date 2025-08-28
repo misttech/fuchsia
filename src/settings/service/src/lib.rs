@@ -553,7 +553,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             service_context,
             Rc::new(Mutex::new(handler_factory)),
             self.storage_factory,
-            fidl_storage_factory,
             self.setting_proxy_inspect_info.unwrap_or_else(|| component::inspector().root()),
             listener_logger,
         )
@@ -619,7 +618,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
         factory_handle: &mut SettingHandlerFactoryImpl,
     ) where
-        F: StorageFactory<Storage = FidlStorage>,
+        F: StorageFactory<Storage = FidlStorage> + 'static,
     {
         // Accessibility
         if components.contains(&SettingType::Accessibility) {
@@ -674,15 +673,15 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 light_configuration.expect("Light controller requires a light configuration"),
             ));
             fidl_storage_factory
-                .initialize::<LightController>()
+                .initialize::<LightController<F>>()
                 .await
                 .expect("storage should still be initializing");
             factory_handle.register(
                 SettingType::Light,
                 Box::new(move |context| {
-                    DataHandler::<LightController>::spawn_with_async(
+                    DataHandler::<LightController<F>>::spawn_with_async(
                         context,
-                        Rc::clone(&light_configuration),
+                        (Rc::clone(&fidl_storage_factory), Rc::clone(&light_configuration)),
                     )
                 }),
             );
@@ -847,7 +846,7 @@ fn create_agent_blueprints(
 /// service (handlers, agents, etc.) and brings up the components necessary to
 /// support the components specified in the components HashSet.
 #[allow(clippy::too_many_arguments)]
-async fn create_environment<'a, T, F>(
+async fn create_environment<'a, T>(
     mut service_dir: ServiceFsDir<'_, ServiceObjLocal<'a, ()>>,
     delegate: service::message::Delegate,
     job_seeder: Seeder,
@@ -858,13 +857,11 @@ async fn create_environment<'a, T, F>(
     service_context: Rc<ServiceContext>,
     handler_factory: Rc<Mutex<SettingHandlerFactoryImpl>>,
     device_storage_factory: Rc<T>,
-    fidl_storage_factory: Rc<F>,
     setting_proxies_node: &fuchsia_inspect::Node,
     listener_logger: Rc<ListenerInspectLogger>,
 ) -> Result<HashSet<Entity>, Error>
 where
     T: StorageFactory<Storage = DeviceStorage> + 'static,
-    F: StorageFactory<Storage = FidlStorage> + 'static,
 {
     for blueprint in event_subscriber_blueprints {
         blueprint.create(delegate.clone()).await;
@@ -909,10 +906,7 @@ where
 
     // The service does not work without storage, so ensure it is always included first.
     agent_authority
-        .register(crate::agent::storage_agent::create_registrar(
-            device_storage_factory,
-            fidl_storage_factory,
-        ))
+        .register(crate::agent::storage_agent::create_registrar(device_storage_factory))
         .await;
 
     for blueprint in agent_blueprints {

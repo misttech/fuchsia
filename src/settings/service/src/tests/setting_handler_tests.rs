@@ -20,12 +20,9 @@ use crate::storage::testing::InMemoryStorageFactory;
 use crate::tests::message_utils::verify_payload;
 use crate::{service, EnvironmentBuilder};
 use async_trait::async_trait;
-use fidl::endpoints::create_proxy_and_stream;
-use fidl_fuchsia_io::DirectoryMarker;
 use futures::channel::mpsc::{unbounded, UnboundedSender};
 use futures::StreamExt;
 use settings_storage::device_storage::DeviceStorageCompatible;
-use settings_storage::storage_factory::FidlStorageFactory;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -108,11 +105,7 @@ async fn test_write_notify() {
         crate::agent::Context::new(agent_receptor, delegate, [SettingType::Accessibility].into())
             .await;
 
-    let (directory_proxy, _stream) = create_proxy_and_stream::<DirectoryMarker>();
-    let blueprint = crate::agent::storage_agent::create_registrar(
-        Rc::clone(&storage_factory),
-        Rc::new(FidlStorageFactory::new(1, directory_proxy)),
-    );
+    let blueprint = crate::agent::storage_agent::create_registrar(Rc::clone(&storage_factory));
 
     blueprint.create(agent_context).await;
 
