@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
-import("//src/testing/end_to_end/antlion/environments.gni")
+import("//third_party/antlion/antlion_host_test.gni")
+import("//third_party/antlion/environments.gni")
 
 assert(is_host, "antlion tests only supported for host testing")
 

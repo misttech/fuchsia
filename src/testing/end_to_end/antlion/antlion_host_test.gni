@@ -71,7 +71,7 @@ template("antlion_host_test") {
                            ])
     output_name = _python_binary_name
     main_callable = "test_runner.main"  # Mobly-specific entry point.
-    deps = [ "//src/testing/end_to_end/antlion" ]
+    deps = [ "//third_party/antlion" ]
     if (defined(invoker.test_data_deps)) {
       deps += invoker.test_data_deps
     }
@@ -182,8 +182,8 @@ template("antlion_host_test") {
       ":${_host_test_data_ssh}",
       ":${_host_test_data_target}",
       "//build/python:interpreter",
-      "//src/testing/end_to_end/antlion/runner",
       "//src/testing/end_to_end/honeydew",
+      "//third_party/antlion/runner",
     ]
 
     if (defined(invoker.test_params)) {

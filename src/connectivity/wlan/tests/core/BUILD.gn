@@ -5,8 +5,8 @@ import("//build/python/python_mobly_test.gni")
 import("//build/testing/environments.gni")
 import("//build/testing/host_test_data.gni")
 
-import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
-import("//src/testing/end_to_end/antlion/environments.gni")
+import("//third_party/antlion/antlion_host_test.gni")
+import("//third_party/antlion/environments.gni")
 
 assert(is_host, "WLAN end-to-end tests only supported for host testing")
 

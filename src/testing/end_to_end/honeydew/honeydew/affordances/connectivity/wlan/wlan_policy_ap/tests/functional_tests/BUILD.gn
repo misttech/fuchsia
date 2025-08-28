@@ -11,7 +11,7 @@ if (is_host) {
     libraries = [
       "//src/testing/end_to_end/honeydew",
       "//src/testing/end_to_end/mobly_base_tests:wlan_base_test",
-      "//src/testing/end_to_end/antlion",
+      "//third_party/antlion",
     ]
     honeydew_config = {
       affordances = {

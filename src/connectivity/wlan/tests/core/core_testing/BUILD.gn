@@ -12,8 +12,8 @@ python_library("core_testing") {
     "ies.py",
   ]
   library_deps = [
-    "//src/testing/end_to_end/antlion",
     "//src/testing/end_to_end/honeydew",
+    "//third_party/antlion",
     "//third_party/mobly",
   ]
 }
