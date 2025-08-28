@@ -120,6 +120,7 @@ lazy_static_visibility = [
   "//src/sys/lib/fuchsia-zbi:*",
   "//src/sys/lib/routing:*",
   "//src/sys/pkg/lib/tuf:*",
+  "//src/testing/end_to_end/antlion/*",
   "//src/testing/fidl/intl_property_manager:*",
   "//src/testing/sl4f:*",
   "//src/ui/bin/brightness_manager:*",
