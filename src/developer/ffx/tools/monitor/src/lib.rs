@@ -6,18 +6,19 @@ use args::{MonitorCommand, SubCommand};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use ffx_config::EnvironmentContext;
 use fho::{FfxMain, FfxTool};
+use fidl_fuchsia_developer_ffx::{RemoteControlState, TargetInfo, TargetState};
 use hyper::service::service_fn;
 use hyper::{Body, Request, Response, StatusCode};
 use std::convert::Infallible;
 use std::fs;
 use std::io::Write;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::process::Command;
 use tokio::net::TcpListener;
-
-use std::path::Path;
 
 // Default value of this can be found in //src/developer/ffx/data/config.json
 const CONFIG_PID_FILE: &str = "monitor.pid_file";
@@ -26,7 +27,19 @@ const CONFIG_PID_FILE: &str = "monitor.pid_file";
 pub struct MonitorTool {
     #[command]
     cmd: MonitorCommand,
+
     context: EnvironmentContext,
+}
+
+#[derive(Debug, PartialEq)]
+struct TargetStatus {
+    name: Option<String>,
+
+    status: Option<TargetState>,
+
+    timestamp: DateTime<Utc>,
+
+    rcs_state: Option<RemoteControlState>,
 }
 
 async fn start_server(addr: SocketAddr) -> anyhow::Result<()> {
@@ -42,6 +55,26 @@ async fn start_server(addr: SocketAddr) -> anyhow::Result<()> {
             }
         });
     }
+}
+
+/// Converts a vector of TargetInfo into a vector of TargetStatus.
+fn infos_to_statuses(infos: Vec<TargetInfo>) -> Vec<TargetStatus> {
+    let now = Utc::now();
+    infos
+        .into_iter()
+        .map(|info| TargetStatus {
+            name: info.nodename,
+            status: info.target_state,
+            timestamp: now,
+            rcs_state: info.rcs_state,
+        })
+        .collect()
+}
+
+#[allow(dead_code)]
+async fn collect_target_status(context: &EnvironmentContext) -> Result<Vec<TargetStatus>> {
+    let infos = ffx_target::list_targets(context, None, true, true, true).await?;
+    Ok(infos_to_statuses(infos))
 }
 
 async fn handle_request(req: Request<Body>) -> std::result::Result<Response<Body>, Infallible> {
@@ -90,5 +123,47 @@ impl FfxMain for MonitorTool {
                 Ok(())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_infos_to_statuses() {
+        let infos = vec![
+            TargetInfo {
+                nodename: Some("fuchsia-one".to_string()),
+                target_state: Some(TargetState::Product),
+                rcs_state: Some(RemoteControlState::Up),
+                ..Default::default()
+            },
+            TargetInfo {
+                nodename: Some("fuchsia-two".to_string()),
+                target_state: Some(TargetState::Fastboot),
+                rcs_state: Some(RemoteControlState::Down),
+                ..Default::default()
+            },
+        ];
+
+        let statuses = infos_to_statuses(infos);
+
+        let expected = vec![
+            TargetStatus {
+                name: Some("fuchsia-one".to_string()),
+                status: Some(TargetState::Product),
+                timestamp: statuses[0].timestamp,
+                rcs_state: Some(RemoteControlState::Up),
+            },
+            TargetStatus {
+                name: Some("fuchsia-two".to_string()),
+                status: Some(TargetState::Fastboot),
+                timestamp: statuses[1].timestamp,
+                rcs_state: Some(RemoteControlState::Down),
+            },
+        ];
+
+        assert_eq!(statuses, expected);
     }
 }
