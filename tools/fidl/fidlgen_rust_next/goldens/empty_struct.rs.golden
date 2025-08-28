@@ -1153,14 +1153,10 @@ where
         match ordinal {
             2301564782476583487 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.receive(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -1208,14 +1204,10 @@ where
         match ordinal {
             1378773277029173000 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.send(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -1232,15 +1224,11 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.send_and_receive(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }

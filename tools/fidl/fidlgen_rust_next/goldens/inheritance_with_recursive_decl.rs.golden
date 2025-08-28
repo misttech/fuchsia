@@ -283,9 +283,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -322,14 +320,10 @@ where
         match ordinal {
             3973163707930985819 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.first(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -341,9 +335,7 @@ where
         responder: ::fidl_next::protocol::Responder,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -722,9 +714,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -770,21 +760,15 @@ where
         match ordinal {
             3973163707930985819 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.first(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             2545123272820824165 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.second(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -796,9 +780,7 @@ where
         responder: ::fidl_next::protocol::Responder,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }

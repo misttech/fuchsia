@@ -107,7 +107,8 @@ pub async fn test_one_way<T: Transport + 'static>(client_end: T, server_end: T) 
         .await
         .expect("client failed to send request");
     client_sender.close();
-    // TODO: Don't require dropping all of the senders to close
+    // We're running the client and server in the same future, so we have to
+    // manually drop the final client to cause the underlying transport to close
     drop(client_sender);
 
     client_task.await.expect("client encountered an error");
@@ -158,7 +159,8 @@ pub async fn test_two_way<T: Transport + 'static>(client_end: T, server_end: T) 
     assert_eq!(&**message, "Pong");
 
     client_sender.close();
-    // TODO: Don't require dropping all of the senders to close
+    // We're running the client and server in the same future, so we have to
+    // manually drop the final client to cause the underlying transport to close
     drop(client_sender);
 
     client_task.await.expect("client encountered an error");
@@ -232,7 +234,8 @@ pub async fn test_multiple_two_way<T: Transport + 'static>(client_end: T, server
     assert_eq!(&**message_three, "Three");
 
     client_sender.close();
-    // TODO: Don't require dropping all of the senders to close
+    // We're running the client and server in the same future, so we have to
+    // manually drop the final client to cause the underlying transport to close
     drop(client_sender);
 
     client_task.await.expect("client encountered an error");

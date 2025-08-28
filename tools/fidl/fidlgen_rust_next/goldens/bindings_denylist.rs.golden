@@ -1054,9 +1054,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -1089,9 +1087,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -1109,9 +1105,7 @@ where
                 handler.denied(sender, responder).await;
             }
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -1179,9 +1173,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -1208,9 +1200,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -1222,9 +1212,7 @@ where
         responder: ::fidl_next::protocol::Responder,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -2379,9 +2367,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -2418,14 +2404,10 @@ where
         match ordinal {
             5338181991150205725 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.should_never_appear_in_any_binding(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -2437,9 +2419,7 @@ where
         responder: ::fidl_next::protocol::Responder,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -6131,9 +6111,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -6225,9 +6203,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -6244,9 +6220,7 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.only_deny_cpp(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -6255,9 +6229,7 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.only_deny_dart(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -6266,9 +6238,7 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.only_deny_go(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -6277,9 +6247,7 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.only_deny_python(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -6288,9 +6256,7 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.only_deny_rust(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -6299,15 +6265,11 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.only_deny_syzkaller(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -6496,9 +6458,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -6545,9 +6505,7 @@ where
         match ordinal {
             6808317417318106526 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.always_denied(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             475191379775102607 => {
@@ -6558,9 +6516,7 @@ where
                 handler.always_appears_in_importing_library(sender).await;
             }
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -6572,9 +6528,7 @@ where
         responder: ::fidl_next::protocol::Responder,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -7012,9 +6966,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -7041,9 +6993,7 @@ where
         buffer: ___T::RecvBuffer,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -7055,9 +7005,7 @@ where
         responder: ::fidl_next::protocol::Responder,
     ) {
         match ordinal {
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }

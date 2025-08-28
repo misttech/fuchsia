@@ -3004,42 +3004,30 @@ where
         match ordinal {
             9198778981238868491 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.on_anon_composed(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             6802961197456477674 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.on_named_composed(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             6584793811321990352 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.on_import(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             4199259762307646332 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.on_local(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             7275479350674227467 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.on_anon(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -3222,42 +3210,30 @@ where
         match ordinal {
             467706262354916833 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.one_way_anon_composed(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             6735359826241449560 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.one_way_named_composed(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             374039999976906043 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.one_way_import(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             6085941264859402051 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.one_way_local(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             4203317713771984620 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.one_way_anon(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -3274,9 +3250,7 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.two_way_anon_composed(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -3287,9 +3261,7 @@ where
                     Ok(decoded) => {
                         handler.two_way_anon_composed_with_error(sender, decoded, responder).await
                     }
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -3298,9 +3270,7 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.two_way_named_composed(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -3311,9 +3281,7 @@ where
                     Ok(decoded) => {
                         handler.two_way_named_composed_with_error(sender, decoded, responder).await
                     }
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -3322,9 +3290,7 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.two_way_import(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -3335,9 +3301,7 @@ where
                     Ok(decoded) => {
                         handler.two_way_import_with_error(sender, decoded, responder).await
                     }
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -3346,9 +3310,7 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.two_way_local(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -3359,9 +3321,7 @@ where
                     Ok(decoded) => {
                         handler.two_way_local_with_error(sender, decoded, responder).await
                     }
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -3370,9 +3330,7 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => handler.two_way_anon(sender, decoded, responder).await,
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -3383,15 +3341,11 @@ where
                     Ok(decoded) => {
                         handler.two_way_anon_with_error(sender, decoded, responder).await
                     }
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -4303,16 +4257,12 @@ where
         match ordinal {
             9152311661656086484 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.flexible_event(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             3921073878922106269 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_event(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             ordinal => handler.on_unknown_interaction(sender, ordinal).await,
@@ -4423,23 +4373,17 @@ where
         match ordinal {
             3516779973873009953 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.flexible_one_way(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             8790149921168801703 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_one_way(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             1525606789639046512 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.flexible_one_way_named_payload(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             ordinal => handler.on_unknown_interaction(sender, ordinal).await,
@@ -4461,9 +4405,7 @@ where
                     Ok(decoded) => {
                         handler.flexible_two_way_no_error(sender, decoded, responder).await
                     }
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -4474,9 +4416,7 @@ where
                     Ok(decoded) => {
                         handler.flexible_two_way_with_error(sender, decoded, responder).await
                     }
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -4487,9 +4427,7 @@ where
                     Ok(decoded) => {
                         handler.strict_two_way_no_error(sender, decoded, responder).await
                     }
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 
@@ -4500,9 +4438,7 @@ where
                     Ok(decoded) => {
                         handler.strict_two_way_with_error(sender, decoded, responder).await
                     }
-                    Err(e) => {
-                        sender.close();
-                    }
+                    Err(e) => sender.close(),
                 }
             }
 

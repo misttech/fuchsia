@@ -5,6 +5,7 @@
 use thiserror::Error;
 
 use fidl_next_codec::{DecodeError, EncodeError};
+use fidl_next_protocol::ProtocolError;
 
 /// Error returned by TryFrom on a strict enum if none of the members match the supplied value.
 #[derive(Debug)]
@@ -37,16 +38,7 @@ pub enum Error<
     /// A FIDL decoding error.
     #[error("decoding error: {0}")]
     Decode(#[from] DecodeError),
-    /// A FIDL transport error.
-    #[error("transport error: {0}")]
-    Transport(E),
-    /// The FIDL transport was closed.
-    #[error("the transport was closed")]
-    Closed,
-}
-
-impl<E> From<Option<E>> for Error<E> {
-    fn from(value: Option<E>) -> Self {
-        if let Some(e) = value { Self::Transport(e) } else { Self::Closed }
-    }
+    /// A FIDL protocol error.
+    #[error("protocol error: {0}")]
+    Protocol(#[from] ProtocolError<E>),
 }

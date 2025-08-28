@@ -5,7 +5,8 @@
 use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
-    Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, Slot, Wire, WireU32, WireU64,
+    Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, Slot, Wire, WireI32, WireU32,
+    WireU64,
 };
 
 use zerocopy::IntoBytes;
@@ -67,6 +68,57 @@ unsafe impl<E: ?Sized> EncodeRef<E> for WireMessageHeader {
 }
 
 unsafe impl<D: ?Sized> Decode<D> for WireMessageHeader {
+    #[inline]
+    fn decode(_: Slot<'_, Self>, _: &mut D) -> Result<(), DecodeError> {
+        Ok(())
+    }
+}
+
+/// A FIDL protocol epitaph.
+#[derive(Clone, Copy, Debug, IntoBytes)]
+#[repr(C)]
+pub struct WireEpitaph {
+    /// The error status.
+    pub error: WireI32,
+}
+
+unsafe impl Wire for WireEpitaph {
+    type Decoded<'de> = Self;
+
+    #[inline]
+    fn zero_padding(_: &mut MaybeUninit<Self>) {
+        // Wire epitaphs have no padding
+    }
+}
+
+impl Encodable for WireEpitaph {
+    type Encoded = Self;
+}
+
+unsafe impl<E: ?Sized> Encode<E> for WireEpitaph {
+    #[inline]
+    fn encode(
+        self,
+        encoder: &mut E,
+        out: &mut MaybeUninit<Self::Encoded>,
+    ) -> Result<(), EncodeError> {
+        self.encode_ref(encoder, out)
+    }
+}
+
+unsafe impl<E: ?Sized> EncodeRef<E> for WireEpitaph {
+    #[inline]
+    fn encode_ref(
+        &self,
+        _: &mut E,
+        out: &mut MaybeUninit<Self::Encoded>,
+    ) -> Result<(), EncodeError> {
+        out.write(*self);
+        Ok(())
+    }
+}
+
+unsafe impl<D: ?Sized> Decode<D> for WireEpitaph {
     #[inline]
     fn decode(_: Slot<'_, Self>, _: &mut D) -> Result<(), DecodeError> {
         Ok(())

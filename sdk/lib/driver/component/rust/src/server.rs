@@ -14,7 +14,7 @@ use zx::Status;
 use fdf::{Channel, Dispatcher, DispatcherBuilder, DispatcherRef};
 use fidl_fuchsia_driver_framework::DriverRequest;
 
-use fdf::{fdf_handle_t, DriverHandle, Message};
+use fdf::{DriverHandle, Message, fdf_handle_t};
 
 use crate::{Driver, DriverContext};
 use fdf_sys::fdf_dispatcher_get_current_dispatcher;
@@ -135,7 +135,9 @@ impl<T: Driver> DriverServer<T> {
                 }
                 Ok(None) => panic!("unexpected empty message on server channel"),
                 Err(status @ Status::PEER_CLOSED) | Err(status @ Status::UNAVAILABLE) => {
-                    warn!("Driver server channel closed before a stop message with status {status}, exiting main loop early but stop() will not be called.");
+                    warn!(
+                        "Driver server channel closed before a stop message with status {status}, exiting main loop early but stop() will not be called."
+                    );
                     return;
                 }
                 Err(e) => panic!("unexpected error on server channel {e}"),
@@ -233,6 +235,7 @@ mod tests {
 
     crate::driver_register!(TestDriver);
 
+    #[derive(Debug)]
     struct DriverClient;
     impl DriverClientHandler<fdf_fidl::DriverChannel> for DriverClient {}
 

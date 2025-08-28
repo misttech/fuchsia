@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use fidl_next_codec::{
-    DecodeError, DecoderExt as _, EncodeError, EncoderExt as _, WireU32, WireU64,
+    DecodeError, DecoderExt as _, EncodeError, EncoderExt as _, WireI32, WireU32, WireU64,
 };
 
-use crate::{FLAG_0_WIRE_FORMAT_V2_BIT, MAGIC_NUMBER, Transport, WireMessageHeader};
+use crate::{FLAG_0_WIRE_FORMAT_V2_BIT, MAGIC_NUMBER, Transport, WireEpitaph, WireMessageHeader};
 
 /// Encodes a message into the given buffer.
 pub fn encode_header<T: Transport>(
@@ -32,4 +32,17 @@ pub fn decode_header<T: Transport>(
     };
 
     Ok((txid, ordinal))
+}
+
+/// Encodes an epitaph into the given buffer.
+pub fn encode_epitaph<T: Transport>(
+    buffer: &mut T::SendBuffer,
+    error: i32,
+) -> Result<(), EncodeError> {
+    buffer.encode_next(WireEpitaph { error: WireI32(error) })
+}
+
+/// Parses the epitaph error from the given buffer.
+pub fn decode_epitaph<T: Transport>(mut buffer: &mut T::RecvBuffer) -> Result<i32, DecodeError> {
+    Ok(*buffer.decode_owned::<WireEpitaph>()?.error)
 }

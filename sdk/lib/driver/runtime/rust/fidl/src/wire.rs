@@ -5,15 +5,15 @@
 //! Driver-specific extensions to FIDL.
 
 use core::fmt;
-use core::mem::{forget, MaybeUninit};
+use core::mem::{MaybeUninit, forget};
 use core::num::NonZero;
 
 use fdf_channel::channel::Channel;
-use fdf_core::handle::{fdf_handle_t, DriverHandle};
+use fdf_core::handle::{DriverHandle, fdf_handle_t};
 use fidl_next::fuchsia::{HandleDecoder, HandleEncoder};
 use fidl_next::{
-    munge, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption,
-    FromWire, FromWireOption, Slot, Wire, WireU32,
+    Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
+    FromWireOption, Slot, Wire, WireU32, munge,
 };
 
 use crate::DriverChannel;
@@ -156,11 +156,7 @@ impl WireOptionalDriverChannel {
         // SAFETY: If we have a reference to `WireDriverHandle`, then it has
         // been successfully decoded and the `decoded` field is safe to read.
         let decoded = unsafe { self.decoded };
-        if decoded == 0 {
-            None
-        } else {
-            Some(decoded)
-        }
+        if decoded == 0 { None } else { Some(decoded) }
     }
 }
 
@@ -268,7 +264,7 @@ mod tests {
     use fdf_channel::arena::Arena;
     use fdf_channel::message::Message;
     use fdf_core::handle::MixedHandleType;
-    use fidl_next::{chunks, Chunk, DecoderExt as _, EncoderExt as _};
+    use fidl_next::{Chunk, DecoderExt as _, EncoderExt as _, chunks};
 
     use crate::{RecvBuffer, SendBuffer};
 
@@ -296,7 +292,7 @@ mod tests {
         let arena = Arena::new();
         let data = arena.insert_boxed_slice(encoder.data.into_boxed_slice());
         let handles = arena.insert_boxed_slice(encoder.handles.into_boxed_slice());
-        let buffer = Message::new(&arena, Some(data), Some(handles));
+        let buffer = Some(Message::new(&arena, Some(data), Some(handles)));
         let decoder = RecvBuffer { buffer, data_offset: 0, handle_offset: 0 };
 
         let decoded = decoder.decode::<WireDriverChannel>().unwrap();
@@ -329,7 +325,7 @@ mod tests {
         let arena = Arena::new();
         let data = arena.insert_boxed_slice(encoder.data.into_boxed_slice());
         let handles = arena.insert_boxed_slice(encoder.handles.into_boxed_slice());
-        let buffer = Message::new(&arena, Some(data), Some(handles));
+        let buffer = Some(Message::new(&arena, Some(data), Some(handles)));
         let decoder = RecvBuffer { buffer, data_offset: 0, handle_offset: 0 };
 
         let decoded = decoder.decode::<WireOptionalDriverChannel>().unwrap();
@@ -351,7 +347,7 @@ mod tests {
         let arena = Arena::new();
         let data = arena.insert_boxed_slice(encoder.data.into_boxed_slice());
         let handles = arena.insert_boxed_slice(encoder.handles.into_boxed_slice());
-        let buffer = Message::new(&arena, Some(data), Some(handles));
+        let buffer = Some(Message::new(&arena, Some(data), Some(handles)));
         let decoder = RecvBuffer { buffer, data_offset: 0, handle_offset: 0 };
 
         let decoded = decoder.decode::<WireOptionalDriverChannel>().unwrap();

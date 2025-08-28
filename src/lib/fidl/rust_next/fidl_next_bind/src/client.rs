@@ -138,16 +138,19 @@ impl<P, T: Transport> Client<P, T> {
     }
 
     /// Runs the client with the provided handler.
-    pub async fn run<H>(&mut self, handler: H) -> Result<(), ProtocolError<T::Error>>
+    pub async fn run<H>(&mut self, handler: H) -> Result<H, ProtocolError<T::Error>>
     where
         P: DispatchClientMessage<H, T>,
     {
-        self.client.run(ClientHandlerAdapter { handler, _protocol: PhantomData::<P> }).await
+        self.client
+            .run(ClientHandlerAdapter { handler, _protocol: PhantomData::<P> })
+            .await
+            .map(|adapter| adapter.handler)
     }
 
     /// Runs the client, ignoring any incoming events.
     pub async fn run_sender(&mut self) -> Result<(), ProtocolError<T::Error>> {
-        self.client.run(IgnoreEvents).await
+        self.client.run(IgnoreEvents).await.map(|_| ())
     }
 }
 

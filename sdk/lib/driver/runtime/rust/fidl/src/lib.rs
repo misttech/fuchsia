@@ -4,12 +4,11 @@
 
 mod wire;
 
-use futures::task::AtomicWaker;
+use std::marker::PhantomData;
 use std::num::NonZero;
+use std::pin::Pin;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::task::Poll;
+use std::task::{Context, Poll};
 
 use fidl_next::Chunk;
 use zx::Status;
@@ -106,8 +105,8 @@ pub fn create_channel_with_dispatcher<P, D: Clone>(
 
 /// Creates a pair of [`fidl_next::ClientEnd`] and [`fidl_next::ServerEnd`] backed by a new
 /// pair of [`DriverChannel`]s using the default [`CurrentDispatcher`]
-pub fn create_channel<P>(
-) -> (fidl_next::ClientEnd<P, DriverChannel>, fidl_next::ServerEnd<P, DriverChannel>) {
+pub fn create_channel<P>()
+-> (fidl_next::ClientEnd<P, DriverChannel>, fidl_next::ServerEnd<P, DriverChannel>) {
     create_channel_with_dispatcher(CurrentDispatcher)
 }
 
@@ -185,14 +184,18 @@ impl fidl_next::fuchsia::HandleEncoder for SendBuffer {
 }
 
 pub struct RecvBuffer {
-    buffer: Message<[Chunk]>,
+    buffer: Option<Message<[Chunk]>>,
     data_offset: usize,
     handle_offset: usize,
 }
 
 impl RecvBuffer {
     fn next_handle(&self) -> Result<&MixedHandle, fidl_next::DecodeError> {
-        let Some(handles) = self.buffer.handles() else {
+        let Some(buffer) = &self.buffer else {
+            return Err(fidl_next::DecodeError::InsufficientHandles);
+        };
+
+        let Some(handles) = buffer.handles() else {
             return Err(fidl_next::DecodeError::InsufficientHandles);
         };
         if handles.len() < self.handle_offset + 1 {
@@ -210,7 +213,11 @@ unsafe impl fidl_next::Decoder for RecvBuffer {
     // SAFETY: if the caller requests a number of [`Chunk`]s that we can't supply, we return
     // `InsufficientData`.
     fn take_chunks_raw(&mut self, count: usize) -> Result<NonNull<Chunk>, fidl_next::DecodeError> {
-        let Some(data) = self.buffer.data_mut() else {
+        let Some(buffer) = &mut self.buffer else {
+            return Err(fidl_next::DecodeError::InsufficientData);
+        };
+
+        let Some(data) = buffer.data_mut() else {
             return Err(fidl_next::DecodeError::InsufficientData);
         };
         if data.len() < self.data_offset + count {
@@ -222,7 +229,7 @@ unsafe impl fidl_next::Decoder for RecvBuffer {
     }
 
     fn commit(&mut self) {
-        if let Some(handles) = self.buffer.handles_mut() {
+        if let Some(handles) = self.buffer.as_mut().and_then(Message::handles_mut) {
             for i in 0..self.handle_offset {
                 core::mem::forget(handles[i].take());
             }
@@ -230,25 +237,28 @@ unsafe impl fidl_next::Decoder for RecvBuffer {
     }
 
     fn finish(&self) -> Result<(), fidl_next::DecodeError> {
-        let data_len = self.buffer.data().unwrap_or(&[]).len();
-        if self.data_offset != data_len {
-            return Err(fidl_next::DecodeError::ExtraBytes {
-                num_extra: data_len - self.data_offset,
-            });
+        if let Some(buffer) = &self.buffer {
+            let data_len = buffer.data().unwrap_or(&[]).len();
+            if self.data_offset != data_len {
+                return Err(fidl_next::DecodeError::ExtraBytes {
+                    num_extra: data_len - self.data_offset,
+                });
+            }
+            let handle_len = buffer.handles().unwrap_or(&[]).len();
+            if self.handle_offset != handle_len {
+                return Err(fidl_next::DecodeError::ExtraHandles {
+                    num_extra: handle_len - self.handle_offset,
+                });
+            }
         }
-        let handle_len = self.buffer.handles().unwrap_or(&[]).len();
-        if self.handle_offset != handle_len {
-            return Err(fidl_next::DecodeError::ExtraHandles {
-                num_extra: handle_len - self.handle_offset,
-            });
-        }
+
         Ok(())
     }
 }
 
 impl fidl_next::decoder::InternalHandleDecoder for RecvBuffer {
     fn __internal_take_handles(&mut self, count: usize) -> Result<(), fidl_next::DecodeError> {
-        let Some(handles) = self.buffer.handles_mut() else {
+        let Some(handles) = self.buffer.as_mut().and_then(Message::handles_mut) else {
             return Err(fidl_next::DecodeError::InsufficientHandles);
         };
         if handles.len() < self.handle_offset + count {
@@ -260,7 +270,10 @@ impl fidl_next::decoder::InternalHandleDecoder for RecvBuffer {
     }
 
     fn __internal_handles_remaining(&self) -> usize {
-        self.buffer.handles().unwrap_or(&[]).len() - self.handle_offset
+        self.buffer
+            .as_ref()
+            .map(|buffer| buffer.handles().unwrap_or(&[]).len() - self.handle_offset)
+            .unwrap_or(0)
     }
 }
 
@@ -292,100 +305,61 @@ impl fidl_next::fuchsia::HandleDecoder for RecvBuffer {
     }
 
     fn handles_remaining(&mut self) -> usize {
-        self.buffer.handles().unwrap_or(&[]).len() - self.handle_offset
+        fidl_next::decoder::InternalHandleDecoder::__internal_handles_remaining(self)
     }
 }
 
 /// The inner state of a receive future used by [`fidl_next::protocol::Transport`].
 pub struct DriverRecvState(ReadMessageState);
 
-struct Shared<D> {
-    is_closed: AtomicBool,
-    sender_count: AtomicUsize,
-    closed_waker: AtomicWaker,
+/// The shared part of a driver channel.
+pub struct Shared<D> {
     channel: DriverChannel<D>,
 }
 
 impl<D> Shared<D> {
     fn new(channel: DriverChannel<D>) -> Self {
-        Self {
-            is_closed: AtomicBool::new(false),
-            sender_count: AtomicUsize::new(1),
-            closed_waker: AtomicWaker::new(),
-            channel,
-        }
-    }
-
-    fn close(&self) {
-        self.is_closed.store(true, Ordering::Relaxed);
-        self.closed_waker.wake();
-    }
-}
-/// The sender side of a [`DriverChannel`].
-pub struct DriverSender<D> {
-    shared: Arc<Shared<D>>,
-}
-
-impl<D> Drop for DriverSender<D> {
-    fn drop(&mut self) {
-        let senders = self.shared.sender_count.fetch_sub(1, Ordering::Relaxed);
-        if senders == 1 {
-            self.shared.close();
-        }
+        Self { channel }
     }
 }
 
-impl<D> Clone for DriverSender<D> {
-    fn clone(&self) -> Self {
-        self.shared.sender_count.fetch_add(1, Ordering::Relaxed);
-        Self { shared: self.shared.clone() }
-    }
-}
-
-/// The receiver side of a [`DriverChannel`].
-pub struct DriverReceiver<D> {
-    shared: Arc<Shared<D>>,
+/// The exclusive part of a driver channel.
+pub struct Exclusive {
+    _phantom: PhantomData<()>,
 }
 
 impl<D: OnDispatcher> fidl_next::protocol::Transport for DriverChannel<D> {
     type Error = Status;
 
-    fn split(self) -> (Self::Sender, Self::Receiver) {
-        let shared = Arc::new(Shared::new(self));
-        let sender = DriverSender { shared: shared.clone() };
-        let receiver = DriverReceiver { shared };
-        (sender, receiver)
+    fn split(self) -> (Self::Shared, Self::Exclusive) {
+        (Shared::new(self), Exclusive { _phantom: PhantomData })
     }
 
-    type Sender = DriverSender<D>;
+    type Shared = Shared<D>;
 
     type SendBuffer = SendBuffer;
 
     type SendFutureState = SendBuffer;
 
-    fn acquire(_sender: &Self::Sender) -> Self::SendBuffer {
+    fn acquire(_shared: &Self::Shared) -> Self::SendBuffer {
         SendBuffer::new()
     }
 
-    fn close(sender: &Self::Sender) {
-        sender.shared.close();
-    }
-
-    type Receiver = DriverReceiver<D>;
+    type Exclusive = Exclusive;
 
     type RecvFutureState = DriverRecvState;
 
     type RecvBuffer = RecvBuffer;
 
-    fn begin_send(_sender: &Self::Sender, buffer: Self::SendBuffer) -> Self::SendFutureState {
+    fn begin_send(_shared: &Self::Shared, buffer: Self::SendBuffer) -> Self::SendFutureState {
         buffer
     }
 
     fn poll_send(
-        mut buffer: std::pin::Pin<&mut Self::SendFutureState>,
-        _cx: &mut std::task::Context<'_>,
-        sender: &Self::Sender,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
+        mut buffer: Pin<&mut Self::SendFutureState>,
+        _cx: &mut Context<'_>,
+        shared: &Self::Shared,
+    ) -> Poll<Result<(), Option<Self::Error>>> {
         let arena = Arena::new();
         let message = Message::new_with(arena, |arena| {
             let data = arena.insert_slice(&buffer.data);
@@ -393,58 +367,66 @@ impl<D: OnDispatcher> fidl_next::protocol::Transport for DriverChannel<D> {
             let handles = arena.insert_from_iter(handles.into_iter());
             (Some(data), Some(handles))
         });
-        Poll::Ready(sender.shared.channel.channel.write(message))
+        let result = match shared.channel.channel.write(message) {
+            Ok(()) => Ok(()),
+            Err(Status::PEER_CLOSED) => Err(None),
+            Err(e) => Err(Some(e)),
+        };
+        Poll::Ready(result)
     }
 
-    fn begin_recv(receiver: &mut Self::Receiver) -> Self::RecvFutureState {
+    fn begin_recv(
+        shared: &Self::Shared,
+        _exclusive: &mut Self::Exclusive,
+    ) -> Self::RecvFutureState {
         // SAFETY: The `receiver` owns the channel we're using here and will be the same
         // receiver given to `poll_recv`, so must outlive the state object we're constructing.
-        let state =
-            unsafe { ReadMessageState::new(receiver.shared.channel.channel.driver_handle()) };
+        let state = unsafe { ReadMessageState::new(shared.channel.channel.driver_handle()) };
         DriverRecvState(state)
     }
 
     fn poll_recv(
-        mut future: std::pin::Pin<&mut Self::RecvFutureState>,
-        cx: &mut std::task::Context<'_>,
-        receiver: &mut Self::Receiver,
-    ) -> std::task::Poll<Result<Option<Self::RecvBuffer>, Self::Error>> {
+        mut future: Pin<&mut Self::RecvFutureState>,
+        cx: &mut Context<'_>,
+        shared: &Self::Shared,
+        _exclusive: &mut Self::Exclusive,
+    ) -> Poll<Result<Self::RecvBuffer, Option<Self::Error>>> {
         use std::task::Poll::*;
-        match future.as_mut().0.poll_with_dispatcher(cx, receiver.shared.channel.dispatcher.clone())
-        {
-            Ready(Ok(Some(buffer))) => {
-                let buffer = buffer.map_data(|_, data| {
-                    let bytes = data.len();
-                    assert_eq!(
-                        0,
-                        bytes % size_of::<Chunk>(),
-                        "Received driver channel buffer was not a multiple of {} bytes",
-                        size_of::<Chunk>()
-                    );
-                    // SAFETY: we verified that the size of the message we received was the correct
-                    // multiple of chunks and we know that the data pointer is otherwise valid and
-                    // from the correct arena by construction.
-                    let new_box = unsafe {
-                        let ptr = ArenaBox::into_ptr(data).cast();
-                        ArenaBox::new(NonNull::slice_from_raw_parts(
-                            ptr,
-                            bytes / size_of::<Chunk>(),
-                        ))
-                    };
-                    new_box
+        match future.as_mut().0.poll_with_dispatcher(cx, shared.channel.dispatcher.clone()) {
+            Ready(Ok(maybe_buffer)) => {
+                let buffer = maybe_buffer.map(|buffer| {
+                    buffer.map_data(|_, data| {
+                        let bytes = data.len();
+                        assert_eq!(
+                            0,
+                            bytes % size_of::<Chunk>(),
+                            "Received driver channel buffer was not a multiple of {} bytes",
+                            size_of::<Chunk>()
+                        );
+                        // SAFETY: we verified that the size of the message we received was the correct
+                        // multiple of chunks and we know that the data pointer is otherwise valid and
+                        // from the correct arena by construction.
+                        let new_box = unsafe {
+                            let ptr = ArenaBox::into_ptr(data).cast();
+                            ArenaBox::new(NonNull::slice_from_raw_parts(
+                                ptr,
+                                bytes / size_of::<Chunk>(),
+                            ))
+                        };
+                        new_box
+                    })
                 });
 
-                Ready(Ok(Some(RecvBuffer { buffer, data_offset: 0, handle_offset: 0 })))
+                Ready(Ok(RecvBuffer { buffer, data_offset: 0, handle_offset: 0 }))
             }
-            Ready(Ok(None)) => Ready(Ok(None)),
-            Ready(Err(err)) => Ready(Err(err)),
-            Pending => {
-                receiver.shared.closed_waker.register(cx.waker());
-                if receiver.shared.is_closed.load(Ordering::Relaxed) {
-                    return Poll::Ready(Ok(None));
+            Ready(Err(err)) => {
+                if err == Status::PEER_CLOSED {
+                    Ready(Err(None))
+                } else {
+                    Ready(Err(Some(err)))
                 }
-                Pending
             }
+            Pending => Pending,
         }
     }
 }

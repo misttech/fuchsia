@@ -421,7 +421,6 @@ pub trait {{ client_handler_name }}<
             sender: &::fidl_next::ClientSender<{{ protocol_name }}, ___T>,
             ordinal: u64,
         ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-            {# TODO: send epitaph before closing #}
             sender.close();
             ::core::future::ready(())
         }
@@ -454,10 +453,7 @@ where
                         {% if method.maybe_response_payload.is_some() %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
                                 Ok(decoded) => handler.{{ method_name }}(sender, decoded).await,
-                                Err(e) => {
-                                    {# TODO: send epitaph / log error #}
-                                    sender.close();
-                                }
+                                Err(e) => sender.close(),
                             }
                         {% else %}
                             handler.{{ method_name}}(sender).await;
@@ -468,10 +464,7 @@ where
             {% if protocol.openness != ProtocolOpenness::Closed %}
                 ordinal => handler.on_unknown_interaction(sender, ordinal).await,
             {% else %}
-                ordinal => {
-                    {# TODO: send epitaph #}
-                    sender.close();
-                }
+                ordinal => sender.close(),
             {% endif %}
         }
     }
@@ -520,7 +513,6 @@ pub trait {{ server_handler_name }}<
             sender: &::fidl_next::ServerSender<{{ protocol_name }}, ___T>,
             ordinal: u64,
         ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-            {# TODO: send epitaph before closing #}
             sender.close();
             ::core::future::ready(())
         }
@@ -553,10 +545,7 @@ where
                         {% if let Some(request) = method.maybe_request_payload %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
                                 Ok(decoded) => handler.{{ method_name }}(sender, decoded).await,
-                                Err(e) => {
-                                    {# TODO: send epitaph / log error #}
-                                    sender.close();
-                                }
+                                Err(e) => sender.close(),
                             }
                         {% else %}
                             handler.{{ method_name}}(sender).await;
@@ -567,10 +556,7 @@ where
             {% if protocol.openness != ProtocolOpenness::Closed %}
                 ordinal => handler.on_unknown_interaction(sender, ordinal).await,
             {% else %}
-                ordinal => {
-                    {# TODO: send epitaph #}
-                    sender.close();
-                }
+                ordinal => sender.close(),
             {% endif %}
         }
     }
@@ -592,10 +578,7 @@ where
                         {% if let Some(request) = method.maybe_request_payload %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
                                 Ok(decoded) => handler.{{ method_name }}(sender, decoded, responder).await,
-                                Err(e) => {
-                                    {# TODO: send epitaph / log error #}
-                                    sender.close();
-                                }
+                                Err(e) => sender.close(),
                             }
                         {% else %}
                             handler.{{ method_name}}(sender, responder).await;
@@ -606,10 +589,7 @@ where
             {% if protocol.openness != ProtocolOpenness::Closed %}
                 ordinal => handler.on_unknown_interaction(sender, ordinal).await,
             {% else %}
-                ordinal => {
-                    {# TODO: send epitaph #}
-                    sender.close();
-                }
+                ordinal => sender.close(),
             {% endif %}
         }
     }

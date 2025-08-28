@@ -39,6 +39,11 @@ impl<P, T: Transport> ServerSender<P, T> {
     pub fn close(&self) {
         self.sender.close();
     }
+
+    /// Closes the channel from the server end without sending an epitaph.
+    pub fn close_with_epitaph(&self, epitaph: i32) {
+        self.sender.close_with_epitaph(epitaph);
+    }
 }
 
 impl<P, T: Transport> Clone for ServerSender<P, T> {
@@ -161,12 +166,15 @@ impl<P, T: Transport> Server<P, T> {
     }
 
     /// Runs the server with the provided handler.
-    pub async fn run<H>(&mut self, handler: H) -> Result<(), ProtocolError<T::Error>>
+    pub async fn run<H>(&mut self, handler: H) -> Result<H, ProtocolError<T::Error>>
     where
         P: DispatchServerMessage<H, T>,
         H: Send,
     {
-        self.server.run(ServerHandlerAdapter { handler, _protocol: PhantomData::<P> }).await
+        self.server
+            .run(ServerHandlerAdapter { handler, _protocol: PhantomData::<P> })
+            .await
+            .map(|adapter| adapter.handler)
     }
 }
 

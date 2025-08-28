@@ -17,7 +17,6 @@ rustc_library("fidl") {
     "//sdk/rust/zx",
     "//src/devices/bin/driver_runtime",
     "//src/lib/fidl/rust_next/fidl_next",
-    "//third_party/rust_crates:futures",
   ]
 
   test_deps = [

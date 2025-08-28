@@ -63,16 +63,14 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 mod buffer;
-mod client;
+mod endpoints;
 mod error;
 mod flexible;
 mod flexible_result;
 mod framework_error;
 #[cfg(feature = "fuchsia")]
 pub mod fuchsia;
-mod lockers;
 pub mod mpsc;
-mod server;
 mod service;
 #[cfg(test)]
 mod testing;
@@ -80,12 +78,11 @@ mod transport;
 mod wire;
 
 pub use self::buffer::*;
-pub use self::client::*;
+pub use self::endpoints::*;
 pub use self::error::*;
 pub use self::flexible::*;
 pub use self::flexible_result::*;
 pub use self::framework_error::*;
-pub use self::server::*;
 pub use self::service::*;
 pub use self::transport::*;
 pub use self::wire::*;

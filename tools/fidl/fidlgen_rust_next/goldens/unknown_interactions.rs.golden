@@ -6119,23 +6119,17 @@ where
 
             5838220329633564521 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_event_fields(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             6303151946645602671 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_event_union(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             659277224687564957 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_event_table(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             1281760452005010931 => {
@@ -6144,23 +6138,17 @@ where
 
             4298964238728681570 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.flexible_event_fields(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             8950943792372972717 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.flexible_event_union(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             705539350563403440 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.flexible_event_table(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             ordinal => handler.on_unknown_interaction(sender, ordinal).await,
@@ -8377,10 +8365,7 @@ where
 
 
 
-                ordinal => {
-
-                    sender.close();
-                }
+                ordinal => sender.close(),
 
         }
     }
@@ -8489,9 +8474,7 @@ where
                 handler.strict_one_way(sender).await;
             }
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -8551,9 +8534,7 @@ where
                 handler.strict_two_way_table_err(sender, responder).await;
             }
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -11466,28 +11447,20 @@ where
 
             6736355582617074292 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_event_fields(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             4288682345454280036 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_event_union(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             2871682464255309246 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_event_table(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -11585,9 +11558,7 @@ where
                 handler.strict_one_way(sender).await;
             }
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 
@@ -11647,9 +11618,7 @@ where
                 handler.strict_two_way_table_err(sender, responder).await;
             }
 
-            ordinal => {
-                sender.close();
-            }
+            ordinal => sender.close(),
         }
     }
 }
@@ -21555,23 +21524,17 @@ where
 
             8896208255987935026 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_event_fields(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             3919175221694221274 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_event_union(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             2711448698318579984 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.strict_event_table(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             7042257263728687206 => {
@@ -21580,23 +21543,17 @@ where
 
             3613822014516746241 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.flexible_event_fields(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             2499446536152409191 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.flexible_event_union(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             5724881371349617120 => match ::fidl_next::DecoderExt::decode(buffer) {
                 Ok(decoded) => handler.flexible_event_table(sender, decoded).await,
-                Err(e) => {
-                    sender.close();
-                }
+                Err(e) => sender.close(),
             },
 
             ordinal => handler.on_unknown_interaction(sender, ordinal).await,
