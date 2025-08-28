@@ -422,8 +422,7 @@ void platform_init(void) {
       }
     }
 
-    // TODO(https://fxbug.dev/417558115): Flip this flag to enable based on presence of ZBI config.
-    cpu_suspend_supported = false;
+    cpu_suspend_supported = true;
   }
   dprintf(INFO, "platform_suspend_cpu support %s\n",
           cpu_suspend_supported ? "enabled" : "disabled");
