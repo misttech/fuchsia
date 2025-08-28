@@ -1,0 +1,49 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//third_party/antlion/antlion_host_test.gni")
+import("//third_party/antlion/environments.gni")
+
+assert(is_host, "antlion tests only supported for host testing")
+
+antlion_host_test("hidden_networks_test") {
+  main_source = "HiddenNetworksTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("policy_scan_test") {
+  main_source = "PolicyScanTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("regulatory_recovery_test") {
+  main_source = "RegulatoryRecoveryTest.py"
+  environments = display_envs
+}
+
+antlion_host_test("saved_networks_test") {
+  main_source = "SavedNetworksTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("start_stop_client_connections_test") {
+  main_source = "StartStopClientConnectionsTest.py"
+  environments = display_ap_envs
+}
+
+group("e2e_tests") {
+  testonly = true
+  public_deps = [
+    ":hidden_networks_test",
+    ":policy_scan_test",
+    ":regulatory_recovery_test",
+    ":saved_networks_test",
+    ":start_stop_client_connections_test",
+  ]
+}
+
+group("e2e_tests_quick") {
+  testonly = true
+  public_deps = [ ":hidden_networks_test" ]
+}

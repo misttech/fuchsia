@@ -1,0 +1,193 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/testing/environments.gni")
+
+astro_ap_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = "Astro"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+astro_ap_iperf_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = "Astro"
+    iperf_servers = "1"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+astro_ap_iperf_attenuator_env = {
+  dimensions = {
+    access_points = "1"
+    attenuators = "1"
+    device_type = "Astro"
+    iperf_servers = "1"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+sherlock_ap_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = "Sherlock"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+sherlock_ap_iperf_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = "Sherlock"
+    iperf_servers = "1"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+sherlock_ap_iperf_attenuator_env = {
+  dimensions = {
+    access_points = "1"
+    attenuators = "1"
+    device_type = "Sherlock"
+    iperf_servers = "1"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+nelson_ap_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = "Nelson"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+nelson_ap_iperf_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = "Nelson"
+    iperf_servers = "1"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+nelson_ap_iperf_attenuator_env = {
+  dimensions = {
+    access_points = "1"
+    attenuators = "1"
+    device_type = "Nelson"
+    iperf_servers = "1"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+nuc11_ap_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = "Intel NUC Kit NUC11TNHv5"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+nuc11_ap_iperf_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = "Intel NUC Kit NUC11TNHv5"
+    iperf_servers = "1"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+nuc11_ap_iperf_attenuator_env = {
+  dimensions = {
+    access_points = "1"
+    attenuators = "1"
+    device_type = "Intel NUC Kit NUC11TNHv5"
+    iperf_servers = "1"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+vim3_ap_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = "Vim3"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+vim3_ap_iperf_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = "Vim3"
+    iperf_servers = "1"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+vim3_ap_iperf_attenuator_env = {
+  dimensions = {
+    access_points = "1"
+    attenuators = "1"
+    device_type = "Vim3"
+    iperf_servers = "1"
+    pool = "fuchsia.tests.connectivity"
+  }
+  tags = [ "antlion" ]
+}
+
+# Display environments supported by antlion.
+display_envs = [
+  astro_env,
+  sherlock_env,
+  nelson_env,
+  nuc11_env,
+  vim3_env,
+  wlan_astro_env,
+  wlan_sherlock_env,
+  wlan_nelson_env,
+  wlan_nuc11_env,
+  wlan_vim3_env,
+]
+
+display_ap_envs = [
+  astro_ap_env,
+  sherlock_ap_env,
+  nelson_ap_env,
+  nuc11_ap_env,
+  vim3_ap_env,
+]
+
+display_ap_iperf_envs = [
+  astro_ap_iperf_env,
+  sherlock_ap_iperf_env,
+  nelson_ap_iperf_env,
+  nuc11_ap_iperf_env,
+  vim3_ap_iperf_env,
+]
+
+display_ap_iperf_attenuator_envs = [
+  astro_ap_iperf_attenuator_env,
+  sherlock_ap_iperf_attenuator_env,
+  nelson_ap_iperf_attenuator_env,
+  nuc11_ap_iperf_attenuator_env,
+  vim3_ap_iperf_attenuator_env,
+]

@@ -1,0 +1,23 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//third_party/antlion/antlion_host_test.gni")
+import("//third_party/antlion/environments.gni")
+
+assert(is_host, "antlion tests only supported for host testing")
+
+antlion_host_test("sl4f_sanity_test") {
+  main_source = "Sl4fSanityTest.py"
+  environments = display_envs + [ qemu_env ]
+}
+
+group("e2e_tests_quick") {
+  testonly = true
+  public_deps = [ ":sl4f_sanity_test" ]
+}
+
+group("e2e_tests") {
+  testonly = true
+  public_deps = [ ":sl4f_sanity_test" ]
+}

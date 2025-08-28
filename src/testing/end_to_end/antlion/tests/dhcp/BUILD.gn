@@ -1,0 +1,38 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//third_party/antlion/antlion_host_test.gni")
+import("//third_party/antlion/environments.gni")
+
+assert(is_host, "antlion tests only supported for host testing")
+
+antlion_host_test("dhcpv4_duplicate_address_test") {
+  main_source = "Dhcpv4DuplicateAddressTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("dhcpv4_interop_basic_test") {
+  main_source = "Dhcpv4InteropBasicTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("dhcpv4_interop_combinatorial_options_test") {
+  main_source = "Dhcpv4InteropCombinatorialOptionsTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("dhcpv4_interop_fixture_test") {
+  main_source = "Dhcpv4InteropFixtureTest.py"
+  environments = display_ap_envs
+}
+
+group("e2e_tests") {
+  testonly = true
+  public_deps = [
+    ":dhcpv4_duplicate_address_test",
+    ":dhcpv4_interop_basic_test",
+    ":dhcpv4_interop_combinatorial_options_test",
+    ":dhcpv4_interop_fixture_test",
+  ]
+}

@@ -1,0 +1,180 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//third_party/antlion/antlion_host_test.gni")
+import("//third_party/antlion/environments.gni")
+
+assert(is_host, "antlion tests only supported for host testing")
+
+antlion_host_test("beacon_loss_test") {
+  main_source = "BeaconLossTest.py"
+  environments = display_ap_envs
+  timeout_secs = 900
+}
+
+antlion_host_test("channel_switch_test") {
+  main_source = "ChannelSwitchTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("connection_stress_test") {
+  main_source = "ConnectionStressTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("ping_stress_test") {
+  main_source = "PingStressTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("soft_ap_test") {
+  main_source = "SoftApTest.py"
+
+  # Requires one Fuchsia device and one Anddroid device. There are no
+  # infra-hosted environments to run this test on. Will likely remain an at-desk
+  # test for as long as it requires an Android device.
+  environments = []
+}
+
+antlion_host_test("wlan_driver_restart_test") {
+  main_source = "WlanDriverRestartTest.py"
+  environments = [
+    nuc7_env,
+    nuc11_env,
+  ]
+  test_data_deps =
+      [ "//src/developer/ffx/tools/driver:ffx_driver_tool_test_data" ]
+}
+
+antlion_host_test("wlan_policy_initiated_roam_test") {
+  main_source = "WlanPolicyInitiatedRoamTest.py"
+  environments = display_ap_envs
+}
+
+# wlan reboot tests
+# ap tests
+antlion_host_test("wlan_reboot_ap_open_test") {
+  main_source = "WlanRebootTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test.+ap.+open.+" ]
+  deps = [ "//third_party/iperf" ]
+}
+
+antlion_host_test("wlan_reboot_ap_wpa2_test") {
+  main_source = "WlanRebootTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test.+ap.+wpa2.+" ]
+  deps = [ "//third_party/iperf" ]
+}
+
+antlion_host_test("wlan_reboot_ap_wpa3_test") {
+  main_source = "WlanRebootTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test.+ap.+wpa3.+" ]
+  deps = [ "//third_party/iperf" ]
+}
+
+# dut tests
+antlion_host_test("wlan_reboot_dut_open_test") {
+  main_source = "WlanRebootTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test.+dut.+open.+" ]
+  deps = [ "//third_party/iperf" ]
+}
+
+antlion_host_test("wlan_reboot_dut_wpa2_test") {
+  main_source = "WlanRebootTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test.+dut.+wpa2.+" ]
+  deps = [ "//third_party/iperf" ]
+}
+
+antlion_host_test("wlan_reboot_dut_wpa3_test") {
+  main_source = "WlanRebootTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test.+dut.+wpa3.+" ]
+  deps = [ "//third_party/iperf" ]
+}
+
+# quick tests
+antlion_host_test("wlan_reboot_ap_test_quick") {
+  main_source = "WlanRebootTest.py"
+  environments = display_ap_envs
+  test_cases = [ "test_soft_reboot_ap_5g_open_ipv4" ]
+  deps = [ "//third_party/iperf" ]
+}
+
+antlion_host_test("wlan_reboot_dut_test_quick") {
+  main_source = "WlanRebootTest.py"
+  environments = display_ap_envs
+  test_cases = [ "test_soft_reboot_dut_5g_open_ipv4" ]
+  deps = [ "//third_party/iperf" ]
+}
+
+antlion_host_test("wlan_scan_test") {
+  main_source = "WlanScanTest.py"
+  environments = display_ap_envs
+}
+
+# iwlwifi AX201 does not support WPA2 yet.
+# TODO(b/328494216): Remove then add nuc11_env to wlan_scan_test.
+antlion_host_test("wlan_scan_test_without_wpa2") {
+  main_source = "WlanScanTest.py"
+  environments = [ nuc11_ap_env ]
+  test_cases = [
+    "test_basic_scan_request",
+    "test_scan_while_connected_open_network_2g",
+    "test_scan_while_connected_open_network_5g",
+  ]
+}
+
+antlion_host_test("wlan_target_security_test") {
+  main_source = "WlanTargetSecurityTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("wlan_wireless_network_management_test") {
+  main_source = "WlanWirelessNetworkManagementTest.py"
+  environments = display_ap_envs
+}
+
+group("e2e_tests") {
+  testonly = true
+  public_deps = [
+    ":beacon_loss_test",
+    ":channel_switch_test",
+    ":ping_stress_test",
+    ":wlan_reboot_ap_open_test",
+    ":wlan_reboot_ap_test_quick",
+    ":wlan_reboot_ap_wpa2_test",
+    ":wlan_reboot_ap_wpa3_test",
+    ":wlan_reboot_dut_open_test",
+    ":wlan_reboot_dut_wpa2_test",
+    ":wlan_reboot_dut_wpa3_test",
+    ":wlan_scan_test",
+    ":wlan_scan_test_without_wpa2",
+    ":wlan_target_security_test",
+    ":wlan_wireless_network_management_test",
+  ]
+}
+
+group("e2e_tests_quick") {
+  testonly = true
+  public_deps = [
+    ":ping_stress_test",
+    ":wlan_driver_restart_test",
+    ":wlan_reboot_ap_test_quick",
+    ":wlan_reboot_dut_test_quick",
+    ":wlan_scan_test_without_wpa2",
+  ]
+}
+
+# Tests that are disabled in automation
+group("e2e_tests_manual") {
+  testonly = true
+  public_deps = [
+    ":soft_ap_test",
+    ":wlan_policy_initiated_roam_test",
+  ]
+}

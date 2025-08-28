@@ -1,0 +1,29 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+assert(is_host, "antlion tests only supported for host testing")
+
+group("e2e_tests") {
+  testonly = true
+  public_deps = [
+    "dhcp:e2e_tests",
+    "examples:e2e_tests",
+    "wlan:e2e_tests",
+    "wlan_policy:e2e_tests",
+  ]
+}
+
+group("e2e_tests_quick") {
+  testonly = true
+  public_deps = [
+    "examples:e2e_tests_quick",
+    "wlan:e2e_tests_quick",
+    "wlan_policy:e2e_tests_quick",
+  ]
+}
+
+group("e2e_tests_manual") {
+  testonly = true
+  public_deps = [ "wlan:e2e_tests_manual" ]
+}

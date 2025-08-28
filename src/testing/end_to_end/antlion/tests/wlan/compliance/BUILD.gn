@@ -1,0 +1,611 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//third_party/antlion/antlion_host_test.gni")
+import("//third_party/antlion/environments.gni")
+
+assert(is_host, "antlion tests only supported for host testing")
+
+# wlan phy n compliance tests
+antlion_host_test("wlan_phy_compliance_11n_2g_ht20_open_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_2\.4GHz_HT20_open_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_2g_ht40lower_open_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_2\.4GHz_HT40Lower_open_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_2g_ht40upper_open_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_2\.4GHz_HT40Upper_open_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_5g_ht20_open_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_5GHz_HT20_open_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_5g_ht40lower_open_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_5GHz_HT40Lower_open_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_5g_ht40upper_open_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_5GHz_HT40Upper_open_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_2g_ht20_wpa2_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_2\.4GHz_HT20_wpa2_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_2g_ht40lower_wpa2_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_2\.4GHz_HT40Lower_wpa2_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_2g_ht40upper_wpa2_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_2\.4GHz_HT40Upper_wpa2_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_5g_ht20_wpa2_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_5GHz_HT20_wpa2_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_5g_ht40lower_wpa2_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_5GHz_HT40Lower_wpa2_.*" ]
+}
+
+antlion_host_test("wlan_phy_compliance_11n_5g_ht40upper_wpa2_test") {
+  main_source = "WlanPhyCompliance11NTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11n_5GHz_HT40Upper_wpa2_.*" ]
+}
+
+# wlan phy ac compliance tests
+# 20mhz open
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp0_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_open_(?:.*MAX-A-MPDU-LEN-EXP0.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp1_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_open_(?:.*MAX-A-MPDU-LEN-EXP1.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp2_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_open_(?:.*MAX-A-MPDU-LEN-EXP2.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp3_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_open_(?:.*MAX-A-MPDU-LEN-EXP3.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp4_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_open_(?:.*MAX-A-MPDU-LEN-EXP4.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp5_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_open_(?:.*MAX-A-MPDU-LEN-EXP5.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp6_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_open_(?:.*MAX-A-MPDU-LEN-EXP6.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp7_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_open_(?:.*MAX-A-MPDU-LEN-EXP7.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_disabled_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_open((?!MAX-A-MPDU-LEN-EXP[\d]).)*\$" ]
+}
+
+# 20mhz wpa2
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp0_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP0.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp1_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP1.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp2_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP2.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp3_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP3.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp4_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP4.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp5_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP5.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp6_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP6.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp7_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP7.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_disabled_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_20mhz_wpa2((?!MAX-A-MPDU-LEN-EXP[\d]).)*\$" ]
+}
+
+# 40mhz open
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp0_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_open_(?:.*MAX-A-MPDU-LEN-EXP0.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp1_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_open_(?:.*MAX-A-MPDU-LEN-EXP1.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp2_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_open_(?:.*MAX-A-MPDU-LEN-EXP2.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp3_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_open_(?:.*MAX-A-MPDU-LEN-EXP3.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp4_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_open_(?:.*MAX-A-MPDU-LEN-EXP4.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp5_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_open_(?:.*MAX-A-MPDU-LEN-EXP5.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp6_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_open_(?:.*MAX-A-MPDU-LEN-EXP6.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp7_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_open_(?:.*MAX-A-MPDU-LEN-EXP7.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_disabled_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_open((?!MAX-A-MPDU-LEN-EXP[\d]).)*\$" ]
+}
+
+# 40mhz wpa2
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp0_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP0.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp1_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP1.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp2_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP2.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp3_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP3.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp4_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP4.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp5_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP5.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp6_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP6.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp7_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP7.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_disabled_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_40mhz_wpa2((?!MAX-A-MPDU-LEN-EXP[\d]).)*\$" ]
+}
+
+# 80mhz open
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp0_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_open_(?:.*MAX-A-MPDU-LEN-EXP0.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp1_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_open_(?:.*MAX-A-MPDU-LEN-EXP1.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp2_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_open_(?:.*MAX-A-MPDU-LEN-EXP2.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp3_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_open_(?:.*MAX-A-MPDU-LEN-EXP3.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp4_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_open_(?:.*MAX-A-MPDU-LEN-EXP4.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp5_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_open_(?:.*MAX-A-MPDU-LEN-EXP5.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp6_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_open_(?:.*MAX-A-MPDU-LEN-EXP6.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp7_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_open_(?:.*MAX-A-MPDU-LEN-EXP7.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_disabled_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_open((?!MAX-A-MPDU-LEN-EXP[\d]).)*\$" ]
+}
+
+# 80mhz wpa2
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp0_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP0.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp1_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP1.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp2_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP2.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp3_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP3.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp4_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP4.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp5_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP5.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp6_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP6.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp7_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_wpa2_(?:.*MAX-A-MPDU-LEN-EXP7.*)" ]
+}
+
+antlion_host_test(
+    "wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_disabled_test") {
+  main_source = "WlanPhyCompliance11ACTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test_11ac_80mhz_wpa2((?!MAX-A-MPDU-LEN-EXP[\d]).)*\$" ]
+}
+
+antlion_host_test("wlan_security_compliance_11a_test") {
+  main_source = "WlanSecurityComplianceABGTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test.*11a.*" ]
+  timeout_secs = 1800
+}
+
+antlion_host_test("wlan_security_compliance_11bg_test") {
+  main_source = "WlanSecurityComplianceABGTest.py"
+  environments = display_ap_envs
+  test_cases = [ "re:test.*11bg.*" ]
+  timeout_secs = 1800
+}
+
+antlion_host_test("wlan_phy_compliance_abg_test") {
+  main_source = "WlanPhyComplianceABGTest.py"
+  environments = display_ap_envs
+  timeout_secs = 1200
+}
+
+antlion_host_test("regulatory_compliance_test") {
+  main_source = "RegulatoryComplianceTest.py"
+  environments = display_ap_envs
+}
+
+antlion_host_test("vape_interop_test") {
+  main_source = "VapeInteropTest.py"
+  environments = display_ap_envs
+  timeout_secs = 900
+}
+
+antlion_host_test("wlan_security_compliance_abg_test_quick") {
+  main_source = "WlanSecurityComplianceABGTest.py"
+  environments = display_ap_envs
+  test_cases = [
+    "test_associate_11bg_sec_open_wep_26_hex_ptk_none",
+    "test_associate_11bg_sec_wpa_psk_ptk_tkip",
+    "test_associate_11bg_sec_wpa_psk_ptk_ccmp",
+    "test_associate_11bg_sec_wpa2_psk_ptk_tkip",
+    "test_associate_11bg_sec_wpa2_psk_ptk_ccmp",
+    "test_associate_11bg_pmf_sec_wpa2_psk_ptk_ccmp",
+    "test_associate_11bg_sec_wpa_wpa2_psk_ptk_tkip",
+    "test_associate_11bg_sec_wpa_wpa2_psk_ptk_ccmp",
+    "test_associate_11bg_sec_wpa3_sae_ptk_ccmp",
+    "test_associate_11bg_sec_wpa2_wpa3_psk_sae_ptk_ccmp",
+  ]
+}
+
+group("e2e_tests") {
+  testonly = true
+  public_deps = [
+    ":vape_interop_test",
+    ":wlan_phy_compliance_11n_2g_ht20_open_test",
+    ":wlan_phy_compliance_11n_2g_ht20_wpa2_test",
+    ":wlan_phy_compliance_11n_2g_ht40lower_open_test",
+    ":wlan_phy_compliance_11n_2g_ht40lower_wpa2_test",
+    ":wlan_phy_compliance_11n_2g_ht40upper_open_test",
+    ":wlan_phy_compliance_11n_2g_ht40upper_wpa2_test",
+    ":wlan_phy_compliance_11n_5g_ht20_open_test",
+    ":wlan_phy_compliance_11n_5g_ht20_wpa2_test",
+    ":wlan_phy_compliance_11n_5g_ht40lower_open_test",
+    ":wlan_phy_compliance_11n_5g_ht40lower_wpa2_test",
+    ":wlan_phy_compliance_11n_5g_ht40upper_open_test",
+    ":wlan_phy_compliance_11n_5g_ht40upper_wpa2_test",
+    ":wlan_phy_compliance_abg_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_disabled_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp0_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp1_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp2_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp3_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp4_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp5_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp6_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_open_max_a_mpdu_len_exp7_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_disabled_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp0_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp1_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp2_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp3_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp4_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp5_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp6_test",
+    ":wlan_phy_compliance_ac_5g_20mhz_wpa2_max_a_mpdu_len_exp7_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_disabled_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp0_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp1_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp2_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp3_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp4_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp5_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp6_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_open_max_a_mpdu_len_exp7_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_disabled_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp0_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp1_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp2_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp3_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp4_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp5_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp6_test",
+    ":wlan_phy_compliance_ac_5g_40mhz_wpa2_max_a_mpdu_len_exp7_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_disabled_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp0_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp1_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp2_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp3_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp4_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp5_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp6_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_open_max_a_mpdu_len_exp7_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_disabled_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp0_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp1_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp2_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp3_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp4_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp5_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp6_test",
+    ":wlan_phy_compliance_ac_5g_80mhz_wpa2_max_a_mpdu_len_exp7_test",
+    ":wlan_security_compliance_11a_test",
+    ":wlan_security_compliance_11bg_test",
+  ]
+}
+
+group("e2e_tests_quick") {
+  testonly = true
+  public_deps = [ ":wlan_security_compliance_abg_test_quick" ]
+}
+
+group("e2e_tests_manual") {
+  testonly = true
+  public_deps = [
+    # Running RegulatoryComplianceTest is usually only necessary when verifying
+    # new WLAN firmware patches. Take it out of automation; it takes too long
+    # otherwise.
+    ":regulatory_compliance_test",
+  ]
+}

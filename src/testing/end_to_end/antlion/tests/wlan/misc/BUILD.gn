@@ -1,0 +1,26 @@
+# Copyright 2023 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//third_party/antlion/antlion_host_test.gni")
+import("//third_party/antlion/environments.gni")
+
+assert(is_host, "antlion tests only supported for host testing")
+
+antlion_host_test("wlan_interface_test") {
+  main_source = "WlanInterfaceTest.py"
+  environments = display_envs
+}
+
+antlion_host_test("wlan_misc_scenario") {
+  main_source = "WlanMiscScenarioTest.py"
+  environments = display_ap_envs
+}
+
+group("e2e_tests") {
+  testonly = true
+  public_deps = [
+    ":wlan_interface_test",
+    ":wlan_misc_scenario",
+  ]
+}

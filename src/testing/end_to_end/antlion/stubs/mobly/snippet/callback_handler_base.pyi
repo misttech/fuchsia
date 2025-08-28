@@ -1,0 +1,33 @@
+import abc
+
+from _typeshed import Incomplete
+from mobly.snippet import callback_event as callback_event
+from mobly.snippet import errors as errors
+
+class CallbackHandlerBase(abc.ABC, metaclass=abc.ABCMeta):
+    ret_value: Incomplete
+    def __init__(
+        self,
+        callback_id,
+        event_client,
+        ret_value,
+        method_name,
+        device,
+        rpc_max_timeout_sec,
+        default_timeout_sec: int = ...,
+    ) -> None: ...
+    @property
+    def rpc_max_timeout_sec(self): ...
+    @property
+    def default_timeout_sec(self): ...
+    @property
+    def callback_id(self): ...
+    @abc.abstractmethod
+    def callEventWaitAndGetRpc(self, callback_id, event_name, timeout_sec): ...
+    @abc.abstractmethod
+    def callEventGetAllRpc(self, callback_id, event_name): ...
+    def waitAndGet(self, event_name, timeout: Incomplete | None = ...): ...
+    def waitForEvent(
+        self, event_name, predicate, timeout: Incomplete | None = ...
+    ): ...
+    def getAll(self, event_name): ...
