@@ -2563,14 +2563,14 @@ alias(
 )
 
 alias(
-    name = "signal-hook-0.3.17",
-    actual = "//third_party/rust_crates/vendor/signal-hook-0.3.17:signal_hook",
+    name = "signal-hook-0.3.18",
+    actual = "//third_party/rust_crates/vendor/signal-hook-0.3.18:signal_hook",
     tags = ["manual"],
 )
 
 alias(
     name = "signal-hook",
-    actual = "//third_party/rust_crates/vendor/signal-hook-0.3.17:signal_hook",
+    actual = "//third_party/rust_crates/vendor/signal-hook-0.3.18:signal_hook",
     tags = ["manual"],
 )
 
