@@ -8,20 +8,36 @@
 //! listening to requests immediately after creation.
 //!
 
-use crate::agent::{Context, Payload};
+use crate::agent::{AgentCreator, Context, CreationFunc, Payload};
 use crate::base::SettingType;
 use crate::handler::base::{Payload as HandlerPayload, Request};
+use crate::inspect::event::{Direction, UsageEvent};
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::service::TryFromWithClient;
 use crate::{service, trace};
 use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect, component};
 use fuchsia_inspect_derive::Inspect;
+use futures::channel::mpsc::UnboundedReceiver;
 use futures::StreamExt;
 use inspect::NumericProperty;
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+
+pub(crate) fn create_registrar(rx: UnboundedReceiver<UsageEvent>) -> AgentCreator {
+    let rx = Rc::new(RefCell::new(rx));
+    AgentCreator {
+        debug_id: "UsageCountInspectAgent",
+        create: CreationFunc::Dynamic(Rc::new(move |context| {
+            let rx = Rc::clone(&rx);
+            Box::pin(async move {
+                SettingTypeUsageInspectAgent::create(context, rx).await;
+            })
+        })),
+    }
+}
 
 /// Information about a setting type usage count to be written to inspect.
 struct SettingTypeUsageInspectInfo {
@@ -59,15 +75,20 @@ pub(crate) struct SettingTypeUsageInspectAgent {
 }
 
 impl SettingTypeUsageInspectAgent {
-    pub(crate) async fn create(context: Context) {
+    pub(crate) async fn create(context: Context, rx: Rc<RefCell<UnboundedReceiver<UsageEvent>>>) {
         Self::create_with_node(
             context,
+            rx,
             component::inspector().root().create_child("api_usage_counts"),
         )
         .await;
     }
 
-    async fn create_with_node(context: Context, node: inspect::Node) {
+    async fn create_with_node(
+        context: Context,
+        rx: Rc<RefCell<UnboundedReceiver<UsageEvent>>>,
+        node: inspect::Node,
+    ) {
         let (_, message_rx) = context
             .delegate
             .create(MessengerType::Broker(Rc::new(move |message| {
@@ -87,6 +108,7 @@ impl SettingTypeUsageInspectAgent {
             trace!(id, c"usage_counts_inspect_agent");
             let event = message_rx.fuse();
             let agent_event = context.receptor.fuse();
+            let mut usage_event = rx.borrow_mut();
             futures::pin_mut!(agent_event, event);
 
             loop {
@@ -97,6 +119,9 @@ impl SettingTypeUsageInspectAgent {
                             c"message_event"
                         );
                         agent.process_message_event(message_event);
+                    },
+                    usage_event = usage_event.select_next_some() => {
+                        agent.process_usage_event(usage_event);
                     },
                     agent_message = agent_event.select_next_some() => {
                         trace!(
@@ -115,6 +140,25 @@ impl SettingTypeUsageInspectAgent {
             }
         }})
         .detach();
+    }
+
+    fn process_usage_event(&mut self, event: UsageEvent) {
+        // We only need to track incoming requests.
+        if let Direction::Response(..) = event.direction {
+            return;
+        }
+
+        let inspect_node = &self.inspect_node;
+        let setting_type_info = self
+            .api_call_counts
+            .entry(event.setting.to_string())
+            .or_insert_with(|| SettingTypeUsageInspectInfo::new(inspect_node, event.setting));
+
+        let key = event.request_type;
+        let usage = setting_type_info
+            .requests_by_type
+            .get_or_insert_with(format!("{key:?}"), UsageInfo::default);
+        let _ = usage.count.add(1);
     }
 
     /// Identifies [`service::message::MessageEvent`] that contains a [`Request`]
@@ -159,6 +203,7 @@ mod tests {
     use crate::intl::types::{IntlInfo, LocaleId, TemperatureUnit};
 
     use diagnostics_assertions::assert_data_tree;
+    use futures::channel::mpsc;
     use std::collections::HashSet;
 
     /// The `RequestProcessor` handles sending a request through a MessageHub
@@ -213,7 +258,13 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        SettingTypeUsageInspectAgent::create_with_node(context, inspect_node).await;
+        let (_tx, rx) = mpsc::unbounded();
+        SettingTypeUsageInspectAgent::create_with_node(
+            context,
+            Rc::new(RefCell::new(rx)),
+            inspect_node,
+        )
+        .await;
 
         // Send a few requests to make sure they get written to inspect properly.
         let turn_off_auto_brightness = Request::SetDisplayInfo(SetDisplayInfo {
@@ -264,7 +315,13 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        SettingTypeUsageInspectAgent::create_with_node(context, inspect_node).await;
+        let (_tx, rx) = mpsc::unbounded();
+        SettingTypeUsageInspectAgent::create_with_node(
+            context,
+            Rc::new(RefCell::new(rx)),
+            inspect_node,
+        )
+        .await;
 
         // Interlace different request types to make sure the counter is correct.
         request_processor

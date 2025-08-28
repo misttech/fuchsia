@@ -159,6 +159,7 @@ icu_rustc_library("lib") {
     "src/input/types.rs",
     "src/inspect.rs",
     "src/inspect/config_logger.rs",
+    "src/inspect/event.rs",
     "src/inspect/listener_logger.rs",
     "src/inspect/utils.rs",
     "src/inspect/utils/enums.rs",

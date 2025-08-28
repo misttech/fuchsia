@@ -793,31 +793,36 @@ fn create_agent_blueprints(
     agent_blueprints: Vec<AgentCreator>,
     media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
 ) -> Vec<AgentCreator> {
-    let (_inspect_event_tx, inspect_event_rx) = mpsc::unbounded();
+    let (_value_event_tx, value_event_rx) = mpsc::unbounded();
+    let (_usage_event_tx, usage_event_rx) = mpsc::unbounded();
 
     let media_buttons_registrar = agent_types
         .contains(&AgentType::MediaButtons)
         .then(|| agent::media_buttons::create_registrar(media_buttons_event_txs));
     let inspect_settings_values_registrar = agent_types
         .contains(&AgentType::InspectSettingValues)
-        .then(|| agent::inspect::setting_values::create_registrar(inspect_event_rx));
+        .then(|| agent::inspect::setting_values::create_registrar(value_event_rx));
+    let inspect_usages_registrar = agent_types
+        .contains(&AgentType::InspectSettingTypeUsage)
+        .then(|| agent::inspect::usage_counts::create_registrar(usage_event_rx));
 
-    let agent_registrars = [media_buttons_registrar, inspect_settings_values_registrar];
+    let agent_registrars =
+        [media_buttons_registrar, inspect_settings_values_registrar, inspect_usages_registrar];
 
-    let mut agent_blueprints = if agent_types
-        .iter()
-        .all(|t| matches!(t, AgentType::MediaButtons | AgentType::InspectSettingValues))
-    {
+    let mut agent_blueprints = if agent_types.iter().all(|t| {
+        matches!(
+            t,
+            AgentType::MediaButtons
+                | AgentType::InspectSettingValues
+                | AgentType::InspectSettingTypeUsage
+        )
+    }) {
         agent_blueprints
     } else {
         agent_types.into_iter().filter_map(AgentCreator::from_type).collect()
     };
 
-    for registrar in agent_registrars {
-        if let Some(registrar) = registrar {
-            agent_blueprints.push(registrar);
-        }
-    }
+    agent_blueprints.extend(agent_registrars.into_iter().filter_map(|r| r));
     agent_blueprints
 }
 

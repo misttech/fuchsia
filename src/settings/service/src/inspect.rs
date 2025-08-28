@@ -10,3 +10,6 @@ pub mod listener_logger;
 
 /// Utilities for inspect.
 pub mod utils;
+
+/// Events for inspect channels.
+pub mod event;

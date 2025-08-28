@@ -105,8 +105,10 @@ impl AgentCreator {
                 create_agent!(camera_watcher, camera_watcher::CameraWatcherAgent::create)
             }
             AgentType::Earcons => create_agent!(earcons, earcons::agent::Agent::create),
-            AgentType::MediaButtons | AgentType::InspectSettingValues => {
-                // Handled in service/lib.rs
+            AgentType::MediaButtons
+            | AgentType::InspectSettingValues
+            | AgentType::InspectSettingTypeUsage => {
+                // Moved to lib.rs
                 return None;
             }
             AgentType::Restore => create_agent!(restore_agent, restore_agent::RestoreAgent::create),
@@ -117,10 +119,6 @@ impl AgentCreator {
             AgentType::InspectSettingProxy => create_agent!(
                 setting_proxy,
                 inspect::setting_proxy::SettingProxyInspectAgent::create
-            ),
-            AgentType::InspectSettingTypeUsage => create_agent!(
-                usage_counts,
-                inspect::usage_counts::SettingTypeUsageInspectAgent::create
             ),
         })
     }
