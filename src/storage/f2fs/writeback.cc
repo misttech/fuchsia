@@ -39,8 +39,8 @@ zx::result<storage::Operation> Writer::PageToOperation(OwnedStorageBuffer &buffe
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  zx::result index_or = buffer->Reserve(1);
-  if (index_or.is_error()) {
+  zx::result index = buffer->Reserve(1);
+  if (index.is_error()) {
     return zx::error(ZX_ERR_UNAVAILABLE);
   }
 
@@ -56,7 +56,7 @@ zx::result<storage::Operation> Writer::PageToOperation(OwnedStorageBuffer &buffe
 
   storage::Operation op = {
       .type = type,
-      .vmo_offset = *index_or,
+      .vmo_offset = *index,
       .dev_offset = page.GetBlockAddr(),
       .length = 1,
   };
@@ -73,9 +73,9 @@ std::vector<storage::BufferedOperation> Writer::BuildBufferedOperation(OwnedStor
   NotifyWriteback notifier;
   while (!pages.is_empty()) {
     auto page = pages.pop_front();
-    zx::result operation_or = PageToOperation(buffer, *page, needs_preflush);
-    if (operation_or.is_error()) {
-      if (operation_or.error_value() == ZX_ERR_UNAVAILABLE) {
+    zx::result operation = PageToOperation(buffer, *page, needs_preflush);
+    if (operation.is_error()) {
+      if (operation.error_value() == ZX_ERR_UNAVAILABLE) {
         // No available buffers. Need to submit pending StorageOperations to free buffers.
         pages.push_front(std::move(page));
         return builder.TakeOperations();
@@ -89,7 +89,7 @@ std::vector<storage::BufferedOperation> Writer::BuildBufferedOperation(OwnedStor
       continue;
     }
     to_submit.push_back(std::move(page));
-    builder.Add(*operation_or, &buffer->GetVmoBuffer());
+    builder.Add(*operation, &buffer->GetVmoBuffer());
   }
   return builder.TakeOperations();
 }

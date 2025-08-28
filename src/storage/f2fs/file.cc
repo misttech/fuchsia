@@ -311,7 +311,7 @@ File::File(F2fs *fs, ino_t ino, umode_t mode, std::optional<gid_t> gid) : VnodeF
 zx_status_t File::Truncate(size_t len) {
   TRACE_DURATION("f2fs", "File::Truncate", "event", "File::Truncate", "ino", Ino(), "length", len);
 
-  if (superblock_info_.TestCpFlags(CpFlag::kCpErrorFlag)) {
+  if (GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag)) {
     return ZX_ERR_BAD_STATE;
   }
 
@@ -348,7 +348,7 @@ size_t File::MaxFileSize() {
   leaf_count *= kNidsPerBlock;
   result += leaf_count;
 
-  result <<= superblock_info_.GetLogBlocksize();
+  result <<= GetSuperblockInfo().GetLogBlocksize();
   return result;
 }
 
@@ -380,9 +380,9 @@ void File::VmoDirty(uint64_t offset, uint64_t length) {
     return VnodeF2fs::VmoDirty(offset, length);
   }
 
-  auto pages_or = WriteBegin(offset, length);
-  if (unlikely(pages_or.is_error())) {
-    return ReportPagerError(ZX_PAGER_OP_DIRTY, offset, length, pages_or.error_value());
+  zx::result pages = WriteBegin(offset, length);
+  if (unlikely(pages.is_error())) {
+    return ReportPagerError(ZX_PAGER_OP_DIRTY, offset, length, pages.error_value());
   }
   SetTime<Timestamps::ModificationTime>();
   SetDirty();
@@ -421,12 +421,12 @@ zx::result<LockedPage> File::FindGcPage(pgoff_t index) {
 
   // Ask kernel to dirty the vmo area for |data_page|. If the regarding pages are not present, we
   // supply a vmo and dirty it again.
-  zx::result dirty_or = data_page.SetVmoDirty();
-  if (dirty_or.is_ok()) {
+  zx::result dirty = data_page.SetVmoDirty();
+  if (dirty.is_ok()) {
     return zx::ok(std::move(data_page));
   }
-  if (dirty_or.error_value() != ZX_ERR_NOT_FOUND) {
-    return dirty_or.take_error();
+  if (dirty.error_value() != ZX_ERR_NOT_FOUND) {
+    return dirty.take_error();
   }
   pgoff_t offset = safemath::CheckMul(data_page->GetKey(), kBlockSize).ValueOrDie();
   VmoRead(offset, Page::Size());

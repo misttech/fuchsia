@@ -90,11 +90,11 @@ zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
       block_count = slice_size * slice_count / kBlockSize;
     }
 
-    auto bcache_or = Bcache::Create(std::move(device), block_count, kBlockSize);
-    if (bcache_or.is_error()) {
-      return bcache_or.take_error();
+    zx::result bcache = Bcache::Create(std::move(device), block_count, kBlockSize);
+    if (bcache.is_error()) {
+      return bcache.take_error();
     }
-    bcaches.push_back(std::move(bcache_or.value()));
+    bcaches.push_back(std::move(bcache.value()));
     total_block_count += block_count;
   }
   if (total_block_count < kMinVolumeSize / kBlockSize) {
@@ -119,19 +119,19 @@ zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
 
 zx::result<std::unique_ptr<BcacheMapper>> CreateBcacheMapper(
     fidl::ClientEnd<fuchsia_hardware_block::Block> device_channel, bool allocate) {
-  auto device_or = block_client::RemoteBlockDevice::Create(
+  zx::result device = block_client::RemoteBlockDevice::Create(
       fidl::ClientEnd<fuchsia_hardware_block_volume::Volume>{device_channel.TakeChannel()});
-  if (device_or.is_error()) {
+  if (device.is_error()) {
     FX_LOGS(ERROR) << "could not initialize block device";
-    return device_or.take_error();
+    return device.take_error();
   }
 
-  auto bc_or = CreateBcacheMapper(std::move(*device_or), allocate);
-  if (bc_or.is_error()) {
+  zx::result bc = CreateBcacheMapper(std::move(*device), allocate);
+  if (bc.is_error()) {
     FX_LOGS(ERROR) << "could not create block cache";
-    return bc_or.take_error();
+    return bc.take_error();
   }
-  return bc_or.take_value();
+  return bc.take_value();
 }
 
 Bcache::Bcache(std::unique_ptr<block_client::BlockDevice> device, uint64_t max_blocks,
@@ -304,9 +304,9 @@ zx::result<vmoid_t> BcacheMapper::FindFreeVmoId() {
 }
 
 zx_status_t BcacheMapper::BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out) {
-  zx::result<vmoid_t> vmoid_or = FindFreeVmoId();
-  if (vmoid_or.is_error()) {
-    return vmoid_or.error_value();
+  zx::result<vmoid_t> vmoid = FindFreeVmoId();
+  if (vmoid.is_error()) {
+    return vmoid.error_value();
   }
 
   std::vector<storage::Vmoid> new_vmoids;
@@ -324,8 +324,8 @@ zx_status_t BcacheMapper::BlockAttachVmo(const zx::vmo& vmo, storage::Vmoid* out
     new_vmoids.push_back(std::move(vmoid));
   }
 
-  vmoid_tree_.insert(std::make_pair(vmoid_or.value(), std::move(new_vmoids)));
-  *out = storage::Vmoid(vmoid_or.value());
+  vmoid_tree_.insert(std::make_pair(vmoid.value(), std::move(new_vmoids)));
+  *out = storage::Vmoid(vmoid.value());
   cleanup.cancel();
   return ZX_OK;
 }

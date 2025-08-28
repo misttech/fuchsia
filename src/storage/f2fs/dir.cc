@@ -146,20 +146,20 @@ zx::result<DentryInfo> Dir::FindInLevel(unsigned int level, std::string_view nam
 
   ZX_DEBUG_ASSERT(level <= kMaxDirHashDepth);
 
-  nbucket = DirBuckets(level, dir_level_);
+  nbucket = DirBuckets(level, GetDirLevel());
   nblock = BucketBlocks(level);
 
-  bidx = DirBlockIndex(level, dir_level_, namehash % nbucket);
+  bidx = DirBlockIndex(level, GetDirLevel(), namehash % nbucket);
   end_block = bidx + nblock;
 
   for (; bidx < end_block; ++bidx) {
     // no need to allocate new dentry pages to all the indices
-    auto dentry_page_or = FindDataPage(bidx);
-    if (dentry_page_or.is_error()) {
+    zx::result dentry_page = FindDataPage(bidx);
+    if (dentry_page.is_error()) {
       continue;
     }
-    if (auto info = FindInBlock((*dentry_page_or).CopyRefPtr(), name, namehash); info.is_ok()) {
-      *res_page = (*dentry_page_or).release();
+    if (auto info = FindInBlock((*dentry_page).CopyRefPtr(), name, namehash); info.is_ok()) {
+      *res_page = (*dentry_page).release();
       return info;
     }
   }
@@ -180,7 +180,7 @@ zx::result<DentryInfo> Dir::FindEntryOnDevice(std::string_view name, fbl::RefPtr
   }
 
   *res_page = nullptr;
-  uint64_t max_depth = current_depth_;
+  uint64_t max_depth = GetCurrentDepth();
   for (; current.level < max_depth; ++current.level) {
     if (auto info = FindInLevel(current.level, name, current.hash, res_page); info.is_ok()) {
       return info;
@@ -263,7 +263,7 @@ void Dir::SetLink(const DentryInfo &info, fbl::RefPtr<Page> &page, VnodeF2fs *vn
       GetDirEntryCache().UpdateDirEntry(vnode->GetNameView(),
                                         {vnode->GetKey(), info.page_index, info.bit_pos});
     }
-    time_->Update<Timestamps::ModificationTime>();
+    UpdateTime<Timestamps::ModificationTime>();
   }
   SetDirty();
 }
@@ -297,10 +297,10 @@ void Dir::UpdateParentMetadata(VnodeF2fs *vnode, uint64_t current_depth) {
   }
 
   vnode->SetParentNid(Ino());
-  time_->Update<Timestamps::ModificationTime>();
+  UpdateTime<Timestamps::ModificationTime>();
 
-  if (current_depth_ != current_depth) {
-    current_depth_ = current_depth;
+  if (GetCurrentDepth() != current_depth) {
+    SetCurrentDepth(current_depth);
     SetFlag(InodeInfoFlag::kUpdateDir);
   }
 
@@ -335,9 +335,9 @@ zx_status_t Dir::AddLink(std::string_view name, VnodeF2fs *vnode) {
   });
 
   if (TestFlag(InodeInfoFlag::kInlineDentry)) {
-    if (auto converted_or = AddInlineEntry(name, vnode); converted_or.is_error()) {
-      return converted_or.error_value();
-    } else if (!converted_or.value()) {
+    if (zx::result converted = AddInlineEntry(name, vnode); converted.is_error()) {
+      return converted.error_value();
+    } else if (!converted.value()) {
       return ZX_OK;
     }
   }
@@ -346,15 +346,15 @@ zx_status_t Dir::AddLink(std::string_view name, VnodeF2fs *vnode) {
   f2fs_hash_t dentry_hash = DentryHash(name);
   uint16_t namelen = safemath::checked_cast<uint16_t>(name.length());
   size_t slots = GetDentrySlots(namelen);
-  for (uint64_t current_depth = current_depth_; current_depth < kMaxDirHashDepth; ++level) {
+  for (uint64_t current_depth = GetCurrentDepth(); current_depth < kMaxDirHashDepth; ++level) {
     // Increase the depth, if required
     if (level == current_depth) {
       ++current_depth;
     }
 
-    uint32_t nbucket = DirBuckets(level, dir_level_);
+    uint32_t nbucket = DirBuckets(level, GetDirLevel());
     uint32_t nblock = BucketBlocks(level);
-    uint64_t bidx = DirBlockIndex(level, dir_level_, (dentry_hash % nbucket));
+    uint64_t bidx = DirBlockIndex(level, GetDirLevel(), (dentry_hash % nbucket));
 
     for (uint64_t block = bidx; block <= (bidx + nblock - 1); ++block) {
       LockedPage dentry_page;
@@ -429,7 +429,7 @@ void Dir::DeleteEntry(const DentryInfo &info, fbl::RefPtr<Page> &page, VnodeF2fs
 
   GetDirEntryCache().RemoveDirEntry(remove_name);
 
-  time_->Update<Timestamps::ModificationTime>();
+  UpdateTime<Timestamps::ModificationTime>();
 
   if (!vnode || !vnode->IsDir()) {
     SetDirty();
@@ -592,7 +592,7 @@ zx_status_t Dir::Readdir(fs::VdirCookie *cookie, void *dirents, size_t len, size
 void Dir::VmoRead(uint64_t offset, uint64_t length) TA_NO_THREAD_SAFETY_ANALYSIS {
   ZX_ASSERT_MSG(0,
                 "Unexpected ZX_PAGER_VMO_READ request to dir node[%s:%u]. offset: %lu, size: %lu",
-                name_.data(), GetKey(), offset, length);
+                GetNameViewUnsafe().data(), GetKey(), offset, length);
 }
 
 zx::result<PageBitmap> Dir::GetBitmap(fbl::RefPtr<Page> dentry_page) {
@@ -621,11 +621,11 @@ zx::result<LockedPage> Dir::FindDataPage(pgoff_t index, bool do_read) {
     }
   }
 
-  zx::result addrs_or = FindAddresses(index, 1);
-  if (addrs_or.is_error()) {
-    return addrs_or.take_error();
+  zx::result addrs = FindAddresses(index, 1);
+  if (addrs.is_error()) {
+    return addrs.take_error();
   }
-  block_t addr = addrs_or->front();
+  block_t addr = addrs->front();
   if (addr == kNullAddr) {
     return zx::error(ZX_ERR_NOT_FOUND);
   } else if (addr == kNewAddr) {
@@ -649,15 +649,15 @@ zx::result<LockedPage> Dir::FindDataPage(pgoff_t index, bool do_read) {
 }
 
 zx_status_t Dir::GetLockedDataPage(pgoff_t index, LockedPage *out) {
-  auto page_or = GetLockedDataPages(index, index + 1);
-  if (page_or.is_error()) {
-    return page_or.error_value();
+  zx::result page = GetLockedDataPages(index, index + 1);
+  if (page.is_error()) {
+    return page.error_value();
   }
-  if (page_or->empty() || page_or.value()[0] == nullptr) {
+  if (page->empty() || page.value()[0] == nullptr) {
     return ZX_ERR_NOT_FOUND;
   }
 
-  *out = std::move(page_or.value()[0]);
+  *out = std::move(page.value()[0]);
   return ZX_OK;
 }
 
@@ -665,12 +665,12 @@ zx::result<std::vector<LockedPage>> Dir::GetLockedDataPages(const pgoff_t start,
                                                             const size_t size) {
   std::vector<LockedPage> pages(size);
   std::vector<pgoff_t> offsets;
-  auto found = FindLockedPages(start, start + size);
-  auto target = found.begin();
+  auto found_pages = FindLockedPages(start, start + size);
+  auto target = found_pages.begin();
   bool uptodate = true;
   for (size_t i = 0; i < size; ++i) {
     size_t offset = i + start;
-    if (target != found.end() && offset == (*target)->GetKey()) {
+    if (target != found_pages.end() && offset == (*target)->GetKey()) {
       pages[i] = std::move(*target);
       ++target;
     }
@@ -684,14 +684,14 @@ zx::result<std::vector<LockedPage>> Dir::GetLockedDataPages(const pgoff_t start,
     return zx::ok(std::move(pages));
   }
 
-  auto addrs_or = FindAddresses(offsets);
-  if (addrs_or.is_error()) {
-    return addrs_or.take_error();
+  zx::result found_addrs = FindAddresses(offsets);
+  if (found_addrs.is_error()) {
+    return found_addrs.take_error();
   }
 
   // Build addrs to request read I/Os for valid blocks.
   std::vector<block_t> addrs(size, kNullAddr);
-  auto addr = addrs_or->begin();
+  auto addr = found_addrs->begin();
   bool need_read_op = false;
   for (auto offset : offsets) {
     size_t index = offset - start;
@@ -713,7 +713,7 @@ zx::result<std::vector<LockedPage>> Dir::GetLockedDataPages(const pgoff_t start,
     return zx::ok(std::move(pages));
   }
 
-  auto status = fs()->MakeReadOperations(pages, addrs, PageType::kData);
+  zx::result status = fs()->MakeReadOperations(pages, addrs, PageType::kData);
   if (status.is_error()) {
     return status.take_error();
   }
@@ -721,12 +721,12 @@ zx::result<std::vector<LockedPage>> Dir::GetLockedDataPages(const pgoff_t start,
 }
 
 zx::result<LockedPage> Dir::FindGcPage(pgoff_t index) {
-  zx::result page_or = FindDataPage(index);
-  if (page_or.is_error()) {
-    return page_or.take_error();
+  zx::result page = FindDataPage(index);
+  if (page.is_error()) {
+    return page.take_error();
   }
-  page_or->WaitOnWriteback();
-  return page_or;
+  page->WaitOnWriteback();
+  return page;
 }
 
 }  // namespace f2fs

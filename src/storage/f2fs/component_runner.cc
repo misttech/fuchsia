@@ -95,8 +95,8 @@ zx::result<> ComponentRunner::Configure(std::unique_ptr<BcacheMapper> bcache,
     return status.take_error();
   }
 
-  auto readonly_or = options.GetValue(MountOption::kReadOnly);
-  SetReadonly(*readonly_or != 0);
+  zx::result readonly = options.GetValue(MountOption::kReadOnly);
+  SetReadonly(*readonly != 0);
 
   auto f2fs = F2fs::Create(dispatcher_, std::move(bcache), options, this);
   if (f2fs.is_error()) {

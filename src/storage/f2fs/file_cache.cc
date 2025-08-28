@@ -95,14 +95,14 @@ bool LockedPage::ClearDirtyForIo() {
 }
 
 zx_status_t Page::GetVmo() {
-  auto committed_or = VmoOpLock();
-  ZX_ASSERT(committed_or.is_ok());
-  if (!committed_or.value()) {
+  zx::result committed = VmoOpLock();
+  ZX_ASSERT(committed.is_ok());
+  if (!*committed) {
     ZX_DEBUG_ASSERT(!IsDirty());
     ZX_DEBUG_ASSERT(!IsWriteback());
     ClearUptodate();
   }
-  return committed_or.status_value();
+  return committed.status_value();
 }
 
 void LockedPage::Invalidate() {
@@ -232,11 +232,11 @@ zx::result<> LockedPage::SetVmoDirty() {
     return zx::ok();
   }
   size_t start_offset = safemath::CheckMul(page_->GetKey(), kBlockSize).ValueOrDie();
-  if (auto dirty_or = page_->GetVmoManager().DirtyPages(*page_->fs()->vfs(), start_offset,
-                                                        start_offset + Page::Size());
-      dirty_or.is_error()) {
-    ZX_DEBUG_ASSERT(dirty_or.error_value() == ZX_ERR_NOT_FOUND);
-    return dirty_or.take_error();
+  if (zx::result dirty = page_->GetVmoManager().DirtyPages(*page_->fs()->vfs(), start_offset,
+                                                           start_offset + Page::Size());
+      dirty.is_error()) {
+    ZX_DEBUG_ASSERT(dirty.error_value() == ZX_ERR_NOT_FOUND);
+    return dirty.take_error();
   }
   return zx::ok();
 }
@@ -333,13 +333,12 @@ fbl::RefPtr<Page> FileCache::AddNewPageUnsafe(const pgoff_t index) {
 }
 
 zx_status_t FileCache::GetLockedPage(const pgoff_t index, LockedPage *out) {
-  LockedPage locked_page;
   std::lock_guard tree_lock(tree_lock_);
-  auto locked_page_or = GetLockedPagesUnsafe(index, index + 1);
-  if (locked_page_or.is_error()) {
-    return locked_page_or.error_value();
+  zx::result locked_page = GetLockedPagesUnsafe(index, index + 1);
+  if (locked_page.is_error()) {
+    return locked_page.error_value();
   }
-  *out = std::move(locked_page_or->front());
+  *out = std::move(locked_page->front());
   return ZX_OK;
 }
 
@@ -361,11 +360,11 @@ zx::result<LockedPage> FileCache::GetLockedPageFromRawUnsafe(Page *raw_page) {
     return zx::error(ZX_ERR_UNAVAILABLE);
   }
   // Try to make LockedPage from |page|.
-  auto locked_page_or = GetLockedPageUnsafe(std::move(page));
-  if (locked_page_or.is_error()) {
-    return locked_page_or.take_error();
+  zx::result locked_page = GetLockedPageUnsafe(std::move(page));
+  if (locked_page.is_error()) {
+    return locked_page.take_error();
   }
-  return zx::ok(*std::move(locked_page_or));
+  return zx::ok(*std::move(locked_page));
 }
 
 zx::result<LockedPage> FileCache::GetLockedPageUnsafe(fbl::RefPtr<Page> page) {
@@ -429,12 +428,12 @@ std::vector<LockedPage> FileCache::FindLockedPagesUnsafe(pgoff_t start, pgoff_t 
       pages.push_back(std::move(locked_page));
     } else {
       auto prev_key = current->GetKey();
-      auto locked_page_or = GetLockedPageFromRawUnsafe(current.CopyPointer());
-      if (locked_page_or.is_error()) {
+      zx::result locked_page = GetLockedPageFromRawUnsafe(current.CopyPointer());
+      if (locked_page.is_error()) {
         current = page_tree_.lower_bound(prev_key);
         continue;
       }
-      pages.push_back(std::move(*locked_page_or));
+      pages.push_back(std::move(*locked_page));
     }
     ++current;
   }

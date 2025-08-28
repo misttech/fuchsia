@@ -277,7 +277,7 @@ class VnodeF2fs : public fs::PagedVnode,
   bool ClearDirty();
   bool IsDirty();
 
-  void SetInlineXattrAddrs(const uint16_t addrs) { inline_xattr_size_ = addrs; }
+  void SetInlineXattrSize(const uint16_t num_addrs) { inline_xattr_size_ = num_addrs; }
 
   // Release-acquire ordering for Set/ClearFlag and TestFlag
   bool SetFlag(const InodeInfoFlag &flag) {
@@ -334,6 +334,17 @@ class VnodeF2fs : public fs::PagedVnode,
   block_t GetReadBlockSize(block_t start_block, block_t req_size, block_t end_block);
   zx_status_t InitFileCacheUnsafe(uint64_t nbytes = 0) __TA_REQUIRES(mutex_);
   void CleanupCache();
+  uint8_t GetDirLevel() const { return dir_level_; }
+  template <typename T>
+  const timespec &GetTime() const __TA_REQUIRES_SHARED(mutex_) {
+    ZX_DEBUG_ASSERT(time_);
+    return time_->Get<T>();
+  }
+  template <typename T>
+  void UpdateTime() __TA_REQUIRES(mutex_) {
+    ZX_DEBUG_ASSERT(time_);
+    return time_->Update<T>();
+  }
 
   // for testing
   zx_status_t SetExtendedAttribute(XattrIndex index, std::string_view name,
@@ -347,16 +358,9 @@ class VnodeF2fs : public fs::PagedVnode,
   FileCache &GetFileCache() { return *file_cache_; }
   void ResetFileCache() { file_cache_->Reset(); }
   ExtentTree &GetExtentTree() { return *extent_tree_; }
-  uint8_t GetDirLevel() TA_NO_THREAD_SAFETY_ANALYSIS { return dir_level_; }
   bool HasPagedVmo() TA_NO_THREAD_SAFETY_ANALYSIS { return paged_vmo().is_valid(); }
-  void ClearAdvise(const FAdvise bit) TA_NO_THREAD_SAFETY_ANALYSIS {
-    advise_ &= ~GetMask(1, static_cast<size_t>(bit));
-  }
-  void SetDirLevel(const uint8_t level) TA_NO_THREAD_SAFETY_ANALYSIS { dir_level_ = level; }
-  template <typename T>
-  const timespec &GetTime() const __TA_REQUIRES_SHARED(mutex_) {
-    return time_->Get<T>();
-  }
+  void ClearAdvise(const FAdvise bit) { advise_ &= ~GetMask(1, static_cast<size_t>(bit)); }
+  void SetDirLevel(const uint8_t level) { dir_level_ = level; }
   pgoff_t Writeback(bool is_sync = false, bool is_reclaim = false)
       __TA_EXCLUDES(f2fs::GetGlobalLock()) {
     fs::SharedLock lock(f2fs::GetGlobalLock());
@@ -403,7 +407,12 @@ class VnodeF2fs : public fs::PagedVnode,
   zx_status_t ClonePagedVmo(fuchsia_io::wire::VmoFlags flags, size_t size, zx::vmo *out_vmo)
       __TA_REQUIRES(mutex_);
   void SetPagedVmoName() __TA_REQUIRES(mutex_);
+  const SuperblockInfo &GetSuperblockInfo() const { return superblock_info_; }
+  uint16_t GetExtraSize() const { return extra_isize_; }
+  uint64_t GetCurrentDepth() const __TA_REQUIRES_SHARED(mutex_) { return current_depth_; }
+  void SetCurrentDepth(uint64_t depth) __TA_REQUIRES(mutex_) { current_depth_ = depth; }
 
+ private:
   DirEntryCache dir_entry_cache_;
   std::unique_ptr<VmoManager> vmo_manager_;
   std::unique_ptr<FileCache> file_cache_;
@@ -418,6 +427,7 @@ class VnodeF2fs : public fs::PagedVnode,
   block_t num_blocks_ __TA_GUARDED(mutex_) = 0;
   uint32_t nlink_ __TA_GUARDED(mutex_) = 0;
   uint64_t current_depth_ __TA_GUARDED(mutex_) = 1;  // use only in directory structure
+  std::unique_ptr<Timestamps> time_ __TA_GUARDED(mutex_);
 
   std::atomic<block_t> dirty_pages_ = 0;  // # of dirty dentry/data pages
   std::atomic<ino_t> parent_ino_ = kNullIno;
@@ -434,7 +444,6 @@ class VnodeF2fs : public fs::PagedVnode,
   uint8_t dir_level_ = 0;                   // use for dentry level for large dir
   // TODO: revisit thread annotation when xattr is available.
   nid_t xattr_nid_ = 0;  // node id that contains xattrs
-  std::optional<Timestamps> time_ __TA_GUARDED(mutex_) = std::nullopt;
 
   std::unique_ptr<ExtentTree> extent_tree_;
 

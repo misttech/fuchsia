@@ -93,13 +93,13 @@ void F2fs::StartMemoryPressureWatcher() {
 zx::result<std::unique_ptr<F2fs>> F2fs::Create(FuchsiaDispatcher dispatcher,
                                                std::unique_ptr<f2fs::BcacheMapper> bc,
                                                const MountOptions& options, PlatformVfs* vfs) {
-  zx::result<std::unique_ptr<Superblock>> superblock_or;
-  if (superblock_or = LoadSuperblock(*bc); superblock_or.is_error()) {
-    return superblock_or.take_error();
+  zx::result<std::unique_ptr<Superblock>> superblock;
+  if (superblock = LoadSuperblock(*bc); superblock.is_error()) {
+    return superblock.take_error();
   }
 
   auto fs = std::make_unique<F2fs>(dispatcher, std::move(bc), options, vfs);
-  if (zx_status_t status = fs->LoadSuper(std::move(*superblock_or)); status != ZX_OK) {
+  if (zx_status_t status = fs->LoadSuper(std::move(*superblock)); status != ZX_OK) {
     FX_LOGS(ERROR) << "failed to initialize fs." << status;
     return zx::error(status);
   }
@@ -412,11 +412,11 @@ zx_status_t F2fs::LoadSuper(std::unique_ptr<Superblock> sb) {
   }
 
   // read root inode and dentry
-  zx::result vnode_or = GetVnode(superblock_info_->GetRootIno());
-  if (vnode_or.is_error()) {
-    return vnode_or.status_value();
+  zx::result vnode = GetVnode(superblock_info_->GetRootIno());
+  if (vnode.is_error()) {
+    return vnode.status_value();
   }
-  root_vnode_ = std::move(*vnode_or);
+  root_vnode_ = std::move(*vnode);
 
   // root vnode is corrupted
   if (!root_vnode_->IsDir() || !root_vnode_->GetBlockCount() || !root_vnode_->GetSize()) {
@@ -538,16 +538,16 @@ zx::result<fbl::RefPtr<VnodeF2fs>> F2fs::GetVnode(ino_t ino, LockedPage* inode_p
 }
 
 zx::result<fbl::RefPtr<VnodeF2fs>> F2fs::CreateNewVnode(umode_t mode, std::optional<gid_t> gid) {
-  zx::result ino_or = node_manager_->AllocNid();
-  if (ino_or.is_error()) {
-    return ino_or.take_error();
+  zx::result ino = node_manager_->AllocNid();
+  if (ino.is_error()) {
+    return ino.take_error();
   }
 
   fbl::RefPtr<VnodeF2fs> vnode;
   if (S_ISDIR(mode)) {
-    vnode = fbl::MakeRefCounted<Dir>(this, *ino_or, mode, gid);
+    vnode = fbl::MakeRefCounted<Dir>(this, *ino, mode, gid);
   } else {
-    vnode = fbl::MakeRefCounted<File>(this, *ino_or, mode, gid);
+    vnode = fbl::MakeRefCounted<File>(this, *ino, mode, gid);
   }
 
   vnode_cache_->Add(vnode.get());
@@ -656,11 +656,11 @@ zx::result<uint32_t> F2fs::StartGc(uint32_t needed) {
       gc_type = GcType::kFgGc;
     }
 
-    auto segno_or = segment_manager_->GetGcVictim(gc_type, CursegType::kNoCheckType);
-    if (segno_or.is_error()) {
+    auto segno = segment_manager_->GetGcVictim(gc_type, CursegType::kNoCheckType);
+    if (segno.is_error()) {
       break;
     }
-    if (auto err = segment_manager_->DoGarbageCollect(*segno_or, gc_type); err != ZX_OK) {
+    if (auto err = segment_manager_->DoGarbageCollect(*segno, gc_type); err != ZX_OK) {
       return zx::error(err);
     }
     ++prefree;

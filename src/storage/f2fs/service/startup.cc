@@ -24,26 +24,26 @@ void StartupService::Start(StartRequestView request, StartCompleter::Sync& compl
     if (!configure_)
       return zx::error(ZX_ERR_BAD_STATE);
 
-    auto bc_or = f2fs::CreateBcacheMapper(std::move(request->device));
-    if (bc_or.is_error()) {
-      return bc_or.take_error();
+    zx::result bc = f2fs::CreateBcacheMapper(std::move(request->device));
+    if (bc.is_error()) {
+      return bc.take_error();
     }
 
     // TODO: parse option from request->options.
-    return configure_(std::move(*bc_or), MountOptions{});
+    return configure_(*std::move(bc), MountOptions{});
   }());
 }
 
 void StartupService::Format(FormatRequestView request, FormatCompleter::Sync& completer) {
   completer.Reply([&]() -> zx::result<> {
-    auto bc_or = f2fs::CreateBcacheMapper(std::move(request->device), true);
-    if (bc_or.is_error()) {
-      return bc_or.take_error();
+    zx::result bc = f2fs::CreateBcacheMapper(std::move(request->device), true);
+    if (bc.is_error()) {
+      return bc.take_error();
     }
 
     f2fs::MkfsOptions mkfs_options;
     // TODO: parse option from request->options.
-    if (auto status = f2fs::Mkfs(mkfs_options, std::move(*bc_or)); status.is_error()) {
+    if (auto status = f2fs::Mkfs(mkfs_options, *std::move(bc)); status.is_error()) {
       FX_LOGS(ERROR) << "failed to format f2fs: " << status.status_string();
       return status.take_error();
     }
@@ -53,16 +53,16 @@ void StartupService::Format(FormatRequestView request, FormatCompleter::Sync& co
 
 void StartupService::Check(CheckRequestView request, CheckCompleter::Sync& completer) {
   completer.Reply([&]() -> zx::result<> {
-    auto bc_or = f2fs::CreateBcacheMapper(std::move(request->device));
-    if (bc_or.is_error()) {
-      return bc_or.take_error();
+    zx::result bc = f2fs::CreateBcacheMapper(std::move(request->device));
+    if (bc.is_error()) {
+      return bc.take_error();
     }
 
     // TODO: parse option from request->options.
     FsckOptions fsck_options;
-    fsck_options.repair = bc_or->IsWritable();
+    fsck_options.repair = bc->IsWritable();
 
-    if (zx_status_t status = Fsck(std::move(*bc_or), fsck_options); status != ZX_OK) {
+    if (zx_status_t status = Fsck(*std::move(bc), fsck_options); status != ZX_OK) {
       FX_PLOGS(ERROR, status) << "Fsck failed";
       return zx::error(status);
     }

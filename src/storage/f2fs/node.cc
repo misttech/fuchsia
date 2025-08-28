@@ -299,11 +299,11 @@ zx_status_t NodeManager::GetNodeInfo(nid_t nid, NodeInfo &out) {
   });
   if (i < 0) {
     // Fill NodeInfo from nat page
-    zx::result page_or = GetCurrentNatPage(start_nid);
-    if (page_or.is_error()) {
-      return page_or.error_value();
+    zx::result page = GetCurrentNatPage(start_nid);
+    if (page.is_error()) {
+      return page.error_value();
     }
-    NatBlock *nat_blk = page_or->GetAddress<NatBlock>();
+    NatBlock *nat_blk = page->GetAddress<NatBlock>();
     ne = nat_blk->entries[nid - start_nid];
 
     NodeInfoFromRawNat(out, ne);
@@ -321,11 +321,11 @@ zx::result<LockedPage> NodeManager::FindLockedDnodePage(NodePath &path) {
   }
 
   for (size_t i = 0; i < level; ++i) {
-    auto page_or = GetNextNodePage(node_page, offset[i]);
-    if (page_or.is_error()) {
-      return page_or.take_error();
+    zx::result page = GetNextNodePage(node_page, offset[i]);
+    if (page.is_error()) {
+      return page.take_error();
     }
-    node_page = std::move(*page_or);
+    node_page = std::move(*page);
   }
   return zx::ok(std::move(node_page));
 }
@@ -350,28 +350,28 @@ zx::result<LockedPage> NodeManager::GetLockedDnodePage(NodePath &node_path, bool
     nid_t nid = parent.GetPage<NodePage>().GetNid(offset[i]);
     if (!nid) {
       // alloc new node
-      auto nid_or = AllocNid();
-      if (nid_or.is_error()) {
+      zx::result allocated = AllocNid();
+      if (allocated.is_error()) {
         return zx::error(ZX_ERR_NO_SPACE);
       }
-      nid = *nid_or;
-      auto page_or = NewNodePage(node_path.ino, nid, is_dir, noffset[i + 1]);
-      if (page_or.is_error()) {
+      nid = *allocated;
+      zx::result page = NewNodePage(node_path.ino, nid, is_dir, noffset[i + 1]);
+      if (page.is_error()) {
         AddFreeNid(nid);
-        return page_or.take_error();
+        return page.take_error();
       }
       new_nids.push_back(nid);
-      node_page = std::move(*page_or);
+      node_page = std::move(*page);
       parent.WaitOnWriteback();
       parent.GetPage<NodePage>().SetNid(offset[i], nid);
       parent.SetDirty();
       ++node_path.num_new_nodes;
     } else {
-      auto page_or = GetNextNodePage(parent, offset[i]);
-      if (page_or.is_error()) {
-        return page_or.take_error();
+      zx::result page = GetNextNodePage(parent, offset[i]);
+      if (page.is_error()) {
+        return page.take_error();
       }
-      node_page = std::move(*page_or);
+      node_page = std::move(*page);
     }
     parent = std::move(node_page);
   }
@@ -508,14 +508,14 @@ zx::result<LockedPage> NodeManager::GetNextNodePage(LockedPage &node_page, size_
     nids.push_back(nid);
   }
   ZX_DEBUG_ASSERT(nids.size());
-  auto pages_or = GetNodePages(nids);
-  if (pages_or.is_error()) {
-    return pages_or.take_error();
+  zx::result pages = GetNodePages(nids);
+  if (pages.is_error()) {
+    return pages.take_error();
   }
-  if (!(*pages_or)[0]->IsUptodate()) {
+  if (!(*pages)[0]->IsUptodate()) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
-  return zx::ok(std::move((*pages_or)[0]));
+  return zx::ok(std::move((*pages)[0]));
 }
 
 pgoff_t NodeManager::FsyncNodePages(nid_t ino) {
@@ -597,7 +597,7 @@ void NodeManager::RemoveFreeNid(nid_t nid) {
 }
 
 void NodeManager::RemoveFreeNidUnsafe(nid_t nid) {
-  if (auto state_or = LookupFreeNidList(nid); state_or.is_ok()) {
+  if (zx::result status = LookupFreeNidList(nid); status.is_ok()) {
     free_nid_tree_.erase(nid);
   }
 }
@@ -631,9 +631,9 @@ void NodeManager::BuildFreeNids() {
 
     RaNatPages(nid);
     while (true) {
-      zx::result page_or = GetCurrentNatPage(nid);
-      ZX_ASSERT(page_or.is_ok());
-      free_nids += ScanNatPage(**page_or, nid);
+      zx::result page = GetCurrentNatPage(nid);
+      ZX_ASSERT(page.is_ok());
+      free_nids += ScanNatPage(**page, nid);
 
       nid += (kNatEntryPerBlock - (nid % kNatEntryPerBlock));
       if (nid >= max_nid_) {
@@ -829,11 +829,11 @@ zx_status_t NodeManager::FlushNatEntries() {
 
               // get nat block with dirty flag, increased reference
               // count, mapped and lock
-              auto page_or = GetNextNatPage(start_nid);
-              if (page_or.is_error()) {
-                return page_or.error_value();
+              zx::result next = GetNextNatPage(start_nid);
+              if (next.is_error()) {
+                return next.error_value();
               }
-              page = std::move(*page_or);
+              page = std::move(*next);
               nat_blk = page->GetAddress<NatBlock>();
             }
 

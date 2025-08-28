@@ -321,19 +321,18 @@ zx::result<TraverseResult> FsckWorker::CheckNodeBlock(const Inode *inode, nid_t 
   auto node_block_ptr = std::make_unique<BlockBuffer<Node>>();
   auto &node_block = *node_block_ptr;
   // Read the node block.
-  auto node_info_or = ReadNodeBlock(nid, node_block);
-  if (node_info_or.is_error()) {
-    return node_info_or.take_error();
+  zx::result node_info = ReadNodeBlock(nid, node_block);
+  if (node_info.is_error()) {
+    return node_info.take_error();
   }
 
   // Validate the node block.
-  auto node_info = std::move(*node_info_or);
-  if (auto status = ValidateNodeBlock(*node_block, node_info, ftype, ntype); status != ZX_OK) {
+  if (auto status = ValidateNodeBlock(*node_block, *node_info, ftype, ntype); status != ZX_OK) {
     return zx::error(status);
   }
 
   // Update fsck context.
-  auto do_traverse = UpdateContext(*node_block, node_info, ftype, ntype);
+  auto do_traverse = UpdateContext(*node_block, *node_info, ftype, ntype);
   if (do_traverse.is_error()) {
     return do_traverse.take_error();
   }
@@ -347,7 +346,7 @@ zx::result<TraverseResult> FsckWorker::CheckNodeBlock(const Inode *inode, nid_t 
         ret = zx::ok(TraverseResult{0, 0});
         break;
       case NodeType::kTypeDirectNode:
-        ret = TraverseDnodeBlock(inode, *node_block, node_info, ftype);
+        ret = TraverseDnodeBlock(inode, *node_block, *node_info, ftype);
         break;
       case NodeType::kTypeIndirectNode:
         ret = TraverseIndirectNodeBlock(inode, *node_block, ftype);
@@ -382,12 +381,12 @@ zx::result<TraverseResult> FsckWorker::TraverseInodeBlock(const Node &node_block
   ZX_ASSERT(LeToCpu(node_block.footer.nid) == node_info.nid);
   ZX_ASSERT(LeToCpu(node_block.footer.ino) == node_info.ino);
 
-  zx::result<bool> xattr_block_or = CheckXattrBlock(nid, node_block.i.i_xattr_nid);
-  if (xattr_block_or.is_error()) {
-    return xattr_block_or.take_error();
+  zx::result xattr_block = CheckXattrBlock(nid, node_block.i.i_xattr_nid);
+  if (xattr_block.is_error()) {
+    return xattr_block.take_error();
   }
 
-  if (*xattr_block_or) {
+  if (*xattr_block) {
     ++block_count;
   }
 
@@ -1088,14 +1087,13 @@ zx_status_t FsckWorker::RepairCheckpoint() {
 zx_status_t FsckWorker::RepairInodeLinks() {
   for (auto const [nid, links] : fsck_.inode_link_map) {
     BlockBuffer<Node> node_block;
-    auto node_info_or = ReadNodeBlock(nid, node_block);
-    if (node_info_or.is_error()) {
+    zx::result node_info = ReadNodeBlock(nid, node_block);
+    if (node_info.is_error()) {
       return ZX_ERR_INTERNAL;
     }
 
-    auto node_info = std::move(*node_info_or);
     node_block->i.i_links = CpuToLe(links.actual_links);
-    if (WriteBlock(&node_block, node_info.blk_addr) != ZX_OK) {
+    if (WriteBlock(&node_block, node_info->blk_addr) != ZX_OK) {
       return ZX_ERR_INTERNAL;
     }
   }
@@ -1105,14 +1103,13 @@ zx_status_t FsckWorker::RepairInodeLinks() {
 zx_status_t FsckWorker::RepairDataExistFlag() {
   for (auto const nid : fsck_.data_exist_flag_set) {
     BlockBuffer<Node> node_block;
-    auto node_info_or = ReadNodeBlock(nid, node_block);
-    if (node_info_or.is_error()) {
+    zx::result node_info = ReadNodeBlock(nid, node_block);
+    if (node_info.is_error()) {
       return ZX_ERR_INTERNAL;
     }
 
-    auto node_info = std::move(*node_info_or);
     node_block->i.i_inline |= kDataExist;
-    if (WriteBlock(&node_block, node_info.blk_addr) != ZX_OK) {
+    if (WriteBlock(&node_block, node_info->blk_addr) != ZX_OK) {
       return ZX_ERR_INTERNAL;
     }
   }
@@ -1303,12 +1300,12 @@ void FsckWorker::PrintCheckpointInfo() {
 }
 
 zx_status_t FsckWorker::GetValidSuperblock() {
-  if (auto sb_or = LoadSuperblock(*bc_); sb_or.is_error()) {
+  if (zx::result superblock = LoadSuperblock(*bc_); superblock.is_error()) {
     return ZX_ERR_NOT_FOUND;
   } else {
     MountOptions options;
     options.SetValue(MountOption::kActiveLogs, kNrCursegType);
-    superblock_info_ = std::make_unique<SuperblockInfo>(std::move(*sb_or));
+    superblock_info_ = std::make_unique<SuperblockInfo>(std::move(*superblock));
   }
   return ZX_OK;
 }
@@ -1373,13 +1370,13 @@ zx_status_t FsckWorker::GetValidCheckpoint() {
   for (auto checkpoint_start :
        {LeToCpu(raw_sb.cp_blkaddr),
         LeToCpu(raw_sb.cp_blkaddr) + (1 << LeToCpu(raw_sb.log_blocks_per_seg))}) {
-    auto checkpoint_or = ValidateCheckpoint(checkpoint_start);
-    if (checkpoint_or.is_error()) {
+    zx::result checkpoint = ValidateCheckpoint(checkpoint_start);
+    if (checkpoint.is_error()) {
       continue;
     }
 
-    if (current.is_error() || VerAfter(checkpoint_or->second, current->second)) {
-      current = std::move(checkpoint_or);
+    if (current.is_error() || VerAfter(checkpoint->second, current->second)) {
+      current = std::move(checkpoint);
       cp_start_blk_no = checkpoint_start;
     }
   }

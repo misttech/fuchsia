@@ -81,13 +81,13 @@ zx_status_t F2fs::CheckOrphanSpace() {
 }
 
 zx::result<> F2fs::PurgeOrphanInode(nid_t ino) {
-  zx::result vnode_or = GetVnode(ino);
-  if (vnode_or.is_error()) {
-    return vnode_or.take_error();
+  zx::result vnode = GetVnode(ino);
+  if (vnode.is_error()) {
+    return vnode.take_error();
   }
-  vnode_or->ClearLinkCount();
-  vnode_or->SetOrphan();
-  // Here, |*vnode_or| should be deleted to purge its metadata.
+  vnode->ClearLinkCount();
+  vnode->SetOrphan();
+  // Here, |*vnode| should be deleted to purge its metadata.
   return zx::ok();
 }
 
@@ -177,12 +177,12 @@ zx_status_t F2fs::ValidateCheckpoint(block_t cp_addr, uint64_t *version, LockedP
     }
     // get the version number
     Checkpoint *cp_block = cp_page->GetAddress<Checkpoint>();
-    zx::result crc_or = superblock_info_->GetCrcFromCheckpointBlock(cp_block);
-    if (crc_or.is_error()) {
-      return crc_or.error_value();
+    zx::result crc = superblock_info_->GetCrcFromCheckpointBlock(cp_block);
+    if (crc.is_error()) {
+      return crc.error_value();
     }
 
-    if (!F2fsCrcValid(*crc_or, cp_block, LeToCpu(cp_block->checksum_offset))) {
+    if (!F2fsCrcValid(*crc, cp_block, LeToCpu(cp_block->checksum_offset))) {
       return ZX_ERR_BAD_STATE;
     }
     // The checkpoint header and its copy are located in the first and last blocks on a checkpoint
@@ -348,8 +348,8 @@ zx_status_t F2fs::DoCheckpoint(bool is_umount) {
   GetWriter().ScheduleWriteBlocks();
 
   auto &ckpt_block = superblock_info.GetCheckpointBlock();
-  if (auto last_nid_or = GetNodeManager().GetNextFreeNid(); last_nid_or.is_ok()) {
-    ckpt_block->next_free_nid = CpuToLe(*last_nid_or);
+  if (zx::result last_nid = GetNodeManager().GetNextFreeNid(); last_nid.is_ok()) {
+    ckpt_block->next_free_nid = CpuToLe(*last_nid);
   } else {
     ckpt_block->next_free_nid = CpuToLe(GetNodeManager().GetNextScanNid());
   }

@@ -106,9 +106,9 @@ void XattrOperator::Remove(uint32_t offset) {
 
 zx::result<size_t> XattrOperator::Lookup(XattrIndex index, std::string_view name,
                                          std::span<uint8_t> out) {
-  zx::result<uint32_t> offset_or = FindSlotOffset(index, name);
-  if (offset_or.is_error()) {
-    return offset_or.take_error();
+  zx::result<uint32_t> offset = FindSlotOffset(index, name);
+  if (offset.is_error()) {
+    return offset.take_error();
   }
 
   if (out.empty()) {
@@ -116,11 +116,11 @@ zx::result<size_t> XattrOperator::Lookup(XattrIndex index, std::string_view name
   }
 
   XattrEntryInfo entry_info;
-  std::memcpy(&entry_info, &buffer_->at(*offset_or), sizeof(XattrEntryInfo));
+  std::memcpy(&entry_info, &buffer_->at(*offset), sizeof(XattrEntryInfo));
 
-  ZX_ASSERT(*offset_or + entry_info.Slots() <= buffer_->size());
+  ZX_ASSERT(*offset + entry_info.Slots() <= buffer_->size());
   std::vector<char> entry(entry_info.Size());
-  std::memcpy(entry.data(), &buffer_->at(*offset_or), entry.size());
+  std::memcpy(entry.data(), &buffer_->at(*offset), entry.size());
   std::memcpy(out.data(), &entry.at(entry_info.ValueOffset()), entry_info.value_size);
   return zx::ok(entry_info.value_size);
 }

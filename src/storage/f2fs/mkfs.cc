@@ -308,11 +308,11 @@ zx_status_t MkfsWorker::PrepareSuperblock() {
   super_block_.segment_count_main =
       CpuToLe(LeToCpu(super_block_.section_count) * params_.segs_per_sec);
 
-  zx::result total_zones_or = SetSpace();
-  if (total_zones_or.is_error()) {
+  zx::result total_zones = SetSpace();
+  if (total_zones.is_error()) {
     FX_LOGS(WARNING) << "failed to set sections for op and reserved space. "
-                     << total_zones_or.status_string();
-    return total_zones_or.error_value();
+                     << total_zones.status_string();
+    return total_zones.error_value();
   }
 
   memcpy(super_block_.uuid, uuid::Uuid::Generate().bytes(), 16);
@@ -331,7 +331,7 @@ zx_status_t MkfsWorker::PrepareSuperblock() {
 
   if (params_.heap) {
     params_.cur_seg[static_cast<int>(CursegType::kCursegHotNode)] =
-        (*total_zones_or - 1) * params_.segs_per_sec * params_.secs_per_zone +
+        (*total_zones - 1) * params_.segs_per_sec * params_.secs_per_zone +
         ((params_.secs_per_zone - 1) * params_.segs_per_sec);
     params_.cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] =
         params_.cur_seg[static_cast<int>(CursegType::kCursegHotNode)] -

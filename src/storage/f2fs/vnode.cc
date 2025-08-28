@@ -50,7 +50,7 @@ VnodeF2fs::VnodeF2fs(F2fs *fs, ino_t ino, umode_t mode, LockedPage node_page)
 
   timespec cur;
   clock_gettime(CLOCK_REALTIME, &cur);
-  time_ = Timestamps(UpdateMode::kRelative, cur, cur, cur, cur);
+  time_ = std::make_unique<Timestamps>(UpdateMode::kRelative, cur, cur, cur, cur);
 
   generation_ = superblock_info_.GetNextGeneration();
   superblock_info_.IncNextGeneration();
@@ -61,7 +61,7 @@ VnodeF2fs::VnodeF2fs(F2fs *fs, ino_t ino, umode_t mode, LockedPage node_page)
 
   if (superblock_info_.TestOpt(MountOption::kInlineDentry) && IsDir()) {
     SetFlag(InodeInfoFlag::kInlineDentry);
-    SetInlineXattrAddrs(kInlineXattrAddrs);
+    SetInlineXattrSize(kInlineXattrAddrs);
   }
   InitFileCache();
 }
@@ -101,11 +101,11 @@ bool VnodeF2fs::IsMeta() const { return ino_ == superblock_info_.GetMetaIno(); }
 
 zx_status_t VnodeF2fs::GetVmo(fuchsia_io::wire::VmoFlags flags, zx::vmo *out_vmo) {
   std::lock_guard lock(mutex_);
-  auto size_or = CreatePagedVmo(GetSize());
-  if (size_or.is_error()) {
-    return size_or.error_value();
+  zx::result size = CreatePagedVmo(GetSize());
+  if (size.is_error()) {
+    return size.error_value();
   }
-  return ClonePagedVmo(flags, *size_or, out_vmo);
+  return ClonePagedVmo(flags, *size, out_vmo);
 }
 
 zx::result<size_t> VnodeF2fs::CreatePagedVmo(size_t size) {
@@ -167,7 +167,7 @@ zx_status_t VnodeF2fs::ClonePagedVmo(fuchsia_io::wire::VmoFlags flags, size_t si
 
 void VnodeF2fs::VmoRead(uint64_t offset, uint64_t length) {
   zx::vmo vmo;
-  auto size_or = CreateAndPopulateVmo(vmo, offset, length);
+  zx::result size = CreateAndPopulateVmo(vmo, offset, length);
   fs::SharedLock rlock(mutex_);
   if (unlikely(!paged_vmo())) {
     // Races with calling FreePagedVmo() on another thread can result in stale read requests. Ignore
@@ -175,12 +175,12 @@ void VnodeF2fs::VmoRead(uint64_t offset, uint64_t length) {
     FX_LOGS(WARNING) << "A pager-backed VMO is already freed: " << ZX_ERR_NOT_FOUND;
     return;
   }
-  if (unlikely(size_or.is_error())) {
-    return ReportPagerErrorUnsafe(ZX_PAGER_VMO_READ, offset, length, size_or.error_value());
+  if (unlikely(size.is_error())) {
+    return ReportPagerErrorUnsafe(ZX_PAGER_VMO_READ, offset, length, size.error_value());
   }
   std::optional vfs = this->vfs();
   ZX_DEBUG_ASSERT(vfs.has_value());
-  if (auto ret = vfs.value().get().SupplyPages(paged_vmo(), offset, *size_or, std::move(vmo), 0);
+  if (auto ret = vfs.value().get().SupplyPages(paged_vmo(), offset, *size, std::move(vmo), 0);
       ret.is_error()) {
     ReportPagerErrorUnsafe(ZX_PAGER_VMO_READ, offset, length, ret.error_value());
   }
@@ -566,26 +566,25 @@ zx_status_t VnodeF2fs::TruncateHoleUnsafe(pgoff_t pg_start, pgoff_t pg_end, bool
     pages = InvalidatePages(pg_start, pg_end);
   }
   for (pgoff_t index = pg_start; index < pg_end; ++index) {
-    auto path_or = GetNodePath(index);
-    if (path_or.is_error()) {
-      if (path_or.error_value() == ZX_ERR_NOT_FOUND) {
+    zx::result path = GetNodePath(index);
+    if (path.is_error()) {
+      if (path.error_value() == ZX_ERR_NOT_FOUND) {
         continue;
       }
-      return path_or.error_value();
+      return path.error_value();
     }
-    auto page_or = fs()->GetNodeManager().GetLockedDnodePage(*path_or, IsDir());
-    if (page_or.is_error()) {
-      if (page_or.error_value() == ZX_ERR_NOT_FOUND) {
+    zx::result dnode_page = fs()->GetNodeManager().GetLockedDnodePage(*path, IsDir());
+    if (dnode_page.is_error()) {
+      if (dnode_page.error_value() == ZX_ERR_NOT_FOUND) {
         continue;
       }
-      return page_or.error_value();
+      return dnode_page.error_value();
     }
-    AddBlocksUnsafe(path_or->num_new_nodes);
-    LockedPage dnode_page = std::move(*page_or);
-    size_t ofs_in_dnode = GetOfsInDnode(*path_or);
-    NodePage &node = dnode_page.GetPage<NodePage>();
+    AddBlocksUnsafe(path->num_new_nodes);
+    size_t ofs_in_dnode = GetOfsInDnode(*path);
+    NodePage &node = (*dnode_page).GetPage<NodePage>();
     if (node.GetBlockAddr(ofs_in_dnode) != kNullAddr) {
-      TruncateDnodeAddrs(dnode_page, ofs_in_dnode, 1);
+      TruncateDnodeAddrs(*dnode_page, ofs_in_dnode, 1);
     }
   }
   return ZX_OK;
@@ -628,15 +627,15 @@ void VnodeF2fs::PurgeDataBlocks() {
 
 zx_status_t VnodeF2fs::InvalidateBlocks(size_t from) {
   {
-    auto path_or = GetNodePath(from);
-    if (path_or.is_error()) {
-      return path_or.error_value();
+    zx::result path = GetNodePath(from);
+    if (path.is_error()) {
+      return path.error_value();
     }
-    auto node_page_or = fs()->GetNodeManager().FindLockedDnodePage(*path_or);
-    if (node_page_or.is_ok()) {
-      size_t ofs_in_node = GetOfsInDnode(*path_or);
+    zx::result node_page = fs()->GetNodeManager().FindLockedDnodePage(*path);
+    if (node_page.is_ok()) {
+      size_t ofs_in_node = GetOfsInDnode(*path);
       // If |from| starts from inode or the middle of dnode, purge the addrs in the start dnode.
-      NodePage &node = (*node_page_or).GetPage<NodePage>();
+      NodePage &node = (*node_page).GetPage<NodePage>();
       if (ofs_in_node || node.IsInode()) {
         size_t count = 0;
         if (node.IsInode()) {
@@ -644,11 +643,11 @@ zx_status_t VnodeF2fs::InvalidateBlocks(size_t from) {
         } else {
           count = safemath::CheckSub(kAddrsPerBlock, ofs_in_node).ValueOrDie();
         }
-        TruncateDnodeAddrs(*node_page_or, ofs_in_node, count);
+        TruncateDnodeAddrs(*node_page, ofs_in_node, count);
         from += count;
       }
-    } else if (node_page_or.error_value() != ZX_ERR_NOT_FOUND) {
-      return node_page_or.error_value();
+    } else if (node_page.error_value() != ZX_ERR_NOT_FOUND) {
+      return node_page.error_value();
     }
   }
   // Invalidate the rest nodes.
@@ -672,7 +671,7 @@ zx_status_t VnodeF2fs::InitFileCacheUnsafe(uint64_t nbytes) {
     return ZX_ERR_ALREADY_EXISTS;
   }
   if (IsReg()) {
-    if (auto size_or = CreatePagedVmo(nbytes); size_or.is_ok()) {
+    if (zx::result size = CreatePagedVmo(nbytes); size.is_ok()) {
       zx_rights_t right = ZX_RIGHTS_BASIC | ZX_RIGHT_MAP | ZX_RIGHTS_PROPERTY | ZX_RIGHT_READ |
                           ZX_RIGHT_WRITE | ZX_RIGHT_RESIZE;
       ZX_ASSERT(paged_vmo().duplicate(right, &vmo) == ZX_OK);
@@ -712,7 +711,7 @@ void VnodeF2fs::InitializeFromPage(LockedPage &node_page) {
                           static_cast<time_t>(LeToCpu(inode.i_ctime_nsec))};
   const timespec mtime = {static_cast<time_t>(LeToCpu(inode.i_mtime)),
                           static_cast<time_t>(LeToCpu(inode.i_mtime_nsec))};
-  time_ = Timestamps(UpdateMode::kRelative, atime, btime, mtime, mtime);
+  time_ = std::make_unique<Timestamps>(UpdateMode::kRelative, atime, btime, mtime, mtime);
   generation_ = LeToCpu(inode.i_generation);
   SetParentNid(LeToCpu(inode.i_pino));
   current_depth_ = LeToCpu(inode.i_current_depth);
@@ -1026,11 +1025,11 @@ zx::result<size_t> VnodeF2fs::TruncateNodes(nid_t start_nid, size_t nofs, size_t
     child_nofs = nofs + ofs * kInvalidatedNids + 1;
     for (size_t i = ofs; i < kNidsPerBlock; ++i) {
       child_nid = LeToCpu(indirect_node.nid[i]);
-      auto freed_or = TruncateNodes(child_nid, child_nofs, 0, depth - 1);
-      if (freed_or.is_error()) {
-        return freed_or.take_error();
+      zx::result num_freed_nodes = TruncateNodes(child_nid, child_nofs, 0, depth - 1);
+      if (num_freed_nodes.is_error()) {
+        return num_freed_nodes.take_error();
       }
-      ZX_DEBUG_ASSERT(*freed_or == kInvalidatedNids);
+      ZX_DEBUG_ASSERT(*num_freed_nodes == kInvalidatedNids);
       ZX_DEBUG_ASSERT(!page.GetPage<NodePage>().IsInode());
       page.WaitOnWriteback();
       page.GetPage<NodePage>().SetNid(i, 0);
@@ -1142,30 +1141,30 @@ zx_status_t VnodeF2fs::TruncateInodeBlocks(pgoff_t from) {
 
   bool run = true;
   while (run) {
-    zx::result<size_t> freed_or;
+    zx::result<size_t> freed;
     nid_t nid = LeToCpu(inode.i_nid[offsets_in_node[0] - kNodeDir1Block]);
     switch (offsets_in_node[0]) {
       case kNodeDir1Block:
       case kNodeDir2Block:
-        freed_or = TruncateDnode(nid);
+        freed = TruncateDnode(nid);
         break;
 
       case kNodeInd1Block:
       case kNodeInd2Block:
-        freed_or = TruncateNodes(nid, node_offset, offsets_in_node[1], 2);
+        freed = TruncateNodes(nid, node_offset, offsets_in_node[1], 2);
         break;
 
       case kNodeDIndBlock:
-        freed_or = TruncateNodes(nid, node_offset, offsets_in_node[1], 3);
+        freed = TruncateNodes(nid, node_offset, offsets_in_node[1], 3);
         run = false;
         break;
 
       default:
         ZX_ASSERT(0);
     }
-    if (freed_or.is_error()) {
-      ZX_DEBUG_ASSERT(freed_or.error_value() != ZX_ERR_NOT_FOUND);
-      return freed_or.error_value();
+    if (freed.is_error()) {
+      ZX_DEBUG_ASSERT(freed.error_value() != ZX_ERR_NOT_FOUND);
+      return freed.error_value();
     }
     if (offsets_in_node[1] == 0) {
       inode.i_nid[offsets_in_node[0] - kNodeDir1Block] = 0;
@@ -1173,7 +1172,7 @@ zx_status_t VnodeF2fs::TruncateInodeBlocks(pgoff_t from) {
     }
     offsets_in_node[1] = 0;
     ++offsets_in_node[0];
-    node_offset += *freed_or;
+    node_offset += *freed;
   }
   return ZX_OK;
 }
@@ -1204,11 +1203,11 @@ zx_status_t VnodeF2fs::InitInodeMetadata() {
 zx_status_t VnodeF2fs::InitInodeMetadataUnsafe() {
   LockedPage ipage;
   if (TestFlag(InodeInfoFlag::kNewInode)) {
-    zx::result page_or = NewInodePage();
-    if (page_or.is_error()) {
-      return page_or.error_value();
+    zx::result page = NewInodePage();
+    if (page.is_error()) {
+      return page.error_value();
     }
-    ipage = *std::move(page_or);
+    ipage = *std::move(page);
 #if 0  // porting needed
     // err = f2fs_init_acl(inode, dir);
     // if (err) {
@@ -1243,12 +1242,12 @@ zx::result<LockedPage> VnodeF2fs::NewInodePage() {
     return zx::error(ZX_ERR_ACCESS_DENIED);
   }
   // allocate inode page for new inode
-  auto page_or = fs()->GetNodeManager().NewNodePage(Ino(), Ino(), IsDir(), 0);
-  if (page_or.is_error()) {
-    return page_or.take_error();
+  zx::result page = fs()->GetNodeManager().NewNodePage(Ino(), Ino(), IsDir(), 0);
+  if (page.is_error()) {
+    return page.take_error();
   }
   SetDirty();
-  return zx::ok(std::move(*page_or));
+  return zx::ok(std::move(*page));
 }
 
 // TODO: Consider using a global lock as below
@@ -1350,22 +1349,22 @@ zx_status_t VnodeF2fs::SetExtendedAttribute(XattrIndex index, std::string_view n
 
   XattrOperator xattr_operator(ipage, xattr_page);
 
-  zx::result<uint32_t> offset_or = xattr_operator.FindSlotOffset(index, name);
+  zx::result<uint32_t> offset = xattr_operator.FindSlotOffset(index, name);
 
   if (option == XattrOption::kCreate) {
-    if (offset_or.is_ok()) {
+    if (offset.is_ok()) {
       return ZX_ERR_ALREADY_EXISTS;
     }
   }
 
   if (option == XattrOption::kReplace) {
-    if (offset_or.is_error()) {
+    if (offset.is_error()) {
       return ZX_ERR_NOT_FOUND;
     }
   }
 
-  if (offset_or.is_ok()) {
-    xattr_operator.Remove(*offset_or);
+  if (offset.is_ok()) {
+    xattr_operator.Remove(*offset);
   }
 
   if (!value.empty()) {
@@ -1377,20 +1376,19 @@ zx_status_t VnodeF2fs::SetExtendedAttribute(XattrIndex index, std::string_view n
   uint32_t xattr_block_start_offset =
       TestFlag(InodeInfoFlag::kInlineXattr) ? kInlineXattrAddrs : kXattrHeaderSlots;
   if (xattr_nid_ == 0 && xattr_operator.GetEndOffset() > xattr_block_start_offset) {
-    zx::result<nid_t> nid_or = fs()->GetNodeManager().AllocNid();
-    if (nid_or.is_error()) {
+    zx::result<nid_t> nid = fs()->GetNodeManager().AllocNid();
+    if (nid.is_error()) {
       return ZX_ERR_NO_SPACE;
     }
-    xattr_nid_ = *nid_or;
+    xattr_nid_ = *nid;
 
-    zx::result<LockedPage> page_or =
-        fs()->GetNodeManager().NewNodePage(ino_, xattr_nid_, IsDir(), 0);
-    if (page_or.is_error()) {
+    zx::result<LockedPage> page = fs()->GetNodeManager().NewNodePage(ino_, xattr_nid_, IsDir(), 0);
+    if (page.is_error()) {
       fs()->GetNodeManager().AddFreeNid(xattr_nid_);
       xattr_nid_ = 0;
-      return page_or.error_value();
+      return page.error_value();
     }
-    xattr_page = std::move(*page_or);
+    xattr_page = std::move(*page);
 
     AddBlocks(1);
     SetDirty();

@@ -296,13 +296,12 @@ zx::result<std::pair<nid_t, block_t>> SegmentManager::CheckDnode(const Summary &
   fs_->GetNodeManager().CheckNidRange(dnode_info.ino);
 
   fbl::RefPtr<NodePage> node_page = fbl::RefPtr<NodePage>::Downcast(locked_page.CopyRefPtr());
-  zx::result vnode_or =
-      fs_->GetVnode(dnode_info.ino, node_page->IsInode() ? &locked_page : nullptr);
-  if (vnode_or.is_error()) {
-    return vnode_or.take_error();
+  zx::result vnode = fs_->GetVnode(dnode_info.ino, node_page->IsInode() ? &locked_page : nullptr);
+  if (vnode.is_error()) {
+    return vnode.take_error();
   }
 
-  auto start_bidx = node_page->StartBidxOfNode(vnode_or->GetAddrsPerInode());
+  auto start_bidx = node_page->StartBidxOfNode(vnode->GetAddrsPerInode());
   block_t source_blkaddr = node_page->GetBlockAddr(ofs_in_node);
   if (source_blkaddr != blkaddr) {
     return zx::error(ZX_ERR_BAD_STATE);
@@ -338,33 +337,33 @@ zx_status_t SegmentManager::GcDataSegment(const SummaryBlock &sum_blk, unsigned 
 
     uint32_t ofs_in_node = LeToCpu(entry->ofs_in_node);
 
-    zx::result vnode_or = fs_->GetVnode(ino);
-    if (vnode_or.is_error()) {
+    zx::result vnode = fs_->GetVnode(ino);
+    if (vnode.is_error()) {
       continue;
     }
     const size_t index = start_bidx + ofs_in_node;
-    if (!vnode_or->IsValid()) {
+    if (!vnode->IsValid()) {
       // When victim blocks belong to an orphan, we load and keep the corresponding pages instead of
       // migration. They are available until there is no connection to the orphan or kernel reclaims
       // the pages.
-      vnode_or->TruncateHole(index, index + 1, false);
+      vnode->TruncateHole(index, index + 1, false);
       continue;
     }
     // Migrate blocks only when their vnodes are valid.
-    zx::result page_or = vnode_or->FindGcPage(index);
-    if (page_or.is_error()) {
+    zx::result page = vnode->FindGcPage(index);
+    if (page.is_error()) {
       continue;
     }
-    page_or->SetDirty();
-    page_or->SetColdData();
+    page->SetDirty();
+    page->SetColdData();
     if (gc_type == GcType::kFgGc) {
-      block_t addr = vnode_or->GetBlockAddr(*page_or);
+      block_t addr = vnode->GetBlockAddr(*page);
       if (addr == kNullAddr) {
         continue;
       }
       ZX_DEBUG_ASSERT(addr != kNewAddr);
-      (*page_or).SetWriteback(addr);
-      pages_to_disk.push_back((*page_or).release());
+      (*page).SetWriteback(addr);
+      pages_to_disk.push_back((*page).release());
     }
   }
   if (!pages_to_disk.is_empty()) {

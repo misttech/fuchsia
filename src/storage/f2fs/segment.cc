@@ -270,9 +270,8 @@ bool SegmentManager::NeedSSR() { return !superblock_info_.TestOpt(MountOption::k
 
 zx::result<> SegmentManager::GetSsrSegment(CursegType type) {
   CursegInfo *curseg = CURSEG_I(type);
-  if (zx::result segno_or = GetVictimByDefault(GcType::kBgGc, type, AllocMode::kSSR);
-      segno_or.is_ok()) {
-    curseg->next_segno = segno_or.value();
+  if (zx::result segno = GetVictimByDefault(GcType::kBgGc, type, AllocMode::kSSR); segno.is_ok()) {
+    curseg->next_segno = segno.value();
     return zx::ok();
   }
 
@@ -305,9 +304,9 @@ zx::result<> SegmentManager::GetSsrSegment(CursegType type) {
     if (current == type) {
       continue;
     }
-    if (zx::result segno_or = GetVictimByDefault(GcType::kBgGc, current, AllocMode::kSSR);
-        segno_or.is_ok()) {
-      curseg->next_segno = segno_or.value();
+    if (zx::result segno = GetVictimByDefault(GcType::kBgGc, current, AllocMode::kSSR);
+        segno.is_ok()) {
+      curseg->next_segno = segno.value();
       return zx::ok();
     }
   }
@@ -1410,11 +1409,11 @@ zx_status_t SegmentManager::FlushSitEntries() {
           end = start + kSitEntryPerBlock - 1;
 
           // read sit block that will be updated
-          auto page_or = GetNextSitPage(start);
-          if (page_or.is_error()) {
-            return page_or.error_value();
+          zx::result next = GetNextSitPage(start);
+          if (next.is_error()) {
+            return next.error_value();
           }
-          page = std::move(*page_or);
+          page = *std::move(next);
         }
 
         // udpate entry in SIT block
@@ -1551,12 +1550,10 @@ zx_status_t SegmentManager::BuildSitEntries() {
       }
     }
     if (!got_it) {
-      LockedPage page;
-      auto page_or = GetCurrentSitPage(start);
-      if (page_or.is_error()) {
-        return page_or.error_value();
+      zx::result page = GetCurrentSitPage(start);
+      if (page.is_error()) {
+        return page.error_value();
       }
-      page = std::move(*page_or);
       sit_blk = page->GetAddress<SitBlock>();
       sit = sit_blk->entries[SitEntryOffset(start)];
     }

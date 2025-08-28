@@ -128,15 +128,15 @@ zx::result<bool> VmoManager::CreateAndLockVmo(const pgoff_t index, void **out)
   if (index >= size_in_blocks_) {
     size_in_blocks_ = fbl::round_up(index + 1, node_size_in_blocks_);
   }
-  auto vmo_node_or = GetVmoNodeUnsafe(GetVmoNodeKey(index));
-  ZX_DEBUG_ASSERT(vmo_node_or.is_ok());
+  zx::result vmo_node = GetVmoNodeUnsafe(GetVmoNodeKey(index));
+  ZX_DEBUG_ASSERT(vmo_node.is_ok());
   if (out) {
-    auto addr_or = vmo_node_or.value()->GetAddress(GetOffsetInVmoNode(index));
-    if (addr_or.is_ok()) {
-      *out = reinterpret_cast<void *>(*addr_or);
+    zx::result addr = vmo_node.value()->GetAddress(GetOffsetInVmoNode(index));
+    if (addr.is_ok()) {
+      *out = reinterpret_cast<void *>(*addr);
     }
   }
-  return vmo_node_or.value()->Lock(GetOffsetInVmoNode(index));
+  return vmo_node.value()->Lock(GetOffsetInVmoNode(index));
 }
 
 zx_status_t VmoManager::UnlockVmo(const pgoff_t index) {
@@ -145,13 +145,13 @@ zx_status_t VmoManager::UnlockVmo(const pgoff_t index) {
   }
   fs::SharedLock tree_lock(mutex_);
   ZX_ASSERT(index < size_in_blocks_);
-  auto vmo_node_or = FindVmoNodeUnsafe(GetVmoNodeKey(index));
-  if (vmo_node_or.is_ok()) {
-    if (auto status = vmo_node_or.value()->Unlock(index); status != ZX_OK) {
+  zx::result vmo_node = FindVmoNodeUnsafe(GetVmoNodeKey(index));
+  if (vmo_node.is_ok()) {
+    if (auto status = vmo_node.value()->Unlock(index); status != ZX_OK) {
       return status;
     }
   }
-  return vmo_node_or.status_value();
+  return vmo_node.status_value();
 }
 
 void VmoManager::Reset(bool shutdown) {
@@ -181,13 +181,13 @@ zx::result<VmoMapping *> VmoManager::GetVmoNodeUnsafe(const pgoff_t index) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
   VmoMapping *vmo_node = nullptr;
-  if (auto vmo_node_or = FindVmoNodeUnsafe(index); vmo_node_or.is_error()) {
+  if (zx::result node = FindVmoNodeUnsafe(index); node.is_error()) {
     std::unique_ptr<VmoMapping> new_node;
     new_node = std::make_unique<VmoDiscardable>(index, node_size_in_blocks_);
     vmo_node = new_node.get();
     vmo_tree_.insert(std::move(new_node));
   } else {
-    vmo_node = vmo_node_or.value();
+    vmo_node = node.value();
   }
   return zx::ok(vmo_node);
 }
@@ -205,9 +205,9 @@ void VmoManager::ZeroBlocks(fs::PagedVfs &vfs, pgoff_t start, pgoff_t end) {
   if (start < end) {
     pgoff_t end_node = fbl::round_up(end, node_size_in_blocks_);
     for (pgoff_t i = start; i < end_node; i = GetVmoNodeKey(i + node_size_in_blocks_)) {
-      if (auto vmo_node_or = FindVmoNodeUnsafe(GetVmoNodeKey(i)); vmo_node_or.is_ok()) {
+      if (zx::result vmo_node = FindVmoNodeUnsafe(GetVmoNodeKey(i)); vmo_node.is_ok()) {
         size_t len = std::min(end - i, node_size_in_blocks_ - GetOffsetInVmoNode(i));
-        ZX_ASSERT(vmo_node_or->Zero(GetOffsetInVmoNode(i), len) == ZX_OK);
+        ZX_ASSERT(vmo_node->Zero(GetOffsetInVmoNode(i), len) == ZX_OK);
       }
     }
   }

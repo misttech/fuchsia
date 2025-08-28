@@ -14,25 +14,25 @@
 namespace f2fs {
 
 zx_status_t Dir::DoCreate(std::string_view name, umode_t mode, fbl::RefPtr<fs::Vnode> *out) {
-  auto vnode_or = fs()->CreateNewVnode(safemath::CheckOr<umode_t>(S_IFREG, mode).ValueOrDie());
-  if (vnode_or.is_error()) {
-    return vnode_or.error_value();
+  zx::result vnode = fs()->CreateNewVnode(safemath::CheckOr<umode_t>(S_IFREG, mode).ValueOrDie());
+  if (vnode.is_error()) {
+    return vnode.error_value();
   }
 
-  vnode_or->SetName(name);
-  if (!superblock_info_.TestOpt(MountOption::kDisableExtIdentify)) {
-    vnode_or->SetColdFile();
+  vnode->SetName(name);
+  if (!GetSuperblockInfo().TestOpt(MountOption::kDisableExtIdentify)) {
+    vnode->SetColdFile();
   }
 
-  if (zx_status_t err = AddLink(name, (*vnode_or).get()); err != ZX_OK) {
-    vnode_or->ClearLinkCount();
-    vnode_or->ClearDirty();
-    fs()->GetNodeManager().AddFreeNid(vnode_or->Ino());
+  if (zx_status_t err = AddLink(name, (*vnode).get()); err != ZX_OK) {
+    vnode->ClearLinkCount();
+    vnode->ClearDirty();
+    fs()->GetNodeManager().AddFreeNid(vnode->Ino());
     return err;
   }
 
-  vnode_or->ClearFlag(InodeInfoFlag::kNewInode);
-  *out = *std::move(vnode_or);
+  vnode->ClearFlag(InodeInfoFlag::kNewInode);
+  *out = *std::move(vnode);
   return ZX_OK;
 }
 
@@ -44,18 +44,18 @@ zx::result<> Dir::RecoverLink(VnodeF2fs &vnode) {
     AddLink(vnode.GetNameView(), &vnode);
   } else if (vnode.Ino() != dir_entry->ino) {
     // Remove old dentry
-    auto old_vnode_or = fs()->GetVnode(dir_entry->ino);
-    if (old_vnode_or.is_error()) {
-      return old_vnode_or.take_error();
+    zx::result old_vnode = fs()->GetVnode(dir_entry->ino);
+    if (old_vnode.is_error()) {
+      return old_vnode.take_error();
     }
-    DeleteEntry(*dir_entry, page, (*old_vnode_or).get());
+    DeleteEntry(*dir_entry, page, (*old_vnode).get());
     ZX_ASSERT(AddLink(vnode.GetNameView(), &vnode) == ZX_OK);
   }
   return zx::ok();
 }
 
 zx_status_t Dir::Link(std::string_view name, fbl::RefPtr<fs::Vnode> new_child) {
-  if (superblock_info_.TestCpFlags(CpFlag::kCpErrorFlag)) {
+  if (GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag)) {
     return ZX_ERR_BAD_STATE;
   }
 
@@ -92,12 +92,12 @@ zx_status_t Dir::DoLookup(std::string_view name, fbl::RefPtr<fs::Vnode> *out) {
   if (!fs::IsValidName(name)) {
     return ZX_ERR_INVALID_ARGS;
   }
-  if (auto ino_or = LookUpEntries(name); ino_or.is_ok()) {
-    auto vnode_or = fs()->GetVnode(*ino_or);
-    if (vnode_or.is_error()) {
-      return vnode_or.error_value();
+  if (zx::result ino = LookUpEntries(name); ino.is_ok()) {
+    zx::result vnode = fs()->GetVnode(*ino);
+    if (vnode.is_error()) {
+      return vnode.error_value();
     }
-    *out = *std::move(vnode_or);
+    *out = *std::move(vnode);
     return ZX_OK;
   }
   return ZX_ERR_NOT_FOUND;
@@ -159,21 +159,21 @@ zx_status_t Dir::DoUnlink(VnodeF2fs *vnode, std::string_view name) {
 #endif
 
 zx_status_t Dir::Mkdir(std::string_view name, umode_t mode, fbl::RefPtr<fs::Vnode> *out) {
-  auto vnode_or = fs()->CreateNewVnode(safemath::CheckOr<umode_t>(S_IFDIR, mode).ValueOrDie());
-  if (vnode_or.is_error()) {
-    return vnode_or.error_value();
+  zx::result vnode = fs()->CreateNewVnode(safemath::CheckOr<umode_t>(S_IFDIR, mode).ValueOrDie());
+  if (vnode.is_error()) {
+    return vnode.error_value();
   }
-  vnode_or->SetName(name);
-  vnode_or->SetFlag(InodeInfoFlag::kIncLink);
-  if (zx_status_t err = AddLink(name, (*vnode_or).get()); err != ZX_OK) {
-    vnode_or->ClearFlag(InodeInfoFlag::kIncLink);
-    vnode_or->ClearLinkCount();
-    vnode_or->ClearDirty();
-    fs()->GetNodeManager().AddFreeNid(vnode_or->Ino());
+  vnode->SetName(name);
+  vnode->SetFlag(InodeInfoFlag::kIncLink);
+  if (zx_status_t err = AddLink(name, (*vnode).get()); err != ZX_OK) {
+    vnode->ClearFlag(InodeInfoFlag::kIncLink);
+    vnode->ClearLinkCount();
+    vnode->ClearDirty();
+    fs()->GetNodeManager().AddFreeNid(vnode->Ino());
     return err;
   }
-  vnode_or->ClearFlag(InodeInfoFlag::kNewInode);
-  *out = *std::move(vnode_or);
+  vnode->ClearFlag(InodeInfoFlag::kNewInode);
+  *out = *std::move(vnode);
   return ZX_OK;
 }
 
@@ -222,23 +222,23 @@ zx_status_t Dir::Rmdir(Dir *vnode, std::string_view name) {
 
 zx::result<bool> Dir::IsSubdir(Dir *possible_dir) {
   VnodeF2fs *vnode = possible_dir;
-  while (vnode->Ino() != superblock_info_.GetRootIno()) {
+  while (vnode->Ino() != GetSuperblockInfo().GetRootIno()) {
     if (vnode->Ino() == Ino()) {
       return zx::ok(true);
     }
 
-    auto parent_or = fs()->GetVnode(vnode->GetParentNid());
-    if (parent_or.is_error()) {
-      return parent_or.take_error();
+    zx::result parent = fs()->GetVnode(vnode->GetParentNid());
+    if (parent.is_error()) {
+      return parent.take_error();
     }
-    vnode = (*parent_or).get();
+    vnode = (*parent).get();
   }
   return zx::ok(false);
 }
 
 zx_status_t Dir::Rename(fbl::RefPtr<fs::Vnode> _newdir, std::string_view oldname,
                         std::string_view newname, bool src_must_be_dir, bool dst_must_be_dir) {
-  if (superblock_info_.TestCpFlags(CpFlag::kCpErrorFlag)) {
+  if (GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag)) {
     return ZX_ERR_BAD_STATE;
   }
 
@@ -263,12 +263,11 @@ zx_status_t Dir::Rename(fbl::RefPtr<fs::Vnode> _newdir, std::string_view oldname
     }
 
     nid_t old_ino = old_entry->ino;
-    auto old_vnode_or = fs()->GetVnode(old_ino);
-    if (old_vnode_or.is_error()) {
-      return old_vnode_or.error_value();
+    zx::result old_vnode = fs()->GetVnode(old_ino);
+    if (old_vnode.is_error()) {
+      return old_vnode.error_value();
     }
 
-    fbl::RefPtr<VnodeF2fs> old_vnode = *std::move(old_vnode_or);
     ZX_DEBUG_ASSERT(old_vnode->IsSameName(oldname));
 
     if (!old_vnode->IsDir() && (src_must_be_dir || dst_must_be_dir)) {
@@ -280,12 +279,12 @@ zx_status_t Dir::Rename(fbl::RefPtr<fs::Vnode> _newdir, std::string_view oldname
     fbl::RefPtr<Page> old_dir_page;
     zx::result<DentryInfo> old_dir_entry = zx::error(ZX_ERR_NOT_FOUND);
     if (old_vnode->IsDir()) {
-      old_dir_entry = fbl::RefPtr<Dir>::Downcast(old_vnode)->GetParentDentryInfo(&old_dir_page);
+      old_dir_entry = fbl::RefPtr<Dir>::Downcast(*old_vnode)->GetParentDentryInfo(&old_dir_page);
       if (old_dir_entry.is_error()) {
         return ZX_ERR_IO;
       }
 
-      auto is_subdir = fbl::RefPtr<Dir>::Downcast(old_vnode)->IsSubdir(new_dir.get());
+      auto is_subdir = fbl::RefPtr<Dir>::Downcast(*old_vnode)->IsSubdir(new_dir.get());
       if (is_subdir.is_error()) {
         return is_subdir.error_value();
       }
@@ -304,12 +303,11 @@ zx_status_t Dir::Rename(fbl::RefPtr<fs::Vnode> _newdir, std::string_view oldname
 
     if (new_entry.is_ok()) {
       ino_t new_ino = new_entry->ino;
-      auto new_vnode_or = fs()->GetVnode(new_ino);
-      if (new_vnode_or.is_error()) {
-        return new_vnode_or.error_value();
+      zx::result new_vnode = fs()->GetVnode(new_ino);
+      if (new_vnode.is_error()) {
+        return new_vnode.error_value();
       }
 
-      fbl::RefPtr<VnodeF2fs> new_vnode = *std::move(new_vnode_or);
       if (!new_vnode->IsDir() && (src_must_be_dir || dst_must_be_dir)) {
         return ZX_ERR_NOT_DIR;
       }
@@ -327,17 +325,17 @@ zx_status_t Dir::Rename(fbl::RefPtr<fs::Vnode> _newdir, std::string_view oldname
       }
 
       if (old_dir_entry.is_ok() &&
-          (!new_vnode->IsDir() || !fbl::RefPtr<Dir>::Downcast(new_vnode)->IsEmptyDir())) {
+          (!new_vnode->IsDir() || !fbl::RefPtr<Dir>::Downcast(*new_vnode)->IsEmptyDir())) {
         return ZX_ERR_NOT_EMPTY;
       }
 
-      ZX_DEBUG_ASSERT(this != new_vnode.get());
+      ZX_DEBUG_ASSERT(this != (*new_vnode).get());
       ZX_DEBUG_ASSERT(new_vnode->IsSameName(newname));
       old_vnode->SetName(newname);
       if (is_same_dir) {
-        SetLink(*new_entry, new_page, old_vnode.get());
+        SetLink(*new_entry, new_page, (*old_vnode).get());
       } else {
-        new_dir->SetLinkSafe(*new_entry, new_page, old_vnode.get());
+        new_dir->SetLinkSafe(*new_entry, new_page, (*old_vnode).get());
       }
 
       new_vnode->SetTime<Timestamps::ChangeTime>();
@@ -357,7 +355,7 @@ zx_status_t Dir::Rename(fbl::RefPtr<fs::Vnode> _newdir, std::string_view oldname
       old_vnode->SetName(newname);
 
       if (is_same_dir) {
-        if (zx_status_t err = AddLink(newname, old_vnode.get()); err != ZX_OK) {
+        if (zx_status_t err = AddLink(newname, (*old_vnode).get()); err != ZX_OK) {
           return err;
         }
         if (old_dir_entry.is_ok()) {
@@ -365,7 +363,7 @@ zx_status_t Dir::Rename(fbl::RefPtr<fs::Vnode> _newdir, std::string_view oldname
           SetDirty();
         }
       } else {
-        if (zx_status_t err = new_dir->AddLinkSafe(newname, old_vnode.get()); err != ZX_OK) {
+        if (zx_status_t err = new_dir->AddLinkSafe(newname, (*old_vnode).get()); err != ZX_OK) {
           return err;
         }
         if (old_dir_entry.is_ok()) {
@@ -384,8 +382,8 @@ zx_status_t Dir::Rename(fbl::RefPtr<fs::Vnode> _newdir, std::string_view oldname
 
     if (old_dir_entry.is_ok()) {
       if (!is_same_dir) {
-        fbl::RefPtr<Dir>::Downcast(old_vnode)->SetLinkSafe(*old_dir_entry, old_dir_page,
-                                                           new_dir.get());
+        fbl::RefPtr<Dir>::Downcast(*old_vnode)
+            ->SetLinkSafe(*old_dir_entry, old_dir_page, new_dir.get());
       }
       DecrementLinkUnsafe();
       SetDirty();
@@ -411,7 +409,7 @@ zx::result<fbl::RefPtr<fs::Vnode>> Dir::Create(std::string_view name, fs::Creati
 }
 
 zx::result<fbl::RefPtr<fs::Vnode>> Dir::CreateWithMode(std::string_view name, umode_t mode) {
-  if (superblock_info_.TestCpFlags(CpFlag::kCpErrorFlag)) {
+  if (GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag)) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
@@ -446,7 +444,7 @@ zx::result<fbl::RefPtr<fs::Vnode>> Dir::CreateWithMode(std::string_view name, um
 }
 
 zx_status_t Dir::Unlink(std::string_view name, bool must_be_dir) {
-  if (superblock_info_.TestCpFlags(CpFlag::kCpErrorFlag)) {
+  if (GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag)) {
     return ZX_ERR_BAD_STATE;
   }
   fbl::RefPtr<fs::Vnode> vnode;

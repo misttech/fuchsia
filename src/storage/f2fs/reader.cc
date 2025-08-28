@@ -32,11 +32,11 @@ std::vector<storage::BufferedOperation> Reader::BuildBufferedOperations(
     if (!IsValidBlockAddr(addr)) {
       continue;
     }
-    zx::result index_or = buffer->Reserve(1);
-    ZX_ASSERT(index_or.is_ok());
+    zx::result index = buffer->Reserve(1);
+    ZX_ASSERT(index.is_ok());
     storage::Operation op = {
         .type = storage::OperationType::kRead,
-        .vmo_offset = *index_or,
+        .vmo_offset = *index,
         .dev_offset = addr,
         .length = 1,
     };

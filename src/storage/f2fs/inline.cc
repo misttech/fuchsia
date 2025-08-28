@@ -17,7 +17,7 @@ namespace f2fs {
 uint8_t *Dir::InlineDentryBitmap(Page *page) {
   Inode &inode = page->GetAddress<Node>()->i;
   return reinterpret_cast<uint8_t *>(
-      &inode.i_addr[extra_isize_ / sizeof(uint32_t) + kInlineStartOffset]);
+      &inode.i_addr[GetExtraSize() / sizeof(uint32_t) + kInlineStartOffset]);
 }
 
 uint64_t Dir::InlineDentryBitmapSize() const {
@@ -143,51 +143,50 @@ size_t Dir::RoomInInlineDir(const PageBitmap &bits, size_t slots) {
 }
 
 zx_status_t Dir::ConvertInlineDir() {
-  LockedPage page;
-  if (zx_status_t ret = GrabLockedPage(0, &page); ret != ZX_OK) {
+  LockedPage data_page;
+  if (zx_status_t ret = GrabLockedPage(0, &data_page); ret != ZX_OK) {
     return ret;
   }
 
-  auto path_or = GetNodePath(0);
-  if (path_or.is_error()) {
-    return path_or.error_value();
+  zx::result path = GetNodePath(0);
+  if (path.is_error()) {
+    return path.error_value();
   }
-  auto dnode_page_or = fs()->GetNodeManager().GetLockedDnodePage(*path_or, IsDir());
-  if (dnode_page_or.is_error()) {
-    return dnode_page_or.error_value();
+  zx::result dnode_page = fs()->GetNodeManager().GetLockedDnodePage(*path, IsDir());
+  if (dnode_page.is_error()) {
+    return dnode_page.error_value();
   }
-  LockedPage dnode_page = std::move(*dnode_page_or);
-  size_t ofs_in_dnode = GetOfsInDnode(*path_or);
-  NodePage *ipage = &dnode_page.GetPage<NodePage>();
-  block_t data_blkaddr = ipage->GetBlockAddr(ofs_in_dnode);
+  size_t ofs_in_dnode = GetOfsInDnode(*path);
+  NodePage &ipage = (*dnode_page).GetPage<NodePage>();
+  block_t data_blkaddr = ipage.GetBlockAddr(ofs_in_dnode);
   ZX_DEBUG_ASSERT(data_blkaddr == kNullAddr);
 
-  if (zx_status_t err = ReserveNewBlock(dnode_page, ofs_in_dnode); err != ZX_OK) {
+  if (zx_status_t err = ReserveNewBlock(*dnode_page, ofs_in_dnode); err != ZX_OK) {
     return err;
   }
-  AddBlocksUnsafe(path_or->num_new_nodes + 1);
+  AddBlocksUnsafe(path->num_new_nodes + 1);
 
-  page.WaitOnWriteback();
-  page.Zero();
+  data_page.WaitOnWriteback();
+  data_page.Zero();
 
-  DentryBlock *dentry_blk = page->GetAddress<DentryBlock>();
+  DentryBlock *dentry_blk = data_page->GetAddress<DentryBlock>();
 
   // copy data from inline dentry block to new dentry block
-  std::memcpy(dentry_blk->dentry_bitmap, InlineDentryBitmap(ipage), InlineDentryBitmapSize());
-  std::memcpy(dentry_blk->dentry, InlineDentryArray(ipage, *this),
+  std::memcpy(dentry_blk->dentry_bitmap, InlineDentryBitmap(&ipage), InlineDentryBitmapSize());
+  std::memcpy(dentry_blk->dentry, InlineDentryArray(&ipage, *this),
               sizeof(DirEntry) * MaxInlineDentry());
   std::memcpy(
-      dentry_blk->filename, InlineDentryFilenameArray(ipage, *this),
+      dentry_blk->filename, InlineDentryFilenameArray(&ipage, *this),
       safemath::CheckMul(safemath::checked_cast<size_t>(MaxInlineDentry()), kNameLen).ValueOrDie());
 
-  page.SetDirty();
+  data_page.SetDirty();
   // clear inline dir and flag after data writeback
-  dnode_page.WaitOnWriteback();
-  dnode_page.Zero(InlineDataOffset(), InlineDataOffset() + MaxInlineData());
+  (*dnode_page).WaitOnWriteback();
+  (*dnode_page).Zero(InlineDataOffset(), InlineDataOffset() + MaxInlineData());
   ClearFlag(InodeInfoFlag::kInlineDentry);
 
   if (!TestFlag(InodeInfoFlag::kInlineXattr)) {
-    inline_xattr_size_ = 0;
+    SetInlineXattrSize(0);
   }
 
   if (GetSize() < kPageSize) {
@@ -274,7 +273,7 @@ void Dir::DeleteInlineEntry(const DentryInfo &info, fbl::RefPtr<Page> &page, Vno
 
   GetDirEntryCache().RemoveDirEntry(remove_name);
 
-  time_->Update<Timestamps::ModificationTime>();
+  UpdateTime<Timestamps::ModificationTime>();
 
   if (vnode && vnode->IsDir()) {
     DecrementLinkUnsafe();
@@ -370,32 +369,31 @@ zx_status_t File::ConvertInlineData() {
     }
   }
 
-  auto path_or = GetNodePath(0);
-  if (path_or.is_error()) {
-    return path_or.error_value();
+  zx::result path = GetNodePath(0);
+  if (path.is_error()) {
+    return path.error_value();
   }
-  auto dnode_page_or = fs()->GetNodeManager().GetLockedDnodePage(*path_or, IsDir());
-  if (dnode_page_or.is_error()) {
-    return dnode_page_or.error_value();
+  zx::result dnode_page = fs()->GetNodeManager().GetLockedDnodePage(*path, IsDir());
+  if (dnode_page.is_error()) {
+    return dnode_page.error_value();
   }
-  LockedPage dnode_page = std::move(*dnode_page_or);
-  size_t ofs_in_dnode = GetOfsInDnode(*path_or);
-  NodePage *ipage = &dnode_page.GetPage<NodePage>();
-  block_t data_blkaddr = ipage->GetBlockAddr(ofs_in_dnode);
+  size_t ofs_in_dnode = GetOfsInDnode(*path);
+  NodePage &ipage = (*dnode_page).GetPage<NodePage>();
+  block_t data_blkaddr = ipage.GetBlockAddr(ofs_in_dnode);
   ZX_DEBUG_ASSERT(data_blkaddr == kNullAddr);
 
-  if (zx_status_t err = ReserveNewBlock(dnode_page, ofs_in_dnode); err != ZX_OK) {
+  if (zx_status_t err = ReserveNewBlock(*dnode_page, ofs_in_dnode); err != ZX_OK) {
     return err;
   }
-  AddBlocks(path_or->num_new_nodes + 1);
+  AddBlocks(path->num_new_nodes + 1);
 
   if (TestFlag(InodeInfoFlag::kDataExist)) {
     page.WaitOnWriteback();
-    page->Write(ipage->GetAddress<uint8_t>() + InlineDataOffset(), 0, GetSize());
+    page->Write(ipage.GetAddress<uint8_t>() + InlineDataOffset(), 0, GetSize());
     page.SetDirty();
 
-    dnode_page.WaitOnWriteback();
-    dnode_page.Zero(InlineDataOffset(), InlineDataOffset() + MaxInlineData());
+    (*dnode_page).WaitOnWriteback();
+    (*dnode_page).Zero(InlineDataOffset(), InlineDataOffset() + MaxInlineData());
   }
   ClearFlag(InodeInfoFlag::kInlineData);
   ClearFlag(InodeInfoFlag::kDataExist);

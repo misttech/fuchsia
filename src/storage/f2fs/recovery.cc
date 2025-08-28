@@ -26,11 +26,11 @@ zx_status_t F2fs::RecoverDentry(NodePage &ipage, VnodeF2fs &vnode) {
     return ZX_OK;
   }
 
-  auto vnode_or = GetVnode(LeToCpu(ipage.GetAddress<Node>()->i.i_pino));
-  if (vnode_or.is_error()) {
-    return vnode_or.status_value();
+  zx::result parent = GetVnode(LeToCpu(ipage.GetAddress<Node>()->i.i_pino));
+  if (parent.is_error()) {
+    return parent.status_value();
   }
-  return fbl::RefPtr<Dir>::Downcast(*vnode_or)->RecoverLink(vnode).status_value();
+  return fbl::RefPtr<Dir>::Downcast(*parent)->RecoverLink(vnode).status_value();
 }
 
 zx_status_t F2fs::RecoverInode(VnodeF2fs &vnode, NodePage &node_page) {
@@ -103,13 +103,12 @@ zx::result<F2fs::FsyncInodeList> F2fs::FindFsyncDnodes() {
         }
       }
 
-      auto vnode_or = GetVnode(ino);
-      if (vnode_or.is_error()) {
-        return vnode_or.take_error();
+      zx::result vnode = GetVnode(ino);
+      if (vnode.is_error()) {
+        return vnode.take_error();
       }
 
-      fbl::RefPtr<VnodeF2fs> vnode_refptr = *std::move(vnode_or);
-      auto entry = std::make_unique<FsyncInodeEntry>(std::move(vnode_refptr));
+      auto entry = std::make_unique<FsyncInodeEntry>(*std::move(vnode));
       entry->SetLastDnodeBlkaddr(blkaddr);
       inode_list.push_back(std::move(entry));
       entry_ptr = GetFsyncInode(inode_list, ino);
@@ -167,26 +166,21 @@ void F2fs::CheckIndexInPrevNodes(block_t blkaddr) {
     sum = sum_node->entries[blkoff];
   }
 
-  fbl::RefPtr<VnodeF2fs> vnode_refptr;
-  size_t bidx;
   // Get the node page
-  {
-    LockedPage node_page;
-    if (zx_status_t err = GetNodeManager().GetNodePage(LeToCpu(sum.nid), &node_page);
-        err != ZX_OK) {
-      FX_LOGS(ERROR) << "F2fs::CheckIndexInPrevNodes, GetNodePage Error!!!";
-      return;
-    }
-    nid_t ino = node_page.GetPage<NodePage>().InoOfNode();
-    auto vnode_or = GetVnode(ino);
-    ZX_ASSERT(vnode_or.is_ok());
-    vnode_refptr = *std::move(vnode_or);
-    bidx = node_page.GetPage<NodePage>().StartBidxOfNode(vnode_refptr->GetAddrsPerInode()) +
-           LeToCpu(sum.ofs_in_node);
+  LockedPage node_page;
+  if (zx_status_t err = GetNodeManager().GetNodePage(LeToCpu(sum.nid), &node_page); err != ZX_OK) {
+    FX_LOGS(ERROR) << "F2fs::CheckIndexInPrevNodes, GetNodePage Error!!!";
+    return;
   }
+  nid_t ino = node_page.GetPage<NodePage>().InoOfNode();
+  zx::result vnode = GetVnode(ino);
+  ZX_ASSERT(vnode.is_ok());
+  size_t bidx = node_page.GetPage<NodePage>().StartBidxOfNode(vnode->GetAddrsPerInode()) +
+                LeToCpu(sum.ofs_in_node);
 
+  node_page.reset();
   // Deallocate previous index in the node page
-  vnode_refptr->TruncateHole(bidx, bidx + 1);
+  vnode->TruncateHole(bidx, bidx + 1);
 }
 
 void F2fs::DoRecoverData(VnodeF2fs &vnode, NodePage &page) {
@@ -205,55 +199,54 @@ void F2fs::DoRecoverData(VnodeF2fs &vnode, NodePage &page) {
     end = start + kAddrsPerBlock;
   }
 
-  auto path_or = vnode.GetNodePath(start);
-  if (path_or.is_error()) {
+  zx::result path = vnode.GetNodePath(start);
+  if (path.is_error()) {
     return;
   }
-  auto page_or = GetNodeManager().GetLockedDnodePage(*path_or, vnode.IsDir());
-  if (page_or.is_error()) {
+  auto dnode_page = GetNodeManager().GetLockedDnodePage(*path, vnode.IsDir());
+  if (dnode_page.is_error()) {
     return;
   }
-  vnode.AddBlocks(path_or->num_new_nodes);
-  LockedPage dnode_page = std::move(*page_or);
-  dnode_page.WaitOnWriteback();
+  vnode.AddBlocks(path->num_new_nodes);
+  dnode_page->WaitOnWriteback();
 
-  GetNodeManager().GetNodeInfo(dnode_page.GetPage<NodePage>().NidOfNode(), ni);
+  GetNodeManager().GetNodeInfo((*dnode_page).GetPage<NodePage>().NidOfNode(), ni);
   ZX_DEBUG_ASSERT(ni.ino == page.InoOfNode());
-  ZX_DEBUG_ASSERT(dnode_page.GetPage<NodePage>().OfsOfNode() == page.OfsOfNode());
+  ZX_DEBUG_ASSERT((*dnode_page).GetPage<NodePage>().OfsOfNode() == page.OfsOfNode());
 
-  size_t offset_in_dnode = GetOfsInDnode(*path_or);
+  size_t offset_in_dnode = GetOfsInDnode(*path);
 
   for (; start < end; ++start) {
     block_t src, dest;
 
-    src = dnode_page.GetPage<NodePage>().GetBlockAddr(offset_in_dnode);
+    src = (*dnode_page).GetPage<NodePage>().GetBlockAddr(offset_in_dnode);
     dest = page.GetBlockAddr(offset_in_dnode);
 
     if (src != dest && dest != kNewAddr && dest != kNullAddr) {
       if (src == kNullAddr) {
-        ZX_ASSERT(vnode.ReserveNewBlock(dnode_page, offset_in_dnode) == ZX_OK);
+        ZX_ASSERT(vnode.ReserveNewBlock(*dnode_page, offset_in_dnode) == ZX_OK);
         vnode.AddBlocks(1);
       }
 
       // Check the previous node page having this index
       CheckIndexInPrevNodes(dest);
 
-      SetSummary(&sum, dnode_page.GetPage<NodePage>().NidOfNode(), offset_in_dnode, ni.version);
+      SetSummary(&sum, (*dnode_page).GetPage<NodePage>().NidOfNode(), offset_in_dnode, ni.version);
 
       // Write dummy data page
       GetSegmentManager().RecoverDataPage(sum, src, dest);
-      dnode_page.WaitOnWriteback();
-      dnode_page.GetPage<NodePage>().SetDataBlkaddr(offset_in_dnode, dest);
-      dnode_page.SetDirty();
+      dnode_page->WaitOnWriteback();
+      dnode_page.value().GetPage<NodePage>().SetDataBlkaddr(offset_in_dnode, dest);
+      dnode_page->SetDirty();
       vnode.UpdateExtentCache(page.StartBidxOfNode(vnode.GetAddrsPerInode()) + offset_in_dnode,
                               dest);
     }
     ++offset_in_dnode;
   }
 
-  dnode_page.GetPage<NodePage>().CopyNodeFooterFrom(page);
-  dnode_page.GetPage<NodePage>().FillNodeFooter(ni.nid, ni.ino, page.OfsOfNode());
-  dnode_page.SetDirty();
+  dnode_page.value().GetPage<NodePage>().CopyNodeFooterFrom(page);
+  dnode_page.value().GetPage<NodePage>().FillNodeFooter(ni.nid, ni.ino, page.OfsOfNode());
+  dnode_page->SetDirty();
 }
 
 void F2fs::RecoverData(FsyncInodeList &inode_list) {

@@ -67,9 +67,9 @@ class F2fsComponentTest : public testing::Test {
 
   void CreateRamDisk(int block_size = kBlockSize, uint64_t block_count = kBlockCount,
                      const storage::RamDisk::Options& options = storage::RamDisk::Options{}) {
-    auto ramdisk_or = storage::RamDisk::Create(block_size, block_count);
-    ASSERT_EQ(ramdisk_or.status_value(), ZX_OK);
-    ramdisk_ = std::move(*ramdisk_or);
+    zx::result ramdisk = storage::RamDisk::Create(block_size, block_count);
+    ASSERT_EQ(ramdisk.status_value(), ZX_OK);
+    ramdisk_ = std::move(*ramdisk);
   }
 
   const fidl::WireSyncClient<fuchsia_fs_startup::Startup>& startup_client() const {

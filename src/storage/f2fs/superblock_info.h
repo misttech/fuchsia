@@ -75,7 +75,7 @@ class SuperblockInfo {
     checkpoint_block_->ckpt_flags = CpuToLe(flags);
   }
 
-  bool TestCpFlags(CpFlag flag) __TA_EXCLUDES(mutex_) {
+  bool TestCpFlags(CpFlag flag) const __TA_EXCLUDES(mutex_) {
     fs::SharedLock lock(mutex_);
     uint32_t flags = LeToCpu(checkpoint_block_->ckpt_flags);
     return flags & static_cast<uint32_t>(flag);
@@ -136,7 +136,7 @@ class SuperblockInfo {
     alloc_block_count_ = 0;
   }
 
-  bool SpaceForRollForward() __TA_EXCLUDES(mutex_) {
+  bool SpaceForRollForward() const __TA_EXCLUDES(mutex_) {
     fs::SharedLock lock(mutex_);
     return last_valid_block_count_ + alloc_block_count_ <= total_block_count_;
   }
@@ -288,9 +288,9 @@ class SuperblockInfo {
   uint64_t GetCheckpointVer(bool with_crc = false) {
     uint64_t version = checkpoint_ver_;
     if (with_crc && TestCpFlags(CpFlag::kCpCrcRecoveryFlag)) {
-      zx::result crc_or = GetCrcFromCheckpointBlock();
-      ZX_DEBUG_ASSERT(crc_or.is_ok());
-      version |= static_cast<uint64_t>(*crc_or) << 32;
+      zx::result crc = GetCrcFromCheckpointBlock();
+      ZX_DEBUG_ASSERT(crc.is_ok());
+      version |= static_cast<uint64_t>(*crc) << 32;
     }
     return version;
   }
@@ -396,7 +396,7 @@ class SuperblockInfo {
 
   std::vector<std::string> extension_list_;
 
-  std::shared_mutex mutex_;  // for checkpoint data
+  mutable std::shared_mutex mutex_;  // for checkpoint data
 };
 
 #if 0  // porting needed
