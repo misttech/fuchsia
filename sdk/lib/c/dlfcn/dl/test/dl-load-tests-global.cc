@@ -478,32 +478,107 @@ TYPED_TEST(DlTests, GlobalModuleOrderingOfDeps) {
   ASSERT_TRUE(this->DlClose(open_bar_v1.value()).is_ok());
 }
 
-// TODO(https://fxbug.dev/338233824): Add more global module tests:
-// - Test that promoting only the dependency of module to global does not affect
-// the root module's visibility.
-// dlopen has-bar-v1:
-//   - bar-v1 -> calls foo(), defines bar() -> bar() returns 9
-//      - foo-v1 -> foo() returns 2
-// dlopen RTLD_GLOBAL foo-v1
-// dlopen has-bar-v2:
-//   - bar-v2 -> calls foo(), defines bar() -> bar() returns 3
-//      - foo-v2 -> foo() returns 7
-// call foo() from has-bar-v2 and get 2 from global foo-v1. call bar() from
-// has-bar-v2 and get 3 from the dependency bar-v2.
+// Test that promoting only the dependency of module to global does not affect
+// the root module or sibling dep's visibility.
+// dlopen multiple-foo-deps:
+//  - foo-v1 -> foo() returns 2
+//  - foo-v2 -> foo() returns 7
+// dlopen RTLD_GLOBAL foo-v2
+// dlopen has-foo-v1:
+//  - foo-v1 -> foo() returns 2
+// call_foo() from has-foo-v1 returns 7 from global foo-v2.
+TYPED_TEST(DlTests, GlobalPromotionOfDep) {
+  const std::string kMultiFooDepsFile = TestModule("multiple-foo-deps");
+  const std::string kFooV1File = TestShlib("libld-dep-foo-v1");
+  const std::string kFooV2File = TestShlib("libld-dep-foo-v2");
+  const std::string kHasFooV1File = TestShlib("libhas-foo-v1");
+  constexpr int64_t kFooV1ReturnValue = 2;
+  constexpr int64_t kFooV2ReturnValue = 7;
 
-// TODO(https://fxbug.dev/374375563)
-// - Test that a module and its dependencies remain a global module after they
-// have been promoted.
+  this->ExpectRootModule(kMultiFooDepsFile);
+  this->Needed({kFooV1File, kFooV2File});
+
+  auto open_multi_foo_deps = this->DlOpen(kMultiFooDepsFile.c_str(), RTLD_NOW | RTLD_LOCAL);
+  ASSERT_TRUE(open_multi_foo_deps.is_ok()) << open_multi_foo_deps.error_value();
+  EXPECT_TRUE(open_multi_foo_deps.value());
+
+  // Promote the foo-v2 dependency to global.
+  auto open_foo_v2 = this->DlOpen(kFooV2File.c_str(), RTLD_NOW | RTLD_NOLOAD | RTLD_GLOBAL);
+  ASSERT_TRUE(open_foo_v2.is_ok()) << open_foo_v2.error_value();
+  EXPECT_TRUE(open_foo_v2.value());
+
+  this->Needed({kHasFooV1File});
+
+  auto open_has_foo_v1 = this->DlOpen(kHasFooV1File.c_str(), RTLD_NOW | RTLD_LOCAL);
+  ASSERT_TRUE(open_has_foo_v1.is_ok()) << open_has_foo_v1.error_value();
+  EXPECT_TRUE(open_has_foo_v1.value());
+
+  // call_foo() will return foo(). This will resolve the symbol from the global
+  // module foo-v2 instead of its local dep (foo-v1).
+  auto call_foo = this->DlSym(open_has_foo_v1.value(), TestSym("call_foo").c_str());
+  ASSERT_TRUE(call_foo.is_ok()) << call_foo.error_value();
+  EXPECT_TRUE(call_foo.value());
+
+  if (TestFixture::kStrictLoadOrderPriority) {
+    // Musl will prioritize the symbol that was loaded first (from foo-v1), even
+    // though the file does not have global scope.
+    EXPECT_EQ(RunFunction<int64_t>(call_foo.value()), kFooV1ReturnValue);
+  } else {
+    // Glibc & libdl will use the foo symbol that was promoted to global over
+    // any local symbols that were loaded first.
+    EXPECT_EQ(RunFunction<int64_t>(call_foo.value()), kFooV2ReturnValue);
+  }
+
+  ASSERT_TRUE(this->DlClose(open_multi_foo_deps.value()).is_ok());
+  ASSERT_TRUE(this->DlClose(open_foo_v2.value()).is_ok());
+  ASSERT_TRUE(this->DlClose(open_has_foo_v1.value()).is_ok());
+}
+
+// Test that a module and its dependencies remain a global module after they
+// have been promoted (ie they cannot be demoted).
 // dlopen RTLD_GLOBAL has-foo-v1:
 //    - foo-v1 -> foo() returns 2
-// dlopen RTLD_LOCAL foo-v1
-// dlopen RTLD_LOCAL has-foo-v2:
-//  - foo-v2 -> foo() returns 7
-// call foo() from has-foo-v2 and expect 2 from the still global foo-v1.
-// dlclose has-foo-v1
-// dlopen bar-v2 -> calls foo()
-//   - foo-v2 -> foo() returns 7
-// Call bar() from bar-v2, and it should return 2 from the still global foo-v1.
+// dlopen RTLD_LOCAL has-foo-v1:
+// dlopen has-foo-v2:
+//    - foo-v2 -> foo() returns 7
+// call_foo() from has-foo-v2, and it should return 2 from the still global foo-v1.
+TYPED_TEST(DlTests, GlobalPersistence) {
+  const std::string kHasFooV1File = TestShlib("libhas-foo-v1");
+  const std::string kFooV1File = TestShlib("libld-dep-foo-v1");
+  const std::string kHasFooV2File = TestShlib("libhas-foo-v2");
+  const std::string kFooV2File = TestShlib("libld-dep-foo-v2");
+  const std::string kBarV2File = TestShlib("libbar-v2");
+  constexpr int64_t kFooV1ReturnValue = 2;
+
+  this->ExpectRootModule(kHasFooV1File);
+  this->Needed({kFooV1File});
+
+  auto open_has_foo_v1 = this->DlOpen(kHasFooV1File.c_str(), RTLD_NOW | RTLD_GLOBAL);
+  ASSERT_TRUE(open_has_foo_v1.is_ok()) << open_has_foo_v1.error_value();
+  EXPECT_TRUE(open_has_foo_v1.value());
+
+  auto reopen_has_foo_v1 = this->DlOpen(kHasFooV1File.c_str(), RTLD_NOW | RTLD_LOCAL);
+  ASSERT_TRUE(open_has_foo_v1.is_ok()) << open_has_foo_v1.error_value();
+  EXPECT_TRUE(open_has_foo_v1.value());
+
+  this->ExpectRootModule(kHasFooV2File);
+  this->Needed({kFooV2File});
+
+  auto open_has_foo_v2 = this->DlOpen(kHasFooV2File.c_str(), RTLD_NOW | RTLD_LOCAL);
+  ASSERT_TRUE(open_has_foo_v2.is_ok()) << open_has_foo_v2.error_value();
+  EXPECT_TRUE(open_has_foo_v2.value());
+
+  auto has_foo_v2_call_foo = this->DlSym(open_has_foo_v2.value(), TestSym("call_foo").c_str());
+  ASSERT_TRUE(has_foo_v2_call_foo.is_ok()) << has_foo_v2_call_foo.error_value();
+  EXPECT_TRUE(has_foo_v2_call_foo.value());
+
+  // Expect to resolve to the global foo() symbol from foo-v1.
+  EXPECT_EQ(RunFunction<int64_t>(has_foo_v2_call_foo.value()), kFooV1ReturnValue);
+
+  ASSERT_TRUE(this->DlClose(open_has_foo_v1.value()).is_ok());
+  ASSERT_TRUE(this->DlClose(reopen_has_foo_v1.value()).is_ok());
+  ASSERT_TRUE(this->DlClose(open_has_foo_v2.value()).is_ok());
+}
 
 // TODO(https://fxbug.dev/362604713)
 // - Test applying RTLD_GLOBAL to a node along the circular dependency chain.

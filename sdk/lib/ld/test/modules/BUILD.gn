@@ -80,6 +80,8 @@ per_test_suffices = [
   "GlobalModuleOrdering",
   "GlobalModuleOrderingMultiDlopen",
   "GlobalModuleOrderingOfDeps",
+  "GlobalPromotionOfDep",
+  "GlobalPersistence",
   "RelativeRelocPrecedence",
   "RootPrecedenceInDepResolution",
   "PrecedenceInDepResolution",
