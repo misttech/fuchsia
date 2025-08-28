@@ -2,26 +2,44 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
 use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect, component, Property, StringProperty};
 use fuchsia_inspect_derive::{Inspect, WithInspect};
+use futures::channel::mpsc::UnboundedReceiver;
+#[cfg(test)]
+use futures::channel::mpsc::UnboundedSender;
 use futures::StreamExt;
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 
-use crate::agent::{Context, Lifespan, Payload};
+use crate::agent::{AgentCreator, Context, CreationFunc, Lifespan, Payload};
 use crate::base::{SettingInfo, SettingType};
 use crate::handler::base::{Payload as SettingPayload, Request};
 use crate::handler::setting_handler::{Event, Payload as HandlerPayload};
 use crate::message::base::{Audience, MessageEvent, MessengerType};
+use crate::message::receptor::Receptor;
 use crate::service::message::Messenger;
 use crate::service::TryFromWithClient;
 use crate::{clock, service};
 
 const INSPECT_NODE_NAME: &str = "setting_values";
 const SETTING_TYPE_INSPECT_NODE_NAME: &str = "setting_types";
+
+pub(crate) fn create_registrar(rx: UnboundedReceiver<(&'static str, String)>) -> AgentCreator {
+    let rx = Rc::new(RefCell::new(rx));
+    AgentCreator {
+        debug_id: "SettingValuesInspectAgent",
+        create: CreationFunc::Dynamic(Rc::new(move |context| {
+            let rx = Rc::clone(&rx);
+            Box::pin(async move {
+                SettingValuesInspectAgent::create(context, rx).await;
+            })
+        })),
+    }
+}
 
 /// An agent that listens in on messages between the proxy and setting handlers to record the
 /// values of all settings to inspect.
@@ -68,76 +86,34 @@ struct SettingValuesInspectInfo {
     timestamp: StringProperty,
 }
 
-impl SettingValuesInspectAgent {
-    pub(crate) async fn create(context: Context) {
-        Self::create_with_node(
-            context,
-            component::inspector().root().create_child(INSPECT_NODE_NAME),
-            None,
-        )
-        .await;
-    }
+struct AgentSetup {
+    agent: SettingValuesInspectAgent,
+    context: Context,
+    receptor: Receptor,
+}
 
-    /// Create an agent to listen in on all messages between Proxy and setting
-    /// handlers. Agent starts immediately without calling invocation, but
-    /// acknowledges the invocation payload to let the Authority know the agent
-    /// starts properly.
-    async fn create_with_node(
-        context: Context,
-        inspect_node: inspect::Node,
-        custom_inspector: Option<&inspect::Inspector>,
+impl AgentSetup {
+    fn into_event_loop(
+        self,
+        event_rx: Rc<RefCell<UnboundedReceiver<(&'static str, String)>>>,
+        #[cfg(test)] mut channel_done_tx: Option<UnboundedSender<()>>,
     ) {
-        let inspector = custom_inspector.unwrap_or_else(|| component::inspector());
-
-        let (messenger_client, receptor) = match context
-            .delegate
-            .create(MessengerType::Broker(Rc::new(move |message| {
-                // Only catch messages that were originally sent from the interfaces, and
-                // that contain a request for the specific setting type we're interested in.
-                matches!(
-                    message.payload(),
-                    service::Payload::Controller(HandlerPayload::Event(Event::Changed(_)))
-                )
-            })))
-            .await
-        {
-            Ok(messenger) => messenger,
-            Err(err) => {
-                log::error!("could not create inspect: {:?}", err);
-                return;
-            }
-        };
-
-        // Add inspect node for the setting types.
-        let mut setting_types_list: Vec<String> = context
-            .available_components
-            .clone()
-            .iter()
-            .map(|component| format!("{component:?}"))
-            .collect();
-        setting_types_list.sort();
-        let setting_types_value = format!("{setting_types_list:?}");
-        let setting_types_inspect_info = SettingTypesInspectInfo::new(
-            setting_types_value,
-            inspector.root(),
-            SETTING_TYPE_INSPECT_NODE_NAME,
-        );
-
-        let mut agent = Self {
-            messenger_client,
-            setting_values: ManagedInspectMap::<SettingValuesInspectInfo>::with_node(inspect_node),
-            setting_types: context.available_components.clone(),
-            _setting_types_inspect_info: setting_types_inspect_info,
-        };
-
+        let AgentSetup { mut agent, context, receptor } = self;
         fasync::Task::local(async move {
-            let _ = &context;
             let event = receptor.fuse();
             let agent_event = context.receptor.fuse();
             futures::pin_mut!(agent_event, event);
+            let event_rx = &mut *event_rx.borrow_mut();
 
             loop {
                 futures::select! {
+                    (setting_name, setting_str) = event_rx.select_next_some() => {
+                        agent.write_raw_setting_to_inspect(setting_name, setting_str).await;
+                        #[cfg(test)]
+                        {
+                            let _ = channel_done_tx.as_mut().map(|tx| tx.start_send(()));
+                        }
+                    },
                     message_event = event.select_next_some() => {
                         agent.process_message_event(message_event).await;
                     },
@@ -159,6 +135,83 @@ impl SettingValuesInspectAgent {
             }
         })
         .detach();
+    }
+}
+
+impl SettingValuesInspectAgent {
+    pub(crate) async fn create(
+        context: Context,
+        rx: Rc<RefCell<UnboundedReceiver<(&'static str, String)>>>,
+    ) {
+        let Some(agent) = Self::create_with_node(
+            context,
+            component::inspector().root().create_child(INSPECT_NODE_NAME),
+            None,
+        )
+        .await
+        else {
+            return;
+        };
+        agent.into_event_loop(
+            rx,
+            #[cfg(test)]
+            None,
+        );
+    }
+
+    /// Create an agent to listen in on all messages between Proxy and setting
+    /// handlers. Agent starts immediately without calling invocation, but
+    /// acknowledges the invocation payload to let the Authority know the agent
+    /// starts properly.
+    async fn create_with_node(
+        context: Context,
+        inspect_node: inspect::Node,
+        custom_inspector: Option<&inspect::Inspector>,
+    ) -> Option<AgentSetup> {
+        let inspector = custom_inspector.unwrap_or_else(|| component::inspector());
+
+        let (messenger_client, receptor) = match context
+            .delegate
+            .create(MessengerType::Broker(Rc::new(move |message| {
+                // Only catch messages that were originally sent from the interfaces, and
+                // that contain a request for the specific setting type we're interested in.
+                matches!(
+                    message.payload(),
+                    service::Payload::Controller(HandlerPayload::Event(Event::Changed(_)))
+                )
+            })))
+            .await
+        {
+            Ok(messenger) => messenger,
+            Err(err) => {
+                log::error!("could not create inspect: {:?}", err);
+                return None;
+            }
+        };
+
+        // Add inspect node for the setting types.
+        let mut setting_types_list: Vec<String> = context
+            .available_components
+            .clone()
+            .iter()
+            .map(|component| format!("{component:?}"))
+            .collect();
+        setting_types_list.sort();
+        let setting_types_value = format!("{setting_types_list:?}");
+        let setting_types_inspect_info = SettingTypesInspectInfo::new(
+            setting_types_value,
+            inspector.root(),
+            SETTING_TYPE_INSPECT_NODE_NAME,
+        );
+
+        let agent = Self {
+            messenger_client,
+            setting_values: ManagedInspectMap::<SettingValuesInspectInfo>::with_node(inspect_node),
+            setting_types: context.available_components.clone(),
+            _setting_types_inspect_info: setting_types_inspect_info,
+        };
+
+        Some(AgentSetup { agent, context, receptor })
     }
 
     /// This function iterates over the available components, requesting the current value with a
@@ -195,9 +248,14 @@ impl SettingValuesInspectAgent {
     /// Writes a setting value to inspect.
     async fn write_setting_to_inspect(&mut self, setting: SettingInfo) {
         let (key, value) = setting.for_inspect();
+        self.write_raw_setting_to_inspect(key, value).await;
+    }
+
+    /// Writes a setting value to inspect.
+    async fn write_raw_setting_to_inspect(&mut self, setting_name: &'static str, value: String) {
         let timestamp = clock::inspect_format_now();
 
-        let key_str = key.to_string();
+        let key_str = setting_name.to_string();
         let setting_values = self.setting_values.get_mut(&key_str);
 
         if let Some(setting_values_info) = setting_values {
@@ -217,6 +275,7 @@ impl SettingValuesInspectAgent {
 #[cfg(test)]
 mod tests {
     use diagnostics_assertions::assert_data_tree;
+    use futures::channel::mpsc;
     use zx::MonotonicInstant;
 
     use crate::agent::Invocation;
@@ -256,7 +315,11 @@ mod tests {
             .await
             .expect("should create proxy");
 
-        SettingValuesInspectAgent::create_with_node(context, inspect_node, Some(&inspector)).await;
+        let (_tx, rx) = mpsc::unbounded();
+        SettingValuesInspectAgent::create_with_node(context, inspect_node, Some(&inspector))
+            .await
+            .expect("agent missing inspect")
+            .into_event_loop(Rc::new(RefCell::new(rx)), None);
 
         // Inspect agent should not report any setting values.
         assert_data_tree!(inspector, root: {
@@ -325,7 +388,14 @@ mod tests {
         let mut proxy_receptor =
             delegate.create(MessengerType::Unbound).await.expect("should create proxy messenger").1;
 
-        SettingValuesInspectAgent::create_with_node(context, inspect_node, Some(&inspector)).await;
+        let (mut tx, rx) = mpsc::unbounded();
+        let agent_setup =
+            SettingValuesInspectAgent::create_with_node(context, inspect_node, Some(&inspector))
+                .await
+                .expect("agent missing inspect");
+
+        let (done_tx, mut done_rx) = mpsc::unbounded();
+        agent_setup.into_event_loop(Rc::new(RefCell::new(rx)), Some(done_tx));
 
         // Inspect agent should not report any setting values.
         assert_data_tree!(inspector, root: {
@@ -360,6 +430,23 @@ mod tests {
             setting_values: {
                 "Unknown": {
                     value: "UnknownInfo(false)",
+                    timestamp: "0.000000000",
+                }
+            }
+        });
+
+        tx.start_send(("Unknown", format!("{:?}", UnknownInfo(true))))
+            .expect("sending via channel");
+        let () = done_rx.next().await.expect("should have processed event");
+
+        // Inspect agent writes value to inspect.
+        assert_data_tree!(inspector, root: {
+            setting_types: {
+                "value": "[\"Unknown\"]",
+            },
+            setting_values: {
+                "Unknown": {
+                    value: "UnknownInfo(true)",
                     timestamp: "0.000000000",
                 }
             }

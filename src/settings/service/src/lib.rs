@@ -19,7 +19,7 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ProtocolConnector;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObjLocal};
 use fuchsia_inspect::component;
-use futures::channel::mpsc::UnboundedSender;
+use futures::channel::mpsc::{self, UnboundedSender};
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 #[cfg(test)]
@@ -529,26 +529,11 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             handler_factory.register(setting_type, handler);
         }
 
-        let media_buttons_registrar = agent_types
-            .contains(&AgentType::MediaButtons)
-            .then(|| agent::media_buttons::create_registrar(self.media_buttons_event_txs));
-
-        // If any of there are any agent types that require AgentCreator::from_type to be
-        // constructed, then use that constructor. Otherwise just use the agent blueprints.
-        let mut agent_blueprints = if agent_types.iter().any(|t| match t {
-            // Does not require AgentCreator::from_type
-            AgentType::MediaButtons => false,
-            // Does require AgentCreator::from_type
-            _ => true,
-        }) {
-            agent_types.into_iter().filter_map(AgentCreator::from_type).collect()
-        } else {
-            self.agent_blueprints
-        };
-
-        if let Some(registrar) = media_buttons_registrar {
-            agent_blueprints.push(registrar);
-        }
+        let agent_blueprints = create_agent_blueprints(
+            agent_types,
+            self.agent_blueprints,
+            self.media_buttons_event_txs,
+        );
 
         let job_manager_signature = Manager::spawn(&delegate).await;
         let job_seeder = Seeder::new(&delegate, job_manager_signature).await;
@@ -798,6 +783,39 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 .register(SettingType::Setup, Box::new(DataHandler::<SetupController>::spawn));
         }
     }
+}
+
+fn create_agent_blueprints(
+    agent_types: HashSet<AgentType>,
+    agent_blueprints: Vec<AgentCreator>,
+    media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+) -> Vec<AgentCreator> {
+    let (_inspect_event_tx, inspect_event_rx) = mpsc::unbounded();
+
+    let media_buttons_registrar = agent_types
+        .contains(&AgentType::MediaButtons)
+        .then(|| agent::media_buttons::create_registrar(media_buttons_event_txs));
+    let inspect_settings_values_registrar = agent_types
+        .contains(&AgentType::InspectSettingValues)
+        .then(|| agent::inspect::setting_values::create_registrar(inspect_event_rx));
+
+    let agent_registrars = [media_buttons_registrar, inspect_settings_values_registrar];
+
+    let mut agent_blueprints = if agent_types
+        .iter()
+        .all(|t| matches!(t, AgentType::MediaButtons | AgentType::InspectSettingValues))
+    {
+        agent_blueprints
+    } else {
+        agent_types.into_iter().filter_map(AgentCreator::from_type).collect()
+    };
+
+    for registrar in agent_registrars {
+        if let Some(registrar) = registrar {
+            agent_blueprints.push(registrar);
+        }
+    }
+    agent_blueprints
 }
 
 /// Brings up the settings service environment.
