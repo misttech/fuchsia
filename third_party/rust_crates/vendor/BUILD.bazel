@@ -391,6 +391,18 @@ alias(
 )
 
 alias(
+    name = "bt-pacs-0.0.1",
+    actual = "//third_party/rust_crates/vendor/bt-pacs-0.0.1:bt_pacs",
+    tags = ["manual"],
+)
+
+alias(
+    name = "bt-pacs",
+    actual = "//third_party/rust_crates/vendor/bt-pacs-0.0.1:bt_pacs",
+    tags = ["manual"],
+)
+
+alias(
     name = "bumpalo-3.17.0",
     actual = "//third_party/rust_crates/vendor/bumpalo-3.17.0:bumpalo",
     tags = ["manual"],

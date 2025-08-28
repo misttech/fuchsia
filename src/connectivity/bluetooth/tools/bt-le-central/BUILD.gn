@@ -21,6 +21,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bt-common",
     "//third_party/rust_crates:bt-gatt",
+    "//third_party/rust_crates:bt-pacs",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:getopts",
     "//third_party/rust_crates:num",

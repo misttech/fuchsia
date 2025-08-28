@@ -12,9 +12,11 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use bt_common::debug_command::{CommandRunner, CommandSet};
 use bt_common::Uuid;
 use bt_gatt::client::{Client, PeerService, PeerServiceHandle};
 use bt_gatt::types::Characteristic;
+use bt_pacs::debug::{PacsCmd, PacsDebug};
 
 use self::commands::Cmd;
 
@@ -104,14 +106,21 @@ struct GattClient<T: bt_gatt::GattTypes> {
 
     // Proxy and associated state for the currently connected service, if any.
     active_service: Mutex<Option<Arc<ActiveService<T>>>>,
+
+    // Pacs client
+    pacs: Arc<PacsDebug<T>>,
 }
 
 impl<T: bt_gatt::GattTypes> GattClient<T> {
-    fn new(client: T::Client) -> GattClientPtr<T> {
+    fn new(client: T::Client) -> GattClientPtr<T>
+    where
+        <T as bt_gatt::GattTypes>::Client: Clone,
+    {
         Arc::new(GattClient {
-            client,
+            client: client.clone(),
             services: Mutex::new(HashMap::new()),
             active_service: Mutex::new(None),
+            pacs: Arc::new(PacsDebug::new(client)),
         })
     }
 
@@ -172,6 +181,10 @@ impl<T: bt_gatt::GattTypes> GattClient<T> {
                 Err(e.into())
             }
         }
+    }
+
+    fn pacs(&self) -> Arc<PacsDebug<T>> {
+        self.pacs.clone()
     }
 
     fn active(&self) -> Option<Arc<ActiveService<T>>> {
@@ -736,6 +749,46 @@ async fn do_disable_notify<'a, T: bt_gatt::GattTypes>(
     } else {
         println!("(id = {id}) notifications not enabled");
     }
+    Ok(())
+}
+
+async fn pacs_cmd<T: bt_gatt::GattTypes>(
+    pacs: Arc<PacsDebug<T>>,
+    sub_cmd: PacsCmd,
+    args: Vec<String>,
+) -> Result<(), Error> {
+    if let Err(e) = pacs.run(sub_cmd, args).await {
+        println!("Error running pacs command: {e:?}");
+    }
+    Ok(())
+}
+
+async fn do_pacs<T: bt_gatt::GattTypes>(
+    args: Vec<String>,
+    client: GattClientPtr<T>,
+) -> Result<(), Error> {
+    if args.len() < 1 {
+        println!("usage: pacs {}", "variants");
+        return Ok(());
+    }
+
+    let Ok(sub_cmd) = args[0].parse::<PacsCmd>() else {
+        println!(
+            "subcommands are: {}",
+            PacsCmd::variants()
+                .into_iter()
+                .map(|mut s| {
+                    s.push_str(" ");
+                    s
+                })
+                .collect::<String>()
+        );
+        return Ok(());
+    };
+
+    println!("Args: {:?}", args);
+    let pacs = client.pacs();
+    pacs_cmd(pacs, sub_cmd, args.clone()).await?;
     Ok(())
 }
 

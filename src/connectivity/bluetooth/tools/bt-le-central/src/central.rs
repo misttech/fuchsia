@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(armansito): Remove this once a server channel can be killed using a Controller
-#![allow(unreachable_code)]
-
 use anyhow::{format_err, Error};
 use fuchsia_sync::Mutex;
 use futures::future::FutureExt;
@@ -65,7 +62,10 @@ impl<T: bt_gatt::GattTypes> CentralState<T> {
 pub async fn watch_scan_results<T: bt_gatt::GattTypes>(
     state: CentralStatePtr<T>,
     result_stream: T::ScanResultStream,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    <T as bt_gatt::GattTypes>::Client: Clone,
+{
     eprintln!("Starting Scan");
     let mut pinned_stream = Box::pin(result_stream);
     let connect_id = loop {
@@ -104,8 +104,13 @@ pub async fn connect<T: bt_gatt::GattTypes>(
     central: Arc<T::Central>,
     peer_id: PeerId,
     service_uuid: Option<Uuid>,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    <T as bt_gatt::GattTypes>::Client: Clone,
+{
     let client = central.connect(peer_id).await?;
+
+    println!("Connecting to {}..", peer_id);
 
     let gatt_loop_fut = start_gatt_loop::<T>(client, service_uuid).fuse();
     pin_mut!(gatt_loop_fut);

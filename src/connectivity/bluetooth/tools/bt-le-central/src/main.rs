@@ -21,7 +21,10 @@ async fn do_scan<T: bt_gatt::GattTypes>(
     appname: &String,
     args: &[String],
     state: CentralStatePtr<T>,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    <T as bt_gatt::GattTypes>::Client: Clone,
+{
     let mut opts = Options::new();
 
     let _ = opts.optflag("h", "help", "");
@@ -98,9 +101,12 @@ async fn do_scan<T: bt_gatt::GattTypes>(
 
     let mut filters = ScanFilter::default();
     if uuid.is_some() {
-        let _ = filters.add(Filter::ServiceUuid(bt_gatt_fuchsia::to_gatt_uuid(&uuid.unwrap())));
+        let uuid = bt_gatt_fuchsia::to_gatt_uuid(&uuid.unwrap());
+        println!("Adding {} to the scan filter..", uuid.recognize());
+        let _ = filters.add(Filter::ServiceUuid(uuid));
     }
     if name.is_some() {
+        println!("Filtering by names matching {}", name.as_ref().unwrap());
         let _ = filters.add(Filter::MatchesName(name.unwrap()));
     }
     let scan_fut = state.lock().get_central().scan(&[filters]);
@@ -113,7 +119,10 @@ async fn do_scan<T: bt_gatt::GattTypes>(
 async fn do_connect<'a, T: bt_gatt::GattTypes>(
     state: CentralStatePtr<T>,
     args: &'a [String],
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    <T as bt_gatt::GattTypes>::Client: Clone,
+{
     if args.len() < 1 {
         println!("connect: peer-id is required");
         return Err(format_err!("invalid connect arguments"));

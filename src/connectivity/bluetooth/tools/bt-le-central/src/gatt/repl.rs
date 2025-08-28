@@ -19,6 +19,7 @@ use super::{
     do_enable_notify,
     do_find_services,
     do_list,
+    do_pacs,
     do_read_chr,
     do_read_desc,
     do_read_long_chr,
@@ -44,7 +45,10 @@ pub static CHA: &str = "\x1b[1G";
 pub async fn start_gatt_loop<'a, T: bt_gatt::GattTypes>(
     client: T::Client,
     service: Option<Uuid>,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    <T as bt_gatt::GattTypes>::Client: Clone,
+{
     let client = GattClient::<T>::new(client);
 
     if let Some(uuid) = service {
@@ -127,6 +131,8 @@ async fn handle_cmd<T: bt_gatt::GattTypes>(
     let cmd = components.next().map(|c| c.parse());
     let args: Vec<&str> = components.collect();
 
+    let args_str: Vec<String> = args.iter().map(|s| String::from(*s)).collect();
+
     match cmd {
         Some(Ok(Cmd::Exit)) | Some(Ok(Cmd::Quit)) => {
             return Err(format_err!("exited").into());
@@ -154,6 +160,7 @@ async fn handle_cmd<T: bt_gatt::GattTypes>(
         Some(Ok(Cmd::WriteLongDesc)) => do_write_long_desc(&args, client).await,
         Some(Ok(Cmd::EnableNotify)) => do_enable_notify(&args, client).await,
         Some(Ok(Cmd::DisableNotify)) => do_disable_notify(&args, client).await,
+        Some(Ok(Cmd::Pacs)) => do_pacs(args_str, client.clone()).await,
         Some(Err(e)) => {
             eprintln!("Unknown command: {:?}", e);
             Ok(())

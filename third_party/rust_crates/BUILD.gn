@@ -135,6 +135,10 @@ group("bt-gatt") {
   public_deps = [ ":bt-gatt-v0_0_1" ]
 }
 
+group("bt-pacs") {
+  public_deps = [ ":bt-pacs-v0_0_1" ]
+}
+
 group("bumpalo") {
   public_deps = [ ":bumpalo-v3_17_0" ]
 }
@@ -3186,6 +3190,39 @@ rustc_library("bt-gatt-v0_0_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":bt-gatt-v0_0_1.license" ]
+}
+
+license("bt-pacs-v0_0_1.license") {
+  public_package_name = "bt_pacs"
+  license_files =
+      [ "//third_party/rust_crates/forks/bluetooth/bt-pacs/LICENSE" ]
+}
+
+rustc_library("bt-pacs-v0_0_1") {
+  crate_name = "bt_pacs"
+  source_root = "//third_party/rust_crates/forks/bluetooth/bt-pacs/src/lib.rs"
+  output_name = "bt_pacs-36eafd209f466e47"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":bt-common-v0_0_1" ]
+  deps += [ ":bt-gatt-v0_0_1" ]
+  deps += [ ":futures-v0_3_31" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=36eafd209f466e47",
+    "-Cextra-filename=-36eafd209f466e47",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":bt-pacs-v0_0_1.license" ]
 }
 
 license("bumpalo-v3_17_0.license") {

@@ -61,6 +61,7 @@ impl bt_gatt::ServerTypes for FuchsiaTypes {
     type IndicateConfirmationStream = IndicateConfirmationStream;
 }
 
+#[derive(Clone)]
 pub struct Central {
     proxy: fidl_le::CentralProxy,
 }
@@ -667,6 +668,7 @@ impl bt_gatt::client::PeerServiceHandle<FuchsiaTypes> for PeerServiceHandle {
     }
 }
 
+#[derive(Clone)]
 pub struct Client {
     peer_id: PeerId,
     _connection_proxy: fidl_le::ConnectionProxy,

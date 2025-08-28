@@ -110,6 +110,7 @@ gen_commands! {
         ReadByType = ("read-by-type", [], ["uuid"], "Read a characteristic or descriptor by UUID"),
         EnableNotify = ("enable-notify", [], ["id"], "Enable characteristic notifications"),
         DisableNotify = ("disable-notify", [], ["id"], "Disable characteristic notifications"),
+        Pacs = ("pacs", [], [], "PACS subcommands"),
         Quit = ("quit", [], [], "Quit and disconnect the peripheral"),
         Exit = ("exit", [], [], "Quit and disconnect the peripheral"),
     }

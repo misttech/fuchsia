@@ -5,7 +5,7 @@
 use super::AssignedNumber;
 use crate::assigned_number;
 
-pub(super) const SERVICE_UUIDS: [AssignedNumber; 40] = [
+pub(super) const SERVICE_UUIDS: [AssignedNumber; 71] = [
     assigned_number!(0x1800, "GAP", "Generic Access"),
     assigned_number!(0x1801, "GATT", "Generic Attribute"),
     assigned_number!(0x1802, "IAS", "Immediate Alert Service"),
@@ -46,6 +46,37 @@ pub(super) const SERVICE_UUIDS: [AssignedNumber; 40] = [
     assigned_number!(0x1828, "MPS", "Mesh Proxy Service"),
     assigned_number!(0x1829, "RCS", "Reconnection Configuration Service"),
     assigned_number!(0x183A, "IDS", "Insulin Delivery Service"),
+    assigned_number!(0x183B, "BSS", "Binary Sensor"),
+    assigned_number!(0x183C, "ECS", "Emergency Configuration"),
+    assigned_number!(0x183D, "ACS", "Authorization Control"),
+    assigned_number!(0x183E, "PAMS", "Physical Activity Monitor"),
+    assigned_number!(0x183F, "ETS", "Elapsed Time"),
+    assigned_number!(0x1840, "GHSS", "Generic Health Sensor"),
+    assigned_number!(0x1843, "AICS", "Audio Input Control"),
+    assigned_number!(0x1844, "VCS", "Volume Control"),
+    assigned_number!(0x1845, "VOCS", "Volume Offset Control"),
+    assigned_number!(0x1846, "CSIS", "Coordinated Set Identification"),
+    assigned_number!(0x1847, "DTS", "Device Time"),
+    assigned_number!(0x1848, "MCS", "Media Control"),
+    assigned_number!(0x1849, "GMCS", "Generic Media Control"),
+    assigned_number!(0x184A, "CTES", "Constant Tone Extension"),
+    assigned_number!(0x184B, "TBS", "Telephone Bearer"),
+    assigned_number!(0x184C, "GTBS", "Generic Telephone Bearer"),
+    assigned_number!(0x184D, "MCS", "Microphone Control"),
+    assigned_number!(0x184E, "ASCS", "Audio Stream Control"),
+    assigned_number!(0x184F, "BASS", "Broadcast Audio Scan"),
+    assigned_number!(0x1850, "PACS", "Published Audio Capabilities"),
+    assigned_number!(0x1851, "BAAS", "Basic Audio Announcement"),
+    assigned_number!(0x1852, "BAAS", "Broadcast Audio Announcement"),
+    assigned_number!(0x1853, "CAS", "Common Audio"),
+    assigned_number!(0x1854, "HAS", "Hearing Access"),
+    assigned_number!(0x1855, "TMAS", "Telephony and Media Audio"),
+    assigned_number!(0x1856, "PBAS", "Public Broadcast Announcement"),
+    assigned_number!(0x1857, "ESLS", "Electronic Shelf Label"),
+    assigned_number!(0x1858, "GAS", "Gaming Audio"),
+    assigned_number!(0x1859, "MPSS", "Mesh Proxy Solicitation"),
+    assigned_number!(0x185A, "IMDS", "Industrial Measurement Device"),
+    assigned_number!(0x185B, "RS", "Ranging"),
 ];
 
 /// Custom service uuids are SIG allocated 16-bit Universally Unique Identifier (UUID)
