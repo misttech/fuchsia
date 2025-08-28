@@ -3,27 +3,48 @@
 // found in the LICENSE file.
 
 use core::cell::UnsafeCell;
+use core::future::Future;
 use core::hint::unreachable_unchecked;
-use core::mem::{MaybeUninit, replace, take};
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::mem::{ManuallyDrop, MaybeUninit, replace, take};
+use core::pin::Pin;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::{Context, Poll, Waker};
 use std::sync::Mutex;
 
-use core::future::Future;
-use core::pin::Pin;
-
+use fidl_next_codec::EncodeError;
 use futures::task::AtomicWaker;
 
 use crate::{NonBlockingTransport, ProtocolError, Transport, encode_epitaph, encode_header};
 
 pub const ORDINAL_EPITAPH: u64 = 0xffff_ffff_ffff_ffff;
 
-// The connection is running normally.
-const STATE_RUNNING: u8 = 0;
-// The connection is stopping.
-const STATE_STOPPING: u8 = 1;
-// The connection has been terminated.
-const STATE_TERMINATED: u8 = 2;
+// Indicates that the connection has been requested to stop. Connections are
+// always stopped as they are terminated.
+const STOPPING_BIT: usize = 1 << 0;
+// Indicates that the connection has been provided a termination reason.
+const TERMINATED_BIT: usize = 1 << 1;
+const BITS_COUNT: usize = 2;
+
+// Each refcount represents a thread which is attempting to access the shared
+// part of the transport.
+const REFCOUNT: usize = 1 << BITS_COUNT;
+
+#[derive(Clone, Copy)]
+struct State(usize);
+
+impl State {
+    fn is_stopping(self) -> bool {
+        self.0 & STOPPING_BIT != 0
+    }
+
+    fn is_terminated(self) -> bool {
+        self.0 & TERMINATED_BIT != 0
+    }
+
+    fn refcount(self) -> usize {
+        self.0 >> BITS_COUNT
+    }
+}
 
 /// A wrapper around a transport which connectivity semantics.
 ///
@@ -40,12 +61,23 @@ const STATE_TERMINATED: u8 = 2;
 ///   before the underlying transport is closed. This epitaph should be provided
 ///   to all sends when they fail, which requires additional coordination.
 pub struct Connection<T: Transport> {
-    state: AtomicU8,
-    shared: T::Shared,
+    // The lowest `BITS_COUNT` of this field contain flags indicating the
+    // current state of the transport. The remainder of the upper bits contain
+    // the number of threads attempting to access the `shared` field.
+    state: AtomicUsize,
+    // A thread will drop `shared` if:
+    //
+    // - the connection is dropped before being terminated, or
+    // - it set `TERMINATED_BIT` while the refcount was 0, or
+    // - it decremented the refcount to 0 while `TERMINATED_BIT` was set.
+    //
+    // These cases are handled by `drop`, `terminate`, and `with_shared`
+    // respectively.
+    shared: UnsafeCell<ManuallyDrop<T::Shared>>,
     stop_waker: AtomicWaker,
     // TODO: switch this to intrusive linked list in send futures
     termination_wakers: Mutex<Vec<Waker>>,
-    // Initialized as part of the transition from CLOSING to CLOSED
+    // Initialized if `TERMINATED_BIT` is set.
     termination_reason: UnsafeCell<MaybeUninit<ProtocolError<T::Error>>>,
 }
 
@@ -54,9 +86,17 @@ unsafe impl<T: Transport> Sync for Connection<T> {}
 
 impl<T: Transport> Drop for Connection<T> {
     fn drop(&mut self) {
-        if *self.state.get_mut() == STATE_TERMINATED {
-            // SAFETY: `termination_reason` is initialized if the state is
-            // `STATE_TERMINATED`.
+        let state = State(*self.state.get_mut());
+
+        if !state.is_terminated() {
+            // SAFETY: The connection was not terminated before being dropped,
+            // so `shared` has not yet been dropped.
+            unsafe {
+                ManuallyDrop::drop(self.shared.get_mut());
+            }
+        } else {
+            // SAFETY: The connection was terminated before being dropped, so
+            // `termination_reason` is initialized.
             unsafe {
                 self.termination_reason.get_mut().assume_init_drop();
             }
@@ -68,8 +108,8 @@ impl<T: Transport> Connection<T> {
     /// Creates a new connection from the shared part of a transport.
     pub fn new(shared: T::Shared) -> Self {
         Self {
-            state: AtomicU8::new(STATE_RUNNING),
-            shared,
+            state: AtomicUsize::new(0),
+            shared: UnsafeCell::new(ManuallyDrop::new(shared)),
             stop_waker: AtomicWaker::new(),
             termination_wakers: Mutex::new(Vec::new()),
             termination_reason: UnsafeCell::new(MaybeUninit::uninit()),
@@ -78,68 +118,153 @@ impl<T: Transport> Connection<T> {
 
     /// # Safety
     ///
-    /// `state` must have been loaded with `Ordering::Acquire` and observed to
-    /// be `STATE_TERMINATED`.
+    /// This thread must have loaded `state` with at least `Ordering::Acquire`
+    /// and observed that `TERMINATED_BIT` was set.
     unsafe fn get_termination_reason_unchecked(&self) -> ProtocolError<T::Error> {
+        // SAFETY: The caller guaranteed that `state` was loaded with at least
+        // `Ordering::Acquire` ordering and observed that `TERMINATED_BIT` was
+        // set.
         unsafe { (&*self.termination_reason.get()).assume_init_ref().clone() }
     }
 
-    /// Returns the termination reason if the connection is terminated.
+    /// Returns the termination reason for the connection, if any.
     pub fn get_termination_reason(&self) -> Option<ProtocolError<T::Error>> {
-        let state = self.state.load(Ordering::Acquire);
-        if state == STATE_TERMINATED {
+        if self.state.load(Ordering::Acquire) & TERMINATED_BIT != 0 {
+            // SAFETY: We loaded the state with `Ordering::Acquire` and observed
+            // that `TERMINATED_BIT` was set.
             unsafe { Some(self.get_termination_reason_unchecked()) }
         } else {
             None
         }
     }
 
-    /// Acquires an empty send buffer for the transport.
-    pub fn acquire(&self) -> T::SendBuffer {
-        T::acquire(&self.shared)
+    /// # Safety
+    ///
+    /// `shared` must not have been dropped. See the documentation on `shared`
+    /// for acceptable criteria.
+    unsafe fn get_shared_unchecked(&self) -> &T::Shared {
+        // SAFETY: The caller guaranteed that `shared` has not been dropped.
+        unsafe { &*self.shared.get() }
     }
 
-    /// Returns a new [`SendFuture`] which sends the given buffer.
-    pub fn send(&self, buffer: T::SendBuffer) -> SendFuture<'_, T> {
-        SendFuture {
-            connection: self,
-            waker_index: None,
-            future_state: T::begin_send(&self.shared, buffer),
+    fn with_shared<U>(
+        &self,
+        success: impl FnOnce(&T::Shared) -> U,
+        failure: impl FnOnce(Option<ProtocolError<T::Error>>) -> U,
+    ) -> U {
+        let pre_increment = State(self.state.fetch_add(REFCOUNT, Ordering::Acquire));
+
+        // After the refcount drops to zero (and `shared` is dropped), threads
+        // may still increment and decrement the refcount to attempt to read it.
+        // To avoid dropping `shared` more than once, we prevent the refcount
+        // from being decremented to 0 more than once after `TERMINATED_BIT` is
+        // set.
+        //
+        // We do this by having each thread check whether its increment changed
+        // the refcount from 0 to 1 while `TERMINATED_BIT` was set. If it did,
+        // the thread will not decrement that refcount, leaving it "dangling"
+        // instead. This ensures that the refcount never falls below 1 again.
+        if pre_increment.is_terminated() && pre_increment.refcount() == 0 {
+            // SAFETY: We loaded `state` with `Ordering::Acquire` and observed
+            // that `TERMINATED_BIT` was set.
+            let termination_reason = unsafe { self.get_termination_reason_unchecked() };
+            return failure(Some(termination_reason));
         }
+
+        let mut success_result = None;
+        if !pre_increment.is_stopping() {
+            // SAFETY: Termination always sets `STOPPING_BIT`. We incremented
+            // the refcount while `STOPPING_BIT` was not set, so `shared` won't
+            // be dropped until we decrement our refcount.
+            let shared = unsafe { self.get_shared_unchecked() };
+            success_result = Some(success(shared));
+        }
+
+        let pre_decrement = State(self.state.fetch_sub(REFCOUNT, Ordering::Acquire));
+
+        if !pre_decrement.is_stopping() {
+            success_result.unwrap()
+        } else if !pre_decrement.is_terminated() {
+            failure(None)
+        } else {
+            // The connection is terminated. If we decremented the refcount to
+            // 0, then we need to drop `shared`.
+            if pre_decrement.refcount() == 1 {
+                // SAFETY: We decremented the refcount to 0 while
+                // `TERMINATED_BIT` was set.
+                unsafe {
+                    ManuallyDrop::drop(&mut *self.shared.get());
+                }
+            }
+
+            // SAFETY: We loaded `state` with `Ordering::Acquire` and observed
+            // that `TERMINATED_BIT` was set.
+            let termination_reason = unsafe { self.get_termination_reason_unchecked() };
+            failure(Some(termination_reason))
+        }
+    }
+
+    pub fn send_with(
+        &self,
+        f: impl FnOnce(&mut T::SendBuffer) -> Result<(), EncodeError>,
+    ) -> Result<SendFuture<'_, T>, EncodeError> {
+        Ok(SendFuture {
+            connection: self,
+            state: self.with_shared(
+                |shared| {
+                    let mut buffer = T::acquire(shared);
+                    f(&mut buffer)?;
+                    Ok(SendFutureState::Running { future_state: T::begin_send(shared, buffer) })
+                },
+                |error| {
+                    Ok(error
+                        // Some(Error) => Terminated
+                        .map(|error| SendFutureState::Terminated { error })
+                        // None => Stopping
+                        .unwrap_or(SendFutureState::Stopping))
+                },
+            )?,
+        })
     }
 
     /// Sends an epitaph to the underlying transport.
     ///
     /// This send ignores the current state of the connection, and does not
     /// report back any errors encountered while sending.
-    pub async fn send_epitaph(&self, error: i32) {
-        struct SendEpitaphFuture<'a, T: Transport> {
-            shared: &'a T::Shared,
-            future_state: T::SendFutureState,
-        }
+    ///
+    /// # Safety
+    ///
+    /// The connection must not be terminated, and the returned future must be
+    /// completed or canceled before the connection is terminated.
+    pub unsafe fn send_epitaph(&self, error: i32) -> SendEpitaphFuture<'_, T> {
+        // SAFETY: The caller has guaranteed that the connection is not
+        // terminated, and will not be terminated until the returned future is
+        // completed or canceled. As long as the connection is not terminated,
+        // `shared` will not be dropped.
+        let shared = unsafe { &*self.shared.get() };
 
-        impl<T: Transport> Future for SendEpitaphFuture<'_, T> {
-            type Output = Result<(), Option<T::Error>>;
-
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                let this = unsafe { Pin::into_inner_unchecked(self) };
-                let future_state = unsafe { Pin::new_unchecked(&mut this.future_state) };
-                T::poll_send(future_state, cx, this.shared)
-            }
-        }
-
-        let mut buffer = self.acquire();
+        let mut buffer = T::acquire(shared);
         encode_header::<T>(&mut buffer, 0, ORDINAL_EPITAPH).unwrap();
         encode_epitaph::<T>(&mut buffer, error).unwrap();
-        let future_state = T::begin_send(&self.shared, buffer);
+        let future_state = T::begin_send(shared, buffer);
 
-        // Don't care whether sending the epitaph succeeds or fails
-        let _ = SendEpitaphFuture::<'_, T> { shared: &self.shared, future_state }.await;
+        SendEpitaphFuture { shared, future_state }
     }
 
     /// Returns a new [`RecvFuture`] which receives the next message.
-    pub fn recv<'a>(&'a self, exclusive: &'a mut T::Exclusive) -> RecvFuture<'a, T> {
-        let future_state = T::begin_recv(&self.shared, exclusive);
+    ///
+    /// # Safety
+    ///
+    /// The connection must not be terminated, and the returned future must be
+    /// completed or canceled before the connection is terminated.
+    pub unsafe fn recv<'a>(&'a self, exclusive: &'a mut T::Exclusive) -> RecvFuture<'a, T> {
+        // SAFETY: The caller has guaranteed that the connection is not
+        // terminated, and will not be terminated until the returned future is
+        // completed or canceled. As long as the connection is not terminated,
+        // `shared` will not be dropped.
+        let shared = unsafe { &*self.shared.get() };
+
+        let future_state = T::begin_recv(shared, exclusive);
         RecvFuture { connection: self, exclusive, future_state }
     }
 
@@ -156,8 +281,8 @@ impl<T: Transport> Connection<T> {
     /// [`poll_send`]: Transport::poll_send
     /// [`poll_recv`]: Transport::poll_recv
     pub fn stop(&self) {
-        let prev_state = self.state.fetch_max(STATE_STOPPING, Ordering::Relaxed);
-        if prev_state < STATE_STOPPING {
+        let prev_state = State(self.state.fetch_or(STOPPING_BIT, Ordering::Relaxed));
+        if !prev_state.is_stopping() {
             self.stop_waker.wake();
         }
     }
@@ -167,53 +292,84 @@ impl<T: Transport> Connection<T> {
     /// This causes this connection's futures to return `Poll::Ready` with an
     /// error of the given termination reason.
     ///
-    /// Does nothing if the connection has already been terminated.
-    pub fn terminate(&self, termination_reason: ProtocolError<T::Error>) {
-        let mut wakers_guard = self.termination_wakers.lock().unwrap();
-        let previous_state = self.state.fetch_max(STATE_TERMINATED, Ordering::Acquire);
+    /// # Safety
+    ///
+    /// `terminate` may only be called once per connection.
+    pub unsafe fn terminate(&self, termination_reason: ProtocolError<T::Error>) {
+        // SAFETY: The caller guaranteed that this is the only time `terminate`
+        // is called on this connection.
+        unsafe {
+            self.termination_reason.get().write(MaybeUninit::new(termination_reason));
+        }
+        let pre_terminate =
+            State(self.state.fetch_or(STOPPING_BIT | TERMINATED_BIT, Ordering::Release));
 
-        if previous_state != STATE_TERMINATED {
-            // SAFETY: We successfully increased the state to
-            // `STATE_TERMINATING` which gives us permission to write the
-            // termination reason.
+        // If we set `TERMINATED_BIT` and the refcount was 0, then we need to
+        // drop `shared`.
+        if !pre_terminate.is_terminated() && pre_terminate.refcount() == 0 {
+            // SAFETY: We set `TERMINATED_BIT` while the refcount was 0.
             unsafe {
-                self.termination_reason.get().write(MaybeUninit::new(termination_reason));
-            }
-
-            // Wake all of the futures waiting for a termination reason
-            let wakers = take(&mut *wakers_guard);
-            drop(wakers_guard);
-
-            for waker in wakers {
-                waker.wake();
+                ManuallyDrop::drop(&mut *self.shared.get());
             }
         }
+
+        // Wake all of the futures waiting for a termination reason
+        let wakers = take(&mut *self.termination_wakers.lock().unwrap());
+        for waker in wakers {
+            waker.wake();
+        }
     }
+}
+
+pub struct SendEpitaphFuture<'a, T: Transport> {
+    shared: &'a T::Shared,
+    future_state: T::SendFutureState,
+}
+
+impl<T: Transport> Future for SendEpitaphFuture<'_, T> {
+    type Output = Result<(), Option<T::Error>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: We continue to treat `self` as pinned.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        // SAFETY: `self` is pinned, and `future_state` is a structurally-pinned
+        // field of `self`.
+        let future_state = unsafe { Pin::new_unchecked(&mut this.future_state) };
+        T::poll_send(future_state, cx, this.shared)
+    }
+}
+
+enum SendFutureState<T: Transport> {
+    Running { future_state: T::SendFutureState },
+    Stopping,
+    Terminated { error: ProtocolError<T::Error> },
+    Waiting { waker_index: usize },
+    Finished,
 }
 
 /// A future which sends an encoded message to a connection.
 #[must_use = "futures do nothing unless polled"]
 pub struct SendFuture<'a, T: Transport> {
     connection: &'a Connection<T>,
-    waker_index: Option<usize>,
-    future_state: T::SendFutureState,
+    state: SendFutureState<T>,
 }
 
 impl<T: Transport> SendFuture<'_, T> {
     fn register_termination_waker(
         &mut self,
         cx: &mut Context<'_>,
-    ) -> Result<(), ProtocolError<T::Error>> {
+        waker_index: Option<usize>,
+    ) -> Poll<Result<(), ProtocolError<T::Error>>> {
         let mut wakers = self.connection.termination_wakers.lock().unwrap();
 
         // Re-check the state now that we're holding the lock again. This
         // prevents us from adding wakers after termination (which would "leak"
         // them).
         if let Some(termination_reason) = self.connection.get_termination_reason() {
-            Err(termination_reason)
+            Poll::Ready(Err(termination_reason))
         } else {
             let waker = cx.waker().clone();
-            if let Some(waker_index) = self.waker_index {
+            if let Some(waker_index) = waker_index {
                 // Overwrite an existing waker
                 let old_waker = replace(&mut wakers[waker_index], waker);
 
@@ -222,10 +378,15 @@ impl<T: Transport> SendFuture<'_, T> {
                 drop(old_waker);
             } else {
                 // Insert a new waker
-                self.waker_index = Some(wakers.len());
+                let waker_index = wakers.len();
                 wakers.push(waker);
+
+                // Update the state outside of the mutex lock. If we were
+                // running then a `T::SendFutureState` may be dropped.
+                drop(wakers);
+                self.state = SendFutureState::Waiting { waker_index };
             }
-            Ok(())
+            Poll::Pending
         }
     }
 }
@@ -234,13 +395,39 @@ impl<T: NonBlockingTransport> SendFuture<'_, T> {
     /// Completes the send operation synchronously and without blocking.
     ///
     /// Using this method prevents transports from applying backpressure. Prefer
-    /// awaiting when possible.
+    /// awaiting when possible to allow for backpressure.
     ///
-    /// Because failed sends return immediately without waiting for an epitaph
-    /// to be read, `send_immediately` may observe transport closure
-    /// prematurely.
-    pub fn send_immediately(mut self) -> Result<(), Option<T::Error>> {
-        T::send_immediately(&mut self.future_state, &self.connection.shared)
+    /// Because failed sends return immediately, `send_immediately` may observe
+    /// transport closure prematurely. This can manifest as this method
+    /// returning `Err(PeerClosed)` or `Err(Stopped)` when it should have
+    /// returned `Err(PeerClosedWithEpitaph)`. Prefer awaiting when possible for
+    /// correctness.
+    pub fn send_immediately(mut self) -> Result<(), ProtocolError<T::Error>> {
+        match replace(&mut self.state, SendFutureState::Finished) {
+            SendFutureState::Running { mut future_state } => {
+                self.connection.with_shared(
+                    |shared| {
+                        // Connection is running, try to send immediately.
+                        T::send_immediately(&mut future_state, shared).map_err(|e| {
+                            // Immediate send failed:
+                            // - `None` => `PeerClosed`
+                            // - `Some(T::Error)` => `TransportError(T::Error)`
+                            e.map_or(ProtocolError::PeerClosed, ProtocolError::TransportError)
+                        })
+                    },
+                    // Getting shared failed, but we may have a termination
+                    // reason. If we don't have one, return `Stopped`.
+                    |error| Err(error.unwrap_or(ProtocolError::Stopped)),
+                )
+            }
+            SendFutureState::Stopping | SendFutureState::Waiting { waker_index: _ } => {
+                // Try to get the termination reason. If we don't have one yet,
+                // return `Stopped`.
+                Err(self.connection.get_termination_reason().unwrap_or(ProtocolError::Stopped))
+            }
+            SendFutureState::Terminated { error } => Err(error),
+            SendFutureState::Finished => panic!("SendFuture polled after finishing"),
+        }
     }
 }
 
@@ -248,65 +435,49 @@ impl<T: Transport> Future for SendFuture<'_, T> {
     type Output = Result<(), ProtocolError<T::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: We continue to treat `self` as pinned.
         let this = unsafe { Pin::into_inner_unchecked(self) };
 
-        let mut state = this.connection.state.load(Ordering::Acquire);
-        loop {
-            match state {
-                STATE_RUNNING => {
-                    // Connection is running, poll the future.
+        match &this.state {
+            SendFutureState::Running { .. } => {
+                let result = this.connection.with_shared(
+                    |shared| {
+                        let SendFutureState::Running { future_state } = &mut this.state else {
+                            // SAFETY: We matched on `state` and checked that it
+                            // is Running.
+                            unsafe { unreachable_unchecked() }
+                        };
+                        // SAFETY: `self` is pinned and `future_state` is a
+                        // structurally pinned field of `self`.
+                        let future_state = unsafe { Pin::new_unchecked(future_state) };
+                        T::poll_send(future_state, cx, shared)
+                            // `Err(Some(error))` =>
+                            //   `Err(Some(TransportError(error)))`
+                            .map_err(|error| error.map(ProtocolError::TransportError))
+                    },
+                    |error| Poll::Ready(Err(error)),
+                );
 
-                    let future_state = unsafe { Pin::new_unchecked(&mut this.future_state) };
-                    match T::poll_send(future_state, cx, &this.connection.shared) {
-                        // Send didn't complete, we'll get polled again later.
-                        Poll::Pending => (),
-
-                        // Send succeeded.
-                        Poll::Ready(Ok(())) => return Poll::Ready(Ok(())),
-
-                        // Transport failed
-                        Poll::Ready(Err(error)) => {
-                            if let Some(e) = error {
-                                // Abnormal failure: return the transport error.
-                                return Poll::Ready(Err(ProtocolError::TransportError(e)));
-                            } else {
-                                // Normal failure: wait for termination reason.
-                                if let Err(error) = this.register_termination_waker(cx) {
-                                    return Poll::Ready(Err(error));
-                                }
-                            }
-                        }
-                    }
+                match result {
+                    Poll::Pending => Poll::Pending,
+                    Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+                    Poll::Ready(Err(None)) => this.register_termination_waker(cx, None),
+                    Poll::Ready(Err(Some(error))) => Poll::Ready(Err(error)),
                 }
-
-                STATE_STOPPING => {
-                    // Connection is stopping, but not terminated yet. Wait for
-                    // a termination reason.
-                    if let Err(error) = this.register_termination_waker(cx) {
-                        return Poll::Ready(Err(error));
-                    }
-                }
-
-                STATE_TERMINATED => {
-                    // Connection has terminated, return the termination reason.
-                    let error = unsafe { this.connection.get_termination_reason_unchecked() };
-                    return Poll::Ready(Err(error));
-                }
-
-                _ => unsafe { unreachable_unchecked() },
             }
-
-            // We're ready to pend, but need to make sure the state hasn't been
-            // updated since we last checked.
-
-            let state_after = this.connection.state.load(Ordering::Acquire);
-            if state == state_after {
-                // The state hasn't changed and we're ready to pend.
-                return Poll::Pending;
+            SendFutureState::Stopping => this.register_termination_waker(cx, None),
+            SendFutureState::Terminated { .. } => {
+                let state = replace(&mut this.state, SendFutureState::Finished);
+                let SendFutureState::Terminated { error } = state else {
+                    // SAFETY: We just checked that our state is Terminated.
+                    unsafe { unreachable_unchecked() }
+                };
+                Poll::Ready(Err(error))
             }
-
-            // The state changed, poll again.
-            state = state_after;
+            SendFutureState::Waiting { waker_index } => {
+                this.register_termination_waker(cx, Some(*waker_index))
+            }
+            SendFutureState::Finished => panic!("SendFuture polled after returning `Poll::Ready`"),
         }
     }
 }
@@ -323,41 +494,42 @@ impl<T: Transport> Future for RecvFuture<'_, T> {
     type Output = Result<T::RecvBuffer, ProtocolError<T::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: We continue to treat `self` as pinned
         let this = unsafe { Pin::into_inner_unchecked(self) };
-        let state = this.connection.state.load(Ordering::Acquire);
 
-        if state == STATE_TERMINATED {
-            // Connection is terminated, return the termination reason.
-            let error = unsafe { this.connection.get_termination_reason_unchecked() };
-            return Poll::Ready(Err(error));
-        }
+        // SAFETY: This future is created by `Connection::recv`. The connection
+        // will not be terminated until this is completed or canceled, and so
+        // `shared` will not be dropped.
+        let shared = unsafe { this.connection.get_shared_unchecked() };
 
+        // SAFETY: `self` is pinned, and `future_state` is a structurally-pinned
+        // field of `self`.
         let future_state = unsafe { Pin::new_unchecked(&mut this.future_state) };
-        let termination_reason =
-            match T::poll_recv(future_state, cx, &this.connection.shared, this.exclusive) {
-                Poll::Pending => {
-                    // Receive didn't complete, register waker before re-checking state
-                    this.connection.stop_waker.register(cx.waker());
-
-                    if this.connection.state.load(Ordering::Relaxed) == STATE_STOPPING {
-                        // The connection is stopping. Return an error that the
-                        // connection has been closed locally.
-                        ProtocolError::Stopped
-                    } else {
-                        // Still running, we'll get polled again later.
-                        return Poll::Pending;
-                    }
+        let termination_reason = match T::poll_recv(future_state, cx, shared, this.exclusive) {
+            Poll::Pending => {
+                // Receive didn't complete, register waker before
+                // re-checking state.
+                this.connection.stop_waker.register(cx.waker());
+                let state = State(this.connection.state.load(Ordering::Relaxed));
+                if state.is_stopping() {
+                    // The connection is stopping. Return an error that the
+                    // connection has been stopped.
+                    ProtocolError::Stopped
+                } else {
+                    // Still running, we'll get polled again later.
+                    return Poll::Pending;
                 }
+            }
 
-                // Receive succeeded.
-                Poll::Ready(Ok(buffer)) => return Poll::Ready(Ok(buffer)),
+            // Receive succeeded.
+            Poll::Ready(Ok(buffer)) => return Poll::Ready(Ok(buffer)),
 
-                // Normal failure: return peer closed error.
-                Poll::Ready(Err(None)) => ProtocolError::PeerClosed,
+            // Normal failure: return peer closed error.
+            Poll::Ready(Err(None)) => ProtocolError::PeerClosed,
 
-                // Abnormal failure: return transport error.
-                Poll::Ready(Err(Some(error))) => ProtocolError::TransportError(error),
-            };
+            // Abnormal failure: return transport error.
+            Poll::Ready(Err(Some(error))) => ProtocolError::TransportError(error),
+        };
 
         Poll::Ready(Err(termination_reason))
     }

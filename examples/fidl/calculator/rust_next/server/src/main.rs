@@ -117,7 +117,7 @@ async fn main() -> Result<(), anyhow::Error> {
     component::health().set_ok();
     log::debug!("Initialized.");
 
-    service_fs.for_each_concurrent(None, |()| async {}).await;
+    service_fs.collect::<()>().await;
 
     Ok(())
 }
@@ -154,7 +154,7 @@ mod tests {
     async fn test_subtract() {
         let (client_end, server_end) = create_channel::<Calculator>();
         let sender = spawn_client_sender_detached(client_end);
-        let server_task = pin!(async move { Server::new(server_end).run(CalculatorServer).await });
+        let server_task = pin!(Server::new(server_end).run(CalculatorServer));
 
         let future = sender.subtract(7.7, 3.2).unwrap();
         futures::select! {
@@ -172,7 +172,7 @@ mod tests {
     async fn test_multiply() {
         let (client_end, server_end) = create_channel::<Calculator>();
         let sender = spawn_client_sender_detached(client_end);
-        let server_task = pin!(async move { Server::new(server_end).run(CalculatorServer).await });
+        let server_task = pin!(Server::new(server_end).run(CalculatorServer));
 
         let future = sender.multiply(1.5, 2.0).unwrap();
         futures::select! {
@@ -190,7 +190,7 @@ mod tests {
     async fn test_divide() {
         let (client_end, server_end) = create_channel::<Calculator>();
         let sender = spawn_client_sender_detached(client_end);
-        let server_task = pin!(async move { Server::new(server_end).run(CalculatorServer).await });
+        let server_task = pin!(Server::new(server_end).run(CalculatorServer));
 
         let future = sender.divide(2.0, 4.0).unwrap();
         futures::select! {
@@ -208,7 +208,7 @@ mod tests {
     async fn test_pow() {
         let (client_end, server_end) = create_channel::<Calculator>();
         let sender = spawn_client_sender_detached(client_end);
-        let server_task = pin!(async move { Server::new(server_end).run(CalculatorServer).await });
+        let server_task = pin!(Server::new(server_end).run(CalculatorServer));
 
         let future = sender.pow(3.0, 4.0).unwrap();
         futures::select! {

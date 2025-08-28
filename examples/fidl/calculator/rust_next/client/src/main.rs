@@ -17,11 +17,10 @@ async fn main() -> Result<(), anyhow::Error> {
     // <../BUILD.gn> can rely on
     // `"//examples/fidl/calculator/fidl:calculator_rust_next"` to make this
     // available.
-    let mut calculator =
+    let calculator =
         connect_to_protocol::<Calculator>().expect("Error connecting to Calculator Service.");
     let sender = calculator.sender().clone();
-    let calculator_handler =
-        fuchsia_async::Task::spawn(async move { calculator.run_sender().await });
+    let calculator_handler = fuchsia_async::Task::spawn(calculator.run_sender());
 
     // Note the path starts with /pkg/ even though the build rule
     // `resource("input")` uses `data/input.txt`. At runtime, components are
@@ -39,7 +38,8 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     }
 
-    calculator_handler.abort().await;
+    sender.close();
+    calculator_handler.await.expect("calculator client terminated unexpectedly");
 
     Ok(())
 }

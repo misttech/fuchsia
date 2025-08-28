@@ -67,10 +67,10 @@ impl<T: Transport> ServerSender<T> {
     where
         M: Encode<T::SendBuffer>,
     {
-        let mut buffer = self.inner.connection.acquire();
-        encode_header::<T>(&mut buffer, 0, ordinal)?;
-        buffer.encode_next(event)?;
-        Ok(self.inner.connection.send(buffer))
+        self.inner.connection.send_with(|buffer| {
+            encode_header::<T>(buffer, 0, ordinal)?;
+            buffer.encode_next(event)
+        })
     }
 
     /// Send a response to a two-way message.
@@ -83,10 +83,10 @@ impl<T: Transport> ServerSender<T> {
     where
         M: Encode<T::SendBuffer>,
     {
-        let mut buffer = self.inner.connection.acquire();
-        encode_header::<T>(&mut buffer, responder.txid.get(), ordinal)?;
-        buffer.encode_next(response)?;
-        Ok(self.inner.connection.send(buffer))
+        self.inner.connection.send_with(|buffer| {
+            encode_header::<T>(buffer, responder.txid.get(), ordinal)?;
+            buffer.encode_next(response)
+        })
     }
 }
 
@@ -132,13 +132,29 @@ pub trait ServerHandler<T: Transport> {
 pub struct Server<T: Transport> {
     sender: ServerSender<T>,
     exclusive: T::Exclusive,
+    is_terminated: bool,
+}
+
+impl<T: Transport> Drop for Server<T> {
+    fn drop(&mut self) {
+        if !self.is_terminated {
+            // SAFETY: We checked that the connection has not been terminated.
+            unsafe {
+                self.sender.inner.connection.terminate(ProtocolError::Stopped);
+            }
+        }
+    }
 }
 
 impl<T: Transport> Server<T> {
     /// Creates a new server from a transport.
     pub fn new(transport: T) -> Self {
         let (shared, exclusive) = transport.split();
-        Self { sender: ServerSender { inner: Arc::new(ServerSenderInner::new(shared)) }, exclusive }
+        Self {
+            sender: ServerSender { inner: Arc::new(ServerSenderInner::new(shared)) },
+            exclusive,
+            is_terminated: false,
+        }
     }
 
     /// Returns the sender for the server.
@@ -147,39 +163,60 @@ impl<T: Transport> Server<T> {
     }
 
     /// Runs the server with the provided handler.
-    pub async fn run<H>(&mut self, mut handler: H) -> Result<H, ProtocolError<T::Error>>
+    pub async fn run<H>(mut self, mut handler: H) -> Result<H, ProtocolError<T::Error>>
     where
         H: ServerHandler<T>,
     {
-        loop {
-            if let Err(error) = self.run_one(&mut handler).await {
-                // If we closed locally and have an epitaph to send
-                if matches!(error, ProtocolError::Stopped) {
-                    if let Some(epitaph) = self.sender.inner.epitaph() {
-                        self.sender.inner.connection.send_epitaph(epitaph).await;
-                    }
-                }
+        // We may assume that the connection has not been terminated because
+        // connections are only terminated by `run` and `drop`. Neither of those
+        // could have been called before this method because `run` consumes
+        // `self` and `drop` is only ever called once.
 
-                self.sender.inner.connection.terminate(error.clone());
-
-                let result = match error {
-                    // We consider servers to have finished successfully if they
-                    // stop themselves manually, or if the client disconnects.
-                    ProtocolError::Stopped | ProtocolError::PeerClosed => Ok(handler),
-
-                    // Otherwise, the server finished with an error.
-                    _ => Err(error),
-                };
-                return result;
+        let error = loop {
+            // SAFETY: The connection has not been terminated.
+            let result = unsafe { self.run_one(&mut handler).await };
+            if let Err(error) = result {
+                break error;
             }
+        };
+
+        // If we closed locally, we may have an epitaph to send before
+        // terminating the connection.
+        if matches!(error, ProtocolError::Stopped) {
+            if let Some(epitaph) = self.sender.inner.epitaph() {
+                // Note that we don't care whether sending the epitaph succeeds
+                // or fails; it's best-effort.
+
+                // SAFETY: The connection has not been terminated.
+                let _ = unsafe { self.sender.inner.connection.send_epitaph(epitaph).await };
+            }
+        }
+
+        // SAFETY: The connection has not been terminated.
+        unsafe {
+            self.sender.inner.connection.terminate(error.clone());
+        }
+        self.is_terminated = true;
+
+        match error {
+            // We consider servers to have finished successfully if they stop
+            // themselves manually, or if the client disconnects.
+            ProtocolError::Stopped | ProtocolError::PeerClosed => Ok(handler),
+
+            // Otherwise, the server finished with an error.
+            _ => Err(error),
         }
     }
 
-    async fn run_one<H>(&mut self, handler: &mut H) -> Result<(), ProtocolError<T::Error>>
+    /// # Safety
+    ///
+    /// The connection must not be terminated.
+    async unsafe fn run_one<H>(&mut self, handler: &mut H) -> Result<(), ProtocolError<T::Error>>
     where
         H: ServerHandler<T>,
     {
-        let mut buffer = self.sender.inner.connection.recv(&mut self.exclusive).await?;
+        // SAFETY: The caller guaranteed that the connection is not terminated.
+        let mut buffer = unsafe { self.sender.inner.connection.recv(&mut self.exclusive).await? };
 
         let (txid, ordinal) =
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;

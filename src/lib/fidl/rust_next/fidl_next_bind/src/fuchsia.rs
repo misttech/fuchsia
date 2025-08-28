@@ -32,9 +32,9 @@ where
     T: Transport + 'static,
     H: Send + 'static,
 {
-    let mut client = Client::new(client_end);
+    let client = Client::new(client_end);
     let sender = client.sender().clone();
-    Task::spawn(async move { client.run(handler).await }).detach_on_drop();
+    Task::spawn(client.run(handler)).detach_on_drop();
     sender
 }
 
@@ -49,9 +49,9 @@ where
     T: Transport + 'static,
     P: 'static,
 {
-    let mut client = Client::new(client_end);
+    let client = Client::new(client_end);
     let sender = client.sender().clone();
-    Task::spawn(async move { client.run_sender().await }).detach_on_drop();
+    Task::spawn(client.run_sender()).detach_on_drop();
     sender
 }
 
@@ -67,8 +67,8 @@ where
     P: DispatchServerMessage<H, T> + 'static,
     H: Send + 'static,
 {
-    let mut server = Server::new(server_end);
+    let server = Server::new(server_end);
     let sender = server.sender().clone();
-    Task::spawn(async move { server.run(handler).await }).detach_on_drop();
+    Task::spawn(server.run(handler)).detach_on_drop();
     sender
 }

@@ -94,10 +94,10 @@ impl<T: Transport> ClientSender<T> {
     where
         M: Encode<T::SendBuffer>,
     {
-        let mut buffer = self.inner.connection.acquire();
-        encode_header::<T>(&mut buffer, txid, ordinal)?;
-        buffer.encode_next(message)?;
-        Ok(self.inner.connection.send(buffer))
+        self.inner.connection.send_with(|buffer| {
+            encode_header::<T>(buffer, txid, ordinal)?;
+            buffer.encode_next(message)
+        })
     }
 }
 
@@ -216,11 +216,17 @@ pub trait ClientHandler<T: Transport> {
 pub struct Client<T: Transport> {
     sender: ClientSender<T>,
     exclusive: T::Exclusive,
+    is_terminated: bool,
 }
 
 impl<T: Transport> Drop for Client<T> {
     fn drop(&mut self) {
-        self.terminate(ProtocolError::Stopped);
+        if !self.is_terminated {
+            // SAFETY: We checked that the connection has not been terminated.
+            unsafe {
+                self.terminate(ProtocolError::Stopped);
+            }
+        }
     }
 }
 
@@ -229,11 +235,17 @@ impl<T: Transport> Client<T> {
     pub fn new(transport: T) -> Self {
         let (shared, exclusive) = transport.split();
         let inner = Arc::new(ClientSenderInner::new(shared));
-        Self { sender: ClientSender { inner }, exclusive }
+        Self { sender: ClientSender { inner }, exclusive, is_terminated: false }
     }
 
-    fn terminate(&mut self, error: ProtocolError<T::Error>) {
-        self.sender.inner.connection.terminate(error);
+    /// # Safety
+    ///
+    /// The connection must not yet be terminated.
+    unsafe fn terminate(&mut self, error: ProtocolError<T::Error>) {
+        // SAFETY: We checked that the connection has not been terminated.
+        unsafe {
+            self.sender.inner.connection.terminate(error);
+        }
         self.sender.inner.responses.lock().unwrap().wake_all();
     }
 
@@ -242,11 +254,49 @@ impl<T: Transport> Client<T> {
         &self.sender
     }
 
-    async fn run_one<H>(&mut self, handler: &mut H) -> Result<(), ProtocolError<T::Error>>
+    /// Runs the client with the provided handler.
+    pub async fn run<H>(mut self, mut handler: H) -> Result<H, ProtocolError<T::Error>>
     where
         H: ClientHandler<T>,
     {
-        let mut buffer = self.sender.inner.connection.recv(&mut self.exclusive).await?;
+        // We may assume that the connection has not been terminated because
+        // connections are only terminated by `run` and `drop`. Neither of those
+        // could have been called before this method because `run` consumes
+        // `self` and `drop` is only ever called once.
+
+        let error = loop {
+            // SAFETY: The connection has not been terminated.
+            let result = unsafe { self.run_one(&mut handler).await };
+            if let Err(error) = result {
+                break error;
+            }
+        };
+
+        // SAFETY: The connection has not been terminated.
+        unsafe {
+            self.terminate(error.clone());
+        }
+        self.is_terminated = true;
+
+        match error {
+            // We consider clients to have finished successfully only if they
+            // stop themselves manually.
+            ProtocolError::Stopped => Ok(handler),
+
+            // Otherwise, the client finished with an error.
+            _ => Err(error),
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The connection must not be terminated.
+    async unsafe fn run_one<H>(&mut self, handler: &mut H) -> Result<(), ProtocolError<T::Error>>
+    where
+        H: ClientHandler<T>,
+    {
+        // SAFETY: The caller guaranteed that the connection is not terminated.
+        let mut buffer = unsafe { self.sender.inner.connection.recv(&mut self.exclusive).await? };
 
         let (txid, ordinal) =
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
@@ -280,30 +330,8 @@ impl<T: Transport> Client<T> {
         Ok(())
     }
 
-    /// Runs the client with the provided handler.
-    pub async fn run<H>(&mut self, mut handler: H) -> Result<H, ProtocolError<T::Error>>
-    where
-        H: ClientHandler<T>,
-    {
-        loop {
-            if let Err(error) = self.run_one(&mut handler).await {
-                self.terminate(error.clone());
-
-                let result = match error {
-                    // We consider clients to have finished successfully only if they
-                    // stop themselves manually.
-                    ProtocolError::Stopped => Ok(handler),
-
-                    // Otherwise, the client finished with an error.
-                    _ => Err(error),
-                };
-                return result;
-            }
-        }
-    }
-
     /// Runs the client with the [`IgnoreEvents`] handler.
-    pub async fn run_sender(&mut self) -> Result<(), ProtocolError<T::Error>> {
+    pub async fn run_sender(self) -> Result<(), ProtocolError<T::Error>> {
         self.run(IgnoreEvents).await.map(|_| ())
     }
 }

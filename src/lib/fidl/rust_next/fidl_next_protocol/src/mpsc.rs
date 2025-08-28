@@ -156,12 +156,12 @@ impl Transport for Mpsc {
     fn poll_send(
         mut future_state: Pin<&mut SendFutureState>,
         _: &mut Context<'_>,
-        sender: &Self::Shared,
+        shared: &Self::Shared,
     ) -> Poll<Result<(), Option<Error>>> {
         let chunks = take(&mut future_state.buffer);
-        match sender.sender.send(chunks) {
+        match shared.sender.send(chunks) {
             Ok(()) => {
-                sender.send_wakers[sender.end].wake();
+                shared.send_wakers[shared.end].wake();
                 Poll::Ready(Ok(()))
             }
             Err(_) => Poll::Ready(Err(None)),

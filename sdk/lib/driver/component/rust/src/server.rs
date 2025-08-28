@@ -251,7 +251,7 @@ mod tests {
         spawn_in_driver("driver registration", async move {
             let client_end: ClientEnd<fidl_next_fuchsia_driver_framework::Driver, _> =
                 ClientEnd::from_untyped(fdf_fidl::DriverChannel::new(client_chan));
-            let mut client = Client::new(client_end);
+            let client = Client::new(client_end);
             let client_sender = client.sender().clone();
 
             CurrentDispatcher

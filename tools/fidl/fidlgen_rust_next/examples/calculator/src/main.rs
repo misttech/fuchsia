@@ -99,15 +99,13 @@ async fn create_endpoints() -> (
     let client_end = ClientEnd::<Calculator, _>::from_untyped(client_transport);
     let server_end = ServerEnd::<Calculator, _>::from_untyped(server_transport);
 
-    let mut client = Client::new(client_end);
+    let client = Client::new(client_end);
     let client_sender = client.sender().clone();
-    let mut server = Server::new(server_end);
-    let server_sender = server.sender().clone();
+    let client_task = Task::spawn(client.run(MyCalculatorClient { error: None }));
 
-    let client_task =
-        Task::spawn(async move { client.run(MyCalculatorClient { error: None }).await });
-    let server_task =
-        Task::spawn(async move { server.run(MyCalculatorServer { last_result: None }).await });
+    let server = Server::new(server_end);
+    let server_sender = server.sender().clone();
+    let server_task = Task::spawn(server.run(MyCalculatorServer { last_result: None }));
 
     (client_sender, client_task, server_sender, server_task)
 }
@@ -177,8 +175,7 @@ mod tests {
 
         add(&client_sender).await;
 
-        // Dropping the client sender will close the stream
-        drop(client_sender);
+        client_sender.close();
 
         assert_eq!(client_task.await.unwrap().error, None);
         assert_eq!(server_task.await.unwrap().last_result, Some(42));
@@ -190,8 +187,7 @@ mod tests {
 
         divide(&client_sender).await;
 
-        // Dropping the client sender will close the stream
-        drop(client_sender);
+        client_sender.close();
 
         assert_eq!(client_task.await.unwrap().error, None);
         assert_eq!(server_task.await.unwrap().last_result, Some(33));
@@ -204,8 +200,7 @@ mod tests {
         add(&client_sender).await;
         clear(&client_sender).await;
 
-        // Dropping the client sender will close the stream
-        drop(client_sender);
+        client_sender.close();
 
         assert_eq!(client_task.await.unwrap().error, None);
         assert_eq!(server_task.await.unwrap().last_result, None);
@@ -217,8 +212,7 @@ mod tests {
 
         on_error(&server_sender).await;
 
-        // Dropping the client sender will close the stream
-        drop(client_sender);
+        client_sender.close();
 
         assert_eq!(client_task.await.unwrap().error, Some(100));
         assert_eq!(server_task.await.unwrap().last_result, None);

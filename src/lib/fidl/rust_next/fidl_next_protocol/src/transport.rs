@@ -32,20 +32,21 @@ pub trait Transport {
     /// only while receiving. For an MPSC, this would contain a receiver.
     type Exclusive: Send;
 
-    /// The buffer type for senders.
+    /// The buffer type for sending.
     type SendBuffer: Encoder + Send;
     /// The future state for send operations.
     type SendFutureState: Send;
 
     /// Acquires an empty send buffer for the transport.
-    fn acquire(sender: &Self::Shared) -> Self::SendBuffer;
+    fn acquire(shared: &Self::Shared) -> Self::SendBuffer;
 
     /// Begins sending a `SendBuffer` over this transport.
     ///
     /// Returns the state for a future which can be polled with `poll_send`.
-    fn begin_send(sender: &Self::Shared, buffer: Self::SendBuffer) -> Self::SendFutureState;
+    fn begin_send(shared: &Self::Shared, buffer: Self::SendBuffer) -> Self::SendFutureState;
 
-    /// Polls a `SendFutureState` for completion with a sender.
+    /// Polls a `SendFutureState` for completion with the shared part of the
+    /// transport.
     ///
     /// When ready, polling returns one of three values:
     /// - `Ok(())` if the buffer was successfully sent.
@@ -92,7 +93,8 @@ pub trait Transport {
 /// memory exhaustion across the system. `NonBlockingTransport` is intended for
 /// use only while porting existing code.
 pub trait NonBlockingTransport: Transport {
-    /// Completes a `SendFutureState` using a sender without blocking.
+    /// Completes a `SendFutureState` with the shared part of the transport
+    /// without blocking.
     fn send_immediately(
         future_state: &mut Self::SendFutureState,
         shared: &Self::Shared,

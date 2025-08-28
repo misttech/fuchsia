@@ -35,7 +35,7 @@ pub async fn test_close_on_drop<T: Transport + 'static>(client_end: T, server_en
 
         async fn on_two_way(
             &mut self,
-            server: &ServerSender<T>,
+            sender: &ServerSender<T>,
             ordinal: u64,
             buffer: T::RecvBuffer,
             responder: Responder,
@@ -44,8 +44,7 @@ pub async fn test_close_on_drop<T: Transport + 'static>(client_end: T, server_en
             assert_eq!(ordinal, 42);
             assert_eq!(&**message, "Ping");
 
-            let server = server.clone();
-            server
+            sender
                 .send_response(responder, 42, "Pong")
                 .expect("failed to encode response")
                 .await
@@ -53,11 +52,10 @@ pub async fn test_close_on_drop<T: Transport + 'static>(client_end: T, server_en
         }
     }
 
-    let mut client = Client::new(client_end);
+    let client = Client::new(client_end);
     let client_sender = client.sender().clone();
-    let client_task = Task::spawn(async move { client.run_sender().await });
-    let mut server = Server::new(server_end);
-    let server_task = Task::spawn(async move { server.run(TestServer).await });
+    let client_task = Task::spawn(client.run_sender());
+    let server_task = Task::spawn(Server::new(server_end).run(TestServer));
 
     let message = client_sender
         .send_two_way(42, "Ping")
@@ -68,9 +66,10 @@ pub async fn test_close_on_drop<T: Transport + 'static>(client_end: T, server_en
         .expect("failed to decode response");
     assert_eq!(&**message, "Pong");
 
+    // Dropping the last client sender should close the connection.
     drop(client_sender);
-    drop(client_task);
 
+    client_task.await.expect("client encountered an error");
     server_task.await.expect("server encountered an error");
 }
 
@@ -95,21 +94,18 @@ pub async fn test_one_way<T: Transport + 'static>(client_end: T, server_end: T) 
         }
     }
 
-    let mut client = Client::new(client_end);
+    let client = Client::new(client_end);
     let client_sender = client.sender().clone();
-    let client_task = Task::spawn(async move { client.run_sender().await });
-    let mut server = Server::new(server_end);
-    let server_task = Task::spawn(async move { server.run(TestServer).await });
+    let client_task = Task::spawn(client.run_sender());
+    let server_task = Task::spawn(Server::new(server_end).run(TestServer));
 
     client_sender
         .send_one_way(42, "Hello world")
         .expect("client failed to encode request")
         .await
         .expect("client failed to send request");
+
     client_sender.close();
-    // We're running the client and server in the same future, so we have to
-    // manually drop the final client to cause the underlying transport to close
-    drop(client_sender);
 
     client_task.await.expect("client encountered an error");
     server_task.await.expect("server encountered an error");
@@ -125,7 +121,7 @@ pub async fn test_two_way<T: Transport + 'static>(client_end: T, server_end: T) 
 
         async fn on_two_way(
             &mut self,
-            server: &ServerSender<T>,
+            sender: &ServerSender<T>,
             ordinal: u64,
             buffer: T::RecvBuffer,
             responder: Responder,
@@ -134,8 +130,7 @@ pub async fn test_two_way<T: Transport + 'static>(client_end: T, server_end: T) 
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(&**message, "Ping");
 
-            let server = server.clone();
-            server
+            sender
                 .send_response(responder, 42, "Pong")
                 .expect("failed to encode response")
                 .await
@@ -143,11 +138,10 @@ pub async fn test_two_way<T: Transport + 'static>(client_end: T, server_end: T) 
         }
     }
 
-    let mut client = Client::new(client_end);
+    let client = Client::new(client_end);
     let client_sender = client.sender().clone();
-    let client_task = Task::spawn(async move { client.run_sender().await });
-    let mut server = Server::new(server_end);
-    let server_task = Task::spawn(async move { server.run(TestServer).await });
+    let client_task = Task::spawn(client.run_sender());
+    let server_task = Task::spawn(Server::new(server_end).run(TestServer));
 
     let message = client_sender
         .send_two_way(42, "Ping")
@@ -159,9 +153,6 @@ pub async fn test_two_way<T: Transport + 'static>(client_end: T, server_end: T) 
     assert_eq!(&**message, "Pong");
 
     client_sender.close();
-    // We're running the client and server in the same future, so we have to
-    // manually drop the final client to cause the underlying transport to close
-    drop(client_sender);
 
     client_task.await.expect("client encountered an error");
     server_task.await.expect("server encountered an error");
@@ -177,7 +168,7 @@ pub async fn test_multiple_two_way<T: Transport + 'static>(client_end: T, server
 
         async fn on_two_way(
             &mut self,
-            server: &ServerSender<T>,
+            sender: &ServerSender<T>,
             ordinal: u64,
             buffer: T::RecvBuffer,
             responder: Responder,
@@ -193,8 +184,7 @@ pub async fn test_multiple_two_way<T: Transport + 'static>(client_end: T, server
 
             assert_eq!(&**message, response);
 
-            let server = server.clone();
-            server
+            sender
                 .send_response(responder, ordinal, response)
                 .expect("server failed to encode response")
                 .await
@@ -202,11 +192,10 @@ pub async fn test_multiple_two_way<T: Transport + 'static>(client_end: T, server
         }
     }
 
-    let mut client = Client::new(client_end);
+    let client = Client::new(client_end);
     let client_sender = client.sender().clone();
-    let client_task = Task::spawn(async move { client.run_sender().await });
-    let mut server = Server::new(server_end);
-    let server_task = Task::spawn(async move { server.run(TestServer).await });
+    let client_task = Task::spawn(client.run_sender());
+    let server_task = Task::spawn(Server::new(server_end).run(TestServer));
 
     let send_one = client_sender.send_two_way(1, "One").expect("client failed to encode request");
     let send_two = client_sender.send_two_way(2, "Two").expect("client failed to encode request");
@@ -234,9 +223,6 @@ pub async fn test_multiple_two_way<T: Transport + 'static>(client_end: T, server
     assert_eq!(&**message_three, "Three");
 
     client_sender.close();
-    // We're running the client and server in the same future, so we have to
-    // manually drop the final client to cause the underlying transport to close
-    drop(client_sender);
 
     client_task.await.expect("client encountered an error");
     server_task.await.expect("server encountered an error");
@@ -248,7 +234,7 @@ pub async fn test_event<T: Transport + 'static>(client_end: T, server_end: T) {
     impl<T: Transport> ClientHandler<T> for TestClient {
         async fn on_event(
             &mut self,
-            client: &ClientSender<T>,
+            sender: &ClientSender<T>,
             ordinal: u64,
             buffer: T::RecvBuffer,
         ) {
@@ -256,7 +242,7 @@ pub async fn test_event<T: Transport + 'static>(client_end: T, server_end: T) {
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(&**message, "Surprise!");
 
-            client.close();
+            sender.close();
         }
     }
 
@@ -274,11 +260,11 @@ pub async fn test_event<T: Transport + 'static>(client_end: T, server_end: T) {
         }
     }
 
-    let mut client = Client::new(client_end);
-    let client_task = Task::spawn(async move { client.run(TestClient).await });
-    let mut server = Server::new(server_end);
+    let client = Client::new(client_end);
+    let client_task = Task::spawn(client.run(TestClient));
+    let server = Server::new(server_end);
     let server_sender = server.sender().clone();
-    let server_task = Task::spawn(async move { server.run(TestServer).await });
+    let server_task = Task::spawn(server.run(TestServer));
 
     server_sender
         .send_event(10, "Surprise!")

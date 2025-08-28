@@ -28,9 +28,9 @@ impl Driver for ZirconChildDriver {
         );
         let node = context.take_node()?;
 
-        let mut device = get_i2cimpl_device(&context).unwrap();
+        let device = get_i2cimpl_device(&context).unwrap();
         let device_sender = device.sender().clone();
-        fuchsia_async::Task::spawn(async move { device.run_sender().await.unwrap() }).detach();
+        fuchsia_async::Task::spawn(async { device.run_sender().await.unwrap() }).detach();
         let transfer_size =
             device_sender.get_max_transfer_size().unwrap().await.unwrap().unwrap().size;
         info!("i2cimpl max transfer size: {transfer_size}");

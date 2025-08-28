@@ -502,19 +502,18 @@ mod tests {
             }
         }
 
-        let mut client = Client::new(client_end);
+        let client = Client::new(client_end);
         let client_sender = client.sender().clone();
-        let client_task = fasync::Task::spawn(async move { client.run_sender().await });
-        let mut server = Server::new(server_end);
-        let server_task = fasync::Task::spawn(async move { server.run(TestServer).await });
+        let client_task = fasync::Task::spawn(client.run_sender());
+        let server_task = fasync::Task::spawn(Server::new(server_end).run(TestServer));
 
         client_sender
             .send_one_way(42, "Hello world")
             .expect("client failed to encode request")
             .send_immediately()
             .expect("client failed to send request");
+
         client_sender.close();
-        drop(client_sender);
 
         client_task.await.expect("client encountered an error");
         server_task.await.expect("server encountered an error");

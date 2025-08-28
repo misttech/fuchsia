@@ -71,7 +71,7 @@ pub trait DispatchServerMessage<
     /// Handles a received server one-way message with the given handler.
     fn on_one_way(
         handler: &mut H,
-        server: &ServerSender<Self, T>,
+        sender: &ServerSender<Self, T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = ()> + Send;
@@ -79,7 +79,7 @@ pub trait DispatchServerMessage<
     /// Handles a received server two-way message with the given handler.
     fn on_two_way(
         handler: &mut H,
-        server: &ServerSender<Self, T>,
+        sender: &ServerSender<Self, T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
         responder: protocol::Responder,
@@ -166,7 +166,7 @@ impl<P, T: Transport> Server<P, T> {
     }
 
     /// Runs the server with the provided handler.
-    pub async fn run<H>(&mut self, handler: H) -> Result<H, ProtocolError<T::Error>>
+    pub async fn run<H>(self, handler: H) -> Result<H, ProtocolError<T::Error>>
     where
         P: DispatchServerMessage<H, T>,
         H: Send,
@@ -194,7 +194,7 @@ impl<M> Responder<M> {
     /// Responds to the client.
     pub fn respond<'s, P, T, R>(
         self,
-        server: &'s ServerSender<P, T>,
+        sender: &'s ServerSender<P, T>,
         response: R,
     ) -> Result<SendFuture<'s, T>, EncodeError>
     where
@@ -202,6 +202,6 @@ impl<M> Responder<M> {
         M: Method<Protocol = P>,
         R: Encode<T::SendBuffer, Encoded = M::Response>,
     {
-        server.sender.send_response(self.responder, M::ORDINAL, response)
+        sender.sender.send_response(self.responder, M::ORDINAL, response)
     }
 }

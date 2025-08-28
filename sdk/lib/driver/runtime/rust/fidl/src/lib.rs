@@ -486,18 +486,18 @@ mod test {
                 ClientEnd::<Device, _>::from_untyped(DriverChannel::new(client_chan));
             let server_end: ServerEnd<Device, _> =
                 ServerEnd::from_untyped(DriverChannel::new(server_chan));
-            let mut client = Client::new(client_end);
-            let mut server = Server::new(server_end);
+            let client = Client::new(client_end);
+            let server = Server::new(server_end);
             let client_sender = client.sender().clone();
 
             CurrentDispatcher
-                .spawn_task(async move {
+                .spawn_task(async {
                     server.run(DeviceServer).await.unwrap();
                     println!("server task finished");
                 })
                 .unwrap();
             CurrentDispatcher
-                .spawn_task(async move {
+                .spawn_task(async {
                     client.run(DeviceClient).await.unwrap();
                     println!("client task finished");
                 })
