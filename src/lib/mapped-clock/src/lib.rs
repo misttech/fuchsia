@@ -80,18 +80,24 @@ impl<'a, Reference: zx::Timeline, Output: zx::Timeline> MappedClock<'a, Referenc
     ) -> Result<MappedClock<'a, Reference, Output>, Status> {
         // Follows the C++ example from:
         // https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0266_memory_mappable_kernel_clocks
-        let clock_size = zx::Clock::get_mapped_size(&clock)?;
+        // but requires `zx::Rights::INSPECT`, which here we do not have.
+        //
+        // ```
+        // let clock_size = zx::Clock::get_mapped_size(&clock)
+        //   .inspect_err(|err| log::error!("in get_mapped_size: {err:?}"))?;
+        // ```
+        // instead "just" do this:
+        const PAGE_SIZE: usize = 4096;
+        let mapping = parent_vmar
+            .map_clock(zx::VmarFlags::PERM_READ, 0, &clock, PAGE_SIZE)
+            .inspect_err(|err| log::error!("in map_clock: {err:?}"))?;
+
         let addr = unsafe {
             // SAFETY: map_clock will not return an invalid pointer, but will
             // return an error instead.
-            ptr::NonNull::<u8>::new_unchecked(parent_vmar.map_clock(
-                zx::VmarFlags::PERM_READ,
-                0,
-                &clock,
-                clock_size,
-            )? as *mut u8)
+            ptr::NonNull::<u8>::new_unchecked(mapping as *mut u8)
         };
-        Ok(Self { parent_vmar, addr, clock_size, _mark: std::marker::PhantomData })
+        Ok(Self { parent_vmar, addr, clock_size: PAGE_SIZE, _mark: std::marker::PhantomData })
     }
 
     /// Returns the raw value of the address this clock is mapped to.
