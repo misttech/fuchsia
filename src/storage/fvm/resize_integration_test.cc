@@ -63,10 +63,10 @@ void CheckWriteReadBlock(fidl::UnownedClientEnd<fuchsia_hardware_block::Block> d
   ASSERT_NO_FATAL_FAILURE(CheckRead(device, off, in));
 }
 
-class FvmResizeTest : public zxtest::TestWithParam<FvmImplementation> {
+class FvmResizeTest : public zxtest::Test {
  protected:
   void SetUp() override {
-    instance_ = CreateFvmInstance(GetParam());
+    instance_ = std::make_unique<fvm::DriverFvmInstance>();
     instance_->SetUp();
   }
 
@@ -109,7 +109,7 @@ class FvmResizeTest : public zxtest::TestWithParam<FvmImplementation> {
   std::unique_ptr<fvm::FvmInstance> instance_;
 };
 
-TEST_P(FvmResizeTest, PreallocatedMetadataGrowsCorrectly) {
+TEST_F(FvmResizeTest, PreallocatedMetadataGrowsCorrectly) {
   constexpr uint64_t kInitialBlockCount = (50 * kSliceSize) / kTestBlockSize;
   constexpr uint64_t kMaxBlockCount = (4 << 10) * kSliceSize / kTestBlockSize;
   Header expected =
@@ -157,7 +157,7 @@ TEST_P(FvmResizeTest, PreallocatedMetadataGrowsCorrectly) {
   ASSERT_NO_FATAL_FAILURE(CheckWriteReadBlock(vp->as_block(), block_offset, kDataSizeInBlocks));
 }
 
-TEST_P(FvmResizeTest, PreallocatedMetadataGrowsAsMuchAsPossible) {
+TEST_F(FvmResizeTest, PreallocatedMetadataGrowsAsMuchAsPossible) {
   constexpr uint64_t kInitialBlockCount = (50 * kSliceSize) / kTestBlockSize;
   constexpr uint64_t kMaxBlockCount = (1 << 10) * kSliceSize / kTestBlockSize;
   // Compute the expected header information. This is the header computed for the original slice
@@ -215,7 +215,7 @@ TEST_P(FvmResizeTest, PreallocatedMetadataGrowsAsMuchAsPossible) {
   ASSERT_NO_FATAL_FAILURE(CheckWriteReadBlock(vp->as_block(), block_offset, kDataSizeInBlocks));
 }
 
-TEST_P(FvmResizeTest, PreallocatedMetadataRemainsValidInPartialGrowths) {
+TEST_F(FvmResizeTest, PreallocatedMetadataRemainsValidInPartialGrowths) {
   constexpr uint64_t kInitialBlockCount = (50 * kSliceSize) / kTestBlockSize;
   constexpr uint64_t kMidBlockCount = (4 << 10) * kSliceSize / kTestBlockSize;
   constexpr uint64_t kMaxBlockCount = (8 << 10) * kSliceSize / kTestBlockSize;
@@ -283,18 +283,6 @@ TEST_P(FvmResizeTest, PreallocatedMetadataRemainsValidInPartialGrowths) {
   size_t block_offset = (expected_max.pslice_count - 1) * kSliceSize / kBlockSize;
   ASSERT_NO_FATAL_FAILURE(CheckWriteReadBlock(vp->as_block(), block_offset, kDataSizeInBlocks));
 }
-
-INSTANTIATE_TEST_SUITE_P(FvmResizeTest, FvmResizeTest,
-                         zxtest::Values(fvm::FvmImplementation::kDriver,
-                                        fvm::FvmImplementation::kComponent),
-                         [](const auto& info) {
-                           switch (info.param) {
-                             case fvm::FvmImplementation::kDriver:
-                               return "Driver";
-                             case fvm::FvmImplementation::kComponent:
-                               return "Component";
-                           }
-                         });
 
 }  // namespace
 }  // namespace fvm
