@@ -6,12 +6,15 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include <memory>
+
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/mock_stack_delegate.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
+#include "src/lib/fxl/memory/ref_ptr.h"
 
 namespace zxdb {
 
@@ -27,6 +30,61 @@ std::vector<std::unique_ptr<Frame>> GetTestFrames() {
                                                FileLine("file3.cc", 23)));
   frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1004, 0x2004, "Function4",
                                                FileLine("file4.cc", 23)));
+  return frames;
+}
+
+std::vector<std::unique_ptr<Frame>> GetCAsyncLoopFrames() {
+  std::vector<std::unique_ptr<Frame>> frames;
+
+  // C async_loop.
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001, "platform_syscall",
+                                               FileLine("file1.c", 12)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1002, 0x2002, "_zx_port_wait",
+                                               FileLine("port.c", 21)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1003, 0x2003,
+                                               "async_loop_run_once", FileLine("loop.c", 22)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1004, 0x2004, "async_loop_run",
+                                               FileLine("loop.c", 23)));
+  return frames;
+}
+
+std::vector<std::unique_ptr<Frame>> GetCppAsyncLoopFrames() {
+  auto frames = GetCAsyncLoopFrames();
+
+  // This is just a thin wrapper around the C async loop implementation.
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1005, 0x2005, "async::Loop::Run",
+                                               FileLine("loop.cc, ", 111)));
+  return frames;
+}
+
+std::vector<std::unique_ptr<Frame>> GetRustAsyncExecutorPollResultFrames() {
+  std::vector<std::unique_ptr<Frame>> frames;
+
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001, "platform_syscall",
+                                               FileLine("file1.c", 12)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1002, 0x2002, "_zx_port_wait",
+                                               FileLine("port.c", 12)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1003, 0x2003,
+                                               "zx::port::Port::wait", FileLine("port.rs", 12)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1004, 0x2004, "lambda1",
+                                               FileLine("wait.rs", 12)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1005, 0x2005, "lambda2",
+                                               FileLine("wait.rs", 12)));
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x1006, 0x2006,
+      "std::thread::local::LocalKey<anything>::try_with<anything>", FileLine("local_key.rs", 12)));
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x1007, 0x2007, "std::thread::local::LocalKey<anything>::with<anything>",
+      FileLine("local_key.rs", 12)));
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x1008, 0x2008,
+      "fuchsia_async::runtime::fuchsia::executor::with_local_timer_heap<*>",
+      FileLine("executor.rs", 12)));
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x1009, 0x2009,
+      "fuchsia_async::runtime::fuchsia::executor::Executor::run_singlethreaded<*>",
+      FileLine("executor.rs", 12)));
+
   return frames;
 }
 
@@ -202,6 +260,100 @@ TEST(PrettyStackManager, ProcessStack) {
   EXPECT_FALSE(entries[2].match);
   ASSERT_EQ(1u, entries[2].frames.size());
   EXPECT_EQ(stack[3], entries[2].frames[0]);
+}
+
+// Tests for a subset of the default matchers. These should all end up matching the entire given
+// stack, resulting in a single entry returned from the PrettyStackManager.
+TEST(PrettyStackManager, DefaultMatchersCpp) {
+  Session session;
+  MockStackDelegate delegate(&session);
+  Stack stack(&delegate);
+  delegate.set_stack(&stack);
+
+  auto manager = fxl::MakeRefCounted<PrettyStackManager>();
+  manager->LoadDefaultMatchers();
+
+  stack.SetFramesForTest(GetCAsyncLoopFrames(), true);
+  auto entries = manager->ProcessStack(stack);
+  ASSERT_EQ(1u, entries.size());
+
+  stack.SetFramesForTest(GetCppAsyncLoopFrames(), true);
+  entries = manager->ProcessStack(stack);
+  ASSERT_EQ(1u, entries.size());
+
+  // pthread startup routines.
+  std::vector<std::unique_ptr<Frame>> frames;
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001, "start_pthread",
+                                               FileLine("pthread.c", 11)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1002, 0x2002,
+                                               "thread_trampoline", FileLine("pthread.c", 12)));
+
+  stack.SetFramesForTest(std::move(frames), true);
+  entries = manager->ProcessStack(stack);
+  ASSERT_EQ(1u, entries.size());
+
+  frames.clear();
+
+  // Now match C++'s std::thread, which is called from the same pthread startup routines.
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001, "some_crazy_func",
+                                               FileLine("thread", 10)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1002, 0x2002, "start_pthread",
+                                               FileLine("pthread.c", 11)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1003, 0x2003,
+                                               "thread_trampoline", FileLine("pthread.c", 12)));
+
+  stack.SetFramesForTest(std::move(frames), true);
+  entries = manager->ProcessStack(stack);
+  ASSERT_EQ(1u, entries.size());
+}
+
+// Same as above but for Rust.
+TEST(PrettyStackManager, DefaultMatchersRust) {
+  Session session;
+  MockStackDelegate delegate(&session);
+  Stack stack(&delegate);
+  delegate.set_stack(&stack);
+
+  auto manager = fxl::MakeRefCounted<PrettyStackManager>();
+  manager->LoadDefaultMatchers();
+
+  // This matches when a thread is blocked in the async executor without any currently active tasks.
+  stack.SetFramesForTest(GetRustAsyncExecutorPollResultFrames(), true);
+  auto entries = manager->ProcessStack(stack);
+  ASSERT_EQ(1u, entries.size());
+
+  // This matches when an async task has been selected to run.
+  std::vector<std::unique_ptr<Frame>> frames;
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x1001, 0x2001,
+      "fuchsia_async::runtime::fuchsia::executor::atomic_future::AtomicFuture<*>::poll<*>",
+      FileLine("executor.rs", 1234)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1002, 0x2002, "anything",
+                                               FileLine("somewhere", 1234)));
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x100a, 0x200a,
+      "fuchsia_async::runtime::fuchsia::executor::local::LocalExecutor::run_singlethreaded<*>",
+      FileLine("executor.rs", 1233)));
+
+  stack.SetFramesForTest(std::move(frames), true);
+  entries = manager->ProcessStack(stack);
+  ASSERT_EQ(1u, entries.size());
+
+  // Matches a multithreaded executor in a test environment.
+  frames.clear();
+  frames.push_back(std::make_unique<MockFrame>(
+      nullptr, nullptr, 0x1001, 0x2001,
+      "fuchsia_async::runtime::fuchsia::executor::atomic_future::AtomicFuture<*>::poll<*>",
+      FileLine("executor.rs", 1234)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1002, 0x2002, "anything",
+                                               FileLine("somewhere", 1234)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x100a, 0x200a,
+                                               "fuchsia::test_singlethreaded<*>",
+                                               FileLine("test.rs", 10)));
+
+  stack.SetFramesForTest(std::move(frames), true);
+  entries = manager->ProcessStack(stack);
+  ASSERT_EQ(1u, entries.size());
 }
 
 }  // namespace zxdb

@@ -4,10 +4,13 @@
 
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 
+#include "gtest/gtest.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/zxdb/client/arch_info.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/expr/eval_context_impl.h"
+#include "src/developer/debug/zxdb/expr/expr_parser.h"
+#include "src/developer/debug/zxdb/expr/parsed_identifier.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/mock_symbol_data_provider.h"
 #include "src/developer/debug/zxdb/symbols/namespace.h"
@@ -30,7 +33,19 @@ MockFrame::MockFrame(Session* session, Thread* thread, const Location& location,
 MockFrame::MockFrame(Session* session, Thread* thread, TargetPointer ip, TargetPointer sp,
                      const std::string& func_name, FileLine file_line)
     : MockFrame(session, thread, Location{}, sp) {
-  MakeLocation(ip, func_name, std::move(file_line), {});
+  ParsedIdentifier ident;
+  auto err = ExprParser::ParseIdentifier(func_name, &ident);
+  if (err.has_error()) {
+    ADD_FAILURE() << "Failed to parse " << func_name << " as identifier: " << err.ToString();
+  }
+
+  std::vector<std::string> string_components;
+  for (const auto& component : ident.components()) {
+    string_components.push_back(component.GetName(false));
+  }
+  std::string function_name = string_components.back();
+  string_components.pop_back();
+  MakeLocation(ip, function_name, std::move(file_line), string_components);
 }
 
 MockFrame::MockFrame(Session* session, Thread* thread, TargetPointer ip, TargetPointer sp,

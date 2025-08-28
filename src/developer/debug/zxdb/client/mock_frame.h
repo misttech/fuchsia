@@ -32,7 +32,9 @@ class MockFrame : public Frame {
             const Frame* physical_frame = nullptr, bool is_ambiguous_inline = false);
 
   // This variant makes a location with a mock function object of the given name and the default
-  // value of everything else. It's usuaully enough for many types of tests.
+  // value of everything else. It's usuaully enough for many types of tests. You may pass in a raw
+  // string containing namespaces as in C++ (e.g. "async::Loop::Run" will turn into a parsed
+  // identifier with function name "Run" within two nested namespaces "async" and "Loop".
   MockFrame(Session* session, Thread* thread, TargetPointer ip, TargetPointer sp,
             const std::string& func_name, FileLine file_line);
 

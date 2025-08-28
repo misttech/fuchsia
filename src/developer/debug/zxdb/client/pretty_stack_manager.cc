@@ -19,16 +19,21 @@ void PrettyStackManager::SetMatchers(std::vector<StackGlob> matchers) {
   });
 }
 
-// TODO(bug 43549) this should be loaded from a configuration file somehow associated with the
-// user's build instead of being hardcoded.
+// TODO(https://fxbug.dev/292124860) this should be loaded from a configuration file somehow
+// associated with the user's build instead of being hardcoded.
 void PrettyStackManager::LoadDefaultMatchers() {
   std::vector<StackGlob> matchers;
+
+  // Turn off formatting. We want each frame matcher to appear on different lines and clang-format
+  // likes to combine them which makes it more difficult to follow.
+  // clang-format off
 
   // C async loop waiting.
   StackGlob c_async_loop(
       "Waiting for event in async_loop_run()",
       {PrettyFrameGlob::Wildcard(1, 1),  // syscalls-<platform>.S
-       PrettyFrameGlob::Func("_zx_port_wait"), PrettyFrameGlob::Func("async_loop_run_once"),
+       PrettyFrameGlob::Func("_zx_port_wait"),
+       PrettyFrameGlob::Func("async_loop_run_once"),
        PrettyFrameGlob::Func("async_loop_run")});
 
   // C++ async loop waiting (just adds a call to the C version).
@@ -37,10 +42,6 @@ void PrettyStackManager::LoadDefaultMatchers() {
 
   matchers.push_back(std::move(cpp_async_loop));
   matchers.push_back(std::move(c_async_loop));
-
-  // Turn off formatting. We want each frame matcher to appear on different lines and clang-format
-  // likes to combine them which makes it more difficult to follow.
-  // clang-format off
 
   // Typical background thread startup.
   StackGlob pthread_startup("pthread startup", {PrettyFrameGlob::Func("start_pthread"),
@@ -93,6 +94,35 @@ void PrettyStackManager::LoadDefaultMatchers() {
        PrettyFrameGlob::Func(
            "fuchsia_async::runtime::fuchsia::executor::Executor::run_singlethreaded<*>")});
   matchers.push_back(std::move(rust_async_loop));
+
+  StackGlob rust_test_async_dispatch(
+      "Polled event in fuchsia::test_singlethreaded",
+      {PrettyFrameGlob::Func(
+          "fuchsia_async::runtime::fuchsia::executor::atomic_future::AtomicFuture<*>::poll<*>"),
+       PrettyFrameGlob::Wildcard(1, 25),
+       PrettyFrameGlob::Func("fuchsia::test_singlethreaded<*>"),
+      });
+  matchers.push_back(std::move(rust_test_async_dispatch));
+
+  StackGlob rust_multithreaded_test_async_dispatch(
+      "Polled event in fuchsia::multithreaded_test_singlethreaded",
+      {
+       PrettyFrameGlob::Func(
+        "fuchsia_async::runtime::fuchsia::executor::atomic_future::AtomicFuture<*>::poll<*>"),
+       PrettyFrameGlob::Wildcard(1, 23),
+       PrettyFrameGlob::Func("thread_trampoline"),
+      });
+  matchers.push_back(std::move(rust_multithreaded_test_async_dispatch));
+
+  StackGlob rust_async_dispatch(
+      "Polled event in Executor::run_singlethreaded",
+      {PrettyFrameGlob::Func(
+          "fuchsia_async::runtime::fuchsia::executor::atomic_future::AtomicFuture<*>::poll<*>"),
+       PrettyFrameGlob::Wildcard(1,10),
+       PrettyFrameGlob::Func(
+           "fuchsia_async::runtime::fuchsia::executor::local::LocalExecutor::run_singlethreaded<*>"),
+      });
+  matchers.push_back(std::move(rust_async_dispatch));
 
   // C startup code. The functions depends on the platform, so just match the file name for most of
   // them. The number of functions in __libc_start_main has varied between 1 and 2 over time. Since
