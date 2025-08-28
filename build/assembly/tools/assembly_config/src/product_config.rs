@@ -20,14 +20,7 @@ pub fn new(args: &ProductArgs) -> Result<()> {
         config.product_input_bundles.insert(pib.release_info.name.clone(), pib);
     }
 
-    let version = if args.version.is_none() && args.version_file.is_none() {
-        common::get_release_version(
-            &None,
-            &config.product.build_info.as_ref().map(|b| b.version.clone()),
-        )?
-    } else {
-        common::get_release_version(&args.version, &args.version_file)?
-    };
+    let version = common::get_release_version(&args.version, &args.version_file)?;
 
     config.product.release_info = ProductReleaseInfo {
         info: ReleaseInfo {
