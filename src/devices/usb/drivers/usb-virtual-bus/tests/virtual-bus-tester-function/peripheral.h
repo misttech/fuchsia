@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_PERIPHERAL_H_
-#define SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_PERIPHERAL_H_
+#ifndef SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_FUNCTION_PERIPHERAL_H_
+#define SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_FUNCTION_PERIPHERAL_H_
 
 #include <fidl/fuchsia.hardware.usb.virtualbustest/cpp/fidl.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
@@ -103,4 +103,4 @@ class TestFunction : public fdf::DriverBase,
 };
 }  // namespace virtualbus
 
-#endif  // SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_PERIPHERAL_H_
+#endif  // SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_FUNCTION_PERIPHERAL_H_

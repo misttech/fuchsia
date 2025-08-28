@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_HOST_BANJO_H_
-#define SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_HOST_BANJO_H_
+#ifndef SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_HOST_BANJO_H_
+#define SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_HOST_BANJO_H_
 
-#include "src/devices/usb/drivers/usb-virtual-bus/tests/host.h"
+#include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester/host.h"
 
 namespace virtualbus {
 
@@ -26,4 +26,4 @@ class BanjoDevice : public Device {
 
 }  // namespace virtualbus
 
-#endif  // SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_HOST_BANJO_H_
+#endif  // SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_HOST_BANJO_H_

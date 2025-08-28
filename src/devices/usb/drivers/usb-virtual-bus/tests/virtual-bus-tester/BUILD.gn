@@ -1,0 +1,64 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/drivers.gni")
+
+driver_bind_rules("usb-virtual-bus-tester-bind") {
+  testonly = true
+  rules = "meta/usb-virtual-bus-tester.bind"
+  deps = [
+    "..:fuchsia.usb.test",
+    "//src/devices/bind/fuchsia.usb",
+  ]
+}
+
+source_set("virtual-bus-tester-common") {
+  testonly = true
+  sources = [ "host.cc" ]
+  public_deps = [
+    ":usb-virtual-bus-tester-bind",
+    "..:fuchsia.hardware.usb.virtualbustest_cpp",
+    "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
+    "//sdk/banjo/fuchsia.hardware.usb.composite:fuchsia.hardware.usb.composite_banjo_cpp",
+    "//sdk/banjo/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_banjo_cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
+  ]
+}
+
+fuchsia_cc_driver("virtual-bus-tester-banjo-driver") {
+  testonly = true
+  output_name = "virtual-bus-tester-banjo"
+  sources = [ "host-banjo.cc" ]
+  deps = [ ":virtual-bus-tester-common" ]
+}
+
+fuchsia_driver_component("virtual-bus-tester-banjo") {
+  testonly = true
+  info = "meta/virtual-bus-tester-info.json"
+  component_name = "virtual-bus-tester-banjo"
+  deps = [ ":virtual-bus-tester-banjo-driver" ]
+  manifest = "meta/virtual-bus-tester-banjo.cml"
+}
+
+fuchsia_cc_driver("virtual-bus-tester-fidl-driver") {
+  testonly = true
+  output_name = "virtual-bus-tester-fidl"
+  sources = [ "host-fidl.cc" ]
+  deps = [
+    ":virtual-bus-tester-common",
+    "//sdk/fidl/fuchsia.hardware.usb:fuchsia.hardware.usb_cpp",
+    "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client-dfv2-compat-logging",
+  ]
+}
+
+fuchsia_driver_component("virtual-bus-tester-fidl") {
+  testonly = true
+  info = "meta/virtual-bus-tester-info.json"
+  component_name = "virtual-bus-tester-fidl"
+  deps = [ ":virtual-bus-tester-fidl-driver" ]
+  manifest = "meta/virtual-bus-tester-fidl.cml"
+}

@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_PERIPHERAL_BANJO_H_
-#define SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_PERIPHERAL_BANJO_H_
+#ifndef SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_FUNCTION_PERIPHERAL_BANJO_H_
+#define SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_FUNCTION_PERIPHERAL_BANJO_H_
 
-#include "src/devices/usb/drivers/usb-virtual-bus/tests/peripheral.h"
+#include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester-function/peripheral.h"
 
 namespace virtualbus {
 
@@ -25,4 +25,4 @@ class BanjoTestFunction : public TestFunction {
 
 }  // namespace virtualbus
 
-#endif  // SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_PERIPHERAL_BANJO_H_
+#endif  // SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_TESTS_VIRTUAL_BUS_TESTER_FUNCTION_PERIPHERAL_BANJO_H_

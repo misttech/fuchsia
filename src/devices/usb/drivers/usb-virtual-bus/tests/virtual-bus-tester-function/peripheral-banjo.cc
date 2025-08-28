@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/devices/usb/drivers/usb-virtual-bus/tests/peripheral-banjo.h"
+#include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester-function/peripheral-banjo.h"
 
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_export.h>
