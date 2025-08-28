@@ -52,7 +52,7 @@ group("tests") {
 }
 
 python_library("antlion") {
-  source_root = "//third_party/antlion/packages/antlion"
+  source_root = "//src/testing/end_to_end/antlion/packages/antlion"
   testonly = true
   sources = [
     "__init__.py",
