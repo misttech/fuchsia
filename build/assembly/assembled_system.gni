@@ -81,6 +81,10 @@ import("//src/developer/ffx/build/ffx_action.gni")
 #   qemu_kernel (optional; default: null)
 #     [label] Label of a custom boot shim for kernel tests
 #
+#   assembly_mode (optional; default: null)
+#     [string] The mode to run product assembly in. Valid values are:
+#     "test-zbi", and "test-no-platform".
+#
 # Image Assembly parameters:
 #
 #   assembly_include_account_in_fvm (optional; default: false)
@@ -324,6 +328,11 @@ template("assembled_system") {
     }
   }
 
+  if (defined(invoker.assembly_mode)) {
+    assert(invoker.assembly_mode == "test-zbi" ||
+           invoker.assembly_mode == "test-no-platform")
+  }
+
   # Intermediate files produced for Image Assembly.
 
   files = {
@@ -539,6 +548,13 @@ template("assembled_system") {
       ]
       deps += [ ":${labels.custom_boot_shim_aib}" ]
       inputs += [ files.custom_boot_shim_aib_manifest ]
+    }
+
+    if (defined(invoker.assembly_mode)) {
+      args += [
+        "--mode",
+        invoker.assembly_mode,
+      ]
     }
 
     outputs = [ files.regenerated_image_assembly_config ]

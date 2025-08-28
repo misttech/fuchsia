@@ -284,25 +284,6 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_product_assembly_config_from_json5() {
-        let json5 = r#"
-        {
-          platform: {
-            feature_set_level: "test_no_platform",
-            build_type: "eng",
-          },
-          product: {},
-        }
-    "#;
-
-        let mut cursor = std::io::Cursor::new(json5);
-        let config: ProductConfig = util::from_reader(&mut cursor).unwrap();
-        let platform = config.platform;
-        assert_eq!(platform.build_type, BuildType::Eng);
-        assert_eq!(platform.feature_set_level, FeatureSetLevel::TestNoPlatform);
-    }
-
-    #[test]
     fn test_buildtype_deserialization_userdebug() {
         let json5 = r#"
         {

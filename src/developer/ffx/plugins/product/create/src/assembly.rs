@@ -81,6 +81,7 @@ impl Assembly {
             suppress_overrides_warning: false,
             developer_overrides: None,
             include_example_aib_for_tests: Some(should_configure_example),
+            mode: Default::default(),
         };
         let create_system_outputs = assembly_api::assemble(args)?;
         AssembledSystem::from_dir(create_system_outputs.outdir)

@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, bail};
+use assembly_cli_args::AssemblyMode;
 use assembly_config_schema::developer_overrides::DeveloperOnlyOptions;
-use assembly_config_schema::platform_settings::PlatformSettings;
+use assembly_config_schema::platform_settings::{FeatureSetLevel, PlatformSettings};
 use assembly_config_schema::product_settings::ProductSettings;
 use assembly_config_schema::{BoardConfig, BuildType, ExampleConfig};
 use camino::Utf8Path;
@@ -16,12 +17,11 @@ pub(crate) mod prelude {
     #[allow(unused)]
     pub(crate) use crate::common::{
         BoardConfigExt, ComponentConfigBuilderExt, ConfigurationBuilder, ConfigurationContext,
-        DefaultByBuildType, DefineSubsystemConfiguration, FeatureSetLevel,
-        OptionDefaultByBuildTypeExt,
+        DefaultByBuildType, DefineSubsystemConfiguration, OptionDefaultByBuildTypeExt,
     };
 
     #[allow(unused)]
-    pub(crate) use assembly_config_schema::BuildType;
+    pub(crate) use assembly_config_schema::{BuildType, FeatureSetLevel};
 }
 
 use prelude::*;
@@ -71,6 +71,7 @@ mod virtualization;
 /// value files with concrete package/component tuples.
 ///
 /// Returns a map from package names to configuration updates.
+#[allow(clippy::too_many_arguments)]
 pub fn define_configuration(
     platform: &PlatformSettings,
     product: &ProductSettings,
@@ -79,14 +80,13 @@ pub fn define_configuration(
     resource_dir: impl AsRef<Utf8Path>,
     developer_only_options: Option<&DeveloperOnlyOptions>,
     include_example_aib_for_tests: bool,
+    mode: &AssemblyMode,
 ) -> anyhow::Result<CompletedConfiguration> {
     let icu_config = &platform.icu;
     let mut builder = ConfigurationBuilderImpl::new(icu_config.clone());
 
-    let feature_set_level = FeatureSetLevel::from_deserialized(&platform.feature_set_level);
-
-    // Only perform configuration if the feature_set_level is not None (ie, Empty).
-    if let Some(feature_set_level) = &feature_set_level {
+    // Only perform configuration if the mode is not a test mode.
+    if mode.is_default() {
         let build_type = &platform.build_type;
         let gendir = gendir.as_ref().to_path_buf();
         let resource_dir = resource_dir.as_ref().to_path_buf();
@@ -95,7 +95,7 @@ pub fn define_configuration(
         // available platform information.
         let context = ConfigurationContextBase {
             base_context: ConfigurationContext {
-                feature_set_level,
+                feature_set_level: &platform.feature_set_level,
                 build_type,
                 board_config,
                 gendir,
@@ -559,8 +559,16 @@ mod tests {
 
         let mut cursor = std::io::Cursor::new(json5);
         let ProductConfig { platform, product, .. } = util::from_reader(&mut cursor).unwrap();
-        let result =
-            define_configuration(&platform, &product, &BoardConfig::default(), "", "", None, true);
+        let result = define_configuration(
+            &platform,
+            &product,
+            &BoardConfig::default(),
+            "",
+            "",
+            None,
+            true,
+            &AssemblyMode::default(),
+        );
 
         assert!(result.is_err());
     }

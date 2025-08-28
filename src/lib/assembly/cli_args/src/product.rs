@@ -4,6 +4,7 @@
 
 use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
+use serde::Serialize;
 use std::fmt;
 use std::str::FromStr;
 
@@ -57,6 +58,10 @@ pub struct ProductArgs {
     /// flag stating whether the example AIB should be included.
     #[argh(option)]
     pub include_example_aib_for_tests: Option<bool>,
+
+    /// change the default mode assembly runs in to produce test images.
+    #[argh(option, default = "default_mode()")]
+    pub mode: AssemblyMode,
 }
 
 impl ProductArgs {
@@ -99,6 +104,10 @@ impl ProductArgs {
         if ffx_config::get::<bool, _>("assembly_example_enabled").unwrap_or_default() {
             args.push("--include-example-aib-for-tests".to_string());
             args.push(true.to_string());
+        }
+        if !self.mode.is_default() {
+            args.push("--mode".to_string());
+            args.push(self.mode.to_string());
         }
         args
     }
@@ -168,4 +177,66 @@ impl From<ProductArgs> for ProductAssemblyOutputs {
             image_assembly_config,
         }
     }
+}
+
+/// A mode for Assembly to run in.
+#[derive(Debug, Default, PartialEq, Clone, Copy, Serialize)]
+pub enum AssemblyMode {
+    /// Adds a real ZBI, but possibly no kernel, and definitely no fvm/fxfs.
+    /// Uses the board to add a dtbo and run the postprocessing script.
+    /// Accepts a custom qemu kernel.
+    /// Used for
+    /// * Test ZBI (no zircon)
+    /// * Bootfs test program
+    TestZBI,
+
+    /// Adds a board and product, but skips the platform.
+    /// This is often used for testing Assembly itself.
+    TestNoPlatform,
+
+    /// The normal mode of operation for assembly is to build everything.
+    #[default]
+    BuildEverything,
+}
+
+impl AssemblyMode {
+    /// Returns whether this mode produces a test kernel.
+    /// Assembly should not modify this kernel in any way.
+    pub fn is_test_kernel(&self) -> bool {
+        matches!(self, Self::TestZBI)
+    }
+
+    /// Returns whether this mode is the default mode.
+    pub fn is_default(&self) -> bool {
+        matches!(self, Self::BuildEverything)
+    }
+}
+
+impl FromStr for AssemblyMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "test-zbi" => Ok(Self::TestZBI),
+            "test-no-platform" => Ok(Self::TestNoPlatform),
+            _ => Err(format!(
+                "Unknown option for 'mode', valid values are 'test-zbi' and 'test-no-platform': {}",
+                s
+            )),
+        }
+    }
+}
+
+impl fmt::Display for AssemblyMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AssemblyMode::TestZBI => write!(f, "test-zbi"),
+            AssemblyMode::TestNoPlatform => write!(f, "test-no-platform"),
+            AssemblyMode::BuildEverything => write!(f, "build-everything"),
+        }
+    }
+}
+
+fn default_mode() -> AssemblyMode {
+    AssemblyMode::default()
 }

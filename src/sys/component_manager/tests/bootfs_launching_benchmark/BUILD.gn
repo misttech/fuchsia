@@ -95,7 +95,6 @@ if (current_toolchain == default_toolchain) {
     testonly = true
     platform = {
       build_type = "user"
-      feature_set_level = "test_no_platform"
       storage = {
         filesystems = {
           image_name = img_name
@@ -142,6 +141,7 @@ if (current_toolchain == default_toolchain) {
     product_assembly_config_label = ":product_config"
     board_config_label = ":board_config"
     use_bringup_platform_bundles_only = true
+    assembly_mode = "test-no-platform"
   }
 
   output_file = "$target_out_dir/uncompressed_bootfs"

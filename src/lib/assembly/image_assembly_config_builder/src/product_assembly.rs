@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::image_assembly_config_builder::ImageAssemblyConfigBuilder;
-use assembly_cli_args::ValidationMode;
+use assembly_cli_args::{AssemblyMode, ValidationMode};
 
 use anyhow::{Context, Result, bail};
 use assembly_config_schema::developer_overrides::{DeveloperOnlyOptions, DeveloperOverrides};
@@ -33,6 +33,7 @@ pub struct ProductAssembly {
     builder_forensics_file_path: Option<Utf8PathBuf>,
     board_forensics_file_path: Option<Utf8PathBuf>,
     include_example_aib_for_tests: bool,
+    mode: AssemblyMode,
 }
 
 impl ProductAssembly {
@@ -41,6 +42,7 @@ impl ProductAssembly {
         product_config: ProductConfig,
         board_config: BoardConfig,
         include_example_aib_for_tests: bool,
+        mode: AssemblyMode,
     ) -> Result<Self> {
         let image_mode = product_config.platform.storage.filesystems.image_mode;
         let builder = ImageAssemblyConfigBuilder::new(
@@ -48,7 +50,7 @@ impl ProductAssembly {
             board_config.name.clone(),
             board_config.partitions_config.as_ref().map(|p| p.as_utf8_path_buf().clone()),
             image_mode,
-            product_config.platform.feature_set_level,
+            mode,
             SystemReleaseInfo {
                 platform: platform_artifacts.release_info.clone(),
                 product: product_config.product.release_info.clone(),
@@ -76,6 +78,7 @@ impl ProductAssembly {
             builder_forensics_file_path: None,
             board_forensics_file_path: None,
             include_example_aib_for_tests,
+            mode,
         })
     }
 
@@ -131,8 +134,8 @@ impl ProductAssembly {
     }
 
     pub fn set_boot_shim_aib(&mut self, path: Utf8PathBuf) -> Result<()> {
-        if self.product_config.platform.feature_set_level != FeatureSetLevel::TestKernelOnly {
-            bail!("A custom boot shim can only be set at FeatureSetLevel::TestKernelOnly");
+        if !self.mode.is_test_kernel() {
+            bail!("A custom boot shim can only be set with --mode `test-zbi`");
         }
         self.boot_shim_aib = path;
         Ok(())
@@ -215,10 +218,11 @@ impl ProductAssembly {
             &resource_dir,
             self.developer_only_options.as_ref(),
             include_example_aib_for_tests,
+            &self.mode,
         )?;
 
         // Set the info used for BoardDriver arguments.
-        if platform.feature_set_level != FeatureSetLevel::TestKernelOnly {
+        if !self.mode.is_test_kernel() {
             builder
                 .set_board_driver_arguments(&board_config)
                 .context("Setting arguments for the Board Driver")?;
@@ -240,7 +244,7 @@ impl ProductAssembly {
         // Add the configuration capabilities.
         builder.add_configuration_capabilities(configuration.configuration_capabilities)?;
 
-        if platform.feature_set_level != FeatureSetLevel::TestKernelOnly {
+        if !self.mode.is_test_kernel() {
             // Add the board's Board Input Bundles, if it has them.
             for (bundle_path, bundle) in board_input_bundles {
                 builder
@@ -289,17 +293,14 @@ impl ProductAssembly {
 
         // Add product-specified packages and configuration
         if product.bootfs_files_package.is_some() {
-            match platform.feature_set_level {
-                FeatureSetLevel::TestNoPlatform
-                | FeatureSetLevel::Embeddable
-                | FeatureSetLevel::Bootstrap => {
-                    // these are the only valid feature set levels for adding these files.
-                }
-                _ => {
-                    bail!(
-                        "bootfs files can only be added to the 'empty', 'embeddable', or 'bootstrap' feature set levels"
-                    );
-                }
+            let embeddable_or_bootstrap = matches!(
+                platform.feature_set_level,
+                FeatureSetLevel::Embeddable | FeatureSetLevel::Bootstrap
+            );
+            if self.mode.is_default() && !embeddable_or_bootstrap {
+                bail!(
+                    "bootfs files can only be added to the 'embeddable' or 'bootstrap' feature set levels"
+                );
             }
         }
 

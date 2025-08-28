@@ -30,6 +30,7 @@ pub fn assemble(args: ProductArgs) -> Result<()> {
         suppress_overrides_warning,
         developer_overrides,
         include_example_aib_for_tests,
+        mode,
     } = args;
 
     info!("Reading configuration files.");
@@ -78,6 +79,7 @@ Resulting product is not supported and may misbehave!
         product_config,
         board_config,
         include_example_aib_for_tests.unwrap_or(false),
+        mode,
     )?;
     if let Some(developer_overrides) = developer_overrides {
         pa = pa.add_developer_overrides(developer_overrides)?;

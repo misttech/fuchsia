@@ -75,6 +75,7 @@ mod tests {
             suppress_overrides_warning: false,
             developer_overrides: None,
             include_example_aib_for_tests: Some(false),
+            mode: Default::default(),
         };
         assembly_tool.run(&args.to_vec()).unwrap();
 

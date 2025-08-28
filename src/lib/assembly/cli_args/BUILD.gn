@@ -17,6 +17,7 @@ rustc_library("cli_args") {
     "//src/developer/ffx/config:lib",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:camino",
+    "//third_party/rust_crates:serde",
   ]
 
   sources = [

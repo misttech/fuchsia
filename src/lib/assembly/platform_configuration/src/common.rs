@@ -12,96 +12,12 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
 use assembly_config_schema::platform_settings::icu_config::{ICU_CONFIG_INFO, ICUMap, Revision};
-use assembly_config_schema::{BoardConfig, BuildType, ICUConfig};
+use assembly_config_schema::{BoardConfig, BuildType, FeatureSetLevel, ICUConfig};
 use assembly_constants::{
     BootfsDestination, CompiledPackageDestination, FileEntry, KernelArg, PackageSetDestination,
 };
 use assembly_named_file_map::NamedFileMap;
 use assembly_util::NamedMap;
-
-/// The platform's base service level.
-///
-/// This is the basis for the contract with the product as to what the minimal
-/// set of services that are available in the platform will be.  Features can
-/// be enabled on top of this most-basic level, but some features will require
-/// a higher basic level of support.
-///
-/// These were initially based on the product definitions that are used to
-/// provide the basis for all other products:
-///
-/// bringup.gni  (Bootstrap)
-///   +--> minimal.gni  (Standard)
-///         +--> core.gni
-///               +--> (everything else)
-///
-/// The `Utility` level is between `Bootstrap` and `Standard`, adding the `/core`
-/// realm and those children of `/core` needed by all systems that include
-/// `/core`.
-///
-/// The standard, default, level is `Standard`, and is the level that should be
-/// used by products' main system.  As it's the default, it should not be named
-/// directly in the platform configuration of products.
-///
-/// Note:  This version of the enum does not contain the
-/// `assembly_config_schema::FeatureSetLevel::TestNoPlatform` option, as that is instead
-/// represented as `Option::None`, with the other values as an
-/// `Option::Some(value)`.
-#[derive(Debug, PartialEq)]
-pub(crate) enum FeatureSetLevel {
-    /// This is a small build of fuchsia which is not meant to support
-    /// self-updates, but rather be updated externally. It is meant for truly
-    /// memory constrained environments. It includes a minimal subset of
-    /// bootstrap and doesn't bring in any of core.
-    Embeddable,
-
-    /// Bootable, but serial-only.  This is only the `/bootstrap` realm.  No
-    /// netstack, no storage drivers, etc.  This is a smallest bootable system
-    /// created by assembly, and is primarily used for board-level bringup.
-    ///
-    /// https://fuchsia.dev/fuchsia-src/development/build/build_system/bringup
-    Bootstrap,
-
-    /// This is the smallest configuration that includes the `/core` realm, and
-    /// is best suited for utility-type systems such as recovery.  The "main"
-    /// system for a product should not use this, and instead use the default.
-    Utility,
-
-    /// This is the smallest "full Fuchsia" configuration.  This has a netstack,
-    /// can update itself, and has all the subsystems that are required to
-    /// ship a production-level product.
-    ///
-    /// This is the default level unless otherwise specified.
-    Standard,
-}
-impl FeatureSetLevel {
-    /// Convert a deserialized assembly_config_schema:: FeatureSetLevel into an
-    /// `Option<FeatureSetLevel>`, where the `Empty` case becomes `None`.
-    pub fn from_deserialized(
-        value: &assembly_config_schema::platform_settings::FeatureSetLevel,
-    ) -> Option<Self> {
-        match value {
-            assembly_config_schema::FeatureSetLevel::TestKernelOnly => None,
-            assembly_config_schema::FeatureSetLevel::TestNoPlatform => None,
-            assembly_config_schema::FeatureSetLevel::Embeddable => {
-                Some(FeatureSetLevel::Embeddable)
-            }
-            assembly_config_schema::FeatureSetLevel::Bootstrap => Some(FeatureSetLevel::Bootstrap),
-            assembly_config_schema::FeatureSetLevel::Utility => Some(FeatureSetLevel::Utility),
-            assembly_config_schema::FeatureSetLevel::Standard => Some(FeatureSetLevel::Standard),
-        }
-    }
-}
-
-impl std::fmt::Display for FeatureSetLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FeatureSetLevel::Embeddable => f.write_str("embeddable"),
-            FeatureSetLevel::Bootstrap => f.write_str("bootstrap"),
-            FeatureSetLevel::Utility => f.write_str("utility"),
-            FeatureSetLevel::Standard => f.write_str("standard"),
-        }
-    }
-}
 
 /// A trait for subsystems to implement to provide the configuration for their
 /// subsystem's components.

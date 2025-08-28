@@ -340,6 +340,7 @@ template("boot_test") {
           "//build/testing/boot_tests:product_config"
       kernel_zbi = assembled_system_kernel_zbi
       generate_vbmeta = use_vbmeta
+      assembly_mode = "test-zbi"
       if (custom_signing_script != "") {
         inputs = custom_signing_script_inputs
         deps = [ "//build/images/custom_signing:deps" ]

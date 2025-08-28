@@ -250,7 +250,6 @@ pub struct PlatformSettings {
     pub health_check: health_check_config::HealthCheckConfig,
 }
 
-// LINT.IfChange
 /// The platform's base service level.
 ///
 /// This is the basis for the contract with the product as to what the minimal
@@ -275,16 +274,6 @@ pub struct PlatformSettings {
 #[derive(Debug, Deserialize, Serialize, PartialEq, Default, JsonSchema, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureSetLevel {
-    /// THIS IS FOR TESTING ONLY!
-    ///
-    /// It creates an assembly with no platform, product, or board.
-    TestKernelOnly,
-
-    /// THIS IS FOR TESTING ONLY!
-    ///
-    /// It creates an assembly with no platform.
-    TestNoPlatform,
-
     /// This is a small build of fuchsia which is not meant to support
     /// self-updates, but rather be updated externally. It is meant for truly
     /// memory constrained environments where fuchsia does not need to driver a
@@ -312,7 +301,17 @@ pub enum FeatureSetLevel {
     #[default]
     Standard,
 }
-// LINT.ThenChange(../../platform_configuration/src/common.rs)
+
+impl std::fmt::Display for FeatureSetLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FeatureSetLevel::Embeddable => f.write_str("embeddable"),
+            FeatureSetLevel::Bootstrap => f.write_str("bootstrap"),
+            FeatureSetLevel::Utility => f.write_str("utility"),
+            FeatureSetLevel::Standard => f.write_str("standard"),
+        }
+    }
+}
 
 /// The platform BuildTypes.
 ///

@@ -9,7 +9,6 @@ import("//build/zbi/zbi.gni")
 product_assembly_configuration("product_config") {
   testonly = true
   platform = {
-    feature_set_level = "test_kernel_only"
     build_type = "eng"
     storage = {
       filesystems = {

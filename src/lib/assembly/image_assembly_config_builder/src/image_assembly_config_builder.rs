@@ -5,7 +5,7 @@
 use crate::compiled_package::CompiledPackageBuilder;
 
 use anyhow::{Context, Result, anyhow, bail};
-use assembly_cli_args::ValidationMode;
+use assembly_cli_args::{AssemblyMode, ValidationMode};
 use assembly_config_data::ConfigDataBuilder;
 use assembly_config_schema::board_config::{BoardInputBundle, HardwareInfo};
 use assembly_config_schema::common::PackagedDriverDetails;
@@ -17,9 +17,7 @@ use assembly_config_schema::product_config::{
 use assembly_config_schema::product_settings::{
     ProductConfigData, ProductPackageDetails, ProductPackagesConfig,
 };
-use assembly_config_schema::{
-    BoardConfig, DriverDetails, FeatureSetLevel, PackageDetails, PackageSet,
-};
+use assembly_config_schema::{BoardConfig, DriverDetails, PackageDetails, PackageSet};
 use assembly_constants::{
     BootfsDestination, BootfsPackageDestination, FileEntry, PackageDestination,
     PackageSetDestination,
@@ -65,6 +63,9 @@ pub struct ImageAssemblyConfigBuilder {
 
     /// How to generate the filesystem image.
     image_mode: FilesystemImageMode,
+
+    /// The mode to run assembly in.
+    mode: AssemblyMode,
 
     /// All of the packages, in all package sets.
     packages: Packages,
@@ -123,9 +124,6 @@ pub struct ImageAssemblyConfigBuilder {
     /// Optional ImagesConfig to add to the constructed ImageAssembly config
     images_config: Option<ImagesConfig>,
 
-    /// The feature set that this product supports.
-    feature_set_level: FeatureSetLevel,
-
     /// Optional version information for all input artifacts.
     /// TODO(https://fxbug.dev/416239346): Make this a required field.
     system_release_info: SystemReleaseInfo,
@@ -137,7 +135,7 @@ impl ImageAssemblyConfigBuilder {
         board_name: String,
         partitions_config: Option<Utf8PathBuf>,
         image_mode: FilesystemImageMode,
-        feature_set_level: FeatureSetLevel,
+        mode: AssemblyMode,
         system_release_info: SystemReleaseInfo,
     ) -> Self {
         Self {
@@ -145,6 +143,7 @@ impl ImageAssemblyConfigBuilder {
             board_name,
             partitions_config,
             image_mode,
+            mode,
             packages: Packages::default(),
             base_drivers: NamedMap::new("base_drivers"),
             boot_drivers: NamedMap::new("boot_drivers"),
@@ -168,7 +167,6 @@ impl ImageAssemblyConfigBuilder {
             developer_only_options: None,
             images_config: None,
             system_release_info,
-            feature_set_level,
         }
     }
 
@@ -913,6 +911,7 @@ impl ImageAssemblyConfigBuilder {
             board_name,
             partitions_config,
             image_mode,
+            mode,
             package_configs,
             domain_configs,
             mut packages,
@@ -936,7 +935,6 @@ impl ImageAssemblyConfigBuilder {
             developer_only_options: _,
             images_config,
             system_release_info,
-            feature_set_level,
         } = self;
 
         if !boot_args.is_empty() {
@@ -1073,7 +1071,7 @@ impl ImageAssemblyConfigBuilder {
         }
 
         // Construct the config capability package.
-        if feature_set_level != FeatureSetLevel::TestKernelOnly {
+        if !mode.is_test_kernel() {
             let package_name = "config";
             let outdir = outdir.join(package_name);
             std::fs::create_dir_all(&outdir)
@@ -1185,22 +1183,22 @@ impl ImageAssemblyConfigBuilder {
             image_mode,
         };
 
-        if feature_set_level == FeatureSetLevel::TestKernelOnly {
+        if mode.is_test_kernel() {
             anyhow::ensure!(
                 image_mode == FilesystemImageMode::NoImage,
-                "Products using the 'test_kernel_only' feature set level must use image_mode=no_image"
+                "Products using a test kernel must use image_mode=no_image"
             );
             anyhow::ensure!(
                 image_assembly_config.bootfs_packages.is_empty(),
                 format!(
-                    "Bootfs packages are not allowed on 'test_kernel_only' products. Found: {:?}",
+                    "Bootfs packages are not allowed on products with a test kernel. Found: {:?}",
                     image_assembly_config.bootfs_packages
                 )
             );
             anyhow::ensure!(
                 image_assembly_config.bootfs_files.is_empty(),
                 format!(
-                    "Bootfs files are not allowed on 'test_kernel_only' products. Found: {:?}",
+                    "Bootfs files are not allowed on products with a test kernel. Found: {:?}",
                     image_assembly_config.bootfs_files
                 )
             );
@@ -1709,7 +1707,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
         builder.add_parsed_bundle(outdir.as_ref().join("minimum_bundle"), minimum_bundle).unwrap();
@@ -1726,7 +1724,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
         builder
@@ -1786,7 +1784,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
         builder
@@ -1841,7 +1839,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
         builder
@@ -1895,7 +1893,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
 
@@ -2349,7 +2347,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
         assert!(builder.add_parsed_bundle(root, aib).is_err());
@@ -2380,7 +2378,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
         builder.add_parsed_bundle(outdir, aib).unwrap();
@@ -2421,7 +2419,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
         assert!(builder.add_parsed_bundle(outdir, aib).is_err());
@@ -2468,7 +2466,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
         builder.add_parsed_bundle(outdir, aib).ok();
@@ -2515,7 +2513,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
         builder.add_parsed_bundle(outdir, aib).ok();
@@ -2552,7 +2550,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
         builder.add_parsed_bundle(root, first_aib).unwrap();
@@ -2566,7 +2564,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
 
@@ -2585,7 +2583,7 @@ mod tests {
             "my_board".into(),
             None::<Utf8PathBuf>,
             FilesystemImageMode::default(),
-            FeatureSetLevel::Standard,
+            AssemblyMode::default(),
             SystemReleaseInfo::new_for_testing(),
         );
 

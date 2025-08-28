@@ -79,6 +79,12 @@ def main() -> int:
         required=False,
         help="Developer overrides to add.",
     )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        required=False,
+        help="The assembly mode to use.",
+    )
     args = parser.parse_args()
 
     kwargs = {}
@@ -86,6 +92,8 @@ def main() -> int:
         kwargs["extra_config"] = args.config
     if args.developer_overrides:
         kwargs["developer_overrides"] = args.developer_overrides
+    if args.mode:
+        kwargs["mode"] = args.mode
 
     output = run_product_assembly(
         ffx_bin=args.ffx_bin,

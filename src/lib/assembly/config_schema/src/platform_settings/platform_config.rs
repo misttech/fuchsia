@@ -273,16 +273,6 @@ pub struct PlatformSettings {
 #[derive(Debug, Deserialize, Serialize, PartialEq, Default, JsonSchema, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureSetLevel {
-    /// THIS IS FOR TESTING ONLY!
-    ///
-    /// It creates an assembly with no platform, product, or board.
-    TestKernelOnly,
-
-    /// THIS IS FOR TESTING ONLY!
-    ///
-    /// It creates an assembly with no platform.
-    TestNoPlatform,
-
     /// This is a small build of fuchsia which is not meant to support
     /// self-updates, but rather be updated externally. It is meant for truly
     /// memory constrained environments where fuchsia does not need to driver a
@@ -310,7 +300,7 @@ pub enum FeatureSetLevel {
     #[default]
     Standard,
 }
-// LINT.ThenChange(../../platform_configuration/src/common.rs)
+// LINT.ThenChange(/src/lib/assembly/platform_configuration/src/common.rs)
 
 /// The platform BuildTypes.
 ///
