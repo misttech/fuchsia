@@ -10,8 +10,8 @@ use fidl_fuchsia_component::{Event, EventHeader, EventType, StoppedPayload};
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmBuilderParams, Ref, Route, ScopedInstanceFactory,
 };
-use futures::future::{self, Either};
 use futures::StreamExt;
+use futures::future::{self, Either};
 use std::pin::pin;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_sandbox as fsandbox,
@@ -219,17 +219,20 @@ async fn stop_with_dynamic_dictionary() {
         .await
         .unwrap();
 
+    // Open the event sream before starting the realm, so as to not race with component startup.
+    let event_stream = EventStream::open().await.unwrap();
+
     let instance = builder.build().await.unwrap();
     let moniker =
         format!("realm_builder:{}/stop_with_dynamic_dictionary", instance.root.child_name());
-
-    // Wait for the component to start.
-    let mut event_stream = EventStream::open().await.unwrap().filter(|ev| {
+    let mut event_stream = event_stream.filter(|ev| {
         future::ready(matches!(
             &ev.header,
             Some(EventHeader { moniker: Some(m), .. }) if m == &moniker
         ))
     });
+
+    // Wait for the component to start.
     while let Some(ev) = event_stream.next().await {
         if matches!(ev.header, Some(EventHeader { event_type: Some(EventType::Started), .. })) {
             break;
