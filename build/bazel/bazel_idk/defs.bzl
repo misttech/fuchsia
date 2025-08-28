@@ -468,6 +468,10 @@ def idk_cc_source_library(
             This file is used to ensure modifications to the library's API are
             explicitly acknowledged.
             If not specified, the path will be "<idk_name>.api".
+            Only specify when the default needs to be overridden.
+            When the path is not in the current directory, the file will likely
+            need to be made visibile to this target using `exports_files()` in
+            the BUILD.bazel file for the directory containing the .api file.
             GN equivalent: `api`
             Not allowed when `stable` is false.
         testonly: Standard definition.
@@ -612,8 +616,13 @@ def idk_cc_source_library(
     if stable:
         api_path = idk_name + ".api"
         if api_file_path:
-            if paths.relativize(api_file_path, ".") == paths.relativize(api_path, "."):
-                fail("The specified `api` file (`%s`) matches the default. `api` only needs to be specified when overriding the default." % api_file_path)
+            # Check that `api_file_path` does not specify the default path.
+            # We must assume that absolute paths are not specifying the default
+            # path because `relativize()` fails with absolute paths and we
+            # cannot get the package path at this point.
+            if not paths.is_absolute(api_file_path):
+                if paths.relativize(api_file_path, ".") == paths.relativize(api_path, "."):
+                    fail("The specified `api` file (`%s`) matches the default. `api` only needs to be specified when overriding the default." % api_file_path)
             api_path = api_file_path
 
         api_contents_map = idk_header_files_map

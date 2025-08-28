@@ -47,6 +47,9 @@ idk_cc_source_library(
     testonly = True,
     hdrs = ["dependency.h"],
     api_area = "Developer",
+
+    # Test overriding the path to the API file.
+    api_file_path = "dependency_1.api",
     category = "partner",
     hdrs_for_internal_use = ["another_header.h"],
     idk_name = "source_dependency_1",
@@ -63,6 +66,12 @@ idk_cc_source_library(
     testonly = True,
     hdrs = ["dependency.h"],
     api_area = "Developer",
+
+    # Test specifying an absolute path to the API file.
+    # The value is the same as the default path, but we are unable to detect
+    # this for reasons explained in the implementation. Do not do this in real
+    # instances.
+    api_file_path = "//build/bazel/bazel_idk/tests:source_dependency_2.api",
     category = "partner",
     hdrs_for_internal_use = ["another_header.h"],
     idk_name = "source_dependency_2",
