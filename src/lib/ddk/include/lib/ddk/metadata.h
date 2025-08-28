@@ -33,10 +33,6 @@ static_assert(DEVICE_METADATA_BOARD_PRIVATE == ZBI_TYPE_DRV_BOARD_PRIVATE, "");
 // device-protocol-display/include/lib/device-protocol/display-panel.h)
 #define DEVICE_METADATA_DISPLAY_PANEL_TYPE 0x43505344  // DSPC
 
-// Maximum screen brightness in nits. Used by the backlight driver.
-// type: double
-#define DEVICE_METADATA_BACKLIGHT_MAX_BRIGHTNESS_NITS 0x4C4B4342  // BCKL
-
 // Metadata types that have least significant byte set to lowercase 'd'
 // signify private driver data.
 // This allows creating metadata types to be defined local to a particular

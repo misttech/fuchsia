@@ -13,6 +13,9 @@ struct TiLp8556Metadata {
   uint8_t registers[256 * 2];
   uint32_t register_count;  // Refers to the number of both registers and values listed in the
                             // registers field.
+
+  // Maximum screen brightness in nits.
+  double backlight_max_brightness;
 };
 
 #endif  // SRC_UI_BACKLIGHT_DRIVERS_TI_LP8556_TI_LP8556METADATA_H_

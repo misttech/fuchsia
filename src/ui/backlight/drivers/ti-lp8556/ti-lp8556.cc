@@ -315,13 +315,6 @@ zx::result<display::PanelType> TiLp8556::GetDisplayPanelInfo() {
 
 zx::result<> TiLp8556::Start() {
   root_ = inspector().root().CreateChild("ti-lp8556");
-  zx::result brightness_nits = compat::GetMetadata<double>(
-      incoming(), DEVICE_METADATA_BACKLIGHT_MAX_BRIGHTNESS_NITS, "pdev");
-  if (brightness_nits.is_ok()) {
-    SetMaxAbsoluteBrightnessNits(*brightness_nits.value());
-  } else {
-    fdf::info("Failed to get max absolute brightness: {}", brightness_nits);
-  }
 
   // Obtain I2C protocol needed to control backlight
   zx::result i2c = incoming()->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
@@ -336,6 +329,9 @@ zx::result<> TiLp8556::Start() {
   // Supplying this metadata is optional.
   if (metadata.is_ok()) {
     metadata_ = *metadata.value();
+
+    SetMaxAbsoluteBrightnessNits(metadata_.backlight_max_brightness);
+
     if (metadata_.register_count % (2 * sizeof(uint8_t)) != 0) {
       fdf::error("Register metadata is invalid. Register count ({}) is not a multiple of {}",
                  metadata_.register_count, 2 * sizeof(uint8_t));

@@ -29,8 +29,6 @@ static const std::vector<fpbus::Mmio> backlight_mmios{
     }},
 };
 
-constexpr double kMaxBrightnessInNits = 350.0;
-
 TiLp8556Metadata kDeviceMetadata = {
     .panel_id = 0,
     // `allow_set_current_scale` is true iff the driver is on factory build.
@@ -39,25 +37,27 @@ TiLp8556Metadata kDeviceMetadata = {
     .registers =
         {
             // Registers
-            0x01, 0x85,  // Device Control
-                         // EPROM
-            0xa2, 0x20,  // CFG2
-            0xa3, 0x32,  // CFG3
-            0xa5, 0x04,  // CFG5
-            0xa7, 0xf4,  // CFG7
-            0xa9, 0x60,  // CFG9
-            0xae, 0x09,  // CFGE
+            0x01,
+            0x85,  // Device Control
+                   // EPROM
+            0xa2,
+            0x20,  // CFG2
+            0xa3,
+            0x32,  // CFG3
+            0xa5,
+            0x04,  // CFG5
+            0xa7,
+            0xf4,  // CFG7
+            0xa9,
+            0x60,  // CFG9
+            0xae,
+            0x09,  // CFGE
         },
     .register_count = 14,
+    .backlight_max_brightness = 350.0,
 };
 
 static const std::vector<fpbus::Metadata> backlight_metadata{
-    {{
-        .id = std::to_string(DEVICE_METADATA_BACKLIGHT_MAX_BRIGHTNESS_NITS),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(&kMaxBrightnessInNits),
-            reinterpret_cast<const uint8_t*>(&kMaxBrightnessInNits) + sizeof(kMaxBrightnessInNits)),
-    }},
     {{
         .id = std::to_string(DEVICE_METADATA_PRIVATE),
         .data = std::vector<uint8_t>(
