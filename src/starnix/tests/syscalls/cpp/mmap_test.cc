@@ -53,7 +53,7 @@ constexpr intptr_t LIMIT_4GB = 0x80000000;
 TEST(MmapTest, UnmapPartialMapped) {
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
   uint8_t* mmap_addr = reinterpret_cast<uint8_t*>(
-      mmap(NULL, page_size * 2, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+      mmap(nullptr, page_size * 2, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
   ASSERT_NE(mmap_addr, MAP_FAILED) << strerror(errno);
 
   EXPECT_EQ(munmap(mmap_addr, page_size), 0) << strerror(errno);
@@ -174,7 +174,7 @@ TEST(MMapTest, MapFileThenGrow) {
 
 TEST(MMapTest, MapFixedUnalignedFails) {
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
-  void* mmap_addr = mmap(NULL, page_size * 2, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  void* mmap_addr = mmap(nullptr, page_size * 2, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   ASSERT_NE(mmap_addr, MAP_FAILED);
 
   void* unaligned_addr = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(mmap_addr) + 1);
@@ -1052,7 +1052,7 @@ TEST_F(MapGrowsdownTest, SyscallWritesBelowGrowsdown) {
 
 TEST(Mprotect, ProtGrowsdownOnNonGrowsdownMapping) {
   size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
-  void* rv = mmap(NULL, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  void* rv = mmap(nullptr, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   ASSERT_NE(rv, MAP_FAILED) << "mmap failed: " << strerror(errno) << "(" << errno << ")";
   EXPECT_EQ(mprotect(rv, page_size, PROT_READ | PROT_GROWSDOWN), -1);
   EXPECT_EQ(errno, EINVAL);
@@ -1060,7 +1060,7 @@ TEST(Mprotect, ProtGrowsdownOnNonGrowsdownMapping) {
 
 TEST(Mprotect, UnalignedMprotectEnd) {
   size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
-  void* rv = mmap(NULL, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  void* rv = mmap(nullptr, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   ASSERT_NE(rv, MAP_FAILED) << "mmap failed: " << strerror(errno) << "(" << errno << ")";
   EXPECT_EQ(mprotect(rv, 5, PROT_READ), 0);
 }
@@ -1069,7 +1069,7 @@ TEST_F(MMapProcTest, MProtectIsThreadSafe) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([&] {
     const size_t page_size = sysconf(_SC_PAGE_SIZE);
-    void* mmap1 = mmap(NULL, page_size, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void* mmap1 = mmap(nullptr, page_size, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(mmap1, MAP_FAILED);
     uintptr_t addr = reinterpret_cast<uintptr_t>(mmap1);
     ASSERT_TRUE(test_helper::TryRead(addr));
@@ -1311,7 +1311,7 @@ TEST_P(MMapAllProtectionsTest, PrivateFileMappingAllowAllProtections) {
   for (const auto& fd : fds) {
     ASSERT_TRUE(fd.is_valid());
     auto mapping =
-        test_helper::ScopedMMap::MMap(NULL, page_size, mmap_prot, MAP_PRIVATE, fd.get(), 0);
+        test_helper::ScopedMMap::MMap(nullptr, page_size, mmap_prot, MAP_PRIVATE, fd.get(), 0);
     EXPECT_EQ(mapping.is_ok(), true) << mapping.error_value();
     if (mapping.is_ok()) {
       auto addr = mapping->mapping();

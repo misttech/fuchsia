@@ -128,7 +128,7 @@ TEST_F(VdsoProcTest, VdsoMappingCannotBeSplit) {
   });
   EXPECT_TRUE(helper.WaitForChildren());
 
-  void* new_addr = mmap(NULL, page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  void* new_addr = mmap(nullptr, page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   ASSERT_NE(new_addr, MAP_FAILED);
 
   // We cannot mremap one page of the vdso somewhere else.
@@ -190,7 +190,7 @@ TEST_F(VdsoProcTest, VdsoCanBeRemapped) {
   test_helper::ForkHelper helper;
 
   helper.RunInForkedProcess([&] {
-    void* new_addr = mmap(NULL, vdso_size_, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void* new_addr = mmap(nullptr, vdso_size_, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(new_addr, MAP_FAILED);
     EXPECT_NE(mremap(vdso_base_, vdso_size_, vdso_size_, MREMAP_FIXED | MREMAP_MAYMOVE, new_addr),
               MAP_FAILED);
@@ -204,7 +204,7 @@ TEST_F(VdsoProcTest, VdsoCanBeRemappedInto) {
   test_helper::ForkHelper helper;
 
   helper.RunInForkedProcess([&] {
-    void* new_addr = mmap(NULL, vdso_size_, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void* new_addr = mmap(nullptr, vdso_size_, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(new_addr, MAP_FAILED);
     EXPECT_NE(mremap(new_addr, vdso_size_, vdso_size_, MREMAP_FIXED | MREMAP_MAYMOVE, vdso_base_),
               MAP_FAILED);
@@ -320,7 +320,7 @@ TEST_F(VdsoProcTest, VdsoModificationsDontAffectOtherPrograms) {
   test_helper::ForkHelper helper;
 
   helper.RunInForkedProcess([&] {
-    const char* argv[] = {"/proc/self/exe", "--gtest_filter=" ELF_HEADER_TEST_NAME, NULL};
+    const char* argv[] = {"/proc/self/exe", "--gtest_filter=" ELF_HEADER_TEST_NAME, nullptr};
     ASSERT_EQ(mprotect(vdso_base_, vdso_size_, PROT_READ | PROT_WRITE | PROT_EXEC), 0);
 
     // Don't print anything on the child.
@@ -331,7 +331,7 @@ TEST_F(VdsoProcTest, VdsoModificationsDontAffectOtherPrograms) {
     // We are going to modify the vdso. Try not to use complex code.
     SetEIPadFirstByte(vdso_base_, 0x3F);
     // From this point on, we can't use any vdso call.
-    execve(argv[0], const_cast<char**>(&argv[0]), NULL);
+    execve(argv[0], const_cast<char**>(&argv[0]), nullptr);
     _exit(1);
   });
 
@@ -343,7 +343,7 @@ TEST_F(VdsoProcTest, VdsoModificationsBeforeForkingDontAffectOtherPrograms) {
   // after fork has different effects. This test checks that if we modify the
   // vdso before forking, and execve into another binary, that binary will *not*
   // see our vdso modifications.
-  const char* argv[] = {"/proc/self/exe", "--gtest_filter=" ELF_HEADER_TEST_NAME, NULL};
+  const char* argv[] = {"/proc/self/exe", "--gtest_filter=" ELF_HEADER_TEST_NAME, nullptr};
   ASSERT_EQ(mprotect(vdso_base_, vdso_size_, PROT_READ | PROT_WRITE | PROT_EXEC), 0);
   ASSERT_TRUE(IsEIPadFirstByteZero(vdso_base_));
 
@@ -359,7 +359,7 @@ TEST_F(VdsoProcTest, VdsoModificationsBeforeForkingDontAffectOtherPrograms) {
   pid_t child_pid = fork();
 
   if (child_pid == 0) {
-    execve(argv[0], const_cast<char**>(&argv[0]), NULL);
+    execve(argv[0], const_cast<char**>(&argv[0]), nullptr);
     _exit(1);
   } else {
     int status;

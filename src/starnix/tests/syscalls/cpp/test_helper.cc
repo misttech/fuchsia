@@ -143,7 +143,7 @@ CloneHelper::CloneHelper() {
 CloneHelper::~CloneHelper() { munmap(this->_childStack, CloneHelper::_childStackSize); }
 
 int CloneHelper::runInClonedChild(unsigned int cloneFlags, int (*childFunction)(void *)) {
-  int childPid = clone(childFunction, this->_childStackBegin, cloneFlags, NULL);
+  int childPid = clone(childFunction, this->_childStackBegin, cloneFlags, nullptr);
   assert(childPid != -1);
   return childPid;
 }
@@ -227,7 +227,7 @@ void waitForChildSucceeds(unsigned int waitFlag, int cloneFlags, int (*childRunF
   CloneHelper cloneHelper;
   int expectedWaitPid = cloneHelper.runInClonedChild(cloneFlags, childRunFunction);
 
-  parentRunFunction(NULL);
+  parentRunFunction(nullptr);
 
   int expectedWaitStatus = 0;
   int expectedErrno = 0;

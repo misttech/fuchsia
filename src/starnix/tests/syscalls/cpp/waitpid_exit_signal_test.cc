@@ -35,7 +35,7 @@ void handler(int signum, siginfo_t *info, void *ucontext) {
 test_helper::CloneHelper nested_clone_helper;
 
 void ensureWait(int pid, unsigned int waitFlags) {
-  int actual_waitpid = waitpid(pid, NULL, waitFlags);
+  int actual_waitpid = waitpid(pid, nullptr, waitFlags);
   EXPECT_EQ(errno, 0);
   EXPECT_EQ(pid, actual_waitpid);
 }
@@ -126,7 +126,7 @@ TEST(WaitpidExitSignalTest, childProcessSendsNoExitSignalOnTerminationToParentPr
 int processThatFinishAfterChildThread(void *) {
   nested_clone_helper.runInClonedChild(CLONE_THREAD | CLONE_VM | CLONE_SIGHAND | SIGUSR2,
                                        test_helper::CloneHelper::doNothing);
-  test_helper::CloneHelper::sleep_1sec(NULL);
+  test_helper::CloneHelper::sleep_1sec(nullptr);
   return 0;
 }
 

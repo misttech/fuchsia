@@ -20,7 +20,7 @@ void ValidateSigactions(int argc, char** argv) {
     signums.push_back(signum);
 
     struct sigaction sa{};
-    ASSERT_THAT(sigaction(signum, NULL, &sa), SyscallSucceeds()) << "signal number: " << signum;
+    ASSERT_THAT(sigaction(signum, nullptr, &sa), SyscallSucceeds()) << "signal number: " << signum;
     sigactions.push_back(sa);
 
     std::string action = std::string(argv[i + 1]);

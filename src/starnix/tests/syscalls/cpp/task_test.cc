@@ -240,7 +240,7 @@ TEST(Task, Clone3_ChangeStack) {
   ca.child_tid = reinterpret_cast<uint64_t>(&child_pid_from_clone);
 
   constexpr size_t kStackSize = 0x5000;
-  void* stack_addr = mmap(NULL, kStackSize, PROT_WRITE | PROT_READ,
+  void* stack_addr = mmap(nullptr, kStackSize, PROT_WRITE | PROT_READ,
                           MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
   ASSERT_NE(MAP_FAILED, stack_addr);
 
@@ -309,7 +309,7 @@ TEST(Task, Clone3_InvalidSize) {
   bzero(&ca, sizeof(ca));
 
   // Pass a structure size smaller than the first supported version, it should report EINVAL.
-  EXPECT_EQ(-1, DoClone3(&ca, CLONE_ARGS_SIZE_VER0 - 8, &empty_func, NULL));
+  EXPECT_EQ(-1, DoClone3(&ca, CLONE_ARGS_SIZE_VER0 - 8, &empty_func, nullptr));
   EXPECT_EQ(EINVAL, errno);
 }
 
@@ -326,7 +326,7 @@ static int CloneVForkFunctionSleepExit(void* param) {
 // block until the thread exits.
 TEST(Task, CloneVfork_exit) {
   constexpr size_t kStackSize = 1024 * 16;
-  void* stack_low = mmap(NULL, kStackSize, PROT_READ | PROT_WRITE,
+  void* stack_low = mmap(nullptr, kStackSize, PROT_READ | PROT_WRITE,
                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
   ASSERT_NE(stack_low, MAP_FAILED);
   void* stack_high = static_cast<char*>(stack_low) + kStackSize;  // Pass in the top of the stack.
@@ -879,8 +879,8 @@ TEST(Task, ExecvePathnameTooLong) {
     std::vector<char> pathname(path_size, '/');
     pathname[path_size - 1] = '\0';
 
-    char* argv[] = {NULL};
-    char* envp[] = {NULL};
+    char* argv[] = {nullptr};
+    char* envp[] = {nullptr};
 
     EXPECT_NE(execve(pathname.data(), argv, envp), 0);
     EXPECT_EQ(errno, ENAMETOOLONG);

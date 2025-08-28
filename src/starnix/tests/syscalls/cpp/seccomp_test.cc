@@ -138,7 +138,7 @@ TEST(SeccompTest, BadArgs) {
   helper.OnlyWaitForForkedChildren();
   helper.RunInForkedProcess([] {
     EXPECT_GE(0, prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
-    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, NULL, NULL, NULL));
+    EXPECT_EQ(-1, prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, nullptr, nullptr, nullptr));
     EXPECT_EQ(EFAULT, errno);
 
     sock_filter filter[] = {

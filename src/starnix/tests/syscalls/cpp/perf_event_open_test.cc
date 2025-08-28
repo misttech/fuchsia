@@ -555,7 +555,7 @@ TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
 
     // mmap() returns the address of the mapping. Note you MUST use MAP_SHARED because you're
     // doing kernel and user stuff. The offset has to be 0 to access the metadata page (first page).
-    void* address = mmap(NULL, buffer_size, PROT_READ, MAP_SHARED, file_descriptor, 0);
+    void* address = mmap(nullptr, buffer_size, PROT_READ, MAP_SHARED, file_descriptor, 0);
 
     // Address should not be 0xffffffffffffffff.
     EXPECT_NE(address, MAP_FAILED);
@@ -604,7 +604,7 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     // mmap() returns the address of the mapping. Note you MUST use MAP_SHARED because you're
     // doing
     // kernel and user stuff. The offset has to be 0 to access the metadata page (first page).
-    void* address = mmap(NULL, buffer_size, PROT_READ, MAP_SHARED, file_descriptor, 0);
+    void* address = mmap(nullptr, buffer_size, PROT_READ, MAP_SHARED, file_descriptor, 0);
 
     // Address should not be 0xffffffffffffffff.
     EXPECT_NE(address, MAP_FAILED);

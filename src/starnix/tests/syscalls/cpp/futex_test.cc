@@ -180,8 +180,8 @@ TEST(RobustFutexTest, DoesNotModifyReadOnlyMapping) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([] {
     const size_t page_size = sysconf(_SC_PAGESIZE);
-    void *addr =
-        mmap(NULL, sizeof(page_size), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void *addr = mmap(nullptr, sizeof(page_size), PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(addr, MAP_FAILED);
 
     robust_list_head head = {.list = {.next = nullptr},
@@ -303,7 +303,7 @@ TEST(FutexTest, FutexAddressHasToBeAligned) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(&some_addresses[0]);
 
   auto futex_basic = [](uintptr_t addr, uint32_t op, uint32_t val) {
-    return syscall(SYS_futex, addr, op, val, NULL, NULL, 0);
+    return syscall(SYS_futex, addr, op, val, nullptr, nullptr, 0);
   };
 
   auto futex_requeue = [](uintptr_t addr, uint32_t val, uint32_t val2, uintptr_t addr2) {
@@ -328,7 +328,7 @@ TEST(FutexTest, FutexAddressOutOfRange) {
   uintptr_t addr = static_cast<uintptr_t>(-4);  // not in userspace
 
   auto futex_basic = [](uintptr_t addr, uint32_t op, uint32_t val) {
-    return syscall(SYS_futex, addr, op, val, NULL, NULL, 0);
+    return syscall(SYS_futex, addr, op, val, nullptr, nullptr, 0);
   };
 
   EXPECT_EQ(-1, futex_basic(addr, FUTEX_WAIT, 0));
@@ -349,10 +349,11 @@ TEST(FutexTest, FutexWaitOnRemappedMemory) {
     constexpr size_t kNumWaiters = 16;
     constexpr uint32_t kFutexConstant = 0xbeef;
     const size_t page_size = sysconf(_SC_PAGESIZE);
-    void *addr = mmap(NULL, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void *addr =
+        mmap(nullptr, page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(addr, MAP_FAILED);
     auto futex_basic = [](std::atomic<uint32_t> *addr, uint32_t op, uint32_t val) {
-      return syscall(SYS_futex, reinterpret_cast<uint32_t *>(addr), op, val, NULL, NULL, 0);
+      return syscall(SYS_futex, reinterpret_cast<uint32_t *>(addr), op, val, nullptr, nullptr, 0);
     };
 
     std::atomic<uint32_t> *futex = new (addr) std::atomic<uint32_t>(kFutexConstant);
@@ -418,7 +419,7 @@ TEST(FutexTest, CanRequeueAllWaiters) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([] {
     auto futex_basic = [](std::atomic<uint32_t> *addr, uint32_t op, uint32_t val) {
-      return syscall(SYS_futex, addr, op, val, NULL, NULL, 0);
+      return syscall(SYS_futex, addr, op, val, nullptr, nullptr, 0);
     };
 
     auto futex_requeue_all = [](std::atomic<uint32_t> *addr, std::atomic<uint32_t> *addr2) {
@@ -469,14 +470,14 @@ TEST(FutexTest, CanRequeueAllWaiters) {
 }
 
 TEST(FutexTest, FutexFailsWithEFAULTOnNullAddress) {
-  EXPECT_THAT(syscall(SYS_futex, nullptr, FUTEX_WAIT, 0, NULL, 0, 0),
+  EXPECT_THAT(syscall(SYS_futex, nullptr, FUTEX_WAIT, 0, nullptr, 0, 0),
               SyscallFailsWithErrno(EFAULT));
 }
 
 TEST(FutexTest, FutexFailsWithEFAULTOnInvalidLowAddress) {
   // Zircon forbids creating mappings with addresses lower than 2MB.
   constexpr uintptr_t kInvalidLowAddress = 0x10000;
-  EXPECT_THAT(syscall(SYS_futex, kInvalidLowAddress, FUTEX_WAIT, 0, NULL, 0, 0),
+  EXPECT_THAT(syscall(SYS_futex, kInvalidLowAddress, FUTEX_WAIT, 0, nullptr, 0, 0),
               SyscallFailsWithErrno(EFAULT));
 }
 
@@ -501,7 +502,7 @@ TEST(FutexTest, FutexFailsWithEFAULTOnLowestNormalAddress) {
   if (!test_helper::IsStarnix()) {
     GTEST_SKIP();
   }
-  EXPECT_THAT(syscall(SYS_futex, kLowestNormalModeAddress, FUTEX_WAIT, 0, NULL, 0, 0),
+  EXPECT_THAT(syscall(SYS_futex, kLowestNormalModeAddress, FUTEX_WAIT, 0, nullptr, 0, 0),
               SyscallFailsWithErrno(EFAULT));
 }
 

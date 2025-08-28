@@ -57,7 +57,7 @@ TEST(RestartRead, ReadFromPipeRestarts) {
   struct sigaction sa = {};
   sa.sa_sigaction = sig_handler;
   sa.sa_flags = SA_SIGINFO | SA_RESTART;
-  ASSERT_EQ(sigaction(SIGUSR1, &sa, NULL), 0);
+  ASSERT_EQ(sigaction(SIGUSR1, &sa, nullptr), 0);
 
   // Create the pipe that will be used to communicate with the child process.
   int pipefd[2];
@@ -73,7 +73,7 @@ TEST(RestartRead, ReadFromPipeRestarts) {
     struct sigaction sa = {};
     sa.sa_sigaction = sig_handler_child;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
-    ASSERT_EQ(sigaction(SIGUSR2, &sa, NULL), 0);
+    ASSERT_EQ(sigaction(SIGUSR2, &sa, nullptr), 0);
 
     // Send a series of signals to the parent process, which should continue to interrupt the
     // parent's read syscall until the payload is written.

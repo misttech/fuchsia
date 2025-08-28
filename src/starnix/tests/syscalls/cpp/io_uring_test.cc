@@ -43,17 +43,17 @@ TEST(IoUringTest, IoUringReadWrite) {
   ASSERT_TRUE(ring_fd.is_valid()) << strerror(errno);
 
   auto sq_mapping = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
-      NULL, params.sq_off.array + params.sq_entries * sizeof(__u32), PROT_READ | PROT_WRITE,
+      nullptr, params.sq_off.array + params.sq_entries * sizeof(__u32), PROT_READ | PROT_WRITE,
       MAP_SHARED | MAP_POPULATE, ring_fd.get(), IORING_OFF_SQ_RING));
   char* sq_ptr = static_cast<char*>(sq_mapping.mapping());
 
   auto cqe_mapping = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
-      NULL, params.cq_off.cqes + params.cq_entries * sizeof(io_uring_cqe), PROT_READ | PROT_WRITE,
-      MAP_SHARED | MAP_POPULATE, ring_fd.get(), IORING_OFF_CQ_RING));
+      nullptr, params.cq_off.cqes + params.cq_entries * sizeof(io_uring_cqe),
+      PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, ring_fd.get(), IORING_OFF_CQ_RING));
   char* cqe_ptr = static_cast<char*>(cqe_mapping.mapping());
 
   auto sqe_mapping = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
-      NULL, params.sq_entries * sizeof(io_uring_sqe), PROT_READ | PROT_WRITE,
+      nullptr, params.sq_entries * sizeof(io_uring_sqe), PROT_READ | PROT_WRITE,
       MAP_SHARED | MAP_POPULATE, ring_fd.get(), IORING_OFF_SQES));
   io_uring_sqe* sqes = reinterpret_cast<io_uring_sqe*>(sqe_mapping.mapping());
 
@@ -90,7 +90,7 @@ TEST(IoUringTest, IoUringReadWrite) {
   sq_tail_ptr->store(tail + 1, std::memory_order_release);
 
   // Submit and wait for both operations
-  ASSERT_EQ(io_uring_enter(ring_fd.get(), 2, 2, IORING_ENTER_GETEVENTS, NULL), 2);
+  ASSERT_EQ(io_uring_enter(ring_fd.get(), 2, 2, IORING_ENTER_GETEVENTS, nullptr), 2);
 
   // Process completions
   std::atomic<uint32_t>* cq_head_ptr =

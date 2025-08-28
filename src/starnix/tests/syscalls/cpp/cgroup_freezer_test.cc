@@ -110,7 +110,7 @@ class CgroupFreezerTest : public ::testing::Test {
     // Kill the child processes
     for (int pid : test_pids_) {
       kill(pid, SIGKILL);
-      waitpid(pid, NULL, 0);
+      waitpid(pid, nullptr, 0);
     }
     for (const auto& cgroup : cgroups_) {
       if (std::filesystem::exists(cgroup)) {

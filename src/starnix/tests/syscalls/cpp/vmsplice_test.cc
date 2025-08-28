@@ -125,7 +125,7 @@ TEST(VmspliceTest, ForkWithBufferInPipe) {
     // Volatile to let the compiler know not to optimize out the final write we
     // perform to `write_buffer` which is never directly read here.
     volatile char* write_buffer = reinterpret_cast<volatile char*>(
-        mmap(NULL, kBufSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+        mmap(nullptr, kBufSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
     ASSERT_NE(write_buffer, MAP_FAILED) << strerror(errno);
     auto unmap_write_buffer = fit::defer([&]() {
       EXPECT_EQ(munmap(const_cast<char*>(write_buffer), kBufSize), 0) << strerror(errno);
@@ -204,7 +204,7 @@ TEST(VmspliceTest, FileInPipe) {
   fbl::unique_fd fds[kNumPipeEndsCount];
   ASSERT_NO_FATAL_FAILURE(MakePipe(fds));
   {
-    void* write_buffer = mmap(NULL, kFileSize, PROT_READ, MAP_PRIVATE, tmp_file.get(), 0);
+    void* write_buffer = mmap(nullptr, kFileSize, PROT_READ, MAP_PRIVATE, tmp_file.get(), 0);
     ASSERT_NE(write_buffer, MAP_FAILED) << strerror(errno);
     auto unmap_write_buffer =
         fit::defer([&]() { EXPECT_EQ(munmap(write_buffer, kFileSize), 0) << strerror(errno); });
@@ -265,7 +265,7 @@ TEST(VmspliceTest, UnmapBufferInPipe) {
     // Volatile to let the compiler know not to optimize out the final write we
     // perform to `write_buffer` which is never directly read here.
     volatile char* write_buffer = reinterpret_cast<volatile char*>(
-        mmap(NULL, kMmapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+        mmap(nullptr, kMmapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
     ASSERT_NE(write_buffer, MAP_FAILED) << strerror(errno);
     auto unmap_write_buffer = fit::defer([&]() {
       EXPECT_EQ(munmap(const_cast<char*>(write_buffer), kMmapSize), 0) << strerror(errno);
@@ -299,7 +299,7 @@ TEST(VmspliceTest, UnmapBufferInPipeThenMapInPlace) {
   // Volatile to let the compiler know not to optimize out the final write we
   // perform to `write_buffer` which is never directly read here.
   volatile char* write_buffer = reinterpret_cast<volatile char*>(
-      mmap(NULL, kMmapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+      mmap(nullptr, kMmapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
   {
     ASSERT_NE(write_buffer, MAP_FAILED) << strerror(errno);
     auto unmap_write_buffer = fit::defer([&]() {
@@ -350,7 +350,7 @@ TEST_P(VmspliceRemapNewMemoryOverBufferInPipeTest, RemapNewMemoryOverBufferInPip
   // Volatile to let the compiler know not to optimize out the final write we
   // perform to `write_buffer` which is never read here.
   volatile char* write_buffer = reinterpret_cast<volatile char*>(
-      mmap(NULL, kMmapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+      mmap(nullptr, kMmapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
   ASSERT_NE(write_buffer, MAP_FAILED) << strerror(errno);
   auto unmap_write_buffer = fit::defer([&]() {
     EXPECT_EQ(munmap(const_cast<char*>(write_buffer), kMmapSize), 0) << strerror(errno);
@@ -369,7 +369,7 @@ TEST_P(VmspliceRemapNewMemoryOverBufferInPipeTest, RemapNewMemoryOverBufferInPip
     // Volatile to let the compiler know not to optimize out the final write we
     // perform to `write_buffer_new` which is never read here.
     volatile char* write_buffer_new = reinterpret_cast<volatile char*>(
-        mmap(NULL, kMmapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+        mmap(nullptr, kMmapSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
     ASSERT_NE(write_buffer_new, MAP_FAILED) << strerror(errno);
     ASSERT_NE(write_buffer_new, write_buffer);
     auto unmap_write_buffer_new = fit::defer([&]() {
@@ -403,7 +403,7 @@ TEST_P(VmspliceRemapNewMemoryOverBufferInPipeTest, RemapNewMemoryOverBufferInPip
 void AliasSharedMapping(volatile char* addr, size_t size, volatile char** alias) {
   // First allocate a mapping that will accommodate our alias mapping. This is
   // where the original mapping will alias from.
-  void* remap_target = mmap(NULL, size, 0, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  void* remap_target = mmap(nullptr, size, 0, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   ASSERT_NE(remap_target, MAP_FAILED) << strerror(errno);
   // The aliased mapping obviously can't be the same as our original mapping.
   ASSERT_NE(remap_target, addr);
@@ -432,7 +432,7 @@ TEST(VmspliceTest, RemapSharedBufferInPipeThenModify) {
   // Volatile to let the compiler know not to optimize out the final write we
   // perform to `write_buffer` which is never read here.
   volatile char* write_buffer = reinterpret_cast<volatile char*>(
-      mmap(NULL, kMmapSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
+      mmap(nullptr, kMmapSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
   ASSERT_NE(write_buffer, MAP_FAILED) << strerror(errno);
   auto unmap_write_buffer = fit::defer([&]() {
     EXPECT_EQ(munmap(const_cast<char*>(write_buffer), kMmapSize), 0) << strerror(errno);
@@ -495,7 +495,7 @@ TEST_P(VmspliceUnmapBufferAfterVmsplicingRemappedBufferTest,
   // Volatile to let the compiler know not to optimize out the final write we
   // perform to `write_buffer` which is never read here.
   volatile char* write_buffer = reinterpret_cast<volatile char*>(
-      mmap(NULL, kMmapSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
+      mmap(nullptr, kMmapSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0));
   ASSERT_NE(write_buffer, MAP_FAILED) << strerror(errno);
   auto unmap_write_buffer = fit::defer([&]() {
     EXPECT_EQ(munmap(const_cast<char*>(write_buffer), kMmapSize), 0) << strerror(errno);

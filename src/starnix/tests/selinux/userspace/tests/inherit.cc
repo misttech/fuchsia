@@ -54,7 +54,7 @@ TEST(InheritTest, ExecutableFdRemappedToNull) {
 
     std::string binary_name = "true_bin";
     std::string path_for_exec = PathForExec(binary_name);
-    char* const args[] = {binary_name.data(), NULL};
+    char* const args[] = {binary_name.data(), nullptr};
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
   } else {
     int wstatus;
@@ -79,7 +79,7 @@ TEST(InheritTest, ExecutableFdUseAllowed) {
 
     std::string binary_name = "true_bin";
     std::string path_for_exec = PathForExec(binary_name);
-    char* const args[] = {binary_name.data(), NULL};
+    char* const args[] = {binary_name.data(), nullptr};
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
   }));
 }
@@ -108,7 +108,7 @@ TEST(InheritTest, FdUseDeniedFdRemappedToNull) {
       std::string path_for_exec = PathForExec(binary_name);
       std::string expect_null_inode = std::to_string(int(true));
       char* const args[] = {binary_name.data(), no_use_fd_str.data(), expect_null_inode.data(),
-                            NULL};
+                            nullptr};
 
       auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
       ASSERT_TRUE(set_exec_context.is_ok());
@@ -148,7 +148,7 @@ TEST(InheritTest, NullFileDescriptorIsDuplicated) {
       std::string path_for_exec = PathForExec(binary_name);
       std::string expect_null_inode = std::to_string(int(true));
       char* const args[] = {binary_name.data(), no_use_fd_1_str.data(), no_use_fd_2_str.data(),
-                            NULL};
+                            nullptr};
 
       auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
       ASSERT_TRUE(set_exec_context.is_ok());
@@ -178,7 +178,8 @@ TEST(InheritTest, FsNodePermissionDeniedFdRemappedToNull) {
     std::string binary_name = "is_selinux_null_inode_bin";
     std::string path_for_exec = PathForExec(binary_name);
     std::string expect_null_inode = std::to_string(int(true));
-    char* const args[] = {binary_name.data(), no_use_fd_str.data(), expect_null_inode.data(), NULL};
+    char* const args[] = {binary_name.data(), no_use_fd_str.data(), expect_null_inode.data(),
+                          nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());
@@ -208,7 +209,7 @@ TEST(InheritTest, FdUseAllowed) {
     std::string path_for_exec = PathForExec(binary_name);
     std::string expect_null_inode = std::to_string(int(false));
     char* const args[] = {binary_name.data(), allow_use_fd_str.data(), expect_null_inode.data(),
-                          NULL};
+                          nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());
@@ -235,7 +236,7 @@ TEST(InheritTest, SiginhDeniedItimerRealReset) {
     std::string binary_name = "is_itimer_real_reset_bin";
     std::string path_for_exec = PathForExec(binary_name);
     std::string expect_itimer_real_reset = std::to_string(int(true));
-    char* const args[] = {binary_name.data(), expect_itimer_real_reset.data(), NULL};
+    char* const args[] = {binary_name.data(), expect_itimer_real_reset.data(), nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());
@@ -262,7 +263,7 @@ TEST(InheritTest, SiginhAllowedItimerRealInherited) {
     std::string binary_name = "is_itimer_real_reset_bin";
     std::string path_for_exec = PathForExec(binary_name);
     std::string expect_itimer_real_reset = std::to_string(int(false));
-    char* const args[] = {binary_name.data(), expect_itimer_real_reset.data(), NULL};
+    char* const args[] = {binary_name.data(), expect_itimer_real_reset.data(), nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());
@@ -282,14 +283,14 @@ TEST(InheritTest, SiginhDeniedPendingNonFatalSignalsCleared) {
     sigset_t blocked_signals;
     sigemptyset(&blocked_signals);
     ASSERT_THAT(sigaddset(&blocked_signals, SIGCONT), SyscallSucceeds());
-    ASSERT_THAT(sigprocmask(SIG_BLOCK, &blocked_signals, NULL), SyscallSucceeds());
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, &blocked_signals, nullptr), SyscallSucceeds());
 
     ASSERT_THAT(raise(SIGCONT), SyscallSucceeds());
 
     std::string binary_name = "has_pending_signals_bin";
     std::string path_for_exec = PathForExec(binary_name);
     // Expect no pending signals for the child program.
-    char* const args[] = {binary_name.data(), NULL};
+    char* const args[] = {binary_name.data(), nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());
@@ -309,14 +310,14 @@ TEST(InheritTest, SiginhDeniedPendingFatalSignalsCleared) {
     sigset_t blocked_signals;
     sigemptyset(&blocked_signals);
     ASSERT_THAT(sigaddset(&blocked_signals, SIGABRT), SyscallSucceeds());
-    ASSERT_THAT(sigprocmask(SIG_BLOCK, &blocked_signals, NULL), SyscallSucceeds());
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, &blocked_signals, nullptr), SyscallSucceeds());
 
     ASSERT_THAT(raise(SIGABRT), SyscallSucceeds());
 
     std::string binary_name = "has_pending_signals_bin";
     std::string path_for_exec = PathForExec(binary_name);
     // Expect no pending signals for the child program..
-    char* const args[] = {binary_name.data(), NULL};
+    char* const args[] = {binary_name.data(), nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());
@@ -336,7 +337,7 @@ TEST(InheritTest, SiginhAllowedPendingSignalsInherited) {
     sigset_t blocked_signals;
     sigemptyset(&blocked_signals);
     ASSERT_THAT(sigaddset(&blocked_signals, SIGCONT), SyscallSucceeds());
-    ASSERT_THAT(sigprocmask(SIG_BLOCK, &blocked_signals, NULL), SyscallSucceeds());
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, &blocked_signals, nullptr), SyscallSucceeds());
 
     ASSERT_THAT(raise(SIGCONT), SyscallSucceeds());
 
@@ -344,7 +345,7 @@ TEST(InheritTest, SiginhAllowedPendingSignalsInherited) {
     std::string path_for_exec = PathForExec(binary_name);
     // Expect that SIGCONT is pending for the child program.
     std::string expect_sigcont = std::to_string(SIGCONT);
-    char* const args[] = {binary_name.data(), expect_sigcont.data(), NULL};
+    char* const args[] = {binary_name.data(), expect_sigcont.data(), nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());
@@ -363,12 +364,12 @@ TEST(InheritTest, SiginhDeniedSignalMaskReset) {
     sigset_t blocked_signals;
     sigemptyset(&blocked_signals);
     ASSERT_THAT(sigaddset(&blocked_signals, SIGCONT), SyscallSucceeds());
-    ASSERT_THAT(sigprocmask(SIG_BLOCK, &blocked_signals, NULL), SyscallSucceeds());
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, &blocked_signals, nullptr), SyscallSucceeds());
 
     std::string binary_name = "has_blocked_signals_bin";
     std::string path_for_exec = PathForExec(binary_name);
     // Expect no blocked signals for the child program.
-    char* const args[] = {binary_name.data(), NULL};
+    char* const args[] = {binary_name.data(), nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());
@@ -391,13 +392,13 @@ TEST(InheritTest, SiginhAllowedSignalMaskInherited) {
     sigset_t blocked_signals;
     sigemptyset(&blocked_signals);
     ASSERT_THAT(sigaddset(&blocked_signals, SIGCONT), SyscallSucceeds());
-    ASSERT_THAT(sigprocmask(SIG_BLOCK, &blocked_signals, NULL), SyscallSucceeds());
+    ASSERT_THAT(sigprocmask(SIG_BLOCK, &blocked_signals, nullptr), SyscallSucceeds());
 
     std::string binary_name = "has_blocked_signals_bin";
     std::string path_for_exec = PathForExec(binary_name);
     // Expect that SIGCONT is blocked for the child program.
     std::string expect_sigcont = std::to_string(SIGCONT);
-    char* const args[] = {binary_name.data(), expect_sigcont.data(), NULL};
+    char* const args[] = {binary_name.data(), expect_sigcont.data(), nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());
@@ -420,12 +421,12 @@ TEST(InheritTest, SiginhDeniedSignalDispositionsReset) {
   ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
     struct sigaction action;
     action.sa_handler = SIG_IGN;
-    ASSERT_THAT(sigaction(SIGCONT, &action, NULL), SyscallSucceeds());
+    ASSERT_THAT(sigaction(SIGCONT, &action, nullptr), SyscallSucceeds());
 
     std::string binary_name = "has_ignored_signals_bin";
     std::string path_for_exec = PathForExec(binary_name);
     // Expect that the child process has only default signal handlers.
-    char* const args[] = {binary_name.data(), NULL};
+    char* const args[] = {binary_name.data(), nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());
@@ -449,13 +450,13 @@ TEST(InheritTest, SiginhAllowedIgnoredSignalDispositionsInherited) {
   ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
     struct sigaction action;
     action.sa_handler = SIG_IGN;
-    ASSERT_THAT(sigaction(SIGCONT, &action, NULL), SyscallSucceeds());
+    ASSERT_THAT(sigaction(SIGCONT, &action, nullptr), SyscallSucceeds());
 
     std::string binary_name = "has_ignored_signals_bin";
     std::string path_for_exec = PathForExec(binary_name);
     // Expect that the child process ignores SIGCONT.
     std::string expect_sigcont = std::to_string(SIGCONT);
-    char* const args[] = {binary_name.data(), expect_sigcont.data(), NULL};
+    char* const args[] = {binary_name.data(), expect_sigcont.data(), nullptr};
 
     auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
     ASSERT_TRUE(set_exec_context.is_ok());

@@ -58,13 +58,13 @@ int setup_sigaltstack_at(uintptr_t base, size_t size) {
       .ss_size = size,
   };
 
-  return sigaltstack(&ss, NULL);
+  return sigaltstack(&ss, nullptr);
 }
 
 // Helper function for setting up a sig altstack.
 void *setup_sigaltstack(size_t size) {
   void *altstack =
-      mmap(NULL, size, PROT_WRITE | PROT_READ, MAP_STACK | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+      mmap(nullptr, size, PROT_WRITE | PROT_READ, MAP_STACK | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (altstack == MAP_FAILED) {
     exit(kExitTestFailure);
   }
@@ -159,7 +159,7 @@ TEST(SignalHandlingDeathTest, ExitsKilledBySignal) {
           // program to terminate.
           struct sigaction sa = {};
           sa.sa_handler = SIG_DFL;
-          if (sigaction(signal, &sa, NULL)) {
+          if (sigaction(signal, &sa, nullptr)) {
             perror("sigaction");
             exit(EXIT_FAILURE);
           }
@@ -183,7 +183,7 @@ TEST(SignalHandlingDeathTest, ExitsKilledBySignal) {
   EXPECT_EXIT(
       []() {
         // Write to a non-writable memory address to cause a SIGSEGV.
-        void *res = mmap(NULL, 0x1000, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        void *res = mmap(nullptr, 0x1000, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
         if (res == MAP_FAILED) {
           exit(EXIT_FAILURE);
         }
@@ -359,7 +359,7 @@ TEST(SignalHandling, SignalFailureUnmasksSIGSEGVAndResetsHandler) {
         sigemptyset(&newset);
         sigaddset(&newset, SIGSEGV);
 
-        if (sigprocmask(SIG_BLOCK, &newset, NULL)) {
+        if (sigprocmask(SIG_BLOCK, &newset, nullptr)) {
           exit(kExitTestFailure);
         }
 
@@ -377,7 +377,7 @@ TEST(SignalHandlingDeathTest, MaskedSIGSEGVGetsUnmasked) {
         sigemptyset(&newset);
         sigaddset(&newset, SIGSEGV);
 
-        if (sigprocmask(SIG_BLOCK, &newset, NULL)) {
+        if (sigprocmask(SIG_BLOCK, &newset, nullptr)) {
           perror("sigprocmask");
           exit(kExitTestFailure);
         }
@@ -474,7 +474,7 @@ TEST(SignalHandlingDeathTest, InvalidSigcontextCausesSIGSEGV) {
 #if (!__has_feature(address_sanitizer))
 TEST(SignalHandlingDeathTest, SignalStackUnmappedDeliversSIGSEGV) {
   constexpr size_t kStackSize = 0x20000;
-  void *temp_stack = mmap(NULL, kStackSize, PROT_READ | PROT_WRITE,
+  void *temp_stack = mmap(nullptr, kStackSize, PROT_READ | PROT_WRITE,
                           MAP_ANONYMOUS | MAP_PRIVATE | MAP_STACK, -1, 0);
   ASSERT_NE(MAP_FAILED, temp_stack);
 
@@ -510,7 +510,7 @@ TEST(SignalHandlingDeathTest, SignalStackUnmappedDeliversSIGSEGV) {
 
 TEST(SignalHandlingDeathTest, SignalAltStackUnmappedDeliversSIGSEGV) {
   constexpr size_t kStackSize = 0x20000;
-  void *temp_stack = mmap(NULL, kStackSize, PROT_READ | PROT_WRITE,
+  void *temp_stack = mmap(nullptr, kStackSize, PROT_READ | PROT_WRITE,
                           MAP_ANONYMOUS | MAP_PRIVATE | MAP_STACK, -1, 0);
   ASSERT_NE(MAP_FAILED, temp_stack);
 
@@ -576,7 +576,7 @@ class SigaltstackDeathTest : public testing::Test {
     // the sigaltstack base in the middle of the mapping,
     // so that there is no risk of hitting unintended page faults.
     sigaltstack_mapping_size_ = kSigAltStackMmapSize;
-    sigaltstack_mapping_ = mmap(NULL, sigaltstack_mapping_size_, PROT_READ | PROT_WRITE,
+    sigaltstack_mapping_ = mmap(nullptr, sigaltstack_mapping_size_, PROT_READ | PROT_WRITE,
                                 MAP_ANONYMOUS | MAP_PRIVATE | MAP_STACK, -1, 0);
     ASSERT_NE(MAP_FAILED, sigaltstack_mapping_);
     sigaltstack_base_ =
@@ -605,11 +605,11 @@ TEST_F(SigaltstackDeathTest, SigaltstackExceededThrowsSIGSEGV) {
                 sa.sa_handler = [](int) {};
                 sa.sa_flags = SA_ONSTACK;
 
-                if (sigaction(SIGUSR1, &sa, NULL)) {
+                if (sigaction(SIGUSR1, &sa, nullptr)) {
                   exit(kExitTestFailure);
                 }
                 sa.sa_flags = 0;
-                if (sigaction(SIGSEGV, &sa, NULL)) {
+                if (sigaction(SIGSEGV, &sa, nullptr)) {
                   exit(kExitTestFailure);
                 }
 
@@ -629,13 +629,13 @@ TEST_F(SigaltstackDeathTest, MINSIGSTKSZIsEnough) {
     sa.sa_handler = [](int) {};  // empty handler.
     sa.sa_flags = SA_ONSTACK;
 
-    ASSERT_EQ(0, sigaction(SIGUSR1, &sa, NULL));
+    ASSERT_EQ(0, sigaction(SIGUSR1, &sa, nullptr));
 
     sa = {};
     sa.sa_sigaction = [](int, siginfo_t *, void *) {};  // empty handler.
     sa.sa_flags = SA_ONSTACK | SA_SIGINFO;
 
-    ASSERT_EQ(0, sigaction(SIGUSR2, &sa, NULL));
+    ASSERT_EQ(0, sigaction(SIGUSR2, &sa, nullptr));
     raise(SIGUSR1);
     raise(SIGUSR2);
   });
@@ -653,13 +653,13 @@ TEST_F(SigaltstackDeathTest, NestedSignalsWork) {
     sa.sa_handler = [](int) { raise(SIGUSR2); };
     sa.sa_flags = SA_ONSTACK;
 
-    ASSERT_EQ(0, sigaction(SIGUSR1, &sa, NULL));
+    ASSERT_EQ(0, sigaction(SIGUSR1, &sa, nullptr));
 
     sa = {};
     sa.sa_sigaction = [](int, siginfo_t *, void *) { sigusr2_called = true; };
     sa.sa_flags = SA_ONSTACK | SA_SIGINFO;
 
-    ASSERT_EQ(0, sigaction(SIGUSR2, &sa, NULL));
+    ASSERT_EQ(0, sigaction(SIGUSR2, &sa, nullptr));
     raise(SIGUSR1);
     ASSERT_TRUE(sigusr2_called);
   });
@@ -674,7 +674,7 @@ TEST_F(SigaltstackDeathTest, SigaltstackSetupFailureIsNotResumed) {
   // If the sigusr1 handler is resumed, it should exit with kExitTestFailure.
   test_helper::ForkHelper helper;
 
-  g_mmap_area = mmap(NULL, 0x10000, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
+  g_mmap_area = mmap(nullptr, 0x10000, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
   ASSERT_NE(MAP_FAILED, g_mmap_area);
 
   helper.RunInForkedProcess([&] {
@@ -682,13 +682,13 @@ TEST_F(SigaltstackDeathTest, SigaltstackSetupFailureIsNotResumed) {
     struct sigaction sa = {};
     sa.sa_handler = [](int) { exit(kExitTestFailure); };
 
-    ASSERT_EQ(0, sigaction(SIGUSR1, &sa, NULL));
+    ASSERT_EQ(0, sigaction(SIGUSR1, &sa, nullptr));
 
     sa = {};
     sa.sa_handler = [](int) { mprotect(g_mmap_area, 0x10000, PROT_READ | PROT_WRITE); };
     sa.sa_flags = SA_ONSTACK;
 
-    ASSERT_EQ(0, sigaction(SIGSEGV, &sa, NULL));
+    ASSERT_EQ(0, sigaction(SIGSEGV, &sa, nullptr));
     raise_with_stack(SIGUSR1, reinterpret_cast<uintptr_t>(g_mmap_area) + 0x10000);
   });
 
@@ -708,14 +708,14 @@ TEST_F(SigaltstackDeathTest, SigaltstackSetupFailureCanUseMainStack) {
     sa.sa_handler = [](int) { exit(kExitTestFailure); };
     sa.sa_flags = SA_ONSTACK;
 
-    ASSERT_EQ(0, sigaction(SIGUSR1, &sa, NULL));
+    ASSERT_EQ(0, sigaction(SIGUSR1, &sa, nullptr));
 
     // Handle Sigsegv on the main stack. Resume immediately.
     sa = {};
     sa.sa_handler = [](int) {};
     sa.sa_flags = 0;
 
-    ASSERT_EQ(0, sigaction(SIGSEGV, &sa, NULL));
+    ASSERT_EQ(0, sigaction(SIGSEGV, &sa, nullptr));
     raise(SIGUSR1);
   });
 
@@ -748,9 +748,9 @@ TEST(SignalHandling, SigactionResetByExec) {
   dfl.sa_mask = mask;
 
   helper.RunInForkedProcess([&] {
-    ASSERT_THAT(sigaction(SIGUSR1, &custom, NULL), SyscallSucceeds());
-    ASSERT_THAT(sigaction(SIGUSR2, &ignore, NULL), SyscallSucceeds());
-    ASSERT_THAT(sigaction(SIGCONT, &dfl, NULL), SyscallSucceeds());
+    ASSERT_THAT(sigaction(SIGUSR1, &custom, nullptr), SyscallSucceeds());
+    ASSERT_THAT(sigaction(SIGUSR2, &ignore, nullptr), SyscallSucceeds());
+    ASSERT_THAT(sigaction(SIGCONT, &dfl, nullptr), SyscallSucceeds());
 
     std::string binary_name = "signal_handling_test_exec_child";
     std::string binary_path = GetBinaryPath(binary_name);
@@ -796,7 +796,7 @@ TEST(SignalHandling, Sigsuspend) {
   ASSERT_EQ(0, kill(child_pid, SIGUSR1));
 
   ASSERT_TRUE(helper.WaitForChildren());
-  ASSERT_EQ(0, sigprocmask(SIG_SETMASK, &old_sigset, NULL));
+  ASSERT_EQ(0, sigprocmask(SIG_SETMASK, &old_sigset, nullptr));
 }
 
 TEST(SignalHandling, RealTimeSignals) {
@@ -1441,7 +1441,7 @@ TEST(SignalHandling, RaceBetweenTaskReleaseAndThreadRelease) {
       pid_t pid = getpid();
       test_helper::ForkHelper helper;
       pid_t child = helper.RunInForkedProcess([pid] { kill(pid, SIGUSR1); });
-      SAFE_SYSCALL(sigtimedwait(&sigs, &si, NULL));
+      SAFE_SYSCALL(sigtimedwait(&sigs, &si, nullptr));
       SAFE_SYSCALL(kill(child, SIGTERM));
       // Assert result on this WaitForChildren would cause this test to fail.
       auto unused_result = helper.WaitForChildren();
@@ -1456,7 +1456,7 @@ TEST(SignalHandling, FlagsRestoredAfterSigsegv) {
   helper.RunInForkedProcess([]() {
     static const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
     static void *noaccess_page =
-        mmap(NULL, page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        mmap(nullptr, page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ASSERT_NE(MAP_FAILED, noaccess_page);
     struct sigaction sigsegv_action = {};
     sigsegv_action.sa_flags = SA_SIGINFO;

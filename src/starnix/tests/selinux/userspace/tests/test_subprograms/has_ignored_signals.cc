@@ -11,7 +11,7 @@
 void ValidateSigactions(std::set<int>& expect_ignored) {
   for (int signum = 1; signum < NSIG; signum++) {
     struct sigaction action{};
-    int sigaction_result = sigaction(signum, NULL, &action);
+    int sigaction_result = sigaction(signum, nullptr, &action);
 
     // If the signal number is in the `expect_ignored` set, then expect
     // `sigaction` to succeed. Otherwise, allow it to fail with EINVAL.

@@ -95,19 +95,19 @@ TEST(FsTest, DevZeroAndNullQuirks) {
 
     // Attempting to write with an invalid buffer pointer still successfully "writes" the specified
     // number of bytes.
-    EXPECT_EQ(write(fd, NULL, page_size), static_cast<ssize_t>(page_size));
+    EXPECT_EQ(write(fd, nullptr, page_size), static_cast<ssize_t>(page_size));
 
     // write will report success up to the maximum number of bytes.
     ssize_t max_rw_count = 0x8000'0000 - page_size;
-    EXPECT_EQ(write(fd, NULL, max_rw_count), max_rw_count);
+    EXPECT_EQ(write(fd, nullptr, max_rw_count), max_rw_count);
 
     // Attempting to write more than this reports a short write.
-    EXPECT_EQ(write(fd, NULL, max_rw_count + 1), max_rw_count);
+    EXPECT_EQ(write(fd, nullptr, max_rw_count + 1), max_rw_count);
 
     // Producing a range that goes outside the userspace accessible range does produce EFAULT.
     ssize_t implausibly_large_len = (1ll << 48);
 
-    EXPECT_EQ(write(fd, NULL, implausibly_large_len), -1);
+    EXPECT_EQ(write(fd, nullptr, implausibly_large_len), -1);
     EXPECT_EQ(errno, EFAULT);
 
     // A pointer unlikely to be backed by real memory is successful.
@@ -120,11 +120,11 @@ TEST(FsTest, DevZeroAndNullQuirks) {
     EXPECT_EQ(errno, EFAULT);
 
     // Passing an invalid iov pointer produces EFAULT.
-    EXPECT_EQ(writev(fd, NULL, 1), -1);
+    EXPECT_EQ(writev(fd, nullptr, 1), -1);
     EXPECT_EQ(errno, EFAULT);
 
     struct iovec iov_null_base_valid_length[] = {{
-        .iov_base = NULL,
+        .iov_base = nullptr,
         .iov_len = 1,
     }};
 
@@ -133,36 +133,36 @@ TEST(FsTest, DevZeroAndNullQuirks) {
     EXPECT_EQ(writev(fd, iov_null_base_valid_length, 1), 1);
 
     struct iovec iov_null_base_max_rw_count_length[] = {{
-        .iov_base = NULL,
+        .iov_base = nullptr,
         .iov_len = static_cast<size_t>(max_rw_count),
     }};
     EXPECT_EQ(writev(fd, iov_null_base_max_rw_count_length, 1), max_rw_count);
 
     struct iovec iov_null_base_max_rw_count_in_two_entries[] = {
         {
-            .iov_base = NULL,
+            .iov_base = nullptr,
             .iov_len = static_cast<size_t>(max_rw_count - 100),
         },
         {
-            .iov_base = NULL,
+            .iov_base = nullptr,
             .iov_len = 100,
         },
     };
     EXPECT_EQ(writev(fd, iov_null_base_max_rw_count_in_two_entries, 2), max_rw_count);
 
     struct iovec iov_null_base_max_rwcount_length_plus_one[] = {{
-        .iov_base = NULL,
+        .iov_base = nullptr,
         .iov_len = static_cast<size_t>(max_rw_count + 1),
     }};
     EXPECT_EQ(writev(fd, iov_null_base_max_rwcount_length_plus_one, 1), max_rw_count);
 
     struct iovec iov_null_base_max_rwcount_length_plus_one_in_two_entries[] = {
         {
-            .iov_base = NULL,
+            .iov_base = nullptr,
             .iov_len = static_cast<size_t>(max_rw_count - 100),
         },
         {
-            .iov_base = NULL,
+            .iov_base = nullptr,
             .iov_len = 101,
         },
     };
@@ -171,7 +171,7 @@ TEST(FsTest, DevZeroAndNullQuirks) {
 
     // Implausibly large iov_len values still generate EFAULT.
     struct iovec iov_null_base_implausible_length[] = {{
-        .iov_base = NULL,
+        .iov_base = nullptr,
         .iov_len = static_cast<size_t>(implausibly_large_len),
     }};
     EXPECT_EQ(writev(fd, iov_null_base_implausible_length, 1), -1);
@@ -179,11 +179,11 @@ TEST(FsTest, DevZeroAndNullQuirks) {
 
     struct iovec iov_null_base_implausible_length_behind_max_rw_count[] = {
         {
-            .iov_base = NULL,
+            .iov_base = nullptr,
             .iov_len = static_cast<size_t>(max_rw_count),
         },
         {
-            .iov_base = NULL,
+            .iov_base = nullptr,
             .iov_len = static_cast<size_t>(implausibly_large_len),
         },
     };
@@ -194,14 +194,14 @@ TEST(FsTest, DevZeroAndNullQuirks) {
     if (std::string(path) == "/dev/null") {
       // Reading any plausible number of bytes from an invalid buffer pointer into /dev/null
       // will successfully read 0 bytes.
-      EXPECT_EQ(read(fd, NULL, 1), 0);
-      EXPECT_EQ(read(fd, NULL, max_rw_count), 0);
-      EXPECT_EQ(read(fd, NULL, max_rw_count + 1), 0);
+      EXPECT_EQ(read(fd, nullptr, 1), 0);
+      EXPECT_EQ(read(fd, nullptr, max_rw_count), 0);
+      EXPECT_EQ(read(fd, nullptr, max_rw_count + 1), 0);
     }
 
     // Reading an implausibly large number of bytes from /dev/zero or /dev/null will fail with
     // EFAULT.
-    EXPECT_EQ(read(fd, NULL, implausibly_large_len), -1);
+    EXPECT_EQ(read(fd, nullptr, implausibly_large_len), -1);
     EXPECT_EQ(errno, EFAULT);
 
     close(fd);
@@ -278,7 +278,7 @@ TEST_F(UtimensatTest, OwnerCanAlwaysSetTime) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([this] {
     ASSERT_TRUE(change_ids(kOwnerUid, kOwnerGid));
-    EXPECT_EQ(0, utimensat(-1, test_file_.c_str(), NULL, 0))
+    EXPECT_EQ(0, utimensat(-1, test_file_.c_str(), nullptr, 0))
         << "utimensat failed: " << std::strerror(errno);
   });
 
@@ -302,7 +302,7 @@ TEST_F(UtimensatTest, NonOwnerWithWriteAccessCanOnlySetTimeToNow) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([this] {
     ASSERT_TRUE(change_ids(kNonOwnerUid, kNonOwnerGid));
-    EXPECT_NE(0, utimensat(-1, test_file_.c_str(), NULL, 0));
+    EXPECT_NE(0, utimensat(-1, test_file_.c_str(), nullptr, 0));
   });
   EXPECT_TRUE(helper.WaitForChildren());
 
@@ -310,7 +310,7 @@ TEST_F(UtimensatTest, NonOwnerWithWriteAccessCanOnlySetTimeToNow) {
   ASSERT_EQ(chmod(test_file_.c_str(), 0006), 0);
   helper.RunInForkedProcess([this] {
     ASSERT_TRUE(change_ids(kNonOwnerUid, kNonOwnerGid));
-    EXPECT_EQ(0, utimensat(-1, test_file_.c_str(), NULL, 0))
+    EXPECT_EQ(0, utimensat(-1, test_file_.c_str(), nullptr, 0))
         << "utimensat failed: " << std::strerror(errno);
   });
   EXPECT_TRUE(helper.WaitForChildren());
@@ -335,7 +335,7 @@ TEST_F(UtimensatTest, NonOwnerWithCapabilitiesCanSetTime) {
   helper.RunInForkedProcess([this] {
     ASSERT_TRUE(test_helper::HasCapability(CAP_DAC_OVERRIDE));
     ASSERT_TRUE(test_helper::HasCapability(CAP_FOWNER));
-    EXPECT_EQ(0, utimensat(-1, test_file_.c_str(), NULL, 0))
+    EXPECT_EQ(0, utimensat(-1, test_file_.c_str(), nullptr, 0))
         << "utimensat failed: " << std::strerror(errno);
   });
   EXPECT_TRUE(helper.WaitForChildren());
@@ -344,7 +344,7 @@ TEST_F(UtimensatTest, NonOwnerWithCapabilitiesCanSetTime) {
     test_helper::UnsetCapability(CAP_DAC_OVERRIDE);
     ASSERT_FALSE(test_helper::HasCapability(CAP_DAC_OVERRIDE));
     ASSERT_TRUE(test_helper::HasCapability(CAP_FOWNER));
-    EXPECT_EQ(0, utimensat(-1, test_file_.c_str(), NULL, 0))
+    EXPECT_EQ(0, utimensat(-1, test_file_.c_str(), nullptr, 0))
         << "utimensat failed: " << std::strerror(errno);
   });
   EXPECT_TRUE(helper.WaitForChildren());
@@ -353,7 +353,7 @@ TEST_F(UtimensatTest, NonOwnerWithCapabilitiesCanSetTime) {
     test_helper::UnsetCapability(CAP_FOWNER);
     ASSERT_TRUE(test_helper::HasCapability(CAP_DAC_OVERRIDE));
     ASSERT_FALSE(test_helper::HasCapability(CAP_FOWNER));
-    EXPECT_EQ(0, utimensat(-1, test_file_.c_str(), NULL, 0))
+    EXPECT_EQ(0, utimensat(-1, test_file_.c_str(), nullptr, 0))
         << "utimensat failed: " << std::strerror(errno);
   });
   EXPECT_TRUE(helper.WaitForChildren());
@@ -363,7 +363,7 @@ TEST_F(UtimensatTest, NonOwnerWithCapabilitiesCanSetTime) {
     test_helper::UnsetCapability(CAP_FOWNER);
     ASSERT_FALSE(test_helper::HasCapability(CAP_DAC_OVERRIDE));
     ASSERT_FALSE(test_helper::HasCapability(CAP_FOWNER));
-    EXPECT_NE(0, utimensat(-1, test_file_.c_str(), NULL, 0));
+    EXPECT_NE(0, utimensat(-1, test_file_.c_str(), nullptr, 0));
   });
   EXPECT_TRUE(helper.WaitForChildren());
 
@@ -411,7 +411,7 @@ TEST_F(UtimensatTest, ReturnsEFAULTOnNullPathAndCWDDirFd) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([] {
     struct timespec times[2] = {{0, 0}};
-    EXPECT_NE(0, syscall(SYS_utimensat, AT_FDCWD, NULL, times, 0));
+    EXPECT_NE(0, syscall(SYS_utimensat, AT_FDCWD, nullptr, times, 0));
     EXPECT_EQ(errno, EFAULT);
   });
   EXPECT_TRUE(helper.WaitForChildren());
@@ -420,7 +420,7 @@ TEST_F(UtimensatTest, ReturnsEFAULTOnNullPathAndCWDDirFd) {
 TEST_F(UtimensatTest, ReturnsENOENTOnEmptyPath) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([] {
-    EXPECT_NE(0, utimensat(-1, "", NULL, 0));
+    EXPECT_NE(0, utimensat(-1, "", nullptr, 0));
     EXPECT_EQ(errno, ENOENT);
   });
   EXPECT_TRUE(helper.WaitForChildren());

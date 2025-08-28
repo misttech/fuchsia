@@ -120,7 +120,7 @@ class FuseTest : public ::testing::Test {
       std::string configuration =
           "lowerdir=" + lowerdir + ",upperdir=" + upperdir + ",workdir=" + workdir;
       execl(GetOverlayFsPath().c_str(), GetOverlayFsPath().c_str(), "-f", "-o",
-            configuration.c_str(), mergedir.c_str(), NULL);
+            configuration.c_str(), mergedir.c_str(), nullptr);
     });
     if (child_pid <= 0) {
       return testing::AssertionFailure() << "Unable to fork to start the fuse server process";
@@ -1362,7 +1362,7 @@ void TestAccess(const std::string& path) {
 }
 
 void TestExec(const std::string& path) {
-  int ret = execl(path.c_str(), path.c_str(), NULL);
+  int ret = execl(path.c_str(), path.c_str(), nullptr);
   ASSERT_EQ(ret, -1);
   // Access check passes but we don't exec because there is no memory for this file.
   EXPECT_EQ(errno, ENOEXEC);

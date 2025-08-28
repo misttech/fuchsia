@@ -69,7 +69,7 @@ const uint16_t GOOGLE_VENDOR_ID = 0x18d1;
 
 TEST_F(UinputTest, UiGetVersion) {
   // Pass null to UI_GET_VERSION expect EFAULT.
-  int res = ioctl(uinput_fd_.get(), UI_GET_VERSION, NULL);
+  int res = ioctl(uinput_fd_.get(), UI_GET_VERSION, nullptr);
   EXPECT_EQ(res, -1);
   EXPECT_EQ(errno, EFAULT);
 
@@ -126,7 +126,7 @@ TEST_F(UinputTest, UiDevSetup) {
 }
 
 TEST_F(UinputTest, UiDevSetupNull) {
-  int res = ioctl(uinput_fd_.get(), UI_DEV_SETUP, NULL);
+  int res = ioctl(uinput_fd_.get(), UI_DEV_SETUP, nullptr);
   EXPECT_EQ(res, -1);
   EXPECT_EQ(errno, EFAULT);
 }

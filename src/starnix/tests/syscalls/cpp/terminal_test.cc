@@ -441,7 +441,7 @@ TEST_F(Pty, SendSignals) {
         ASSERT_TRUE(WIFSTOPPED(wstatus));
         // Ensure the children is called, even when only stopped.
         SAFE_SYSCALL(kill(child_pid, SIGKILL));
-        SAFE_SYSCALL(waitpid(child_pid, NULL, 0));
+        SAFE_SYSCALL(waitpid(child_pid, nullptr, 0));
       } else {
         ASSERT_TRUE(WIFSIGNALED(wstatus));
         ASSERT_EQ(WTERMSIG(wstatus), signal);

@@ -14,7 +14,7 @@
 // signals.
 int main(int argc, char** argv) {
   sigset_t blocked;
-  EXPECT_THAT(sigprocmask(SIG_BLOCK, NULL, &blocked), SyscallSucceeds());
+  EXPECT_THAT(sigprocmask(SIG_BLOCK, nullptr, &blocked), SyscallSucceeds());
   if (::testing::Test::HasFailure()) {
     return 1;
   }

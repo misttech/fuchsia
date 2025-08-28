@@ -37,7 +37,7 @@ TEST(PtraceTest, PtraceTraceMeDenied) {
       std::string binary_name = "ptrace_traceme_bin";
       std::string path_for_exec = PathForExec(binary_name);
       std::string expect_success = std::to_string(false);
-      char* const args[] = {binary_name.data(), expect_success.data(), NULL};
+      char* const args[] = {binary_name.data(), expect_success.data(), nullptr};
       SAFE_SYSCALL(execv(path_for_exec.data(), args));
     } else {
       int wstatus;
@@ -66,7 +66,7 @@ TEST(PtraceTest, PtraceTraceMeAllowed) {
       std::string binary_name = "ptrace_traceme_bin";
       std::string path_for_exec = PathForExec(binary_name);
       std::string expect_success = std::to_string(true);
-      char* const args[] = {binary_name.data(), expect_success.data(), NULL};
+      char* const args[] = {binary_name.data(), expect_success.data(), nullptr};
       SAFE_SYSCALL(execv(path_for_exec.data(), args));
     } else {
       int wstatus;
@@ -96,7 +96,7 @@ TEST(PtraceTest, PtraceAttachDenied) {
 
       std::string binary_name = "stop_bin";
       std::string path_for_exec = PathForExec(binary_name);
-      char* const args[] = {binary_name.data(), NULL};
+      char* const args[] = {binary_name.data(), nullptr};
       SAFE_SYSCALL(execv(path_for_exec.data(), args));
     } else {
       // Wait for the child program to stop, then attempt to attach (expecting failure).
@@ -142,7 +142,7 @@ TEST(PtraceTest, PtraceAttachAllowed) {
 
       std::string binary_name = "stop_bin";
       std::string path_for_exec = PathForExec(binary_name);
-      char* const args[] = {binary_name.data(), NULL};
+      char* const args[] = {binary_name.data(), nullptr};
       SAFE_SYSCALL(execv(path_for_exec.data(), args));
     } else {
       // Wait for the child program to stop, then attempt to attach (expecting success).
@@ -197,7 +197,7 @@ TEST(PtraceTest, PtraceAttachThenExecDenied) {
 
       std::string binary_name = "stop_bin";
       std::string path_for_exec = PathForExec(binary_name);
-      char* const args[] = {binary_name.data(), NULL};
+      char* const args[] = {binary_name.data(), nullptr};
       EXPECT_THAT(execv(path_for_exec.data(), args), SyscallFailsWithErrno(EPERM));
 
       ASSERT_THAT(raise(SIGSTOP), SyscallSucceeds());
@@ -263,7 +263,7 @@ TEST(PtraceTest, PtraceAttachThenExecAllowed) {
 
       std::string binary_name = "true_bin";
       std::string path_for_exec = PathForExec(binary_name);
-      char* const args[] = {binary_name.data(), NULL};
+      char* const args[] = {binary_name.data(), nullptr};
       EXPECT_THAT(execv(path_for_exec.data(), args), SyscallSucceeds());
     } else {
       // Wait for the child program to stop, then attach.
