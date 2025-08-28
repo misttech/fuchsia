@@ -82,16 +82,17 @@ class LinkingSession {
 
   using SessionModuleList = fbl::DoublyLinkedList<std::unique_ptr<SessionModule>>;
 
-  // TODO(https://fxbug.dev/333573264): Talk about how previously-loaded modules
-  // are handled in this function.
-  // Load the root module and all its dependencies. The `retrieve_file` argument
-  // is a callable passed down from `Open` and is invoked to retrieve the
-  // module's file from the file system for processing.
+  // Load the root module and all its dependencies. If a module for a dependency
+  // is already loaded (e.g. by a previous dlopen call), its reference is
+  // reused. The `retrieve_file` argument is a callable passed down from `Open`
+  // and is invoked to retrieve a new module's file from the file system for
+  // processing.
   template <typename RetrieveFile>
   bool Load(Diagnostics& diag, Soname soname, RetrieveFile&& retrieve_file) {
     static_assert(std::is_invocable_v<RetrieveFile, Diagnostics&, std::string_view>);
 
-    // The root module will always be the first module in the list.
+    // The root module will always be the first module in the LinkingSession's
+    // bookkeeping lists.
     if (!EnqueueModule(diag, soname)) {
       return false;
     }
@@ -118,9 +119,9 @@ class LinkingSession {
 
       if (auto dep_names = module.Load(diag, *std::move(file), max_tls_modid_)) {
         // Create and enqueue a module for each dependency, skipping
-        // dependencies that have already been enqueued. The module that was
-        // loaded will also store a reference to the dependency's RuntimeModule
-        // in its direct_deps list.
+        // dependencies that have already been enqueued. The (parent) module
+        // that was just loaded will also store a reference to its dependencies'
+        // RuntimeModules in its direct_deps list.
         auto enqueue_dep = [this, &diag, &parent_list = module.runtime_module().direct_deps()](
                                const Soname& name) {
           if (std::ranges::any_of(session_modules_, name.equal_to())) {
@@ -162,7 +163,9 @@ class LinkingSession {
   }
 
   // Create module data structures for `soname` and enqueue the modules onto
-  // this LinkingSession's bookkeeping lists.
+  // this LinkingSession's bookkeeping lists. If a module with `soname` has
+  // already been loaded, then a reference to the loaded module is returned
+  // instead.
   const RuntimeModule* EnqueueModule(Diagnostics& diag, Soname soname) {
     if (auto it = std::ranges::find_if(loaded_modules_, soname.equal_to());
         it != loaded_modules_.end()) {
