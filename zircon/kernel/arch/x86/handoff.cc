@@ -7,12 +7,16 @@
 #include <lib/arch/x86/boot-cpuid.h>
 #include <zircon/compiler.h>
 
+#include <arch/x86/gdt.h>
 #include <arch/x86/idt.h>
 #include <arch/x86/mp.h>
 #include <phys/handoff.h>
 #include <vm/handoff-end.h>
 
 __NO_SAFESTACK void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff) {
+  // Best to do this early. See docstring for more details.
+  load_startup_gdt();
+
   // Before setting %gs.base to &bp_percpu, copy over the unsafe stack pointer
   // and stack guard set by physboot. The structure is otherwise statically
   // initialized.

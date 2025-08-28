@@ -8,6 +8,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/arch/asm.h>
+#include <arch/x86/descriptor.h>
 
 .object _temp_gdtr_words, scope=local, type=relro, align=8
 // Intentionlly misalign this by 6 so that the address word holding _temp_gdt
@@ -85,3 +86,16 @@
 .label _temp_gdt_end, global
 .end_object
 
+.function load_startup_gdt, global
+  lgdt _temp_gdtr(%rip)
+
+  // Pop our return address now. We'll push it back after the new CS to long
+  // jump to it.
+  pop %rax
+
+  // Load our new CS from the newly-loaded GDT and jump to the return address
+  // with a long return.
+  pushq $CODE_64_SELECTOR
+  push %rax
+  lretq
+.end_function

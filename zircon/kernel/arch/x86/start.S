@@ -7,17 +7,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <arch/code-patches/case-id-asm.h>
 #include <arch/defines.h>
 #include <arch/kernel_aspace.h>
-#include <arch/x86/asm.h>
-#include <arch/x86/descriptor.h>
 #include <arch/x86/mmu.h>
 #include <arch/x86/registers.h>
 #include <lib/arch/asm.h>
-#include <lib/code-patching/asm.h>
 #include <lib/instrumentation/asan.h>
-#include <zircon/tls.h>
 #include <phys/handoff.h>
 
 // We assume `KERNEL_ASPACE_SIZE` <= 512GB.
@@ -43,18 +38,7 @@
 
   mov %r15, kernel_entry_ticks(%rip)
 
-  // Load our new GDT before touching the segment registers, as the latter
-  // will cause the CPU to verify the GDTR points to valid memory for the
-  // GDT.
-  lgdt _temp_gdtr(%rip)
-
-  // Load our new CS from the newly-loaded GDT with a long return.
-  pushq $CODE_64_SELECTOR
-  lea .Lreload_cs(%rip), %rax
-  pushq %rax
-  lretq
-.Lreload_cs:
-
+#if __has_feature(address_sanitizer)
   // We modify the currently live address space below.
   mov $X86_CR3_BASE_MASK, %rax
   mov %cr3, %rcx
@@ -69,7 +53,6 @@
   and %rax, %rcx
   mov %rcx, upper_512gib_page_table_phys(%rip)
 
-#if __has_feature(address_sanitizer)
   // After these instructions, virtual addresses may be translated to physical
   // ones by subtracting %rbx.
   lea __executable_start(%rip), %rbx
