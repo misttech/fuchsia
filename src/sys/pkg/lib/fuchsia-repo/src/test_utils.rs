@@ -388,3 +388,14 @@ pub async fn make_file_system_repository(
     client.update().await.unwrap();
     client
 }
+
+#[cfg(not(target_os = "fuchsia"))]
+/// Given the path to the blobstore, and the hash of a blob within it, read the
+/// the delivery blob and return its decompressed contents.  This fn assumes
+/// Type1 delivery blobs as callers are not specifying the delivery blob type
+/// at this time, and using the default.
+pub fn read_blob_from_repo(blobs_dir: &Utf8Path, hash: &str) -> Vec<u8> {
+    let blob_path = blobs_dir.join(format!("1/{hash}"));
+    let delivery_blob = std::fs::read(&blob_path).unwrap();
+    delivery_blob::decompress(&delivery_blob).unwrap()
+}

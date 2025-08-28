@@ -897,12 +897,8 @@ async fn merkle_pinned_meta_far_size_different_than_tuf_metadata() {
         .await
         .unwrap();
     assert_eq!(pkg_16k_pinned.meta_far().unwrap().metadata().unwrap().len(), 4 * 4096);
-    std::fs::copy(
-        pkg_16k_pinned.artifacts().join("meta.far"),
-        repo.path().join("blobs").join(pkg_16k_pinned.hash().to_string()),
-    )
-    .unwrap();
-    let _delivery_size = repo.overwrite_uncompressed_delivery_blob(pkg_16k_pinned.hash()).unwrap();
+    let pkg_16k_pinned_data = std::fs::read(pkg_16k_pinned.artifacts().join("meta.far")).unwrap();
+    let _delivery_size = repo.write_blob(pkg_16k_pinned.hash(), &pkg_16k_pinned_data).unwrap();
 
     let repo_url = "fuchsia-pkg://test".parse().unwrap();
     let repo_config = served_repository.make_repo_config(repo_url);

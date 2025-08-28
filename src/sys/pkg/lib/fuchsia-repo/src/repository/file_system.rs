@@ -370,21 +370,7 @@ impl RepoStorage for FileSystemRepository {
         let hash = *hash;
 
         async move {
-            let dst = sanitize_path(&self.blob_repo_path, &hash_str)?;
-
             let src_metadata = fs::metadata(&src)?;
-            let dst_metadata = match fs::metadata(&dst) {
-                Ok(metadata) => Some(metadata),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-                Err(e) => return Err(anyhow!(e)),
-            };
-
-            let dst_is_hardlink = if let Some(dst_metadata) = &dst_metadata {
-                dst_metadata.nlink() > 1
-            } else {
-                false
-            };
-
             if src_metadata.len() != len {
                 return Err(anyhow!(BlobSizeMismatchError {
                     hash,
@@ -394,58 +380,28 @@ impl RepoStorage for FileSystemRepository {
                 }));
             }
 
-            let dst_len = dst_metadata.as_ref().map(|m| m.len());
-            let dst_exists = dst_metadata.is_some();
-            let dst_dirty = !dst_exists || dst_len != Some(len);
-
-            match self.copy_mode {
-                CopyMode::Copy => {
-                    if dst_dirty || dst_is_hardlink {
-                        copy_blob(&src, &dst).await?
+            let dst = sanitize_path(
+                &self.blob_repo_path,
+                &format!("{}/{hash_str}", u32::from(self.delivery_blob_type)),
+            )?;
+            let existing_len = match fs::File::open(&dst) {
+                Ok(file) => {
+                    if let Ok(len) = delivery_blob::decompressed_size_from_reader(file) {
+                        Some(len)
+                    } else {
+                        // In the event that the delivery blob is corrupt, log a warning and
+                        // return None to signify that it needs to be written.
+                        warn!("corrupt delivery blob found at {dst}, overwriting");
+                        None
                     }
                 }
-                CopyMode::CopyOverwrite => copy_blob(&src, &dst).await?,
-                CopyMode::HardLink => {
-                    let is_hardlink = if let Some(dst_metadata) = &dst_metadata {
-                        src_metadata.dev() == dst_metadata.dev()
-                            && src_metadata.ino() == dst_metadata.ino()
-                    } else {
-                        false
-                    };
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => return Err(anyhow!(e)),
+            };
 
-                    if is_hardlink {
-                        // No work to do if src and dest are already hardlinks.
-                    } else {
-                        match fs::hard_link(&src, &dst) {
-                            Ok(()) => {
-                                // FIXME(b/271694204): Workaround an unknown issue where hardlinks
-                                // aren't readable immediately after creation in some environments.
-                                if fs::metadata(&dst).is_err() {
-                                    warn!("Hardlink at {dst:?} not yet readable");
-                                    fuchsia_async::Timer::new(std::time::Duration::from_secs(1)).await;
-                                    if fs::metadata(&dst).is_err() {
-                                        warn!("Hardlink at {dst:?} still not readable, falling back to copy");
-                                        copy_blob(&src, &dst).await?
-                                    }
-                                }
-                            }
-                            Err(_) if dst_dirty => copy_blob(&src, &dst).await?,
-                            Err(_) => {
-                                // The dest file exists and has the right size,
-                                // but we failed to make it a hardlink.
-                            }
-                        }
-                    }
-                }
+            if self.copy_mode == CopyMode::CopyOverwrite || existing_len != Some(len) {
+                generate_delivery_blob(&src, &dst, self.delivery_blob_type).await?;
             }
-
-                let dst = sanitize_path(
-                    &self.blob_repo_path,
-                    &format!("{}/{hash_str}", u32::from(self.delivery_blob_type)),
-                )?;
-                if self.copy_mode == CopyMode::CopyOverwrite || !path_exists(&dst).await? {
-                    generate_delivery_blob(&src, &dst, self.delivery_blob_type).await?;
-                }
 
             Ok(())
         }
@@ -465,8 +421,7 @@ impl RepoStorage for FileSystemRepository {
             if delivery_blob_type != self.delivery_blob_type {
                 warn!(
                     "storing delivery blob type {:?} in repository with delivery blob type {:?}",
-                    delivery_blob_type,
-                    self.delivery_blob_type,
+                    delivery_blob_type, self.delivery_blob_type,
                 );
                 // TODO: convert the delivery blob to the expected type?
             }
@@ -509,15 +464,18 @@ impl RepoStorage for FileSystemRepository {
                     if is_hardlink {
                         // No work to do if src and dest are already hardlinks.
                     } else {
+                        // Create the parent directory if it doesn't yet exist.
+                        if let Some(parent) = dst.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
                         match fs::hard_link(&src, &dst) {
                             Ok(()) => {
                                 // FIXME(b/271694204): Workaround an unknown issue where hardlinks
                                 // aren't readable immediately after creation in some environments.
                                 if fs::metadata(&dst).is_err() {
-                                    warn!("Hardlink at {dst:?} not yet readable");
-                                    fuchsia_async::Timer::new(std::time::Duration::from_secs(1)).await;
+                                    fuchsia_async::Timer::new(std::time::Duration::from_secs(1))
+                                        .await;
                                     if fs::metadata(&dst).is_err() {
-                                        warn!("Hardlink at {dst:?} still not readable, falling back to copy");
                                         copy_blob(&src, &dst).await?
                                     }
                                 }
@@ -534,14 +492,6 @@ impl RepoStorage for FileSystemRepository {
             Ok(())
         }
         .boxed()
-    }
-}
-
-async fn path_exists(path: &Utf8Path) -> std::io::Result<bool> {
-    match fs::File::open(path) {
-        Ok(_) => Ok(true),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(err) => Err(err),
     }
 }
 
@@ -868,17 +818,19 @@ mod tests {
             .copy_mode(CopyMode::Copy)
             .build();
 
-        // Store the blob.
+        // The blob contents and its hash.
         let contents = b"hello world";
+        let hash = fuchsia_merkle::from_slice(contents).root();
+
         let path = dir.join("my-blob");
         std::fs::write(&path, contents).unwrap();
 
-        let hash = fuchsia_merkle::from_slice(contents).root();
         assert_matches!(repo.store_blob(&hash, contents.len() as u64, &path).await, Ok(()));
 
         // Make sure we can read it back.
-        let blob_path = blob_repo_path.join(hash.to_string());
-        let actual = std::fs::read(&blob_path).unwrap();
+        let blob_path = blob_repo_path.join(format!("1/{hash}"));
+        let delivery_blob = std::fs::read(&blob_path).unwrap();
+        let actual = delivery_blob::decompress(&delivery_blob).unwrap();
         assert_eq!(&actual, &contents[..]);
 
         assert!(std::fs::metadata(&blob_path).unwrap().permissions().readonly());
@@ -890,7 +842,8 @@ mod tests {
         assert_matches!(repo.store_blob(&hash, contents2.len() as u64, &path2).await, Ok(()));
 
         // Make sure we get the new contents back.
-        let actual = std::fs::read(&blob_path).unwrap();
+        let delivery_blob = std::fs::read(&blob_path).unwrap();
+        let actual = delivery_blob::decompress(&delivery_blob).unwrap();
         assert_eq!(&actual, &contents2[..]);
     }
 
@@ -917,8 +870,9 @@ mod tests {
         assert_matches!(repo.store_blob(&hash, contents.len() as u64, &path).await, Ok(()));
 
         // Make sure we can read it back.
-        let blob_path = blob_repo_path.join(hash.to_string());
-        let actual = std::fs::read(&blob_path).unwrap();
+        let blob_path = blob_repo_path.join(format!("1/{hash}"));
+        let delivery_blob = std::fs::read(&blob_path).unwrap();
+        let actual = delivery_blob::decompress(&delivery_blob).unwrap();
         assert_eq!(&actual, &contents[..]);
 
         assert!(std::fs::metadata(&blob_path).unwrap().permissions().readonly());
@@ -930,59 +884,9 @@ mod tests {
         assert_matches!(repo.store_blob(&hash, contents2.len() as u64, &path2).await, Ok(()));
 
         // Make sure we get the original contents back.
-        let actual = std::fs::read(&blob_path).unwrap();
+        let delivery_blob = std::fs::read(&blob_path).unwrap();
+        let actual = delivery_blob::decompress(&delivery_blob).unwrap();
         assert_eq!(&actual, &contents[..]);
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_store_blob_copy_breaks_hardlinks() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = Utf8Path::from_path(tmp.path()).unwrap();
-
-        let metadata_repo_path = dir.join("metadata");
-        let blob_repo_path = dir.join("blobs");
-        std::fs::create_dir(&metadata_repo_path).unwrap();
-        std::fs::create_dir(&blob_repo_path).unwrap();
-
-        let repo =
-            FileSystemRepository::builder(metadata_repo_path.clone(), blob_repo_path.clone())
-                .copy_mode(CopyMode::HardLink)
-                .build();
-
-        // Store the blob.
-        let contents = b"hello world.";
-        let path = dir.join("my-blob");
-        std::fs::write(&path, contents).unwrap();
-
-        let hash = fuchsia_merkle::from_slice(contents).root();
-        assert_matches!(repo.store_blob(&hash, contents.len() as u64, &path).await, Ok(()));
-
-        // Make sure we can read it back.
-        let blob_path = blob_repo_path.join(hash.to_string());
-        let actual = std::fs::read(&blob_path).unwrap();
-        assert_eq!(&actual, &contents[..]);
-        assert_eq!(std::fs::metadata(&blob_path).unwrap().nlink(), 2);
-
-        // Switch to Copy mode.
-        drop(repo);
-        let repo = FileSystemRepository::builder(metadata_repo_path, blob_repo_path.clone())
-            .copy_mode(CopyMode::Copy)
-            .build();
-
-        // Store the blob again
-        let contents2 = b"Hello World!";
-        let path2 = dir.join("my-blob2");
-        std::fs::write(&path2, contents2).unwrap();
-
-        assert_matches!(repo.store_blob(&hash, contents2.len() as u64, &path2).await, Ok(()));
-
-        // Make sure we can read it back.
-        let blob_path = blob_repo_path.join(hash.to_string());
-        let actual = std::fs::read(&blob_path).unwrap();
-        assert_eq!(&actual, &contents2[..]);
-
-        assert!(std::fs::metadata(&blob_path).unwrap().permissions().readonly());
-        assert_eq!(std::fs::metadata(&blob_path).unwrap().nlink(), 1);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -1008,8 +912,9 @@ mod tests {
         assert_matches!(repo.store_blob(&hash, contents.len() as u64, &path).await, Ok(()));
 
         // Make sure we can read it back.
-        let blob_path = blob_repo_path.join(hash.to_string());
-        let actual = std::fs::read(&blob_path).unwrap();
+        let blob_path = blob_repo_path.join(format!("1/{hash}"));
+        let delivery_blob = std::fs::read(&blob_path).unwrap();
+        let actual = delivery_blob::decompress(&delivery_blob).unwrap();
         assert_eq!(&actual, &contents[..]);
 
         assert!(std::fs::metadata(&blob_path).unwrap().permissions().readonly());
@@ -1021,12 +926,13 @@ mod tests {
         assert_matches!(repo.store_blob(&hash, contents2.len() as u64, &path2).await, Ok(()));
 
         // Make sure we get the new contents back.
-        let actual = std::fs::read(&blob_path).unwrap();
+        let delivery_blob = std::fs::read(&blob_path).unwrap();
+        let actual = delivery_blob::decompress(&delivery_blob).unwrap();
         assert_eq!(&actual, &contents2[..]);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_store_blob_hard_link() {
+    async fn test_store_delivery_blob_hard_link() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = Utf8Path::from_path(tmp.path()).unwrap();
 
@@ -1041,15 +947,22 @@ mod tests {
 
         // Store the blob.
         let contents = b"hello world";
-        let path = dir.join("my-blob");
-        std::fs::write(&path, contents).unwrap();
-
         let hash = fuchsia_merkle::from_slice(contents).root();
-        assert_matches!(repo.store_blob(&hash, contents.len() as u64, &path).await, Ok(()));
+
+        let uncompressed_path = dir.join("my-blob");
+        std::fs::write(&uncompressed_path, contents).unwrap();
+        let path = dir.join("my-delivery-blob");
+        generate_delivery_blob(&uncompressed_path, &path, DeliveryBlobType::Type1).await.unwrap();
+
+        assert_matches!(
+            repo.store_delivery_blob(&hash, &path, DeliveryBlobType::Type1).await,
+            Ok(())
+        );
 
         // Make sure we can read it back.
-        let blob_path = blob_repo_path.join(hash.to_string());
-        let actual = std::fs::read(&blob_path).unwrap();
+        let blob_path = blob_repo_path.join(format!("1/{hash}"));
+        let delivery_blob = std::fs::read(&blob_path).unwrap();
+        let actual: Vec<u8> = delivery_blob::decompress(&delivery_blob).unwrap();
         assert_eq!(&actual, &contents[..]);
 
         #[cfg(target_family = "unix")]
@@ -1082,28 +995,20 @@ mod tests {
 
         // Store the blob.
         let contents = b"hello world";
+        let hash = fuchsia_merkle::from_slice(contents).root();
+
         let path = dir.join("my-blob");
         std::fs::write(&path, contents).unwrap();
 
-        let hash = fuchsia_merkle::from_slice(contents).root();
         assert_matches!(repo.store_blob(&hash, contents.len() as u64, &path).await, Ok(()));
 
         // Make sure we can read the delivery blob.
         let blob_path = blob_repo_path.join("1").join(hash.to_string());
         let delivery_blob = std::fs::read(&blob_path).unwrap();
-        assert!(!delivery_blob.is_empty());
+        let actual = delivery_blob::decompress(&delivery_blob).unwrap();
+        assert_eq!(&actual, &contents[..]);
 
         assert!(std::fs::metadata(&blob_path).unwrap().permissions().readonly());
-
-        // Next, we won't overwrite a blob that already exists.
-        let contents2 = b"another blob";
-        let path2 = dir.join("my-blob2");
-        std::fs::write(&path2, contents2).unwrap();
-        assert_matches!(repo.store_blob(&hash, contents2.len() as u64, &path2).await, Ok(()));
-
-        // Make sure we get the original contents back.
-        let actual = std::fs::read(&blob_path).unwrap();
-        assert_eq!(delivery_blob, actual);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]

@@ -932,18 +932,15 @@ mod tests {
         assert_eq!(
             read_dir(&blob_repo_path),
             [
-                (test_utils::PKG1_HASH.into(), pkg1_meta_far_contents.clone()),
-                (test_utils::PKG1_BIN_HASH.into(), b"binary package1".to_vec()),
-                (test_utils::PKG1_LIB_HASH.into(), b"lib package1".to_vec()),
+                (test_utils::PKG1_HASH, pkg1_meta_far_contents.clone()),
+                (test_utils::PKG1_BIN_HASH, b"binary package1".to_vec()),
+                (test_utils::PKG1_LIB_HASH, b"lib package1".to_vec()),
             ]
             .into_iter()
-            .flat_map(|(hash, content)| [
-                (
-                    format!("1/{hash}"),
-                    delivery_blob::generate(delivery_blob::DeliveryBlobType::Type1, &content)
-                ),
-                (hash, content)
-            ])
+            .map(|(hash, content)| (
+                format!("1/{hash}"),
+                delivery_blob::generate(delivery_blob::DeliveryBlobType::Type1, &content)
+            ),)
             .collect()
         );
 
@@ -983,21 +980,18 @@ mod tests {
         assert_eq!(
             read_dir(&blob_repo_path),
             [
-                (test_utils::PKG1_HASH.into(), pkg1_meta_far_contents.clone()),
-                (test_utils::PKG1_BIN_HASH.into(), b"binary package1".to_vec()),
-                (test_utils::PKG1_LIB_HASH.into(), b"lib package1".to_vec()),
-                (test_utils::PKG2_HASH.into(), pkg2_meta_far_contents.clone()),
-                (test_utils::PKG2_BIN_HASH.into(), b"binary package2".to_vec()),
-                (test_utils::PKG2_LIB_HASH.into(), b"lib package2".to_vec()),
+                (test_utils::PKG1_HASH, pkg1_meta_far_contents.clone()),
+                (test_utils::PKG1_BIN_HASH, b"binary package1".to_vec()),
+                (test_utils::PKG1_LIB_HASH, b"lib package1".to_vec()),
+                (test_utils::PKG2_HASH, pkg2_meta_far_contents.clone()),
+                (test_utils::PKG2_BIN_HASH, b"binary package2".to_vec()),
+                (test_utils::PKG2_LIB_HASH, b"lib package2".to_vec()),
             ]
             .into_iter()
-            .flat_map(|(hash, content)| [
-                (
-                    format!("1/{hash}"),
-                    delivery_blob::generate(delivery_blob::DeliveryBlobType::Type1, &content)
-                ),
-                (hash, content)
-            ])
+            .map(|(hash, content)| (
+                format!("1/{hash}"),
+                delivery_blob::generate(delivery_blob::DeliveryBlobType::Type1, &content)
+            ))
             .collect()
         );
 
@@ -1162,18 +1156,18 @@ mod tests {
         assert_eq!(
             repo_blobs.keys().map(|k| k.to_owned()).collect::<BTreeSet<String>>(),
             [
-                test_utils::ANONSUBPKG_HASH.into(),
-                test_utils::ANONSUBPKG_BIN_HASH.into(),
-                test_utils::ANONSUBPKG_LIB_HASH.into(),
-                test_utils::NAMEDSUBPKG_HASH.into(),
-                test_utils::NAMEDSUBPKG_BIN_HASH.into(),
-                test_utils::NAMEDSUBPKG_LIB_HASH.into(),
-                test_utils::SUPERPKG_HASH.into(),
-                test_utils::SUPERPKG_BIN_HASH.into(),
-                test_utils::SUPERPKG_LIB_HASH.into(),
+                test_utils::ANONSUBPKG_HASH,
+                test_utils::ANONSUBPKG_BIN_HASH,
+                test_utils::ANONSUBPKG_LIB_HASH,
+                test_utils::NAMEDSUBPKG_HASH,
+                test_utils::NAMEDSUBPKG_BIN_HASH,
+                test_utils::NAMEDSUBPKG_LIB_HASH,
+                test_utils::SUPERPKG_HASH,
+                test_utils::SUPERPKG_BIN_HASH,
+                test_utils::SUPERPKG_LIB_HASH,
             ]
             .into_iter()
-            .flat_map(|hash| [format!("1/{hash}"), hash])
+            .map(|hash| format!("1/{hash}"))
             .collect()
         );
 
@@ -1181,24 +1175,21 @@ mod tests {
         assert_eq!(
             read_dir(&blob_repo_path),
             [
-                (test_utils::ANONSUBPKG_HASH.into(), anonsubpkg_meta_far_contents.clone()),
-                (test_utils::ANONSUBPKG_BIN_HASH.into(), b"binary anonymous_subpackage".to_vec()),
-                (test_utils::ANONSUBPKG_LIB_HASH.into(), b"lib anonymous_subpackage".to_vec()),
-                (test_utils::NAMEDSUBPKG_HASH.into(), namedsubpkg_meta_far_contents.clone()),
-                (test_utils::NAMEDSUBPKG_BIN_HASH.into(), b"binary named_subpackage".to_vec()),
-                (test_utils::NAMEDSUBPKG_LIB_HASH.into(), b"lib named_subpackage".to_vec()),
-                (test_utils::SUPERPKG_HASH.into(), superpkg_meta_far_contents.clone()),
-                (test_utils::SUPERPKG_BIN_HASH.into(), b"binary superpackage".to_vec()),
-                (test_utils::SUPERPKG_LIB_HASH.into(), b"lib superpackage".to_vec()),
+                (test_utils::ANONSUBPKG_HASH, anonsubpkg_meta_far_contents.clone()),
+                (test_utils::ANONSUBPKG_BIN_HASH, b"binary anonymous_subpackage".to_vec()),
+                (test_utils::ANONSUBPKG_LIB_HASH, b"lib anonymous_subpackage".to_vec()),
+                (test_utils::NAMEDSUBPKG_HASH, namedsubpkg_meta_far_contents.clone()),
+                (test_utils::NAMEDSUBPKG_BIN_HASH, b"binary named_subpackage".to_vec()),
+                (test_utils::NAMEDSUBPKG_LIB_HASH, b"lib named_subpackage".to_vec()),
+                (test_utils::SUPERPKG_HASH, superpkg_meta_far_contents.clone()),
+                (test_utils::SUPERPKG_BIN_HASH, b"binary superpackage".to_vec()),
+                (test_utils::SUPERPKG_LIB_HASH, b"lib superpackage".to_vec()),
             ]
             .into_iter()
-            .flat_map(|(hash, content)| [
-                (
-                    format!("1/{hash}"),
-                    delivery_blob::generate(delivery_blob::DeliveryBlobType::Type1, &content)
-                ),
-                (hash, content)
-            ])
+            .map(|(hash, content)| (
+                format!("1/{hash}"),
+                delivery_blob::generate(delivery_blob::DeliveryBlobType::Type1, &content)
+            ))
             .collect()
         );
 
@@ -1870,13 +1861,12 @@ mod tests {
             .unwrap();
 
         // Corrupt the contents of the blob, and change it's size.
-        let shared_blob_path = blob_repo_path.join(hash.to_string());
+        let shared_blob_path = blob_repo_path.join(format!("1/{hash}"));
         let mut perms = fs::metadata(&shared_blob_path).unwrap().permissions();
         perms.set_mode(perms.mode() | 0o664);
         fs::set_permissions(&shared_blob_path, perms).unwrap();
-        let mut blob = fs::File::options().append(true).open(&shared_blob_path).unwrap();
-        blob.write_all(b", but now corrupted").unwrap();
-        drop(blob);
+        // It's no longer a delivery blob after this write
+        fs::write(&shared_blob_path, b"corrupted contents").unwrap();
 
         // Publish the second package, which should succeed and overwrite the corrupted blob.
         RepoBuilder::create(&repo, &repo_keys)
@@ -1887,7 +1877,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(std::fs::read(&shared_blob_path).unwrap(), contents);
+        let delivery_blob = std::fs::read(&shared_blob_path).unwrap();
+        let actual: Vec<u8> = delivery_blob::decompress(&delivery_blob).unwrap();
+        assert_eq!(actual, contents);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -1937,11 +1929,12 @@ mod tests {
             .unwrap();
 
         // Corrupt the contents of the blob, but keep it's length the same.
-        let shared_blob_path = blob_repo_path.join(hash.to_string());
+        let shared_blob_path = blob_repo_path.join(format!("1/{hash}"));
         let mut perms = fs::metadata(&shared_blob_path).unwrap().permissions();
         perms.set_mode(perms.mode() | 0o664);
         fs::set_permissions(&shared_blob_path, perms).unwrap();
-        fs::write(&shared_blob_path, contents2).unwrap();
+        fs::write(&shared_blob_path, delivery_blob::generate(DeliveryBlobType::Type1, contents2))
+            .unwrap();
 
         // Publish the second package, which should succeed and overwrite the corrupted blob.
         RepoBuilder::create(&repo, &repo_keys)
@@ -1953,7 +1946,9 @@ mod tests {
             .unwrap();
 
         // The blob still contains the corrupted contents.
-        assert_eq!(std::fs::read(&shared_blob_path).unwrap(), contents2);
+        let delivery_blob = std::fs::read(&shared_blob_path).unwrap();
+        let actual: Vec<u8> = delivery_blob::decompress(&delivery_blob).unwrap();
+        assert_eq!(actual, contents2);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]

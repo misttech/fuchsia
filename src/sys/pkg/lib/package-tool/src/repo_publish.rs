@@ -590,10 +590,10 @@ mod tests {
             for package_manifest in &self.manifests {
                 for blob in package_manifest.blobs() {
                     expected_deps.insert(blob.source_path.clone().into());
-                    let blob_path = blob_repo_path.join(blob.merkle.to_string());
                     assert_eq!(
                         std::fs::read(&blob.source_path).unwrap(),
-                        std::fs::read(blob_path).unwrap()
+                        // Decompress the stored delivery blob to compare against
+                        test_utils::read_blob_from_repo(&blob_repo_path, &blob.merkle.to_string())
                     );
                 }
             }

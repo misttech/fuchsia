@@ -133,7 +133,7 @@ impl<'a> RepositoryBuilder<'a> {
             .unwrap();
         repo.commit().await.unwrap();
 
-        Ok(Repository { dir: repodir })
+        Ok(Repository { dir: repodir, delivery_blob_type: self.delivery_blob_type })
     }
 }
 
@@ -182,12 +182,20 @@ pub(crate) fn iter_packages(
 #[derive(Debug)]
 pub struct Repository {
     dir: TempDir,
+    delivery_blob_type: DeliveryBlobType,
 }
 
 impl Repository {
+    fn blobs_dir(&self) -> PathBuf {
+        match self.delivery_blob_type {
+            DeliveryBlobType::Type1 => self.dir.path().join("repository/blobs/1"),
+            t => panic!("Unsupported delivery blob type: {:?}", t),
+        }
+    }
+
     /// Returns an iterator over all blobs contained in this repository.
-    pub fn iter_blobs(&self) -> Result<impl Iterator<Item = Result<Hash, Error>>, io::Error> {
-        Ok(fs::read_dir(self.dir.path().join("repository/blobs"))?
+    pub fn iter_blobs(&self) -> Result<impl Iterator<Item = Result<Hash, Error>>, Error> {
+        Ok(fs::read_dir(self.blobs_dir())?
             .filter(|entry| entry.as_ref().map(|e| !e.path().is_dir()).unwrap_or(true))
             .map(|entry| {
                 Ok(entry?
@@ -206,14 +214,14 @@ impl Repository {
     /// Removes the specified from the repository.
     pub fn purge_blobs(&self, blobs: impl Iterator<Item = Hash>) {
         for blob in blobs {
-            fs::remove_file(self.dir.path().join(format!("repository/blobs/{blob}"))).unwrap();
-            fs::remove_file(self.dir.path().join(format!("repository/blobs/1/{blob}"))).unwrap();
+            fs::remove_file(self.blobs_dir().join(format!("{blob}"))).unwrap();
         }
     }
 
     /// Reads the contents of requested blob from the repository.
-    pub fn read_blob(&self, merkle_root: &Hash) -> Result<Vec<u8>, io::Error> {
-        fs::read(self.dir.path().join(format!("repository/blobs/{merkle_root}")))
+    pub fn read_blob(&self, merkle_root: &Hash) -> Result<Vec<u8>, Error> {
+        let raw_blob = fs::read(self.blobs_dir().join(format!("{merkle_root}")))?;
+        Ok(delivery_blob::decompress(&raw_blob)?)
     }
 
     /// Reads the contents of requested delivery blob from the repository.
@@ -227,19 +235,28 @@ impl Repository {
         )
     }
 
+    /// Writes a blob with the given merkle and data (which may not match), into the repository's
+    /// blobs directory, without any compression.
+    pub fn write_blob(&self, merkle_root: &Hash, blob: &[u8]) -> Result<usize, Error> {
+        let blob_data_to_write = match self.delivery_blob_type {
+            DeliveryBlobType::Type1 => {
+                delivery_blob::Type1Blob::generate(blob, delivery_blob::CompressionMode::Never)
+            }
+            t => panic!("Unsupported delivery blob type: {:?}", t),
+        };
+        let () = fs::write(self.blobs_dir().join(format!("{merkle_root}")), &blob_data_to_write)
+            .with_context(|| format!("writing blob: {merkle_root}"))?;
+        Ok(blob_data_to_write.len())
+    }
+
     /// Overwrites the delivery blob to uncompressed version from an uncompressed blob that is
     /// already in the repository, returns the size of the delivery blob.
-    pub fn overwrite_uncompressed_delivery_blob(
-        &self,
-        merkle_root: &Hash,
-    ) -> Result<usize, io::Error> {
-        let blob = self.read_blob(merkle_root)?;
+    pub fn overwrite_uncompressed_delivery_blob(&self, merkle_root: &Hash) -> Result<usize, Error> {
+        let blob =
+            self.read_blob(merkle_root).with_context(|| format!("reading blob: {merkle_root}"))?;
         let delivery_blob =
             delivery_blob::Type1Blob::generate(&blob, delivery_blob::CompressionMode::Never);
-        let () = fs::write(
-            self.dir.path().join(format!("repository/blobs/1/{merkle_root}")),
-            &delivery_blob,
-        )?;
+        let () = fs::write(self.blobs_dir().join(format!("{merkle_root}")), &delivery_blob)?;
         Ok(delivery_blob.len())
     }
 

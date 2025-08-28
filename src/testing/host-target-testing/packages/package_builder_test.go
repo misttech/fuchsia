@@ -224,7 +224,7 @@ func TestPublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create FFXTool: %s", err)
 	}
-	pkgRepo, err = NewRepository(ctx, pkgRepo.rootDir, pkgRepo.blobStore, ffx, nil)
+	pkgRepo, err = NewRepository(ctx, pkgRepo.rootDir, pkgRepo.blobStore, ffx, &deliveryBlobType)
 
 	// Confirm that the package is published and updated.
 	pkg, err = pkgRepo.OpenPackage(ctx, fullPkgName)
