@@ -15,12 +15,12 @@ use std::time::Duration;
 
 mod common;
 
-type TestBuffer = Cursor<[u8; MAX_DATAGRAM_LEN_BYTES as usize]>;
+type TestBuffer = Cursor<Vec<u8>>;
 type TestEncoder = Encoder<TestBuffer>;
 
 #[inline]
 fn encoder() -> TestEncoder {
-    let buffer = [0u8; MAX_DATAGRAM_LEN_BYTES as usize];
+    let buffer = vec![0u8; MAX_DATAGRAM_LEN_BYTES as usize];
     Encoder::new(Cursor::new(buffer), EncoderOpts::default())
 }
 
