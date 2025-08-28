@@ -11,7 +11,7 @@ pub use discovery::{enumerate_devices, wait_for_devices};
 use futures::future::poll_fn;
 use futures::task::AtomicWaker;
 use std::cell::UnsafeCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::future::Future;
 use std::io::Read;
@@ -36,14 +36,11 @@ static SYSFS_DEVICES_DIR: &str = "/sys/bus/usb/devices";
 pub struct DeviceHandleInner {
     pub(crate) hdl: String,
     pub(crate) serial: Option<String>,
-    // TODO: remove in a follow up that uses this
-    #[allow(dead_code)]
-    pub(crate) sysfs_path: Option<std::path::PathBuf>,
 }
 
 /// Represents a USB device with its major and minor numbers.
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub(crate) struct DeviceId {
+#[derive(Debug, PartialEq, Eq)]
+struct DeviceId {
     major: u32,
     minor: u32,
 }
@@ -95,42 +92,6 @@ fn find_sysfs_path(device_id: &DeviceId) -> Option<std::path::PathBuf> {
     None
 }
 
-fn build_devid_to_sysfs_path_map() -> HashMap<DeviceId, std::path::PathBuf> {
-    let mut device_map = HashMap::new();
-    let sys_usb_path = std::path::Path::new(SYSFS_DEVICES_DIR);
-    let Ok(entries) = std::fs::read_dir(sys_usb_path) else {
-        return device_map;
-    };
-    for entry in entries {
-        let Ok(entry) = entry else {
-            continue;
-        };
-
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        let dev_file_path = path.join("dev");
-        if !dev_file_path.exists() {
-            continue;
-        }
-
-        let Ok(content) = std::fs::read_to_string(&dev_file_path) else {
-            continue;
-        };
-
-        let parts: Vec<&str> = content.trim().split(':').collect();
-        if parts.len() == 2 {
-            if let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
-                let deviceid = DeviceId { major, minor };
-                device_map.insert(deviceid, path);
-            }
-        }
-    }
-    device_map
-}
-
 /// Reads the serial number from the 'serial' file in the given sysfs device path.
 /// Returns None if there is an error
 fn get_serial_from_sysfs<P>(sysfs_path: P) -> Option<String>
@@ -144,31 +105,14 @@ where
 impl DeviceHandleInner {
     pub(crate) fn new(hdl: String) -> DeviceHandleInner {
         let devid = DeviceId::from_path(&hdl).ok();
-        let (serial, sysfs_path) = match devid {
-            None => (None, None),
+        let serial = match devid {
+            None => None,
             Some(id) => match find_sysfs_path(&id) {
-                None => (None, None),
-                Some(sysfs_path) => (get_serial_from_sysfs(&sysfs_path), Some(sysfs_path)),
+                None => None,
+                Some(sysfs_path) => get_serial_from_sysfs(&sysfs_path),
             },
         };
-        DeviceHandleInner { hdl, serial, sysfs_path }
-    }
-
-    pub(crate) fn new_with_sysfs(
-        hdl: String,
-        map: &HashMap<DeviceId, std::path::PathBuf>,
-    ) -> DeviceHandleInner {
-        let devid = DeviceId::from_path(&hdl).ok();
-        let (serial, sysfs_path) = match devid {
-            None => (None, None),
-            Some(id) => match map.get(&id) {
-                None => (None, None),
-                Some(sysfs_path) => {
-                    (get_serial_from_sysfs(&sysfs_path), Some(sysfs_path.to_owned()))
-                }
-            },
-        };
-        DeviceHandleInner { hdl, serial, sysfs_path }
+        DeviceHandleInner { hdl, serial }
     }
 
     pub fn debug_name(&self) -> String {
@@ -559,7 +503,11 @@ impl InterfaceInner {
         Ok(async move {
             poll_fn(|ctx| {
                 urb.waker.register(ctx.waker());
-                if urb.refs.load(Ordering::Relaxed) != 1 { Poll::Pending } else { Poll::Ready(()) }
+                if urb.refs.load(Ordering::Relaxed) != 1 {
+                    Poll::Pending
+                } else {
+                    Poll::Ready(())
+                }
             })
             .await;
 
@@ -836,7 +784,7 @@ impl BulkInEndpoint {
 
             let got = {
                 let mut out = out.lock().unwrap();
-                let idx = out.iter().enumerate().find(|x| x.1.1 == next_expected).map(|x| x.0);
+                let idx = out.iter().enumerate().find(|x| x.1 .1 == next_expected).map(|x| x.0);
 
                 idx.and_then(|idx| out.remove(idx))
             };
@@ -956,7 +904,7 @@ mod test {
     use crate::USB_ENDPOINT_DIR_MASK;
     use futures::StreamExt;
     use std::collections::HashMap;
-    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::sync::mpsc::{channel, Receiver, Sender};
 
     #[derive(Clone)]
     enum EndpointBuffer {

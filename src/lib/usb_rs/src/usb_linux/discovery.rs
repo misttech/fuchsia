@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use futures::channel::mpsc::{UnboundedReceiver, unbounded};
+use futures::channel::mpsc::{unbounded, UnboundedReceiver};
 use futures::stream::Stream;
-use notify::Watcher;
 use notify::event::{CreateKind, Event, EventKind, ModifyKind};
+use notify::Watcher;
 use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
-use std::task::{Context, Poll, ready};
+use std::task::{ready, Context, Poll};
 
 use super::DeviceHandleInner;
-use crate::usb_plat::build_devid_to_sysfs_path_map;
 use crate::{DeviceEvent, DeviceHandle, Error, Result};
 
 /// Root of the Linux devfs
@@ -70,7 +69,6 @@ fn readable<P: AsRef<Path>>(path: P) -> bool {
 /// Lists all USB devices currently on the bus.
 pub fn enumerate_devices() -> Result<Vec<DeviceHandle>> {
     let mut devices: Vec<DeviceHandle> = vec![];
-    let map = build_devid_to_sysfs_path_map();
     for path in read_dir_path_no_dots(USB_FS_DIR)? {
         let path = path?;
         if path.is_dir() {
@@ -80,7 +78,7 @@ pub fn enumerate_devices() -> Result<Vec<DeviceHandle>> {
                     .to_str()
                     .ok_or_else(|| Error::BadDeviceName(path.to_string_lossy().to_string()))?
                     .to_owned();
-                devices.push(DeviceHandleInner::new_with_sysfs(full_path, &map).into());
+                devices.push(DeviceHandleInner::new(full_path).into());
             }
         }
     }
