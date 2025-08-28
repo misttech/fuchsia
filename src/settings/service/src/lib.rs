@@ -794,6 +794,7 @@ fn create_agent_blueprints(
     media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
 ) -> Vec<AgentCreator> {
     let (_value_event_tx, value_event_rx) = mpsc::unbounded();
+    let (_external_event_tx, external_event_rx) = mpsc::unbounded();
     let (_proxy_event_tx, proxy_event_rx) = mpsc::unbounded();
     let (_usage_event_tx, usage_event_rx) = mpsc::unbounded();
 
@@ -803,6 +804,9 @@ fn create_agent_blueprints(
     let inspect_settings_values_registrar = agent_types
         .contains(&AgentType::InspectSettingValues)
         .then(|| agent::inspect::setting_values::create_registrar(value_event_rx));
+    let inspect_external_apis_registrar = agent_types
+        .contains(&AgentType::InspectExternalApis)
+        .then(|| agent::inspect::external_apis::create_registrar(external_event_rx));
     let inspect_setting_proxy_registrar = agent_types
         .contains(&AgentType::InspectSettingProxy)
         .then(|| agent::inspect::setting_proxy::create_registrar(proxy_event_rx));
@@ -813,6 +817,7 @@ fn create_agent_blueprints(
     let agent_registrars = [
         media_buttons_registrar,
         inspect_settings_values_registrar,
+        inspect_external_apis_registrar,
         inspect_setting_proxy_registrar,
         inspect_usages_registrar,
     ];
@@ -822,6 +827,7 @@ fn create_agent_blueprints(
             t,
             AgentType::MediaButtons
                 | AgentType::InspectSettingValues
+                | AgentType::InspectExternalApis
                 | AgentType::InspectSettingProxy
                 | AgentType::InspectSettingTypeUsage
         )

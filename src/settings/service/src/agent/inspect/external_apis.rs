@@ -39,7 +39,7 @@
 //! }
 //! ```
 
-use crate::agent::{Context, Payload};
+use crate::agent::{AgentCreator, Context, CreationFunc, Payload};
 use crate::event::{Event, Payload as EventPayload};
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::service::{self as service, TryFromWithClient};
@@ -49,9 +49,11 @@ use crate::trace;
 use fuchsia_async as fasync;
 use fuchsia_inspect::{component, Node};
 use fuchsia_inspect_derive::{IValue, Inspect, WithInspect};
+use futures::channel::mpsc::UnboundedReceiver;
 use futures::StreamExt;
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 use settings_inspect_utils::managed_inspect_queue::ManagedInspectQueue;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 /// The key for the queue for completed calls per protocol.
@@ -67,6 +69,19 @@ const MAX_COMPLETED_CALLS: usize = 10;
 /// The maximum number of still pending calls that will be kept in
 /// inspect per protocol.
 const MAX_PENDING_CALLS: usize = 10;
+
+pub(crate) fn create_registrar(rx: UnboundedReceiver<ExternalServiceEvent>) -> AgentCreator {
+    let rx = Rc::new(RefCell::new(rx));
+    AgentCreator {
+        debug_id: "ExternalApisInspectAgent",
+        create: CreationFunc::Dynamic(Rc::new(move |context| {
+            let rx = Rc::clone(&rx);
+            Box::pin(async move {
+                ExternalApiInspectAgent::create(context, rx).await;
+            })
+        })),
+    }
+}
 
 // TODO(https://fxbug.dev/42060063): Explore reducing size of keys in inspect.
 #[derive(Debug, Default, Inspect)]
@@ -162,16 +177,24 @@ pub(crate) struct ExternalApiInspectAgent {
 
 impl ExternalApiInspectAgent {
     /// Creates the `ExternalApiInspectAgent` with the given `context`.
-    pub(crate) async fn create(context: Context) {
+    pub(crate) async fn create(
+        context: Context,
+        event_rx: Rc<RefCell<UnboundedReceiver<ExternalServiceEvent>>>,
+    ) {
         Self::create_with_node(
             context,
+            event_rx,
             component::inspector().root().create_child("external_apis"),
         )
         .await;
     }
 
     /// Creates the `ExternalApiInspectAgent` with the given `context` and Inspect `node`.
-    async fn create_with_node(context: Context, node: Node) {
+    async fn create_with_node(
+        context: Context,
+        event_rx: Rc<RefCell<UnboundedReceiver<ExternalServiceEvent>>>,
+        node: Node,
+    ) {
         let (_, message_rx) = context
             .delegate
             .create(MessengerType::Broker(Rc::new(move |message| {
@@ -195,6 +218,7 @@ impl ExternalApiInspectAgent {
                 trace!(id, c"external_api_inspect_agent");
                 let event = message_rx.fuse();
                 let agent_event = context.receptor.fuse();
+                let mut inner_event = event_rx.borrow_mut();
                 futures::pin_mut!(agent_event, event);
 
                 let mut message_event_fut = event.select_next_some();
@@ -209,6 +233,9 @@ impl ExternalApiInspectAgent {
                             agent.process_message_event(message_event);
                             message_event_fut = event.select_next_some();
                         },
+                        event = inner_event.select_next_some() => {
+                            agent.process_direct_event(event);
+                        }
                         agent_message = agent_message_fut => {
                             trace!(
                                 id,
@@ -230,74 +257,78 @@ impl ExternalApiInspectAgent {
         .detach();
     }
 
+    fn process_direct_event(&mut self, event: ExternalServiceEvent) {
+        match event {
+            ExternalServiceEvent::Created(protocol, timestamp) => {
+                let count = self.get_count(protocol) + 1;
+                let info = ExternalApiCallInfo::new("connect", "none", "none", &timestamp);
+                self.add_info(protocol, COMPLETED_CALLS_KEY, "Created", info, count);
+            }
+            ExternalServiceEvent::ApiCall(protocol, request, timestamp) => {
+                let count = self.get_count(protocol) + 1;
+                let info = ExternalApiCallInfo::new(&request, "none", &timestamp, "none");
+                self.add_info(protocol, PENDING_CALLS_KEY, "ApiCall", info, count);
+            }
+            ExternalServiceEvent::ApiResponse(
+                protocol,
+                response,
+                request,
+                request_timestamp,
+                response_timestamp,
+            ) => {
+                let count = self.get_count(protocol) + 1;
+                let info = ExternalApiCallInfo::new(
+                    &request,
+                    &response,
+                    &request_timestamp,
+                    &response_timestamp,
+                );
+                self.remove_pending(protocol, &info);
+                self.add_info(protocol, COMPLETED_CALLS_KEY, "ApiResponse", info, count);
+            }
+            ExternalServiceEvent::ApiError(
+                protocol,
+                error,
+                request,
+                request_timestamp,
+                error_timestamp,
+            ) => {
+                let count = self.get_count(protocol) + 1;
+                let info = ExternalApiCallInfo::new(
+                    &request,
+                    &error,
+                    &request_timestamp,
+                    &error_timestamp,
+                );
+                self.remove_pending(protocol, &info);
+                self.add_info(protocol, COMPLETED_CALLS_KEY, "ApiError", info, count);
+            }
+            ExternalServiceEvent::Closed(
+                protocol,
+                request,
+                request_timestamp,
+                response_timestamp,
+            ) => {
+                let count = self.get_count(protocol) + 1;
+                let info = ExternalApiCallInfo::new(
+                    &request,
+                    "closed",
+                    &request_timestamp,
+                    &response_timestamp,
+                );
+                self.remove_pending(protocol, &info);
+                self.add_info(protocol, COMPLETED_CALLS_KEY, "Closed", info, count);
+            }
+        }
+    }
+
     /// Processes the given `event` and writes it to Inspect if it is an
     /// `ExternalServiceEvent`.
     fn process_message_event(&mut self, event: service::message::MessageEvent) {
         if let Ok((EventPayload::Event(Event::ExternalServiceEvent(external_service_event)), _)) =
             EventPayload::try_from_with_client(event)
         {
-            match external_service_event {
-                ExternalServiceEvent::Created(protocol, timestamp) => {
-                    let count = self.get_count(protocol) + 1;
-                    let info = ExternalApiCallInfo::new("connect", "none", "none", &timestamp);
-                    self.add_info(protocol, COMPLETED_CALLS_KEY, "Created", info, count);
-                }
-                ExternalServiceEvent::ApiCall(protocol, request, timestamp) => {
-                    let count = self.get_count(protocol) + 1;
-                    let info = ExternalApiCallInfo::new(&request, "none", &timestamp, "none");
-                    self.add_info(protocol, PENDING_CALLS_KEY, "ApiCall", info, count);
-                }
-                ExternalServiceEvent::ApiResponse(
-                    protocol,
-                    response,
-                    request,
-                    request_timestamp,
-                    response_timestamp,
-                ) => {
-                    let count = self.get_count(protocol) + 1;
-                    let info = ExternalApiCallInfo::new(
-                        &request,
-                        &response,
-                        &request_timestamp,
-                        &response_timestamp,
-                    );
-                    self.remove_pending(protocol, &info);
-                    self.add_info(protocol, COMPLETED_CALLS_KEY, "ApiResponse", info, count);
-                }
-                ExternalServiceEvent::ApiError(
-                    protocol,
-                    error,
-                    request,
-                    request_timestamp,
-                    error_timestamp,
-                ) => {
-                    let count = self.get_count(protocol) + 1;
-                    let info = ExternalApiCallInfo::new(
-                        &request,
-                        &error,
-                        &request_timestamp,
-                        &error_timestamp,
-                    );
-                    self.remove_pending(protocol, &info);
-                    self.add_info(protocol, COMPLETED_CALLS_KEY, "ApiError", info, count);
-                }
-                ExternalServiceEvent::Closed(
-                    protocol,
-                    request,
-                    request_timestamp,
-                    response_timestamp,
-                ) => {
-                    let count = self.get_count(protocol) + 1;
-                    let info = ExternalApiCallInfo::new(
-                        &request,
-                        "closed",
-                        &request_timestamp,
-                        &response_timestamp,
-                    );
-                    self.remove_pending(protocol, &info);
-                    self.add_info(protocol, COMPLETED_CALLS_KEY, "Closed", info, count);
-                }
-            }
+            self.process_direct_event(external_service_event);
         }
     }
 
@@ -383,6 +414,7 @@ mod tests {
 
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_inspect::Inspector;
+    use futures::channel::mpsc;
     use std::collections::HashSet;
 
     const MOCK_PROTOCOL_NAME: &str = "fuchsia.external.FakeAPI";
@@ -438,7 +470,9 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        ExternalApiInspectAgent::create_with_node(context, inspect_node).await;
+        let (_tx, rx) = mpsc::unbounded();
+        ExternalApiInspectAgent::create_with_node(context, Rc::new(RefCell::new(rx)), inspect_node)
+            .await;
 
         let connection_created_event =
             ExternalServiceEvent::Created(MOCK_PROTOCOL_NAME, "0.000000".into());
@@ -475,7 +509,9 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        ExternalApiInspectAgent::create_with_node(context, inspect_node).await;
+        let (_tx, rx) = mpsc::unbounded();
+        ExternalApiInspectAgent::create_with_node(context, Rc::new(RefCell::new(rx)), inspect_node)
+            .await;
 
         let api_call_event = ExternalServiceEvent::ApiCall(
             MOCK_PROTOCOL_NAME,
@@ -515,7 +551,9 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        ExternalApiInspectAgent::create_with_node(context, inspect_node).await;
+        let (_tx, rx) = mpsc::unbounded();
+        ExternalApiInspectAgent::create_with_node(context, Rc::new(RefCell::new(rx)), inspect_node)
+            .await;
 
         let api_call_event = ExternalServiceEvent::ApiCall(
             MOCK_PROTOCOL_NAME,
@@ -586,7 +624,9 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        ExternalApiInspectAgent::create_with_node(context, inspect_node).await;
+        let (_tx, rx) = mpsc::unbounded();
+        ExternalApiInspectAgent::create_with_node(context, Rc::new(RefCell::new(rx)), inspect_node)
+            .await;
 
         let api_call_event = ExternalServiceEvent::ApiCall(
             MOCK_PROTOCOL_NAME,
@@ -658,7 +698,9 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        ExternalApiInspectAgent::create_with_node(context, inspect_node).await;
+        let (_tx, rx) = mpsc::unbounded();
+        ExternalApiInspectAgent::create_with_node(context, Rc::new(RefCell::new(rx)), inspect_node)
+            .await;
 
         let api_call_event = ExternalServiceEvent::ApiCall(
             MOCK_PROTOCOL_NAME,
@@ -729,7 +771,9 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        ExternalApiInspectAgent::create_with_node(context, inspect_node).await;
+        let (_tx, rx) = mpsc::unbounded();
+        ExternalApiInspectAgent::create_with_node(context, Rc::new(RefCell::new(rx)), inspect_node)
+            .await;
 
         let api_call_event = ExternalServiceEvent::ApiCall(
             MOCK_PROTOCOL_NAME,
