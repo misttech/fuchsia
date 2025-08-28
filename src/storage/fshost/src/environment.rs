@@ -25,7 +25,7 @@ use anyhow::{Context, Error, anyhow, bail};
 use async_trait::async_trait;
 use crypt_policy::{Policy, get_policy};
 use device_watcher::{recursive_wait, recursive_wait_and_open};
-use fidl::endpoints::{ServerEnd, ServiceMarker as _, create_proxy};
+use fidl::endpoints::{Proxy, ServerEnd, ServiceMarker as _, create_proxy};
 use fidl_fuchsia_fs_startup::MountOptions;
 use fidl_fuchsia_hardware_block_partition::Guid;
 use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeMarker, VolumeProxy};
@@ -1152,16 +1152,14 @@ impl Environment for FshostEnvironment {
             .path()
             .strip_suffix("/volume")
             .ok_or_else(|| anyhow!("failed to strip volume suffix from device path"))?;
-        let partition =
+        let partition_service =
             fuchsia_fs::directory::open_directory(&partitions_dir, path, fio::PERM_READABLE)
                 .await?;
-        let (client, server_end) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
-        partition.clone(server_end.into_channel().into())?;
 
         let fxfs_provisioner = connect_to_protocol::<ffxfsprovisioner::FxfsProvisionerMarker>()
             .context("failed to connect to fxfs provisioner protocol")?;
         fxfs_provisioner
-            .provision(client)
+            .provision(partition_service.into_client_end().unwrap())
             .await
             .context("provision FIDL call failed")?
             .map_err(|err| anyhow!("provision failed {:?}", zx::Status::from_raw(err)))?;

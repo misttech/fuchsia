@@ -123,10 +123,10 @@ async fn run_fxfs_provisioner(mut stream: ffxfsprovisioner::FxfsProvisionerReque
     while let Some(request) = stream.next().await {
         match request.unwrap() {
             ffxfsprovisioner::FxfsProvisionerRequest::Provision {
-                partition_service_dir,
+                partition_service,
                 responder,
             } => {
-                let partition_service = partition_service_dir.into_proxy();
+                let partition_service = partition_service.into_proxy();
 
                 let overlay = connect_to_named_protocol_at_dir_root::<
                     fpartitions::OverlayPartitionProxy,

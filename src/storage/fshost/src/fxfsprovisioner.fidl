@@ -12,7 +12,7 @@ using zx;
 open protocol FxfsProvisioner {
     /// Format device to use Fxfs.
     flexible Provision(resource struct {
-        // Handle to directory containing partition services.
-        partition_service_dir client_end:fuchsia.io.Directory;
+        /// PartitionService instance.
+        partition_service client_end:fuchsia.io.Directory;
     }) -> () error zx.Status;
 };
