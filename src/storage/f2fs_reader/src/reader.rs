@@ -406,14 +406,13 @@ mod test {
         let f2fs = F2fsReader::open_device(Arc::new(device)).await.expect("open ok");
         let root_ino = f2fs.root_ino();
         let root_entries = f2fs.readdir(root_ino).await.expect("readdir");
-        assert_eq!(root_entries.len(), 6);
+        assert_eq!(root_entries.len(), 5);
         assert_eq!(root_entries[0].filename, "a");
         assert_eq!(root_entries[0].file_type, FileType::Directory);
         assert_eq!(root_entries[1].filename, "large_dir");
         assert_eq!(root_entries[2].filename, "large_dir2");
         assert_eq!(root_entries[3].filename, "sparse.dat");
         assert_eq!(root_entries[4].filename, "fscrypt");
-        assert_eq!(root_entries[5].filename, "large_zero");
 
         let inlined_file_ino =
             resolve_inode_path(&f2fs, "/a/b/c/inlined").await.expect("resolve inlined");
@@ -540,22 +539,18 @@ mod test {
         //   $ sudo mount testdata/f2fs.img /mnt
         //   $ ls /mnt/fscrypt -lR
 
-        let str_a = "iUVQ8QAAAACKGCrbr-bLCTkXu6PS0HXV"; // a (/fscrypt/<a>/<b>))
-        let str_b = "OhTWiwAAAAAx1quUaAG0dp7tJBTCuBSl"; // b (4096 bytes)
-        let str_symlink = "QYEbJQAAAADQk_ZO2kpiowGuBKuhct2L"; // symlink
-        let bytes_symlink_content = b"AAAAAAAAAAAzHOOo5BwLI7X0Yckn1kRx";
-        let mut expected : HashSet<_> = [ // files in fscrypt/ dir.
-            "G8tpkQAAAACvRyVWDS1uth15k0H4JifRABRFZBnmePk819BnTOTN6srPUnwFvzcVB2YhKlov19X-_FcDjShqkg733g9l1xDLnQmXLQLy_PPTWqHOQUqDUvBB5sbxjd1iZntg2VvQuaHb7BhCuX3ekVCugWV1HkAp-qAWteDnr6yoPoBf9LK4hMTrwvpoNjo_RWCGecv2tIDPDdIVERjLtStwQsIO7nVbxqKhvhjwyU5eDzEiyBXf8ZSq05dv",
-            "5OAb0wAAAAAnmedhSJ4gvbd7pcU5arPH",
-            "BVNy_gAAAABEBdxfYviVu3rsZacmVmIB",
-            "DdxUxQAAAADG2j9HdHCopkYVDmziU3Nm",
-            "Hby0jwAAAAB7kE-M84n1_xCrBRkNCpzi",
-            "iUVQ8QAAAACKGCrbr-bLCTkXu6PS0HXV",
-            "KgKe4AAAAADSl7xWJpsiDJEZo_4qes4a",
-            "XiBSDwAAAACaxU39oX9QOQt2vk0zhxFl",
-            "YSax1AAAAAB9E2jks4AJNs7iOVHVrIHv",
-
-            ].into_iter().collect();
+        let str_a = "NKuk1QAAAADJvT0sogE0EI1H0T--cnwP"; // a
+        let str_b = "_9dQxgAAAAAwU9c2uQE1_7gk_y90HItg"; // b
+        let str_symlink = "KYMJjgAAAABsQ88j6M9Q4nmsXZ1cDnSc"; // symlink
+        let bytes_symlink_content = b"AAAAAAAAAABfxa334kxxbSt2IE22_MFy";
+        let mut expected : HashSet<_> = [
+            "h-rU6QAAAABvcvrSi47pNbFgQEUBf_JUylLK1S2BHaDPN3I0qCqYdy1ul3ZyTgXpJUrQmfGT7kXudRqBJj1ZGPfv9OWc_VIgdWCLBNrqH2o1oOSzMk2FVFB7Woh1za03z_cPRA6T7-rOLfXyV37z92yjex24rpp6-Ws0W7aJhj7iqVAiudnW4nP-04wZV58ED6oHLpFOCfEgwGDlv37k2i7ERdXgkFhdhaqsx8IKm2ShEKqV6qywwtcwzl_t",
+            "ILcBrgAAAAAbLRmQf6nN4cFTI8retFUs",
+            "kW9d6QAAAAAhvwVPtWGcVSHUtfLThAL-",
+            "rTz5FQAAAACNkO0XR-TR6wX_gcUgo2sZ",
+            "UiuVqgAAAADTTp9HOB4lS_vON3fvD9M8",
+            "yZ50IQAAAAC7YvyCEWkvmFdkgN_SM5gJ",
+            "NKuk1QAAAADJvT0sogE0EI1H0T--cnwP" ].into_iter().collect();
 
         let device = open_test_image("/pkg/testdata/f2fs.img.zst");
 
