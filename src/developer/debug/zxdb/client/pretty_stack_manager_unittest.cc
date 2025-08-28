@@ -354,6 +354,26 @@ TEST(PrettyStackManager, DefaultMatchersRust) {
   stack.SetFramesForTest(std::move(frames), true);
   entries = manager->ProcessStack(stack);
   ASSERT_EQ(1u, entries.size());
+
+  // Matches the top of the backtrace code which runs when the Rust runtime encounters an exception.
+  frames.clear();
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1001, 0x2001,
+                                               "std::sys::backtrace::_print_fmt",
+                                               FileLine("backtrace.rs", 1234)));
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1002, 0x2002,
+                                               "std::sys::backtrace::__rust_end_short_backtrace<*>",
+                                               FileLine("backtrace.rs", 12)));
+  // Need to add an unrelated frame outside of the matching part, since the matcher is allowed to
+  // match a wildcard of length 0 but we have to have at least the same total number of frames as
+  // globs. We could add this frame between the other two that are part of the matching pattern, but
+  // this ensures we have the limits tested on the wildcard glob type.
+  frames.push_back(std::make_unique<MockFrame>(nullptr, nullptr, 0x1003, 0x2003, "anything",
+                                               FileLine("somewhere", 1234)));
+
+  stack.SetFramesForTest(std::move(frames), true);
+  entries = manager->ProcessStack(stack);
+  // Because of the above, we'll have two for this one.
+  ASSERT_EQ(2u, entries.size());
 }
 
 }  // namespace zxdb

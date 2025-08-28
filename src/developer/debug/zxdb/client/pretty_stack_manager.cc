@@ -156,6 +156,14 @@ void PrettyStackManager::LoadDefaultMatchers() {
        PrettyFrameGlob::Wildcard(0, 16),
        PrettyFrameGlob::Func("std::sys::backtrace::__rust_end_short_backtrace<*>")}));
 
+  // This is generic code that appears around the top of the stack when dumping a backtrace from a
+  // failed assertion.
+  matchers.push_back(StackGlob(
+      "Rust backtrace library",
+      {PrettyFrameGlob::Func("std::sys::backtrace::_print_fmt"),
+       PrettyFrameGlob::Wildcard(0, 19),
+       PrettyFrameGlob::Func("std::sys::backtrace::__rust_end_short_backtrace<*>")}));
+
   // Rust startup code. The "call_once()" in function.rs is present in debug mode but not release.
   matchers.push_back(StackGlob(
       "Rust startup",
