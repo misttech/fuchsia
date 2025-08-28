@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use diagnostics_assertions::{
-    tree_assertion, AnyProperty, AnyStringProperty, NonZeroUintProperty, TreeAssertion,
+    AnyProperty, AnyStringProperty, NonZeroUintProperty, TreeAssertion, tree_assertion,
 };
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
@@ -14,7 +14,7 @@ use fidl_test_systemactivitygovernor::RealmOptions;
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
-use power_broker_client::{basic_update_fn_factory, run_power_element, PowerElementContext};
+use power_broker_client::{PowerElementContext, basic_update_fn_factory, run_power_element};
 use realm_proxy_client::RealmProxyClient;
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -186,8 +186,8 @@ macro_rules! block_until_inspect_matches {
 }
 
 #[fuchsia::test]
-async fn test_activity_governor_with_no_suspender_returns_not_supported_after_suspend_attempt(
-) -> Result<()> {
+async fn test_activity_governor_with_no_suspender_returns_not_supported_after_suspend_attempt()
+-> Result<()> {
     let (realm, activity_governor_moniker) =
         create_realm_ext(ftest::RealmOptions { use_suspender: Some(false), ..Default::default() })
             .await?;
@@ -223,8 +223,8 @@ async fn test_activity_governor_with_no_suspender_returns_not_supported_after_su
 }
 
 #[fuchsia::test]
-async fn test_activity_governor_increments_suspend_success_on_application_activity_lease_drop(
-) -> Result<()> {
+async fn test_activity_governor_increments_suspend_success_on_application_activity_lease_drop()
+-> Result<()> {
     let (realm, activity_governor_moniker) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
     set_up_default_suspender(&suspend_device).await;
@@ -840,7 +840,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
 }
 
 #[fuchsia::test]
-async fn test_activity_governor_suspends_after_listener_hanging_on_resume() -> Result<()> {
+async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume() -> Result<()> {
     let (realm, activity_governor_moniker) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
     set_up_default_suspender(&suspend_device).await;
@@ -856,34 +856,35 @@ async fn test_activity_governor_suspends_after_listener_hanging_on_resume() -> R
     assert_eq!(None, current_stats.last_time_in_suspend);
     assert_eq!(Some(0), current_stats.total_time_in_suspend);
 
-    let (listener_client_end, mut listener_stream) = fidl::endpoints::create_request_stream();
-    activity_governor
-        .register_listener(fsystem::ActivityGovernorRegisterListenerRequest {
-            listener: Some(listener_client_end),
+    let (blocker_client_end, mut blocker_stream) = fidl::endpoints::create_request_stream();
+    let registration_lease = activity_governor
+        .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+            suspend_blocker: Some(blocker_client_end),
+            name: Some("test_suspend_blocker".into()),
             ..Default::default()
         })
         .await
-        .unwrap();
+        .expect("RegisterSuspendBlocker failed");
 
-    let (on_suspend_started_tx, mut on_suspend_started_rx) = mpsc::channel(1);
-    let (on_resume_tx, mut on_resume_rx) = mpsc::channel(1);
+    let (before_suspend_tx, mut before_suspend_rx) = mpsc::channel(1);
+    let (after_resume_tx, mut after_resume_rx) = mpsc::channel(1);
 
     fasync::Task::local(async move {
-        let mut on_suspend_started_tx = on_suspend_started_tx;
-        let mut on_resume_tx = on_resume_tx;
+        let mut before_suspend_tx = before_suspend_tx;
+        let mut after_resume_tx = after_resume_tx;
 
-        while let Some(Ok(req)) = listener_stream.next().await {
+        while let Some(Ok(req)) = blocker_stream.next().await {
             match req {
-                fsystem::ActivityGovernorListenerRequest::OnResume { .. } => {
+                fsystem::SuspendBlockerRequest::AfterResume { .. } => {
                     // OnResume never responds.
                     // Check SAG state after resume to confirm SAG doesn't block on the OnResume.
-                    on_resume_tx.try_send(()).unwrap();
+                    after_resume_tx.try_send(()).unwrap();
                 }
-                fsystem::ActivityGovernorListenerRequest::OnSuspendStarted { responder } => {
+                fsystem::SuspendBlockerRequest::BeforeSuspend { responder } => {
                     responder.send().unwrap();
-                    on_suspend_started_tx.try_send(()).unwrap();
+                    before_suspend_tx.try_send(()).unwrap();
                 }
-                fsystem::ActivityGovernorListenerRequest::_UnknownMethod { ordinal, .. } => {
+                fsystem::SuspendBlockerRequest::_UnknownMethod { ordinal, .. } => {
                     panic!("Unexpected method: {}", ordinal);
                 }
             }
@@ -896,6 +897,7 @@ async fn test_activity_governor_suspends_after_listener_hanging_on_resume() -> R
         let () =
             boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
     }
+    drop(registration_lease);
 
     // Await SAG's power elements to drop their power levels.
     block_until_inspect_matches!(
@@ -928,17 +930,34 @@ async fn test_activity_governor_suspends_after_listener_hanging_on_resume() -> R
                 "1": {
                     ref fobs::RESUME_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
-
                 "2": {
-                    ref fobs::SUSPEND_CALLBACK_PHASE_START_AT: AnyProperty,
-                 },
+                    ref fobs::SUSPEND_BLOCKER_ACQUIRED_AT: AnyProperty,
+               },
                 "3": {
-                    ref fobs::SUSPEND_CALLBACK_PHASE_END_AT: AnyProperty,
-                 },
+                    ref fobs::WAKE_LEASE_CREATED_AT: AnyProperty,
+                    ref fobs::WAKE_LEASE_ITEM_NAME: "test_suspend_blocker",
+                },
                 "4": {
-                    ref fobs::SUSPEND_LOCK_ACQUIRED_AT: AnyProperty,
+                    ref fobs::WAKE_LEASE_SATISFIED_AT: AnyProperty,
+                    ref fobs::WAKE_LEASE_ITEM_NAME: "test_suspend_blocker",
                 },
                 "5": {
+                    ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
+                    ref fobs::WAKE_LEASE_ITEM_NAME: "test_suspend_blocker",
+                },
+                "6": {
+                    ref fobs::SUSPEND_BLOCKER_DROPPED_AT: AnyProperty,
+                },
+                "7": {
+                    ref fobs::SUSPEND_CALLBACK_PHASE_START_AT: AnyProperty,
+                 },
+                "8": {
+                    ref fobs::SUSPEND_CALLBACK_PHASE_END_AT: AnyProperty,
+                 },
+                "9": {
+                    ref fobs::SUSPEND_LOCK_ACQUIRED_AT: AnyProperty,
+                },
+                "10": {
                     ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
             },
@@ -956,7 +975,7 @@ async fn test_activity_governor_suspends_after_listener_hanging_on_resume() -> R
     );
 
     // OnSuspendStarted should have been called once.
-    on_suspend_started_rx.next().await.unwrap();
+    before_suspend_rx.next().await.unwrap();
 
     assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
     suspend_device
@@ -969,7 +988,7 @@ async fn test_activity_governor_suspends_after_listener_hanging_on_resume() -> R
         .unwrap()
         .unwrap();
 
-    // Should only have been 1 suspend after all listener handling.
+    // Should only have been 1 suspend after all suspend blocker handling.
     let current_stats = stats.watch().await?;
     assert_eq!(Some(1), current_stats.success_count);
     assert_eq!(Some(0), current_stats.fail_count);
@@ -978,7 +997,7 @@ async fn test_activity_governor_suspends_after_listener_hanging_on_resume() -> R
     assert_eq!(Some(2), current_stats.total_time_in_suspend);
 
     // OnResume should have been called once.
-    on_resume_rx.next().await.unwrap();
+    after_resume_rx.next().await.unwrap();
 
     // OnResume does not block. SAG raises ExecutionState to Suspending state.
     block_until_inspect_matches!(
@@ -1007,30 +1026,30 @@ async fn test_activity_governor_suspends_after_listener_hanging_on_resume() -> R
                 ref fobs::SUSPEND_LAST_DURATION: 1u64,
             },
             ref fobs::SUSPEND_EVENTS_NODE: contains {
-                "6": {
+                "11": {
                     ref fobs::SUSPEND_RESUMED_AT: AnyProperty,
                     ref fobs::SUSPEND_LAST_TIMESTAMP: 2u64,
                     ref fobs::SUSPEND_CUMULATIVE_DURATION: 2u64,
                 },
-                "7": {
+                "12": {
                     ref fobs::SUSPEND_LOCK_DROPPED_AT: AnyProperty,
                 },
-                "8": {
+                "13": {
                     ref fobs::RESUME_CALLBACK_PHASE_START_AT: AnyProperty,
                  },
-                "9": {
+                "14": {
                     ref fobs::RESUME_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
-                "10": {
+                "15": {
                     ref fobs::SUSPEND_CALLBACK_PHASE_START_AT: AnyProperty,
                  },
-                "11": {
+                "16": {
                     ref fobs::SUSPEND_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
-                "12": {
+                "17": {
                     ref fobs::SUSPEND_LOCK_ACQUIRED_AT: AnyProperty,
                 },
-                "13": {
+                "18": {
                    ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
             },
@@ -1051,149 +1070,7 @@ async fn test_activity_governor_suspends_after_listener_hanging_on_resume() -> R
 }
 
 #[fuchsia::test]
-async fn test_activity_governor_blocks_for_on_suspend_started() -> Result<()> {
-    let (realm, _) = create_realm().await?;
-    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
-    set_up_default_suspender(&suspend_device).await;
-
-    let stats = realm.connect_to_protocol::<fsuspend::StatsMarker>().await?;
-    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
-
-    // First watch should return immediately with default values.
-    let current_stats = stats.watch().await?;
-    assert_eq!(Some(0), current_stats.success_count);
-    assert_eq!(Some(0), current_stats.fail_count);
-    assert_eq!(None, current_stats.last_failed_error);
-    assert_eq!(None, current_stats.last_time_in_suspend);
-    assert_eq!(Some(0), current_stats.total_time_in_suspend);
-
-    let (listener_client_end, mut listener_stream) = fidl::endpoints::create_request_stream();
-    activity_governor
-        .register_listener(fsystem::ActivityGovernorRegisterListenerRequest {
-            listener: Some(listener_client_end),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
-
-    let (on_suspend_started_tx, mut on_suspend_started_rx) = mpsc::channel(1);
-    fasync::Task::local(async move {
-        let mut on_suspend_started_tx = on_suspend_started_tx;
-        let mut _on_suspend_started_responder;
-
-        while let Some(Ok(req)) = listener_stream.next().await {
-            match req {
-                fsystem::ActivityGovernorListenerRequest::OnResume { responder } => {
-                    responder.send().unwrap();
-                }
-                fsystem::ActivityGovernorListenerRequest::OnSuspendStarted { responder } => {
-                    _on_suspend_started_responder = responder;
-                    on_suspend_started_tx.try_send(()).unwrap();
-                }
-                fsystem::ActivityGovernorListenerRequest::_UnknownMethod { ordinal, .. } => {
-                    panic!("Unexpected method: {}", ordinal);
-                }
-            }
-        }
-    })
-    .detach();
-
-    // Queue up a callback from `suspend_device`, to let us know when
-    // SAG requests to suspend the hardware.
-    let await_suspend = suspend_device.await_suspend();
-
-    // Call SetBootComplete to allow SAG to start suspending.
-    {
-        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
-        let () =
-            boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
-    }
-
-    // Wait to receive the OnSuspendStarted() callback.
-    on_suspend_started_rx.next().await.unwrap();
-
-    // Give SAG some time to take any further suspend actions.
-    fasync::Timer::new(fasync::MonotonicDuration::from_millis(1000)).await;
-
-    // Verify that SAG did _not_ suspend the hardware (because we did not
-    // respond to the callback).
-    assert!(await_suspend.now_or_never().is_none());
-
-    Ok(())
-}
-
-#[fuchsia::test]
-async fn test_acquire_wake_lease_doesnt_deadlock_in_on_suspend_started() -> Result<()> {
-    let (realm, _) = create_realm().await?;
-    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
-    set_up_default_suspender(&suspend_device).await;
-
-    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
-
-    let (listener_client_end, mut listener_stream) = fidl::endpoints::create_request_stream();
-    activity_governor
-        .register_listener(fsystem::ActivityGovernorRegisterListenerRequest {
-            listener: Some(listener_client_end),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
-
-    // Define the listener such that:
-    //  - OnResume notifies on_resume_tx.
-    //  - OnSuspendStarted calls AcquireWakeLease and passes the lease to on_suspend_started_rx.
-    let (on_resume_tx, mut on_resume_rx) = mpsc::channel(1);
-    let (on_suspend_started_tx, mut on_suspend_started_rx) = mpsc::channel(1);
-    fasync::Task::local(async move {
-        let mut on_resume_tx = on_resume_tx;
-        let mut on_suspend_started_tx = on_suspend_started_tx;
-
-        while let Some(Ok(req)) = listener_stream.next().await {
-            match req {
-                fsystem::ActivityGovernorListenerRequest::OnResume { responder } => {
-                    log::info!("Running OnResume");
-                    on_resume_tx.try_send(()).unwrap();
-                    responder.send().unwrap();
-                }
-                fsystem::ActivityGovernorListenerRequest::OnSuspendStarted { responder } => {
-                    log::info!("Running OnSuspendStarted");
-                    let lease = activity_governor
-                        .acquire_wake_lease("on_suspend_started_wake_lease")
-                        .await
-                        .unwrap()
-                        .unwrap();
-                    on_suspend_started_tx.try_send(lease).unwrap();
-                    responder.send().unwrap()
-                }
-                fsystem::ActivityGovernorListenerRequest::_UnknownMethod { ordinal, .. } => {
-                    panic!("Unexpected method: {}", ordinal);
-                }
-            }
-        }
-    })
-    .detach();
-
-    // Call SetBootComplete to allow SAG to start suspending.
-    {
-        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
-        let () =
-            boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
-    }
-
-    // Wait to receive the wake lease from OnSuspendStarted.
-    let _wake_lease = on_suspend_started_rx.next().await.unwrap();
-
-    // Verify that SAG did not call Suspender.Suspend due to the existence of the wake lease.
-    assert!(suspend_device.await_suspend().now_or_never().is_none());
-
-    // Now wait for the resume callback resulting from OnSuspendStarted's wake lease.
-    on_resume_rx.next().await.unwrap();
-
-    Ok(())
-}
-
-#[fuchsia::test]
-async fn test_activity_governor_handles_listener_raising_power_levels() -> Result<()> {
+async fn test_activity_governor_handles_suspend_blocker_raising_power_levels() -> Result<()> {
     let (realm, activity_governor_moniker) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
     set_up_default_suspender(&suspend_device).await;
@@ -1201,34 +1078,36 @@ async fn test_activity_governor_handles_listener_raising_power_levels() -> Resul
 
     let suspend_controller = create_suspend_topology(&realm).await?;
 
-    let (listener_client_end, mut listener_stream) = fidl::endpoints::create_request_stream();
-    activity_governor
-        .register_listener(fsystem::ActivityGovernorRegisterListenerRequest {
-            listener: Some(listener_client_end),
+    let (blocker_client_end, mut blocker_stream) = fidl::endpoints::create_request_stream();
+    let registration_lease = activity_governor
+        .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+            suspend_blocker: Some(blocker_client_end),
+            name: Some("test_suspend_blocker".into()),
             ..Default::default()
         })
         .await
-        .unwrap();
+        .expect("RegisterSuspendBlocker failed");
+    drop(registration_lease);
 
-    let (on_suspend_started_tx, mut on_suspend_started_rx) = mpsc::channel(1);
-    let (on_resume_tx, mut on_resume_rx) = mpsc::channel(1);
+    let (before_suspend_tx, mut before_suspend_rx) = mpsc::channel(1);
+    let (after_resume_tx, mut after_resume_rx) = mpsc::channel(1);
 
     fasync::Task::local(async move {
-        let mut on_suspend_started_tx = on_suspend_started_tx;
-        let mut on_resume_tx = on_resume_tx;
+        let mut before_suspend_tx = before_suspend_tx;
+        let mut after_resume_tx = after_resume_tx;
 
-        while let Some(Ok(req)) = listener_stream.next().await {
+        while let Some(Ok(req)) = blocker_stream.next().await {
             match req {
-                fsystem::ActivityGovernorListenerRequest::OnResume { responder } => {
+                fsystem::SuspendBlockerRequest::AfterResume { responder } => {
                     let suspend_lease = lease(&suspend_controller, 1).await.unwrap();
-                    on_resume_tx.try_send(suspend_lease).unwrap();
+                    after_resume_tx.try_send(suspend_lease).unwrap();
                     responder.send().unwrap();
                 }
-                fsystem::ActivityGovernorListenerRequest::OnSuspendStarted { responder } => {
+                fsystem::SuspendBlockerRequest::BeforeSuspend { responder } => {
                     responder.send().unwrap();
-                    on_suspend_started_tx.try_send(()).unwrap();
+                    before_suspend_tx.try_send(()).unwrap();
                 }
-                fsystem::ActivityGovernorListenerRequest::_UnknownMethod { ordinal, .. } => {
+                fsystem::SuspendBlockerRequest::_UnknownMethod { ordinal, .. } => {
                     panic!("Unexpected method: {}", ordinal);
                 }
             }
@@ -1241,7 +1120,7 @@ async fn test_activity_governor_handles_listener_raising_power_levels() -> Resul
     let () = boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
 
     // OnSuspendStarted should have been called.
-    on_suspend_started_rx.next().await.unwrap();
+    before_suspend_rx.next().await.unwrap();
 
     assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
     suspend_device
@@ -1254,7 +1133,7 @@ async fn test_activity_governor_handles_listener_raising_power_levels() -> Resul
         .unwrap()
         .unwrap();
 
-    // At this point, the listener should have raised the execution_state power level to 2.
+    // At this point, the suspend blocker should have raised the execution_state power level to 2.
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: {
@@ -1280,31 +1159,32 @@ async fn test_activity_governor_handles_listener_raising_power_levels() -> Resul
             },
             // Events 0 and 1 are resume callback phase start/end
             // arising from Execution State initially exiting level 0.
+            // Events 2 through 6 are for the lifecycle of `registration_lease`.
             ref fobs::SUSPEND_EVENTS_NODE: contains {
-                "2": {
+                "7": {
                     ref fobs::SUSPEND_CALLBACK_PHASE_START_AT: AnyProperty,
                  },
-                "3": {
+                "8": {
                     ref fobs::SUSPEND_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
-                "4": {
+                "9": {
                     ref fobs::SUSPEND_LOCK_ACQUIRED_AT: AnyProperty,
                  },
-                "5": {
+                "10": {
                    ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
-                "6": {
+                "11": {
                     ref fobs::SUSPEND_RESUMED_AT: AnyProperty,
                     ref fobs::SUSPEND_LAST_TIMESTAMP: 2u64,
                     ref fobs::SUSPEND_CUMULATIVE_DURATION: 2u64,
                 },
-                "7": {
+                "12": {
                     ref fobs::SUSPEND_LOCK_DROPPED_AT: AnyProperty,
                  },
-                "8": {
+                "13": {
                     ref fobs::RESUME_CALLBACK_PHASE_START_AT: AnyProperty,
                  },
-                "9": {
+                "14": {
                     ref fobs::RESUME_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
             },
@@ -1322,10 +1202,10 @@ async fn test_activity_governor_handles_listener_raising_power_levels() -> Resul
     );
 
     // Drop the lease and wait for suspend,
-    on_resume_rx.next().await.unwrap();
+    after_resume_rx.next().await.unwrap();
 
     // OnSuspendStarted should be called again.
-    on_suspend_started_rx.next().await.unwrap();
+    before_suspend_rx.next().await.unwrap();
 
     assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
     suspend_device
@@ -1338,7 +1218,7 @@ async fn test_activity_governor_handles_listener_raising_power_levels() -> Resul
         .unwrap()
         .unwrap();
 
-    // At this point, the listener should have raised the execution_state power level to 2 again.
+    // At this point, the suspend blocker should have raised the execution_state power level to 2 again.
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: {
@@ -1363,30 +1243,30 @@ async fn test_activity_governor_handles_listener_raising_power_levels() -> Resul
                 ref fobs::SUSPEND_LAST_DURATION: 1u64,
             },
             ref fobs::SUSPEND_EVENTS_NODE: contains {
-                "10": {
+                "15": {
                     ref fobs::SUSPEND_CALLBACK_PHASE_START_AT: AnyProperty,
                  },
-                "11": {
+                "16": {
                     ref fobs::SUSPEND_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
-                "12": {
+                "17": {
                     ref fobs::SUSPEND_LOCK_ACQUIRED_AT: AnyProperty,
                  },
-                "13": {
+                "18": {
                    ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
-                "14": {
+                "19": {
                     ref fobs::SUSPEND_RESUMED_AT: AnyProperty,
                     ref fobs::SUSPEND_LAST_TIMESTAMP: 3u64,
                     ref fobs::SUSPEND_CUMULATIVE_DURATION: 5u64,
                 },
-                "15": {
+                "20": {
                     ref fobs::SUSPEND_LOCK_DROPPED_AT: AnyProperty,
                  },
-                "16": {
+                "21": {
                     ref fobs::RESUME_CALLBACK_PHASE_START_AT: AnyProperty,
                  },
-                "17": {
+                "22": {
                     ref fobs::RESUME_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
             },
@@ -1745,8 +1625,8 @@ async fn test_execution_state_always_starts_at_active_power_level() -> Result<()
 }
 
 #[fuchsia::test]
-async fn test_activity_governor_take_wake_lease_raises_execution_state_to_wake_handling(
-) -> Result<()> {
+async fn test_activity_governor_take_wake_lease_raises_execution_state_to_wake_handling()
+-> Result<()> {
     let (realm, activity_governor_moniker) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
     set_up_default_suspender(&suspend_device).await;
@@ -1823,8 +1703,8 @@ async fn test_activity_governor_take_wake_lease_raises_execution_state_to_wake_h
 }
 
 #[fuchsia::test]
-async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_suspending(
-) -> Result<()> {
+async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_suspending()
+-> Result<()> {
     let (realm, activity_governor_moniker) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
     set_up_default_suspender(&suspend_device).await;
@@ -2859,8 +2739,8 @@ async fn test_suspend_blocker_receives_calls_on_suspend_resume() -> Result<()> {
 }
 
 #[fuchsia::test]
-async fn test_register_suspend_blocker_responds_with_invalid_args_error_when_missing_args(
-) -> Result<()> {
+async fn test_register_suspend_blocker_responds_with_invalid_args_error_when_missing_args()
+-> Result<()> {
     let (realm, _) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
     set_up_default_suspender(&suspend_device).await;
@@ -2913,8 +2793,8 @@ async fn test_register_suspend_blocker_responds_with_invalid_args_error_when_mis
 }
 
 #[fuchsia::test]
-async fn test_register_suspend_blocker_only_before_suspend_called_after_register_during_suspending(
-) -> Result<()> {
+async fn test_register_suspend_blocker_only_before_suspend_called_after_register_during_suspending()
+-> Result<()> {
     let (realm, _) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
     set_up_default_suspender(&suspend_device).await;
@@ -3166,7 +3046,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
         .unwrap()
         .unwrap();
 
-    // Should only have been 1 suspend after all listener handling.
+    // Should only have been 1 suspend after all suspend blocker handling.
     let current_stats = stats.watch().await?;
     assert_eq!(Some(1), current_stats.success_count);
     assert_eq!(Some(0), current_stats.fail_count);
@@ -3342,7 +3222,7 @@ async fn test_acquire_wake_lease_doesnt_deadlock_in_before_suspend() -> Result<(
         .unwrap()
         .unwrap();
 
-    // Define the listener such that:
+    // Define the suspend blocker such that:
     //  - AfterResume notifies after_resume_tx.
     //  - BeforeSuspend calls AcquireWakeLease and passes the lease to before_suspend_rx.
     let (after_resume_tx, mut after_resume_rx) = mpsc::channel(1);

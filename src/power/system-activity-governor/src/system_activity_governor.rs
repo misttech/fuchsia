@@ -10,7 +10,7 @@ use anyhow::Result;
 use async_lock::{Semaphore, SemaphoreGuardArc};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::{HangingGet, Publisher};
-use fidl::endpoints::{create_endpoints, Proxy};
+use fidl::endpoints::{Proxy, create_endpoints};
 use fidl_fuchsia_power_system::{
     self as fsystem, ApplicationActivityLevel, CpuLevel, ExecutionStateLevel,
 };
@@ -24,7 +24,7 @@ use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::stream::StreamExt;
 use power_broker_client::{
-    basic_update_fn_factory, run_power_element, LeaseHelper, PowerElementContext,
+    LeaseHelper, PowerElementContext, basic_update_fn_factory, run_power_element,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -228,7 +228,7 @@ impl LeaseManager {
                     .application_activity_assertive_dependency_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)?,
                 requires_level_by_preference: vec![
-                    ApplicationActivityLevel::Active.into_primitive()
+                    ApplicationActivityLevel::Active.into_primitive(),
                 ],
             }],
         )
@@ -403,9 +403,6 @@ pub struct SystemActivityGovernor {
     suspend_stats: SuspendStatsManager,
     /// The manager used to create and report wake and activity application leases.
     lease_manager: LeaseManager,
-    /// The collection of ActivityGovernorListener that have registered through
-    /// fuchsia.power.system.ActivityGovernor/RegisterListener.
-    listeners: RefCell<Vec<fsystem::ActivityGovernorListenerProxy>>,
     /// The collection of fsystem::SuspendBlockerProxy that have
     /// been registered through
     /// fuchsia.power.system.ActivityGovernor/RegisterSuspendBlocker.
@@ -569,7 +566,6 @@ impl SystemActivityGovernor {
             application_activity,
             suspend_stats,
             lease_manager,
-            listeners: RefCell::new(Vec::new()),
             suspend_blockers: RefCell::new(Vec::new()),
             pending_suspend_blockers: RefCell::new(Vec::new()),
             cpu_manager,
@@ -672,9 +668,9 @@ impl SystemActivityGovernor {
                         } else if previous_power_level.get()
                             == ExecutionStateLevel::Inactive.into_primitive()
                         {
-                            // If leaving Inactive, we need to notify listeners that we exited
-                            // suspend. This cannot block, as a listener may need to raise Execution
-                            // State.
+                            // If leaving Inactive, we need to notify suspend blockers that we
+                            // exited suspend. This cannot block, as a suspend blocker may need to
+                            // raise Execution State.
                             let this2 = this.clone();
                             fasync::Task::local(async move {
                                 this2.notify_on_resume().await;
@@ -846,15 +842,6 @@ impl SystemActivityGovernor {
                             "Encountered error while responding to AcquireWakeLease request"
                         );
                     }
-                }
-                Ok(fsystem::ActivityGovernorRequest::RegisterListener { responder, payload }) => {
-                    match payload.listener {
-                        Some(listener) => {
-                            self.listeners.borrow_mut().push(listener.into_proxy());
-                        }
-                        None => log::warn!("No listener provided in request"),
-                    }
-                    let _ = responder.send();
                 }
                 Ok(fsystem::ActivityGovernorRequest::RegisterSuspendBlocker {
                     responder,
@@ -1118,65 +1105,14 @@ impl SuspendResumeListener for SystemActivityGovernor {
     }
 
     async fn notify_on_suspend(&self) {
-        self.update_suspend_blockers(true).await;
-
-        // A client may call RegisterListener while handling on_suspend which may cause another
-        // mutable borrow of listeners. Clone the listeners to prevent this.
-        let listeners: Vec<_> = self.listeners.borrow_mut().clone();
-
-        log::info!("Running on-suspend callbacks ({} listeners)", listeners.len());
         self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseStarted);
-
-        // Run the callbacks concurrently.
-        // TODO(b/393212343): Include listeners' names in log messages once we have names for them.
-        futures::stream::iter(listeners)
-            .enumerate()
-            .for_each_concurrent(None, |(i, listener)| async move {
-                let _warn_task = fasync::Task::local(async move {
-                    loop {
-                        fasync::Timer::new(fasync::MonotonicDuration::from_seconds(10)).await;
-                        log::warn!(
-                            "No response from on_suspend_started from listener {} after 10 \
-                            seconds!",
-                            i
-                        );
-                    }
-                });
-                let _ = listener.on_suspend_started().await;
-            })
-            .await;
+        self.update_suspend_blockers(true).await;
         self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseEnded);
     }
 
     async fn notify_on_resume(&self) {
-        self.update_suspend_blockers(false).await;
-
-        // A client may call RegisterListener while handling on_suspend which may cause another
-        // mutable borrow of listeners. Clone the listeners to prevent this.
-        let listeners: Vec<_> = self.listeners.borrow_mut().clone();
-
-        log::info!("Running on-resume callbacks ({} listeners)", listeners.len());
         self.sag_event_logger.log(SagEvent::ResumeCallbackPhaseStarted);
-
-        // Run the callbacks concurrently.
-        // TODO(b/393212343): Include listeners' names in log messages once we have names for them.
-        futures::stream::iter(listeners)
-            .enumerate()
-            .for_each_concurrent(None, |(i, listener)| async move {
-                // Arguably, OnResume shouldn't yield a response at all, but given that it does,
-                // we'll log if a call takes a very long time to complete.
-                let _warn_task = fasync::Task::local(async move {
-                    loop {
-                        fasync::Timer::new(fasync::MonotonicDuration::from_seconds(10)).await;
-                        log::warn!(
-                            "No response from on_resume from listener {} after 10 seconds!",
-                            i,
-                        );
-                    }
-                });
-                let _ = listener.on_resume().await;
-            })
-            .await;
+        self.update_suspend_blockers(false).await;
         self.sag_event_logger.log(SagEvent::ResumeCallbackPhaseEnded);
     }
 }

@@ -7,8 +7,8 @@ use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_power_broker::{self as fbroker, LeaseStatus};
 use fidl_fuchsia_power_system::{self as fsystem, ApplicationActivityLevel, ExecutionStateLevel};
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
-use futures::channel::mpsc;
 use futures::StreamExt;
+use futures::channel::mpsc;
 use log::*;
 use power_broker_client::PowerElementContext;
 use {fidl_test_sagcontrol as fctrl, fuchsia_async as fasync};
@@ -113,7 +113,7 @@ async fn create_test_env() -> TestEnv {
 }
 
 #[fuchsia::test]
-async fn test_fsystem_activity_governor_listener_and_get_power_element() -> Result<()> {
+async fn test_fsystem_activity_governor_suspend_blocker_and_get_power_element() -> Result<()> {
     let env = create_test_env().await;
 
     let activity_governor = env.connect_to_protocol::<fsystem::ActivityGovernorMarker>();
@@ -155,33 +155,35 @@ async fn test_fsystem_activity_governor_listener_and_get_power_element() -> Resu
             .build()
             .await?;
 
-    let (listener_client_end, mut listener_stream) = fidl::endpoints::create_request_stream();
-    activity_governor
-        .register_listener(fsystem::ActivityGovernorRegisterListenerRequest {
-            listener: Some(listener_client_end),
+    let (blocker_client_end, mut blocker_stream) = fidl::endpoints::create_request_stream();
+    let registration_lease = activity_governor
+        .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+            suspend_blocker: Some(blocker_client_end),
+            name: Some("test_suspend_blocker".into()),
             ..Default::default()
         })
         .await
-        .unwrap();
+        .expect("RegisterSuspendBlocker failed");
+    drop(registration_lease);
 
-    let (on_suspend_started_tx, mut on_suspend_started_rx) = mpsc::channel(1);
+    let (on_suspend_tx, mut on_suspend_rx) = mpsc::channel(1);
     let (on_resume_tx, mut on_resume_rx) = mpsc::channel(1);
 
     fasync::Task::local(async move {
-        let mut on_suspend_started_tx = on_suspend_started_tx;
+        let mut on_suspend_tx = on_suspend_tx;
         let mut on_resume_tx = on_resume_tx;
 
-        while let Some(Ok(req)) = listener_stream.next().await {
+        while let Some(Ok(req)) = blocker_stream.next().await {
             match req {
-                fsystem::ActivityGovernorListenerRequest::OnResume { responder } => {
+                fsystem::SuspendBlockerRequest::AfterResume { responder } => {
                     responder.send().unwrap();
                     on_resume_tx.try_send(()).unwrap();
                 }
-                fsystem::ActivityGovernorListenerRequest::OnSuspendStarted { responder } => {
+                fsystem::SuspendBlockerRequest::BeforeSuspend { responder } => {
                     responder.send().unwrap();
-                    on_suspend_started_tx.try_send(()).unwrap();
+                    on_suspend_tx.try_send(()).unwrap();
                 }
-                fsystem::ActivityGovernorListenerRequest::_UnknownMethod { ordinal, .. } => {
+                fsystem::SuspendBlockerRequest::_UnknownMethod { ordinal, .. } => {
                     panic!("Unexpected method: {}", ordinal);
                 }
             }
@@ -223,7 +225,7 @@ async fn test_fsystem_activity_governor_listener_and_get_power_element() -> Resu
     assert_eq!(sag_ctrl_state.watch().await.unwrap(), current_state);
 
     // OnSuspendStarted and OnResume should have been called once.
-    on_suspend_started_rx.next().await.unwrap();
+    on_suspend_rx.next().await.unwrap();
     on_resume_rx.next().await.unwrap();
 
     let lease_control = test_driver_controller
