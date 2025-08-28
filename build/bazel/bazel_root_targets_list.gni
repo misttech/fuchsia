@@ -37,6 +37,12 @@ declare_args() {
     },
     {
       bazel_label = "//build/tools/bazel2gn"
+      copy_outputs = [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_DIR}}/bazel2gn_/bazel2gn"
+          ninja = "bazel2gn"
+        },
+      ]
     },
   ]
 
@@ -82,6 +88,10 @@ foreach(_root_target,
       host_bin_label = "//build/bazel/host:bazel_root_host_tools.${_ninja_name}($host_toolchain)"
       gn_subtarget_label = "//build/bazel/host:bazel_root_targets.${_ninja_name}($default_toolchain)"
       install_host_tool = _install_host_tool
+
+      if (defined(_root_target.copy_outputs)) {
+        copy_outputs = _root_target.copy_outputs
+      }
     },
   ]
 }

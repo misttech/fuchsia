@@ -39,12 +39,16 @@ if (current_toolchain == default_toolchain) {
           gn_target_name =
               get_label_info(_root_target.gn_subtarget_label, "name")
 
-          copy_outputs = [
-            {
-              bazel = "{{BAZEL_TARGET_OUT_DIR}}/${_root_target.bazel_name}"
-              ninja = _root_target.ninja_name
-            },
-          ]
+          if (defined(_root_target.copy_outputs)) {
+            copy_outputs = _root_target.copy_outputs
+          } else {
+            copy_outputs = [
+              {
+                bazel = "{{BAZEL_TARGET_OUT_DIR}}/${_root_target.bazel_name}"
+                ninja = _root_target.ninja_name
+              },
+            ]
+          }
         },
       ]
     }

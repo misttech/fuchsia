@@ -25,9 +25,6 @@ go_binary(
     srcs = [
         "cmd/main.go",
     ],
-    # TODO(jayzhuang): In root targets, copy with mode-specific directory prefix
-    # instead.
-    out = "bazel2gn",
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         ":bazel2gn_lib",
