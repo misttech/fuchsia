@@ -121,7 +121,7 @@ fn main() -> Result<(), Error> {
         .light_configuration(light_configuration)
         .setting_proxy_inspect_info(
             setting_proxy_inspect_info.node(),
-            Rc::new(Mutex::new(listener_inspect_logger)),
+            Rc::new(listener_inspect_logger),
         )
         .storage_dir(storage_dir)
         .store_proxy(store_proxy)

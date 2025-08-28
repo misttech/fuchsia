@@ -224,7 +224,7 @@ pub struct EnvironmentBuilder<'a, T: StorageFactory<Storage = DeviceStorage>> {
     settings: Vec<SettingType>,
     handlers: HashMap<SettingType, GenerateHandler>,
     setting_proxy_inspect_info: Option<&'a fuchsia_inspect::Node>,
-    active_listener_inspect_logger: Option<Rc<Mutex<ListenerInspectLogger>>>,
+    active_listener_inspect_logger: Option<Rc<ListenerInspectLogger>>,
     storage_dir: Option<DirectoryProxy>,
     store_proxy: Option<StoreProxy>,
     fidl_storage_factory: Option<Rc<FidlStorageFactory>>,
@@ -371,7 +371,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
     pub fn setting_proxy_inspect_info(
         mut self,
         setting_proxy_inspect_info: &'a fuchsia_inspect::Node,
-        active_listener_inspect_logger: Rc<Mutex<ListenerInspectLogger>>,
+        active_listener_inspect_logger: Rc<ListenerInspectLogger>,
     ) -> Self {
         self.setting_proxy_inspect_info = Some(setting_proxy_inspect_info);
         self.active_listener_inspect_logger = Some(active_listener_inspect_logger);
@@ -510,6 +510,10 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             context_id_counter.clone(),
         );
 
+        let listener_logger = self
+            .active_listener_inspect_logger
+            .unwrap_or_else(|| Rc::new(ListenerInspectLogger::new()));
+
         EnvironmentBuilder::register_setting_handlers(
             &settings,
             Rc::clone(&self.storage_factory),
@@ -551,8 +555,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             self.storage_factory,
             fidl_storage_factory,
             self.setting_proxy_inspect_info.unwrap_or_else(|| component::inspector().root()),
-            self.active_listener_inspect_logger
-                .unwrap_or_else(|| Rc::new(Mutex::new(ListenerInspectLogger::new()))),
+            listener_logger,
         )
         .await
         .context("Could not create environment")?;
@@ -837,7 +840,7 @@ async fn create_environment<'a, T, F>(
     device_storage_factory: Rc<T>,
     fidl_storage_factory: Rc<F>,
     setting_proxies_node: &fuchsia_inspect::Node,
-    listener_logger: Rc<Mutex<ListenerInspectLogger>>,
+    listener_logger: Rc<ListenerInspectLogger>,
 ) -> Result<HashSet<Entity>, Error>
 where
     T: StorageFactory<Storage = DeviceStorage> + 'static,

@@ -150,7 +150,7 @@ pub(crate) struct SettingProxy {
     error_count: usize,
 
     /// Inspect logger for active listener counts.
-    listener_logger: Rc<Mutex<ListenerInspectLogger>>,
+    listener_logger: Rc<ListenerInspectLogger>,
 }
 
 struct NodeError {
@@ -179,7 +179,7 @@ impl SettingProxy {
         request_timeout: Option<MonotonicDuration>,
         retry_on_timeout: bool,
         node: fuchsia_inspect::Node,
-        listener_logger: Rc<Mutex<ListenerInspectLogger>>,
+        listener_logger: Rc<ListenerInspectLogger>,
     ) -> Result<service::message::Signature, Error> {
         let (messenger, receptor) = delegate
             .create(MessengerType::Addressable(service::Address::Handler(setting_type)))
@@ -343,7 +343,7 @@ impl SettingProxy {
             }
             ProxyRequest::EndListen(request_id) => {
                 trace!(id, c"handle end listen");
-                self.listener_logger.lock().await.remove_listener(self.setting_type);
+                self.listener_logger.remove_listener(format!("{:?}", self.setting_type));
                 self.handle_end_listen(request_id).await;
             }
         }
@@ -644,7 +644,7 @@ impl SettingProxy {
             let info = active_request.get_info();
 
             // Increment the active listener count in inspect.
-            self.listener_logger.lock().await.add_listener(self.setting_type);
+            self.listener_logger.add_listener(format!("{:?}", self.setting_type));
 
             // Add the request to tracked listen requests.
             self.listen_requests.push(info.clone());

@@ -238,8 +238,7 @@ impl TestEnvironmentBuilder {
         let handler_factory = Rc::new(Mutex::new(FakeFactory::new(delegate.clone())));
 
         let inspector = Inspector::default();
-        let listener_logger =
-            Rc::new(Mutex::new(ListenerInspectLogger::with_inspector(&inspector)));
+        let listener_logger = Rc::new(ListenerInspectLogger::with_inspector(&inspector));
         let proxy_handler_signature = SettingProxy::create(
             self.setting_type,
             handler_factory.clone(),
@@ -539,7 +538,7 @@ async fn inspect_catches_errors() {
         None,
         false,
         inspector.root().create_child("test"),
-        Rc::new(Mutex::new(ListenerInspectLogger::with_inspector(&inspector))),
+        Rc::new(ListenerInspectLogger::with_inspector(&inspector)),
     )
     .await
     .expect("proxy creation should succeed");
@@ -625,7 +624,7 @@ async fn inspect_errors_roll_after_limit() {
         None,
         false,
         inspector.root().create_child("test"),
-        Rc::new(Mutex::new(ListenerInspectLogger::with_inspector(&inspector))),
+        Rc::new(ListenerInspectLogger::with_inspector(&inspector)),
     )
     .await
     .expect("proxy creation should succeed");
