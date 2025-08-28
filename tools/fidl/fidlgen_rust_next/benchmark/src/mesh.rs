@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{generate_vec, make_rng, Generate};
+use crate::{Generate, generate_vec, make_rng};
 use {fidl_next_test_benchmark as ftb_next, fidl_test_benchmark as ftb};
 
 impl_generate! {

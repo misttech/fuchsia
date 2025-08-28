@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use fidl_next_codec::{Encode, EncodeError, EncoderExt};
 
 use crate::lockers::Lockers;
-use crate::{decode_header, encode_header, ProtocolError, SendFuture, Transport, TransportExt};
+use crate::{ProtocolError, SendFuture, Transport, TransportExt, decode_header, encode_header};
 
 use super::lockers::LockerError;
 

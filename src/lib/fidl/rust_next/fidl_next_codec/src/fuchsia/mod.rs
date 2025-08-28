@@ -7,8 +7,8 @@
 mod handle;
 mod handle_types;
 
-use zx::sys::zx_handle_t;
 use zx::Handle;
+use zx::sys::zx_handle_t;
 
 use crate::decoder::InternalHandleDecoder;
 use crate::encoder::InternalHandleEncoder;

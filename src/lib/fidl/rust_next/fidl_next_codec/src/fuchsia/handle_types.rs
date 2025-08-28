@@ -6,12 +6,12 @@ use core::mem::MaybeUninit;
 
 use crate::fuchsia::{HandleDecoder, HandleEncoder, WireHandle, WireOptionalHandle};
 use crate::{
-    munge, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption,
-    FromWire, FromWireOption, Slot, Wire,
+    Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
+    FromWireOption, Slot, Wire, munge,
 };
 
-use zx::sys::zx_handle_t;
 use zx::Handle;
+use zx::sys::zx_handle_t;
 
 macro_rules! define_wire_handle_types {
     ($($wire:ident($wire_optional:ident): $natural:ident),* $(,)?) => { $(

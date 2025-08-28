@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use core::fmt;
-use core::mem::{forget, MaybeUninit};
+use core::mem::{MaybeUninit, forget};
 use core::ptr::NonNull;
 
 use munge::munge;
@@ -78,11 +78,7 @@ impl<T> WireBox<'_, T> {
     pub fn into_option(self) -> Option<T> {
         let ptr = self.ptr.as_ptr();
         forget(self);
-        if ptr.is_null() {
-            None
-        } else {
-            unsafe { Some(ptr.read()) }
-        }
+        if ptr.is_null() { None } else { unsafe { Some(ptr.read()) } }
     }
 }
 

@@ -140,10 +140,6 @@ impl<T> Lockers<T> {
     /// Gets the locker corresponding to the given index.
     pub fn get(&mut self, index: u32) -> Option<&mut Locker<T>> {
         let locker = self.lockers.get_mut(index as usize)?;
-        if matches!(locker, Locker::Free(_)) {
-            None
-        } else {
-            Some(locker)
-        }
+        if matches!(locker, Locker::Free(_)) { None } else { Some(locker) }
     }
 }

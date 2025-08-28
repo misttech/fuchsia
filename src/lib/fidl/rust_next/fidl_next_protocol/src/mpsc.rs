@@ -11,10 +11,10 @@ use core::pin::Pin;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::task::{Context, Poll};
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 
 use fidl_next_codec::decoder::InternalHandleDecoder;
-use fidl_next_codec::{Chunk, DecodeError, Decoder, CHUNK_SIZE};
+use fidl_next_codec::{CHUNK_SIZE, Chunk, DecodeError, Decoder};
 use futures::task::AtomicWaker;
 
 use crate::Transport;

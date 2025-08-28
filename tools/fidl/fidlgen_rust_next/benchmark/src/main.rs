@@ -10,7 +10,7 @@ mod minecraft;
 
 use core::mem::MaybeUninit;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use fidl_next::{DecoderExt as _, EncoderExt as _, Wire};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng as _};
@@ -39,11 +39,7 @@ impl<T: Generate> Generate for Box<T> {
 
 impl<T: Generate> Generate for Option<T> {
     fn generate(rng: &mut impl Rng) -> Self {
-        if rng.random_bool(0.5) {
-            Some(T::generate(rng))
-        } else {
-            None
-        }
+        if rng.random_bool(0.5) { Some(T::generate(rng)) } else { None }
     }
 }
 

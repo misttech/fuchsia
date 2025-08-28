@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use core::fmt;
-use core::mem::{forget, MaybeUninit};
+use core::mem::{MaybeUninit, forget};
 
-use zx::sys::{zx_handle_t, ZX_HANDLE_INVALID};
 use zx::Handle;
+use zx::sys::{ZX_HANDLE_INVALID, zx_handle_t};
 
 use crate::fuchsia::{HandleDecoder, HandleEncoder};
 use crate::{
-    munge, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption,
-    FromWire, FromWireOption, Slot, Wire, WireU32,
+    Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
+    FromWireOption, Slot, Wire, WireU32, munge,
 };
 
 /// A Zircon handle.

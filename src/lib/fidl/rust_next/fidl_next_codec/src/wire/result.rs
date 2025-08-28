@@ -7,8 +7,8 @@ use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 
 use crate::{
-    munge, Chunk, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder,
-    FromWire, FromWireRef, RawWireUnion, Slot, Wire,
+    Chunk, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder,
+    FromWire, FromWireRef, RawWireUnion, Slot, Wire, munge,
 };
 
 /// A FIDL result union.

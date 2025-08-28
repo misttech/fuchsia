@@ -10,8 +10,8 @@ use munge::munge;
 use crate::decoder::InternalHandleDecoder;
 use crate::encoder::InternalHandleEncoder;
 use crate::{
-    Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError, Encoder, EncoderExt as _,
-    Slot, Wire, WireU16, WireU32, CHUNK_SIZE,
+    CHUNK_SIZE, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError, Encoder,
+    EncoderExt as _, Slot, Wire, WireU16, WireU32,
 };
 
 #[derive(Clone, Copy)]

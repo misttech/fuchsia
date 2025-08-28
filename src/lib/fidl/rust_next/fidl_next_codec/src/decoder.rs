@@ -8,7 +8,7 @@ use core::mem::take;
 use core::ptr::NonNull;
 use core::slice;
 
-use crate::{Chunk, Decode, DecodeError, Decoded, Slot, CHUNK_SIZE};
+use crate::{CHUNK_SIZE, Chunk, Decode, DecodeError, Decoded, Slot};
 
 /// A decoder for FIDL handles (internal).
 pub trait InternalHandleDecoder {

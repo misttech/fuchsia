@@ -14,12 +14,12 @@ use std::sync::Arc;
 use fidl_next_codec::decoder::InternalHandleDecoder;
 use fidl_next_codec::encoder::InternalHandleEncoder;
 use fidl_next_codec::fuchsia::{HandleDecoder, HandleEncoder};
-use fidl_next_codec::{Chunk, DecodeError, Decoder, EncodeError, Encoder, CHUNK_SIZE};
+use fidl_next_codec::{CHUNK_SIZE, Chunk, DecodeError, Decoder, EncodeError, Encoder};
 use fuchsia_async::{RWHandle, ReadableHandle as _};
 use futures::task::AtomicWaker;
 use zx::sys::{
-    zx_channel_read, zx_channel_write, zx_handle_t, ZX_ERR_BUFFER_TOO_SMALL, ZX_ERR_PEER_CLOSED,
-    ZX_ERR_SHOULD_WAIT, ZX_OK,
+    ZX_ERR_BUFFER_TOO_SMALL, ZX_ERR_PEER_CLOSED, ZX_ERR_SHOULD_WAIT, ZX_OK, zx_channel_read,
+    zx_channel_write, zx_handle_t,
 };
 use zx::{AsHandleRef as _, Channel, Handle, HandleBased, Status};
 
@@ -360,8 +360,8 @@ mod tests {
 
     use fidl_next_codec::fuchsia::{HandleDecoder, HandleEncoder, WireHandle};
     use fidl_next_codec::{
-        munge, Decode, DecodeError, DecoderExt as _, Encodable, Encode, EncodeError,
-        EncoderExt as _, FromWire, Slot, Wire, WireString,
+        Decode, DecodeError, DecoderExt as _, Encodable, Encode, EncodeError, EncoderExt as _,
+        FromWire, Slot, Wire, WireString, munge,
     };
     use fuchsia_async as fasync;
     use zx::{AsHandleRef, Channel, Handle, HandleBased as _, Instant, Signals, WaitResult};

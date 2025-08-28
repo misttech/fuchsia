@@ -6,7 +6,7 @@ use fidl_next_codec::{
     DecodeError, DecoderExt as _, EncodeError, EncoderExt as _, WireU32, WireU64,
 };
 
-use crate::{Transport, WireMessageHeader, FLAG_0_WIRE_FORMAT_V2_BIT, MAGIC_NUMBER};
+use crate::{FLAG_0_WIRE_FORMAT_V2_BIT, MAGIC_NUMBER, Transport, WireMessageHeader};
 
 /// Encodes a message into the given buffer.
 pub fn encode_header<T: Transport>(

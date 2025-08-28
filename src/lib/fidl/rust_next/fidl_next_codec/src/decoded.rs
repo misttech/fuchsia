@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use core::fmt;
-use core::mem::{forget, ManuallyDrop};
+use core::mem::{ManuallyDrop, forget};
 use core::ops::Deref;
 use core::ptr::NonNull;
 

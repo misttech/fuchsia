@@ -7,8 +7,8 @@ use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 
 use fidl_next_codec::{
-    munge, Chunk, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder,
-    FromWire, FromWireRef, RawWireUnion, Slot, Wire, WireResult,
+    Chunk, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder,
+    FromWire, FromWireRef, RawWireUnion, Slot, Wire, WireResult, munge,
 };
 
 use crate::{FrameworkError, WireFrameworkError};
@@ -308,11 +308,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use fidl_next_codec::{chunks, WireI32};
+    use fidl_next_codec::{WireI32, chunks};
 
     use super::{FlexibleResult, WireFlexibleResult};
-    use crate::testing::{assert_decoded, assert_encoded};
     use crate::FrameworkError;
+    use crate::testing::{assert_decoded, assert_encoded};
 
     #[test]
     fn encode_flexible_result() {

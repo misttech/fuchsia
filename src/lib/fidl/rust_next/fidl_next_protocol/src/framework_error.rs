@@ -7,8 +7,8 @@ use core::hint::unreachable_unchecked;
 use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
-    munge, Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, FromWire, FromWireRef,
-    Slot, Wire, WireI32,
+    Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, FromWire, FromWireRef, Slot,
+    Wire, WireI32, munge,
 };
 
 /// An internal framework error.

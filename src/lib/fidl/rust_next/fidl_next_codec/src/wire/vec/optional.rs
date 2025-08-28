@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::mem::{needs_drop, MaybeUninit};
+use core::mem::{MaybeUninit, needs_drop};
 use core::{fmt, slice};
 
 use munge::munge;
@@ -65,11 +65,7 @@ impl<'de, T> WireOptionalVector<'de, T> {
 
     /// Gets a reference to the vector, if any.
     pub fn as_ref(&self) -> Option<&WireVector<'_, T>> {
-        if self.is_some() {
-            Some(unsafe { &*(self as *const Self).cast() })
-        } else {
-            None
-        }
+        if self.is_some() { Some(unsafe { &*(self as *const Self).cast() }) } else { None }
     }
 
     /// Converts the optional wire vector to an `Option<WireVector>`.

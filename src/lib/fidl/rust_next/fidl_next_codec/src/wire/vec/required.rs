@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use core::marker::PhantomData;
-use core::mem::{forget, needs_drop, MaybeUninit};
+use core::mem::{MaybeUninit, forget, needs_drop};
 use core::ops::Deref;
-use core::ptr::{copy_nonoverlapping, NonNull};
+use core::ptr::{NonNull, copy_nonoverlapping};
 use core::{fmt, slice};
 
 use munge::munge;

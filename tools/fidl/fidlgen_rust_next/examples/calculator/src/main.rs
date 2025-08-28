@@ -96,8 +96,8 @@ fn make_transport() -> (Endpoint, Endpoint) {
     }
 }
 
-async fn create_endpoints(
-) -> (ClientSender<Calculator, Endpoint>, Task<()>, ServerSender<Calculator, Endpoint>, Task<()>) {
+async fn create_endpoints()
+-> (ClientSender<Calculator, Endpoint>, Task<()>, ServerSender<Calculator, Endpoint>, Task<()>) {
     let (client_transport, server_transport) = make_transport();
 
     let client_end = ClientEnd::<Calculator, _>::from_untyped(client_transport);

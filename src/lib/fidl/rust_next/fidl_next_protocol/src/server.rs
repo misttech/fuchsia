@@ -9,7 +9,7 @@ use core::num::NonZeroU32;
 
 use fidl_next_codec::{Encode, EncodeError, EncoderExt as _};
 
-use crate::{decode_header, encode_header, ProtocolError, SendFuture, Transport, TransportExt};
+use crate::{ProtocolError, SendFuture, Transport, TransportExt, decode_header, encode_header};
 
 /// A responder for a two-way message.
 #[must_use]

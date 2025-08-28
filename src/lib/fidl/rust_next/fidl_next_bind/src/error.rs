@@ -47,10 +47,6 @@ pub enum Error<
 
 impl<E> From<Option<E>> for Error<E> {
     fn from(value: Option<E>) -> Self {
-        if let Some(e) = value {
-            Self::Transport(e)
-        } else {
-            Self::Closed
-        }
+        if let Some(e) = value { Self::Transport(e) } else { Self::Closed }
     }
 }
