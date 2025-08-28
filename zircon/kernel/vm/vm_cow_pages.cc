@@ -470,7 +470,8 @@ class VmCowPages::TreeWalkCursor
     }
     MoveCurLocked(
         cur, sibling,
-        CheckedSub(cumulative_parent_offset_, cur->parent_offset_) + sibling->parent_offset_);
+        CheckedSub(cumulative_parent_offset_, cur->parent_offset_) + sibling->parent_offset_,
+        debug_depth_);
   }
 
   // Inform the cursor that the root node is going away. Since a node can only be removed if it has
@@ -492,7 +493,9 @@ class VmCowPages::TreeWalkCursor
     // If the cursor was still pointing at the root then also move it. Although this would get
     // updated by a separate call to MergeToChild anyway, it's preferable to maintain the invariant.
     if (cur_ == root) {
-      MoveCurLocked(root, child, cumulative_parent_offset_ + child->parent_offset_);
+      MoveCurLocked(root, child, cumulative_parent_offset_ + child->parent_offset_, debug_depth_);
+    } else {
+      debug_depth_--;
     }
     root->root_cursor_list_.erase(*this);
     child->root_cursor_list_.push_back(this);
@@ -503,7 +506,11 @@ class VmCowPages::TreeWalkCursor
   void MergeToChild(VmCowPages* cur, VmCowPages* child) TA_REQ(cur->lock()) TA_REQ(child->lock()) {
     Guard<CriticalMutex> guard{&lock_};
     DEBUG_ASSERT(child->parent_.get() == cur);
-    MoveCurLocked(cur, child, cumulative_parent_offset_ + child->parent_offset_);
+
+    DEBUG_ASSERT(cur != root_);
+    uint32_t new_depth = (cur == root_) ? debug_depth_ : (debug_depth_ - 1);
+
+    MoveCurLocked(cur, child, cumulative_parent_offset_ + child->parent_offset_, new_depth);
   }
 
   // Inform the cursor that both the current node and its parent are going away and the cursor
@@ -528,7 +535,8 @@ class VmCowPages::TreeWalkCursor
         EraseLocked(cur, parent);
         return;
       }
-      MoveCurLocked(cur, parent, CheckedSub(cumulative_parent_offset_, cur->parent_offset_));
+      MoveCurLocked(cur, parent, CheckedSub(cumulative_parent_offset_, cur->parent_offset_),
+                    debug_depth_);
     }
     MoveToNextSibling(parent);
   }
@@ -565,8 +573,10 @@ class VmCowPages::TreeWalkCursor
             // to drop child_ref and store a raw LockedPtr of child.
             DEBUG_ASSERT(parent.locked().life_cycle_ == LifeCycle::Alive &&
                          child.locked().life_cycle_ == LifeCycle::Alive);
+
             MoveCurLocked(&parent.locked(), &child.locked(),
-                          cumulative_parent_offset_ + child.locked().parent_offset_);
+                          cumulative_parent_offset_ + child.locked().parent_offset_,
+                          (debug_depth_ + 1));
             cur_locked_ = ktl::move(child);
             // cur_ is updated and cur_locked_ holds a lock acquired with the correct order so we
             // can directly return and do not need to use UpdateCurLocked to reacquire.
@@ -611,6 +621,8 @@ class VmCowPages::TreeWalkCursor
 
   // Retrieve a reference to the current node.
   const LockedPtr& GetCur() const { return cur_locked_; }
+
+  int32_t DebugGetDepth() const { return debug_depth_; }
 
  private:
   // Helper for moving cur_ to the next sibling. The |start| location, which must be equal to cur_
@@ -672,7 +684,8 @@ class VmCowPages::TreeWalkCursor
         DEBUG_ASSERT(start == cur_);
         MoveCurLocked(start, &sibling.locked(),
                       CheckedSub(offset, cur.locked_or(start).parent_offset_) +
-                          sibling.locked().parent_offset_);
+                          sibling.locked().parent_offset_,
+                      debug_depth_);
         return;
       }
       // Raced with a modification, need to go around again and see what the state of the tree is
@@ -718,11 +731,13 @@ class VmCowPages::TreeWalkCursor
     cur->cur_cursor_list_.erase(*this);
     root->root_cursor_list_.erase(*this);
     cur_ = root_ = nullptr;
+    debug_depth_ = 0;
   }
 
   // Helper to update the current location of the cursor.
-  void MoveCurLocked(VmCowPages* old_cur, VmCowPages* new_cur, uint64_t new_offset) TA_REQ(lock_)
-      TA_REQ(old_cur->lock()) TA_REQ(new_cur->lock()) {
+  void MoveCurLocked(VmCowPages* old_cur, VmCowPages* new_cur, uint64_t new_offset,
+                     uint32_t new_depth) TA_REQ(lock_) TA_REQ(old_cur->lock())
+      TA_REQ(new_cur->lock()) {
     DEBUG_ASSERT(old_cur == cur_);
     DEBUG_ASSERT(new_cur != root_);
     // Validate there is no cur_locked_, and so we can update this without racing with any readers
@@ -731,6 +746,7 @@ class VmCowPages::TreeWalkCursor
     cumulative_parent_offset_ = new_offset;
     old_cur->cur_cursor_list_.erase(*this);
     new_cur->cur_cursor_list_.push_back(this);
+    debug_depth_ = new_depth;
     cur_ = new_cur;
   }
 
@@ -777,6 +793,10 @@ class VmCowPages::TreeWalkCursor
   // change, using AssertHeld is dangerous as it can provide a false sense of correctness.
   VmCowPages* root_ TA_GUARDED(lock_) = nullptr;
   VmCowPages* cur_ TA_GUARDED(lock_) = nullptr;
+
+  // Probably depth of cur_ with respect to root_. As the cow-pages has a fine-grained lock, there
+  // is a chance that a node outside of the lock races and it becomes inaccurate.
+  int32_t debug_depth_ = 0;
 
   // Whenever the cursor is valid, then cur_locked_ is a LockedPtr to cur_. This lock is only
   // dropped internally when walking between nodes. Storing this internally, instead of returning it
@@ -1315,11 +1335,12 @@ zx_status_t VmCowPages::DebugForEachDescendant(
     fit::function<bool(VmCowPages* cow, uint depth)> visit) {
   auto cursor = TreeWalkCursor{LockedPtr(this)};
 
-  // TODO(https://fxbug.dev/438581232): Add depth formatting
-  int depth = 0;
   do {
     AssertHeld(cursor.GetCur()->lock_ref());
+    int32_t approx_depth = cursor.DebugGetDepth();
+    uint32_t depth = (approx_depth < 0) ? 0 : approx_depth;
     auto status = visit(cursor.GetCur().get(), depth);
+
     if (status != ZX_OK) {
       return status;
     }
@@ -2165,9 +2186,9 @@ void VmCowPages::DumpLocked(uint depth, bool verbose) const {
     printf("  ");
   }
   printf("cow_pages %p %ssize %#" PRIx64 " offset %#" PRIx64 " limit %#" PRIx64
-         " content pages %zu compressed pages %zu ref %d parent %p\n",
+         " content pages %zu compressed pages %zu ref %d parent %p num children %u\n",
          this, node_type, size_, parent_offset_, parent_limit_, page_count, compressed_count,
-         ref_count_debug(), parent_.get());
+         ref_count_debug(), parent_.get(), children_list_len_);
 
   if (page_source_) {
     for (uint i = 0; i < depth + 1; ++i) {
@@ -7339,7 +7360,7 @@ bool VmCowPages::DebugValidateHierarchyLocked() TA_REQ(lock()) {
   // Iterate whole hierarchy; the iteration order doesn't matter.  Since there are cases with
   // >2 children, in-order isn't well defined, so we choose pre-order, but post-order would also
   // be fine.
-  zx_status_t status = parent_most->DebugForEachDescendant([this](VmCowPages* cur, int depth) {
+  zx_status_t status = parent_most->DebugForEachDescendant([this](VmCowPages* cur, uint depth) {
     AssertHeld(cur->lock_ref());
     if (!cur->DebugValidateBacklinksLocked()) {
       dprintf(INFO, "cur: %p this: %p\n", cur, this);
