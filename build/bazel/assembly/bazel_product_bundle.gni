@@ -819,5 +819,16 @@ template("bazel_product_bundle") {
 
     # Some dependents want to claim outputs from these targets as inputs.
     public_deps = [ ":${targets.bazel_product_bundle}" ]
+
+    metadata = {
+      # Assembly does not emit information about the packages that it includes
+      # via metadata, but via its own output files.
+      assembly_inputs_barrier = []
+      assembly_package_barrier = []
+      distribution_entries_barrier = []
+      package_barrier = []
+      test_component_manifest_barrier = []
+      test_component_manifest_program_barrier = []
+    }
   }
 }
