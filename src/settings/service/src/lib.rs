@@ -794,6 +794,7 @@ fn create_agent_blueprints(
     media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
 ) -> Vec<AgentCreator> {
     let (_value_event_tx, value_event_rx) = mpsc::unbounded();
+    let (_proxy_event_tx, proxy_event_rx) = mpsc::unbounded();
     let (_usage_event_tx, usage_event_rx) = mpsc::unbounded();
 
     let media_buttons_registrar = agent_types
@@ -802,18 +803,26 @@ fn create_agent_blueprints(
     let inspect_settings_values_registrar = agent_types
         .contains(&AgentType::InspectSettingValues)
         .then(|| agent::inspect::setting_values::create_registrar(value_event_rx));
+    let inspect_setting_proxy_registrar = agent_types
+        .contains(&AgentType::InspectSettingProxy)
+        .then(|| agent::inspect::setting_proxy::create_registrar(proxy_event_rx));
     let inspect_usages_registrar = agent_types
         .contains(&AgentType::InspectSettingTypeUsage)
         .then(|| agent::inspect::usage_counts::create_registrar(usage_event_rx));
 
-    let agent_registrars =
-        [media_buttons_registrar, inspect_settings_values_registrar, inspect_usages_registrar];
+    let agent_registrars = [
+        media_buttons_registrar,
+        inspect_settings_values_registrar,
+        inspect_setting_proxy_registrar,
+        inspect_usages_registrar,
+    ];
 
     let mut agent_blueprints = if agent_types.iter().all(|t| {
         matches!(
             t,
             AgentType::MediaButtons
                 | AgentType::InspectSettingValues
+                | AgentType::InspectSettingProxy
                 | AgentType::InspectSettingTypeUsage
         )
     }) {

@@ -10,14 +10,15 @@
 //!
 //! [SettingProxyInspectAgent]: inspect::SettingProxyInspectAgent
 
-use crate::agent::{Context, Payload};
+use crate::agent::{AgentCreator, Context, CreationFunc, Payload};
 use crate::base::{SettingInfo, SettingType};
 use crate::handler::base::{Error, Payload as HandlerPayload, Request};
-use crate::inspect::utils::enums::ResponseType;
+use crate::inspect::event::{Direction, ResponseType, UsageEvent};
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::message::receptor::Receptor;
 use crate::service::TryFromWithClient;
 use crate::{clock, service, trace};
+use futures::channel::mpsc::UnboundedReceiver;
 use settings_inspect_utils::joinable_inspect_vecdeque::JoinableInspectVecDeque;
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 use settings_inspect_utils::managed_inspect_queue::ManagedInspectQueue;
@@ -27,6 +28,7 @@ use fuchsia_inspect::{self as inspect, component, NumericProperty};
 use fuchsia_inspect_derive::{IValue, Inspect};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 /// The maximum number of pending requests to store in inspect per setting. There should generally
@@ -46,6 +48,18 @@ const REQUEST_RESPONSE_NODE_NAME: &str = "requests_and_responses";
 /// Name of the top-level node under root used to store request counts.
 const RESPONSE_COUNTS_NODE_NAME: &str = "response_counts";
 
+pub(crate) fn create_registrar(rx: UnboundedReceiver<UsageEvent>) -> AgentCreator {
+    let rx = Rc::new(RefCell::new(rx));
+    AgentCreator {
+        debug_id: "SettingProxyInspectAgent",
+        create: CreationFunc::Dynamic(Rc::new(move |context| {
+            let rx = Rc::clone(&rx);
+            Box::pin(async move {
+                SettingProxyInspectAgent::create(context, rx).await;
+            })
+        })),
+    }
+}
 #[derive(Default, Inspect)]
 /// Information about response counts to be written to inspect.
 struct SettingTypeResponseCountInfo {
@@ -181,9 +195,10 @@ pub(crate) struct SettingProxyInspectAgent {
 }
 
 impl SettingProxyInspectAgent {
-    pub(crate) async fn create(context: Context) {
+    pub(crate) async fn create(context: Context, rx: Rc<RefCell<UnboundedReceiver<UsageEvent>>>) {
         Self::create_with_node(
             context,
+            rx,
             component::inspector().root().create_child(REQUEST_RESPONSE_NODE_NAME),
             component::inspector().root().create_child(RESPONSE_COUNTS_NODE_NAME),
         )
@@ -192,6 +207,7 @@ impl SettingProxyInspectAgent {
 
     async fn create_with_node(
         context: Context,
+        rx: Rc<RefCell<UnboundedReceiver<UsageEvent>>>,
         request_response_inspect_node: inspect::Node,
         response_counts_node: inspect::Node,
     ) {
@@ -221,6 +237,7 @@ impl SettingProxyInspectAgent {
             trace!(id, c"setting_proxy_inspect_agent");
             let event = message_rx.fuse();
             let agent_event = context.receptor.fuse();
+            let mut usage_event = rx.borrow_mut();
             futures::pin_mut!(agent_event, event);
 
             // Push reply_receptor to the FutureUnordered to avoid blocking codes when there are no
@@ -241,6 +258,13 @@ impl SettingProxyInspectAgent {
                                 });
                         };
                     },
+                    usage_event = usage_event.select_next_some() => {
+                        if let Direction::Request(_) = usage_event.direction {
+                            agent.process_usage_event(usage_event);
+                        } else {
+                            agent.process_usage_response_event(usage_event);
+                        }
+                    }
                     reply = unordered.select_next_some() => {
                         let (setting_type, count, payload) = reply;
                         if let Ok((
@@ -269,6 +293,128 @@ impl SettingProxyInspectAgent {
             }
         }})
         .detach();
+    }
+
+    fn process_usage_event(&mut self, event: UsageEvent) {
+        let timestamp = clock::inspect_format_now();
+
+        // Get or create the info for this setting type.
+        let request_response_info = self
+            .setting_request_response_info
+            .get_or_insert_with(event.setting.to_string(), SettingTypeRequestResponseInfo::new);
+
+        request_response_info.count += 1;
+
+        let Direction::Request(request) = event.direction else {
+            panic!("Call process_usage_event with response!");
+        };
+        let pending_request_info = PendingRequestInspectInfo {
+            request: request.into(),
+            request_type: format!("{:?}", event.request_type),
+            timestamp: timestamp.into(),
+            count: event.id,
+            inspect_node: inspect::Node::default(),
+        };
+
+        let count_key = format!("{:020}", event.id);
+        request_response_info.pending_requests.push(&count_key, pending_request_info);
+    }
+
+    fn process_usage_response_event(&mut self, event: UsageEvent) {
+        let setting_type_str = event.setting.to_string();
+        let timestamp = clock::inspect_format_now();
+        let Direction::Response(response, response_type) = event.direction else {
+            panic!("Called process_usage_response_event with a request!");
+        };
+
+        // Update the response counter.
+        self.increment_response_count(setting_type_str.clone(), response_type);
+
+        // Find the inspect data for this setting. This should always be present as it's created
+        // upon receiving a request, which should happen before the response is recorded.
+        let condensed_setting_type_info = self
+            .setting_request_response_info
+            .map_mut()
+            .get_mut(&setting_type_str)
+            .expect("Missing info for request");
+
+        let pending_requests = &mut condensed_setting_type_info.pending_requests;
+
+        // Find the position of the pending request with the same request count and remove it. This
+        // should generally be the first pending request in the queue if requests are being answered
+        // in order.
+        let position = match pending_requests.iter_mut().position(|info| info.count == event.id) {
+            Some(position) => position,
+            None => {
+                // We may be unable to find a matching request if requests are piling up faster than
+                // responses, as the number of pending requests is limited.
+                return;
+            }
+        };
+        let pending =
+            pending_requests.items_mut().remove(position).expect("Failed to find pending item");
+
+        // Find the info for this particular request type.
+        let request_type_info_map = condensed_setting_type_info
+            .requests_and_responses_by_type
+            .get_or_insert_with(pending.request_type, || {
+                ManagedInspectMap::<RequestResponsePairInfo>::default()
+            });
+
+        // Request and response pairs are keyed by the concatenation of the request and response,
+        // which uniquely identifies them within a setting.
+        let map_key = format!("{:?}{:?}", pending.request, response);
+
+        // Find this request + response pair in the map and remove it, if it's present. While the
+        // map key is the request + response concatenated, the key displayed in inspect is the
+        // newest request count for that pair. We remove the map entry if it exists so that we can
+        // re-insert to update the key displayed in inspect.
+        let removed_info = request_type_info_map.map_mut().remove(&map_key);
+
+        let mut info = removed_info.unwrap_or_else(|| {
+            RequestResponsePairInfo::new(pending.request.into_inner(), response, pending.count)
+        });
+        {
+            // Update the request and response timestamps. We have borrow from the IValues with
+            // as_mut and drop the variables after this scope ends so that the IValues will know to
+            // update the values in inspect.
+            let mut_requests = &mut info.request_timestamps.as_mut().0;
+            let mut_responses = &mut info.response_timestamps.as_mut().0;
+
+            mut_requests.push_back(pending.timestamp.into_inner());
+            mut_responses.push_back(timestamp);
+
+            // If there are too many timestamps, remove earlier ones.
+            if mut_requests.len() > MAX_REQUEST_RESPONSE_TIMESTAMPS {
+                let _ = mut_requests.pop_front();
+            }
+            if mut_responses.len() > MAX_REQUEST_RESPONSE_TIMESTAMPS {
+                let _ = mut_responses.pop_front();
+            }
+        }
+
+        // Insert into the map, but display the key in inspect as the request count.
+        let count_key = format!("{:020}", pending.count);
+        let _ = request_type_info_map.insert_with_property_name(map_key, count_key, info);
+
+        // If there are too many entries, find and remove the oldest.
+        let num_request_response_pairs = request_type_info_map.map().len();
+        if num_request_response_pairs > MAX_REQUEST_RESPONSE_PAIRS {
+            // Find the item with the lowest request count, which means it was the oldest request
+            // received.
+            let mut lowest_count: u64 = u64::MAX;
+            let mut lowest_key: Option<String> = None;
+            for (key, inspect_info) in request_type_info_map.map() {
+                if inspect_info.request_count < lowest_count {
+                    lowest_count = inspect_info.request_count;
+                    lowest_key = Some(key.clone());
+                }
+            }
+
+            if let Some(key_to_remove) = lowest_key {
+                let _ = request_type_info_map.map_mut().remove(&key_to_remove);
+            }
+        }
     }
 
     /// Identfies [`service::message::MessageEvent`] that contains a [`Request`]
@@ -336,7 +482,10 @@ impl SettingProxyInspectAgent {
         let timestamp = clock::inspect_format_now();
 
         // Update the response counter.
-        self.increment_response_count(setting_type_str.clone(), &response);
+        self.increment_response_count(
+            setting_type_str.clone(),
+            ResponseType::from(response.clone()),
+        );
 
         // Find the inspect data for this setting. This should always be present as it's created
         // upon receiving a request, which should happen before the response is recorded.
@@ -426,11 +575,7 @@ impl SettingProxyInspectAgent {
         }
     }
 
-    fn increment_response_count(
-        &mut self,
-        setting_type_str: String,
-        response: &Result<Option<SettingInfo>, Error>,
-    ) {
+    fn increment_response_count(&mut self, setting_type_str: String, response_type: ResponseType) {
         // Get the response count info for the setting type, creating a new info object
         // if it doesn't exist in the map yet.
         let response_count_info = self
@@ -439,7 +584,6 @@ impl SettingProxyInspectAgent {
 
         // Get the count for the response type, creating a new count if it doesn't exist
         // in the map yet, then increment the response count
-        let response_type: ResponseType = response.clone().into();
         let response_count = response_count_info
             .response_counts_by_type
             .get_or_insert_with(format!("{response_type:?}"), ResponseTypeCount::default);
@@ -453,6 +597,7 @@ mod tests {
     use crate::display::types::SetDisplayInfo;
     use crate::intl::types::{IntlInfo, LocaleId, TemperatureUnit};
     use diagnostics_assertions::{assert_data_tree, TreeAssertion};
+    use futures::channel::mpsc;
     use std::collections::HashSet;
     use zx::MonotonicInstant;
 
@@ -530,8 +675,14 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        SettingProxyInspectAgent::create_with_node(context, condense_node, response_counts_node)
-            .await;
+        let (_tx, rx) = mpsc::unbounded();
+        SettingProxyInspectAgent::create_with_node(
+            context,
+            Rc::new(RefCell::new(rx)),
+            condense_node,
+            response_counts_node,
+        )
+        .await;
 
         // Send a request to turn off auto brightness.
         let turn_off_auto_brightness = Request::SetDisplayInfo(SetDisplayInfo {
@@ -612,8 +763,14 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        SettingProxyInspectAgent::create_with_node(context, condense_node, response_counts_node)
-            .await;
+        let (_tx, rx) = mpsc::unbounded();
+        SettingProxyInspectAgent::create_with_node(
+            context,
+            Rc::new(RefCell::new(rx)),
+            condense_node,
+            response_counts_node,
+        )
+        .await;
 
         // Interlace different request types to make sure the counter is correct.
         request_processor
@@ -711,8 +868,14 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        SettingProxyInspectAgent::create_with_node(context, condense_node, request_counts_node)
-            .await;
+        let (_tx, rx) = mpsc::unbounded();
+        SettingProxyInspectAgent::create_with_node(
+            context,
+            Rc::new(RefCell::new(rx)),
+            condense_node,
+            request_counts_node,
+        )
+        .await;
 
         request_processor
             .send_request(
@@ -759,8 +922,14 @@ mod tests {
 
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        SettingProxyInspectAgent::create_with_node(context, condense_node, request_counts_node)
-            .await;
+        let (_tx, rx) = mpsc::unbounded();
+        SettingProxyInspectAgent::create_with_node(
+            context,
+            Rc::new(RefCell::new(rx)),
+            condense_node,
+            request_counts_node,
+        )
+        .await;
 
         request_processor
             .send_and_receive(
@@ -812,8 +981,14 @@ mod tests {
         let context = create_context().await;
         let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        SettingProxyInspectAgent::create_with_node(context, condense_node, response_counts_node)
-            .await;
+        let (_tx, rx) = mpsc::unbounded();
+        SettingProxyInspectAgent::create_with_node(
+            context,
+            Rc::new(RefCell::new(rx)),
+            condense_node,
+            response_counts_node,
+        )
+        .await;
 
         request_processor
             .send_and_receive(

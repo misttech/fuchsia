@@ -107,6 +107,7 @@ impl AgentCreator {
             AgentType::Earcons => create_agent!(earcons, earcons::agent::Agent::create),
             AgentType::MediaButtons
             | AgentType::InspectSettingValues
+            | AgentType::InspectSettingProxy
             | AgentType::InspectSettingTypeUsage => {
                 // Moved to lib.rs
                 return None;
@@ -115,10 +116,6 @@ impl AgentCreator {
             AgentType::InspectExternalApis => create_agent!(
                 external_apis,
                 inspect::external_apis::ExternalApiInspectAgent::create
-            ),
-            AgentType::InspectSettingProxy => create_agent!(
-                setting_proxy,
-                inspect::setting_proxy::SettingProxyInspectAgent::create
             ),
         })
     }

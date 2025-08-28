@@ -14,7 +14,7 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub enum Direction {
     Request(String),
-    Response(String),
+    Response(String, ResponseType),
 }
 
 #[derive(Clone)]
@@ -94,11 +94,11 @@ impl<T> UsageResponsePublisher<T>
 where
     T: Nameable,
 {
-    pub fn respond(mut self, response: String) {
+    pub fn respond(mut self, response: String, response_type: ResponseType) {
         let _ = self.inspect_tx.unbounded_send(InspectEvent::Usage(UsageEvent {
             setting: T::NAME,
             request_type: self.request_type,
-            direction: Direction::Response(response),
+            direction: Direction::Response(response, response_type),
             id: self.id,
         }));
         if let RequestType::Get = self.request_type {
@@ -124,6 +124,31 @@ pub enum RequestType {
     Set,
     OnCameraSWState(bool),
     OnButton(MediaButtons),
+}
+
+#[derive(Debug, Copy, Clone)]
+/// Response type to a request to a setting. Used for accumulating response type
+/// counts for inspect. This should be updated to have a matching error for each
+/// of the controller error variants.
+pub enum ResponseType {
+    OkSome,
+    OkNone,
+    UnimplementedRequest,
+    StorageFailure,
+    InitFailure,
+    RestoreFailure,
+    InvalidArgument,
+    IncompatibleArguments,
+    ExternalFailure,
+    UnhandledType,
+    DeliveryError,
+    UnexpectedError,
+    UndeliverableError,
+    UnsupportedError,
+    CommunicationError,
+    IrrecoverableError,
+    TimeoutError,
+    AlreadySubscribed,
 }
 
 #[derive(Copy, Clone, Debug)]

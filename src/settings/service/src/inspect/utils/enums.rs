@@ -3,30 +3,7 @@
 // found in the LICENSE file.
 
 use crate::handler::base::{Error, Response};
-
-#[derive(Debug)]
-/// Response type to a request to a setting handler. Used for accumulating
-/// response type counts for inspect. This should be updated to have all
-/// the errors in [handler::base::Error].
-pub(crate) enum ResponseType {
-    OkSome,
-    OkNone,
-    UnimplementedRequest,
-    StorageFailure,
-    InitFailure,
-    RestoreFailure,
-    InvalidArgument,
-    IncompatibleArguments,
-    ExternalFailure,
-    UnhandledType,
-    DeliveryError,
-    UnexpectedError,
-    UndeliverableError,
-    UnsupportedError,
-    CommunicationError,
-    IrrecoverableError,
-    TimeoutError,
-}
+use crate::inspect::event::ResponseType;
 
 impl From<Error> for ResponseType {
     fn from(error: Error) -> Self {
