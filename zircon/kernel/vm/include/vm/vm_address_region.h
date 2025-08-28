@@ -140,7 +140,7 @@ class VmAddressRegionOrMapping
   Lock<CriticalMutex>* lock() const TA_RET_CAP(aspace_->lock()) { return aspace_->lock(); }
   Lock<CriticalMutex>& lock_ref() const TA_RET_CAP(aspace_->lock()) { return aspace_->lock_ref(); }
 
-  bool is_in_range_locked(vaddr_t base, size_t size) const TA_REQ(lock()) {
+  bool is_in_range(vaddr_t base, size_t size) const {
     const size_t offset = base - base_;
     return base >= base_ && offset < size_ && size_ - offset >= size;
   }
@@ -1121,7 +1121,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
   template <typename F>
   zx_status_t EnumerateProtectionRangesLocked(vaddr_t base, size_t size, F func) const
       TA_REQ(lock()) {
-    DEBUG_ASSERT(is_in_range_locked(base, size));
+    DEBUG_ASSERT(is_in_range(base, size));
     // If the mapping is no longer alive, then return early since there's nothing to enumerate.
     if (!IsAliveLocked()) {
       return ZX_OK;

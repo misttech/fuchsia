@@ -610,8 +610,7 @@ zx_status_t VmAspace::PageFaultInternal(vaddr_t va, uint flags, size_t additiona
       // walk.
       bool found = false;
       if (likely(last_fault_)) {
-        AssertHeld(last_fault_->lock_ref());
-        if (last_fault_->is_in_range_locked(va, 1)) {
+        if (last_fault_->is_in_range(va, 1)) {
           vm_aspace_last_fault_hit.Add(1);
           found = true;
         }

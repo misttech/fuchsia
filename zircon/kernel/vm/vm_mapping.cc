@@ -664,7 +664,7 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
   LTRACEF("region %p, offset %#zx, size %#zx, commit %d\n", this, offset, len, commit);
 
   DEBUG_ASSERT(object_);
-  if (!IS_PAGE_ROUNDED(offset) || !is_in_range_locked(base_ + offset, len)) {
+  if (!IS_PAGE_ROUNDED(offset) || !is_in_range(base_ + offset, len)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
