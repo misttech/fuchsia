@@ -89,6 +89,12 @@ var idkAttrMap = map[string]string{
 	"api_area": "sdk_area",
 	"idk_name": "sdk_name",
 
+	// This renames the variable, but it must be made a `+=` inside a
+	// conditional block in `attrAssignmentToGN()`. `deps` must be specified
+	// before it in the `BUILD.bazel` file. This requires using
+	// `# buildifier: leave-alone` above the macro.
+	"fuchsia_deps": "public_deps",
+
 	// These are not identical because files in `hdrs_for_internal_use` need
 	// to be added to GN's `public` as well. This takes care of populating
 	// `sdk_headers_for_internal_use`, and `attrAssignmentToGN()` adds the files

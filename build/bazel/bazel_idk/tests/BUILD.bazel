@@ -30,13 +30,17 @@ idk_cc_source_library(
     api_area = "Developer",
     api_file_path = "different_file_name.api",
     category = "partner",
+    fuchsia_deps = [
+        # This target defines `RequiredFunction()`. ":test_executable" would
+        # fail to link if this dependency is not included in the `cc_library()`.
+        ":test_source_set_dependency",
+    ],
     idk_name = "test_source_set",
     include_base = ".",
     stable = True,
     deps = [
         # Cover deps strings that omit the package path, omit the target name,
-        # and provide the full label.
-        ":test_source_set_dependency",
+        # and provide the full label. The first case is covered in `fuchsia_deps`.
         "//build/bazel/bazel_idk/tests",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
     ],
@@ -45,6 +49,7 @@ idk_cc_source_library(
 idk_cc_source_library(
     name = "test_source_set_dependency",
     testonly = True,
+    srcs = ["dependency.cc"],
     hdrs = ["dependency.h"],
     api_area = "Developer",
 
@@ -131,11 +136,20 @@ idk_molecule(
     ],
 )
 
+# Tests that all dependencies are linked in.
+cc_binary(
+    name = "test_executable",
+    testonly = True,
+    srcs = ["test_executable.cc"],
+    deps = [":test-source-set"],
+)
+
 filegroup(
     name = "build_only_tests",
     testonly = True,
     srcs = [
         ":test_molecule",
+        ":test_executable",
 
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.

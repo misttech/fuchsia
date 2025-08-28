@@ -439,6 +439,27 @@ idk_cc_source_library_zx(
 	]
 }`,
 		},
+		{
+			name: "fuchsia_deps",
+			bazel: `idk_cc_source_library(
+	name = "foo",
+	public_deps = ["//sdk/lib/stdcompat"],
+	fuchsia_deps = [
+		"//zircon/system/ulib/zx",
+	],
+)
+`,
+			wantGN: `sdk_source_set("foo") {
+	public_deps = [
+		"//sdk/lib/stdcompat",
+	]
+	if (is_fuchsia) {
+		public_deps += [
+			"//zircon/system/ulib/zx",
+		]
+	}
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

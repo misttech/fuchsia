@@ -6,4 +6,6 @@
 
 #include "another_header.h"
 
+int RequiredFunction(int input);
+
 #endif  // BUILD_BAZEL_BAZEL_IDK_TESTS_DEPENDENCY_H_

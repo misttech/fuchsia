@@ -6,4 +6,6 @@
 
 #include "another_header.h"
 
+int SomeFunction();
+
 #endif  // BUILD_BAZEL_BAZEL_IDK_TESTS_TEST_HEADER_H_

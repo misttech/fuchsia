@@ -3,6 +3,5 @@
 // found in the LICENSE file.
 
 #include "dependency.h"
-#include "test_header.h"
 
-int SomeFunction() { return RequiredFunction(42); }
+int RequiredFunction(int input) { return input; }

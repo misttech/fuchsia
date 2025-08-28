@@ -82,8 +82,7 @@ def _get_idk_label(label_str):
     return "//{}:{}_idk".format(label.package, label.name)
 
 def _get_idk_deps(underlying_deps):
-    idk_deps = []
-    return [_get_idk_label(dep) for dep in underlying_deps] + idk_deps
+    return [_get_idk_label(dep) for dep in underlying_deps]
 
 def _compute_atom_api_impl(ctx):
     args = ctx.actions.args()
@@ -406,6 +405,7 @@ def idk_cc_source_library(
         srcs = [],
         deps = [],
         implementation_deps = [],
+        fuchsia_deps = [],
         # TODO(https://fxbug.dev/417307356): When implementing prebuilt
         # libraries, add `data = []`, which will be equivalent to GN's
         # `runtime_deps`.
@@ -418,6 +418,10 @@ def idk_cc_source_library(
         public_configs = [],  # buildifier: disable=unused-variable - For GN conversion only.
         **kwargs):
     """Defines a C++ source library that can be exported to an IDK.
+
+    The values of all deps args must be iterable. That means they cannot contain
+    `select()` statements. Instead, use `fuchsia_deps` for public dependencies
+    that only apply to Fuchsia.
 
     Args:
         name: The name of the underlying `cc_library` target. Required.
@@ -454,10 +458,18 @@ def idk_cc_source_library(
             GN note: Unlike the GN template, public headers must actually be in `hdrs`.
         deps: List of labels for other IDK elements this element publicly depends on at build time.
             These labels must point to targets with corresponding `_create_idk_atom` targets.
+            As with all deps arguments, must not contain `select()` statements.
             GN equivalent: `public_deps`
         implementation_deps: List of labels for other IDK elements this element depends on at build time.
             These labels must point to targets with corresponding `_create_idk_atom` targets.
             GN equivalent: `deps`.
+        fuchsia_deps: List of labels for other IDK elements this element
+            publicly depends on at build time only when targeting Fuchsia.
+            These labels must point to targets with corresponding `_create_idk_atom` targets.
+            GN equivalent: `public_deps +=` inside an `if (is_fuchsia) {}` statement.
+            GN note: If `bazel2gn` is run on the target, `fuchsia_deps` must come after `deps.
+            This may require adding `# buildifier: leave-alone` above the target definition to
+            disable reordering by the formatter.
         include_base: Path to the root directory for includes.
             This path will be added to the underlying library's `includes`.
             If the path is "//sdk", the paths to the headers will be made
@@ -542,7 +554,10 @@ def idk_cc_source_library(
         srcs = srcs_for_bazel_library,
         data = allowlist_deps,
         hdrs = hdrs_for_bazel_library,
-        deps = deps,
+        deps = deps + select({
+            "@platforms//os:fuchsia": fuchsia_deps,
+            "//conditions:default": [],
+        }),
         # TODO(https://fxbug.dev/428229472): If we must support
         # `non_idk_implementation_deps`, include it below.
         implementation_deps = implementation_deps,
@@ -579,7 +594,11 @@ def idk_cc_source_library(
         idk_metadata_sources.append(source_dest_path)
         idk_files_map |= {source_dest_path: source}
 
-    idk_deps = _get_idk_deps(deps) + _get_idk_deps(implementation_deps)
+    # Deps strings must be modified before being added to a `select()` statement.
+    idk_deps = _get_idk_deps(deps) + _get_idk_deps(implementation_deps) + select({
+        "@platforms//os:fuchsia": _get_idk_deps(fuchsia_deps),
+        "//conditions:default": [],
+    })
 
     # Dependencies for generating the actual IDK atom (not the underlying library).
     # TODO(https://fxbug.dev/428229472): If we must support

@@ -317,6 +317,10 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		op = "="
 	}
 
+	if lhs.Name == "fuchsia_deps" {
+		op = "+="
+	}
+
 	// TODO(https://fxbug.dev/430953918): Figure out a better way to handle configs and public_configs conversion.
 	if attrName == "configs" && hasClearAnnotation(expr) {
 		op = "="
@@ -362,6 +366,11 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 
 	ret := []string{fmt.Sprintf("%s %s %s", attrName, op, rhs[0])}
 	ret = append(ret, rhs[1:]...)
+
+	if lhs.Name == "fuchsia_deps" {
+		ret = append([]string{"if (is_fuchsia) {"}, indent(ret, 1)...)
+		ret = append(ret, "}")
+	}
 
 	// Handle any additional work necessary for specific assignments.
 	if attrName == "sdk_headers_for_internal_use" {
