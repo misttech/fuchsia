@@ -528,8 +528,8 @@ if (is_kernel) {
 
     ldflags = [ "-Wl,-T," + rebase_path(inputs[0], root_build_dir) ]
 
-    # TODO(https://fxbug.dev/42164859): There is still start.S bootstrap logic
-    # for x86 that cannot yet be moved into lk_main().
+    # TODO(https://fxbug.dev/379891035): There is still kASan-related start.S
+    # bootstrap logic for x86 not yet moved into physboot.
     if (current_cpu != "x64") {
       # PhysbootHandoff is the entrypoint symbol.
       ldflags += [ "-Wl,--defsym,PhysbootHandoff=lk_main" ]

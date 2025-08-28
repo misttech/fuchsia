@@ -74,12 +74,7 @@ bool ConstructorsCalled() { return lk_global_constructors_called(); }
 
 // called from arch code
 void lk_main(PhysHandoff* handoff) {
-  // TODO(https://fxbug.dev/42164859): There is still start.S bootstrap logic
-  // for x86 that cannot yet be moved into lk_main(), and so in that case
-  // entrypoint time sampling still happens there.
-#ifndef __x86_64__
   kernel_entry_ticks = arch::EarlyTicks::Get();
-#endif
 
   PostHandoffBootstrap(handoff);
 

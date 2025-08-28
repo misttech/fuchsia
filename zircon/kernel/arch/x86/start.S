@@ -15,28 +15,21 @@
 #include <lib/instrumentation/asan.h>
 #include <phys/handoff.h>
 
+// TODO(https://fxbug.dev/379891035): The only thing that happens now in this
+// routine, apart from jumping to lk_main(), is kASan setup. That should
+// happen holistically during address space setup in physboot, at which point
+// this file can be deleted and the kernel entrypoint can be made to be
+// lk_main().
+
 // We assume `KERNEL_ASPACE_SIZE` <= 512GB.
 .if KERNEL_ASPACE_SIZE > 0x0000008000000000
 .err "KERNEL_ASPACE_SIZE must be less than or equal to 512GB"
 .endif
 
-// Clobbers %rax, %rdx.
-.macro sample_ticks out
-  rdtsc
-  shl $32, %rdx
-  or %rdx, %rax
-  mov %rax, \out
-.endm
-
 .function _start, global
 .label PhysbootHandoff, global
-  // As early as possible collect the time stamp.
-  sample_ticks %r15
-
   // Save off the handoff pointer in a register that won't get clobbered.
   mov %rdi, %r14
-
-  mov %r15, kernel_entry_ticks(%rip)
 
 #if __has_feature(address_sanitizer)
   // We modify the currently live address space below.
