@@ -61,7 +61,7 @@ pub fn create_overnet_socket(
                 }
                 .await
                 {
-                    log::warn!("FIDL pipe circuit closed: {:?}", e);
+                    log::debug!("FIDL pipe circuit closed: {:?}", e);
                 }
             },
             errors
