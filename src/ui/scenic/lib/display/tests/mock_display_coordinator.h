@@ -11,7 +11,7 @@
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/syslog/cpp/macros.h>
 
-namespace scenic_impl::display::test {
+namespace display::test {
 
 class MockDisplayCoordinator;
 
@@ -143,6 +143,6 @@ class MockDisplayCoordinator
   fidl::WireSharedClient<fuchsia_hardware_display::CoordinatorListener> listener_;
 };
 
-}  // namespace scenic_impl::display::test
+}  // namespace display::test
 
 #endif  // SRC_UI_SCENIC_LIB_DISPLAY_TESTS_MOCK_DISPLAY_COORDINATOR_H_

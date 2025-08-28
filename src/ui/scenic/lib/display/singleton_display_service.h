@@ -13,7 +13,7 @@
 
 #include "src/ui/scenic/lib/display/display.h"
 
-namespace scenic_impl::display {
+namespace display {
 
 // Implements the fuchsia.ui.display.singleton.Info and
 // fuchsia.ui.composition.internal.DisplayOwnership FIDL services.
@@ -44,6 +44,6 @@ class SingletonDisplayService
   fidl::ServerBindingGroup<fuchsia_ui_composition_internal::DisplayOwnership> ownership_bindings_;
 };
 
-}  // namespace scenic_impl::display
+}  // namespace display
 
 #endif  // SRC_UI_SCENIC_LIB_DISPLAY_SINGLETON_DISPLAY_SERVICE_H_

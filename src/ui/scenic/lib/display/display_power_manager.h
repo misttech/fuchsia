@@ -13,7 +13,7 @@
 #include "src/lib/fxl/macros.h"
 #include "src/ui/scenic/lib/display/display_manager.h"
 
-namespace scenic_impl::display {
+namespace display {
 
 // Implements the |fuchsia::ui::display::singleton::DisplayPower| protocol,
 // Internal protocol clients are able to control the power of all available
@@ -46,6 +46,6 @@ class DisplayPowerManager : public fidl::Server<fuchsia_ui_display_singleton::Di
   FXL_DISALLOW_COPY_AND_ASSIGN(DisplayPowerManager);
 };
 
-}  // namespace scenic_impl::display
+}  // namespace display
 
 #endif  // SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_POWER_MANAGER_H_

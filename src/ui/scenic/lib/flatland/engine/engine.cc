@@ -96,7 +96,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   TRACE_FLOW_STEP("gfx", "scenic_frame", frame_number);
 
   SceneState scene_state(*this, display.root_transform());
-  scenic_impl::display::Display* const hw_display = display.display();
+  display::Display* const hw_display = display.display();
 
 #if defined(USE_FLATLAND_VERBOSE_LOGGING)
   std::ostringstream str;

@@ -22,7 +22,6 @@
 
 #include <glm/glm.hpp>
 
-namespace scenic_impl {
 namespace display {
 
 // Display is a placeholder that provides make-believe values for screen
@@ -110,6 +109,5 @@ class Display {
 };
 
 }  // namespace display
-}  // namespace scenic_impl
 
 #endif  // SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_H_

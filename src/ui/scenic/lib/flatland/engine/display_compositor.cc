@@ -369,7 +369,7 @@ void DisplayCompositor::ReleaseBufferCollection(
   std::scoped_lock lock(lock_);
   FX_DCHECK(display_coordinator_.is_valid());
   const fuchsia_hardware_display::wire::BufferCollectionId display_collection_id =
-      scenic_impl::ToDisplayFidlBufferCollectionId(collection_id);
+      display::ToDisplayFidlBufferCollectionId(collection_id);
   const fidl::OneWayStatus result =
       display_coordinator_.sync()->ReleaseBufferCollection(display_collection_id);
   if (!result.ok()) {
@@ -420,7 +420,7 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
 
   const allocation::GlobalBufferCollectionId collection_id = metadata.collection_id;
   const fuchsia_hardware_display::wire::BufferCollectionId display_collection_id =
-      scenic_impl::ToDisplayFidlBufferCollectionId(collection_id);
+      display::ToDisplayFidlBufferCollectionId(collection_id);
   const bool display_support_already_set =
       buffer_collection_supports_display_.find(collection_id) !=
       buffer_collection_supports_display_.end();
@@ -453,7 +453,7 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
   const fuchsia_hardware_display_types::wire::ImageMetadata image_metadata =
       CreateImageMetadata(metadata);
   const fuchsia_hardware_display::wire::ImageId fidl_image_id =
-      scenic_impl::ToDisplayFidlImageId(metadata.identifier);
+      display::ToDisplayFidlImageId(metadata.identifier);
   const auto import_image_result = display_coordinator_.sync()->ImportImage(
       image_metadata, display_collection_id, metadata.vmo_index, fidl_image_id);
   if (!import_image_result.ok()) {
@@ -478,7 +478,7 @@ void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image
   renderer_->ReleaseBufferImage(image_id);
 
   const fuchsia_hardware_display::wire::ImageId fidl_image_id =
-      scenic_impl::ToDisplayFidlImageId(image_id);
+      display::ToDisplayFidlImageId(image_id);
   std::scoped_lock lock(lock_);
 
   if (display_imported_images_.erase(image_id) == 1) {
@@ -658,7 +658,7 @@ void DisplayCompositor::ApplyLayerColor(const fuchsia_hardware_display::wire::La
 void DisplayCompositor::ApplyLayerImage(const fuchsia_hardware_display::wire::LayerId& layer_id,
                                         const ImageRect& rectangle,
                                         const allocation::ImageMetadata& image,
-                                        const scenic_impl::DisplayEventId& wait_id) {
+                                        const display::DisplayEventId& wait_id) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ApplyLayerImage");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
@@ -695,7 +695,7 @@ void DisplayCompositor::ApplyLayerImage(const fuchsia_hardware_display::wire::La
 
   // Set the imported image on the layer.
   const fuchsia_hardware_display::wire::ImageId image_id =
-      scenic_impl::ToDisplayFidlImageId(image.identifier);
+      display::ToDisplayFidlImageId(image.identifier);
   const fidl::OneWayStatus set_layer_image_result =
       display_coordinator_.sync()->SetLayerImage2(layer_id, image_id, wait_id);
   FX_DCHECK(set_layer_image_result.ok())
@@ -1013,12 +1013,12 @@ DisplayCompositor::FrameEventData DisplayCompositor::NewFrameEventData() {
     const auto status = zx::event::create(0, &result.wait_event);
     FX_DCHECK(status == ZX_OK);
   }
-  result.wait_id = scenic_impl::ImportEvent(display_coordinator_, result.wait_event);
+  result.wait_id = display::ImportEvent(display_coordinator_, result.wait_event);
   FX_DCHECK(result.wait_id.value != fuchsia_hardware_display_types::kInvalidDispId);
   return result;
 }
 
-void DisplayCompositor::AddDisplay(scenic_impl::display::Display* display, const DisplayInfo info,
+void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo info,
                                    const uint32_t num_render_targets,
                                    fuchsia::sysmem2::BufferCollectionInfo* out_collection_info) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
@@ -1267,7 +1267,7 @@ std::vector<allocation::ImageMetadata> DisplayCompositor::AllocateDisplayRenderT
   }
 
   // We know that this collection is supported by display because we collected constraints from
-  // display in scenic_impl::ImportBufferCollection() and waited for successful allocation.
+  // display in display::ImportBufferCollection() and waited for successful allocation.
   {
     std::scoped_lock lock(lock_);
     buffer_collection_supports_display_[collection_id] = true;
@@ -1297,8 +1297,8 @@ bool DisplayCompositor::ImportBufferCollectionToDisplayCoordinator(
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
     const fuchsia_hardware_display_types::wire::ImageBufferUsage& image_buffer_usage) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-  return scenic_impl::ImportBufferCollection(identifier, display_coordinator_, std::move(token),
-                                             image_buffer_usage);
+  return display::ImportBufferCollection(identifier, display_coordinator_, std::move(token),
+                                         image_buffer_usage);
 }
 
 }  // namespace flatland

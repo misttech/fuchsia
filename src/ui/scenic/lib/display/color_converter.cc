@@ -11,7 +11,7 @@
 
 #include "src/ui/scenic/lib/utils/helpers.h"
 
-namespace scenic_impl::display {
+namespace display {
 
 namespace {
 
@@ -64,4 +64,4 @@ void ColorConverter::SetMinimumRgb(uint8_t minimum_rgb, SetMinimumRgbCallback ca
   callback(set_minimum_rgb_(minimum_rgb));
 }
 
-}  // namespace scenic_impl::display
+}  // namespace display

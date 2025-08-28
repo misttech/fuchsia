@@ -13,9 +13,7 @@
 
 #include "src/lib/fsl/handles/object_info.h"
 
-namespace scenic_impl {
-namespace display {
-namespace test {
+namespace display::test {
 
 TEST(SingletonDisplayService, GetMetrics) {
   static constexpr uint32_t kWidthInPx = 777;
@@ -102,6 +100,4 @@ TEST(SingletonDisplayService, GetOwnershipEvent) {
   EXPECT_EQ(fsl::GetKoid(event->get()), fsl::GetKoid(display->ownership_event().get()));
 }
 
-}  // namespace test
-}  // namespace display
-}  // namespace scenic_impl
+}  // namespace display::test

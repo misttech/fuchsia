@@ -32,8 +32,7 @@ class FlatlandManager {
   FlatlandManager(
       async_dispatcher_t* dispatcher, const std::shared_ptr<FlatlandPresenter>& flatland_presenter,
       const std::shared_ptr<UberStructSystem>& uber_struct_system,
-      const std::shared_ptr<LinkSystem>& link_system,
-      std::shared_ptr<scenic_impl::display::Display> display,
+      const std::shared_ptr<LinkSystem>& link_system, std::shared_ptr<display::Display> display,
       std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>
           buffer_collection_importers,
       fit::function<void(fidl::InterfaceRequest<fuchsia::ui::views::Focuser>, zx_koid_t)>
@@ -110,7 +109,7 @@ class FlatlandManager {
     std::shared_ptr<utils::LoopDispatcherHolder> loop;
 
     std::shared_ptr<FlatlandDisplay> impl;
-    std::shared_ptr<scenic_impl::display::Display> display;
+    std::shared_ptr<display::Display> display;
   };
 
   // Sends |additional_present_credits| to a particular Flatland |instance|.
@@ -165,7 +164,7 @@ class FlatlandManager {
 
   // Eventually we will support multiple displays, but as we bootstrap Flatland we assume that
   // there is a single primary display.
-  std::shared_ptr<scenic_impl::display::Display> primary_display_;
+  std::shared_ptr<display::Display> primary_display_;
 
   // The number of flatland instances currently alive. Used to ensure that the flatland manager gets
   // destroyed after all instances in |flatland_instances_| and |flatland_display_instances_| are

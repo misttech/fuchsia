@@ -7,6 +7,8 @@
 
 #include <array>
 
+namespace display {
+
 // This is a color transform in the format expected by the
 // Fuchsia display controller API.  The equation is:
 // matrix * (rgb + preoffsets) + postoffsets
@@ -16,5 +18,7 @@ struct ColorTransform {
   std::array<float, 9> matrix = {1, 0, 0, 0, 1, 0, 0, 0, 1};
   std::array<float, 3> postoffsets = {0, 0, 0};
 };
+
+}  // namespace display
 
 #endif  // SRC_UI_SCENIC_LIB_DISPLAY_COLOR_TRANSFORM_H_

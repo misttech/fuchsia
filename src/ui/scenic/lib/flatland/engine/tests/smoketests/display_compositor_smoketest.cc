@@ -72,7 +72,7 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
 
     executor_ = std::make_unique<async::Executor>(dispatcher());
 
-    display_manager_ = std::make_unique<scenic_impl::display::DisplayManager>([]() {});
+    display_manager_ = std::make_unique<display::DisplayManager>([]() {});
 
     fidl::ClientEnd<fuchsia_io::Directory> svc_root(
         realm_root_->component().CloneExposedDir().TakeChannel());
@@ -118,7 +118,7 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
   std::optional<component_testing::RealmRoot> realm_root_;
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
   std::unique_ptr<async::Executor> executor_;
-  std::unique_ptr<scenic_impl::display::DisplayManager> display_manager_;
+  std::unique_ptr<display::DisplayManager> display_manager_;
 
   static std::pair<std::unique_ptr<escher::Escher>, std::shared_ptr<flatland::VkRenderer>>
   NewVkRenderer() {

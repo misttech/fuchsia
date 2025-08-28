@@ -13,7 +13,8 @@
 
 #include "src/ui/scenic/lib/allocation/id.h"
 
-namespace scenic_impl {
+namespace display {
+
 using DisplayEventId = fuchsia_hardware_display::wire::EventId;
 
 // Imports a sysmem buffer collection token to a display controller, and sets the constraints.
@@ -61,6 +62,6 @@ inline fuchsia_hardware_display::wire::ImageId ToDisplayFidlImageId(
   return {.value = global_image_id};
 }
 
-}  // namespace scenic_impl
+}  // namespace display
 
 #endif  // SRC_UI_SCENIC_LIB_DISPLAY_UTIL_H_

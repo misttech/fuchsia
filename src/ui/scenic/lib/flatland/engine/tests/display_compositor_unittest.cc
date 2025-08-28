@@ -252,7 +252,7 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
 TEST_F(DisplayCompositorTest, ImportAndReleaseBufferCollectionTest) {
   constexpr allocation::GlobalBufferCollectionId kGlobalBufferCollectionId = 15;
   const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
-      scenic_impl::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   EXPECT_CALL(*mock_display_coordinator_,
               ImportBufferCollection(MatchRequestField(ImportBufferCollection, buffer_collection_id,
@@ -343,7 +343,7 @@ TEST_F(DisplayCompositorTest,
 
   const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
-      scenic_impl::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr display_token;
   EXPECT_CALL(*mock_display_coordinator_,
@@ -469,7 +469,7 @@ TEST_F(DisplayCompositorTest,
 
   const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
-      scenic_impl::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr display_token;
   EXPECT_CALL(*mock_display_coordinator_,
@@ -576,7 +576,7 @@ TEST_F(DisplayCompositorTest, SysmemNegotiationTest_InRendererOnlyMode_DisplaySh
 
   const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
-      scenic_impl::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 
@@ -622,7 +622,7 @@ TEST_F(DisplayCompositorTest, SysmemNegotiationTest_InRendererOnlyMode_DisplaySh
 TEST_F(DisplayCompositorTest, ClientDropSysmemToken) {
   const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
-      scenic_impl::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
   // Let client drop token.
@@ -667,7 +667,7 @@ TEST_F(DisplayCompositorTest, ClientDropSysmemToken) {
 TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
   const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
-      scenic_impl::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   // Import buffer collection.
   EXPECT_CALL(*mock_display_coordinator_,
@@ -730,7 +730,7 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
 
   // Release buffer collection. Make sure that does not release Image.
   const fuchsia_hardware_display::wire::ImageId kFidlImageId =
-      scenic_impl::ToDisplayFidlImageId(image_metadata.identifier);
+      display::ToDisplayFidlImageId(image_metadata.identifier);
   EXPECT_CALL(*mock_display_coordinator_,
               ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(kFidlImageId)), _))
       .Times(0);
@@ -752,11 +752,11 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
   const allocation::GlobalBufferCollectionId kGlobalBufferCollectionId =
       allocation::GenerateUniqueBufferCollectionId();
   const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
-      scenic_impl::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   const allocation::GlobalImageId kImageId = allocation::GenerateUniqueImageId();
   const fuchsia_hardware_display::wire::ImageId kFidlImageId =
-      scenic_impl::ToDisplayFidlImageId(kImageId);
+      display::ToDisplayFidlImageId(kImageId);
   const uint32_t kVmoCount = 2;
   const uint32_t kVmoIdx = 1;
   const uint32_t kMaxWidth = 100;
@@ -955,7 +955,7 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
-      scenic_impl::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   // Create a parent and child session.
   auto parent_session = CreateSession();
@@ -1074,7 +1074,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
   const fuchsia_hardware_display::wire::ImageId fidl_parent_image_id =
-      scenic_impl::ToDisplayFidlImageId(parent_image_metadata.identifier);
+      display::ToDisplayFidlImageId(parent_image_metadata.identifier);
   EXPECT_CALL(*mock_display_coordinator_,
               ImportImage(testing::AllOf(
                               MatchRequestField(ImportImage, buffer_collection_id,
@@ -1093,7 +1093,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
                                          BufferCollectionUsage::kClientImage);
 
   const fuchsia_hardware_display::wire::ImageId fidl_child_image_id =
-      scenic_impl::ToDisplayFidlImageId(child_image_metadata.identifier);
+      display::ToDisplayFidlImageId(child_image_metadata.identifier);
 
   EXPECT_CALL(
       *mock_display_coordinator_,
@@ -1140,8 +1140,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
   // Make sure each layer has all of its components set properly.
   fuchsia_hardware_display::wire::ImageId fidl_image_ids[] = {
-      scenic_impl::ToDisplayFidlImageId(child_image_metadata.identifier),
-      scenic_impl::ToDisplayFidlImageId(parent_image_metadata.identifier)};
+      display::ToDisplayFidlImageId(child_image_metadata.identifier),
+      display::ToDisplayFidlImageId(parent_image_metadata.identifier)};
   for (uint32_t i = 0; i < 2; i++) {
     EXPECT_CALL(
         *mock_display_coordinator_,
@@ -1195,7 +1195,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_));
 
   DisplayInfo display_info = {resolution, {kPixelFormat}};
-  scenic_impl::display::Display display({kDisplayId.value}, resolution.x, resolution.y);
+  display::Display display({kDisplayId.value}, resolution.x, resolution.y);
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
@@ -1219,7 +1219,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
     fuchsia_hardware_display_types::CoordinateTransformation expected_transform) {
   const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
-      scenic_impl::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   // Create a parent session.
   auto parent_session = CreateSession();
@@ -1297,7 +1297,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
   const fuchsia_hardware_display::wire::ImageId fidl_parent_image_id =
-      scenic_impl::ToDisplayFidlImageId(parent_image_metadata.identifier);
+      display::ToDisplayFidlImageId(parent_image_metadata.identifier);
   EXPECT_CALL(*mock_display_coordinator_,
               ImportImage(testing::AllOf(
                               MatchRequestField(ImportImage, buffer_collection_id,
@@ -1346,7 +1346,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
       .WillOnce(Return());
 
   const fuchsia_hardware_display::wire::ImageId fidl_collection_image_id =
-      scenic_impl::ToDisplayFidlImageId(parent_image_metadata.identifier);
+      display::ToDisplayFidlImageId(parent_image_metadata.identifier);
   EXPECT_CALL(
       *mock_display_coordinator_,
       SetLayerPrimaryConfig(MatchRequestField(SetLayerPrimaryConfig, layer_id, Eq(layers[0])), _))
@@ -1392,7 +1392,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_));
 
   DisplayInfo display_info = {resolution, {kPixelFormat}};
-  scenic_impl::display::Display display({kDisplayId.value}, resolution.x, resolution.y);
+  display::Display display({kDisplayId.value}, resolution.x, resolution.y);
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
@@ -1574,7 +1574,7 @@ TEST_F(DisplayCompositorTest, RendererOnly_ImportAndReleaseBufferCollectionTest)
 
   const allocation::GlobalBufferCollectionId kGlobalBufferCollectionId = 15;
   const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
-      scenic_impl::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
+      display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   EXPECT_CALL(*mock_display_coordinator_,
               ImportBufferCollection(MatchRequestField(ImportBufferCollection, buffer_collection_id,

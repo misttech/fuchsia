@@ -12,7 +12,6 @@
 
 #include "src/ui/scenic/lib/utils/logging.h"
 
-namespace scenic_impl {
 namespace display {
 
 namespace {
@@ -184,4 +183,3 @@ void DisplayManager::OnVsync(fuchsia_hardware_display_types::wire::DisplayId dis
 }
 
 }  // namespace display
-}  // namespace scenic_impl

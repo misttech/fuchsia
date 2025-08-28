@@ -34,7 +34,7 @@ class FlatlandDisplay : public fuchsia::ui::composition::FlatlandDisplay,
   static std::shared_ptr<FlatlandDisplay> New(
       std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
       fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> request,
-      scheduling::SessionId session_id, std::shared_ptr<scenic_impl::display::Display> display,
+      scheduling::SessionId session_id, std::shared_ptr<display::Display> display,
       std::function<void()> destroy_display_function,
       std::shared_ptr<FlatlandPresenter> flatland_presenter,
       std::shared_ptr<LinkSystem> link_system,
@@ -58,15 +58,14 @@ class FlatlandDisplay : public fuchsia::ui::composition::FlatlandDisplay,
   void SetDevicePixelRatio(fuchsia::math::VecF device_pixel_ratio) override;
 
   TransformHandle root_transform() const { return root_transform_; }
-  scenic_impl::display::Display* display() const { return display_.get(); }
+  display::Display* display() const { return display_.get(); }
 
   scheduling::SessionId session_id() const { return session_id_; }
 
  private:
   FlatlandDisplay(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
                   fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> request,
-                  scheduling::SessionId session_id,
-                  std::shared_ptr<scenic_impl::display::Display> display,
+                  scheduling::SessionId session_id, std::shared_ptr<display::Display> display,
                   std::function<void()> destroy_display_function,
                   std::shared_ptr<FlatlandPresenter> flatland_presenter,
                   std::shared_ptr<LinkSystem> link_system,
@@ -85,7 +84,7 @@ class FlatlandDisplay : public fuchsia::ui::composition::FlatlandDisplay,
   const scheduling::SessionId session_id_;
 
   // Physical display that this FlatlandDisplay connects to a tree of Flatland content.
-  const std::shared_ptr<scenic_impl::display::Display> display_;
+  const std::shared_ptr<display::Display> display_;
 
   // A function that, when called, will destroy this display. Necessary because an async::Wait can
   // only wait on peer channel destruction, not "this" channel destruction, so the FlatlandManager

@@ -12,9 +12,7 @@
 
 #include <algorithm>
 
-namespace scenic_impl {
-namespace display {
-namespace test {
+namespace display::test {
 
 MockDisplayCoordinator::MockDisplayCoordinator(fuchsia_hardware_display::wire::Info display_info)
     : display_info_(display_info) {}
@@ -155,6 +153,4 @@ void MockDisplayCoordinator::SendOnDisplayChangedRequest() {
   FX_CHECK(result.ok());
 }
 
-}  // namespace test
-}  // namespace display
-}  // namespace scenic_impl
+}  // namespace display::test

@@ -15,7 +15,7 @@
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/display/tests/mock_display_coordinator.h"
 
-namespace scenic_impl::display::test {
+namespace display::test {
 
 namespace {
 
@@ -174,4 +174,4 @@ TEST_F(DisplayCoordinatorListenerTest, OnVsyncCallback) {
 
 }  // namespace
 
-}  // namespace scenic_impl::display::test
+}  // namespace display::test

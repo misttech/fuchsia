@@ -13,7 +13,6 @@
 
 #include "src/ui/scenic/lib/utils/logging.h"
 
-namespace scenic_impl {
 namespace display {
 
 Display::Display(fuchsia_hardware_display_types::wire::DisplayId id,
@@ -73,4 +72,3 @@ void Display::OnVsync(zx::time_monotonic timestamp,
 }
 
 }  // namespace display
-}  // namespace scenic_impl

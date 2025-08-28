@@ -15,7 +15,7 @@
 
 #include "src/ui/scenic/lib/allocation/id.h"
 
-namespace scenic_impl {
+namespace display {
 
 bool ImportBufferCollection(
     allocation::GlobalBufferCollectionId buffer_collection_id,
@@ -23,7 +23,7 @@ bool ImportBufferCollection(
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
     const fuchsia_hardware_display_types::wire::ImageBufferUsage& image_buffer_usage) {
   const fuchsia_hardware_display::wire::BufferCollectionId display_buffer_collection_id =
-      scenic_impl::ToDisplayFidlBufferCollectionId(buffer_collection_id);
+      ToDisplayFidlBufferCollectionId(buffer_collection_id);
 
   auto import_buffer_collection_result = display_coordinator.sync()->ImportBufferCollection(
       display_buffer_collection_id, std::move(token));
@@ -122,9 +122,8 @@ zx_status_t ImportImageForCapture(
   }
 
   const fuchsia_hardware_display::wire::BufferCollectionId display_buffer_collection_id =
-      scenic_impl::ToDisplayFidlBufferCollectionId(buffer_collection_id);
-  const fuchsia_hardware_display::wire::ImageId fidl_image_id =
-      scenic_impl::ToDisplayFidlImageId(image_id);
+      ToDisplayFidlBufferCollectionId(buffer_collection_id);
+  const fuchsia_hardware_display::wire::ImageId fidl_image_id = ToDisplayFidlImageId(image_id);
 
   auto import_image_result = display_coordinator.sync()->ImportImage(
       image_metadata, display_buffer_collection_id, vmo_idx, fidl_image_id);
@@ -140,4 +139,4 @@ zx_status_t ImportImageForCapture(
   return ZX_OK;
 }
 
-}  // namespace scenic_impl
+}  // namespace display

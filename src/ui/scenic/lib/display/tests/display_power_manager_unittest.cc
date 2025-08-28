@@ -21,7 +21,7 @@
 #include "src/ui/scenic/lib/display/display_manager.h"
 #include "src/ui/scenic/lib/display/tests/mock_display_coordinator.h"
 
-namespace scenic_impl::gfx::test {
+namespace display::test {
 
 namespace {
 
@@ -33,14 +33,14 @@ struct DisplayPowerInfo {
 class DisplayPowerManagerMockTest : public gtest::RealLoopFixture {
  public:
   DisplayPowerManagerMockTest() {
-    display_manager_ = std::make_unique<display::DisplayManager>([] {});
+    display_manager_ = std::make_unique<DisplayManager>([] {});
     display_power_manager_ =
-        std::make_unique<display::DisplayPowerManager>(*display_manager_, inspector_.GetRoot());
+        std::make_unique<DisplayPowerManager>(*display_manager_, inspector_.GetRoot());
   }
 
-  display::DisplayManager* display_manager() { return display_manager_.get(); }
-  display::DisplayPowerManager* display_power_manager() { return display_power_manager_.get(); }
-  display::Display* display() { return display_manager()->default_display(); }
+  DisplayManager* display_manager() { return display_manager_.get(); }
+  DisplayPowerManager* display_power_manager() { return display_power_manager_.get(); }
+  Display* display() { return display_manager()->default_display(); }
   DisplayPowerInfo GetLastDisplayPowerInspectValue() {
     auto result = inspect::ReadFromVmo(inspector_.DuplicateVmo());
     EXPECT_TRUE(result.is_ok());
@@ -63,8 +63,8 @@ class DisplayPowerManagerMockTest : public gtest::RealLoopFixture {
 
  private:
   inspect::Inspector inspector_;
-  std::unique_ptr<display::DisplayManager> display_manager_;
-  std::unique_ptr<display::DisplayPowerManager> display_power_manager_;
+  std::unique_ptr<DisplayManager> display_manager_;
+  std::unique_ptr<DisplayPowerManager> display_power_manager_;
 };
 
 TEST_F(DisplayPowerManagerMockTest, Ok) {
@@ -81,10 +81,9 @@ TEST_F(DisplayPowerManagerMockTest, Ok) {
                                                    std::move(listener_server));
 
   display_manager()->SetDefaultDisplayForTests(
-      std::make_shared<display::Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
+      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
 
-  display::test::MockDisplayCoordinator mock_display_coordinator(
-      fuchsia_hardware_display::wire::Info{});
+  MockDisplayCoordinator mock_display_coordinator(fuchsia_hardware_display::wire::Info{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client),
                                 dispatcher());
   mock_display_coordinator.set_set_display_power_result(ZX_OK);
@@ -142,8 +141,7 @@ TEST_F(DisplayPowerManagerMockTest, NoDisplay) {
 
   display_manager()->SetDefaultDisplayForTests(nullptr);
 
-  display::test::MockDisplayCoordinator mock_display_coordinator(
-      fuchsia_hardware_display::wire::Info{});
+  MockDisplayCoordinator mock_display_coordinator(fuchsia_hardware_display::wire::Info{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client),
                                 dispatcher());
 
@@ -179,10 +177,9 @@ TEST_F(DisplayPowerManagerMockTest, NotSupported) {
                                                    std::move(listener_server));
 
   display_manager()->SetDefaultDisplayForTests(
-      std::make_shared<display::Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
+      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
 
-  display::test::MockDisplayCoordinator mock_display_coordinator(
-      fuchsia_hardware_display::wire::Info{});
+  MockDisplayCoordinator mock_display_coordinator(fuchsia_hardware_display::wire::Info{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client),
                                 dispatcher());
   mock_display_coordinator.set_set_display_power_result(ZX_ERR_NOT_SUPPORTED);
@@ -207,4 +204,4 @@ TEST_F(DisplayPowerManagerMockTest, NotSupported) {
 
 }  // namespace
 
-}  // namespace scenic_impl::gfx::test
+}  // namespace display::test

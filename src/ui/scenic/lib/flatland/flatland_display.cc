@@ -31,7 +31,7 @@ namespace flatland {
 std::shared_ptr<FlatlandDisplay> FlatlandDisplay::New(
     std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
     fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> request,
-    scheduling::SessionId session_id, std::shared_ptr<scenic_impl::display::Display> display,
+    scheduling::SessionId session_id, std::shared_ptr<display::Display> display,
     std::function<void()> destroy_display_function,
     std::shared_ptr<FlatlandPresenter> flatland_presenter, std::shared_ptr<LinkSystem> link_system,
     std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue) {
@@ -44,7 +44,7 @@ std::shared_ptr<FlatlandDisplay> FlatlandDisplay::New(
 FlatlandDisplay::FlatlandDisplay(
     std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
     fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> request,
-    scheduling::SessionId session_id, std::shared_ptr<scenic_impl::display::Display> display,
+    scheduling::SessionId session_id, std::shared_ptr<display::Display> display,
     std::function<void()> destroy_display_function,
     std::shared_ptr<FlatlandPresenter> flatland_presenter, std::shared_ptr<LinkSystem> link_system,
     std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue)

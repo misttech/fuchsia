@@ -141,8 +141,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // required.
   // TODO(https://fxbug.dev/42137737): We need to figure out exactly how we want the display to
   // anchor to the Flatland hierarchy. Only called from the main thread.
-  void AddDisplay(scenic_impl::display::Display* display, DisplayInfo info,
-                  uint32_t num_render_targets,
+  void AddDisplay(display::Display* display, DisplayInfo info, uint32_t num_render_targets,
                   fuchsia::sysmem2::BufferCollectionInfo* out_collection_info)
       FXL_LOCKS_EXCLUDED(lock_);
 
@@ -167,7 +166,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   };
 
   struct FrameEventData {
-    scenic_impl::DisplayEventId wait_id;
+    display::DisplayEventId wait_id;
     zx::event wait_event;
   };
 
@@ -247,8 +246,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Takes an image and directly composites it to a hardware layer on the display.
   void ApplyLayerImage(const fuchsia_hardware_display::wire::LayerId& layer_id,
                        const ImageRect& rectangle, const allocation::ImageMetadata& image,
-                       const scenic_impl::DisplayEventId& wait_id)
-      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+                       const display::DisplayEventId& wait_id) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Checks if the display coordinator is capable of applying the configuration settings that
   // have been set up until that point.

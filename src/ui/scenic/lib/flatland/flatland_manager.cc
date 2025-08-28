@@ -23,8 +23,7 @@ namespace flatland {
 FlatlandManager::FlatlandManager(
     async_dispatcher_t* dispatcher, const std::shared_ptr<FlatlandPresenter>& flatland_presenter,
     const std::shared_ptr<UberStructSystem>& uber_struct_system,
-    const std::shared_ptr<LinkSystem>& link_system,
-    std::shared_ptr<scenic_impl::display::Display> display,
+    const std::shared_ptr<LinkSystem>& link_system, std::shared_ptr<display::Display> display,
     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> buffer_collection_importers,
     fit::function<void(fidl::InterfaceRequest<fuchsia::ui::views::Focuser>, zx_koid_t)>
         register_view_focuser,

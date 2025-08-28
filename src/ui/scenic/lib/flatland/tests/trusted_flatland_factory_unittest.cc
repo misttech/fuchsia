@@ -41,7 +41,7 @@ class TrustedFlatlandFactoryTest : public LoggingEventLoop, public ::testing::Te
     importers.push_back(std::make_shared<allocation::MockBufferCollectionImporter>());
     flatland_manager_ = std::make_shared<FlatlandManager>(
         this->dispatcher(), mock_flatland_presenter_, uber_struct_system_, link_system_,
-        std::make_shared<scenic_impl::display::Display>(kDisplayId, 640, 480), importers,
+        std::make_shared<display::Display>(kDisplayId, 640, 480), importers,
         /*register_view_focuser*/ [](auto...) {},
         /*register_view_ref_focused*/ [](auto...) {},
         /*register_touch_source*/ [](auto...) {},

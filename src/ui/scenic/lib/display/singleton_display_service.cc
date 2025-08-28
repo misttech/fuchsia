@@ -7,7 +7,6 @@
 #include <fidl/fuchsia.math/cpp/fidl.h>
 #include <lib/async/default.h>
 
-namespace scenic_impl {
 namespace display {
 
 SingletonDisplayService::SingletonDisplayService(std::shared_ptr<display::Display> display)
@@ -71,4 +70,3 @@ void SingletonDisplayService::AddPublicService(sys::OutgoingDirectory* outgoing_
 }
 
 }  // namespace display
-}  // namespace scenic_impl

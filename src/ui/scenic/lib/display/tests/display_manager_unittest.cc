@@ -20,7 +20,7 @@
 #include "src/ui/scenic/lib/display/tests/mock_display_coordinator.h"
 #include "src/ui/scenic/lib/utils/range_inclusive.h"
 
-namespace scenic_impl::gfx::test {
+namespace display::test {
 
 namespace {
 
@@ -31,7 +31,7 @@ class DisplayManagerMockTest : public gtest::TestLoopFixture {
     TestLoopFixture::SetUp();
 
     async_set_default_dispatcher(dispatcher());
-    display_manager_ = std::make_unique<display::DisplayManager>([]() {});
+    display_manager_ = std::make_unique<DisplayManager>([]() {});
   }
 
   // |testing::Test|
@@ -40,11 +40,11 @@ class DisplayManagerMockTest : public gtest::TestLoopFixture {
     TestLoopFixture::TearDown();
   }
 
-  display::DisplayManager* display_manager() { return display_manager_.get(); }
-  display::Display* display() { return display_manager()->default_display(); }
+  DisplayManager* display_manager() { return display_manager_.get(); }
+  Display* display() { return display_manager()->default_display(); }
 
  private:
-  std::unique_ptr<display::DisplayManager> display_manager_;
+  std::unique_ptr<DisplayManager> display_manager_;
 };
 
 TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
@@ -67,10 +67,9 @@ TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
                                                    std::move(listener_server));
 
   display_manager()->SetDefaultDisplayForTests(
-      std::make_shared<display::Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
+      std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
 
-  display::test::MockDisplayCoordinator mock_display_coordinator(
-      fuchsia_hardware_display::wire::Info{});
+  MockDisplayCoordinator mock_display_coordinator(fuchsia_hardware_display::wire::Info{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
   mock_display_coordinator.set_acknowledge_vsync_fn(
       [&cookies_sent, &num_vsync_acknowledgement](uint64_t cookie) {
@@ -135,13 +134,13 @@ TEST_F(DisplayManagerMockTest, OnDisplayAdded) {
       .vertical_size_mm = 100,
       .using_fallback_size = false,
   };
-  display::test::MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
+  MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
   mock_display_coordinator.SendOnDisplayChangedRequest();
 
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  const display::Display* default_display = display_manager()->default_display();
+  const Display* default_display = display_manager()->default_display();
   ASSERT_TRUE(default_display != nullptr);
   EXPECT_EQ(default_display->width_in_px(), static_cast<uint32_t>(kDisplayWidth));
   EXPECT_EQ(default_display->height_in_px(), static_cast<uint32_t>(kDisplayHeight));
@@ -186,13 +185,13 @@ TEST_F(DisplayManagerMockTest, SelectPreferredMode) {
       .using_fallback_size = false,
   };
 
-  display::test::MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
+  MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
   mock_display_coordinator.SendOnDisplayChangedRequest();
 
   EXPECT_TRUE(RunLoopUntilIdle());
 
-  const display::Display* default_display = display_manager()->default_display();
+  const Display* default_display = display_manager()->default_display();
   ASSERT_TRUE(default_display != nullptr);
 
   EXPECT_EQ(default_display->width_in_px(), kPreferredMode.active_area.width);
@@ -238,13 +237,13 @@ TEST(DisplayManager, ICanHazDisplayMode) {
       fidl::Endpoints<fuchsia_hardware_display::Coordinator>::Create();
   auto [listener_client, listener_server] =
       fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
-  display::test::MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
+  MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
 
-  display::DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
-                                          /*display_mode_index_override=*/std::make_optional(1),
-                                          display::DisplayModeConstraints{},
-                                          /*display_available_cb=*/[]() {});
+  DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
+                                 /*display_mode_index_override=*/std::make_optional(1),
+                                 DisplayModeConstraints{},
+                                 /*display_available_cb=*/[]() {});
   display_manager.BindDefaultDisplayCoordinator(loop.dispatcher(), std::move(coordinator_client),
                                                 std::move(listener_server));
 
@@ -252,7 +251,7 @@ TEST(DisplayManager, ICanHazDisplayMode) {
 
   EXPECT_TRUE(loop.RunUntilIdle());
 
-  const display::Display* default_display = display_manager.default_display();
+  const Display* default_display = display_manager.default_display();
   ASSERT_TRUE(default_display != nullptr);
 
   EXPECT_EQ(default_display->width_in_px(), kNonPreferredButSelectedMode.active_area.width);
@@ -262,7 +261,7 @@ TEST(DisplayManager, ICanHazDisplayMode) {
 }
 
 TEST(DisplayManager, DisplayModeConstraintsHorizontalResolution) {
-  static const display::DisplayModeConstraints kDisplayModeConstraints = {
+  static const DisplayModeConstraints kDisplayModeConstraints = {
       .width_px_range = utils::RangeInclusive(700, 900),
   };
 
@@ -302,13 +301,13 @@ TEST(DisplayManager, DisplayModeConstraintsHorizontalResolution) {
   auto [listener_client, listener_server] =
       fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
 
-  display::test::MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
+  MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
 
-  display::DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
-                                          /*display_mode_index_override=*/std::nullopt,
-                                          kDisplayModeConstraints,
-                                          /*display_available_cb=*/[]() {});
+  DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
+                                 /*display_mode_index_override=*/std::nullopt,
+                                 kDisplayModeConstraints,
+                                 /*display_available_cb=*/[]() {});
   display_manager.BindDefaultDisplayCoordinator(loop.dispatcher(), std::move(coordinator_client),
                                                 std::move(listener_server));
 
@@ -316,7 +315,7 @@ TEST(DisplayManager, DisplayModeConstraintsHorizontalResolution) {
 
   EXPECT_TRUE(loop.RunUntilIdle());
 
-  const display::Display* default_display = display_manager.default_display();
+  const Display* default_display = display_manager.default_display();
   ASSERT_TRUE(default_display != nullptr);
 
   EXPECT_EQ(default_display->width_in_px(), kModeSatisfyingConstraints.active_area.width);
@@ -326,7 +325,7 @@ TEST(DisplayManager, DisplayModeConstraintsHorizontalResolution) {
 }
 
 TEST(DisplayManager, DisplayModeConstraintsVerticalResolution) {
-  static const display::DisplayModeConstraints kDisplayModeConstraints = {
+  static const DisplayModeConstraints kDisplayModeConstraints = {
       .height_px_range = utils::RangeInclusive(500, 700),
   };
 
@@ -366,13 +365,13 @@ TEST(DisplayManager, DisplayModeConstraintsVerticalResolution) {
   auto [listener_client, listener_server] =
       fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
 
-  display::test::MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
+  MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
 
-  display::DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
-                                          /*display_mode_index_override=*/std::nullopt,
-                                          kDisplayModeConstraints,
-                                          /*display_available_cb=*/[]() {});
+  DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
+                                 /*display_mode_index_override=*/std::nullopt,
+                                 kDisplayModeConstraints,
+                                 /*display_available_cb=*/[]() {});
   display_manager.BindDefaultDisplayCoordinator(loop.dispatcher(), std::move(coordinator_client),
                                                 std::move(listener_server));
 
@@ -380,7 +379,7 @@ TEST(DisplayManager, DisplayModeConstraintsVerticalResolution) {
 
   EXPECT_TRUE(loop.RunUntilIdle());
 
-  const display::Display* default_display = display_manager.default_display();
+  const Display* default_display = display_manager.default_display();
   ASSERT_TRUE(default_display != nullptr);
 
   EXPECT_EQ(default_display->width_in_px(), kModeSatisfyingConstraints.active_area.width);
@@ -390,7 +389,7 @@ TEST(DisplayManager, DisplayModeConstraintsVerticalResolution) {
 }
 
 TEST(DisplayManager, DisplayModeConstraintsRefreshRateLimit) {
-  static const display::DisplayModeConstraints kDisplayModeConstraints = {
+  static const DisplayModeConstraints kDisplayModeConstraints = {
       .refresh_rate_millihertz_range = utils::RangeInclusive(20'000, 50'000),
   };
 
@@ -430,13 +429,13 @@ TEST(DisplayManager, DisplayModeConstraintsRefreshRateLimit) {
   auto [listener_client, listener_server] =
       fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
 
-  display::test::MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
+  MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
 
-  display::DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
-                                          /*display_mode_index_override=*/std::nullopt,
-                                          kDisplayModeConstraints,
-                                          /*display_available_cb=*/[]() {});
+  DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
+                                 /*display_mode_index_override=*/std::nullopt,
+                                 kDisplayModeConstraints,
+                                 /*display_available_cb=*/[]() {});
   display_manager.BindDefaultDisplayCoordinator(loop.dispatcher(), std::move(coordinator_client),
                                                 std::move(listener_server));
 
@@ -444,7 +443,7 @@ TEST(DisplayManager, DisplayModeConstraintsRefreshRateLimit) {
 
   EXPECT_TRUE(loop.RunUntilIdle());
 
-  const display::Display* default_display = display_manager.default_display();
+  const Display* default_display = display_manager.default_display();
   ASSERT_TRUE(default_display != nullptr);
 
   EXPECT_EQ(default_display->width_in_px(), kModeSatisfyingConstraints.active_area.width);
@@ -454,7 +453,7 @@ TEST(DisplayManager, DisplayModeConstraintsRefreshRateLimit) {
 }
 
 TEST(DisplayManager, DisplayModeConstraintsOverriddenByModeIndex) {
-  static const display::DisplayModeConstraints kDisplayModeConstraints = {
+  static const DisplayModeConstraints kDisplayModeConstraints = {
       .width_px_range = utils::RangeInclusive(700, 900),
   };
 
@@ -499,13 +498,13 @@ TEST(DisplayManager, DisplayModeConstraintsOverriddenByModeIndex) {
   auto [listener_client, listener_server] =
       fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
 
-  display::test::MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
+  MockDisplayCoordinator mock_display_coordinator(kDisplayInfo);
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
 
-  display::DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
-                                          /*display_mode_index_override=*/std::make_optional(2),
-                                          kDisplayModeConstraints,
-                                          /*display_available_cb=*/[]() {});
+  DisplayManager display_manager(/*i_can_haz_display_id=*/std::nullopt,
+                                 /*display_mode_index_override=*/std::make_optional(2),
+                                 kDisplayModeConstraints,
+                                 /*display_available_cb=*/[]() {});
   display_manager.BindDefaultDisplayCoordinator(loop.dispatcher(), std::move(coordinator_client),
                                                 std::move(listener_server));
 
@@ -513,7 +512,7 @@ TEST(DisplayManager, DisplayModeConstraintsOverriddenByModeIndex) {
 
   EXPECT_TRUE(loop.RunUntilIdle());
 
-  const display::Display* default_display = display_manager.default_display();
+  const Display* default_display = display_manager.default_display();
   ASSERT_TRUE(default_display != nullptr);
 
   EXPECT_EQ(default_display->width_in_px(), kModeOverridden.active_area.width);
@@ -524,4 +523,4 @@ TEST(DisplayManager, DisplayModeConstraintsOverriddenByModeIndex) {
 
 }  // namespace
 
-}  // namespace scenic_impl::gfx::test
+}  // namespace display::test

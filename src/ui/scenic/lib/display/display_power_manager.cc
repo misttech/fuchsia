@@ -10,7 +10,7 @@
 
 #include "src/ui/scenic/lib/display/display_manager.h"
 
-namespace scenic_impl::display {
+namespace display {
 
 namespace {
 
@@ -77,4 +77,4 @@ void DisplayPowerManager::SetDisplayPower(bool power_on,
   completer(fit::ok());
 }
 
-}  // namespace scenic_impl::display
+}  // namespace display

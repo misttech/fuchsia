@@ -8,7 +8,6 @@
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/types.h>
 
-namespace scenic_impl {
 namespace display {
 
 DisplayCoordinatorListener::DisplayCoordinatorListener(
@@ -52,4 +51,3 @@ void DisplayCoordinatorListener::handle_unknown_method(
 }
 
 }  // namespace display
-}  // namespace scenic_impl

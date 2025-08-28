@@ -12,7 +12,7 @@
 #include <lib/zx/channel.h>
 #include <lib/zx/event.h>
 
-namespace scenic_impl::display {
+namespace display {
 
 // Implements a [`fuchsia.hardware.display/CoordinatorListener`] server and
 // allows registration for display events callbacks.
@@ -59,6 +59,6 @@ class DisplayCoordinatorListener final
   fidl::ServerBindingRef<fuchsia_hardware_display::CoordinatorListener> binding_;
 };
 
-}  // namespace scenic_impl::display
+}  // namespace display
 
 #endif  // SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_COORDINATOR_LISTENER_H_

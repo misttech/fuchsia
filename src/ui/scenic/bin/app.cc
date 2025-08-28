@@ -92,7 +92,7 @@ utils::RangeInclusive<int> CreateRangeFromStructuredConfigValues(int left, int r
   return utils::RangeInclusive<int>();
 }
 
-scenic_impl::display::DisplayModeConstraints GetDisplayModeConstraints(
+display::DisplayModeConstraints GetDisplayModeConstraints(
     const scenic_structured_config::Config& values) {
   return {
       .width_px_range =

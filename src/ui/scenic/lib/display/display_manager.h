@@ -16,7 +16,6 @@
 #include "src/ui/scenic/lib/display/display_coordinator_listener.h"
 #include "src/ui/scenic/lib/utils/range_inclusive.h"
 
-namespace scenic_impl {
 namespace display {
 
 struct DisplayModeConstraints {
@@ -101,6 +100,5 @@ class DisplayManager {
 };
 
 }  // namespace display
-}  // namespace scenic_impl
 
 #endif  // SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_MANAGER_H_

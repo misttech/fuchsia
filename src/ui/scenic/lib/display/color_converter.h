@@ -9,7 +9,7 @@
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/sys/cpp/component_context.h>
 
-namespace scenic_impl::display {
+namespace display {
 
 using SetColorConversionFunc = fit::function<void(const fidl::Array<float, 9>& coefficients,
                                                   const fidl::Array<float, 3>& preoffsets,
@@ -37,6 +37,6 @@ class ColorConverter : public fuchsia::ui::display::color::Converter {
   const SetMinimumRgbFunc set_minimum_rgb_;
 };
 
-}  // namespace scenic_impl::display
+}  // namespace display
 
 #endif  // SRC_UI_SCENIC_LIB_DISPLAY_COLOR_CONVERTER_H_
