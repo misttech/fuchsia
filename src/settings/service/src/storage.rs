@@ -71,12 +71,12 @@ pub(crate) mod testing {
     use fidl_fuchsia_stash::{
         StoreAccessorMarker, StoreAccessorProxy, StoreAccessorRequest, Value,
     };
-    use fuchsia_async as fasync;
     use fuchsia_inspect::component;
     use futures::lock::Mutex;
     use futures::prelude::*;
     use serde::{Deserialize, Serialize};
     use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
+    use settings_storage::fidl_storage::{FidlStorage, FidlStorageConvertible};
     use settings_storage::stash_logger::StashInspectLogger;
     use settings_storage::storage_factory::{
         DefaultLoader, InitializationState, NoneT, StorageAccess, StorageFactory,
@@ -84,6 +84,7 @@ pub(crate) mod testing {
     use std::any::Any;
     use std::collections::HashMap;
     use std::rc::Rc;
+    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     #[derive(PartialEq)]
     pub(crate) enum StashAction {
@@ -302,6 +303,152 @@ pub(crate) mod testing {
         })
         .detach();
         (stash_proxy, stats)
+    }
+
+    /// Storage that does not write to disk, for testing.
+    // TODO(https://fxbug.dev/XYZ) Remove allow once used.
+    #[allow(dead_code)]
+    pub(crate) struct InMemoryFidlStorageFactory {
+        initial_data: HashMap<&'static str, Vec<u8>>,
+        fidl_storage_cache: Mutex<InitializationState<(Rc<FidlStorage>, tempfile::TempDir)>>,
+    }
+
+    impl Default for InMemoryFidlStorageFactory {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    const FIDL_INITIALIZATION_ERROR: &str =
+        "Cannot initialize an already accessed device storage. Make \
+        sure you're not retrieving a FidlStorage before passing InMemoryFidlStorageFactory to an \
+        EnvironmentBuilder. That must be done after.";
+
+    fn open_tempdir(tempdir: &tempfile::TempDir) -> fio::DirectoryProxy {
+        fuchsia_fs::directory::open_in_namespace(
+            tempdir.path().to_str().expect("tempdir path is not valid UTF-8"),
+            fuchsia_fs::PERM_READABLE | fuchsia_fs::PERM_WRITABLE,
+        )
+        .expect("failed to open connection to tempdir")
+    }
+
+    impl InMemoryFidlStorageFactory {
+        /// Constructs a new `InMemoryFidlStorageFactory` with the ability to create a [`FidlStorage`]
+        /// that can only read and write to the storage keys passed in.
+        pub fn new() -> Self {
+            InMemoryFidlStorageFactory {
+                initial_data: HashMap::new(),
+                fidl_storage_cache: Mutex::new(InitializationState::new()),
+            }
+        }
+
+        /// Helper method to simplify setup for `InMemoryFidlStorageFactory` in tests.
+        // TODO(https://fxbug.dev/42166874) Remove allow once used.
+        #[allow(dead_code)]
+        pub(crate) async fn initialize_storage<T>(&self)
+        where
+            T: FidlStorageConvertible,
+        {
+            self.initialize_storage_for_key(T::KEY).await;
+        }
+
+        async fn initialize_storage_for_key(&self, key: &'static str) {
+            match &mut *self.fidl_storage_cache.lock().await {
+                InitializationState::Initializing(initial_keys, _) => {
+                    let _ = initial_keys.insert(key, None);
+                }
+                InitializationState::Initialized(_) => panic!("{}", FIDL_INITIALIZATION_ERROR),
+                _ => unreachable!(),
+            }
+        }
+
+        async fn initialize_storage_for_key_with_loader(
+            &self,
+            key: &'static str,
+            loader: Box<dyn Any>,
+        ) {
+            match &mut *self.fidl_storage_cache.lock().await {
+                InitializationState::Initializing(initial_keys, _) => {
+                    let _ = initial_keys.insert(key, Some(loader));
+                }
+                InitializationState::Initialized(_) => panic!("{}", INITIALIZATION_ERROR),
+                _ => unreachable!(),
+            }
+        }
+
+        /// Retrieve the [`FidlStorage`] singleton.
+        pub(crate) async fn get_fidl_storage(&self) -> Rc<FidlStorage> {
+            let initialization = &mut *self.fidl_storage_cache.lock().await;
+            match initialization {
+                InitializationState::Initializing(initial_keys, _) => {
+                    let tempdir = tempfile::tempdir().expect("failed to create tempdir");
+                    let directory = open_tempdir(&tempdir);
+
+                    let (mut fidl_storage, tasks) =
+                        FidlStorage::with_file_proxy(initial_keys.drain(), directory, move |key| {
+                            let temp_file_name = format!("{key}.tmp");
+                            let file_name = format!("{key}.pfidl");
+                            Ok((temp_file_name, file_name))
+                        })
+                        .await
+                        .unwrap();
+
+                    for task in tasks {
+                        task.detach();
+                    }
+                    fidl_storage.set_caching_enabled(false);
+                    fidl_storage.set_debounce_writes(false);
+
+                    // write initial data to storage
+                    for (&key, data) in &self.initial_data {
+                        fidl_storage
+                            .write_test_bytes(key, data.clone())
+                            .await
+                            .expect("Failed to write initial data");
+                    }
+
+                    let fidl_storage = Rc::new(fidl_storage);
+                    *initialization = InitializationState::Initialized(Rc::new((
+                        Rc::clone(&fidl_storage),
+                        // Store tempdir with storage. It will delete the tempdir when it's dropped,
+                        // so we need to keep it alive.
+                        tempdir,
+                    )));
+                    fidl_storage
+                }
+                InitializationState::Initialized(initialized) => Rc::clone(&initialized.as_ref().0),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    impl StorageFactory for InMemoryFidlStorageFactory {
+        type Storage = FidlStorage;
+
+        async fn initialize<T>(&self) -> Result<(), Error>
+        where
+            T: StorageAccess<Storage = FidlStorage>,
+        {
+            self.initialize_storage_for_key(T::STORAGE_KEY).await;
+            Ok(())
+        }
+
+        async fn initialize_with_loader<T, L>(&self, loader: L) -> Result<(), Error>
+        where
+            T: StorageAccess<Storage = FidlStorage>,
+            L: DefaultLoader<Result = T::Data> + 'static,
+        {
+            self.initialize_storage_for_key_with_loader(
+                T::STORAGE_KEY,
+                Box::new(loader) as Box<dyn Any>,
+            )
+            .await;
+            Ok(())
+        }
+
+        async fn get_store(&self) -> Rc<FidlStorage> {
+            self.get_fidl_storage().await
+        }
     }
 
     const VALUE0: i32 = 3;

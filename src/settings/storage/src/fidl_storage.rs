@@ -137,7 +137,7 @@ impl FidlStorage {
     ///
     /// On success, returns the FidlStorage as well as the list of background synchronizing tasks.
     /// The background tasks can be awaited or detached.
-    pub(crate) async fn with_file_proxy<I, G>(
+    pub async fn with_file_proxy<I, G>(
         iter: I,
         storage_dir: DirectoryProxy,
         files_generator: G,
@@ -275,17 +275,11 @@ impl FidlStorage {
         }
     }
 
-    #[cfg(test)]
-    // TODO(https://fxbug.dev/42172967) Remove allow once all tests have been migrated to fidl storage.
-    #[allow(dead_code)]
-    fn set_caching_enabled(&mut self, enabled: bool) {
+    pub fn set_caching_enabled(&mut self, enabled: bool) {
         self.caching_enabled = enabled;
     }
 
-    #[cfg(test)]
-    // TODO(https://fxbug.dev/42172967) Remove allow once all tests have been migrated to fidl storage.
-    #[allow(dead_code)]
-    fn set_debounce_writes(&mut self, debounce: bool) {
+    pub fn set_debounce_writes(&mut self, debounce: bool) {
         self.debounce_writes = debounce;
     }
 
@@ -353,6 +347,12 @@ impl FidlStorage {
     {
         let new_value = persist(&new_value.to_storable())?;
         self.inner_write(T::KEY, new_value).await
+    }
+
+    /// Test-only method to write directly to disk without touching the cache. This is used for
+    /// setting up data as if it existed on disk before the storage was constructed.
+    pub async fn write_test_bytes(&self, key: &'static str, value: Vec<u8>) -> Result<(), Error> {
+        self.inner_write(key, value).await.map(|_| ())
     }
 
     async fn get_inner(&self, key: &'static str) -> MutexGuard<'_, CachedStorage> {
