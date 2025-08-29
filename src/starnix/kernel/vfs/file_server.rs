@@ -525,18 +525,6 @@ impl directory::entry::GetEntryInfo for StarnixNodeConnection {
 }
 
 impl directory::entry_container::Directory for StarnixNodeConnection {
-    fn deprecated_open(
-        self: Arc<Self>,
-        scope: execution_scope::ExecutionScope,
-        flags: fio::OpenFlags,
-        path: path::Path,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) {
-        flags
-            .to_object_request(server_end)
-            .handle(|object_request| self.directory_entry_open(scope, flags, path, object_request));
-    }
-
     fn open(
         self: Arc<Self>,
         scope: execution_scope::ExecutionScope,
