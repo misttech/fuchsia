@@ -51,21 +51,21 @@ Error Validate32BitRegisters(const Registers& regs) {
     return Error("32 bit registers don't have SP (r13) set: %s\n32 Bit Registers: %s",
                  err.msg().c_str(), regs.Describe().c_str());
   } else if (val > std::numeric_limits<uint32_t>::max()) {
-    return Error("32 bit SP (r13) %#lx > uint32::MAX", val);
+    return Error("32 bit SP (r13) %" PRIx64 " > uint32::MAX", val);
   }
 
   if (auto err = regs.GetReturnAddress(val); err.has_err()) {
     return Error("32 bit registers don't have LR (r14) set: %s\n32 Bit Registers: %s",
                  err.msg().c_str(), regs.Describe().c_str());
   } else if (val > std::numeric_limits<uint32_t>::max()) {
-    return Error("32 bit LR (r14) %#lx > uint32::MAX", val);
+    return Error("32 bit LR (r14) %" PRIx64 " > uint32::MAX", val);
   }
 
   if (auto err = regs.GetPC(val); err.has_err()) {
     return Error("32 bit registers don't have PC (r15) set: %s\n32 Bit Registers: %s",
                  err.msg().c_str(), regs.Describe().c_str());
   } else if (val > std::numeric_limits<uint32_t>::max()) {
-    return Error("32 bit PC (r15) %#lx > uint32::MAX", val);
+    return Error("32 bit PC (r15) %" PRIx64 " > uint32::MAX", val);
   }
 
   return Success();
@@ -98,8 +98,9 @@ fit::result<Error, Registers> TryConvertRegistersTo32Bit(const Registers& curren
 
   if (!(pc < std::numeric_limits<uint32_t>::max()) ||
       !(ra < std::numeric_limits<uint32_t>::max())) {
-    return fit::error(Error(
-        "PC [%#lx] or LR [%#lx] contains address greater than 32 bit address space.", pc, ra));
+    return fit::error(Error("PC [%" PRIx64 "] or LR [%" PRIx64
+                            "] contains address greater than 32 bit address space.",
+                            pc, ra));
   }
 
   return next.To32Bit();
