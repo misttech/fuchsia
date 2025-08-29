@@ -4,7 +4,9 @@
 
 use itertools::Itertools;
 use regex::Regex;
-use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, PAGE_SIZE, ProcMapsFile, ProcSmapsFile};
+use starnix_core::mm::{
+    MemoryAccessor, MemoryAccessorExt, MemoryManager, PAGE_SIZE, ProcMapsFile, ProcSmapsFile,
+};
 use starnix_core::security;
 use starnix_core::task::{
     CurrentTask, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup, ThreadGroupKey,
@@ -44,7 +46,7 @@ use starnix_uapi::{
 use std::borrow::Cow;
 use std::ffi::CString;
 use std::ops::{Deref, Range};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Weak};
 /// Loads entries for the `scope` of a task.
 fn task_entries(scope: TaskEntryScope) -> Vec<(FsString, FileMode)> {
     // NOTE: keep entries in sync with `TaskDirectory::lookup()`.
@@ -909,11 +911,16 @@ impl DynamicFileSource for LimitsFile {
 }
 
 /// `MemFile` implements `proc/<pid>/mem` file.
-#[derive(Clone)]
-pub struct MemFile(WeakRef<Task>);
+pub struct MemFile(Weak<MemoryManager>);
+
 impl MemFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        SimpleFileNode::new(move || Ok(Self(task.clone())))
+        let get_mm = move || {
+            let task = task.upgrade()?;
+            let mm = task.mm().ok()?;
+            Some(Arc::downgrade(&mm))
+        };
+        SimpleFileNode::new(move || Ok(Self(get_mm().unwrap_or_default())))
     }
 }
 
@@ -943,28 +950,21 @@ impl FileOps for MemFile {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        let task = if let Some(task) = self.0.upgrade() {
-            task
-        } else {
+        let Some(mm) = self.0.upgrade() else {
             return Ok(0);
         };
-        match task.state_code() {
-            TaskStateCode::Zombie => Ok(0),
-            TaskStateCode::Running | TaskStateCode::Sleeping | TaskStateCode::TracingStop => {
-                let mut addr = UserAddress::from(offset as u64);
-                data.write_each(&mut |bytes| {
-                    let read_bytes = if current_task.has_same_address_space(&task) {
-                        current_task.read_memory_partial(addr, bytes)
-                    } else {
-                        task.read_memory_partial(addr, bytes)
-                    }
-                    .map_err(|_| errno!(EIO))?;
-                    let actual = read_bytes.len();
-                    addr = (addr + actual)?;
-                    Ok(actual)
-                })
+        let mut addr = UserAddress::from(offset as u64);
+        data.write_each(&mut |bytes| {
+            let read_bytes = if current_task.has_same_address_space(Some(&mm)) {
+                current_task.read_memory_partial(addr, bytes)
+            } else {
+                mm.syscall_read_memory_partial(addr, bytes)
             }
-        }
+            .map_err(|_| errno!(EIO))?;
+            let actual = read_bytes.len();
+            addr = (addr + actual)?;
+            Ok(actual)
+        })
     }
 
     fn write(
@@ -975,26 +975,23 @@ impl FileOps for MemFile {
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        let task = Task::from_weak(&self.0)?;
-        match task.state_code() {
-            TaskStateCode::Zombie => Ok(0),
-            TaskStateCode::Running | TaskStateCode::Sleeping | TaskStateCode::TracingStop => {
-                let addr = UserAddress::from(offset as u64);
-                let mut written = 0;
-                let result = data.peek_each(&mut |bytes| {
-                    let actual = if current_task.has_same_address_space(&task) {
-                        current_task.write_memory_partial((addr + written)?, bytes)
-                    } else {
-                        task.write_memory_partial((addr + written)?, bytes)
-                    }
-                    .map_err(|_| errno!(EIO))?;
-                    written += actual;
-                    Ok(actual)
-                });
-                data.advance(written)?;
-                result
+        let Some(mm) = self.0.upgrade() else {
+            return Ok(0);
+        };
+        let addr = UserAddress::from(offset as u64);
+        let mut written = 0;
+        let result = data.peek_each(&mut |bytes| {
+            let actual = if current_task.has_same_address_space(Some(&mm)) {
+                current_task.write_memory_partial((addr + written)?, bytes)
+            } else {
+                mm.syscall_write_memory_partial((addr + written)?, bytes)
             }
-        }
+            .map_err(|_| errno!(EIO))?;
+            written += actual;
+            Ok(actual)
+        });
+        data.advance(written)?;
+        result
     }
 }
 
