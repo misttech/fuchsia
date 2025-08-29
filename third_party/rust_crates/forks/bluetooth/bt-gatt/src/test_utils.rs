@@ -15,9 +15,10 @@ use bt_common::{PeerId, Uuid};
 
 use crate::central::ScanResult;
 use crate::client::CharacteristicNotification;
+use crate::periodic_advertising::{PeriodicAdvertising, SyncReport};
 use crate::pii::GetPeerAddr;
 use crate::server::{self, LocalService, ReadResponder, ServiceDefinition, WriteResponder};
-use crate::{GattTypes, ServerTypes, types::*};
+use crate::{types::*, GattTypes, ServerTypes};
 
 #[derive(Default)]
 struct FakePeerServiceInner {
@@ -293,6 +294,7 @@ impl GattTypes for FakeTypes {
     type NotificationStream = UnboundedReceiver<Result<CharacteristicNotification>>;
     type ReadFut<'a> = Ready<Result<(usize, bool)>>;
     type WriteFut<'a> = Ready<Result<()>>;
+    type PeriodicAdvertising = FakePeriodicAdvertising;
 }
 
 impl ServerTypes for FakeTypes {
@@ -304,6 +306,21 @@ impl ServerTypes for FakeTypes {
     type ReadResponder = FakeResponder;
     type WriteResponder = FakeResponder;
     type IndicateConfirmationStream = UnboundedReceiver<Result<server::ConfirmationEvent>>;
+}
+
+pub struct FakePeriodicAdvertising;
+
+impl PeriodicAdvertising for FakePeriodicAdvertising {
+    type SyncFut = Ready<Result<Self::SyncStream>>;
+    type SyncStream = futures::stream::Empty<Result<SyncReport>>;
+
+    fn sync_to_advertising_reports(
+        _peer_id: PeerId,
+        _advertising_sid: u8,
+        _config: crate::periodic_advertising::SyncConfiguration,
+    ) -> Self::SyncFut {
+        unimplemented!()
+    }
 }
 
 #[derive(Default)]
@@ -338,6 +355,10 @@ impl crate::Central<FakeTypes> for FakeCentral {
             None => Err(Error::PeerDisconnected(peer_id)),
         };
         futures::future::ready(res)
+    }
+
+    fn periodic_advertising(&self) -> Result<<FakeTypes as GattTypes>::PeriodicAdvertising> {
+        unimplemented!()
     }
 }
 

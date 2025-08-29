@@ -8,7 +8,7 @@ use thiserror::Error;
 /// Errors that can be returned from GATT procedures. These errors are sent from
 /// the peer. These are defined to match the Bluetooth Core Spec (v5.4, Vol 3,
 /// Part F, Sec 3.4.1.1)
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum GattError {
     InvalidHandle = 1,
     ReadNotPermitted = 2,
@@ -153,6 +153,8 @@ pub enum Error {
     AlreadyPublished(crate::server::ServiceId),
     #[error("Encoding/decoding error: {0}")]
     Encoding(#[from] bt_common::packet_encoding::Error),
+    #[error("Periodic Advertising error: {0}")]
+    PeriodicAdvertising(crate::periodic_advertising::Error),
 }
 
 impl Error {

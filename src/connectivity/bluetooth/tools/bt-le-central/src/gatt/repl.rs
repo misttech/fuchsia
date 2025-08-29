@@ -2,16 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use bt_common::Uuid;
 use fuchsia_async as fasync;
-use futures::channel::mpsc::{channel, SendError};
+use futures::channel::mpsc::{SendError, channel};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use rustyline::error::ReadlineError;
 use rustyline::{CompletionType, Config, EditMode, Editor};
 use std::thread;
 
 use super::{
+    GattClient,
+    GattClientPtr,
     commands::{Cmd, CmdHelper},
     do_connect,
     //  do_read_by_type,
@@ -24,12 +26,11 @@ use super::{
     do_read_desc,
     do_read_long_chr,
     do_read_long_desc,
+    do_vcs,
     do_write_chr,
     do_write_desc,
     do_write_long_chr,
     do_write_long_desc,
-    GattClient,
-    GattClientPtr,
 };
 
 const PROMPT: &str = "GATT> ";
@@ -161,6 +162,7 @@ async fn handle_cmd<T: bt_gatt::GattTypes>(
         Some(Ok(Cmd::EnableNotify)) => do_enable_notify(&args, client).await,
         Some(Ok(Cmd::DisableNotify)) => do_disable_notify(&args, client).await,
         Some(Ok(Cmd::Pacs)) => do_pacs(args_str, client.clone()).await,
+        Some(Ok(Cmd::Vol)) => do_vcs(args_str, client.clone()).await,
         Some(Err(e)) => {
             eprintln!("Unknown command: {:?}", e);
             Ok(())

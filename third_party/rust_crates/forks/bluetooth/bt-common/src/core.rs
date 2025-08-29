@@ -177,6 +177,16 @@ impl crate::packet_encoding::Decodable for CodecId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phy {
+    /// LE 1M PHY
+    Le1m,
+    /// LE 2M PHY
+    Le2m,
+    /// LE Coded PHY
+    LeCoded,
+}
+
 #[cfg(test)]
 mod tests {
     use crate::packet_encoding::Decodable;

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
@@ -12,11 +12,12 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use bt_common::debug_command::{CommandRunner, CommandSet};
 use bt_common::Uuid;
+use bt_common::debug_command::{CommandRunner, CommandSet};
 use bt_gatt::client::{Client, PeerService, PeerServiceHandle};
 use bt_gatt::types::Characteristic;
 use bt_pacs::debug::{PacsCmd, PacsDebug};
+use bt_vcs::debug::{VcsCmd, VcsDebug};
 
 use self::commands::Cmd;
 
@@ -109,6 +110,9 @@ struct GattClient<T: bt_gatt::GattTypes> {
 
     // Pacs client
     pacs: Arc<PacsDebug<T>>,
+
+    // Vcs client
+    vol: Arc<VcsDebug<T>>,
 }
 
 impl<T: bt_gatt::GattTypes> GattClient<T> {
@@ -120,7 +124,8 @@ impl<T: bt_gatt::GattTypes> GattClient<T> {
             client: client.clone(),
             services: Mutex::new(HashMap::new()),
             active_service: Mutex::new(None),
-            pacs: Arc::new(PacsDebug::new(client)),
+            pacs: Arc::new(PacsDebug::new(client.clone())),
+            vol: Arc::new(VcsDebug::new(client)),
         })
     }
 
@@ -185,6 +190,10 @@ impl<T: bt_gatt::GattTypes> GattClient<T> {
 
     fn pacs(&self) -> Arc<PacsDebug<T>> {
         self.pacs.clone()
+    }
+
+    fn vcs(&self) -> Arc<VcsDebug<T>> {
+        self.vol.clone()
     }
 
     fn active(&self) -> Option<Arc<ActiveService<T>>> {
@@ -786,9 +795,47 @@ async fn do_pacs<T: bt_gatt::GattTypes>(
         return Ok(());
     };
 
-    println!("Args: {:?}", args);
     let pacs = client.pacs();
     pacs_cmd(pacs, sub_cmd, args.clone()).await?;
+    Ok(())
+}
+
+async fn vcs_cmd<T: bt_gatt::GattTypes>(
+    vcs: Arc<VcsDebug<T>>,
+    sub_cmd: VcsCmd,
+    args: Vec<String>,
+) -> Result<(), Error> {
+    if let Err(e) = vcs.run(sub_cmd, args).await {
+        println!("Error running vol command: {e:?}");
+    }
+    Ok(())
+}
+
+async fn do_vcs<T: bt_gatt::GattTypes>(
+    args: Vec<String>,
+    client: GattClientPtr<T>,
+) -> Result<(), Error> {
+    if args.len() < 1 {
+        println!("usage: vol {}", "variants");
+        return Ok(());
+    }
+
+    let Ok(sub_cmd) = args[0].parse::<VcsCmd>() else {
+        println!(
+            "subcommands are: {}",
+            VcsCmd::variants()
+                .into_iter()
+                .map(|mut s| {
+                    s.push_str(" ");
+                    s
+                })
+                .collect::<String>()
+        );
+        return Ok(());
+    };
+
+    let vcs = client.vcs();
+    vcs_cmd(vcs, sub_cmd, args[1..].iter().cloned().collect()).await?;
     Ok(())
 }
 

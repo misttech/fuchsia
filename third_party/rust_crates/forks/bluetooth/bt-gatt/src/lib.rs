@@ -14,6 +14,7 @@ pub use client::Client;
 pub mod central;
 pub use central::Central;
 
+pub mod periodic_advertising;
 pub mod pii;
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -23,6 +24,8 @@ pub mod test_utils;
 mod tests;
 
 use futures::{Future, Stream};
+
+use crate::periodic_advertising::PeriodicAdvertising;
 
 /// Implementors implement traits with respect to GattTypes.
 /// Implementation crates provide an object which relates a constellation of
@@ -56,6 +59,8 @@ pub trait GattTypes: Sized {
     /// Future resolving when a characteristic or descriptor has been written.
     /// Returns an error if the value could not be written.
     type WriteFut<'a>: Future<Output = Result<()>> + 'a;
+    /// The implementation of periodic advertising for this GATT implementation.
+    type PeriodicAdvertising: PeriodicAdvertising;
 }
 
 /// Servers and services are defined with respect to ServerTypes.

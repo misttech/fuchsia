@@ -1,19 +1,20 @@
 [package]
-name = "bt-gatt"
+name = "bt-vcs"
+description = "Client and server library for the Volume Control Service"
 version = "0.0.1"
 edition = "2021"
 license = "BSD-2-Clause"
 
-[features]
-default = []
-test-utils = []
-
 [dependencies]
+### In-tree dependencies
+bt-gatt = { path = "../bt-gatt" }
 bt-common = { path = "../bt-common" }
-thiserror = "2.0.12"
+
+### Others
 futures = "=0.3.31"
 parking_lot = "0.12.4"
+thiserror = "2.0.12"
 
 [dev-dependencies]
-assert_matches = "1.5.0"
+pretty_assertions = "1.2.1"
 bt-gatt = { path = "../bt-gatt", features = ["test-utils"] }

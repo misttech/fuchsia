@@ -165,6 +165,7 @@ mod tests {
                 BROADCAST_AUDIO_ANNOUNCEMENT_SERVICE,
                 vec![0x01, 0x02, 0x03],
             )],
+            advertising_sid: 0,
         }));
 
         // Found broadcast source event shouldn't have been sent since braodcast source
@@ -209,6 +210,7 @@ mod tests {
                 BASIC_AUDIO_ANNOUNCEMENT_SERVICE,
                 base_data.clone(),
             )],
+            advertising_sid: 0,
         }));
 
         // Expect the stream to send out broadcast source found event since information
@@ -231,6 +233,7 @@ mod tests {
                 BASIC_AUDIO_ANNOUNCEMENT_SERVICE,
                 base_data.clone(),
             )],
+            advertising_sid: 0,
         }));
 
         // Shouldn't have gotten the event again since the information remained the

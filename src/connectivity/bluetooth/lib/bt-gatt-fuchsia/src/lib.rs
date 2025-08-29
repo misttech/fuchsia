@@ -14,6 +14,8 @@ use fidl_gatt2::{
 use fidl_le::{ConnectionProxy, ScanResultWatcherProxy};
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_sync::Mutex;
+use futures::future::{FusedFuture, Ready};
+use futures::stream::FusedStream;
 use futures::{Future, FutureExt, Stream, StreamExt};
 use std::collections::{HashMap, VecDeque};
 use std::pin::Pin;
@@ -31,13 +33,12 @@ pub mod pii;
 
 pub struct FuchsiaTypes {}
 
-use futures::future::{FusedFuture, Ready};
-
 impl bt_gatt::GattTypes for FuchsiaTypes {
     type Central = Central;
     type ScanResultStream = ScanResultStream;
     type Client = Client;
     type ConnectFuture = Ready<Result<Self::Client>>;
+    type PeriodicAdvertising = PeriodicAdvertising;
 
     type PeerServiceHandle = PeerServiceHandle;
     type FindServicesFut = fasync::Task<Result<Vec<PeerServiceHandle>>>;
@@ -59,6 +60,22 @@ impl bt_gatt::ServerTypes for FuchsiaTypes {
     type ReadResponder = ReadResponder;
     type WriteResponder = WriteResponder;
     type IndicateConfirmationStream = IndicateConfirmationStream;
+}
+
+#[derive(Clone)]
+pub struct PeriodicAdvertising;
+
+impl bt_gatt::periodic_advertising::PeriodicAdvertising for PeriodicAdvertising {
+    type SyncFut = Ready<bt_gatt::Result<Self::SyncStream>>;
+    type SyncStream =
+        futures::stream::Pending<bt_gatt::Result<bt_gatt::periodic_advertising::SyncReport>>;
+    fn sync_to_advertising_reports(
+        _peer_id: PeerId,
+        _adv_sid: u8,
+        _config: bt_gatt::periodic_advertising::SyncConfiguration,
+    ) -> Self::SyncFut {
+        futures::future::ready(Err("Unimplemented".to_owned().into()))
+    }
 }
 
 #[derive(Clone)]
@@ -112,6 +129,12 @@ impl bt_gatt::Central<FuchsiaTypes> for Central {
             fidl::endpoints::create_proxy::<fidl_le::ScanResultWatcherMarker>();
         let scan_stopped_fut = self.proxy.scan(&scan_options, server_end);
         ScanResultStream::new(proxy, scan_stopped_fut)
+    }
+
+    fn periodic_advertising(
+        &self,
+    ) -> bt_gatt::Result<<FuchsiaTypes as GattTypes>::PeriodicAdvertising> {
+        Err("Unimplemented".to_owned().into())
     }
 
     fn connect(&self, peer_id: PeerId) -> <FuchsiaTypes as GattTypes>::ConnectFuture {
@@ -211,6 +234,7 @@ fn to_gatt_scan_result(peer: &fidl_le::Peer) -> bt_gatt::central::ScanResult {
             .advertising_data
             .clone()
             .map_or(Vec::new(), |d| to_gatt_advertising_data(d)),
+        advertising_sid: peer.advertising_sid.unwrap_or(0),
     }
 }
 
@@ -297,7 +321,9 @@ impl ScanResultStream {
     fn new(proxy: ScanResultWatcherProxy, complete_fut: QueryResponseFut<()>) -> Self {
         Self::Running { proxy, _complete_fut: complete_fut, active_watch: None, queued: Vec::new() }
     }
+}
 
+impl FusedStream for ScanResultStream {
     fn is_terminated(&self) -> bool {
         matches!(self, Self::Terminated)
     }

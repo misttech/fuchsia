@@ -75,6 +75,7 @@ pub struct ScanResult {
     pub connectable: bool,
     pub name: PeerName,
     pub advertised: Vec<AdvertisingDatum>,
+    pub advertising_sid: u8,
 }
 
 pub trait Central<T: crate::GattTypes> {
@@ -84,4 +85,7 @@ pub trait Central<T: crate::GattTypes> {
 
     /// Connect to a specific peer.
     fn connect(&self, peer_id: PeerId) -> T::ConnectFuture;
+
+    /// Get API for periodic advertising.
+    fn periodic_advertising(&self) -> crate::Result<T::PeriodicAdvertising>;
 }

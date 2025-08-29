@@ -263,7 +263,13 @@ where
                         if args.len() == 3 { parse_bis_sync(&args[2]) } else { HashSet::new() };
 
                     self.with_peer(|peer| async move {
-                        peer.add_broadcast_source(broadcast_source_pid, &self.peer_addr_getter, pa_sync, bis_sync).await
+                        peer.add_broadcast_source(
+                            broadcast_source_pid,
+                            &self.peer_addr_getter,
+                            pa_sync,
+                            bis_sync,
+                        )
+                        .await
                     })
                     .await;
                 }

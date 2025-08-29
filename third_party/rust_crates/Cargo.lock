@@ -512,6 +512,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bt-vcs"
+version = "0.0.1"
+dependencies = [
+ "bt-common",
+ "bt-gatt",
+ "futures",
+ "parking_lot 0.12.4",
+ "thiserror 2.0.12",
+]
+
+[[package]]
 name = "build_const"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1514,6 +1525,7 @@ dependencies = [
  "bt-common",
  "bt-gatt",
  "bt-pacs",
+ "bt-vcs",
  "bumpalo",
  "byteorder",
  "bytes",

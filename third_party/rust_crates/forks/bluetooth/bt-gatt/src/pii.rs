@@ -5,8 +5,8 @@
 use std::future::Future;
 
 use bt_common::{
-    PeerId,
     core::{Address, AddressType},
+    PeerId,
 };
 
 use crate::types::*;

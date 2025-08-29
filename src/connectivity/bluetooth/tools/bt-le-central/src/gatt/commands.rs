@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use rustyline::Helper;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use rustyline::Helper;
 use std::borrow::Cow::{self, Borrowed, Owned};
 use std::fmt;
 use std::str::FromStr;
@@ -111,6 +111,7 @@ gen_commands! {
         EnableNotify = ("enable-notify", [], ["id"], "Enable characteristic notifications"),
         DisableNotify = ("disable-notify", [], ["id"], "Disable characteristic notifications"),
         Pacs = ("pacs", [], [], "PACS subcommands"),
+        Vol = ("vol", [], [], "VCS subcommands"),
         Quit = ("quit", [], [], "Quit and disconnect the peripheral"),
         Exit = ("exit", [], [], "Quit and disconnect the peripheral"),
     }
@@ -188,11 +189,13 @@ mod tests {
     fn test_completer() {
         let cmdhelper = CmdHelper::new();
 
-        assert!(cmdhelper
-            .complete("write-long-c", 0)
-            .unwrap()
-            .1
-            .contains(&"write-long-chr".to_string()));
+        assert!(
+            cmdhelper
+                .complete("write-long-c", 0)
+                .unwrap()
+                .1
+                .contains(&"write-long-chr".to_string())
+        );
         assert!(cmdhelper.complete("he", 0).unwrap().1.contains(&"help".to_string()));
         assert!(cmdhelper.complete("ex", 0).unwrap().1.contains(&"exit".to_string()));
         assert!(cmdhelper.complete("read-d", 0).unwrap().1.contains(&"read-desc".to_string()));

@@ -243,6 +243,7 @@ fn central_search_works() {
         connectable: true,
         name: PeerName::CompleteName("Marie's Pixel 7 Pro".to_owned()),
         advertised: vec![AdvertisingDatum::Services(vec![Uuid::from_u16(0x1844)])],
+        advertising_sid: 0,
     };
     let _ = scan_results.set_scanned_result(Ok(scanned_result));
 

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use bt_gatt::pii::GetPeerAddr;
-use futures::Stream;
 use futures::stream::FusedStream;
+use futures::Stream;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -94,8 +94,8 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
     ///
     /// * `broadcast_source_pid` - peer id of the braodcast source that's to be
     ///   added to this scan delegator peer
-    /// * `address_lookup` - An implementation of [`GetPeerAddr`] that will
-    ///   be used to look up the peer's address.
+    /// * `address_lookup` - An implementation of [`GetPeerAddr`] that will be
+    ///   used to look up the peer's address.
     /// * `pa_sync` - pa sync mode the peer should attempt to be in
     /// * `bis_sync` - desired BIG to BIS synchronization information. If the
     ///   set is empty, no preference value is used for all the BIGs
@@ -198,7 +198,7 @@ pub(crate) mod tests {
 
     use assert_matches::assert_matches;
     use bt_gatt::pii::StaticPeerAddr;
-    use futures::{FutureExt, pin_mut};
+    use futures::{pin_mut, FutureExt};
     use std::collections::HashSet;
     use std::task::Poll;
 

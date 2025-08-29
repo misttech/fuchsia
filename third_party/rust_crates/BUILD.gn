@@ -139,6 +139,10 @@ group("bt-pacs") {
   public_deps = [ ":bt-pacs-v0_0_1" ]
 }
 
+group("bt-vcs") {
+  public_deps = [ ":bt-vcs-v0_0_1" ]
+}
+
 group("bumpalo") {
   public_deps = [ ":bumpalo-v3_17_0" ]
 }
@@ -3227,6 +3231,40 @@ rustc_library("bt-pacs-v0_0_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":bt-pacs-v0_0_1.license" ]
+}
+
+license("bt-vcs-v0_0_1.license") {
+  public_package_name = "bt_vcs"
+  license_files = [ "//third_party/rust_crates/forks/bluetooth/bt-vcs/LICENSE" ]
+}
+
+rustc_library("bt-vcs-v0_0_1") {
+  crate_name = "bt_vcs"
+  source_root = "//third_party/rust_crates/forks/bluetooth/bt-vcs/src/lib.rs"
+  output_name = "bt_vcs-bc01bf8d8281ac9f"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":bt-common-v0_0_1" ]
+  deps += [ ":bt-gatt-v0_0_1" ]
+  deps += [ ":futures-v0_3_31" ]
+  deps += [ ":parking_lot-v0_12_4" ]
+  deps += [ ":thiserror-v2_0_12" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=bc01bf8d8281ac9f",
+    "-Cextra-filename=-bc01bf8d8281ac9f",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":bt-vcs-v0_0_1.license" ]
 }
 
 license("bumpalo-v3_17_0.license") {

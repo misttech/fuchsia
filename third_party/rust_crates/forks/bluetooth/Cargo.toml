@@ -20,13 +20,14 @@ bt-gatt = { path = "bt-gatt" }
 bt-pacs = { path = "bt-pacs" }
 
 ## External dependencies
+# Intended to match Fuchsia versions.
 assert_matches = "1.5.0"
 bitfield = "0.14.0"
 futures = "=0.3.31"
-lazy_static = "1.4"
-log = { version = "0.4.22", features = [ "kv", "std" ] }
-num = "0.4.0" # 0.4.0 in Fuchsia
-parking_lot = "0.12.0"
+lazy_static = "1.5"
+log = { version = "0.4.27", features = [ "kv", "std" ] }
+num = { version = "0.4.3", features = ["rand"] }
+parking_lot = "0.12.4"
 pretty_assertions = "1.2.1"
-thiserror = "2.0.11"
+thiserror = "2.0.12"
 uuid = { version = "1.1.2", features = ["serde", "v4"] }

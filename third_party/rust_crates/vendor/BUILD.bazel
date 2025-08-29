@@ -403,6 +403,18 @@ alias(
 )
 
 alias(
+    name = "bt-vcs-0.0.1",
+    actual = "//third_party/rust_crates/vendor/bt-vcs-0.0.1:bt_vcs",
+    tags = ["manual"],
+)
+
+alias(
+    name = "bt-vcs",
+    actual = "//third_party/rust_crates/vendor/bt-vcs-0.0.1:bt_vcs",
+    tags = ["manual"],
+)
+
+alias(
     name = "bumpalo-3.17.0",
     actual = "//third_party/rust_crates/vendor/bumpalo-3.17.0:bumpalo",
     tags = ["manual"],
