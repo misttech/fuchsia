@@ -112,8 +112,6 @@ lazy_static_visibility = [
   "//src/power/broker:*",
   "//src/recovery/lib/recovery-ui:*",
   "//src/recovery/lib/recovery-util:*",
-  "//src/session/bin/element_manager:*",
-  "//src/session/lib/realm_management:*",
   "//src/storage/fxfs/platform:*",
   "//src/storage/lib/block_client/rust:*",
   "//src/sys/pkg/lib/tuf:*",

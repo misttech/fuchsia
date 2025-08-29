@@ -101,8 +101,8 @@ mod tests {
     };
     use fidl::endpoints::{create_endpoints, create_proxy};
     use fidl_test_util::spawn_stream_handler;
-    use lazy_static::lazy_static;
     use session_testing::spawn_directory_server;
+    use std::sync::LazyLock;
     use test_util::Counter;
     use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio};
 
@@ -126,15 +126,17 @@ mod tests {
             }
         });
 
-        assert!(create_child_component(
-            child_name,
-            child_url,
-            child_collection,
-            Default::default(),
-            &realm_proxy
-        )
-        .await
-        .is_ok());
+        assert!(
+            create_child_component(
+                child_name,
+                child_url,
+                child_collection,
+                Default::default(),
+                &realm_proxy
+            )
+            .await
+            .is_ok()
+        );
     }
 
     /// Tests that a success received when creating a child results in an appropriate result from
@@ -176,9 +178,9 @@ mod tests {
             }
         });
 
-        assert!(create_child_component("", "", "", Default::default(), &realm_proxy)
-            .await
-            .is_err());
+        assert!(
+            create_child_component("", "", "", Default::default(), &realm_proxy).await.is_err()
+        );
     }
 
     /// Tests that `open_child_component_exposed_dir` results in the appropriate call to `RealmProxy`.
@@ -200,14 +202,16 @@ mod tests {
         });
 
         let (_exposed_dir, exposed_dir_server_end) = create_endpoints::<fio::DirectoryMarker>();
-        assert!(open_child_component_exposed_dir(
-            child_name,
-            child_collection,
-            &realm_proxy,
-            exposed_dir_server_end
-        )
-        .await
-        .is_ok());
+        assert!(
+            open_child_component_exposed_dir(
+                child_name,
+                child_collection,
+                &realm_proxy,
+                exposed_dir_server_end
+            )
+            .await
+            .is_ok()
+        );
     }
 
     /// Tests that a success received when opening a child's exposed directory
@@ -228,18 +232,18 @@ mod tests {
         });
 
         let (_exposed_dir, exposed_dir_server_end) = create_endpoints::<fio::DirectoryMarker>();
-        assert!(open_child_component_exposed_dir("", "", &realm_proxy, exposed_dir_server_end)
-            .await
-            .is_ok());
+        assert!(
+            open_child_component_exposed_dir("", "", &realm_proxy, exposed_dir_server_end)
+                .await
+                .is_ok()
+        );
     }
 
     /// Tests that opening a child's exposed directory returns successfully.
     #[fuchsia::test]
     async fn open_child_exposed_dir_success() {
         // Make a static call counter to avoid unneeded complexity with cloned Arc<Mutex>.
-        lazy_static! {
-            static ref CALL_COUNT: Counter = Counter::new(0);
-        }
+        static CALL_COUNT: LazyLock<Counter> = LazyLock::new(|| Counter::new(0));
 
         let directory_request_handler = |directory_request| match directory_request {
             fio::DirectoryRequest::Open { path: fake_capability_path, .. } => {
@@ -271,12 +275,14 @@ mod tests {
 
         // Connect should succeed, but it is still an asynchronous operation.
         // The `directory_request_handler` is not called yet.
-        assert!(fdio::service_connect_at(
-            &exposed_dir.into_channel(),
-            "fake_capability_path",
-            server_end.into_channel()
-        )
-        .is_ok());
+        assert!(
+            fdio::service_connect_at(
+                &exposed_dir.into_channel(),
+                "fake_capability_path",
+                server_end.into_channel()
+            )
+            .is_ok()
+        );
 
         // Attempting to invoke and await an arbitrary method to ensure the
         // `directory_request_handler` responds to the Open() method and increment
@@ -307,9 +313,11 @@ mod tests {
         });
 
         let (_exposed_dir, exposed_dir_server_end) = create_endpoints::<fio::DirectoryMarker>();
-        assert!(open_child_component_exposed_dir("", "", &realm_proxy, exposed_dir_server_end)
-            .await
-            .is_err());
+        assert!(
+            open_child_component_exposed_dir("", "", &realm_proxy, exposed_dir_server_end)
+                .await
+                .is_err()
+        );
     }
 
     /// Tests that `destroy_child` results in the appropriate call to `RealmProxy`.

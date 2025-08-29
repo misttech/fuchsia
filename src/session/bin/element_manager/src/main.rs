@@ -92,14 +92,14 @@ async fn main() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use crate::element_manager::{CollectionConfig, ElementManager};
-    use fidl::endpoints::{create_proxy_and_stream, Proxy};
+    use fidl::endpoints::{Proxy, create_proxy_and_stream};
     use fidl_connector::Connect;
     use fidl_test_util::spawn_stream_handler;
     use futures::channel::mpsc;
     use futures::{SinkExt, StreamExt};
-    use lazy_static::lazy_static;
     use session_testing::spawn_directory_server;
     use std::collections::HashMap;
+    use std::sync::LazyLock;
     use test_util::Counter;
     use zx::sys::ZX_OK;
     use {
@@ -151,9 +151,7 @@ mod tests {
     /// Tests that ProposeElement launches the element as a child in a realm.
     #[fuchsia::test]
     async fn propose_element_launches_element() {
-        lazy_static! {
-            static ref CREATE_CHILD_CALL_COUNT: Counter = Counter::new(0);
-        }
+        static CREATE_CHILD_CALL_COUNT: LazyLock<Counter> = LazyLock::new(|| Counter::new(0));
 
         let component_url = "fuchsia-pkg://fuchsia.com/simple_element#meta/simple_element.cm";
 
@@ -233,9 +231,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn propose_persistent_element() {
-        lazy_static! {
-            static ref CREATE_CHILD_CALL_COUNT: Counter = Counter::new(0);
-        }
+        static CREATE_CHILD_CALL_COUNT: LazyLock<Counter> = LazyLock::new(|| Counter::new(0));
 
         let component_url = "fuchsia-pkg://fuchsia.com/simple_element#meta/simple_element.cm";
 

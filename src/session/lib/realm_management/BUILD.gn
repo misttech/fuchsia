@@ -23,7 +23,6 @@ rustc_library("realm_management") {
     "//src/lib/fuchsia",
     "//src/lib/test_util",
     "//src/session/testing",
-    "//third_party/rust_crates:lazy_static",
   ]
 
   sources = [ "src/lib.rs" ]
