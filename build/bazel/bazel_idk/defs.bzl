@@ -415,6 +415,7 @@ def idk_cc_source_library(
         visibility = ["//visibility:private"],
         # TODO(https://fxbug.dev/425931839): Remove these no longer converting to GN.
         build_as_static = False,  # buildifier: disable=unused-variable - For GN conversion only.
+        friend = [],  # buildifier: disable=unused-variable - For GN conversion only.
         public_configs = [],  # buildifier: disable=unused-variable - For GN conversion only.
         **kwargs):
     """Defines a C++ source library that can be exported to an IDK.
@@ -491,6 +492,7 @@ def idk_cc_source_library(
         build_as_static: Unused in Bazel, for GN conversion only.
             TODO(https://fxbug.dev/421888626): Use this argument if there is a
              way to tell Bazel to not always compile the source set.
+        friend: Unused in Bazel, for GN conversion only.
         public_configs: Unused in Bazel, for GN conversion only.
         **kwargs: Additional arguments for the underlying library.
     """

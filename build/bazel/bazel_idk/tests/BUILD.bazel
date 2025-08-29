@@ -133,6 +133,9 @@ idk_molecule(
         "//sdk/lib/media/cpp:no_converters_idk",
         "//sdk/lib/memory_barriers:memory_barriers_idk",
         "//sdk/lib/stdcompat:stdcompat_idk",
+
+        # "//sdk/lib/utf-utils:utf-utils_idk" cannot be analyzed on the Fuchsia
+        # toolchain because //zircon/system/ulib/zx does not yet exist.
     ],
 )
 
@@ -159,5 +162,22 @@ filegroup(
         "//sdk/lib/media/cpp:no_converters",
         "//sdk/lib/memory_barriers",
         "//sdk/lib/stdcompat",
+
+        # "//sdk/lib/utf-utils" cannot be analyzed on the Fuchsia
+        # toolchain because //zircon/system/ulib/zx does not yet exist.
+
+        # Build some of the underlying libraries on the host toolchain.
+        ":build_only_tests_on_host_toolchain",
+    ],
+)
+
+# Builds the targets listed in `tools` on the host toolchain.
+genrule(
+    name = "build_only_tests_on_host_toolchain",
+    outs = ["build_only_tests_on_host_toolchain.stamp"],
+    cmd = "touch $@",
+    tools = [
+        "//sdk/lib/stdcompat",
+        "//sdk/lib/utf-utils",
     ],
 )

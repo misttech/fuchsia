@@ -50,6 +50,7 @@ if (is_host) {
       "//sdk/lib/media/cpp:verify_bazel2gn",
       "//sdk/lib/memory_barriers:verify_bazel2gn",
       "//sdk/lib/stdcompat:verify_bazel2gn",
+      "//sdk/lib/utf-utils:verify_bazel2gn",
       "//sdk/rust/zx-status:verify_bazel2gn",
       "//sdk/rust/zx-types:verify_bazel2gn",
       "//src/developer/ffx/lib/netext:verify_bazel2gn",
