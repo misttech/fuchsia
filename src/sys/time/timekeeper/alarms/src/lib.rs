@@ -58,6 +58,11 @@ static I32_MAX_AS_U64: LazyLock<u64> = LazyLock::new(|| i32::MAX.try_into().expe
 /// The largest value of timer "ticks" that is still considered useful.
 static MAX_USEFUL_TICKS: LazyLock<u64> = LazyLock::new(|| *I32_MAX_AS_U64);
 
+/// The smallest value of "ticks" that we can program into the driver. To wit,
+/// driver will reject "0" ticks, even though it probably shouldn't. See
+/// for details: b/437177931.
+static MIN_USEFUL_TICKS: u64 = 1;
+
 /// The hrtimer ID used for scheduling wake alarms.  This ID is reused from
 /// Starnix, and should eventually no longer be critical.
 const MAIN_TIMER_ID: usize = 6;
@@ -1345,19 +1350,21 @@ async fn schedule_hrtimer(
     );
 
     let slack = timer_config.pick_setting(timeout);
-
     let resolution_nanos = slack.resolution.into_nanos();
-    let ticks = slack.ticks();
+    // The driver will reject "0" ticks, even though it probably shouldn't. See for details:
+    // b/437177931.
+    let useful_ticks = std::cmp::max(MIN_USEFUL_TICKS, slack.ticks());
+
     trace::instant!(c"alarms", c"hrtimer:programmed",
         trace::Scope::Process,
         "resolution_ns" => resolution_nanos,
-        "ticks" => ticks
+        "ticks" => useful_ticks
     );
     let timer_config_id = timer_config.id;
     let start_and_wait_fut = hrtimer.start_and_wait(
         timer_config.id,
         &ffhh::Resolution::Duration(resolution_nanos),
-        ticks,
+        useful_ticks,
         clone_handle(&hrtimer_scheduled),
     );
     let hrtimer_scheduled_if_error = clone_handle(&hrtimer_scheduled);
@@ -1396,7 +1403,7 @@ async fn schedule_hrtimer(
                         error: e,
                         timer_config_id,
                         resolution_nanos,
-                        ticks,
+                        ticks: useful_ticks,
                     })
                     .unwrap();
                 // BAD: no way to keep alive.
@@ -1822,6 +1829,7 @@ mod tests {
                                         fasync::Timer::new(sleep_duration).await;
                                         *timer_running_clone.borrow_mut() = false;
                                         responder.send(Ok(clone_handle(wake_lease.borrow().as_ref().unwrap()))).unwrap();
+                                        debug!("StartAndWait: hrtimer expired");
                                     });
                                 }
                                 ffhh::DeviceRequest::StartAndWait2 { responder, .. } => {
@@ -2486,6 +2494,10 @@ mod tests {
                     .build(),
             )
             .unwrap();
+
+        // Give the fake hrtimer a time slice to run, so it can expire the wake alarm.
+        // In a setup with real underlying clock, this would not be needed.
+        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(1)).await;
 
         // Verify that the timer is now expired.
         assert_matches!(
