@@ -82,6 +82,7 @@ ciborium = { version = "0.2.2", features = ["std"] }
 cipher = "0.4.4"
 clap = "2.34"
 cmac = "0.7.2"
+cpio = "0.4.1"
 crc = "1.8.1"
 criterion = { version = "0.2", default-features = false }
 crossbeam = "0.8.4"

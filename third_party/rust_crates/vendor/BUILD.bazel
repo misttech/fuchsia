@@ -583,6 +583,18 @@ alias(
 )
 
 alias(
+    name = "cpio-0.4.1",
+    actual = "//third_party/rust_crates/vendor/cpio-0.4.1:cpio",
+    tags = ["manual"],
+)
+
+alias(
+    name = "cpio",
+    actual = "//third_party/rust_crates/vendor/cpio-0.4.1:cpio",
+    tags = ["manual"],
+)
+
+alias(
     name = "crc-1.8.1",
     actual = "//third_party/rust_crates/vendor/crc-1.8.1:crc",
     tags = ["manual"],

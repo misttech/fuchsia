@@ -203,6 +203,10 @@ if (current_os == "fuchsia") {
   }
 }
 
+group("cpio") {
+  public_deps = [ ":cpio-v0_4_1" ]
+}
+
 group("crc") {
   public_deps = [ ":crc-v1_8_1" ]
 }
@@ -4184,6 +4188,35 @@ rustc_library("coset-v0_3_8") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":coset-v0_3_8.license" ]
+}
+
+license("cpio-v0_4_1.license") {
+  public_package_name = "cpio"
+  license_files = [ "//third_party/rust_crates/vendor/cpio-0.4.1/LICENSE.md" ]
+}
+
+rustc_library("cpio-v0_4_1") {
+  crate_name = "cpio"
+  source_root = "//third_party/rust_crates/vendor/cpio-0.4.1/src/lib.rs"
+  output_name = "cpio-af64ce2cd16bdaff"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=af64ce2cd16bdaff",
+    "-Cextra-filename=-af64ce2cd16bdaff",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":cpio-v0_4_1.license" ]
 }
 
 license("cpufeatures-v0_2_1.license") {

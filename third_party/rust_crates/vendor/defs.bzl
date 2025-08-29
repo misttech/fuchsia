@@ -334,6 +334,7 @@ _NORMAL_DEPENDENCIES = {
             "cipher": Label("//third_party/rust_crates/vendor/cipher-0.4.4:cipher"),
             "clap": Label("//third_party/rust_crates/vendor/clap-2.34.0:clap"),
             "cmac": Label("//third_party/rust_crates/vendor/cmac-0.7.2:cmac"),
+            "cpio": Label("//third_party/rust_crates/vendor/cpio-0.4.1:cpio"),
             "crc": Label("//third_party/rust_crates/vendor/crc-1.8.1:crc"),
             "criterion": Label("//third_party/rust_crates/vendor/criterion-0.2.11:criterion"),
             "crossbeam": Label("//third_party/rust_crates/vendor/crossbeam-0.8.4:crossbeam"),
