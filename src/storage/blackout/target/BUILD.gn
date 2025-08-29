@@ -7,7 +7,7 @@ group("tests") {
   deps = [
     "blackout-integration:tests",
     "fs-tree:tests",
-    "fvm:tests",
+    "fvm-minfs-random-op:tests",
     "fxfs-random-op:tests",
     "lib:tests",
   ]

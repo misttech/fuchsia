@@ -7,10 +7,10 @@ import("//build/rust/rustc_binary.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":blackout-fvm" ]
+  deps = [ ":blackout-fvm-minfs-random-op" ]
 }
 
-rustc_binary("blackout-fvm-bin") {
+rustc_binary("blackout-fvm-minfs-random-op-bin") {
   output_name = "blackout_fvm_bin"
   testonly = true
   edition = "2021"
@@ -35,15 +35,15 @@ rustc_binary("blackout-fvm-bin") {
   sources = [ "src/main.rs" ]
 }
 
-fuchsia_component("blackout-fvm-component") {
+fuchsia_component("blackout-fvm-minfs-random-op-component") {
   testonly = true
-  deps = [ ":blackout-fvm-bin" ]
+  deps = [ ":blackout-fvm-minfs-random-op-bin" ]
   manifest = "meta/blackout_fvm.cml"
 }
 
-fuchsia_package("blackout-fvm") {
+fuchsia_package("blackout-fvm-minfs-random-op") {
   testonly = true
-  deps = [ ":blackout-fvm-component" ]
+  deps = [ ":blackout-fvm-minfs-random-op-component" ]
 }
 
 resource("golden") {

@@ -36,10 +36,10 @@ impl blackout_target::random_op::OpSampler for OpSampler {
 }
 
 #[derive(Clone)]
-struct FvmTest;
+struct FvmMinfsTest;
 
 #[async_trait]
-impl Test for FvmTest {
+impl Test for FvmMinfsTest {
     async fn setup(
         self: Arc<Self>,
         device_label: String,
@@ -137,9 +137,9 @@ impl Test for FvmTest {
     }
 }
 
-#[fuchsia::main(logging_tags = ["blackout", "fvm"])]
+#[fuchsia::main(logging_tags = ["blackout", "fvm-minfs"])]
 async fn main() -> Result<()> {
-    let server = TestServer::new(FvmTest)?;
+    let server = TestServer::new(FvmMinfsTest)?;
     server.serve().await;
 
     Ok(())
