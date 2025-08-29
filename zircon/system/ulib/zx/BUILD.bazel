@@ -1,0 +1,68 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# LINT.IfChange
+load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library_zx")
+
+# This is only a partial implementation of this target. It is sufficient to
+# allow utf-utils targets to be built on the Fuchsia toolchain by
+#`build/bazel/bazel_idk/tests:build_only_tests`. Neither target is currently
+# used from Bazel on the Fuchsia toolchain.
+# TODO(https://fxbug.dev/429377203): Implement this library.
+idk_cc_source_library_zx(
+    name = "zx",
+    # Specify all the headers so that .api file matches.
+    hdrs = [
+        "include/lib/zx/bti.h",
+        "include/lib/zx/channel.h",
+        "include/lib/zx/clock.h",
+        "include/lib/zx/counter.h",
+        "include/lib/zx/debuglog.h",
+        "include/lib/zx/event.h",
+        "include/lib/zx/eventpair.h",
+        "include/lib/zx/exception.h",
+        "include/lib/zx/fifo.h",
+        "include/lib/zx/guest.h",
+        "include/lib/zx/handle.h",
+        "include/lib/zx/interrupt.h",
+        "include/lib/zx/iob.h",
+        "include/lib/zx/iommu.h",
+        "include/lib/zx/job.h",
+        "include/lib/zx/msi.h",
+        "include/lib/zx/object.h",
+        "include/lib/zx/object_traits.h",
+        "include/lib/zx/pager.h",
+        "include/lib/zx/pmt.h",
+        "include/lib/zx/port.h",
+        "include/lib/zx/process.h",
+        "include/lib/zx/profile.h",
+        "include/lib/zx/resource.h",
+        "include/lib/zx/result.h",
+        "include/lib/zx/socket.h",
+        "include/lib/zx/stream.h",
+        "include/lib/zx/suspend_token.h",
+        "include/lib/zx/task.h",
+        "include/lib/zx/thread.h",
+        "include/lib/zx/time.h",
+        "include/lib/zx/timer.h",
+        "include/lib/zx/vcpu.h",
+        "include/lib/zx/vmar.h",
+        "include/lib/zx/vmo.h",
+    ],
+    api_area = "Kernel",
+    api_file_path = "//sdk/lib/zx:zx.api",
+    category = "partner",
+    idk_name = "zx",
+    sdk = "source",
+    stable = True,
+
+    # The current definition contains headers only applicable to Fuchsia.
+    # TODO(https://fxbug.dev/429377203): Provide an implementation appropriate for host toolchain.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+
+    # Only allow the stub to be used as described above.
+    # Do not modify this until the stub is replaced with a real implementation.
+    visibility = ["//sdk/lib/utf-utils:__pkg__"],
+)
+# LINT.ThenChange(BUILD.gn)

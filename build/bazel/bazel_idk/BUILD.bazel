@@ -20,6 +20,7 @@ filegroup(
         "//sdk/lib/media/cpp:__pkg__",
         "//sdk/lib/stdcompat:__pkg__",
         "//sdk/lib/utf-utils:__pkg__",
+        "//zircon/system/ulib/zx:__pkg__",
     ],
 )
 

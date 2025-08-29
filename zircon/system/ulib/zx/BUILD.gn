@@ -2,8 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/zircon/zx_library.gni")
 
+# LINT.IfChange
 zx_library("zx") {
   sdk = "source"
   sdk_publishable = "partner"
@@ -92,3 +93,4 @@ zx_library("zx") {
     ]
   }
 }
+# LINT.ThenChange(BUILD.bazel)
