@@ -435,7 +435,7 @@ group("hmac") {
 
 if (!(current_os == "fuchsia")) {
   group("home") {
-    public_deps = [ ":home-v0_5_9" ]
+    public_deps = [ ":home-v0_5_11" ]
   }
 }
 
@@ -8135,18 +8135,18 @@ rustc_library("hmac-v0_12_1") {
   applicable_licenses = [ ":hmac-v0_12_1.license" ]
 }
 
-license("home-v0_5_9.license") {
+license("home-v0_5_11.license") {
   public_package_name = "home"
   license_files = [
-    "//third_party/rust_crates/vendor/home-0.5.9/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/home-0.5.9/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/home-0.5.11/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/home-0.5.11/LICENSE-MIT",
   ]
 }
 
-rustc_library("home-v0_5_9") {
+rustc_library("home-v0_5_11") {
   crate_name = "home"
-  source_root = "//third_party/rust_crates/vendor/home-0.5.9/src/lib.rs"
-  output_name = "home-995a6338de29718d"
+  source_root = "//third_party/rust_crates/vendor/home-0.5.11/src/lib.rs"
+  output_name = "home-4a7a4e05ebf7c076"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -8154,20 +8154,20 @@ rustc_library("home-v0_5_9") {
 
   deps = []
   if (false) {
-    deps += [ ":windows-sys-v0_52_0" ]
+    deps += [ ":windows-sys-v0_59_0" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=995a6338de29718d",
-    "-Cextra-filename=-995a6338de29718d",
+    "-Cmetadata=4a7a4e05ebf7c076",
+    "-Cextra-filename=-4a7a4e05ebf7c076",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":home-v0_5_9.license" ]
+  applicable_licenses = [ ":home-v0_5_11.license" ]
 }
 
 license("hound-v3_5_1.license") {
@@ -20842,11 +20842,9 @@ rustc_library("windows-sys-v0_52_0") {
     "-Cextra-filename=-774d2e10fba62fe6",
     "--cfg=feature=\"Win32_Foundation\"",
     "--cfg=feature=\"Win32_Networking_WinSock\"",
-    "--cfg=feature=\"Win32_System_Com\"",
     "--cfg=feature=\"Win32_System_IO\"",
     "--cfg=feature=\"Win32_System_Threading\"",
     "--cfg=feature=\"Win32_System_WindowsProgramming\"",
-    "--cfg=feature=\"Win32_UI_Shell\"",
   ]
 
   visibility = [ ":*" ]
@@ -20872,7 +20870,9 @@ rustc_library("windows-sys-v0_59_0") {
     "-Cmetadata=160906ccdd05e721",
     "-Cextra-filename=-160906ccdd05e721",
     "--cfg=feature=\"Win32_Foundation\"",
+    "--cfg=feature=\"Win32_System_Com\"",
     "--cfg=feature=\"Win32_System_Threading\"",
+    "--cfg=feature=\"Win32_UI_Shell\"",
   ]
 
   visibility = [ ":*" ]

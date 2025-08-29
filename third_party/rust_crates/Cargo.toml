@@ -318,7 +318,7 @@ cargo_metadata = "0.18.1"
 crossterm = "0.19"
 fs_extra = "1.2.0"
 fuse3 = { version = "0.6.1", features = ["tokio-runtime", "unprivileged"] }
-home = "0.5.9"
+home = "0.5.11"
 hyper-rustls = { version = "0.24.2", default-features = false, features = ["rustls-native-certs"] }
 indoc = "2.0.6"
 loom = "0.7.1"

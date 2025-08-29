@@ -507,7 +507,7 @@ _NORMAL_DEPENDENCIES = {
             "crossterm": Label("//third_party/rust_crates/vendor/crossterm-0.19.0:crossterm"),
             "fs_extra": Label("//third_party/rust_crates/vendor/fs_extra-1.2.0:fs_extra"),
             "fuse3": Label("//third_party/rust_crates/vendor/fuse3-0.6.1:fuse3"),
-            "home": Label("//third_party/rust_crates/vendor/home-0.5.9:home"),
+            "home": Label("//third_party/rust_crates/vendor/home-0.5.11:home"),
             "hyper-rustls": Label("//third_party/rust_crates/vendor/hyper-rustls-0.24.2:hyper_rustls"),
             "loom": Label("//third_party/rust_crates/vendor/loom-0.7.1:loom"),
             "mio": Label("//third_party/rust_crates/vendor/mio-0.8.9:mio"),

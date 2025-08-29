@@ -1231,14 +1231,14 @@ alias(
 )
 
 alias(
-    name = "home-0.5.9",
-    actual = "//third_party/rust_crates/vendor/home-0.5.9:home",
+    name = "home-0.5.11",
+    actual = "//third_party/rust_crates/vendor/home-0.5.11:home",
     tags = ["manual"],
 )
 
 alias(
     name = "home",
-    actual = "//third_party/rust_crates/vendor/home-0.5.9:home",
+    actual = "//third_party/rust_crates/vendor/home-0.5.11:home",
     tags = ["manual"],
 )
 
