@@ -20,18 +20,20 @@ pub fn new(args: &ProductArgs) -> Result<()> {
         config.product_input_bundles.insert(pib.release_info.name.clone(), pib);
     }
 
+    let name = match config.product.build_info {
+        Some(ref value) => value.name.clone(),
+        // TODO(https://fxbug.dev/418249336): Make
+        // product.build_info.name a required field.
+        None => "unknown".to_string(),
+    };
     let version = common::get_release_version(&args.version, &args.version_file)?;
+    let repository = common::get_release_repository(&args.repo, &args.repo_file)?;
 
     config.product.release_info = ProductReleaseInfo {
         info: ReleaseInfo {
-            name: match config.product.build_info {
-                Some(ref value) => value.name.clone(),
-                // TODO(https://fxbug.dev/418249336): Make
-                // product.build_info.name a required field.
-                None => "unknown".to_string(),
-            },
-            repository: common::get_release_repository(&args.repo, &args.repo_file)?,
-            version,
+            name: common::validate_string_for_upstream_versioning(name)?,
+            version: common::validate_string_for_upstream_versioning(version)?,
+            repository: common::validate_string_for_upstream_versioning(repository)?,
         },
         pibs: config.product_input_bundles.values().map(|p| p.release_info.clone()).collect(),
     };
