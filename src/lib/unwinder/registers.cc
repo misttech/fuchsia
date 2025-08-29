@@ -88,7 +88,7 @@ Error Registers::GetReturnAddress(uint64_t& ra) const {
 
 Error Registers::SetReturnAddress(uint64_t ra) { return Set(GetReturnAddressRegister(arch_), ra); }
 
-Registers Registers::To32Bit() const {
+fit::result<Error, Registers> Registers::To32Bit() const {
   Registers result = Registers(Arch::kArm32);
   uint64_t r_val;
 
@@ -102,19 +102,25 @@ Registers Registers::To32Bit() const {
   //
   // TODO(https://fxbug.dev/441470079): Have a better defined contract of what registers will be
   // where when we're transitioning to a 32 bit restricted mode frame.
-  if (GetSP(r_val).ok()) {
+  if (auto err = GetSP(r_val); err.ok()) {
     result.SetSP(r_val);
+  } else {
+    return fit::error(err);
   }
 
-  if (GetReturnAddress(r_val).ok()) {
+  if (auto err = GetReturnAddress(r_val); err.ok()) {
     result.SetReturnAddress(r_val);
+  } else {
+    return fit::error(err);
   }
 
-  if (GetPC(r_val).ok()) {
+  if (auto err = GetPC(r_val); err.ok()) {
     result.SetPC(r_val);
+  } else {
+    return fit::error(err);
   }
 
-  return result;
+  return fit::ok(result);
 }
 
 std::string Registers::Describe() const {

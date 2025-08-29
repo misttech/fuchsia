@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 
+#include "lib/fit/result.h"
 #include "src/lib/unwinder/error.h"
 
 namespace unwinder {
@@ -145,7 +146,7 @@ class Registers {
   // all general purpose registers are copied wholesale (without checking if the value can actually
   // fit in a 32 bit register), and the specially named registers are copied using the getters and
   // setters below.
-  Registers To32Bit() const;
+  fit::result<Error, Registers> To32Bit() const;
 
   Arch arch() const { return arch_; }
 

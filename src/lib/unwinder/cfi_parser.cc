@@ -9,6 +9,7 @@
 #include <limits>
 #include <optional>
 
+#include "lib/fit/result.h"
 #include "src/lib/unwinder/error.h"
 #include "src/lib/unwinder/registers.h"
 
@@ -35,31 +36,73 @@ Error ReadRegisterIDAndAdvance(Memory* elf, uint64_t& addr, RegisterID& reg) {
   return Success();
 }
 
-std::optional<Registers> TryConvertRegistersTo32Bit(const Registers& current,
-                                                    const Registers& next) {
-  if (current.arch() != Registers::Arch::kArm64 || next.arch() == Registers::Arch::kArm32)
-    return std::nullopt;
-
-  std::optional<Registers> result = std::nullopt;
-  std::optional<uint64_t> maybe_pc = std::nullopt;
-  std::optional<uint64_t> maybe_ra = std::nullopt;
-
-  if (uint64_t pc; next.GetPC(pc).ok()) {
-    maybe_pc = pc;
+// Validates our assumptions about what registers we should have recovered in a "transition" 32 bit
+// frame that was recovered from a 64 bit frame. For now, this should only ever happen via Starnix's
+// custom CFI directives that get us the first restricted mode frame, which is what should be
+// contained in |regs|. In this state, we should always successfully recover all of SP, LR, and PC,
+// and they should all be pointing into the 32 bit restricted mode address space.
+Error Validate32BitRegisters(const Registers& regs) {
+  if (regs.arch() != Registers::Arch::kArm32) {
+    return Error("New registers aren't kArm32?");
   }
 
-  if (uint64_t ra; next.GetReturnAddress(ra).ok()) {
-    maybe_ra = ra;
+  uint64_t val;
+  if (auto err = regs.GetSP(val); err.has_err()) {
+    return Error("32 bit registers don't have SP (r13) set: %s\n32 Bit Registers: %s",
+                 err.msg().c_str(), regs.Describe().c_str());
+  } else if (val > std::numeric_limits<uint32_t>::max()) {
+    return Error("32 bit SP (r13) %#lx > uint32::MAX", val);
   }
 
-  if ((maybe_pc && !(*maybe_pc < std::numeric_limits<uint32_t>::max())) ||
-      (maybe_ra && !(*maybe_ra < std::numeric_limits<uint32_t>::max()))) {
-    return std::nullopt;
+  if (auto err = regs.GetReturnAddress(val); err.has_err()) {
+    return Error("32 bit registers don't have LR (r14) set: %s\n32 Bit Registers: %s",
+                 err.msg().c_str(), regs.Describe().c_str());
+  } else if (val > std::numeric_limits<uint32_t>::max()) {
+    return Error("32 bit LR (r14) %#lx > uint32::MAX", val);
   }
 
-  result = next.To32Bit();
+  if (auto err = regs.GetPC(val); err.has_err()) {
+    return Error("32 bit registers don't have PC (r15) set: %s\n32 Bit Registers: %s",
+                 err.msg().c_str(), regs.Describe().c_str());
+  } else if (val > std::numeric_limits<uint32_t>::max()) {
+    return Error("32 bit PC (r15) %#lx > uint32::MAX", val);
+  }
 
-  return result;
+  return Success();
+}
+
+// Returns an error if the |next| registers do not have PC and LR populated with 32 bit values.
+fit::result<Error, Registers> TryConvertRegistersTo32Bit(const Registers& current,
+                                                         const Registers& next) {
+  if (current.arch() != Registers::Arch::kArm64) {
+    return fit::error(Error("Current registers are not kArm64."));
+  } else if (next.arch() == Registers::Arch::kArm32) {
+    return fit::error(Error("Next registers are already kArm32, nothing to do."));
+  }
+
+  uint64_t pc = 0;
+  uint64_t ra = 0;
+
+  // As of today the only way we should ever successfully transition to a 32 bit frame is when we
+  // have just recovered all of the registers specified by Starnix's CFI directives to reconstruct
+  // the restricted mode stack. That means that we should _always_ have both PC and LR available
+  // from the CFI (which should be finished processing by the time this is called). Therefore if we
+  // cannot fetch either of them from |next| we bail out.
+  if (next.GetPC(pc).has_err()) {
+    return fit::error(Error("Next registers do not have PC set: %s", next.Describe().c_str()));
+  }
+
+  if (next.GetReturnAddress(ra).has_err()) {
+    return fit::error(Error("Next registers do not have LR set: %s", next.Describe().c_str()));
+  }
+
+  if (!(pc < std::numeric_limits<uint32_t>::max()) ||
+      !(ra < std::numeric_limits<uint32_t>::max())) {
+    return fit::error(Error(
+        "PC [%#lx] or LR [%#lx] contains address greater than 32 bit address space.", pc, ra));
+  }
+
+  return next.To32Bit();
 }
 
 }  // namespace
@@ -522,9 +565,24 @@ Error CfiParser::Step(Memory* stack, RegisterID return_address_register, const R
     }
   }
 
-  if (auto maybe_32bit = TryConvertRegistersTo32Bit(current, next)) {
-    // When transitioning to 32bit code, we should always be coming from Starnix code, and therefore
-    // always recover both LR and PC, so we don't need to override |return_address_register| here.
+  // TryConvertRegistersTo32Bit returns a fit::result. In the error case, the message is probably
+  // only useful for developing and debugging the unwinder itself and will happen frequently enough
+  // that we shouldn't log it, but for debugging purposes can be displayed if needed. The validation
+  // step in the success case is a fatal error since we have strict expectations of what registers
+  // are restored by Starnix, which is currently the only way we should ever transition to code in a
+  // 32 bit address space.
+  if (auto maybe_32bit = TryConvertRegistersTo32Bit(current, next); maybe_32bit.is_ok()) {
+    // Both PC and LR in |next| appear to be 32 bit addresses, now validate that the converted 32
+    // bit registers actually have everything that we expect to get from Starnix's CFI: PC, LR, and
+    // SP should all be populated and have 32 bit addresses, if this fails at this point, it's an
+    // error.
+    if (auto err = Validate32BitRegisters(*maybe_32bit); err.has_err()) {
+      return err;
+    }
+
+    // Validations succeeded, |next| is a 32 bit frame recovered from Starnix restricted mode. Since
+    // we always recover both LR and PC directly, so we don't need to override
+    // |return_address_register| here.
     next = *maybe_32bit;
   }
 
