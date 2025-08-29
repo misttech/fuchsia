@@ -311,6 +311,10 @@ function main {
   local skip_auth_check=0
   local concurrency=0
 
+  if [[ "${FX_BUILD_QUIET}" == "1" ]]; then
+    quiet=true
+  fi
+
   # When tracing, increase verbosity.
   if [[ -o xtrace ]]; then
     verbose="true"

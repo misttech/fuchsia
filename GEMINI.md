@@ -6,8 +6,7 @@ Fuchsia codebase and must follow these instructions.
 
 The main way to interact with a fuchsia device is via `fx` and `ffx` commands.
 
-To run a build, run `fx build -q`. Make sure to use the `-q`
-option to make the output smaller. The Fuchsia platform uses the GN and Bazel
+To run a build, run `fx build`. The Fuchsia platform uses the GN and Bazel
 build systems. You must not generate Cargo.toml, CMakeLists.txt, or Makefile
 build files.
 
@@ -66,7 +65,7 @@ investigation of the existing codebase *before* writing new code.
 2.  **Implement and Test:** Write your code according to the plan. Add or update
     tests to validate your changes.
 
-3.  **Verify with Build:** After implementation, run `fx build -q` to confirm
+3.  **Verify with Build:** After implementation, run `fx build` to confirm
     your changes compile correctly. This is a final verification step, not a
     tool for initial API discovery.
 
