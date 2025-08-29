@@ -406,6 +406,7 @@ test("unit_tests") {
   } else if (is_linux) {
     sources += [
       "aligned_chunk_unittest.cc",
+      "elf_utils_unittest.cc",
       "linux_utils_unittest.cc",
       "posix/file_descriptor_shuffle_unittest.cc",
     ]
