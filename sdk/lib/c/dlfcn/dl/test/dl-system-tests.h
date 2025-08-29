@@ -78,15 +78,27 @@ class DlSystemTests : public DlSystemLoadTestsBase {
   static const inline bool kDestructorsRunOutOfOrder = !GlibcVersionAtLeast(2, 38);
 #endif
 
+  void SetUp() override { ASSERT_TRUE(dlerror_.empty()); }
+
+  void TearDown() override {
+    // Clear dlerror_ for tests that only test the error object returned from
+    // a failed dlopen/dlsym/etc call. These tests don't call DlError, which
+    // clears dlerror_ after reporting the error, so we must clear it at test
+    // teardown.
+    dlerror_.clear();
+  }
+
+  std::optional<Error> DlError();
+
   fit::result<Error, void*> DlOpen(const char* file, int mode);
 
   fit::result<Error> DlClose(void* module);
 
-  static fit::result<Error, void*> DlSym(void* module, const char* ref);
+  fit::result<Error, void*> DlSym(void* module, const char* ref);
 
   static int DlIteratePhdr(DlIteratePhdrCallback* callback, void* data);
 
-  static fit::result<Error, int> DlInfo(void* module, int request, void* info);
+  fit::result<Error, int> DlInfo(void* module, int request, void* info);
 
   // ExpectRootModule or Needed are called by tests when a file is expected to
   // be loaded from the file system for the first time. The following functions
@@ -122,6 +134,30 @@ class DlSystemTests : public DlSystemLoadTestsBase {
   // DlOpen `name` with `RTLD_NOLOAD` to ensure this will be the first time the
   // file is loaded from the filesystem.
   void NoLoadCheck(std::string_view name);
+
+  // Create an Error object to return in a fit::result<Error..>. This function
+  // will also set `dlerror_` to the error message of the Error object.
+  fit::error<Error> TakeError();
+
+  // The following functions should be used to return a successful result for
+  // any public-facing Dl* function that returns a fit::result<..>. Since
+  // dlerror() will clear its error state after a successful function return,
+  // we must do that here, so that the next call to DlError will not report a
+  // stale error message.
+  template <typename T>
+  auto SuccessResult(T&& success) {
+    dlerror_.clear();
+    return fit::ok(std::forward<T>(success));
+  }
+  auto SuccessResult() {
+    dlerror_.clear();
+    return fit::ok();
+  }
+
+  // This holds the error message for the most recently failed dl function made
+  // during a test and is cleared in between tests. DlError will report the
+  // contents of this string when called.
+  std::string dlerror_;
 };
 
 }  // namespace dl::testing

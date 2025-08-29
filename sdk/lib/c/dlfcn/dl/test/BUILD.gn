@@ -32,6 +32,7 @@ test("dl-unittests") {
   ]
   if (is_elf) {
     sources += [
+      "dl-error-tests.cc",
       "dl-load-tests-basic.cc",
       "dl-load-tests-deps.cc",
       "dl-load-tests-dlinfo.cc",

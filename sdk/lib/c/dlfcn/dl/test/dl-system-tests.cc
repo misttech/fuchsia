@@ -12,17 +12,29 @@
 #include <gtest/gtest.h>
 
 namespace dl::testing {
-namespace {
 
-// Consume the pending dlerror() state after a <dlfcn.h> call that failed.
-// The return value is suitable for any fit:result<Error, ...> return value.
-fit::error<Error> TakeError() {
+fit::error<Error> DlSystemTests::TakeError() {
   const char* error_str = dlerror();
   EXPECT_TRUE(error_str);
+
+  // It's possible `dlerror_` is holding a previous error string, as the case
+  // for a test that produces multiple consecutive errors without checking
+  // dlerror() in between. `error_str` will replace the previous contents of
+  // dlerror_ and the previous error message is no longer accessible, which
+  // emulates the underlying behavior of dlerror().
+  dlerror_ = std::string{error_str};
+
   return fit::error<Error>{"%s", error_str};
 }
 
-}  // namespace
+std::optional<Error> DlSystemTests::DlError() {
+  if (!dlerror_.empty()) {
+    Error err = Error{"%s", dlerror_.c_str()};
+    dlerror_.clear();
+    return std::move(err);
+  }
+  return std::nullopt;
+}
 
 fit::result<Error, void*> DlSystemTests::DlOpen(const char* file, int mode) {
   // Call dlopen in an OS-specific context.
@@ -32,12 +44,12 @@ fit::result<Error, void*> DlSystemTests::DlOpen(const char* file, int mode) {
       // Musl emits a "Library x is not already loaded" for RTLD_NOLOAD, so
       // consume any failure from dlerror here.
       dlerror();
-      return fit::ok(result);
+      return SuccessResult(result);
     }
     return TakeError();
   }
   TrackModule(result, file);
-  return fit::ok(result);
+  return SuccessResult(result);
 }
 
 fit::result<Error> DlSystemTests::DlClose(void* module) {
@@ -45,7 +57,7 @@ fit::result<Error> DlSystemTests::DlClose(void* module) {
   if (dlclose(module)) {
     return TakeError();
   }
-  return fit::ok();
+  return SuccessResult();
 }
 
 fit::result<Error, void*> DlSystemTests::DlSym(void* module, const char* ref) {
@@ -53,7 +65,7 @@ fit::result<Error, void*> DlSystemTests::DlSym(void* module, const char* ref) {
   if (!result) {
     return TakeError();
   }
-  return fit::ok(result);
+  return SuccessResult(result);
 }
 
 int DlSystemTests::DlIteratePhdr(DlIteratePhdrCallback* callback, void* data) {
@@ -66,7 +78,7 @@ fit::result<Error, int> DlSystemTests::DlInfo(void* module, int request, void* i
     EXPECT_EQ(result, -1);
     return TakeError();
   }
-  return fit::ok(result);
+  return SuccessResult(result);
 }
 
 #ifdef __Fuchsia__
