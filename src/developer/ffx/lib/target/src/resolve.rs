@@ -313,7 +313,8 @@ fn get_discovery_stream_with_sources(
         .notify_added(true)
         .notify_removed(false)
         .build();
-    let stream = discovery.discover_devices(query.clone())?;
+    // Just get the new handles
+    let stream = discovery.discover_devices(query.clone()).map_err(anyhow::Error::from)?;
 
     // This is tricky. We want the stream to complete immediately if we find
     // a target whose name/serial matches the query exactly. Otherwise, run

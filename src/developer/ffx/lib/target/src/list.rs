@@ -113,7 +113,9 @@ pub async fn list_targets(
     connect: bool,
 ) -> Result<Vec<ffx::TargetInfo>> {
     let query = TargetInfoQuery::from(nodename);
-    let stream = get_discovery_stream(query, include_usb, include_mdns, ctx).await?;
+    let stream = get_discovery_stream(query, include_usb, include_mdns, ctx)
+        .await
+        .map_err(anyhow::Error::from)?;
     let targets = handles_to_infos(stream, ctx, connect).await?;
     Ok(targets)
 }

@@ -354,7 +354,7 @@ async fn rediscover_target(
     let criteria = Criteria { serial: serial_number.clone() };
 
     let query = serial_number.map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
-    let stream = disco.discover_devices(query)?;
+    let stream = disco.discover_devices(query).map_err(anyhow::Error::from)?;
     let timer = fuchsia_async::Timer::new(std::time::Duration::from_millis(100000)).fuse();
     let found_target_event = async_utils::event::Event::new();
     let found_it = found_target_event.wait().fuse();
@@ -445,7 +445,8 @@ impl FlashTool {
             Some(FidlTargetState::Fastboot) => {
                 // Nothing to do
                 log::debug!("Target already in Fastboot state");
-                let s: discovery::TargetHandle = (*self.target_info).clone().try_into()?;
+                let s: discovery::TargetHandle =
+                    (*self.target_info).clone().try_into().map_err(anyhow::Error::from)?;
                 s.state
             }
             Some(FidlTargetState::Product) => {

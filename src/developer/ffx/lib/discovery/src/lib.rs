@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 use crate::emulator_watcher::EmulatorWatcher;
-pub use crate::events::*;
+use crate::error::Result;
+pub use crate::events::{
+    FastbootConnectionState, FastbootTargetState, TargetEvent, TargetHandle, TargetState,
+};
 use crate::fastboot_file_watcher::FastbootWatcher;
 use crate::query::TargetInfoQuery;
-use anyhow::Result;
 use bitflags::bitflags;
 use futures::Stream;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
@@ -27,6 +29,7 @@ use fidl_fuchsia_developer_ffx as ffx;
 
 pub mod desc;
 mod emulator_watcher;
+pub mod error;
 pub mod events;
 mod fastboot_file_watcher;
 pub mod query;
@@ -201,8 +204,8 @@ fn wait_for_devices(
         let mdns_sender = sender.clone();
         Some(recommended_watcher(move |res: ffx::MdnsEventType| {
             // Translate the result to a TargetEvent
-            let event = target_event_from_mdns_event(res);
-            if let Some(event) = event {
+            let event = TargetEvent::try_from(res);
+            if let Ok(event) = event {
                 let _ = mdns_sender.unbounded_send(event);
             }
         }))
@@ -318,7 +321,10 @@ pub mod test {
     impl TargetDiscovery for TestDiscovery {
         #[allow(refining_impl_trait)]
 
-        fn discover_devices(&self, _query: TargetInfoQuery) -> Result<TestTargetStream> {
+        fn discover_devices(
+            &self,
+            _query: TargetInfoQuery,
+        ) -> crate::error::Result<TestTargetStream> {
             Ok(TestTargetStream { events: self.events.clone() })
         }
     }
@@ -342,7 +348,7 @@ pub mod test {
     // Example TestDiscovery Usage
     ///////////////////////////////////////////////////////////////////////////
 
-    fn write_target_event<W: Write>(writer: &mut W, event: TargetEvent) -> Result<()> {
+    fn write_target_event<W: Write>(writer: &mut W, event: TargetEvent) -> std::io::Result<()> {
         let symbol = match event {
             TargetEvent::Added(_) => "+",
             TargetEvent::Removed(_) => "-",
@@ -364,7 +370,7 @@ pub mod test {
     }
 
     #[fuchsia::test]
-    async fn test_write_event_stream() -> Result<()> {
+    async fn test_write_event_stream() -> anyhow::Result<()> {
         let mut writer = vec![];
         let disco = TestDiscovery {
             events: Rc::new(RefCell::new(VecDeque::from([
@@ -406,7 +412,7 @@ pub mod test {
     ///////////////////////////////////////////////////////////////////////////
 
     #[test]
-    fn test_discovery_builder_default() -> Result<()> {
+    fn test_discovery_builder_default() -> anyhow::Result<()> {
         let discovery = Discovery::builder().build();
         assert_eq!(discovery.notify_added, true);
         assert_eq!(discovery.notify_removed, true);
@@ -416,7 +422,7 @@ pub mod test {
     }
 
     #[test]
-    fn test_discovery_builder_changes() -> Result<()> {
+    fn test_discovery_builder_changes() -> anyhow::Result<()> {
         let discovery = Discovery::builder()
             .notify_added(false)
             .notify_removed(false)
@@ -433,7 +439,7 @@ pub mod test {
     }
 
     #[test]
-    fn test_discovery_builder_with_root() -> Result<()> {
+    fn test_discovery_builder_with_root() -> anyhow::Result<()> {
         let discovery = Discovery::builder()
             .set_source(DiscoverySources::MANUAL)
             .with_emulator_instance_root(Some(
@@ -456,7 +462,7 @@ pub mod test {
     ///////////////////////////////////////////////////////////////////////////
 
     #[fuchsia::test]
-    async fn test_target_stream() -> Result<()> {
+    async fn test_target_stream() -> anyhow::Result<()> {
         let (sender, queue) = unbounded();
 
         let mut stream = TargetStream {
@@ -472,17 +478,21 @@ pub mod test {
         };
 
         // Send a few events
-        sender.unbounded_send(TargetEvent::Added(TargetHandle {
-            node_name: Some("Vin".to_string()),
-            state: TargetState::Zedboot,
-            manual: false,
-        }))?;
+        sender
+            .unbounded_send(TargetEvent::Added(TargetHandle {
+                node_name: Some("Vin".to_string()),
+                state: TargetState::Zedboot,
+                manual: false,
+            }))
+            .unwrap();
 
-        sender.unbounded_send(TargetEvent::Removed(TargetHandle {
-            node_name: Some("Vin".to_string()),
-            state: TargetState::Zedboot,
-            manual: false,
-        }))?;
+        sender
+            .unbounded_send(TargetEvent::Removed(TargetHandle {
+                node_name: Some("Vin".to_string()),
+                state: TargetState::Zedboot,
+                manual: false,
+            }))
+            .unwrap();
 
         assert_eq!(
             stream.next().await.unwrap(),
@@ -506,7 +516,7 @@ pub mod test {
     }
 
     #[fuchsia::test]
-    async fn test_target_stream_ignores_added() -> Result<()> {
+    async fn test_target_stream_ignores_added() -> anyhow::Result<()> {
         let (sender, queue) = unbounded();
 
         let mut stream = TargetStream {
@@ -522,17 +532,21 @@ pub mod test {
         };
 
         // Send a few events
-        sender.unbounded_send(TargetEvent::Added(TargetHandle {
-            node_name: Some("Vin".to_string()),
-            state: TargetState::Zedboot,
-            manual: false,
-        }))?;
+        sender
+            .unbounded_send(TargetEvent::Added(TargetHandle {
+                node_name: Some("Vin".to_string()),
+                state: TargetState::Zedboot,
+                manual: false,
+            }))
+            .unwrap();
 
-        sender.unbounded_send(TargetEvent::Removed(TargetHandle {
-            node_name: Some("Vin".to_string()),
-            state: TargetState::Zedboot,
-            manual: false,
-        }))?;
+        sender
+            .unbounded_send(TargetEvent::Removed(TargetHandle {
+                node_name: Some("Vin".to_string()),
+                state: TargetState::Zedboot,
+                manual: false,
+            }))
+            .unwrap();
 
         assert_eq!(
             stream.next().await.unwrap(),
@@ -547,7 +561,7 @@ pub mod test {
     }
 
     #[fuchsia::test]
-    async fn test_target_stream_ignores_removed() -> Result<()> {
+    async fn test_target_stream_ignores_removed() -> anyhow::Result<()> {
         let (sender, queue) = unbounded();
 
         let mut stream = TargetStream {
@@ -563,17 +577,21 @@ pub mod test {
         };
 
         // Send a few events
-        sender.unbounded_send(TargetEvent::Removed(TargetHandle {
-            node_name: Some("Vin".to_string()),
-            state: TargetState::Zedboot,
-            manual: false,
-        }))?;
+        sender
+            .unbounded_send(TargetEvent::Removed(TargetHandle {
+                node_name: Some("Vin".to_string()),
+                state: TargetState::Zedboot,
+                manual: false,
+            }))
+            .unwrap();
 
-        sender.unbounded_send(TargetEvent::Added(TargetHandle {
-            node_name: Some("Vin".to_string()),
-            state: TargetState::Zedboot,
-            manual: false,
-        }))?;
+        sender
+            .unbounded_send(TargetEvent::Added(TargetHandle {
+                node_name: Some("Vin".to_string()),
+                state: TargetState::Zedboot,
+                manual: false,
+            }))
+            .unwrap();
 
         assert_eq!(
             stream.next().await.unwrap(),
@@ -588,7 +606,7 @@ pub mod test {
     }
 
     #[fuchsia::test]
-    async fn test_target_stream_filtered() -> Result<()> {
+    async fn test_target_stream_filtered() -> anyhow::Result<()> {
         let (sender, queue) = unbounded();
 
         let mut stream = TargetStream {
@@ -607,17 +625,21 @@ pub mod test {
         let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let addr = TargetAddr::from(socket);
         // This should not come into the queue since the target is not in zedboot
-        sender.unbounded_send(TargetEvent::Added(TargetHandle {
-            node_name: Some("Kelsier".to_string()),
-            state: TargetState::Product { addrs: vec![addr], serial: None },
-            manual: false,
-        }))?;
+        sender
+            .unbounded_send(TargetEvent::Added(TargetHandle {
+                node_name: Some("Kelsier".to_string()),
+                state: TargetState::Product { addrs: vec![addr], serial: None },
+                manual: false,
+            }))
+            .unwrap();
 
-        sender.unbounded_send(TargetEvent::Added(TargetHandle {
-            node_name: Some("Vin".to_string()),
-            state: TargetState::Zedboot,
-            manual: false,
-        }))?;
+        sender
+            .unbounded_send(TargetEvent::Added(TargetHandle {
+                node_name: Some("Vin".to_string()),
+                state: TargetState::Zedboot,
+                manual: false,
+            }))
+            .unwrap();
 
         assert_eq!(
             stream.next().await.unwrap(),
@@ -631,7 +653,7 @@ pub mod test {
         Ok(())
     }
 
-    fn build_instance_file(dir: &PathBuf, name: &str) -> Result<File> {
+    fn build_instance_file(dir: &PathBuf, name: &str) -> std::io::Result<File> {
         let new_instance_dir = dir.join(String::from(name));
         std::fs::create_dir_all(&new_instance_dir)?;
         let new_instance_engine_file = new_instance_dir.join("engine.json");
@@ -665,7 +687,7 @@ pub mod test {
     // Normally, emulators are extended events, not just a fast creation of a single file.
     #[ignore]
     #[fuchsia::test]
-    async fn test_target_stream_produces_emulator() -> Result<()> {
+    async fn test_target_stream_produces_emulator() -> anyhow::Result<()> {
         use tempfile::tempdir;
 
         let _env = ffx_config::test_init().await.expect("Failed to initialize test env");
@@ -681,7 +703,7 @@ pub mod test {
         // Before waiting on devices, let's make sure we're actually getting the
         // emulator. (This shouldn't be necessary, but I've seen this test flake
         // by timing out, so this is a validity check.)
-        let existing = emulator_instance::get_all_targets(&emu_instances)?;
+        let existing = emulator_instance::get_all_targets(&emu_instances).unwrap();
         assert_eq!(existing.len(), 1);
 
         // Start watching the directory
@@ -692,7 +714,8 @@ pub mod test {
             true,
             false,
             DiscoverySources::EMULATOR,
-        )?;
+        )
+        .unwrap();
 
         // Assert that the existing emulator is discovered
         let next =
@@ -705,7 +728,7 @@ pub mod test {
                 node_name: Some("emu-data-instance".to_string()),
                 // Addr must correspond to "host:port_map:sh:host" value in config
                 state: TargetState::Product {
-                    addrs: vec![TargetAddr::from_str("127.0.0.1:3322")?],
+                    addrs: vec![TargetAddr::from_str("127.0.0.1:3322").unwrap()],
                     serial: None
                 },
                 manual: false,
@@ -729,7 +752,7 @@ pub mod test {
                 node_name: Some("emu-data-instance2".to_string()),
                 // Addr must correspond to "host:port_map:sh:host" value in config
                 state: TargetState::Product {
-                    addrs: vec![TargetAddr::from_str("127.0.0.1:3322")?],
+                    addrs: vec![TargetAddr::from_str("127.0.0.1:3322").unwrap()],
                     serial: None
                 },
                 manual: false,

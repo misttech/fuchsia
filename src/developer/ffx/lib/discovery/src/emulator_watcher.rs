@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::TargetEvent;
-use anyhow::Result;
+use crate::error::Error;
 use emulator_instance::EmulatorInstances;
 use fuchsia_async::Task;
 use futures::channel::mpsc::UnboundedSender;
@@ -18,9 +18,11 @@ impl EmulatorWatcher {
     pub(crate) fn new(
         instance_root: PathBuf,
         sender: UnboundedSender<TargetEvent>,
-    ) -> Result<Self> {
+    ) -> Result<Self, Error> {
         let emu_instances = EmulatorInstances::new(instance_root.clone());
-        let existing = emulator_instance::get_all_targets(&emu_instances)?;
+        let existing = emulator_instance::get_all_targets(&emu_instances).map_err(|err| {
+            Error::EmulatorWatcher { path: instance_root.clone(), err: err.to_string() }
+        })?;
         for i in existing {
             let handle = i.try_into();
             if let Ok(h) = handle {
@@ -31,7 +33,8 @@ impl EmulatorWatcher {
 
         // Emulator (and therefore notify thread) lifetime should last as long as the task,
         // because it is moved into the loop
-        let mut watcher = emulator_instance::start_emulator_watching(instance_root)?;
+        let mut watcher = emulator_instance::start_emulator_watching(instance_root.clone())
+            .map_err(|err| Error::EmulatorWatcher { path: instance_root, err: err.to_string() })?;
         let task = Task::local(async move {
             loop {
                 if let Some(act) = watcher.emulator_target_detected().await {

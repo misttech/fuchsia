@@ -23,7 +23,6 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/netext:lib",
     "//src/developer/ffx/lib/usb_fastboot_discovery:lib",
     "//src/lib/fuchsia-async",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
@@ -35,6 +34,7 @@ rustc_library("lib") {
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/target_errors:lib",
     "//src/lib/fuchsia",
+    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:tempfile",
@@ -44,6 +44,7 @@ rustc_library("lib") {
   sources = [
     "src/desc.rs",
     "src/emulator_watcher.rs",
+    "src/error.rs",
     "src/events.rs",
     "src/fastboot_file_watcher.rs",
     "src/lib.rs",

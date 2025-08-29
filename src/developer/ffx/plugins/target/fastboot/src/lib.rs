@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use addr::TargetIpAddr;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use discovery::{FastbootConnectionState, TargetState};
 use errors::ffx_bail;
@@ -11,7 +11,7 @@ use ffx_config::EnvironmentContext;
 use ffx_fastboot::common::flash_partition_impl;
 use ffx_fastboot::common::vars::MAX_DOWNLOAD_SIZE_VAR;
 use ffx_fastboot_connection_factory::{
-    tcp_proxy, udp_proxy, usb_proxy, FastbootNetworkConnectionConfig,
+    FastbootNetworkConnectionConfig, tcp_proxy, udp_proxy, usb_proxy,
 };
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, Variable};
 use ffx_fastboot_tool_args::{FastbootCommand, FastbootSubcommand};
@@ -227,7 +227,8 @@ async fn cmd_impl(
         Some(FidlTargetState::Fastboot) => {
             // Nothing to do
             log::debug!("Target already in Fastboot state");
-            let s: discovery::TargetHandle = (**info).clone().try_into()?;
+            let s: discovery::TargetHandle =
+                (**info).clone().try_into().map_err(anyhow::Error::from)?;
             s.state
         }
         _ => {

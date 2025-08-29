@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::error::{Error, Result};
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{Result, bail};
 use manual_targets::watcher::{ManualTargetEvent, ManualTargetState};
 use netext::IsLocalAddr;
 use std::cmp::Ordering;
@@ -122,67 +122,42 @@ impl TargetEvent {
     }
 }
 
-pub(crate) fn target_event_from_mdns_event(event: ffx::MdnsEventType) -> Option<TargetEvent> {
-    match event {
-        ffx::MdnsEventType::SocketBound(_) => {
-            // Unsupported
-            None
-        }
-        e @ _ => {
-            let converted = TargetEvent::try_from(e);
-            match converted {
-                Ok(m) => Some(m),
-                Err(_) => None,
-            }
-        }
-    }
-}
-
 impl TryFrom<ffx::MdnsEventType> for TargetEvent {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(event: ffx::MdnsEventType) -> Result<Self, Self::Error> {
-        match event {
-            ffx::MdnsEventType::TargetFound(info) => {
-                let handle: TargetHandle = info.try_into()?;
-                Ok(TargetEvent::Added(handle))
-            }
-            ffx::MdnsEventType::TargetRediscovered(info) => {
-                let handle: TargetHandle = info.try_into()?;
-                Ok(TargetEvent::Added(handle))
+    fn try_from(e: ffx::MdnsEventType) -> Result<Self> {
+        match e {
+            ffx::MdnsEventType::TargetFound(info)
+            | ffx::MdnsEventType::TargetRediscovered(info) => {
+                Ok(TargetEvent::Added(TargetHandle::try_from(info)?))
             }
             ffx::MdnsEventType::TargetExpired(info) => {
-                let handle: TargetHandle = info.try_into()?;
-                Ok(TargetEvent::Removed(handle))
+                Ok(TargetEvent::Removed(TargetHandle::try_from(info)?))
             }
-            ffx::MdnsEventType::SocketBound(_) => {
-                anyhow::bail!("SocketBound events are not supported")
-            }
+            ffx::MdnsEventType::SocketBound(_) => Err(Error::SocketBoundUnsupported),
         }
     }
 }
 
 impl TryFrom<emulator_instance::EmulatorTargetAction> for TargetEvent {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(event: emulator_instance::EmulatorTargetAction) -> Result<Self, Self::Error> {
-        match event {
+    fn try_from(e: emulator_instance::EmulatorTargetAction) -> Result<Self> {
+        match e {
             emulator_instance::EmulatorTargetAction::Add(info) => {
-                let handle: TargetHandle = info.try_into()?;
-                Ok(TargetEvent::Added(handle))
+                Ok(TargetEvent::Added(TargetHandle::try_from(info)?))
             }
             emulator_instance::EmulatorTargetAction::Remove(info) => {
-                let handle: TargetHandle = info.try_into()?;
-                Ok(TargetEvent::Removed(handle))
+                Ok(TargetEvent::Removed(TargetHandle::try_from(info)?))
             }
         }
     }
 }
 
 impl TryFrom<ffx::TargetInfo> for TargetHandle {
-    type Error = anyhow::Error;
+    type Error = Error;
 
-    fn try_from(info: ffx::TargetInfo) -> Result<Self, Self::Error> {
+    fn try_from(info: ffx::TargetInfo) -> Result<Self> {
         let addresses = info.addresses.unwrap_or_default();
         // Get the TargetAddrs
         let mut addrs: Vec<_> =
@@ -190,9 +165,9 @@ impl TryFrom<ffx::TargetInfo> for TargetHandle {
         // Sorting them this way put ipv6 above ipv4
         addrs.sort_by(|a, b| b.cmp(a));
 
-        fn assert_non_empty_addrs(addrs: &Vec<TargetIpAddr>) -> Result<(), anyhow::Error> {
+        fn assert_non_empty_addrs(addrs: &Vec<TargetIpAddr>) -> Result<()> {
             if addrs.is_empty() {
-                bail!("There must be at least one target address")
+                return Err(Error::TargetHasNoAddresses);
             }
             Ok(())
         }
@@ -628,7 +603,7 @@ mod test {
 
     #[test]
     fn test_from_emulatoreventtype_for_targetevent() -> Result<()> {
-        let addr = TargetAddr::from_str("127.0.0.1:8080")?;
+        let addr = TargetAddr::from_str("127.0.0.1:8080").unwrap();
         {
             let addr_info: ffx::TargetAddrInfo = addr.into();
             let info = ffx::TargetInfo {

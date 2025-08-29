@@ -3,34 +3,23 @@
 // found in the LICENSE file.
 
 use crate::TargetEvent;
-use anyhow::Result;
-use fastboot_file_discovery::{FastbootFileWatcher, GetFastbootEntriesError, get_fastboot_devices};
+use crate::error::Error;
+use fastboot_file_discovery::{FastbootFileWatcher, get_fastboot_devices};
 use futures::channel::mpsc::UnboundedSender;
 use std::path::PathBuf;
-use thiserror::Error;
 
 pub(crate) struct FastbootWatcher {
     // Task for the drain loop
     _watcher: FastbootFileWatcher,
 }
 
-#[derive(Error, Debug)]
-pub enum ParseFastbootDevicesError {
-    #[error("Fastboot Devices file malformed. Please check file contents: \"{}\"", path)]
-    MalformedFile { path: String, source: GetFastbootEntriesError },
-}
-
 impl FastbootWatcher {
     pub(crate) fn new(
         instance_root: PathBuf,
         sender: UnboundedSender<TargetEvent>,
-    ) -> Result<Self> {
-        let existing = get_fastboot_devices(&instance_root).map_err(|source| {
-            ParseFastbootDevicesError::MalformedFile {
-                path: instance_root.display().to_string(),
-                source,
-            }
-        })?;
+    ) -> Result<Self, Error> {
+        let existing = get_fastboot_devices(&instance_root)
+            .map_err(|err| Error::FastbootDiscovery { path: instance_root.clone(), err })?;
         for device in existing {
             let event = fastboot_file_discovery::FastbootEvent::Discovered(device);
             let handle = event.into();
@@ -46,8 +35,9 @@ impl FastbootWatcher {
                 let event = res.into();
                 let _ = sender.unbounded_send(event);
             },
-            instance_root,
-        )?;
+            instance_root.clone(),
+        )
+        .map_err(|e| Error::FastbootWatcher { path: instance_root, err: e.to_string() })?;
         Ok(Self { _watcher: watcher })
     }
 }

@@ -74,7 +74,7 @@ impl FidlProtocol for FastbootTargetStreamProtocol {
                     .notify_removed(true)
                     .set_source(DiscoverySources::USB_FASTBOOT | DiscoverySources::FASTBOOT_FILE)
                     .build();
-                let mut device_stream = discovery.discover_devices(TargetInfoQuery::First)?;
+                let mut device_stream = discovery.discover_devices(TargetInfoQuery::First).map_err(anyhow::Error::from)?;
                 while let Some(event) = device_stream.next().await {
                         match event {
                             TargetEvent::Added(e) => match e.state {

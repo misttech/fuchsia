@@ -104,7 +104,8 @@ impl FfxMain for BootloaderTool {
                 // Nothing to do
                 log::debug!("Target already in Fastboot state");
 
-                let s: discovery::TargetHandle = (*self.target_info).clone().try_into()?;
+                let s: discovery::TargetHandle =
+                    (*self.target_info).clone().try_into().map_err(anyhow::Error::from)?;
                 s.state
             }
             Some(FidlTargetState::Product) => {
@@ -161,7 +162,7 @@ Reboot the Target to the bootloader and re-run this command."
                 let query = info
                     .serial_number
                     .map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
-                let stream = disco.discover_devices(query)?;
+                let stream = disco.discover_devices(query).map_err(anyhow::Error::from)?;
                 let timer =
                     fuchsia_async::Timer::new(std::time::Duration::from_millis(100000)).fuse();
                 let found_target_event = async_utils::event::Event::new();

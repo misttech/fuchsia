@@ -26,7 +26,7 @@ where
         .with_fastboot_devices_file_path(fastboot_file_path.clone())
         .build();
     let query = discovery::query::TargetInfoQuery::NodenameOrSerial(target_name.clone());
-    let mut device_stream = discovery.discover_devices(query)?;
+    let mut device_stream = discovery.discover_devices(query).map_err(anyhow::Error::from)?;
 
     while let Some(event) = device_stream.next().await {
         if filter(event.as_handle()) {
