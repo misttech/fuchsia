@@ -556,13 +556,13 @@
     },
     {
         "package": "fuchsia/third_party/crosvm/linux-amd64",
-        "version": "git_revision:2fe344d595c23bb59f38fb18e41416b69f6d1f0c",
-        "instance_id": "EIoOSUrB3jMF0eNBFdrjtvk8_hxVhyj196L-_cUie0UC"
+        "version": "git_revision:658cb3d31388c2904faec539dfc351fbbbc2c783",
+        "instance_id": "oAS2nj3jghLe4xfr0jeXK7kDMUmQdDfDFf6CdW9b604C"
     },
     {
         "package": "fuchsia/third_party/crosvm/linux-arm64",
-        "version": "git_revision:2fe344d595c23bb59f38fb18e41416b69f6d1f0c",
-        "instance_id": "sq575L_oyQ0zsYFp-w0MiXR_RYGtMRH7zs7L2_tAE58C"
+        "version": "git_revision:658cb3d31388c2904faec539dfc351fbbbc2c783",
+        "instance_id": "h4OzrXqOasuR7IWg9Z_ilCgGvSLl79Eyg77hioE_dlwC"
     },
     {
         "package": "fuchsia/third_party/dtc/linux-amd64",
