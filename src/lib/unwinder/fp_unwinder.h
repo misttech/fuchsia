@@ -25,10 +25,9 @@ class FramePointerUnwinder : public UnwinderBase {
   Error Step(Memory* stack, const Frame& current, Frame& next) override;
 
  private:
-  Error Step(Memory* stack, const Registers& current, Registers& next,
-             Module::AddressSize pointer_size);
+  Error Step(Memory* stack, const Registers& current, Registers& next, CfiModuleInfo* module_info);
   Error ReadNextFpAndSp(Memory* stack, uint64_t& fp, uint64_t& next_fp, uint64_t& next_pc,
-                        Module::AddressSize pointer_size);
+                        CfiModuleInfo* module_info);
 };
 
 }  // namespace unwinder

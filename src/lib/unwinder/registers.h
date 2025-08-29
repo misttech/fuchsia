@@ -80,6 +80,7 @@ enum class RegisterID : uint8_t {
   kArm64_lr = kArm64_x30,
 
   // Aliases for ARM32.
+  kArm32_fp = kArm64_x11,
   kArm32_sp = kArm64_x13,
   kArm32_lr = kArm64_x14,
   kArm32_pc = kArm64_x15,
