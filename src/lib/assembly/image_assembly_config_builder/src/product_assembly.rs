@@ -135,7 +135,7 @@ impl ProductAssembly {
 
     pub fn set_boot_shim_aib(&mut self, path: Utf8PathBuf) -> Result<()> {
         if !self.mode.is_test_kernel() {
-            bail!("A custom boot shim can only be set with --mode `test-zbi`");
+            bail!("A custom boot shim can only be set with --mode `test-ramdisk` or `test-zbi`");
         }
         self.boot_shim_aib = path;
         Ok(())

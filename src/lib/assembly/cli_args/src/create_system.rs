@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::product::ProductAssemblyOutputs;
+use crate::product::{AssemblyMode, ProductAssemblyOutputs};
 
 use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
@@ -37,6 +37,10 @@ pub struct CreateSystemArgs {
     /// base packages to the same TUF repository.
     #[argh(option)]
     pub base_package_name: Option<String>,
+
+    /// change the default mode assembly runs in to produce test images.
+    #[argh(option, default = "crate::product::default_mode()")]
+    pub mode: AssemblyMode,
 }
 
 impl CreateSystemArgs {
@@ -61,7 +65,10 @@ impl CreateSystemArgs {
             args.push("--base-package-name".to_string());
             args.push(name.clone());
         }
-
+        if !self.mode.is_default() {
+            args.push("--mode".to_string());
+            args.push(self.mode.to_string());
+        }
         args
     }
 }
@@ -75,6 +82,7 @@ impl From<ProductAssemblyOutputs> for CreateSystemArgs {
             gendir: outs.gendir,
             base_package_name: None,
             include_account: None,
+            mode: outs.mode,
         }
     }
 }

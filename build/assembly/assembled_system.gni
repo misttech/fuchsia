@@ -83,7 +83,7 @@ import("//src/developer/ffx/build/ffx_action.gni")
 #
 #   assembly_mode (optional; default: null)
 #     [string] The mode to run product assembly in. Valid values are:
-#     "test-zbi", and "test-no-platform".
+#     "test-ramdisk", "test-zbi", and "test-no-platform".
 #
 # Image Assembly parameters:
 #
@@ -329,7 +329,8 @@ template("assembled_system") {
   }
 
   if (defined(invoker.assembly_mode)) {
-    assert(invoker.assembly_mode == "test-zbi" ||
+    assert(invoker.assembly_mode == "test-ramdisk" ||
+           invoker.assembly_mode == "test-zbi" ||
            invoker.assembly_mode == "test-no-platform")
   }
 
@@ -654,6 +655,13 @@ template("assembled_system") {
       args += [ "--include-account" ]
     }
 
+    if (defined(invoker.assembly_mode)) {
+      args += [
+        "--mode",
+        invoker.assembly_mode,
+      ]
+    }
+
     deps = []
     if (defined(invoker.deps)) {
       deps += invoker.deps
@@ -680,14 +688,21 @@ template("assembled_system") {
     ]
 
     outputs = [
-      files.bootfs_files,
-      files.additional_boot_args,
-      files.zbi,
-      files.zbi_manifest,
-      files.bootfs_packages,
       files.image_command_log,
       files.assembly_manifest,
     ]
+
+    is_mode_test_ramdisk = defined(invoker.assembly_mode) &&
+                           invoker.assembly_mode == "test-ramdisk"
+    if (!is_mode_test_ramdisk) {
+      outputs += [
+        files.bootfs_files,
+        files.additional_boot_args,
+        files.zbi,
+        files.zbi_manifest,
+        files.bootfs_packages,
+      ]
+    }
 
     _generate_signed_zbi = defined(invoker.zbi_signing_script)
     if (defined(invoker.generate_signed_zbi)) {

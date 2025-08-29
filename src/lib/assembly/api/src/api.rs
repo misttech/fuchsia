@@ -122,6 +122,7 @@ mod tests {
             gendir: gendir.clone(),
             include_account: None,
             base_package_name: None,
+            mode: Default::default(),
         };
         assembly_tool.run(&args.to_vec()).unwrap();
 

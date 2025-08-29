@@ -163,6 +163,8 @@ pub struct ProductAssemblyOutputs {
     pub gendir: Utf8PathBuf,
     /// path to image assembly config output file
     pub image_assembly_config: Utf8PathBuf,
+    /// the mode to run assembly in.
+    pub mode: AssemblyMode,
 }
 
 impl From<ProductArgs> for ProductAssemblyOutputs {
@@ -175,6 +177,7 @@ impl From<ProductArgs> for ProductAssemblyOutputs {
             outdir: args.outdir,
             gendir: args.gendir,
             image_assembly_config,
+            mode: args.mode,
         }
     }
 }
@@ -182,6 +185,11 @@ impl From<ProductArgs> for ProductAssemblyOutputs {
 /// A mode for Assembly to run in.
 #[derive(Debug, Default, PartialEq, Clone, Copy, Serialize)]
 pub enum AssemblyMode {
+    /// Passes a prebuilt image through to the "ZBI" position in the PB.
+    /// This image may not be a ZBI.
+    /// Accepts a custom qemu kernel.
+    TestRamdisk,
+
     /// Adds a real ZBI, but possibly no kernel, and definitely no fvm/fxfs.
     /// Uses the board to add a dtbo and run the postprocessing script.
     /// Accepts a custom qemu kernel.
@@ -203,7 +211,7 @@ impl AssemblyMode {
     /// Returns whether this mode produces a test kernel.
     /// Assembly should not modify this kernel in any way.
     pub fn is_test_kernel(&self) -> bool {
-        matches!(self, Self::TestZBI)
+        matches!(self, Self::TestRamdisk | Self::TestZBI)
     }
 
     /// Returns whether this mode is the default mode.
@@ -217,10 +225,11 @@ impl FromStr for AssemblyMode {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
+            "test-ramdisk" => Ok(Self::TestRamdisk),
             "test-zbi" => Ok(Self::TestZBI),
             "test-no-platform" => Ok(Self::TestNoPlatform),
             _ => Err(format!(
-                "Unknown option for 'mode', valid values are 'test-zbi' and 'test-no-platform': {}",
+                "Unknown option for 'mode', valid values are 'test-ramdisk', 'test-zbi' and 'test-no-platform': {}",
                 s
             )),
         }
@@ -230,6 +239,7 @@ impl FromStr for AssemblyMode {
 impl fmt::Display for AssemblyMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            AssemblyMode::TestRamdisk => write!(f, "test-ramdisk"),
             AssemblyMode::TestZBI => write!(f, "test-zbi"),
             AssemblyMode::TestNoPlatform => write!(f, "test-no-platform"),
             AssemblyMode::BuildEverything => write!(f, "build-everything"),
@@ -237,6 +247,6 @@ impl fmt::Display for AssemblyMode {
     }
 }
 
-fn default_mode() -> AssemblyMode {
+pub fn default_mode() -> AssemblyMode {
     AssemblyMode::default()
 }

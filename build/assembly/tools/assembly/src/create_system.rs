@@ -21,6 +21,7 @@ pub async fn create_system(args: CreateSystemArgs) -> Result<()> {
         outdir,
         gendir,
         base_package_name,
+        mode,
     } = args;
 
     let image_assembly_config: ImageAssemblyConfig = util::read_config(image_assembly_config)
@@ -36,6 +37,7 @@ pub async fn create_system(args: CreateSystemArgs) -> Result<()> {
         &gendir,
         &tools,
         base_package_name,
+        mode,
     )
     .await?;
     assembled_system

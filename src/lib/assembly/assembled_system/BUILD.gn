@@ -15,6 +15,7 @@ rustc_library("assembled_system") {
   deps = [
     "//src/lib/assembly/base_package",
     "//src/lib/assembly/blobfs",
+    "//src/lib/assembly/cli_args",
     "//src/lib/assembly/constants",
     "//src/lib/assembly/container",
     "//src/lib/assembly/fvm",

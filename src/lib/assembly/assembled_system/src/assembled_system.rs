@@ -9,6 +9,7 @@ use crate::image::Image;
 use crate::{vbmeta, zbi};
 
 use anyhow::{Context, Result, anyhow};
+use assembly_cli_args::AssemblyMode;
 use assembly_constants::PackageDestination;
 use assembly_container::{
     AssemblyContainer, DirectoryPathBuf, FileType, WalkPaths, assembly_container,
@@ -74,6 +75,7 @@ impl AssembledSystem {
         gendir: &Utf8PathBuf,
         tools: &impl ToolProvider,
         base_package_name: Option<String>,
+        assembly_mode: AssemblyMode,
     ) -> Result<Self> {
         let mut system = Self {
             images: vec![],
@@ -177,6 +179,7 @@ impl AssembledSystem {
                 zbi_config,
                 base_package.as_ref(),
                 disk_image_for_zbi,
+                assembly_mode,
             )?)
         } else {
             info!("Skipping zbi creation");

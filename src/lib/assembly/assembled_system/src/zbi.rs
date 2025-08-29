@@ -6,6 +6,7 @@ use crate::base_package::BasePackage;
 use crate::{AssembledSystem, Image};
 
 use anyhow::{Context, Result, anyhow};
+use assembly_cli_args::AssemblyMode;
 use assembly_constants::BootfsDestination;
 use assembly_images_config::Zbi;
 use assembly_package_list::{PackageList, WritablePackageList};
@@ -28,7 +29,15 @@ pub fn construct_zbi(
     zbi_config: &Zbi,
     base_package: Option<&BasePackage>,
     ramdisk_image: Option<impl Into<Utf8PathBuf>>,
+    assembly_mode: AssemblyMode,
 ) -> Result<Utf8PathBuf> {
+    // If this is a ramdisk, don't touch it. Pass it on through.
+    if matches!(assembly_mode, AssemblyMode::TestRamdisk) {
+        let zbi_path_relative = path_relative_from_current_dir(&product.kernel.path)?;
+        assembled_system.images.push(Image::ZBI { path: zbi_path_relative, signed: false });
+        return Ok(product.kernel.path.clone());
+    }
+
     let mut zbi_builder = ZbiBuilder::new(zbi_tool);
 
     // Add the kernel image.
@@ -269,6 +278,7 @@ mod tests {
             &zbi_config,
             Some(&base),
             None::<Utf8PathBuf>,
+            Default::default(),
         )
         .unwrap();
 
@@ -299,6 +309,7 @@ mod tests {
             &zbi_config,
             Some(&base),
             None::<Utf8PathBuf>,
+            Default::default(),
         )
         .unwrap();
 
