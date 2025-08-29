@@ -9,6 +9,7 @@ import argparse
 import dataclasses
 import errno
 import filecmp
+import json
 import os
 import shlex
 import shutil
@@ -1113,6 +1114,10 @@ def main() -> int:
         help="If specified, write the command used to invoke Bazel to file.",
     )
     parser.add_argument(
+        "--timings-file",
+        help="If specified, write timings of each step in this script to file.",
+    )
+    parser.add_argument(
         "--verbose_failures",
         action="store_true",
         default=False,
@@ -1143,6 +1148,8 @@ def main() -> int:
             "Bazel launcher does not exist: %s" % args.bazel_launcher
         )
 
+    time_profile = build_utils.TimeProfile()
+
     current_dir = os.getcwd()
     bazel_output_base_dir = find_bazel_output_base(args.workspace_dir)
 
@@ -1160,6 +1167,9 @@ def main() -> int:
             jobs = int(job_count)
 
     if args.gn_targets_repository_dir:
+        time_profile.start(
+            "gn_targets_dir", "Updating @gn_targets directory symlink"
+        )
         # Update fuchsia_build_generated/gn_targets_dir to point
         # to a new location that matches the content of @gn_target
         # for the current bazel_action() target.
@@ -1181,6 +1191,7 @@ def main() -> int:
         ),
     )
 
+    time_profile.start("query_cache", "loading Bazel query cache")
     query_cache = build_utils.BazelQueryCache(
         os.path.join(
             args.workspace_dir, "fuchsia_build_generated/bazel_query_cache"
@@ -1228,6 +1239,10 @@ def main() -> int:
         assert result is not None
         return result
 
+    time_profile.start(
+        "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"
+    )
+
     # All bazel targets as a set() expression for Bazel queries below.
     # See https://bazel.build/query/language#set
     query_targets = "set(%s)" % " ".join(args.bazel_targets)
@@ -1247,6 +1262,10 @@ def main() -> int:
         )
 
     write_file_if_changed(output_build_file, output_build_content)
+
+    time_profile.start(
+        f"bazel {args.command}", "Invoking Bazel {args.command} command"
+    )
 
     cmd = [args.bazel_launcher, args.command]
 
@@ -1312,6 +1331,8 @@ def main() -> int:
         # sure console output from Bazel are correctly printed out by Ninja.
         ret = subprocess.run(cmd)
 
+    time_profile.stop()
+
     if ret.returncode != 0:
         if quiet:
             # Print the captured outputs in quiet mode to help debugging build errors.
@@ -1349,6 +1370,10 @@ def main() -> int:
         return 1
 
     if args.command == "build":
+        time_profile.start(
+            "list_sources", "Query the list of Bazel source files"
+        )
+
         build_files_query_output = os.path.join(
             args.workspace_dir, "bazel-bin", "buildfiles_genquery", "genquery"
         )
@@ -1374,6 +1399,7 @@ def main() -> int:
 
         # Remove the ' (null)' suffix of each result line.
         source_files = [l.partition(" (null)")[0] for l in bazel_source_files]
+        time_profile.stop()
 
     file_copies = []
     unwanted_dirs = []
@@ -1403,6 +1429,9 @@ def main() -> int:
         final_symlinks.append((target_path, link_path))
 
     if _build_fuchsia_package:
+        time_profile.start(
+            "package_info", "Run cquery to extract Fuchsia package information"
+        )
         bazel_execroot = find_bazel_execroot(args.workspace_dir)
 
         for entry in args.package_outputs:
@@ -1457,11 +1486,17 @@ def main() -> int:
                         bazel_output_base_dir,
                     )
 
+        time_profile.stop()
+
+    time_profile.start(
+        "copy_files", "Copy Bazel output files to Ninja build directory"
+    )
     for src_path, dst_path in file_copies:
         copy_file_if_changed(src_path, dst_path, bazel_output_base_dir)
 
     for target_path, link_path in final_symlinks:
         build_utils.force_symlink(link_path, target_path)
+    time_profile.stop()
 
     dir_copies = []
     missing_directories = []
@@ -1484,6 +1519,10 @@ def main() -> int:
         dir_copies.append((src_path, dst_path, dir_output.tracked_files))
 
         if dir_output.copy_debug_symbols:
+            time_profile.start(
+                "copy_debug_symbols",
+                "Copy debug symbols to Ninja build directory",
+            )
             if _DEBUG_BUILD_ID_COPIES:
                 print(
                     f"DIRECTORY DEBUG SYMBOLS gn={args.gn_target_label} bazel={args.bazel_targets} {src_path} -> {dst_path}"
@@ -1521,6 +1560,10 @@ def main() -> int:
         )
         return 1
 
+    time_profile.start(
+        "copy_directories",
+        "Copy Bazel output directories to Ninja build directory",
+    )
     for src_path, dst_path, tracked_files in dir_copies:
         copy_directory_if_changed(src_path, dst_path, tracked_files)
 
@@ -1529,6 +1572,7 @@ def main() -> int:
     all_copies = file_copies + [(src, dst) for src, dst, _ in dir_copies]
 
     if args.path_mapping:
+        time_profile.start("file_mapping", "Write file mapping file")
         # When determining source path of the copied output, follow links to get
         # out of bazel-bin, because the content of bazel-bin is not guaranteed
         # to be stable after subsequent `bazel` commands.
@@ -1543,6 +1587,7 @@ def main() -> int:
         )
 
     if args.depfile:
+        time_profile.start("depfile", "Write Ninja depfile")
         # Perform a cquery to get all source inputs for the targets, this
         # returns a list of Bazel labels followed by "(null)" because these
         # are never configured. E.g.:
@@ -1609,6 +1654,13 @@ track all input files that the repository rule may access when it is run.
         for stamp_file in args.stamp_files:
             with open(stamp_file, "w") as f:
                 f.write("")
+
+    time_profile.stop()
+
+    if args.timings_file:
+        os.makedirs(os.path.dirname(args.timings_file), exist_ok=True)
+        with open(args.timings_file, "wt") as f:
+            json.dump(time_profile.to_json_timings(), f)
 
     # Done!
     return 0

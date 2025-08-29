@@ -656,6 +656,9 @@ template("bazel_action") {
   _bazel_command_file = "${target_out_dir}/${target_name}.bazel_command.sh"
   _rebased_bazel_command_file = rebase_path(_bazel_command_file, root_build_dir)
 
+  _timings_file = "${target_out_dir}/${target_name}.bazel_action_timings.json"
+  _rebased_timings_file = rebase_path(_timings_file, root_build_dir)
+
   action(target_name) {
     forward_variables_from(invoker,
                            [
@@ -685,6 +688,7 @@ template("bazel_action") {
     outputs = [
       _path_mapping,
       _bazel_command_file,
+      _timings_file,
     ]
 
     # Write stamp files for every Bazel target executed by this bazel_action.
@@ -719,6 +723,8 @@ template("bazel_action") {
              rebase_path(depfile, root_build_dir),
              "--command-file",
              _rebased_bazel_command_file,
+             "--timings-file",
+             _rebased_timings_file,
              "--path-mapping",
              _rebased_path_mapping,
              "--stamp-files",
@@ -875,6 +881,7 @@ template("bazel_action") {
             build_events_log_json = _rebased_bazel_build_events_log_json
             bazel_command_file = _rebased_bazel_command_file
             path_mapping = _rebased_path_mapping
+            timings_file = _rebased_timings_file
           },
         ]
       }

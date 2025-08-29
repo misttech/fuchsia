@@ -2164,6 +2164,11 @@ build_api_module("nuc11_fastboot_images_location") {
 #         Ninja build directory. Only used for debugging.
 #     - Type: string
 #
+#   timings_file
+#     - Optional: Path to a file used to describe timings of different steps of the
+#         bazel_action.py script call for this target. Only used for debugging.
+#     - Type: string
+#
 #   build_events_log_json:
 #     - Optional: Path to a file that will contain the Bazel event log for the latest
 #        invocation of this action, as a JSON file. Used for debugging.
