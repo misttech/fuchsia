@@ -106,6 +106,18 @@ void DebuggedProcess::DetachFromProcess() {
     }
   }
 
+  for (auto& [address, breakpoint] : hardware_breakpoints_) {
+    for (auto& thread_koid : breakpoint->installed_threads()) {
+      auto thread = GetThread(thread_koid);
+      if (!thread) {
+        // Might have raced with thread destruction.
+        continue;
+      }
+
+      thread->WillDeleteProcessBreakpoint(breakpoint.get());
+    }
+  }
+
   // Clear the resources.
   software_breakpoints_.clear();
   hardware_breakpoints_.clear();

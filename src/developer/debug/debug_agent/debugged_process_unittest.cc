@@ -8,10 +8,13 @@
 #include "src/developer/debug/debug_agent/arch.h"
 #include "src/developer/debug/debug_agent/breakpoint.h"
 #include "src/developer/debug/debug_agent/debug_agent.h"
+#include "src/developer/debug/debug_agent/hardware_breakpoint.h"
 #include "src/developer/debug/debug_agent/mock_debug_agent_harness.h"
 #include "src/developer/debug/debug_agent/mock_process.h"
 #include "src/developer/debug/debug_agent/mock_thread.h"
+#include "src/developer/debug/debug_agent/software_breakpoint.h"
 #include "src/developer/debug/debug_agent/test_utils.h"
+#include "src/developer/debug/ipc/records.h"
 
 namespace debug_agent {
 namespace {
@@ -256,6 +259,39 @@ TEST(DebuggedProcess, DetachFromProcess) {
   ASSERT_FALSE(thread->running());
   process.DetachFromProcess();
   ASSERT_TRUE(thread->running());
+}
+
+TEST(DebuggedProcess, DetachFromProcessWithBreakpoints) {
+  MockProcess process(nullptr, kProcessKoid, kProcessName);
+  MockThread* thread = process.AddThread(1234);
+
+  MockProcessDelegate delegate;
+
+  Breakpoint bp1 = Breakpoint(&delegate);
+  debug_ipc::BreakpointSettings settings;
+  settings.type = debug_ipc::BreakpointType::kHardware;
+  settings.locations.push_back(CreateLocation(process.koid(), thread->koid(), kAddress1));
+  bp1.SetSettings(settings);
+
+  ASSERT_TRUE(process.RegisterBreakpoint(&bp1, kAddress1).ok());
+
+  Breakpoint bp2 = Breakpoint(&delegate);
+  debug_ipc::BreakpointSettings settings2;
+  settings2.type = debug_ipc::BreakpointType::kSoftware;
+  settings2.locations.push_back(CreateLocation(process.koid(), thread->koid(), kAddress2));
+  bp2.SetSettings(settings2);
+
+  // The software breakpoint needs some memory backing it.
+  process.mock_process_handle().mock_memory().AddMemory(kAddress2, GetBreakpointMemory());
+
+  ASSERT_TRUE(process.RegisterBreakpoint(&bp2, kAddress2).ok());
+
+  process.DetachFromProcess();
+
+  // Now the thread should be running again and there shouldn't be any more breakpoints.
+  EXPECT_TRUE(process.hardware_breakpoints().empty());
+  EXPECT_TRUE(process.software_breakpoints().empty());
+  EXPECT_TRUE(thread->running());
 }
 
 TEST(DebuggedProcess, WeakAttachSkipsLoaderBreakpoint) {
