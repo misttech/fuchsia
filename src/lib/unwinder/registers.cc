@@ -116,11 +116,38 @@ fit::result<Error, Registers> Registers::To32Bit() const {
 
   if (auto err = GetPC(r_val); err.ok()) {
     result.SetPC(r_val);
+    // This function could be called from unwinders that don't know about or care to account for
+    // THUMB so we do it here as well as in the 32 bit ARM EHABI unwinder. Calling this here will
+    // only fail if PC isn't set or fails to be set for some reason.
+    if (err = result.AdjustPCForThumb(); err.has_err()) {
+      return fit::error(err);
+    }
   } else {
     return fit::error(err);
   }
 
   return fit::ok(result);
+}
+
+Error Registers::AdjustPCForThumb() {
+  if (arch() != Arch::kArm32) {
+    return Error("Not kArm32 architecture.");
+  }
+
+  uint64_t pc;
+  if (auto err = GetPC(pc); err.has_err()) {
+    return err;
+  }
+
+  // Accounting for THUMB instructions is simply masking away the lowest bit of PC to get the
+  // true address of the instruction.
+  pc &= static_cast<uint64_t>(~1);
+
+  if (auto err = SetPC(pc); err.has_err()) {
+    return err;
+  }
+
+  return Success();
 }
 
 std::string Registers::Describe() const {

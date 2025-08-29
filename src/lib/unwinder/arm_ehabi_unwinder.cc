@@ -8,6 +8,7 @@
 #include "src/lib/unwinder/cfi_unwinder.h"
 #include "src/lib/unwinder/error.h"
 #include "src/lib/unwinder/module.h"
+#include "src/lib/unwinder/registers.h"
 
 namespace unwinder {
 
@@ -29,6 +30,8 @@ Error ArmEhAbiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
 
   switch (info->module.size) {
     case Module::AddressSize::k32Bit:
+      // Make sure we mark the next registers as 32 bit so we're setting the expected PC, LR, and SP
+      // registers.
       next.regs = Registers(Registers::Arch::kArm32);
       return Step(stack, info, current.regs, next.regs);
     case Module::AddressSize::k64Bit:

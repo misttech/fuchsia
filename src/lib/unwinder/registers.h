@@ -148,6 +148,7 @@ class Registers {
   // fit in a 32 bit register), and the specially named registers are copied using the getters and
   // setters below.
   fit::result<Error, Registers> To32Bit() const;
+  Error AdjustPCForThumb();
 
   Arch arch() const { return arch_; }
 
