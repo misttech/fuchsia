@@ -6,10 +6,9 @@ import("//build/bazel/bazel_action.gni")
 
 # Build a Bazel target and copy its results back to Ninja.
 #
-# This template is used to invoke `bazel build <bazel_target>` inside
-# the special Bazel workspace setup by the platform build (see
-# //build/bazel:generate_main_workspace), then copy some of its outputs
-# back to the Ninja build directory.
+# This template is used to invoke `bazel build <bazel_target>` inside the
+# special Bazel workspace set up by the platform build then copy some of its
+# outputs back to the Ninja build directory.
 #
 # This back-copy is necessary because the exact location of Bazel build
 # artifacts is essentially unpredictable, but will use hard-copies when

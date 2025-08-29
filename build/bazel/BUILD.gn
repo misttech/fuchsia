@@ -22,16 +22,6 @@ assert(
     current_toolchain == default_toolchain,
     "This BUILD.gn file should only be parsed in the default toolchain, to prevent generating Bazel workspace multiple times.")
 
-group("generate_main_workspace") {
-  # This dependency is needed to properly populate the @fuchsia_sdk repository.
-  deps = [ "//sdk:bazel_in_tree_idk" ]
-
-  # This dependency is needed to properly populate the @internal_sdk repository.
-  # (see https://fxbug.dev/42063353).
-  # TODO(https://fxbug.dev/333907192): Remove this.
-  deps += [ "//sdk:bazel_internal_only_idk" ]
-}
-
 # LINT.IfChange
 generate_content_hash_file("fuchsia_internal_only_idk.hash") {
   source_paths = [ "$root_build_dir/sdk/exported/bazel_internal_only_idk" ]

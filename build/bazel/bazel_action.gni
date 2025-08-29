@@ -23,7 +23,6 @@ declare_args() {
 }
 
 # Wrap a Bazel command with a GN action.
-# Bazel is invoked in a workspace setup by `//build/bazel:bazel_workspace`.
 #
 # May only be called on the default_toolchain so as to prevent generating Bazel
 # workspace multiple times. Host targets can be built by specifying

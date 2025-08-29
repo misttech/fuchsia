@@ -2417,18 +2417,6 @@ group("developer_host_tools") {
   }
 }
 
-# IMPORTANT: This target is only provided for the benefit of the `fx bazel`
-# command, and nothing should depend on it, its definition may change over
-# time.
-#
-# Targets that need to depend on the Bazel workspace should instead depend
-# directly on //build/bazel:generate_main_workspace and other targets
-# instead (e.g. see the definition of `bazel_action()`).
-#
-group("bazel_workspace") {
-  deps = [ "//build/bazel:generate_main_workspace" ]
-}
-
 # IMPORTANT: Nothing should depend on this target. It is here
 # to ensure that its dependencies are always in the GN build graph,
 # which is critical for a few generated_file() dependencies that
