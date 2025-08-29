@@ -104,7 +104,7 @@
           https://ci.chromium.org/ui/p/fuchsia/builders/ci/crosvm-linux-x64
     -->
     <package name="fuchsia/third_party/crosvm/${platform}"
-             version="git_revision:25c5729f2b6dd4d2f3da214cb71280b81ff60318"
+             version="git_revision:2fe344d595c23bb59f38fb18e41416b69f6d1f0c"
              platforms="linux-amd64"
              path="prebuilt/third_party/crosvm/{{.OS}}-{{.Arch}}"/>
 
@@ -112,7 +112,7 @@
          under pure arm64 emulation.
     -->
     <package name="fuchsia/third_party/crosvm/linux-arm64"
-             version="git_revision:25c5729f2b6dd4d2f3da214cb71280b81ff60318"
+             version="git_revision:2fe344d595c23bb59f38fb18e41416b69f6d1f0c"
              path="prebuilt/third_party/crosvm/linux-arm64"/>
 
     <!-- EDKII firmware for emulating UEFI, from
