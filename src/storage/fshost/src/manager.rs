@@ -14,6 +14,24 @@ use futures::lock::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+fn size_as_string(bytes: u64) -> String {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    const MIB: u64 = 1024 * 1024;
+    const KIB: u64 = 1024;
+    if bytes >= GIB {
+        let gibibytes = bytes / GIB;
+        format!("{gibibytes}G")
+    } else if bytes >= MIB {
+        let mebibytes = bytes / MIB;
+        format!("{mebibytes}M")
+    } else if bytes >= KIB {
+        let kibibytes = bytes / KIB;
+        format!("{kibibytes}K")
+    } else {
+        format!("{bytes}B")
+    }
+}
+
 pub struct Manager {
     matcher: matcher::Matchers,
     environment: Arc<Mutex<dyn Environment>>,
@@ -83,13 +101,19 @@ impl Manager {
             let label = device.partition_label().await.ok().map(|s| s.to_string());
             let type_guid =
                 device.partition_type().await.ok().map(|guid| uuid::Uuid::from_bytes(guid.clone()));
+            let size = device
+                .get_block_info()
+                .await
+                .ok()
+                .map(|info| size_as_string(info.block_count * info.block_size as u64))
+                .unwrap_or_else(|| "?".to_string());
             log::info!(
                 source:% = device.source(),
                 path:% = device.path(),
                 content_format:?,
                 label:?,
                 type_guid:?,
-                is_ramdisk = device.is_fshost_ramdisk();
+                size:%;
                 "Matching device"
             );
             // Publish devices we find as needed.
@@ -101,7 +125,7 @@ impl Manager {
             let device_path = device.path().to_string();
             match self.matcher.match_device(device, &mut *environment).await {
                 Ok(true) => (),
-                Ok(false) => log::info!(path:% = device_path; "ignored"),
+                Ok(false) => log::trace!(path:% = device_path; "ignored"),
                 Err(error) => {
                     log::error!(
                         path:% = device_path,

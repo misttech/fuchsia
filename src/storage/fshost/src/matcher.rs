@@ -22,6 +22,8 @@ pub use config_matcher::get_config_matchers;
 
 #[async_trait]
 pub trait Matcher: Send {
+    fn matcher_name(&self) -> &str;
+
     /// Tries to match this device against this matcher. Matching should be infallible.
     async fn match_device(&self, device: &mut dyn Device) -> bool;
 
@@ -140,6 +142,11 @@ impl Matchers {
 
         for (_, m) in self.matchers.iter_mut().enumerate() {
             if m.match_device(device.as_mut()).await {
+                log::info!(
+                    matcher:% = m.matcher_name(),
+                    path:% = device.path();
+                    "Matched device"
+                );
                 let mut tag = m.process_device(device.as_mut(), env).await?;
                 // Tag the first Ramdisk device so that it's retained; the ramdisk will be detached
                 // if it's dropped.
@@ -170,6 +177,10 @@ impl PublisherMatcher {
 
 #[async_trait]
 impl Matcher for PublisherMatcher {
+    fn matcher_name(&self) -> &str {
+        "Publisher"
+    }
+
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         device.parent() == Parent::Dev && !device.is_nand()
     }
@@ -202,6 +213,10 @@ impl BootpartMatcher {
 
 #[async_trait]
 impl Matcher for BootpartMatcher {
+    fn matcher_name(&self) -> &str {
+        "Bootpart"
+    }
+
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         device.get_block_info().await.map_or(false, |info| info.flags.contains(BlockFlag::BOOTPART))
     }
@@ -227,6 +242,9 @@ impl NandMatcher {
 
 #[async_trait]
 impl Matcher for NandMatcher {
+    fn matcher_name(&self) -> &str {
+        "Nand"
+    }
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         device.is_nand()
     }
@@ -271,6 +289,9 @@ impl FxblobMatcher {
 
 #[async_trait]
 impl Matcher for FxblobMatcher {
+    fn matcher_name(&self) -> &str {
+        "Fxblob"
+    }
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         if self.already_matched {
             return false;
@@ -391,6 +412,10 @@ impl FvmMatcher {
 
 #[async_trait]
 impl Matcher for FvmMatcher {
+    fn matcher_name(&self) -> &str {
+        "Fvm"
+    }
+
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         if self.already_matched {
             return false;
@@ -450,6 +475,10 @@ impl GptAllMatcher {
 
 #[async_trait]
 impl Matcher for GptAllMatcher {
+    fn matcher_name(&self) -> &str {
+        "GptAll"
+    }
+
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         device.content_format().await.ok() == Some(DiskFormat::Gpt)
     }
@@ -508,6 +537,10 @@ impl SystemGptMatcher {
 
 #[async_trait]
 impl Matcher for SystemGptMatcher {
+    fn matcher_name(&self) -> &str {
+        "SystemGpt"
+    }
+
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         if self.device_path.is_some() {
             return false;
@@ -577,6 +610,10 @@ impl PartitionMapMatcher {
 
 #[async_trait]
 impl Matcher for PartitionMapMatcher {
+    fn matcher_name(&self) -> &str {
+        "PartitionMap"
+    }
+
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         device.content_format().await.ok() == Some(self.content_format)
     }
@@ -614,6 +651,10 @@ impl FxblobOnRecoveryMatcher {
 
 #[async_trait]
 impl Matcher for FxblobOnRecoveryMatcher {
+    fn matcher_name(&self) -> &str {
+        "FxblobOnRecovery"
+    }
+
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         if self.already_matched || device.is_fshost_ramdisk() {
             return false;
@@ -660,6 +701,10 @@ impl FvmOnRecoveryMatcher {
 
 #[async_trait]
 impl Matcher for FvmOnRecoveryMatcher {
+    fn matcher_name(&self) -> &str {
+        "FvmOnRecovery"
+    }
+
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         if self.already_matched || device.is_fshost_ramdisk() {
             return false;

@@ -61,6 +61,10 @@ impl ConfigMatcher {
 
 #[async_trait]
 impl Matcher for ConfigMatcher {
+    fn matcher_name(&self) -> &str {
+        "Config"
+    }
+
     async fn match_device(&self, device: &mut dyn Device) -> bool {
         self.publisher.is_some()
             && device.partition_label().await.is_ok_and(|label| label == &self.label)

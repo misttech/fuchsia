@@ -243,7 +243,7 @@ impl Inner {
         info: gpt::PartitionInfo,
         overlay_indexes: Vec<usize>,
     ) -> Result<(), Error> {
-        log::info!(
+        log::trace!(
             "GPT part {index}{}: {info:?}",
             if !overlay_indexes.is_empty() { " (overlay)" } else { "" }
         );
@@ -286,7 +286,7 @@ impl Inner {
             num_blocks: super_partition.1.num_blocks + userdata_partition.1.num_blocks,
             flags: super_partition.1.flags,
         };
-        log::info!(
+        log::trace!(
             "GPT merged parts {:?} + {:?} -> {info:?}",
             super_partition.1,
             userdata_partition.1
@@ -406,7 +406,6 @@ impl GptManager {
             }),
             shutdown: AtomicBool::new(false),
         });
-        log::info!("Bind to GPT OK, binding partitions");
         this.inner.lock().await.bind_all_partitions(&this).await?;
         log::info!("Starting all partitions OK!");
         Ok(this)
@@ -652,7 +651,6 @@ impl GptManager {
         transaction.partitions = partitions;
         inner.gpt.commit_transaction(transaction).await?;
 
-        log::info!("Rebinding partitions...");
         if let Err(err) = inner.bind_all_partitions(&self).await {
             log::error!(err:?; "Failed to rebind partitions");
             return Err(zx::Status::BAD_STATE);
