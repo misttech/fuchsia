@@ -1674,6 +1674,10 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
             }
         }
         impl sandbox::DirConnectable for OutgoingDirConnector {
+            fn maximum_flags(&self) -> fio::Flags {
+                self.flags
+            }
+
             fn send(
                 &self,
                 dir: ServerEnd<fio::DirectoryMarker>,
