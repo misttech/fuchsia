@@ -523,7 +523,7 @@ group("log") {
 
 if (!(current_os == "fuchsia")) {
   group("loom") {
-    public_deps = [ ":loom-v0_7_1" ]
+    public_deps = [ ":loom-v0_7_2" ]
     testonly = true
   }
 }
@@ -3711,7 +3711,7 @@ rustc_library("chrono-v0_4_41") {
     deps += [ ":iana-time-zone-v0_1_60" ]
   }
   if (false) {
-    deps += [ ":windows-link-v0_1_2" ]
+    deps += [ ":windows-link-v0_1_3" ]
   }
 
   rustenv = []
@@ -7399,52 +7399,49 @@ rustc_library("futures-util-v0_3_31") {
   applicable_licenses = [ ":futures-util-v0_3_31.license" ]
 }
 
-license("generator-v0_7_5.license") {
+license("generator-v0_8_7.license") {
   public_package_name = "generator"
   license_files = [
-    "//third_party/rust_crates/vendor/generator-0.7.5/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/generator-0.7.5/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/generator-0.8.7/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/generator-0.8.7/LICENSE-MIT",
   ]
 }
 
-rustc_library("generator-v0_7_5") {
+rustc_library("generator-v0_8_7") {
   crate_name = "generator"
-  source_root = "//third_party/rust_crates/vendor/generator-0.7.5/src/lib.rs"
-  output_name = "generator-76a988bf2831d99"
+  source_root = "//third_party/rust_crates/vendor/generator-0.8.7/src/lib.rs"
+  output_name = "generator-761def78771022db"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":cfg-if-v1_0_0" ]
   deps += [ ":log-v0_4_27" ]
   if (true) {
     deps += [ ":libc-v0_2_174" ]
   }
   if (false) {
-    deps += [ ":windows-v0_48_0" ]
+    deps += [ ":windows-v0_61_3" ]
   }
   deps += [ "//build/validate:non_production_tag" ]
-  if (!(current_os == "fuchsia")) {
-    deps += [ "//third_party/rust_crates/compat/generator:asm" ]
-  }
-
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=76a988bf2831d99",
-    "-Cextra-filename=-76a988bf2831d99",
+    "-Cmetadata=761def78771022db",
+    "-Cextra-filename=-761def78771022db",
   ]
 
   visibility = []
-  visibility += [ ":loom-v0_7_1.actual" ]
-  visibility += [ ":loom-v0_7_1.rustdoc" ]
-  visibility += [ ":loom-v0_7_1.aux.deps.deps" ]
-  visibility += [ ":loom-v0_7_1.aux.deps.transdeps" ]
-  visibility += [ ":loom-v0_7_1.actual.rust_compilation_deps" ]
+  visibility += [ ":loom-v0_7_2.actual" ]
+  visibility += [ ":loom-v0_7_2.rustdoc" ]
+  visibility += [ ":loom-v0_7_2.aux.deps.deps" ]
+  visibility += [ ":loom-v0_7_2.aux.deps.transdeps" ]
+  visibility += [ ":loom-v0_7_2.actual.rust_compilation_deps" ]
   testonly = true
-  applicable_licenses = [ ":generator-v0_7_5.license" ]
+  applicable_licenses = [ ":generator-v0_8_7.license" ]
 }
 
 license("generic-array-v0_14_7.license") {
@@ -9466,15 +9463,15 @@ rustc_library("log-v0_4_27") {
   applicable_licenses = [ ":log-v0_4_27.license" ]
 }
 
-license("loom-v0_7_1.license") {
+license("loom-v0_7_2.license") {
   public_package_name = "loom"
-  license_files = [ "//third_party/rust_crates/vendor/loom-0.7.1/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/loom-0.7.2/LICENSE" ]
 }
 
-rustc_library("loom-v0_7_1") {
+rustc_library("loom-v0_7_2") {
   crate_name = "loom"
-  source_root = "//third_party/rust_crates/vendor/loom-0.7.1/src/lib.rs"
-  output_name = "loom-7b415502d397946a"
+  source_root = "//third_party/rust_crates/vendor/loom-0.7.2/src/lib.rs"
+  output_name = "loom-66004af6324b2b5e"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -9482,7 +9479,7 @@ rustc_library("loom-v0_7_1") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_0" ]
-  deps += [ ":generator-v0_7_5" ]
+  deps += [ ":generator-v0_8_7" ]
   deps += [ ":scoped-tls-v1_0_1" ]
   deps += [ ":tracing-subscriber-v0_3_18" ]
   deps += [ ":tracing-v0_1_40" ]
@@ -9491,15 +9488,15 @@ rustc_library("loom-v0_7_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=7b415502d397946a",
-    "-Cextra-filename=-7b415502d397946a",
+    "-Cmetadata=66004af6324b2b5e",
+    "-Cextra-filename=-66004af6324b2b5e",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
   testonly = true
-  applicable_licenses = [ ":loom-v0_7_1.license" ]
+  applicable_licenses = [ ":loom-v0_7_2.license" ]
 }
 
 license("lru-cache-v0_1_2.license") {
@@ -15789,11 +15786,11 @@ rustc_library("scoped-tls-v1_0_1") {
   ]
 
   visibility = []
-  visibility += [ ":loom-v0_7_1.actual" ]
-  visibility += [ ":loom-v0_7_1.rustdoc" ]
-  visibility += [ ":loom-v0_7_1.aux.deps.deps" ]
-  visibility += [ ":loom-v0_7_1.aux.deps.transdeps" ]
-  visibility += [ ":loom-v0_7_1.actual.rust_compilation_deps" ]
+  visibility += [ ":loom-v0_7_2.actual" ]
+  visibility += [ ":loom-v0_7_2.rustdoc" ]
+  visibility += [ ":loom-v0_7_2.aux.deps.deps" ]
+  visibility += [ ":loom-v0_7_2.aux.deps.transdeps" ]
+  visibility += [ ":loom-v0_7_2.actual.rust_compilation_deps" ]
   testonly = true
   applicable_licenses = [ ":scoped-tls-v1_0_1.license" ]
 }
@@ -20686,10 +20683,10 @@ rustc_library("winapi-util-v0_1_5") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-rustc_library("windows-v0_48_0") {
+rustc_library("windows-v0_61_3") {
   crate_name = "windows"
-  source_root = "//third_party/rust_crates/empty/windows/src/lib.rs"
-  output_name = "windows-541fc3d7afee256"
+  source_root = "//third_party/rust_crates/empty/windows-0.61.3/src/lib.rs"
+  output_name = "windows-e5914020539c2fb3"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -20701,10 +20698,11 @@ rustc_library("windows-v0_48_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=541fc3d7afee256",
-    "-Cextra-filename=-541fc3d7afee256",
+    "-Cmetadata=e5914020539c2fb3",
+    "-Cextra-filename=-e5914020539c2fb3",
     "--cfg=feature=\"Win32_Foundation\"",
     "--cfg=feature=\"Win32_System_Diagnostics_Debug\"",
+    "--cfg=feature=\"Win32_System_Kernel\"",
     "--cfg=feature=\"Win32_System_Memory\"",
     "--cfg=feature=\"Win32_System_SystemInformation\"",
   ]
@@ -20738,10 +20736,10 @@ rustc_library("windows-core-v0_52_0") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-rustc_library("windows-link-v0_1_2") {
+rustc_library("windows-link-v0_1_3") {
   crate_name = "windows_link"
-  source_root = "//third_party/rust_crates/empty/windows-link-0.1.2/src/lib.rs"
-  output_name = "windows_link-e3703681a803bbbb"
+  source_root = "//third_party/rust_crates/empty/windows-link-0.1.3/src/lib.rs"
+  output_name = "windows_link-90970d45ed4b7f20"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -20753,8 +20751,8 @@ rustc_library("windows-link-v0_1_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e3703681a803bbbb",
-    "-Cextra-filename=-e3703681a803bbbb",
+    "-Cmetadata=90970d45ed4b7f20",
+    "-Cextra-filename=-90970d45ed4b7f20",
   ]
 
   visibility = [ ":*" ]

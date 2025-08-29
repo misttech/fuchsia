@@ -509,7 +509,7 @@ _NORMAL_DEPENDENCIES = {
             "fuse3": Label("//third_party/rust_crates/vendor/fuse3-0.6.1:fuse3"),
             "home": Label("//third_party/rust_crates/vendor/home-0.5.11:home"),
             "hyper-rustls": Label("//third_party/rust_crates/vendor/hyper-rustls-0.24.2:hyper_rustls"),
-            "loom": Label("//third_party/rust_crates/vendor/loom-0.7.1:loom"),
+            "loom": Label("//third_party/rust_crates/vendor/loom-0.7.2:loom"),
             "mio": Label("//third_party/rust_crates/vendor/mio-0.8.9:mio"),
             "notify": Label("//third_party/rust_crates/vendor/notify-5.2.0:notify"),
             "num_cpus": Label("//third_party/rust_crates/vendor/num_cpus-1.16.0:num_cpus"),

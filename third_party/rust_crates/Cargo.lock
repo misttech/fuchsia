@@ -1916,11 +1916,12 @@ dependencies = [
 
 [[package]]
 name = "generator"
-version = "0.7.5"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cc16584ff22b460a382b7feec54b23d2908d858152e5739a120b949293bd74e"
+checksum = "605183a538e3e2a9c1038635cc5c2d194e2ee8fd0d1b66b8349fad7dbacce5a2"
 dependencies = [
  "cc",
+ "cfg-if 1.0.0",
  "libc",
  "log",
  "rustversion",
@@ -2445,9 +2446,9 @@ checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
 name = "loom"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e045d70ddfbc984eacfa964ded019534e8f6cbf36f6410aee0ed5cefa5a9175"
+checksum = "419e0dc8046cb947daa77eb95ae174acfbddb7673b4151f56d1eed8e93fbfaca"
 dependencies = [
  "cfg-if 1.0.0",
  "generator",
@@ -5463,7 +5464,7 @@ version = "0.1.5"
 
 [[package]]
 name = "windows"
-version = "0.48.0"
+version = "0.61.3"
 
 [[package]]
 name = "windows-core"
@@ -5471,7 +5472,7 @@ version = "0.52.0"
 
 [[package]]
 name = "windows-link"
-version = "0.1.2"
+version = "0.1.3"
 
 [[package]]
 name = "windows-sys"
@@ -5624,8 +5625,3 @@ version = "2.0.1+zstd.1.5.6"
 dependencies = [
  "libc",
 ]
-
-[[patch.unused]]
-name = "redox_syscall"
-version = "0.4.1"
-

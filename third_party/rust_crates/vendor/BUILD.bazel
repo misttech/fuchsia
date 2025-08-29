@@ -1447,14 +1447,14 @@ alias(
 )
 
 alias(
-    name = "loom-0.7.1",
-    actual = "//third_party/rust_crates/vendor/loom-0.7.1:loom",
+    name = "loom-0.7.2",
+    actual = "//third_party/rust_crates/vendor/loom-0.7.2:loom",
     tags = ["manual"],
 )
 
 alias(
     name = "loom",
-    actual = "//third_party/rust_crates/vendor/loom-0.7.1:loom",
+    actual = "//third_party/rust_crates/vendor/loom-0.7.2:loom",
     tags = ["manual"],
 )
 
