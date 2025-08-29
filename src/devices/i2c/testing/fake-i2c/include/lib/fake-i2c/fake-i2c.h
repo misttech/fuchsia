@@ -90,8 +90,8 @@ class FakeI2c : public fidl::WireServer<fuchsia_hardware_i2c::Device> {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
 
-  fuchsia_hardware_i2c::Service::InstanceHandler CreateInstanceHandler() {
-    auto* dispatcher = async_get_default_dispatcher();
+  fuchsia_hardware_i2c::Service::InstanceHandler CreateInstanceHandler(
+      async_dispatcher_t* dispatcher = async_get_default_dispatcher()) {
     Handler device_handler = [impl = this, dispatcher = dispatcher](
                                  ::fidl::ServerEnd<::fuchsia_hardware_i2c::Device> request) {
       impl->bindings_.AddBinding(dispatcher, std::move(request), impl, fidl::kIgnoreBindingClosure);

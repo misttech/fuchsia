@@ -4,13 +4,10 @@
 
 #include "ft_device.h"
 
-#include <lib/async-loop/default.h>
-#include <lib/async/default.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/metadata.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fake-i2c/fake-i2c.h>
-#include <lib/fdf/cpp/dispatcher.h>
 #include <lib/focaltech/focaltech.h>
 #include <lib/zx/clock.h>
 #include <zircon/assert.h>
@@ -21,9 +18,8 @@
 #include <gtest/gtest.h>
 
 #include "ft_firmware.h"
-#include "lib/zx/result.h"
 #include "src/devices/gpio/testing/fake-gpio/fake-gpio.h"
-#include "src/devices/testing/mock-ddk/mock-device.h"
+#include "src/lib/testing/predicates/status.h"
 
 namespace {
 
@@ -39,6 +35,9 @@ constexpr uint8_t kFirmware3[0x120 + 3] = {0x02, 0x69, 0x96, 0x71, [0x10a] = 0x6
 }  // namespace
 
 namespace ft {
+
+namespace fi2c = fuchsia_hardware_i2c;
+namespace fgpio = fuchsia_hardware_gpio;
 
 const FirmwareEntry kFirmwareEntries[] = {
     {
@@ -168,120 +167,96 @@ class FakeFtDevice : public fake_i2c::FakeI2c {
   std::queue<std::pair<uint8_t, std::vector<uint8_t>>> expected_report_;  // address, data pair
 };
 
-struct IncomingNamespace {
+class FtDeviceTestEnvironment : public fdf_testing::Environment {
+ public:
+  void Init(zx::interrupt interrupt, const FocaltechMetadata& metadata) {
+    interrupt_gpio_.SetInterrupt(zx::ok(std::move(interrupt)));
+
+    device_server_.Initialize("pdev", std::nullopt, {});
+    device_server_.AddMetadata(DEVICE_METADATA_PRIVATE, reinterpret_cast<const void*>(&metadata),
+                               sizeof(metadata));
+  }
+
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+
+    EXPECT_OK(device_server_.Serve(dispatcher, &to_driver_vfs));
+    EXPECT_OK(
+        to_driver_vfs.AddService<fi2c::Service>(i2c_.CreateInstanceHandler(dispatcher), "i2c"));
+    EXPECT_OK(to_driver_vfs.AddService<fgpio::Service>(reset_gpio_.CreateInstanceHandler(),
+                                                       "gpio-reset"));
+    EXPECT_OK(to_driver_vfs.AddService<fgpio::Service>(interrupt_gpio_.CreateInstanceHandler(),
+                                                       "gpio-int"));
+
+    return zx::ok();
+  }
+
+  FakeFtDevice& i2c() { return i2c_; }
+  fake_gpio::FakeGpio& interrupt_gpio() { return interrupt_gpio_; }
+  fake_gpio::FakeGpio& reset_gpio() { return reset_gpio_; }
+
+ private:
   FakeFtDevice i2c_;
   fake_gpio::FakeGpio interrupt_gpio_;
   fake_gpio::FakeGpio reset_gpio_;
-  component::OutgoingDirectory i2c_fragment_outgoing_{async_get_default_dispatcher()};
-  component::OutgoingDirectory interrupt_gpio_fragment_outgoing_{async_get_default_dispatcher()};
-  component::OutgoingDirectory reset_gpio_fragment_outgoing_{async_get_default_dispatcher()};
+  compat::DeviceServer device_server_;
+};
+
+class FixtureConfig final {
+ public:
+  using DriverType = FtDevice;
+  using EnvironmentType = FtDeviceTestEnvironment;
 };
 
 class FocaltechTest : public testing::Test {
  public:
-  void SetUp() override {
-    ASSERT_EQ(ZX_OK, incoming_loop_.StartThread("incoming-ns-thread"));
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
 
-    // I2c fragment
-    {
-      auto endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
-      incoming_.SyncCall([server = std::move(endpoints.server)](IncomingNamespace* infra) mutable {
-        zx::result service_result =
-            infra->i2c_fragment_outgoing_.AddService<fuchsia_hardware_i2c::Service>(
-                fuchsia_hardware_i2c::Service::InstanceHandler(
-                    {.device = infra->i2c_.bind_handler(async_get_default_dispatcher())}));
-        ZX_ASSERT(service_result.is_ok());
-        ZX_ASSERT(infra->i2c_fragment_outgoing_.Serve(std::move(server)).is_ok());
-      });
-      fake_parent_->AddFidlService(fuchsia_hardware_i2c::Service::Name, std::move(endpoints.client),
-                                   "i2c");
-    }
-
-    // Reset gpio fragment
-    {
-      auto endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
-      incoming_.SyncCall([server = std::move(endpoints.server)](IncomingNamespace* infra) mutable {
-        auto service_result =
-            infra->reset_gpio_fragment_outgoing_.AddService<fuchsia_hardware_gpio::Service>(
-                infra->reset_gpio_.CreateInstanceHandler());
-        ZX_ASSERT(service_result.is_ok());
-        ZX_ASSERT(infra->reset_gpio_fragment_outgoing_.Serve(std::move(server)).is_ok());
-      });
-      fake_parent_->AddFidlService(fuchsia_hardware_gpio::Service::Name,
-                                   std::move(endpoints.client), "gpio-reset");
-    }
-
-    // Interrupt gpio fragment
-    {
-      auto endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
-      incoming_.SyncCall([server = std::move(endpoints.server)](IncomingNamespace* infra) mutable {
-        auto service_result =
-            infra->interrupt_gpio_fragment_outgoing_.AddService<fuchsia_hardware_gpio::Service>(
-                infra->interrupt_gpio_.CreateInstanceHandler());
-        ZX_ASSERT(service_result.is_ok());
-        ZX_ASSERT(infra->interrupt_gpio_fragment_outgoing_.Serve(std::move(server)).is_ok());
-      });
-      fake_parent_->AddFidlService(fuchsia_hardware_gpio::Service::Name,
-                                   std::move(endpoints.client), "gpio-int");
-    }
-
+ protected:
+  void StartDriver(const FocaltechMetadata& metadata) {
     zx::interrupt interrupt;
     ASSERT_EQ(ZX_OK, zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
-    ASSERT_EQ(ZX_OK, interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &irq_));
-    incoming_.SyncCall([interrupt = std::move(interrupt)](IncomingNamespace* infra) mutable {
-      infra->interrupt_gpio_.SetInterrupt(zx::ok(std::move(interrupt)));
-    });
-  }
+    ASSERT_EQ(ZX_OK, interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &interrupt_));
 
-  fidl::ClientEnd<fuchsia_input_report::InputDevice> CreateDut() {
-    auto result = fdf::RunOnDispatcherSync(dispatcher_->async_dispatcher(), [&]() {
-      EXPECT_EQ(ZX_OK, FtDevice::Create(nullptr, fake_parent_.get()));
-    });
-    EXPECT_EQ(ZX_OK, result.status_value());
-    EXPECT_EQ(size_t(1), fake_parent_->child_count());
-    child_ = fake_parent_->GetLatestChild();
-    dut_ = child_->GetDeviceContext<FtDevice>();
+    driver_test_.RunInEnvironmentTypeContext(
+        [interrupt = std::move(interrupt), &metadata](FtDeviceTestEnvironment& env) mutable {
+          env.Init(std::move(interrupt), metadata);
+        });
+    ASSERT_OK(driver_test_.StartDriver());
     VerifyGpioInit();
 
-    auto endpoints = fidl::Endpoints<fuchsia_input_report::InputDevice>::Create();
-    fidl::BindServer(dispatcher_->async_dispatcher(), std::move(endpoints.server), dut_);
-    return std::move(std::move(endpoints.client));
+    zx::result input_device = driver_test_.ConnectThroughDevfs<fuchsia_input_report::InputDevice>(
+        FtDevice::kChildNodeName);
+    ASSERT_OK(input_device);
+    input_device_.Bind(std::move(input_device.value()),
+                       driver_test_.runtime().GetForegroundDispatcher()->async_dispatcher());
   }
 
-  void TearDown() override {
-    auto result = fdf::RunOnDispatcherSync(dispatcher_->async_dispatcher(), [&]() {
-      device_async_remove(child_);
-      mock_ddk::ReleaseFlaggedDevices(fake_parent_.get());
-      ;
-    });
-    EXPECT_EQ(ZX_OK, result.status_value());
-  }
+  fidl::WireClient<fuchsia_input_report::InputDevice>& input_device() { return input_device_; }
+  zx::interrupt& interrupt() { return interrupt_; }
+  fdf_testing::ForegroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
 
  private:
   void VerifyGpioInit() {
-    incoming_.SyncCall([](IncomingNamespace* infra) mutable {
-      std::vector interrupt_states = infra->interrupt_gpio_.GetStateLog();
+    driver_test_.RunInEnvironmentTypeContext([](FtDeviceTestEnvironment& env) {
+      std::vector interrupt_states = env.interrupt_gpio().GetStateLog();
       ASSERT_GE(interrupt_states.size(), size_t(1));
       ASSERT_EQ(fake_gpio::ReadSubState{}, interrupt_states[0].sub_state);
 
-      std::vector reset_states = infra->reset_gpio_.GetStateLog();
+      std::vector reset_states = env.reset_gpio().GetStateLog();
       ASSERT_GE(reset_states.size(), size_t(2));
       ASSERT_EQ(fake_gpio::WriteSubState{.value = 0}, reset_states[0].sub_state);
       ASSERT_EQ(fake_gpio::WriteSubState{.value = 1}, reset_states[1].sub_state);
     });
   }
 
-  async::Loop incoming_loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
+  zx::interrupt interrupt_;
+  fidl::WireClient<fuchsia_input_report::InputDevice> input_device_;
 
- protected:
-  std::shared_ptr<MockDevice> fake_parent_ = MockDevice::FakeRootParent();
-  fdf::UnownedSynchronizedDispatcher dispatcher_ =
-      fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher();
-  zx::interrupt irq_;
-  zx_device_t* child_;
-  FtDevice* dut_;
-  async_patterns::TestDispatcherBound<IncomingNamespace> incoming_{incoming_loop_.dispatcher(),
-                                                                   std::in_place};
+  // Use `ForegroundDriverTest` instead of `BackgroundDriverTest` because some tests send one-way
+  // FIDL requests to the driver and wait for the request to be handled by the driver. This can be
+  // done with `runtime().RunUntilIdle()` if the driver is running on the foreground dispatcher.
+  fdf_testing::ForegroundDriverTest<FixtureConfig> driver_test_;
 };
 
 void VerifyDescriptor(const fuchsia_input_report::wire::DeviceDescriptor& descriptor, int64_t x_max,
@@ -337,13 +312,14 @@ TEST_F(FocaltechTest, Metadata3x27) {
       .device_id = FOCALTECH_DEVICE_FT3X27,
       .needs_firmware = false,
   };
-  fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, &kFt3x27Metadata, sizeof(kFt3x27Metadata));
+  StartDriver(kFt3x27Metadata);
 
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(CreateDut());
-
-  auto result = client->GetDescriptor();
-  EXPECT_TRUE(result.ok());
-  VerifyDescriptor(result->descriptor, 600, 1024);
+  input_device()->GetDescriptor().ThenExactlyOnce(
+      [](fidl::WireUnownedResult<fuchsia_input_report::InputDevice::GetDescriptor>& result) {
+        ASSERT_OK(result.status());
+        VerifyDescriptor(result->descriptor, 600, 1024);
+      });
+  driver_test().runtime().RunUntilIdle();
 }
 
 TEST_F(FocaltechTest, Metadata5726) {
@@ -351,13 +327,14 @@ TEST_F(FocaltechTest, Metadata5726) {
       .device_id = FOCALTECH_DEVICE_FT5726,
       .needs_firmware = false,
   };
-  fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, &kFt5726Metadata, sizeof(kFt5726Metadata));
+  StartDriver(kFt5726Metadata);
 
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(CreateDut());
-
-  auto result = client->GetDescriptor();
-  EXPECT_TRUE(result.ok());
-  VerifyDescriptor(result->descriptor, 800, 1280);
+  input_device()->GetDescriptor().ThenExactlyOnce(
+      [](fidl::WireUnownedResult<fuchsia_input_report::InputDevice::GetDescriptor>& result) {
+        EXPECT_TRUE(result.ok());
+        VerifyDescriptor(result->descriptor, 800, 1280);
+      });
+  driver_test().runtime().RunUntilIdle();
 }
 
 TEST_F(FocaltechTest, Metadata6336) {
@@ -365,13 +342,14 @@ TEST_F(FocaltechTest, Metadata6336) {
       .device_id = FOCALTECH_DEVICE_FT6336,
       .needs_firmware = false,
   };
-  fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, &kFt6336Metadata, sizeof(kFt6336Metadata));
+  StartDriver(kFt6336Metadata);
 
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(CreateDut());
-
-  auto result = client->GetDescriptor();
-  EXPECT_TRUE(result.ok());
-  VerifyDescriptor(result->descriptor, 480, 800);
+  input_device()->GetDescriptor().ThenExactlyOnce(
+      [](fidl::WireUnownedResult<fuchsia_input_report::InputDevice::GetDescriptor>& result) {
+        EXPECT_TRUE(result.ok());
+        VerifyDescriptor(result->descriptor, 480, 800);
+      });
+  driver_test().runtime().RunUntilIdle();
 }
 
 TEST_F(FocaltechTest, Firmware5726) {
@@ -381,12 +359,10 @@ TEST_F(FocaltechTest, Firmware5726) {
       .display_vendor = 1,
       .ddic_version = 1,
   };
-  fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, &kFt5726Metadata, sizeof(kFt5726Metadata));
+  StartDriver(kFt5726Metadata);
 
-  CreateDut();
-
-  incoming_.SyncCall([](IncomingNamespace* infra) mutable {
-    EXPECT_EQ(infra->i2c_.firmware_write_size(), sizeof(kFirmware3));
+  driver_test().RunInEnvironmentTypeContext([](FtDeviceTestEnvironment& env) {
+    EXPECT_EQ(env.i2c().firmware_write_size(), sizeof(kFirmware3));
   });
 }
 
@@ -397,13 +373,10 @@ TEST_F(FocaltechTest, Firmware5726UpToDate) {
       .display_vendor = 1,
       .ddic_version = 0,
   };
-  fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, &kFt5726Metadata, sizeof(kFt5726Metadata));
+  StartDriver(kFt5726Metadata);
 
-  CreateDut();
-
-  incoming_.SyncCall([](IncomingNamespace* infra) mutable {
-    EXPECT_EQ(infra->i2c_.firmware_write_size(), uint32_t(0));
-  });
+  driver_test().RunInEnvironmentTypeContext(
+      [](FtDeviceTestEnvironment& env) { EXPECT_EQ(env.i2c().firmware_write_size(), 0u); });
 }
 
 TEST_F(FocaltechTest, Touch) {
@@ -411,20 +384,22 @@ TEST_F(FocaltechTest, Touch) {
       .device_id = FOCALTECH_DEVICE_FT6336,
       .needs_firmware = false,
   };
-  fake_parent_->SetMetadata(DEVICE_METADATA_PRIVATE, &kFt6336Metadata, sizeof(kFt6336Metadata));
-
-  fidl::WireSyncClient<fuchsia_input_report::InputDevice> client(CreateDut());
+  StartDriver(kFt6336Metadata);
 
   auto reader_endpoints = fidl::Endpoints<fuchsia_input_report::InputReportsReader>::Create();
-  auto result = client->GetInputReportsReader(std::move(reader_endpoints.server));
-  ASSERT_EQ(ZX_OK, result.status());
-  auto reader = fidl::WireSyncClient<fuchsia_input_report::InputReportsReader>(
-      std::move(reader_endpoints.client));
+  fidl::OneWayStatus status =
+      input_device()->GetInputReportsReader(std::move(reader_endpoints.server));
+  ASSERT_EQ(ZX_OK, status.status());
+  fidl::WireClient<fuchsia_input_report::InputReportsReader> reader(
+      std::move(reader_endpoints.client),
+      driver_test().runtime().GetForegroundDispatcher()->async_dispatcher());
 
-  ASSERT_EQ(ZX_OK, dut_->WaitForNextReader(zx::duration::infinite()));
+  // Wait for the driver to receive the `GetInputReportsReader()` request and create an
+  // input-reports reader.
+  driver_test().runtime().RunUntilIdle();
 
   // clang-format off
-  static const uint8_t expected_report[] = {
+  static const std::array<uint8_t, 61> kExpectedReport = {
       0x02,  // contact_count
 
       // Contact 0, finger_id = 0
@@ -462,44 +437,42 @@ TEST_F(FocaltechTest, Touch) {
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   };
   // clang-format on
-  incoming_.SyncCall([](IncomingNamespace* infra) mutable {
-    for (size_t i = 0; i < sizeof(expected_report); i += 8) {
-      infra->i2c_.ExpectReport(
+  driver_test().RunInEnvironmentTypeContext([](FtDeviceTestEnvironment& env) {
+    for (size_t i = 0; i < sizeof(kExpectedReport); i += 8) {
+      env.i2c().ExpectReport(
           static_cast<uint8_t>(i + FTS_REG_CURPOINT),
-          std::vector<uint8_t>(expected_report + i,
-                               expected_report + std::min(i + 8, sizeof(expected_report))));
+          std::vector<uint8_t>(kExpectedReport.begin() + i,
+                               kExpectedReport.begin() + std::min(i + 8, sizeof(kExpectedReport))));
     }
   });
-  irq_.trigger(0, zx::clock::get_boot());
+  interrupt().trigger(0, zx::clock::get_boot());
 
-  {
-    auto result = reader->ReadInputReports();
-    ASSERT_EQ(ZX_OK, result.status());
-    ASSERT_FALSE(result.value().is_error());
-    auto& reports = result.value().value()->reports;
+  reader->ReadInputReports().ThenExactlyOnce(
+      [](fidl::WireUnownedResult<fuchsia_input_report::InputReportsReader::ReadInputReports>&
+             result) {
+        ASSERT_OK(result.status());
+        ASSERT_FALSE(result.value().is_error());
+        const fidl::VectorView<::fuchsia_input_report::wire::InputReport>& reports =
+            result.value().value()->reports;
 
-    ASSERT_EQ(size_t(1), reports.size());
-    auto report = reports[0];
+        ASSERT_EQ(size_t(1), reports.size());
+        const fuchsia_input_report::wire::InputReport& report = reports[0];
 
-    ASSERT_TRUE(report.has_event_time());
-    ASSERT_TRUE(report.has_touch());
-    auto& touch_report = report.touch();
+        ASSERT_TRUE(report.has_event_time());
+        ASSERT_TRUE(report.has_touch());
+        const fuchsia_input_report::wire::TouchInputReport& touch_report = report.touch();
 
-    ASSERT_TRUE(touch_report.has_contacts());
-    ASSERT_EQ(touch_report.contacts().size(), size_t(2));
-    EXPECT_EQ(touch_report.contacts()[0].contact_id(), uint32_t(0));
-    EXPECT_EQ(touch_report.contacts()[0].position_x(), 0x001);
-    EXPECT_EQ(touch_report.contacts()[0].position_y(), 0x013);
+        ASSERT_TRUE(touch_report.has_contacts());
+        ASSERT_EQ(touch_report.contacts().size(), size_t(2));
+        EXPECT_EQ(touch_report.contacts()[0].contact_id(), uint32_t(0));
+        EXPECT_EQ(touch_report.contacts()[0].position_x(), 0x001);
+        EXPECT_EQ(touch_report.contacts()[0].position_y(), 0x013);
 
-    EXPECT_EQ(touch_report.contacts()[1].contact_id(), uint32_t(1));
-    EXPECT_EQ(touch_report.contacts()[1].position_x(), 0x031);
-    EXPECT_EQ(touch_report.contacts()[1].position_y(), 0x000);
-  }
+        EXPECT_EQ(touch_report.contacts()[1].contact_id(), uint32_t(1));
+        EXPECT_EQ(touch_report.contacts()[1].position_x(), 0x031);
+        EXPECT_EQ(touch_report.contacts()[1].position_y(), 0x000);
+      });
+  driver_test().runtime().RunUntilIdle();
 }
 
 }  // namespace ft
-
-int main(int argc, char** argv) {
-  testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}

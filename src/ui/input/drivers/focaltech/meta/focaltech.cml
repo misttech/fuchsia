@@ -3,20 +3,24 @@
 // found in the LICENSE file.
 {
     include: [
-        "//sdk/lib/driver/compat/compat.shard.cml",
+        "driver_component/driver.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
     program: {
         runner: "driver",
+        binary: "driver/focaltech.so",
         bind: "meta/bind/focaltech.bindbc",
-        compat: "driver/focaltech.so",
         colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         default_dispatcher_scheduler_role: "fuchsia.ui.input.drivers.focaltech.device",
     },
     use: [
-        { service: "fuchsia.hardware.gpio.Service" },
-        { service: "fuchsia.hardware.i2c.Service" },
+        {
+            service: [
+                "fuchsia.hardware.gpio.Service",
+                "fuchsia.hardware.i2c.Service",
+            ],
+        },
     ],
 }
