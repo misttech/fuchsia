@@ -50,6 +50,8 @@ source_set("source") {
     "pipeline_manager.h",
     "processing_node.cc",
     "processing_node.h",
+    "stream_pipeline_info.h",
+    "util.h",
   ]
   deps = [
     ":camera_controller_bind",
@@ -77,6 +79,7 @@ source_set("source") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
+    "//sdk/lib/syslog/cpp",
     "//src/camera/drivers/controller/configs",
     "//src/camera/lib/format_conversion",
     "//src/devices/lib/driver",

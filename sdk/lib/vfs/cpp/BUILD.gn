@@ -29,10 +29,9 @@ sdk_source_set("cpp") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
     "//sdk/lib/async",
     "//sdk/lib/fdio",
+    "//sdk/lib/vfs/internal:vfs_internal",
     "//zircon/system/ulib/zx",
   ]
-
-  deps = [ "//sdk/lib/vfs/internal:vfs_internal" ]
 
   public_configs = [ "//sdk/config" ]
 }

@@ -31,6 +31,7 @@ source_set("data_provider") {
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/sys/cpp",
+    "//sdk/lib/vfs/cpp",
     "//src/developer/forensics/feedback/annotations",
     "//src/developer/forensics/feedback/attachments",
     "//src/developer/forensics/utils/cobalt",
@@ -42,7 +43,6 @@ source_set("data_provider") {
   deps = [
     ":constants",
     "//sdk/lib/syslog/cpp",
-    "//sdk/lib/vfs/cpp",
     "//src/developer/forensics/utils:archive",
     "//src/lib/fsl",
     "//src/lib/uuid",

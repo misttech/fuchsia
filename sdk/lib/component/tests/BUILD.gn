@@ -252,6 +252,7 @@ test("service_server_test") {
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/component/tests:fidl.service.test_cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/syslog/cpp",
     "//src/storage/lib/vfs/cpp",
     "//zircon/system/ulib/zxtest",
   ]

@@ -372,6 +372,9 @@ template("sdk_prebuilt_library_impl") {
 
   if (defined(invoker.include_base)) {
     include_base = invoker.include_base
+    assert(
+        include_base != "//sdk",
+        "Use of the parent directory for include structure is not supported for prebuilt libraries.")
   } else if (!no_headers) {
     include_base = "include"
   }

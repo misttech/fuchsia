@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "sdk/lib/syslog/cpp/logging_backend_fuchsia_globals.h"
+#include "lib/syslog/cpp/logging_backend_fuchsia_globals.h"
 
 #include "sdk/lib/syslog/structured_backend/cpp/log_connection.h"
 #include "sdk/lib/syslog/structured_backend/cpp/logger.h"

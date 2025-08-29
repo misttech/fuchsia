@@ -24,15 +24,12 @@ sdk_shared_library("vfs_internal") {
   category = "partner"
   sdk_name = "vfs_internal"
   symbols_api = "vfs_internal.ifs"
-  include_base = "//sdk"
   libcxx_linkage = "static"
 
-  sources = [
-    "libvfs.cc",
-    "libvfs_private.h",
-  ]
+  public = [ "include/lib/vfs/internal/libvfs_private.h" ]
+  sources = [ "libvfs.cc" ]
 
-  sdk_headers_for_internal_use = [ "libvfs_private.h" ]
+  sdk_headers_for_internal_use = [ "include/lib/vfs/internal/libvfs_private.h" ]
 
   public_deps = [ "//sdk/lib/async" ]
 
@@ -42,7 +39,7 @@ sdk_shared_library("vfs_internal") {
     "//zircon/system/ulib/fbl",
   ]
 
-  public_configs = [ "//sdk/config" ]
+  public_configs = [ ":include" ]
 
   #  ________  _________  ________  ________
   # |\   ____\|\___   ___\\   __  \|\   __  \
@@ -60,4 +57,9 @@ sdk_shared_library("vfs_internal") {
     "//sdk:core_cc_prebuilt_libraries",
     "//sdk/lib/vfs/cpp:*",
   ]
+}
+
+config("include") {
+  visibility = [ ":*" ]
+  include_dirs = [ "include" ]
 }
