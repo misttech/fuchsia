@@ -308,14 +308,16 @@ mod tests {
         expected_name[0..name_slice.len()].copy_from_slice(&name_slice);
         expected_uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         check_io(&io, expected_name, expected_uuid);
@@ -326,8 +328,9 @@ mod tests {
         // Cleanup -- remove all created dm-devices.
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -349,8 +352,9 @@ mod tests {
         init_io(&mut io, vec![]);
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret != 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -379,8 +383,9 @@ mod tests {
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
         io.version = [0; 3];
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret != 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -413,8 +418,9 @@ mod tests {
         expected_name[0..name_slice.len()].copy_from_slice(&name_slice);
         expected_uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dev = io.dev;
 
@@ -422,43 +428,49 @@ mod tests {
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
         io.dev = dev;
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &mut io)
+        };
         assert!(ret != 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &mut io)
+        };
         assert!(ret != 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, vec![]);
         io.dev = dev;
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &mut io)
+        };
         assert!(ret != 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, vec![]);
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, vec![]);
         io.dev = dev;
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         check_io(&io, expected_name, expected_uuid);
@@ -470,7 +482,7 @@ mod tests {
         let mut io_remove: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io_remove, name_slice);
         let ret = unsafe {
-            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io_remove)
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io_remove)
         };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
@@ -507,8 +519,9 @@ mod tests {
         expected_name[0..name_slice.len()].copy_from_slice(&name_slice);
         expected_uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
@@ -535,8 +548,9 @@ mod tests {
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         check_io(&io, expected_name, expected_uuid);
@@ -546,15 +560,17 @@ mod tests {
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
         assert_eq!(io.flags, DM_READONLY_FLAG | DM_ACTIVE_PRESENT_FLAG | DM_UEVENT_GENERATED_FLAG);
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_STATUS.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         check_io(&io, expected_name, expected_uuid);
@@ -576,7 +592,7 @@ mod tests {
         let mut io_remove: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io_remove, name_slice.clone());
         let ret = unsafe {
-            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io_remove)
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io_remove)
         };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
         assert_eq!(io_remove.flags, DM_UEVENT_GENERATED_FLAG);
@@ -606,8 +622,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
@@ -630,8 +647,9 @@ mod tests {
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let dm_device =
@@ -640,15 +658,17 @@ mod tests {
         // DM_DEV_REMOVE fails with an open device handle.
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret != 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
 
         drop(dm_device);
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -676,8 +696,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
@@ -700,8 +721,9 @@ mod tests {
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let dm_device =
@@ -714,15 +736,17 @@ mod tests {
         // DM_DEV_REMOVE fails with an open device handle.
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret != 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
 
         drop(dm_device_2);
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -753,8 +777,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
@@ -777,8 +802,9 @@ mod tests {
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
 
         // Perform verified read
@@ -792,7 +818,7 @@ mod tests {
         let mut io_remove: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io_remove, name_slice.clone());
         let ret = unsafe {
-            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io_remove)
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io_remove)
         };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
@@ -821,8 +847,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
@@ -846,8 +873,9 @@ mod tests {
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
         io.flags |= DM_SUSPEND_FLAG;
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
         assert_eq!(io.flags, DM_INACTIVE_PRESENT_FLAG | DM_SUSPEND_FLAG);
 
@@ -863,7 +891,7 @@ mod tests {
         let mut io_remove: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io_remove, name_slice.clone());
         let ret = unsafe {
-            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io_remove)
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io_remove)
         };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
         assert_eq!(io_remove.flags, DM_UEVENT_GENERATED_FLAG | DM_INACTIVE_PRESENT_FLAG);
@@ -893,8 +921,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let (_, _, target_vec) = create_verity_target_two_loop_devices(false);
@@ -918,16 +947,18 @@ mod tests {
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
         io.flags |= DM_SUSPEND_FLAG;
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
         assert_eq!(io.flags, DM_INACTIVE_PRESENT_FLAG | DM_SUSPEND_FLAG);
 
         // Activate the table.
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
         assert_eq!(io.flags, DM_ACTIVE_PRESENT_FLAG | DM_READONLY_FLAG | DM_UEVENT_GENERATED_FLAG);
 
@@ -935,8 +966,9 @@ mod tests {
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
         io.flags |= DM_SUSPEND_FLAG;
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
         assert_eq!(io.flags, DM_ACTIVE_PRESENT_FLAG | DM_SUSPEND_FLAG | DM_READONLY_FLAG);
 
@@ -967,15 +999,16 @@ mod tests {
         // The inactive table now replaces the active table.
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev suspend ioctl failed: {:?}", std::io::Error::last_os_error());
         assert_eq!(io.flags, DM_ACTIVE_PRESENT_FLAG | DM_READONLY_FLAG | DM_UEVENT_GENERATED_FLAG);
 
         let mut io_remove: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io_remove, name_slice.clone());
         let ret = unsafe {
-            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io_remove)
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io_remove)
         };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
         assert_eq!(io_remove.flags, DM_UEVENT_GENERATED_FLAG);
@@ -1005,8 +1038,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
@@ -1033,8 +1067,9 @@ mod tests {
         // Cleanup -- delete all created dm-devices.
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -1061,8 +1096,9 @@ mod tests {
         init_io(&mut io, name_slice_1.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dev_1 = io.dev;
 
@@ -1083,8 +1119,9 @@ mod tests {
         init_io(&mut io, name_slice_2.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dev_2 = io.dev;
 
@@ -1160,14 +1197,16 @@ mod tests {
         // Cleanup -- delete all created dm-devices.
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice_1);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice_2);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -1290,8 +1329,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let (_, _, target_vec) = create_verity_target_two_loop_devices(false);
@@ -1313,8 +1353,9 @@ mod tests {
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev resume ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
@@ -1344,8 +1385,9 @@ mod tests {
 
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -1373,8 +1415,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let (_, _, target_vec) = create_verity_target_two_loop_devices(false);
@@ -1419,8 +1462,9 @@ mod tests {
 
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -1451,8 +1495,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
         let dm_minor = ((io.dev >> 12 & 0xffffff00) | (io.dev & 0xff)) as u32;
 
@@ -1475,8 +1520,9 @@ mod tests {
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev resume ioctl failed: {:?}", std::io::Error::last_os_error());
 
         // Ensure read of corrupted device fails.
@@ -1563,8 +1609,9 @@ mod tests {
 
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -1592,8 +1639,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let (_, target_spec, target_vec) = create_verity_target_two_loop_devices(false);
@@ -1615,8 +1663,9 @@ mod tests {
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev resume ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut observed_table_statuses: HashSet<(u64, u64, i32, String, Option<String>)> =
@@ -1694,8 +1743,9 @@ mod tests {
 
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 
@@ -1723,8 +1773,9 @@ mod tests {
         init_io(&mut io, name_slice.clone());
         io.uuid[0..uuid_slice.len()].copy_from_slice(&uuid_slice);
 
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_CREATE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev create ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let (param_str, target_spec, target_vec) = create_verity_target_two_loop_devices(false);
@@ -1746,8 +1797,9 @@ mod tests {
 
         let mut io = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice.clone());
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_SUSPEND.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev resume ioctl failed: {:?}", std::io::Error::last_os_error());
 
         let mut observed_table_statuses: HashSet<(u64, u64, i32, String, Option<String>)> =
@@ -1831,8 +1883,9 @@ mod tests {
 
         let mut io: dm_ioctl = linux_uapi::dm_ioctl { ..Default::default() };
         init_io(&mut io, name_slice);
-        let ret =
-            unsafe { libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &io) };
+        let ret = unsafe {
+            libc::ioctl(dm_control.as_raw_fd(), DM_DEV_REMOVE.try_into().unwrap(), &mut io)
+        };
         assert!(ret == 0, "dm dev remove ioctl failed: {:?}", std::io::Error::last_os_error());
     }
 }
