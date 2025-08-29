@@ -50,7 +50,12 @@ rust_library(
         ],
     ),
     crate_features = [
+        "checkpoint",
         "default",
+        "futures",
+        "pin-utils",
+        "serde",
+        "serde_json",
     ],
     crate_root = "src/lib.rs",
     edition = "2018",
@@ -76,7 +81,10 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/cfg-if-1.0.0:cfg_if",
         "//third_party/rust_crates/vendor/generator-0.8.7:generator",
+        "//third_party/rust_crates/vendor/pin-utils-0.1.0:pin_utils",
         "//third_party/rust_crates/vendor/scoped-tls-1.0.1:scoped_tls",
+        "//third_party/rust_crates/vendor/serde-1.0.204:serde",
+        "//third_party/rust_crates/vendor/serde_json-1.0.143:serde_json",
         "//third_party/rust_crates/vendor/tracing-0.1.40:tracing",
         "//third_party/rust_crates/vendor/tracing-subscriber-0.3.18:tracing_subscriber",
     ],

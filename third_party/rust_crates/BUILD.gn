@@ -9480,7 +9480,10 @@ rustc_library("loom-v0_7_2") {
   deps = []
   deps += [ ":cfg-if-v1_0_0" ]
   deps += [ ":generator-v0_8_7" ]
+  deps += [ ":pin-utils-v0_1_0" ]
   deps += [ ":scoped-tls-v1_0_1" ]
+  deps += [ ":serde-v1_0_204" ]
+  deps += [ ":serde_json-v1_0_143" ]
   deps += [ ":tracing-subscriber-v0_3_18" ]
   deps += [ ":tracing-v0_1_40" ]
   deps += [ "//build/validate:non_production_tag" ]
@@ -9490,7 +9493,12 @@ rustc_library("loom-v0_7_2") {
     "--cap-lints=allow",
     "-Cmetadata=66004af6324b2b5e",
     "-Cextra-filename=-66004af6324b2b5e",
+    "--cfg=feature=\"checkpoint\"",
     "--cfg=feature=\"default\"",
+    "--cfg=feature=\"futures\"",
+    "--cfg=feature=\"pin-utils\"",
+    "--cfg=feature=\"serde\"",
+    "--cfg=feature=\"serde_json\"",
   ]
 
   visibility = [ ":*" ]
