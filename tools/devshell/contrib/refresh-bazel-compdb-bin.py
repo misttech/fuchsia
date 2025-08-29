@@ -47,7 +47,7 @@ _REGEX_PATH_PATTERNS = [
     # Fidl libraries defined in GN in the SDK
     (
         re.compile(
-            ".*bazel-out.*\/fuchsia_sdk\/fidl\/.*\/_virtual_includes\/(?P<name>.*)_cpp"
+            ".*bazel-out.*fuchsia_sdk\/fidl\/.*\/_virtual_includes\/(?P<name>.*)_cpp"
         ),
         lambda m: "-Ifidling/gen/sdk/fidl/{fidl_lib}/{fidl_lib}/cpp".format(
             fidl_lib=m["name"]
