@@ -51,7 +51,6 @@ sdk_source_set("mock-mmio-reg") {
   category = "internal"
   sdk_name = "mock-mmio-reg"
   public = [ "include/mock-mmio-reg/mock-mmio-reg.h" ]
-  include_base = "include"
   public_deps = [
     "//src/devices/lib/mmio",
     "//src/devices/lib/mmio:test_helper",

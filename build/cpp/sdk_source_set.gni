@@ -232,6 +232,7 @@ template("sdk_source_set") {
 
   if (defined(invoker.include_base)) {
     include_base = invoker.include_base
+    assert(include_base != "include", "No need to specify the default value.")
   } else {
     include_base = "include"
   }

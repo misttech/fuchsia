@@ -120,7 +120,6 @@ sdk_source_set("hlcpp") {
     "unknown_interactions_hlcpp.cc",
   ]
 
-  include_base = "//sdk/lib/fidl/hlcpp/include"
   stable = true
 
   public_deps = [
@@ -154,8 +153,6 @@ sdk_source_set("hlcpp_sync") {
     "internal/message_sender.cc",
     "internal/synchronous_proxy.cc",
   ]
-
-  include_base = "//sdk/lib/fidl/hlcpp/include"
 
   public_configs = [ "//sdk/config" ]
 
@@ -204,8 +201,6 @@ sdk_source_set("hlcpp_base") {
     "message.cc",
     "message_buffer.cc",
   ]
-
-  include_base = "//sdk/lib/fidl/hlcpp/include"
 
   public_configs = [
     "//sdk/config",
