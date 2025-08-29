@@ -16,7 +16,7 @@
 #include <lib/zx/result.h>
 
 #include "src/media/audio/drivers/aml-g12-tdm/aml-tdm-config-device.h"
-#include "src/media/audio/drivers/aml-g12-tdm/recorder.h"
+#include "src/media/audio/drivers/lib/inspect/recorder.h"
 
 namespace audio::aml_g12 {
 
@@ -110,6 +110,11 @@ class AudioCompositeServer final
   friend class RingBufferServer;
 
  public:
+  static constexpr std::array<fuchsia_hardware_audio::ElementId, kNumberOfPipelines> kDaiIds = {
+      1, 2, 3};
+  static constexpr std::array<fuchsia_hardware_audio::ElementId, kNumberOfTdmEngines>
+      kRingBufferIds = {4, 5, 6, 7, 8, 9};
+
   AudioCompositeServer(std::array<std::optional<fdf::MmioBuffer>, kNumberOfTdmEngines> mmios,
                        zx::bti bti, async_dispatcher_t* dispatcher,
                        metadata::AmlVersion aml_version,
@@ -156,12 +161,6 @@ class AudioCompositeServer final
   std::unique_ptr<Recorder>& device_inspect() { return recorder_; }
 
  private:
-  friend void Recorder::PopulateInspectNodes();
-
-  static constexpr std::array<fuchsia_hardware_audio::ElementId, kNumberOfPipelines> kDaiIds = {
-      1, 2, 3};
-  static constexpr std::array<fuchsia_hardware_audio::ElementId, kNumberOfTdmEngines>
-      kRingBufferIds = {4, 5, 6, 7, 8, 9};
   static constexpr fuchsia_hardware_audio::TopologyId kTopologyId = 1;
 
   static constexpr zx::duration kTimeToStabilizePll = zx::msec(10);

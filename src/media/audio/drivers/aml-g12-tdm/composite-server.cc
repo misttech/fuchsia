@@ -18,7 +18,7 @@
 
 #include <fbl/algorithm.h>
 
-#include "src/media/audio/drivers/aml-g12-tdm/recorder.h"
+#include "src/media/audio/drivers/lib/inspect/recorder.h"
 
 namespace audio::aml_g12 {
 

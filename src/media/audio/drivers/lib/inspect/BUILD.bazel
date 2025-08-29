@@ -1,0 +1,17 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+cc_library(
+    name = "recorder",
+    srcs = [
+        "recorder.cc",
+    ],
+    hdrs = [
+        "recorder.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@fuchsia_sdk//pkg/inspect",
+    ],
+)

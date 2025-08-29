@@ -1,14 +1,14 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-#ifndef SRC_MEDIA_AUDIO_DRIVERS_AML_G12_TDM_RECORDER_H_
-#define SRC_MEDIA_AUDIO_DRIVERS_AML_G12_TDM_RECORDER_H_
+#ifndef SRC_MEDIA_AUDIO_DRIVERS_LIB_INSPECT_RECORDER_H_
+#define SRC_MEDIA_AUDIO_DRIVERS_LIB_INSPECT_RECORDER_H_
 
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
 
-namespace audio::aml_g12 {
+namespace audio {
 
 //
 // Recorder class and subclasses
@@ -134,7 +134,10 @@ class RingBufferSpecification {
 class Recorder final {
  public:
   explicit Recorder(inspect::Node& inspect_root);
-  void PopulateInspectNodes();
+
+  void PopulateRingBuffer(const std::string& name, uint64_t element_id,
+                          bool supports_active_channels, bool outgoing);
+  void PopulateDai(const std::string& name, uint64_t element_id);
 
   void RecordSocPowerUp(const zx::time& called_at, const zx::time& completed_at);
   void RecordSocPowerDown(const zx::time& called_at, const zx::time& completed_at);
@@ -151,6 +154,8 @@ class Recorder final {
   }
 
  private:
+  void PopulatePowerNodes();
+
   inspect::Node& inspect_root_;
   inspect::BoolProperty current_power_state_;
 
@@ -164,6 +169,6 @@ class Recorder final {
   std::vector<DaiEntry> dai_entries_;
 };
 
-}  // namespace audio::aml_g12
+}  // namespace audio
 
-#endif  // SRC_MEDIA_AUDIO_DRIVERS_AML_G12_TDM_RECORDER_H_
+#endif  // SRC_MEDIA_AUDIO_DRIVERS_LIB_INSPECT_RECORDER_H_

@@ -179,8 +179,6 @@ bazel_driver_package("aml-g12-composite-bazel-package") {
     "composite.h",
     "composite-server.cc",
     "composite-server.h",
-    "recorder.cc",
-    "recorder.h",
   ]
 }
 

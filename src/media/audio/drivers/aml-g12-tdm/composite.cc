@@ -167,6 +167,16 @@ zx::result<> Driver::Start() {
   }
 
   auto recorder = std::make_unique<Recorder>(inspector().root());
+  // Populate Inspect with nodes specific to AudioCompositeServer.
+  for (size_t idx = 0u; idx < kNumberOfTdmEngines; ++idx) {
+    recorder->PopulateRingBuffer("tdm engine #" + std::to_string(idx),
+                                 AudioCompositeServer::kRingBufferIds[idx],
+                                 /* supports_active_channels= */ true,
+                                 /* outgoing= */ idx < 3);
+  }
+  for (size_t idx = 0u; idx < kNumberOfPipelines; ++idx) {
+    recorder->PopulateDai("pipeline #" + std::to_string(idx), AudioCompositeServer::kDaiIds[idx]);
+  }
 
   server_ = std::make_unique<AudioCompositeServer>(
       std::move(mmios), std::move(bti.value()), dispatcher(), aml_version, std::move(gate_client),

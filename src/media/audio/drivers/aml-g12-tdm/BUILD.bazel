@@ -45,8 +45,6 @@ cc_library(
         "composite.h",
         "composite-server.cc",
         "composite-server.h",
-        "recorder.cc",
-        "recorder.h",
     ],
     defines = [
         "ZX_ASSERT_LEVEL=2",
@@ -55,6 +53,7 @@ cc_library(
     deps = [
         "//sdk/lib/driver/compat/cpp",
         "//src/devices/lib/amlogic",
+        "//src/media/audio/drivers/lib/inspect:recorder",
         "//zircon/system/ulib/ddk-platform-defs",
         "@fuchsia_sdk//fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp",
@@ -64,7 +63,6 @@ cc_library(
         "@fuchsia_sdk//pkg/driver_devfs_cpp",
         "@fuchsia_sdk//pkg/driver_platform_device_cpp",
         "@fuchsia_sdk//pkg/driver_runtime_cpp",
-        "@fuchsia_sdk//pkg/inspect",
         "@fuchsia_sdk//pkg/memory_barriers",
         "@fuchsia_sdk//pkg/trace",
     ],
