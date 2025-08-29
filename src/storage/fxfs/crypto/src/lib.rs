@@ -44,11 +44,9 @@ impl std::ops::Deref for UnwrappedKey {
 }
 
 /// A fixed length array of 48 bytes that holds an AES-256-GCM-SIV wrapped key.
-// TODO(b/419723745): Move this to Fxfs and keep fxfs-crypto free of versioned types.
-pub type WrappedKeyBytes = WrappedKeyBytesV32;
 #[repr(transparent)]
 #[derive(Clone, Debug, PartialEq)]
-pub struct WrappedKeyBytesV32(pub [u8; FXFS_WRAPPED_KEY_SIZE]);
+pub struct WrappedKeyBytes(pub [u8; FXFS_WRAPPED_KEY_SIZE]);
 impl Default for WrappedKeyBytes {
     fn default() -> Self {
         Self([0u8; FXFS_WRAPPED_KEY_SIZE])
@@ -131,13 +129,10 @@ impl<'de> Deserialize<'de> for WrappedKeyBytes {
     }
 }
 
-// TODO(b/419723745): Move this to Fxfs and keep fxfs-crypto free of versioned types.
-pub type FxfsKey = FxfsKeyV40;
-
 /// An Fxfs encryption key wrapped in AES-256-GCM-SIV and the associated wrapping key ID.
 /// This can be provided to Crypt::unwrap_key to obtain the unwrapped key.
 #[derive(Clone, Default, Debug, Serialize, Deserialize, TypeFingerprint, PartialEq)]
-pub struct FxfsKeyV40 {
+pub struct FxfsKey {
     /// The identifier of the wrapping key.  The identifier has meaning to whatever is doing the
     /// unwrapping.
     pub wrapping_key_id: u128,
@@ -146,7 +141,7 @@ pub struct FxfsKeyV40 {
     /// https://csrc.nist.gov/CSRC/media/Projects/Block-Cipher-Techniques/documents/BCM/Comments/XTS/follow-up_XTS_comments-Ball.pdf)
     /// which is what we do here.  Since the key is wrapped with AES-GCM-SIV, there are an
     /// additional 16 bytes paid per key (so the actual key material is 32 bytes once unwrapped).
-    pub key: WrappedKeyBytesV32,
+    pub key: WrappedKeyBytes,
 }
 
 impl Into<fidl_fuchsia_fxfs::FxfsKey> for FxfsKey {
@@ -164,9 +159,6 @@ impl<'a> arbitrary::Arbitrary<'a> for FxfsKey {
         return Ok(FxfsKey::default());
     }
 }
-
-#[derive(Serialize, Deserialize, TypeFingerprint)]
-pub struct WrappedKeysV40(pub Vec<(u64, FxfsKeyV40)>);
 
 /// A thin wrapper around a ChaCha20 stream cipher.  This will use a zero nonce. **NOTE**: Great
 /// care must be taken not to encrypt different plaintext with the same key and offset (even across

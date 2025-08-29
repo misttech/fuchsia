@@ -12,8 +12,8 @@ use crate::object_store::AttributeKey;
 use crate::object_store::allocator::{AllocatorItem, Reservation};
 use crate::object_store::object_manager::{ObjectManager, reserved_space_from_journal_usage};
 use crate::object_store::object_record::{
-    ObjectItem, ObjectItemV40, ObjectItemV41, ObjectItemV43, ObjectItemV46, ObjectItemV47,
-    ObjectKey, ObjectKeyData, ObjectValue, ProjectProperty,
+    FxfsKey, FxfsKeyV40, ObjectItem, ObjectItemV40, ObjectItemV41, ObjectItemV43, ObjectItemV46,
+    ObjectItemV47, ObjectKey, ObjectKeyData, ObjectValue, ProjectProperty,
 };
 use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
 use anyhow::Error;
@@ -22,7 +22,6 @@ use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
 use futures::future::poll_fn;
 use futures::pin_mut;
-use fxfs_crypto::{FxfsKey, FxfsKeyV40};
 use rustc_hash::FxHashMap as HashMap;
 use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};

@@ -59,9 +59,7 @@ use fidl_fuchsia_io as fio;
 use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::ff1::Ff1;
-use fxfs_crypto::{
-    Cipher, Crypt, FxfsCipher, FxfsKey, FxfsKeyV40, KeyPurpose, StreamCipher, UnwrappedKey,
-};
+use fxfs_crypto::{Cipher, Crypt, FxfsCipher, KeyPurpose, StreamCipher, UnwrappedKey};
 use once_cell::sync::OnceCell;
 use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
@@ -76,9 +74,9 @@ pub use extent_record::{
     FSVERITY_MERKLE_ATTRIBUTE_ID,
 };
 pub use object_record::{
-    AttributeKey, EncryptionKey, EncryptionKeys, ExtendedAttributeValue, FsverityMetadata,
-    ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue, ProjectProperty,
-    RootDigest,
+    AttributeKey, EncryptionKey, EncryptionKeys, ExtendedAttributeValue, FsverityMetadata, FxfsKey,
+    FxfsKeyV40, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue,
+    ProjectProperty, RootDigest,
 };
 pub use transaction::Mutation;
 

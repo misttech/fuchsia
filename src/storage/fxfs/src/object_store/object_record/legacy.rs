@@ -96,6 +96,9 @@ impl From<EncryptionKeysV40> for EncryptionKeysV47 {
     }
 }
 
+#[derive(Serialize, Deserialize, TypeFingerprint)]
+pub struct WrappedKeysV40(pub Vec<(u64, FxfsKeyV40)>);
+
 #[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(ObjectValueV47)]
 pub enum ObjectValueV46 {
