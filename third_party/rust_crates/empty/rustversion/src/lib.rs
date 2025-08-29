@@ -11,11 +11,25 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 
 #[proc_macro_attribute]
-pub fn before(_args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn before(_args: TokenStream, _input: TokenStream) -> TokenStream {
     TokenStream::new()
 }
 
 #[proc_macro_attribute]
 pub fn since(_args: TokenStream, input: TokenStream) -> TokenStream {
     input
+}
+
+#[proc_macro_attribute]
+pub fn nightly(_args: TokenStream, _input: TokenStream) -> TokenStream {
+    TokenStream::new()
+}
+
+#[proc_macro_attribute]
+pub fn not(args: TokenStream, input: TokenStream) -> TokenStream {
+    if format!("{args}") == "nightly" {
+        input
+    } else {
+        TokenStream::new()
+    }
 }
