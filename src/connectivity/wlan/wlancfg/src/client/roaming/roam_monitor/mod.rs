@@ -7,13 +7,13 @@ use crate::client::connection_selection::ConnectionSelectionRequester;
 use crate::client::roaming::lib::*;
 use crate::client::types;
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
 use futures::stream::{FuturesUnordered, StreamExt};
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 use log::{debug, error, info, warn};
 use std::any::Any;
 use std::sync::Arc;
@@ -127,7 +127,7 @@ pub async fn serve_roam_monitor(
                 }
             },
             complete => {
-                info!("Roam monitor channels dropped, exiting monitor service loop.");
+                debug!("Roam monitor channels dropped, exiting monitor service loop.");
                 break
             }
         }
@@ -158,7 +158,7 @@ async fn get_roaming_connection_selection_future(
 mod test {
     use super::*;
     use crate::client::connection_selection::ConnectionSelectionRequest;
-    use crate::client::roaming::lib::{RoamingProfile, NUM_PLATFORM_MAX_ROAMS_PER_DAY};
+    use crate::client::roaming::lib::{NUM_PLATFORM_MAX_ROAMS_PER_DAY, RoamingProfile};
     use crate::telemetry::TelemetryEvent;
     use crate::util::testing::fakes::FakeRoamMonitor;
     use crate::util::testing::{
@@ -168,7 +168,7 @@ mod test {
     use assert_matches::assert_matches;
     use fuchsia_async::{self as fasync, TestExecutor};
     use futures::task::Poll;
-    use futures::{pin_mut, Future};
+    use futures::{Future, pin_mut};
     use std::pin::Pin;
     use test_case::test_case;
     use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal};

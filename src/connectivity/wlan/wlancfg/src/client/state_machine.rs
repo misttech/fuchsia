@@ -10,8 +10,8 @@ use crate::config_management::{Credential, PastConnectionData, SavedNetworksMana
 use crate::mode_management::iface_manager_api::SmeForClientStateMachine;
 use crate::mode_management::{Defect, IfaceFailure};
 use crate::telemetry::{
-    DisconnectInfo, TelemetryEvent, TelemetrySender, AVERAGE_SCORE_DELTA_MINIMUM_DURATION,
-    METRICS_SHORT_CONNECT_DURATION,
+    AVERAGE_SCORE_DELTA_MINIMUM_DURATION, DisconnectInfo, METRICS_SHORT_CONNECT_DURATION,
+    TelemetryEvent, TelemetrySender,
 };
 use crate::util::historical_list::HistoricalList;
 use crate::util::listener::Message::NotifyListeners;
@@ -709,6 +709,10 @@ async fn connected_state(
                             false
                         }
                         fidl_sme::ConnectTransactionEvent::OnChannelSwitched { info } => {
+                            info!(
+                                "OnChannelSwitch received. Previous channel: {:?}, new channel: {:?}.",
+                                options.ap_state.tracked.channel.primary, info.new_channel
+                            );
                             options.ap_state.tracked.channel.primary = info.new_channel;
                             // Re-initialize roam monitor for new channel
                             let (sender, roam_request_receiver) = mpsc::channel(ROAMING_CHANNEL_BUFFER_SIZE);
@@ -910,7 +914,6 @@ fn notify_on_channel_switch(
     info: fidl_internal::ChannelSwitchInfo,
 ) {
     common_options.telemetry_sender.send(TelemetryEvent::OnChannelSwitched { info });
-
     // Update reported state.
     common_options.status_publisher.publish_status(Status::from_ap_state(&options.ap_state));
 }
@@ -1219,21 +1222,21 @@ mod tests {
     use super::*;
     use crate::client::roaming::lib::{PolicyRoamRequest, RoamTriggerData};
     use crate::client::roaming::local_roam_manager::RoamServiceRequest;
-    use crate::config_management::network_config::{self, Credential};
     use crate::config_management::PastConnectionList;
+    use crate::config_management::network_config::{self, Credential};
     use crate::util::listener;
-    use crate::util::state_machine::{status_publisher_and_reader, StateMachineStatusReader};
+    use crate::util::state_machine::{StateMachineStatusReader, status_publisher_and_reader};
     use crate::util::testing::{
+        ConnectResultRecord, ConnectionRecord, FakeSavedNetworksManager,
         generate_connect_selection, generate_disconnect_info, generate_policy_roam_request,
         generate_random_scanned_candidate, poll_sme_req, random_connection_data,
-        ConnectResultRecord, ConnectionRecord, FakeSavedNetworksManager,
     };
     use assert_matches::assert_matches;
     use fidl::endpoints::{create_proxy, create_proxy_and_stream};
     use fidl::prelude::*;
     use fidl_fuchsia_wlan_policy as fidl_policy;
-    use futures::task::Poll;
     use futures::Future;
+    use futures::task::Poll;
     use ieee80211::MacAddrBytes;
     use lazy_static::lazy_static;
     use rand::Rng;
@@ -1803,13 +1806,14 @@ mod tests {
             Sequestered::release(connect_selection.target.bss.bss_description.clone());
 
         // save network to check that failed connect is recorded
-        assert!(exec
-            .run_singlethreaded(test_values.saved_networks_manager.store(
+        assert!(
+            exec.run_singlethreaded(test_values.saved_networks_manager.store(
                 connect_selection.target.network.clone(),
                 connect_selection.target.credential.clone()
             ),)
-            .expect("Failed to save network")
-            .is_none());
+                .expect("Failed to save network")
+                .is_none()
+        );
 
         let connecting_options = ConnectingOptions {
             connect_selection: connect_selection.clone(),
@@ -1897,13 +1901,14 @@ mod tests {
         let bss_description =
             Sequestered::release(connect_selection.target.bss.bss_description.clone());
 
-        assert!(exec
-            .run_singlethreaded(test_values.saved_networks_manager.store(
+        assert!(
+            exec.run_singlethreaded(test_values.saved_networks_manager.store(
                 connect_selection.target.network.clone(),
                 connect_selection.target.credential.clone()
             ),)
-            .expect("Failed to save network")
-            .is_none());
+                .expect("Failed to save network")
+                .is_none()
+        );
 
         let connecting_options = ConnectingOptions {
             connect_selection: connect_selection.clone(),
