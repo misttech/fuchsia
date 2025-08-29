@@ -32,19 +32,6 @@ group("generate_main_workspace") {
   deps += [ "//sdk:bazel_internal_only_idk" ]
 }
 
-# Generates an SDK that only supports targeting `HEAD` for the default
-# `target_cpu` in `$BUILD_DIR/obj/sdk/final_fuchsia_sdk_head_only/`.
-# This is provided for compatibility with existing documentation. The
-# documentation may assume a different output directory than the dependency
-# produces and should thus be updated to reference that dependency and its
-# output directory directly.
-group("generate_fuchsia_sdk_repository") {
-  # There should be no internal dependencies on this target.
-  visibility = [ "//:root_targets" ]
-
-  deps = [ "//sdk:final_fuchsia_sdk_head_only" ]
-}
-
 # LINT.IfChange
 generate_content_hash_file("fuchsia_internal_only_idk.hash") {
   source_paths = [ "$root_build_dir/sdk/exported/bazel_internal_only_idk" ]

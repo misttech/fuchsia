@@ -2463,9 +2463,6 @@ group("root_targets") {
     # Required for local developer overrides to be found by the bazel workspace.
     "//build/bazel:assembly_developer_overrides",
 
-    # Required for compatibility with existing documentation.
-    "//build/bazel:generate_fuchsia_sdk_repository",
-
     # The list of content hash files required by the Bazel workspace.
     # This is parsed by //build/regenerator just after `gn gen` to create
     # the final files in the Bazel workspace.
