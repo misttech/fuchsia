@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::vfs::{FsStr, FsString};
+use crate::vfs::FsStr;
+use flyweights::FlyByteStr;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::mount_flags::MountFlags;
@@ -25,7 +26,7 @@ use std::fmt::Display;
 /// `key0="mis"quoted,key2=unquoted` -> `EINVAL`
 #[derive(Debug, Default, Clone)]
 pub struct MountParams {
-    options: HashMap<FsString, FsString>,
+    options: HashMap<FlyByteStr, FlyByteStr>,
 }
 
 impl MountParams {
@@ -34,8 +35,8 @@ impl MountParams {
         Ok(MountParams { options })
     }
 
-    pub fn get(&self, key: &[u8]) -> Option<&FsString> {
-        self.options.get(key)
+    pub fn get(&self, key: &[u8]) -> Option<&FlyByteStr> {
+        self.options.get(&key.into())
     }
 
     pub fn get_as<T: std::str::FromStr>(&self, key: &[u8]) -> Result<Option<T>, Errno>
@@ -53,8 +54,8 @@ impl MountParams {
         self.get(key).map(|v| parse_with(v.as_ref(), parser)).transpose()
     }
 
-    pub fn remove(&mut self, key: &[u8]) -> Option<FsString> {
-        self.options.remove(key)
+    pub fn remove(&mut self, key: &[u8]) -> Option<FlyByteStr> {
+        self.options.remove(&key.into())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -119,7 +120,8 @@ pub fn parse_with<F, E: std::fmt::Debug>(
 }
 
 mod parse_mount_options {
-    use crate::vfs::{FsStr, FsString};
+    use crate::vfs::FsStr;
+    use flyweights::FlyByteStr;
     use nom::branch::alt;
     use nom::bytes::complete::{is_not, tag};
     use nom::combinator::opt;
@@ -154,7 +156,9 @@ mod parse_mount_options {
         alt((key_value, key_only)).parse(input)
     }
 
-    pub(super) fn parse_mount_options(input: &FsStr) -> Result<HashMap<FsString, FsString>, Errno> {
+    pub(super) fn parse_mount_options(
+        input: &FsStr,
+    ) -> Result<HashMap<FlyByteStr, FlyByteStr>, Errno> {
         let (input, options) = terminated(separated_list0(tag(","), option), opt(tag(",")))
             .parse(input.into())
             .map_err(|_| errno!(EINVAL))?;
@@ -165,7 +169,8 @@ mod parse_mount_options {
         }
 
         // Insert in-order so that last `key=value` containing `key` "wins".
-        let mut options_map: HashMap<FsString, FsString> = HashMap::with_capacity(options.len());
+        let mut options_map: HashMap<FlyByteStr, FlyByteStr> =
+            HashMap::with_capacity(options.len());
         for (key, value) in options.into_iter() {
             options_map.insert(key.into(), value.into());
         }
@@ -177,7 +182,7 @@ mod parse_mount_options {
 #[cfg(test)]
 mod tests {
     use super::{MountParams, parse};
-    use crate::vfs::FsString;
+    use flyweights::FlyByteStr;
     use maplit::hashmap;
     use starnix_uapi::mount_flags::MountFlags;
 
@@ -194,7 +199,7 @@ mod tests {
         assert_eq!(
             parsed_data.options,
             hashmap! {
-                b"key0".into() => b"value0".into(),
+                FlyByteStr::new(b"key0") => FlyByteStr::new(b"value0"),
             }
         );
     }
@@ -208,10 +213,10 @@ mod tests {
         assert_eq!(
             parsed_data.options,
             hashmap! {
-                b"key1".into() => b"".into(),
-                b"key2".into() => b"value2".into(),
+                FlyByteStr::new(b"key1") => FlyByteStr::new(b""),
+                FlyByteStr::new(b"key2") => FlyByteStr::new(b"value2"),
                 // Last `key0` value in list "wins":
-                b"key0".into() => b"value3".into(),
+                FlyByteStr::new(b"key0") => FlyByteStr::new(b"value3"),
             }
         );
     }
@@ -224,8 +229,8 @@ mod tests {
         assert_eq!(
             parsed_data.options,
             hashmap! {
-                b"key0".into() => b"unqouted".into(),
-                b"key1".into() => b"quoted,with=punc:tua-tion.".into(),
+                FlyByteStr::new(b"key0") => FlyByteStr::new(b"unqouted"),
+                FlyByteStr::new(b"key1") => FlyByteStr::new(b"quoted,with=punc:tua-tion."),
             }
         );
     }
@@ -258,10 +263,10 @@ mod tests {
         assert_eq!(
             parsed_data.options,
             hashmap! {
-                b"nosuid".into() => FsString::default(),
-                b"nodev".into() => FsString::default(),
-                b"noexec".into() => FsString::default(),
-                b"relatime".into() => FsString::default(),
+                FlyByteStr::new(b"nosuid") => FlyByteStr::default(),
+                FlyByteStr::new(b"nodev") => FlyByteStr::default(),
+                FlyByteStr::new(b"noexec") => FlyByteStr::default(),
+                FlyByteStr::new(b"relatime") => FlyByteStr::default(),
             }
         );
     }

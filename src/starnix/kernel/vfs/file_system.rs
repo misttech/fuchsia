@@ -9,6 +9,7 @@ use crate::vfs::fs_node_cache::FsNodeCache;
 use crate::vfs::{
     DirEntry, DirEntryHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
 };
+use flyweights::FlyByteStr;
 use linked_hash_map::LinkedHashMap;
 use ref_cast::RefCast;
 use smallvec::SmallVec;
@@ -82,7 +83,7 @@ impl std::fmt::Debug for FileSystem {
 #[derive(Clone, Debug, Default)]
 pub struct FileSystemOptions {
     /// The source string passed as the first argument to mount(), e.g. a block device.
-    pub source: FsString,
+    pub source: FlyByteStr,
     /// Flags kept per-superblock, i.e. included in MountFlags::STORED_ON_FILESYSTEM.
     pub flags: MountFlags,
     /// Filesystem options passed as the last argument to mount().

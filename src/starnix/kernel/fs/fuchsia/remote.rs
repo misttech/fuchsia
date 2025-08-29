@@ -20,7 +20,7 @@ use crate::vfs::{
     fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
     fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
-use bstr::{BString, ByteSlice};
+use bstr::ByteSlice;
 use fidl::AsHandleRef;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fuchsia_runtime::UtcInstant;
@@ -84,7 +84,7 @@ pub fn new_remote_fs(
         open_rights |= fio::PERM_WRITABLE;
     }
     let mut subdir_options = options;
-    subdir_options.source = BString::from(subdir);
+    subdir_options.source = subdir.into();
     create_remotefs_filesystem(locked, kernel, &root_proxy, subdir_options, open_rights)
 }
 
@@ -1726,6 +1726,7 @@ mod test {
     use crate::vfs::{EpollFileObject, LookupContext, Namespace, SymlinkMode, TimeUpdateType};
     use assert_matches::assert_matches;
     use fidl::endpoints::Proxy;
+    use flyweights::FlyByteStr;
     use fuchsia_fs::{directory, file};
     use fxfs_testing::{TestFixture, TestFixtureOptions};
     use starnix_uapi::auth::Credentials;
@@ -1766,7 +1767,7 @@ mod test {
             locked,
             &kernel,
             client,
-            FileSystemOptions { source: b"/pkg".into(), ..Default::default() },
+            FileSystemOptions { source: FlyByteStr::new(b"/pkg"), ..Default::default() },
             rights,
         )?;
         let ns = Namespace::new(fs);
@@ -1926,7 +1927,7 @@ mod test {
                 locked,
                 &kernel,
                 client,
-                FileSystemOptions { source: b"/".into(), ..Default::default() },
+                FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                 fio::PERM_READABLE | fio::PERM_WRITABLE,
             )
             .expect("new_fs failed");
@@ -1966,7 +1967,7 @@ mod test {
                 locked,
                 &kernel,
                 client,
-                FileSystemOptions { source: b"/".into(), ..Default::default() },
+                FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                 fio::PERM_READABLE | fio::PERM_WRITABLE,
             )
             .expect("new_fs failed after remount");
@@ -2024,7 +2025,10 @@ mod test {
                             locked,
                             &kernel,
                             client,
-                            FileSystemOptions { source: b"/".into(), ..Default::default() },
+                            FileSystemOptions {
+                                source: FlyByteStr::new(b"/"),
+                                ..Default::default()
+                            },
                             rights,
                         )
                         .expect("new_fs failed");
@@ -2085,7 +2089,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2144,7 +2148,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2241,7 +2245,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2318,7 +2322,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2371,7 +2375,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2414,7 +2418,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2460,7 +2464,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2498,7 +2502,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2539,7 +2543,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2576,7 +2580,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2617,7 +2621,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2676,7 +2680,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2737,7 +2741,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2798,7 +2802,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2844,7 +2848,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -2928,7 +2932,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -3008,7 +3012,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -3056,7 +3060,7 @@ mod test {
                         locked,
                         &kernel,
                         client,
-                        FileSystemOptions { source: b"/".into(), ..Default::default() },
+                        FileSystemOptions { source: FlyByteStr::new(b"/"), ..Default::default() },
                         rights,
                     )
                     .expect("new_fs failed");
@@ -3105,7 +3109,7 @@ mod test {
                             &kernel,
                             client,
                             FileSystemOptions {
-                                source: b"/".into(),
+                                source: FlyByteStr::new(b"/"),
                                 flags: MountFlags::RELATIME,
                                 ..Default::default()
                             },
@@ -3173,7 +3177,7 @@ mod test {
                             &kernel,
                             client,
                             FileSystemOptions {
-                                source: b"/".into(),
+                                source: FlyByteStr::new(b"/"),
                                 flags: MountFlags::RELATIME,
                                 ..Default::default()
                             },
@@ -3226,7 +3230,7 @@ mod test {
                         &kernel,
                         client,
                         FileSystemOptions {
-                            source: b"/".into(),
+                            source: FlyByteStr::new(b"/"),
                             flags: MountFlags::RELATIME,
                             ..Default::default()
                         },
