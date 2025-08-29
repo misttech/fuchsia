@@ -77,8 +77,9 @@ pub(crate) struct UnicastNewRouteArgs<I: Ip> {
     // The forwarding action. Unicast routes are gateway/direct routes and must
     // have a target.
     pub target: fnet_routes_ext::RouteTarget<I>,
-    // The metric used to weigh the importance of the route.
-    pub priority: u32,
+    // The metric used to weigh the importance of the route. `None` if unset in
+    // the netlink message.
+    pub priority: Option<NonZeroU32>,
     // The routing table.
     pub table: NetlinkRouteTableIndex,
 }
@@ -858,18 +859,22 @@ fn routes_conflict<I: Ip>(
     incoming_table: fnet_routes_ext::TableId,
 ) -> bool {
     let fnet_routes_ext::InstalledRoute {
-        route: fnet_routes_ext::Route { destination: stored_destination, action: _, properties: _ },
-        effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric: stored_metric },
+        route:
+            fnet_routes_ext::Route {
+                destination: stored_destination,
+                action: _,
+                properties: stored_properties,
+            },
+        effective_properties: _,
         table_id: stored_table_id,
     } = stored_route;
 
     let destinations_match = stored_destination == incoming_route.destination;
-    // NB: Netlink requests always specify an explicit metric.
-    let metrics_match = fnet_routes::SpecifiedMetric::ExplicitMetric(stored_metric)
+    let specified_metrics_match = stored_properties.specified_properties.metric
         == incoming_route.properties.specified_properties.metric;
     let tables_match = stored_table_id == incoming_table;
 
-    destinations_match && metrics_match && tables_match
+    destinations_match && specified_metrics_match && tables_match
 }
 
 /// Recreates the original route from the backup route.
@@ -1249,18 +1254,24 @@ impl From<DecodeError> for NetlinkRouteMessageConversionError {
     }
 }
 
+fn netlink_priority_to_specified_metric(prio: Option<NonZeroU32>) -> fnet_routes::SpecifiedMetric {
+    match prio {
+        None => fnet_routes::SpecifiedMetric::InheritedFromInterface(fnet_routes::Empty),
+        Some(priority) => fnet_routes::SpecifiedMetric::ExplicitMetric(priority.get()),
+    }
+}
+
 impl<I: Ip> From<NewRouteArgs<I>> for fnet_routes_ext::Route<I> {
     fn from(new_route_args: NewRouteArgs<I>) -> Self {
         match new_route_args {
             NewRouteArgs::Unicast(args) => {
                 let UnicastNewRouteArgs { subnet, target, priority, table: _ } = args;
+                let metric = netlink_priority_to_specified_metric(priority);
                 fnet_routes_ext::Route {
                     destination: subnet,
                     action: fnet_routes_ext::RouteAction::Forward(target),
                     properties: fnet_routes_ext::RouteProperties {
-                        specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
-                            metric: fnet_routes::SpecifiedMetric::ExplicitMetric(priority),
-                        },
+                        specified_properties: fnet_routes_ext::SpecifiedRouteProperties { metric },
                     },
                 }
             }
@@ -2580,7 +2591,7 @@ mod tests {
                 outbound_interface: interface_id,
                 next_hop: SpecifiedAddr::new(next_hop),
             },
-            priority,
+            priority: NonZeroU32::new(priority),
             table,
         }
     }
@@ -4275,111 +4286,243 @@ mod tests {
         subnet: Subnet<I::Addr>,
         device: u32,
         nexthop: Option<I::Addr>,
-        metric: u32,
+        metric: Option<NonZeroU32>,
     }
 
     impl<I: Ip> Route<I> {
+        fn to_route(self) -> fnet_routes_ext::Route<I> {
+            let Self { subnet, device, nexthop, metric } = self;
+            fnet_routes_ext::Route {
+                destination: subnet,
+                action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
+                    outbound_interface: device.into(),
+                    next_hop: nexthop
+                        .map(|a| SpecifiedAddr::new(a).expect("nexthop should be specified")),
+                }),
+                properties: fnet_routes_ext::RouteProperties {
+                    specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
+                        metric: netlink_priority_to_specified_metric(metric),
+                    },
+                },
+            }
+        }
+
         fn to_installed_route(
             self,
             table_id: fnet_routes_ext::TableId,
         ) -> fnet_routes_ext::InstalledRoute<I> {
-            let Self { subnet, device, nexthop, metric } = self;
+            const DEFAULT_INTERFACE_METRIC: u32 = 100000;
+            let effective_metric = match self.metric {
+                None => DEFAULT_INTERFACE_METRIC,
+                Some(metric) => metric.into(),
+            };
+            let route = self.to_route();
             fnet_routes_ext::InstalledRoute {
-                route: fnet_routes_ext::Route {
-                    destination: subnet,
-                    action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget {
-                        outbound_interface: device.into(),
-                        next_hop: nexthop
-                            .map(|a| SpecifiedAddr::new(a).expect("nexthop should be specified")),
-                    }),
-                    properties: fnet_routes_ext::RouteProperties::from_explicit_metric(metric),
+                route,
+                effective_properties: fnet_routes_ext::EffectiveRouteProperties {
+                    metric: effective_metric,
                 },
-                effective_properties: fnet_routes_ext::EffectiveRouteProperties { metric },
                 table_id,
             }
         }
     }
 
+    const ROUTE_METRIC1: NonZeroU32 = NonZeroU32::new(METRIC1).unwrap();
+    const ROUTE_METRIC2: NonZeroU32 = NonZeroU32::new(METRIC2).unwrap();
+    const ROUTE_METRIC3: NonZeroU32 = NonZeroU32::new(METRIC3).unwrap();
+
     #[test_case(
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "all_fields_the_same_v4_should_match")]
     #[test_case(
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "all_fields_the_same_v6_should_match")]
     #[test_case(
-        Route::<Ipv4>{subnet: V4_DFLT, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_DFLT, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_DFLT, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_DFLT, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "default_route_v4_should_match")]
     #[test_case(
-        Route::<Ipv6>{subnet: V6_DFLT, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_DFLT, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_DFLT, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_DFLT, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "default_route_v6_should_match")]
     #[test_case(
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV2, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV2, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "different_device_v4_should_match")]
     #[test_case(
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV2, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV2, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "different_device_v6_should_match")]
     #[test_case(
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP2), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP2), metric: Some(ROUTE_METRIC1),
+        },
         true; "different_nexthop_v4_should_match")]
     #[test_case(
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP2), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP2), metric: Some(ROUTE_METRIC1),
+        },
         true; "different_nexthop_v6_should_match")]
     #[test_case(
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV2, nexthop: Some(V4_NEXTHOP2), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV2, nexthop: Some(V4_NEXTHOP2), metric: Some(ROUTE_METRIC1),
+        },
         true; "different_device_and_nexthop_v4_should_match")]
     #[test_case(
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV2, nexthop: Some(V6_NEXTHOP2), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV2, nexthop: Some(V6_NEXTHOP2), metric: Some(ROUTE_METRIC1),
+        },
         true; "different_device_and_nexthop_v6_should_match")]
     #[test_case(
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: None, metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: None, metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "nexthop_newly_unset_v4_should_match")]
     #[test_case(
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: None, metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: None, metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "nexthop_newly_unset_v6_should_match")]
     #[test_case(
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: None, metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: None, metric: Some(ROUTE_METRIC1),
+        },
         true; "nexthop_previously_unset_v4_should_match")]
     #[test_case(
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: None, metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: None, metric: Some(ROUTE_METRIC1),
+        },
         true; "nexthop_previously_unset_v6_should_match")]
     #[test_case(
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC2, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC2),
+        },
         false; "different_metric_v4_should_not_match")]
     #[test_case(
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC2, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: None,
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC2),
+        },
+        false; "default_and_non_default_v4_should_not_match")]
+    #[test_case(
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: None,
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: None,
+        },
+        true; "default_and_default_v4_should_match")]
+    #[test_case(
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC2),
+        },
         false; "different_metric_v6_should_not_match")]
     #[test_case(
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_SUB2, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB2, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         false; "different_subnet_v4_should_not_match")]
     #[test_case(
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_SUB2, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB2, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         false; "different_subnet_v6_should_not_match")]
     #[test_case(
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_SUB3, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB3, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         false; "different_subnet_prefixlen_v4_should_not_match")]
     #[test_case(
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_SUB3, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB3, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         false; "different_subnet_prefixlen_v6_should_not_match")]
+    #[test_case(
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: None,
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC2),
+        },
+        false; "default_and_non_default_v6_should_not_match")]
+    #[test_case(
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: None,
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: None,
+        },
+        true; "default_and_default_v6_should_match")]
     fn test_new_route_matcher<I: Ip>(
         route1: Route<I>,
         route2: Route<I>,
@@ -4449,7 +4592,7 @@ mod tests {
                     *subnet,
                     *nexthop,
                     (*device).into(),
-                    *metric,
+                    metric.map_or(0, NonZeroU32::get),
                     OTHER_FIDL_TABLE_ID,
                 );
             assert_matches!(fidl_route_map.add(route, table_id, effective_properties), None);
@@ -4467,7 +4610,7 @@ mod tests {
                         destination,
                         nexthop.to_owned(),
                         *device,
-                        *metric,
+                        metric.map_or(0, NonZeroU32::get),
                         Some(MANAGED_ROUTE_TABLE_ID),
                     ),
                 )
@@ -4497,7 +4640,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv4>{subnet: V4_SUB2, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB2, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         false; "subnet_does_not_match_v4")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv4> {
@@ -4506,7 +4651,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv4>{subnet: V4_SUB3, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB3, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         false; "subnet_prefix_len_does_not_match_v4")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv4> {
@@ -4515,7 +4662,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "subnet_matches_v4")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv4> {
@@ -4524,7 +4673,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV2, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV2, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         false; "interface_does_not_match_v4")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv4> {
@@ -4533,7 +4684,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "interface_matches_v4")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv4> {
@@ -4543,7 +4696,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: None, metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: None, metric: Some(ROUTE_METRIC1),
+        },
         false; "nexthop_absent_v4")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv4> {
@@ -4553,7 +4708,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP2), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP2), metric: Some(ROUTE_METRIC1),
+        },
         false; "nexthop_does_not_match_v4")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv4> {
@@ -4563,7 +4720,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "nexthop_matches_v4")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv4> {
@@ -4573,7 +4732,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: None, metric: METRIC2, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: None, metric: Some(ROUTE_METRIC2),
+        },
         false; "metric_does_not_match_v4")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv4> {
@@ -4583,7 +4744,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: None, metric: METRIC1, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: None, metric: Some(ROUTE_METRIC1),
+        },
         true; "metric_matches_v4")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv6> {
@@ -4592,7 +4755,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv6>{subnet: V6_SUB2, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB2, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         false; "subnet_does_not_match_v6")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv6> {
@@ -4601,7 +4766,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv6>{subnet: V6_SUB3, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB3, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         false; "subnet_prefix_len_does_not_match_v6")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv6> {
@@ -4610,7 +4777,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "subnet_matches_v6")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv6> {
@@ -4619,7 +4788,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV2, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV2, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         false; "interface_does_not_match_v6")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv6> {
@@ -4628,7 +4799,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "interface_matches_v6")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv6> {
@@ -4638,7 +4811,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: None, metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: None, metric: Some(ROUTE_METRIC1),
+        },
         false; "nexthop_absent_v6")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv6> {
@@ -4648,7 +4823,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP2), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP2), metric: Some(ROUTE_METRIC1),
+        },
         false; "nexthop_does_not_match_v6")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv6> {
@@ -4658,7 +4835,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
         true; "nexthop_matches_v6")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv6> {
@@ -4668,7 +4847,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: None, metric: METRIC2, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: None, metric: Some(ROUTE_METRIC2),
+        },
         false; "metric_does_not_match_v6")]
     #[test_case(
         UnicastDelRouteArgs::<Ipv6> {
@@ -4678,7 +4859,9 @@ mod tests {
                 NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()
             ),
         },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: None, metric: METRIC1, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: None, metric: Some(ROUTE_METRIC1),
+        },
         true; "metric_matches_v6")]
     fn test_select_route_for_deletion<
         I: Ip + fnet_routes_ext::admin::FidlRouteAdminIpExt + fnet_routes_ext::FidlRouteIpExt,
@@ -4696,9 +4879,15 @@ mod tests {
             table: NonZeroNetlinkRouteTableIndex::new_non_zero(NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()),
         },
         &[
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC2, },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv4>{subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: METRIC3, },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC2),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv4>{
+            subnet: V4_SUB1, device: DEV1, nexthop: Some(V4_NEXTHOP1), metric: Some(ROUTE_METRIC3),
+        },
         ],
         Some(1); "multiple_matches_prefers_lowest_metric_v4")]
     #[test_case(
@@ -4707,9 +4896,15 @@ mod tests {
             table: NonZeroNetlinkRouteTableIndex::new_non_zero(NonZeroU32::new(MANAGED_ROUTE_TABLE_INDEX.get()).unwrap()),
         },
         &[
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC2, },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC1, },
-        Route::<Ipv6>{subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: METRIC3, },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC2),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC1),
+        },
+        Route::<Ipv6>{
+            subnet: V6_SUB1, device: DEV1, nexthop: Some(V6_NEXTHOP1), metric: Some(ROUTE_METRIC3),
+        },
         ],
         Some(1); "multiple_matches_prefers_lowest_metric_v6")]
     fn test_select_route_for_deletion_multiple_matches<
