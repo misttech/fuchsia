@@ -65,7 +65,7 @@ use std::ops::{Deref, DerefMut, Range, RangeBounds};
 use std::sync::{Arc, LazyLock, Weak};
 use syncio::zxio::zxio_default_maybe_faultable_copy;
 use zerocopy::IntoBytes;
-use zx::{HandleBased, VmarInfo};
+use zx::VmarInfo;
 
 pub const ZX_VM_SPECIFIC_OVERWRITE: zx::VmarFlags =
     zx::VmarFlags::from_bits_retain(zx::VmarFlagsExtended::SPECIFIC_OVERWRITE.bits());
@@ -3083,60 +3083,34 @@ impl MemoryManager {
         Ok(())
     }
 
-    /// Returns the replacement `MemoryManager` to be used by the `exec()`ing task.
-    ///
-    /// POSIX requires that "a call to any exec function from a process with more than one thread
-    /// shall result in all threads being terminated and the new executable being loaded and
-    /// executed. No destructor functions or cleanup handlers shall be called".
-    /// The caller is responsible for having ensured that this is the only `Task` in the
-    /// `ThreadGroup`, and thereby the `zx::process`, such that it is safe to tear-down the Zircon
-    /// userspace VMAR for the current address-space.
-    pub fn exec(
-        &self,
-        exe_node: NamespaceNode,
-        arch_width: ArchWidth,
-    ) -> Result<Arc<Self>, zx::Status> {
-        // To safeguard against concurrent accesses by other tasks through this `MemoryManager`, the
-        // following steps are performed while holding the write lock on this instance:
-        //
-        // 1. All `mappings` are removed, so that remote `MemoryAccessor` calls will fail.
-        // 2. The `user_vmar` is `destroy()`ed to free-up the user address-space.
-        // 3. The new `user_vmar` is created, to re-reserve the user address-space.
-        //
-        // Once these steps are complete the lock must first be dropped, after which it is safe for
-        // the old mappings to be dropped.
-        let (_old_mappings, user_vmar) = {
+    pub fn exec(&self, exe_node: NamespaceNode, arch_width: ArchWidth) -> Result<(), zx::Status> {
+        // The previous mapping should be dropped only after the lock to state is released to
+        // prevent lock order inversion.
+        let _old_mappings = {
             let mut state = self.state.write();
             let mut info = self.root_vmar.info()?;
-
-            // SAFETY: This operation is safe because this is the only `Task` active in the address-
-            // space, and accesses by remote tasks will use syscalls on the `root_vmar`.
+            // SAFETY: This operation is safe because the VMAR is for another process.
             unsafe { state.user_vmar.destroy()? }
-
             if arch_width.is_arch32() {
                 info.len = (LOWER_4GB_LIMIT.ptr() - info.base) as usize;
             } else {
                 info.len = RESTRICTED_ASPACE_HIGHEST_ADDRESS - info.base;
             }
+            state.user_vmar = create_user_vmar(&self.root_vmar, &info)?;
+            state.user_vmar_info = state.user_vmar.info()?;
+            state.brk = None;
+            state.executable_node = Some(exe_node);
 
-            // Create the new userspace VMAR, to enmsure that the address range is (re-)reserved.
-            let user_vmar = create_user_vmar(&self.root_vmar, &info)?;
+            // All private-anonymous memory is zeroed
+            #[cfg(feature = "alternate_anon_allocs")]
+            state
+                .private_anonymous
+                .zero(UserAddress::from_ptr(state.user_vmar_info.base), state.user_vmar_info.len)?;
 
-            (std::mem::replace(&mut state.mappings, Default::default()), user_vmar)
+            std::mem::replace(&mut state.mappings, Default::default())
         };
-
-        // Wrap the new user address-space VMAR into a new `MemoryManager`.
-        let root_vmar = self.root_vmar.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-        let user_vmar_info = user_vmar.info()?;
-        let new_mm = Self::from_vmar(root_vmar, user_vmar, user_vmar_info);
-
-        // Initialize the new `MemoryManager` state.
-        new_mm.state.write().executable_node = Some(exe_node);
-
-        // Initialize the appropriate address-space layout for the `arch_width`.
-        new_mm.initialize_mmap_layout(arch_width)?;
-
-        Ok(Arc::new(new_mm))
+        self.initialize_mmap_layout(arch_width)?;
+        Ok(())
     }
 
     pub fn initialize_mmap_layout(&self, arch_width: ArchWidth) -> Result<(), Errno> {
@@ -4308,8 +4282,7 @@ mod tests {
         assert!(has(mapped_addr));
 
         let node = current_task.lookup_path_from_root(locked, "/".into()).unwrap();
-        let new_mm = mm.exec(node, ArchWidth::Arch64).expect("failed to exec memory manager");
-        *current_task.mm.lock() = Some(new_mm);
+        mm.exec(node, ArchWidth::Arch64).expect("failed to exec memory manager");
 
         assert!(!has(brk_addr));
         assert!(!has(mapped_addr));

@@ -989,8 +989,8 @@ pub struct Task {
     /// This table can be share by many tasks.
     pub files: FdTable,
 
-    /// The memory manager for this task.  This is `None` only for system tasks.
-    pub mm: Mutex<Option<Arc<MemoryManager>>>,
+    /// The memory manager for this task.
+    mm: Option<Arc<MemoryManager>>,
 
     /// The file system for this task.
     fs: Option<RwLock<Arc<FsContext>>>,
@@ -1059,10 +1059,10 @@ impl Task {
         &self.thread_group
     }
 
-    pub fn has_same_address_space(&self, other: Option<&Arc<MemoryManager>>) -> bool {
-        match (self.mm(), other) {
-            (Ok(this), Some(other)) => Arc::ptr_eq(&this, other),
-            (Err(_), None) => true,
+    pub fn has_same_address_space(&self, other: &Self) -> bool {
+        match (self.mm(), other.mm()) {
+            (Ok(this), Ok(other)) => Arc::ptr_eq(&this, &other),
+            (Err(_), Err(_)) => true,
             _ => false,
         }
     }
@@ -1181,7 +1181,7 @@ impl Task {
                 thread_group,
                 thread: RwLock::new(thread.map(Arc::new)),
                 files,
-                mm: Mutex::new(mm),
+                mm,
                 fs: Some(RwLock::new(fs)),
                 abstract_socket_namespace,
                 abstract_vsock_namespace,
@@ -1279,7 +1279,7 @@ impl Task {
 
     #[track_caller]
     pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
-        self.mm.lock().clone().ok_or_else(|| errno!(EINVAL))
+        self.mm.as_ref().map(Clone::clone).ok_or_else(|| errno!(EINVAL))
     }
 
     pub fn unshare_fs(&self) {
@@ -1571,8 +1571,7 @@ impl Releasable for Task {
 
         // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
         self.fs = None;
-        *self.mm.get_mut() = None;
-
+        self.mm = None;
         // Rebuild a temporary CurrentTask to run the release actions that requires a CurrentState.
         let current_task = CurrentTask::new(OwnedRef::new(self), thread_state);
 
