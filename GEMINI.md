@@ -157,6 +157,11 @@ for similar code live. Try not to add new dependencies as you add tests, and try
 to make new tests similar in style and API usage to other tests which already
 exist nearby.
 
+## Copyright headers in new files
+
+When adding files to the source tree which contain languages that support
+comments, add the Fuchsia copyright header at the top with the current year.
+
 # Code reviews
 
 ## Fetching Change List (CL) diffs
