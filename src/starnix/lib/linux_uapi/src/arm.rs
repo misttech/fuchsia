@@ -7101,7 +7101,7 @@ impl Default for flat_binder_object {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
 pub struct binder_fd_object {
     pub hdr: binder_object_header,
     pub pad_flags: __u32,
@@ -7109,7 +7109,7 @@ pub struct binder_fd_object {
     pub cookie: binder_uintptr_t,
 }
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
 pub union binder_fd_object__bindgen_ty_1 {
     pub pad_binder: binder_uintptr_t,
     pub fd: __u32,

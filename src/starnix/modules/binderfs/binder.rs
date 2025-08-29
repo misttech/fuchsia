@@ -85,7 +85,7 @@ use starnix_uapi::{
     binder_driver_return_protocol_BR_SPAWN_LOOPER, binder_driver_return_protocol_BR_TRANSACTION,
     binder_driver_return_protocol_BR_TRANSACTION_COMPLETE,
     binder_driver_return_protocol_BR_TRANSACTION_PENDING_FROZEN,
-    binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX, binder_fd_array_object,
+    binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX, binder_fd_array_object, binder_fd_object,
     binder_freeze_info, binder_frozen_state_info, binder_frozen_status_info, binder_object_header,
     binder_transaction_data, binder_transaction_data__bindgen_ty_2__bindgen_ty_1,
     binder_transaction_data_sg, binder_uintptr_t, binder_version, binder_write_read, errno,
@@ -5195,11 +5195,11 @@ impl SerializedBinderObject {
             }
             BINDER_TYPE_FD => {
                 let (object, _) =
-                    flat_binder_object::read_from_prefix(data).map_err(|_| errno!(EINVAL))?;
+                    binder_fd_object::read_from_prefix(data).map_err(|_| errno!(EINVAL))?;
                 Ok(Self::File {
                     // SAFETY: Union read.
-                    fd: FdNumber::from_raw(unsafe { object.__bindgen_anon_1.handle } as i32),
-                    flags: BinderObjectFlags::parse(object.flags)?,
+                    fd: FdNumber::from_raw(unsafe { object.__bindgen_anon_1.fd } as i32),
+                    flags: BinderObjectFlags::parse(object.pad_flags)?,
                     cookie: object.cookie,
                 })
             }
@@ -5259,10 +5259,10 @@ impl SerializedBinderObject {
                 .ok()
             }
             SerializedBinderObject::File { fd, flags, cookie } => {
-                struct_with_union_into_bytes!(flat_binder_object {
+                struct_with_union_into_bytes!(binder_fd_object {
                     hdr.type_: BINDER_TYPE_FD,
-                    __bindgen_anon_1.handle: fd.raw() as u32,
-                    flags: flags.bits(),
+                    __bindgen_anon_1.fd: fd.raw() as u32,
+                    pad_flags: flags.bits(),
                     cookie: cookie,
                 })
                 .write_to_prefix(data)
@@ -6520,11 +6520,11 @@ pub mod tests {
         .write_to(&mut output)
         .expect("write fd");
         assert_eq!(
-            struct_with_union_into_bytes!(flat_binder_object {
+            struct_with_union_into_bytes!(binder_fd_object {
                 hdr.type_: BINDER_TYPE_FD,
-                flags: 42,
+                pad_flags: 42,
                 cookie: 99,
-                __bindgen_anon_1.handle: 2,
+                __bindgen_anon_1.fd: 2,
             }),
             output
         );
@@ -6645,11 +6645,11 @@ pub mod tests {
 
     #[fuchsia::test]
     fn deserialize_binder_fd() {
-        let input = struct_with_union_into_bytes!(flat_binder_object {
+        let input = struct_with_union_into_bytes!(binder_fd_object {
             hdr.type_: BINDER_TYPE_FD,
-            flags: 42,
+            pad_flags: 42,
             cookie: 99,
-            __bindgen_anon_1.handle: 2,
+            __bindgen_anon_1.fd: 2,
         });
         assert_eq!(
             SerializedBinderObject::from_bytes(&input).expect("read handle"),
@@ -6711,11 +6711,11 @@ pub mod tests {
 
     #[fuchsia::test]
     fn deserialize_input_too_small() {
-        let input = struct_with_union_into_bytes!(flat_binder_object {
+        let input = struct_with_union_into_bytes!(binder_fd_object {
             hdr.type_: BINDER_TYPE_FD,
-            flags: 42,
+            pad_flags: 42,
             cookie: 99,
-            __bindgen_anon_1.handle: 2,
+            __bindgen_anon_1.fd: 2,
         });
         SerializedBinderObject::from_bytes(&input[..std::mem::size_of::<binder_uintptr_t>()])
             .expect_err("read buffer too small");
@@ -8520,11 +8520,11 @@ pub mod tests {
 
             // Send the fd in a transaction. `flags` and `cookie` are set so that we can ensure binder
             // driver doesn't touch them/passes them through.
-            let mut transaction_data = struct_with_union_into_bytes!(flat_binder_object {
+            let mut transaction_data = struct_with_union_into_bytes!(binder_fd_object {
                 hdr.type_: BINDER_TYPE_FD,
-                flags: 42,
+                pad_flags: 42,
                 cookie: 51,
-                __bindgen_anon_1.handle: sender_fd.raw() as u32,
+                __bindgen_anon_1.fd: sender_fd.raw() as u32,
             });
             let offsets = [0];
 
@@ -8576,11 +8576,11 @@ pub mod tests {
                 "FDs from sender and receiver don't point to the same file"
             );
 
-            let expected_transaction_data = struct_with_union_into_bytes!(flat_binder_object {
+            let expected_transaction_data = struct_with_union_into_bytes!(binder_fd_object {
                 hdr.type_: BINDER_TYPE_FD,
-                flags: 42,
+                pad_flags: 42,
                 cookie: 51,
-                __bindgen_anon_1.handle: receiver_fd.raw() as u32,
+                __bindgen_anon_1.fd: receiver_fd.raw() as u32,
             });
 
             assert_eq!(expected_transaction_data, transaction_data);
@@ -8612,11 +8612,11 @@ pub mod tests {
 
             // Send the fd in a transaction. `flags` and `cookie` are set so that we can ensure binder
             // driver doesn't touch them/passes them through.
-            let mut transaction_data = struct_with_union_into_bytes!(flat_binder_object {
+            let mut transaction_data = struct_with_union_into_bytes!(binder_fd_object {
                 hdr.type_: BINDER_TYPE_FD,
-                flags: 42,
+                pad_flags: 42,
                 cookie: 51,
-                __bindgen_anon_1.handle: sender_fd.raw() as u32,
+                __bindgen_anon_1.fd: sender_fd.raw() as u32,
             });
             let offsets = [0];
 
@@ -8649,11 +8649,11 @@ pub mod tests {
                 .cloned()
                 .expect("receiver should have FD");
 
-            let expected_transaction_data = struct_with_union_into_bytes!(flat_binder_object {
+            let expected_transaction_data = struct_with_union_into_bytes!(binder_fd_object {
                 hdr.type_: BINDER_TYPE_FD,
-                flags: 42,
+                pad_flags: 42,
                 cookie: 51,
-                __bindgen_anon_1.handle: receiver_fd.raw() as u32,
+                __bindgen_anon_1.fd: receiver_fd.raw() as u32,
             });
 
             assert_eq!(expected_transaction_data, transaction_data);
@@ -8677,11 +8677,11 @@ pub mod tests {
                 current_task.add_file(locked, file, FdFlags::CLOEXEC).expect("add file");
 
             // Send the fd in a transaction.
-            let mut transaction_data = struct_with_union_into_bytes!(flat_binder_object {
+            let mut transaction_data = struct_with_union_into_bytes!(binder_fd_object {
                 hdr.type_: BINDER_TYPE_FD,
-                flags: 0,
+                pad_flags: 0,
                 cookie: 0,
-                __bindgen_anon_1.handle: sender_fd.raw() as u32,
+                __bindgen_anon_1.fd: sender_fd.raw() as u32,
             });
             let offsets = [0];
 

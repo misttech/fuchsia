@@ -150,6 +150,7 @@ AUTO_DERIVE_TRAITS = [
         r"audit_status.*",
         ["Copy", "Clone", "FromBytes", "IntoBytes", "KnownLayout", "Immutable"],
     ),
+    (r"binder_fd_object.*", ["KnownLayout", "FromBytes", "Immutable"]),
     (
         r"binder_transaction_data__bindgen_ty_2__bindgen_ty_1",
         ["IntoBytes", "FromBytes", "KnownLayout", "Immutable"],
