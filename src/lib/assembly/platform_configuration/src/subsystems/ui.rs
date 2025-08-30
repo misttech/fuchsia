@@ -18,6 +18,10 @@ impl DefineSubsystemConfiguration<PlatformUiConfig> for UiSubsystem {
         ui_config: &PlatformUiConfig,
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
+        if context.board_config.provides_feature("fuchsia::input") {
+            builder.platform_bundle("input_drivers");
+        }
+
         let visual_debugging_level: u8 = ui_config.visual_debugging_level.clone().into();
         builder.set_config_capability(
             "fuchsia.ui.VisualDebuggingLevel",

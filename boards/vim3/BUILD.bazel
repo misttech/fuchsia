@@ -156,6 +156,7 @@ _COMMON_PROVIDED_FEATURES = [
     "fuchsia::storage_power_management",
     "fuchsia::suspender",
     "fuchsia::suspending_token",
+    "fuchsia::input",
     "fuchsia::usb_host",
     "fuchsia::usb_peripheral_support",
     "fuchsia::wlan_fullmac",

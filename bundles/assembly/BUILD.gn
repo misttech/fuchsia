@@ -299,18 +299,6 @@ assembly_input_bundle("bootstrap") {
       driver_components = [ "meta/display-coordinator.cm" ]
     },
     {
-      package_target = "//src/ui/input/drivers/hid:package"
-      driver_components = [ "meta/hid.cm" ]
-    },
-    {
-      package_target = "//src/ui/input/drivers/buttons:package"
-      driver_components = [ "meta/buttons.cm" ]
-    },
-    {
-      package_target = "//src/ui/input/drivers/hid-input-report:package"
-      driver_components = [ "meta/hid-input-report.cm" ]
-    },
-    {
       package_target = "//src/devices/registers/drivers/registers:package"
       driver_components = [ "meta/registers.cm" ]
     },
@@ -326,6 +314,23 @@ assembly_input_bundle("bootstrap") {
     {
       package_target = "//src/devices/usb/drivers/usb-bus:package"
       driver_components = [ "meta/usb-bus.cm" ]
+    },
+  ]
+}
+
+assembly_input_bundle("input_drivers") {
+  boot_driver_packages = [
+    {
+      package_target = "//src/ui/input/drivers/buttons:package"
+      driver_components = [ "meta/buttons.cm" ]
+    },
+    {
+      package_target = "//src/ui/input/drivers/hid:package"
+      driver_components = [ "meta/hid.cm" ]
+    },
+    {
+      package_target = "//src/ui/input/drivers/hid-input-report:package"
+      driver_components = [ "meta/hid-input-report.cm" ]
     },
   ]
 }
