@@ -43,6 +43,7 @@ declare_args() {
           ninja = "bazel2gn"
         },
       ]
+      install_host_tool = true
     },
   ]
 
