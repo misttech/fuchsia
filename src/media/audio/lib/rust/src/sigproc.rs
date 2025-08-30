@@ -65,7 +65,7 @@ impl From<Element> for fhaudio_sigproc::Element {
     fn from(value: Element) -> Self {
         Self {
             id: Some(value.id),
-            type_: Some(value.type_.into()),
+            type_: Some(value.type_),
             type_specific: value.type_specific.map(Into::into),
             description: value.description,
             can_stop: value.can_stop,

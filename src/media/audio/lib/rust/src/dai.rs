@@ -38,7 +38,7 @@ impl FromStr for DaiFormat {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() == 0 {
+        if s.is_empty() {
             return Err("No DAI format specified.".to_string());
         };
 
@@ -354,7 +354,7 @@ impl FromStr for DaiFrameFormatCustom {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() == 0 {
+        if s.is_empty() {
             return Err("No DAI frame format specified.".to_string());
         };
 

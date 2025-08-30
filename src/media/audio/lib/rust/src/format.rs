@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result, anyhow};
 use regex::Regex;
 use std::fmt::Display;
 use std::io::{Cursor, Seek, SeekFrom, Write};
@@ -14,7 +14,7 @@ use {
     fidl_fuchsia_hardware_audio as fhaudio, fidl_fuchsia_media as fmedia,
 };
 
-pub const DURATION_REGEX: &'static str = r"^(\d+)(h|m|s|ms)$";
+pub const DURATION_REGEX: &str = r"^(\d+)(h|m|s|ms)$";
 
 // Common sample sizes.
 pub const BITS_8: NonZeroU32 = NonZeroU32::new(8).unwrap();
@@ -64,7 +64,7 @@ impl Format {
         // The File Size field of a WAV header. 32-bit int starting at position 4, represents
         // the size of the overall file minus 8 bytes (exclude RIFF description and
         // file size description)
-        let file_size_bytes: u32 = bytes_to_capture as u32 + total_header_bytes - 8;
+        let file_size_bytes: u32 = bytes_to_capture + total_header_bytes - 8;
 
         cursor_writer.seek(SeekFrom::Start(4))?;
         cursor_writer.write_all(&file_size_bytes.to_le_bytes()[..])?;
@@ -189,7 +189,7 @@ impl FromStr for Format {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Error> {
-        if s.len() == 0 {
+        if s.is_empty() {
             return Err(anyhow!("No format specified."));
         };
 
@@ -456,7 +456,7 @@ impl FromStr for SampleSize {
 pub fn parse_duration(value: &str) -> Result<Duration, String> {
     let re = Regex::new(DURATION_REGEX).map_err(|e| format!("Could not create regex: {}", e))?;
     let captures = re
-        .captures(&value)
+        .captures(value)
         .ok_or_else(|| format!("Durations must be specified in the form {}.", DURATION_REGEX))?;
     let number: u64 = captures[1].parse().map_err(|e| format!("Could not parse number: {}", e))?;
     let unit = &captures[2];
@@ -480,15 +480,9 @@ pub fn str_to_clock(src: &str) -> Result<fac::ClockType, String> {
         _ => {
             let splits: Vec<&str> = src.split(",").collect();
             if splits[0] == "custom" {
-                let rate_adjust = match splits[1].parse::<i32>() {
-                    Ok(rate_adjust) => Some(rate_adjust),
-                    Err(_) => None,
-                };
+                let rate_adjust = splits[1].parse::<i32>().ok();
 
-                let offset = match splits[2].parse::<i32>() {
-                    Ok(offset) => Some(offset),
-                    Err(_) => None,
-                };
+                let offset = splits[2].parse::<i32>().ok();
 
                 Ok(fac::ClockType::Custom(fac::CustomClockConfig {
                     rate_adjust,

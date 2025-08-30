@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_audio_controller as fac;
 use futures::TryStreamExt;
@@ -17,7 +17,7 @@ pub mod sigproc;
 #[cfg(target_os = "fuchsia")]
 pub mod vmo_buffer;
 
-pub use format::{parse_duration, str_to_clock, Format};
+pub use format::{Format, parse_duration, str_to_clock};
 pub use registry::Registry;
 #[cfg(target_os = "fuchsia")]
 pub use vmo_buffer::VmoBuffer;

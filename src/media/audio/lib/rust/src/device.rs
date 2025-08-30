@@ -114,13 +114,13 @@ impl TryFrom<(HardwareType, Option<Direction>)> for Type {
             fhaudio::DeviceType::Dai => Ok(fac::DeviceType::Dai),
             fhaudio::DeviceType::StreamConfig => Ok(
                 match direction
-                    .ok_or_else(|| format!("direction is missing for StreamConfig type"))?
+                    .ok_or_else(|| "direction is missing for StreamConfig type".to_string())?
                 {
                     Direction::Input => fac::DeviceType::Input,
                     Direction::Output => fac::DeviceType::Output,
                 },
             ),
-            _ => Err(format!("unknown device type")),
+            _ => Err("unknown device type".to_string()),
         }?;
         Ok(Self(device_type))
     }
@@ -262,7 +262,7 @@ impl TryFrom<fac::DeviceSelector> for DevfsSelector {
 
     fn try_from(value: fac::DeviceSelector) -> Result<Self, Self::Error> {
         match value {
-            fac::DeviceSelector::Devfs(devfs) => Ok(Self(devfs.into())),
+            fac::DeviceSelector::Devfs(devfs) => Ok(Self(devfs)),
             _ => Err("unknown selector type".to_string()),
         }
     }

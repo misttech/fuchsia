@@ -62,9 +62,7 @@ impl VmoBuffer {
     pub fn new(vmo: zx::Vmo, num_frames: u64, format: Format) -> Result<Self, VmoBufferError> {
         // Ensure that the VMO is big enough to hold `num_frames` of audio in the given `format`.
         let data_size_bytes = num_frames * format.bytes_per_frame() as u64;
-        let vmo_size_bytes = vmo
-            .get_size()
-            .map_err(|status| VmoBufferError::VmoGetSize(zx::Status::from(status)))?;
+        let vmo_size_bytes = vmo.get_size().map_err(VmoBufferError::VmoGetSize)?;
 
         if data_size_bytes > vmo_size_bytes {
             return Err(VmoBufferError::VmoTooSmall { data_size_bytes, vmo_size_bytes });
@@ -79,7 +77,7 @@ impl VmoBuffer {
                 // TODO(https://fxbug.dev/356700720): Don't map read-only VMOs with `PERM_WRITE`.
                 zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
             )
-            .map_err(|status| VmoBufferError::VmoMap(zx::Status::from(status)))?;
+            .map_err(VmoBufferError::VmoMap)?;
 
         log::debug!(
             "format {:?} num frames {} data_size_bytes {}",
@@ -100,7 +98,7 @@ impl VmoBuffer {
 
     /// Writes all frames from `buf` to the ring buffer at position `running_frame`.
     pub fn write_to_frame(&self, running_frame: u64, buf: &[u8]) -> Result<(), VmoBufferError> {
-        if buf.len() % self.format.bytes_per_frame() as usize != 0 {
+        if !buf.len().is_multiple_of(self.format.bytes_per_frame() as usize) {
             return Err(VmoBufferError::BufferIncompleteFrames);
         }
         let frame_offset = running_frame % self.num_frames;
@@ -110,7 +108,7 @@ impl VmoBuffer {
         // Check whether the buffer can be written to contiguously or if the write needs to be
         // split into two: one until the end of the buffer and one starting from the beginning.
         if (frame_offset + num_frames_in_buf) <= self.num_frames {
-            self.vmo.write(&buf[..], byte_offset as u64).map_err(VmoBufferError::VmoWrite)?;
+            self.vmo.write(buf, byte_offset as u64).map_err(VmoBufferError::VmoWrite)?;
             // Flush cache so that hardware reads most recent write.
             self.flush_cache(byte_offset, buf.len()).map_err(VmoBufferError::VmoFlushCache)?;
             log::debug!(
@@ -195,7 +193,7 @@ impl VmoBuffer {
         running_frame: u64,
         buf: &mut [u8],
     ) -> Result<(), VmoBufferError> {
-        if buf.len() % self.format.bytes_per_frame() as usize != 0 {
+        if !buf.len().is_multiple_of(self.format.bytes_per_frame() as usize) {
             return Err(VmoBufferError::BufferIncompleteFrames);
         }
         let frame_offset = running_frame % self.num_frames;
@@ -207,7 +205,7 @@ impl VmoBuffer {
         if (frame_offset + num_frames_in_buf) <= self.num_frames {
             // Flush and invalidate cache so we read the hardware's most recent write.
             log::debug!("frame {} reading starting from position {}", running_frame, byte_offset);
-            self.flush_invalidate_cache(byte_offset as usize, buf.len())
+            self.flush_invalidate_cache(byte_offset, buf.len())
                 .map_err(VmoBufferError::VmoFlushCache)?;
             self.vmo.read(buf, byte_offset as u64).map_err(VmoBufferError::VmoRead)?;
         } else {
@@ -287,7 +285,9 @@ impl Drop for VmoBuffer {
 
 #[derive(Error, Debug)]
 pub enum VmoBufferError {
-    #[error("VMO is too small ({vmo_size_bytes} bytes) to hold ring buffer data ({data_size_bytes} bytes)")]
+    #[error(
+        "VMO is too small ({vmo_size_bytes} bytes) to hold ring buffer data ({data_size_bytes} bytes)"
+    )]
     VmoTooSmall { data_size_bytes: u64, vmo_size_bytes: u64 },
 
     #[error("Buffer size is invalid; contains incomplete frames")]

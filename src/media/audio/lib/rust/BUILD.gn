@@ -65,6 +65,8 @@ rustc_library("fuchsia-audio") {
 
     sources += [ "src/vmo_buffer.rs" ]
   }
+
+  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
 fuchsia_unittest_package("fuchsia_audio_tests") {

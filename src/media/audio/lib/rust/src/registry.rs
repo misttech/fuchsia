@@ -4,15 +4,15 @@
 
 use crate::device::Info as DeviceInfo;
 use crate::sigproc::{Element, ElementState, Topology};
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use async_utils::event::Event as AsyncEvent;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_audio_device as fadevice;
 use fuchsia_async::Task;
+use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::lock::Mutex;
-use futures::StreamExt;
 use log::error;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -270,7 +270,7 @@ impl SignalProcessing {
             .get_elements()
             .await
             .context("failed to call GetElements")?
-            .map_err(|status| Status::from_raw(status));
+            .map_err(Status::from_raw);
 
         if let Err(Status::NOT_SUPPORTED) = response {
             return Ok(None);
@@ -294,7 +294,7 @@ impl SignalProcessing {
             .get_topologies()
             .await
             .context("failed to call GetTopologies")?
-            .map_err(|status| Status::from_raw(status));
+            .map_err(Status::from_raw);
 
         if let Err(Status::NOT_SUPPORTED) = response {
             return Ok(None);
@@ -355,7 +355,7 @@ async fn watch_element_states(
             .get_elements()
             .await
             .context("failed to call GetElements")?
-            .map_err(|status| Status::from_raw(status));
+            .map_err(Status::from_raw);
 
         if let Err(Status::NOT_SUPPORTED) = get_elements_response {
             element_states_initialized.take().unwrap().signal();
@@ -385,7 +385,7 @@ async fn watch_element_states(
             .try_into()
             .map_err(|err| anyhow!("Invalid element state: {}", err))?;
         let mut element_states = element_states.lock().await;
-        let element_states_map = element_states.get_or_insert_with(|| BTreeMap::new());
+        let element_states_map = element_states.get_or_insert_with(BTreeMap::new);
         let _ = element_states_map.insert(element_id, element_state);
 
         // Signal `element_states_initialized` once all elements have initial states.
@@ -430,6 +430,8 @@ async fn watch_topology(
 
 #[cfg(test)]
 mod test {
+    use std::rc::Rc;
+
     use super::*;
     use async_utils::hanging_get::server::{HangingGet, Publisher};
     use fidl_test_util::spawn_local_stream_handler;
@@ -465,8 +467,8 @@ mod test {
         let mut removed_broker = HangingGet::new_unknown_state(watch_device_removed_notify);
         let removed_publisher = removed_broker.new_publisher();
 
-        let added_subscriber = Arc::new(Mutex::new(added_broker.new_subscriber()));
-        let removed_subscriber = Arc::new(Mutex::new(removed_broker.new_subscriber()));
+        let added_subscriber = Rc::new(Mutex::new(added_broker.new_subscriber()));
+        let removed_subscriber = Rc::new(Mutex::new(removed_broker.new_subscriber()));
 
         let proxy = spawn_local_stream_handler(move |request| {
             let added_subscriber = added_subscriber.clone();
