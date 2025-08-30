@@ -928,5 +928,11 @@ func infraToolLogChecks() []FailureModeCheck {
 			Type:               swarmingOutputType,
 			SkipAllPassedTests: true,
 		},
+		// For https://fxbug.dev/433971550
+		&stringInLogCheck{
+			String:             "Failed 'adb pull' operation.",
+			Type:               swarmingOutputType,
+			SkipAllPassedTests: true,
+		},
 	}
 }
