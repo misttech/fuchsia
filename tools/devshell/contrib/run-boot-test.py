@@ -260,6 +260,20 @@ def main():
         default=[],
         help="Add kernel command-line arguments.",
     )
+    parser.add_argument(
+        "--test-filter",
+        metavar="TEST-NAMES",
+        action="append",
+        default=[],
+        help="Shorthand for `--cmdline=--gtest_filter=TEST-NAMES`.",
+    )
+    parser.add_argument(
+        "--count",
+        metavar="COUNT",
+        action="append",
+        default=[],
+        help="Shorthand for `--cmdline=--gtest_repeat=COUNT`.",
+    )
     modes.add_argument("--crosvm", action="store_true", help="Run via crosvm")
     parser.add_argument(
         "--crosvm-args",
@@ -391,7 +405,11 @@ def main():
         if test.efi_disk:
             cmd += ["-D", test.efi_disk]
 
-    for arg in args.cmdline:
+    for arg in (
+        args.cmdline
+        + [f"--gtest_filter={t}" for t in args.test_filter]
+        + [f"--gtest_repeat={count}" for count in args.count]
+    ):
         cmd += [
             "-p" if args.crosvm else ("--cmdline" if args.fastboot else "-c"),
             arg,
