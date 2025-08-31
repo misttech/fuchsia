@@ -882,9 +882,6 @@
                 "PtyTest.PacketModeWriteMasterToReplica",
                 "PtyTest.PacketModeWriteReplicaToMaster",
                 "PtyTest.PacketModeFailsOnReplica",
-
-                // TODO(https://fxbug.dev/437995606): Investigate and re-enable
-                "ExecTest.ReadProcMemAfterExecFromChild",
             ],
         },
         {

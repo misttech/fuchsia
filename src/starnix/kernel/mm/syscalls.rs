@@ -321,7 +321,8 @@ pub fn sys_process_vm_readv(
     // avoid doing two copies like other IPC mechanisms require. We should avoid this too at some
     // point.
     let mut output = UserBuffersOutputBuffer::unified_new(current_task, local_iov)?;
-    if current_task.has_same_address_space(&remote_task) {
+    let remote_mm = remote_task.mm().ok();
+    if current_task.has_same_address_space(remote_mm.as_ref()) {
         let mut input = UserBuffersInputBuffer::unified_new(current_task, remote_iov)?;
         output.write_buffer(&mut input)
     } else {
@@ -372,7 +373,8 @@ pub fn sys_process_vm_writev(
     // avoid doing two copies like other IPC mechanisms require. We should avoid this too at some
     // point.
     let mut input = UserBuffersInputBuffer::unified_new(current_task, local_iov)?;
-    if current_task.has_same_address_space(&remote_task) {
+    let remote_mm = remote_task.mm().ok();
+    if current_task.has_same_address_space(remote_mm.as_ref()) {
         let mut output = UserBuffersOutputBuffer::unified_new(current_task, remote_iov)?;
         output.write_buffer(&mut input)
     } else {

@@ -1086,9 +1086,14 @@ impl CurrentTask {
 
         // Passing arch32 information here ensures the replacement memory
         // layout matches the elf being executed.
-        let mm = self.mm()?;
-        mm.exec(resolved_elf.file.name.to_passive(), resolved_elf.arch_width)
-            .map_err(|status| from_status_like_fdio!(status))?;
+        let mm = {
+            let mm = self.mm()?;
+            let new_mm = mm
+                .exec(resolved_elf.file.name.to_passive(), resolved_elf.arch_width)
+                .map_err(|status| from_status_like_fdio!(status))?;
+            *self.mm.lock() = Some(new_mm.clone());
+            new_mm
+        };
 
         {
             let mut state = self.write();
