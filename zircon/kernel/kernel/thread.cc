@@ -68,8 +68,6 @@
 #include <vm/vm_address_region.h>
 #include <vm/vm_aspace.h>
 
-#include "lib/zx/time.h"
-
 #include <ktl/enforce.h>
 
 #define LOCAL_TRACE 0
@@ -95,10 +93,88 @@ KCOUNTER(thread_restricted_kick_count, "thread.restricted_kick")
 // counts the number of failed samples
 KCOUNTER(thread_sampling_failed, "thread.sampling_failed")
 
-// The global thread list. This is a lazy_init type, since initial thread code
-// manipulates the list before global constructors are run. This is initialized by
-// thread_init_early.
-static lazy_init::LazyInit<Thread::List> thread_list TA_GUARDED(Thread::get_list_lock());
+namespace {
+
+// The global thread list.  This is a lazy_init type, since initial thread code
+// manipulates the list before global constructors are run.  It's initialized
+// by thread_init_early().
+lazy_init::LazyInit<Thread::List> thread_list TA_GUARDED(Thread::get_list_lock());
+
+// ConstructFirstThread() sets up the initial thread for each CPU from its
+// running state.
+//
+// For the boot CPU, this must take care not to touch any global locks when
+// invoked by early init code that runs before global ctors are called.  The
+// thread_list is safe to mutate before global ctors are run.
+//
+// For secondary CPUs, this must use normal locking to guard both this Thread
+// object and the thread_list.
+//
+// These two modes are represented by the template argument, which is a class
+// of scoped guard objects that hold the necessary locks (or appear to).
+
+class TA_SCOPED_CAP ConstructFirstThreadBootCpu {
+ public:
+  ConstructFirstThreadBootCpu() = delete;
+  ConstructFirstThreadBootCpu(const ConstructFirstThreadBootCpu&) = delete;
+  ConstructFirstThreadBootCpu operator=(const ConstructFirstThreadBootCpu&) = delete;
+
+  // Appear to take all the locks that the secondary CPUs actually will.
+  explicit ConstructFirstThreadBootCpu(Thread* t)
+      TA_ACQ(Thread::get_list_lock(), chainlock_transaction_token, t->get_lock())
+      : thread_{t} {}
+
+  // This happens after the Thread has been fully initialized.
+  ~ConstructFirstThreadBootCpu() TA_REL() { thread_list->push_front(thread_); }
+
+ private:
+  Thread* thread_;
+};
+
+class TA_SCOPED_CAP ConstructFirstThreadSecondaryCpu {
+ public:
+  ConstructFirstThreadSecondaryCpu() = delete;
+  ConstructFirstThreadSecondaryCpu(const ConstructFirstThreadSecondaryCpu&) = delete;
+  ConstructFirstThreadBootCpu& operator=(const ConstructFirstThreadBootCpu&) = delete;
+
+  // The guard members actually hold all the necessary locks.
+  explicit ConstructFirstThreadSecondaryCpu(Thread* t)
+      TA_ACQ(Thread::get_list_lock(), chainlock_transaction_token, t->get_lock())
+      : thread_{t},
+        thread_guard_{NoIrqSaveOption, t->get_lock(), CLT_TAG("thread_construct_first")} {}
+
+  // This happens after the Thread has been fully initialized, with all the
+  // locks still held.
+  ~ConstructFirstThreadSecondaryCpu() TA_REL() { thread_list->push_front(thread_); }
+
+ private:
+  Thread* thread_;
+  Guard<SpinLock, IrqSave> list_guard_{&Thread::get_list_lock()};
+  SingleChainLockGuard<ChainLockTransaction::StateOptions::NoIrqSave> thread_guard_;
+};
+
+template <class Guards>
+void ConstructFirstThread(Thread* t, ktl::string_view name) {
+  DEBUG_ASSERT(arch_ints_disabled());
+  construct_thread(t, name);
+
+  Guards guard{t};
+
+  t->set_detached(true);
+
+  // Set up the scheduler state.
+  Scheduler::InitializeFirstThread(t);
+
+  // Start out with preemption disabled to avoid attempts to reschedule until
+  // threading is fully enabled.  This simplifies code paths shared between
+  // initialization and runtime (e.g. logging).  Preemption is enabled when the
+  // idle thread for the current CPU is ready.
+  t->preemption_state().PreemptDisable();
+
+  arch_thread_construct_first(t);
+}
+
+}  // namespace
 
 Thread::MigrateList Thread::migrate_list_;
 
@@ -167,7 +243,7 @@ void Thread::set_name(ktl::string_view name) {
   memset(name_ + name.size(), 0, ZX_MAX_NAME_LEN - name.size());
 }
 
-void construct_thread(Thread* t, const char* name) {
+void construct_thread(Thread* t, ktl::string_view name) {
   // Placement new to trigger any special construction requirements of the
   // Thread structure.
   //
@@ -1795,48 +1871,6 @@ cpu_num_t Thread::LastCpu() const {
 cpu_num_t Thread::LastCpuLocked() const { return scheduler_state_.last_cpu_; }
 
 /**
- * @brief Construct a thread t around the current running state
- *
- * This should be called once per CPU initialization.  It will create
- * a thread that is pinned to the current CPU and running at the
- * highest priority.
- */
-void thread_construct_first(Thread* t, const char* name) {
-  DEBUG_ASSERT(arch_ints_disabled());
-
-  construct_thread(t, name);
-
-  auto InitThreadState = [](Thread* const t) TA_NO_THREAD_SAFETY_ANALYSIS {
-    t->set_detached(true);
-
-    // Setup the scheduler state.
-    Scheduler::InitializeFirstThread(t);
-
-    // Start out with preemption disabled to avoid attempts to reschedule until
-    // threading is fulling enabled. This simplifies code paths shared between
-    // initialization and runtime (e.g. logging). Preemption is enabled when the
-    // idle thread for the current CPU is ready.
-    t->preemption_state().PreemptDisable();
-
-    arch_thread_construct_first(t);
-  };
-
-  // Take care not to touch any global locks when invoked by early init code
-  // that runs before global ctors are called. The thread_list is safe to mutate
-  // before global ctors are run.
-  if (lk_global_constructors_called()) {
-    Guard<SpinLock, IrqSave> list_guard{&Thread::get_list_lock()};
-    SingleChainLockGuard thread_guard{NoIrqSaveOption, t->get_lock(),
-                                      CLT_TAG("thread_construct_first")};
-    InitThreadState(t);
-    thread_list->push_front(t);
-  } else {
-    InitThreadState(t);
-    [t]() TA_NO_THREAD_SAFETY_ANALYSIS { thread_list->push_front(t); }();
-  }
-}
-
-/**
  * @brief  Initialize threading system
  *
  * This function is called once, from kmain()
@@ -1853,7 +1887,7 @@ void thread_init_early() {
 
   // create a thread to cover the current running state
   Thread* t = &percpu::Get(0).idle_power_thread.thread();
-  thread_construct_first(t, "bootstrap");
+  ConstructFirstThread<ConstructFirstThreadBootCpu>(t, "bootstrap");
 }
 
 /**
@@ -1972,7 +2006,7 @@ void Thread::SecondaryCpuInitEarly() {
 
   char name[16];
   snprintf(name, sizeof(name), "cpu_init %u", arch_curr_cpu_num());
-  thread_construct_first(this, name);
+  ConstructFirstThread<ConstructFirstThreadSecondaryCpu>(this, name);
 
   // Emitting the thread metadata usually happens during Thread::Resume(), however, cpu_init threads
   // are never resumed. Emit the metadata here so that the thread name is associated with its tid.

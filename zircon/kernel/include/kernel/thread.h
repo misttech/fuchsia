@@ -1981,12 +1981,11 @@ inline void Thread::DumpTidDuringPanic(zx_koid_t tid, bool full) TA_NO_THREAD_SA
 //
 // Normal users should only ever need to call either Thread::Create, or
 // Thread::CreateEtc.
-void construct_thread(Thread* t, const char* name);
+void construct_thread(Thread* t, ktl::string_view name);
 
 // Other thread-system bringup functions.
 void thread_init_early();
 void thread_secondary_cpu_entry() __NO_RETURN;
-void thread_construct_first(Thread* t, const char* name);
 
 // Call the arch-specific signal handler.
 extern "C" void arch_iframe_process_pending_signals(iframe_t* iframe);
