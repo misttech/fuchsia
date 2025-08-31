@@ -9,8 +9,7 @@ use crate::job::source::Seeder;
 use fidl_fuchsia_settings::{
     AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream,
     DoNotDisturbRequestStream, FactoryResetRequestStream, InputRequestStream, IntlRequestStream,
-    KeyboardRequestStream, LightRequestStream, NightModeRequestStream, PrivacyRequestStream,
-    SetupRequestStream,
+    KeyboardRequestStream, NightModeRequestStream, PrivacyRequestStream, SetupRequestStream,
 };
 use fuchsia_component::server::{ServiceFsDir, ServiceObjLocal};
 use serde::Deserialize;
@@ -231,12 +230,7 @@ impl Interface {
                                 seeder.seed(stream);
                             });
                     }
-                    Interface::Light => {
-                        let seeder = seeder.clone();
-                        let _ = service_dir.add_fidl_service(move |stream: LightRequestStream| {
-                            seeder.seed(stream);
-                        });
-                    }
+                    Interface::Light => {} // Handled in lib.rs
                     Interface::NightMode => {
                         let seeder = seeder.clone();
                         let _ =

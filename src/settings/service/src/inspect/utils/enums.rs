@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::handler::base::{Error, Response};
+use crate::handler::setting_handler::ControllerError;
 use crate::inspect::event::ResponseType;
 
 impl From<Error> for ResponseType {
@@ -30,6 +31,13 @@ impl From<Error> for ResponseType {
             Error::IrrecoverableError => ResponseType::IrrecoverableError,
             Error::TimeoutError => ResponseType::TimeoutError,
         }
+    }
+}
+
+impl From<ControllerError> for ResponseType {
+    fn from(error: ControllerError) -> Self {
+        let error = Error::from(error);
+        ResponseType::from(error)
     }
 }
 

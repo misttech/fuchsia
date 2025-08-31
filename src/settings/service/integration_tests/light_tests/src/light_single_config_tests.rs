@@ -6,7 +6,10 @@ use fidl_fuchsia_settings::{LightError, LightGroup, LightState, LightType, Light
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
 use futures::channel::mpsc;
 use futures::StreamExt;
-use light_realm::{assert_fidl_light_group_eq, assert_lights_eq, HardwareLight, LightRealm};
+use light_realm::{
+    assert_fidl_light_group_eq, assert_lights_eq, check_fidl_light_group_eq, HardwareLight,
+    LightRealm,
+};
 use std::collections::HashMap;
 
 const LIGHT_NAME_1: &str = "LED";
@@ -76,6 +79,14 @@ async fn test_light_disabled_by_mic_mute_off() {
         .expect("on event called");
 
     // Verify that the expected value is returned on a watch call.
+    let settings: LightGroup =
+        light_proxy.watch_light_group(LIGHT_NAME_1).await.expect("watch completed");
+    // We might need to call watch twice in case the watch goes through the hanging get
+    // before the event is handled.
+    if check_fidl_light_group_eq(&expected_light_group, &settings) {
+        return;
+    }
+
     let settings: LightGroup =
         light_proxy.watch_light_group(LIGHT_NAME_1).await.expect("watch completed");
     assert_fidl_light_group_eq!(&expected_light_group, &settings);

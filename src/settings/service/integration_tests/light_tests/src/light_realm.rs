@@ -7,7 +7,7 @@ use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_hardware_light::{
     Capability, Info as HardwareInfo, LightError, LightRequest, LightRequestStream, Rgb,
 };
-use fidl_fuchsia_settings::{LightMarker, LightProxy, LightValue};
+use fidl_fuchsia_settings::{LightGroup, LightMarker, LightProxy, LightValue};
 use fidl_fuchsia_ui_policy::{
     DeviceListenerRegistryMarker, DeviceListenerRegistryRequest,
     DeviceListenerRegistryRequestStream, MediaButtonsListenerProxy,
@@ -330,4 +330,16 @@ macro_rules! assert_fidl_light_group_eq {
             assert_eq!(left.lights, right.lights);
         }
     };
+}
+
+pub fn check_fidl_light_group_eq(left: &LightGroup, right: &LightGroup) -> bool {
+    left.name == right.name
+        && left.enabled == right.enabled
+        && left.type_ == right.type_
+        && left.lights.as_ref().unwrap().len() == right.lights.as_ref().unwrap().len()
+        && if left.type_ == Some(::fidl_fuchsia_settings::LightType::Simple) {
+            left.lights == right.lights
+        } else {
+            true
+        }
 }

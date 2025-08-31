@@ -4,26 +4,27 @@
 
 use crate::base::{SettingInfo, SettingType};
 use crate::config::default_settings::DefaultSetting;
-use crate::handler::base::Request;
-use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
-use crate::handler::setting_handler::{
-    self, controller, ControllerError, ControllerStateResult, SettingHandlerResult,
-};
+use crate::event::media_buttons::Event;
+use crate::handler::setting_handler::{ControllerError, ControllerStateResult};
 use crate::input::MediaButtons;
+use crate::inspect::event::SettingValuePublisher;
+use crate::light::light_fidl_handler::{GroupPublisher, InfoPublisher};
 use crate::light::light_hardware_configuration::DisableConditions;
 use crate::light::types::{LightGroup, LightInfo, LightState, LightType, LightValue};
-use crate::service_context::ExternalServiceProxy;
+use crate::service_context::{ExternalServiceProxy, ServiceContext};
 use crate::{call_async, LightHardwareConfiguration};
-use async_trait::async_trait;
 use fidl_fuchsia_hardware_light::{Info, LightMarker, LightProxy};
 use fidl_fuchsia_settings_storage::LightGroups;
+use fuchsia_async as fasync;
+use futures::channel::mpsc::UnboundedReceiver;
+use futures::channel::oneshot::{self, Sender};
 use futures::lock::Mutex;
+use futures::StreamExt;
 use settings_storage::fidl_storage::{FidlStorage, FidlStorageConvertible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
 use settings_storage::UpdateState;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::rc::Rc;
 
 /// Used as the argument field in a ControllerError::InvalidArgument to signal the FIDL handler to
@@ -66,10 +67,7 @@ impl From<LightInfo> for SettingInfo {
     }
 }
 
-pub struct LightController<F> {
-    /// Provides access to common resources and functionality for controllers.
-    client: ClientProxy,
-
+pub(crate) struct LightController {
     /// Proxy for interacting with light hardware.
     light_proxy: ExternalServiceProxy<LightProxy>,
 
@@ -86,99 +84,176 @@ pub struct LightController<F> {
     /// Disk storage for light setting. Stores in fidl format.
     store: Rc<FidlStorage>,
 
-    // Marker type for StorageFactory. Needed to manage storage factory in CreateWithAsync impl.
-    _phantom: PhantomData<F>,
+    /// HangingGet publisher for WatchLightGroups fidl api.
+    publisher: Option<InfoPublisher>,
+
+    /// HangingGet publisher for WatchLightGroup (singular) fidl api.
+    group_publishers: HashMap<String, GroupPublisher>,
+
+    /// Publisher for updates to the setting value.
+    setting_value_publisher: SettingValuePublisher<LightInfo>,
 }
 
-impl<F> StorageAccess for LightController<F> {
+pub(crate) enum Request {
+    SetLightGroupValue(String, Vec<LightState>, Sender<Result<(), ControllerError>>),
+}
+
+impl StorageAccess for LightController {
     type Storage = FidlStorage;
     type Data = LightInfo;
     const STORAGE_KEY: &'static str = LightInfo::KEY;
 }
 
-#[async_trait(?Send)]
-impl<F> data_controller::CreateWithAsync for LightController<F>
-where
-    F: StorageFactory<Storage = FidlStorage>,
-{
-    type Data = (Rc<F>, Rc<Mutex<DefaultSetting<LightHardwareConfiguration, &'static str>>>);
-    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
-        let light_hardware_config = data.1.lock().await.load_default_value().map_err(|_| {
+/// Controller for processing requests surrounding the Light protocol.
+impl LightController {
+    pub(super) async fn new<F>(
+        service_context: Rc<ServiceContext>,
+        default_setting: &mut DefaultSetting<LightHardwareConfiguration, &'static str>,
+        storage_factory: Rc<F>,
+        setting_value_publisher: SettingValuePublisher<LightInfo>,
+    ) -> Result<Self, ControllerError>
+    where
+        F: StorageFactory<Storage = FidlStorage>,
+    {
+        let light_hardware_config = default_setting.load_default_value().map_err(|_| {
             ControllerError::InitFailure("Invalid default light hardware config".into())
         })?;
 
-        LightController::create_with_config(client, data.0.as_ref(), light_hardware_config).await
+        LightController::create_with_config(
+            service_context,
+            light_hardware_config,
+            &*storage_factory,
+            setting_value_publisher,
+        )
+        .await
     }
-}
 
-#[async_trait(?Send)]
-impl<F> controller::Handle for LightController<F> {
-    async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
-        match request {
-            Request::Restore => {
-                Some(self.restore().await.map(|light_info| Some(SettingInfo::Light(light_info))))
-            }
-            Request::OnButton(MediaButtons { mic_mute: Some(mic_mute), .. }) => {
-                Some(self.on_mic_mute(mic_mute).await)
-            }
-            Request::SetLightGroupValue(name, state) => {
-                // Validate state contains valid float numbers.
-                for light_state in &state {
-                    if !light_state.is_finite() {
-                        return Some(Err(ControllerError::InvalidArgument(
-                            SettingType::Light,
-                            "state".into(),
-                            format!("{light_state:?}").into(),
-                        )));
-                    }
-                }
-                Some(self.set(name, state).await)
-            }
-            Request::Get => {
-                // Read all light values from underlying fuchsia.hardware.light before returning a
-                // value to ensure we have the latest light state.
-                // TODO(https://fxbug.dev/42134045): remove once all clients are migrated.
-                Some(self.restore().await.map(|light_info| Some(SettingInfo::Light(light_info))))
-            }
-            _ => None,
-        }
-    }
-}
-
-/// Controller for processing requests surrounding the Light protocol.
-impl<F> LightController<F>
-where
-    F: StorageFactory<Storage = FidlStorage>,
-{
     /// Alternate constructor that allows specifying a configuration.
-    pub(crate) async fn create_with_config(
-        client: ClientProxy,
-        storage_factory: &F,
+    async fn create_with_config<F>(
+        service_context: Rc<ServiceContext>,
         light_hardware_config: Option<LightHardwareConfiguration>,
-    ) -> Result<Self, ControllerError> {
-        let light_proxy = client
-            .get_service_context()
-            .connect_device_path::<LightMarker>(DEVICE_PATH)
-            .await
-            .map_err(|e| {
+        storage_factory: &F,
+        setting_value_publisher: SettingValuePublisher<LightInfo>,
+    ) -> Result<Self, ControllerError>
+    where
+        F: StorageFactory<Storage = FidlStorage>,
+    {
+        let light_proxy =
+            service_context.connect_device_path::<LightMarker>(DEVICE_PATH).await.map_err(|e| {
                 ControllerError::InitFailure(
                     format!("failed to connect to fuchsia.hardware.light with error: {e:?}").into(),
                 )
             })?;
 
         Ok(LightController {
-            client,
             light_proxy,
             light_hardware_config,
-            store: storage_factory.get_store().await,
             data_cache: Rc::new(Mutex::new(None)),
-            _phantom: PhantomData,
+            store: storage_factory.get_store().await,
+            publisher: None,
+            group_publishers: HashMap::new(),
+            setting_value_publisher,
         })
     }
-}
 
-impl<F> LightController<F> {
-    async fn set(&self, name: String, state: Vec<LightState>) -> SettingHandlerResult {
+    pub(super) fn register_publishers(
+        &mut self,
+        publisher: InfoPublisher,
+        group_publishers: HashMap<String, GroupPublisher>,
+    ) {
+        self.publisher = Some(publisher);
+        self.group_publishers = group_publishers;
+    }
+
+    fn publish(&self, info: LightInfo) {
+        let _ = self.setting_value_publisher.publish(&info);
+        let pg = info.light_groups.iter().filter_map(|(key, group)| {
+            self.group_publishers.get(key).map(|publisher| (publisher, group))
+        });
+        for (publisher, group) in pg {
+            publisher.update(|old_group| {
+                let Some(old_group) = old_group.as_mut() else {
+                    *old_group = Some(group.clone());
+                    return true;
+                };
+
+                if *old_group != *group {
+                    *old_group = group.clone();
+                    return true;
+                }
+                false
+            });
+        }
+
+        if let Some(publisher) = self.publisher.as_ref() {
+            publisher.set(info);
+        }
+    }
+
+    pub(super) async fn handle(
+        self,
+        mut event_rx: UnboundedReceiver<(
+            Event,
+            oneshot::Sender<Result<Option<()>, ControllerError>>,
+        )>,
+        mut request_rx: UnboundedReceiver<Request>,
+    ) -> Result<fasync::Task<()>, ControllerError> {
+        Ok(fasync::Task::local(async move {
+            let mut next_event = event_rx.next();
+            let mut next_request = request_rx.next();
+            'request: loop {
+                futures::select! {
+                    event = next_event => {
+                        let Some((Event::OnButton(media_buttons), response_tx)) = event else {
+                            continue;
+                        };
+                        next_event = event_rx.next();
+                        let res = if let MediaButtons { mic_mute: Some(mic_mute), .. } = media_buttons {
+                            self.on_mic_mute(mic_mute).await.map(|res| res.map(|info| self.publish(info)))
+                        } else {
+                            Ok(None)
+                        };
+                        let _ = response_tx.send(res);
+                    }
+                    request = next_request => {
+                        let Some(Request::SetLightGroupValue(name, state, tx)) = request else {
+                            continue;
+                        };
+                        next_request = request_rx.next();
+                        // Validate state contains valid float numbers.
+                        for light_state in &state {
+                            if !light_state.is_finite() {
+                                let _ = tx.send(Err(ControllerError::InvalidArgument(
+                                    SettingType::Light,
+                                    "state".into(),
+                                    format!("{light_state:?}").into(),
+                                )));
+                                continue 'request;
+                            }
+                        }
+
+                        match self.set(name, state).await {
+                            Ok(info) => {
+                                if let Some(info) = info {
+                                    self.publish(info);
+                                }
+                                let _ = tx.send(Ok(()));
+                            }
+                            Err(e) => {
+                                let _ = tx.send(Err(e));
+                            }
+                        }
+                    }
+                }
+            }
+        }))
+    }
+
+    async fn set(
+        &self,
+        name: String,
+        state: Vec<LightState>,
+    ) -> Result<Option<LightInfo>, ControllerError> {
         let mut light_info = self.data_cache.lock().await;
         // TODO(https://fxbug.dev/42058901) Deduplicate the code here and in mic_mute if possible.
         if light_info.is_none() {
@@ -233,15 +308,11 @@ impl<F> LightController<F> {
         // After the main validations, write the state to the hardware.
         self.write_light_group_to_hardware(group, &state).await?;
 
-        let state = self.store.write(current.clone()).await.map_err(|e| {
-            log::error!("Failed to write light info on set: {e:?}");
+        let _ = self.store.write(current.clone()).await.map_err(|e| {
+            log::error!("Failed to write light info: {e:?}");
             ControllerError::WriteFailure(SettingType::Light)
         })?;
-        if let UpdateState::Updated = state {
-            self.client.notify(setting_handler::Event::Changed(current.clone().into())).await;
-        }
-
-        Ok(Some(current.clone().into()))
+        Ok(Some(current.clone()))
     }
 
     /// Writes the given list of light states for a light group to the actual hardware.
@@ -303,7 +374,7 @@ impl<F> LightController<F> {
         Ok(())
     }
 
-    async fn on_mic_mute(&self, mic_mute: bool) -> SettingHandlerResult {
+    async fn on_mic_mute(&self, mic_mute: bool) -> Result<Option<LightInfo>, ControllerError> {
         let mut light_info = self.data_cache.lock().await;
         if light_info.is_none() {
             drop(light_info);
@@ -324,18 +395,17 @@ impl<F> LightController<F> {
             light.enabled = mic_mute;
         }
 
-        let state = self.store.write(current.clone()).await.map_err(|e| {
+        if let UpdateState::Updated = self.store.write(current.clone()).await.map_err(|e| {
             log::error!("Failed to write light info on mic mute: {e:?}");
             ControllerError::WriteFailure(SettingType::Light)
-        })?;
-        if let UpdateState::Updated = state {
-            self.client.notify(setting_handler::Event::Changed(current.clone().into())).await;
+        })? {
+            Ok(Some(current.clone()))
+        } else {
+            Ok(None)
         }
-
-        Ok(Some(current.clone().into()))
     }
 
-    async fn restore(&self) -> Result<LightInfo, ControllerError> {
+    pub(super) async fn restore(&self) -> Result<LightInfo, ControllerError> {
         let light_info = if let Some(config) = self.light_hardware_config.clone() {
             // Configuration is specified, restore from the configuration.
             self.restore_from_configuration(config).await
@@ -510,32 +580,18 @@ impl<F> LightController<F> {
 
 #[cfg(test)]
 mod tests {
-    use crate::handler::setting_handler::persist::ClientProxy;
-    use crate::handler::setting_handler::ClientImpl;
-    use crate::light::types::{LightInfo, LightState, LightType, LightValue};
-    use crate::message::base::MessengerType;
+    use futures::channel::mpsc;
+
+    use super::*;
+    use crate::light::light_fidl_handler::LightFidlHandler;
     use crate::storage::testing::InMemoryFidlStorageFactory;
     use crate::tests::fakes::hardware_light_service::HardwareLightService;
     use crate::tests::fakes::service_registry::ServiceRegistry;
-    use crate::{service, LightController, ServiceContext, SettingType};
-    use futures::lock::Mutex;
-    use std::rc::Rc;
 
     // Verify that a set call without a restore call succeeds. This can happen when the controller
     // is shutdown after inactivity and is brought up again to handle the set call.
     #[fuchsia::test()]
     async fn test_set_before_restore() {
-        let storage_factory = InMemoryFidlStorageFactory::new();
-        storage_factory.initialize_storage::<LightInfo>().await;
-
-        let message_hub = service::MessageHub::create_hub();
-
-        // Create the messenger that the client proxy uses to send messages.
-        let (controller_messenger, _) = message_hub
-            .create(MessengerType::Unbound)
-            .await
-            .expect("Unable to create agent messenger");
-
         // Create a fake hardware light service that responds to FIDL calls and add it to the
         // service registry so that FIDL calls are routed to this fake service.
         let service_registry = ServiceRegistry::create();
@@ -552,25 +608,30 @@ mod tests {
             .insert_light(0, "light_1".to_string(), LightType::Simple, LightValue::Simple(false))
             .await;
 
-        // This isn't actually the signature for the notifier, but it's unused in this test, so just
-        // provide the signature of its own messenger to the client proxy.
-        let signature = controller_messenger.get_signature();
+        let storage_factory = InMemoryFidlStorageFactory::new();
+        storage_factory.initialize_storage::<LightInfo>().await;
 
-        let base_proxy = ClientImpl::for_test(
-            Default::default(),
-            controller_messenger,
-            signature,
-            Rc::new(service_context),
-            SettingType::Light,
-        );
-
-        let client_proxy = ClientProxy::new(Rc::new(base_proxy), SettingType::Light).await;
+        let (tx, _rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(tx);
 
         // Create the light controller.
-        let light_controller =
-            LightController::create_with_config(client_proxy, &storage_factory, None)
-                .await
-                .expect("Failed to create light controller");
+        let mut light_controller = LightController::create_with_config(
+            Rc::new(service_context),
+            None,
+            &storage_factory,
+            setting_value_publisher,
+        )
+        .await
+        .expect("Failed to create light controller");
+        let info = light_controller.restore().await.unwrap();
+        let (info_hanging_get, group_hanging_gets) = LightFidlHandler::build_hanging_gets(info);
+        light_controller.register_publishers(
+            info_hanging_get.new_publisher(),
+            group_hanging_gets
+                .iter()
+                .map(|(key, hanging_get)| (key.clone(), hanging_get.new_publisher()))
+                .collect(),
+        );
 
         // Call set and verify it succeeds.
         let _ = light_controller
@@ -587,17 +648,6 @@ mod tests {
     // controller is shutdown after inactivity and is brought up again to handle the set call.
     #[fuchsia::test()]
     async fn test_on_mic_mute_before_restore() {
-        let storage_factory = InMemoryFidlStorageFactory::new();
-        storage_factory.initialize_storage::<LightInfo>().await;
-
-        let message_hub = service::MessageHub::create_hub();
-
-        // Create the messenger that the client proxy uses to send messages.
-        let (controller_messenger, _) = message_hub
-            .create(MessengerType::Unbound)
-            .await
-            .expect("Unable to create agent messenger");
-
         // Create a fake hardware light service that responds to FIDL calls and add it to the
         // service registry so that FIDL calls are routed to this fake service.
         let service_registry = ServiceRegistry::create();
@@ -614,25 +664,30 @@ mod tests {
             .insert_light(0, "light_1".to_string(), LightType::Simple, LightValue::Simple(false))
             .await;
 
-        // This isn't actually the signature for the notifier, but it's unused in this test, so just
-        // provide the signature of its own messenger to the client proxy.
-        let signature = controller_messenger.get_signature();
+        let storage_factory = InMemoryFidlStorageFactory::new();
+        storage_factory.initialize_storage::<LightInfo>().await;
 
-        let base_proxy = ClientImpl::for_test(
-            Default::default(),
-            controller_messenger,
-            signature,
-            Rc::new(service_context),
-            SettingType::Light,
-        );
-
-        let client_proxy = ClientProxy::new(Rc::new(base_proxy), SettingType::Light).await;
+        let (tx, _rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(tx);
 
         // Create the light controller.
-        let light_controller =
-            LightController::create_with_config(client_proxy, &storage_factory, None)
-                .await
-                .expect("Failed to create light controller");
+        let mut light_controller = LightController::create_with_config(
+            Rc::new(service_context),
+            None,
+            &storage_factory,
+            setting_value_publisher,
+        )
+        .await
+        .expect("Failed to create light controller");
+        let info = light_controller.restore().await.unwrap();
+        let (info_hanging_get, group_hanging_gets) = LightFidlHandler::build_hanging_gets(info);
+        light_controller.register_publishers(
+            info_hanging_get.new_publisher(),
+            group_hanging_gets
+                .iter()
+                .map(|(key, hanging_get)| (key.clone(), hanging_get.new_publisher()))
+                .collect(),
+        );
 
         // Call on_mic_mute and verify it succeeds.
         let _ = light_controller.on_mic_mute(false).await.expect("Set call failed");

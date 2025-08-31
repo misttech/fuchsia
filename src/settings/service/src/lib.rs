@@ -13,17 +13,20 @@ use audio::types::AudioInfo;
 use audio::AudioInfoLoader;
 use display::display_controller::DisplayInfoLoader;
 use fidl_fuchsia_io::DirectoryProxy;
+use fidl_fuchsia_settings::LightRequestStream;
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
 #[cfg(test)]
 use fuchsia_component::server::ProtocolConnector;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObjLocal};
 use fuchsia_inspect::component;
-use futures::channel::mpsc::{self, UnboundedSender};
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
+use inspect::event::{SettingValuePublisher, UsageEvent, UsagePublisher};
 #[cfg(test)]
 use log as _;
+use service_context::ExternalServiceEvent;
 use settings_storage::device_storage::DeviceStorage;
 use settings_storage::fidl_storage::FidlStorage;
 use settings_storage::storage_factory::{FidlStorageFactory, StorageFactory};
@@ -514,15 +517,34 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             .active_listener_inspect_logger
             .unwrap_or_else(|| Rc::new(ListenerInspectLogger::new()));
 
+        let RegistrationResult {
+            media_buttons_event_txs,
+            setting_value_rx,
+            external_event_rx,
+            usage_event_rx,
+            tasks,
+        } = Self::register_controllers(
+            &settings,
+            Rc::clone(&service_context),
+            fidl_storage_factory,
+            self.light_configuration,
+            &mut service_dir,
+            Rc::clone(&listener_logger),
+        )
+        .await;
+        for task in tasks {
+            task.detach();
+        }
+
+        self.media_buttons_event_txs.extend(media_buttons_event_txs);
+
         EnvironmentBuilder::register_setting_handlers(
             &settings,
             Rc::clone(&self.storage_factory),
-            Rc::clone(&fidl_storage_factory),
             &flags,
             self.display_configuration.map(DisplayInfoLoader::new),
             self.audio_configuration.map(AudioInfoLoader::new),
             self.input_configuration,
-            self.light_configuration,
             &mut handler_factory,
         )
         .await;
@@ -537,6 +559,9 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             agent_types,
             self.agent_blueprints,
             self.media_buttons_event_txs,
+            setting_value_rx,
+            external_event_rx,
+            usage_event_rx,
         );
 
         let job_manager_signature = Manager::spawn(&delegate).await;
@@ -604,22 +629,91 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 
         environment.connector.ok_or_else(|| format_err!("connector not created"))
     }
+}
+
+struct RegistrationResult {
+    media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+    setting_value_rx: UnboundedReceiver<(&'static str, String)>,
+    external_event_rx: UnboundedReceiver<ExternalServiceEvent>,
+    usage_event_rx: UnboundedReceiver<UsageEvent>,
+    tasks: Vec<fasync::Task<()>>,
+}
+
+impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<'a, T> {
+    async fn register_controllers<F>(
+        components: &HashSet<SettingType>,
+        service_context: Rc<ServiceContext>,
+        fidl_storage_factory: Rc<F>,
+        light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
+        service_dir: &mut ServiceFsDir<'_, ServiceObjLocal<'_, ()>>,
+        listener_logger: Rc<ListenerInspectLogger>,
+    ) -> RegistrationResult
+    where
+        F: StorageFactory<Storage = FidlStorage>,
+    {
+        let (setting_value_tx, setting_value_rx) = mpsc::unbounded();
+        let (_external_event_tx, external_event_rx) = mpsc::unbounded();
+        let (usage_event_tx, usage_event_rx) = mpsc::unbounded();
+        let mut media_buttons_event_txs = vec![];
+        let mut tasks = vec![];
+        // Initialize storage for all components.
+        if components.contains(&SettingType::Light) {
+            fidl_storage_factory
+                .initialize::<LightController>()
+                .await
+                .expect("storage should still be initializing");
+        }
+
+        // Start handlers for all components.
+        if components.contains(&SettingType::Light) {
+            let mut light_configuration =
+                light_configuration.expect("Light controller requires a light configuration");
+            match self::light::setup_light_api(
+                service_context,
+                &mut light_configuration,
+                fidl_storage_factory,
+                SettingValuePublisher::new(setting_value_tx),
+                UsagePublisher::new(usage_event_tx, listener_logger),
+            )
+            .await
+            {
+                Ok(self::light::SetupResult {
+                    mut light_fidl_handler,
+                    media_buttons_event_tx,
+                    task,
+                }) => {
+                    media_buttons_event_txs.push(media_buttons_event_tx);
+                    tasks.push(task);
+                    let _ = service_dir.add_fidl_service(move |stream: LightRequestStream| {
+                        light_fidl_handler.handle_stream(stream)
+                    });
+                }
+                Err(e) => {
+                    log::error!("Failed to setup light api: {e:?}");
+                }
+            }
+        }
+
+        RegistrationResult {
+            media_buttons_event_txs,
+            setting_value_rx,
+            external_event_rx,
+            usage_event_rx,
+            tasks,
+        }
+    }
 
     /// Initializes storage and registers handler generation functions for the configured setting
     /// types.
-    async fn register_setting_handlers<F>(
+    async fn register_setting_handlers(
         components: &HashSet<SettingType>,
         device_storage_factory: Rc<T>,
-        fidl_storage_factory: Rc<F>,
         controller_flags: &HashSet<ControllerFlag>,
         display_loader: Option<DisplayInfoLoader>,
         audio_loader: Option<AudioInfoLoader>,
         input_configuration: Option<DefaultSetting<InputConfiguration, &'static str>>,
-        light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
         factory_handle: &mut SettingHandlerFactoryImpl,
-    ) where
-        F: StorageFactory<Storage = FidlStorage> + 'static,
-    {
+    ) {
         // Accessibility
         if components.contains(&SettingType::Accessibility) {
             device_storage_factory
@@ -664,26 +758,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                         DataHandler::<DisplayController>::spawn
                     },
                 ),
-            );
-        }
-
-        // Light
-        if components.contains(&SettingType::Light) {
-            let light_configuration = Rc::new(Mutex::new(
-                light_configuration.expect("Light controller requires a light configuration"),
-            ));
-            fidl_storage_factory
-                .initialize::<LightController<F>>()
-                .await
-                .expect("storage should still be initializing");
-            factory_handle.register(
-                SettingType::Light,
-                Box::new(move |context| {
-                    DataHandler::<LightController<F>>::spawn_with_async(
-                        context,
-                        (Rc::clone(&fidl_storage_factory), Rc::clone(&light_configuration)),
-                    )
-                }),
             );
         }
 
@@ -791,18 +865,27 @@ fn create_agent_blueprints(
     agent_types: HashSet<AgentType>,
     agent_blueprints: Vec<AgentCreator>,
     media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+    setting_value_rx: UnboundedReceiver<(&'static str, String)>,
+    external_event_rx: UnboundedReceiver<ExternalServiceEvent>,
+    mut usage_router_rx: UnboundedReceiver<UsageEvent>,
 ) -> Vec<AgentCreator> {
-    let (_value_event_tx, value_event_rx) = mpsc::unbounded();
-    let (_external_event_tx, external_event_rx) = mpsc::unbounded();
-    let (_proxy_event_tx, proxy_event_rx) = mpsc::unbounded();
-    let (_usage_event_tx, usage_event_rx) = mpsc::unbounded();
+    let (proxy_event_tx, proxy_event_rx) = mpsc::unbounded();
+    let (usage_event_tx, usage_event_rx) = mpsc::unbounded();
 
+    // Route general inspect requests to specific inspect agents.
+    fasync::Task::local(async move {
+        while let Some(usage_event) = usage_router_rx.next().await {
+            let _ = proxy_event_tx.unbounded_send(usage_event.clone());
+            let _ = usage_event_tx.unbounded_send(usage_event);
+        }
+    })
+    .detach();
     let media_buttons_registrar = agent_types
         .contains(&AgentType::MediaButtons)
         .then(|| agent::media_buttons::create_registrar(media_buttons_event_txs));
     let inspect_settings_values_registrar = agent_types
         .contains(&AgentType::InspectSettingValues)
-        .then(|| agent::inspect::setting_values::create_registrar(value_event_rx));
+        .then(|| agent::inspect::setting_values::create_registrar(setting_value_rx));
     let inspect_external_apis_registrar = agent_types
         .contains(&AgentType::InspectExternalApis)
         .then(|| agent::inspect::external_apis::create_registrar(external_event_rx));

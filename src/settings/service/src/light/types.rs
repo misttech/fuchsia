@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::inspect::event::Nameable;
 use crate::light::light_hardware_configuration::DisableConditions;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -9,6 +10,11 @@ use std::collections::HashMap;
 #[derive(PartialEq, Default, Debug, Clone, Serialize, Deserialize)]
 pub struct LightInfo {
     pub light_groups: HashMap<String, LightGroup>,
+}
+
+/// Name used when logging to inspect.
+impl Nameable for LightInfo {
+    const NAME: &str = "Light";
 }
 
 /// Internal representation of a light group.

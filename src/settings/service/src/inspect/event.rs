@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use super::listener_logger::ListenerInspectLogger;
-use crate::service_context::ExternalServiceEvent;
 use anyhow::{anyhow, Error};
 use futures::channel::mpsc::UnboundedSender;
 use std::cell::Cell;
@@ -19,8 +18,6 @@ pub enum Direction {
 }
 
 #[derive(Clone)]
-// TODO(https://fxbug.dev/42166874) Remove allow once used
-#[allow(dead_code)]
 pub struct UsageEvent {
     pub setting: &'static str,
     pub request_type: RequestType,
@@ -28,25 +25,21 @@ pub struct UsageEvent {
     pub id: u64,
 }
 
-// TODO(https://fxbug.dev/42166874) Remove allow once used
-#[allow(dead_code)]
 pub trait Nameable {
     const NAME: &str;
 }
 
 #[derive(Clone)]
-// TODO(https://fxbug.dev/42166874) Remove allow once used
-#[allow(dead_code)]
 pub struct UsagePublisher<T> {
     id_gen: Rc<Cell<u64>>,
-    inspect_tx: UnboundedSender<InspectEvent>,
+    inspect_tx: UnboundedSender<UsageEvent>,
     listener_logger: Rc<ListenerInspectLogger>,
     _phantom: PhantomData<T>,
 }
 
 impl<T> UsagePublisher<T> {
     pub fn new(
-        inspect_tx: UnboundedSender<InspectEvent>,
+        inspect_tx: UnboundedSender<UsageEvent>,
         listener_logger: Rc<ListenerInspectLogger>,
     ) -> Self {
         Self { id_gen: Rc::new(Cell::new(0)), inspect_tx, listener_logger, _phantom: PhantomData }
@@ -60,12 +53,12 @@ where
     pub fn request(&self, request: String, request_type: RequestType) -> UsageResponsePublisher<T> {
         let id = self.id_gen.get();
         self.id_gen.set(id.wrapping_add(1));
-        let _ = self.inspect_tx.unbounded_send(InspectEvent::Usage(UsageEvent {
+        let _ = self.inspect_tx.unbounded_send(UsageEvent {
             setting: T::NAME,
             request_type,
             direction: Direction::Request(request),
             id,
-        }));
+        });
         if let RequestType::Get = request_type {
             self.listener_logger.add_listener(T::NAME.into());
         }
@@ -85,7 +78,7 @@ where
 pub struct UsageResponsePublisher<T> {
     id: u64,
     request_type: RequestType,
-    inspect_tx: UnboundedSender<InspectEvent>,
+    inspect_tx: UnboundedSender<UsageEvent>,
     listener_logger: Rc<ListenerInspectLogger>,
     sent: bool,
     _phantom: PhantomData<T>,
@@ -96,12 +89,12 @@ where
     T: Nameable,
 {
     pub fn respond(mut self, response: String, response_type: ResponseType) {
-        let _ = self.inspect_tx.unbounded_send(InspectEvent::Usage(UsageEvent {
+        let _ = self.inspect_tx.unbounded_send(UsageEvent {
             setting: T::NAME,
             request_type: self.request_type,
             direction: Direction::Response(response, response_type),
             id: self.id,
-        }));
+        });
         if let RequestType::Get = self.request_type {
             self.listener_logger.remove_listener(T::NAME.into());
         }
@@ -118,13 +111,11 @@ impl<T> Drop for UsageResponsePublisher<T> {
 }
 
 #[derive(Copy, Clone, Debug)]
-// TODO(https://fxbug.dev/42166874) Remove allow once used
-#[allow(dead_code)]
 pub enum RequestType {
     Get,
     Set,
-    OnCameraSWState(bool),
-    OnButton(MediaButtons),
+    Camera,
+    MediaButtons,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -153,36 +144,19 @@ pub enum ResponseType {
 }
 
 #[derive(Copy, Clone, Debug)]
-// TODO(https://fxbug.dev/42166874) Remove allow once used
-#[allow(dead_code)]
 pub struct MediaButtons {
     pub mic_mute: Option<bool>,
     pub camera_disable: Option<bool>,
 }
 
 #[derive(Clone)]
-pub enum InspectEvent {
-    // TODO(https://fxbug.dev/42166874) Remove allow once used
-    #[allow(dead_code)]
-    SettingValue { setting: &'static str, value: String },
-    // TODO(https://fxbug.dev/42166874) Remove allow once used
-    #[allow(dead_code)]
-    Usage(UsageEvent),
-    // TODO(https://fxbug.dev/42166874) Remove allow once used
-    #[allow(dead_code)]
-    External(ExternalServiceEvent),
-}
-
-#[derive(Clone)]
-// TODO(https://fxbug.dev/42166874) Remove allow once used
-#[allow(dead_code)]
 pub struct SettingValuePublisher<T> {
-    tx: UnboundedSender<InspectEvent>,
+    tx: UnboundedSender<(&'static str, String)>,
     _phantom: PhantomData<T>,
 }
 
 impl<T> SettingValuePublisher<T> {
-    pub fn new(tx: UnboundedSender<InspectEvent>) -> Self {
+    pub fn new(tx: UnboundedSender<(&'static str, String)>) -> Self {
         Self { tx, _phantom: PhantomData }
     }
 }
@@ -193,10 +167,7 @@ where
 {
     pub fn publish(&self, value: &T) -> Result<(), Error> {
         self.tx
-            .unbounded_send(InspectEvent::SettingValue {
-                setting: T::NAME,
-                value: format!("{value:?}"),
-            })
+            .unbounded_send((T::NAME, format!("{value:?}")))
             .map_err(|e| anyhow!("Unable to send setting_value update: {e:?}"))
     }
 }

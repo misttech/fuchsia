@@ -207,7 +207,13 @@ impl SettingValuesInspectAgent {
         let agent = Self {
             messenger_client,
             setting_values: ManagedInspectMap::<SettingValuesInspectInfo>::with_node(inspect_node),
-            setting_types: context.available_components.clone(),
+            setting_types: context
+                .available_components
+                .iter()
+                // Filter out settings that submit via new channel.
+                .filter(|t| **t != SettingType::Light)
+                .copied()
+                .collect(),
             _setting_types_inspect_info: setting_types_inspect_info,
         };
 
