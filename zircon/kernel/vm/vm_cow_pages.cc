@@ -1406,7 +1406,8 @@ bool VmCowPages::DedupZeroPage(vm_page_t* page, uint64_t offset) {
       __UNINITIALIZED auto result =
           BeginAddPageWithSlotLocked(offset, page_or_marker, CanOverwriteContent::NonZero);
       DEBUG_ASSERT(result.is_ok());
-      old_page = CompleteAddPageLocked(*result, VmPageOrMarker::Marker(), &deferred);
+      old_page = CompleteAddPageLocked(*result, VmPageOrMarker::Marker(), ParentContent::Unknown,
+                                       &deferred);
     }
     DEBUG_ASSERT(old_page.IsPage());
 
@@ -2415,7 +2416,8 @@ zx_status_t VmCowPages::CheckOverwriteConditionsLocked(uint64_t offset, VmPageOr
 }
 
 VmPageOrMarker VmCowPages::CompleteAddPageLocked(AddPageTransaction& transaction,
-                                                 VmPageOrMarker&& p, DeferredOps* deferred) {
+                                                 VmPageOrMarker&& p, ParentContent parent,
+                                                 DeferredOps* deferred) {
   if (p.IsPage()) {
     LTRACEF("vmo %p, offset %#" PRIx64 ", page %p (%#" PRIxPTR ")\n", this, transaction.offset(),
             p.Page(), p.Page()->paddr());
@@ -2461,8 +2463,11 @@ VmPageOrMarker VmCowPages::CompleteAddPageLocked(AddPageTransaction& transaction
         // modification to this hierarchy, which we know is true because a non-null |deferred| was
         // passed in.
       } else {
-        // other mappings may have covered this offset into the vmo, so unmap those ranges
-        const RangeChangeOp op = transaction.overwrite() == CanOverwriteContent::NonZero
+        // other mappings may have covered this offset into the vmo, so unmap those ranges.
+        // If we are both overwriting zero content *and* the caller has promised us that any visible
+        // parent contains zero content, then we can use a more optimal unmap request.
+        const RangeChangeOp op = transaction.overwrite() == CanOverwriteContent::NonZero ||
+                                         parent == ParentContent::Unknown
                                      ? RangeChangeOp::Unmap
                                      : RangeChangeOp::UnmapZeroPage;
         RangeChangeUpdateLocked(VmCowRange(transaction.offset(), PAGE_SIZE), op, deferred);
@@ -2492,7 +2497,7 @@ zx::result<VmPageOrMarker> VmCowPages::AddPageLocked(uint64_t offset, VmPageOrMa
     }
     return result.take_error();
   }
-  return zx::ok(CompleteAddPageLocked(*result, ktl::move(p), deferred));
+  return zx::ok(CompleteAddPageLocked(*result, ktl::move(p), ParentContent::Unknown, deferred));
 }
 
 zx_status_t VmCowPages::AddNewPageLocked(uint64_t offset, vm_page_t* page,
@@ -2532,7 +2537,8 @@ VmPageOrMarker VmCowPages::CompleteAddNewPageLocked(AddPageTransaction& transact
     DEBUG_ASSERT(zero || IsZeroPage(page));
     UpdateDirtyStateLocked(page, transaction.offset(), DirtyState::Clean, /*is_pending_add=*/true);
   }
-  return CompleteAddPageLocked(transaction, VmPageOrMarker::Page(page), deferred);
+  return CompleteAddPageLocked(transaction, VmPageOrMarker::Page(page), ParentContent::Unknown,
+                               deferred);
 }
 
 zx_status_t VmCowPages::AddNewPagesLocked(uint64_t start_offset, list_node_t* pages,
@@ -2643,8 +2649,9 @@ zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, list_node_t* alloc_l
   // If the new page is different from the original page, then we must remove the original page
   // from any mappings that reference this node or its descendants.
   const bool do_range_update = (*out_page != page);
-  [[maybe_unused]] VmPageOrMarker prev_content = CompleteAddPageLocked(
-      *page_transaction, VmPageOrMarker::Page(*out_page), do_range_update ? &deferred : nullptr);
+  [[maybe_unused]] VmPageOrMarker prev_content =
+      CompleteAddPageLocked(*page_transaction, VmPageOrMarker::Page(*out_page),
+                            ParentContent::Unknown, do_range_update ? &deferred : nullptr);
   // We should not have been trying to fork at this offset if something already existed.
   DEBUG_ASSERT(prev_content.IsEmpty() || prev_content.IsParentContent());
   // Transaction completed successfully, so it should no longer be cancelled.
@@ -3345,8 +3352,9 @@ VmCowPages::LookupCursor::TargetAllocateCopyPageAsResult(vm_page_t* source, Dirt
     return page_transaction.take_error();
   }
 
-  [[maybe_unused]] VmPageOrMarker old =
-      target_->CompleteAddPageLocked(*page_transaction, VmPageOrMarker::Page(out_page), &deferred);
+  [[maybe_unused]] VmPageOrMarker old = target_->CompleteAddPageLocked(
+      *page_transaction, VmPageOrMarker::Page(out_page),
+      source == vm_get_zero_page() ? ParentContent::Zero : ParentContent::Unknown, &deferred);
   DEBUG_ASSERT(!old.IsPageOrRef());
 
   // If asked to explicitly mark zero forks, and this is actually fork of the zero page, move to the
@@ -5925,7 +5933,8 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
         // so we use AddPageLocked().
         // We only want to populate offsets that have true absence of content, so do not overwrite
         // anything in the page list.
-        old_page = CompleteAddPageLocked(*page_transaction, ktl::move(src_page), nullptr);
+        old_page = CompleteAddPageLocked(*page_transaction, ktl::move(src_page),
+                                         ParentContent::Unknown, nullptr);
       }
     }
     // If the content overwrite policy was None, the old page should be empty.
@@ -7297,7 +7306,8 @@ zx_status_t VmCowPages::ReplacePageLocked(vm_page_t* before_page, uint64_t offse
     // clean up any internal structures, so BeginAddPageWithSlotLocked() didn't need to allocate, so
     // we know that BeginAddPageWithSlotLocked() will succeed.
     DEBUG_ASSERT(result.is_ok());
-    released_page = CompleteAddPageLocked(*result, VmPageOrMarker::Page(new_page), nullptr);
+    released_page = CompleteAddPageLocked(*result, VmPageOrMarker::Page(new_page),
+                                          ParentContent::Unknown, nullptr);
   };
 
   vm_page_t* new_page = nullptr;

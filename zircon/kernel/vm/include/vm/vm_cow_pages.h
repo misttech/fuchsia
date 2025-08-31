@@ -530,6 +530,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // See VmObjectPaged::GetLookupCursorLocked
   zx::result<LookupCursor> GetLookupCursorLocked(VmCowRange range) TA_REQ(lock());
 
+  // TODO(https://fxbug.dev/441409277): This enum and its use of the term 'Zero' needs to be
+  // rethought to avoid confusion between root and non-root VMOs.
   // Controls the type of content that can be overwritten by the Add[New]Page[s]Locked functions.
   enum class CanOverwriteContent : uint8_t {
     // Do not overwrite any kind of content, i.e. only add a page at the slot if there is true
@@ -538,6 +540,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     // Only overwrite slots that represent zeros. In the case of anonymous VMOs, both gaps and zero
     // page markers represent zeros, as the entire VMO is implicitly zero on creation. For pager
     // backed VMOs, zero page markers and zero intervals represent zeros.
+    // This definition of zero, and the checks done therein, only consider the local page list and
+    // do not consider the content of any visible parent.
     Zero,
     // Overwrite any slots, regardless of the type of content.
     NonZero,
@@ -1155,6 +1159,16 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   [[nodiscard]] zx::result<AddPageTransaction> BeginAddPageWithSlotLocked(
       uint64_t offset, VmPageOrMarkerRef slot, CanOverwriteContent overwrite) TA_REQ(lock());
 
+  // Flag for CompleteAddPageLocked to allow the caller to state whether they known, for certain,
+  // any properties of the visible parent content.
+  enum class ParentContent : bool {
+    // The caller either does not know, or does not wish to make any claims, about the visible
+    // parent content. This is always a safe choice for this flag.
+    Unknown = false,
+    // The caller knows for certain that the visible parent content was the common zero page. This
+    // cannot be checked and it is completely up to the caller to not make a mistake.
+    Zero = true,
+  };
   // Completes an add page transaction that had been started by inserting the provided page |p| into
   // the slot looked up in |transaction|. Once complete the transaction must not be used in any
   // other complete or cancel calls.
@@ -1163,11 +1177,15 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   //
   // This operation unmaps the corresponding offset from any existing mappings, unless |deferred| is
   // a |nullptr|, in which case it will skip updating mappings.
+  // If the caller *knows* that the there was no visible parent content that was no the shared zero
+  // page then ParentContent::Zero can be passed in to achieve more optimal unmaps. This method has
+  // no way to check for the correctness of that claim, so unless certain ParentContent::Unknown
+  // should be passed.
   //
   // Any previous content in the slot is returned and must be dealt with by the caller.
   [[nodiscard]] VmPageOrMarker CompleteAddPageLocked(AddPageTransaction& transaction,
-                                                     VmPageOrMarker&& p, DeferredOps* deferred)
-      TA_REQ(lock());
+                                                     VmPageOrMarker&& p, ParentContent parent,
+                                                     DeferredOps* deferred) TA_REQ(lock());
 
   // Similar to |CompleteAddPageLocked| except a |vm_page_t| is provided that is assumed to not yet
   // be in the |OBJECT| state, this page may also be optionally zeroed.
