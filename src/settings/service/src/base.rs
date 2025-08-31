@@ -22,7 +22,6 @@ use crate::ingress::fidl;
 use crate::input::types::InputInfo;
 use crate::intl::types::IntlInfo;
 use crate::keyboard::types::KeyboardInfo;
-use crate::light::types::LightInfo;
 use crate::night_mode::types::NightModeInfo;
 use crate::privacy::types::PrivacyInfo;
 use crate::setup::types::SetupInfo;
@@ -127,7 +126,6 @@ generate_inspect_with_info! {
         Audio(AudioInfo),
         Brightness(DisplayInfo),
         FactoryReset(FactoryResetInfo),
-        Light(LightInfo),
         DoNotDisturb(DoNotDisturbInfo),
         Input(InputInfo),
         Intl(IntlInfo),
@@ -171,7 +169,6 @@ conversion_impls! {
     Audio(AudioInfo) => Audio,
     Brightness(DisplayInfo) => Display,
     FactoryReset(FactoryResetInfo) => FactoryReset,
-    Light(LightInfo) => Light,
     DoNotDisturb(DoNotDisturbInfo) => DoNotDisturb,
     Input(InputInfo) => Input,
     Intl(IntlInfo) => Intl,
@@ -194,7 +191,6 @@ impl From<&SettingInfo> for SettingType {
             SettingInfo::Input(_) => SettingType::Input,
             SettingInfo::Intl(_) => SettingType::Intl,
             SettingInfo::Keyboard(_) => SettingType::Keyboard,
-            SettingInfo::Light(_) => SettingType::Light,
             SettingInfo::NightMode(_) => SettingType::NightMode,
             SettingInfo::Privacy(_) => SettingType::Privacy,
             SettingInfo::Setup(_) => SettingType::Setup,

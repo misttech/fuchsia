@@ -9,11 +9,11 @@ pub mod types;
 
 pub use light_hardware_configuration::build_light_default_settings;
 
+use self::light_controller::LightError;
 use self::light_fidl_handler::LightFidlHandler;
 use self::light_hardware_configuration::LightHardwareConfiguration;
 use crate::config::default_settings::DefaultSetting;
 use crate::event::media_buttons;
-use crate::handler::setting_handler::ControllerError;
 use crate::inspect::event::{RequestType, ResponseType, SettingValuePublisher, UsagePublisher};
 use crate::service_context::ServiceContext;
 use anyhow::{anyhow, Context, Result};
@@ -72,14 +72,13 @@ where
 fn event_request_logger(
     mut media_buttons_event_rx: UnboundedReceiver<media_buttons::Event>,
     usage_publisher: UsagePublisher<LightInfo>,
-) -> UnboundedReceiver<(media_buttons::Event, oneshot::Sender<Result<Option<()>, ControllerError>>)>
-{
+) -> UnboundedReceiver<(media_buttons::Event, oneshot::Sender<Result<Option<()>, LightError>>)> {
     let (inner_mb_event_tx, inner_mb_event_rx) = mpsc::unbounded();
     fasync::Task::local(async move {
         while let Some(event) = media_buttons_event_rx.next().await {
             let usage_responder =
                 usage_publisher.request(format!("{event:?}"), RequestType::MediaButtons);
-            let (tx, rx) = oneshot::channel::<Result<Option<()>, ControllerError>>();
+            let (tx, rx) = oneshot::channel::<Result<Option<()>, LightError>>();
             let _ = inner_mb_event_tx.unbounded_send((event, tx));
             if let Ok(res) = rx.await {
                 usage_responder.respond(
@@ -91,7 +90,7 @@ fn event_request_logger(
                             ResponseType::OkNone
                         }
                     })
-                    .unwrap_or_else(|e| ResponseType::from(e)),
+                    .unwrap_or_else(|e| ResponseType::from(&e)),
                 );
             } else {
                 usage_responder

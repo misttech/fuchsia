@@ -14,9 +14,10 @@ use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use futures::StreamExt;
 
-use crate::handler::setting_handler::ControllerError;
 use crate::inspect::event::{RequestType, ResponseType, UsagePublisher, UsageResponsePublisher};
-use crate::light::light_controller::{LightController, Request, ARG_NAME};
+use crate::light::light_controller::{
+    LightController, LightError as ControllerLightError, Request, ARG_NAME,
+};
 use crate::light::types::{LightGroup, LightInfo};
 
 pub(crate) type SubscriberObject<T> = (UsageResponsePublisher<LightInfo>, T);
@@ -122,16 +123,16 @@ impl LightFidlHandler {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum HandlerError {
     AlreadySubscribed,
     NotFound,
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(ControllerLightError),
 }
 
-impl From<HandlerError> for ResponseType {
-    fn from(error: HandlerError) -> Self {
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
         match error {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::NotFound => ResponseType::InvalidArgument,
@@ -143,7 +144,8 @@ impl From<HandlerError> for ResponseType {
 
 impl From<HandlerError> for LightError {
     fn from(error: HandlerError) -> Self {
-        if let HandlerError::Controller(ControllerError::InvalidArgument(_, argument, _)) = error {
+        if let HandlerError::Controller(ControllerLightError::InvalidArgument(argument, _)) = error
+        {
             if ARG_NAME == argument {
                 LightError::InvalidName
             } else {
@@ -172,7 +174,7 @@ impl RequestHandler {
                     self.info_subscriber.register2((usage_res, responder))
                 {
                     let e = HandlerError::AlreadySubscribed;
-                    let _ = usage_res.respond(format!("Err({e:?})"), ResponseType::from(e));
+                    let _ = usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
                     drop(responder);
                 }
             }
@@ -190,7 +192,7 @@ impl RequestHandler {
                     Err((HandlerError::NotFound, usage_res, responder))
                 };
                 if let Err((e, usage_res, responder)) = res {
-                    let _ = usage_res.respond(format!("Err({e:?})"), ResponseType::from(e));
+                    let _ = usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
                     drop(responder);
                 }
             }
@@ -200,7 +202,7 @@ impl RequestHandler {
                     RequestType::Set,
                 );
                 if let Err(e) = self.set(name, state).await {
-                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(e.clone()));
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
                     let _ = responder.send(Err(LightError::from(e)));
                 } else {
                     usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);

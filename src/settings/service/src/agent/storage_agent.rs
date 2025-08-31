@@ -251,7 +251,6 @@ where
                 SettingInfo::Input(info) => self.write(info, responder).await,
                 SettingInfo::Intl(info) => self.write(info, responder).await,
                 SettingInfo::Keyboard(info) => self.write(info, responder).await,
-                SettingInfo::Light(_) => panic!("Light goes directly to storage"),
                 SettingInfo::NightMode(info) => self.write(info, responder).await,
                 SettingInfo::Privacy(info) => self.write(info, responder).await,
                 SettingInfo::Setup(info) => self.write(info, responder).await,

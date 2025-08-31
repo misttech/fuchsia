@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::{SettingInfo, SettingType};
 use crate::config::default_settings::DefaultSetting;
 use crate::event::media_buttons::Event;
-use crate::handler::setting_handler::{ControllerError, ControllerStateResult};
 use crate::input::MediaButtons;
-use crate::inspect::event::SettingValuePublisher;
+use crate::inspect::event::{ResponseType, SettingValuePublisher};
 use crate::light::light_fidl_handler::{GroupPublisher, InfoPublisher};
 use crate::light::light_hardware_configuration::DisableConditions;
 use crate::light::types::{LightGroup, LightInfo, LightState, LightType, LightValue};
 use crate::service_context::{ExternalServiceProxy, ServiceContext};
 use crate::{call_async, LightHardwareConfiguration};
+use anyhow::{Context, Error};
 use fidl_fuchsia_hardware_light::{Info, LightMarker, LightProxy};
 use fidl_fuchsia_settings_storage::LightGroups;
 use fuchsia_async as fasync;
@@ -23,12 +22,13 @@ use futures::StreamExt;
 use settings_storage::fidl_storage::{FidlStorage, FidlStorageConvertible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
 use settings_storage::UpdateState;
+use std::borrow::Cow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/// Used as the argument field in a ControllerError::InvalidArgument to signal the FIDL handler to
-/// signal that a LightError::INVALID_NAME should be returned to the client.
+/// Used as the argument field in a LightError::InvalidArgument to signal the FIDL handler to
+/// signal that a fidl LightError::INVALID_NAME should be returned to the client.
 pub(crate) const ARG_NAME: &str = "name";
 
 /// Hardware path used to connect to light devices.
@@ -61,9 +61,29 @@ impl FidlStorageConvertible for LightInfo {
     }
 }
 
-impl From<LightInfo> for SettingInfo {
-    fn from(info: LightInfo) -> SettingInfo {
-        SettingInfo::Light(info)
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum LightError {
+    #[error("Invalid input argument for Light setting: argument:{0:?} value:{1:?}")]
+    InvalidArgument(&'static str, String),
+    #[error(
+        "Call to an external dependency {0:?} for Light setting failed. \
+         Request:{1:?}: Error:{2}"
+    )]
+    ExternalFailure(&'static str, Cow<'static, str>, Cow<'static, str>),
+    #[error("Write failed for Light setting: {0:?}")]
+    WriteFailure(Error),
+    #[error("Unexpected error: {0:?}")]
+    UnexpectedError(&'static str),
+}
+
+impl From<&LightError> for ResponseType {
+    fn from(error: &LightError) -> Self {
+        match error {
+            LightError::InvalidArgument(..) => ResponseType::InvalidArgument,
+            LightError::ExternalFailure(..) => ResponseType::ExternalFailure,
+            LightError::WriteFailure(..) => ResponseType::StorageFailure,
+            LightError::UnexpectedError(..) => ResponseType::UnexpectedError,
+        }
     }
 }
 
@@ -95,7 +115,7 @@ pub(crate) struct LightController {
 }
 
 pub(crate) enum Request {
-    SetLightGroupValue(String, Vec<LightState>, Sender<Result<(), ControllerError>>),
+    SetLightGroupValue(String, Vec<LightState>, Sender<Result<(), LightError>>),
 }
 
 impl StorageAccess for LightController {
@@ -111,13 +131,12 @@ impl LightController {
         default_setting: &mut DefaultSetting<LightHardwareConfiguration, &'static str>,
         storage_factory: Rc<F>,
         setting_value_publisher: SettingValuePublisher<LightInfo>,
-    ) -> Result<Self, ControllerError>
+    ) -> Result<Self, Error>
     where
         F: StorageFactory<Storage = FidlStorage>,
     {
-        let light_hardware_config = default_setting.load_default_value().map_err(|_| {
-            ControllerError::InitFailure("Invalid default light hardware config".into())
-        })?;
+        let light_hardware_config =
+            default_setting.load_default_value().context("loading default value")?;
 
         LightController::create_with_config(
             service_context,
@@ -134,16 +153,14 @@ impl LightController {
         light_hardware_config: Option<LightHardwareConfiguration>,
         storage_factory: &F,
         setting_value_publisher: SettingValuePublisher<LightInfo>,
-    ) -> Result<Self, ControllerError>
+    ) -> Result<Self, Error>
     where
         F: StorageFactory<Storage = FidlStorage>,
     {
-        let light_proxy =
-            service_context.connect_device_path::<LightMarker>(DEVICE_PATH).await.map_err(|e| {
-                ControllerError::InitFailure(
-                    format!("failed to connect to fuchsia.hardware.light with error: {e:?}").into(),
-                )
-            })?;
+        let light_proxy = service_context
+            .connect_device_path::<LightMarker>(DEVICE_PATH)
+            .await
+            .context("connecting to fuchsia.hardware.light")?;
 
         Ok(LightController {
             light_proxy,
@@ -192,12 +209,9 @@ impl LightController {
 
     pub(super) async fn handle(
         self,
-        mut event_rx: UnboundedReceiver<(
-            Event,
-            oneshot::Sender<Result<Option<()>, ControllerError>>,
-        )>,
+        mut event_rx: UnboundedReceiver<(Event, oneshot::Sender<Result<Option<()>, LightError>>)>,
         mut request_rx: UnboundedReceiver<Request>,
-    ) -> Result<fasync::Task<()>, ControllerError> {
+    ) -> Result<fasync::Task<()>, LightError> {
         Ok(fasync::Task::local(async move {
             let mut next_event = event_rx.next();
             let mut next_request = request_rx.next();
@@ -223,10 +237,9 @@ impl LightController {
                         // Validate state contains valid float numbers.
                         for light_state in &state {
                             if !light_state.is_finite() {
-                                let _ = tx.send(Err(ControllerError::InvalidArgument(
-                                    SettingType::Light,
-                                    "state".into(),
-                                    format!("{light_state:?}").into(),
+                                let _ = tx.send(Err(LightError::InvalidArgument(
+                                    "state",
+                                    format!("{light_state:?}"),
                                 )));
                                 continue 'request;
                             }
@@ -253,7 +266,7 @@ impl LightController {
         &self,
         name: String,
         state: Vec<LightState>,
-    ) -> Result<Option<LightInfo>, ControllerError> {
+    ) -> Result<Option<LightInfo>, LightError> {
         let mut light_info = self.data_cache.lock().await;
         // TODO(https://fxbug.dev/42058901) Deduplicate the code here and in mic_mute if possible.
         if light_info.is_none() {
@@ -262,17 +275,12 @@ impl LightController {
             light_info = self.data_cache.lock().await;
         }
 
-        let current = light_info
-            .as_mut()
-            .ok_or_else(|| ControllerError::UnexpectedError("missing data cache".into()))?;
+        let current =
+            light_info.as_mut().ok_or_else(|| LightError::UnexpectedError("missing data cache"))?;
         let mut entry = match current.light_groups.entry(name.clone()) {
             Entry::Vacant(_) => {
                 // Reject sets if the light name is not known.
-                return Err(ControllerError::InvalidArgument(
-                    SettingType::Light,
-                    ARG_NAME.into(),
-                    name.into(),
-                ));
+                return Err(LightError::InvalidArgument(ARG_NAME, name));
             }
             Entry::Occupied(entry) => entry,
         };
@@ -282,11 +290,7 @@ impl LightController {
         if state.len() != group.lights.len() {
             // If the number of light states provided doesn't match the number of lights,
             // return an error.
-            return Err(ControllerError::InvalidArgument(
-                SettingType::Light,
-                "state".into(),
-                format!("{state:?}").into(),
-            ));
+            return Err(LightError::InvalidArgument("state", format!("{state:?}")));
         }
 
         if !state.iter().filter_map(|state| state.value.clone()).all(|value| {
@@ -298,21 +302,20 @@ impl LightController {
         }) {
             // If not all the light values match the light type of this light group, return an
             // error.
-            return Err(ControllerError::InvalidArgument(
-                SettingType::Light,
-                "state".into(),
-                format!("{state:?}").into(),
-            ));
+            return Err(LightError::InvalidArgument("state", format!("{state:?}")));
         }
 
         // After the main validations, write the state to the hardware.
         self.write_light_group_to_hardware(group, &state).await?;
 
-        let _ = self.store.write(current.clone()).await.map_err(|e| {
-            log::error!("Failed to write light info: {e:?}");
-            ControllerError::WriteFailure(SettingType::Light)
-        })?;
-        Ok(Some(current.clone()))
+        self.store
+            .write(current.clone())
+            .await
+            .map(|state| match state {
+                UpdateState::Unchanged => None,
+                UpdateState::Updated => Some(current.clone()),
+            })
+            .map_err(|e| LightError::WriteFailure(e.context("writing light on set")))
     }
 
     /// Writes the given list of light states for a light group to the actual hardware.
@@ -322,7 +325,7 @@ impl LightController {
         &self,
         group: &mut LightGroup,
         state: &[LightState],
-    ) -> ControllerStateResult {
+    ) -> Result<(), LightError> {
         for (i, (light, hardware_index)) in
             state.iter().zip(group.hardware_index.iter()).enumerate()
         {
@@ -337,13 +340,10 @@ impl LightController {
                     "set_brightness_value",
                 ),
                 Some(LightValue::Rgb(rgb)) => {
-                    let value = rgb.clone().try_into().map_err(|_| {
-                        ControllerError::InvalidArgument(
-                            SettingType::Light,
-                            "value".into(),
-                            format!("{rgb:?}").into(),
-                        )
-                    })?;
+                    let value = rgb
+                        .clone()
+                        .try_into()
+                        .map_err(|_| LightError::InvalidArgument("value", format!("{rgb:?}")))?;
                     (
                         call_async!(self.light_proxy =>
                             set_rgb_value(*hardware_index, & value))
@@ -360,11 +360,10 @@ impl LightController {
                 .map_err(|e| format!("{e:?}"))
                 .and_then(|res| res.map_err(|e| format!("{e:?}")))
                 .map_err(|e| {
-                    ControllerError::ExternalFailure(
-                        SettingType::Light,
-                        "fuchsia.hardware.light".into(),
-                        format!("{method_name} for light {hardware_index}").into(),
-                        e.into(),
+                    LightError::ExternalFailure(
+                        "fuchsia.hardware.light",
+                        Cow::Owned(format!("{method_name} for light {hardware_index}")),
+                        Cow::Owned(e),
                     )
                 })?;
 
@@ -374,7 +373,7 @@ impl LightController {
         Ok(())
     }
 
-    async fn on_mic_mute(&self, mic_mute: bool) -> Result<Option<LightInfo>, ControllerError> {
+    async fn on_mic_mute(&self, mic_mute: bool) -> Result<Option<LightInfo>, LightError> {
         let mut light_info = self.data_cache.lock().await;
         if light_info.is_none() {
             drop(light_info);
@@ -382,9 +381,8 @@ impl LightController {
             light_info = self.data_cache.lock().await;
         }
 
-        let current = light_info
-            .as_mut()
-            .ok_or_else(|| ControllerError::UnexpectedError("missing data cache".into()))?;
+        let current =
+            light_info.as_mut().ok_or_else(|| LightError::UnexpectedError("missing data cache"))?;
         for light in current
             .light_groups
             .values_mut()
@@ -395,17 +393,17 @@ impl LightController {
             light.enabled = mic_mute;
         }
 
-        if let UpdateState::Updated = self.store.write(current.clone()).await.map_err(|e| {
-            log::error!("Failed to write light info on mic mute: {e:?}");
-            ControllerError::WriteFailure(SettingType::Light)
-        })? {
-            Ok(Some(current.clone()))
-        } else {
-            Ok(None)
-        }
+        self.store
+            .write(current.clone())
+            .await
+            .map(|state| match state {
+                UpdateState::Unchanged => None,
+                UpdateState::Updated => Some(current.clone()),
+            })
+            .map_err(|e| LightError::WriteFailure(e.context("writing light on mic mute")))
     }
 
-    pub(super) async fn restore(&self) -> Result<LightInfo, ControllerError> {
+    pub(super) async fn restore(&self) -> Result<LightInfo, LightError> {
         let light_info = if let Some(config) = self.light_hardware_config.clone() {
             // Configuration is specified, restore from the configuration.
             self.restore_from_configuration(config).await
@@ -424,7 +422,7 @@ impl LightController {
     async fn restore_from_configuration(
         &self,
         config: LightHardwareConfiguration,
-    ) -> Result<LightInfo, ControllerError> {
+    ) -> Result<LightInfo, LightError> {
         let current = self.store.get::<LightInfo>().await;
         let mut light_groups: HashMap<String, LightGroup> = HashMap::new();
         for group_config in config.light_groups {
@@ -466,13 +464,12 @@ impl LightController {
     /// the underlying fuchsia.hardware.Light API and turning each light into a [`LightGroup`].
     ///
     /// [`LightGroup`]: ../../light/types/struct.LightGroup.html
-    async fn restore_from_hardware(&self) -> Result<LightInfo, ControllerError> {
+    async fn restore_from_hardware(&self) -> Result<LightInfo, LightError> {
         let num_lights = call_async!(self.light_proxy => get_num_lights()).await.map_err(|e| {
-            ControllerError::ExternalFailure(
-                SettingType::Light,
-                "fuchsia.hardware.light".into(),
-                "get_num_lights".into(),
-                format!("{e:?}").into(),
+            LightError::ExternalFailure(
+                "fuchsia.hardware.light",
+                Cow::Borrowed("get_num_lights"),
+                Cow::Owned(format!("{e:?}")),
             )
         })?;
 
@@ -483,11 +480,10 @@ impl LightController {
                 .map_err(|e| format!("{e:?}"))
                 .and_then(|res| res.map_err(|e| format!("{e:?}")))
                 .map_err(|e| {
-                    ControllerError::ExternalFailure(
-                        SettingType::Light,
-                        "fuchsia.hardware.light".into(),
-                        format!("get_info for light {i}").into(),
-                        e.into(),
+                    LightError::ExternalFailure(
+                        "fuchsia.hardware.light",
+                        Cow::Owned(format!("get_info for light {i}")),
+                        Cow::Owned(e),
                     )
                 })?;
             let (name, group) = self.light_info_to_group(i, info).await?;
@@ -503,7 +499,7 @@ impl LightController {
         &self,
         index: u32,
         info: Info,
-    ) -> Result<(String, LightGroup), ControllerError> {
+    ) -> Result<(String, LightGroup), LightError> {
         let light_type: LightType = info.capability.into();
 
         let light_state = self.light_state_from_hardware_index(index, light_type).await?;
@@ -528,7 +524,7 @@ impl LightController {
         &self,
         index: u32,
         light_type: LightType,
-    ) -> Result<LightState, ControllerError> {
+    ) -> Result<LightState, LightError> {
         // Read the proper value depending on the light type.
         let value = match light_type {
             LightType::Brightness => {
@@ -538,11 +534,10 @@ impl LightController {
                     .and_then(|res| res.map_err(|e| format!("{e:?}")))
                     .map(LightValue::Brightness)
                     .map_err(|e| {
-                        ControllerError::ExternalFailure(
-                            SettingType::Light,
-                            "fuchsia.hardware.light".into(),
-                            format!("get_current_brightness_value for light {index}").into(),
-                            e.into(),
+                        LightError::ExternalFailure(
+                            "fuchsia.hardware.light",
+                            Cow::Owned(format!("get_current_brightness_value for light {index}")),
+                            Cow::Owned(e),
                         )
                     })?
             }
@@ -552,11 +547,10 @@ impl LightController {
                 .and_then(|res| res.map_err(|e| format!("{e:?}")))
                 .map(LightValue::from)
                 .map_err(|e| {
-                    ControllerError::ExternalFailure(
-                        SettingType::Light,
-                        "fuchsia.hardware.light".into(),
-                        format!("get_current_rgb_value for light {index}").into(),
-                        e.into(),
+                    LightError::ExternalFailure(
+                        "fuchsia.hardware.light",
+                        Cow::Owned(format!("get_current_rgb_value for light {index}")),
+                        Cow::Owned(e),
                     )
                 })?,
             LightType::Simple => call_async!(self.light_proxy => get_current_simple_value(index))
@@ -565,11 +559,10 @@ impl LightController {
                 .and_then(|res| res.map_err(|e| format!("{e:?}")))
                 .map(LightValue::Simple)
                 .map_err(|e| {
-                    ControllerError::ExternalFailure(
-                        SettingType::Light,
-                        "fuchsia.hardware.light".into(),
-                        format!("get_current_simple_value for light {index}").into(),
-                        e.into(),
+                    LightError::ExternalFailure(
+                        "fuchsia.hardware.light",
+                        Cow::Owned(format!("get_current_simple_value for light {index}")),
+                        Cow::Owned(e),
                     )
                 })?,
         };
