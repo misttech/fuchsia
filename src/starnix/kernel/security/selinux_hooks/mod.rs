@@ -20,6 +20,7 @@ use super::{FsNodeSecurityXattr, PermissionFlags, TaskState};
 use crate::task::{CurrentTask, FullCredentials, Task};
 use crate::vfs::{Anon, DirEntry, FileHandle, FileObject, FileSystem, FsNode, OutputBuffer};
 use audit::{Auditable, audit_decision, audit_todo_decision};
+use indexmap::IndexSet;
 use selinux::permission_check::PermissionCheck;
 use selinux::policy::FsUseType;
 use selinux::{
@@ -597,7 +598,7 @@ pub(super) struct FileObjectState {
 pub(super) struct FileSystemState {
     // Fields used prior to policy-load, to hold mount options, etc.
     mount_options: FileSystemMountOptions,
-    pending_entries: Mutex<HashSet<WeakKey<DirEntry>>>,
+    pending_entries: Mutex<IndexSet<WeakKey<DirEntry>>>,
 
     // Set once the initial policy has been loaded, taking into account `mount_options`.
     label: OnceLock<FileSystemLabel>,
@@ -605,7 +606,7 @@ pub(super) struct FileSystemState {
 
 impl FileSystemState {
     fn new(mount_options: FileSystemMountOptions) -> Self {
-        Self { mount_options, pending_entries: Mutex::new(HashSet::new()), label: OnceLock::new() }
+        Self { mount_options, pending_entries: Mutex::new(IndexSet::new()), label: OnceLock::new() }
     }
 
     /// Returns the resolved `FileSystemLabel`, or `None` if no policy has yet been loaded.
