@@ -19,6 +19,30 @@
 use crate::fscrypt_key_specifier;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+// SAFETY: The IntoBytes implementation is safe because the array size is a
+// multiple of 8, so there is no padding.
+unsafe impl IntoBytes for __BindgenOpaqueArray8<[u8; 8usize]> {
+    fn only_derive_is_allowed_to_implement_this_trait() {}
+}
+
+// SAFETY: The IntoBytes implementation is safe because the array size is a
+// multiple of 8, so there is no padding.
+unsafe impl IntoBytes for __BindgenOpaqueArray8<[u8; 16usize]> {
+    fn only_derive_is_allowed_to_implement_this_trait() {}
+}
+
+// SAFETY: The IntoBytes implementation is safe because the array size is a
+// multiple of 8, so there is no padding.
+unsafe impl IntoBytes for __BindgenOpaqueArray8<[u8; 144usize]> {
+    fn only_derive_is_allowed_to_implement_this_trait() {}
+}
+
+// SAFETY: The IntoBytes implementation is safe because the array size is a
+// multiple of 8, so there is no padding.
+unsafe impl IntoBytes for __BindgenOpaqueArray8<[u8; 272usize]> {
+    fn only_derive_is_allowed_to_implement_this_trait() {}
+}
+
 #[repr(C)]
 #[derive(
     Copy,
@@ -145,6 +169,24 @@ where
             let index = if cfg!(target_endian = "big") { bit_width as usize - 1 - i } else { i };
             unsafe { Self::raw_set_bit(this, index + bit_offset, val_bit_is_set) };
         }
+    }
+}
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+#[repr(C)]
+#[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
+pub struct __BindgenOpaqueArray<T>(pub T);
+impl<T: Copy + Default, const N: usize> Default for __BindgenOpaqueArray<[T; N]> {
+    fn default() -> Self {
+        Self([<T as Default>::default(); N])
+    }
+}
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+#[repr(C, align(8))]
+#[derive(FromBytes, Immutable, KnownLayout)]
+pub struct __BindgenOpaqueArray8<T>(pub T);
+impl<T: Copy + Default, const N: usize> Default for __BindgenOpaqueArray8<[T; N]> {
+    fn default() -> Self {
+        Self([<T as Default>::default(); N])
     }
 }
 #[repr(transparent)]
@@ -10547,7 +10589,7 @@ pub struct io_uring_sqe__bindgen_ty_6 {
     pub __bindgen_anon_1: __BindgenUnionField<io_uring_sqe__bindgen_ty_6__bindgen_ty_1>,
     pub optval: __BindgenUnionField<__u64>,
     pub cmd: __BindgenUnionField<[__u8; 0usize]>,
-    pub bindgen_union_field: [u64; 2usize],
+    pub bindgen_union_field: __BindgenOpaqueArray8<[u8; 16usize]>,
 }
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
@@ -10844,7 +10886,7 @@ pub struct io_uring_buf_ring {
 pub struct io_uring_buf_ring__bindgen_ty_1 {
     pub __bindgen_anon_1: __BindgenUnionField<io_uring_buf_ring__bindgen_ty_1__bindgen_ty_1>,
     pub __bindgen_anon_2: __BindgenUnionField<io_uring_buf_ring__bindgen_ty_1__bindgen_ty_2>,
-    pub bindgen_union_field: [u64; 2usize],
+    pub bindgen_union_field: __BindgenOpaqueArray8<[u8; 16usize]>,
 }
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
@@ -11770,52 +11812,29 @@ impl Default for group_source_req {
 }
 #[repr(C)]
 #[repr(align(4))]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct group_filter {
-    pub _bindgen_opaque_blob: [u32; 67usize],
+    pub _bindgen_opaque_blob: __BindgenOpaqueArray<[u32; 67usize]>,
 }
 #[repr(C)]
 #[repr(align(4))]
-pub struct group_filter__bindgen_ty_1 {
-    pub _bindgen_opaque_blob: [u32; 67usize],
+#[derive(Copy, Clone)]
+pub union group_filter__bindgen_ty_1 {
+    pub _bindgen_opaque_blob: __BindgenOpaqueArray<[u32; 67usize]>,
 }
 #[repr(C)]
 #[repr(align(4))]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct group_filter__bindgen_ty_1__bindgen_ty_1 {
-    pub _bindgen_opaque_blob: [u32; 67usize],
-}
-impl Default for group_filter__bindgen_ty_1__bindgen_ty_1 {
-    fn default() -> Self {
-        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
-        unsafe {
-            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
-            s.assume_init()
-        }
-    }
+    pub _bindgen_opaque_blob: __BindgenOpaqueArray<[u32; 67usize]>,
 }
 #[repr(C)]
 #[repr(align(4))]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct group_filter__bindgen_ty_1__bindgen_ty_2 {
-    pub _bindgen_opaque_blob: [u32; 35usize],
-}
-impl Default for group_filter__bindgen_ty_1__bindgen_ty_2 {
-    fn default() -> Self {
-        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
-        unsafe {
-            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
-            s.assume_init()
-        }
-    }
+    pub _bindgen_opaque_blob: __BindgenOpaqueArray<[u32; 35usize]>,
 }
 impl Default for group_filter__bindgen_ty_1 {
-    fn default() -> Self {
-        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
-        unsafe {
-            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
-            s.assume_init()
-        }
-    }
-}
-impl Default for group_filter {
     fn default() -> Self {
         let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
         unsafe {
@@ -19445,7 +19464,7 @@ pub struct fastrpc_ioctl_capability {
 #[repr(align(8))]
 #[derive(Debug, Default)]
 pub struct StdAtomicI64 {
-    pub _bindgen_opaque_blob: u64,
+    pub _bindgen_opaque_blob: __BindgenOpaqueArray8<[u8; 8usize]>,
 }
 #[repr(C)]
 #[repr(align(4))]
@@ -19457,7 +19476,7 @@ pub struct StdAtomicU32 {
 #[repr(align(8))]
 #[derive(Debug, Default)]
 pub struct StdAtomicU64 {
-    pub _bindgen_opaque_blob: u64,
+    pub _bindgen_opaque_blob: __BindgenOpaqueArray8<[u8; 8usize]>,
 }
 #[repr(C)]
 #[derive(Debug, Default)]

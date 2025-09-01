@@ -704,13 +704,13 @@ pub struct SignalEventValue(pub u64);
 
 impl From<sigval_t> for SignalEventValue {
     fn from(value: sigval_t) -> Self {
-        SignalEventValue(unsafe { value._bindgen_opaque_blob })
+        SignalEventValue(zerocopy::transmute!(unsafe { value._bindgen_opaque_blob }))
     }
 }
 
 impl From<SignalEventValue> for sigval_t {
     fn from(value: SignalEventValue) -> Self {
-        Self { _bindgen_opaque_blob: value.0 }
+        Self { _bindgen_opaque_blob: zerocopy::transmute!(value.0) }
     }
 }
 

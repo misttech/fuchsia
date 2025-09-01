@@ -36,6 +36,19 @@ use crate::fscrypt_key_specifier;
 """
 )
 
+for s in [8, 16, 144, 272]:
+    RAW_LINES += (
+        """
+// SAFETY: The IntoBytes implementation is safe because the array size is a
+// multiple of 8, so there is no padding.
+unsafe impl IntoBytes for __BindgenOpaqueArray8<[u8; %dusize]> {
+    fn only_derive_is_allowed_to_implement_this_trait() {
+    }
+}
+"""
+        % s
+    )
+
 PTR_TYPES = """
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd, IntoBytes, FromBytes, KnownLayout, Immutable)]
@@ -107,7 +120,6 @@ impl<T> From<uref32<T>> for uref<T> {
         Self { addr: ur.addr.into(), _phantom: Default::default() }
     }
 }
-
 """
 
 # Tell bindgen not to produce records for these types.
@@ -141,6 +153,14 @@ AUTO_DERIVE_TRAITS = [
     (
         r"__BindgenUnionField",
         ["IntoBytes", "FromBytes", "KnownLayout", "Immutable"],
+    ),
+    (
+        r"__BindgenOpaqueArray$",
+        ["IntoBytes", "FromBytes", "KnownLayout", "Immutable"],
+    ),
+    (
+        r"__BindgenOpaqueArray8$",
+        ["FromBytes", "KnownLayout", "Immutable"],
     ),
     (
         r"__sifields__bindgen_ty_(2|3|7)",

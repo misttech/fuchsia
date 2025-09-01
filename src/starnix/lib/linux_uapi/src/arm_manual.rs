@@ -250,7 +250,8 @@ impl From<crate::arch32::sigval> for crate::sigval {
     fn from(sigval: crate::arch32::sigval) -> Self {
         // SAFETY: This is safe because the union has a single field.
         let bindgen_opaque_blob = unsafe { sigval._bindgen_opaque_blob };
-        Self { _bindgen_opaque_blob: bindgen_opaque_blob.into() }
+        let bindgen_opaque_blob_as_u64: u64 = bindgen_opaque_blob.into();
+        Self { _bindgen_opaque_blob: zerocopy::transmute!(bindgen_opaque_blob_as_u64) }
     }
 }
 
@@ -259,7 +260,8 @@ impl TryFrom<crate::sigval> for crate::arch32::sigval {
     fn try_from(sigval: crate::sigval) -> Result<Self, ()> {
         // SAFETY: This is safe because the union has a single field.
         let bindgen_opaque_blob = unsafe { sigval._bindgen_opaque_blob };
-        Ok(Self { _bindgen_opaque_blob: bindgen_opaque_blob.try_into().map_err(|_| ())? })
+        let bindgen_opaque_blob_as_u64: u64 = zerocopy::transmute!(bindgen_opaque_blob);
+        Ok(Self { _bindgen_opaque_blob: bindgen_opaque_blob_as_u64.try_into().map_err(|_| ())? })
     }
 }
 
