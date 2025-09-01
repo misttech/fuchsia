@@ -8,4 +8,4 @@
 //! product-provided config.
 
 mod compile;
-pub use compile::{Args, InjectedBundle, InjectedUse, InjectedUseProtocol, compile};
+pub use compile::{Args, compile};

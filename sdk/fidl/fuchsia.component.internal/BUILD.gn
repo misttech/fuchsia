@@ -11,7 +11,6 @@ fidl("fuchsia.component.internal") {
     "component_id_index.fidl",
     "config.fidl",
     "event_stream_route_metadata.fidl",
-    "injection.fidl",
     "internal_capability.fidl",
     "sandbox.fidl",
   ]

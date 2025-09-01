@@ -155,14 +155,11 @@ pub struct HeapdumpConfig {
 
     /// Whether driver_manager and driver_host will be instrumented.
     pub driver_framework: bool,
-
-    /// Monikers that the ELF runner will inject the instrumentation into.
-    pub monikers: Vec<String>,
 }
 
 impl HeapdumpConfig {
     /// Tells if at least one program will be instrumented.
     pub fn is_enabled(&self) -> bool {
-        self.component_manager || self.driver_framework || !self.monikers.is_empty()
+        self.component_manager || self.driver_framework
     }
 }
