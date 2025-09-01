@@ -45,19 +45,19 @@ unsafe impl IntoBytes for __BindgenOpaqueArray8<[u8; 272usize]> {
 
 #[repr(C)]
 #[derive(
-    Copy,
     Clone,
+    Copy,
     Debug,
     Default,
     Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
     FromBytes,
+    Hash,
     Immutable,
     IntoBytes,
     KnownLayout,
+    Ord,
+    PartialEq,
+    PartialOrd,
 )]
 pub struct __BindgenBitfieldUnit<Storage> {
     storage: Storage,
@@ -190,7 +190,7 @@ impl<T: Copy + Default, const N: usize> Default for __BindgenOpaqueArray8<[T; N]
     }
 }
 #[repr(transparent)]
-#[derive(Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct __IncompleteArrayField<T>(::std::marker::PhantomData<T>, [T; 0]);
 impl<T> __IncompleteArrayField<T> {
     #[inline]
@@ -6416,7 +6416,7 @@ pub type __kernel_gid16_t = crate::types::arch32::c_ushort;
 pub type socklen_t = u32;
 #[repr(C)]
 #[derive(
-    Debug, Default, Copy, Clone, Eq, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq,
+    Clone, Copy, Debug, Default, Eq, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq,
 )]
 pub struct ucred {
     pub pid: __kernel_pid_t,
@@ -6445,7 +6445,7 @@ impl Default for msghdr {
 }
 #[repr(C)]
 #[derive(
-    Debug, Default, Copy, Clone, Eq, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq,
+    Clone, Copy, Debug, Default, Eq, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq,
 )]
 pub struct cmsghdr {
     pub cmsg_len: size_t,
@@ -6504,7 +6504,7 @@ pub type __sighandler_t = __signalfn_t;
 pub type __restorefn_t = crate::uaddr32;
 pub type __sigrestore_t = __restorefn_t;
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct __kernel_sigaction {
     pub sa_handler: __sighandler_t,
     pub sa_mask: sigset_t,
@@ -6512,7 +6512,7 @@ pub struct __kernel_sigaction {
     pub sa_restorer: crate::uaddr32,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub union __kernel_sigaction__bindgen_ty_1 {
     pub _sa_handler: __sighandler_t,
     pub _sa_sigaction: crate::uaddr32,
@@ -7111,7 +7111,7 @@ pub struct binder_object_header {
     pub type_: __u32,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct flat_binder_object {
     pub hdr: binder_object_header,
     pub flags: __u32,
@@ -7119,7 +7119,7 @@ pub struct flat_binder_object {
     pub cookie: binder_uintptr_t,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub union flat_binder_object__bindgen_ty_1 {
     pub binder: binder_uintptr_t,
     pub handle: __u32,
@@ -7143,7 +7143,7 @@ impl Default for flat_binder_object {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct binder_fd_object {
     pub hdr: binder_object_header,
     pub pad_flags: __u32,
@@ -7151,7 +7151,7 @@ pub struct binder_fd_object {
     pub cookie: binder_uintptr_t,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub union binder_fd_object__bindgen_ty_1 {
     pub pad_binder: binder_uintptr_t,
     pub fd: __u32,
@@ -7279,7 +7279,7 @@ pub const transaction_flags_TF_CLEAR_BUF: transaction_flags = 32;
 pub const transaction_flags_TF_UPDATE_TXN: transaction_flags = 64;
 pub type transaction_flags = crate::types::arch32::c_uint;
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct binder_transaction_data {
     pub target: binder_transaction_data__bindgen_ty_1,
     pub cookie: binder_uintptr_t,
@@ -7292,7 +7292,7 @@ pub struct binder_transaction_data {
     pub data: binder_transaction_data__bindgen_ty_2,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub union binder_transaction_data__bindgen_ty_1 {
     pub handle: __u32,
     pub ptr: binder_uintptr_t,
@@ -7307,13 +7307,13 @@ impl Default for binder_transaction_data__bindgen_ty_1 {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub union binder_transaction_data__bindgen_ty_2 {
     pub ptr: binder_transaction_data__bindgen_ty_2__bindgen_ty_1,
     pub buf: [__u8; 8usize],
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct binder_transaction_data__bindgen_ty_2__bindgen_ty_1 {
     pub buffer: binder_uintptr_t,
     pub offsets: binder_uintptr_t,
@@ -7337,7 +7337,7 @@ impl Default for binder_transaction_data {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct binder_transaction_data_secctx {
     pub transaction_data: binder_transaction_data,
     pub secctx: binder_uintptr_t,
@@ -7352,7 +7352,7 @@ impl Default for binder_transaction_data_secctx {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct binder_transaction_data_sg {
     pub transaction_data: binder_transaction_data,
     pub buffers_size: binder_size_t,
@@ -7499,7 +7499,7 @@ pub const audit_nlgrps_AUDIT_NLGRP_READLOG: audit_nlgrps = 1;
 pub const audit_nlgrps___AUDIT_NLGRP_MAX: audit_nlgrps = 2;
 pub type audit_nlgrps = crate::types::arch32::c_uint;
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct audit_status {
     pub mask: __u32,
     pub enabled: __u32,
@@ -7514,7 +7514,7 @@ pub struct audit_status {
     pub backlog_wait_time_actual: __u32,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub union audit_status__bindgen_ty_1 {
     pub version: __u32,
     pub feature_bitmap: __u32,
@@ -9576,7 +9576,7 @@ pub struct sock_filter {
     pub k: __u32,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, KnownLayout)]
 pub struct sock_fprog {
     pub len: crate::types::arch32::c_ushort,
     pub __bindgen_padding_0: [u8; 2usize],
@@ -9605,7 +9605,7 @@ pub struct fsverity_enable_arg {
     pub __reserved2: [__u64; 11usize],
 }
 #[repr(C)]
-#[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct fsverity_digest {
     pub digest_algorithm: __u16,
     pub digest_size: __u16,
@@ -9659,7 +9659,7 @@ pub struct futex_waitv {
     pub __reserved: __u32,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, KnownLayout)]
 pub struct robust_list {
     pub next: crate::uref32<robust_list>,
 }
@@ -9673,7 +9673,7 @@ impl Default for robust_list {
     }
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, KnownLayout)]
 pub struct robust_list_head {
     pub list: robust_list,
     pub futex_offset: crate::types::arch32::c_long,
@@ -9794,14 +9794,14 @@ pub struct ifmap {
     pub __bindgen_padding_0: [u8; 3usize],
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct if_settings {
     pub type_: crate::types::arch32::c_uint,
     pub size: crate::types::arch32::c_uint,
     pub ifs_ifsu: if_settings__bindgen_ty_1,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub union if_settings__bindgen_ty_1 {
     pub raw_hdlc: crate::uref32<raw_hdlc_proto>,
     pub cisco: crate::uref32<cisco_proto>,
@@ -9831,13 +9831,13 @@ impl Default for if_settings {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct ifreq {
     pub ifr_ifrn: ifreq__bindgen_ty_1,
     pub ifr_ifru: ifreq__bindgen_ty_2,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub union ifreq__bindgen_ty_1 {
     pub ifrn_name: [crate::types::arch32::c_char; 16usize],
 }
@@ -9851,7 +9851,7 @@ impl Default for ifreq__bindgen_ty_1 {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub union ifreq__bindgen_ty_2 {
     pub ifru_addr: sockaddr,
     pub ifru_dstaddr: sockaddr,
@@ -9930,7 +9930,7 @@ pub struct sockaddr_pkt {
     pub spkt_protocol: __be16,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct sockaddr_ll {
     pub sll_family: crate::types::arch32::c_ushort,
     pub sll_protocol: __be16,
@@ -10276,7 +10276,7 @@ pub struct __kernel_sock_timeval {
     pub tv_usec: __s64,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq)]
 pub struct timeval {
     pub tv_sec: __kernel_old_time_t,
     pub tv_usec: __kernel_suseconds_t,
@@ -10300,7 +10300,7 @@ pub struct timezone {
     pub tz_dsttime: crate::types::arch32::c_int,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq)]
 pub struct input_event {
     pub time: timeval,
     pub type_: __u16,
@@ -10308,7 +10308,7 @@ pub struct input_event {
     pub value: __s32,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq)]
 pub struct input_id {
     pub bustype: __u16,
     pub vendor: __u16,
@@ -11200,12 +11200,12 @@ pub const IPV4_DEVCONF_ARP_EVICT_NOCARRIER: _bindgen_ty_81 = 33;
 pub const __IPV4_DEVCONF_MAX: _bindgen_ty_81 = 34;
 pub type _bindgen_ty_81 = crate::types::arch32::c_uint;
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct in6_addr {
     pub in6_u: in6_addr__bindgen_ty_1,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub union in6_addr__bindgen_ty_1 {
     pub u6_addr8: [__u8; 16usize],
     pub u6_addr16: [__be16; 8usize],
@@ -11230,7 +11230,7 @@ impl Default for in6_addr {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct sockaddr_in6 {
     pub sin6_family: crate::types::arch32::c_ushort,
     pub sin6_port: __be16,
@@ -11284,7 +11284,7 @@ impl Default for in6_flowlabel_req {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct in6_pktinfo {
     pub ipi6_addr: in6_addr,
     pub ipi6_ifindex: crate::types::arch32::c_int,
@@ -11851,7 +11851,7 @@ pub struct in_pktinfo {
     pub ipi_addr: in_addr,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct sockaddr_in {
     pub sin_family: __kernel_sa_family_t,
     pub sin_port: __be16,
@@ -11881,7 +11881,7 @@ pub const NFPROTO_DECNET: _bindgen_ty_85 = 12;
 pub const NFPROTO_NUMPROTO: _bindgen_ty_85 = 13;
 pub type _bindgen_ty_85 = crate::types::arch32::c_uint;
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub union nf_inet_addr {
     pub all: [__u32; 4usize],
     pub ip: __be32,
@@ -11966,7 +11966,7 @@ pub const ip_conntrack_dir_IP_CT_DIR_REPLY: ip_conntrack_dir = 1;
 pub const ip_conntrack_dir_IP_CT_DIR_MAX: ip_conntrack_dir = 2;
 pub type ip_conntrack_dir = crate::types::arch32::c_uint;
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub union nf_conntrack_man_proto {
     pub all: __be16,
     pub tcp: nf_conntrack_man_proto__bindgen_ty_1,
@@ -11977,32 +11977,32 @@ pub union nf_conntrack_man_proto {
     pub gre: nf_conntrack_man_proto__bindgen_ty_6,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, KnownLayout)]
 pub struct nf_conntrack_man_proto__bindgen_ty_1 {
     pub port: __be16,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, KnownLayout)]
 pub struct nf_conntrack_man_proto__bindgen_ty_2 {
     pub port: __be16,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, KnownLayout)]
 pub struct nf_conntrack_man_proto__bindgen_ty_3 {
     pub id: __be16,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, KnownLayout)]
 pub struct nf_conntrack_man_proto__bindgen_ty_4 {
     pub port: __be16,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, KnownLayout)]
 pub struct nf_conntrack_man_proto__bindgen_ty_5 {
     pub port: __be16,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, KnownLayout)]
 pub struct nf_conntrack_man_proto__bindgen_ty_6 {
     pub key: __be16,
 }
@@ -12016,7 +12016,7 @@ impl Default for nf_conntrack_man_proto {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct nf_nat_ipv4_range {
     pub flags: crate::types::arch32::c_uint,
     pub min_ip: __be32,
@@ -12034,7 +12034,7 @@ impl Default for nf_nat_ipv4_range {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct nf_nat_ipv4_multi_range_compat {
     pub rangesize: crate::types::arch32::c_uint,
     pub range: [nf_nat_ipv4_range; 1usize],
@@ -12049,7 +12049,7 @@ impl Default for nf_nat_ipv4_multi_range_compat {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct nf_nat_range {
     pub flags: crate::types::arch32::c_uint,
     pub min_addr: nf_inet_addr,
@@ -12067,7 +12067,7 @@ impl Default for nf_nat_range {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct nf_nat_range2 {
     pub flags: crate::types::arch32::c_uint,
     pub min_addr: nf_inet_addr,
@@ -12096,7 +12096,7 @@ pub struct xt_tproxy_target_info {
     pub __bindgen_padding_0: [u8; 2usize],
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct xt_tproxy_target_info_v1 {
     pub mark_mask: __u32,
     pub mark_value: __u32,
@@ -12415,7 +12415,7 @@ pub const nf_ip6_hook_priorities_NF_IP6_PRI_CONNTRACK_HELPER: nf_ip6_hook_priori
 pub const nf_ip6_hook_priorities_NF_IP6_PRI_LAST: nf_ip6_hook_priorities = 2147483647;
 pub type nf_ip6_hook_priorities = crate::types::arch32::c_int;
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct ip6t_ip6 {
     pub src: in6_addr,
     pub dst: in6_addr,
@@ -12756,7 +12756,7 @@ pub const perf_event_read_format_PERF_FORMAT_LOST: perf_event_read_format = 16;
 pub const perf_event_read_format_PERF_FORMAT_MAX: perf_event_read_format = 32;
 pub type perf_event_read_format = crate::types::arch32::c_uint;
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable)]
+#[derive(Clone, Copy, FromBytes, Immutable)]
 pub struct perf_event_attr {
     pub type_: __u32,
     pub size: __u32,
@@ -12783,7 +12783,7 @@ pub struct perf_event_attr {
     pub config3: __u64,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable)]
+#[derive(Clone, Copy, FromBytes, Immutable)]
 pub union perf_event_attr__bindgen_ty_1 {
     pub sample_period: __u64,
     pub sample_freq: __u64,
@@ -12798,7 +12798,7 @@ impl Default for perf_event_attr__bindgen_ty_1 {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable)]
+#[derive(Clone, Copy, FromBytes, Immutable)]
 pub union perf_event_attr__bindgen_ty_2 {
     pub wakeup_events: __u32,
     pub wakeup_watermark: __u32,
@@ -12813,7 +12813,7 @@ impl Default for perf_event_attr__bindgen_ty_2 {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable)]
+#[derive(Clone, Copy, FromBytes, Immutable)]
 pub union perf_event_attr__bindgen_ty_3 {
     pub bp_addr: __u64,
     pub kprobe_func: __u64,
@@ -12830,7 +12830,7 @@ impl Default for perf_event_attr__bindgen_ty_3 {
     }
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable)]
+#[derive(Clone, Copy, FromBytes, Immutable)]
 pub union perf_event_attr__bindgen_ty_4 {
     pub bp_len: __u64,
     pub kprobe_addr: __u64,
@@ -16069,7 +16069,7 @@ pub struct seccomp_notif_addfd {
 }
 #[repr(C)]
 #[repr(align(4))]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub union sigval {
     pub _bindgen_opaque_blob: u32,
 }
@@ -16101,7 +16101,7 @@ pub struct __sifields__bindgen_ty_1 {
     pub _uid: __kernel_uid32_t,
 }
 #[repr(C)]
-#[derive(Default, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct __sifields__bindgen_ty_2 {
     pub _tid: __kernel_timer_t,
     pub _overrun: crate::types::arch32::c_int,
@@ -16109,7 +16109,7 @@ pub struct __sifields__bindgen_ty_2 {
     pub _sys_private: crate::types::arch32::c_int,
 }
 #[repr(C)]
-#[derive(Default, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct __sifields__bindgen_ty_3 {
     pub _pid: __kernel_pid_t,
     pub _uid: __kernel_uid32_t,
@@ -16193,7 +16193,7 @@ pub struct __sifields__bindgen_ty_6 {
     pub _fd: crate::types::arch32::c_int,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct __sifields__bindgen_ty_7 {
     pub _call_addr: crate::uaddr32,
     pub _syscall: crate::types::arch32::c_int,
@@ -16265,7 +16265,7 @@ impl Default for siginfo {
 }
 pub type siginfo_t = siginfo;
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub struct sigevent {
     pub sigev_value: sigval_t,
     pub sigev_signo: crate::types::arch32::c_int,
@@ -16273,14 +16273,14 @@ pub struct sigevent {
     pub _sigev_un: sigevent__bindgen_ty_1,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
 pub union sigevent__bindgen_ty_1 {
     pub _pad: [crate::types::arch32::c_int; 13usize],
     pub _tid: crate::types::arch32::c_int,
     pub _sigev_thread: sigevent__bindgen_ty_1__bindgen_ty_1,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, KnownLayout)]
 pub struct sigevent__bindgen_ty_1__bindgen_ty_1 {
     pub _function: crate::uaddr32,
     pub _attribute: crate::uaddr32,
@@ -16414,7 +16414,7 @@ pub struct sync_set_deadline {
     pub pad: __u64,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, Immutable, IntoBytes, KnownLayout)]
 pub struct sysinfo {
     pub uptime: __kernel_long_t,
     pub loads: [__kernel_ulong_t; 3usize],
@@ -17379,14 +17379,14 @@ pub const usb_functionfs_event_type_FUNCTIONFS_SUSPEND: usb_functionfs_event_typ
 pub const usb_functionfs_event_type_FUNCTIONFS_RESUME: usb_functionfs_event_type = 6;
 pub type usb_functionfs_event_type = crate::types::arch32::c_uint;
 #[repr(C, packed)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct usb_functionfs_event {
     pub u: usb_functionfs_event__bindgen_ty_1,
     pub type_: __u8,
     pub _pad: [__u8; 3usize],
 }
 #[repr(C, packed)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub union usb_functionfs_event__bindgen_ty_1 {
     pub setup: usb_ctrlrequest,
 }
@@ -17897,14 +17897,14 @@ pub struct fuse_create_in {
     pub open_flags: u32,
 }
 #[repr(C)]
-#[derive(Copy, Clone, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct fuse_open_out {
     pub fh: u64,
     pub open_flags: u32,
     pub __bindgen_anon_1: fuse_open_out__bindgen_ty_1,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub union fuse_open_out__bindgen_ty_1 {
     pub passthrough_fh: u32,
     pub backing_id: i32,
@@ -18164,7 +18164,7 @@ pub struct fuse_fallocate_in {
     pub padding: u32,
 }
 #[repr(C)]
-#[derive(Copy, Clone, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct fuse_in_header {
     pub len: u32,
     pub opcode: u32,
@@ -18176,13 +18176,13 @@ pub struct fuse_in_header {
     pub __bindgen_anon_1: fuse_in_header__bindgen_ty_1,
 }
 #[repr(C)]
-#[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub union fuse_in_header__bindgen_ty_1 {
     pub error_in: u32,
     pub __bindgen_anon_1: fuse_in_header__bindgen_ty_1__bindgen_ty_1,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct fuse_in_header__bindgen_ty_1__bindgen_ty_1 {
     pub total_extlen: u16,
     pub padding: u16,
@@ -18213,7 +18213,7 @@ pub struct fuse_out_header {
     pub unique: u64,
 }
 #[repr(C)]
-#[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct fuse_dirent {
     pub ino: u64,
     pub off: u64,
@@ -18222,7 +18222,7 @@ pub struct fuse_dirent {
     pub name: __IncompleteArrayField<crate::types::arch32::c_char>,
 }
 #[repr(C)]
-#[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[derive(Clone, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct fuse_direntplus {
     pub entry_out: fuse_entry_out,
     pub dirent: fuse_dirent,
@@ -19371,7 +19371,7 @@ pub struct kgsl_read_calibrated_timestamps {
     pub padding: __u32,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct remote_buf {
     pub pv: crate::uaddr32,
     pub len: size_t,
@@ -19386,7 +19386,7 @@ impl Default for remote_buf {
     }
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct fastrpc_ioctl_invoke {
     pub handle: u32,
     pub sc: u32,
@@ -19402,7 +19402,7 @@ impl Default for fastrpc_ioctl_invoke {
     }
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct fastrpc_ioctl_invoke_fd {
     pub inv: fastrpc_ioctl_invoke,
     pub fds: crate::uref32<i32>,
@@ -19417,7 +19417,7 @@ impl Default for fastrpc_ioctl_invoke_fd {
     }
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct fastrpc_ioctl_invoke2 {
     pub req: u32,
     pub invparam: crate::uaddr32,
@@ -19434,7 +19434,7 @@ impl Default for fastrpc_ioctl_invoke2 {
     }
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct fastrpc_ioctl_init {
     pub flags: u32,
     pub file: crate::uaddr32,
@@ -19454,7 +19454,7 @@ impl Default for fastrpc_ioctl_init {
     }
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct fastrpc_ioctl_capability {
     pub domain: u32,
     pub attribute_ID: u32,
@@ -19567,7 +19567,7 @@ pub const EVIOCGABS_MT_POSITION_X: __u32 = 2149074293;
 pub const EVIOCGABS_MT_POSITION_Y: __u32 = 2149074294;
 pub const EVIOCGNAME_0: __u32 = 2147501318;
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct remote_binder_start_command {
     pub incoming_service: crate::uref32<crate::types::arch32::c_char>,
 }
@@ -19581,7 +19581,7 @@ impl Default for remote_binder_start_command {
     }
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct remote_binder_wait_command {
     pub spawn_thread: crate::types::arch32::c_char,
 }

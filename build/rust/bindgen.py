@@ -211,7 +211,7 @@ class Bindgen:
         if len(results) == 0:
             return None
         else:
-            return sorted(results)
+            return results
 
     def post_process_rust_file(self, rust_file_name):
         with open(rust_file_name, "r+") as source_file:
@@ -221,18 +221,14 @@ class Bindgen:
                 extra_traits = self.get_auto_derive_traits(line)
                 if extra_traits:
                     # Parse existing traits, if any.
+                    traits = set(extra_traits)
                     if len(output_lines) > 0 and output_lines[-1].startswith(
                         "#[derive(",
                     ):
-                        traits = output_lines[-1][9:-3].split(", ")
-                        traits.extend(
-                            x for x in extra_traits if x not in traits
-                        )
+                        traits.update(output_lines[-1][9:-3].split(", "))
                         output_lines.pop()
-                    else:
-                        traits = extra_traits
                     output_lines.append(
-                        "#[derive(" + ", ".join(traits) + ")]\n",
+                        "#[derive(" + ", ".join(sorted(traits)) + ")]\n",
                     )
                 output_lines.append(line)
 
