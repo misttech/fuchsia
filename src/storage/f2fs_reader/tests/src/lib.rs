@@ -106,7 +106,7 @@ async fn keys_from_context(
 /// `existing_inodes` is used to handle hard links.
 /// `f2fs_metadata_blocks` must be preserved to ensure that the resulting image is still parsable
 /// as a valid f2fs image.
-async fn recursively_migrate(
+async fn migrate(
     f2fs: &F2fsReader,
     fxfs: &mut OpenFxFilesystem,
     ino: u32,
@@ -115,102 +115,51 @@ async fn recursively_migrate(
     files_to_copy: &mut HashSet<u64>,
     f2fs_metadata_blocks: &mut Vec<u32>,
 ) -> Result<(), Error> {
-    // Any dentry blocks for this directory are f2fs metadata.
-    let inode = f2fs.read_inode(ino).await?;
-    f2fs_metadata_blocks.extend_from_slice(&inode.block_addrs);
-    f2fs_metadata_blocks.append(&mut inode.data_blocks().map(|(_, x)| x).collect());
+    let mut stack = vec![(ino, dir)];
+    while let Some((ino, dir)) = stack.pop() {
+        // Any dentry blocks for this directory are f2fs metadata.
+        let inode = f2fs.read_inode(ino).await?;
+        f2fs_metadata_blocks.extend_from_slice(&inode.block_addrs);
+        f2fs_metadata_blocks.append(&mut inode.data_blocks().map(|(_, x)| x).collect());
 
-    for entry in f2fs.readdir(ino).await? {
-        let object_id = entry.ino as u64;
-        let inode = f2fs.read_inode(entry.ino).await?;
-        let flags = inode.header.flags;
-        let casefold = flags.contains(Flags::Casefold);
+        for entry in f2fs.readdir(ino).await? {
+            let object_id = entry.ino as u64;
+            let inode = f2fs.read_inode(entry.ino).await?;
+            let flags = inode.header.flags;
+            let casefold = flags.contains(Flags::Casefold);
 
-        let mut transaction = fxfs
-            .clone()
-            .new_transaction(
-                lock_keys![
-                    LockKey::object(dir.owner().store_object_id(), dir.object_id()),
-                    LockKey::object(dir.owner().store_object_id(), object_id)
-                ],
-                Options::default(),
+            let mut transaction = fxfs
+                .clone()
+                .new_transaction(
+                    lock_keys![
+                        LockKey::object(dir.owner().store_object_id(), dir.object_id()),
+                        LockKey::object(dir.owner().store_object_id(), object_id)
+                    ],
+                    Options::default(),
+                )
+                .await?;
+
+            let (wrapping_key_id, key_id, keys) = keys_from_context(
+                object_id,
+                &inode.context,
+                &dir,
+                dir.wrapping_key_id().is_some(),
+                entry.file_type == FileType::RegularFile,
             )
             .await?;
 
-        let (wrapping_key_id, key_id, keys) = keys_from_context(
-            object_id,
-            &inode.context,
-            &dir,
-            dir.wrapping_key_id().is_some(),
-            entry.file_type == FileType::RegularFile,
-        )
-        .await?;
-
-        transaction.add(
-            dir.owner().store_object_id(),
-            Mutation::replace_or_insert_object(
-                ObjectKey::keys(object_id),
-                ObjectValue::Keys(keys.into()),
-            ),
-        );
-
-        if !existing_inodes.insert(entry.ino) {
-            // Hard link to an existing inode.
-            ensure!(entry.file_type == FileType::RegularFile, "Hard link to non-file");
-            if wrapping_key_id.is_some() {
-                transaction.add(
-                    dir.store().store_object_id(),
-                    Mutation::replace_or_insert_object(
-                        ObjectKey::encrypted_child(
-                            dir.object_id(),
-                            entry.raw_filename,
-                            if casefold { entry.hash_code } else { 0 },
-                        ),
-                        ObjectValue::child(object_id, ObjectDescriptor::File),
-                    ),
-                );
-            } else {
-                transaction.add(
-                    dir.store().store_object_id(),
-                    Mutation::replace_or_insert_object(
-                        ObjectKey::child(dir.object_id(), &entry.filename, casefold),
-                        ObjectValue::child(object_id, ObjectDescriptor::File),
-                    ),
-                );
-            }
-            dir.store().adjust_refs(&mut transaction, object_id, 1).await?;
-            transaction.commit().await?;
-            continue;
-        }
-
-        // Both directories and files can have xattr.
-        for xattr in &inode.xattr {
-            // In f2fs, each xattr has an index byte that acts as a sort of namespace.
-            // We will capture these verbatim and wire them into starnix.
-            let mut name = vec![xattr.index as u8];
-            name.extend_from_slice(&xattr.name);
             transaction.add(
-                dir.store().store_object_id(),
+                dir.owner().store_object_id(),
                 Mutation::replace_or_insert_object(
-                    ObjectKey::extended_attribute(object_id, name),
-                    ObjectValue::inline_extended_attribute(xattr.value.to_vec()),
+                    ObjectKey::keys(object_id),
+                    ObjectValue::Keys(keys.into()),
                 ),
             );
-        }
 
-        match entry.file_type {
-            FileType::Directory => {
-                transaction.add(
-                    dir.owner().store_object_id(),
-                    Mutation::insert_object(
-                        ObjectKey::object(object_id),
-                        ObjectValue::Object {
-                            kind: ObjectKind::Directory { sub_dirs: 0, casefold, wrapping_key_id },
-                            attributes: inode_to_object_attributes(&inode, 0),
-                        },
-                    ),
-                );
-                if dir.wrapping_key_id().is_some() {
+            if !existing_inodes.insert(entry.ino) {
+                // Hard link to an existing inode.
+                ensure!(entry.file_type == FileType::RegularFile, "Hard link to non-file");
+                if wrapping_key_id.is_some() {
                     transaction.add(
                         dir.store().store_object_id(),
                         Mutation::replace_or_insert_object(
@@ -219,7 +168,7 @@ async fn recursively_migrate(
                                 entry.raw_filename,
                                 if casefold { entry.hash_code } else { 0 },
                             ),
-                            ObjectValue::child(object_id, ObjectDescriptor::Directory),
+                            ObjectValue::child(object_id, ObjectDescriptor::File),
                         ),
                     );
                 } else {
@@ -227,356 +176,409 @@ async fn recursively_migrate(
                         dir.store().store_object_id(),
                         Mutation::replace_or_insert_object(
                             ObjectKey::child(dir.object_id(), &entry.filename, casefold),
-                            ObjectValue::child(object_id, ObjectDescriptor::Directory),
+                            ObjectValue::child(object_id, ObjectDescriptor::File),
                         ),
                     );
                 }
-
-                // Bump sub_dirs count in parent.
-                let mut mutation =
-                    dir.store().get_object_mutation(&transaction, dir.object_id()).await?;
-                if let ObjectValue::Object {
-                    kind: ObjectKind::Directory { sub_dirs, .. }, ..
-                } = &mut mutation.item.value
-                {
-                    *sub_dirs = sub_dirs.saturating_add_signed(1);
-                } else {
-                    bail!("Parent is not a directory");
-                };
-                transaction.add(dir.store().store_object_id(), Mutation::ObjectStore(mutation));
-
+                dir.store().adjust_refs(&mut transaction, object_id, 1).await?;
                 transaction.commit().await?;
-                let new_dir = Directory::open_unchecked(
-                    dir.owner().clone(),
-                    object_id,
-                    wrapping_key_id,
-                    casefold,
-                );
-                Box::pin(recursively_migrate(
-                    f2fs,
-                    fxfs,
-                    entry.ino,
-                    new_dir,
-                    existing_inodes,
-                    files_to_copy,
-                    f2fs_metadata_blocks,
-                ))
-                .await?;
+                continue;
             }
-            FileType::RegularFile => {
-                // Add inode block and related blocks to set of f2fs metadata blocks.
-                f2fs_metadata_blocks.extend_from_slice(&inode.block_addrs);
 
-                let mut allocated_size = 0;
-                let inline_flags = inode.header.inline_flags;
-                if inline_flags.contains(InlineFlags::Data) {
-                    if inode.header.size > 0 {
-                        // We have to allocate inline files.
-                        // Encrypted inline files are not possible, so this is relatively uncommon.
-                        files_to_copy.insert(object_id);
-                        allocated_size = BLOCK_SIZE as u64;
-                    }
-                } else if inode.context.is_some() {
-                    // Fscrypt file, extents are remapped.
-                    for (block_offset, block_addr) in inode.data_blocks() {
-                        let device_range = block_addr as u64 * BLOCK_SIZE as u64
-                            ..(block_addr as u64 + 1) * BLOCK_SIZE as u64;
-                        let logical_range = block_offset as u64 * BLOCK_SIZE as u64
-                            ..(block_offset as u64 + 1) * BLOCK_SIZE as u64;
-                        dir.store()
-                            .mark_allocated(
-                                &mut transaction,
-                                dir.store().store_object_id(),
-                                device_range.clone(),
-                            )
-                            .await?;
+            // Both directories and files can have xattr.
+            for xattr in &inode.xattr {
+                // In f2fs, each xattr has an index byte that acts as a sort of namespace.
+                // We will capture these verbatim and wire them into starnix.
+                let mut name = vec![xattr.index as u8];
+                name.extend_from_slice(&xattr.name);
+                transaction.add(
+                    dir.store().store_object_id(),
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::extended_attribute(object_id, name),
+                        ObjectValue::inline_extended_attribute(xattr.value.to_vec()),
+                    ),
+                );
+            }
+
+            match entry.file_type {
+                FileType::Directory => {
+                    transaction.add(
+                        dir.owner().store_object_id(),
+                        Mutation::insert_object(
+                            ObjectKey::object(object_id),
+                            ObjectValue::Object {
+                                kind: ObjectKind::Directory {
+                                    sub_dirs: 0,
+                                    casefold,
+                                    wrapping_key_id,
+                                },
+                                attributes: inode_to_object_attributes(&inode, 0),
+                            },
+                        ),
+                    );
+                    if dir.wrapping_key_id().is_some() {
                         transaction.add(
                             dir.store().store_object_id(),
-                            Mutation::merge_object(
-                                ObjectKey::extent(
-                                    object_id,
-                                    DEFAULT_DATA_ATTRIBUTE_ID,
-                                    logical_range,
+                            Mutation::replace_or_insert_object(
+                                ObjectKey::encrypted_child(
+                                    dir.object_id(),
+                                    entry.raw_filename,
+                                    if casefold { entry.hash_code } else { 0 },
                                 ),
-                                ObjectValue::Extent(ExtentValue::new_raw(
-                                    device_range.start,
-                                    key_id,
-                                )),
+                                ObjectValue::child(object_id, ObjectDescriptor::Directory),
                             ),
                         );
-                        allocated_size += BLOCK_SIZE as u64;
+                    } else {
+                        transaction.add(
+                            dir.store().store_object_id(),
+                            Mutation::replace_or_insert_object(
+                                ObjectKey::child(dir.object_id(), &entry.filename, casefold),
+                                ObjectValue::child(object_id, ObjectDescriptor::Directory),
+                            ),
+                        );
                     }
-                } else {
-                    // Default encrypted file, data will be copied later.
-                    files_to_copy.insert(object_id);
-                    // Max blocks per file is ~1B and block count is stored in a u32 so
-                    // there is basically no chance of this overflowing.
-                    allocated_size = inode.data_blocks().count() as u64 * BLOCK_SIZE as u64;
-                }
 
-                transaction.add(
-                    dir.owner().store_object_id(),
-                    Mutation::insert_object(
-                        ObjectKey::object(object_id),
-                        ObjectValue::Object {
-                            kind: ObjectKind::File { refs: 1 },
-                            attributes: inode_to_object_attributes(&inode, allocated_size),
-                        },
-                    ),
-                );
-                transaction.add(
-                    dir.owner().store_object_id(),
-                    Mutation::insert_object(
-                        ObjectKey::attribute(
-                            object_id,
-                            DEFAULT_DATA_ATTRIBUTE_ID,
-                            AttributeKey::Attribute,
-                        ),
-                        ObjectValue::attribute(inode.header.size, false),
-                    ),
-                );
-                if inode.context.is_some() {
-                    transaction.add(
-                        dir.owner().store_object_id(),
-                        Mutation::replace_or_insert_object(
-                            ObjectKey::encrypted_child(
-                                dir.object_id(),
-                                entry.raw_filename,
-                                if casefold { entry.hash_code } else { 0 },
-                            ),
-                            ObjectValue::child(object_id, ObjectDescriptor::File),
-                        ),
+                    // Bump sub_dirs count in parent.
+                    let mut mutation =
+                        dir.store().get_object_mutation(&transaction, dir.object_id()).await?;
+                    if let ObjectValue::Object {
+                        kind: ObjectKind::Directory { sub_dirs, .. },
+                        ..
+                    } = &mut mutation.item.value
+                    {
+                        *sub_dirs = sub_dirs.saturating_add_signed(1);
+                    } else {
+                        bail!("Parent is not a directory");
+                    };
+                    transaction.add(dir.store().store_object_id(), Mutation::ObjectStore(mutation));
+
+                    transaction.commit().await?;
+                    let new_dir = Directory::open_unchecked(
+                        dir.owner().clone(),
+                        object_id,
+                        wrapping_key_id,
+                        casefold,
                     );
-                } else {
-                    transaction.add(
-                        dir.owner().store_object_id(),
-                        Mutation::replace_or_insert_object(
-                            ObjectKey::child(dir.object_id(), &entry.filename, casefold),
-                            ObjectValue::child(object_id, ObjectDescriptor::File),
-                        ),
-                    );
+                    stack.push((entry.ino, new_dir));
                 }
-                transaction.commit().await?;
-            }
-            FileType::Symlink => {
-                // Add inode block and related blocks to set of f2fs metadata blocks.
-                f2fs_metadata_blocks.extend_from_slice(&inode.block_addrs);
+                FileType::RegularFile => {
+                    // Add inode block and related blocks to set of f2fs metadata blocks.
+                    f2fs_metadata_blocks.extend_from_slice(&inode.block_addrs);
 
-                // Symlinks are stored as inline data.
-                let Some(filename) = &inode.inline_data else {
-                    bail!("Symlink missing inline data");
-                };
-                let mut filename = filename.to_vec();
+                    let mut allocated_size = 0;
+                    let inline_flags = inode.header.inline_flags;
+                    //let mut mutation_count = 4;
+                    if inline_flags.contains(InlineFlags::Data) {
+                        if inode.header.size > 0 {
+                            // We have to allocate inline files.
+                            // Encrypted inline files are not possible, so this is relatively uncommon.
+                            files_to_copy.insert(object_id);
+                            allocated_size = BLOCK_SIZE as u64;
+                        }
+                    } else if inode.context.is_some() {
+                        // Fscrypt file, extents are remapped.
+                        for (block_offset, block_addr) in inode.data_blocks() {
+                            let device_range = block_addr as u64 * BLOCK_SIZE as u64
+                                ..(block_addr as u64 + 1) * BLOCK_SIZE as u64;
+                            let logical_range = block_offset as u64 * BLOCK_SIZE as u64
+                                ..(block_offset as u64 + 1) * BLOCK_SIZE as u64;
+                            dir.store()
+                                .mark_allocated(
+                                    &mut transaction,
+                                    dir.store().store_object_id(),
+                                    device_range.clone(),
+                                )
+                                .await?;
+                            transaction.add(
+                                dir.store().store_object_id(),
+                                Mutation::merge_object(
+                                    ObjectKey::extent(
+                                        object_id,
+                                        DEFAULT_DATA_ATTRIBUTE_ID,
+                                        logical_range,
+                                    ),
+                                    ObjectValue::Extent(ExtentValue::new_raw(
+                                        device_range.start,
+                                        key_id,
+                                    )),
+                                ),
+                            );
+                            allocated_size += BLOCK_SIZE as u64;
+                        }
+                    } else {
+                        // Default encrypted file, data will be copied later.
+                        files_to_copy.insert(object_id);
+                        // Max blocks per file is ~1B and block count is stored in a u32 so
+                        // there is basically no chance of this overflowing.
+                        allocated_size = inode.data_blocks().count() as u64 * BLOCK_SIZE as u64;
+                    }
 
-                let object_attributes = inode_to_object_attributes(&inode, 0);
-                if inode.context.is_some() {
-                    // Redundant 2-byte length prefix on encrypted symlinks (use inline_data.len()).
-                    filename.drain(..2);
                     transaction.add(
                         dir.owner().store_object_id(),
-                        Mutation::replace_or_insert_object(
-                            ObjectKey::encrypted_child(
-                                dir.object_id(),
-                                entry.raw_filename.clone(),
-                                if casefold { entry.hash_code } else { 0 },
-                            ),
-                            ObjectValue::child(object_id, ObjectDescriptor::Symlink),
+                        Mutation::insert_object(
+                            ObjectKey::object(object_id),
+                            ObjectValue::Object {
+                                kind: ObjectKind::File { refs: 1 },
+                                attributes: inode_to_object_attributes(&inode, allocated_size),
+                            },
                         ),
                     );
                     transaction.add(
                         dir.owner().store_object_id(),
                         Mutation::insert_object(
-                            ObjectKey::object(object_id),
-                            ObjectValue::encrypted_symlink(
-                                filename,
-                                object_attributes.creation_time,
-                                object_attributes.modification_time,
-                                object_attributes.project_id,
+                            ObjectKey::attribute(
+                                object_id,
+                                DEFAULT_DATA_ATTRIBUTE_ID,
+                                AttributeKey::Attribute,
                             ),
+                            ObjectValue::attribute(inode.header.size, false),
                         ),
                     );
-                } else {
-                    transaction.add(
-                        dir.owner().store_object_id(),
-                        Mutation::replace_or_insert_object(
-                            ObjectKey::child(dir.object_id(), &entry.filename, casefold),
-                            ObjectValue::child(object_id, ObjectDescriptor::Symlink),
-                        ),
-                    );
-                    transaction.add(
-                        dir.owner().store_object_id(),
-                        Mutation::insert_object(
-                            ObjectKey::object(object_id),
-                            ObjectValue::symlink(
-                                filename,
-                                object_attributes.creation_time,
-                                object_attributes.modification_time,
-                                object_attributes.project_id,
+                    if inode.context.is_some() {
+                        transaction.add(
+                            dir.owner().store_object_id(),
+                            Mutation::replace_or_insert_object(
+                                ObjectKey::encrypted_child(
+                                    dir.object_id(),
+                                    entry.raw_filename,
+                                    if casefold { entry.hash_code } else { 0 },
+                                ),
+                                ObjectValue::child(object_id, ObjectDescriptor::File),
                             ),
-                        ),
-                    );
+                        );
+                    } else {
+                        transaction.add(
+                            dir.owner().store_object_id(),
+                            Mutation::replace_or_insert_object(
+                                ObjectKey::child(dir.object_id(), &entry.filename, casefold),
+                                ObjectValue::child(object_id, ObjectDescriptor::File),
+                            ),
+                        );
+                    }
+                    transaction.commit().await?;
                 }
-                transaction.commit().await?;
+                FileType::Symlink => {
+                    // Add inode block and related blocks to set of f2fs metadata blocks.
+                    f2fs_metadata_blocks.extend_from_slice(&inode.block_addrs);
+
+                    // Symlinks are stored as inline data.
+                    let Some(filename) = &inode.inline_data else {
+                        bail!("Symlink missing inline data");
+                    };
+                    let mut filename = filename.to_vec();
+
+                    let object_attributes = inode_to_object_attributes(&inode, 0);
+                    if inode.context.is_some() {
+                        // Redundant 2-byte length prefix on encrypted symlinks (use
+                        // inline_data.len()).
+                        filename.drain(..2);
+                        transaction.add(
+                            dir.owner().store_object_id(),
+                            Mutation::replace_or_insert_object(
+                                ObjectKey::encrypted_child(
+                                    dir.object_id(),
+                                    entry.raw_filename.clone(),
+                                    if casefold { entry.hash_code } else { 0 },
+                                ),
+                                ObjectValue::child(object_id, ObjectDescriptor::Symlink),
+                            ),
+                        );
+                        transaction.add(
+                            dir.owner().store_object_id(),
+                            Mutation::insert_object(
+                                ObjectKey::object(object_id),
+                                ObjectValue::encrypted_symlink(
+                                    filename,
+                                    object_attributes.creation_time,
+                                    object_attributes.modification_time,
+                                    object_attributes.project_id,
+                                ),
+                            ),
+                        );
+                    } else {
+                        transaction.add(
+                            dir.owner().store_object_id(),
+                            Mutation::replace_or_insert_object(
+                                ObjectKey::child(dir.object_id(), &entry.filename, casefold),
+                                ObjectValue::child(object_id, ObjectDescriptor::Symlink),
+                            ),
+                        );
+                        transaction.add(
+                            dir.owner().store_object_id(),
+                            Mutation::insert_object(
+                                ObjectKey::object(object_id),
+                                ObjectValue::symlink(
+                                    filename,
+                                    object_attributes.creation_time,
+                                    object_attributes.modification_time,
+                                    object_attributes.project_id,
+                                ),
+                            ),
+                        );
+                    }
+                    transaction.commit().await?;
+                }
+                _ => unimplemented!(),
             }
-            _ => unimplemented!(),
         }
     }
     Ok(())
 }
 
-async fn recursively_verify(
+async fn verify(
     f2fs: &F2fsReader,
     fxfs: &OpenFxFilesystem,
     ino: u32,
     dir: Directory<ObjectStore>,
     check_file_contents: bool,
 ) -> Result<(), Error> {
-    for entry in f2fs.readdir(ino).await? {
-        let object_id = entry.ino as u64;
-        let inode = f2fs.read_inode(entry.ino).await.unwrap();
-        let flags = inode.header.flags;
-        let casefold = flags.contains(Flags::Casefold);
-        let mut wrapping_key_id = dir.wrapping_key_id();
+    let mut stack = vec![(ino, dir)];
+    while let Some((ino, dir)) = stack.pop() {
+        for entry in f2fs.readdir(ino).await? {
+            let object_id = entry.ino as u64;
+            let inode = f2fs.read_inode(entry.ino).await.unwrap();
+            let flags = inode.header.flags;
+            let casefold = flags.contains(Flags::Casefold);
+            let mut wrapping_key_id = dir.wrapping_key_id();
 
-        // If f2fs inode has a context, we have an fscrypt file. In fxfs this is marked by the
-        // presence of a wrapping_key_id.
-        if inode.context.is_some() {
-            wrapping_key_id = Some(0);
-        }
-
-        // TODO(https://fxbug.dev/393449584): Lookup and compare fxfs filename.
-
-        match entry.file_type {
-            FileType::Directory => {
-                let dir = Directory::open_unchecked(
-                    dir.owner().clone(),
-                    object_id,
-                    wrapping_key_id,
-                    casefold,
-                );
-
-                for xattr in &inode.xattr {
-                    let mut name = vec![xattr.index as u8];
-                    name.extend_from_slice(&xattr.name);
-                    let fxfs_xattr_value =
-                        dir.get_extended_attribute(name).await.context("xattr read")?;
-                    assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
-                }
-
-                let fxfs_properties = dir.get_properties().await.context("get_properties")?;
-                let object_attributes = inode_to_object_attributes(&inode, 0);
-                let f2fs_properties = ObjectProperties {
-                    refs: 1,
-                    allocated_size: 0,
-                    data_attribute_size: 0,
-                    creation_time: object_attributes.creation_time,
-                    modification_time: object_attributes.modification_time,
-                    access_time: object_attributes.access_time,
-                    change_time: object_attributes.change_time,
-                    sub_dirs: inode.header.links as u64 - 2,
-                    posix_attributes: object_attributes.posix_attributes,
-                    casefold,
-                    wrapping_key_id,
-                };
-                let h = inode.header;
-                assert_eq!(
-                    fxfs_properties, f2fs_properties,
-                    "entry {entry:?}, inode header: {h:?}"
-                );
-
-                Box::pin(recursively_verify(f2fs, fxfs, entry.ino, dir, check_file_contents))
-                    .await
-                    .context("verify")
-                    .unwrap();
+            // If f2fs inode has a context, we have an fscrypt file. In fxfs this is marked by the
+            // presence of a wrapping_key_id.
+            if inode.context.is_some() {
+                wrapping_key_id = Some(0);
             }
-            FileType::RegularFile => {
-                let handle = ObjectStore::open_object(
-                    &dir.owner(),
-                    object_id,
-                    HandleOptions::default(),
-                    None,
-                )
-                .await
-                .context("open object")?;
 
-                for xattr in &inode.xattr {
-                    let mut name = vec![xattr.index as u8];
-                    name.extend_from_slice(&xattr.name);
-                    let fxfs_xattr_value =
-                        handle.get_extended_attribute(name).await.context("xattr read")?;
-                    assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
+            // TODO(https://fxbug.dev/393449584): Lookup and compare fxfs filename.
+
+            match entry.file_type {
+                FileType::Directory => {
+                    let dir = Directory::open_unchecked(
+                        dir.owner().clone(),
+                        object_id,
+                        wrapping_key_id,
+                        casefold,
+                    );
+
+                    for xattr in &inode.xattr {
+                        let mut name = vec![xattr.index as u8];
+                        name.extend_from_slice(&xattr.name);
+                        let fxfs_xattr_value =
+                            dir.get_extended_attribute(name).await.context("xattr read")?;
+                        assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
+                    }
+
+                    let fxfs_properties = dir.get_properties().await.context("get_properties")?;
+                    let object_attributes = inode_to_object_attributes(&inode, 0);
+                    let f2fs_properties = ObjectProperties {
+                        refs: 1,
+                        allocated_size: 0,
+                        data_attribute_size: 0,
+                        creation_time: object_attributes.creation_time,
+                        modification_time: object_attributes.modification_time,
+                        access_time: object_attributes.access_time,
+                        change_time: object_attributes.change_time,
+                        sub_dirs: inode.header.links as u64 - 2,
+                        posix_attributes: object_attributes.posix_attributes,
+                        casefold,
+                        wrapping_key_id,
+                    };
+                    let h = inode.header;
+                    assert_eq!(
+                        fxfs_properties, f2fs_properties,
+                        "entry {entry:?}, inode header: {h:?}"
+                    );
+
+                    stack.push((entry.ino, dir));
                 }
+                FileType::RegularFile => {
+                    let handle = ObjectStore::open_object(
+                        &dir.owner(),
+                        object_id,
+                        HandleOptions::default(),
+                        None,
+                    )
+                    .await
+                    .context("open object")?;
 
-                let fxfs_properties = handle.get_properties().await.context("get properties")?;
-                let f2fs_allocated_size = if let Some(data) = inode.inline_data.as_ref() {
-                    if data.len() > 0 { BLOCK_SIZE as u64 } else { 0 }
-                } else {
-                    inode.data_blocks().count() as u64 * BLOCK_SIZE as u64
-                };
-                let object_attributes = inode_to_object_attributes(&inode, f2fs_allocated_size);
-                let f2fs_properties = ObjectProperties {
-                    refs: inode.header.links as u64,
-                    allocated_size: object_attributes.allocated_size,
-                    data_attribute_size: inode.header.size,
-                    creation_time: object_attributes.creation_time,
-                    modification_time: object_attributes.modification_time,
-                    access_time: object_attributes.access_time,
-                    change_time: object_attributes.change_time,
-                    sub_dirs: 0,
-                    posix_attributes: object_attributes.posix_attributes,
-                    casefold,
-                    wrapping_key_id: None,
-                };
-                assert_eq!(fxfs_properties, f2fs_properties);
+                    for xattr in &inode.xattr {
+                        let mut name = vec![xattr.index as u8];
+                        name.extend_from_slice(&xattr.name);
+                        let fxfs_xattr_value =
+                            handle.get_extended_attribute(name).await.context("xattr read")?;
+                        assert_eq!(&fxfs_xattr_value, xattr.value.as_ref());
+                    }
 
-                if check_file_contents {
-                    let inline_flags = inode.header.inline_flags;
-                    if inline_flags.contains(InlineFlags::Data) {
-                        let mut buffer = handle.allocate_buffer(BLOCK_SIZE).await;
-                        let len = handle.read(0, 0, buffer.as_mut()).await.context("read")?;
-                        let f2fs_block = inode.inline_data.as_ref().unwrap();
-                        assert_eq!(
-                            &buffer.as_slice()[..len],
-                            f2fs_block.as_ref(),
-                            "Inline data mismatch."
-                        );
+                    let fxfs_properties =
+                        handle.get_properties().await.context("get properties")?;
+                    let f2fs_allocated_size = if let Some(data) = inode.inline_data.as_ref() {
+                        if data.len() > 0 { BLOCK_SIZE as u64 } else { 0 }
                     } else {
-                        let device = fxfs.device();
-                        let mut fxfs_buffer = device.allocate_buffer(BLOCK_SIZE).await;
-                        for i in 0..inode.header.block_size as u32 {
-                            if let Some(f2fs_block) = f2fs.read_data(&inode, i).await.unwrap() {
-                                let len = handle
-                                    .read(0, i as u64 * BLOCK_SIZE as u64, fxfs_buffer.as_mut())
-                                    .await
-                                    .unwrap();
-                                assert_eq!(
-                                    &fxfs_buffer.as_slice()[..len],
-                                    &f2fs_block.as_slice()[..len],
-                                    "File content mismatch for ino {}",
-                                    object_id
-                                );
+                        inode.data_blocks().count() as u64 * BLOCK_SIZE as u64
+                    };
+                    let object_attributes = inode_to_object_attributes(&inode, f2fs_allocated_size);
+                    let f2fs_properties = ObjectProperties {
+                        refs: inode.header.links as u64,
+                        allocated_size: object_attributes.allocated_size,
+                        data_attribute_size: inode.header.size,
+                        creation_time: object_attributes.creation_time,
+                        modification_time: object_attributes.modification_time,
+                        access_time: object_attributes.access_time,
+                        change_time: object_attributes.change_time,
+                        sub_dirs: 0,
+                        posix_attributes: object_attributes.posix_attributes,
+                        casefold,
+                        wrapping_key_id: None,
+                    };
+                    assert_eq!(fxfs_properties, f2fs_properties);
+
+                    if check_file_contents {
+                        let inline_flags = inode.header.inline_flags;
+                        if inline_flags.contains(InlineFlags::Data) {
+                            let mut buffer = handle.allocate_buffer(BLOCK_SIZE).await;
+                            let len = handle.read(0, 0, buffer.as_mut()).await.context("read")?;
+                            let f2fs_block = inode.inline_data.as_ref().unwrap();
+                            assert_eq!(
+                                &buffer.as_slice()[..len],
+                                f2fs_block.as_ref(),
+                                "Inline data mismatch."
+                            );
+                        } else {
+                            let device = fxfs.device();
+                            let mut fxfs_buffer = device.allocate_buffer(BLOCK_SIZE).await;
+                            for i in 0..inode.header.block_size as u32 {
+                                if let Some(f2fs_block) = f2fs.read_data(&inode, i).await.unwrap() {
+                                    let len = handle
+                                        .read(0, i as u64 * BLOCK_SIZE as u64, fxfs_buffer.as_mut())
+                                        .await
+                                        .unwrap();
+                                    assert_eq!(
+                                        &fxfs_buffer.as_slice()[..len],
+                                        &f2fs_block.as_slice()[..len],
+                                        "File content mismatch for ino {}",
+                                        object_id
+                                    );
+                                }
                             }
                         }
                     }
                 }
-            }
-            FileType::Symlink => {
-                if check_file_contents {
-                    let f2fs_link = f2fs.read_symlink(&inode)?;
-                    let fxfs_link = dir
-                        .store()
-                        .read_symlink(object_id)
-                        .await
-                        .context("failed to read fxfs symlink")?;
-                    assert_eq!(
-                        f2fs_link.as_ref(),
-                        &fxfs_link,
-                        "Symlink differs for inode {:?}",
-                        inode.context
-                    );
+                FileType::Symlink => {
+                    if check_file_contents {
+                        let f2fs_link = f2fs.read_symlink(&inode)?;
+                        let fxfs_link = dir
+                            .store()
+                            .read_symlink(object_id)
+                            .await
+                            .context("failed to read fxfs symlink")?;
+                        assert_eq!(
+                            f2fs_link.as_ref(),
+                            &fxfs_link,
+                            "Symlink differs for inode {:?}",
+                            inode.context
+                        );
+                    }
                 }
+                _ => unimplemented!(),
             }
-            _ => unimplemented!(),
         }
     }
     Ok(())
@@ -691,7 +693,7 @@ async fn migrate_device(
         let mut existing_inodes = HashSet::new();
         let mut files_to_copy = HashSet::new();
         let mut f2fs_metadata_blocks = Vec::new();
-        recursively_migrate(
+        migrate(
             &f2fs,
             &mut fxfs,
             ino,
@@ -833,9 +835,7 @@ async fn test_fxfs_migration_no_keys() {
 
     // Note that we can't check file contents in this test as we haven't given fxfs encryption keys.
     let check_file_contents = false;
-    recursively_verify(&f2fs, &fxfs, ino, root_directory, check_file_contents)
-        .await
-        .expect("verify");
+    verify(&f2fs, &fxfs, ino, root_directory, check_file_contents).await.expect("verify");
 
     fxfs.close().await.expect("close ok");
 }
@@ -948,8 +948,6 @@ async fn test_fxfs_verify_encrypted_data() {
     let root_directory =
         Directory::open(&vol, vol.root_directory_object_id()).await.expect("open failed");
     let ino = f2fs.root_ino();
-    recursively_verify(&f2fs, &fxfs, ino, root_directory, /*check_file_contents=*/ true)
-        .await
-        .expect("verify");
+    verify(&f2fs, &fxfs, ino, root_directory, /*check_file_contents=*/ true).await.expect("verify");
     fxfs.close().await.expect("close ok");
 }

@@ -106,6 +106,24 @@ touch ${MOUNT_PATH}/fscrypt/1234
 touch ${MOUNT_PATH}/fscrypt/12345
 touch ${MOUNT_PATH}/fscrypt/${LONG_NAME_192}
 
+# A large amount of data that we need to copy (not fscrypt, needs encrypting)
+echo "large zero..."
+dd if=/dev/zero bs=4096 count=4096 of=${MOUNT_PATH}/large_zero
+# A fscrypt file (no copy - already encrypted)
+echo "large zero in fscrypt..."
+dd if=/dev/zero bs=4096 count=4096 of=${MOUNT_PATH}/fscrypt/large_zero
+
+# fscrypt nested directories
+echo "deep nesting fscrypt..."
+$(
+	cd ${MOUNT_PATH}/fscrypt/
+	for i in $(seq 0 400); do
+		mkdir d
+		cd d
+	done
+	touch f
+)
+
 umount ${MOUNT_PATH}
 zstd /tmp/f2fs.img -o ../testdata/f2fs.img.zst
 
