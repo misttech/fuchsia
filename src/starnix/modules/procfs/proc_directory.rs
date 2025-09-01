@@ -7,6 +7,7 @@ use crate::config_gz::ConfigFile;
 use crate::cpuinfo::CpuinfoFile;
 use crate::device_tree::device_tree_directory;
 use crate::devices::DevicesFile;
+use crate::filesystems::FilesystemsFile;
 use crate::kmsg::kmsg_file;
 use crate::loadavg::LoadavgFile;
 use crate::meminfo::MeminfoFile;
@@ -28,6 +29,7 @@ use crate::vmstat::VmStatFile;
 use crate::zoneinfo::ZoneInfoFile;
 use maplit::btreemap;
 use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, SimpleFileNode};
 use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::{
@@ -86,7 +88,7 @@ impl ProcDirectory {
             "devices".into() => read_only_file(fs, DevicesFile::new_node()),
             "device-tree".into() => device_tree_directory(kernel, fs),
             "diskstats".into() => stub_file(fs, "/proc/diskstats", bug_ref!("https://fxbug.dev/322893370")),
-            "filesystems".into() => bytes_file(fs, b"fxfs".to_vec()),
+            "filesystems".into() => read_only_file(fs, FilesystemsFile::new_node(&kernel.expando.get::<FsRegistry>())),
             "kallsyms".into() => read_only_file(fs, SimpleFileNode::new(|| {
                 track_stub!(TODO("https://fxbug.dev/369067922"), "Provide a real /proc/kallsyms");
                 Ok(BytesFile::new(b"0000000000000000 T security_inode_copy_up".to_vec()))

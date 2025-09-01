@@ -9,6 +9,7 @@ mod config_gz;
 mod cpuinfo;
 mod device_tree;
 mod devices;
+mod filesystems;
 mod fs;
 mod kmsg;
 mod loadavg;

@@ -56,4 +56,8 @@ impl FsRegistry {
             Ok(fs)
         }))
     }
+
+    pub fn list_all(&self) -> Vec<FsString> {
+        self.registry.lock().keys().cloned().collect()
+    }
 }

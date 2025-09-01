@@ -17,6 +17,7 @@ rustc_library("procfs") {
     "cpuinfo.rs",
     "device_tree.rs",
     "devices.rs",
+    "filesystems.rs",
     "fs.rs",
     "kmsg.rs",
     "lib.rs",
