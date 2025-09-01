@@ -288,6 +288,19 @@ pub async fn serve_starnix_manager(
                     ),
                 );
             }
+            fstarnixrunner::ManagerRequest::RemoveWakeSource { payload, .. } => {
+                let fstarnixrunner::ManagerRemoveWakeSourceRequest {
+                    // TODO: Handle more than one container.
+                    container_job: Some(_container_job),
+                    handle: Some(handle),
+                    ..
+                } = payload
+                else {
+                    continue;
+                };
+
+                suspend_context.wake_sources.lock().remove(&handle.get_koid().unwrap());
+            }
             fstarnixrunner::ManagerRequest::CreatePager { payload, .. } => {
                 std::thread::spawn(|| {
                     fasync::LocalExecutor::new().run_singlethreaded(run_pager(payload));

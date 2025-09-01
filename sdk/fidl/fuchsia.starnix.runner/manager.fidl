@@ -64,8 +64,6 @@ open protocol Manager {
 
     /// Adds `signals` on `handle` as a way to prevent the container from suspending, or wake it
     /// if it is already suspended.
-    ///
-    /// TODO(b/436557027): Add support for removing wake sources.
     flexible AddWakeSource(resource table {
         /// The job of the container that is meant to be woken by `signals` on `handle`.
         1: container_job zx.Handle:JOB;
@@ -80,6 +78,20 @@ open protocol Manager {
 
         /// The signals on `handle` that are meant to wake the container.
         4: signals zx.Signals;
+    });
+
+    /// Removes a wake source handle from the `container_job`.
+    ///
+    /// If the container is currently suspended, the `handle` may still wake the container if
+    /// its signals are raised. To ensure that the wake source never wakes the container again
+    /// after this call, the client must make sure that the signals are cleared and not raised
+    /// again.
+    flexible RemoveWakeSource(resource table {
+        /// The job of the container that `handle` is associated with.
+        1: container_job zx.Handle:JOB;
+
+        /// The handle to the wake source that is to be removed.
+        2: handle zx.Handle;
     });
 
     /// Registers an eventpair that will be signaled when the container is suspended or resumed.
