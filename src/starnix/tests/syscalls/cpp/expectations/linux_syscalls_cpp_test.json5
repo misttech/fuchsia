@@ -73,6 +73,9 @@
                 "AccessTest.EaccessChecksAgainstEffectiveCredsOwner",
                 "AccessTest.EaccessChecksAgainstEffectiveCredsNonOwner",
 
+                // TODO(https://fxbug.dev/317285180): Test needs to run where Binder is available.
+                "BinderWithoutSE*",
+
                 // TODO(https://fxbug.dev/436918865): Test needs to be reworked.
                 "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",
 

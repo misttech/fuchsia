@@ -138,6 +138,9 @@
 
                 // TODO(https://fxbug.dev/439058791)
                 "DumpableTest.DumpableDropsOnUserChange",
+
+                // TODO(https://fxbug.dev/398654361)
+                "BinderWithoutSEStarnix/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
             ],
         },
     ],

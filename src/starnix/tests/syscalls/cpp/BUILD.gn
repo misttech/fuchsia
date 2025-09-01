@@ -229,6 +229,17 @@ source_set("test_utils") {
   testonly = true
 
   sources = [
+    "binder/client.cc",
+    "binder/client.h",
+    "binder/common.cc",
+    "binder/common.h",
+    "binder/manager.cc",
+    "binder/manager.h",
+    "binder/manager_provider_client_test.h",
+    "binder/provider.cc",
+    "binder/provider.h",
+    "binder_helper.cc",
+    "binder_helper.h",
     "capabilities_helper.cc",
     "capabilities_helper.h",
     "fault_test.h",

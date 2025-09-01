@@ -4,6 +4,7 @@
 
 #include <fcntl.h>
 #include <lib/fit/defer.h>
+#include <lib/fit/function.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -11,22 +12,16 @@
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
-#include "src/starnix/tests/selinux/userspace/tests/binder_helper.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
-#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
+#include "src/starnix/tests/syscalls/cpp/binder/manager_provider_client_test.h"
+#include "src/starnix/tests/syscalls/cpp/binder_helper.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 extern std::string DoPrePolicyLoadWork() { return "binder.pp"; }
 
+namespace starnix_binder {
+
 namespace {
-
-constexpr int kServiceManagerHandle = 0;
-const size_t kBinderMMapSize = sysconf(_SC_PAGESIZE);
-
-// Opens the binder
-fbl::unique_fd OpenBinder(std::string_view dir) {
-  return fbl::unique_fd(open((std::string(dir) + "/binder").c_str(), O_RDWR | O_CLOEXEC));
-}
 
 // Makes the current process register itself as a binder context manager,
 // and reads in an infinite loop the messages.
@@ -43,7 +38,7 @@ void ContextManagerLoop(std::string_view dir) {
 
   // Enter looper
   {
-    binder_helper::EnterLooperPayload enter_looper_payload;
+    EnterLooperWriteBuffer enter_looper_payload;
     struct binder_write_read payload = {};
     payload.write_buffer = (binder_uintptr_t)&enter_looper_payload;
     payload.write_size = sizeof(enter_looper_payload);
@@ -145,13 +140,20 @@ TEST_P(CallPermission, DoCall) {
                                                  binder.get(), 0);
     ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
 
-    binder_helper::TransactionPayload transaction_payload;
-    transaction_payload.command_code = BC_TRANSACTION;
-    transaction_payload.data.target.handle = kServiceManagerHandle;
+    TransactionWriteBuffer transaction_payload = {
+        .command = BC_TRANSACTION,
+        .data =
+            {
+                .target =
+                    {
+                        .handle = kServiceManagerHandle,
+                    },
+            },
+    };
 
     struct binder_write_read payload = {};
     payload.write_buffer = (binder_uintptr_t)&transaction_payload;
-    payload.write_size = sizeof(binder_helper::TransactionPayload);
+    payload.write_size = sizeof(TransactionWriteBuffer);
 
     std::array<int32_t, 32> read_buffer = {};
     payload.read_size = sizeof(read_buffer);
@@ -159,12 +161,12 @@ TEST_P(CallPermission, DoCall) {
     payload.read_consumed = 0;
 
     ASSERT_THAT(ioctl(binder.get(), BINDER_WRITE_READ, &payload), SyscallSucceeds());
-    binder_helper::ParsedMessage message =
-        binder_helper::ParseMessage((binder_uintptr_t)read_buffer.data(), payload.read_consumed);
+    ParsedMessage message =
+        ParseMessage((binder_uintptr_t)read_buffer.data(), payload.read_consumed);
     if (expect_success) {
-      ASSERT_THAT(message.commands_, ::testing::ElementsAre(BR_NOOP, BR_TRANSACTION_COMPLETE));
+      ASSERT_THAT(message.returns_, ::testing::ElementsAre(BR_NOOP, BR_TRANSACTION_COMPLETE));
     } else {
-      ASSERT_THAT(message.commands_, ::testing::ElementsAre(BR_NOOP, BR_FAILED_REPLY));
+      ASSERT_THAT(message.returns_, ::testing::ElementsAre(BR_NOOP, BR_FAILED_REPLY));
     }
   }));
 }
@@ -175,3 +177,33 @@ const auto kCallPermissionValues =
 INSTANTIATE_TEST_SUITE_P(CallPermission, CallPermission, kCallPermissionValues);
 
 }  // namespace
+
+class WithSEStarnix : public WithOrWithoutSEStarnix {
+ public:
+  pid_t SpawnManager(test_helper::ForkHelper& fork_helper, fit::closure manager_behavior) override {
+    return RunInForkedProcessWithLabel(fork_helper, "test_u:test_r:binder_context_manager_t:s0",
+                                       std::move(manager_behavior));
+  }
+  pid_t SpawnProvider(test_helper::ForkHelper& fork_helper,
+                      fit::closure provider_behavior) override {
+    return RunInForkedProcessWithLabel(fork_helper, "test_u:test_r:binder_service_provider_t:s0",
+                                       std::move(provider_behavior));
+  }
+  pid_t SpawnClient(test_helper::ForkHelper& fork_helper, fit::closure client_behavior) override {
+    return RunInForkedProcessWithLabel(fork_helper, "test_u:test_r:binder_service_client_t:s0",
+                                       std::move(client_behavior));
+  }
+  void ValidateClientSecctxSeenByProvider(std::string_view secctx) override {
+    // TODO(nathaniel): SELinux Test Suite uses functions from selinux/context.h for this
+    // comparison; do we want to be that orthodox?
+    ASSERT_STREQ(std::string(secctx).data(), "test_u:test_r:binder_service_client_t:s0");
+  }
+  bool SkipEntirely() override { return false; }
+
+ private:
+  ScopedEnforcement enforcing_ = ScopedEnforcement::SetEnforcing();
+};
+
+INSTANTIATE_TYPED_TEST_SUITE_P(BinderWithSEStarnix, ManagerProviderClientTest, WithSEStarnix);
+
+}  // namespace starnix_binder

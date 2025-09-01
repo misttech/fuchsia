@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <lib/fit/function.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
@@ -20,6 +21,7 @@
 #include <linux/android/binderfs.h>
 #include <linux/netlink.h>
 
+#include "src/starnix/tests/syscalls/cpp/binder/manager_provider_client_test.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -68,7 +70,7 @@ class BinderTest : public ::testing::Test {
         .nl_pid = 0,
         .nl_groups = 0xffffffff,
     };
-    ASSERT_THAT(bind(uevent_fd.get(), (struct sockaddr *)&addr, sizeof(addr)), SyscallSucceeds());
+    ASSERT_THAT(bind(uevent_fd.get(), (struct sockaddr*)&addr, sizeof(addr)), SyscallSucceeds());
 
     // Mount sysfs to check for device presence.
     ASSERT_THAT(mkdir(TestPath("sys").c_str(), 0o700), SyscallSucceeds());
@@ -81,7 +83,7 @@ class BinderTest : public ::testing::Test {
     }
   }
 
-  std::string TestPath(const char *path) const { return temp_dir_.path() + "/" + path; }
+  std::string TestPath(const char* path) const { return temp_dir_.path() + "/" + path; }
 
   ::testing::AssertionResult NoUeventReceived() {
     char buffer[4096];
@@ -284,3 +286,27 @@ TEST_F(BinderTest, BinderControlInvalidPathSlash) {
 }
 
 }  // namespace
+
+namespace starnix_binder {
+
+class WithoutSEStarnix : public WithOrWithoutSEStarnix {
+ public:
+  pid_t SpawnManager(test_helper::ForkHelper& fork_helper, fit::closure manager_behavior) override {
+    return fork_helper.RunInForkedProcess(std::move(manager_behavior));
+  }
+  pid_t SpawnProvider(test_helper::ForkHelper& fork_helper,
+                      fit::closure provider_behavior) override {
+    return fork_helper.RunInForkedProcess(std::move(provider_behavior));
+  }
+  pid_t SpawnClient(test_helper::ForkHelper& fork_helper, fit::closure client_behavior) override {
+    return fork_helper.RunInForkedProcess(std::move(client_behavior));
+  }
+  void ValidateClientSecctxSeenByProvider(std::string_view secctx) override {
+    // Nothing to validate here in the Not-SE flavor.
+  }
+  bool SkipEntirely() override { return !test_helper::IsStarnix(); }
+};
+
+INSTANTIATE_TYPED_TEST_SUITE_P(BinderWithoutSEStarnix, ManagerProviderClientTest, WithoutSEStarnix);
+
+}  // namespace starnix_binder

@@ -2,9 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/starnix/tests/selinux/userspace/tests/binder_helper.h"
+#include "src/starnix/tests/syscalls/cpp/binder_helper.h"
 
-namespace binder_helper {
+#include <fcntl.h>
+#include <sys/ioctl.h>
+
+#include <fbl/unique_fd.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
+
+namespace starnix_binder {
+
+fbl::unique_fd OpenBinder(std::string_view dir) {
+  return fbl::unique_fd(open((std::string(dir) + "/binder").c_str(), O_RDWR | O_CLOEXEC));
+}
 
 ParsedMessage ParseMessage(const binder_uintptr_t start, const binder_size_t length) {
   // This function is based on the code of `printReturnCommand`:
@@ -16,10 +29,10 @@ ParsedMessage ParseMessage(const binder_uintptr_t start, const binder_size_t len
 
   binder_uintptr_t ptr = start;
   while (ptr < end) {
-    binder_driver_return_protocol cmd = (binder_driver_return_protocol)(*(uint32_t *)ptr);
-    m.commands_.push_back(cmd);
-    ptr += sizeof(uint32_t);
-    switch (cmd) {
+    binder_driver_return_protocol returned = *(binder_driver_return_protocol*)ptr;
+    m.returns_.push_back(returned);
+    ptr += sizeof(binder_driver_return_protocol);
+    switch (returned) {
       case BR_TRANSACTION_SEC_CTX:
         ptr += sizeof(binder_transaction_data_secctx);
         break;
@@ -57,4 +70,15 @@ ParsedMessage ParseMessage(const binder_uintptr_t start, const binder_size_t len
   return m;
 }
 
-}  // namespace binder_helper
+void EnterLooper(const fbl::unique_fd& binder_fd) {
+  EnterLooperWriteBuffer write_buffer;
+  struct binder_write_read write_read = {
+      .write_size = sizeof(write_buffer),
+      .write_consumed = 0,
+      .write_buffer = (binder_uintptr_t)&write_buffer,
+  };
+
+  ASSERT_THAT(ioctl(binder_fd.get(), BINDER_WRITE_READ, &write_read), SyscallSucceeds());
+}
+
+}  // namespace starnix_binder

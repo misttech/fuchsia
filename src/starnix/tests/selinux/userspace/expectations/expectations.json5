@@ -32,6 +32,9 @@
                 // TODO: https://fxbug.dev/361552580 - Fix SELinuxFS API validation of fields.
                 "SeLinuxFsAccess.ClassIdMayHaveTrailingNonNumericData",
                 "SeLinuxFsAccess.FourthArgumentIsNotValidated",
+
+                // TODO(https://fxbug.dev/398654361)
+                "BinderWithSEStarnix/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
             ],
         },
     ],
