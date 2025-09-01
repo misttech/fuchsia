@@ -8,12 +8,13 @@ use crate::message::{Message, MessageResult, MessageReturn};
 use crate::node::Node;
 use crate::ok_or_default_err;
 use crate::types::{NormPerfs, OperatingPoint, ThermalLoad, Watts};
-use anyhow::{anyhow, bail, format_err, Error};
+use anyhow::{Error, anyhow, bail, format_err};
 use async_trait::async_trait;
 use async_utils::event::Event as AsyncEvent;
 use fuchsia_inspect::{self as inspect, ArrayProperty as _, Property as _};
+use futures::lock::{Mutex, MutexGuard};
 use serde_derive::Deserialize;
-use std::cell::{Cell, RefCell, RefMut};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::convert::TryInto as _;
 use std::fmt::Debug;
@@ -524,7 +525,7 @@ impl<'a> CpuManagerMainBuilder<'a> {
             syscall_handler: self.syscall_handler,
             min_power_for_boost: self.min_power_for_boost,
             inspect,
-            mutable_inner: RefCell::new(mutable_inner),
+            mutable_inner: Mutex::new(mutable_inner),
         }))
     }
 
@@ -561,8 +562,9 @@ pub struct CpuManagerMain {
     /// Minimum available power to boost cpu clusters to the maximum.
     min_power_for_boost: Watts,
 
-    /// Mutable inner state.
-    mutable_inner: RefCell<MutableInner>,
+    /// Mutable inner state. This must be guarded with a Mutex rather than a RefCell because CPU
+    /// boost requests can overlap with thermal updates.
+    mutable_inner: Mutex<MutableInner>,
 }
 
 /// A performance model for a future time interval.
@@ -601,12 +603,10 @@ impl CpuManagerMain {
     // Determines the thermal state that should be used for the given available power and
     // performance model, as well as its estimated performance and power.
     fn select_thermal_state(
-        &self,
+        thermal_states: &Vec<ThermalState>,
         available_power: Watts,
         performance_model: PerformanceModel,
     ) -> (usize, PerfAndPower) {
-        let thermal_states = &self.mutable_inner.borrow().thermal_states;
-
         // State 0 is guaranteed to be admissible. If it meets the power criterion, we return it.
         // Otherwise, we use it to initialize the fallback -- the lowest-index admissible state,
         // which will be used if no states meet the power criterion.
@@ -642,7 +642,7 @@ impl CpuManagerMain {
             "index" => index as u32
         );
 
-        let mut inner = self.mutable_inner.borrow_mut();
+        let mut inner = self.mutable_inner.lock().await;
 
         if let Some(current_index) = inner.current_thermal_state {
             // Return early if no update is required. We're assuming that opps have not changed.
@@ -737,7 +737,7 @@ impl CpuManagerMain {
         self.init_done.wait().await;
 
         self.inspect.available_power.set(available_power.0);
-        self.mutable_inner.borrow_mut().available_power = available_power.clone();
+        self.mutable_inner.lock().await.available_power = available_power.clone();
 
         // Gather CPU loads over the last time interval. In the unlikely event of an error, use the
         // worst-case CPU load of 1.0 for all CPUs and throttle accordingly.
@@ -749,13 +749,13 @@ impl CpuManagerMain {
                     e
                 );
                 self.inspect.last_error.set(&e.to_string());
-                vec![1.0; self.mutable_inner.borrow().num_cpus as usize]
+                vec![1.0; self.mutable_inner.lock().await.num_cpus as usize]
             }
         };
 
         // Determine the normalized performance over the last interval.
         let mut last_performance = NormPerfs(0.0);
-        for cluster in self.mutable_inner.borrow().clusters.iter() {
+        for cluster in self.mutable_inner.lock().await.clusters.iter() {
             let (load, performance) = cluster.process_fractional_loads(&cpu_loads);
             last_performance += performance;
 
@@ -782,8 +782,11 @@ impl CpuManagerMain {
         // Determine the next thermal state, updating if needed. We use the performance over the
         // last interval as an estimate of performance over the next interval; in principle a more
         // sophisticated estimate could be used.
-        let (new_thermal_state_index, estimate) =
-            self.select_thermal_state(available_power, performance_model);
+        let (new_thermal_state_index, estimate) = Self::select_thermal_state(
+            &self.mutable_inner.lock().await.thermal_states,
+            available_power,
+            performance_model,
+        );
         fuchsia_trace::counter!(
             c"cpu_manager",
             c"CpuManagerMain new_thermal_state_index",
@@ -820,7 +823,7 @@ impl CpuManagerMain {
             c"CpuManagerMain::handle_set_boost",
             "enable" => enable
         );
-        let mut inner = self.mutable_inner.borrow_mut();
+        let mut inner = self.mutable_inner.lock().await;
         inner.boost_enabled = enable;
         fuchsia_trace::counter!(
             c"cpu_manager",
@@ -835,7 +838,7 @@ impl CpuManagerMain {
 
     async fn update_cluster_opps(
         &self,
-        inner: &RefMut<'_, MutableInner>,
+        inner: &MutexGuard<'_, MutableInner>,
         thermal_state: usize,
     ) -> Result<(), CpuManagerError> {
         fuchsia_trace::duration!(
@@ -933,15 +936,15 @@ impl Node for CpuManagerMain {
         fuchsia_trace::duration!(c"cpu_manager", c"CpuManagerMain::init");
 
         let cluster_configs =
-            ok_or_default_err!(self.mutable_inner.borrow_mut().cluster_configs.take())
+            ok_or_default_err!(self.mutable_inner.lock().await.cluster_configs.take())
                 .or_debug_panic()?;
 
         let cluster_handlers =
-            ok_or_default_err!(self.mutable_inner.borrow_mut().cluster_handlers.take())
+            ok_or_default_err!(self.mutable_inner.lock().await.cluster_handlers.take())
                 .or_debug_panic()?;
 
         let thermal_state_configs =
-            ok_or_default_err!(self.mutable_inner.borrow_mut().thermal_state_configs.take())
+            ok_or_default_err!(self.mutable_inner.lock().await.thermal_state_configs.take())
                 .or_debug_panic()?;
 
         // Retrieve the total number of CPUs, and ensure that clusters' logical CPU numbers exactly
@@ -1019,7 +1022,7 @@ impl Node for CpuManagerMain {
         self.inspect.set_thermal_states(&thermal_states);
 
         {
-            let mut inner = self.mutable_inner.borrow_mut();
+            let mut inner = self.mutable_inner.lock().await;
             inner.num_cpus = num_cpus;
             inner.clusters = clusters;
             inner.thermal_states = thermal_states;
@@ -1132,7 +1135,7 @@ impl InspectData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::mock_node::{create_dummy_node, MessageMatcher, MockNode, MockNodeMaker};
+    use crate::test::mock_node::{MessageMatcher, MockNode, MockNodeMaker, create_dummy_node};
     use crate::types::{Hertz, Volts};
     use crate::{msg_eq, msg_ok_return};
     use assert_matches::assert_matches;
@@ -1678,7 +1681,7 @@ mod tests {
 
         // We choose a max power above state 1's max and below state 0's.
         let thermal_load = {
-            let inner = node.mutable_inner.borrow();
+            let inner = node.mutable_inner.lock().await;
             let state = &inner.thermal_states[1];
             let state_1_max_power = state.estimate_power(Saturated);
             let max_power = state_1_max_power + Watts(0.1);
@@ -1738,7 +1741,7 @@ mod tests {
         assert_matches!(result, Ok(_));
 
         let estimate =
-            node.mutable_inner.borrow().thermal_states[1].estimate_perf_and_power(Saturated);
+            node.mutable_inner.lock().await.thermal_states[1].estimate_perf_and_power(Saturated);
 
         assert_data_tree!(
             inspector,
@@ -1845,7 +1848,7 @@ mod tests {
         .await;
 
         // SetBoost should succeed when no active throttling
-        assert!(!node.mutable_inner.borrow().throttling_active());
+        assert!(!node.mutable_inner.lock().await.throttling_active());
         handlers.expect_big_opp(0);
         handlers.expect_little_opp(0);
         let mut result = node.handle_message(&Message::SetBoost(true)).await;
