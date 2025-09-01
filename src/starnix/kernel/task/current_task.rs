@@ -283,7 +283,7 @@ impl CurrentTask {
     /// actions performed by the task.
     pub fn current_creds(&self) -> Credentials {
         match self.overridden_creds.borrow().as_ref() {
-            Some(x) => x.creds.clone(),
+            Some(full_creds) => full_creds.creds.clone(),
             None => self.real_creds(),
         }
     }
@@ -295,6 +295,17 @@ impl CurrentTask {
         match self.overridden_creds.borrow().as_ref() {
             Some(x) => f(&x.creds),
             None => self.with_real_creds(f),
+        }
+    }
+
+    /// Returns the current subjective credentials of the task, including the security state.
+    pub fn full_current_creds(&self) -> FullCredentials {
+        match self.overridden_creds.borrow().as_ref() {
+            Some(full_creds) => full_creds.clone(),
+            None => FullCredentials {
+                creds: self.real_creds(),
+                security_state: self.security_state.clone(),
+            },
         }
     }
 

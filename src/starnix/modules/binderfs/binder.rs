@@ -17,8 +17,8 @@ use starnix_core::mm::{
 };
 use starnix_core::mutable_state::Guard;
 use starnix_core::task::{
-    CurrentTask, CurrentTaskAndLocked, EventHandler, Kernel, SchedulerState, SimpleWaiter, Task,
-    ThreadGroupKey, WaitCanceler, WaitQueue, Waiter,
+    CurrentTask, CurrentTaskAndLocked, EventHandler, FullCredentials, Kernel, SchedulerState,
+    SimpleWaiter, Task, ThreadGroupKey, WaitCanceler, WaitQueue, Waiter,
 };
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer, VecInputBuffer};
 use starnix_core::vfs::pseudo::simple_file::BytesFile;
@@ -3229,6 +3229,7 @@ fn get_resource_accessor<'a>(
 struct RemoteResourceAccessor {
     process: zx::Process,
     process_accessor: fbinder::ProcessAccessorSynchronousProxy,
+    remote_creds: FullCredentials,
 }
 
 impl RemoteResourceAccessor {
@@ -3241,6 +3242,13 @@ impl RemoteResourceAccessor {
             .file_request(request, zx::MonotonicInstant::INFINITE)
             .map_err(|_| errno!(ENOENT))?;
         result.map_err(|e| errno_from_code!(e.into_primitive() as i16))
+    }
+
+    fn with_remote_creds<F, T>(&self, current_task: &CurrentTask, f: F) -> Result<T, Errno>
+    where
+        F: FnOnce() -> Result<T, Errno>,
+    {
+        current_task.override_creds(|temp_creds| *temp_creds = self.remote_creds.clone(), f)
     }
 }
 
@@ -3406,28 +3414,30 @@ impl ResourceAccessor for RemoteResourceAccessor {
         let num_fds = fds.len();
         let mut files = Vec::with_capacity(num_fds);
 
-        for chunk in fds.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
-            let response = self.run_file_request(fbinder::FileRequest {
-                get_requests: Some(chunk.into_iter().map(|fd| fd.raw()).collect()),
-                ..Default::default()
-            })?;
-            for fbinder::FileHandle { file, flags, .. } in
-                response.get_responses.into_iter().flatten()
-            {
-                let Some(flags) = flags else {
-                    log_warn!("Incorrect response to file request. Missing flags.");
-                    return error!(ENOENT);
-                };
-                let file = if let Some(file) = file {
-                    new_remote_file(locked, current_task, file, flags.into_fidl())?
-                } else {
-                    new_null_file(locked, current_task, flags.into_fidl())
-                };
-                files.push((file, FdFlags::empty()));
+        self.with_remote_creds(current_task, || {
+            for chunk in fds.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
+                let response = self.run_file_request(fbinder::FileRequest {
+                    get_requests: Some(chunk.into_iter().map(|fd| fd.raw()).collect()),
+                    ..Default::default()
+                })?;
+                for fbinder::FileHandle { file, flags, .. } in
+                    response.get_responses.into_iter().flatten()
+                {
+                    let Some(flags) = flags else {
+                        log_warn!("Incorrect response to file request. Missing flags.");
+                        return error!(ENOENT);
+                    };
+                    let file = if let Some(file) = file {
+                        new_remote_file(locked, current_task, file, flags.into_fidl())?
+                    } else {
+                        new_null_file(locked, current_task, flags.into_fidl())
+                    };
+                    files.push((file, FdFlags::empty()));
+                }
             }
-        }
 
-        if files.len() != num_fds { error!(ENOENT) } else { Ok(files) }
+            if files.len() != num_fds { error!(ENOENT) } else { Ok(files) }
+        })
     }
 
     fn add_files_with_flags(
@@ -3441,27 +3451,30 @@ impl ResourceAccessor for RemoteResourceAccessor {
         let num_files = files.len();
         let mut fds = Vec::with_capacity(num_files);
 
-        for chunk in files.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
-            let mut handles = Vec::with_capacity(chunk.len());
-            for (file, _) in chunk.into_iter() {
-                handles.push(fbinder::FileHandle {
-                    file: file.to_handle(current_task)?,
-                    flags: Some(file.flags().into_fidl()),
-                    ..fbinder::FileHandle::default()
-                });
+        self.with_remote_creds(current_task, || {
+            for chunk in files.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
+                let mut handles = Vec::with_capacity(chunk.len());
+                for (file, _) in chunk.into_iter() {
+                    handles.push(fbinder::FileHandle {
+                        file: file.to_handle(current_task)?,
+                        flags: Some(file.flags().into_fidl()),
+                        ..fbinder::FileHandle::default()
+                    });
+                }
+                let response = self.run_file_request(fbinder::FileRequest {
+                    add_requests: Some(handles),
+                    ..Default::default()
+                })?;
+                for fd in
+                    response.add_responses.into_iter().flatten().map(|fd| FdNumber::from_raw(fd))
+                {
+                    add_action(fd);
+                    fds.push(fd);
+                }
             }
-            let response = self.run_file_request(fbinder::FileRequest {
-                add_requests: Some(handles),
-                ..Default::default()
-            })?;
-            for fd in response.add_responses.into_iter().flatten().map(|fd| FdNumber::from_raw(fd))
-            {
-                add_action(fd);
-                fds.push(fd);
-            }
-        }
 
-        if fds.len() != num_files { error!(ENOENT) } else { Ok(fds) }
+            if fds.len() != num_files { error!(ENOENT) } else { Ok(fds) }
+        })
     }
 
     fn as_memory_accessor(&self) -> Option<&dyn MemoryAccessor> {
@@ -3678,7 +3691,11 @@ impl BinderDriver {
             fbinder::ProcessAccessorSynchronousProxy::new(process_accessor.into_channel());
         let identifier = this.create_remote_process(
             current_task.thread_group_key.clone(),
-            RemoteResourceAccessor { process_accessor, process },
+            RemoteResourceAccessor {
+                process_accessor,
+                process,
+                remote_creds: current_task.full_current_creds(),
+            },
         );
         Arc::new(RemoteBinderConnection {
             binder_connection: BinderConnection {
@@ -9661,7 +9678,9 @@ pub mod tests {
             let process = fuchsia_runtime::process_self()
                 .duplicate(zx::Rights::SAME_RIGHTS)
                 .expect("process");
-            let remote_binder_task = Arc::new(RemoteResourceAccessor { process_accessor, process });
+            let remote_creds = FullCredentials::for_kernel();
+            let remote_binder_task =
+                Arc::new(RemoteResourceAccessor { process_accessor, process, remote_creds });
             let mut vector = Vec::with_capacity(vector_size);
             for i in 0..vector_size {
                 vector.push((i & 255) as u8);

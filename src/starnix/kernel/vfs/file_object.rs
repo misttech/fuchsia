@@ -7,8 +7,8 @@ use crate::mm::{DesiredAddress, MappingName, MappingOptions, MemoryAccessorExt, 
 use crate::power::OnWakeOps;
 use crate::security;
 use crate::task::{
-    CurrentTask, CurrentTaskAndLocked, EncryptionKeyId, EventHandler, FullCredentials, Task,
-    ThreadGroupKey, WaitCallback, WaitCanceler, Waiter, register_delayed_release,
+    CurrentTask, CurrentTaskAndLocked, EncryptionKeyId, EventHandler, Task, ThreadGroupKey,
+    WaitCallback, WaitCanceler, Waiter, register_delayed_release,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::file_server::serve_file;
@@ -425,7 +425,7 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         file: &FileObject,
         current_task: &CurrentTask,
     ) -> Result<Option<zx::Handle>, Errno> {
-        serve_file(current_task, file, FullCredentials::for_kernel())
+        serve_file(current_task, file, current_task.full_current_creds())
             .map(|c| Some(c.0.into_handle()))
     }
 

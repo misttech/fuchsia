@@ -13,7 +13,7 @@ use starnix_core::device::DeviceOps;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::fuchsia::new_remote_file_ops;
 use starnix_core::fs_node_impl_not_dir;
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, FullCredentials};
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::{FileOps, FsNode, FsNodeOps, FsStr, FsString};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
@@ -85,8 +85,8 @@ fn connect(socket_label: Arc<FsString>) -> Result<Box<dyn FileOps>, Errno> {
         .map_err(|_| errno!(ENOENT))?
         .map_err(|_| errno!(ENOENT))?;
 
-    // This will only be reached if the status was OK
-    new_remote_file_ops(tx.into())
+    // This will only be reached if the status was OK. Credentials are ignored for sockets.
+    new_remote_file_ops(tx.into(), FullCredentials::for_kernel())
 }
 
 impl DeviceOps for SocketTunnelFile {

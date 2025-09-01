@@ -8,7 +8,7 @@ use crate::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
 use crate::mm::memory::MemoryObject;
 use crate::mm::{ProtectionFlags, VMEX_RESOURCE};
 use crate::security;
-use crate::task::{CurrentTask, EncryptionKeyId, Kernel};
+use crate::task::{CurrentTask, EncryptionKeyId, FullCredentials, Kernel};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer, with_iovec_segments};
 use crate::vfs::fsverity::FsVerityState;
 use crate::vfs::socket::{Socket, SocketFile, ZxioBackedSocket};
@@ -356,7 +356,8 @@ pub fn new_remote_file<L>(
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    let (attrs, ops) = remote_file_attrs_and_ops(handle)?;
+    let remote_creds = current_task.full_current_creds();
+    let (attrs, ops) = remote_file_attrs_and_ops(handle, remote_creds)?;
     let mut rights = fio::Flags::empty();
     if flags.can_read() {
         rights |= fio::PERM_READABLE;
@@ -374,13 +375,17 @@ where
 // Create a FileOps from a zx::Handle.
 //
 // The handle must satisfy the same requirements as `new_remote_file`.
-pub fn new_remote_file_ops(handle: zx::Handle) -> Result<Box<dyn FileOps>, Errno> {
-    let (_, ops) = remote_file_attrs_and_ops(handle)?;
+pub fn new_remote_file_ops(
+    handle: zx::Handle,
+    creds: FullCredentials,
+) -> Result<Box<dyn FileOps>, Errno> {
+    let (_, ops) = remote_file_attrs_and_ops(handle, creds)?;
     Ok(ops)
 }
 
 fn remote_file_attrs_and_ops(
     mut handle: zx::Handle,
+    remote_creds: FullCredentials,
 ) -> Result<(zxio_node_attr, Box<dyn FileOps>), Errno> {
     let handle_type =
         handle.basic_info().map_err(|status| from_status_like_fdio!(status))?.object_type;
@@ -391,7 +396,8 @@ fn remote_file_attrs_and_ops(
         let queryable = funknown::QueryableSynchronousProxy::new(channel);
         if let Ok(name) = queryable.query(zx::MonotonicInstant::INFINITE) {
             if name == fbinder::UnixDomainSocketMarker::PROTOCOL_NAME.as_bytes() {
-                let socket_ops = RemoteUnixDomainSocket::new(queryable.into_channel())?;
+                let socket_ops =
+                    RemoteUnixDomainSocket::new(queryable.into_channel(), remote_creds)?;
                 let socket = Socket::new_with_ops(Box::new(socket_ops))?;
                 let file_ops = SocketFile::new(socket);
                 let attr = zxio_node_attr {

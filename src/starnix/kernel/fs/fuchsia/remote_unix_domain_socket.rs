@@ -4,7 +4,8 @@
 
 use crate::fs::fuchsia::{OpenFlags, new_remote_file};
 use crate::task::{
-    CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, WaitCanceler, Waiter,
+    CurrentTask, EventHandler, FullCredentials, SignalHandler, SignalHandlerInner, WaitCanceler,
+    Waiter,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::socket::{
@@ -29,10 +30,11 @@ static WRITABLE_SIGNAL: zx::Signals =
 pub struct RemoteUnixDomainSocket {
     client: fbinder::UnixDomainSocketSynchronousProxy,
     event: zx::EventPair,
+    remote_creds: FullCredentials,
 }
 
 impl RemoteUnixDomainSocket {
-    pub fn new(channel: zx::Channel) -> Result<Self, Errno> {
+    pub fn new(channel: zx::Channel, remote_creds: FullCredentials) -> Result<Self, Errno> {
         let client = fbinder::UnixDomainSocketSynchronousProxy::from_channel(channel);
         let response = client
             .get_event(
@@ -42,7 +44,7 @@ impl RemoteUnixDomainSocket {
             .map_err(|_| errno!(ECONNREFUSED))?
             .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?;
         let event = response.event.ok_or_else(|| errno!(ECONNREFUSED))?;
-        Ok(Self { client, event })
+        Ok(Self { client, event, remote_creds })
     }
 
     fn get_signals_from_events(events: FdEvents) -> zx::Signals {
@@ -65,6 +67,14 @@ impl RemoteUnixDomainSocket {
             events |= FdEvents::POLLOUT;
         }
         events
+    }
+
+    /// Perform an action using the credentials of the remote task.
+    fn with_remote_creds<F, R>(&self, current_task: &CurrentTask, f: F) -> Result<R, Errno>
+    where
+        F: FnOnce() -> Result<R, Errno>,
+    {
+        current_task.override_creds(|temp_creds| *temp_creds = self.remote_creds.clone(), f)
     }
 }
 
@@ -145,9 +155,19 @@ impl SocketOps for RemoteUnixDomainSocket {
 
         let mut file_handles: Vec<FileHandle> = vec![];
         if let Some(handles) = response.handles {
-            for handle in handles {
-                file_handles.push(new_remote_file(locked, current_task, handle, OpenFlags::RDWR)?);
-            }
+            // Use the remote task's credentials to create the remote_file object. This ensures
+            // that the SID associated to the fd is set to the correct value.
+            self.with_remote_creds(current_task, || {
+                for handle in handles {
+                    file_handles.push(new_remote_file(
+                        locked,
+                        current_task,
+                        handle,
+                        OpenFlags::RDWR,
+                    )?);
+                }
+                Ok(())
+            })?;
         }
         let ancillary_data = vec![AncillaryData::Unix(UnixControlData::Rights(file_handles))];
 
@@ -173,12 +193,16 @@ impl SocketOps for RemoteUnixDomainSocket {
         for data in ancillary_data {
             match data {
                 AncillaryData::Unix(UnixControlData::Rights(file_handles)) => {
-                    for file_handle in file_handles {
-                        let Some(handle) = file_handle.to_handle(current_task)? else {
-                            return error!(EINVAL);
-                        };
-                        handles.push(handle);
-                    }
+                    // Access the served files with the credentials of the remote end.
+                    self.with_remote_creds(current_task, || {
+                        for file_handle in file_handles {
+                            let Some(handle) = file_handle.to_handle(current_task)? else {
+                                return error!(EINVAL);
+                            };
+                            handles.push(handle);
+                        }
+                        Ok(())
+                    })?;
                 }
                 _ => return error!(EINVAL),
             }
