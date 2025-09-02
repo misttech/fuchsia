@@ -1,0 +1,29 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/rust/rustc_library.gni")
+
+rustc_library("boot_notifier") {
+  name = "starnix-modules-boot-notifier"
+  edition = "2021"
+  version = "0.1.0"
+  source_root = "lib.rs"
+
+  sources = [ "lib.rs" ]
+
+  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+
+  deps = [
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+    "//sdk/rust/zx",
+    "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/fuchsia-component",
+    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/lib/starnix_logging",
+    "//src/starnix/lib/starnix_sync",
+    "//src/starnix/lib/starnix_uapi",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:zerocopy",
+  ]
+}

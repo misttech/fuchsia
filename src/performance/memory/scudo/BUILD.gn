@@ -20,6 +20,9 @@ rustc_library("rust") {
   visibility = [
     # Please discuss with the owners before adding a dependency.
     "//src/devices/bin/driver-host/*",
+
+    # Depends on this crate for mallopt binding
+    "//src/sys/component_manager/*",
   ]
   edition = "2021"
   with_unit_tests = false

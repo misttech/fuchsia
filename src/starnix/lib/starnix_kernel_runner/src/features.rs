@@ -13,6 +13,7 @@ use starnix_core::vfs::FsString;
 use starnix_features::Feature;
 use starnix_logging::log_error;
 use starnix_modules_ashmem::ashmem_device_init;
+use starnix_modules_boot_notifier::booted_device_init;
 use starnix_modules_fastrpc::fastrpc_device_init;
 use starnix_modules_framebuffer::{AspectRatio, Framebuffer};
 use starnix_modules_gpu::gpu_device_init;
@@ -50,6 +51,9 @@ pub struct Features {
 
     /// Whether to enable ashmem.
     pub ashmem: bool,
+
+    /// Whether to enable a boot notifier device.
+    pub boot_notifier: bool,
 
     /// Whether to enable a framebuffer device.
     pub framebuffer: bool,
@@ -150,6 +154,7 @@ impl Features {
                     },
                 selinux,
                 ashmem,
+                boot_notifier,
                 framebuffer,
                 aspect_ratio,
                 enable_visual_debugging,
@@ -176,6 +181,7 @@ impl Features {
             } => {
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("ashmem", *ashmem);
+                inspect_node.record_bool("boot_notifier", *boot_notifier);
                 inspect_node.record_bool("framebuffer", *framebuffer);
                 inspect_node.record_bool("gralloc", *gralloc);
                 inspect_node.record_bool("kgsl", *kgsl);
@@ -307,6 +313,7 @@ pub fn parse_features(
             (Feature::Container, _) => features.container = true,
             (Feature::CustomArtifacts, _) => features.custom_artifacts = true,
             (Feature::Ashmem, _) => features.ashmem = true,
+            (Feature::BootNotifier, _) => features.boot_notifier = true,
             (Feature::Framebuffer, _) => features.framebuffer = true,
             (Feature::Gralloc, _) => features.gralloc = true,
             (Feature::Kgsl, _) => features.kgsl = true,
@@ -550,6 +557,9 @@ pub fn run_container_features(
     }
     if features.ashmem {
         ashmem_device_init(locked, system_task);
+    }
+    if features.boot_notifier {
+        booted_device_init(locked, system_task);
     }
     if !enabled_profiling {
         fuchsia_inspect_contrib::stop_self_profiling();

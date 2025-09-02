@@ -19,6 +19,7 @@ pub enum Feature {
     Container,
     CustomArtifacts,
     Ashmem,
+    BootNotifier,
     Framebuffer,
     Gralloc,
     Kgsl,

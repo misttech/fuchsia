@@ -12,3 +12,16 @@ closed protocol SystemController {
     /// is exited we expect the system will reboot.
     strict Shutdown() -> ();
 };
+
+@discoverable(server="platform")
+@available(added=NEXT)
+open protocol BootController {
+    // Notify the component manager that boot has completed.
+    //
+    // This is only a hint to component manager to perform optimizations, and does not guarantee
+    // any side effects. For example, component manager may use this to decide to release memory
+    // capacity. Component manager will send the response when it is finished performing these
+    // actions.
+    @available(added=NEXT)
+    flexible Notify() -> ();
+};

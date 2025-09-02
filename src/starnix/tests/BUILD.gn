@@ -14,6 +14,7 @@ group("tests") {
 
   deps = [
     "alpine:tests",
+    "boot_notifier:tests",
     "core_unit_tests:tests",
     "crash_reports:tests",
     "diagnostics:tests",

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use diagnostics_assertions::{assert_data_tree, AnyProperty};
+use diagnostics_assertions::{AnyProperty, assert_data_tree};
 use diagnostics_reader::{ArchiveReader, DiagnosticsHierarchy};
 use fidl::endpoints::create_proxy;
 use {fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys};
@@ -78,6 +78,9 @@ async fn main() {
     assert_eq!(data.len(), 1, "expected 1 match: {:?}", data);
     let hierarchy = data[0].payload.as_ref().unwrap();
     assert_data_tree!(hierarchy, root: {
+        boot: {
+            last_memory_purge_timestamp: 0u64,
+        },
         ota_health_verification: contains {},
         "fuchsia.inspect.Health": {
             start_timestamp_nanos: AnyProperty,

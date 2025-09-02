@@ -103,6 +103,7 @@
                 "fuchsia.posix.socket.raw.Provider",
                 "fuchsia.recovery.FactoryReset",
                 "fuchsia.scheduler.RoleManager",
+                "fuchsia.sys2.BootController",
                 "fuchsia.sysinfo.SysInfo",
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",

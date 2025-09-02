@@ -9,6 +9,7 @@
         features: [
             // keep-sorted start
             "ashmem",
+            "boot_notifier",
             "container",
             "custom_artifacts",
             "enable_suid",

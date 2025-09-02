@@ -15,6 +15,7 @@
         {
             protocol: [
                 "fuchsia.sys2.CrashIntrospect",
+                "fuchsia.sys2.BootController",
                 "fuchsia.sys2.SystemController",
                 "fuchsia.update.verify.HealthVerification",
             ],

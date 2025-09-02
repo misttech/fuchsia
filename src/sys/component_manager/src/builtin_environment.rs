@@ -10,6 +10,7 @@ use builtins::ioport_resource::IoportResource;
 use fidl_fuchsia_boot::UserbootRequest;
 
 use crate::bootfs::BootfsSvc;
+use crate::builtin::boot_controller::BootController;
 use crate::builtin::builtin_resolver::{BuiltinResolver, SCHEME as BUILTIN_SCHEME};
 use crate::builtin::builtin_runner::BuiltinProgramGen;
 use crate::builtin::crash_introspect::CrashIntrospectSvc;
@@ -1552,6 +1553,13 @@ impl BuiltinEnvironment {
                     .serve(stream)
                     .boxed()
             },
+        );
+
+        // Set up Boot Controller service.
+        let node = params.inspector.root().create_child("boot");
+        let boot_controller = BootController::new(node);
+        root_input_builder.add_builtin_protocol_if_enabled::<fsys::BootControllerMarker>(
+            move |stream| boot_controller.clone().serve(stream).boxed(),
         );
 
         root_input_builder.add_event_stream_capabilities();

@@ -62,6 +62,7 @@ rustc_library("starnix_kernel_runner") {
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules",
     "//src/starnix/modules/ashmem",
+    "//src/starnix/modules/boot_notifier",
     "//src/starnix/modules/fastrpc",
     "//src/starnix/modules/framebuffer",
     "//src/starnix/modules/gpu",

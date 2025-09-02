@@ -1,5 +1,19 @@
 [
     {
+        "kind": "protocol/member",
+        "name": "fuchsia.sys2/BootController.Notify",
+        "strictness": "flexible",
+        "ordinal": "6131437437582235870",
+        "direction": "two_way",
+        "response": "fuchsia.sys2/BootController_Notify_Response"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.sys2/BootController",
+        "openness": "open",
+        "transport": "channel"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.sys2/ChildLocation.collection",
         "ordinal": "1",
