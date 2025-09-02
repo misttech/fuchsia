@@ -13,7 +13,6 @@ use futures::StreamExt;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 use crate::agent::{self, AgentCreator, Context, CreationFunc, Lifespan};
-use crate::audio::types::AudioInfo;
 #[cfg(test)]
 use crate::base::UnknownInfo;
 use crate::base::{SettingInfo, SettingType};
@@ -140,7 +139,6 @@ macro_rules! into_storage_info {
 
 #[cfg(test)]
 into_storage_info!(UnknownInfo => SettingInfo);
-into_storage_info!(AudioInfo => SettingInfo);
 into_storage_info!(FactoryResetInfo => SettingInfo);
 into_storage_info!(DoNotDisturbInfo => SettingInfo);
 into_storage_info!(InputInfoSources => SettingInfo);
@@ -214,10 +212,7 @@ where
                     #[cfg(test)]
                     SettingType::Unknown => self.read::<UnknownInfo>(id, responder).await,
                     SettingType::Accessibility => panic!("Accessibility goes directly to storage"),
-                    SettingType::Audio => {
-                        trace!(id, c"audio storage read");
-                        self.read::<AudioInfo>(id, responder).await
-                    }
+                    SettingType::Audio => panic!("Audio goes directly to storage"),
                     SettingType::Display => panic!("Display goes directly to storage"),
                     SettingType::DoNotDisturb => self.read::<DoNotDisturbInfo>(id, responder).await,
                     SettingType::FactoryReset => self.read::<FactoryResetInfo>(id, responder).await,
@@ -230,27 +225,25 @@ where
                     SettingType::Setup => self.read::<SetupInfo>(id, responder).await,
                 }
             }
-            StorageRequest::Write(StorageInfo::SettingInfo(setting_info), id) => match setting_info
-            {
-                #[cfg(test)]
-                SettingInfo::Unknown(info) => self.write(info, responder).await,
-                SettingInfo::Accessibility(_) => {
-                    panic!("Accessibility goes directly to storage")
+            StorageRequest::Write(StorageInfo::SettingInfo(setting_info), _) => {
+                match setting_info {
+                    #[cfg(test)]
+                    SettingInfo::Unknown(info) => self.write(info, responder).await,
+                    SettingInfo::Accessibility(_) => {
+                        panic!("Accessibility goes directly to storage")
+                    }
+                    SettingInfo::Audio(_) => panic!("Audio goes directly to storage"),
+                    SettingInfo::Brightness(_) => panic!("Display goes directly to storage"),
+                    SettingInfo::DoNotDisturb(info) => self.write(info, responder).await,
+                    SettingInfo::FactoryReset(info) => self.write(info, responder).await,
+                    SettingInfo::Input(info) => self.write(info, responder).await,
+                    SettingInfo::Intl(info) => self.write(info, responder).await,
+                    SettingInfo::Keyboard(info) => self.write(info, responder).await,
+                    SettingInfo::NightMode(info) => self.write(info, responder).await,
+                    SettingInfo::Privacy(info) => self.write(info, responder).await,
+                    SettingInfo::Setup(info) => self.write(info, responder).await,
                 }
-                SettingInfo::Audio(info) => {
-                    trace!(id, c"audio storage write");
-                    self.write(info, responder).await
-                }
-                SettingInfo::Brightness(_) => panic!("Display goes directly to storage"),
-                SettingInfo::DoNotDisturb(info) => self.write(info, responder).await,
-                SettingInfo::FactoryReset(info) => self.write(info, responder).await,
-                SettingInfo::Input(info) => self.write(info, responder).await,
-                SettingInfo::Intl(info) => self.write(info, responder).await,
-                SettingInfo::Keyboard(info) => self.write(info, responder).await,
-                SettingInfo::NightMode(info) => self.write(info, responder).await,
-                SettingInfo::Privacy(info) => self.write(info, responder).await,
-                SettingInfo::Setup(info) => self.write(info, responder).await,
-            },
+            }
         }
     }
 }

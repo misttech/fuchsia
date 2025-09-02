@@ -4,6 +4,7 @@
 
 use crate::audio::audio_default_settings::{create_default_audio_stream, AudioInfoLoader};
 use crate::audio::{create_default_modified_counters, ModifiedCounters};
+use crate::base::SettingType;
 use anyhow::{anyhow, Error};
 use serde::{Deserialize, Serialize};
 use settings_storage::device_storage::DeviceStorageCompatible;
@@ -99,6 +100,12 @@ impl From<AudioStream> for SetAudioStream {
 pub struct AudioInfo {
     pub streams: [AudioStream; AUDIO_STREAM_TYPE_COUNT],
     pub modified_counters: Option<ModifiedCounters>,
+}
+
+impl From<&AudioInfo> for SettingType {
+    fn from(_: &AudioInfo) -> SettingType {
+        SettingType::Audio
+    }
 }
 
 impl DeviceStorageCompatible for AudioInfo {

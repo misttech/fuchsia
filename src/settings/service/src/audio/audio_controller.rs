@@ -8,9 +8,7 @@ use crate::audio::types::{
 use crate::audio::{create_default_modified_counters, ModifiedCounters, StreamVolumeControl};
 use crate::base::SettingType;
 use crate::handler::base::Request;
-use crate::handler::setting_handler::persist::{
-    controller as data_controller, ClientProxy, WriteResult,
-};
+use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
 use crate::handler::setting_handler::{
     controller, ControllerError, ControllerStateResult, Event, SettingHandlerResult, State,
 };
@@ -18,8 +16,10 @@ use crate::{trace, trace_guard};
 use async_trait::async_trait;
 use futures::lock::Mutex;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
-use settings_storage::storage_factory::{DefaultLoader, StorageAccess};
+use settings_storage::storage_factory::{DefaultLoader, StorageAccess, StorageFactory};
+use settings_storage::UpdateState;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::rc::Rc;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
@@ -27,6 +27,7 @@ type VolumeControllerHandle = Rc<Mutex<VolumeController>>;
 
 pub(crate) struct VolumeController {
     client: ClientProxy,
+    store: Rc<DeviceStorage>,
     audio_service_connected: bool,
     stream_volume_controls: HashMap<AudioStreamType, StreamVolumeControl>,
     modified_counters: ModifiedCounters,
@@ -39,12 +40,15 @@ enum UpdateFrom {
 }
 
 impl VolumeController {
-    fn create_with(
+    async fn create_with(
         client: ClientProxy,
         audio_info_loader: AudioInfoLoader,
+        storage_factory: Rc<impl StorageFactory<Storage = DeviceStorage>>,
     ) -> VolumeControllerHandle {
+        let store = storage_factory.get_store().await;
         Rc::new(Mutex::new(Self {
             client,
+            store,
             stream_volume_controls: HashMap::new(),
             audio_service_connected: false,
             modified_counters: create_default_modified_counters(),
@@ -65,7 +69,7 @@ impl VolumeController {
         push_to_audio_core: bool,
         id: ftrace::Id,
     ) -> ControllerStateResult {
-        let audio_info = self.client.read_setting::<AudioInfo>(id).await;
+        let audio_info = self.store.get::<AudioInfo>().await;
         // Ignore the notification triggered result.
         let _ = self
             .update_volume_streams(UpdateFrom::AudioInfo(audio_info), push_to_audio_core, id)
@@ -73,8 +77,8 @@ impl VolumeController {
         Ok(())
     }
 
-    async fn get_info(&self, id: ftrace::Id) -> Result<AudioInfo, ControllerError> {
-        let mut audio_info = self.client.read_setting::<AudioInfo>(id).await;
+    async fn get_info(&self) -> Result<AudioInfo, ControllerError> {
+        let mut audio_info = self.store.get::<AudioInfo>().await;
 
         audio_info.modified_counters = Some(self.modified_counters.clone());
         Ok(audio_info)
@@ -101,7 +105,7 @@ impl VolumeController {
 
         if !(self.update_volume_streams(UpdateFrom::NewStreams(volume), true, id).await?) {
             trace!(id, c"set volume notifying");
-            let info = self.get_info(id).await?.into();
+            let info = self.get_info().await?.into();
             self.client.notify(Event::Changed(info)).await;
         }
 
@@ -142,7 +146,7 @@ impl VolumeController {
             UpdateFrom::AudioInfo(audio_info) => (None, audio_info.streams.iter()),
             UpdateFrom::NewStreams(streams) => {
                 trace!(id, c"reading setting");
-                let stored_value = self.client.read_setting::<AudioInfo>(id).await;
+                let stored_value = self.store.get::<AudioInfo>().await;
                 for set_stream in streams.iter() {
                     let stored_stream = stored_value
                         .streams
@@ -201,9 +205,11 @@ impl VolumeController {
             drop(guard);
 
             let guard = trace_guard!(id, c"writing setting");
-            let write_result = self.client.write_setting(stored_value.into(), id).await;
+            let write_result = self.client.storage_write(&self.store, stored_value, id).await;
             drop(guard);
-            Ok(write_result.notified())
+            Ok(write_result
+                .as_ref()
+                .map_or(false, |update_state| UpdateState::Updated == *update_state))
         } else {
             Ok(false)
         }
@@ -283,25 +289,33 @@ impl VolumeController {
     }
 }
 
-pub(crate) struct AudioController {
+pub(crate) struct AudioController<F> {
     volume: VolumeControllerHandle,
+    _phantom: PhantomData<F>,
 }
 
-impl StorageAccess for AudioController {
+impl<F> StorageAccess for AudioController<F> {
     type Storage = DeviceStorage;
     type Data = AudioInfo;
     const STORAGE_KEY: &'static str = AudioInfo::KEY;
 }
 
-impl data_controller::CreateWith for AudioController {
-    type Data = AudioInfoLoader;
-    fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
-        Ok(AudioController { volume: VolumeController::create_with(client, data) })
+#[async_trait(?Send)]
+impl<F> data_controller::CreateWithAsync for AudioController<F>
+where
+    F: StorageFactory<Storage = DeviceStorage>,
+{
+    type Data = (Rc<F>, AudioInfoLoader);
+    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
+        Ok(AudioController {
+            volume: VolumeController::create_with(client, data.1, data.0).await,
+            _phantom: PhantomData,
+        })
     }
 }
 
 #[async_trait(?Send)]
-impl controller::Handle for AudioController {
+impl<F> controller::Handle for AudioController<F> {
     async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
         match request {
             Request::Restore => Some({
@@ -324,8 +338,7 @@ impl controller::Handle for AudioController {
                 Some(self.volume.lock().await.set_volume(volume, id).await)
             }
             Request::Get => {
-                let id = ftrace::Id::new();
-                Some(self.volume.lock().await.get_info(id).await.map(|info| Some(info.into())))
+                Some(self.volume.lock().await.get_info().await.map(|info| Some(info.into())))
             }
             _ => None,
         }

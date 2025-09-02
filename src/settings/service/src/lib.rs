@@ -743,13 +743,17 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         if components.contains(&SettingType::Audio) {
             let audio_loader = audio_loader.expect("Audio storage requires audio loader");
             device_storage_factory
-                .initialize_with_loader::<AudioController, _>(audio_loader.clone())
+                .initialize_with_loader::<AudioController<T>, _>(audio_loader.clone())
                 .await
                 .expect("storage should still be initializing");
+            let device_storage_factory = Rc::clone(&device_storage_factory);
             factory_handle.register(
                 SettingType::Audio,
                 Box::new(move |context| {
-                    DataHandler::<AudioController>::spawn_with(context, audio_loader.clone())
+                    DataHandler::<AudioController<T>>::spawn_with_async(
+                        context,
+                        (Rc::clone(&device_storage_factory), audio_loader.clone()),
+                    )
                 }),
             );
         }

@@ -556,19 +556,6 @@ pub mod persist {
         }
     }
 
-    /// A trait for interpreting a `Result` into whether a notification occurred
-    /// and converting the `Result` into a `SettingHandlerResult`.
-    pub(crate) trait WriteResult: IntoHandlerResult {
-        /// Indicates whether a notification occurred as a result of the write.
-        fn notified(&self) -> bool;
-    }
-
-    impl WriteResult for Result<UpdateState, ControllerError> {
-        fn notified(&self) -> bool {
-            self.as_ref().map_or(false, |update_state| UpdateState::Updated == *update_state)
-        }
-    }
-
     impl IntoHandlerResult for Result<UpdateState, ControllerError> {
         fn into_handler_result(self) -> SettingHandlerResult {
             self.map(|_| None)
