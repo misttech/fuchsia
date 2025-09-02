@@ -5,6 +5,7 @@
 #include "src/storage/lib/paver/moonflower.h"
 
 #include <fidl/fuchsia.storage.partitions/cpp/wire_types.h>
+#include <lib/abr/abr.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/result.h>
@@ -219,29 +220,35 @@ class MoonflowerAbrClient : public abr::Client {
                                           std::move(zircon_b.value()), std::move(client)));
   }
 
-  zx::result<> GetPartitionFlags(uint64_t* a_flags, uint64_t* b_flags) {
-    if (pending_zircon_a_flags_) {
-      *a_flags = *pending_zircon_a_flags_;
-    } else {
-      zx::result a = zircon_a_->GetMetadata();
-      if (a.is_error()) {
-        return a.take_error();
-      }
-      *a_flags = a->flags;
+  struct GptEntryAttributes {
+    static constexpr uint8_t kMoonflowerMaxPriority = 3;
+
+    explicit GptEntryAttributes(uint64_t flags) : flags(flags) {}
+
+    uint64_t flags;
+    DEF_SUBFIELD(flags, 49, 48, priority);
+    DEF_SUBBIT(flags, 50, active);
+    DEF_SUBFIELD(flags, 53, 51, retry_count);
+    DEF_SUBBIT(flags, 54, boot_success);
+    DEF_SUBBIT(flags, 55, unbootable);
+  };
+
+  zx::result<> GetPartitionFlags(GptEntryAttributes* a_flags, GptEntryAttributes* b_flags) {
+    zx::result a = zircon_a_->GetMetadata();
+    if (a.is_error()) {
+      return a.take_error();
     }
-    if (pending_zircon_b_flags_) {
-      *b_flags = *pending_zircon_b_flags_;
-    } else {
-      zx::result b = zircon_b_->GetMetadata();
-      if (b.is_error()) {
-        return b.take_error();
-      }
-      *b_flags = b->flags;
+    a_flags->flags = a->flags;
+    zx::result b = zircon_b_->GetMetadata();
+    if (b.is_error()) {
+      return b.take_error();
     }
+    b_flags->flags = b->flags;
     return zx::ok();
   }
 
-  zx::result<> SetPartitionFlags(uint64_t a_flags, uint64_t b_flags) {
+  zx::result<> SetPartitionFlags(const GptEntryAttributes& a_flags,
+                                 const GptEntryAttributes& b_flags) {
     zx::result result = UpdatePartitionMetadata(*zircon_a_, a_flags, {});
     if (result.is_error()) {
       return result.take_error();
@@ -250,12 +257,15 @@ class MoonflowerAbrClient : public abr::Client {
     if (result.is_error()) {
       return result.take_error();
     }
-    pending_zircon_a_flags_ = a_flags;
-    pending_zircon_b_flags_ = b_flags;
     return zx::ok();
   }
 
-  zx::result<> SwapAbPartitionTypeGuids(bool new_slot_is_b) {
+  enum class ActiveSlot {
+    kA,
+    kB,
+  };
+
+  zx::result<> SwapAbPartitionTypeGuids(ActiveSlot new_active_slot) {
     zx::result a_partitions = partitioner_->FindAllPartitions(
         [](const GptPartitionMetadata& metadata) -> bool { return metadata.name.ends_with("_a"); });
     if (a_partitions.is_error()) {
@@ -305,6 +315,7 @@ class MoonflowerAbrClient : public abr::Client {
       return b_partitions_map.take_error();
     }
 
+    bool new_slot_is_b = (new_active_slot == ActiveSlot::kB);
     const std::unordered_map<std::string, Partition>& new_partitions =
         new_slot_is_b ? *b_partitions_map : *a_partitions_map;
     const std::unordered_map<std::string, Partition>& old_partitions =
@@ -326,11 +337,16 @@ class MoonflowerAbrClient : public abr::Client {
         return zx::error(ZX_ERR_BAD_STATE);
       }
       if (new_part.metadata.type_guid != inactive_type_guid) {
-        // Make note if the device has mixed partition type GUID assignment
-        // (https://fxbug.dev/397766186).
-        ERROR("%s partition has type GUID %s (expected %s)\n", part_name.c_str(),
-              new_part.metadata.type_guid.ToString().c_str(),
+        // The to-be-active slot should currently have the inactive type GUID so we can swap them.
+        // If it doesn't, log the error but keep going (https://fxbug.dev/397766186) on the
+        // assumption that the GUIDs were already swapped so this partition already has the active
+        // GUID. We don't know each partition's active GUID so this is the best we can do, and the
+        // bootloader has some logic to work with unexpected GPT state so this gives us the best
+        // shot of completing the OTA and ending up with something bootable.
+        ERROR("To-be-active partition %s has type GUID %s (expected %s) - skipping swap\n",
+              new_part.metadata.name.c_str(), new_part.metadata.type_guid.ToString().c_str(),
               inactive_type_guid.ToString().c_str());
+
         continue;
       }
       const Uuid& active_type_guid = old_part->second.metadata.type_guid;
@@ -349,11 +365,7 @@ class MoonflowerAbrClient : public abr::Client {
     return zx::ok();
   }
 
-  void Discard() {
-    transaction_.reset();
-    pending_zircon_a_flags_.reset();
-    pending_zircon_b_flags_.reset();
-  }
+  void Discard() { transaction_.reset(); }
 
   zx::result<> Commit() {
     if (transaction_.is_valid()) {
@@ -367,7 +379,8 @@ class MoonflowerAbrClient : public abr::Client {
     return zx::ok();
   }
 
-  zx::result<> Flush() override { return Commit(); }
+  // We always flush immediately in `WriteCustom()`.
+  zx::result<> Flush() override { return zx::ok(); }
 
  private:
   MoonflowerAbrClient(
@@ -380,7 +393,8 @@ class MoonflowerAbrClient : public abr::Client {
         zircon_b_(std::move(zircon_b)),
         partitions_manager_(std::move(partitions_manager)) {}
 
-  zx::result<> UpdatePartitionMetadata(PartitionClient& client, std::optional<uint64_t> flags,
+  zx::result<> UpdatePartitionMetadata(PartitionClient& client,
+                                       std::optional<GptEntryAttributes> flags,
                                        std::optional<Uuid> type_guid) {
     zx::result partition = client.connector()->PartitionManagement();
     if (partition.is_error()) {
@@ -394,7 +408,7 @@ class MoonflowerAbrClient : public abr::Client {
     }
     request.transaction(std::move(*transaction));
     if (flags) {
-      request.flags(*flags);
+      request.flags(flags->flags);
     }
     fuchsia_hardware_block_partition::wire::Guid type;
     if (type_guid) {
@@ -436,14 +450,27 @@ class MoonflowerAbrClient : public abr::Client {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
+  // Determines the active slot based on the given GPT attributes.
+  static ActiveSlot GetActiveSlot(const GptEntryAttributes& a, const GptEntryAttributes& b) {
+    // The bootloaders generally have more complicated logic to deal with
+    // initializing from zero-state, but from the OS perspective the bootloader
+    // has already initialized to a known-good state so the logic here can be
+    // reduced to "default to A unless B is both active and higher-priority".
+    if (b.active() && b.priority() > a.priority()) {
+      return ActiveSlot::kB;
+    }
+    return ActiveSlot::kA;
+  }
+
   zx::result<> ReadCustom(AbrSlotData* a, AbrSlotData* b, uint8_t* one_shot_recovery) override {
-    uint64_t a_flags, b_flags;
+    GptEntryAttributes a_flags(0), b_flags(0);
     zx::result result = GetPartitionFlags(&a_flags, &b_flags);
     if (result.is_error()) {
       return result.take_error();
     }
-    *a = ToFuchsia(a_flags);
-    *b = ToFuchsia(b_flags);
+
+    *a = ToFuchsia(a_flags, "boot_a");
+    *b = ToFuchsia(b_flags, "boot_b");
 
     // TODO(b/348034903): Consider checking that the higher-priority active slot has the active
     // partition type GUIDs.
@@ -454,113 +481,101 @@ class MoonflowerAbrClient : public abr::Client {
 
   zx::result<> WriteCustom(const AbrSlotData* a, const AbrSlotData* b,
                            uint8_t one_shot_recovery) override {
-    bool slot_switch = DetectSlotSwitch(a, b);
-    bool new_slot_is_b = false;
-    if (slot_switch) {
-      new_slot_is_b = true;
-    } else {
-      slot_switch = DetectSlotSwitch(b, a);
-    }
-
-    uint64_t a_flags, b_flags;
+    // Read the existing flags first to figure out the current slot, and to retain any non-slot bits
+    // that might be set.
+    GptEntryAttributes a_flags(0), b_flags(0);
     zx::result result = GetPartitionFlags(&a_flags, &b_flags);
     if (result.is_error()) {
       return result.take_error();
     }
-    a_flags = ToMoonflower(*a, *b, a_flags);
-    b_flags = ToMoonflower(*b, *a, b_flags);
+    ActiveSlot active_slot = GetActiveSlot(a_flags, b_flags);
+
+    ToMoonflower(*a, *b, &a_flags, &b_flags);
 
     auto discard_changes = fit::defer([&]() { Discard(); });
 
-    // SetActiveAndUnbootable calls back into ReadCustom to read the flags, so we need to set them
-    // here, even though we'll update them and call SetPartitionFlags again after.
     result = SetPartitionFlags(a_flags, b_flags);
     if (result.is_error()) {
       return result.take_error();
     }
-    zx::result<uint64_t> new_a_flags = SetActiveAndUnbootable(kAbrSlotIndexA, a_flags);
-    if (new_a_flags.is_error()) {
-      return new_a_flags.take_error();
-    }
-    zx::result<uint64_t> new_b_flags = SetActiveAndUnbootable(kAbrSlotIndexB, b_flags);
-    if (new_b_flags.is_error()) {
-      return new_b_flags.take_error();
-    }
 
-    result = SetPartitionFlags(*new_a_flags, *new_b_flags);
-    if (result.is_error()) {
-      return result.take_error();
-    }
-
-    if (slot_switch) {
-      zx::result result = SwapAbPartitionTypeGuids(new_slot_is_b);
+    ActiveSlot new_active_slot = GetActiveSlot(a_flags, b_flags);
+    if (new_active_slot != active_slot) {
+      LOG("Switching active slot from %s\n",
+          new_active_slot == ActiveSlot::kB ? "A to B" : "B to A");
+      zx::result result = SwapAbPartitionTypeGuids(new_active_slot);
       if (result.is_error()) {
         return result.take_error();
       }
-      LOG("Switching active slot from %s\n", new_slot_is_b ? "A to B" : "B to A");
     }
+
     discard_changes.cancel();
-    return zx::ok();
+
+    // Commit immediately rather than waiting for an explicit `Flush()` call, otherwise if this is
+    // called again the logic can get confused because there may be pending flag/GUID changes that
+    // would not have been finalized yet.
+    return Commit();
   }
 
-  struct GptEntryAttributes {
-    static constexpr uint8_t kMoonflowerMaxPriority = 3;
+  // Updates `a_flags` and `b_flags` with the data from `a_data` and `b_data`.
+  // Non-slot flags are left unmodified.
+  static void ToMoonflower(const AbrSlotData& a_data, const AbrSlotData& b_data,
+                           GptEntryAttributes* a_flags, GptEntryAttributes* b_flags) {
+    const uint8_t a_fuchsia_priority = AbrGetNormalizedPriority(&a_data);
+    const uint8_t b_fuchsia_priority = AbrGetNormalizedPriority(&b_data);
 
-    explicit GptEntryAttributes(uint64_t flags) : flags(flags) {}
+    bool a_active = (a_fuchsia_priority >= b_fuchsia_priority);
+    bool b_active = !a_active;
 
-    uint64_t flags;
-    DEF_SUBFIELD(flags, 49, 48, priority);
-    DEF_SUBBIT(flags, 50, active);
-    DEF_SUBFIELD(flags, 53, 51, retry_count);
-    DEF_SUBBIT(flags, 54, boot_success);
-    DEF_SUBBIT(flags, 55, unbootable);
-  };
-
-  static bool DetectSlotSwitch(const AbrSlotData* old_slot, const AbrSlotData* new_slot) {
-    return new_slot->priority == kAbrMaxPriority &&
-           new_slot->tries_remaining == kAbrMaxTriesRemaining && !new_slot->successful_boot &&
-           old_slot->priority < kAbrMaxPriority && old_slot->successful_boot;
-  }
-
-  static uint64_t ToMoonflower(const AbrSlotData& current, const AbrSlotData& alternative,
-                               uint64_t gpt_entry_flags) {
     // The priority field in Moonflower is only 2 bits wide (max value 3). Normalize
     // AbrSlotData::priority while maintaining the slots' relative priority.
-    const uint8_t moonflower_priority = current.priority >= alternative.priority
-                                            ? GptEntryAttributes::kMoonflowerMaxPriority
-                                            : GptEntryAttributes::kMoonflowerMaxPriority - 1;
-
-    GptEntryAttributes attributes(gpt_entry_flags);
-    attributes.set_priority(moonflower_priority)
-        .set_retry_count(current.tries_remaining)  // Both fields are 3 bits wide.
-        .set_boot_success(current.successful_boot);
-    return attributes.flags;
-  }
-
-  zx::result<uint64_t> SetActiveAndUnbootable(AbrSlotIndex slot_index, uint64_t gpt_entry_flags) {
-    // Use GetSlotInfo's logic of determining is_active/is_bootable.
-    zx::result<AbrSlotInfo> slot_info = GetSlotInfo(slot_index);
-    if (slot_info.is_error()) {
-      ERROR("Failed to get info for slot %s: %s\n",
-            slot_index == kAbrSlotIndexA ? "A" : (slot_index == kAbrSlotIndexB ? "B" : "R"),
-            slot_info.status_string());
-      return slot_info.take_error();
+    uint8_t a_moonflower_priority = GptEntryAttributes::kMoonflowerMaxPriority;
+    uint8_t b_moonflower_priority = GptEntryAttributes::kMoonflowerMaxPriority - 1;
+    if (b_active) {
+      std::swap(a_moonflower_priority, b_moonflower_priority);
     }
 
-    GptEntryAttributes attributes(gpt_entry_flags);
-    attributes.set_active(slot_info->is_active).set_unbootable(!slot_info->is_bootable);
-    return zx::ok(attributes.flags);
+    a_flags->set_priority(a_moonflower_priority)
+        .set_active(a_active)
+        .set_retry_count(a_data.tries_remaining)
+        .set_boot_success(a_data.successful_boot)
+        .set_unbootable(a_fuchsia_priority == 0);
+    b_flags->set_priority(b_moonflower_priority)
+        .set_active(b_active)
+        .set_retry_count(b_data.tries_remaining)
+        .set_boot_success(b_data.successful_boot)
+        .set_unbootable(b_fuchsia_priority == 0);
   }
 
-  static AbrSlotData ToFuchsia(uint64_t gpt_entry_flags) {
-    const GptEntryAttributes attributes(gpt_entry_flags);
+  // Converts Moonflower GPT flags to Fuchsia `AbrSlotData`.
+  // The `partition` name is only used for logging if there's an inconsistent state.
+  static AbrSlotData ToFuchsia(GptEntryAttributes flags, const char* partition) {
+    // libabr expects successful or unbootable slots to have zero retries. This check is also
+    // important for correct functionality, if libabr sees a successful slot with nonzero retries
+    // it will currently reset the slot entirely to the default state.
+    if ((flags.boot_success() || flags.unbootable()) && (flags.retry_count())) {
+      // Successful or unbootable takes priority, remove the retries.
+      LOG("Warning: %s flags indicate successful or unbootable but with nonzero retry count %d",
+          partition, static_cast<int>(flags.retry_count()));
+      LOG("Resetting retry count to 0");
+      flags.set_retry_count(0);
+    }
+    if (flags.unbootable() && flags.boot_success()) {
+      // Unbootable takes priority. Slots never go from unbootable to successful since it couldn't
+      // be booted in the first place, but slots may go from successful to unbootable e.g. if the
+      // image gets corrupted on-disk.
+      LOG("Warning: %s flags indicate both unbootable and successful", partition);
+      LOG("Unbootable takes priority");
+      flags.set_boot_success(false);
+    }
 
-    AbrSlotData abr_slot_data = {};
-    abr_slot_data.priority = static_cast<uint8_t>(attributes.priority());
-    // Both fields are 3 bits wide.
-    abr_slot_data.tries_remaining = static_cast<uint8_t>(attributes.retry_count());
-    abr_slot_data.successful_boot = static_cast<uint8_t>(attributes.boot_success());
-    return abr_slot_data;
+    return AbrSlotData{
+        .priority = static_cast<uint8_t>(flags.priority()),
+        .tries_remaining = static_cast<uint8_t>(flags.retry_count()),
+        .successful_boot = static_cast<uint8_t>(flags.boot_success()),
+        // Moonflower doesn't support an unbootable reason.
+        .unbootable_reason = kAbrUnbootableReasonNone,
+    };
   }
 
   const MoonflowerPartitioner* partitioner_;
@@ -568,8 +583,6 @@ class MoonflowerAbrClient : public abr::Client {
   std::unique_ptr<BlockPartitionClient> zircon_b_;
   fidl::WireSyncClient<fuchsia_storage_partitions::PartitionsManager> partitions_manager_;
   zx::eventpair transaction_;
-  std::optional<uint64_t> pending_zircon_a_flags_;
-  std::optional<uint64_t> pending_zircon_b_flags_;
 };
 
 zx::result<std::unique_ptr<abr::Client>> MoonflowerPartitioner::CreateAbrClient() const {

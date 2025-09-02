@@ -29,8 +29,7 @@
 #include "src/storage/lib/paver/sherlock.h"
 #include "src/storage/lib/paver/test/test-utils.h"
 #include "src/storage/lib/paver/uefi.h"
-
-namespace abr {
+namespace {
 
 using device_watcher::RecursiveWaitForFile;
 using driver_integration_test::IsolatedDevmgr;
@@ -125,8 +124,6 @@ class CurrentSlotUuidTest : public PaverTest {
  protected:
   static constexpr int kBlockSize = 512;
   static constexpr int kDiskBlocks = 1024;
-  static constexpr uuid::Uuid kEmptyGuid;
-  static constexpr uint8_t kEmptyType[GPT_GUID_LEN] = GUID_EMPTY_VALUE;
   static constexpr uint8_t kZirconType[GPT_GUID_LEN] = GPT_ZIRCON_ABR_TYPE_GUID;
   static constexpr uint8_t kTestUuid[GPT_GUID_LEN] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
                                                       0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
@@ -314,6 +311,7 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
     return args;
   }
 
+  // Disk starts with A slot active and successful.
   void SetUp() override {
     CurrentSlotUuidTest::SetUp();
 
@@ -340,6 +338,11 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
     ASSERT_OK(abr_client);
     partitioner_ = std::move(*partitioner);
     abr_client_ = std::move(*abr_client);
+
+    // Set A active + successful.
+    ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexA));
+    ASSERT_OK(abr_client_->MarkSlotSuccessful(kAbrSlotIndexA));
+    ASSERT_OK(abr_client_->Flush());
   }
 
   zx::result<std::unique_ptr<gpt::GptDevice>> OpenGptDevice() {
@@ -450,10 +453,6 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
     return TypeGuidState::kUnknown;
   }
 
-  void AbrClientFlush() { ASSERT_OK(abr_client_->Flush()); }
-
-  void MoonflowerTest();
-
   std::unique_ptr<paver::DevicePartitioner> partitioner_;
   std::unique_ptr<abr::Client> abr_client_;
 };
@@ -463,105 +462,160 @@ bool operator==(const MoonflowerGptEntryAttributes& a, const MoonflowerGptEntryA
   return a.flags == b.flags;
 }
 
-TEST_F(MoonflowerAbrClientTest, MoonflowerTest) {
-  // Initial active slot A.
-  ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexA));
-  ASSERT_OK(abr_client_->MarkSlotSuccessful(kAbrSlotIndexA));
-  AbrClientFlush();
+// Define some common GPT flag states to make tests a bit more readable.
+constexpr uint64_t kActivePriority = MoonflowerGptEntryAttributes::kMoonflowerMaxPriority;
+constexpr uint64_t kInactivePriority = kActivePriority - 1;
+// Active, max attempts remaining.
+const MoonflowerGptEntryAttributes kFlagsActive = MoonflowerGptEntryAttributes(0)
+                                                      .set_priority(kActivePriority)
+                                                      .set_active(true)
+                                                      .set_retry_count(kAbrMaxTriesRemaining)
+                                                      .set_boot_success(false)
+                                                      .set_unbootable(false);
+// Inactive, max attempts remaining.
+const MoonflowerGptEntryAttributes kFlagsInactive = MoonflowerGptEntryAttributes(0)
+                                                        .set_priority(kInactivePriority)
+                                                        .set_active(false)
+                                                        .set_retry_count(kAbrMaxTriesRemaining)
+                                                        .set_boot_success(false)
+                                                        .set_unbootable(false);
+// Active and successful.
+const MoonflowerGptEntryAttributes kFlagsActiveAndSuccessful = MoonflowerGptEntryAttributes(0)
+                                                                   .set_priority(kActivePriority)
+                                                                   .set_active(true)
+                                                                   .set_retry_count(0)
+                                                                   .set_boot_success(true)
+                                                                   .set_unbootable(false);
+// Inactive and successful.
+const MoonflowerGptEntryAttributes kFlagsInactiveAndSuccessful =
+    MoonflowerGptEntryAttributes(0)
+        .set_priority(kInactivePriority)
+        .set_active(false)
+        .set_retry_count(0)
+        .set_boot_success(true)
+        .set_unbootable(false);
+// Inactive and unbootable.
+const MoonflowerGptEntryAttributes kFlagsUnbootable = MoonflowerGptEntryAttributes(0)
+                                                          .set_priority(kInactivePriority)
+                                                          .set_active(false)
+                                                          .set_retry_count(0)
+                                                          .set_boot_success(false)
+                                                          .set_unbootable(true);
 
-  ASSERT_EQ(GetPartitionTypeGuidAndAttributes(0, "boot_a").second,
-            MoonflowerGptEntryAttributes(0)
-                .set_priority(MoonflowerGptEntryAttributes::kMoonflowerMaxPriority)
-                .set_active(true)
-                .set_retry_count(0)
-                .set_boot_success(true)
-                .set_unbootable(false));
-  ASSERT_EQ(GetPartitionTypeGuidAndAttributes(1, "boot_b").second,
-            MoonflowerGptEntryAttributes(0)
-                .set_priority(MoonflowerGptEntryAttributes::kMoonflowerMaxPriority - 1)
-                .set_active(false)
-                .set_retry_count(0)
-                .set_boot_success(false)
-                .set_unbootable(true));
+// Make sure our test setup logic puts us in the expected A state with flipped GUIDs.
+TEST_F(MoonflowerAbrClientTest, StartingState) {
+  ASSERT_EQ(kFlagsActiveAndSuccessful, GetPartitionTypeGuidAndAttributes(0, "boot_a").second);
+  ASSERT_EQ(kFlagsUnbootable, GetPartitionTypeGuidAndAttributes(1, "boot_b").second);
   // We haven't touched GUIDs yet - "flipped" type GUIDs should still be in their original state.
-  ASSERT_EQ(GetTypeGuidState(), TypeGuidState::kActiveAWithFlip);
+  ASSERT_EQ(TypeGuidState::kActiveAWithFlip, GetTypeGuidState());
+}
 
+TEST_F(MoonflowerAbrClientTest, SwitchActiveToB) {
   ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexB));
-  AbrClientFlush();
+  ASSERT_OK(abr_client_->Flush());
 
-  ASSERT_EQ(GetPartitionTypeGuidAndAttributes(0, "boot_a").second,
-            MoonflowerGptEntryAttributes(0)
-                .set_priority(MoonflowerGptEntryAttributes::kMoonflowerMaxPriority - 1)
-                .set_active(false)
-                .set_retry_count(0)
-                .set_boot_success(true)
-                .set_unbootable(false));
-  ASSERT_EQ(GetPartitionTypeGuidAndAttributes(1, "boot_b").second,
-            MoonflowerGptEntryAttributes(0)
-                .set_priority(MoonflowerGptEntryAttributes::kMoonflowerMaxPriority)
-                .set_active(true)
-                .set_retry_count(kAbrMaxTriesRemaining)
-                .set_boot_success(false)
-                .set_unbootable(false));
-  // We've switched slots - "flipped" type GUIDs should now be corrected.
-  ASSERT_EQ(GetTypeGuidState(), TypeGuidState::kActiveB);
+  ASSERT_EQ(kFlagsInactiveAndSuccessful, GetPartitionTypeGuidAndAttributes(0, "boot_a").second);
+  ASSERT_EQ(kFlagsActive, GetPartitionTypeGuidAndAttributes(1, "boot_b").second);
+  ASSERT_EQ(TypeGuidState::kActiveB, GetTypeGuidState());
+}
 
+TEST_F(MoonflowerAbrClientTest, MarkSuccessfulB) {
+  ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexB));
   ASSERT_OK(abr_client_->MarkSlotSuccessful(kAbrSlotIndexB));
-  AbrClientFlush();
+  ASSERT_OK(abr_client_->Flush());
 
-  ASSERT_EQ(GetPartitionTypeGuidAndAttributes(0, "boot_a").second,
-            MoonflowerGptEntryAttributes(0)
-                .set_priority(MoonflowerGptEntryAttributes::kMoonflowerMaxPriority - 1)
-                .set_active(false)
-                .set_retry_count(kAbrMaxTriesRemaining)
-                .set_boot_success(false)
-                .set_unbootable(false));
-  ASSERT_EQ(GetPartitionTypeGuidAndAttributes(1, "boot_b").second,
-            MoonflowerGptEntryAttributes(0)
-                .set_priority(MoonflowerGptEntryAttributes::kMoonflowerMaxPriority)
-                .set_active(true)
-                .set_retry_count(0)
-                .set_boot_success(true)
-                .set_unbootable(false));
-  ASSERT_EQ(GetTypeGuidState(), TypeGuidState::kActiveB);
+  // In libabr when a slot is marked successful, the other slot is reset to default state, so
+  // A no longer has the successful bit here.
+  ASSERT_EQ(kFlagsInactive, GetPartitionTypeGuidAndAttributes(0, "boot_a").second);
+  ASSERT_EQ(kFlagsActiveAndSuccessful, GetPartitionTypeGuidAndAttributes(1, "boot_b").second);
+  ASSERT_EQ(TypeGuidState::kActiveB, GetTypeGuidState());
+}
 
+TEST_F(MoonflowerAbrClientTest, SwitchActiveToA) {
+  ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->MarkSlotSuccessful(kAbrSlotIndexB));
   ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexA));
-  AbrClientFlush();
+  ASSERT_OK(abr_client_->Flush());
 
-  ASSERT_EQ(GetPartitionTypeGuidAndAttributes(0, "boot_a").second,
-            MoonflowerGptEntryAttributes(0)
-                .set_priority(MoonflowerGptEntryAttributes::kMoonflowerMaxPriority)
-                .set_active(true)
-                .set_retry_count(kAbrMaxTriesRemaining)
-                .set_boot_success(false)
-                .set_unbootable(false));
-  ASSERT_EQ(GetPartitionTypeGuidAndAttributes(1, "boot_b").second,
-            MoonflowerGptEntryAttributes(0)
-                .set_priority(MoonflowerGptEntryAttributes::kMoonflowerMaxPriority - 1)
-                .set_active(false)
-                .set_retry_count(0)
-                .set_boot_success(true)
-                .set_unbootable(false));
-  ASSERT_EQ(GetTypeGuidState(), TypeGuidState::kActiveA);
+  ASSERT_EQ(kFlagsActive, GetPartitionTypeGuidAndAttributes(0, "boot_a").second);
+  ASSERT_EQ(kFlagsInactiveAndSuccessful, GetPartitionTypeGuidAndAttributes(1, "boot_b").second);
+  ASSERT_EQ(TypeGuidState::kActiveA, GetTypeGuidState());
+}
 
+TEST_F(MoonflowerAbrClientTest, MarkSuccessfulA) {
+  ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->MarkSlotSuccessful(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexA));
   ASSERT_OK(abr_client_->MarkSlotSuccessful(kAbrSlotIndexA));
-  AbrClientFlush();
+  ASSERT_OK(abr_client_->Flush());
 
-  ASSERT_EQ(GetPartitionTypeGuidAndAttributes(0, "boot_a").second,
-            MoonflowerGptEntryAttributes(0)
-                .set_priority(MoonflowerGptEntryAttributes::kMoonflowerMaxPriority)
-                .set_active(true)
-                .set_retry_count(0)
-                .set_boot_success(true)
-                .set_unbootable(false));
-  ASSERT_EQ(GetPartitionTypeGuidAndAttributes(1, "boot_b").second,
-            MoonflowerGptEntryAttributes(0)
-                .set_priority(MoonflowerGptEntryAttributes::kMoonflowerMaxPriority - 1)
-                .set_active(false)
-                .set_retry_count(kAbrMaxTriesRemaining)
-                .set_boot_success(false)
-                .set_unbootable(false));
-  ASSERT_EQ(GetTypeGuidState(), TypeGuidState::kActiveA);
+  ASSERT_EQ(kFlagsActiveAndSuccessful, GetPartitionTypeGuidAndAttributes(0, "boot_a").second);
+  ASSERT_EQ(kFlagsInactive, GetPartitionTypeGuidAndAttributes(1, "boot_b").second);
+  ASSERT_EQ(TypeGuidState::kActiveA, GetTypeGuidState());
+}
+
+// Setting a slot active should be idempotent.
+TEST_F(MoonflowerAbrClientTest, SwitchActiveToBTwice) {
+  ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->Flush());
+  ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->Flush());
+
+  ASSERT_EQ(kFlagsInactiveAndSuccessful, GetPartitionTypeGuidAndAttributes(0, "boot_a").second);
+  ASSERT_EQ(kFlagsActive, GetPartitionTypeGuidAndAttributes(1, "boot_b").second);
+  ASSERT_EQ(TypeGuidState::kActiveB, GetTypeGuidState());
+}
+
+// This is the common OTA flow:
+// * boot into a successful slot, with other slot unbootable
+// * apply the OTA to the other slot
+// * mark the other slot active
+TEST_F(MoonflowerAbrClientTest, ApplyOtaB) {
+  // Initial state: B is unbootable.
+  ASSERT_OK(abr_client_->MarkSlotUnbootable(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->Flush());
+
+  // Apply an OTA by marking B active.
+  ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->Flush());
+
+  ASSERT_EQ(kFlagsInactiveAndSuccessful, GetPartitionTypeGuidAndAttributes(0, "boot_a").second);
+  ASSERT_EQ(kFlagsActive, GetPartitionTypeGuidAndAttributes(1, "boot_b").second);
+  ASSERT_EQ(TypeGuidState::kActiveB, GetTypeGuidState());
+}
+
+// This is the common OTA commit flow:
+// * boot into an active-but-not-successful slot
+// * the slot gets marked successful
+// * the inactive slot gets marked unbootable (to prevent rollbacks)
+TEST_F(MoonflowerAbrClientTest, CommitOtaB) {
+  // Initial state: B is active but not successful.
+  ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->Flush());
+
+  // OTA is committed by marking B successful and A unbootable in one transaction.
+  ASSERT_OK(abr_client_->MarkSlotSuccessful(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->MarkSlotUnbootable(kAbrSlotIndexA));
+  ASSERT_OK(abr_client_->Flush());
+
+  ASSERT_EQ(kFlagsUnbootable, GetPartitionTypeGuidAndAttributes(0, "boot_a").second);
+  ASSERT_EQ(kFlagsActiveAndSuccessful, GetPartitionTypeGuidAndAttributes(1, "boot_b").second);
+  ASSERT_EQ(TypeGuidState::kActiveB, GetTypeGuidState());
+}
+
+TEST_F(MoonflowerAbrClientTest, MarkActiveSlotUnbootable) {
+  // Initial state: A is successful, B is active.
+  ASSERT_OK(abr_client_->MarkSlotActive(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->Flush());
+
+  // Mark the B slot unbootable.
+  ASSERT_OK(abr_client_->MarkSlotUnbootable(kAbrSlotIndexB));
+  ASSERT_OK(abr_client_->Flush());
+
+  // The active slot should revert to A now since B is unbootable.
+  ASSERT_EQ(kFlagsActiveAndSuccessful, GetPartitionTypeGuidAndAttributes(0, "boot_a").second);
+  ASSERT_EQ(kFlagsUnbootable, GetPartitionTypeGuidAndAttributes(1, "boot_b").second);
+  ASSERT_EQ(TypeGuidState::kActiveA, GetTypeGuidState());
 }
 
 class FakePartitionClient final : public paver::PartitionClient {
@@ -669,4 +723,4 @@ TEST_F(OneShotFlagsTest, Set2Flags) {
   EXPECT_TRUE(AbrIsOneShotRecoveryBootSet(abr_flags_res.value()));
 }
 
-}  // namespace abr
+}  // namespace

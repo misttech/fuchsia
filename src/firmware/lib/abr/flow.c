@@ -76,13 +76,13 @@ static void set_slot_unbootable(AbrSlotData* slot, uint8_t reason) {
   slot->unbootable_reason = reason;
 }
 
-static uint8_t get_normalized_priority(const AbrSlotData* slot) {
+uint8_t AbrGetNormalizedPriority(const AbrSlotData* slot) {
   return is_slot_bootable(slot) ? slot->priority : 0;
 }
 
 static AbrSlotIndex get_active_slot(const AbrData* abr_data) {
-  uint8_t priority_a = get_normalized_priority(&abr_data->slot_data[kAbrSlotIndexA]);
-  uint8_t priority_b = get_normalized_priority(&abr_data->slot_data[kAbrSlotIndexB]);
+  uint8_t priority_a = AbrGetNormalizedPriority(&abr_data->slot_data[kAbrSlotIndexA]);
+  uint8_t priority_b = AbrGetNormalizedPriority(&abr_data->slot_data[kAbrSlotIndexB]);
   // zero priority means unbootable.
   if (priority_b > priority_a) {
     return kAbrSlotIndexB;

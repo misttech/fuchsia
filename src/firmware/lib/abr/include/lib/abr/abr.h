@@ -203,6 +203,14 @@ AbrResult AbrSetOneShotBootloader(const AbrOps* abr_ops, bool enable);
 /* Retrieves current 'one_shot_flags' value from 'abr_ops', and resets it in 'abr_ops' */
 AbrResult AbrGetAndClearOneShotFlags(const AbrOps* abr_ops, AbrDataOneShotFlags* flags);
 
+/* Returns the normalized slot priority.
+ *
+ * Normalized priority will be 0 if a slot is unbootable, whereas the raw `slot_data.priority` may
+ * have non-zero priority even for unbootable slots. When trying to compare slots to determine which
+ * is active, always use normalized priority instead of raw priority.
+ */
+uint8_t AbrGetNormalizedPriority(const AbrSlotData* slot_data);
+
 #ifdef __cplusplus
 }
 #endif
