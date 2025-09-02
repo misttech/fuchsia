@@ -130,7 +130,7 @@ pub(super) const SELINUX_AVD_FLAGS_PERMISSIVE: u32 = 1;
 
 /// The set of permissions that may be granted to sources accessing targets of a particular class,
 /// as defined in an SELinux policy.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AccessVector(u32);
 
 impl AccessVector {
@@ -139,6 +139,12 @@ impl AccessVector {
 
     pub(super) fn from_class_permission_id(id: ClassPermissionId) -> Self {
         Self((1 as u32) << (id.0.get() - 1))
+    }
+}
+
+impl Debug for AccessVector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AccessVector({:0>8x})", self)
     }
 }
 
@@ -1470,5 +1476,13 @@ pub(super) mod tests {
             .expect("valid expected security context");
 
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn access_vector_formats() {
+        assert_eq!(format!("{:x}", AccessVector::NONE), "0");
+        assert_eq!(format!("{:x}", AccessVector::ALL), "ffffffff");
+        assert_eq!(format!("{:?}", AccessVector::NONE), "AccessVector(00000000)");
+        assert_eq!(format!("{:?}", AccessVector::ALL), "AccessVector(ffffffff)");
     }
 }

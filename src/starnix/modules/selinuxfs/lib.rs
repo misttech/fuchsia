@@ -18,7 +18,8 @@ use selinux::{
 };
 use starnix_core::device::mem::DevNull;
 use starnix_core::mm::memory::MemoryObject;
-use starnix_core::task::CurrentTask;
+use starnix_core::security;
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
 use starnix_core::vfs::pseudo::simple_file::{
@@ -32,9 +33,8 @@ use starnix_core::vfs::{
     fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
     fileops_impl_unbounded_seek, fs_node_impl_dir_readonly, fs_node_impl_not_dir,
 };
-use starnix_core::{TODO_DENY, security};
 use starnix_logging::{
-    __track_stub_inner, BugRef, impossible_error, log_error, log_info, log_warn, track_stub,
+    __track_stub_inner, BugRef, impossible_error, log_error, log_info, track_stub,
 };
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_types::vfs::default_statfs;
@@ -48,7 +48,7 @@ use std::borrow::Cow;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, Weak};
 use zerocopy::{Immutable, IntoBytes};
 use zx::{self as zx, HandleBased as _};
 
@@ -187,12 +187,9 @@ impl SeLinuxFs {
         security_server.set_status_publisher(Box::new(status_holder));
 
         // Write-only files used to configure and query SELinux.
-        let access_todo_bug = (!current_task.kernel().features.selinux_test_suite).then(|| {
-            TODO_DENY!("https://fxbug.dev/422929151", "Enforce SELinuxFS access API").into()
-        });
         dir.entry(
             "access",
-            AccessApi::new_node(security_server.clone(), access_todo_bug),
+            AccessApi::new_node(security_server.clone(), current_task.kernel()),
             mode!(IFREG, 0o666),
         );
         dir.entry("context", ContextApi::new_node(security_server.clone()), mode!(IFREG, 0o666));
@@ -646,20 +643,18 @@ struct AccessApi {
     security_server: Arc<SecurityServer>,
     result: OnceLock<AccessDecisionAndDecided>,
 
-    // TODO: https://fxbug.dev/422929151 - Always enforce the "access" API and remove this.
-    todo_bug: Option<NonZeroU64>,
+    // Required to support audit-logging of requests granted via `todo_deny` exceptions.
+    kernel: Weak<Kernel>,
 }
 
 impl AccessApi {
-    fn new_node(
-        security_server: Arc<SecurityServer>,
-        todo_bug: Option<NonZeroU64>,
-    ) -> impl FsNodeOps {
+    fn new_node(security_server: Arc<SecurityServer>, kernel: &Arc<Kernel>) -> impl FsNodeOps {
+        let kernel = Arc::downgrade(kernel);
         SeLinuxApi::new_node(move || {
             Ok(Self {
                 security_server: security_server.clone(),
                 result: OnceLock::default(),
-                todo_bug: todo_bug,
+                kernel: kernel.clone(),
             })
         })
     }
@@ -682,24 +677,24 @@ impl SeLinuxApiOps for AccessApi {
         let mut parts = data.split_whitespace();
 
         // <scontext>: describes the subject acting on the class.
-        let scontext = parts.next().ok_or_else(|| errno!(EINVAL))?;
+        let scontext_str = parts.next().ok_or_else(|| errno!(EINVAL))?;
         let scontext = self
             .security_server
-            .security_context_to_sid(scontext.into())
+            .security_context_to_sid(scontext_str.into())
             .map_err(|_| errno!(EINVAL))?;
 
         // <tcontext>: describes the target (e.g. parent directory) of the operation.
-        let tcontext = parts.next().ok_or_else(|| errno!(EINVAL))?;
+        let tcontext_str = parts.next().ok_or_else(|| errno!(EINVAL))?;
         let tcontext = self
             .security_server
-            .security_context_to_sid(tcontext.into())
+            .security_context_to_sid(tcontext_str.into())
             .map_err(|_| errno!(EINVAL))?;
 
         // <tclass>: the policy-specific Id of the target class, as a decimal integer.
         // Class Ids are obtained via lookups in the SELinuxFS "class" directory.
         let tclass = parts.next().ok_or_else(|| errno!(EINVAL))?;
-        let tclass = u32::from_str(tclass).map_err(|_| errno!(EINVAL))?;
-        let tclass = ClassId::new(NonZeroU32::new(tclass).ok_or_else(|| errno!(EINVAL))?).into();
+        let tclass_id = u32::from_str(tclass).map_err(|_| errno!(EINVAL))?;
+        let tclass = ClassId::new(NonZeroU32::new(tclass_id).ok_or_else(|| errno!(EINVAL))?).into();
 
         // <request>: the set of permissions that the caller requests.
         let requested = if let Some(requested) = parts.next() {
@@ -721,7 +716,14 @@ impl SeLinuxApiOps for AccessApi {
 
         // If there is a `todo_bug` associated with the decision then grant all permissions and
         // make a best-effort attempt to emit a log for missing permissions.
-        let todo_bug = decision.todo_bug.or(self.todo_bug);
+        let Some(kernel) = self.kernel.upgrade() else {
+            return error!(EINVAL);
+        };
+        let todo_bug = decision.todo_bug.or_else(|| {
+            // TODO: https://fxbug.dev/422929151 - Remove this default "todo_deny" behaviour, which
+            // is currently disabled via the `selinux_test_suite` feature.
+            (!kernel.features.selinux_test_suite).then(|| NonZeroU64::new(422929151).unwrap())
+        });
         if let Some(todo_bug) = todo_bug {
             let denied = AccessVector::ALL - decision.allow;
             let audited_denied = denied & decision.auditdeny;
@@ -738,11 +740,10 @@ impl SeLinuxApiOps for AccessApi {
                     None,
                     std::panic::Location::caller(),
                 );
-                log_warn!(
-                    "avc: todo_deny SELinuxFS access request {:?} -> {:?}",
-                    FsStr::new(&data),
-                    decision
+                let audit_message = format!(
+                    "todo_deny {{ ACCESS_API }} scontext={scontext_str:?} tcontext={tcontext_str:?} tclass={tclass_id} requested={requested:?}",
                 );
+                kernel.audit_logger().audit_log("avc", &audit_message);
             } else {
                 // All requested permissions were granted. To allow "todo_deny" logs and track-stub
                 // tracking of permissions that would otherwise be denied & audited, remove those
