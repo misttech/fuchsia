@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_bluetooth as fidl;
 #[cfg(target_os = "fuchsia")]
 use fuchsia_inspect_contrib::log::WriteInspect;
@@ -25,12 +25,18 @@ fn parse_hex_identifier(hex_repr: &str) -> Result<u64, Error> {
 /// Identifiers are currently guaranteed to be stable for the duration of system uptime, including
 /// if the peer is lost and then re-observed. Identifiers are *not* guaranteed to be stable between
 /// reboots.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Eq, Hash, PartialEq)]
 pub struct PeerId(pub u64);
 
 impl PeerId {
     pub fn random() -> PeerId {
         PeerId(rand::random())
+    }
+}
+
+impl fmt::Debug for PeerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("PeerId").field(&format_args!("0x{}", self)).finish()
     }
 }
 
@@ -110,6 +116,17 @@ impl Into<fidl::HostId> for HostId {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn peer_id_debug_impl() {
+        let id = PeerId(2000037777717788818);
+        let debug = format!("{:?}", id);
+        assert_eq!(debug, "PeerId(0x1bc18fc31e3b0092)");
+
+        let small_id = PeerId(123456);
+        let padded_debug = format!("{:?}", small_id);
+        assert_eq!(padded_debug, "PeerId(0x000000000001e240)");
+    }
 
     #[test]
     fn peerid_to_string() {
