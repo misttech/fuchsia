@@ -77,29 +77,6 @@ impl EventStream {
             "/svc/fuchsia.component.EventStream",
         )?))
     }
-
-    pub async fn next(&mut self) -> Result<fcomponent::Event, EventStreamError> {
-        if let Some(event) = self.buffer.pop_front() {
-            return Ok(event);
-        }
-        match self.stream.get_next().await {
-            Ok(events) => {
-                let mut iter = events.into_iter();
-                if let Some(real_event) = iter.next() {
-                    let ret = real_event;
-                    while let Some(value) = iter.next() {
-                        self.buffer.push_back(value);
-                    }
-                    return Ok(ret);
-                } else {
-                    // This should never happen, we should always
-                    // have at least one event.
-                    Err(EventStreamError::StreamClosed)
-                }
-            }
-            Err(_) => Err(EventStreamError::StreamClosed),
-        }
-    }
 }
 
 impl futures::Stream for EventStream {

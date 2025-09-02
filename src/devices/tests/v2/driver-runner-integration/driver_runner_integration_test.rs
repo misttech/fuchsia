@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use component_events::descriptor::EventDescriptor;
-use component_events::events::{self, Event, EventStream};
+use component_events::events::{self, Event, EventStream, EventStreamError};
 use component_events::matcher::EventMatcher;
 use diagnostics_assertions::assert_data_tree;
 use diagnostics_reader::ArchiveReader;
@@ -20,7 +20,7 @@ async fn check_events(
     event_stream: &mut events::EventStream,
 ) -> Result<(), anyhow::Error> {
     while events.len() != 0 {
-        let next = event_stream.next().await?;
+        let next = event_stream.next().await.ok_or(EventStreamError::StreamClosed)?;
         let next = EventDescriptor::try_from(&next)?;
         events.retain(|event| event.matches(&next).is_err());
     }

@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use crate::descriptor::EventDescriptor;
-use crate::events::{event_name, EventStream};
+use crate::events::{EventStream, EventStreamError, event_name};
 use crate::matcher::EventMatcher;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
+use futures::StreamExt;
 
 /// Determines whether an EventGroup allows events to be verified in any order
 /// or only in the order specified in the group.
@@ -69,8 +70,8 @@ impl EventSequence {
     ) -> Result<EventStream, Error> {
         while !self.groups.is_empty() {
             match event_stream.next().await {
-                Err(e) => return Err(e.into()),
-                Ok(event) => {
+                None => return Err(EventStreamError::StreamClosed.into()),
+                Some(event) => {
                     let actual_event = EventDescriptor::try_from(&event)?;
                     let _ = self.next(&actual_event)?;
                 }
@@ -309,11 +310,13 @@ mod tests {
 
         let (event_stream, _server) =
             make_event_stream(events).await.expect("failed to make event stream");
-        assert!(EventSequence::new()
-            .all_of(matchers, Ordering::Ordered)
-            .expect(event_stream)
-            .await
-            .is_err());
+        assert!(
+            EventSequence::new()
+                .all_of(matchers, Ordering::Ordered)
+                .expect(event_stream)
+                .await
+                .is_err()
+        );
     }
 
     #[fuchsia::test]
@@ -325,11 +328,13 @@ mod tests {
 
         let (event_stream, _server) =
             make_event_stream(events).await.expect("failed to make event stream");
-        assert!(EventSequence::new()
-            .all_of(matchers, Ordering::Ordered)
-            .expect(event_stream)
-            .await
-            .is_err());
+        assert!(
+            EventSequence::new()
+                .all_of(matchers, Ordering::Ordered)
+                .expect(event_stream)
+                .await
+                .is_err()
+        );
     }
 
     #[fuchsia::test]
@@ -341,11 +346,13 @@ mod tests {
 
         let (event_stream, _server) =
             make_event_stream(events).await.expect("failed to make event stream");
-        assert!(EventSequence::new()
-            .all_of(matchers, Ordering::Ordered)
-            .expect(event_stream)
-            .await
-            .is_err());
+        assert!(
+            EventSequence::new()
+                .all_of(matchers, Ordering::Ordered)
+                .expect(event_stream)
+                .await
+                .is_err()
+        );
     }
 
     #[fuchsia::test]
@@ -391,11 +398,13 @@ mod tests {
         // Matching should fail because the matcher for "./bar:0" can't find the event.
         let (event_stream, _server) =
             make_event_stream(events).await.expect("failed to make event stream");
-        assert!(EventSequence::new()
-            .has_subset(matchers, Ordering::Ordered)
-            .expect(event_stream)
-            .await
-            .is_err());
+        assert!(
+            EventSequence::new()
+                .has_subset(matchers, Ordering::Ordered)
+                .expect(event_stream)
+                .await
+                .is_err()
+        );
     }
 
     #[fuchsia::test]

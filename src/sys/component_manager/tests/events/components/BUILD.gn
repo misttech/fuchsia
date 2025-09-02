@@ -16,6 +16,7 @@ rustc_binary("echo_reporter_bin") {
     "//src/lib/fuchsia-component",
     "//src/sys/lib/component-events",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
   ]
 
   sources = [ "scoped/echo_reporter.rs" ]

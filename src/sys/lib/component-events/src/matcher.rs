@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use crate::descriptor::EventDescriptor;
-use crate::events::{Event, EventStream, ExitStatus};
+use crate::events::{Event, EventStream, EventStreamError, ExitStatus};
 use anyhow::Error;
 use fidl_fuchsia_component as fcomponent;
+use futures::StreamExt;
 use moniker::Moniker;
 use regex::RegexSet;
 use std::fmt;
@@ -328,7 +329,7 @@ impl EventMatcher {
     pub async fn wait<T: Event>(self, event_stream: &mut EventStream) -> Result<T, Error> {
         let expected_event_matcher = self.r#type(T::TYPE);
         loop {
-            let event = event_stream.next().await?;
+            let event = event_stream.next().await.ok_or(EventStreamError::StreamClosed)?;
             let descriptor = EventDescriptor::try_from(&event)?;
             if expected_event_matcher.matches(&descriptor).is_ok() {
                 return T::try_from(event);
@@ -380,12 +381,16 @@ mod tests {
         };
         let EventMatcherError::FieldMatcherErrors { errors } =
             matcher.matches(&descriptor).unwrap_err();
-        assert!(errors
-            .field_matcher_errors
-            .contains(&FieldMatcherError::MissingField { field_name: "event_type" }));
-        assert!(errors
-            .field_matcher_errors
-            .contains(&FieldMatcherError::MissingField { field_name: "capability_name" }));
+        assert!(
+            errors
+                .field_matcher_errors
+                .contains(&FieldMatcherError::MissingField { field_name: "event_type" })
+        );
+        assert!(
+            errors
+                .field_matcher_errors
+                .contains(&FieldMatcherError::MissingField { field_name: "capability_name" })
+        );
         assert!(errors.field_matcher_errors.contains(&FieldMatcherError::FieldMismatch {
             field_name: "event_is_ok",
             expected: "true".to_string(),

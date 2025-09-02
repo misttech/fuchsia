@@ -6,6 +6,7 @@ use anyhow::format_err;
 use component_events::events::*;
 use component_events::matcher::*;
 use fuchsia_component::client::connect_to_protocol;
+use futures::StreamExt;
 use {fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component as fcomponent};
 
 #[fuchsia::main]
