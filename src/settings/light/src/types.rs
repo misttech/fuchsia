@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::light::light_hardware_configuration::DisableConditions;
+use crate::light_hardware_configuration::DisableConditions;
 use serde::{Deserialize, Serialize};
 use settings_common::inspect::event::Nameable;
 use std::collections::HashMap;
@@ -121,7 +121,7 @@ pub struct LightState {
 
 impl LightState {
     pub(crate) fn is_finite(&self) -> bool {
-        (self.value).as_ref().map_or(true, |val| val.is_finite())
+        (self.value).as_ref().is_none_or(|val| val.is_finite())
     }
 }
 

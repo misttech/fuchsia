@@ -19,6 +19,7 @@ group("tests") {
     "common:tests",
     "config:tests",
     "inspect_utils:tests",
+    "light:tests",
     "media_buttons:tests",
     "service:tests",
     "storage:tests",

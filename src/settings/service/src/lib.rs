@@ -34,6 +34,7 @@ use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use settings_common::service_context::{
     ExternalServiceEvent, GenerateService, ServiceContext as CommonServiceContext,
 };
+use settings_light::light_controller::LightController;
 use settings_storage::device_storage::DeviceStorage;
 use settings_storage::fidl_storage::FidlStorage;
 use settings_storage::storage_factory::{FidlStorageFactory, StorageFactory};
@@ -43,9 +44,9 @@ use {fidl_fuchsia_update_verify as fupdate, fuchsia_async as fasync};
 pub use display::display_configuration::DisplayConfiguration;
 pub use handler::setting_proxy_inspect_info::SettingProxyInspectInfo;
 pub use input::input_device_configuration::InputConfiguration;
-pub use light::light_hardware_configuration::LightHardwareConfiguration;
 use serde::Deserialize;
 pub use service::{Address, Payload};
+pub use settings_light::light_hardware_configuration::LightHardwareConfiguration;
 
 use crate::accessibility::accessibility_controller::AccessibilityController;
 use crate::agent::authority::Authority;
@@ -66,7 +67,6 @@ use crate::intl::intl_controller::IntlController;
 use crate::job::manager::Manager;
 use crate::job::source::Seeder;
 use crate::keyboard::keyboard_controller::KeyboardController;
-use crate::light::light_controller::LightController;
 use crate::night_mode::night_mode_controller::NightModeController;
 use crate::privacy::privacy_controller::PrivacyController;
 use crate::service::message::Delegate;
@@ -84,7 +84,6 @@ pub mod input;
 mod intl;
 mod job;
 mod keyboard;
-pub mod light;
 mod night_mode;
 mod privacy;
 mod service;
@@ -675,7 +674,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         if components.contains(&SettingType::Light) {
             let mut light_configuration =
                 light_configuration.expect("Light controller requires a light configuration");
-            match self::light::setup_light_api(
+            match settings_light::setup_light_api(
                 service_context,
                 &mut light_configuration,
                 fidl_storage_factory,
@@ -685,7 +684,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             )
             .await
             {
-                Ok(self::light::SetupResult {
+                Ok(settings_light::SetupResult {
                     mut light_fidl_handler,
                     media_buttons_event_tx,
                     task,

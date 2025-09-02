@@ -14,10 +14,10 @@ use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use futures::StreamExt;
 
-use crate::light::light_controller::{
+use crate::light_controller::{
     LightController, LightError as ControllerLightError, Request, ARG_NAME,
 };
-use crate::light::types::{LightGroup, LightInfo};
+use crate::types::{LightGroup, LightInfo};
 use settings_common::inspect::event::{
     RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
 };
@@ -176,7 +176,7 @@ impl RequestHandler {
                     self.info_subscriber.register2((usage_res, responder))
                 {
                     let e = HandlerError::AlreadySubscribed;
-                    let _ = usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
                     drop(responder);
                 }
             }
@@ -194,7 +194,7 @@ impl RequestHandler {
                     Err((HandlerError::NotFound, usage_res, responder))
                 };
                 if let Err((e, usage_res, responder)) = res {
-                    let _ = usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
                     drop(responder);
                 }
             }
@@ -240,7 +240,7 @@ impl From<&LightInfo> for Vec<FidlLightGroup> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::light::types::{LightState, LightType, LightValue};
+    use crate::types::{LightState, LightType, LightValue};
 
     #[fuchsia::test]
     fn test_response_to_vector_empty() {

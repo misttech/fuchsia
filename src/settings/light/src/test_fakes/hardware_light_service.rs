@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::light::types::{LightType, LightValue};
 use anyhow::{format_err, Error};
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
@@ -14,6 +13,8 @@ use settings_test_common::fakes::service::Service;
 use std::collections::HashMap;
 use std::rc::Rc;
 use zx::Channel;
+
+use crate::types::{LightType, LightValue};
 
 /// An implementation of fuchsia.hardware.light for testing use.
 pub(crate) struct HardwareLightService {

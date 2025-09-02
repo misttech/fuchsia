@@ -73,13 +73,12 @@ where
     Ok(SetupResult { light_fidl_handler, media_buttons_event_tx, task })
 }
 
+type ResultSender = oneshot::Sender<Result<Option<()>, LightError>>;
+
 fn event_request_logger(
     mut media_buttons_event_rx: UnboundedReceiver<settings_media_buttons::Event>,
     usage_publisher: UsagePublisher<LightInfo>,
-) -> UnboundedReceiver<(
-    settings_media_buttons::Event,
-    oneshot::Sender<Result<Option<()>, LightError>>,
-)> {
+) -> UnboundedReceiver<(settings_media_buttons::Event, ResultSender)> {
     let (inner_mb_event_tx, inner_mb_event_rx) = mpsc::unbounded();
     fasync::Task::local(async move {
         while let Some(event) = media_buttons_event_rx.next().await {
@@ -108,3 +107,6 @@ fn event_request_logger(
     .detach();
     inner_mb_event_rx
 }
+
+#[cfg(test)]
+mod test_fakes;

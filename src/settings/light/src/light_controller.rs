@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::light::light_fidl_handler::{GroupPublisher, InfoPublisher};
-use crate::light::light_hardware_configuration::{DisableConditions, LightHardwareConfiguration};
-use crate::light::types::{LightGroup, LightInfo, LightState, LightType, LightValue};
+use crate::light_fidl_handler::{GroupPublisher, InfoPublisher};
+use crate::light_hardware_configuration::{DisableConditions, LightHardwareConfiguration};
+use crate::types::{LightGroup, LightInfo, LightState, LightType, LightValue};
 use anyhow::{Context, Error};
 use fidl_fuchsia_hardware_light::{Info, LightMarker, LightProxy};
 use fidl_fuchsia_settings_storage::LightGroups;
 use fuchsia_async as fasync;
 use futures::channel::mpsc::UnboundedReceiver;
-use futures::channel::oneshot::{self, Sender};
+use futures::channel::oneshot::Sender;
 use futures::lock::Mutex;
 use futures::StreamExt;
 use settings_common::call_async;
@@ -88,7 +88,7 @@ impl From<&LightError> for ResponseType {
     }
 }
 
-pub(crate) struct LightController {
+pub struct LightController {
     /// Proxy for interacting with light hardware.
     light_proxy: ExternalServiceProxy<LightProxy, ExternalEventPublisher>,
 
@@ -127,7 +127,7 @@ impl StorageAccess for LightController {
 
 /// Controller for processing requests surrounding the Light protocol.
 impl LightController {
-    pub(super) async fn new<F>(
+    pub(crate) async fn new<F>(
         service_context: Rc<ServiceContext>,
         default_setting: &mut DefaultSetting<LightHardwareConfiguration, &'static str>,
         storage_factory: Rc<F>,
@@ -177,7 +177,7 @@ impl LightController {
         })
     }
 
-    pub(super) fn register_publishers(
+    pub(crate) fn register_publishers(
         &mut self,
         publisher: InfoPublisher,
         group_publishers: HashMap<String, GroupPublisher>,
@@ -211,9 +211,9 @@ impl LightController {
         }
     }
 
-    pub(super) async fn handle(
+    pub(crate) async fn handle(
         self,
-        mut event_rx: UnboundedReceiver<(Event, oneshot::Sender<Result<Option<()>, LightError>>)>,
+        mut event_rx: UnboundedReceiver<(Event, super::ResultSender)>,
         mut request_rx: UnboundedReceiver<Request>,
     ) -> Result<fasync::Task<()>, LightError> {
         Ok(fasync::Task::local(async move {
@@ -407,7 +407,7 @@ impl LightController {
             .map_err(|e| LightError::WriteFailure(e.context("writing light on mic mute")))
     }
 
-    pub(super) async fn restore(&self) -> Result<LightInfo, LightError> {
+    pub(crate) async fn restore(&self) -> Result<LightInfo, LightError> {
         let light_info = if let Some(config) = self.light_hardware_config.clone() {
             // Configuration is specified, restore from the configuration.
             self.restore_from_configuration(config).await
@@ -580,8 +580,8 @@ mod tests {
     use futures::channel::mpsc;
 
     use super::*;
-    use crate::light::light_fidl_handler::LightFidlHandler;
-    use crate::tests::fakes::hardware_light_service::HardwareLightService;
+    use crate::light_fidl_handler::LightFidlHandler;
+    use crate::test_fakes::hardware_light_service::HardwareLightService;
     use settings_test_common::fakes::service::ServiceRegistry;
     use settings_test_common::storage::InMemoryFidlStorageFactory;
 

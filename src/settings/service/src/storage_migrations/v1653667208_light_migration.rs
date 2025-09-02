@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::light::types::LightInfo;
 use crate::migration::{FileGenerator, Migration, MigrationError};
 use anyhow::{anyhow, Context};
 use fidl::endpoints::create_proxy;
@@ -12,6 +11,7 @@ use fidl_fuchsia_settings::LightGroup as LightGroupFidl;
 use fidl_fuchsia_settings_storage::LightGroups;
 use fidl_fuchsia_stash::{StoreProxy, Value};
 
+use settings_light::types::LightInfo;
 use settings_storage::fidl_storage::FidlStorageConvertible;
 
 const LIGHT_KEY: &str = "settings_light_info";

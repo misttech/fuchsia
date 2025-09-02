@@ -25,6 +25,7 @@ rustc_library("settings_storage") {
 
   visibility = [
     ":*",
+    "//src/settings/light:*",
     "//src/settings/service:*",
     "//src/settings/test_common:*",
   ]
