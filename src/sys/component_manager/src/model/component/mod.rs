@@ -56,7 +56,7 @@ use moniker::{BorrowedChildName, ChildName, Moniker};
 use router_error::{Explain, RouterError};
 use runner::component::StopInfo;
 use sandbox::{
-    Capability, Connector, Data, Dict, DirConnector, DirEntry, Message, Request, Routable, Router,
+    Capability, Connector, Data, Dict, DirConnector, Message, Request, Routable, Router,
     RouterResponse,
 };
 use std::clone::Clone;
@@ -999,10 +999,10 @@ impl ComponentInstance {
         }
     }
 
-    /// Returns a [sandbox::DirEntry] representation of the outgoing directory of the component. It
+    /// Returns a `DirectoryEntry` representation of the outgoing directory of the component. It
     /// performs the same checks as `open_outgoing`, but errors are surfaced at the server
     /// endpoint.
-    pub fn get_outgoing(self: &Arc<Self>) -> DirEntry {
+    pub fn get_outgoing(self: &Arc<Self>) -> Arc<dyn DirectoryEntry> {
         struct GetOutgoing {
             component: WeakComponentInstance,
         }
@@ -1021,7 +1021,7 @@ impl ComponentInstance {
             }
         }
 
-        DirEntry::new(Arc::new(GetOutgoing { component: WeakComponentInstance::from(self) }))
+        Arc::new(GetOutgoing { component: WeakComponentInstance::from(self) })
     }
 
     /// Obtains the program output dict.

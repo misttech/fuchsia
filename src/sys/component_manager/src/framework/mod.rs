@@ -63,7 +63,9 @@ impl Routable<Dict> for FrameworkRouter {
             .ok_or(RouterError::Unknown)?;
         let component = match target {
             WeakExtendedInstance::Component(c) => c,
-            WeakExtendedInstance::AboveRoot(_) => return Err(RouterError::InvalidArgs),
+            WeakExtendedInstance::AboveRoot(_) => {
+                return Err(RouterError::InvalidArgs);
+            }
         };
         let component = component.upgrade().map_err(RoutingError::from)?;
         if component.moniker != self.scope {

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::model::component::WeakComponentInstance;
-use ::routing::bedrock::sandbox_construction::{ComponentSandbox, ProgramInput};
 use ::routing::DictExt;
+use ::routing::bedrock::sandbox_construction::{ComponentSandbox, ProgramInput};
 use cm_rust::{
     ExposeDecl, ExposeDictionaryDecl, ExposeProtocolDecl, ExposeRunnerDecl, ExposeServiceDecl,
     UseDecl, UseProtocolDecl, UseRunnerDecl, UseServiceDecl,
@@ -76,7 +76,7 @@ impl UseRouteRequest {
                         decl.target_path, target.moniker
                     );
                 };
-                let Capability::DirEntryRouter(_) = &capability else {
+                let Capability::DirConnectorRouter(_) = &capability else {
                     panic!(
                         "program input dictionary for component {} had an entry with an unexpected \
                          type: {:?}",
@@ -179,7 +179,7 @@ impl ExposeRouteRequest {
                         decl.target_name, target.moniker
                     );
                 };
-                let Capability::DirEntryRouter(_) = &capability else {
+                let Capability::DirConnectorRouter(_) = &capability else {
                     panic!(
                         "program input dictionary for component {} had an entry with an unexpected \
                                  type: {:?}",

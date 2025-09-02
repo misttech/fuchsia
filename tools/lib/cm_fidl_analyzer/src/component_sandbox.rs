@@ -31,14 +31,14 @@ use futures::{FutureExt, future};
 use moniker::{ChildName, Moniker};
 use router_error::RouterError;
 use sandbox::{
-    Capability, CapabilityBound, Connector, Data, Dict, DirConnector, DirEntry, Request, Routable,
-    Router, RouterResponse,
+    Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
+    RouterResponse,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_sys2 as fsys,
+    fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
 };
 
 fn new_debug_only_specific_router<T>(source: CapabilitySource) -> Router<T>
@@ -373,18 +373,6 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         }))
     }
 
-    fn new_outgoing_dir_dir_entry_router(
-        &self,
-        component: &Arc<ComponentInstanceForAnalyzer>,
-        _decl: &cm_rust::ComponentDecl,
-        capability: &cm_rust::CapabilityDecl,
-    ) -> Router<DirEntry> {
-        new_debug_only_specific_router::<DirEntry>(CapabilitySource::Component(ComponentSource {
-            capability: ComponentCapability::from(capability.clone()),
-            moniker: component.moniker().clone(),
-        }))
-    }
-
     fn new_outgoing_dir_dir_connector_router(
         &self,
         component: &Arc<ComponentInstanceForAnalyzer>,
@@ -393,6 +381,7 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
     ) -> Router<sandbox::DirConnector> {
         let rights = match capability {
             cm_rust::CapabilityDecl::Directory(dir_decl) => dir_decl.rights,
+            cm_rust::CapabilityDecl::Service(_) => fio::R_STAR_DIR,
             _ => panic!("incompatible porcelain type using DirConnector"),
         };
         let router = new_debug_only_specific_router::<DirConnector>(CapabilitySource::Component(
@@ -469,9 +458,7 @@ pub fn new_aggregate_router(
     _: Arc<ComponentInstanceForAnalyzer>,
     _: Vec<AggregateSource>,
     capability_source: CapabilitySource,
-    _: CapabilityTypeName,
-    _: Availability,
-) -> Router<DirEntry> {
+) -> Router<DirConnector> {
     new_debug_only_specific_router(capability_source)
 }
 

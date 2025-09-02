@@ -311,6 +311,17 @@ pub fn service_metadata(availability: cm_types::Availability) -> sandbox::Dict {
     let metadata = sandbox::Dict::new();
     metadata.set_metadata(CapabilityTypeName::Service);
     metadata.set_metadata(availability);
+    // Service capabilities are implemented as DirConnectors. When the Router<DirConnector> that
+    // connects to a component's outgoing directory wants to assemble a DirConnector, it pulls the
+    // set of rights that are allowed for that DirConnector from the route metadata. This gives us
+    // two choices: maintain a different Router<DirConnector> exclusively for connecting service
+    // capabilities to an outgoing directory that hard-codes R_STAR_DIR, or set R_STAR_DIR in the
+    // routing metadata and let the existing Router<DirConnector> use that information.
+    //
+    // It's less code duplication to do the latter, so we set the necessary bits to carry rights
+    // information in the routing metadata for service capability routing.
+    metadata.set_metadata(Rights::from(fio::R_STAR_DIR));
+    metadata.set_metadata(InheritRights(true));
     metadata
 }
 

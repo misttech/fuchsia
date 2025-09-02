@@ -144,6 +144,10 @@ impl DirConnector {
         }
         self.inner.send(dir, subdir, flags)
     }
+
+    pub fn with_subdir(self, subdir: RelativePath) -> Self {
+        Self::new_sendable(DirConnectorSubdir { parent_dir_connector: self, subdir })
+    }
 }
 
 impl DirConnectable for DirConnector {
@@ -158,6 +162,33 @@ impl DirConnectable for DirConnector {
         flags: Option<fio::Flags>,
     ) -> Result<(), ()> {
         self.inner.send(channel, subdir, flags)
+    }
+}
+
+#[derive(Debug)]
+struct DirConnectorSubdir {
+    parent_dir_connector: DirConnector,
+    subdir: RelativePath,
+}
+
+impl DirConnectable for DirConnectorSubdir {
+    fn maximum_flags(&self) -> fio::Flags {
+        self.parent_dir_connector.maximum_flags()
+    }
+
+    fn send(
+        &self,
+        channel: ServerEnd<fio::DirectoryMarker>,
+        subdir: RelativePath,
+        flags: Option<fio::Flags>,
+    ) -> Result<(), ()> {
+        let mut combined_subdir = self.subdir.clone();
+        let success = combined_subdir.extend(subdir);
+        if !success {
+            // subdir is too long
+            return Err(());
+        }
+        self.parent_dir_connector.send(channel, combined_subdir, flags)
     }
 }
 

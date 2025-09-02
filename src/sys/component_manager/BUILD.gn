@@ -217,7 +217,6 @@ _component_manager_bin = {
     "src/model/routing/open.rs",
     "src/model/routing/providers.rs",
     "src/model/routing/service.rs",
-    "src/model/routing_fns.rs",
     "src/model/start.rs",
     "src/model/storage/admin_protocol.rs",
     "src/model/storage/mod.rs",

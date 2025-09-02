@@ -4,15 +4,10 @@
 
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::routing;
-use crate::model::routing_fns::RouteEntry;
 use ::routing::RouteRequest;
-use ::routing::capability_source::ComponentCapability;
 use ::routing::component_instance::ComponentInstanceInterface;
-use ::routing::rights::Rights;
 use async_trait::async_trait;
-use cm_rust::{
-    CapabilityTypeName, ExposeDecl, UseDirectoryDecl, UseEventStreamDecl, UseStorageDecl,
-};
+use cm_rust::{UseEventStreamDecl, UseStorageDecl};
 use cm_types::RelativePath;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
@@ -31,14 +26,12 @@ pub trait RouteRequestExt {
 }
 
 enum UseDirectoryOrStorage {
-    Directory(UseDirectoryDecl),
     Storage(UseStorageDecl),
 }
 
 impl From<UseDirectoryOrStorage> for RouteRequest {
     fn from(r: UseDirectoryOrStorage) -> Self {
         match r {
-            UseDirectoryOrStorage::Directory(d) => Self::UseDirectory(d),
             UseDirectoryOrStorage::Storage(d) => Self::UseStorage(d),
         }
     }
@@ -47,9 +40,11 @@ impl From<UseDirectoryOrStorage> for RouteRequest {
 impl RouteRequestExt for RouteRequest {
     fn into_capability(self, target: &Arc<ComponentInstance>) -> Option<Capability> {
         let cap = match self {
-            Self::UseService(decl) => use_service(decl, target),
-            Self::UseDirectory(decl) => {
-                use_directory_or_storage(UseDirectoryOrStorage::Directory(decl), target)
+            Self::UseService(_) => {
+                panic!("Services should use bedrock instead");
+            }
+            Self::UseDirectory(_) => {
+                panic!("Services should use bedrock instead");
             }
             Self::UseStorage(decl) => {
                 use_directory_or_storage(UseDirectoryOrStorage::Storage(decl), target)
@@ -61,92 +56,16 @@ impl RouteRequestExt for RouteRequest {
             Self::ExposeProtocol(_) => {
                 panic!("Protocols should use bedrock instead");
             }
-            Self::ExposeService(ref e) => {
-                let cap = ComponentCapability::Expose(ExposeDecl::Service(
-                    e.iter().next().unwrap().clone(),
-                ));
-                expose_any(self, target, cap.type_name())
+            Self::ExposeService(_) => {
+                panic!("Services should use bedrock instead");
             }
-            Self::ExposeDirectory(ref e) => {
-                let cap = ComponentCapability::Expose(ExposeDecl::Directory(e.clone()));
-                expose_any(self, target, cap.type_name())
+            Self::ExposeDirectory(_) => {
+                panic!("Services should use bedrock instead");
             }
             _ => return None,
         };
         Some(cap)
     }
-}
-
-fn expose_any(
-    request: RouteRequest,
-    target: &Arc<ComponentInstance>,
-    type_name: CapabilityTypeName,
-) -> Capability {
-    DirEntry::new(RouteEntry::new(target.as_weak(), request, type_name.into())).into()
-}
-
-fn use_service(decl: cm_rust::UseServiceDecl, target: &Arc<ComponentInstance>) -> Capability {
-    struct Service {
-        target: WeakComponentInstance,
-        scope: ExecutionScope,
-        decl: cm_rust::UseServiceDecl,
-    }
-    impl DirectoryEntry for Service {
-        fn open_entry(self: Arc<Self>, mut request: OpenRequest<'_>) -> Result<(), zx::Status> {
-            // Move this request from the namespace scope to the component's scope so that
-            // we don't block namespace teardown.
-            request.set_scope(self.scope.clone());
-            request.spawn(self);
-            Ok(())
-        }
-    }
-    impl GetEntryInfo for Service {
-        fn entry_info(&self) -> EntryInfo {
-            EntryInfo::new(fio::INO_UNKNOWN, fio::DirentType::Directory)
-        }
-    }
-    impl DirectoryEntryAsync for Service {
-        async fn open_entry_async(
-            self: Arc<Self>,
-            request: OpenRequest<'_>,
-        ) -> Result<(), zx::Status> {
-            if request.path().is_empty() {
-                if !request.wait_till_ready().await {
-                    return Ok(());
-                }
-            }
-
-            let target = match self.target.upgrade() {
-                Ok(component) => component,
-                Err(e) => {
-                    error!(
-                        "failed to upgrade WeakComponentInstance routing use \
-                                 decl `{:?}`: {:?}",
-                        self.decl, e
-                    );
-                    return Err(e.as_zx_status());
-                }
-            };
-
-            // Hold a guard to prevent this task from being dropped during component
-            // destruction.
-            let Some(_guard) = request.scope().try_active_guard() else {
-                return Err(zx::Status::PEER_CLOSED);
-            };
-
-            let route_request = RouteRequest::UseService(self.decl.clone());
-
-            routing::route_and_open_capability_with_reporting(&route_request, &target, request)
-                .await
-                .map_err(|e| e.as_zx_status())
-        }
-    }
-    DirEntry::new(Arc::new(Service {
-        target: target.as_weak(),
-        scope: target.execution_scope.clone(),
-        decl,
-    }))
-    .into()
 }
 
 /// Makes a capability representing the directory described by `use_`. Once the
@@ -161,7 +80,6 @@ fn use_directory_or_storage(
     target: &Arc<ComponentInstance>,
 ) -> Capability {
     let flags = match &request {
-        UseDirectoryOrStorage::Directory(decl) => Rights::from(decl.rights).into(),
         UseDirectoryOrStorage::Storage(_) => fio::PERM_READABLE | fio::PERM_WRITABLE,
     };
 

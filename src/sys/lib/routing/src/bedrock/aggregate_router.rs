@@ -3,20 +3,14 @@
 // found in the LICENSE file.
 
 use crate::capability_source::{AggregateInstance, CapabilitySource};
-use cm_rust::CapabilityTypeName;
-use cm_types::{Availability, Name};
-use sandbox::{DirEntry, Router};
+use cm_types::Name;
+use sandbox::{DirConnector, Router};
 use std::sync::Arc;
 
 /// Functions of this signature are used during sandbox to construct new aggregate routers. These
 /// aggregate routers synthesize together one capability from multiple sources.
-pub type AggregateRouterFn<C> = dyn Fn(
-    Arc<C>,
-    Vec<AggregateSource>,
-    CapabilitySource,
-    CapabilityTypeName,
-    Availability,
-) -> Router<DirEntry>;
+pub type AggregateRouterFn<C> =
+    dyn Fn(Arc<C>, Vec<AggregateSource>, CapabilitySource) -> Router<DirConnector>;
 
 /// An `AggregateSource` describes the source of one (or more) service capabilities whose instances
 /// will be added to an aggregated service.
@@ -28,7 +22,7 @@ pub enum AggregateSource {
         /// Where the router comes from, be it a parent, child, etc.
         source_instance: AggregateInstance,
         /// The router that will back this source to the aggregate.
-        router: Router<DirEntry>,
+        router: Router<DirConnector>,
     },
     /// A collection whose dynamically created components may contribute to an aggregate.
     Collection { collection_name: Name },

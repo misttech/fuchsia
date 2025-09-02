@@ -13,7 +13,7 @@ use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_fs::directory::WatcherCreateError;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
-use futures::future::{join_all, BoxFuture};
+use futures::future::{BoxFuture, join_all};
 use futures::stream::TryStreamExt;
 use hooks::{Event, EventPayload, EventType, Hook, HooksRegistration};
 use log::{error, warn};
@@ -23,19 +23,18 @@ use routing::capability_source::{
 };
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
-use sandbox::{DirEntry, Router, RouterResponse};
+use sandbox::{DirConnector, Router, RouterResponse};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
+use vfs::ToObjectRequest;
 use vfs::directory::entry::{
     DirectoryEntry, DirectoryEntryAsync, EntryInfo, GetEntryInfo, OpenRequest,
 };
 use vfs::directory::helper::DirectlyMutable;
 use vfs::directory::immutable::simple::{
-    simple as simple_immutable_dir, Simple as SimpleImmutableDir,
+    Simple as SimpleImmutableDir, simple as simple_immutable_dir,
 };
-use vfs::execution_scope::ExecutionScope;
-use vfs::ToObjectRequest;
 
 /// Timeout for opening a service capability when aggregating.
 const OPEN_SERVICE_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
@@ -139,7 +138,7 @@ pub trait AnonymizedAggregateCapabilityProvider: Send + Sync {
     async fn route_instance(
         &self,
         instance: &AggregateInstance,
-    ) -> Result<(Router<DirEntry>, CapabilitySource), RoutingError>;
+    ) -> Result<(Router<DirConnector>, CapabilitySource), RoutingError>;
 }
 
 pub struct AnonymizedAggregateServiceDir {
@@ -299,7 +298,7 @@ impl AnonymizedAggregateServiceDir {
     fn spawn_instance_watcher_task(
         self: &Arc<Self>,
         instance: AggregateInstance,
-        router: Router<DirEntry>,
+        router: Router<DirConnector>,
         source: CapabilitySource,
     ) -> Result<(), ModelError> {
         let task_group = self.parent.upgrade()?.nonblocking_task_group();
@@ -503,27 +502,25 @@ impl AnonymizedAggregateServiceDir {
     async fn create_instance_watcher(
         &self,
         instance: &AggregateInstance,
-        router: &Router<DirEntry>,
+        router: &Router<DirConnector>,
     ) -> Result<(fio::DirectoryProxy, fuchsia_fs::directory::Watcher), ModelError> {
         let target =
             self.parent.upgrade().map_err(|err| ModelError::ComponentInstanceError { err })?;
 
-        let scope = ExecutionScope::new();
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let dir_entry = match router.route(None, false).await? {
-            RouterResponse::Capability(dir_entry) => dir_entry,
+        let result = router.route(None, false).await;
+        let dir_connector = match result? {
+            RouterResponse::Capability(dir_connector) => dir_connector,
             RouterResponse::Unavailable => {
                 return Err(RoutingError::RouteUnexpectedUnavailable {
                     type_name: CapabilityTypeName::Service,
                     moniker: target.moniker.clone().into(),
                 }
-                .into())
+                .into());
             }
             RouterResponse::Debug(_) => panic!("we didn't ask for a debug route"),
         };
-        FLAGS.to_object_request(server_end.into_channel()).handle(|request| {
-            dir_entry.open_entry(OpenRequest::new(scope.clone(), FLAGS, vfs::Path::dot(), request))
-        });
+        let _ = dir_connector.send(server_end, RelativePath::dot(), Some(FLAGS));
 
         let watcher = fuchsia_fs::directory::Watcher::new(&proxy)
             .on_timeout(OPEN_SERVICE_TIMEOUT.after_now(), || {
@@ -886,7 +883,7 @@ mod tests {
         async fn route_instance(
             &self,
             instance: &AggregateInstance,
-        ) -> Result<(Router<DirEntry>, CapabilitySource), RoutingError> {
+        ) -> Result<(Router<DirConnector>, CapabilitySource), RoutingError> {
             let instances_guard = self.instances.lock();
             let Some(component_instance) = instances_guard.get(instance) else {
                 let err = match instance {
@@ -941,7 +938,11 @@ mod tests {
                     .await
                     // TODO: better error
                     .map_err(|_| router_error::RouterError::Internal)?;
-                    Ok(RouterResponse::Capability(DirEntry::new(vfs::remote::remote_dir(proxy))))
+                    Ok(RouterResponse::Capability(DirConnector::from_proxy(
+                        proxy,
+                        RelativePath::dot(),
+                        fio::PERM_READABLE,
+                    )))
                 }
                 .boxed()
             });

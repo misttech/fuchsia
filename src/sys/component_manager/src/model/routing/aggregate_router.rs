@@ -7,8 +7,7 @@ use crate::model::routing::service::{
     AnonymizedAggregateCapabilityProvider, AnonymizedAggregateServiceDir, AnonymizedServiceRoute,
 };
 use async_trait::async_trait;
-use cm_rust::CapabilityTypeName;
-use cm_types::{Availability, Name};
+use cm_types::{Name, RelativePath};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::directory::readdir;
@@ -18,7 +17,6 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::stream::FuturesUnordered;
 use router_error::RouterError;
 use routing::bedrock::aggregate_router::AggregateSource;
-use routing::bedrock::request_metadata::Metadata;
 use routing::capability_source::{
     AggregateInstance, AnonymizedAggregateSource, CapabilitySource,
     FilteredAggregateProviderSource, ServiceInstance,
@@ -26,12 +24,10 @@ use routing::capability_source::{
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
 use sandbox::{
-    Capability, Data, Dict, DirEntry, RemotableCapability, Request, Router, RouterResponse,
+    Capability, Data, Dict, DirConnector, RemotableCapability, Request, Router, RouterResponse,
 };
 use std::cmp::Ordering;
 use std::sync::Arc;
-use vfs::ToObjectRequest;
-use vfs::directory::entry::{OpenRequest, SubNode};
 use vfs::execution_scope::ExecutionScope;
 
 #[derive(Debug, Clone)]
@@ -56,12 +52,10 @@ impl From<AnonymizedOrFiltered> for CapabilitySource {
 /// A router which will return a directory that aggregates together entries from the `sources`.
 pub struct AggregateRouter {
     component: WeakComponentInstance,
-    porcelain_type: CapabilityTypeName,
-    availability: Availability,
     capability_source: AnonymizedOrFiltered,
     sources: Vec<AggregateSource>,
     // This is set to `Some` when the aggregate router has been started.
-    aggregate_directory: AsyncMutex<Option<DirEntry>>,
+    aggregate_directory: AsyncMutex<Option<DirConnector>>,
     // This is set to `Some` when the aggregate router has been started, if this is an anonymizing
     // aggregate.
     anonymized_aggregate_service_dir: Mutex<Option<Arc<AnonymizedAggregateServiceDir>>>,
@@ -69,20 +63,13 @@ pub struct AggregateRouter {
 }
 
 #[async_trait]
-impl sandbox::Routable<DirEntry> for AggregateRouter {
+impl sandbox::Routable<DirConnector> for AggregateRouter {
     async fn route(
         &self,
         request: Option<Request>,
         debug: bool,
-    ) -> Result<RouterResponse<DirEntry>, RouterError> {
-        let request = if let Some(request) = request {
-            request
-        } else {
-            let metadata = Dict::new();
-            metadata.set_metadata(self.porcelain_type);
-            metadata.set_metadata(self.availability);
-            Request { target: self.component.clone().into(), metadata }
-        };
+    ) -> Result<RouterResponse<DirConnector>, RouterError> {
+        let request = request.ok_or(RouterError::InvalidArgs)?;
 
         let aggregate_dir = self.get_aggregate_dir(request).await?;
         if debug {
@@ -105,9 +92,7 @@ impl AggregateRouter {
         component: Arc<ComponentInstance>,
         sources: Vec<AggregateSource>,
         capability_source: CapabilitySource,
-        porcelain_type: CapabilityTypeName,
-        availability: Availability,
-    ) -> Router<DirEntry> {
+    ) -> Router<DirConnector> {
         let capability_source = match capability_source {
             CapabilitySource::AnonymizedAggregate(source) => {
                 AnonymizedOrFiltered::AnonymizedAggregate(source)
@@ -124,8 +109,6 @@ impl AggregateRouter {
             aggregate_directory: AsyncMutex::new(None),
             anonymized_aggregate_service_dir: Mutex::new(None),
             scope: component.execution_scope.clone(),
-            porcelain_type,
-            availability,
         })
     }
 
@@ -161,7 +144,7 @@ impl AggregateRouter {
     }
 
     /// Returns the directory containing aggregated entries, and initializes it if necessary.
-    async fn get_aggregate_dir(&self, request: Request) -> Result<DirEntry, RouterError> {
+    async fn get_aggregate_dir(&self, request: Request) -> Result<DirConnector, RouterError> {
         let mut maybe_directory = self.aggregate_directory.lock().await;
         if let Some(aggregate_directory) = &*maybe_directory {
             return Ok(aggregate_directory.clone());
@@ -186,7 +169,7 @@ impl AggregateRouter {
     async fn create_anonymized_aggregate(
         &self,
         anonymized_source: &AnonymizedAggregateSource,
-    ) -> Result<DirEntry, RouterError> {
+    ) -> Result<DirConnector, RouterError> {
         let route = AnonymizedServiceRoute {
             source_moniker: self.component.moniker.clone(),
             members: anonymized_source.members.clone(),
@@ -208,10 +191,13 @@ impl AggregateRouter {
         self.component.upgrade().map_err(RoutingError::from)?.hooks.install(service_dir.hooks());
         let _ = service_dir.add_entries_from_children().await;
         *self.anonymized_aggregate_service_dir.lock() = Some(service_dir.clone());
-        Ok(DirEntry::new(service_dir.dir_entry()))
+        Ok(DirConnector::from_directory_entry(service_dir.dir_entry(), fio::PERM_READABLE))
     }
 
-    async fn create_filtered_aggregate(&self, request: Request) -> Result<DirEntry, RouterError> {
+    async fn create_filtered_aggregate(
+        &self,
+        request: Request,
+    ) -> Result<DirConnector, RouterError> {
         let source_dir_routers = self.sources.iter().filter_map(|source| match source {
             AggregateSource::DirectoryRouter { source_instance: _, router } => Some(router),
             AggregateSource::Collection { collection_name: _ } => panic!("collections can't contribute to filtered aggregates, manifest validation should stop this"),
@@ -223,7 +209,7 @@ impl AggregateRouter {
         let aggregate_dictionary = Dict::new();
         while let Some(router_response) = routing_futures.next().await {
             let source_dir = match router_response {
-                Ok(RouterResponse::Capability(dir_entry)) => dir_entry,
+                Ok(RouterResponse::Capability(dir_connector)) => dir_connector,
                 Ok(RouterResponse::Unavailable) => {
                     // If the capability is unavailable, then there's nothing for us to do here.
                     continue;
@@ -240,39 +226,31 @@ impl AggregateRouter {
                 }
             };
             let (source_dir_proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
-            const FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::Flags::PROTOCOL_DIRECTORY);
-            FLAGS.to_object_request(server_end.into_channel()).handle(|request| {
-                source_dir.open_entry(OpenRequest::new(
-                    self.scope.clone(),
-                    FLAGS,
-                    vfs::Path::dot(),
-                    request,
-                ))
-            });
+            let Ok(()) = source_dir.send(server_end, RelativePath::dot(), None) else {
+                log::warn!(
+                    "failed to open service capability for aggregate on dir connector {source_dir:?}"
+                );
+                continue;
+            };
             // Renames have already been applied by the `with_service_renames_and_filter` function
             // in `source_dir`, so we don't need to do any remappings here.
-            let parent_dir = source_dir.try_into_directory_entry(self.scope.clone()).unwrap();
             for entry in readdir(&source_dir_proxy).await.unwrap_or_default() {
                 if &entry.name == "." || entry.kind != fuchsia_fs::directory::DirentKind::Directory
                 {
                     continue;
                 }
-                let path = vfs::path::Path::validate_and_split(&entry.name)
-                    .expect("path returned from VFS is invalid");
-                let sub_dir_entry = DirEntry::new(Arc::new(SubNode::new(
-                    parent_dir.clone(),
-                    path,
-                    fio::DirentType::Directory,
-                )));
+                let path = RelativePath::new(&entry.name).unwrap();
+                let sub_dir = source_dir.clone().with_subdir(path);
                 let name = entry.name.parse().expect("path returned from VFS is not a valid name");
-                aggregate_dictionary.insert(name, sub_dir_entry.into()).expect(
+                aggregate_dictionary.insert(name, sub_dir.into()).expect(
                     "failed to insert into aggregate dictionary, name collisions should be \
                             prevented by manifest validation",
                 );
             }
         }
-        Ok(DirEntry::new(
+        Ok(DirConnector::from_directory_entry(
             aggregate_dictionary.try_into_directory_entry(self.scope.clone()).unwrap(),
+            fio::PERM_READABLE,
         )
         .into())
     }
@@ -332,7 +310,7 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
     async fn route_instance(
         &self,
         instance: &AggregateInstance,
-    ) -> Result<(Router<DirEntry>, CapabilitySource), RoutingError> {
+    ) -> Result<(Router<DirConnector>, CapabilitySource), RoutingError> {
         let maybe_router = self
             .sources
             .iter()
@@ -409,11 +387,11 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
                         )
                     })?;
                 match capability {
-                    Capability::DirEntryRouter(r) => r,
+                    Capability::DirConnectorRouter(r) => r,
                     other_type => {
                         return Err(RoutingError::BedrockWrongCapabilityType {
                             actual: format!("{:?}", other_type),
-                            expected: "Router<DirEntry>".to_string(),
+                            expected: "Router<DirConnector>".to_string(),
                             moniker: self.component.moniker.clone().into(),
                         });
                     }

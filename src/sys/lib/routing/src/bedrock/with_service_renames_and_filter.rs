@@ -15,7 +15,7 @@ use sandbox::{
 
 /// A router that will apply renames/filtering on any dictionaries routed through it.
 struct ServiceRenameRouter {
-    router: Router<DirEntry>,
+    router: Router<DirConnector>,
     // This field is not read on host
     #[allow(dead_code)]
     renames: Box<[NameMapping]>,
@@ -23,12 +23,12 @@ struct ServiceRenameRouter {
 }
 
 #[async_trait]
-impl Routable<DirEntry> for ServiceRenameRouter {
+impl Routable<DirConnector> for ServiceRenameRouter {
     async fn route(
         &self,
         request: Option<Request>,
         debug: bool,
-    ) -> Result<RouterResponse<DirEntry>, RouterError> {
+    ) -> Result<RouterResponse<DirConnector>, RouterError> {
         self.handle_dir_router(request, debug).await
     }
 }
@@ -38,40 +38,30 @@ impl ServiceRenameRouter {
         &self,
         request: Option<Request>,
         debug: bool,
-    ) -> Result<RouterResponse<DirEntry>, RouterError> {
+    ) -> Result<RouterResponse<DirConnector>, RouterError> {
         let result = self.router.route(request, debug).await;
         match result {
-            Ok(RouterResponse::Capability(_source_services_directory)) => {
-                #[cfg(target_os = "fuchsia")]
-                {
-                    let target_services_dict = Dict::new();
-                    let dir_ent_ref = std::sync::Arc::new(_source_services_directory);
-                    for rename in &self.renames {
-                        let path =
-                            vfs::path::Path::validate_and_split(format!("{}", &rename.source_name))
-                                .expect("path from component manifest is invalid");
-                        let sub_node_dir_entry = DirEntry::new(std::sync::Arc::new(
-                            vfs::directory::entry::SubNode::new(
-                                dir_ent_ref.clone(),
-                                path,
-                                fidl_fuchsia_io::DirentType::Directory,
-                            ),
-                        ));
-                        target_services_dict
-                            .insert(rename.target_name.clone(), sub_node_dir_entry.into())
-                            .expect("failed to insert into target services dict");
-                    }
-                    let dir_entry = DirEntry::new(
-                        target_services_dict
-                            .try_into_directory_entry(vfs::execution_scope::ExecutionScope::new())
-                            .unwrap(),
-                    );
-                    return Ok(dir_entry.into());
+            #[cfg(target_os = "fuchsia")]
+            Ok(RouterResponse::Capability(source_services_directory)) => {
+                let target_services_dict = Dict::new();
+                for rename in &self.renames {
+                    let path = cm_types::RelativePath::new(&rename.source_name).unwrap();
+                    let dir_connector = source_services_directory.clone().with_subdir(path);
+                    target_services_dict
+                        .insert(rename.target_name.clone(), dir_connector.into())
+                        .expect("failed to insert into target services dict");
                 }
-                #[cfg(not(target_os = "fuchsia"))]
-                {
-                    return Ok(DirEntry {}.into());
-                }
+                let dir_entry = target_services_dict
+                    .try_into_directory_entry(vfs::execution_scope::ExecutionScope::new())
+                    .unwrap();
+                let dir_connector =
+                    DirConnector::from_directory_entry(dir_entry, fidl_fuchsia_io::PERM_READABLE);
+                return Ok(dir_connector.into());
+            }
+            #[cfg(not(target_os = "fuchsia"))]
+            Ok(RouterResponse::Capability(_)) => {
+                let (_receiver, dir_connector) = DirConnector::new();
+                return Ok(dir_connector.into());
             }
             Ok(RouterResponse::Debug(capability_source_data)) => {
                 Ok(RouterResponse::Debug(self.wrap_debug_response(capability_source_data)))
@@ -142,12 +132,6 @@ impl WithServiceRenamesAndFilter for Router<Connector> {
 }
 
 impl WithServiceRenamesAndFilter for Router<DirConnector> {
-    fn with_service_renames_and_filter(self, _offer: OfferDecl) -> Capability {
-        self.into()
-    }
-}
-
-impl WithServiceRenamesAndFilter for Router<DirEntry> {
     fn with_service_renames_and_filter(self, offer: OfferDecl) -> Capability {
         let offer_service_decl = match offer {
             OfferDecl::Service(decl) => decl,
@@ -162,6 +146,12 @@ impl WithServiceRenamesAndFilter for Router<DirEntry> {
             return self.into();
         }
         Router::new(ServiceRenameRouter { router: self, renames, offer_service_decl }).into()
+    }
+}
+
+impl WithServiceRenamesAndFilter for Router<DirEntry> {
+    fn with_service_renames_and_filter(self, _offer: OfferDecl) -> Capability {
+        self.into()
     }
 }
 

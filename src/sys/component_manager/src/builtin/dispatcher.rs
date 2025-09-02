@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use cm_rust::CapabilityTypeName;
 use cm_types::{Name, NamespacePath};
 use diagnostics_log::{Publisher, PublisherOptions};
@@ -178,7 +178,7 @@ impl Dispatcher {
                         Ok(CapabilityTypeName::Service) => {
                             Router::new(move |request, debug: bool| {
                                 assert!(!debug);
-                                self_clone.clone().route::<sandbox::DirEntry>(request).boxed()
+                                self_clone.clone().route::<sandbox::DirConnector>(request).boxed()
                             })
                             .into()
                         }

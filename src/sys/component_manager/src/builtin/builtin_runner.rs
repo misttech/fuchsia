@@ -21,11 +21,10 @@ use namespace::{Namespace, NamespaceError};
 use routing::capability_source::{BuiltinSource, CapabilitySource};
 use routing::policy::ScopedPolicyChecker;
 use runner::component::{Controllable, Controller, StopInfo};
-use sandbox::{Capability, Dict, DirEntry, RemotableCapability};
+use sandbox::{Capability, Dict, RemotableCapability};
 use std::sync::Arc;
 use thiserror::Error;
-use vfs::ToObjectRequest;
-use vfs::directory::entry::OpenRequest;
+use vfs::directory::entry::{OpenRequest, serve_directory};
 use vfs::execution_scope::ExecutionScope;
 use vfs::service::endpoint;
 use zx::{AsHandleRef, HandleBased, Task};
@@ -548,18 +547,11 @@ impl ElfRunnerProgram {
 
     /// Serves requests coming from `outgoing_dir` using `self.output`.
     fn serve_outgoing(&self, outgoing_dir: ServerEnd<fio::DirectoryMarker>) {
-        let output = self.output.clone();
-        let dir_entry =
-            DirEntry::new(output.try_into_directory_entry(self.execution_scope.clone()).unwrap());
-        const FLAGS: fio::Flags = fio::PERM_READABLE;
-        FLAGS.to_object_request(outgoing_dir.into_channel()).handle(|request| {
-            dir_entry.open_entry(OpenRequest::new(
-                self.execution_scope.clone(),
-                FLAGS,
-                vfs::Path::dot(),
-                request,
-            ))
-        });
+        let scope = self.execution_scope.clone();
+        let dir_entry = self.output.clone().try_into_directory_entry(scope.clone()).unwrap();
+        let client_end = serve_directory(dir_entry, &scope, fio::PERM_READABLE).unwrap();
+        let dir_proxy = client_end.into_proxy();
+        fuchsia_fs::directory::clone_onto(&dir_proxy, outgoing_dir).unwrap();
     }
 
     async fn wait_for_shutdown(self, lifecycle: ServerEnd<fprocess_lifecycle::LifecycleMarker>) {

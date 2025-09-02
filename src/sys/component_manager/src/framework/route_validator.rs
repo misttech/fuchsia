@@ -429,7 +429,7 @@ impl RouteRequest {
                 });
                 res
             }
-            Capability::DirEntryRouter(router) => {
+            Capability::DirConnectorRouter(router) => {
                 router.route(None, true).await.and_then(|resp| match resp {
                     RouterResponse::Debug(data) => Ok(data),
                     _ => {
@@ -1550,6 +1550,7 @@ mod tests {
         let capability_decl =
             CapabilityBuilder::service().name("my_service").path("/svc/foo.bar").build();
 
+        let target_decl = ComponentDeclBuilder::new().use_(use_decl).build();
         let components = vec![
             (
                 "root",
@@ -1559,7 +1560,7 @@ mod tests {
                     .child_default("target")
                     .build(),
             ),
-            ("target", ComponentDeclBuilder::new().use_(use_decl).build()),
+            ("target", target_decl),
             (
                 "child_a",
                 ComponentDeclBuilder::new()

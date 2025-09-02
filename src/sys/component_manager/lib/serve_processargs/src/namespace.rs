@@ -3,10 +3,10 @@
 
 use cm_types::{NamespacePath, Path, RelativePath};
 use fidl::endpoints::ClientEnd;
-use futures::channel::mpsc::{unbounded, UnboundedSender};
+use futures::channel::mpsc::{UnboundedSender, unbounded};
 use namespace::{Entry as NamespaceEntry, EntryError, Namespace, NamespaceError, Tree};
 use router_error::Explain;
-use sandbox::{Capability, Dict, RouterResponse};
+use sandbox::{Capability, Dict, RemotableCapability, RouterResponse};
 use thiserror::Error;
 use vfs::directory::entry::serve_directory;
 use vfs::execution_scope::ExecutionScope;
@@ -162,12 +162,10 @@ impl NamespaceBuilder {
                     client
                 }
                 Capability::Dictionary(dict) => {
-                    let entry = dict
-                        .try_into_directory_entry_oneshot(self.namespace_scope.clone())
-                        .map_err(|err| BuildNamespaceError::Conversion {
-                            path: path.clone(),
-                            err,
-                        })?;
+                    let entry =
+                        dict.try_into_directory_entry(self.namespace_scope.clone()).map_err(
+                            |err| BuildNamespaceError::Conversion { path: path.clone(), err },
+                        )?;
                     if entry.entry_info().type_() != fio::DirentType::Directory {
                         return Err(BuildNamespaceError::Conversion {
                             path: path.clone(),
@@ -215,8 +213,8 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{self, Proxy, ServerEnd};
     use fidl::Peered;
+    use fidl::endpoints::{self, Proxy, ServerEnd};
     use fuchsia_fs::directory::DirEntry;
     use futures::channel::mpsc;
     use futures::{StreamExt, TryStreamExt};
@@ -225,7 +223,7 @@ mod tests {
     use test_case::test_case;
     use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
     use vfs::remote::RemoteLike;
-    use vfs::{path, pseudo_directory, ObjectRequestRef};
+    use vfs::{ObjectRequestRef, path, pseudo_directory};
     use zx::AsHandleRef;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 

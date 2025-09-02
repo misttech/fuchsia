@@ -68,8 +68,8 @@ use log::warn;
 use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use sandbox::{
-    Capability, Connector, Data, Dict, DirConnector, DirEntry, RemotableCapability, Request,
-    Routable, Router, RouterResponse, WeakInstanceToken,
+    Capability, Connector, Data, Dict, DirConnector, RemotableCapability, Request, Routable,
+    Router, RouterResponse, WeakInstanceToken,
 };
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -469,17 +469,6 @@ impl ResolvedInstanceState {
                 )
             }
 
-            fn new_outgoing_dir_dir_entry_router(
-                &self,
-                component: &Arc<ComponentInstance>,
-                decl: &cm_rust::ComponentDecl,
-                capability: &cm_rust::CapabilityDecl,
-            ) -> Router<DirEntry> {
-                ResolvedInstanceState::make_program_outgoing_dir_entry_router(
-                    component, decl, capability,
-                )
-            }
-
             fn new_outgoing_dir_dir_connector_router(
                 &self,
                 component: &Arc<ComponentInstance>,
@@ -602,10 +591,7 @@ impl ResolvedInstanceState {
         let path = fuchsia_fs::canonicalize_path(&path);
         let entry_type = ComponentCapability::from(capability_decl.clone()).type_name().into();
         let relative_path = vfs::path::Path::validate_and_split(path).unwrap();
-        let outgoing_dir_entry = component
-            .get_outgoing()
-            .try_into_directory_entry(component.execution_scope.clone())
-            .expect("conversion to directory entry should succeed");
+        let outgoing_dir_entry = component.get_outgoing();
         #[derive(Derivative)]
         #[derivative(Debug)]
         struct OutgoingConnector {
@@ -645,36 +631,6 @@ impl ResolvedInstanceState {
         }
     }
 
-    /// Creates a `Router<DirEntry>` that requests the specified capability from the
-    /// program's outgoing directory.
-    pub fn make_program_outgoing_dir_entry_router(
-        component: &Arc<ComponentInstance>,
-        component_decl: &ComponentDecl,
-        capability_decl: &cm_rust::CapabilityDecl,
-    ) -> Router<DirEntry> {
-        if component_decl.get_runner().is_none() {
-            return Router::<DirEntry>::new_error(OpenOutgoingDirError::InstanceNonExecutable);
-        }
-        let name = capability_decl.name();
-        let path = capability_decl.path().expect("must have path").to_string();
-        let path = fuchsia_fs::canonicalize_path(&path);
-        let entry_type = ComponentCapability::from(capability_decl.clone()).type_name().into();
-        let relative_path = vfs::path::Path::validate_and_split(path).unwrap();
-        let outgoing_dir_entry = component
-            .get_outgoing()
-            .try_into_directory_entry(component.execution_scope.clone())
-            .expect("conversion to directory entry should succeed");
-        let dir_entry =
-            DirEntry::new(Arc::new(SubNode::new(outgoing_dir_entry, relative_path, entry_type)));
-        // DirEntry-based capabilities don't need to support CapabilityRequested.
-        Router::<DirEntry>::new(DirEntryOutgoingRouter {
-            source: component.as_weak(),
-            name: name.clone(),
-            dir_entry,
-            capability_decl: capability_decl.clone(),
-        })
-    }
-
     /// Creates a `Router<DirConnector>` that requests the specified capability from the
     /// program's outgoing directory.
     pub fn make_program_outgoing_dir_connector_router(
@@ -687,6 +643,7 @@ impl ResolvedInstanceState {
         }
         let rights = match capability_decl {
             cm_rust::CapabilityDecl::Directory(decl) => decl.rights,
+            cm_rust::CapabilityDecl::Service(_) => fio::R_STAR_DIR,
             _ => panic!("unsupported capability type for DirConnector"),
         };
         let path = capability_decl.path().expect(
@@ -1539,60 +1496,6 @@ impl Routable<Connector> for CapabilityRequestedHook {
 }
 
 #[derive(Debug)]
-struct DirEntryOutgoingRouter {
-    source: WeakComponentInstance,
-    name: Name,
-    dir_entry: DirEntry,
-    capability_decl: cm_rust::CapabilityDecl,
-}
-
-#[async_trait]
-impl Routable<DirEntry> for DirEntryOutgoingRouter {
-    async fn route(
-        &self,
-        request: Option<Request>,
-        debug: bool,
-    ) -> Result<RouterResponse<DirEntry>, RouterError> {
-        fn cm_unexpected() -> RouterError {
-            RoutingError::from(ComponentInstanceError::ComponentManagerInstanceUnexpected {}).into()
-        }
-
-        let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
-        let ExtendedMoniker::ComponentInstance(target_moniker) =
-            <WeakInstanceToken as WeakInstanceTokenExt<ComponentInstance>>::moniker(
-                &request.target,
-            )
-        else {
-            return Err(cm_unexpected());
-        };
-        self.source
-            .ensure_started(&StartReason::AccessCapability {
-                target: target_moniker,
-                name: self.name.clone(),
-            })
-            .await?;
-        let ExtendedInstance::Component(_) =
-            request.target.upgrade().map_err(RoutingError::from)?
-        else {
-            return Err(cm_unexpected());
-        };
-        let resp = if debug {
-            RouterResponse::<DirEntry>::Debug(
-                CapabilitySource::Component(ComponentSource {
-                    capability: self.capability_decl.clone().into(),
-                    moniker: self.source.moniker.clone(),
-                })
-                .try_into()
-                .expect("failed to convert capability source to Data"),
-            )
-        } else {
-            RouterResponse::<DirEntry>::Capability(self.dir_entry.clone())
-        };
-        Ok(resp)
-    }
-}
-
-#[derive(Debug)]
 struct DirConnectorOutgoingRouter {
     source_component: WeakComponentInstance,
     capability_source: CapabilitySource,
@@ -1664,7 +1567,7 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
             }
         }
         let dir_connector = sandbox::DirConnector::new_sendable(OutgoingDirConnector {
-            outgoing_dir: source_component.get_outgoing().to_directory_entry(),
+            outgoing_dir: source_component.get_outgoing(),
             scope: source_component.execution_scope.clone(),
             moniker: source_component.moniker.clone(),
             path,

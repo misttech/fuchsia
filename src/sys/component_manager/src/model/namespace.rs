@@ -8,13 +8,15 @@ use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::mapper::NoopRouteMapper;
 use ::routing::{route_to_storage_decl, verify_instance_in_component_id_index};
 use cm_rust::ComponentDecl;
+use cm_types::{NamespacePath, Path};
 use errors::CreateNamespaceError;
 use fidl::prelude::*;
 use fidl_fuchsia_io as fio;
-use futures::channel::mpsc::{unbounded, UnboundedSender};
 use futures::StreamExt;
+use futures::channel::mpsc::{UnboundedSender, unbounded};
 use sandbox::{Capability, Dict};
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
+use std::collections::HashSet;
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
 
@@ -40,6 +42,7 @@ pub async fn create_namespace(
         })?;
     }
 
+    let mut dont_flatten_past = HashSet::new();
     for use_ in &decl.uses {
         if let cm_rust::UseDecl::Storage(decl) = use_ {
             if let Ok(source) =
@@ -50,11 +53,22 @@ pub async fn create_namespace(
                     .map_err(CreateNamespaceError::InstanceNotInInstanceIdIndex)?;
             }
         }
+        if let cm_rust::UseDecl::Service(decl) = use_ {
+            // Services should behave like protocols, and exist within a component manager hosted
+            // directory instead of being directly placed in the namespace.
+            //
+            // Without this, using a service and a protocol both in /svc will cause a namespace
+            // path conflict because the protocol would cause a directory to go at /svc and the
+            // service would cause a directory to go at /svc/{service_name}.
+            dont_flatten_past.insert(decl.target_path.parent());
+        }
     }
 
-    program_input_dict_to_namespace("", &mut namespace, program_input_dict).map_err(|e| {
-        CreateNamespaceError::BuildNamespaceError { moniker: component.moniker.clone(), err: e }
-    })?;
+    program_input_dict_to_namespace("", &mut namespace, program_input_dict, dont_flatten_past)
+        .map_err(|e| CreateNamespaceError::BuildNamespaceError {
+            moniker: component.moniker.clone(),
+            err: e,
+        })?;
     Ok(namespace)
 }
 
@@ -75,29 +89,45 @@ fn program_input_dict_to_namespace(
     prefix: &str,
     namespace: &mut NamespaceBuilder,
     program_input_dict: &Dict,
+    dont_flatten_past: HashSet<NamespacePath>,
 ) -> Result<(), serve_processargs::BuildNamespaceError> {
     // Convert (the transformed) program_input_dict to namespace.
     //
-    // Flatten the namespace as much as possible.
+    // The namespace is flattened as much as is possible, up until any paths listed in
+    // `dont_flatten_past` (past which no flattening happens).
     //
     // For example, a dictionary that contains a dictionary at "data" that contains one directory
     // at "foo" should add a directory to the namespace at "/data/foo", not a directory at "/data".
+    //
+    // Alternatively if a dictionary contains a dictionary at "svc" that contains a directory
+    // connector at "foo.bar" and `dont_flatten_past` contains "svc", then a dictionary gets added
+    // to the namespace at "/svc", not a directory connector at "/svc/foo.bar".
     for (key, value) in program_input_dict.enumerate() {
+        let new_prefix = NamespacePath::new(format!("{prefix}/{key}")).unwrap();
         match value {
             Ok(Capability::Dictionary(d)) => {
-                program_input_dict_to_namespace(&format!("{prefix}/{key}"), namespace, &d)?;
+                if dont_flatten_past.contains(&new_prefix) {
+                    namespace.add_entry(Capability::Dictionary(d), &new_prefix)?;
+                } else {
+                    program_input_dict_to_namespace(
+                        &format!("{prefix}/{key}"),
+                        namespace,
+                        &d,
+                        dont_flatten_past.clone(),
+                    )?;
+                }
             }
             Ok(cap @ Capability::Directory(_)) => {
-                namespace.add_entry(cap, &format!("{prefix}/{key}").parse().unwrap())?;
+                namespace.add_entry(cap, &new_prefix)?;
             }
             Ok(cap @ Capability::DirConnector(_)) => {
-                namespace.add_entry(cap, &format!("{prefix}/{key}").parse().unwrap())?;
+                namespace.add_entry(cap, &new_prefix)?;
             }
             Ok(cap @ Capability::DirConnectorRouter(_)) => {
-                namespace.add_entry(cap, &format!("{prefix}/{key}").parse().unwrap())?;
+                namespace.add_entry(cap, &new_prefix)?;
             }
             Ok(cap) => {
-                namespace.add_object(cap, &format!("{prefix}/{key}").parse().unwrap())?;
+                namespace.add_object(cap, &Path::new(format!("{prefix}/{key}")).unwrap())?;
             }
             Err(_) => {}
         }

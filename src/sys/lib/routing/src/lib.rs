@@ -54,8 +54,8 @@ use itertools::Itertools;
 use moniker::{ChildName, ExtendedMoniker, Moniker, MonikerError};
 use router_error::Explain;
 use sandbox::{
-    Capability, CapabilityBound, Connector, Data, Dict, DirConnector, DirEntry, Request, Routable,
-    Router, RouterResponse,
+    Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
+    RouterResponse,
 };
 use std::sync::Arc;
 use subdir::SubDir;
@@ -358,7 +358,7 @@ where
         }
         RouteRequest::ExposeService(expose_bundle) => {
             let first_expose = expose_bundle.iter().next().expect("can't route empty bundle");
-            route_capability_inner::<DirEntry, _>(
+            route_capability_inner::<DirConnector, _>(
                 &target.component_sandbox().await?.component_output.capabilities(),
                 first_expose.target_name(),
                 service_metadata(*first_expose.availability()),
@@ -457,7 +457,7 @@ where
             .await
         }
         RouteRequest::UseService(use_service_decl) => {
-            route_capability_inner::<DirEntry, _>(
+            route_capability_inner::<DirConnector, _>(
                 &target.component_sandbox().await?.program_input.namespace(),
                 &use_service_decl.target_path,
                 service_metadata(use_service_decl.availability),
@@ -550,7 +550,7 @@ where
                     Capability::Data(Data::Uint64(1)),
                 )
                 .unwrap();
-            route_capability_inner::<DirEntry, _>(
+            route_capability_inner::<DirConnector, _>(
                 &target_dictionary,
                 &first_offer.target_name,
                 metadata,

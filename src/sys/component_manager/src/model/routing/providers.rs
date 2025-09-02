@@ -10,11 +10,13 @@ use cm_rust::{Availability, CapabilityTypeName};
 use cm_types::{FLAGS_MAX_POSSIBLE_RIGHTS, Name};
 use cm_util::TaskGroup;
 use errors::{CapabilityProviderError, OpenError};
+use fidl_fuchsia_io as fio;
 use moniker::Moniker;
 use router_error::RouterError;
-use routing::bedrock::request_metadata::Metadata;
+use routing::bedrock::request_metadata::{InheritRights, Metadata};
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
+use routing::rights::Rights;
 use routing::{DictExt, GenericRouterResponse};
 use sandbox::{Dict, RemotableCapability, Request};
 use std::collections::HashMap;
@@ -69,6 +71,10 @@ impl CapabilityProvider for DefaultComponentCapabilityProvider {
         };
         metadata.set_metadata(*porcelain_type);
         metadata.set_metadata(Availability::Transitional);
+        if porcelain_type == &CapabilityTypeName::Service {
+            metadata.set_metadata(Rights::from(fio::R_STAR_DIR));
+            metadata.set_metadata(InheritRights(true));
+        }
         let resp = source
             .get_program_output_dict()
             .await?

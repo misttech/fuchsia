@@ -2,15 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::dir_connector::DirConnectable;
 use crate::fidl::registry;
 use crate::{ConversionError, DirConnector, DirReceiver};
 use cm_types::{Name, RelativePath};
-use fidl::endpoints::ClientEnd;
+use fidl::endpoints::{ClientEnd, ServerEnd};
 use futures::channel::mpsc;
+use std::fmt;
 use std::sync::Arc;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::execution_scope::ExecutionScope;
-use vfs::object_request::ObjectRequestRef;
+use vfs::object_request::{ObjectRequest, ObjectRequestRef};
 use vfs::remote::RemoteLike;
 use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -24,6 +26,58 @@ impl DirConnector {
         // Exits when ServerEnd<DirReceiver> is closed
         scope.spawn(receiver.handle_receiver(receiver_client.into_proxy()));
         Self::new_sendable(sender)
+    }
+
+    pub fn from_directory_entry(
+        directory_entry: Arc<dyn DirectoryEntry>,
+        flags: fio::Flags,
+    ) -> Self {
+        assert_eq!(directory_entry.entry_info().type_(), fio::DirentType::Directory);
+        DirConnector::new_sendable(DirectoryEntryDirConnector {
+            directory_entry,
+            scope: ExecutionScope::new(),
+            flags,
+        })
+    }
+}
+
+struct DirectoryEntryDirConnector {
+    directory_entry: Arc<dyn DirectoryEntry>,
+    scope: ExecutionScope,
+    flags: fio::Flags,
+}
+
+// We can't derive Debug on DirectoryEntryDirConnector because of `Arc<dyn DirectoryEntry>`
+impl fmt::Debug for DirectoryEntryDirConnector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        #[allow(dead_code)]
+        #[derive(Debug)]
+        struct DirectoryEntryDirConnector<'a> {
+            scope: &'a ExecutionScope,
+            flags: &'a fio::Flags,
+        }
+        fmt::Debug::fmt(&DirectoryEntryDirConnector { scope: &self.scope, flags: &self.flags }, f)
+    }
+}
+
+impl DirConnectable for DirectoryEntryDirConnector {
+    fn maximum_flags(&self) -> fio::Flags {
+        self.flags
+    }
+
+    fn send(
+        &self,
+        channel: ServerEnd<fio::DirectoryMarker>,
+        subdir: RelativePath,
+        flags: Option<fio::Flags>,
+    ) -> Result<(), ()> {
+        let flags = flags.unwrap_or(self.flags);
+        let mut object_request =
+            ObjectRequest::new(flags, &fio::Options::default(), channel.into_channel());
+        let path = vfs::path::Path::validate_and_split(format!("{}", subdir))
+            .expect("relative path is invalid vfs path");
+        let open_request = OpenRequest::new(self.scope.clone(), flags, path, &mut object_request);
+        self.directory_entry.clone().open_entry(open_request).map_err(|_| ())
     }
 }
 
