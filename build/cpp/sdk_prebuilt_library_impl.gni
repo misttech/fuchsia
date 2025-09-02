@@ -34,7 +34,7 @@ import("//build/sdk/sdk_atom_alias.gni")
 #     If not specified, the path will be "<sdk_name>.api".
 #     Not allowed when `no_headers` is true or `category` is "internal".
 #
-#   symbols_api (required)
+#   symbols_api (required if `prebuilt_library_type` is "shared")
 #     Path to the ifs file containing the public symbols of this library for
 #     the PLATFORM build.
 #     This file is used to ensure modifications to the library's ABI are
@@ -56,6 +56,11 @@ import("//build/sdk/sdk_atom_alias.gni")
 #     dynamically because libc++.so does not have a stable ABI. Can be either
 #     "none" or "static".
 #     Defaults to "none".
+#
+#   output_name (optional)
+#     Name of the library to generate. Defaults to $target_name.
+#     Will be appended to "lib" to generate the library file name.
+#     Must not begin with "lib".
 #
 #   sdk_name (required)
 #     Name of the library in the SDK.
@@ -183,6 +188,12 @@ template("sdk_prebuilt_library_impl") {
         "The specified `output_name` (`${invoker.output_name}`) matches the default. `output_name` only needs to be specified when overriding the default.")
     output_name = invoker.output_name
   }
+
+  # `output_name` should not start with `lib` for consistency and simplicity.
+  # Prepend ### and use string_replace to mimic behavior of has_prefix, for lack
+  # of such a function in GN.
+  assert(
+      string_replace("###${output_name}", "###lib", "") == "###${output_name}")
 
   assert(
       defined(invoker.sdk_name),
@@ -407,21 +418,7 @@ template("sdk_prebuilt_library_impl") {
     # https://fxbug.dev/404169865.
     main_lib_target = ":${main_target_name}(${shlib_toolchain})"
     main_lib_out_dir = get_label_info(main_lib_target, "target_out_dir")
-
-    # If output_name already starts with `lib`, GN won't prepend lib to it.
-    #
-    # E.g. the following target/output name yields the corresponding lib file:
-    #  ngunwind -> libngunwind.a
-    #  libngunwind -> libngunwind.a
-    #
-    # Prepend ### and use string_replace to mimic behavior of has_prefix, for lack
-    # of such a function in GN.
-    if (string_replace("###${output_name}", "###lib", "") !=
-        "###${output_name}") {
-      lib_name = "${output_name}.a"
-    } else {
-      lib_name = "lib${output_name}.a"
-    }
+    lib_name = "lib${output_name}.a"
 
     link_lib = "${link_lib_dir}/${lib_name}"
     link_lib_source = "${main_lib_out_dir}/${lib_name}"
