@@ -18,7 +18,6 @@ use crate::audio::types::AudioInfo;
 #[cfg(test)]
 use crate::base::UnknownInfo;
 use crate::base::{SettingInfo, SettingType};
-use crate::display::types::DisplayInfo;
 use crate::do_not_disturb::types::DoNotDisturbInfo;
 use crate::factory_reset::types::FactoryResetInfo;
 use crate::input::types::InputInfoSources;
@@ -144,7 +143,6 @@ macro_rules! into_storage_info {
 into_storage_info!(UnknownInfo => SettingInfo);
 into_storage_info!(AccessibilityInfo => SettingInfo);
 into_storage_info!(AudioInfo => SettingInfo);
-into_storage_info!(DisplayInfo => SettingInfo);
 into_storage_info!(FactoryResetInfo => SettingInfo);
 into_storage_info!(DoNotDisturbInfo => SettingInfo);
 into_storage_info!(InputInfoSources => SettingInfo);
@@ -224,7 +222,7 @@ where
                         trace!(id, c"audio storage read");
                         self.read::<AudioInfo>(id, responder).await
                     }
-                    SettingType::Display => self.read::<DisplayInfo>(id, responder).await,
+                    SettingType::Display => panic!("Display goes directly to storage"),
                     SettingType::DoNotDisturb => self.read::<DoNotDisturbInfo>(id, responder).await,
                     SettingType::FactoryReset => self.read::<FactoryResetInfo>(id, responder).await,
                     SettingType::Input => self.read::<InputInfoSources>(id, responder).await,
@@ -245,7 +243,7 @@ where
                     trace!(id, c"audio storage write");
                     self.write(info, responder).await
                 }
-                SettingInfo::Brightness(info) => self.write(info, responder).await,
+                SettingInfo::Brightness(_) => panic!("Display goes directly to storage"),
                 SettingInfo::DoNotDisturb(info) => self.write(info, responder).await,
                 SettingInfo::FactoryReset(info) => self.write(info, responder).await,
                 SettingInfo::Input(info) => self.write(info, responder).await,

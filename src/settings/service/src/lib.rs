@@ -751,19 +751,28 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         // Display
         if components.contains(&SettingType::Display) {
             device_storage_factory
-                .initialize_with_loader::<DisplayController, _>(
+                .initialize_with_loader::<DisplayController<T>, _>(
                     display_loader.expect("Display storage requires display loader"),
                 )
                 .await
                 .expect("storage should still be initializing");
+            let device_storage_factory = Rc::clone(&device_storage_factory);
+            let external_brightness_control =
+                controller_flags.contains(&ControllerFlag::ExternalBrightnessControl);
             factory_handle.register(
                 SettingType::Display,
                 Box::new(
-                    if controller_flags.contains(&ControllerFlag::ExternalBrightnessControl) {
-                        DataHandler::<DisplayController<ExternalBrightnessControl>>::spawn
-                    } else {
-                        DataHandler::<DisplayController>::spawn
-                    },
+                    move |context| {
+                        if external_brightness_control {
+                            DataHandler::<DisplayController<T, ExternalBrightnessControl>>::spawn_with_async(
+                                context,
+                                Rc::clone(&device_storage_factory))
+                        } else {
+                            DataHandler::<DisplayController<T>>::spawn_with_async(
+                                context,
+                                Rc::clone(&device_storage_factory))
+                        }
+                    }
                 ),
             );
         }

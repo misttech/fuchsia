@@ -12,9 +12,7 @@ use crate::display::display_configuration::{
 use crate::display::types::{DisplayInfo, LowLightMode, Theme, ThemeBuilder, ThemeMode, ThemeType};
 use crate::handler::base::Request;
 use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
-use crate::handler::setting_handler::{
-    controller, ControllerError, IntoHandlerResult, SettingHandlerResult,
-};
+use crate::handler::setting_handler::{controller, ControllerError, SettingHandlerResult};
 use crate::service_context::ExternalServiceProxy;
 use async_trait::async_trait;
 use fidl_fuchsia_ui_brightness::{
@@ -24,8 +22,10 @@ use fuchsia_trace as ftrace;
 use settings_common::call;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
-use settings_storage::storage_factory::{DefaultLoader, NoneT, StorageAccess};
+use settings_storage::storage_factory::{DefaultLoader, NoneT, StorageAccess, StorageFactory};
 use settings_storage::UpdateState;
+use std::marker::PhantomData;
+use std::rc::Rc;
 use std::sync::Mutex;
 
 pub(super) const DEFAULT_MANUAL_BRIGHTNESS_VALUE: f32 = 0.5;
@@ -98,6 +98,12 @@ impl From<DisplayInfo> for SettingInfo {
     }
 }
 
+impl From<&DisplayInfo> for SettingType {
+    fn from(_: &DisplayInfo) -> SettingType {
+        SettingType::Display
+    }
+}
+
 impl From<DisplayInfoV5> for DisplayInfo {
     fn from(v5: DisplayInfoV5) -> Self {
         DisplayInfo {
@@ -118,6 +124,7 @@ pub(crate) trait BrightnessManager: Sized {
         &self,
         info: DisplayInfo,
         client: &ClientProxy,
+        store: &DeviceStorage,
         // Allows overriding of the check for whether info has changed. This is necessary for
         // the initial restore call.
         always_send: bool,
@@ -136,6 +143,7 @@ impl BrightnessManager for () {
         &self,
         info: DisplayInfo,
         client: &ClientProxy,
+        store: &DeviceStorage,
         _: bool,
     ) -> SettingHandlerResult {
         let id = ftrace::Id::new();
@@ -146,7 +154,10 @@ impl BrightnessManager for () {
                 format!("{info:?}").into(),
             ));
         }
-        client.write_setting(info.into(), id).await.into_handler_result()
+        client.storage_write(&store, info, id).await.map(|_| None).map_err(|e| {
+            log::error!("Failed to update display info {e:?}");
+            ControllerError::WriteFailure(SettingType::Display)
+        })
     }
 }
 
@@ -171,6 +182,7 @@ impl BrightnessManager for ExternalBrightnessControl {
         &self,
         info: DisplayInfo,
         client: &ClientProxy,
+        store: &DeviceStorage,
         always_send: bool,
     ) -> SettingHandlerResult {
         let id = ftrace::Id::new();
@@ -181,7 +193,11 @@ impl BrightnessManager for ExternalBrightnessControl {
                 format!("{info:?}").into(),
             ));
         }
-        let update_state = client.write_setting(info.into(), id).await?;
+        let update_state =
+            client.storage_write::<DisplayInfo>(&store, info.clone(), id).await.map_err(|e| {
+                log::error!("Failed to update display info {e:?}");
+                ControllerError::WriteFailure(SettingType::Display)
+            })?;
         if update_state == UpdateState::Unchanged && !always_send {
             return Ok(None);
         }
@@ -203,15 +219,17 @@ impl BrightnessManager for ExternalBrightnessControl {
     }
 }
 
-pub(crate) struct DisplayController<T = ()>
+pub(crate) struct DisplayController<F, T = ()>
 where
     T: BrightnessManager,
 {
-    client: ClientProxy,
     brightness_manager: T,
+    client: ClientProxy,
+    store: Rc<DeviceStorage>,
+    _phantom: PhantomData<F>,
 }
 
-impl<T> StorageAccess for DisplayController<T>
+impl<F, T> StorageAccess for DisplayController<F, T>
 where
     T: BrightnessManager,
 {
@@ -221,36 +239,39 @@ where
 }
 
 #[async_trait(?Send)]
-impl<T> data_controller::Create for DisplayController<T>
+impl<F, T> data_controller::CreateWithAsync for DisplayController<F, T>
 where
     T: BrightnessManager,
+    F: StorageFactory<Storage = DeviceStorage>,
 {
-    async fn create(client: ClientProxy) -> Result<Self, ControllerError> {
+    type Data = Rc<F>;
+    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
         let brightness_manager = <T as BrightnessManager>::from_client(&client).await?;
-        Ok(Self { client, brightness_manager })
+        let store = data.get_store().await;
+        Ok(Self { brightness_manager, client, store, _phantom: PhantomData })
     }
 }
 
 #[async_trait(?Send)]
-impl<T> controller::Handle for DisplayController<T>
+impl<F, T> controller::Handle for DisplayController<F, T>
 where
     T: BrightnessManager,
 {
     async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
         match request {
             Request::Restore => {
-                let display_info = self.client.read_setting::<DisplayInfo>(ftrace::Id::new()).await;
+                let display_info = self.store.get::<DisplayInfo>().await;
                 assert!(display_info.is_finite());
 
                 // Load and set value.
                 Some(
                     self.brightness_manager
-                        .update_brightness(display_info, &self.client, true)
+                        .update_brightness(display_info, &self.client, &self.store, true)
                         .await,
                 )
             }
             Request::SetDisplayInfo(mut set_display_info) => {
-                let display_info = self.client.read_setting::<DisplayInfo>(ftrace::Id::new()).await;
+                let display_info = self.store.get::<DisplayInfo>().await;
                 assert!(display_info.is_finite());
 
                 if let Some(theme) = set_display_info.theme {
@@ -262,23 +283,21 @@ where
                         .update_brightness(
                             display_info.merge(set_display_info),
                             &self.client,
+                            &self.store,
                             false,
                         )
                         .await,
                 )
             }
-            Request::Get => Some(
-                self.client
-                    .read_setting_info::<DisplayInfo>(ftrace::Id::new())
-                    .await
-                    .into_handler_result(),
-            ),
+            Request::Get => {
+                Some(Ok(Some(SettingInfo::Brightness(self.store.get::<DisplayInfo>().await))))
+            }
             _ => None,
         }
     }
 }
 
-impl<T> DisplayController<T>
+impl<F, T> DisplayController<F, T>
 where
     T: BrightnessManager,
 {

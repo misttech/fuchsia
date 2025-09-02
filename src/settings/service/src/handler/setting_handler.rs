@@ -368,6 +368,17 @@ pub mod persist {
             fn create_with(handler: ClientProxy, data: Self::Data)
                 -> Result<Self, ControllerError>;
         }
+
+        #[async_trait(?Send)]
+        pub(crate) trait CreateWithAsync: Sized {
+            type Data;
+
+            /// Creates the controller with additional data.
+            async fn create_with(
+                handler: ClientProxy,
+                data: Self::Data,
+            ) -> Result<Self, ControllerError>;
+        }
     }
 
     pub struct ClientProxy {
@@ -504,8 +515,6 @@ pub mod persist {
             panic!("Did not get a write response");
         }
 
-        // TODO(https://fxbug.dev/42166874) Remove allow once used
-        #[allow(dead_code)]
         pub(crate) async fn storage_write<T>(
             &self,
             store: &DeviceStorage,
@@ -615,6 +624,41 @@ pub mod persist {
                             Box::pin(async move {
                                 let proxy = ClientProxy::new(proxy, setting_type).await;
                                 let controller_result = C::create_with(proxy, data);
+
+                                match controller_result {
+                                    Err(err) => Err(err),
+                                    Ok(controller) => Ok(Box::new(controller) as BoxedController),
+                                }
+                            })
+                        }
+                    }),
+                )
+                .await
+            })
+        }
+    }
+
+    impl<'a, C, O> Handler<C>
+    where
+        C: controller::CreateWithAsync<Data = O> + super::controller::Handle + 'static,
+        O: Clone + 'static,
+    {
+        pub(crate) fn spawn_with_async(
+            context: Context,
+            data: O,
+        ) -> LocalBoxFuture<'static, ControllerGenerateResult> {
+            Box::pin(async move {
+                let setting_type = context.setting_type;
+
+                ClientImpl::create(
+                    context,
+                    Box::new({
+                        let data = data.clone();
+                        move |proxy| {
+                            let data = data.clone();
+                            Box::pin(async move {
+                                let proxy = ClientProxy::new(proxy, setting_type).await;
+                                let controller_result = C::create_with(proxy, data).await;
 
                                 match controller_result {
                                     Err(err) => Err(err),
