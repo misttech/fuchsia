@@ -1,18 +1,25 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::config::SshConfig;
-use anyhow::{anyhow, Context as _, Result};
+use crate::config::{ParseSshConfigError, SshConfig};
+use anyhow::{Context as _, Result, anyhow};
 use ffx_config::EnvironmentContext;
 use netext::ScopedSocketAddr;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
+use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::process::Command;
+use thiserror::Error;
 
 const SSH_PRIV: &str = "ssh.priv";
+const SSH_CONTROLMASTER_MODE: &str = "ssh.controlmaster.mode";
+const SSH_CONTROLMASTER_PATH: &str = "ssh.controlmaster.path";
+const SSH_CONTROLMASTER_DIR: &str = "ssh.controlmaster.dir";
 pub const KEEPALIVE_TIMEOUT_CONFIG: &str = "ssh.keepalive_timeout";
 
-#[derive(thiserror::Error, Debug, Hash, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Hash, Clone, PartialEq, Eq)]
 pub enum SshError {
     #[error("unknown ssh error: {0}")]
     Unknown(String),
@@ -140,6 +147,187 @@ pub fn build_ssh_command_with_ssh_config(
     build_ssh_command_with_ssh_config_and_env(ssh_path, addr, config, command, None)
 }
 
+fn get_addr_port(addr: &ScopedSocketAddr) -> (String, String) {
+    let mut addr_str = format!("{}", addr);
+    let colon_port = addr_str.split_off(addr_str.rfind(':').expect("socket format includes port"));
+
+    // Remove the enclosing [] used in IPv6 socketaddrs
+    let addr_start = if addr_str.starts_with("[") { 1 } else { 0 };
+    let addr_end = addr_str.len() - if addr_str.ends_with("]") { 1 } else { 0 };
+    let addr_arg = addr_str[addr_start..addr_end].to_string();
+
+    (addr_arg, colon_port[1..].to_string())
+}
+
+fn spawn_controlmaster(
+    ssh_path: &str,
+    controlmaster_dir: PathBuf,
+    ssh_keys: &[String],
+    addr: &ScopedSocketAddr,
+) -> Result<PathBuf, SpawnControlMasterError> {
+    // Okay we need to create the socket path, but unix sockets
+    // have a limit of 109 characters, which an ipv6 address will eat the
+    // vast majority of. Let's go ahead and hash it
+    let mut hasher = DefaultHasher::new();
+    addr.hash(&mut hasher);
+    let hash_value = hasher.finish();
+    log::info!("Checking ControlMaster for {}. Hash: {}", addr, hash_value);
+    if !std::fs::exists(&controlmaster_dir)? {
+        std::fs::DirBuilder::new()
+            .mode(0o700) // Read write execute for owner ownly.
+            .create(&controlmaster_dir)?;
+    }
+    let socket_path = controlmaster_dir.join(hash_value.to_string());
+    if socket_path.to_string_lossy().len() > MAX_SOCKET_LEN {
+        return Err(SpawnControlMasterError::SocketPathTooLong {
+            path: socket_path,
+            max_allowed: MAX_SOCKET_LEN,
+        });
+    }
+
+    if std::fs::exists(&socket_path)? {
+        log::debug!("ControlMaster for {} already exists at: {}", addr, socket_path.display());
+        return Ok(socket_path);
+    }
+
+    let mut c = Command::new(ssh_path);
+    // Enable ControlMaster
+    c.arg("-M");
+    // ControlMaster path
+    c.arg("-S");
+    c.arg(&socket_path);
+    // Forks SSH into the background and prevents it from executing a remote command.
+    // This keeps the ControlMaster connection open without an interactive shell.
+    c.arg("-fN");
+    // Keep the connection alive for 5 minutes max
+    c.args(["-o", "ControlPersist=5m"]);
+    // No config file
+    c.args(["-F", "none"]);
+    // Use our custom Ssh Config
+    let cfg = SshConfig::new()?;
+    c.args(cfg.to_args());
+
+    // Add identity keys
+    for key in ssh_keys {
+        c.arg("-i").arg(key);
+    }
+
+    let (addr_arg, port_arg) = get_addr_port(addr);
+    c.arg("-p").arg(port_arg);
+    c.arg(addr_arg);
+
+    log::debug!("Spawning ssh command for ControlMaster");
+    c.stdout(std::process::Stdio::null());
+    c.stderr(std::process::Stdio::piped());
+    c.stdin(std::process::Stdio::null());
+    let output = c.output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let ssherr = SshError::from(stderr);
+        return Err(SpawnControlMasterError::ControlMasterStartError(ssherr));
+    }
+
+    Ok(socket_path)
+}
+
+#[derive(Debug)]
+pub enum ControlMasterMode {
+    None,
+    Explicit,
+    Managed,
+}
+
+#[derive(Error, Debug)]
+pub enum ParseControlMasterModeError {
+    #[error("Invalid ssh ControlMaster mode: {}", mode)]
+    InvalidMode { mode: String },
+}
+
+#[derive(Error, Debug)]
+pub enum ManageSshControlMasterError {
+    #[error("ssh ControlMaster directory was not specified")]
+    ControlMasterDirNotSpecified,
+    #[error("ssh ControlMaster path was not specified")]
+    ControlMasterPathNotSpecified,
+    #[error("Error parsing ssh ControlMaster mode")]
+    ParseError(#[from] ParseControlMasterModeError),
+    #[error("Error reading configuration")]
+    ConfigError(#[from] ffx_config::ConfigError),
+    #[error("Error spawning ssh")]
+    SpawnError(#[from] SpawnControlMasterError),
+}
+
+const MAX_SOCKET_LEN: usize = 100;
+
+#[derive(Error, Debug)]
+pub enum SpawnControlMasterError {
+    #[error("Error parsing ssh configuration")]
+    ParseSshConfig(#[from] ParseSshConfigError),
+    #[error("Socket path \"{path}\" is too long. Maximum is {max_allowed}")]
+    SocketPathTooLong { path: PathBuf, max_allowed: usize },
+    #[error("ssh ControlMaster failed to start.")]
+    ControlMasterStartError(#[source] SshError),
+    #[error("Error spawning ssh")]
+    SpawnError(#[from] std::io::Error),
+}
+
+impl TryFrom<String> for ControlMasterMode {
+    type Error = ParseControlMasterModeError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "explicit" => Ok(Self::Explicit),
+            "managed" => Ok(Self::Managed),
+            "none" => Ok(Self::None),
+            other => Err(ParseControlMasterModeError::InvalidMode { mode: other.to_owned() }),
+        }
+    }
+}
+
+impl TryFrom<Option<String>> for ControlMasterMode {
+    type Error = ParseControlMasterModeError;
+    fn try_from(value: Option<String>) -> Result<Self, Self::Error> {
+        match value {
+            None => Ok(Self::None),
+            Some(v) => ControlMasterMode::try_from(v),
+        }
+    }
+}
+
+fn get_controlmaster_path(
+    env: Option<&EnvironmentContext>,
+    ssh_path: &str,
+    addr: &ScopedSocketAddr,
+    ssh_keys: &Vec<String>,
+) -> Result<Option<PathBuf>, ManageSshControlMasterError> {
+    let Some(env) = env else {
+        return Ok(None);
+    };
+
+    let controlmaster_mode_string: Option<String> = env.get(SSH_CONTROLMASTER_MODE)?;
+    let controlmaster_mode = ControlMasterMode::try_from(controlmaster_mode_string)?;
+
+    match controlmaster_mode {
+        ControlMasterMode::None => Ok(None),
+        ControlMasterMode::Explicit => {
+            // We are told to get the value explicitly
+            // Map this error
+            let path: Option<String> = env.get(SSH_CONTROLMASTER_PATH)?;
+            let Some(path) = path else {
+                return Err(ManageSshControlMasterError::ControlMasterPathNotSpecified);
+            };
+            Ok(Some(PathBuf::from(path)))
+        }
+        ControlMasterMode::Managed => {
+            let controlmaster_dir: Option<String> = env.get(SSH_CONTROLMASTER_DIR)?;
+            let Some(controlmaster_dir) = controlmaster_dir else {
+                return Err(ManageSshControlMasterError::ControlMasterDirNotSpecified);
+            };
+            let path = spawn_controlmaster(ssh_path, controlmaster_dir.into(), &ssh_keys, addr)?;
+            Ok(Some(path))
+        }
+    }
+}
+
 /// Builds the ssh command using the specified ssh configuration and path to the ssh command.
 fn build_ssh_command_with_ssh_config_and_env(
     ssh_path: &str,
@@ -161,10 +349,23 @@ fn build_ssh_command_with_ssh_config_and_env(
         }
     }
 
+    // Okay there are two ways we can get here
+    // if we have config value ssh.target.control_path, dont spawn one, just use it
+    // if we have config value ssh.controlmaster_dir, check the contents of that dir for a
+    // properly named socket, use that one. Otherwise create one and then use iter
+    // if neither of those config values are set, just dont use a ControlMaster
+    let controlmaster_path = get_controlmaster_path(env, ssh_path, &addr, &keys)?;
+
     let mut c = Command::new(ssh_path);
     apply_auth_sock(&mut c);
     c.args(["-F", "none"]);
     c.args(config.to_args());
+
+    // And then we'll just use the contromaster part from above here if it exists
+    if let Some(control_path) = controlmaster_path {
+        c.arg("-S");
+        c.arg(control_path);
+    }
 
     for key in keys {
         c.arg("-i").arg(key);
@@ -179,15 +380,8 @@ fn build_ssh_command_with_ssh_config_and_env(
         c.arg("-vv");
     }
 
-    let mut addr_str = format!("{}", addr);
-    let colon_port = addr_str.split_off(addr_str.rfind(':').expect("socket format includes port"));
-
-    // Remove the enclosing [] used in IPv6 socketaddrs
-    let addr_start = if addr_str.starts_with("[") { 1 } else { 0 };
-    let addr_end = addr_str.len() - if addr_str.ends_with("]") { 1 } else { 0 };
-    let addr_arg = &addr_str[addr_start..addr_end];
-
-    c.arg("-p").arg(&colon_port[1..]);
+    let (addr_arg, port_arg) = get_addr_port(&addr);
+    c.arg("-p").arg(port_arg);
     c.arg(addr_arg);
 
     c.args(&command);
@@ -352,5 +546,158 @@ mod test {
 
         let unknown_str = "OIHWOFIHOIWHFW";
         assert_eq!(SshError::from(unknown_str), SshError::Unknown(String::from(unknown_str)));
+    }
+
+    #[test]
+    fn test_get_addr_port_ipv4() {
+        let addr: SocketAddr = "192.168.0.1:8022".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
+        let (addr, port) = get_addr_port(&scoped_addr);
+        assert_eq!(addr, "192.168.0.1");
+        assert_eq!(port, "8022");
+    }
+
+    #[test]
+    fn test_get_addr_port_ipv6() {
+        let addr: SocketAddr = "[fe80::12%1]:8022".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
+        let (addr, port) = get_addr_port(&scoped_addr);
+        assert_eq!(addr, "fe80::12%lo");
+        assert_eq!(port, "8022");
+    }
+
+    #[test]
+    fn test_get_addr_port_ipv6_no_scope() {
+        let addr: SocketAddr = "[fe80::12]:22".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
+        let (addr, port) = get_addr_port(&scoped_addr);
+        assert_eq!(addr, "fe80::12");
+        assert_eq!(port, "22");
+    }
+
+    #[test]
+    fn test_controlmaster_mode_try_from() {
+        assert!(matches!(
+            ControlMasterMode::try_from("explicit".to_string()).unwrap(),
+            ControlMasterMode::Explicit
+        ));
+        assert!(matches!(
+            ControlMasterMode::try_from("managed".to_string()).unwrap(),
+            ControlMasterMode::Managed
+        ));
+        assert!(matches!(
+            ControlMasterMode::try_from("none".to_string()).unwrap(),
+            ControlMasterMode::None
+        ));
+
+        let result = ControlMasterMode::try_from("invalid-mode".to_string());
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(format!("{}", err), "Invalid ssh ControlMaster mode: invalid-mode");
+    }
+
+    #[fuchsia::test]
+    async fn test_get_controlmaster_path_mode_none() {
+        let env = ffx_config::test_init().await.unwrap();
+        env.context
+            .query("ssh.controlmaster.mode")
+            .level(Some(ConfigLevel::User))
+            .set("none".into())
+            .unwrap();
+
+        let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
+        let ssh_keys = vec!["key".to_string()];
+
+        let res =
+            get_controlmaster_path(Some(&env.context), "ssh", &scoped_addr, &ssh_keys).unwrap();
+        assert_eq!(res, None);
+    }
+
+    #[fuchsia::test]
+    async fn test_get_controlmaster_path_mode_explicit() {
+        let env = ffx_config::test_init().await.unwrap();
+        env.context
+            .query("ssh.controlmaster.mode")
+            .level(Some(ConfigLevel::User))
+            .set("explicit".into())
+            .unwrap();
+        let expected_path = "/tmp/test_socket";
+        env.context
+            .query("ssh.controlmaster.path")
+            .level(Some(ConfigLevel::User))
+            .set(expected_path.into())
+            .unwrap();
+
+        let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
+        let ssh_keys = vec!["key".to_string()];
+
+        let res =
+            get_controlmaster_path(Some(&env.context), "ssh", &scoped_addr, &ssh_keys).unwrap();
+        assert_eq!(res, Some(PathBuf::from(expected_path)));
+    }
+
+    #[fuchsia::test]
+    async fn test_get_controlmaster_path_mode_explicit_no_path() {
+        let env = ffx_config::test_init().await.unwrap();
+        env.context
+            .query("ssh.controlmaster.mode")
+            .level(Some(ConfigLevel::User))
+            .set("explicit".into())
+            .unwrap();
+
+        let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
+        let ssh_keys = vec!["key".to_string()];
+
+        let res = get_controlmaster_path(Some(&env.context), "ssh", &scoped_addr, &ssh_keys);
+        assert!(matches!(res, Err(ManageSshControlMasterError::ControlMasterPathNotSpecified)));
+    }
+
+    #[fuchsia::test]
+    async fn test_get_controlmaster_path_mode_managed_no_dir() {
+        let env = ffx_config::test_init().await.unwrap();
+        env.context
+            .query("ssh.controlmaster.mode")
+            .level(Some(ConfigLevel::User))
+            .set("managed".into())
+            .unwrap();
+
+        let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
+        let ssh_keys = vec!["key".to_string()];
+
+        let res = get_controlmaster_path(Some(&env.context), "ssh", &scoped_addr, &ssh_keys);
+        assert!(matches!(res, Err(ManageSshControlMasterError::ControlMasterDirNotSpecified)));
+    }
+
+    #[fuchsia::test]
+    async fn test_get_controlmaster_path_socket_path_too_long() {
+        let env = ffx_config::test_init().await.unwrap();
+        env.context
+            .query("ssh.controlmaster.mode")
+            .level(Some(ConfigLevel::User))
+            .set("managed".into())
+            .unwrap();
+
+        let long_dir = "a".repeat(MAX_SOCKET_LEN);
+        env.context
+            .query("ssh.controlmaster.dir")
+            .level(Some(ConfigLevel::User))
+            .set(long_dir.into())
+            .unwrap();
+
+        let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
+        let ssh_keys = vec!["key".to_string()];
+
+        let res = get_controlmaster_path(Some(&env.context), "ssh", &scoped_addr, &ssh_keys);
+        assert!(matches!(
+            res,
+            Err(ManageSshControlMasterError::SpawnError(
+                SpawnControlMasterError::SocketPathTooLong { .. }
+            ))
+        ));
     }
 }
