@@ -37,10 +37,7 @@ syslog_visibility_allowlist = [
   "//build/sdk:partner_idk_versioned_shared_libraries",
   "//sdk/lib/syslog/duplicate_header_test:*",
   "//src/devices/bin/driver_manager:driver_shared_libraries",
-  "//third_party/mini_chromium/src/base:*",
-  "//third_party/Vulkan-Tools/src/cube:*",
   "//zircon/system/ulib/syslog:*",
-  "//vendor/*",
 ]
 
 syslog_headers = [
