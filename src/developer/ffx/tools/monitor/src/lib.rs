@@ -12,6 +12,8 @@ use fho::{FfxMain, FfxTool};
 use fidl_fuchsia_developer_ffx::{RemoteControlState, TargetInfo, TargetState};
 use hyper::service::service_fn;
 use hyper::{Body, Request, Response, StatusCode};
+use serde::Serialize;
+use serde::ser::{SerializeStruct, Serializer};
 use std::convert::Infallible;
 use std::fs;
 use std::io::Write;
@@ -19,6 +21,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::process::Command;
 use tokio::net::TcpListener;
+use tokio::task::spawn_blocking;
 
 // Default value of this can be found in //src/developer/ffx/data/config.json
 const CONFIG_PID_FILE: &str = "monitor.pid_file";
@@ -40,6 +43,20 @@ struct TargetStatus {
     timestamp: DateTime<Utc>,
 
     rcs_state: Option<RemoteControlState>,
+}
+
+impl Serialize for TargetStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_struct("TargetStatus", 4)?;
+        s.serialize_field("name", &self.name)?;
+        s.serialize_field("status", &self.status.as_ref().map(|val| format!("{:?}", val)))?;
+        s.serialize_field("timestamp", &self.timestamp.to_rfc3339())?;
+        s.serialize_field("rcs_state", &self.rcs_state.as_ref().map(|val| format!("{:?}", val)))?;
+        s.end()
+    }
 }
 
 async fn start_server(addr: SocketAddr) -> anyhow::Result<()> {
@@ -71,7 +88,6 @@ fn infos_to_statuses(infos: Vec<TargetInfo>) -> Vec<TargetStatus> {
         .collect()
 }
 
-#[allow(dead_code)]
 async fn collect_target_status(context: &EnvironmentContext) -> Result<Vec<TargetStatus>> {
     let infos = ffx_target::list_targets(context, None, true, true, true).await?;
     Ok(infos_to_statuses(infos))
@@ -81,7 +97,35 @@ async fn handle_request(req: Request<Body>) -> std::result::Result<Response<Body
     let mut response = Response::new("".into());
     match req.uri().path() {
         "/status" => {
-            *response.status_mut() = StatusCode::OK;
+            let res = spawn_blocking(move || {
+                let context = ffx_config::global_env_context()
+                    .context("loading global environment context")
+                    .unwrap();
+                fuchsia_async::LocalExecutor::new()
+                    .run_singlethreaded(collect_target_status(&context))
+            })
+            .await
+            .unwrap();
+
+            match res {
+                Ok(statuses) => match serde_json::to_string(&statuses) {
+                    Ok(body) => {
+                        *response.body_mut() = body.into();
+                        response.headers_mut().insert(
+                            hyper::header::CONTENT_TYPE,
+                            "application/json".parse().unwrap(),
+                        );
+                    }
+                    Err(e) => {
+                        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                        *response.body_mut() = format!("Internal Server Error: {}", e).into();
+                    }
+                },
+                Err(e) => {
+                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    *response.body_mut() = format!("Internal Server Error: {}", e).into();
+                }
+            }
         }
         _ => {
             *response.status_mut() = StatusCode::NOT_FOUND;
