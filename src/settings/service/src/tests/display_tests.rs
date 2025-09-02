@@ -4,14 +4,10 @@
 
 use crate::agent::AgentCreator;
 use crate::base::SettingType;
-use crate::config::base::{AgentType, ControllerFlag};
-use crate::config::default_settings::DefaultSetting;
 use crate::display::build_display_default_settings;
 use crate::display::types::{DisplayInfo, LowLightMode, Theme};
 use crate::ingress::fidl::{display, Interface};
-use crate::inspect::config_logger::InspectConfigLogger;
 use crate::tests::fakes::brightness_service::BrightnessService;
-use crate::tests::fakes::service_registry::ServiceRegistry;
 use crate::tests::test_failure_utils::create_test_env_with_failures_and_config;
 use crate::{DisplayConfiguration, EnvironmentBuilder};
 use anyhow::{anyhow, Result};
@@ -24,6 +20,10 @@ use fuchsia_async::{Task, TestExecutor};
 use fuchsia_inspect::component;
 use futures::future::{self, LocalBoxFuture};
 use futures::lock::Mutex;
+use settings_common::config::default_settings::DefaultSetting;
+use settings_common::config::{AgentType, ControllerFlag};
+use settings_common::inspect::config_logger::InspectConfigLogger;
+use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 use zx::{self as zx, Status};

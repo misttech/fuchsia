@@ -12,16 +12,17 @@ pub use light_hardware_configuration::build_light_default_settings;
 use self::light_controller::LightError;
 use self::light_fidl_handler::LightFidlHandler;
 use self::light_hardware_configuration::LightHardwareConfiguration;
-use crate::config::default_settings::DefaultSetting;
-use crate::inspect::event::{
-    ExternalEventPublisher, RequestType, ResponseType, SettingValuePublisher, UsagePublisher,
-};
-use crate::service_context::common::ServiceContext;
+
 use anyhow::{anyhow, Context, Result};
 use fuchsia_async as fasync;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use futures::StreamExt;
+use settings_common::config::default_settings::DefaultSetting;
+use settings_common::inspect::event::{
+    ExternalEventPublisher, RequestType, ResponseType, SettingValuePublisher, UsagePublisher,
+};
+use settings_common::service_context::ServiceContext;
 use settings_storage::fidl_storage::FidlStorage;
 use settings_storage::storage_factory::StorageFactory;
 use std::rc::Rc;

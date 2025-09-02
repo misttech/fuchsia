@@ -292,9 +292,9 @@ mod tests {
     use std::rc::Rc;
 
     use crate::audio::build_audio_default_settings;
-    use crate::inspect::config_logger::InspectConfigLogger;
     use crate::message::base::MessengerType;
     use crate::service_context::ServiceContext;
+    use settings_common::inspect::config_logger::InspectConfigLogger;
 
     use super::*;
 

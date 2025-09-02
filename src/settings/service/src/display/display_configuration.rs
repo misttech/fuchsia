@@ -6,13 +6,11 @@
 //! internal representation of the configuration data found in
 //! `/config/data/display_configuration.json`.
 
+use serde::{Deserialize, Serialize};
+use settings_common::config::default_settings::DefaultSetting;
+use settings_common::inspect::config_logger::InspectConfigLogger;
 use std::rc::Rc;
 use std::sync::Mutex;
-
-use serde::{Deserialize, Serialize};
-
-use crate::config::default_settings::DefaultSetting;
-use crate::inspect::config_logger::InspectConfigLogger;
 
 /// Possible theme modes that can be found in
 /// `/config/data/display_configuration.json`.

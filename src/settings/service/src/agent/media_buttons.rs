@@ -169,12 +169,12 @@ mod tests {
     use crate::input::common::MediaButtonsEventBuilder;
     use crate::message::base::MessageEvent;
     use crate::message::receptor::Receptor;
-    use crate::tests::fakes::service_registry::ServiceRegistry;
     use crate::tests::helpers::{
         create_messenger_and_publisher, create_messenger_and_publisher_from_hub,
         create_receptor_for_setting_type,
     };
     use futures::channel::mpsc;
+    use settings_test_common::fakes::service::ServiceRegistry;
 
     // Tests that the initialization lifespan is not handled.
     #[fuchsia::test(allow_stalls = false)]

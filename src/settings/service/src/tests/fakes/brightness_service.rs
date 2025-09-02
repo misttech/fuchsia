@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::tests::fakes::base::Service;
 use anyhow::{format_err, Error};
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
 use fuchsia_async as fasync;
 use futures::lock::Mutex;
 use futures::TryStreamExt;
+use settings_test_common::fakes::service::Service;
 use std::rc::Rc;
 
 #[derive(Clone)]

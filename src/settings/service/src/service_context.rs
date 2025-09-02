@@ -6,18 +6,16 @@ use crate::event::{Event, Publisher};
 use crate::message::base::MessengerType;
 use crate::service;
 use anyhow::Error;
-use common::{
+use fidl::endpoints::DiscoverableProtocolMarker;
+use futures::future::OptionFuture;
+use settings_common::service_context::{
     EventPublisher, ExternalServiceEvent, ExternalServiceProxy as InnerExternalServiceProxy,
     ServiceContext as InnerServiceContext,
 };
-use fidl::endpoints::DiscoverableProtocolMarker;
-use futures::future::OptionFuture;
 use std::rc::Rc;
 
-pub(crate) mod common;
-
 #[cfg(test)]
-use common::GenerateService;
+use settings_common::service_context::GenerateService;
 
 /// A wrapper around service operations, allowing redirection to a nested
 /// environment.

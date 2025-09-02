@@ -9,7 +9,6 @@ use crate::agent::{
 use crate::base::{Dependency, Entity, SettingType};
 use crate::event::{Event, Payload as EventPayload};
 use crate::ingress::{fidl, registration};
-use crate::inspect::config_logger::InspectConfigLogger;
 use crate::job::source::Error;
 use crate::job::{self, Job};
 use crate::light::build_light_default_settings;
@@ -17,7 +16,6 @@ use crate::message::base::{Audience, MessengerType};
 use crate::migration::MIGRATION_FILE_NAME;
 use crate::service::Payload;
 use crate::service_context::ServiceContext;
-use crate::tests::fakes::service_registry::ServiceRegistry;
 use crate::tests::message_utils::verify_payload;
 use crate::tests::scaffold::workload::channel;
 use crate::{service, Environment, EnvironmentBuilder};
@@ -28,6 +26,8 @@ use fuchsia_async as fasync;
 use fuchsia_inspect::component;
 use futures::future::LocalBoxFuture;
 use futures::{FutureExt, StreamExt};
+use settings_common::inspect::config_logger::InspectConfigLogger;
+use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 

@@ -2,13 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::config::default_settings::DefaultSetting;
-use crate::inspect::event::{ExternalEventPublisher, ResponseType, SettingValuePublisher};
 use crate::light::light_fidl_handler::{GroupPublisher, InfoPublisher};
-use crate::light::light_hardware_configuration::DisableConditions;
+use crate::light::light_hardware_configuration::{DisableConditions, LightHardwareConfiguration};
 use crate::light::types::{LightGroup, LightInfo, LightState, LightType, LightValue};
-use crate::service_context::common::{ExternalServiceProxy, ServiceContext};
-use crate::{call_async, LightHardwareConfiguration};
 use anyhow::{Context, Error};
 use fidl_fuchsia_hardware_light::{Info, LightMarker, LightProxy};
 use fidl_fuchsia_settings_storage::LightGroups;
@@ -17,6 +13,12 @@ use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::{self, Sender};
 use futures::lock::Mutex;
 use futures::StreamExt;
+use settings_common::call_async;
+use settings_common::config::default_settings::DefaultSetting;
+use settings_common::inspect::event::{
+    ExternalEventPublisher, ResponseType, SettingValuePublisher,
+};
+use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
 use settings_media_buttons::{Event, MediaButtons};
 use settings_storage::fidl_storage::{FidlStorage, FidlStorageConvertible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
@@ -90,7 +92,7 @@ pub(crate) struct LightController {
     /// Proxy for interacting with light hardware.
     light_proxy: ExternalServiceProxy<LightProxy, ExternalEventPublisher>,
 
-    /// Hardware configuration that determines what lights to return to the client.
+    /// inspect_event_tx.clone() configuration that determines what lights to return to the client.
     ///
     /// If present, overrides the lights from the underlying fuchsia.hardware.light API.
     light_hardware_config: Option<LightHardwareConfiguration>,
@@ -580,7 +582,7 @@ mod tests {
     use super::*;
     use crate::light::light_fidl_handler::LightFidlHandler;
     use crate::tests::fakes::hardware_light_service::HardwareLightService;
-    use crate::tests::fakes::service_registry::ServiceRegistry;
+    use settings_test_common::fakes::service::ServiceRegistry;
     use settings_test_common::storage::InMemoryFidlStorageFactory;
 
     // Verify that a set call without a restore call succeeds. This can happen when the controller

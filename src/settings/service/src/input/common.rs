@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 use crate::handler::base::Request;
 use crate::service_context::{ExternalServiceProxy, ServiceContext};
-use crate::{call, call_async};
 use anyhow::{format_err, Error};
 use fidl::endpoints::{create_proxy, create_request_stream};
 use fidl_fuchsia_camera3::{
@@ -17,6 +16,7 @@ use fidl_fuchsia_ui_policy::{
 use fuchsia_async::{self as fasync, DurationExt};
 use futures::future::Fuse;
 use futures::{FutureExt, StreamExt};
+use settings_common::{call, call_async};
 use settings_media_buttons::MediaButtons;
 use std::rc::Rc;
 use zx::MonotonicDuration;

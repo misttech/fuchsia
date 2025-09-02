@@ -51,10 +51,10 @@ impl InspectConfigLogger {
     pub fn write_config_load_to_inspect(
         &mut self,
         path: String,
-        config_load_info: config::base::ConfigLoadInfo,
+        config_load_info: config::ConfigLoadInfo,
     ) {
         let timestamp = clock::inspect_format_now();
-        let config::base::ConfigLoadInfo { status, contents } = config_load_info;
+        let config::ConfigLoadInfo { status, contents } = config_load_info;
         let status_clone = status.clone();
 
         let config_inspect_info =
@@ -63,7 +63,7 @@ impl InspectConfigLogger {
         config_inspect_info.timestamp.set(&timestamp);
         config_inspect_info
             .value
-            .set(&format!("{:#?}", config::base::ConfigLoadInfo { status, contents }));
+            .set(&format!("{:#?}", config::ConfigLoadInfo { status, contents }));
         let _ = config_inspect_info.count.add(1u64);
         let _ = config_inspect_info
             .result_counts
@@ -75,22 +75,21 @@ impl InspectConfigLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::base::ConfigLoadStatus;
+    use crate::config::ConfigLoadStatus;
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_inspect::component;
-    use zx::MonotonicInstant;
 
     #[fuchsia::test]
     async fn test_listener_logger() {
         // Set clock for consistent timestamps.
-        clock::mock::set(MonotonicInstant::from_nanos(0));
+        clock::mock::set(zx::MonotonicInstant::from_nanos(0));
 
         let inspector = component::inspector();
         let mut logger = InspectConfigLogger::new(inspector.root());
 
         logger.write_config_load_to_inspect(
             "test_path".to_string(),
-            config::base::ConfigLoadInfo {
+            config::ConfigLoadInfo {
                 status: ConfigLoadStatus::Success,
                 contents: Some("test".to_string()),
             },
@@ -113,35 +112,35 @@ mod tests {
     #[fuchsia::test]
     async fn test_response_counts() {
         // Set clock for consistent timestamps.
-        clock::mock::set(MonotonicInstant::from_nanos(0));
+        clock::mock::set(zx::MonotonicInstant::from_nanos(0));
 
         let inspector = component::inspector();
         let mut logger = InspectConfigLogger::new(inspector.root());
 
         logger.write_config_load_to_inspect(
             "test_path".to_string(),
-            config::base::ConfigLoadInfo {
+            config::ConfigLoadInfo {
                 status: ConfigLoadStatus::Success,
                 contents: Some("test".to_string()),
             },
         );
         logger.write_config_load_to_inspect(
             "test_path".to_string(),
-            config::base::ConfigLoadInfo {
+            config::ConfigLoadInfo {
                 status: ConfigLoadStatus::ParseFailure("Fake parse failure".to_string()),
                 contents: Some("test".to_string()),
             },
         );
         logger.write_config_load_to_inspect(
             "test_path".to_string(),
-            config::base::ConfigLoadInfo {
+            config::ConfigLoadInfo {
                 status: ConfigLoadStatus::ParseFailure("Fake parse failure".to_string()),
                 contents: Some("test".to_string()),
             },
         );
         logger.write_config_load_to_inspect(
             "test_path".to_string(),
-            config::base::ConfigLoadInfo {
+            config::ConfigLoadInfo {
                 status: ConfigLoadStatus::UsingDefaults("default".to_string()),
                 contents: Some("test".to_string()),
             },

@@ -8,11 +8,11 @@ use crate::handler::setting_handler::ControllerError;
 use crate::ingress::fidl::Interface;
 use crate::tests::fakes::base::create_setting_handler;
 use crate::tests::fakes::recovery_policy_service::RecoveryPolicy;
-use crate::tests::fakes::service_registry::ServiceRegistry;
 use crate::EnvironmentBuilder;
 use assert_matches::assert_matches;
 use fidl_fuchsia_settings::FactoryResetMarker;
 use futures::lock::Mutex;
+use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 

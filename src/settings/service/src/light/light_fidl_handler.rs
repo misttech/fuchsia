@@ -14,11 +14,13 @@ use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use futures::StreamExt;
 
-use crate::inspect::event::{RequestType, ResponseType, UsagePublisher, UsageResponsePublisher};
 use crate::light::light_controller::{
     LightController, LightError as ControllerLightError, Request, ARG_NAME,
 };
 use crate::light::types::{LightGroup, LightInfo};
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
+};
 
 pub(crate) type SubscriberObject<T> = (UsageResponsePublisher<LightInfo>, T);
 pub(crate) type InfoSubscriberObject = SubscriberObject<LightWatchLightGroupsResponder>;

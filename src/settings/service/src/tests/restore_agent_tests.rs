@@ -4,18 +4,18 @@
 
 use crate::agent::AgentCreator;
 use crate::base::SettingType;
-use crate::config::base::AgentType;
 use crate::event::{self as event, restore, Event};
 use crate::handler::base::Request;
 use crate::handler::setting_handler::{ControllerError, SettingHandlerResult};
 use crate::ingress::fidl::Interface;
 use crate::service::message::Receptor;
 use crate::tests::fakes::base::create_setting_handler;
-use crate::tests::fakes::service_registry::ServiceRegistry;
 use crate::tests::scaffold::event::subscriber::Blueprint;
 use crate::{service, EnvironmentBuilder};
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
+use settings_common::config::AgentType;
+use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 

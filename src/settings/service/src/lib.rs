@@ -23,9 +23,17 @@ use fuchsia_inspect::component;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
-use inspect::event::{ExternalEventPublisher, SettingValuePublisher, UsageEvent, UsagePublisher};
 #[cfg(test)]
 use log as _;
+use settings_common::config::default_settings::DefaultSetting;
+use settings_common::config::{AgentType, ControllerFlag};
+use settings_common::inspect::event::{
+    ExternalEventPublisher, SettingValuePublisher, UsageEvent, UsagePublisher,
+};
+use settings_common::inspect::listener_logger::ListenerInspectLogger;
+use settings_common::service_context::{
+    ExternalServiceEvent, GenerateService, ServiceContext as CommonServiceContext,
+};
 use settings_storage::device_storage::DeviceStorage;
 use settings_storage::fidl_storage::FidlStorage;
 use settings_storage::storage_factory::{FidlStorageFactory, StorageFactory};
@@ -44,8 +52,6 @@ use crate::agent::authority::Authority;
 use crate::agent::{AgentCreator, Lifespan};
 use crate::audio::audio_controller::AudioController;
 use crate::base::{Dependency, Entity, SettingType};
-use crate::config::base::{AgentType, ControllerFlag};
-use crate::config::default_settings::DefaultSetting;
 use crate::display::display_controller::{DisplayController, ExternalBrightnessControl};
 use crate::do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
 use crate::factory_reset::factory_reset_controller::FactoryResetController;
@@ -56,7 +62,6 @@ use crate::handler::setting_proxy::SettingProxy;
 use crate::ingress::fidl;
 use crate::ingress::registration::Registrant;
 use crate::input::input_controller::InputController;
-use crate::inspect::listener_logger::ListenerInspectLogger;
 use crate::intl::intl_controller::IntlController;
 use crate::job::manager::Manager;
 use crate::job::source::Seeder;
@@ -65,9 +70,6 @@ use crate::light::light_controller::LightController;
 use crate::night_mode::night_mode_controller::NightModeController;
 use crate::privacy::privacy_controller::PrivacyController;
 use crate::service::message::Delegate;
-use crate::service_context::common::{
-    ExternalServiceEvent, GenerateService, ServiceContext as CommonServiceContext,
-};
 use crate::service_context::ServiceContext;
 use crate::setup::setup_controller::SetupController;
 

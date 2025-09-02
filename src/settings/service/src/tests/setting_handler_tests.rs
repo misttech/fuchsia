@@ -4,7 +4,6 @@
 use crate::accessibility::types::AccessibilityInfo;
 use crate::agent::AgentCreator;
 use crate::base::{get_all_setting_types, SettingInfo, SettingType, UnknownInfo};
-use crate::config::base::AgentType;
 use crate::handler::base::{ContextBuilder, Request};
 use crate::handler::setting_handler::persist::{
     controller as data_controller, ClientProxy as DataClientProxy, Handler as DataHandler,
@@ -21,6 +20,7 @@ use crate::{service, EnvironmentBuilder};
 use async_trait::async_trait;
 use futures::channel::mpsc::{unbounded, UnboundedSender};
 use futures::StreamExt;
+use settings_common::config::AgentType;
 use settings_storage::device_storage::DeviceStorageCompatible;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::hash_map::Entry;

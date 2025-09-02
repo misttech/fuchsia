@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::config::default_settings::DefaultSetting;
 use crate::input::types::{DeviceStateSource, InputDeviceType};
-use crate::inspect::config_logger::InspectConfigLogger;
 use serde::Deserialize;
+use settings_common::config::default_settings::DefaultSetting;
+use settings_common::inspect::config_logger::InspectConfigLogger;
 use std::rc::Rc;
 use std::sync::Mutex;
 

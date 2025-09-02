@@ -13,7 +13,6 @@ use crate::handler::setting_handler;
 use crate::handler::setting_handler::{
     Command, ControllerError, Event, ExitResult, SettingHandlerResult, State,
 };
-use crate::inspect::listener_logger::ListenerInspectLogger;
 use crate::message::action_fuse::ActionFuse;
 use crate::message::base::{Audience, MessageEvent, MessengerType, Status};
 use crate::{clock, event, service, trace, trace_guard};
@@ -21,6 +20,7 @@ use anyhow::Error;
 use futures::channel::mpsc::UnboundedSender;
 use futures::lock::Mutex;
 use futures::{FutureExt, StreamExt};
+use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use zx::MonotonicDuration;

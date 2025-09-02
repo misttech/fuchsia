@@ -12,7 +12,7 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 use crate::config;
-use crate::config::base::ConfigLoadInfo;
+use crate::config::ConfigLoadInfo;
 use crate::inspect::config_logger::InspectConfigLogger;
 
 pub struct DefaultSetting<T, P>
@@ -70,7 +70,7 @@ where
                     Ok(config) => {
                         // Success path.
                         config_load_info = Some(ConfigLoadInfo {
-                            status: config::base::ConfigLoadStatus::Success,
+                            status: config::ConfigLoadStatus::Success,
                             contents: if let Some(ref payload) = config {
                                 Some(format!("{payload:?}"))
                             } else {
@@ -83,7 +83,7 @@ where
                         // Found file, but failed to parse.
                         let err_msg = format!("unable to parse config: {e:?}");
                         config_load_info = Some(ConfigLoadInfo {
-                            status: config::base::ConfigLoadStatus::ParseFailure(err_msg.clone()),
+                            status: config::ConfigLoadStatus::ParseFailure(err_msg.clone()),
                             contents: None,
                         });
                         Err(format_err!("{:?}", err_msg))
@@ -93,7 +93,7 @@ where
             Err(..) => {
                 // No file found.
                 config_load_info = Some(ConfigLoadInfo {
-                    status: config::base::ConfigLoadStatus::UsingDefaults(
+                    status: config::ConfigLoadStatus::UsingDefaults(
                         "File not found, using defaults".to_string(),
                     ),
                     contents: None,
@@ -114,7 +114,7 @@ where
     fn write_config_load_to_inspect(
         &mut self,
         path: String,
-        config_load_info: config::base::ConfigLoadInfo,
+        config_load_info: config::ConfigLoadInfo,
     ) {
         self.config_logger.lock().unwrap().write_config_load_to_inspect(path, config_load_info);
     }
@@ -125,14 +125,12 @@ pub(crate) mod testing {
     use super::*;
 
     use crate::clock;
-    use settings_test_common::helpers::move_executor_forward_and_get;
-
     use assert_matches::assert_matches;
     use diagnostics_assertions::{assert_data_tree, AnyProperty};
     use fuchsia_async::TestExecutor;
     use fuchsia_inspect::component;
     use serde::Deserialize;
-    use zx::MonotonicInstant;
+    use settings_test_common::helpers::move_executor_forward_and_get;
 
     #[derive(Clone, Debug, Deserialize)]
     struct TestConfigData {
@@ -201,9 +199,8 @@ pub(crate) mod testing {
 
     #[fuchsia::test]
     fn test_config_inspect_write() {
-        clock::mock::set(MonotonicInstant::from_nanos(0));
-
         let mut executor = TestExecutor::new_with_fake_time();
+        clock::mock::set(zx::MonotonicInstant::from_nanos(0));
 
         let inspector = component::inspector();
         let mut setting = DefaultSetting::new(

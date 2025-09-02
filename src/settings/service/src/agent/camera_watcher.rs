@@ -144,13 +144,13 @@ mod tests {
     use crate::event;
     use crate::message::base::{MessageEvent, MessengerType};
     use crate::message::receptor::Receptor;
-    use crate::tests::fakes::service_registry::ServiceRegistry;
     use crate::tests::helpers::{
         create_messenger_and_publisher, create_messenger_and_publisher_from_hub,
         create_receptor_for_setting_type,
     };
     use assert_matches::assert_matches;
     use futures::StreamExt;
+    use settings_test_common::fakes::service::ServiceRegistry;
 
     // Tests that the initialization lifespan is not handled.
     #[fuchsia::test(allow_stalls = false)]

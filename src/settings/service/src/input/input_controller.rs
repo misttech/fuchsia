@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::base::{SettingInfo, SettingType};
-use crate::config::default_settings::DefaultSetting;
 use crate::handler::base::Request;
 use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
 use crate::handler::setting_handler::{
@@ -16,6 +15,7 @@ use crate::input::types::{
     DeviceState, DeviceStateSource, InputDevice, InputDeviceType, InputInfo, InputInfoSources,
     InputState, Microphone,
 };
+use settings_common::config::default_settings::DefaultSetting;
 use settings_media_buttons::MediaButtons;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess};
@@ -468,11 +468,11 @@ mod tests {
     use crate::handler::setting_handler::controller::Handle;
     use crate::handler::setting_handler::ClientImpl;
     use crate::input::input_device_configuration::{InputDeviceConfiguration, SourceState};
-    use crate::inspect::config_logger::InspectConfigLogger;
     use crate::service_context::ServiceContext;
     use crate::storage::{Payload as StoragePayload, StorageRequest, StorageResponse};
-    use crate::tests::fakes::service_registry::ServiceRegistry;
     use crate::{service, Address};
+    use settings_common::inspect::config_logger::InspectConfigLogger;
+    use settings_test_common::fakes::service::ServiceRegistry;
 
     use fuchsia_async as fasync;
     use fuchsia_inspect::component;

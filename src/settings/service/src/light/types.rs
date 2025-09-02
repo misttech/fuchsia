@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::inspect::event::Nameable;
 use crate::light::light_hardware_configuration::DisableConditions;
 use serde::{Deserialize, Serialize};
+use settings_common::inspect::event::Nameable;
 use std::collections::HashMap;
 
 #[derive(PartialEq, Default, Debug, Clone, Serialize, Deserialize)]
@@ -241,7 +241,7 @@ impl TryFrom<ColorRgb> for fidl_fuchsia_hardware_light::Rgb {
 
 #[cfg(test)]
 mod tests {
-    use crate::light::types::ColorRgb;
+    use super::*;
 
     #[fuchsia::test]
     fn test_try_from_rgb() {

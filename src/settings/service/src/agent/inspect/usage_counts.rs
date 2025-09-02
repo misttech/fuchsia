@@ -11,7 +11,6 @@
 use crate::agent::{AgentCreator, Context, CreationFunc, Payload};
 use crate::base::SettingType;
 use crate::handler::base::{Payload as HandlerPayload, Request};
-use crate::inspect::event::{Direction, UsageEvent};
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::service::TryFromWithClient;
 use crate::{service, trace};
@@ -21,6 +20,7 @@ use fuchsia_inspect_derive::Inspect;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::StreamExt;
 use inspect::NumericProperty;
+use settings_common::inspect::event::{Direction, UsageEvent};
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 use std::cell::RefCell;
 use std::collections::HashMap;

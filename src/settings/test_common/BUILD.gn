@@ -32,6 +32,7 @@ rustc_library("settings_test_common") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-fs",
+    "//src/settings/common:settings_common",
     "//src/settings/storage:settings_storage",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
@@ -45,6 +46,8 @@ rustc_library("settings_test_common") {
   ]
 
   sources = [
+    "src/fakes.rs",
+    "src/fakes/service.rs",
     "src/helpers.rs",
     "src/lib.rs",
     "src/storage.rs",

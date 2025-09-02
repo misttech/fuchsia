@@ -29,11 +29,11 @@ use crate::handler::setting_handler::{
     self, Command, ControllerError, Event, ExitResult, SettingHandlerResult, State,
 };
 use crate::handler::setting_proxy::{SettingProxy, MAX_NODE_ERRORS};
-use crate::inspect::listener_logger::ListenerInspectLogger;
 use crate::message::base::{Audience, MessageEvent, MessengerType};
 use crate::message::receptor::Receptor;
 use crate::service::{self, message, TryFromWithClient};
 use crate::{clock, event, Payload};
+use settings_common::inspect::listener_logger::ListenerInspectLogger;
 
 const TEARDOWN_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(5);
 const SETTING_PROXY_MAX_ATTEMPTS: u64 = 3;

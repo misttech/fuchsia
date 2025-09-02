@@ -14,7 +14,6 @@ use crate::input::types::{
 };
 use crate::service_context::ServiceContext;
 use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
-use crate::tests::fakes::service_registry::ServiceRegistry;
 use crate::tests::input_test_environment::{TestInputEnvironment, TestInputEnvironmentBuilder};
 use crate::tests::test_failure_utils::create_test_env_with_failures_and_config;
 use assert_matches::assert_matches;
@@ -30,6 +29,7 @@ use futures::lock::Mutex;
 use futures::pin_mut;
 use futures::stream::StreamExt;
 use futures::task::Poll;
+use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::helpers::move_executor_forward;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::HashMap;

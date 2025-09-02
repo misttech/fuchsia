@@ -6,16 +6,16 @@ use crate::audio::build_audio_default_settings;
 use crate::audio::types::{AudioInfo, AudioStreamType};
 #[cfg(test)]
 use crate::audio::{create_default_audio_stream, StreamVolumeControl};
-use crate::inspect::config_logger::InspectConfigLogger;
 use crate::message::base::MessengerType;
-use crate::service_context::common::ExternalServiceEvent;
 use crate::service_context::ServiceContext;
 use crate::tests::fakes::audio_core_service;
-use crate::tests::fakes::service_registry::ServiceRegistry;
 use crate::{clock, event, service};
 use fuchsia_inspect::component;
 use futures::lock::Mutex;
 use futures::StreamExt;
+use settings_common::inspect::config_logger::InspectConfigLogger;
+use settings_common::service_context::ExternalServiceEvent;
+use settings_test_common::fakes::service::ServiceRegistry;
 use std::rc::Rc;
 
 fn default_audio_info() -> AudioInfo {

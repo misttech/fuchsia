@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::input::common::CAMERA_WATCHER_TIMEOUT;
-use crate::tests::fakes::base::Service;
+use settings_test_common::fakes::service::Service;
 
 use anyhow::{format_err, Error};
 use fidl::endpoints::ServerEnd;

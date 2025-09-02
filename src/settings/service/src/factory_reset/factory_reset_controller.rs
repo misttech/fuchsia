@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::base::{SettingInfo, SettingType};
-use crate::call;
 use crate::factory_reset::types::FactoryResetInfo;
 use crate::handler::base::Request;
 use crate::handler::setting_handler::controller::Handle;
@@ -15,6 +14,7 @@ use crate::service_context::ExternalServiceProxy;
 use async_trait::async_trait;
 use fidl_fuchsia_recovery_policy::{DeviceMarker, DeviceProxy};
 use futures::lock::Mutex;
+use settings_common::call;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess};
 use std::rc::Rc;

@@ -8,11 +8,11 @@ use crate::message::base::{Audience, MessengerType};
 use crate::service;
 use crate::service_context::ServiceContext;
 use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
-use crate::tests::fakes::service_registry::ServiceRegistry;
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
 use futures::lock::Mutex;
 use media_buttons::MediaButtonsAgent;
 use settings_media_buttons::MediaButtons;
+use settings_test_common::fakes::service::ServiceRegistry;
 use std::collections::HashSet;
 use std::rc::Rc;
 

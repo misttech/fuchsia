@@ -12,7 +12,7 @@ use crate::base::{SettingInfo, SettingType};
 use crate::event::Publisher;
 use crate::handler::base::{Payload, Request};
 use crate::message::base::Audience;
-use crate::{call, service, trace};
+use crate::{service, trace};
 
 use anyhow::{format_err, Context, Error};
 use fidl::endpoints::create_request_stream;
@@ -20,6 +20,7 @@ use fidl_fuchsia_media_sessions2::{
     DiscoveryMarker, SessionsWatcherRequest, SessionsWatcherRequestStream, WatchOptions,
 };
 use futures::stream::TryStreamExt;
+use settings_common::call;
 use std::collections::HashSet;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 

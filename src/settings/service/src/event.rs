@@ -4,8 +4,9 @@
 
 use crate::base::SettingType;
 use crate::message::base::Audience;
-use crate::service_context::common::ExternalServiceEvent;
-use crate::{config, payload_convert, service};
+use crate::{payload_convert, service};
+use settings_common::config;
+use settings_common::service_context::ExternalServiceEvent;
 use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -19,7 +20,7 @@ pub enum Payload {
 pub enum Event {
     Custom(&'static str),
     CameraUpdate(camera_watcher::Event),
-    ConfigLoad(config::base::Event),
+    ConfigLoad(config::Event),
     Earcon(earcon::Event),
     MediaButtons(settings_media_buttons::Event),
     Restore(restore::Event),

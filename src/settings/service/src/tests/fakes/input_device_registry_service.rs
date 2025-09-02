@@ -13,7 +13,7 @@ use std::rc::Rc;
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
 use fidl_fuchsia_ui_policy::MediaButtonsListenerProxy;
 
-use crate::tests::fakes::base::Service;
+use settings_test_common::fakes::service::Service;
 
 pub(crate) struct InputDeviceRegistryService {
     listeners: Rc<RwLock<Vec<MediaButtonsListenerProxy>>>,

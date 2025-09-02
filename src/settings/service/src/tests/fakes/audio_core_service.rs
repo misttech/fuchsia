@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::audio::types::AudioInfo;
-use crate::tests::fakes::base::Service;
 use anyhow::{format_err, Error};
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
@@ -13,6 +12,7 @@ use fuchsia_sync::RwLock;
 use futures::channel::oneshot;
 use futures::lock::Mutex;
 use futures::{FutureExt, TryStreamExt};
+use settings_test_common::fakes::service::Service;
 use std::collections::HashMap;
 use std::rc::Rc;
 

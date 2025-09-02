@@ -9,4 +9,3 @@ pub(crate) mod camera3_service;
 pub(crate) mod hardware_light_service;
 pub(crate) mod input_device_registry_service;
 pub(crate) mod recovery_policy_service;
-pub(crate) mod service_registry;

@@ -1,9 +1,9 @@
-// Copyright 2024 The Fuchsia Authors. All rights reserved.
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 use super::listener_logger::ListenerInspectLogger;
-use crate::service_context::common::ExternalServiceEvent;
+use crate::service_context::ExternalServiceEvent;
 use anyhow::{anyhow, Error};
 use futures::channel::mpsc::UnboundedSender;
 use std::cell::Cell;

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::base::{SettingInfo, SettingType};
-use crate::call_async;
 use crate::handler::base::Request;
 use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
 use crate::handler::setting_handler::{
@@ -14,6 +13,7 @@ use crate::setup::types::SetupInfo;
 use async_trait::async_trait;
 use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
 
+use settings_common::call_async;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess};
 

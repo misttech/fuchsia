@@ -1,7 +1,6 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::call_async;
 use crate::event::Publisher;
 use crate::service_context::{ExternalServiceProxy, ServiceContext};
 use anyhow::{anyhow, Context as _, Error};
@@ -9,6 +8,7 @@ use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_media::AudioRenderUsage2;
 use fidl_fuchsia_media_sounds::{PlayerMarker, PlayerProxy};
 use futures::lock::Mutex;
+use settings_common::call_async;
 use std::collections::HashSet;
 use std::rc::Rc;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};

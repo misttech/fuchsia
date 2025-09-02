@@ -6,8 +6,6 @@ use anyhow::Error;
 use serde::{Deserialize, Serialize};
 
 use crate::base::{Merge, SettingInfo, SettingType};
-use crate::call;
-use crate::config::default_settings::DefaultSetting;
 use crate::display::display_configuration::{
     ConfigurationThemeMode, ConfigurationThemeType, DisplayConfiguration,
 };
@@ -23,6 +21,8 @@ use fidl_fuchsia_ui_brightness::{
     ControlMarker as BrightnessControlMarker, ControlProxy as BrightnessControlProxy,
 };
 use fuchsia_trace as ftrace;
+use settings_common::call;
+use settings_common::config::default_settings::DefaultSetting;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{DefaultLoader, NoneT, StorageAccess};
 use settings_storage::UpdateState;

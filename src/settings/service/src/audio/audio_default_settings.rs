@@ -6,8 +6,8 @@ use crate::audio::types::{
     AudioInfo, AudioSettingSource, AudioStream, AudioStreamType, AUDIO_STREAM_TYPE_COUNT,
 };
 use crate::base::SettingInfo;
-use crate::config::default_settings::DefaultSetting;
-use crate::inspect::config_logger::InspectConfigLogger;
+use settings_common::config::default_settings::DefaultSetting;
+use settings_common::inspect::config_logger::InspectConfigLogger;
 use settings_storage::storage_factory::DefaultLoader;
 use std::collections::HashMap;
 use std::rc::Rc;

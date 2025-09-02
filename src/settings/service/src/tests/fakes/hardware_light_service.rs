@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::light::types::{LightType, LightValue};
-use crate::tests::fakes::base::Service;
 use anyhow::{format_err, Error};
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
@@ -11,6 +10,7 @@ use fidl_fuchsia_hardware_light::{Info, LightMarker, LightRequest, Rgb};
 use fuchsia_async as fasync;
 use futures::lock::Mutex;
 use futures::TryStreamExt;
+use settings_test_common::fakes::service::Service;
 use std::collections::HashMap;
 use std::rc::Rc;
 use zx::Channel;

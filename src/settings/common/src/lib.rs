@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub mod fakes;
-pub mod helpers;
-pub mod storage;
+pub mod clock;
+pub mod config;
+pub mod inspect;
+pub mod service_context;

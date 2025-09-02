@@ -13,12 +13,12 @@
 use crate::agent::{AgentCreator, Context, CreationFunc, Payload};
 use crate::base::{SettingInfo, SettingType};
 use crate::handler::base::{Error, Payload as HandlerPayload, Request};
-use crate::inspect::event::{Direction, ResponseType, UsageEvent};
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::message::receptor::Receptor;
 use crate::service::TryFromWithClient;
 use crate::{clock, service, trace};
 use futures::channel::mpsc::UnboundedReceiver;
+use settings_common::inspect::event::{Direction, ResponseType, UsageEvent};
 use settings_inspect_utils::joinable_inspect_vecdeque::JoinableInspectVecDeque;
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 use settings_inspect_utils::managed_inspect_queue::ManagedInspectQueue;
@@ -484,7 +484,11 @@ impl SettingProxyInspectAgent {
         // Update the response counter.
         self.increment_response_count(
             setting_type_str.clone(),
-            ResponseType::from(response.clone()),
+            match &response {
+                Ok(Some(_)) => ResponseType::OkSome,
+                Ok(None) => ResponseType::OkNone,
+                Err(e) => ResponseType::from(e.clone()),
+            },
         );
 
         // Find the inspect data for this setting. This should always be present as it's created

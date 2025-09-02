@@ -3,22 +3,10 @@
 // found in the LICENSE file.
 use crate::handler::base::{GenerateHandler, Request};
 use crate::handler::setting_handler::{reply, Command, Payload, SettingHandlerResult, State};
-use anyhow::Error;
 use fuchsia_async as fasync;
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
 use std::rc::Rc;
-
-/// Trait for providing a service.
-pub(crate) trait Service {
-    /// Returns true if this service can process the given service name, false
-    /// otherwise.
-    fn can_handle_service(&self, service_name: &str) -> bool;
-
-    /// Processes the request stream within the specified channel. Ok is returned
-    /// on success, an error otherwise.
-    fn process_stream(&mut self, service_name: &str, channel: zx::Channel) -> Result<(), Error>;
-}
 
 /// A helper function for creating a simple setting handler.
 pub(crate) fn create_setting_handler(

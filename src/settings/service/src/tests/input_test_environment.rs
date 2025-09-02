@@ -4,8 +4,6 @@
 
 use crate::agent::AgentCreator;
 use crate::base::SettingType;
-use crate::config::base::AgentType;
-use crate::config::default_settings::DefaultSetting;
 use crate::handler::base::{Context, GenerateHandler};
 use crate::handler::setting_handler::persist::ClientProxy;
 use crate::handler::setting_handler::{BoxedController, ClientImpl};
@@ -14,14 +12,16 @@ use crate::input::build_input_default_settings;
 use crate::input::input_controller::InputController;
 use crate::input::input_device_configuration::InputConfiguration;
 use crate::input::types::InputInfoSources;
-use crate::inspect::config_logger::InspectConfigLogger;
 use crate::tests::fakes::camera3_service::Camera3Service;
 use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
-use crate::tests::fakes::service_registry::ServiceRegistry;
 use crate::{
     AgentConfiguration, EnabledInterfacesConfiguration, Environment, EnvironmentBuilder,
     ServiceConfiguration, ServiceFlags,
 };
+use settings_common::config::default_settings::DefaultSetting;
+use settings_common::config::AgentType;
+use settings_common::inspect::config_logger::InspectConfigLogger;
+use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 
 use fidl_fuchsia_settings::{InputMarker, InputProxy};

@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::config::default_settings::DefaultSetting;
 use crate::display::build_display_default_settings;
 use crate::ingress::fidl::InterfaceSpec;
-use crate::inspect::config_logger::InspectConfigLogger;
 use crate::{
     AgentConfiguration, EnabledInterfacesConfiguration, EnvironmentBuilder, ServiceConfiguration,
     ServiceFlags,
 };
 use fidl_fuchsia_settings::{AccessibilityMarker, DisplayMarker, PrivacyMarker};
 use fuchsia_inspect::component;
+use settings_common::config::default_settings::DefaultSetting;
+use settings_common::inspect::config_logger::InspectConfigLogger;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::HashSet;
 use std::rc::Rc;

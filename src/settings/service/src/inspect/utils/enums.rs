@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::handler::base::{Error, Response};
+use crate::handler::base::Error;
 use crate::handler::setting_handler::ControllerError;
-use crate::inspect::event::ResponseType;
+use settings_common::inspect::event::ResponseType;
 
 impl From<Error> for ResponseType {
     fn from(error: Error) -> Self {
@@ -38,15 +38,5 @@ impl From<ControllerError> for ResponseType {
     fn from(error: ControllerError) -> Self {
         let error = Error::from(error);
         ResponseType::from(error)
-    }
-}
-
-impl From<Response> for ResponseType {
-    fn from(response: Response) -> Self {
-        match response {
-            Ok(Some(_)) => ResponseType::OkSome,
-            Ok(None) => ResponseType::OkNone,
-            Err(error) => error.into(),
-        }
     }
 }
