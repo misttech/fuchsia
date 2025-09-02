@@ -57,6 +57,13 @@ Error TryUnwinder(UnwinderBase* unwinder, Frame::Trust trust, Memory* stack, con
   }
 
   next.trust = trust;
+
+  // If the frame was identified with an S augmentation by the CFI unwinder, then we know that this
+  // definitely not a return address.
+  if (next.is_signal_frame) {
+    next.pc_is_return_address = false;
+    return Success();
+  }
   if (trust == Frame::Trust::kCFI) {
     next.pc_is_return_address = PcIsReturnAddress(next.regs);
   } else if (trust == Frame::Trust::kSigReturn) {

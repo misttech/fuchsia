@@ -34,6 +34,27 @@ struct Frame {
   // signal frames or when unwinding into restricted mode in Starnix.
   bool pc_is_return_address;
 
+  // This flag is set to true if the CFI for this frame was associated with a CIE containing an 'S'
+  // character in its augmentation string.
+  //
+  // The 'S' augmentation is poorly documented and is not a part of the DWARF standard, but is a de
+  // facto standard to mark unwind information for signal trampolines. Unfortunately it's also not
+  // mentioned in any of the Linux Standard Base (LSB) nor in any of the ARM vendor DWARF extension
+  // specifications or other standards referenced by this unwinder. In practice, this is set by hand
+  // writing CFI directives (.cfi_signal_frame in particular).
+  //
+  // The best references that can be found are in source code of other unwinders: libgcc has the
+  // canonical implementation of this augmentation [1], and libunwind also implements it [2].
+  //
+  // .cfi_signal_frame is not always set on functions that are actually signal frames, so this flag
+  // can be set by probing the instruction sequence set at |pc| for a particular sigreturn method,
+  // which has a predictable and short instruction sequence. This approach is only taken in the case
+  // the CFI unwinder failed to find the 'S' augmentation.
+  //
+  // [1]: https://gcc.gnu.org/git/?p=gcc.git;a=blob;f=libgcc/unwind-dw2.c;h=883b1c7a13dbdf620e64724a2179ffcbfdfa9c69;hb=HEAD#l498
+  // [2]: https://github.com/llvm/llvm-project/blob/main/libunwind/src/DwarfParser.hpp#L395
+  bool is_signal_frame = false;
+
   // Trust level of the frame.
   Trust trust;
 

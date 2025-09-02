@@ -27,14 +27,21 @@ CfiUnwinder::CfiUnwinder(const std::vector<Module>& modules) : UnwinderBase(this
 }
 
 Error CfiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
-  return Step(stack, current.regs, next.regs, current.pc_is_return_address);
+  if (auto result = Step(stack, current.regs, next.regs, current.pc_is_return_address);
+      result.is_error()) {
+    return result.error_value();
+  } else {
+    next.is_signal_frame = result.value();
+  }
+
+  return Success();
 }
 
-Error CfiUnwinder::Step(Memory* stack, const Registers& current, Registers& next,
-                        bool is_return_address) {
+fit::result<Error, bool> CfiUnwinder::Step(Memory* stack, const Registers& current, Registers& next,
+                                           bool is_return_address) {
   uint64_t pc;
   if (auto err = current.GetPC(pc); err.has_err()) {
-    return err;
+    return fit::error(err);
   }
 
   Registers regs = current;
@@ -54,13 +61,15 @@ Error CfiUnwinder::Step(Memory* stack, const Registers& current, Registers& next
 
   CfiModuleInfo* cfi;
   if (auto err = GetCfiModuleInfoForPc(pc, &cfi); err.has_err()) {
-    return err;
+    return fit::error(err);
   }
 
-  if (auto err = cfi->binary->Step(stack, regs, next); err.has_err()) {
-    return err;
+  auto result = cfi->binary->Step(stack, regs, next);
+  if (result.is_error()) {
+    return result;
   }
-  return Success();
+
+  return fit::ok(result.value());
 }
 
 void CfiUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,

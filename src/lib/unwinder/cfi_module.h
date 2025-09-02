@@ -47,8 +47,11 @@ class CfiModule {
   // Load the CFI from the ELF file.
   [[nodiscard]] Error Load();
 
-  // Unwind one frame.
-  [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next);
+  // Unwind one frame. The returned result will contain whether or not the next frame is a signal
+  // frame in the case of success, otherwise the Error field will be populated with additional
+  // information.
+  [[nodiscard]] fit::result<Error, bool> Step(Memory* stack, const Registers& current,
+                                              Registers& next);
 
   void AsyncStep(AsyncMemory* stack, const Registers& current,
                  fit::callback<void(Error, Registers)> cb);
@@ -69,6 +72,9 @@ class CfiModule {
     uint8_t fde_address_encoding = 0xFF;      // default to an invalid encoding.
     uint64_t instructions_begin = 0;
     uint64_t instructions_end = 0;  // exclusive.
+    // The augmentation string indicated this is a signal frame. See the comment for the same
+    // variable in frame.h for more details about what this means and how it is used.
+    bool is_signal_frame = false;
   };
 
   // DWARF Frame Description Entry.

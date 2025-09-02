@@ -336,10 +336,10 @@ Error CfiModule::LoadDebugFrame(const Elf64_Ehdr& ehdr) {
   return Error("no debug_frame section found");
 }
 
-Error CfiModule::Step(Memory* stack, const Registers& current, Registers& next) {
+fit::result<Error, bool> CfiModule::Step(Memory* stack, const Registers& current, Registers& next) {
   DwarfCie cie;
   if (auto err = PrepareToStep(current, cie); err.has_err()) {
-    return err;
+    return fit::error(err);
   }
 
   if (address_size_ == Module::AddressSize::k32Bit) {
@@ -348,10 +348,10 @@ Error CfiModule::Step(Memory* stack, const Registers& current, Registers& next) 
 
   if (auto err = cfi_parser_->Step(stack, cie.return_address_register, current, next);
       err.has_err()) {
-    return err;
+    return fit::error(err);
   }
 
-  return Success();
+  return fit::ok(cie.is_signal_frame);
 }
 
 void CfiModule::AsyncStep(AsyncMemory* stack, const Registers& current,
@@ -673,6 +673,9 @@ Error CfiModule::DecodeCie(UnwindTableSectionType type, uint64_t cie_ptr, DwarfC
           if (auto err = elf_->ReadAndAdvance(cie_ptr, cie.fde_address_encoding); err.has_err()) {
             return err;
           }
+          break;
+        case 'S':
+          cie.is_signal_frame = true;
           break;
       }
     }

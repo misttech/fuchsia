@@ -60,9 +60,10 @@ class CfiUnwinder : public UnwinderBase {
   Error GetModuleForPc(uint64_t pc, Module** out);
 
  private:
-  // |is_return_address| indicates whether the current PC is pointing to a return address,
-  // in which case it'll be adjusted to find the correct CFI entry.
-  Error Step(Memory* stack, const Registers& current, Registers& next, bool is_return_address);
+  // If the returned value is fit::ok, then the contained boolean indicates whether the next frame
+  // is a signal frame or not. Otherwise the encased Error type will have more information.
+  fit::result<Error, bool> Step(Memory* stack, const Registers& current, Registers& next,
+                                bool is_return_address);
 
   void AsyncStep(AsyncMemory* stack, Registers current, bool is_return_address,
                  fit::callback<void(Error, Registers)> cb);
