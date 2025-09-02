@@ -263,11 +263,7 @@ impl<T, U> IsOver<T> for OverPred<T, U> {
 
 impl<T> Predicate<T> {
     fn is_equal(&self) -> bool {
-        if let Predicate::Equal(_, _, _) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Predicate::Equal(_, _, _))
     }
     pub fn describe<'a>(&self, doc: &'a BoxAllocator) -> DocBuilder<'a> {
         match self {

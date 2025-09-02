@@ -27,11 +27,11 @@
 //!   action_success.satisfied(state)
 //!   ```
 #![cfg(target_os = "fuchsia")]
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_sync::{MappedRwLockWriteGuard, RwLock, RwLockWriteGuard};
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use slab::Slab;
 use std::future::Future;
 use std::pin::Pin;

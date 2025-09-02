@@ -10,7 +10,7 @@ use std::fmt;
 use crate::error::Error;
 #[cfg(target_os = "fuchsia")]
 use crate::inspect::{DebugExt, InspectData, Inspectable, IsInspectable, ToProperty};
-use crate::types::{addresses_to_custom_string, Address, HostId};
+use crate::types::{Address, HostId, addresses_to_custom_string};
 
 /// `HostInfo` contains informational parameters and state for a bt-host device.
 #[derive(Clone, Debug, PartialEq)]

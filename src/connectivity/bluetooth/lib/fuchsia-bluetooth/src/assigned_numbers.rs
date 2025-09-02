@@ -96,8 +96,8 @@ macro_rules! assigned_number {
 #[cfg(test)]
 mod tests {
     use super::{
-        find_characteristic_number, find_descriptor_number, find_service_uuid,
         CHARACTERISTIC_NUMBERS, CUSTOM_SERVICE_UUIDS, DESCRIPTOR_NUMBERS, SERVICE_UUIDS,
+        find_characteristic_number, find_descriptor_number, find_service_uuid,
     };
 
     #[test]

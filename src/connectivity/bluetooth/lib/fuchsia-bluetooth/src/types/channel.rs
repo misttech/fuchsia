@@ -4,7 +4,7 @@
 
 use fidl::endpoints::{ClientEnd, Proxy};
 use futures::stream::{FusedStream, Stream};
-use futures::{io, Future, TryFutureExt};
+use futures::{Future, TryFutureExt, io};
 use log::warn;
 use std::fmt;
 use std::pin::Pin;
@@ -470,9 +470,9 @@ mod tests {
         };
         let channel = Channel::try_from(no_ext).unwrap();
 
-        assert!(exec
-            .run_singlethreaded(channel.set_audio_priority(A2dpDirection::Normal))
-            .is_err());
+        assert!(
+            exec.run_singlethreaded(channel.set_audio_priority(A2dpDirection::Normal)).is_err()
+        );
         assert!(exec.run_singlethreaded(channel.set_audio_priority(A2dpDirection::Sink)).is_err());
 
         let (remote, _local) = zx::Socket::create_datagram();
@@ -559,11 +559,12 @@ mod tests {
         );
         assert_eq!(Some(zx::MonotonicDuration::from_millis(50)), res.expect("shouldn't error"));
 
-        assert!(exec
-            .run_singlethreaded(
+        assert!(
+            exec.run_singlethreaded(
                 channel.set_flush_timeout(Some(zx::MonotonicDuration::from_millis(200)))
             )
-            .is_err());
+            .is_err()
+        );
         assert!(exec.run_singlethreaded(channel.set_flush_timeout(None)).is_err());
 
         let (remote, _local) = zx::Socket::create_datagram();

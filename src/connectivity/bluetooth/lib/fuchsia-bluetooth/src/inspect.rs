@@ -28,11 +28,7 @@ pub trait ToProperty {
 impl ToProperty for bool {
     type PropertyType = u64;
     fn to_property(&self) -> Self::PropertyType {
-        if *self {
-            TRUE_VALUE
-        } else {
-            FALSE_VALUE
-        }
+        if *self { TRUE_VALUE } else { FALSE_VALUE }
     }
 }
 

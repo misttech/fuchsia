@@ -4,8 +4,8 @@
 
 use fidl_fuchsia_bluetooth as fidl_bt;
 use fidl_fuchsia_bluetooth_bredr::{
-    self as fidl_bredr, ProfileDescriptor, ATTR_BLUETOOTH_PROFILE_DESCRIPTOR_LIST,
-    ATTR_SERVICE_CLASS_ID_LIST,
+    self as fidl_bredr, ATTR_BLUETOOTH_PROFILE_DESCRIPTOR_LIST, ATTR_SERVICE_CLASS_ID_LIST,
+    ProfileDescriptor,
 };
 use fidl_table_validation::ValidFidlTable;
 #[cfg(target_os = "fuchsia")]
@@ -15,8 +15,8 @@ use fuchsia_inspect_derive::{AttachError, Inspect, Unit};
 use std::cmp::min;
 use std::collections::HashSet;
 
-use crate::assigned_numbers::constants::SERVICE_CLASS_UUIDS;
 use crate::assigned_numbers::AssignedNumber;
+use crate::assigned_numbers::constants::SERVICE_CLASS_UUIDS;
 use crate::error::Error;
 use crate::types::Uuid;
 
@@ -107,11 +107,7 @@ pub fn find_profile_descriptors(
                 .ok_or_else(|| Error::profile("couldn't convert to a ProfileDescriptor"))?,
         );
     }
-    if result.is_empty() {
-        Err(Error::profile("no profile descriptor found"))
-    } else {
-        Ok(result)
-    }
+    if result.is_empty() { Err(Error::profile("no profile descriptor found")) } else { Ok(result) }
 }
 
 pub fn profile_descriptor_to_assigned(profile_desc: &ProfileDescriptor) -> Option<AssignedNumber> {
@@ -582,7 +578,7 @@ impl TryFrom<&fidl_bredr::ServiceDefinition> for ServiceDefinition {
             _ => {
                 return Err(Error::conversion(
                     "bredr.ServiceDefinition.service_class_uuids is empty",
-                ))
+                ));
             }
         };
 
