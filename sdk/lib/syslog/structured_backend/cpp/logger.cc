@@ -35,17 +35,24 @@ class Logger::Impl {
     fidl::ClientEnd<fuchsia_logger::LogSink> client_end;
     client_end = fidl::ClientEnd<fuchsia_logger::LogSink>(zx::channel(settings.log_sink));
 
-    auto result = internal::LogConnection::Create(client_end);
-    if (result.is_error()) {
-      return result.take_error();
+    auto connection = internal::LogConnection::Create(client_end);
+    if (connection.is_error()) {
+      return connection.take_error();
     }
 
-    auto [connection, received_severity] = *std::move(result);
-
-    if (!settings.dispatcher) {
-      // If the caller isn't interested in interest updates, we assume the caller doesn't want the
-      // initial interest either.
-      received_severity = {};
+    std::optional<FuchsiaLogSeverity> received_severity;
+    // We don't need the dispatcher to get the initial interest, but if the caller isn't interested
+    // in interest updates, we assume the caller doesn't want the initial interest either.
+    if (settings.dispatcher) {
+      auto interest_result =
+          fidl::WireCall<fuchsia_logger::LogSink>(client_end)->WaitForInterestChange();
+      if (!interest_result.ok()) {
+        return zx::error(interest_result.status());
+      }
+      if (!interest_result->is_ok()) {
+        return zx::error(ZX_ERR_INTERNAL);
+      }
+      received_severity = GetSeverityFromInterestChange(***interest_result, settings.min_log_level);
     }
 
     std::vector<std::string> tags;
@@ -54,7 +61,7 @@ class Logger::Impl {
       tags.push_back(std::string(settings.tags[i]));
     }
 
-    auto impl = std::make_shared<Impl>(settings.min_log_level, min_severity, std::move(connection),
+    auto impl = std::make_shared<Impl>(settings.min_log_level, min_severity, *std::move(connection),
                                        std::move(tags), settings.severity_change_callback,
                                        settings.severity_change_callback_context);
     fidl::WireSharedClient<fuchsia_logger::LogSink> log_sink;

@@ -5,16 +5,9 @@
 #ifndef LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_CONNECTION_H_
 #define LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_CONNECTION_H_
 
-#include <zircon/availability.h>
-
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
-
 #include <fidl/fuchsia.logger/cpp/fidl.h>
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
-#include <lib/zx/iob.h>
 #include <lib/zx/result.h>
-
-#include <utility>
 
 namespace fuchsia_logging {
 
@@ -25,17 +18,20 @@ namespace internal {
 // LogConnection represents a connection to a logger. This will not watch for interest updates.
 class LogConnection {
  public:
-  // Initializes a connection provided a client end.  This will not retain `client_end`.
-  static zx::result<std::pair<LogConnection, std::optional<FuchsiaLogSeverity>>> Create(
+  // Initializes a connection provided a client end.  This will not retain
+  // `client_end`.
+  static zx::result<LogConnection> Create(
       fidl::UnownedClientEnd<fuchsia_logger::LogSink> client_end);
 
   LogConnection() = default;
-  LogConnection(zx::iob iob) : iob_(std::move(iob)) {}
+  LogConnection(zx::socket socket, FlushConfig config)
+      : socket_(std::move(socket)), block_if_full_(config.block_if_full) {}
 
   LogConnection(LogConnection&&) = default;
   LogConnection& operator=(LogConnection&&) = default;
 
-  bool IsValid() const { return iob_.is_valid(); }
+  zx::socket& socket() { return socket_; }
+  bool IsValid() const { return socket_.is_valid(); }
 
   // Flushes the LogBuffer to the connection.
   zx::result<> FlushBuffer(LogBuffer& buffer) const { return FlushSpan(buffer.EndRecord()); }
@@ -45,12 +41,12 @@ class LogConnection {
 
   zx::result<> FlushSpan(cpp20::span<const uint8_t> data) const;
 
-  zx::iob iob_;
+  zx::socket socket_;
+  bool block_if_full_ = false;
 };
 
 }  // namespace internal
 
 }  // namespace fuchsia_logging
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 #endif  // LIB_SYSLOG_STRUCTURED_BACKEND_CPP_LOG_CONNECTION_H_

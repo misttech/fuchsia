@@ -4,56 +4,44 @@
 
 #include <lib/syslog/structured_backend/cpp/log_connection.h>
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
-
 namespace fuchsia_logging::internal {
 
-zx::result<std::pair<LogConnection, std::optional<FuchsiaLogSeverity>>> LogConnection::Create(
+zx::result<LogConnection> LogConnection::Create(
     fidl::UnownedClientEnd<fuchsia_logger::LogSink> client_end) {
-  class EventHandler : public fidl::WireSyncEventHandler<fuchsia_logger::LogSink> {
-   public:
-    zx::iob& iob() { return iob_; }
-    std::optional<FuchsiaLogSeverity> min_severity() const { return min_severity_; }
+  zx::socket local, remote;
+  if (zx_status_t status = zx::socket::create(ZX_SOCKET_DATAGRAM, &local, &remote);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+  auto result = fidl::WireCall(client_end)->ConnectStructured(std::move(remote));
 
-    void OnInit(fidl::WireEvent<fuchsia_logger::LogSink::OnInit>* event) override {
-      if (event->has_buffer()) {
-        iob_ = std::move(event->buffer());
-      }
-      if (event->has_interest()) {
-        const auto& interest = event->interest();
-        if (interest.has_min_severity()) {
-          min_severity_ = static_cast<FuchsiaLogSeverity>(interest.min_severity());
-        }
-      }
-    }
-
-    void handle_unknown_event(
-        fidl::UnknownEventMetadata<fuchsia_logger::LogSink> metadata) override {}
-
-   private:
-    zx::iob iob_;
-    std::optional<FuchsiaLogSeverity> min_severity_;
-  } handler;
-
-  if (fidl::Status status = handler.HandleOneEvent(client_end); !status.ok()) {
-    return zx::error(status.status());
+  if (!result.ok()) {
+    return zx::error(result.error().status());
   }
 
-  if (!handler.iob().is_valid()) {
-    return zx::error(ZX_ERR_INTERNAL);
-  }
-
-  return zx::ok(std::make_pair(LogConnection(std::move(handler.iob())), handler.min_severity()));
+  return zx::ok(LogConnection(std::move(local), {}));
 }
 
 zx::result<> LogConnection::FlushSpan(cpp20::span<const uint8_t> data) const {
   if (data.empty()) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-  zx_iovec_t vector[] = {{.buffer = const_cast<uint8_t*>(data.data()), .capacity = data.size()}};
-  return iob_.writev({}, 0, vector, std::size(vector));
+  zx_status_t status;
+  while (true) {
+    status = socket_.write(0, data.data(), data.size_bytes(), nullptr);
+    if (status == ZX_OK) {
+      return zx::ok();
+    }
+    if (status != ZX_ERR_SHOULD_WAIT || !block_if_full_) {
+      return zx::error(status);
+    }
+    zx_signals_t observed;
+    status = socket_.wait_one(ZX_SOCKET_WRITABLE | ZX_SOCKET_PEER_CLOSED, zx::time::infinite(),
+                              &observed);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+  }
 }
 
 }  // namespace fuchsia_logging::internal
-
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)

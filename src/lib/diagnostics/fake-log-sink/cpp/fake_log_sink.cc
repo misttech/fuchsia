@@ -4,27 +4,114 @@
 
 #include "src/lib/diagnostics/fake-log-sink/cpp/fake_log_sink.h"
 
-#include <lib/async-loop/cpp/loop.h>
+#include <lib/async-loop/loop.h>
+#include <lib/zx/socket.h>
 #include <zircon/assert.h>
+
+#include <condition_variable>
 
 #include <sdk/lib/syslog/cpp/log_settings.h>
 
-#include "src/lib/diagnostics/fake-log-sink/rust/fake_log_sink.h"
 #include "src/lib/diagnostics/log/message/rust/cpp-log-decoder/log_decoder.h"
 
 namespace fuchsia_logging {
 
+class FakeLogSink::Impl : public fidl::Server<fuchsia_logger::LogSink> {
+ public:
+  explicit Impl(RawLogSeverity severity) : severity_(severity) {}
+
+  void SetSeverity(RawLogSeverity severity) {
+    std::unique_lock lock(mutex_);
+    severity_ = severity;
+    if (!interest_change_completers_.empty()) {
+      for (auto& completer : interest_change_completers_) {
+        completer.Reply(
+            fit::ok(fuchsia_logger::LogSinkWaitForInterestChangeResponse().data().min_severity(
+                static_cast<fuchsia_diagnostics_types::Severity>(severity))));
+      }
+      interest_change_completers_.clear();
+      last_reported_severity_ = severity;
+    }
+  }
+
+  bool WaitForRecord(zx::time deadline) const {
+    std::unique_lock lock(mutex_);
+    return WaitForRecord(lock, deadline) != 0;
+  }
+
+  std::vector<uint8_t> ReadRecord() {
+    std::unique_lock lock(mutex_);
+    size_t amount = WaitForRecord(lock, zx::time::infinite());
+    std::vector<uint8_t> buffer(amount);
+    size_t actual;
+    if (socket_.read(0, buffer.data(), buffer.size(), &actual) != ZX_OK) {
+      return {};
+    };
+    buffer.resize(actual);
+    return buffer;
+  }
+
+ private:
+  size_t WaitForRecord(std::unique_lock<std::mutex>& lock, zx::time deadline) const {
+    condition_.wait(lock, [this] { return socket_.is_valid(); });
+    zx_info_socket_t info;
+    for (;;) {
+      if (socket_.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr) != ZX_OK) {
+        return 0;
+      }
+      if (info.rx_buf_available > 0) {
+        return info.rx_buf_available;
+      }
+      if (socket_.wait_one(ZX_SOCKET_READABLE, deadline, nullptr) != ZX_OK) {
+        return 0;
+      }
+    }
+  }
+
+  void ConnectStructured(ConnectStructuredRequest& request,
+                         ConnectStructuredCompleter::Sync& completer) override {
+    std::unique_lock lock(mutex_);
+    socket_ = std::move(request.socket());
+    last_reported_severity_ = std::nullopt;
+    condition_.notify_all();
+  }
+
+  void WaitForInterestChange(WaitForInterestChangeCompleter::Sync& completer) override {
+    std::unique_lock lock(mutex_);
+    if (!last_reported_severity_.has_value() || *last_reported_severity_ != severity_) {
+      last_reported_severity_ = severity_;
+      completer.Reply(
+          fit::ok(fuchsia_logger::LogSinkWaitForInterestChangeResponse().data().min_severity(
+              static_cast<fuchsia_diagnostics_types::Severity>(severity_))));
+    } else {
+      interest_change_completers_.push_back(completer.ToAsync());
+    }
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_logger::LogSink> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {
+    ZX_PANIC("Unexpected call to handle_unknown_method");
+  }
+
+  mutable std::mutex mutex_;
+  mutable std::condition_variable condition_;
+  zx::socket socket_;
+  std::optional<RawLogSeverity> last_reported_severity_;
+  RawLogSeverity severity_;
+  std::vector<WaitForInterestChangeCompleter::Async> interest_change_completers_;
+};
+
 FakeLogSink::FakeLogSink(RawLogSeverity severity,
                          fidl::ServerEnd<fuchsia_logger::LogSink> server_end)
-    : impl_(internal::fake_log_sink_new()) {
-  SetSeverity(severity);
+    : loop_(std::make_unique<async::Loop>(&kAsyncLoopConfigNeverAttachToThread)),
+      impl_(std::make_shared<Impl>(severity)) {
+  loop_->StartThread();
+
   if (server_end.is_valid()) {
-    internal::fake_log_sink_serve(impl_, server_end.TakeChannel().release());
+    fidl::BindServer(loop_->dispatcher(), std::move(server_end), impl_);
   } else {
     auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
     ZX_ASSERT(endpoints.is_ok());
-
-    internal::fake_log_sink_serve(impl_, endpoints->server.TakeChannel().release());
 
     // Create a dispatcher for the global logger.
     static async::Loop* global_loop = [] {
@@ -33,6 +120,8 @@ FakeLogSink::FakeLogSink(RawLogSeverity severity,
       return loop;
     }();
 
+    fidl::BindServer(loop_->dispatcher(), std::move(endpoints->server), impl_);
+
     LogSettingsBuilder builder;
     builder.WithLogSink(endpoints->client.TakeChannel().release())
         .WithDispatcher(global_loop->dispatcher())
@@ -40,40 +129,12 @@ FakeLogSink::FakeLogSink(RawLogSeverity severity,
   }
 }
 
-FakeLogSink::FakeLogSink(FakeLogSink&& other) : impl_(other.impl_) { other.impl_ = nullptr; }
+bool FakeLogSink::WaitForRecord(zx::time deadline) const { return impl_->WaitForRecord(deadline); }
 
-FakeLogSink& FakeLogSink::operator=(FakeLogSink&& other) {
-  if (this == &other) {
-    return *this;
-  }
-  if (impl_) {
-    internal::fake_log_sink_delete(impl_);
-  }
-  impl_ = other.impl_;
-  other.impl_ = nullptr;
-  return *this;
-}
-
-FakeLogSink::~FakeLogSink() {
-  if (impl_) {
-    internal::fake_log_sink_delete(impl_);
-  }
-}
-
-bool FakeLogSink::WaitForRecord(zx::time deadline) const {
-  return internal::fake_log_sink_wait_for_record(impl_, deadline.get()) > 0;
-}
-
-std::vector<uint8_t> FakeLogSink::ReadRecord() {
-  uintptr_t record_size = internal::fake_log_sink_wait_for_record(impl_, ZX_TIME_INFINITE);
-  ZX_ASSERT(record_size > 0);
-  std::vector<uint8_t> buf(record_size);
-  internal::fake_log_sink_read_record(impl_, buf.data(), record_size);
-  return buf;
-}
+std::vector<uint8_t> FakeLogSink::ReadRecord() { return impl_->ReadRecord(); }
 
 std::optional<diagnostics::reader::LogsData> FakeLogSink::ReadLogsData() {
-  auto record = ReadRecord();
+  auto record = impl_->ReadRecord();
   if (record.empty()) {
     return {};
   }
@@ -86,8 +147,6 @@ std::optional<diagnostics::reader::LogsData> FakeLogSink::ReadLogsData() {
   return diagnostics::reader::LogsData(std::move(log));
 }
 
-void FakeLogSink::SetSeverity(RawLogSeverity severity) {
-  internal::fake_log_sink_set_min_severity(impl_, severity);
-}
+void FakeLogSink::SetSeverity(RawLogSeverity severity) { impl_->SetSeverity(severity); }
 
 }  // namespace fuchsia_logging

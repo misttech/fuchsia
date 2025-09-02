@@ -21,7 +21,7 @@ use fidl_fuchsia_validate_logs::{
     self as fvalidate, LogSinkPuppetMarker, LogSinkPuppetProxy, MAX_ARG_NAME_LENGTH, MAX_ARGS,
     PuppetInfo, RecordSpec,
 };
-use fuchsia_async::Task;
+use fuchsia_async::{Socket, Task};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
@@ -49,17 +49,44 @@ struct Opt {
     /// if true, invalid unicode will be generated in the initial puppet started message.
     #[argh(switch, long = "test-invalid-unicode")]
     test_invalid_unicode: bool,
+    /// if true, use an IOBuffer rather than a socket.
+    #[argh(switch)]
+    use_iob: bool,
 }
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
-    let Opt { ignored_tags, test_invalid_unicode } = argh::from_env();
-    Puppet::launch(true, test_invalid_unicode, ignored_tags).await?.test().await
+    let Opt { ignored_tags, test_invalid_unicode, use_iob } = argh::from_env();
+    Puppet::launch(true, test_invalid_unicode, ignored_tags, use_iob).await?.test().await
+}
+
+enum SocketOrIob {
+    Socket(Socket),
+    Iob(ring_buffer::Reader),
+}
+
+impl SocketOrIob {
+    async fn read_datagram(&mut self, buf: &mut Vec<u8>) -> Result<usize, zx::Status> {
+        match self {
+            SocketOrIob::Socket(socket) => socket.read_datagram(buf).await,
+            SocketOrIob::Iob(ring_buffer) => {
+                *buf = ring_buffer.read_message().await.unwrap().1;
+                Ok(buf.len())
+            }
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        match self {
+            SocketOrIob::Socket(socket) => socket.is_closed(),
+            _ => false,
+        }
+    }
 }
 
 struct Puppet {
     start_time: zx::BootInstant,
-    ring_buffer: ring_buffer::Reader,
+    socket_or_iob: SocketOrIob,
     info: PuppetInfo,
     proxy: LogSinkPuppetProxy,
     _puppet_stopped_watchdog: Task<()>,
@@ -70,7 +97,13 @@ struct Puppet {
 
 async fn demux_fidl(
     stream: &mut LogSinkRequestStream,
-) -> Result<(ring_buffer::Reader, LogSinkWaitForInterestChangeResponder), Error> {
+    use_iob: bool,
+) -> Result<(SocketOrIob, LogSinkWaitForInterestChangeResponder), Error> {
+    let mut interest_listener = None;
+    let mut log_socket = None;
+    let mut got_initial_interest_request = false;
+
+    // Always send an iob.
     let ring_buffer = RingBuffer::create(zx::system_get_page_size() as usize * 32);
 
     stream
@@ -81,10 +114,38 @@ async fn demux_fidl(
         })
         .unwrap();
 
-    match stream.next().await.unwrap()? {
-        LogSinkRequest::WaitForInterestChange { responder } => Ok((ring_buffer, responder)),
-        LogSinkRequest::ConnectStructured { .. } => Err(anyhow!("ConnectStructured unexpected")),
-        LogSinkRequest::_UnknownMethod { .. } => unreachable!(),
+    loop {
+        match stream.next().await.unwrap()? {
+            LogSinkRequest::WaitForInterestChange { responder } => {
+                if got_initial_interest_request || use_iob {
+                    interest_listener = Some(responder);
+                } else {
+                    info!("Unblocking component by sending an empty interest.");
+                    responder.send(Ok(&Interest::default()))?;
+                    got_initial_interest_request = true;
+                }
+            }
+            LogSinkRequest::ConnectStructured { socket, control_handle: _ } => {
+                if use_iob {
+                    return Err(anyhow!("ConnectStructured unexpected"));
+                } else {
+                    log_socket = Some(socket);
+                }
+            }
+            LogSinkRequest::_UnknownMethod { .. } => unreachable!(),
+        }
+        if use_iob || log_socket.is_some() {
+            if let Some(listener) = interest_listener {
+                return Ok((
+                    if use_iob {
+                        SocketOrIob::Iob(ring_buffer)
+                    } else {
+                        SocketOrIob::Socket(Socket::from_socket(log_socket.unwrap()))
+                    },
+                    listener,
+                ));
+            }
+        }
     }
 }
 
@@ -107,6 +168,7 @@ impl Puppet {
         new_file_line_rules: bool,
         test_invalid_unicode: bool,
         ignored_tags: Vec<String>,
+        use_iob: bool,
     ) -> Result<Self, Error> {
         let builder = RealmBuilder::new().await?;
         let puppet = builder.add_child("puppet", "#meta/puppet.cm", ChildOptions::new()).await?;
@@ -181,14 +243,19 @@ impl Puppet {
         info!("Waiting for LogSink connection.");
         let mut stream = incoming_log_sink_requests.next().await.unwrap();
 
-        info!("Using IOBuffer. Waiting for LogSink.WaitForInterestChange");
-        let (ring_buffer, interest_listener) = demux_fidl(&mut stream).await?;
+        if use_iob {
+            info!("Using IOBuffer. Waiting for LogSink.WaitForInterestChange");
+        } else {
+            info!("Waiting for LogSink.ConnectStructured call.");
+        }
+        let (socket_or_iob, interest_listener) = demux_fidl(&mut stream, use_iob).await?;
 
         info!("Requesting info from the puppet.");
         let info = proxy.get_info().await?;
         info!("Ensuring we received the init message.");
+        assert!(!socket_or_iob.is_closed());
         let mut puppet = Self {
-            ring_buffer,
+            socket_or_iob,
             proxy,
             info,
             start_time,
@@ -230,12 +297,13 @@ impl Puppet {
 
     async fn read_record(&mut self, args: ReadRecordArgs) -> Result<Option<TestRecord>, Error> {
         loop {
-            let buf = self.ring_buffer.read_message().await.unwrap().1;
-            if buf.is_empty() {
+            let mut buf: Vec<u8> = vec![];
+            let bytes_read = self.socket_or_iob.read_datagram(&mut buf).await.unwrap();
+            if bytes_read == 0 {
                 continue;
             }
             return TestRecord::parse(TestRecordParseArgs {
-                buf: &buf,
+                buf: &buf[0..bytes_read],
                 new_file_line_rules: args.new_file_line_rules,
                 ignored_tags: &self.ignored_tags,
                 override_file_line: args.override_file_line,
@@ -247,12 +315,13 @@ impl Puppet {
     // as interest events happen outside the main thread due to HLCPP.
     async fn read_record_no_tid(&mut self, expected_tid: u64) -> Result<Option<TestRecord>, Error> {
         loop {
-            let buf = self.ring_buffer.read_message().await.unwrap().1;
-            if buf.is_empty() {
+            let mut buf: Vec<u8> = vec![];
+            let bytes_read = self.socket_or_iob.read_datagram(&mut buf).await.unwrap();
+            if bytes_read == 0 {
                 continue;
             }
             let mut record = TestRecord::parse(TestRecordParseArgs {
-                buf: &buf,
+                buf: &buf[0..bytes_read],
                 new_file_line_rules: self.new_file_line_rules,
                 ignored_tags: &self.ignored_tags,
                 override_file_line: true,
@@ -268,7 +337,10 @@ impl Puppet {
     }
 
     async fn test(&mut self) -> Result<(), Error> {
-        info!("Starting the LogSink iob test.");
+        info!(
+            "Starting the LogSink {} test.",
+            if matches!(self.socket_or_iob, SocketOrIob::Socket(_)) { "socket" } else { "iob" }
+        );
 
         let mut runner = TestRunner::new_with_rng(
             ProptestConfig { cases: 2048, failure_persistence: None, ..Default::default() },
