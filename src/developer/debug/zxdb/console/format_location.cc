@@ -33,7 +33,7 @@ OutputBuffer FormatLocation(const Location& loc, const FormatLocationOptions& op
 
   OutputBuffer result;
   if (opts.always_show_addresses) {
-    result = OutputBuffer(Syntax::kComment, fxl::StringPrintf("0x%" PRIx64 ", ", loc.address()));
+    result = OutputBuffer(Syntax::kComment, fxl::StringPrintf("0x%" PRIx64 " ", loc.address()));
   }
 
   bool show_file_line = opts.show_file_line && loc.file_line().is_valid();

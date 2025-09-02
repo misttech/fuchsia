@@ -152,7 +152,7 @@ TEST(CommandParser, NounSwitches) {
 
   Err err = ParseCommand("frame -", &output);
   EXPECT_TRUE(err.has_error());
-  EXPECT_EQ("Invalid switch \"-\". Usage: frame [ -v ] [ <id> [ <command> ... ] ]", err.msg());
+  EXPECT_EQ("Invalid switch \"-\". Usage: frame [ <id> [ <command> ... ] ]", err.msg());
 
   // Valid short switch.
   err = ParseCommand("frame -v", &output);

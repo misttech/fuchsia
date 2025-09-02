@@ -46,6 +46,7 @@ constexpr int kRawOutput = 3;
 constexpr int kForceRefresh = 4;
 constexpr int kInternalSwitch = 5;
 constexpr int kForceRemoteUnwind = 6;
+constexpr int kForceFrameAddresses = 7;
 
 // Sets formatting options commonly used for outputting stack frames for the "frame" noun.
 FormatStackOptions GetFormatStackOptions(const Command& cmd, ConsoleContext* console_context) {
@@ -64,13 +65,17 @@ FormatStackOptions GetFormatStackOptions(const Command& cmd, ConsoleContext* con
     opts.sync_options.remote_unwind = true;
   }
 
+  if (cmd.HasSwitch(kForceFrameAddresses)) {
+    opts.frame.loc.always_show_addresses = true;
+  }
+
   return opts;
 }
 
 // Frames ------------------------------------------------------------------------------------------
 
 const char kFrameShortHelp[] = "frame / f: Select or list stack frames.";
-const char kFrameUsage[] = "frame [ -v ] [ <id> [ <command> ... ] ]";
+const char kFrameUsage[] = "frame [ <id> [ <command> ... ] ]";
 const char kFrameHelp[] = R"(
   Selects or lists stack frames. Stack frames are only available for threads
   that are stopped. Selecting or listing frames for running threads will
@@ -86,6 +91,10 @@ const char kFrameHelp[] = R"(
   regardless of which is the active one.
 
 Options
+
+  -a
+  --address
+      Includes the address of each frame.
 
   -f
   --force
@@ -948,6 +957,7 @@ const std::vector<SwitchRecord>& GetNounSwitches() {
     switches.emplace_back(kForceRefresh, false, "force", 'f');
     switches.emplace_back(kInternalSwitch, false, "internal");
     switches.emplace_back(kForceRemoteUnwind, false, "force-remote-unwind");
+    switches.emplace_back(kForceFrameAddresses, false, "address", 'a');
   }
   return switches;
 }

@@ -65,7 +65,7 @@ TEST(FormatLocation, FormatLocation_Function) {
   FormatLocationOptions always_addr;
   always_addr.always_show_addresses = true;
   always_addr.show_file_line = true;
-  EXPECT_EQ("0x1234, Func() • /path/foo.cc:21", FormatLocation(loc, always_addr).AsString());
+  EXPECT_EQ("0x1234 Func() • /path/foo.cc:21", FormatLocation(loc, always_addr).AsString());
   EXPECT_EQ("Func() • /path/foo.cc:21", FormatLocation(loc, no_addrs_no_params).AsString());
 
   // Test with file shortening. This target has no files so everything is unique and will be
