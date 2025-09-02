@@ -25,14 +25,6 @@ class Puppet : public fuchsia::validate::logs::LogSinkPuppet {
     context_->outgoing()->AddPublicService(sink_bindings_.GetHandler(this));
   }
 
-  void StopInterestListener(StopInterestListenerCallback callback) override {
-    fuchsia_logging::LogSettingsBuilder log_settings;
-    log_settings.WithMinLogSeverity(fuchsia_logging::LogSeverity::Trace)
-        .DisableInterestListener()
-        .BuildAndInitialize();
-    callback();
-  }
-
   void GetInfo(GetInfoCallback callback) override {
     fuchsia::validate::logs::PuppetInfo info;
     info.pid = GetKoid(zx_process_self());

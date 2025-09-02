@@ -9,10 +9,7 @@
     ],
     program: {
         binary: "bin/sink_validator",
-        args: [
-            "--test-stop-listener",
-            "--test-invalid-unicode",
-        ],
+        args: [ "--test-invalid-unicode" ],
     },
     use: [
         {

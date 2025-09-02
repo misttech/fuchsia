@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use argh::FromArgs;
 use cm_rust::DictionaryDecl;
 use component_events::events::*;
@@ -18,8 +18,8 @@ use fidl_fuchsia_logger::{
     LogSinkWaitForInterestChangeResponder, MAX_DATAGRAM_LEN_BYTES,
 };
 use fidl_fuchsia_validate_logs::{
-    self as fvalidate, LogSinkPuppetMarker, LogSinkPuppetProxy, PuppetInfo, RecordSpec, MAX_ARGS,
-    MAX_ARG_NAME_LENGTH,
+    self as fvalidate, LogSinkPuppetMarker, LogSinkPuppetProxy, MAX_ARG_NAME_LENGTH, MAX_ARGS,
+    PuppetInfo, RecordSpec,
 };
 use fuchsia_async::{Socket, Task};
 use fuchsia_component::server::ServiceFs;
@@ -30,7 +30,7 @@ use futures::channel::mpsc;
 use futures::prelude::*;
 use log::*;
 use proptest::collection::vec;
-use proptest::prelude::{any, Arbitrary, Just, ProptestConfig, Strategy, TestCaseError};
+use proptest::prelude::{Arbitrary, Just, ProptestConfig, Strategy, TestCaseError, any};
 use proptest::prop_oneof;
 use proptest::test_runner::{Reason, RngAlgorithm, TestRng, TestRunner};
 use proptest_derive::Arbitrary;
@@ -43,9 +43,6 @@ use std::ops::Range;
 /// this Validator program.
 #[derive(Debug, FromArgs)]
 struct Opt {
-    /// true if the runtime supports stopping the interest listener
-    #[argh(switch)]
-    test_stop_listener: bool,
     /// messages with this tag will be ignored. can be repeated.
     #[argh(option, long = "ignore-tag")]
     ignored_tags: Vec<String>,
@@ -59,11 +56,8 @@ struct Opt {
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
-    let Opt { test_stop_listener, ignored_tags, test_invalid_unicode, use_iob } = argh::from_env();
-    Puppet::launch(true, test_stop_listener, test_invalid_unicode, ignored_tags, use_iob)
-        .await?
-        .test()
-        .await
+    let Opt { ignored_tags, test_invalid_unicode, use_iob } = argh::from_env();
+    Puppet::launch(true, test_invalid_unicode, ignored_tags, use_iob).await?.test().await
 }
 
 enum SocketOrIob {
@@ -172,7 +166,6 @@ async fn wait_for_severity(
 impl Puppet {
     async fn launch(
         new_file_line_rules: bool,
-        supports_stopping_listener: bool,
         test_invalid_unicode: bool,
         ignored_tags: Vec<String>,
         use_iob: bool,
@@ -297,15 +290,8 @@ impl Puppet {
         info!("Testing dot removal.");
         assert_dot_removal(&mut puppet, new_file_line_rules).await?;
         info!("Asserting interest listener");
-        assert_interest_listener(
-            &mut puppet,
-            new_file_line_rules,
-            &mut stream,
-            &mut incoming_log_sink_requests,
-            supports_stopping_listener,
-            interest_listener,
-        )
-        .await?;
+        assert_interest_listener(&mut puppet, new_file_line_rules, &mut stream, interest_listener)
+            .await?;
         Ok(puppet)
     }
 
@@ -455,17 +441,12 @@ async fn assert_logged_severities(
     Ok(())
 }
 
-async fn assert_interest_listener<S>(
+async fn assert_interest_listener(
     puppet: &mut Puppet,
     new_file_line_rules: bool,
     stream: &mut LogSinkRequestStream,
-    incoming_log_sink_requests: &mut S,
-    supports_stopping_listener: bool,
     listener: LogSinkWaitForInterestChangeResponder,
-) -> Result<(), Error>
-where
-    S: Stream<Item = LogSinkRequestStream> + std::marker::Unpin,
-{
+) -> Result<(), Error> {
     macro_rules! send_log_with_severity {
         ($severity:ident) => {
             let record = RecordSpec {
@@ -548,30 +529,20 @@ where
     .await
     .unwrap();
 
-    if supports_stopping_listener {
-        puppet.proxy.stop_interest_listener().await.unwrap();
-        // We're restarting the logging system in the child process so we should expect a re-connection.
-        *stream = incoming_log_sink_requests.next().await.unwrap();
-        if let LogSinkRequest::ConnectStructured { socket, control_handle: _ } =
-            stream.next().await.unwrap()?
-        {
-            puppet.socket_or_iob = SocketOrIob::Socket(Socket::from_socket(socket));
-        }
-    } else {
-        // Reset severity to TRACE so we get all messages
-        // in later tests.
-        let interest = Interest { min_severity: Some(Severity::Trace), ..Default::default() };
-        let listener = wait_for_severity(stream).await?;
-        listener.send(Ok(&interest))?;
-        info!("Waiting for interest to change back....");
-        assert_eq!(
-            puppet.read_record_no_tid(puppet.info.tid).await?.unwrap(),
-            RecordAssertion::builder(&puppet.info, Severity::Trace, new_file_line_rules)
-                .add_string("message", "Changed severity")
-                .build(puppet.start_time..zx::BootInstant::get())
-        );
-        info!("Changed interest back");
-    }
+    // Reset severity to TRACE so we get all messages
+    // in later tests.
+    let interest = Interest { min_severity: Some(Severity::Trace), ..Default::default() };
+    let listener = wait_for_severity(stream).await?;
+    listener.send(Ok(&interest))?;
+    info!("Waiting for interest to change back....");
+    assert_eq!(
+        puppet.read_record_no_tid(puppet.info.tid).await?.unwrap(),
+        RecordAssertion::builder(&puppet.info, Severity::Trace, new_file_line_rules)
+            .add_string("message", "Changed severity")
+            .build(puppet.start_time..zx::BootInstant::get())
+    );
+    info!("Changed interest back");
+
     Ok(())
 }
 

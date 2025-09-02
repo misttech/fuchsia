@@ -28,7 +28,4 @@ closed protocol LogSinkPuppet {
     strict EmitLog(struct {
         spec RecordSpec;
     }) -> ();
-
-    /// Disables the interest listener
-    strict StopInterestListener() -> ();
 };
