@@ -48,12 +48,16 @@ class CfiUnwinder : public UnwinderBase {
   // For other unwinders that want to check whether a value looks like a valid PC.
   bool IsValidPC(uint64_t pc);
 
+  // Fetch the corresponding CfiModuleInfo for the given PC value. The CfiModuleInfo will always
+  // attempt to load CFI directives for the given module, which can return errors if the CFI is
+  // missing or invalid. If this function returns Success, then the CFI was successfully loaded.
   Error GetCfiModuleInfoForPc(uint64_t pc, CfiModuleInfo** out);
 
-  // Returns the memory for the binary without attempting to load either .eh_frame or .debug_frame.
-  // This may be used by fallback unwinders to probe memory when debug info is unavailable or
-  // incomplete.
-  Error GetMemoryForPc(uint64_t pc, Memory** out);
+  // Returns the Module object for the binary without attempting to load either .eh_frame or
+  // .debug_frame. This may be used by fallback unwinders to probe memory when debug info is
+  // unavailable or incomplete. Errors are only returned if the given |pc| is not within any known
+  // modules. Callers must ensure that the binary or debug_info memory is valid before using them.
+  Error GetModuleForPc(uint64_t pc, Module** out);
 
  private:
   // |is_return_address| indicates whether the current PC is pointing to a return address,

@@ -181,21 +181,20 @@ Error CfiUnwinder::GetCfiModuleInfoForPc(uint64_t pc, CfiModuleInfo** out) {
   return Success();
 }
 
-Error CfiUnwinder::GetMemoryForPc(uint64_t pc, Memory** out) {
+Error CfiUnwinder::GetModuleForPc(uint64_t pc, Module** out) {
   auto module_it = module_map_.upper_bound(pc);
   if (module_it == module_map_.begin()) {
     return Error("%#" PRIx64 " is not covered by any module", pc);
   }
   module_it--;
-  uint64_t module_address = module_it->first;
   auto& module_info = module_it->second;
 
-  if (module_info.module.binary_memory) {
-    *out = module_info.module.binary_memory;
-    return Success();
-  }
-
-  return Error("Module at %#" PRIx64 " does not have binary memory", module_address);
+  // The actual low-level module object is owned by the CfiModuleInfo instance we have found, it's
+  // always valid at this point. It's up to callers to determine whether the binary or debug_info
+  // memory they want is valid before using them. The load address, mode, and address size will
+  // always be safe to read even if the ELF is invalid.
+  *out = &module_info.module;
+  return Success();
 }
 
 }  // namespace unwinder

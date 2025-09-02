@@ -27,13 +27,13 @@ class ArmEhAbiUnwinder : public UnwinderBase {
                  fit::callback<void(Error, Registers)> cb) override;
 
  private:
-  Error Step(Memory* stack, CfiModuleInfo* info, const Registers& current, Registers& next);
+  Error Step(Memory* stack, Module* elf_module, const Registers& current, Registers& next);
 
   void AsyncStep(AsyncMemory* stack, Registers current, bool is_return_address,
                  fit::callback<void(Error, Registers)> cb);
 
   // Looksup the EhAbiModule
-  Error GetEhAbiModuleFromModuleInfo(CfiModuleInfo* info, ArmEhAbiModule** out);
+  Error GetEhAbiModuleFromModuleInfo(Module* elf_module, ArmEhAbiModule** out);
 
   // Lazily loaded.
   std::map<uint32_t, std::unique_ptr<ArmEhAbiModule>> module_map_;

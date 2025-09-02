@@ -15,7 +15,7 @@ namespace unwinder {
 // Unwind when pc is in a Linux sigreturn function.
 class SigReturnUnwinder : public UnwinderBase {
  public:
-  // We need |CfiUnwinder::GetMemoryForPc|.
+  // We need |CfiUnwinder::GetModuleForPc|.
   explicit SigReturnUnwinder(CfiUnwinder* cfi_unwinder) : UnwinderBase(cfi_unwinder) {}
 
   Error Step(Memory* stack, const Frame& current, Frame& next) override {

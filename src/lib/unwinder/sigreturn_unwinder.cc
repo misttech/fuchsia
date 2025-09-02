@@ -5,6 +5,7 @@
 #include "src/lib/unwinder/sigreturn_unwinder.h"
 
 #include <array>
+#include <cinttypes>
 #include <cstdint>
 
 namespace unwinder {
@@ -45,11 +46,16 @@ Error SigReturnUnwinder::StepArm64(Memory* stack, const Registers& current, Regi
   // vDSO. Avoid attempting to load the module info using GetCfiModuleInfoForPc,
   // which will likely fail because the vDSO does not usually have .eh_frame or
   // .debug_frame sections.
-  Memory* memory;
-  if (Error error = cfi_unwinder_->GetMemoryForPc(pc, &memory); error.has_err()) {
+  Module* elf_module;
+  if (Error error = cfi_unwinder_->GetModuleForPc(pc, &elf_module); error.has_err()) {
     return error;
   }
 
+  if (elf_module->binary_memory == nullptr) {
+    return Error("Binary memory for module %#" PRIx64 " is not set!", elf_module->load_address);
+  }
+
+  Memory* memory = elf_module->binary_memory;
   // Check for the sigreturn instruction sequence.
   uint64_t instructions;
   if (Error error = memory->Read(pc, instructions); error.has_err()) {
