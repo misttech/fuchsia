@@ -25,7 +25,7 @@ class VersionTest(unittest.TestCase):
             sys.argv = [
                 "",
                 "--name",
-                "platform_fake_arch",
+                "fake_arch",
                 "--aib-list",
                 aib_list_path,
                 "--outdir",
@@ -41,7 +41,7 @@ class VersionTest(unittest.TestCase):
 
             expected = {
                 "release_info": {
-                    "name": "platform_fake_arch",
+                    "name": "fake_arch",
                     "repository": "fake_repository",
                     "version": "fake_version_123",
                 },
@@ -69,7 +69,7 @@ class VersionTest(unittest.TestCase):
             sys.argv = [
                 "",
                 "--name",
-                "platform_fake_arch",
+                "fake_arch",
                 "--aib-list",
                 aib_list_path,
                 "--repo",
@@ -83,7 +83,7 @@ class VersionTest(unittest.TestCase):
 
             expected = {
                 "release_info": {
-                    "name": "platform_fake_arch",
+                    "name": "fake_arch",
                     "repository": "fake_repository",
                     "version": "unversioned",
                 },

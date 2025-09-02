@@ -26,7 +26,7 @@ template("platform_artifacts") {
   assert(defined(invoker.version),
          "platform_artifacts(\"target_name\") must define `version`")
 
-  artifacts_name = "platform_${target_cpu}"
+  artifacts_name = target_cpu
 
   files = {
     aib_list = "$target_out_dir/$target_name/aib_list.json"
