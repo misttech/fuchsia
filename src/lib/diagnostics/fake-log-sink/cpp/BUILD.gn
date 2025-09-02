@@ -5,6 +5,7 @@
 import("//tools/cmc/build/expect_includes.gni")
 
 source_set("cpp") {
+  testonly = true
   output_name = "fake_log_sink"
   sources = [
     "fake_log_sink.cc",
@@ -12,6 +13,7 @@ source_set("cpp") {
   ]
   deps = [
     ":shard",
+    "//src/lib/diagnostics/fake-log-sink/rust:rust_ffi",
     "//src/lib/diagnostics/log/message/rust/cpp-log-decoder:lib",
   ]
   public_deps = [

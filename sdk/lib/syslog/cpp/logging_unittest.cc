@@ -391,14 +391,16 @@ TEST(LogConnection, Basic) {
   auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
   FakeLogSink log_sink(FUCHSIA_LOG_INFO, std::move(endpoints->server));
 
-  auto connection = internal::LogConnection::Create(std::move(endpoints->client));
-  ASSERT_EQ(connection.status_value(), ZX_OK);
+  auto result = internal::LogConnection::Create(std::move(endpoints->client));
+  ASSERT_EQ(result.status_value(), ZX_OK);
 
-  ASSERT_TRUE(connection->IsValid());
+  auto [connection, min_severity] = *std::move(result);
+
+  ASSERT_TRUE(connection.IsValid());
 
   LogBuffer buffer;
   buffer.BeginRecord(FUCHSIA_LOG_INFO, {}, {}, "foo", 1, 2, 3);
-  ASSERT_EQ(connection->FlushBuffer(buffer).status_value(), ZX_OK);
+  ASSERT_EQ(connection.FlushBuffer(buffer).status_value(), ZX_OK);
 
   std::vector<uint8_t> record = log_sink.ReadRecord();
 
@@ -407,54 +409,17 @@ TEST(LogConnection, Basic) {
   EXPECT_EQ(memcmp(record.data(), span.data(), record.size()), 0);
 }
 
-TEST(LogConnection, BlockIfFull) {
+TEST(LogConnection, EncodingError) {
   auto endpoints = fidl::CreateEndpoints<fuchsia_logger::LogSink>();
   FakeLogSink log_sink(FUCHSIA_LOG_INFO, std::move(endpoints->server));
 
-  auto connection = internal::LogConnection::Create(std::move(endpoints->client));
-  ASSERT_EQ(connection.status_value(), ZX_OK);
+  auto result = internal::LogConnection::Create(std::move(endpoints->client));
+  ASSERT_EQ(result.status_value(), ZX_OK);
 
-  ASSERT_TRUE(connection->IsValid());
+  auto [connection, min_severity] = *std::move(result);
 
-  // Keep logging and we should eventually get ZX_ERR_SHOULD_WAIT.
-  LogBuffer buffer;
-  buffer.BeginRecord(FUCHSIA_LOG_INFO, {}, {}, "foo", 1, 2, 3);
+  ASSERT_TRUE(connection.IsValid());
 
-  int count = 0;
-  for (;;) {
-    auto result = connection->FlushBuffer(buffer);
-    if (result.is_error()) {
-      ASSERT_EQ(result.status_value(), ZX_ERR_SHOULD_WAIT);
-      break;
-    }
-    ++count;
-  }
-
-  zx::socket socket;
-  ASSERT_EQ(connection->socket().duplicate(ZX_RIGHT_SAME_RIGHTS, &socket), ZX_OK);
-  internal::LogConnection connection2(std::move(socket), {.block_if_full = true});
-
-  std::thread thread([&] {
-    // Delay reading the message to make it more likely that we block when flushing the buffer.
-    usleep(10000);
-
-    for (int i = 0; i < count; ++i) {
-      ASSERT_FALSE(log_sink.ReadRecord().empty());
-    }
-  });
-
-  for (int i = 0; i < count; ++i) {
-    ASSERT_EQ(connection2.FlushBuffer(buffer).status_value(), ZX_OK);
-  }
-
-  thread.join();
-}
-
-TEST(LogConnection, EncodingError) {
-  zx::socket client, server;
-  ASSERT_EQ(zx::socket::create(0, &client, &server), ZX_OK);
-
-  internal::LogConnection connection(std::move(client), {});
   LogBuffer buffer;
   std::string message;
   message.resize(sizeof internal::LogBufferData::data, 'a');
