@@ -375,9 +375,24 @@ class BazelRepositoryContext(object):
         print(message, file=sys.stdout)
 
     def run_buildifier(self, args: T.List[str]) -> bool:
+        # We are seeing errors in our infrastructure builds that are saying that
+        # files have lint errors but when we look at the contents of those files
+        # they seem fine. For now, we will retry buildifier if it fails to see if
+        # this reduces our flakes. We only print out errors on the final attempt
+        # to reduce noise for real errors.
+        max_allowed_attempts = 2
+        for attempt in range(max_allowed_attempts):
+            if self._inner_run_buildifier(
+                args, attempt == max_allowed_attempts - 1
+            ):
+                return True
+        return False
+
+    def _inner_run_buildifier(
+        self, args: T.List[str], report_error: bool
+    ) -> bool:
         if not self._buildifier:
             return True
-
         command = (
             [self._buildifier.resolve()]
             + args
@@ -393,27 +408,31 @@ class BazelRepositoryContext(object):
             )
             return True
         except subprocess.CalledProcessError as e:
-            print(
-                f"Buildifier failed with the following error code: '{e.returncode}'"
-            )
-            print("Listing files with errors...\n")
+            # Only report errors if this is the final attempt
+            if report_error:
+                print(
+                    f"Buildifier failed with the following error code: '{e.returncode}'"
+                )
+                print(f"stderr: {e.stderr}")
+                print("Listing files with errors...\n")
 
-            failed_files = set()
-            for line in e.stderr.splitlines():
-                # Files have the format "some/file:1:2 # failure reason"
-                # or "some/file # failure reason". Try to grab the file
-                # path from the stderr.
-                file_path_str = line.split(maxsplit=1)[0].split(":")[0]
+                failed_files = set()
+                for line in e.stderr.splitlines():
+                    # Files have the format "some/file:1:2 # failure reason"
+                    # or "some/file # failure reason". Try to grab the file
+                    # path from the stderr.
+                    file_path_str = line.split(maxsplit=1)[0].split(":")[0]
 
-                if file_path_str:
-                    file_path = Path(self._output_dir) / file_path_str
-                    failed_files.add(file_path)
+                    if file_path_str:
+                        file_path = Path(self._output_dir) / file_path_str
+                        failed_files.add(file_path)
 
-            for file_path in sorted(failed_files):
-                try:
-                    print(file_path.read_text())
-                except FileNotFoundError:
-                    print(f"file not found: {file_path}")
+                for file_path in sorted(failed_files):
+                    try:
+                        print(f"File: {file_path}")
+                        print(file_path.read_text())
+                    except FileNotFoundError:
+                        print(f"file not found: {file_path}")
         return False
 
 
