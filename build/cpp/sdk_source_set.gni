@@ -233,6 +233,13 @@ template("sdk_source_set") {
   if (defined(invoker.include_base)) {
     include_base = invoker.include_base
     assert(include_base != "include", "No need to specify the default value.")
+
+    # Absolute paths should not be used. The exceptions are "//sdk", which is
+    # widely used, and some internal libraries.
+    assert(
+        include_base != "/" + string_replace(include_base, "/", "", 1) ||
+            include_base == "//sdk" || make_internal_atom,
+        "Absolute paths are not allowed. The include base must be within the current directory.")
   } else {
     include_base = "include"
   }

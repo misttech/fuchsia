@@ -374,8 +374,8 @@ template("sdk_prebuilt_library_impl") {
     include_base = invoker.include_base
     assert(include_base != "include", "No need to specify the default value.")
     assert(
-        include_base != "//sdk",
-        "Use of the parent directory for include structure is not supported for prebuilt libraries.")
+        include_base != "/" + string_replace(include_base, "/", "", 1),
+        "Absolute paths are not allowed. The include base must be within the current directory.")
   } else if (!no_headers) {
     include_base = "include"
   }
