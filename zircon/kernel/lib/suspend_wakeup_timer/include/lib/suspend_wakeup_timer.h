@@ -66,8 +66,7 @@
 // in a row.  Once CancelTimer has been called, it is guaranteed that there are
 // no longer any callbacks in flight, however it does *not* guarantee that the
 // user won the race to cancel a timer which had been set up, but may not have
-// fired yet.  (TODO(johngro): Make certain that this statement holds true when
-// using the generic system timer in addition to the ARMv7 timers.)
+// fired yet.
 //
 // Finally, in the BOOT_CPU's IdlePowerThread itself, when the system is
 // supposed to be in the suspend state, it *must* call EnsureStarted to make
@@ -80,21 +79,25 @@
 //
 // So, the summary of the usage protocol is as follows.
 //
-// On the thread coordinating the suspend operation:
-// 1) At the start of a suspend operation, configure the timer using a call to
-//    SetResumeDeadline.
-// 2) Tell the BOOT_CPU IdlePowerThread to enter the suspended state.
-// 3) After control is returned, for any reason, call CancelTimer to set up for
-//    the next suspend cycle.
-//
-// And, when interrupts are disabled, just before the BOOT_CPU's IdlePowerThread
-// is about to suspend itself call EnsureStarted.
+// 1) At the start of a suspend operation call SetResumeDeadline to configure
+//    the time to wake up and resume the system.
+// 2) In the BOOT_CPU's IdlePowerThread itself, just before entering a suspended
+//    state and with interrupts still disabled, call EnsureStarted to make sure
+//    that the timer is running if it needs to be.
+// 3) After control is returned to the coordinator thread, always call
+//    CancelTimer as we unwind.
 //
 // ## Restrictions
 //
-// During execution of a user's registered callback, it is important that no
-// methods of the callback's SuspendWakeupTimer be called.  Doing so risks
-// deadlock.
+// SuspendWakeupTimer callbacks will take place at hard IRQ time.  Operations
+// which may need to block (such as holding a Mutex) are not allowed.  That
+// said, no spinlocks are held during the callback itself.  It is safe for the
+// callback to call methods on the SuspendWakeupTimer instance itself, however
+// it is anticipated that there is little to no reason to do so.  Keep in mind,
+// however, that it is illegal to call SetResumeDeadline a second time without
+// having canceled the timer first.  If a callback _wanted_ to re-program its
+// deadline during the operation itself, `CancelTimer` must still be called
+// first to ensure that the timer is ready to be set up again.
 //
 class SuspendWakeupTimer {
  public:
@@ -141,24 +144,58 @@ class SuspendWakeupTimer {
   }
 
   void DoCallback(zx_instant_boot_t now) {
-    // It is important that we not hold any locks when calling our callback. Timer
-    // implementations may be holding internal locks during their callback that
-    // they also need to hold when we set them up.  We hold our `lock_` while
-    // setting up our timer (which might hold an internal timer lock), so if we
-    // attempt to hold it here, we might expose ourselves to an A/B deadlock.
+    // Don't hold any locks when calling our callback.  Our underlying timers
+    // don't hold any locks, and if we don't hold any locks either, it becomes
+    // safe for the callback to call its own timer instance's methods while
+    // executing.
     //
-    // Why is it safe for us to read `resume_at_` then?  Isn't a formal data race?
-    // In this case, it is OK because of the specifics of our API.  We define 3
-    // operations:
+    // But, why is it safe for us to read `resume_at_` then?  What is to prevent
+    // a callback from running on the boot CPU and attempting to read
+    // resume_at_, while at the same time someone is calling cancel which is
+    // resetting resume_at_ back to ZX_TIME_INFINITE?  Isn't a formal data race?
     //
-    // + SetResumeDeadline: holds the lock but will ASSERT if started_ is true.
-    //   So, resume_at_ only changes if there is not a callback in flight.
-    // + EnsureStarted: holds the lock and calls into our timer, but only if we are
-    //   not already started (meaning there is no HW timer in flight).  Also, it
-    //   never changes the value of resume_at_ (only examines it).
-    // + Cancel: Holds the lock and resets both started_ and resume_at_, but only
-    //   after canceling the underlying timer, which will guarantee that there is
-    //   no callback in flight.
+    // Turns out, the answer is "no", but the reason why is not all that
+    // obvious.  There are 4 operations we need to consider, the 3 public
+    // interface methods and the callback itself.
+    //
+    // The 3 public interface methods all hold the timer's spinlock as they read
+    // and write.  The mutually exclusive nature of the lock guarantees that
+    // there are no formal races, and that the value observed will always be
+    // "correct" for the internal state of the timer.  So, this leaves the
+    // callback itself, and its interaction with the 3 public methods, to
+    // consider.
+    //
+    // + CancelTimer: Cancel operations will mutate the resume_at_ member of the
+    //   timer, but before doing so, they will call "cancel" on their underlying
+    //   timer.  All existing low level timer implementations guarantee that,
+    //   "after cancel is called, any callback in flight has been successfully
+    //   canceled and will not run --or--, the callback has already run to
+    //   completion.  So, if the callback is either finished or never will be
+    //   run, and then resume_at_ is mutated, there is no possibility that the
+    //   value can be written (from the method) while concurrently being read by
+    //   the callback.  So, no formal race.
+    //
+    // + SetResumeDeadline: It is illegal for a user to set a new resume
+    //   deadline without first having called CancelTimer.  SetResumeDeadline
+    //   will obtain lock_, synchronizing it with any CancelTimer operations,
+    //   before checking the value in resume_at_, and will ASSERT if the timer
+    //   has not been first canceled.  So, if there is a timer callback in
+    //   flight, cancel has not been called, and the system will panic (because
+    //   of the protocol violation).  If cancel _has_ been called, then there is
+    //   no timer in flight, and a callback cannot become in-fight for the
+    //   duration of the Set operation (because holding lock_ prevents
+    //   EnsureStarted from being called concurrently).
+    //
+    // + EnsureStarted: Holds the lock, but never mutates resume_at_, meaning
+    //   that there is no possibility of a formal race.
+    //
+    // Please note: even though there is no chance of a formal race here, we
+    // still declare resume_at_ as a RelaxedAtomic.  Why?  Because there is no
+    // real penalty to be paid for relaxed atomic access to variables on the
+    // architectures we support, and it makes it easier for a reader to know
+    // that there is no chance of a formal data race by simply observing the
+    // atomic nature of the member, without having to understand the more
+    // complex chain of reasoning given above.
     //
     callback_(now, resume_at_);
   }

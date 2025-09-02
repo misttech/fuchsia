@@ -184,7 +184,7 @@ void Armv7MmioTimer::Timer::Setup() {
                                                                       : interrupt_polarity::HIGH;
 
       configure_interrupt(irq(), irq_mode, irq_polarity);
-      register_int_handler(irq(), [this]() { IrqHandler(); });
+      register_int_handler(irq(), [this]() { IrqHandlerThunk(); });
       unmask_interrupt(irq());
     } else {
       supported_ = false;
@@ -199,6 +199,7 @@ zx::result<zx_duration_t> Armv7MmioTimer::Timer::TimeUntilDeadline() const {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
+  Guard<SpinLock, IrqSave> guard(&irq_lock_);
   if (!enabled_) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
@@ -212,29 +213,133 @@ zx::result<zx_duration_t> Armv7MmioTimer::Timer::TimeUntilDeadline() const {
   return zx::ok(static_cast<zx_duration_t>(owner_.ticks_to_nsec_.Scale(deadline - now)));
 }
 
-void Armv7MmioTimer::Timer::IrqHandler() {
-  Guard<SpinLock, IrqSave> guard(&irq_lock_);
-  if (enabled_) {
-    Disable();
+void Armv7MmioTimer::Timer::IrqHandlerThunk() {
+  DEBUG_ASSERT(arch_ints_disabled());
+  Guard<SpinLock, NoIrqSave> guard(&irq_lock_);
 
-    // TODO(johngro): Figure out the rules here for what users are allowed to do
-    // as the IRQ fires. Right now, the answer is "not much" as we are holding the
-    // irq lock.
-    if (user_handler_ != nullptr) {
-      user_handler_();
+  // If someone canceled us after the handler fired, but before we made it to
+  // this point, then the Cancel operation won the race.  Don't run the handler,
+  // just get out.
+  if (!enabled_) {
+    return;
+  }
+
+  // Is our deadline in the future?  This is possible if someone reset the
+  // deadline on another CPU after the interrupt fired, but before it made it
+  // to here.  If this happens, the handler lost the race, and we should just
+  // get out.
+  const uint64_t deadline = CVAL::Get().ReadFrom(&timer_mmio_).reg_value();
+  const uint64_t now = ticks();
+  if (deadline >= now) {
+    return;
+  }
+
+  // Looks like the timer fired while we were still enabled.  Disable the timer,
+  // and dispatch the handler if we have one registered.
+  DisableLocked();
+
+  if (user_handler_ != nullptr) {
+    // We have a handler.  Record that fact that we have an active IRQ handler
+    // in flight by recording our CPU number in the `active_cpu_` member
+    // variable, the run the handler.
+    const cpu_num_t current_cpu = arch_curr_cpu_num();
+    active_cpu_.store(current_cpu, ktl::memory_order_relaxed);
+
+    // Note that we disable lock analysis here because we want to access the
+    // `user_handler_`, which is typically protected by the `irq_lock_`.  It
+    // is safe to access user_handler_ here _without_ the lock, because
+    // `SetHandler` will not allow the user_handler_ to be changed  while
+    // `active_cpu_` is something other than INVALID_CPU.
+    IrqHandlerResult irq_result;
+    guard.CallUnlocked([this, &irq_result]()
+                           TA_NO_THREAD_SAFETY_ANALYSIS { irq_result = user_handler_(); });
+
+    // Now that we are back inside of the lock, but before we mark ourselves as
+    // no longer in flight, If the interrupt handler asked us to unregister, do
+    // so now.
+    if (irq_result == IrqHandlerResult::Unregister) {
+      user_handler_ = IrqHandler{};
     }
+
+    // We are back inside of the `irq_lock_` once again.  The IRQ handler is
+    // finished, reset the `active_cpu_` back to INVALID_HANDLE.
+    active_cpu_.store(INVALID_CPU, ktl::memory_order_release);
   }
 }
 
-zx_status_t Armv7MmioTimer::Timer::SetHandler(interrupt_handler_t handler, cpu_mask_t mask) {
-  Guard<SpinLock, IrqSave> guard(&irq_lock_);
-  Disable();
+zx_status_t Armv7MmioTimer::Timer::SetHandler(IrqHandler handler, cpu_mask_t mask) {
+  InterruptDisableGuard irqd;
 
-  if (const zx_status_t status = set_interrupt_affinity(irq(), mask); status != ZX_OK) {
-    return status;
+  // If we are resetting our handler, make sure to destroy the old handler
+  // outside of the spinlock code by transferring it to old_handler first before
+  // dropping the lock.
+  IrqHandler old_handler{};
+  const cpu_num_t current_cpu = arch_curr_cpu_num();
+  while (true) {
+    Guard<SpinLock, NoIrqSave> guard(&irq_lock_);
+
+    // Users are not allowed to replace and existing handler with a new existing handler.  They must
+    // explicitly reset the existing handler first.
+    if ((user_handler_ != nullptr) && (handler != nullptr)) {
+      return ZX_ERR_BAD_STATE;
+    }
+
+    // Is there an IRQ handler in flight?  If it is running on a different CPU,
+    // drop our lock and wait for it to finish.  If it is running on the same
+    // CPU as us, the it is in the process of calling is.  It is not legal to
+    // reset the IRQ handler from within the IRQ handler itself.
+    const cpu_num_t active_cpu = active_cpu_.load(ktl::memory_order_acquire);
+    if (active_cpu != INVALID_CPU) {
+      if (active_cpu != current_cpu) {
+        guard.Release();
+        arch::Yield();
+        continue;
+      }
+      return ZX_ERR_BAD_STATE;
+    }
+
+    DisableLocked();
+
+    if (const zx_status_t status = set_interrupt_affinity(irq(), mask); status != ZX_OK) {
+      return status;
+    }
+
+    old_handler = ktl::move(user_handler_);
+    user_handler_ = ktl::move(handler);
+
+    return ZX_OK;
+  }
+}
+
+zx_status_t Armv7MmioTimer::Timer::CancelTimer() {
+  if (!supported_) {
+    return ZX_ERR_NOT_SUPPORTED;
   }
 
-  user_handler_ = ktl::move(handler);
+  // Make sure that interrupts remain disabled, even after we drop the lock to
+  // sync with any in-flight IRQ handler.
+  InterruptDisableGuard irqd;
+  {
+    // Lock and make sure the timer is disabled.
+    Guard<SpinLock, IrqSave> guard(&irq_lock_);
+    DisableLocked();
+  }
+
+  // Now that we have dropped the lock, sync with any IrqHandler which may
+  // currently be in flight. There is a handler in flight if the `active_cpu_`
+  // member is not INVALID_CPU.  Interrupt are currently disabled, so if the
+  // `active_cpu_` member is valid, and equal to our current cpu, then this is a
+  // call to Cancel being made from the IrqHandler itself, and we can
+  // immediately return.  Otherwise we wait until we see the active CPU achieve
+  // INVALID at least one.
+  const cpu_num_t current_cpu = arch_curr_cpu_num();
+  while (true) {
+    const cpu_num_t active_cpu = active_cpu_.load(ktl::memory_order_acquire);
+    if ((active_cpu == current_cpu) || (active_cpu == INVALID_CPU)) {
+      break;
+    }
+    arch::Yield();
+  }
 
   return ZX_OK;
 }
@@ -244,10 +349,26 @@ zx_status_t Armv7MmioTimer::Timer::SetTimer(uint64_t ticks_deadline) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  Guard<SpinLock, IrqSave> guard(&irq_lock_);
-  Disable();
-  CVAL::Get().FromValue(ticks_deadline).WriteTo(&timer_mmio_);
-  Enable();
+  InterruptDisableGuard irqd;
+  const cpu_num_t current_cpu = arch_curr_cpu_num();
+
+  while (true) {
+    Guard<SpinLock, NoIrqSave> guard(&irq_lock_);
+    // If there is an IRQ handler in flight, and it is not running on this CPU
+    // (meaning it is calling us), wait until it completes before setting the
+    // timer.
+    const cpu_num_t active_cpu = active_cpu_.load(ktl::memory_order_acquire);
+    if ((active_cpu != current_cpu) && (active_cpu != INVALID_CPU)) {
+      guard.Release();
+      arch::Yield();
+      continue;
+    }
+
+    DisableLocked();
+    CVAL::Get().FromValue(ticks_deadline).WriteTo(&timer_mmio_);
+    EnableLocked();
+    break;
+  }
 
   return ZX_OK;
 }

@@ -287,10 +287,27 @@ static int cmd_av7t(int argc, const cmd_args* argv, uint32_t flags) {
       return ZX_OK;
     }
 
+    Armv7MmioTimer::Timer& inner_timer =
+        (type == Armv7MmioTimer::Type::PCT) ? timer->pct_timer() : timer->vct_timer();
+
+    if (!inner_timer.supported()) {
+      printf("Timer %lu:%s is not supported.\n", argv[2].u, argv[3].str);
+      return ZX_ERR_NOT_SUPPORTED;
+    }
+
+    zx_status_t status = inner_timer.SetHandler([&inner_timer]() {
+      printf("%s Timer FIRED (IRQ %u)!\n", inner_timer.type_name(), inner_timer.irq());
+      return Armv7MmioTimer::IrqHandlerResult::Unregister;
+    });
+
+    if (status != ZX_OK) {
+      printf("Timer %lu:%s is busy!\n", argv[2].u, argv[3].str);
+      return status;
+    }
+
     printf("Setting timer %lu:%s to fire in %lu mSec\n", argv[2].u, argv[3].str, argv[4].u);
-    const zx_status_t status = (type == Armv7MmioTimer::Type::PCT)
-                                   ? timer->pct_timer().SetRelativeTimer(ZX_MSEC(argv[4].u))
-                                   : timer->vct_timer().SetRelativeTimer(ZX_MSEC(argv[4].u));
+    status = inner_timer.SetRelativeTimer(ZX_MSEC(argv[4].u));
+
     if (status != ZX_OK) {
       printf("Failed to set timer %lu:%s (err = %d)\n", argv[2].u, argv[3].str, status);
     }

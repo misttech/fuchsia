@@ -19,10 +19,88 @@
 #include <ktl/optional.h>
 #include <ktl/unique_ptr.h>
 
+// # Armv7MmioTimer
+//
+// Armv7MmioTimer and its associated inner class, Armv7MmioTimer::Timer provide
+// an interface to the memory mapped timer used described in the v7 ARM ARM.
+//
+// Armv7MmioTimer represents a block of timer registers, while
+// Armv7MmioTimer::Timer represents the specific PCT and VCT based timers within
+// that block, when available.
+//
+// ## Usage.
+//
+// ### Finding a timer.
+//
+// After initialization, which takes place just before LK_INIT_LEVEL_PLATFORM,
+// users may find a timer to use with the Armv7MmioTimer::Get method.  There are
+// a maximum of Armv7MmioTimer::kMaxTimers timer blocks in the system.  When a
+// given block index is not detected or is otherwise unusable, the
+// Armv7MmioTimer::Get method will return nullptr.
+//
+// Each block may contain a PCT based timer, a VCT based timer, or both.  They
+// may be accessed via the pct_timer() and vct_timer() methods of a timer block
+// instance, and are usable if their `supported()` members return true.
+//
+// ### Configuring a handler.
+//
+// In order to receive notification that a timer has fired, users must register
+// an Armv7MmioTimer::IrqHandler with the timer via the Timer::SetHandler
+// method.  This is an instance of a fit::inline_function which takes no
+// arguments and returns a Armv7MmioTimer::IrqHandlerResult.
+//
+// Only one handler can be registered at once, and attempts to register a second
+// handler will return an error.  In order to change an existing handler for a
+// Timer instance, users must first call ResetHandler.
+//
+// ### Using the timer.
+//
+// #### Programming.
+//
+// After configuring a handler, users may read the timer's current clock value
+// via the `ticks()` method.  Additionally, the Timer's tick rate may be read
+// from its parent timer block's `ticks_to_nsec()` method.  An absolute deadline
+// may be programmed via the SetTimer method, which takes a deadline expressed
+// in the timer's specific ticks timeline.  Alternatively, a relative timer may
+// be set using the SetRelativeTimer helper method, which takes a deadline
+// expressed in nanosecond units.
+//
+// #### Canceling.
+//
+// A programmed timer may be canceled at any time by calling the CancelTimer
+// method.  While canceling a running timer is a race, the Timer instance
+// guarantees that after CancelTimer has been called, any handlers will have
+// been successfully canceled and will not run, or they will have already run to
+// completion.  Calls to CancelTimer are idempotent.
+//
+// #### Handling a timer event.
+//
+// When a timer finally fires, a user's registered handler will be called.  This
+// is done at hard IRQ time and with interrupts disabled.  Blocking is not
+// allowed.  The timer always acts as a one-shot.  When the timer handler has
+// been called, the timer is effectively canceled.  Users may safely reset their
+// timer during their timer handler by calling either SetTimer or
+// SetRelativeTimer. They are also free to cancel their timer using CancelTimer,
+// however since timers are effectively already canceled at the start of the
+// handler, this would only matter if they had already set the timer during the
+// handler and suddenly wanted to cancel it.
+//
+// Users *may not* change their registered handler during their handler
+// callback.  Any attempt to do so with produce an error.  That said, timer
+// handlers may choose to stay registered after the handler has run by retuning
+// IrqHandlerResult::RemainRegistered, or they have have their handler
+// unregistered after completing by returning IrqHandlerResult::Unregister.  Care
+// must be taken, however, as the destruction of the inline function will take
+// place at IRQ time.  In order to safely unregister the handler at this time,
+// the inline function must not hold and references to anything which would
+// require blocking to destroy (such as a heap allocation).
+//
 class Armv7MmioTimer {
  public:
   class Timer;  // fwd decl
   enum class Type { PCT, VCT };
+  enum class IrqHandlerResult { RemainRegistered, Unregister };
+  using IrqHandler = fit::inline_function<IrqHandlerResult(), sizeof(void*)>;
 
   struct Irq {
     uint32_t num;
@@ -71,7 +149,16 @@ class Armv7MmioTimer {
 
     void set_supported(bool value) { supported_ = value; }
     bool supported() const { return supported_; }
-    bool enabled() const { return enabled_; }
+
+    bool enabled() const TA_EXCL(irq_lock_) {
+      Guard<SpinLock, IrqSave> guard(&irq_lock_);
+      return enabled_;
+    }
+
+    bool has_handler() const TA_EXCL(irq_lock_) {
+      Guard<SpinLock, IrqSave> guard(&irq_lock_);
+      return user_handler_ != nullptr;
+    }
 
     uint32_t irq() const { return irq_.num; }
     Type type() const { return type_; }
@@ -81,30 +168,26 @@ class Armv7MmioTimer {
 
     void Setup();
 
-    zx_status_t SetHandler(interrupt_handler_t handler,
-                           cpu_mask_t mask = cpu_num_to_mask(BOOT_CPU_ID));
-    zx_status_t CancelTimer() {
-      Guard<SpinLock, IrqSave> guard(&irq_lock_);
-      if (!supported_) {
-        return ZX_ERR_NOT_SUPPORTED;
-      }
-      Disable();
-      return ZX_OK;
-    }
-    zx_status_t SetTimer(uint64_t ticks_deadline);
-    zx_status_t SetRelativeTimer(zx_duration_t relative_timout);
+    zx_status_t SetHandler(IrqHandler handler, cpu_mask_t mask = cpu_num_to_mask(BOOT_CPU_ID))
+        TA_EXCL(irq_lock_);
+    zx_status_t ResetHandler() TA_EXCL(irq_lock_) { return SetHandler(IrqHandler{}); }
+    zx_status_t CancelTimer() TA_EXCL(irq_lock_);
+    zx_status_t SetTimer(uint64_t ticks_deadline) TA_EXCL(irq_lock_);
+    zx_status_t SetRelativeTimer(zx_duration_t relative_timout) TA_EXCL(irq_lock_);
 
     zx::result<zx_duration_t> TimeUntilDeadline() const;
 
    private:
-    void IrqHandler();
+    void IrqHandlerThunk();
 
-    void Disable() TA_REQ(irq_lock_) {
+    zx_status_t CancelTimerLocked() TA_REQ(irq_lock_);
+
+    void DisableLocked() TA_REQ(irq_lock_) {
       CTL::Get().FromValue(0).set_ENABLE(0).set_IMASK(1).WriteTo(&timer_mmio_);
       enabled_ = false;
     }
 
-    void Enable() TA_REQ(irq_lock_) {
+    void EnableLocked() TA_REQ(irq_lock_) {
       CTL::Get().FromValue(0).set_ENABLE(1).set_IMASK(0).WriteTo(&timer_mmio_);
       enabled_ = true;
     }
@@ -116,10 +199,11 @@ class Armv7MmioTimer {
     const Type type_;
     const Irq irq_;
     bool supported_{false};
-    bool enabled_{false};
 
-    DECLARE_SPINLOCK(Timer) irq_lock_;
-    TA_GUARDED(irq_lock_) interrupt_handler_t user_handler_ { nullptr };
+    mutable DECLARE_SPINLOCK(Timer) irq_lock_;
+    TA_GUARDED(irq_lock_)::Armv7MmioTimer::IrqHandler user_handler_ { nullptr };
+    TA_GUARDED(irq_lock_) bool enabled_ { false };
+    ktl::atomic<cpu_num_t> active_cpu_{INVALID_CPU};
   };
 
  private:

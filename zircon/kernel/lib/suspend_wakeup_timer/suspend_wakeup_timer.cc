@@ -51,8 +51,14 @@ class Armv7MmioSuspendWakeupTimer : public SuspendWakeupTimer {
       : SuspendWakeupTimer(ktl::move(callback)), timer_(timer) {
     // Make certain that our timer is canceled, then register our handler.
     ASSERT(timer_.CancelTimer() == ZX_OK);
-    const zx_status_t status = timer_.SetHandler([this]() { DoCallback(current_boot_time()); },
-                                                 cpu_num_to_mask(BOOT_CPU_ID));
+
+    const zx_status_t status = timer_.SetHandler(
+        [this]() {
+          DoCallback(current_boot_time());
+          return Armv7MmioTimer::IrqHandlerResult::RemainRegistered;
+        },
+        cpu_num_to_mask(BOOT_CPU_ID));
+
     ASSERT(status == ZX_OK);
   }
 
