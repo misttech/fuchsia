@@ -8,13 +8,13 @@ use fastboot_file_discovery::{FastbootFileWatcher, get_fastboot_devices};
 use futures::channel::mpsc::UnboundedSender;
 use std::path::PathBuf;
 
-pub(crate) struct FastbootWatcher {
+pub struct FastbootWatcher {
     // Task for the drain loop
     _watcher: FastbootFileWatcher,
 }
 
 impl FastbootWatcher {
-    pub(crate) fn new(
+    pub fn new(
         instance_root: PathBuf,
         sender: UnboundedSender<TargetEvent>,
     ) -> Result<Self, Error> {

@@ -13,14 +13,16 @@ use bitflags::bitflags;
 use futures::Stream;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use manual_targets::watcher::{
-    ManualTargetEvent, ManualTargetWatcher, recommended_watcher as manual_recommended_watcher,
+    ManualTargetEvent, ManualTargetEventHandler, ManualTargetWatcher,
+    recommended_watcher as manual_recommended_watcher,
 };
-use mdns_discovery::{MdnsWatcher, recommended_watcher};
+use mdns_discovery::{MdnsEventHandler, MdnsWatcher, recommended_watcher};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
 use usb_fastboot_discovery::{
-    FastbootEvent, FastbootUsbWatcher, recommended_watcher as fastboot_watcher,
+    FastbootEvent, FastbootEventHandler, FastbootUsbWatcher,
+    recommended_watcher as fastboot_watcher,
 };
 // TODO(colnnelson): Long term it would be nice to have this be pulled into the mDNS library
 // so that it can speak our language. Or even have the mdns library not export FIDL structs
@@ -37,9 +39,10 @@ pub mod query;
 #[allow(dead_code)]
 /// A stream of new devices as they appear on the bus. See [`wait_for_devices`].
 pub struct TargetStream {
+    /// The query for filtering which target to select.
     query: TargetInfoQuery,
+
     /// Watches mdns events
-    ///
     mdns_watcher: Option<MdnsWatcher>,
 
     /// Watches for FastbootUsb events
@@ -62,6 +65,119 @@ pub struct TargetStream {
 
     /// Whether we want to get Removed events.
     notify_removed: bool,
+}
+
+pub struct TargetStreamConfig<Mdns, Fusb, Man>
+where
+    Mdns: MdnsEventHandler,
+    Fusb: FastbootEventHandler,
+    Man: ManualTargetEventHandler,
+{
+    /// The filter for the target stream. If constructing the stream and this is set to `None`,
+    /// this will default to `TargetInfoQuery::First`.
+    pub query: Option<TargetInfoQuery>,
+
+    /// MDNS event handler.
+    pub mdns_event_handler: Option<Mdns>,
+
+    /// Fastboot USB event handler.
+    pub fastboot_event_handler: Option<Fusb>,
+
+    /// Manual target watcher.
+    pub manual_targets_event_handler: Option<Man>,
+
+    /// Emulator watcher.
+    pub emulator_watcher: Option<EmulatorWatcher>,
+
+    /// Fastboot file watcher.
+    pub fastboot_file_watcher: Option<FastbootWatcher>,
+
+    /// Should we notify when adding an item.
+    pub notify_added: bool,
+
+    /// Should we notify when removing an item.
+    pub notify_removed: bool,
+}
+
+impl<Mdns, Fusb, Man> TargetStreamConfig<Mdns, Fusb, Man>
+where
+    Mdns: MdnsEventHandler,
+    Fusb: FastbootEventHandler,
+    Man: ManualTargetEventHandler,
+{
+    pub fn new() -> Self {
+        // The type constraints make doing a derive of Default not doable.
+        Self {
+            query: None,
+            mdns_event_handler: None,
+            fastboot_event_handler: None,
+            manual_targets_event_handler: None,
+            emulator_watcher: None,
+            fastboot_file_watcher: None,
+            notify_added: false,
+            notify_removed: false,
+        }
+    }
+
+    pub fn set_query(&mut self, q: TargetInfoQuery) {
+        self.query = Some(q)
+    }
+
+    pub fn set_mdns_event_handler(&mut self, e: Mdns) {
+        self.mdns_event_handler = Some(e);
+    }
+
+    pub fn set_fastboot_event_handler(&mut self, e: Fusb) {
+        self.fastboot_event_handler = Some(e);
+    }
+
+    pub fn set_manual_event_handler(&mut self, e: Man) {
+        self.manual_targets_event_handler = Some(e);
+    }
+
+    pub fn set_emulator_watcher(&mut self, e: EmulatorWatcher) {
+        self.emulator_watcher = Some(e);
+    }
+
+    pub fn set_fastboot_file_watcher(&mut self, f: FastbootWatcher) {
+        self.fastboot_file_watcher = Some(f)
+    }
+
+    pub fn set_notify_removed(&mut self, n: bool) {
+        self.notify_removed = n;
+    }
+
+    pub fn set_notify_added(&mut self, n: bool) {
+        self.notify_added = n;
+    }
+}
+
+impl TargetStream {
+    /// Constructs a new target stream using the config, with each watcher defaulting to the
+    /// recommended one.
+    pub fn new<M, F, Man>(
+        config: TargetStreamConfig<M, F, Man>,
+        queue: UnboundedReceiver<TargetEvent>,
+    ) -> Self
+    where
+        M: MdnsEventHandler,
+        F: FastbootEventHandler,
+        Man: ManualTargetEventHandler,
+    {
+        Self {
+            query: config.query.unwrap_or(TargetInfoQuery::First),
+            notify_added: config.notify_added,
+            notify_removed: config.notify_removed,
+            mdns_watcher: config.mdns_event_handler.map(|e| recommended_watcher(e)),
+            fastboot_usb_watcher: config.fastboot_event_handler.map(|e| fastboot_watcher(e)),
+            manual_targets_watcher: config
+                .manual_targets_event_handler
+                .map(|e| manual_recommended_watcher(e)),
+            emulator_watcher: config.emulator_watcher,
+            fastboot_file_watcher: config.fastboot_file_watcher,
+            queue,
+        }
+    }
 }
 
 pub trait TargetEventStream: Stream<Item = TargetEvent> + std::marker::Unpin {}
@@ -198,80 +314,56 @@ fn wait_for_devices(
     notify_removed: bool,
     sources: DiscoverySources,
 ) -> Result<TargetStream> {
+    let mut config = TargetStreamConfig::new();
+    config.set_query(query);
+    config.set_notify_added(notify_added);
+    config.set_notify_removed(notify_removed);
     let (sender, queue) = unbounded();
-    // MDNS Watcher
-    let mdns_watcher = if sources.contains(DiscoverySources::MDNS) {
+    if sources.contains(DiscoverySources::MDNS) {
         let mdns_sender = sender.clone();
-        Some(recommended_watcher(move |res: ffx::MdnsEventType| {
+        config.set_mdns_event_handler(move |res: ffx::MdnsEventType| {
             // Translate the result to a TargetEvent
             let event = TargetEvent::try_from(res);
             if let Ok(event) = event {
                 let _ = mdns_sender.unbounded_send(event);
             }
-        }))
-    } else {
-        None
-    };
+        })
+    }
 
     // USB Fastboot watcher
-    let fastboot_usb_watcher = if sources.contains(DiscoverySources::USB_FASTBOOT) {
+    if sources.contains(DiscoverySources::USB_FASTBOOT) {
         let fastboot_sender = sender.clone();
-        Some(fastboot_watcher(move |res: FastbootEvent| {
+        config.set_fastboot_event_handler(move |res: FastbootEvent| {
             // Translate the result to a TargetEvent
             log::debug!("discovery watcher got fastboot event: {:#?}", res);
             let event = res.into();
             let _ = fastboot_sender.unbounded_send(event);
-        }))
-    } else {
-        None
-    };
+        })
+    }
 
-    // Manual Targets watcher
-    let manual_targets_watcher = if sources.contains(DiscoverySources::MANUAL) {
+    if sources.contains(DiscoverySources::MANUAL) {
         let manual_targets_sender = sender.clone();
-        Some(manual_recommended_watcher(move |res: ManualTargetEvent| {
+        config.set_manual_event_handler(move |res: ManualTargetEvent| {
             // Translate the result to a TargetEvent
             log::trace!("discovery watcher got manual target event: {:#?}", res);
             let event = res.into();
             let _ = manual_targets_sender.unbounded_send(event);
-        }))
-    } else {
-        None
-    };
+        })
+    }
 
-    let emulator_watcher = if sources.contains(DiscoverySources::EMULATOR) {
-        let emulator_sender = sender.clone();
+    if sources.contains(DiscoverySources::EMULATOR) {
         if let Some(instance_root) = emulator_instance_root {
-            Some(EmulatorWatcher::new(instance_root, emulator_sender)?)
-        } else {
-            None
+            config.set_emulator_watcher(EmulatorWatcher::new(instance_root, sender.clone())?)
         }
-    } else {
-        None
-    };
+    }
 
-    let fastboot_file_watcher = if sources.contains(DiscoverySources::FASTBOOT_FILE) {
-        let fastboot_file_sender = sender;
+    if sources.contains(DiscoverySources::FASTBOOT_FILE) {
         if let Some(fastboot_devices_file) = fastboot_devices_file_path {
-            Some(FastbootWatcher::new(fastboot_devices_file, fastboot_file_sender)?)
-        } else {
-            None
+            config.set_fastboot_file_watcher(FastbootWatcher::new(fastboot_devices_file, sender)?)
         }
-    } else {
-        None
-    };
+    }
 
-    Ok(TargetStream {
-        query,
-        queue,
-        notify_added,
-        notify_removed,
-        mdns_watcher,
-        fastboot_usb_watcher,
-        manual_targets_watcher,
-        emulator_watcher,
-        fastboot_file_watcher,
-    })
+    Ok(TargetStream::new(config, queue))
 }
 
 impl Stream for TargetStream {

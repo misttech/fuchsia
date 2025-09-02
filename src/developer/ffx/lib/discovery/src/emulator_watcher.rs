@@ -9,13 +9,13 @@ use fuchsia_async::Task;
 use futures::channel::mpsc::UnboundedSender;
 use std::path::PathBuf;
 
-pub(crate) struct EmulatorWatcher {
+pub struct EmulatorWatcher {
     // Task for the drain loop
     drain_task: Option<Task<()>>,
 }
 
 impl EmulatorWatcher {
-    pub(crate) fn new(
+    pub fn new(
         instance_root: PathBuf,
         sender: UnboundedSender<TargetEvent>,
     ) -> Result<Self, Error> {
