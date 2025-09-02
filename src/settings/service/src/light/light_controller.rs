@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use crate::config::default_settings::DefaultSetting;
-use crate::inspect::event::{ResponseType, SettingValuePublisher};
+use crate::inspect::event::{ExternalEventPublisher, ResponseType, SettingValuePublisher};
 use crate::light::light_fidl_handler::{GroupPublisher, InfoPublisher};
 use crate::light::light_hardware_configuration::DisableConditions;
 use crate::light::types::{LightGroup, LightInfo, LightState, LightType, LightValue};
-use crate::service_context::{ExternalServiceProxy, ServiceContext};
+use crate::service_context::common::{ExternalServiceProxy, ServiceContext};
 use crate::{call_async, LightHardwareConfiguration};
 use anyhow::{Context, Error};
 use fidl_fuchsia_hardware_light::{Info, LightMarker, LightProxy};
@@ -88,7 +88,7 @@ impl From<&LightError> for ResponseType {
 
 pub(crate) struct LightController {
     /// Proxy for interacting with light hardware.
-    light_proxy: ExternalServiceProxy<LightProxy>,
+    light_proxy: ExternalServiceProxy<LightProxy, ExternalEventPublisher>,
 
     /// Hardware configuration that determines what lights to return to the client.
     ///
@@ -130,6 +130,7 @@ impl LightController {
         default_setting: &mut DefaultSetting<LightHardwareConfiguration, &'static str>,
         storage_factory: Rc<F>,
         setting_value_publisher: SettingValuePublisher<LightInfo>,
+        external_publisher: ExternalEventPublisher,
     ) -> Result<Self, Error>
     where
         F: StorageFactory<Storage = FidlStorage>,
@@ -142,6 +143,7 @@ impl LightController {
             light_hardware_config,
             &*storage_factory,
             setting_value_publisher,
+            external_publisher,
         )
         .await
     }
@@ -152,12 +154,13 @@ impl LightController {
         light_hardware_config: Option<LightHardwareConfiguration>,
         storage_factory: &F,
         setting_value_publisher: SettingValuePublisher<LightInfo>,
+        external_publisher: ExternalEventPublisher,
     ) -> Result<Self, Error>
     where
         F: StorageFactory<Storage = FidlStorage>,
     {
         let light_proxy = service_context
-            .connect_device_path::<LightMarker>(DEVICE_PATH)
+            .connect_device_path::<LightMarker, _>(DEVICE_PATH, external_publisher)
             .await
             .context("connecting to fuchsia.hardware.light")?;
 
@@ -590,8 +593,7 @@ mod tests {
         let light_service_handle = Rc::new(Mutex::new(HardwareLightService::new()));
         service_registry.lock().await.register_service(light_service_handle.clone());
 
-        let service_context =
-            ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None);
+        let service_context = ServiceContext::new(Some(ServiceRegistry::serve(service_registry)));
 
         // Add a light to the fake service.
         light_service_handle
@@ -605,6 +607,8 @@ mod tests {
 
         let (tx, _rx) = mpsc::unbounded();
         let setting_value_publisher = SettingValuePublisher::new(tx);
+        let (tx, _rx) = mpsc::unbounded();
+        let event_publisher = ExternalEventPublisher::new(tx);
 
         // Create the light controller.
         let mut light_controller = LightController::create_with_config(
@@ -612,6 +616,7 @@ mod tests {
             None,
             &storage_factory,
             setting_value_publisher,
+            event_publisher,
         )
         .await
         .expect("Failed to create light controller");
@@ -646,8 +651,7 @@ mod tests {
         let light_service_handle = Rc::new(Mutex::new(HardwareLightService::new()));
         service_registry.lock().await.register_service(light_service_handle.clone());
 
-        let service_context =
-            ServiceContext::new(Some(ServiceRegistry::serve(service_registry)), None);
+        let service_context = ServiceContext::new(Some(ServiceRegistry::serve(service_registry)));
 
         // Add a light to the fake service.
         light_service_handle
@@ -661,6 +665,8 @@ mod tests {
 
         let (tx, _rx) = mpsc::unbounded();
         let setting_value_publisher = SettingValuePublisher::new(tx);
+        let (tx, _rx) = mpsc::unbounded();
+        let event_publisher = ExternalEventPublisher::new(tx);
 
         // Create the light controller.
         let mut light_controller = LightController::create_with_config(
@@ -668,6 +674,7 @@ mod tests {
             None,
             &storage_factory,
             setting_value_publisher,
+            event_publisher,
         )
         .await
         .expect("Failed to create light controller");

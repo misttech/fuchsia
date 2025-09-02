@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use super::listener_logger::ListenerInspectLogger;
+use crate::service_context::common::ExternalServiceEvent;
 use anyhow::{anyhow, Error};
 use futures::channel::mpsc::UnboundedSender;
 use std::cell::Cell;
@@ -169,5 +170,22 @@ where
         self.tx
             .unbounded_send((T::NAME, format!("{value:?}")))
             .map_err(|e| anyhow!("Unable to send setting_value update: {e:?}"))
+    }
+}
+
+#[derive(Clone)]
+pub struct ExternalEventPublisher {
+    tx: UnboundedSender<ExternalServiceEvent>,
+}
+
+impl ExternalEventPublisher {
+    pub fn new(tx: UnboundedSender<ExternalServiceEvent>) -> Self {
+        Self { tx }
+    }
+
+    pub fn publish(&self, event: ExternalServiceEvent) -> Result<(), Error> {
+        self.tx
+            .unbounded_send(event)
+            .map_err(|e| anyhow!("Unable to send external event update: {e:?}"))
     }
 }

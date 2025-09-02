@@ -23,10 +23,9 @@ use fuchsia_inspect::component;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
-use inspect::event::{SettingValuePublisher, UsageEvent, UsagePublisher};
+use inspect::event::{ExternalEventPublisher, SettingValuePublisher, UsageEvent, UsagePublisher};
 #[cfg(test)]
 use log as _;
-use service_context::ExternalServiceEvent;
 use settings_storage::device_storage::DeviceStorage;
 use settings_storage::fidl_storage::FidlStorage;
 use settings_storage::storage_factory::{FidlStorageFactory, StorageFactory};
@@ -66,7 +65,10 @@ use crate::light::light_controller::LightController;
 use crate::night_mode::night_mode_controller::NightModeController;
 use crate::privacy::privacy_controller::PrivacyController;
 use crate::service::message::Delegate;
-use crate::service_context::{GenerateService, ServiceContext};
+use crate::service_context::common::{
+    ExternalServiceEvent, GenerateService, ServiceContext as CommonServiceContext,
+};
+use crate::service_context::ServiceContext;
 use crate::setup::setup_controller::SetupController;
 
 mod accessibility;
@@ -501,8 +503,11 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             Rc::new(FidlStorageFactory::new(migration_id.unwrap_or(0), storage_dir))
         };
 
-        let service_context =
-            Rc::new(ServiceContext::new(self.generate_service, Some(delegate.clone())));
+        let common_service_context = Rc::new(CommonServiceContext::new(self.generate_service));
+        let service_context = Rc::new(ServiceContext::new_from_common(
+            Rc::clone(&common_service_context),
+            Some(delegate.clone()),
+        ));
 
         let context_id_counter = Rc::new(AtomicU64::new(1));
 
@@ -524,7 +529,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             tasks,
         } = Self::register_controllers(
             &settings,
-            Rc::clone(&service_context),
+            Rc::clone(&common_service_context),
             fidl_storage_factory,
             self.light_configuration,
             &mut service_dir,
@@ -641,7 +646,7 @@ struct RegistrationResult {
 impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<'a, T> {
     async fn register_controllers<F>(
         components: &HashSet<SettingType>,
-        service_context: Rc<ServiceContext>,
+        service_context: Rc<CommonServiceContext>,
         fidl_storage_factory: Rc<F>,
         light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
         service_dir: &mut ServiceFsDir<'_, ServiceObjLocal<'_, ()>>,
@@ -651,8 +656,9 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         F: StorageFactory<Storage = FidlStorage>,
     {
         let (setting_value_tx, setting_value_rx) = mpsc::unbounded();
-        let (_external_event_tx, external_event_rx) = mpsc::unbounded();
+        let (external_event_tx, external_event_rx) = mpsc::unbounded();
         let (usage_event_tx, usage_event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(external_event_tx);
         let mut media_buttons_event_txs = vec![];
         let mut tasks = vec![];
         // Initialize storage for all components.
@@ -673,6 +679,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 fidl_storage_factory,
                 SettingValuePublisher::new(setting_value_tx),
                 UsagePublisher::new(usage_event_tx, listener_logger),
+                external_publisher,
             )
             .await
             {

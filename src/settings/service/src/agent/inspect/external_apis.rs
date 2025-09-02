@@ -43,7 +43,7 @@ use crate::agent::{AgentCreator, Context, CreationFunc, Payload};
 use crate::event::{Event, Payload as EventPayload};
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::service::{self as service, TryFromWithClient};
-use crate::service_context::ExternalServiceEvent;
+use crate::service_context::common::ExternalServiceEvent;
 use crate::trace;
 
 use fuchsia_async as fasync;

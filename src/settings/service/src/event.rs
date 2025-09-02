@@ -4,7 +4,7 @@
 
 use crate::base::SettingType;
 use crate::message::base::Audience;
-use crate::service_context::ExternalServiceEvent;
+use crate::service_context::common::ExternalServiceEvent;
 use crate::{config, payload_convert, service};
 use std::rc::Rc;
 

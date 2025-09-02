@@ -202,6 +202,7 @@ icu_rustc_library("lib") {
     "src/privacy/types.rs",
     "src/service.rs",
     "src/service_context.rs",
+    "src/service_context/common.rs",
     "src/setup.rs",
     "src/setup/setup_controller.rs",
     "src/setup/setup_fidl_handler.rs",

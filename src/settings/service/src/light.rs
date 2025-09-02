@@ -13,8 +13,10 @@ use self::light_controller::LightError;
 use self::light_fidl_handler::LightFidlHandler;
 use self::light_hardware_configuration::LightHardwareConfiguration;
 use crate::config::default_settings::DefaultSetting;
-use crate::inspect::event::{RequestType, ResponseType, SettingValuePublisher, UsagePublisher};
-use crate::service_context::ServiceContext;
+use crate::inspect::event::{
+    ExternalEventPublisher, RequestType, ResponseType, SettingValuePublisher, UsagePublisher,
+};
+use crate::service_context::common::ServiceContext;
 use anyhow::{anyhow, Context, Result};
 use fuchsia_async as fasync;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -37,6 +39,7 @@ pub async fn setup_light_api<F>(
     storage_factory: Rc<F>,
     setting_value_publisher: SettingValuePublisher<LightInfo>,
     usage_publisher: UsagePublisher<LightInfo>,
+    external_publisher: ExternalEventPublisher,
 ) -> Result<SetupResult>
 where
     F: StorageFactory<Storage = FidlStorage>,
@@ -48,6 +51,7 @@ where
         light_configuration,
         storage_factory,
         setting_value_publisher.clone(),
+        external_publisher,
     )
     .await
     .context("failed to construct light controller")?;
