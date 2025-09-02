@@ -36,6 +36,11 @@ pub enum Error {
         err: String,
         filename: Option<String>,
     },
+    ValidateWithSpan {
+        err: String,
+        location: Option<Location>,
+        filename: Option<String>,
+    },
     FidlValidator {
         errs: ErrorList,
     },
@@ -66,6 +71,18 @@ impl Error {
 
     pub fn validate(err: impl fmt::Display) -> Self {
         Self::Validate { err: err.to_string(), filename: None }
+    }
+
+    pub fn validate_with_span(
+        err: impl fmt::Display,
+        location: Option<Location>,
+        filename: Option<&Path>,
+    ) -> Self {
+        Self::ValidateWithSpan {
+            err: err.to_string(),
+            location,
+            filename: filename.map(|f| f.to_string_lossy().into_owned()),
+        }
     }
 
     pub fn fidl_validator(errs: ErrorList) -> Self {
@@ -139,7 +156,7 @@ impl fmt::Display for Error {
                     write!(f, "{}", err)
                 }
             }
-            Error::Validate {  err, filename } => {
+            Error::Validate { err, filename } => {
                 let mut prefix = String::new();
                 if let Some(filename) = filename {
                     prefix.push_str(&format!("{}:", filename));
@@ -150,7 +167,21 @@ impl fmt::Display for Error {
                     write!(f, "{}", err)
                 }
             }
-            Error::FidlValidator{ errs} => format_multiple_fidl_validator_errors(errs, f),
+            Error::ValidateWithSpan { err, location, filename } => {
+                let mut prefix = String::new();
+                if let Some(filename) = filename {
+                    prefix.push_str(&format!("{}:", filename));
+                }
+                if let Some(location) = location {
+                    prefix.push_str(&format!("{}:{}:", location.line, location.column));
+                }
+                if !prefix.is_empty() {
+                    write!(f, "Error at {} {}", prefix, err)
+                } else {
+                    write!(f, "{}", err)
+                }
+            }
+            Error::FidlValidator { errs } => format_multiple_fidl_validator_errors(errs, f),
             Error::Internal(err) => write!(f, "Internal error: {}", err),
             Error::Utf8(err) => write!(f, "UTF8 error: {}", err),
             Error::RestrictedFeature(feature) => write!(
@@ -193,7 +224,10 @@ fn format_multiple_fidl_validator_errors(e: &ErrorList, f: &mut fmt::Formatter<'
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                write!(f, "All sources that feed into an aggregation operation should have the same availability. ")?;
+                write!(
+                    f,
+                    "All sources that feed into an aggregation operation should have the same availability. "
+                )?;
                 write!(f, "Got [ {comma_separated} ].")?;
             }
             _ => {
