@@ -3,7 +3,11 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/sys/test_runners/gtest/default.shard.cml",
+        // TODO(https://fxbug.dev/441642041): Stabilize zx_iob_create_shared_region
+        // We use the zxtest runner for VDSO next which is currently required
+        // for some of the IOB API which is used by logging fakes. We can switch
+        // back to the default runner when it is stabilised.
+        "//src/sys/test_runners/gtest/zxtest.shard.cml",
         "syslog/client.shard.cml",
     ],
     use: [

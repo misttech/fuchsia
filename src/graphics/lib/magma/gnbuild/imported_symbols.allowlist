@@ -465,6 +465,7 @@ zx_handle_duplicate
 zx_handle_replace
 zx_interrupt_bind
 zx_interrupt_create
+zx_iob_writev
 zx_iommu_create
 zx_job_create
 zx_object_get_child
