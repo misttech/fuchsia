@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 use crate::config::default_settings::DefaultSetting;
-use crate::event::media_buttons::Event;
-use crate::input::MediaButtons;
 use crate::inspect::event::{ResponseType, SettingValuePublisher};
 use crate::light::light_fidl_handler::{GroupPublisher, InfoPublisher};
 use crate::light::light_hardware_configuration::DisableConditions;
@@ -19,6 +17,7 @@ use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::{self, Sender};
 use futures::lock::Mutex;
 use futures::StreamExt;
+use settings_media_buttons::{Event, MediaButtons};
 use settings_storage::fidl_storage::{FidlStorage, FidlStorageConvertible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
 use settings_storage::UpdateState;

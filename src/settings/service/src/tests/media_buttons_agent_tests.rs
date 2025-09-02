@@ -4,7 +4,6 @@
 
 use crate::agent::{media_buttons, Context, Invocation, Lifespan, Payload};
 use crate::event::{self, Event};
-use crate::input::MediaButtons;
 use crate::message::base::{Audience, MessengerType};
 use crate::service;
 use crate::service_context::ServiceContext;
@@ -13,6 +12,7 @@ use crate::tests::fakes::service_registry::ServiceRegistry;
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
 use futures::lock::Mutex;
 use media_buttons::MediaButtonsAgent;
+use settings_media_buttons::MediaButtons;
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -91,7 +91,7 @@ async fn test_media_buttons_proxied() {
     while let Ok((event::Payload::Event(event), _)) =
         event_receptor.next_of::<event::Payload>().await
     {
-        if let Event::MediaButtons(event::media_buttons::Event::OnButton(MediaButtons {
+        if let Event::MediaButtons(settings_media_buttons::Event::OnButton(MediaButtons {
             mic_mute: Some(true),
             ..
         })) = event

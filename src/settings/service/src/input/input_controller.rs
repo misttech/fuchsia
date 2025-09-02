@@ -16,7 +16,7 @@ use crate::input::types::{
     DeviceState, DeviceStateSource, InputDevice, InputDeviceType, InputInfo, InputInfoSources,
     InputState, Microphone,
 };
-use crate::input::MediaButtons;
+use settings_media_buttons::MediaButtons;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess};
 

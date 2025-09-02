@@ -13,7 +13,6 @@ use self::light_controller::LightError;
 use self::light_fidl_handler::LightFidlHandler;
 use self::light_hardware_configuration::LightHardwareConfiguration;
 use crate::config::default_settings::DefaultSetting;
-use crate::event::media_buttons;
 use crate::inspect::event::{RequestType, ResponseType, SettingValuePublisher, UsagePublisher};
 use crate::service_context::ServiceContext;
 use anyhow::{anyhow, Context, Result};
@@ -28,7 +27,7 @@ use types::LightInfo;
 
 pub struct SetupResult {
     pub light_fidl_handler: LightFidlHandler,
-    pub media_buttons_event_tx: UnboundedSender<media_buttons::Event>,
+    pub media_buttons_event_tx: UnboundedSender<settings_media_buttons::Event>,
     pub task: fuchsia_async::Task<()>,
 }
 
@@ -70,9 +69,12 @@ where
 }
 
 fn event_request_logger(
-    mut media_buttons_event_rx: UnboundedReceiver<media_buttons::Event>,
+    mut media_buttons_event_rx: UnboundedReceiver<settings_media_buttons::Event>,
     usage_publisher: UsagePublisher<LightInfo>,
-) -> UnboundedReceiver<(media_buttons::Event, oneshot::Sender<Result<Option<()>, LightError>>)> {
+) -> UnboundedReceiver<(
+    settings_media_buttons::Event,
+    oneshot::Sender<Result<Option<()>, LightError>>,
+)> {
     let (inner_mb_event_tx, inner_mb_event_rx) = mpsc::unbounded();
     fasync::Task::local(async move {
         while let Some(event) = media_buttons_event_rx.next().await {

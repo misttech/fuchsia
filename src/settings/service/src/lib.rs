@@ -49,7 +49,6 @@ use crate::config::base::{AgentType, ControllerFlag};
 use crate::config::default_settings::DefaultSetting;
 use crate::display::display_controller::{DisplayController, ExternalBrightnessControl};
 use crate::do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
-use crate::event::media_buttons;
 use crate::factory_reset::factory_reset_controller::FactoryResetController;
 use crate::handler::base::GenerateHandler;
 use crate::handler::setting_handler::persist::Handler as DataHandler;
@@ -235,7 +234,7 @@ pub struct EnvironmentBuilder<'a, T: StorageFactory<Storage = DeviceStorage>> {
     audio_configuration: Option<DefaultSetting<AudioInfo, &'static str>>,
     input_configuration: Option<DefaultSetting<InputConfiguration, &'static str>>,
     light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
-    media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+    media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
 }
 
 impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<'a, T> {
@@ -398,7 +397,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 
     pub fn media_buttons_event_txs(
         mut self,
-        media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+        media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     ) -> Self {
         self.media_buttons_event_txs.extend(media_buttons_event_txs);
         self
@@ -632,7 +631,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 }
 
 struct RegistrationResult {
-    media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+    media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     setting_value_rx: UnboundedReceiver<(&'static str, String)>,
     external_event_rx: UnboundedReceiver<ExternalServiceEvent>,
     usage_event_rx: UnboundedReceiver<UsageEvent>,
@@ -864,7 +863,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 fn create_agent_blueprints(
     agent_types: HashSet<AgentType>,
     agent_blueprints: Vec<AgentCreator>,
-    media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+    media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     setting_value_rx: UnboundedReceiver<(&'static str, String)>,
     external_event_rx: UnboundedReceiver<ExternalServiceEvent>,
     mut usage_router_rx: UnboundedReceiver<UsageEvent>,

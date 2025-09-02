@@ -9,7 +9,6 @@ use crate::display::types::SetDisplayInfo;
 use crate::do_not_disturb::types::DoNotDisturbInfo;
 use crate::handler::setting_handler::ControllerError;
 use crate::input::types::InputDevice;
-use crate::input::MediaButtons;
 use crate::intl::types::IntlInfo;
 use crate::keyboard::types::KeyboardInfo;
 use crate::light::types::LightState;
@@ -18,6 +17,7 @@ use crate::payload_convert;
 use crate::service::message::{Delegate, Messenger, Receptor, Signature};
 use crate::service_context::ServiceContext;
 use crate::setup::types::SetConfigurationInterfacesParams;
+use settings_media_buttons::MediaButtons;
 
 use async_trait::async_trait;
 use fuchsia_trace as ftrace;

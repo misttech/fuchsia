@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::base::SettingType;
-use crate::event::media_buttons;
 use crate::ingress::fidl::Interface;
 use crate::input::common::MediaButtonsEventBuilder;
 use crate::input::input_device_configuration::{
@@ -161,7 +160,7 @@ fn create_env_and_executor_with_config(
     // The pre-populated data to insert into the store before spawning
     // the environment.
     initial_input_info: Option<InputInfoSources>,
-    media_button_event_tx: UnboundedSender<media_buttons::Event>,
+    media_button_event_tx: UnboundedSender<settings_media_buttons::Event>,
 ) -> (TestExecutor, TestInputEnvironment) {
     let mut executor = TestExecutor::new_with_fake_time();
     let mut builder = TestInputEnvironmentBuilder::new()
@@ -244,12 +243,12 @@ async fn get_and_check_camera_disable(
 // following code can be sure that the media buttons event was handled
 // before continuing.
 async fn wait_for_media_button_event(
-    media_buttons_rx: &mut UnboundedReceiver<media_buttons::Event>,
+    media_buttons_rx: &mut UnboundedReceiver<settings_media_buttons::Event>,
 ) {
     if let Some(event) = media_buttons_rx.next().await {
         // This is really a no-op, but ensures the code will fail to compile if
-        // another variant is ever added to media_buttons::Event.
-        let media_buttons::Event::OnButton(_) = event;
+        // another variant is ever added to settings_media_buttons::Event.
+        let settings_media_buttons::Event::OnButton(_) = event;
     } else {
         panic!("received None from media button rx. Tx closed before event received");
     }

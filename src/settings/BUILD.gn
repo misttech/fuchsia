@@ -18,6 +18,7 @@ group("tests") {
   deps = [
     "config:tests",
     "inspect_utils:tests",
+    "media_buttons:tests",
     "service:tests",
     "storage:tests",
   ]

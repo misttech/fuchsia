@@ -6,7 +6,6 @@ use crate::agent::AgentCreator;
 use crate::base::SettingType;
 use crate::config::base::AgentType;
 use crate::config::default_settings::DefaultSetting;
-use crate::event::media_buttons;
 use crate::handler::base::{Context, GenerateHandler};
 use crate::handler::setting_handler::persist::ClientProxy;
 use crate::handler::setting_handler::{BoxedController, ClientImpl};
@@ -56,7 +55,7 @@ pub(crate) struct TestInputEnvironmentBuilder {
     agents: Vec<AgentType>,
 
     /// The list of additional media_button_event listeners.
-    media_buttons_event_txs: Vec<UnboundedSender<media_buttons::Event>>,
+    media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
 }
 
 impl TestInputEnvironmentBuilder {
@@ -87,7 +86,7 @@ impl TestInputEnvironmentBuilder {
 
     pub(crate) fn add_media_buttons_event_tx(
         mut self,
-        tx: UnboundedSender<media_buttons::Event>,
+        tx: UnboundedSender<settings_media_buttons::Event>,
     ) -> Self {
         self.media_buttons_event_txs.push(tx);
         self

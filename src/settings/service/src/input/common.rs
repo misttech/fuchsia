@@ -17,6 +17,7 @@ use fidl_fuchsia_ui_policy::{
 use fuchsia_async::{self as fasync, DurationExt};
 use futures::future::Fuse;
 use futures::{FutureExt, StreamExt};
+use settings_media_buttons::MediaButtons;
 use std::rc::Rc;
 use zx::MonotonicDuration;
 
@@ -58,43 +59,6 @@ impl MediaButtonsEventBuilder {
     pub(crate) fn set_camera_disable(mut self, camera_disable: bool) -> Self {
         self.camera_disable = camera_disable;
         self
-    }
-}
-
-/// Setting service internal representation of hw media buttons. Used to send
-/// OnButton events in the service.
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
-pub struct MediaButtons {
-    pub mic_mute: Option<bool>,
-    pub camera_disable: Option<bool>,
-}
-
-impl MediaButtons {
-    fn new() -> Self {
-        Self { mic_mute: None, camera_disable: None }
-    }
-
-    pub(crate) fn set_mic_mute(&mut self, mic_mute: Option<bool>) {
-        self.mic_mute = mic_mute;
-    }
-
-    pub(crate) fn set_camera_disable(&mut self, camera_disable: Option<bool>) {
-        self.camera_disable = camera_disable;
-    }
-}
-
-impl From<MediaButtonsEvent> for MediaButtons {
-    fn from(event: MediaButtonsEvent) -> Self {
-        let mut buttons = MediaButtons::new();
-
-        if let Some(mic_mute) = event.mic_mute {
-            buttons.set_mic_mute(Some(mic_mute));
-        }
-        if let Some(camera_disable) = event.camera_disable {
-            buttons.set_camera_disable(Some(camera_disable));
-        }
-
-        buttons
     }
 }
 

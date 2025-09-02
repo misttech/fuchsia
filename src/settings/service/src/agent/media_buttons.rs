@@ -6,15 +6,16 @@ use crate::agent::{
     AgentError, Context as AgentContext, Invocation, InvocationResult, Lifespan, Payload,
 };
 use crate::base::SettingType;
-use crate::event::{media_buttons, Event, Publisher};
+use crate::event::{Event, Publisher};
 use crate::handler::base::{Payload as HandlerPayload, Request};
-use crate::input::{monitor_media_buttons, MediaButtons};
+use crate::input::monitor_media_buttons;
 use crate::message::base::Audience;
 use crate::service_context::ServiceContext;
 use crate::{service, trace_guard};
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
 use futures::channel::mpsc::UnboundedSender;
 use futures::StreamExt;
+use settings_media_buttons::{self as media_buttons, MediaButtons};
 use std::collections::HashSet;
 use std::rc::Rc;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
@@ -290,7 +291,7 @@ mod tests {
                             event::Event::MediaButtons(event))), _) = message
                     {
                         match event {
-                            media_buttons::Event::OnButton(
+                            settings_media_buttons::Event::OnButton(
                                 MediaButtons{..}
                             ) => {
                                 agent_received_media_buttons = true;
@@ -311,7 +312,7 @@ mod tests {
                 }
                 message = fused_rx1.select_next_some() => {
                     match message {
-                        media_buttons::Event::OnButton(
+                        settings_media_buttons::Event::OnButton(
                             MediaButtons{..}
                         ) => {
                             received_channel_events += 1;
@@ -320,7 +321,7 @@ mod tests {
                 }
                 message = fused_rx2.select_next_some() => {
                     match message {
-                        media_buttons::Event::OnButton(
+                        settings_media_buttons::Event::OnButton(
                             MediaButtons{..}
                         ) => {
                             received_channel_events += 1;

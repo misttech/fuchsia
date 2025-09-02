@@ -21,7 +21,7 @@ pub enum Event {
     CameraUpdate(camera_watcher::Event),
     ConfigLoad(config::base::Event),
     Earcon(earcon::Event),
-    MediaButtons(media_buttons::Event),
+    MediaButtons(settings_media_buttons::Event),
     Restore(restore::Event),
     ExternalServiceEvent(ExternalServiceEvent),
     Handler(SettingType, handler::Event),
@@ -108,21 +108,6 @@ pub(crate) mod handler {
         Retry,
         Timeout,
         AttemptsExceeded,
-    }
-}
-
-pub(crate) mod media_buttons {
-    use crate::input::MediaButtons;
-
-    #[derive(PartialEq, Clone, Debug)]
-    pub enum Event {
-        OnButton(MediaButtons),
-    }
-
-    impl From<MediaButtons> for Event {
-        fn from(button_types: MediaButtons) -> Self {
-            Self::OnButton(button_types)
-        }
     }
 }
 
