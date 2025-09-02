@@ -269,12 +269,22 @@ void DebugAdapterContext::OnThreadStopped(Thread* thread, const StopInfo& info) 
       event.reason = "unknown";
   }
   event.threadId = thread->GetKoid();
+
+  // Check whether a process level breakpoint caused this event.
+  // TODO(https://fxbug.dev/442573279): This approach doesn't not work for
+  // `debug_ipc::ExceptionType::kSingleStep` since `StopInfo::hit_breakpoints` will be empty in that
+  // case.
+  for (auto& bp : info.hit_breakpoints) {
+    if (bp->GetSettings().enabled &&
+        (bp->GetSettings().stop_mode == BreakpointSettings::StopMode::kProcess ||
+         bp->GetSettings().stop_mode == BreakpointSettings::StopMode::kAll)) {
+      event.allThreadsStopped = true;
+    }
+  }
   dap_->send(event);
 }
 
-void DebugAdapterContext::DidUpdateStackFrames(Thread* thread) {
-  DeleteFrameIdsForThread(thread);
-}
+void DebugAdapterContext::DidUpdateStackFrames(Thread* thread) { DeleteFrameIdsForThread(thread); }
 
 void DebugAdapterContext::DidCreateProcess(Process* process, uint64_t timestamp) {
   dap::ProcessEvent event;
