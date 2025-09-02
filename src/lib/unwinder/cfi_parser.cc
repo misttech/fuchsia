@@ -508,6 +508,20 @@ Error CfiParser::ParseInstructions(Memory* elf, uint64_t instructions_begin,
         instructions_begin += length;
         continue;
       }
+      case 0x2d: {  // DW_CFA_AARCH64_negate_ra_state
+        // TODO(https://fxbug.dev/442418152): Handle DW_CFA_AARCH64_negate_ra_state.
+        // DW_CFA_AARCH64_negate_ra_state is an ARM DWARF extension:
+        // https://github.com/ARM-software/abi-aa/blob/main/aadwarf64/aadwarf64.rst#44call-frame-instructions
+        // (which reuses the same opcode as DW_CFA_GNU_window_save) for adjusting the PC when
+        // pointer authentication (PAC) is enabled. The instruction is supposed to modify the
+        // RA_SIGN_STATE pseudoregister, also defined by the same ARM DWARF extension:
+        // https://github.com/ARM-software/abi-aa/blob/main/aadwarf64/aadwarf64.rst#41dwarf-register-names
+        //
+        // Currently, this is ignored by this unwinder, which doesn't seem to cause any immediate
+        // harm, but we may need to take special actions if this ends up being an issue:
+        // https://github.com/llvm/llvm-project/blob/37664cd991246aeba988b963d534cb10b4ab0681/libunwind/src/DwarfInstructions.hpp#L304
+        continue;
+      }
     }
     return Error("unsupported CFA instruction: %#x", opcode);
   }
