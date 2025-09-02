@@ -576,9 +576,9 @@ mod tests {
 
     use super::*;
     use crate::light::light_fidl_handler::LightFidlHandler;
-    use crate::storage::testing::InMemoryFidlStorageFactory;
     use crate::tests::fakes::hardware_light_service::HardwareLightService;
     use crate::tests::fakes::service_registry::ServiceRegistry;
+    use settings_test_common::storage::InMemoryFidlStorageFactory;
 
     // Verify that a set call without a restore call succeeds. This can happen when the controller
     // is shutdown after inactivity and is brought up again to handle the set call.

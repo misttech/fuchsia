@@ -5,13 +5,13 @@
 use crate::base::SettingType;
 use crate::ingress::fidl::Interface;
 use crate::keyboard::types::{Autorepeat, KeyboardInfo, KeymapId};
-use crate::storage::testing::InMemoryStorageFactory;
 use crate::tests::test_failure_utils::create_test_env_with_failures;
 use crate::EnvironmentBuilder;
 use assert_matches::assert_matches;
 use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_settings::{KeyboardMarker, KeyboardProxy};
 use settings_storage::device_storage::DeviceStorage;
+use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 use zx::Status;
 

@@ -11,9 +11,9 @@ use crate::service;
 use crate::service_context::ServiceContext;
 use crate::tests::fakes::camera3_service::Camera3Service;
 use crate::tests::fakes::service_registry::ServiceRegistry;
-use crate::tests::helpers::{move_executor_forward, move_executor_forward_and_get};
 use fuchsia_async::{MonotonicInstant, TestExecutor};
 use futures::lock::Mutex;
+use settings_test_common::helpers::{move_executor_forward, move_executor_forward_and_get};
 use std::collections::HashSet;
 use std::rc::Rc;
 

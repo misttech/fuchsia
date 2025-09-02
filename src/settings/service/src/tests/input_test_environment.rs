@@ -15,7 +15,6 @@ use crate::input::input_controller::InputController;
 use crate::input::input_device_configuration::InputConfiguration;
 use crate::input::types::InputInfoSources;
 use crate::inspect::config_logger::InspectConfigLogger;
-use crate::storage::testing::InMemoryStorageFactory;
 use crate::tests::fakes::camera3_service::Camera3Service;
 use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
 use crate::tests::fakes::service_registry::ServiceRegistry;
@@ -23,6 +22,7 @@ use crate::{
     AgentConfiguration, EnabledInterfacesConfiguration, Environment, EnvironmentBuilder,
     ServiceConfiguration, ServiceFlags,
 };
+use settings_test_common::storage::InMemoryStorageFactory;
 
 use fidl_fuchsia_settings::{InputMarker, InputProxy};
 use fuchsia_inspect::component;

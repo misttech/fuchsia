@@ -6,13 +6,13 @@ use crate::config::default_settings::DefaultSetting;
 use crate::display::build_display_default_settings;
 use crate::ingress::fidl::InterfaceSpec;
 use crate::inspect::config_logger::InspectConfigLogger;
-use crate::storage::testing::InMemoryStorageFactory;
 use crate::{
     AgentConfiguration, EnabledInterfacesConfiguration, EnvironmentBuilder, ServiceConfiguration,
     ServiceFlags,
 };
 use fidl_fuchsia_settings::{AccessibilityMarker, DisplayMarker, PrivacyMarker};
 use fuchsia_inspect::component;
+use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Mutex;

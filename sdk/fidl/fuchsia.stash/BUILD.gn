@@ -28,6 +28,7 @@ fidl("fuchsia.stash") {
     "//src/connectivity/wlan/*",
     "//src/settings/service/*",
     "//src/settings/storage/*",
+    "//src/settings/test_common/*",
     "//src/sys/pkg/bin/omaha-client/*",
     "//src/sys/stash/*",
     "//src/sys/tools/stash_ctl/*",

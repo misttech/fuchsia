@@ -10,13 +10,13 @@ use crate::handler::base::Request;
 use crate::handler::setting_handler::{ControllerError, SettingHandlerResult};
 use crate::ingress::fidl::Interface;
 use crate::service::message::Receptor;
-use crate::storage::testing::InMemoryStorageFactory;
 use crate::tests::fakes::base::create_setting_handler;
 use crate::tests::fakes::service_registry::ServiceRegistry;
 use crate::tests::scaffold::event::subscriber::Blueprint;
 use crate::{service, EnvironmentBuilder};
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
+use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 
 const ENV_NAME: &str = "restore_agent_test_environment";

@@ -4,11 +4,11 @@
 
 use crate::base::SettingType;
 use crate::ingress::fidl::Interface;
-use crate::storage::testing::InMemoryStorageFactory;
 use crate::tests::test_failure_utils::create_test_env_with_failures;
 use assert_matches::assert_matches;
 use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_settings::{PrivacyMarker, PrivacyProxy};
+use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 use zx::Status;
 

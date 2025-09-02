@@ -8,7 +8,6 @@ use crate::agent::{
     Payload,
 };
 use crate::service_context::ServiceContext;
-use crate::storage::testing::InMemoryStorageFactory;
 use crate::{service, EnvironmentBuilder};
 use core::fmt::{Debug, Formatter};
 use futures::channel::mpsc::UnboundedSender;
@@ -16,6 +15,7 @@ use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
 use futures::StreamExt;
 use rand::Rng;
+use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::HashSet;
 use std::rc::Rc;
 use {fidl_fuchsia_update_verify as fupdate, fuchsia_async as fasync};

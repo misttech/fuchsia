@@ -6,9 +6,9 @@ use crate::base::SettingType;
 use crate::handler::base::Request;
 use crate::handler::setting_handler::ControllerError;
 use crate::ingress::fidl::Interface;
-use crate::storage::testing::InMemoryStorageFactory;
 use crate::tests::fakes::base::create_setting_handler;
 use crate::EnvironmentBuilder;
+use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 
 pub(crate) async fn create_test_env_with_failures(

@@ -105,12 +105,11 @@ impl From<AudioInfo> for SettingInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::types::{AudioInfoV1, AudioInfoV2, AudioInfoV3};
     use fuchsia_async::TestExecutor;
     use fuchsia_inspect::component;
-
-    use crate::audio::types::{AudioInfoV1, AudioInfoV2, AudioInfoV3};
-    use crate::tests::helpers::move_executor_forward_and_get;
     use settings_storage::device_storage::DeviceStorageCompatible;
+    use settings_test_common::helpers::move_executor_forward_and_get;
 
     const CONFIG_AUDIO_INFO: AudioInfo = AudioInfo {
         streams: [

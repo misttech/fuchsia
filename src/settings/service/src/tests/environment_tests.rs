@@ -17,7 +17,6 @@ use crate::message::base::{Audience, MessengerType};
 use crate::migration::MIGRATION_FILE_NAME;
 use crate::service::Payload;
 use crate::service_context::ServiceContext;
-use crate::storage::testing::InMemoryStorageFactory;
 use crate::tests::fakes::service_registry::ServiceRegistry;
 use crate::tests::message_utils::verify_payload;
 use crate::tests::scaffold::workload::channel;
@@ -29,6 +28,7 @@ use fuchsia_async as fasync;
 use fuchsia_inspect::component;
 use futures::future::LocalBoxFuture;
 use futures::{FutureExt, StreamExt};
+use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 
 const ENV_NAME: &str = "settings_service_environment_test";

@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use crate::agent::{AgentCreator, AgentError, Context, CreationFunc, Payload};
-use crate::storage::testing::InMemoryStorageFactory;
 use crate::tests::scaffold;
 use crate::{event, service, EnvironmentBuilder};
 use assert_matches::assert_matches;
 use fuchsia_async as fasync;
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
+use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 
 const ENV_NAME: &str = "settings_service_event_test_environment";

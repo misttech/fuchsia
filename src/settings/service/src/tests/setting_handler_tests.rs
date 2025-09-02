@@ -16,13 +16,13 @@ use crate::handler::setting_handler::{
     SettingHandlerResult, State,
 };
 use crate::message::base::{Audience, MessengerType};
-use crate::storage::testing::InMemoryStorageFactory;
 use crate::tests::message_utils::verify_payload;
 use crate::{service, EnvironmentBuilder};
 use async_trait::async_trait;
 use futures::channel::mpsc::{unbounded, UnboundedSender};
 use futures::StreamExt;
 use settings_storage::device_storage::DeviceStorageCompatible;
+use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::rc::Rc;

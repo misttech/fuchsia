@@ -125,7 +125,7 @@ pub(crate) mod testing {
     use super::*;
 
     use crate::clock;
-    use crate::tests::helpers::move_executor_forward_and_get;
+    use settings_test_common::helpers::move_executor_forward_and_get;
 
     use assert_matches::assert_matches;
     use diagnostics_assertions::{assert_data_tree, AnyProperty};
