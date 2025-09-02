@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "llvm/BinaryFormat/Dwarf.h"
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/platform_message_loop.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/mock_thread.h"
@@ -102,7 +103,7 @@ TEST_F(FrameImplTest, AsyncBasePointer) {
   frame_regs.emplace_back(RegisterID::kX64_rax, kAddress);
 
   const debug_ipc::StackFrame stack(0x12345678, 0x7890, 0, debug_ipc::StackFrame::Trust::kContext,
-                                    frame_regs);
+                                    debug_ipc::StackFrame::AddressType::kExact, frame_regs);
   SymbolContext symbol_context = SymbolContext::ForRelativeAddresses();
 
   // Set the memory pointed to by the register.

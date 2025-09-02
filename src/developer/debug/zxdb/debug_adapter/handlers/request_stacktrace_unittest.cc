@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/common/scoped_temp_file.h"
@@ -101,8 +102,11 @@ TEST_F(RequestStackTraceTest, SyncFramesRequired) {
   std::vector<Location> location;
 
   for (size_t i = 0; i < kStackSize; i++) {
-    // For non-topmost stack frames, the address lookup will actually be the previous value
-    // to get the function call instruction rather than the return instruction.
+    // For stack frames that did not recover an exact PC value, the address lookup will actually be
+    // the immediately preceding address to get the instruction from the caller rather than the
+    // callee. For this test, we simulate the first frame being recovered from "context" which
+    // always has an exact PC value, and then the following frames recovered via the return address
+    // register.
     uint64_t lookup_address = kAddress[i];
     if (i > 0)
       lookup_address--;
@@ -128,6 +132,10 @@ TEST_F(RequestStackTraceTest, SyncFramesRequired) {
   expected_reply.record.stack_amount = debug_ipc::ThreadRecord::StackAmount::kFull;
   for (size_t i = 0; i < kStackSize; i++) {
     debug_ipc::StackFrame frame(kAddress[i], kStack[i]);
+    if (i > 0) {
+      // For this test the rest of the frames after the first will be simulating return addresses.
+      frame.pc_is_return_address = debug_ipc::StackFrame::AddressType::kReturn;
+    }
     expected_reply.record.frames.push_back(frame);
   }
   mock_remote_api()->set_thread_status_reply(expected_reply);

@@ -183,7 +183,8 @@ class Stack {
  private:
   // Symbolizes the given frame address, taking into account that non-topmost frames should slow the
   // call location (previous instruction) rather than the return address.
-  Location SymbolizeFrameAddress(uint64_t address, bool is_top_physical_frame) const;
+  Location SymbolizeFrameAddress(uint64_t address,
+                                 debug_ipc::StackFrame::AddressType pc_is_return_address) const;
 
   // Adds the given stack frame to the end of the current stack (going backwards in time). Inline
   // frames will be expanded so this may append more than one frame.

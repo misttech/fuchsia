@@ -101,7 +101,9 @@ std::vector<debug_ipc::StackFrame> ConvertFrames(const std::vector<unwinder::Fra
       }
     }
 
-    res.emplace_back(ip, sp, 0, ConvertTrust(frame.trust), frame_regs);
+    auto pc_is_return_address = frame.pc_is_return_address ? StackFrame::AddressType::kReturn
+                                                           : StackFrame::AddressType::kExact;
+    res.emplace_back(ip, sp, 0, ConvertTrust(frame.trust), pc_is_return_address, frame_regs);
   }
 
   return res;

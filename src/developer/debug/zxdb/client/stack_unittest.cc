@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include "llvm/BinaryFormat/Dwarf.h"
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/zxdb/client/frame_fingerprint.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
@@ -20,9 +21,11 @@
 #include "src/developer/debug/zxdb/common/test_with_loop.h"
 #include "src/developer/debug/zxdb/expr/eval_context.h"
 #include "src/developer/debug/zxdb/expr/expr.h"
+#include "src/developer/debug/zxdb/symbols/file_line.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/type_test_support.h"
 #include "src/developer/debug/zxdb/symbols/variable.h"
+#include "src/lib/fxl/memory/ref_ptr.h"
 
 namespace zxdb {
 
@@ -242,9 +245,11 @@ TEST_F(StackTest, InlineExpansion) {
   constexpr uint64_t kTopSP = 0x100;
   constexpr uint64_t kBottomSP = 0x200;
 
-  stack.SetFrames(debug_ipc::ThreadRecord::StackAmount::kFull,
-                  {debug_ipc::StackFrame(kTopAddr, kTopSP, kBottomSP),
-                   debug_ipc::StackFrame(kBottomAddr, kBottomSP, 0)});
+  stack.SetFrames(
+      debug_ipc::ThreadRecord::StackAmount::kFull,
+      {debug_ipc::StackFrame(kTopAddr, kTopSP, kBottomSP),
+       debug_ipc::StackFrame(kBottomAddr, kBottomSP, 0, debug_ipc::StackFrame::Trust::kCFI,
+                             debug_ipc::StackFrame::AddressType::kReturn)});
 
   // This should expand to tree stack entries, the one in the middle should be the inline function
   // expanded from the "bottom".
@@ -458,6 +463,84 @@ TEST_F(StackTest, InlineVars) {
     EXPECT_EQ(4, result);
   });
   EXPECT_TRUE(called);  // Callback should have been issued.
+}
+
+// Ensures that the pc_is_return_address value (that is typically given by the unwinder) is
+// respected. When a frame's AddressType indicates that PC was set from a "return address register",
+// then during symbolization we should subtract one from the address so that we symbolize the
+// caller's address, rather than the callee's address. When the AddressType indicates an exact PC
+// value, then we should not perform this subtraction, since the PC was set explicitly by some
+// unwinding instructions and should be respected.
+TEST_F(StackTest, SymbolizeFrameAddress) {
+  Session session;
+  MockStackDelegate delegate(&session);
+  Stack stack(&delegate);
+  delegate.set_stack(&stack);
+  SymbolContext symbol_context = SymbolContext::ForRelativeAddresses();
+
+  constexpr uint64_t kLowerEndAddr = 0x1234;
+  constexpr uint64_t kHigherStartAddr = 0x1235;
+
+  // This function will have an address range that ends _before_ the start of |higher_func| below.
+  auto lower_func = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  lower_func->set_assigned_name("lower_function");
+  Location lower_end(kLowerEndAddr, FileLine("some_file.cc", 10), 0, symbol_context, lower_func);
+  delegate.AddLocation(lower_end);
+
+  auto higher_func = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  higher_func->set_assigned_name("higher_function");
+  Location higher_loc(kHigherStartAddr, FileLine("other_file.rs", 15), 0, symbol_context,
+                      higher_func);
+  delegate.AddLocation(higher_loc);
+
+  stack.SetFrames(
+      debug_ipc::ThreadRecord::StackAmount::kFull,
+      {
+          // In reality the top most stack frame will always be contextual and have an exact PC.
+          // Simulate that first.
+          {debug_ipc::StackFrame(0x1235, 0x100000, 0, debug_ipc::StackFrame::Trust::kContext,
+                                 debug_ipc::StackFrame::AddressType::kExact)},
+      });
+
+  EXPECT_EQ(stack.size(), 1u);
+  EXPECT_EQ(stack[0]->GetAddress(), kHigherStartAddr);
+  EXPECT_TRUE(stack[0]->GetLocation().is_symbolized());
+  EXPECT_EQ(stack[0]->GetLocation().symbol().Get()->As<Function>(), higher_func.get());
+
+  stack.ClearFrames();
+  stack.SetFrames(
+      debug_ipc::ThreadRecord::StackAmount::kFull,
+      {
+          {debug_ipc::StackFrame(0x1235, 0x100000, 0, debug_ipc::StackFrame::Trust::kCFI,
+                                 debug_ipc::StackFrame::AddressType::kReturn)},
+      });
+
+  EXPECT_EQ(stack.size(), 1u);
+  // The stack object will only apply the subtraction to the symbolization step to get the proper
+  // function name. Once symbolization is completed the address is fixed up to be back where the
+  // return address put the PC so things like "disassemble" and register values reflect the actual
+  // PC rather than the symbolized PC.
+  EXPECT_EQ(stack[0]->GetAddress() - 1, kLowerEndAddr);
+  EXPECT_TRUE(stack[0]->GetLocation().is_symbolized());
+  EXPECT_EQ(stack[0]->GetLocation().symbol().Get()->As<Function>(), lower_func.get());
+
+  stack.ClearFrames();
+  stack.SetFrames(
+      debug_ipc::ThreadRecord::StackAmount::kFull,
+      {
+          {debug_ipc::StackFrame(0x1235, 0x100000, 0, debug_ipc::StackFrame::Trust::kContext,
+                                 debug_ipc::StackFrame::AddressType::kExact)},
+          {debug_ipc::StackFrame(0x1235, 0x100010, 0, debug_ipc::StackFrame::Trust::kCFI,
+                                 debug_ipc::StackFrame::AddressType::kReturn)},
+      });
+
+  EXPECT_EQ(stack.size(), 2u);
+  EXPECT_EQ(stack[0]->GetLocation().address(), kHigherStartAddr);
+  EXPECT_TRUE(stack[0]->GetLocation().is_symbolized());
+  EXPECT_EQ(stack[0]->GetLocation().symbol().Get()->As<Function>(), higher_func.get());
+  EXPECT_EQ(stack[1]->GetLocation().address() - 1, kLowerEndAddr);
+  EXPECT_TRUE(stack[1]->GetLocation().is_symbolized());
+  EXPECT_EQ(stack[1]->GetLocation().symbol().Get()->As<Function>(), lower_func.get());
 }
 
 }  // namespace zxdb

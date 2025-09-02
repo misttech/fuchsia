@@ -195,10 +195,27 @@ struct StackFrame {
     kUnknown,
   };
 
+  // Whether or not the PC value for this frame is set from the "return address" register, or if it
+  // was set directly by unwinding instructions.
+  enum class AddressType {
+    // This frame was recovered by the return address register.
+    kReturn,
+    // This frame was recovered by an explicit instruction to set PC to a specific value, or was
+    // recovered from context.
+    kExact,
+    kUnknown,
+  };
+
   StackFrame() = default;
   StackFrame(uint64_t ip, uint64_t sp, uint64_t cfa = 0, Trust trust = Trust::kContext,
+             AddressType pc_is_return_address = AddressType::kExact,
              std::vector<debug::RegisterValue> r = {})
-      : ip(ip), sp(sp), cfa(cfa), trust(trust), regs(std::move(r)) {}
+      : ip(ip),
+        sp(sp),
+        cfa(cfa),
+        trust(trust),
+        pc_is_return_address(pc_is_return_address),
+        regs(std::move(r)) {}
 
   // Comparisons (primarily for tests).
   bool operator==(const StackFrame& other) const {
@@ -219,6 +236,18 @@ struct StackFrame {
   // The Trust that restored this stack frame according to the unwinder.
   Trust trust = Trust::kUnknown;
 
+  // Indication from the unwinder tha the PC was recovered from a return address register (i.e. LR
+  // on ARM, rax on x64, or ra on riscv). When this is false, it means that the unwinding
+  // instructions set PC directly, and it was not recovered from a return address register.
+  //
+  // This is very important for accurate symbolization of PCs that are on the beginning or ending
+  // addresses for a particular function. For the case where PC was restored as a return address
+  // (the "normal" case), we want to subtract 1 from the return address, which is normally pointing
+  // to the address _after_ the callsite, when we want to symbolize the function where the call came
+  // from. On the other hand when the unwinding instructions set PC explicitly, we should not apply
+  // this subtraction during symbolization.
+  AddressType pc_is_return_address = AddressType::kUnknown;
+
   // Known general registers for this stack frame. See IsGeneralRegister() for
   // which registers are counted as "general".
   //
@@ -231,6 +260,10 @@ struct StackFrame {
 
     if (ver >= 70) {
       ser | trust;
+    }
+
+    if (ver >= 71) {
+      ser | pc_is_return_address;
     }
   }
 

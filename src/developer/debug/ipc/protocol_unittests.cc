@@ -609,11 +609,11 @@ TEST(Protocol, ThreadStatusReply) {
   initial.record.state = ThreadRecord::State::kRunning;
   initial.record.stack_amount = ThreadRecord::StackAmount::kFull;
   initial.record.frames.emplace_back(
-      1234, 9875, 89236413, StackFrame::Trust::kContext,
+      1234, 9875, 89236413, StackFrame::Trust::kContext, StackFrame::AddressType::kExact,
       std::vector<debug::RegisterValue>{{RegisterID::kX64_rsi, static_cast<uint64_t>(12)},
                                         {RegisterID::kX64_rdi, static_cast<uint64_t>(0)}});
   initial.record.frames.emplace_back(
-      71562341, 89236413, 0, StackFrame::Trust::kCFI,
+      71562341, 89236413, 0, StackFrame::Trust::kCFI, StackFrame::AddressType::kReturn,
       std::vector<debug::RegisterValue>{{RegisterID::kX64_rsi, static_cast<uint64_t>(11u)},
                                         {RegisterID::kX64_rdi, static_cast<uint64_t>(1u)}});
 
@@ -978,6 +978,8 @@ TEST(Protocol, NotifyException) {
   initial.thread.name = "foo";
   initial.thread.stack_amount = ThreadRecord::StackAmount::kMinimal;
   initial.thread.frames.emplace_back(0x7647342634, 0x9861238251);
+  initial.thread.frames.emplace_back(0x600df00d, 0x8166023872, 0, StackFrame::Trust::kCFI,
+                                     StackFrame::AddressType::kReturn);
   initial.type = ExceptionType::kHardwareBreakpoint;
   initial.timestamp = kTestTimestampDefault;
 
@@ -1017,6 +1019,7 @@ TEST(Protocol, NotifyException) {
   EXPECT_EQ(initial.thread.name, second.thread.name);
   EXPECT_EQ(initial.thread.stack_amount, second.thread.stack_amount);
   EXPECT_EQ(initial.thread.frames[0], second.thread.frames[0]);
+  EXPECT_EQ(initial.thread.frames[1], second.thread.frames[1]);
   EXPECT_EQ(initial.type, second.type);
   EXPECT_EQ(initial.timestamp, second.timestamp);
 

@@ -279,12 +279,13 @@ void Stack::ClearFrames() {
   delegate_->DidUpdateStackFrames();
 }
 
-Location Stack::SymbolizeFrameAddress(uint64_t address, bool is_top_physical_frame) const {
+Location Stack::SymbolizeFrameAddress(
+    uint64_t address, debug_ipc::StackFrame::AddressType pc_is_return_address) const {
   // Adjust locations for non-topmost frames because we should display the locations of function
   // calls instead of return addresses. Inlined functions should also be expanded from the call
   // sites rather than the return sites.
   uint64_t address_to_symbolize = address;
-  if (!is_top_physical_frame)
+  if (pc_is_return_address == debug_ipc::StackFrame::AddressType::kReturn)
     address_to_symbolize -= 1;
 
   // The symbols will provide the location for the innermost inlined function.
@@ -292,7 +293,7 @@ Location Stack::SymbolizeFrameAddress(uint64_t address, bool is_top_physical_fra
 
   // Restore the actual address so that the register value and commands like "disassemble" are
   // still correct.
-  if (!is_top_physical_frame)
+  if (pc_is_return_address == debug_ipc::StackFrame::AddressType::kReturn)
     loc.AddAddressOffset(1);
 
   return loc;
@@ -304,10 +305,7 @@ void Stack::AppendFrame(const debug_ipc::StackFrame& record) {
   // work. A possible addition is to just save the debug_ipc::StackFrames and only expand the inline
   // frames when the frame list is accessed.
 
-  // Indicates we're adding the newest physical frame and its inlines to the frame list.
-  bool is_top_physical_frame = frames_.empty();
-
-  Location inner_loc = SymbolizeFrameAddress(record.ip, is_top_physical_frame);
+  Location inner_loc = SymbolizeFrameAddress(record.ip, record.pc_is_return_address);
 
   const Function* cur_func = inner_loc.symbol().Get()->As<Function>();
   if (!cur_func) {
