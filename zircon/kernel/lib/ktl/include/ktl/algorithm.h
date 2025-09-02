@@ -93,6 +93,7 @@ using std::ranges::upper_bound;
 
 // "Minimum/maximum operations"
 using std::clamp;
+using std::equal;
 using std::max;
 using std::max_element;
 using std::min;

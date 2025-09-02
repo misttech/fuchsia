@@ -11,11 +11,13 @@ zx_library("instrumentation") {
   if (toolchain_environment == "kernel") {
     sources += [ "vmo.cc" ]
     deps = [
+      ":memory-profile",
       ":private",
       ":profile",
       ":sancov",
       "asan",
       "ubsan:runtime",
+      "//zircon/kernel/lib/heap",
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/version",
       "//zircon/kernel/object",
@@ -56,6 +58,20 @@ if (is_kernel) {
       # The LLVM header file describing the instrumentation data tests this.
       defines += [ "_WIN32" ]
     }
+  }
+
+  source_set("memory-profile") {
+    sources = [ "memory-profile.cc" ]
+    deps = [
+      ":headers",
+      ":private",
+      "//zircon/kernel/lib/heap:headers",
+      "//zircon/kernel/lib/ktl",
+      "//zircon/kernel/lib/version",
+      "//zircon/kernel/object",
+      "//zircon/kernel/vm:headers",
+    ]
+    public_configs = [ "//zircon/kernel:kernel_memory_profiler" ]
   }
 
   source_set("sancov") {

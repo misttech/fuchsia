@@ -19,7 +19,8 @@ __BEGIN_CDECLS
 
 #ifdef _KERNEL
 
-// define this to enable collection of all unique call sites with unique sizes
+// Enables collection of all unique call sites with unique sizes.
+// KERNEL_MEMORY_PROFILER and HEAP_COLLECT_STATS are mutually exclusive.
 #define HEAP_COLLECT_STATS 0
 
 // standard heap definitions
@@ -36,6 +37,9 @@ void heap_get_info(size_t* total_bytes, size_t* free_bytes);
 
 // called once at kernel initialization
 void heap_init(void);
+
+// Returns the address of the heap profile buffer if it exists, and zero otherwise.
+void get_heap_profile(const void** ptr, size_t* size);
 
 #endif  // _KERNEL
 

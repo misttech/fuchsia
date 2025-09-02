@@ -1055,6 +1055,11 @@ NO_ASAN uint32_t cmpct_get_cookie(void* ptr) {
   return header->cookie;
 }
 
+NO_ASAN uint32_t cmpct_get_size(void* ptr) {
+  header_t* header = reinterpret_cast<header_t*>(ptr) - 1;
+  return header->size;
+}
+
 NO_ASAN void cmpct_free(void* payload) {
   LOCAL_TRACE_DURATION("cmpct_free", trace);
   if (payload == NULL) {

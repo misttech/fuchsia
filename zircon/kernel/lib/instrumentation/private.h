@@ -36,4 +36,7 @@ InstrumentationDataVmo LlvmProfdataVmo();
 InstrumentationDataVmo SancovGetPcVmo();
 InstrumentationDataVmo SancovGetCountsVmo();
 
+// memory-profile.cc
+InstrumentationDataVmo MemoryProfileVmo();
+
 #endif  // ZIRCON_KERNEL_LIB_INSTRUMENTATION_PRIVATE_H_

@@ -23,9 +23,11 @@ source_set("heap") {
     "cxx_allocator.cc",
     "heap_wrapper.cc",
   ]
+  public_configs = [ "//zircon/kernel:kernel_memory_profiler" ]
   deps = [
     ":headers.internal",
     "cmpctmalloc",
+    "profile",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/virtual_alloc",
     "//zircon/system/ulib/lazy_init",

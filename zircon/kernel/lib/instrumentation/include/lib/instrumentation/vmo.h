@@ -26,6 +26,7 @@ class InstrumentationData {
     kLlvmProfdataVmo,
     kSancovVmo,
     kSancovCountsVmo,
+    kMemoryProfileVmo,
 
     kVmoCount,
   };

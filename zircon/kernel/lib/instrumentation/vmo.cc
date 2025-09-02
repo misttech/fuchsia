@@ -124,7 +124,8 @@ zx_status_t InstrumentationData::GetVmos(Handle* handles[]) {
         return SancovGetPcVmo;
       case kSancovCountsVmo:
         return SancovGetCountsVmo;
-
+      case kMemoryProfileVmo:
+        return MemoryProfileVmo;
         // The symbolizer file is done separately below since it must be last.
       case kSymbolizerVmo:
       case kVmoCount:

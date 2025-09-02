@@ -12,6 +12,7 @@
 #include <lib/console.h>
 #include <lib/heap.h>
 #include <lib/heap_internal.h>
+#include <lib/heap_profile.h>
 #include <lib/instrumentation/asan.h>
 #include <lib/lazy_init/lazy_init.h>
 #include <lib/virtual_alloc.h>
@@ -39,11 +40,20 @@
 #endif
 #endif
 
+#if KERNEL_MEMORY_PROFILER && HEAP_COLLECT_STATS
+#error "Kernel memory profiler and heap collect statistics cannot be enabled at the same time."
+#endif
+
 /* heap tracing */
 static bool heap_trace = false;
 
 // keep a list of unique caller:size sites in a list
 namespace {
+#if KERNEL_MEMORY_PROFILER
+heap_profile::HeapProfileMap</*ValuesSize=*/1024ul * PAGE_SIZE, /*Capacity=*/4096ul * 4,
+                             /*BucketCount=*/4096>
+    alloc_map;
+#endif
 
 struct alloc_stat : fbl::DoublyLinkedListable<alloc_stat*> {
   // caller and size are used to uniquely identify this stat
@@ -69,6 +79,23 @@ lazy_init::LazyInit<VirtualAlloc> virtual_alloc;
 // Increments the alloc_count for the given caller+size reference and associates it with the given
 // heap_ptr, which should be the result from a cmpct_alloc call.
 void add_alloc_stat(void* caller, size_t size, void* heap_ptr) {
+#if KERNEL_MEMORY_PROFILER
+  {
+    Backtrace bt;
+    Thread::Current::GetBacktrace(bt);
+    Guard<SpinLock, IrqSave> guard(stat_lock::Get());
+    auto [counters, handle] = alloc_map.try_get({bt.data(), bt.size()});
+    if (counters) {
+      const uint32_t act_size = cmpct_get_size(heap_ptr);  // Get rounded up size.
+      counters->allocate(act_size);
+      cmpct_set_cookie(heap_ptr, static_cast<uint32_t>(handle));
+    } else {
+      alloc_map.event_dropped();
+    }
+    return;  // Not compatible with HEAP_COLLECT_STATS because both use the cookie.
+  }
+#endif
+
   if (!HEAP_COLLECT_STATS) {
     return;
   }
@@ -111,6 +138,22 @@ void add_alloc_stat(void* caller, size_t size, void* heap_ptr) {
 // returned by cmpct_alloc and should have previously been given to add_alloc_stat. add_free_stat
 // must be called *before* passing the ptr to cmpct_free
 void add_free_stat(void* heap_ptr) {
+#if KERNEL_MEMORY_PROFILER
+  {
+    const uint32_t handle = cmpct_get_cookie(heap_ptr);
+    const uint32_t size = cmpct_get_size(heap_ptr);
+    Guard<SpinLock, IrqSave> guard(stat_lock::Get());
+    heap_profile::Counters* counters = alloc_map.try_by_handle(handle);
+    if (counters) {
+      counters->deallocate(size);
+    } else {
+      alloc_map.event_dropped();
+    }
+
+    return;  // Not compatible with HEAP_COLLECT_STATS.
+  }
+#endif
+
   if (!HEAP_COLLECT_STATS) {
     return;
   }
@@ -250,6 +293,19 @@ void sized_free(void* ptr, size_t s) {
 }
 
 static void heap_dump(CmpctDumpOptions options) { cmpct_dump(options); }
+
+void get_heap_profile(const void** ptr, size_t* size) {
+  DEBUG_ASSERT(ptr);
+  DEBUG_ASSERT(size);
+#if KERNEL_MEMORY_PROFILER
+  std::span<const uint8_t> buf = alloc_map.data();
+  *ptr = buf.data();
+  *size = buf.size();
+#else
+  *ptr = nullptr;
+  *size = 0;
+#endif
+}
 
 void heap_get_info(size_t* total_bytes, size_t* free_bytes) {
   size_t used_bytes;

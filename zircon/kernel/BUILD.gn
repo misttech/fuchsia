@@ -20,6 +20,12 @@ declare_args() {
   # for all supported CPUs, not just $target_cpu.
   all_cpu_kernel_boot_tests = false
 
+  # Enable stacktrace and statistics aggregation for each malloc and free.
+  # `/boot/kernel/i/memory-profile/d/heap.bin` contains the binary data.
+  # Use `ffx profile heapdump snapshot --kernel` to produce a symbolized
+  # memory profile.
+  kernel_memory_profiler = false
+
   # A list of GN labels reaching zbi_input()-style targets to include in the
   # kernel ZBI.  These targets can be zbi_input(), kernel_cmdline(), etc. to
   # inject ZBI items or resource(), etc. to inject items into the filesystem
@@ -459,6 +465,15 @@ if (is_kernel) {
       "//zircon/kernel/phys:*",
     ]
     defines = [ "KERNEL_IMAGE_MAX_SIZE=$kernel_image_max_size" ]
+  }
+
+  config("kernel_memory_profiler") {
+    visibility = [
+      ":*",
+      "//zircon/kernel/lib/heap",
+      "//zircon/kernel/lib/instrumentation:memory-profile",
+    ]
+    defines = [ "KERNEL_MEMORY_PROFILER=$kernel_memory_profiler" ]
   }
 
   config("jtrace_config") {

@@ -66,5 +66,7 @@ void cmpct_test(void) TA_EXCL(TheHeapLock::Get());
 // safe.
 void cmpct_set_cookie(void* ptr, uint32_t cookie);
 uint32_t cmpct_get_cookie(void* ptr);
+// Returns the allocation size rounded up to the allocator bucket size.
+uint32_t cmpct_get_size(void* ptr);
 
 #endif  // ZIRCON_KERNEL_LIB_HEAP_CMPCTMALLOC_INCLUDE_LIB_CMPCTMALLOC_H_
