@@ -80,8 +80,6 @@ sdk_shared_library("backend_fuchsia_globals") {
 
   libcxx_linkage = "static"
 
-  symbols_api = "backend_fuchsia_globals.ifs"
-
   public = [ "include/lib/syslog/cpp/logging_backend_fuchsia_globals.h" ]
 
   sources = [ "logging_backend_fuchsia_globals.cc" ]

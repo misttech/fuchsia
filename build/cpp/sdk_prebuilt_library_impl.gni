@@ -34,20 +34,10 @@ import("//build/sdk/sdk_atom_alias.gni")
 #     If not specified, the path will be "<sdk_name>.api".
 #     Not allowed when `no_headers` is true or `category` is "internal".
 #
-#   symbols_api (required if `prebuilt_library_type` is "shared")
-#     Path to the ifs file containing the public symbols of this library for
-#     the PLATFORM build.
-#     This file is used to ensure modifications to the library's ABI are
-#     explicitly acknowledged.
-#     This path is not used for API-level specific checks.
-#     TODO(https://fxbug.dev/310006516): Remove when the `arch/` directory is
-#     removed from the IDK if not sooner.
-#     May only be specified when `prebuilt_library_type` is "shared".
-#
 #   no_headers (optional)
 #     Specifies that the library's headers are NOT included in the SDK.
 #     When true, the API modification acknowledgement mechanism is disabled.
-#     (Only the `symbols_api` mechanism will be used.)
+#     (Only the IFS file mechanism will be used.)
 #     Defaults to false.
 #     May only be specified when `prebuilt_library_type` is "shared".
 #
@@ -177,9 +167,8 @@ template("sdk_prebuilt_library_impl") {
           valid_categories || is_internal,
       "'${target_name}' has unsupported SDK category '${invoker.category}'. Must be one of ${valid_categories}.")
 
-  assert(
-      defined(invoker.symbols_api) == (prebuilt_library_type == "shared"),
-      "Shared libraries must define the path to the golden ifs file for the PLATFORM build. See comment in //build/cpp/verify_public_symbols.gni")
+  # TODO(https://fxbug.dev/342032854): Remove after updating Vulkan-Loader.
+  not_needed(invoker, [ "symbols_api" ])
 
   output_name = target_name
   if (defined(invoker.output_name)) {
@@ -259,7 +248,6 @@ template("sdk_prebuilt_library_impl") {
                              "sdk_headers_for_internal_use",
                              "runtime_deps",
                              "sdk_name",
-                             "symbols_api",
                            ])
 
     if (defined(visibility)) {
@@ -458,14 +446,6 @@ template("sdk_prebuilt_library_impl") {
       } else {
         ifs_golden_file = get_path_info(ifs_file_name, "abspath")
       }
-
-      # Verify that the path generated above is equivalent to that specified by
-      # the `symbols_api` parameter.
-      # TODO(https://fxbug.dev/342032854): Remove the `symbols_api` parameter
-      # since the path can be generated and it is only used for this target API
-      # level, for which it will be unnecessary in the future.
-      assert(rebase_path(invoker.symbols_api, "//") ==
-             rebase_path(ifs_golden_file, "//"))
 
       packaged_ifs_file = "${sdk_root_path}/${ifs_file_name}"
     }

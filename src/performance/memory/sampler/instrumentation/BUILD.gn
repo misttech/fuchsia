@@ -37,7 +37,6 @@ sdk_shared_library("instrumentation") {
   category = "partner"
   sdk_name = "sampler_instrumentation"
   output_name = "sampler_instrumentation"
-  symbols_api = "sampler_instrumentation.ifs"
 
   no_headers = true
   sources = [ "instrumentation.cc" ]

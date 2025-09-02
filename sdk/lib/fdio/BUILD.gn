@@ -61,7 +61,6 @@ if (is_fuzzer) {
   zx_library("fdio") {
     configs += [ "//build/config:all_source" ]
 
-    # Note symbols_api is implicit in zx_library() with sdk set.
     sdk = "shared"
     sdk_publishable = "partner"
 

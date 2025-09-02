@@ -59,7 +59,6 @@ sdk_shared_library("driver_runtime") {
   libcxx_linkage = "static"
   no_headers = true
   sdk_name = "driver_runtime_shared_lib"
-  symbols_api = "driver_runtime.ifs"
   sources = []
 
   deps = [ ":driver_runtime_impl" ]

@@ -273,7 +273,6 @@ template("zx_library") {
           category = sdk_category
           sdk_name = target_name
           libcxx_linkage = "static"
-          symbols_api = "//sdk/lib/$target_name/$target_name.ifs"
           forward_variables_from(invoker,
                                  [
                                    "sdk_headers_for_internal_use",

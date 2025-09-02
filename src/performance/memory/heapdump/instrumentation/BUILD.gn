@@ -52,7 +52,6 @@ sdk_shared_library("instrumentation") {
   category = "partner"
   sdk_name = "heapdump_instrumentation"
   output_name = "heapdump_instrumentation"
-  symbols_api = "heapdump_instrumentation.ifs"
 
   sources = [ "bind_with_fdio.cc" ]
   public_configs = [ ":include" ]

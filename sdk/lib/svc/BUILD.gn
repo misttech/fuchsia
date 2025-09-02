@@ -21,8 +21,6 @@ sdk_shared_library("svc") {
     "//zircon/system/ulib/fbl",
   ]
 
-  symbols_api = "svc.ifs"
-
   libcxx_linkage = "static"
 
   public_configs = [ ":include" ]
