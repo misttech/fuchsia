@@ -44,12 +44,22 @@ fuchsia_driver_component("virtual-bus-tester-banjo") {
   manifest = "meta/virtual-bus-tester-banjo.cml"
 }
 
+fuchsia_component_manifest("virtual-bus-tester-fidl-manifest") {
+  component_name = "virtual-bus-tester-fidl"
+  manifest = "meta/virtual-bus-tester-fidl.cml"
+}
+
+fuchsia_structured_config_cpp_elf_lib("virtual-bus-tester-fidl-config") {
+  cm_label = ":virtual-bus-tester-fidl-manifest"
+}
+
 fuchsia_cc_driver("virtual-bus-tester-fidl-driver") {
   testonly = true
   output_name = "virtual-bus-tester-fidl"
   sources = [ "host-fidl.cc" ]
   deps = [
     ":virtual-bus-tester-common",
+    ":virtual-bus-tester-fidl-config",
     "//sdk/fidl/fuchsia.hardware.usb:fuchsia.hardware.usb_cpp",
     "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client-dfv2-compat-logging",
   ]
@@ -58,7 +68,6 @@ fuchsia_cc_driver("virtual-bus-tester-fidl-driver") {
 fuchsia_driver_component("virtual-bus-tester-fidl") {
   testonly = true
   info = "meta/virtual-bus-tester-info.json"
-  component_name = "virtual-bus-tester-fidl"
+  cm_label = ":virtual-bus-tester-fidl-manifest"
   deps = [ ":virtual-bus-tester-fidl-driver" ]
-  manifest = "meta/virtual-bus-tester-fidl.cml"
 }

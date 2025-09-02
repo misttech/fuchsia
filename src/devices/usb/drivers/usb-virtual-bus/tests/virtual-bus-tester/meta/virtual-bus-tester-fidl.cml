@@ -29,4 +29,7 @@
             from: "self",
         },
     ],
+    config: {
+        vmo_data_size: { type: "uint64" },
+    },
 }

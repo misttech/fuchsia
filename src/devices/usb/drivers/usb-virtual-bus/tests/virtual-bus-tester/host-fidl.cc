@@ -149,14 +149,14 @@ zx::result<> FidlDevice::Start() {
     return zx::error(status);
   }
 
-  if (bulk_out_ep_.AddRequests(1, kVmoDataSize,
+  if (bulk_out_ep_.AddRequests(1, config_.vmo_data_size(),
                                fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 1) {
     FDF_LOG(ERROR, "Failed to register VMOs");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  if (bulk_in_ep_.AddRequests(1, kVmoDataSize, fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) !=
-      1) {
+  if (bulk_in_ep_.AddRequests(1, config_.vmo_data_size(),
+                              fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 1) {
     FDF_LOG(ERROR, "Failed to register VMOs");
     return zx::error(ZX_ERR_INTERNAL);
   }

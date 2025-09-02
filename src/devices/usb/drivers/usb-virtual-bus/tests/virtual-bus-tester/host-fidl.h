@@ -8,16 +8,15 @@
 #include <usb-endpoint/usb-endpoint-client.h>
 
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester/host.h"
+#include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester/virtual_bus_tester_fidl_config.h"
 
 namespace virtualbus {
 
 class FidlDevice : public Device {
- protected:
-  static constexpr auto kVmoDataSize = 20;
-
  public:
   FidlDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : Device(std::move(start_args), std::move(dispatcher)) {}
+      : Device(std::move(start_args), std::move(dispatcher)),
+        config_(take_config<virtual_bus_tester_fidl_config::Config>()) {}
 
   zx::result<> Start() override;
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
@@ -29,6 +28,7 @@ class FidlDevice : public Device {
   void OutComplete(fuchsia_hardware_usb_endpoint::Completion completion);
   void InComplete(fuchsia_hardware_usb_endpoint::Completion completion);
 
+  const virtual_bus_tester_fidl_config::Config config_;
   fdf::SynchronizedDispatcher dispatcher_;
 
   usb::EndpointClient<FidlDevice> bulk_out_ep_{usb::EndpointType::BULK, this,

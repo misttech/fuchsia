@@ -59,9 +59,19 @@ fuchsia_unittest_package("usb-virtual-bus-banjo-test") {
   }
 }
 
+fuchsia_structured_config_values("virtual-bus-tester-fidl-default-config") {
+  testonly = true
+  cm_label = "virtual-bus-tester:virtual-bus-tester-fidl-manifest"
+  component_name = "virtual-bus-tester-fidl"
+  values = {
+    vmo_data_size = 20
+  }
+}
+
 fuchsia_unittest_package("usb-virtual-bus-fidl-test") {
   deps = [
     ":usb-virtual-bus-test-common",
+    ":virtual-bus-tester-fidl-default-config",
     "virtual-bus-tester:virtual-bus-tester-fidl",
     "virtual-bus-tester-function:virtual-bus-tester-function-fidl",
   ]
