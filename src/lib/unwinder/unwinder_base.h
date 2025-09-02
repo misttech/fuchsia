@@ -32,6 +32,8 @@ class UnwinderBase {
     return cb(Error("Not implemented"), Registers(current.regs.arch()));
   }
 
+  virtual CfiUnwinder* cfi_unwinder() const { return cfi_unwinder_; }
+
  protected:
   CfiUnwinder* cfi_unwinder_;
 };

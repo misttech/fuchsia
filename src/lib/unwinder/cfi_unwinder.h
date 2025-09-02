@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <utility>
 #include <vector>
 
 #include "sdk/lib/fit/include/lib/fit/function.h"

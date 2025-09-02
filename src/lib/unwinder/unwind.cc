@@ -45,6 +45,7 @@ bool PcIsReturnAddress(const Registers& regs) {
       break;
   }
   uint64_t val;
+
   return regs.Get(reg_id, val).has_err();
 }
 
@@ -64,6 +65,19 @@ Error TryUnwinder(UnwinderBase* unwinder, Frame::Trust trust, Memory* stack, con
     next.pc_is_return_address = false;
     return Success();
   }
+
+  // Successfully probing a sigreturn frame means the next frame needs to be unwound by the
+  // sigreturn unwinder. Only do this if the CFI unwinder failed to detect the 'S' augmentation.
+  if (!next.is_signal_frame) {
+    if (auto err = SigReturnUnwinder::ProbePCForSigReturn(unwinder->cfi_unwinder(), next.regs);
+        err.ok()) {
+      next.pc_is_return_address = false;
+      next.is_signal_frame = true;
+      return Success();
+    }
+  }
+
+  // Otherwise defer to the value of the return address register.
   if (trust == Frame::Trust::kCFI) {
     next.pc_is_return_address = PcIsReturnAddress(next.regs);
   } else if (trust == Frame::Trust::kSigReturn) {
@@ -154,14 +168,26 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
   bool success = false;
   std::string err_msg;
 
-  // Try CFI first because it's the most accurate one.
+  // Try sigreturn first, since it will be explicitly requested via |current.is_signal_frame|. This
+  // means the CFI unwinder got an S augmentation or we already successfully probed sigreturn
+  // instructions for |current.pc|.
+  if (current.is_signal_frame) {
+    if (auto err = TryUnwinder(&sigreturn_unwinder, Frame::Trust::kSigReturn, stack, current, next);
+        err.ok()) {
+      success = true;
+    } else {
+      err_msg += "SIGRETURN: " + err.msg();
+    }
+  }
+
+  // For non-signal frames, try CFI first because it's the most accurate one.
   // TODO(https://fxbug.dev/316047562): Make CFI work on RISC-V.
   if (current.regs.arch() != Registers::Arch::kRiscv64) {
     if (auto err = TryUnwinder(&cfi_unwinder_, Frame::Trust::kCFI, stack, current, next);
         err.ok()) {
       success = true;
     } else {
-      err_msg += "CFI: " + err.msg();
+      err_msg += "; CFI: " + err.msg();
     }
   }
 
@@ -193,16 +219,6 @@ void Unwinder::Step(Memory* stack, Frame& current, Frame& next) {
       success = true;
     } else {
       err_msg += "; FP: " + err.msg();
-    }
-  }
-
-  // Try sigreturn before SCS, since it can recover more than SCS.
-  if (!success && current.regs.arch() == Registers::Arch::kArm64) {
-    if (auto err = TryUnwinder(&sigreturn_unwinder, Frame::Trust::kSigReturn, stack, current, next);
-        err.ok()) {
-      success = true;
-    } else {
-      err_msg += "; SIGRETURN: " + err.msg();
     }
   }
 
@@ -259,6 +275,20 @@ void AsyncUnwinder::Step(Frame& current) {
 
         bool success = async_err.ok();
         std::string err_msg = async_err.msg();
+
+        // Try sigreturn first, since it will be explicitly requested via |current.is_signal_frame|.
+        // This means the CFI unwinder got an S augmentation or we already successfully probed
+        // sigreturn instructions for |current.pc|.
+        if (current.is_signal_frame) {
+          SigReturnUnwinder sigreturn_unwinder(&cfi_unwinder_);
+          if (auto err = TryUnwinder(&sigreturn_unwinder, Frame::Trust::kSigReturn, stack_.get(),
+                                     current, next);
+              err.ok()) {
+            success = true;
+          } else {
+            err_msg += "SIGRETURN: " + err.msg();
+          }
+        }
 
         if (!success && !current.pc_is_return_address) {
           // PLT unwinder only works for the first frame.

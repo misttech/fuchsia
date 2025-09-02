@@ -8,6 +8,9 @@
 #include <cinttypes>
 #include <cstdint>
 
+#include "src/lib/unwinder/cfi_unwinder.h"
+#include "src/lib/unwinder/error.h"
+
 namespace unwinder {
 
 Error SigReturnUnwinder::Step(Memory* stack, const Registers& current, Registers& next) {
@@ -15,10 +18,37 @@ Error SigReturnUnwinder::Step(Memory* stack, const Registers& current, Registers
     case Registers::Arch::kX64:
       return StepX64(stack, current, next);
     case Registers::Arch::kArm32:
+      return StepArm32(stack, current, next);
     case Registers::Arch::kArm64:
       return StepArm64(stack, current, next);
     case Registers::Arch::kRiscv64:
       return StepRiscv64(stack, current, next);
+  }
+}
+
+Error SigReturnUnwinder::ProbePCForSigReturn(CfiUnwinder* cfi_unwinder, const Registers& regs) {
+  uint64_t pc;
+  if (auto err = regs.GetPC(pc); err.has_err()) {
+    return err;
+  }
+
+  Module* elf_module;
+  if (auto err = cfi_unwinder->GetModuleForPc(pc, &elf_module); err.has_err()) {
+    return err;
+  }
+
+  if (elf_module->binary_memory == nullptr) {
+    return Error("No binary memory found for address: %#" PRIx64, pc);
+  }
+
+  Memory* binary_memory = elf_module->binary_memory;
+  switch (regs.arch()) {
+    case Registers::Arch::kArm32:
+      return ProbeArm32SigReturn(binary_memory, pc);
+    case Registers::Arch::kArm64:
+      return ProbeArm64SigReturn(binary_memory, pc);
+    default:
+      return Error("Not implemented.");
   }
 }
 
@@ -27,7 +57,77 @@ Error SigReturnUnwinder::StepX64(Memory* stack, const Registers& current, Regist
 }
 
 Error SigReturnUnwinder::StepArm32(Memory* stack, const Registers& current, Registers& next) {
-  return Error("not implemented");
+  // The sigreturn function looks like:
+  //
+  // 00000114 <__kernel_rt_sigreturn>:
+  //      114: e3a070ad      mov     r7, #173
+  //      118: ef000000      svc     #0x0
+
+  uint64_t pc;
+  if (Error error = current.GetPC(pc); error.has_err()) {
+    return error;
+  }
+
+  if (auto err = ProbePCForSigReturn(cfi_unwinder_, current); err.has_err()) {
+    return err;
+  }
+
+  // The sp points to an rt_sigframe:
+  //
+  // 128 byte siginfo struct
+  // ucontext struct:
+  //     4 byte long: uc_flags
+  //     4 byte pointer: uc_link
+  //    12 byte stack_t
+  //       sigcontext
+
+  const uint64_t sigcontext_offset = 128 + 4 + 4 + 12;
+  // Add another 12 to skip over the trap_no, error_code, and oldmask fields below.
+  const uint64_t regs_offset = sigcontext_offset + 12;
+
+  next = current;
+
+  uint64_t sp;
+  if (Error error = current.GetSP(sp); error.has_err()) {
+    return error;
+  }
+
+  // The layout of the sigcontext struct looks like this:
+  //
+  //  struct sigcontext {
+  //    unsigned long trap_no;
+  //    unsigned long error_code;
+  //    unsigned long oldmask;
+  //    unsigned long arm_r0;
+  //    unsigned long arm_r1;
+  //    unsigned long arm_r2;
+  //    unsigned long arm_r3;
+  //    unsigned long arm_r4;
+  //    unsigned long arm_r5;
+  //    unsigned long arm_r6;
+  //    unsigned long arm_r7;
+  //    unsigned long arm_r8;
+  //    unsigned long arm_r9;
+  //    unsigned long arm_r10;
+  //    unsigned long arm_fp;
+  //    unsigned long arm_ip;
+  //    unsigned long arm_sp;
+  //    unsigned long arm_lr;
+  //    unsigned long arm_pc;
+  //    unsigned long arm_cpsr;
+  //    unsigned long fault_address;
+  //  };
+  //
+  //  We don't care about anything other than the register values.
+  for (size_t i = 0; i < static_cast<size_t>(RegisterID::kArm32_last); i++) {
+    uint32_t gpr;
+    if (Error error = stack->Read(sp + regs_offset + (i * sizeof(gpr)), gpr); error.has_err()) {
+      return error;
+    }
+    next.Set(static_cast<RegisterID>(i), gpr);
+  }
+
+  return Success();
 }
 
 Error SigReturnUnwinder::StepArm64(Memory* stack, const Registers& current, Registers& next) {
@@ -37,32 +137,8 @@ Error SigReturnUnwinder::StepArm64(Memory* stack, const Registers& current, Regi
   //      1d0: d2801168      mov     x8, #0x8b
   //      1d4: d4000001      svc     #0
 
-  uint64_t pc;
-  if (Error error = current.GetPC(pc); error.has_err()) {
-    return error;
-  }
-
-  // Get the memory containing the pc to check for the sigreturn sequence in the
-  // vDSO. Avoid attempting to load the module info using GetCfiModuleInfoForPc,
-  // which will likely fail because the vDSO does not usually have .eh_frame or
-  // .debug_frame sections.
-  Module* elf_module;
-  if (Error error = cfi_unwinder_->GetModuleForPc(pc, &elf_module); error.has_err()) {
-    return error;
-  }
-
-  if (elf_module->binary_memory == nullptr) {
-    return Error("Binary memory for module %#" PRIx64 " is not set!", elf_module->load_address);
-  }
-
-  Memory* memory = elf_module->binary_memory;
-  // Check for the sigreturn instruction sequence.
-  uint64_t instructions;
-  if (Error error = memory->Read(pc, instructions); error.has_err()) {
-    return error;
-  }
-  if (instructions != 0xd4000001d2801168ULL) {
-    return Error("It doesn't look like a sigreturn function");
+  if (auto err = ProbePCForSigReturn(cfi_unwinder_, current); err.has_err()) {
+    return err;
   }
 
   // The sp points to an rt_sigframe:
@@ -101,6 +177,32 @@ Error SigReturnUnwinder::StepArm64(Memory* stack, const Registers& current, Regi
 
 Error SigReturnUnwinder::StepRiscv64(Memory* stack, const Registers& current, Registers& next) {
   return Error("not implemented");
+}
+
+Error SigReturnUnwinder::ProbeArm32SigReturn(Memory* stack, uint64_t pc) {
+  // Check for the sigreturn instruction sequence.
+  uint64_t instructions;
+  if (Error error = stack->Read(pc, instructions); error.has_err()) {
+    return error;
+  }
+  if (instructions != 0xef000000e3a070adULL) {
+    return Error("It doesn't look like a sigreturn function");
+  }
+
+  return Success();
+}
+
+Error SigReturnUnwinder::ProbeArm64SigReturn(Memory* stack, uint64_t pc) {
+  // Check for the sigreturn instruction sequence.
+  uint64_t instructions;
+  if (Error error = stack->Read(pc, instructions); error.has_err()) {
+    return error;
+  }
+  if (instructions != 0xd4000001d2801168ULL) {
+    return Error("It doesn't look like a sigreturn function");
+  }
+
+  return Success();
 }
 
 }  // namespace unwinder

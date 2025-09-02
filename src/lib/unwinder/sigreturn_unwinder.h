@@ -22,12 +22,17 @@ class SigReturnUnwinder : public UnwinderBase {
     return Step(stack, current.regs, next.regs);
   }
 
+  static Error ProbePCForSigReturn(CfiUnwinder* cfi_unwinder, const Registers& regs);
+
  private:
   Error Step(Memory* stack, const Registers& current, Registers& next);
   Error StepX64(Memory* stack, const Registers& current, Registers& next);
   Error StepArm32(Memory* stack, const Registers& current, Registers& next);
   Error StepArm64(Memory* stack, const Registers& current, Registers& next);
   Error StepRiscv64(Memory* stack, const Registers& current, Registers& next);
+
+  static Error ProbeArm32SigReturn(Memory* stack, uint64_t pc);
+  static Error ProbeArm64SigReturn(Memory* stack, uint64_t pc);
 };
 
 }  // namespace unwinder
