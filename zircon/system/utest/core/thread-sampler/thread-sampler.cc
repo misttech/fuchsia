@@ -23,10 +23,10 @@
 
 #include <thread>
 
-#include <runtime/thread.h>
 #include <zxtest/zxtest.h>
 
 #include "../needs-next.h"
+#include "../threads/test-thread.h"
 #include "../threads/thread-functions/thread-functions.h"
 
 #ifdef EXPERIMENTAL_THREAD_SAMPLER_ENABLED
@@ -412,11 +412,7 @@ TEST(ThreadSampler, ClosedHandleReadBuffers) {
 TEST(ThreadSampler, NonRunningThread) {
   NEEDS_NEXT_SKIP(zx_sampler_create);
 
-  zxr_thread_t zxr_thread;
-  ASSERT_OK(zxr_thread_create(zx_process_self(), "test-thread", false, &zxr_thread));
-  zx_handle_t thread = zxr_thread_get_handle(&zxr_thread);
-
-  size_t buffer_size = ZX_PAGE_SIZE;
+  size_t buffer_size = zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::msec(1).get(),
       .buffer_size = buffer_size,
@@ -436,7 +432,9 @@ TEST(ThreadSampler, NonRunningThread) {
     ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
     return;
   }
-  ASSERT_OK(zx_sampler_attach(sampler.get(), thread));
+  TestThread test_thread;
+  ASSERT_NO_FATAL_FAILURE(test_thread.Init("NonRunningThread"));
+  ASSERT_OK(zx_sampler_attach(sampler.get(), test_thread.thread().get()));
 
   ASSERT_OK(create_res);
 
@@ -446,26 +444,16 @@ TEST(ThreadSampler, NonRunningThread) {
 
   zx_handle_t event_handle = event.get();
 
-  zx::vmo stack_handle_;
-  size_t stack_size = size_t{256} << 10;
-  ASSERT_OK(zx::vmo::create(stack_size, ZX_VMO_RESIZABLE, &stack_handle_));
-  ASSERT_NE(stack_handle_.get(), ZX_HANDLE_INVALID);
-
-  uintptr_t thread_stack;
-  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, stack_handle_, 0,
-                                       stack_size, &thread_stack));
-  auto d = fit::defer(
-      [thread_stack, stack_size]() { zx::vmar::root_self()->unmap(thread_stack, stack_size); });
   // Now we actually start the thread. Our request to sample it from earlier should carry over to
   // the now running thread.
-  ASSERT_OK(zxr_thread_start(&zxr_thread, thread_stack, stack_size, threads_test_wait_loop,
-                             &event_handle));
+  ASSERT_NO_FATAL_FAILURE(test_thread.Start(threads_test_wait_loop, event_handle));
   ASSERT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
 
   zx::nanosleep(zx::deadline_after(zx::sec(1)));
   ASSERT_OK(zx_sampler_stop(sampler.get()));
   ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_1));
-  ASSERT_OK(zxr_thread_join(&zxr_thread));
+
+  ASSERT_NO_FATAL_FAILURE(test_thread.Wait());
 
   zx::result<size_t> record_count = CountRecords(sampler, buffer_size);
   ASSERT_OK(record_count.status_value());

@@ -372,6 +372,7 @@ static_library("standalone") {
     "//src/devices/bin/driver_manager/tests/modules/*",
     "//src/devices/lib/driver-host-passive-abi/*",
     "//zircon/kernel/lib/userabi/*",
+    "//zircon/system/utest/core/threads/*",
   ]
 
   complete_static_lib = true

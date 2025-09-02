@@ -22,11 +22,6 @@ static_library("runtime") {
   visibility = [
     "//sdk/lib/c/*",
     "//zircon/third_party/ulib/musl/*",
-
-    # TODO(https://fxbug.dev/42055152): Remove these when the tests are fixed
-    # not to use these libc internals directly.
-    "//zircon/system/utest/core/thread-sampler:*",
-    "//zircon/system/utest/core/threads:*",
   ]
 
   public_deps = [ ":headers" ]

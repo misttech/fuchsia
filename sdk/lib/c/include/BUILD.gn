@@ -155,6 +155,7 @@ basic_source_set("headers") {
     "//build/config/zircon:user_deps",
     "//zircon/kernel/lib/userabi/userboot/*",
     "//zircon/system/ulib/ldmsg/*",
+    "//zircon/system/utest/core/threads/*",
     "//zircon/third_party/scudo/*",
     "//zircon/third_party/ulib/musl/*",
   ]
