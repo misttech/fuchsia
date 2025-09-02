@@ -724,12 +724,18 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         // Accessibility
         if components.contains(&SettingType::Accessibility) {
             device_storage_factory
-                .initialize::<AccessibilityController>()
+                .initialize::<AccessibilityController<T>>()
                 .await
                 .expect("storage should still be initializing");
+            let device_storage_factory = Rc::clone(&device_storage_factory);
             factory_handle.register(
                 SettingType::Accessibility,
-                Box::new(DataHandler::<AccessibilityController>::spawn),
+                Box::new(move |context| {
+                    DataHandler::<AccessibilityController<T>>::spawn_with_async(
+                        context,
+                        Rc::clone(&device_storage_factory),
+                    )
+                }),
             );
         }
 

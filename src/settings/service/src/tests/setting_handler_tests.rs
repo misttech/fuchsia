@@ -1,7 +1,6 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::accessibility::types::AccessibilityInfo;
 use crate::agent::AgentCreator;
 use crate::base::{get_all_setting_types, SettingInfo, SettingType, UnknownInfo};
 use crate::handler::base::{ContextBuilder, Request};
@@ -96,14 +95,13 @@ async fn test_write_notify() {
         .get_signature();
 
     let storage_factory = Rc::new(InMemoryStorageFactory::new());
-    storage_factory.initialize_storage::<AccessibilityInfo>().await;
+    storage_factory.initialize_storage::<UnknownInfo>().await;
 
     let (invocation_messenger, _) = delegate.create(MessengerType::Unbound).await.unwrap();
     let (_, agent_receptor) = delegate.create(MessengerType::Unbound).await.unwrap();
     let agent_receptor_signature = agent_receptor.get_signature();
     let agent_context =
-        crate::agent::Context::new(agent_receptor, delegate, [SettingType::Accessibility].into())
-            .await;
+        crate::agent::Context::new(agent_receptor, delegate, [SettingType::Unknown].into()).await;
 
     let blueprint = crate::agent::storage_agent::create_registrar(Rc::clone(&storage_factory));
 
@@ -129,7 +127,7 @@ async fn test_write_notify() {
     }
 
     let context = ContextBuilder::new(
-        SettingType::Accessibility,
+        SettingType::Unknown,
         handler_messenger,
         handler_receptor,
         signature,
@@ -158,33 +156,8 @@ async fn test_write_notify() {
     // Get the proxy.
     let mut proxy = client_rx.next().await.unwrap();
 
-    verify_write_behavior(
-        &mut proxy,
-        AccessibilityInfo {
-            audio_description: None,
-            screen_reader: None,
-            color_inversion: None,
-            enable_magnification: None,
-            color_correction: None,
-            captions_settings: None,
-        },
-        false,
-    )
-    .await;
-
-    verify_write_behavior(
-        &mut proxy,
-        AccessibilityInfo {
-            audio_description: Some(true),
-            screen_reader: None,
-            color_inversion: None,
-            enable_magnification: None,
-            color_correction: None,
-            captions_settings: None,
-        },
-        true,
-    )
-    .await;
+    verify_write_behavior(&mut proxy, UnknownInfo(false), false).await;
+    verify_write_behavior(&mut proxy, UnknownInfo(true), true).await;
 }
 
 async fn verify_write_behavior<S: DeviceStorageCompatible + Into<SettingInfo>>(

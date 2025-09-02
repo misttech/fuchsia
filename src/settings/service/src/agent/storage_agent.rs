@@ -12,7 +12,6 @@ use futures::stream::{FuturesUnordered, StreamFuture};
 use futures::StreamExt;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
-use crate::accessibility::types::AccessibilityInfo;
 use crate::agent::{self, AgentCreator, Context, CreationFunc, Lifespan};
 use crate::audio::types::AudioInfo;
 #[cfg(test)]
@@ -141,7 +140,6 @@ macro_rules! into_storage_info {
 
 #[cfg(test)]
 into_storage_info!(UnknownInfo => SettingInfo);
-into_storage_info!(AccessibilityInfo => SettingInfo);
 into_storage_info!(AudioInfo => SettingInfo);
 into_storage_info!(FactoryResetInfo => SettingInfo);
 into_storage_info!(DoNotDisturbInfo => SettingInfo);
@@ -215,9 +213,7 @@ where
                 match setting_type {
                     #[cfg(test)]
                     SettingType::Unknown => self.read::<UnknownInfo>(id, responder).await,
-                    SettingType::Accessibility => {
-                        self.read::<AccessibilityInfo>(id, responder).await
-                    }
+                    SettingType::Accessibility => panic!("Accessibility goes directly to storage"),
                     SettingType::Audio => {
                         trace!(id, c"audio storage read");
                         self.read::<AudioInfo>(id, responder).await
@@ -238,7 +234,9 @@ where
             {
                 #[cfg(test)]
                 SettingInfo::Unknown(info) => self.write(info, responder).await,
-                SettingInfo::Accessibility(info) => self.write(info, responder).await,
+                SettingInfo::Accessibility(_) => {
+                    panic!("Accessibility goes directly to storage")
+                }
                 SettingInfo::Audio(info) => {
                     trace!(id, c"audio storage write");
                     self.write(info, responder).await
