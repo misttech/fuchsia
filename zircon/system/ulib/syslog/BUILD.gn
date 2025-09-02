@@ -106,8 +106,9 @@ _test_sources = [
 _test_deps = [
   ":helpers",
   "//sdk/fidl/fuchsia.logger:fuchsia.logger_cpp",
+  "//sdk/lib/diagnostics/reader/cpp",
   "//sdk/lib/syslog/cpp",
-  "//src/lib/diagnostics/fake-log-sink/cpp",
+  "//src/lib/diagnostics/log/message/rust/cpp-log-decoder:lib",
   "//zircon/system/ulib/fbl",
   "//zircon/system/ulib/zx",
   "//zircon/system/ulib/zxtest",
@@ -118,12 +119,8 @@ test("syslog-test") {
   deps = _test_deps + [ ":syslog" ]
 }
 
-fuchsia_unittest_component("c-syslog-test") {
+fuchsia_unittest_package("c-syslog-tests") {
   deps = [ ":syslog-test" ]
-}
-
-fuchsia_test_package("c-syslog-tests") {
-  test_components = [ ":c-syslog-test" ]
 }
 
 fuchsia_unittest_component("c-syslog-defaults-test") {
