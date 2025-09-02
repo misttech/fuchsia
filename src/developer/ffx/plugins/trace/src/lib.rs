@@ -10,11 +10,10 @@ use ffx_trace_args::{Stop, TraceCommand, TraceSubCommand};
 use ffx_tracing::{self as ffx_trace, SymbolizationMap};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{Deferred, FfxMain, FfxTool, deferred};
-use fidl_fuchsia_developer_ffx::{self as ffx, TracingProxy};
 use fidl_fuchsia_tracing::{BufferingMode, KnownCategory};
 use fidl_fuchsia_tracing_controller::{
     ProviderInfo, ProviderStats, ProvisionerProxy, RecordingError, SessionManagerProxy, StopResult,
-    TraceConfig, TraceOptions,
+    TraceConfig, TraceOptions, Trigger,
 };
 use futures::Future;
 use futures::future::{BoxFuture, FutureExt as _};
@@ -22,13 +21,12 @@ use serde::{Deserialize, Serialize};
 use std::io::{Stdin, stdin};
 use std::path::{Component, PathBuf};
 use std::time::Duration;
-use target_holders::{daemon_protocol, moniker};
+use target_holders::moniker;
 use term_grid::Grid;
 #[cfg_attr(test, allow(unused))]
 use termion::terminal_size;
 use termion::{color, style};
 
-mod daemon;
 mod direct;
 mod process;
 use process::*;
@@ -274,9 +272,8 @@ fn print_grid(writer: &mut Writer, values: Vec<String>) -> Result<()> {
 
 type Writer = MachineWriter<TraceOutput>;
 #[derive(FfxTool)]
+#[target(direct)]
 pub struct TraceTool {
-    #[with(deferred(daemon_protocol()))]
-    proxy: Deferred<TracingProxy>,
     #[with(deferred(moniker("/core/trace_manager")))]
     provisioner: Deferred<ProvisionerProxy>,
     #[with(deferred(moniker("/core/trace_manager/trace_session_manager")))]
@@ -291,7 +288,7 @@ impl FfxMain for TraceTool {
     type Writer = Writer;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        trace(self.context, self.proxy, self.provisioner, self.session_manager, writer, self.cmd)
+        trace(self.context, self.provisioner, self.session_manager, writer, self.cmd)
             .await
             .map_err(Into::into)
     }
@@ -299,7 +296,6 @@ impl FfxMain for TraceTool {
 
 pub async fn trace(
     context: EnvironmentContext,
-    proxy: Deferred<TracingProxy>,
     provisioner: Deferred<ProvisionerProxy>,
     session_manager: Deferred<SessionManagerProxy>,
     mut writer: Writer,
@@ -412,15 +408,9 @@ pub async fn trace(
             if opts.background {
                 return match trace_proxy {
                     SessionManagerProxyType::Provisioner(_) => {
-                        background_trace_legacy(
-                            &context,
-                            proxy.await?,
-                            output,
-                            options,
-                            trace_config,
-                            &mut writer,
-                        )
-                        .await
+                        ffx_bail!(
+                            "Background tracing is not supported with devices that do not support SessionManagerProxy"
+                        );
                     }
                     SessionManagerProxyType::SessionManager(_) => {
                         let trace_config = TraceConfig {
@@ -465,7 +455,9 @@ pub async fn trace(
             };
             let trace_data = match trace_proxy {
                 SessionManagerProxyType::Provisioner(_) => {
-                    daemon::stop_tracing(&context, proxy.await?, &output).await?
+                    ffx_bail!(
+                        "Stop is not supported with devices that do not expose SessionManagerProxy"
+                    );
                 }
                 SessionManagerProxyType::SessionManager(_) => {
                     direct::stop_tracing(&context, None, trace_proxy, &output).await?
@@ -485,7 +477,9 @@ pub async fn trace(
         }
         TraceSubCommand::Status(_opts) => match trace_proxy {
             SessionManagerProxyType::Provisioner(_) => {
-                status_legacy(proxy.await?, &mut writer).await?
+                ffx_bail!(
+                    "Status is unavailable with devices that do not support SessionManagerProxy"
+                )
             }
             SessionManagerProxyType::SessionManager(session_manager_proxy) => {
                 status(session_manager_proxy, &mut writer).await?
@@ -574,7 +568,7 @@ async fn status(session_manager_proxy: SessionManagerProxy, writer: &mut Writer)
         Err(RecordingError::NoSuchTraceFile) => "No active traces running".to_string(),
         Ok(status) => {
             format!(
-                "Task Id: {}\nTotal Duration: {}\nRemaining Duration: {}\nCategories: {}",
+                "Task Id: {}\nTotal Duration: {}\nRemaining Duration: {}\nCategories: {}\nTriggers:\n{}",
                 status.task_id.map(|id| id.to_string()).unwrap_or_else(|| "unknown".to_string()),
                 status
                     .duration
@@ -592,7 +586,8 @@ async fn status(session_manager_proxy: SessionManagerProxy, writer: &mut Writer)
                         .categories
                         .map(|cat| cat.join(","))
                         .unwrap_or_else(|| "None".to_string()))
-                    .unwrap_or_else(|| "None".to_string())
+                    .unwrap_or_else(|| "None".to_string()),
+                trigger_status(status.triggers)
             )
         }
         Err(e) => format!("Unexpected error {e:?}"),
@@ -601,69 +596,22 @@ async fn status(session_manager_proxy: SessionManagerProxy, writer: &mut Writer)
     Ok(())
 }
 
-async fn status_legacy(proxy: TracingProxy, writer: &mut Writer) -> Result<()> {
-    let (iter_proxy, server) = fidl::endpoints::create_proxy::<ffx::TracingStatusIteratorMarker>();
-    proxy.status(server).await?;
-    let mut res = Vec::new();
-    loop {
-        let r = iter_proxy.get_next().await?;
-        if r.len() > 0 {
-            res.extend(r);
-        } else {
-            break;
-        }
-    }
-    if res.is_empty() {
-        writer.line("No active traces running.")?;
+fn trigger_status(triggers: Option<Vec<Trigger>>) -> String {
+    if let Some(trigger_list) = triggers {
+        trigger_list
+            .iter()
+            .map(|t| {
+                format!(
+                    "- {} : {}",
+                    t.alert.clone().unwrap_or_else(|| "".to_string()),
+                    t.action.map(|a| format!("{a:?}")).unwrap_or_else(|| "".to_string())
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     } else {
-        let mut unknown_target_counter = 1;
-        for trace in res.into_iter() {
-            let target_string =
-                trace.target.and_then(|t| t.nodename.or(t.serial_number)).unwrap_or_else(|| {
-                    let res = format!("Unknown Target {}", unknown_target_counter);
-                    unknown_target_counter += 1;
-                    res
-                });
-            writer.line(format!("- {}:", target_string))?;
-            writer.line(format!(
-                "  - Output file: {}",
-                trace
-                    .output_file
-                    .ok_or_else(|| anyhow!("Trace status response contained no output file"))?,
-            ))?;
-            if let Some(duration) = trace.duration {
-                writer.line(format!("  - Duration:  {} seconds", duration))?;
-                writer.line(format!(
-                    "  - Remaining: {} seconds",
-                    trace.remaining_runtime.ok_or_else(|| anyhow!(
-                        "Malformed status. Contained duration but not remaining runtime"
-                    ))?
-                ))?;
-            } else {
-                writer.line("  - Duration: indefinite")?;
-            }
-            if let Some(config) = trace.config {
-                writer.line("  - Config:")?;
-                if let Some(categories) = config.categories {
-                    writer.line("    - Categories:")?;
-                    writer.line(format!("      - {}", categories.join(",")))?;
-                }
-            }
-            if let Some(triggers) = trace.triggers {
-                writer.line("  - Triggers:")?;
-                for trigger in triggers.into_iter() {
-                    if trigger.alert.is_some() && trigger.action.is_some() {
-                        writer.line(format!(
-                            "    - {} : {:?}",
-                            trigger.alert.unwrap(),
-                            trigger.action.unwrap()
-                        ))?;
-                    }
-                }
-            }
-        }
+        "None".into()
     }
-    Ok(())
 }
 
 async fn background_trace(
@@ -680,20 +628,6 @@ async fn background_trace(
     } else {
         anyhow::bail!("Missing SessionManagerProxy")
     }
-}
-
-async fn background_trace_legacy(
-    context: &EnvironmentContext,
-    tracing_proxy: TracingProxy,
-    output: String,
-    options: TraceOptions,
-    trace_config: TraceConfig,
-    writer: &mut Writer,
-) -> Result<()> {
-    daemon::trace(&context, tracing_proxy.clone(), output, options, trace_config).await?;
-    writer.line("To manually stop the trace, use `ffx trace stop`")?;
-    writer.line("Current tracing status:")?;
-    status_legacy(tracing_proxy, writer).await
 }
 
 pub(crate) async fn handle_recording_error(
@@ -806,7 +740,10 @@ mod tests {
     use ffx_trace_args::{ListCategories, ListProviders, Start, Status, Stop, Symbolize};
     use ffx_writer::{Format, TestBuffers};
     use fidl::endpoints::{ControlHandle, Responder};
-    use fidl_fuchsia_tracing_controller::{self as tracing_controller, SessionRequest, StopResult};
+    use fidl_fuchsia_tracing as tracing;
+    use fidl_fuchsia_tracing_controller::{
+        self as tracing_controller, Action, SessionRequest, StopResult, TraceStatus, Trigger,
+    };
     use futures::TryStreamExt;
     use pretty_assertions::assert_eq;
     use regex::Regex;
@@ -814,8 +751,7 @@ mod tests {
     use std::io::Write;
     use std::matches;
     use target_holders::fake_proxy;
-    use tempfile::{Builder, NamedTempFile};
-    use {fidl_fuchsia_developer_ffx as ffx, fidl_fuchsia_tracing as tracing};
+    use tempfile::{Builder, NamedTempFile, TempDir};
 
     #[test]
     fn test_canonical_path_has_root() {
@@ -870,7 +806,7 @@ mod tests {
         assert_eq!(want, output);
     }
 
-    fn generate_stop_result() -> tracing_controller::StopResult {
+    fn _generate_stop_result() -> tracing_controller::StopResult {
         let mut stats = tracing_controller::ProviderStats::default();
         stats.name = Some("provider_bar".to_string());
         stats.pid = Some(1234);
@@ -884,70 +820,61 @@ mod tests {
         return result;
     }
 
-    fn setup_fake_service() -> TracingProxy {
-        fake_proxy(|req| match req {
-            ffx::TracingRequest::StartRecording { responder, .. } => responder
-                .send(Ok(&ffx::TargetInfo {
-                    nodename: Some("foo".to_owned()),
-                    ..Default::default()
-                }))
-                .expect("responder err"),
-            ffx::TracingRequest::StopRecording { responder, name, .. } => responder
-                .send(Ok((
-                    &ffx::TargetInfo { nodename: Some("foo".to_owned()), ..Default::default() },
-                    &if name.is_empty() { "foo".to_owned() } else { name },
-                    &vec!["platypus".to_string(), "beaver".to_string()],
-                    &generate_stop_result(),
-                )))
-                .expect("responder err"),
-            ffx::TracingRequest::Status { responder, iterator } => {
-                let mut stream = iterator.into_stream();
-                fuchsia_async::Task::local(async move {
-                    let ffx::TracingStatusIteratorRequest::GetNext { responder, .. } =
-                        stream.try_next().await.unwrap().unwrap();
-                    responder
-                        .send(&[
-                            ffx::TraceInfo {
-                                target: Some(ffx::TargetInfo {
-                                    nodename: Some("foo".to_string()),
-                                    ..Default::default()
-                                }),
-                                output_file: Some("/foo/bar.fxt".to_string()),
-                                ..Default::default()
-                            },
-                            ffx::TraceInfo {
-                                output_file: Some("/foo/bar/baz.fxt".to_string()),
-                                ..Default::default()
-                            },
-                            ffx::TraceInfo {
-                                output_file: Some("/florp/o/matic.txt".to_string()),
-                                triggers: Some(vec![
-                                    ffx::Trigger {
-                                        alert: Some("foo".to_owned()),
-                                        action: Some(ffx::Action::Terminate),
-                                        ..Default::default()
-                                    },
-                                    ffx::Trigger {
-                                        alert: Some("bar".to_owned()),
-                                        action: Some(ffx::Action::Terminate),
-                                        ..Default::default()
-                                    },
-                                ]),
-                                ..Default::default()
-                            },
-                        ])
-                        .unwrap();
-                    let ffx::TracingStatusIteratorRequest::GetNext { responder, .. } =
-                        stream.try_next().await.unwrap().unwrap();
-                    responder.send(&[]).unwrap();
-                })
-                .detach();
-                responder.send().expect("responder err")
+    fn setup_fake_session_manager() -> Deferred<SessionManagerProxy> {
+        Deferred::from_output(Ok(fake_proxy(|req| match req {
+            tracing_controller::SessionManagerRequest::GetKnownCategories { responder, .. } => {
+                responder.send(&fake_known_categories()).expect("should respond");
             }
-        })
+            tracing_controller::SessionManagerRequest::GetProviders { responder, .. } => {
+                responder.send(&fake_provider_infos()).expect("should respond");
+            }
+            tracing_controller::SessionManagerRequest::StartTraceSession {
+                config: _,
+                options: _,
+                responder,
+            } => {
+                responder.send(Ok(123)).expect("should respond");
+            }
+            tracing_controller::SessionManagerRequest::EndTraceSession {
+                task_id: _,
+                output: _,
+                responder,
+            } => {
+                responder
+                    .send(Ok((&TraceOptions { ..Default::default() }, &_generate_stop_result())))
+                    .expect("should respond");
+            }
+            tracing_controller::SessionManagerRequest::Status { responder } => {
+                responder
+                    .send(Ok(&TraceStatus {
+                        task_id: Some(2468),
+                        duration: None,
+                        remaining_runtime: None,
+                        config: Some(TraceConfig {
+                            categories: Some(vec!["beaver".into(), "platypus".into()]),
+                            ..Default::default() //buffer_size_megabytes_hint: (), start_timeout_milliseconds: (), buffering_mode: (), provider_specs: (), version: (), defer_transfer: (), __source_breaking: ()
+                        }),
+                        triggers: Some(vec![
+                            Trigger {
+                                alert: Some("foo".into()),
+                                action: Some(Action::Terminate),
+                                ..Default::default()
+                            },
+                            Trigger {
+                                alert: Some("bar".into()),
+                                action: Some(Action::Terminate),
+                                ..Default::default()
+                            },
+                        ]),
+                        ..Default::default()
+                    }))
+                    .expect("should respond");
+            }
+            r => panic!("unsupported req: {:?}", r),
+        })))
     }
 
-    fn setup_fake_controller_proxy() -> Deferred<ProvisionerProxy> {
+    fn _setup_fake_session_manager() -> Deferred<ProvisionerProxy> {
         Deferred::from_output(Ok(fake_proxy(|req| match req {
             tracing_controller::ProvisionerRequest::GetKnownCategories { responder, .. } => {
                 responder.send(&fake_known_categories()).expect("should respond");
@@ -1044,11 +971,10 @@ mod tests {
     }
 
     async fn run_trace_test(ctx: EnvironmentContext, cmd: TraceCommand, writer: Writer) {
-        let proxy = Deferred::from_output(Ok(setup_fake_service()));
-        let session_manager: Deferred<SessionManagerProxy> =
-            Deferred::from_output(Err(fho::user_error!("not found")));
-        let controller = setup_fake_controller_proxy();
-        trace(ctx, proxy, controller, session_manager, writer, cmd).await.unwrap();
+        let session_manager: Deferred<SessionManagerProxy> = setup_fake_session_manager();
+
+        let controller = Deferred::from_output(Err(fho::user_error!("not found")));
+        trace(ctx, controller, session_manager, writer, cmd).await.unwrap();
     }
 
     #[fuchsia::test]
@@ -1196,11 +1122,10 @@ mod tests {
         let env = ffx_config::test_init().await.unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        let proxy = Deferred::from_output(Ok(setup_fake_service()));
         let session_mgr_proxy = Deferred::from_output(Err(fho::user_error!("not found")));
         let controller = setup_closed_fake_controller_proxy();
         let cmd = TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) };
-        let res = trace(env.context.clone(), proxy, controller, session_mgr_proxy, writer, cmd)
+        let res = trace(env.context.clone(), controller, session_mgr_proxy, writer, cmd)
             .await
             .unwrap_err();
         assert!(res.ffx_error().is_some());
@@ -1231,11 +1156,10 @@ mod tests {
         let env = ffx_config::test_init().await.unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        let proxy = Deferred::from_output(Ok(setup_fake_service()));
         let session_mgr_proxy = Deferred::from_output(Err(fho::user_error!("not found")));
         let controller = setup_closed_fake_controller_proxy();
         let cmd = TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) };
-        let res = trace(env.context.clone(), proxy, controller, session_mgr_proxy, writer, cmd)
+        let res = trace(env.context.clone(), controller, session_mgr_proxy, writer, cmd)
             .await
             .unwrap_err();
         assert!(res.ffx_error().is_some());
@@ -1289,18 +1213,13 @@ mod tests {
         let regex_str = "Tracing categories: \\[beaver,platypus\\]...
 To manually stop the trace, use `ffx trace stop`
 Current tracing status:
-- foo:
-  - Output file: /foo/bar.fxt
-  - Duration: indefinite
-- Unknown Target 1:
-  - Output file: /foo/bar/baz.fxt
-  - Duration: indefinite
-- Unknown Target 2:
-  - Output file: /florp/o/matic.txt
-  - Duration: indefinite
-  - Triggers:
-    - foo : Terminate
-    - bar : Terminate\n";
+Task Id: 2468
+Total Duration: infinite
+Remaining Duration: infinite
+Categories: beaver,platypus
+Triggers:
+- foo : Terminate
+- bar : Terminate\n";
         let want = Regex::new(regex_str).unwrap();
         assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
     }
@@ -1335,20 +1254,20 @@ Current tracing status:
         let regex_str = "Tracing categories: \\[beaver,platypus\\]...
 To manually stop the trace, use `ffx trace stop`
 Current tracing status:
-- foo:
-  - Output file: /foo/bar.fxt
-  - Duration: indefinite
-- Unknown Target 1:
-  - Output file: /foo/bar/baz.fxt
-  - Duration: indefinite
-- Unknown Target 2:
-  - Output file: /florp/o/matic.txt
-  - Duration: indefinite
-  - Triggers:
-    - foo : Terminate
-    - bar : Terminate\n";
+Task Id: 2468
+Total Duration: infinite
+Remaining Duration: infinite
+Categories: beaver,platypus
+Triggers:
+- foo : Terminate
+- bar : Terminate\n";
         let want = Regex::new(regex_str).unwrap();
-        assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
+        assert!(
+            want.is_match(&output),
+            "Actual -----\n\"{}\"------\ndidn't match expected ------\n{}",
+            output,
+            regex_str
+        );
     }
 
     #[fuchsia::test]
@@ -1363,18 +1282,13 @@ Current tracing status:
         )
         .await;
         let output = test_buffers.into_stdout_str();
-        let want = "- foo:
-  - Output file: /foo/bar.fxt
-  - Duration: indefinite
-- Unknown Target 1:
-  - Output file: /foo/bar/baz.fxt
-  - Duration: indefinite
-- Unknown Target 2:
-  - Output file: /florp/o/matic.txt
-  - Duration: indefinite
-  - Triggers:
-    - foo : Terminate
-    - bar : Terminate\n";
+        let want = "Task Id: 2468
+Total Duration: infinite
+Remaining Duration: infinite
+Categories: beaver,platypus
+Triggers:
+- foo : Terminate
+- bar : Terminate\n";
         assert_eq!(want, output);
     }
 
@@ -1408,11 +1322,16 @@ Current tracing status:
         let env = ffx_config::test_init().await.unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
+        let long_dirname = "long_directory_name_0123456789abcdef_1123456789abcdef_2123456789abcdef_3123456789abcdef_4123456789abcdef_5123456789abcdef_6123456789abcdef_7123456789abcdef_8123456789abcdef";
+
+        let tmp_dir = TempDir::new().expect("tmp");
+        let dir_path = tmp_dir.path().join(long_dirname);
+        std::fs::create_dir_all(&dir_path).expect("temp directory");
         run_trace_test(
             env.context.clone(),
             TraceCommand {
                 sub_cmd: TraceSubCommand::Stop(Stop {
-                    output: Some("long_directory_name_0123456789abcdef_1123456789abcdef_2123456789abcdef_3123456789abcdef_4123456789abcdef_5123456789abcdef_6123456789abcdef_7123456789abcdef_8123456789abcdef_9123456789abcdef_a123456789abcdef_b123456789abcdef_c123456789abcdef_d123456789abcdef_e123456789abcdef_f123456789abcdef/trace.fxt".to_string()),
+                    output: Some(dir_path.join("trace.fxt").to_string_lossy().to_string()),
                     verbose: false,
                     no_symbolize: false,
                     no_verify_trace: true,
@@ -1457,18 +1376,13 @@ Current tracing status:
         let regex_str = "Tracing categories: \\[beaver,platypus\\]...
 To manually stop the trace, use `ffx trace stop`
 Current tracing status:
-- foo:
-  - Output file: /foo/bar.fxt
-  - Duration: indefinite
-- Unknown Target 1:
-  - Output file: /foo/bar/baz.fxt
-  - Duration: indefinite
-- Unknown Target 2:
-  - Output file: /florp/o/matic.txt
-  - Duration: indefinite
-  - Triggers:
-    - foo : Terminate
-    - bar : Terminate\n";
+Task Id: 2468
+Total Duration: infinite
+Remaining Duration: infinite
+Categories: beaver,platypus
+Triggers:
+- foo : Terminate
+- bar : Terminate\n";
         let want = Regex::new(regex_str).unwrap();
         assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
     }
@@ -1500,7 +1414,12 @@ Current tracing status:
             Results written to /([^/]+/)+?foo.txt\n\
             Upload to https://ui.perfetto.dev/#!/ to view.";
         let want = Regex::new(regex_str).unwrap();
-        assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
+        assert!(
+            want.is_match(&output),
+            "Actual ----------\n{}\n didn't match regex \n{}\n----------",
+            output,
+            regex_str
+        );
     }
 
     #[fuchsia::test]

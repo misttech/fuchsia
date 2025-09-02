@@ -7,8 +7,7 @@ use anyhow::Result;
 use async_fs::File;
 use ffx_config::EnvironmentContext;
 use fho::{bug, return_bug, return_user_error};
-use fidl_fuchsia_developer_ffx::TraceOptions;
-use fidl_fuchsia_tracing_controller::{RecordingError, TraceConfig};
+use fidl_fuchsia_tracing_controller::{RecordingError, TraceConfig, TraceOptions};
 use std::time::Duration;
 use trace_task::TraceTask;
 
@@ -80,7 +79,9 @@ pub(crate) async fn stop_tracing(
             stop_result: task.stop_and_receive_data(output).await.map_err(|e| bug!(e))?,
         })
     } else {
-        let mut output = File::create(&output_file).await.map_err(|e| bug!(e))?;
+        let mut output = File::create(&output_file)
+            .await
+            .map_err(|e| bug!("Could not create output file: {e}"))?;
         let (client, server) = fidl::Socket::create_stream();
         let client = fidl::AsyncSocket::from_socket(client);
 

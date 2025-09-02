@@ -18,7 +18,6 @@ ffx_protocols("ffx_daemon_protocols") {
     "//src/developer/ffx/daemon/protocols/mdns:ffx_daemon_protocol_mdns",
     "//src/developer/ffx/daemon/protocols/target_collection:ffx_daemon_protocol_target_collection",
     "//src/developer/ffx/daemon/protocols/testing:ffx_daemon_protocol_testing",
-    "//src/developer/ffx/daemon/protocols/tracing:ffx_daemon_protocol_tracing",
   ]
 }
 
@@ -32,6 +31,5 @@ group("tests") {
     "mdns:tests",
     "target_collection:tests",
     "testing:tests",
-    "tracing:tests",
   ]
 }
