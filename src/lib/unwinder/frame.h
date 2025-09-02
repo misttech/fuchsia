@@ -13,6 +13,7 @@
 namespace unwinder {
 
 struct Frame {
+  // LINT.IfChange
   enum class Trust {
     kScan,       // From scanning the stack with heuristics, least reliable.
     kSCS,        // From the shadow call stack.
@@ -23,6 +24,7 @@ struct Frame {
     kCFI,        // From call frame info / .eh_frame section.
     kContext,    // From the input / context, most reliable.
   };
+  // LINT.ThenChange(//src/developer/debug/ipc/records.h)
 
   // Register status at each return site. Unknown registers may be included.
   Registers regs;

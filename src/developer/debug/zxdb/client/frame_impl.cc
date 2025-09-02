@@ -30,6 +30,7 @@ FrameImpl::FrameImpl(Thread* thread, const debug_ipc::StackFrame& stack_frame, L
       thread_(thread),
       sp_(stack_frame.sp),
       cfa_(stack_frame.cfa),
+      trust_(stack_frame.trust),
       location_(std::move(location)),
       weak_factory_(this) {
   registers_[static_cast<size_t>(RegisterCategory::kGeneral)] = stack_frame.regs;
@@ -46,6 +47,8 @@ const Frame* FrameImpl::GetPhysicalFrame() const { return this; }
 const Location& FrameImpl::GetLocation() const { return location_; }
 
 uint64_t FrameImpl::GetAddress() const { return location_.address(); }
+
+debug_ipc::StackFrame::Trust FrameImpl::GetTrust() const { return trust_; }
 
 const std::vector<debug::RegisterValue>* FrameImpl::GetRegisterCategorySync(
     RegisterCategory category) const {

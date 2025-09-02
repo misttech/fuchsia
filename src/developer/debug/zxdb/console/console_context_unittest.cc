@@ -158,8 +158,8 @@ TEST_F(EmbeddedModeConsoleContext, StayInteractiveWithContextualContinue) {
   reply.record.id.process = kProcessKoid;
   reply.record.id.thread = kThreadKoid;
   reply.record.name = "thread1";
-  reply.record.frames.emplace_back(0x1234, 0x5678, 0);
-  reply.record.frames.emplace_back(0x2345, 0x6789, 0);
+  reply.record.frames.emplace_back(0x1234, 0x5678);
+  reply.record.frames.emplace_back(0x2345, 0x6789);
   reply.record.stack_amount = debug_ipc::ThreadRecord::StackAmount::kFull;
   reply.record.state = debug_ipc::ThreadRecord::State::kSuspended;
   mock_remote_api()->set_thread_status_reply(reply);

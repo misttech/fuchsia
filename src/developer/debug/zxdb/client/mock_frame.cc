@@ -63,6 +63,8 @@ void MockFrame::SetAddress(uint64_t address) {
                        location_.symbol_context(), location_.symbol());
 }
 
+void MockFrame::SetTrust(debug_ipc::StackFrame::Trust trust) { trust_ = trust; }
+
 void MockFrame::SetFileLine(const FileLine& file_line) {
   location_ = Location(location_.address(), file_line, location_.column(),
                        location_.symbol_context(), location_.symbol());
@@ -85,6 +87,7 @@ const Frame* MockFrame::GetPhysicalFrame() const {
 
 const Location& MockFrame::GetLocation() const { return location_; }
 uint64_t MockFrame::GetAddress() const { return location_.address(); }
+debug_ipc::StackFrame::Trust MockFrame::GetTrust() const { return trust_; }
 
 const std::vector<debug::RegisterValue>* MockFrame::GetRegisterCategorySync(
     debug::RegisterCategory category) const {

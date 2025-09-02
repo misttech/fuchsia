@@ -34,6 +34,10 @@ struct FormatFrameOptions {
 
   // Formatting options for function parameters if requested in the Detail.
   ConsoleFormatOptions variable;
+
+  // Include the trust of this frame, indicating which unwinder implementation was successful for
+  // this frame.
+  bool include_frame_trust = false;
 };
 
 struct FormatStackOptions {
@@ -42,7 +46,7 @@ struct FormatStackOptions {
   // places the stack can be printed from. Any specific options that a command should set can be
   // done after this function has been called.
   static FormatStackOptions GetFrameOptions(Target* target, bool verbose, bool all_types,
-                                            int max_depth);
+                                            bool trust, int max_depth);
 
   FormatFrameOptions frame;
 

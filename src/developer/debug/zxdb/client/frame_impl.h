@@ -34,6 +34,7 @@ class FrameImpl final : public Frame {
   const Frame* GetPhysicalFrame() const override;
   const Location& GetLocation() const override;
   uint64_t GetAddress() const override;
+  debug_ipc::StackFrame::Trust GetTrust() const override;
   const std::vector<debug::RegisterValue>* GetRegisterCategorySync(
       debug::RegisterCategory category) const override;
   void GetRegisterCategoryAsync(
@@ -70,6 +71,7 @@ class FrameImpl final : public Frame {
 
   uint64_t sp_;
   uint64_t cfa_;
+  const debug_ipc::StackFrame::Trust trust_;
 
   // Currently cached registers, indexed by register category.
   std::optional<std::vector<debug::RegisterValue>>

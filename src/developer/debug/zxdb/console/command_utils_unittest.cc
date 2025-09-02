@@ -343,7 +343,7 @@ TEST(CommandUtils, FormatAllThreadStacks) {
   cmd.add_thread(&t2);
 
   fxl::RefPtr<CommandContext> cmd_context = fxl::MakeRefCounted<ConsoleCommandContext>(&console);
-  auto opts = FormatStackOptions::GetFrameOptions(&target, false, false, 4);
+  auto opts = FormatStackOptions::GetFrameOptions(&target, false, false, false, 4);
   opts.pretty_stack = console.context().pretty_stack_manager();
 
   auto out = FormatAllThreadStacks(cmd.all_threads(), opts, cmd_context);

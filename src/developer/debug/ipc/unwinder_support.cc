@@ -4,11 +4,37 @@
 
 #include "src/developer/debug/ipc/unwinder_support.h"
 
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/arch.h"
 #include "src/developer/debug/shared/register_info.h"
 #include "src/lib/unwinder/unwind.h"
 
 namespace debug_ipc {
+
+namespace {
+StackFrame::Trust ConvertTrust(unwinder::Frame::Trust unwinder_trust) {
+  switch (unwinder_trust) {
+    case unwinder::Frame::Trust::kScan:
+      return StackFrame::Trust::kScan;
+    case unwinder::Frame::Trust::kSCS:
+      return StackFrame::Trust::kSCS;
+    case unwinder::Frame::Trust::kSigReturn:
+      return StackFrame::Trust::kSigReturn;
+    case unwinder::Frame::Trust::kFP:
+      return StackFrame::Trust::kFP;
+    case unwinder::Frame::Trust::kPLT:
+      return StackFrame::Trust::kPLT;
+    case unwinder::Frame::Trust::kArmEhAbi:
+      return StackFrame::Trust::kArmEhAbi;
+    case unwinder::Frame::Trust::kCFI:
+      return StackFrame::Trust::kCFI;
+    case unwinder::Frame::Trust::kContext:
+      return StackFrame::Trust::kContext;
+    default:
+      return StackFrame::Trust::kUnknown;
+  }
+}
+}  // namespace
 
 unwinder::Registers ConvertRegisters(debug::Arch arch,
                                      const std::vector<debug::RegisterValue>& regs) {
@@ -75,7 +101,7 @@ std::vector<debug_ipc::StackFrame> ConvertFrames(const std::vector<unwinder::Fra
       }
     }
 
-    res.emplace_back(ip, sp, 0, frame_regs);
+    res.emplace_back(ip, sp, 0, ConvertTrust(frame.trust), frame_regs);
   }
 
   return res;

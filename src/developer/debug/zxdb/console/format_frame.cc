@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/thread.h"
@@ -121,7 +122,7 @@ fxl::RefPtr<AsyncOutputBuffer> ListCompletedFrames(Thread* thread, const FormatS
 }  // namespace
 
 FormatStackOptions FormatStackOptions::GetFrameOptions(Target* target, bool verbose, bool all_types,
-                                                       int max_depth) {
+                                                       bool trust, int max_depth) {
   FormatStackOptions opts;
 
   opts.frame.loc = FormatLocationOptions(target);
@@ -142,6 +143,8 @@ FormatStackOptions FormatStackOptions::GetFrameOptions(Target* target, bool verb
                                             : ConsoleFormatOptions::Verbosity::kMinimal;
   opts.frame.variable.pointer_expand_depth = 1;
   opts.frame.variable.max_depth = max_depth;
+
+  opts.frame.include_frame_trust = trust;
 
   return opts;
 }
@@ -179,6 +182,11 @@ fxl::RefPtr<AsyncOutputBuffer> FormatFrame(const Frame* frame, const FormatFrame
 
   if (frame->IsInline())
     out->Append(Syntax::kComment, " (inline)");
+
+  if (opts.include_frame_trust) {
+    out->Append(" from ");
+    out->Append(debug_ipc::StackFrame::TrustToString(frame->GetTrust()));
+  }
 
   // IP address and stack pointers.
   if (opts.detail == FormatFrameOptions::kVerbose) {

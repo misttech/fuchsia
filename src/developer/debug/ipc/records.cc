@@ -209,4 +209,30 @@ const char* Filter::TypeToString(Type type) {
   return nullptr;
 }
 
+const char* StackFrame::TrustToString(Trust trust) {
+  switch (trust) {
+    case debug_ipc::StackFrame::Trust::kScan:
+      return "Scan";
+    case debug_ipc::StackFrame::Trust::kSigReturn:
+      return "SigReturn";
+    case debug_ipc::StackFrame::Trust::kSCS:
+      return "SCS";
+    case debug_ipc::StackFrame::Trust::kFP:
+      return "FP";
+    case debug_ipc::StackFrame::Trust::kPLT:
+      return "PLT";
+    case debug_ipc::StackFrame::Trust::kArmEhAbi:
+      return "ArmEhAbi";
+    case debug_ipc::StackFrame::Trust::kCFI:
+      return "CFI";
+    case debug_ipc::StackFrame::Trust::kContext:
+      return "Context";
+    case debug_ipc::StackFrame::Trust::kUnknown:
+      return "Unknown";
+  }
+
+  FX_NOTREACHED();
+  return nullptr;
+}
+
 }  // namespace debug_ipc

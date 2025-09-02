@@ -57,6 +57,8 @@ class MockFrame : public Frame {
   // including the stack or symbols.
   void SetAddress(uint64_t address);
 
+  void SetTrust(debug_ipc::StackFrame::Trust trust);
+
   // Overrides the location's file_line with the new value, leaving everything else as-is.
   void SetFileLine(const FileLine& file_line);
 
@@ -70,6 +72,7 @@ class MockFrame : public Frame {
   const Frame* GetPhysicalFrame() const override;
   const Location& GetLocation() const override;
   uint64_t GetAddress() const override;
+  debug_ipc::StackFrame::Trust GetTrust() const override;
   const std::vector<debug::RegisterValue>* GetRegisterCategorySync(
       debug::RegisterCategory category) const override;
   void GetRegisterCategoryAsync(
@@ -92,6 +95,7 @@ class MockFrame : public Frame {
 
   uint64_t sp_;
   uint64_t cfa_;
+  debug_ipc::StackFrame::Trust trust_ = debug_ipc::StackFrame::Trust::kContext;
   std::vector<debug::RegisterValue> general_registers_;
   uint64_t frame_base_;
   const Frame* physical_frame_;  // Null if non-inlined.

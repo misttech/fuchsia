@@ -182,9 +182,23 @@ struct ProcessTreeRecord {
 };
 
 struct StackFrame {
+  // The different unwinding methods available in the unwinder. See //src/lib/unwinder for details.
+  enum class Trust {
+    kScan,
+    kSCS,
+    kSigReturn,
+    kFP,
+    kPLT,
+    kArmEhAbi,
+    kCFI,
+    kContext,
+    kUnknown,
+  };
+
   StackFrame() = default;
-  StackFrame(uint64_t ip, uint64_t sp, uint64_t cfa = 0, std::vector<debug::RegisterValue> r = {})
-      : ip(ip), sp(sp), cfa(cfa), regs(std::move(r)) {}
+  StackFrame(uint64_t ip, uint64_t sp, uint64_t cfa = 0, Trust trust = Trust::kContext,
+             std::vector<debug::RegisterValue> r = {})
+      : ip(ip), sp(sp), cfa(cfa), trust(trust), regs(std::move(r)) {}
 
   // Comparisons (primarily for tests).
   bool operator==(const StackFrame& other) const {
@@ -202,6 +216,9 @@ struct StackFrame {
   // frame at the time of the call. 0 if unknown.
   uint64_t cfa = 0;
 
+  // The Trust that restored this stack frame according to the unwinder.
+  Trust trust = Trust::kUnknown;
+
   // Known general registers for this stack frame. See IsGeneralRegister() for
   // which registers are counted as "general".
   //
@@ -209,7 +226,15 @@ struct StackFrame {
   // architecture (duplicating the above two fields).
   std::vector<debug::RegisterValue> regs;
 
-  void Serialize(Serializer& ser, uint32_t ver) { ser | ip | sp | cfa | regs; }
+  void Serialize(Serializer& ser, uint32_t ver) {
+    ser | ip | sp | cfa | regs;
+
+    if (ver >= 70) {
+      ser | trust;
+    }
+  }
+
+  static const char* TrustToString(Trust trust);
 };
 
 struct ThreadRecord {

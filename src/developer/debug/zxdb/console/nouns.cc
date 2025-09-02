@@ -47,11 +47,13 @@ constexpr int kForceRefresh = 4;
 constexpr int kInternalSwitch = 5;
 constexpr int kForceRemoteUnwind = 6;
 constexpr int kForceFrameAddresses = 7;
+constexpr int kTrust = 8;
 
 // Sets formatting options commonly used for outputting stack frames for the "frame" noun.
 FormatStackOptions GetFormatStackOptions(const Command& cmd, ConsoleContext* console_context) {
-  auto opts = FormatStackOptions::GetFrameOptions(cmd.target(), cmd.HasSwitch(kVerboseSwitch),
-                                                  cmd.HasSwitch(kForceTypes), 4);
+  auto opts =
+      FormatStackOptions::GetFrameOptions(cmd.target(), cmd.HasSwitch(kVerboseSwitch),
+                                          cmd.HasSwitch(kForceTypes), cmd.HasSwitch(kTrust), 4);
 
   if (!cmd.HasSwitch(kRawOutput))
     opts.pretty_stack = console_context->pretty_stack_manager();
@@ -115,6 +117,10 @@ Options
   -t
   --types
       Include all type information for function parameters.
+
+  --trust
+      Include the frame's Trust as reported by the unwinder, indicating which
+      unwinder implementation retrieved this frame.
 
   -v
   --verbose
@@ -958,6 +964,7 @@ const std::vector<SwitchRecord>& GetNounSwitches() {
     switches.emplace_back(kInternalSwitch, false, "internal");
     switches.emplace_back(kForceRemoteUnwind, false, "force-remote-unwind");
     switches.emplace_back(kForceFrameAddresses, false, "address", 'a');
+    switches.emplace_back(kTrust, false, "trust");
   }
   return switches;
 }

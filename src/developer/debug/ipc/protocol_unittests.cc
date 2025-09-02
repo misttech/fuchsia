@@ -609,11 +609,11 @@ TEST(Protocol, ThreadStatusReply) {
   initial.record.state = ThreadRecord::State::kRunning;
   initial.record.stack_amount = ThreadRecord::StackAmount::kFull;
   initial.record.frames.emplace_back(
-      1234, 9875, 89236413,
+      1234, 9875, 89236413, StackFrame::Trust::kContext,
       std::vector<debug::RegisterValue>{{RegisterID::kX64_rsi, static_cast<uint64_t>(12)},
                                         {RegisterID::kX64_rdi, static_cast<uint64_t>(0)}});
   initial.record.frames.emplace_back(
-      71562341, 89236413, 0,
+      71562341, 89236413, 0, StackFrame::Trust::kCFI,
       std::vector<debug::RegisterValue>{{RegisterID::kX64_rsi, static_cast<uint64_t>(11u)},
                                         {RegisterID::kX64_rdi, static_cast<uint64_t>(1u)}});
 

@@ -22,6 +22,7 @@ constexpr int kRawOutput = 2;
 constexpr int kVerboseBacktrace = 3;
 constexpr int kForceRefresh = 4;
 constexpr int kForceRemoteUnwind = 5;
+constexpr int kTrust = 6;
 
 const char kBacktraceShortHelp[] = "backtrace / bt: Print a backtrace.";
 const char kBacktraceUsage[] = "backtrace / bt";
@@ -52,6 +53,10 @@ Arguments
   --types
       Include all type information for function parameters.
 
+  --trust
+      Include the frame's Trust as reported by the unwinder, indicating which
+      unwinder implementation retrieved this frame.
+
   -v
   --verbose
       Include extra stack frame information:
@@ -59,6 +64,7 @@ Arguments
        • Instruction pointer.
        • Stack pointer.
        • Stack frame base pointer.
+       • Frame trust.
 
 Examples
 
@@ -76,8 +82,9 @@ void RunVerbBacktrace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_contex
   if (!cmd.thread() && cmd.GetNounIndex(Noun::kThread) != Command::kWildcard)
     return cmd_context->ReportError(Err("There is no thread to have frames."));
 
-  auto opts = FormatStackOptions::GetFrameOptions(cmd.target(), cmd.HasSwitch(kVerboseBacktrace),
-                                                  cmd.HasSwitch(kForceAllTypes), 3);
+  auto opts =
+      FormatStackOptions::GetFrameOptions(cmd.target(), cmd.HasSwitch(kVerboseBacktrace),
+                                          cmd.HasSwitch(kForceAllTypes), cmd.HasSwitch(kTrust), 3);
 
   if (!cmd.HasSwitch(kRawOutput))
     opts.pretty_stack = cmd_context->GetConsoleContext()->pretty_stack_manager();
@@ -85,6 +92,7 @@ void RunVerbBacktrace(const Command& cmd, fxl::RefPtr<CommandContext> cmd_contex
   opts.frame.detail = FormatFrameOptions::kParameters;
   if (cmd.HasSwitch(kVerboseBacktrace)) {
     opts.frame.detail = FormatFrameOptions::kVerbose;
+    opts.frame.include_frame_trust = true;
   }
 
   // These are minimal since there is often a lot of data.

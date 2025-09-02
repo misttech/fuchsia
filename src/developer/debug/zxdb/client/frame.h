@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "lib/fit/function.h"
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/register_id.h"
 #include "src/developer/debug/shared/register_info.h"
 #include "src/developer/debug/shared/register_value.h"
@@ -52,6 +53,10 @@ class Frame : public ClientObject {
   // Returns the program counter of this frame. It should be the same as the address returned by
   // GetLocation().address().
   virtual uint64_t GetAddress() const = 0;
+
+  // Returns the Trust for this frame as reported by the unwinder. This indicates which specific
+  // unwinder successfully unwound this frame.
+  virtual debug_ipc::StackFrame::Trust GetTrust() const = 0;
 
   // Retrieves the registers of the given category that were saved with this stack frame. Only the
   // general registers are always available synchronously and on every stack frame.
