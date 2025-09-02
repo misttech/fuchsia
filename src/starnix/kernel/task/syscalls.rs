@@ -1570,6 +1570,7 @@ pub fn sys_capset(
     creds.cap_permitted = new_permitted;
     creds.cap_effective = new_effective;
     creds.cap_inheritable = new_inheritable;
+    creds.cap_ambient = new_permitted & new_inheritable & creds.cap_ambient;
     current_task.set_creds(creds);
     Ok(())
 }
