@@ -832,12 +832,18 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         // Do not disturb
         if components.contains(&SettingType::DoNotDisturb) {
             device_storage_factory
-                .initialize::<DoNotDisturbController>()
+                .initialize::<DoNotDisturbController<T>>()
                 .await
                 .expect("storage should still be initializing");
+            let device_storage_factory = Rc::clone(&device_storage_factory);
             factory_handle.register(
                 SettingType::DoNotDisturb,
-                Box::new(DataHandler::<DoNotDisturbController>::spawn),
+                Box::new(move |context| {
+                    DataHandler::<DoNotDisturbController<T>>::spawn_with_async(
+                        context,
+                        Rc::clone(&device_storage_factory),
+                    )
+                }),
             );
         }
 

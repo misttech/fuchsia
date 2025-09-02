@@ -16,7 +16,6 @@ use crate::agent::{self, AgentCreator, Context, CreationFunc, Lifespan};
 #[cfg(test)]
 use crate::base::UnknownInfo;
 use crate::base::{SettingInfo, SettingType};
-use crate::do_not_disturb::types::DoNotDisturbInfo;
 use crate::factory_reset::types::FactoryResetInfo;
 use crate::input::types::InputInfoSources;
 use crate::intl::types::IntlInfo;
@@ -140,7 +139,6 @@ macro_rules! into_storage_info {
 #[cfg(test)]
 into_storage_info!(UnknownInfo => SettingInfo);
 into_storage_info!(FactoryResetInfo => SettingInfo);
-into_storage_info!(DoNotDisturbInfo => SettingInfo);
 into_storage_info!(InputInfoSources => SettingInfo);
 into_storage_info!(IntlInfo => SettingInfo);
 into_storage_info!(KeyboardInfo => SettingInfo);
@@ -214,7 +212,7 @@ where
                     SettingType::Accessibility => panic!("Accessibility goes directly to storage"),
                     SettingType::Audio => panic!("Audio goes directly to storage"),
                     SettingType::Display => panic!("Display goes directly to storage"),
-                    SettingType::DoNotDisturb => self.read::<DoNotDisturbInfo>(id, responder).await,
+                    SettingType::DoNotDisturb => panic!("DoNotDisturb goes directly to storage"),
                     SettingType::FactoryReset => self.read::<FactoryResetInfo>(id, responder).await,
                     SettingType::Input => self.read::<InputInfoSources>(id, responder).await,
                     SettingType::Intl => self.read::<IntlInfo>(id, responder).await,
@@ -234,7 +232,9 @@ where
                     }
                     SettingInfo::Audio(_) => panic!("Audio goes directly to storage"),
                     SettingInfo::Brightness(_) => panic!("Display goes directly to storage"),
-                    SettingInfo::DoNotDisturb(info) => self.write(info, responder).await,
+                    SettingInfo::DoNotDisturb(_) => {
+                        panic!("DoNotDisturb goes directly to storage")
+                    }
                     SettingInfo::FactoryReset(info) => self.write(info, responder).await,
                     SettingInfo::Input(info) => self.write(info, responder).await,
                     SettingInfo::Intl(info) => self.write(info, responder).await,
