@@ -1,4 +1,4 @@
-// Copyright 2022 The Fuchsia Authors. All rights reserved.
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
@@ -8,18 +8,10 @@
         // for some of the IOB API which is used by logging fakes. We can switch
         // back to the default runner when it is stabilised.
         "//src/sys/test_runners/gtest/zxtest.shard.cml",
+        "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
     program: {
-        binary: "test/logging_cpp_unittests",
+        binary: "test/logging-dfv2-tests",
     },
-    use: [
-        {
-            protocol: [ "fuchsia.process.Launcher" ],
-        },
-        {
-            storage: "tmp",
-            path: "/tmp",
-        },
-    ],
 }

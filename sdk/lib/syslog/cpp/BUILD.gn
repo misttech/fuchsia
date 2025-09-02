@@ -154,6 +154,7 @@ fuchsia_unittest_component("logging-cpp-unittests") {
 }
 
 fuchsia_unittest_component("logging-cpp-unittests-structured") {
+  manifest = "meta/logging_cpp_unittests_structured.cml"
   deps = [ ":logging_cpp_unittests_structured" ]
 }
 

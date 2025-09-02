@@ -95,6 +95,7 @@ test("logging-dfv2-tests-bin") {
 
 fuchsia_unittest_package("logging-dfv2-tests") {
   deps = [ ":logging-dfv2-tests-bin" ]
+  manifest = "meta/logging-dfv2-tests.cml"
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
