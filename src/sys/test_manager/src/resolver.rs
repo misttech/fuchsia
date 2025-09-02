@@ -4,13 +4,13 @@
 
 use anyhow::Error;
 use diagnostics_log::Publisher;
-use fidl::endpoints::ProtocolMarker;
+use fidl::endpoints::DiscoverableProtocolMarker;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::LocalComponentHandles;
 use fuchsia_url::{ComponentUrl, PackageUrl};
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
-use log::{warn, Log};
+use log::{Log, warn};
 use std::collections::HashSet;
 use std::sync::Arc;
 use {
@@ -337,7 +337,7 @@ pub async fn serve_hermetic_resolver(
     let mut fs = ServiceFs::new();
     let mut resolver_tasks = vec![];
     let mut pkg_resolver_tasks = vec![];
-    let log_client = handles.connect_to_named_protocol(flogger::LogSinkMarker::DEBUG_NAME)?;
+    let log_client = handles.connect_to_named_protocol(flogger::LogSinkMarker::PROTOCOL_NAME)?;
     let tags = ["test_resolver"];
     let log_publisher = match flog::Publisher::new_async(
         flog::PublisherOptions::default().tags(&tags).use_log_sink(log_client),

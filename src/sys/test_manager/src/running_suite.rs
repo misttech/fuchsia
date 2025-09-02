@@ -8,7 +8,7 @@ use crate::constants::{
     TEST_ROOT_COLLECTION, TEST_ROOT_REALM_NAME, WRAPPER_REALM_NAME,
 };
 use crate::debug_agent::DebugAgent;
-use crate::debug_data_processor::{serve_debug_data_publisher, DebugDataSender};
+use crate::debug_data_processor::{DebugDataSender, serve_debug_data_publisher};
 use crate::error::{DebugAgentError, LaunchTestError};
 use crate::offers::apply_offers;
 use crate::run_events::SuiteEvents;
@@ -16,9 +16,9 @@ use crate::self_diagnostics::DiagnosticNode;
 use crate::test_suite::SuiteRealm;
 use crate::utilities::stream_fn;
 use crate::{diagnostics, facet, resolver};
-use anyhow::{anyhow, format_err, Context, Error};
+use anyhow::{Context, Error, anyhow, format_err};
 use cm_rust::push_box;
-use fidl::endpoints::{create_proxy, ClientEnd};
+use fidl::endpoints::{ClientEnd, create_proxy};
 use fidl_fuchsia_component_resolution::ResolverProxy;
 use fidl_fuchsia_pkg::PackageResolverProxy;
 use ftest::Invocation;
@@ -33,14 +33,14 @@ use fuchsia_url::AbsoluteComponentUrl;
 use futures::channel::{mpsc, oneshot};
 use futures::future::join_all;
 use futures::prelude::*;
-use futures::{lock, FutureExt};
+use futures::{FutureExt, lock};
 use log::{debug, error, info, warn};
 use moniker::Moniker;
 use resolver::AllowedPackages;
 use std::collections::HashSet;
 use std::fmt;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use thiserror::Error;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
@@ -166,7 +166,10 @@ impl RunningSuite {
             debug_agent: if use_debug_agent {
                 DebugAgent::new().await.map_err(log_warning).ok()
             } else {
-                warn!("Not using debug_agent for test {} because it is marked create_no_exception_channel", test_url);
+                warn!(
+                    "Not using debug_agent for test {} because it is marked create_no_exception_channel",
+                    test_url
+                );
                 None
             },
         })
@@ -843,7 +846,6 @@ async fn get_realm(
             Route::new()
                 .capability(Capability::dictionary(DIAGNOSTICS_DICTIONARY_NAME))
                 .from(Ref::parent())
-                .to(&archivist)
                 .to(&memfs),
         )
         .await?;
@@ -857,6 +859,19 @@ async fn get_realm(
                 .to(test_root.clone()),
         )
         .await?;
+
+    // It does not seem possible to route diagnostics capabilities from Archivist to the resolver,
+    // so we must route them from the parent.
+    wrapper_realm
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
+                .capability(Capability::protocol_by_name("fuchsia.inspect.InspectSink"))
+                .from(Ref::dictionary(Ref::parent(), DIAGNOSTICS_DICTIONARY_NAME))
+                .to(&resolver),
+        )
+        .await?;
+
     wrapper_realm
         .add_route(
             Route::new()
@@ -864,8 +879,7 @@ async fn get_realm(
                 .capability(Capability::protocol_by_name("fuchsia.inspect.InspectSink"))
                 .from(&archivist)
                 .to(test_root.clone())
-                .to(Ref::dictionary(Ref::self_(), DIAGNOSTICS_DICTIONARY_NAME))
-                .to(&resolver),
+                .to(Ref::dictionary(Ref::self_(), DIAGNOSTICS_DICTIONARY_NAME)),
         )
         .await?;
     wrapper_realm
