@@ -33,6 +33,7 @@ use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::str::FromStr;
 use std::{cmp, fmt, path};
+use toml::Spanned;
 use validate::offer_to_all_from_offer;
 
 pub use cm_types::{
@@ -1413,6 +1414,46 @@ pub struct Document {
     // developers from taking a dependency on the source ordering in their manifest. In the future
     // this will hopefully make it easier to pursue layout size optimizations.
     pub config: Option<BTreeMap<ConfigKey, ConfigValueType>>,
+}
+
+/// # Component manifest (`.cml`) reference
+///
+/// A `.cml` file contains a single spanned json5 object literal with the keys below.
+#[derive(Deserialize, Debug, Default, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpannedDocument {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<Spanned<String>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program: Option<Spanned<Program>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub children: Option<Vec<Spanned<Child>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collections: Option<Vec<Spanned<Collection>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environments: Option<Vec<Spanned<Environment>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<Spanned<Capability>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#use: Option<Vec<Spanned<Use>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expose: Option<Vec<Spanned<Expose>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offer: Option<Vec<Spanned<Offer>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub facets: Option<Spanned<IndexMap<String, Value>>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<Spanned<BTreeMap<ConfigKey, ConfigValueType>>>,
 }
 
 impl<T> Canonicalize for Vec<T>
