@@ -19,6 +19,23 @@ if (support_rust) {
   import("//build/rust/config.gni")
 }
 
+# This is what is built into the Clang driver for --target=*-fuchsia.
+default_elf_page_size = 4096
+
+declare_args() {
+  # **TODO(https://fxbug.dev/42107211):** This is _extremely experimental_ and
+  # **must not** be set for production (including SDK) builds.
+  #
+  # This is the ELF ABI maximum page size.  It can always be increased (by
+  # powers of two) while staying ABI-compatible, but never decreased; any
+  # increases likely affect storage and memory sizes.  Binaries linked by
+  # this GN build will be compatible with ELF loading on a system that at
+  # runtime actually uses page sizes as big as this, as well as anything
+  # smaller down to 4k.  No system that uses page sizes larger than this
+  # will be able to load any ELF binaries produced by this build.
+  experimental_elf_page_size = default_elf_page_size
+}
+
 # ccache, at least in some configurations, caches preprocessed content. This
 # means that by the time the compiler sees it, macros are unrolled. A number
 # of gcc and clang diagnostics are conditioned on whether the source is part
@@ -44,6 +61,7 @@ config("compiler") {
     ":compiler_sysroot",
     ":compiler_target",
     ":compiler_fuchsia_api_level",
+    ":max-page-size",
   ]
 
   if (board_configs != []) {
@@ -143,6 +161,12 @@ config("compiler_fuchsia_api_level") {
         [ "-ffuchsia-api-level=${current_build_target_api_level_as_integer}" ]
     asmflags = cflags
     ldflags = cflags
+  }
+}
+
+config("max-page-size") {
+  if (experimental_elf_page_size != default_elf_page_size || is_gcc) {
+    ldflags = [ "-Wl,-z,max-page-size=$experimental_elf_page_size" ]
   }
 }
 

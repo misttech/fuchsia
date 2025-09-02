@@ -96,6 +96,8 @@ config("compiler") {
   }
 
   if (is_fuchsia) {
+    configs += [ "//build/config/fuchsia:max-page-size" ]
+
     ldflags += [ "-Wl,-z,start-stop-visibility=hidden" ]
 
     if (is_gcc) {
@@ -247,14 +249,6 @@ config("no_fuzzer") {
 config("no_maybe_uninitialized") {
   if (is_gcc) {
     cflags = [ "-Wno-maybe-uninitialized" ]
-  }
-}
-
-config("machine") {
-  if (is_fuchsia && is_gcc) {
-    # TODO(https://fxbug.dev/42107211): Really need to get this nailed down once and for all
-    # and set by default in the compiler driver (Clang at least).
-    ldflags = [ "-Wl,-z,max-page-size=4096" ]
   }
 }
 
