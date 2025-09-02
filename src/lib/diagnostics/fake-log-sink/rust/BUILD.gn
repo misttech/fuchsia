@@ -4,6 +4,19 @@
 
 import("//build/components/fuchsia_unittest_package.gni")
 import("//build/rust/rustc_library.gni")
+import("//build/rust/rustc_staticlib.gni")
+
+_sources = [ "src/lib.rs" ]
+_deps = [
+  "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
+  "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+  "//sdk/rust/zx",
+  "//src/diagnostics/lib/ring-buffer",
+  "//src/lib/diagnostics/log/message/rust",
+  "//src/lib/fidl/rust/fidl",
+  "//src/lib/fuchsia-async",
+  "//third_party/rust_crates:futures",
+]
 
 rustc_library("rust") {
   name = "fake-log-sink"
@@ -11,17 +24,9 @@ rustc_library("rust") {
   testonly = true
   edition = "2021"
 
-  sources = [ "src/lib.rs" ]
-  deps = [
-    "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
-    "//src/diagnostics/lib/ring-buffer",
-    "//src/lib/diagnostics/log/message/rust",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
-    "//third_party/rust_crates:futures",
-  ]
+  sources = _sources
+  deps = _deps
   test_deps = [
-    "//sdk/rust/zx",
     "//src/lib/diagnostics/log/encoding/rust",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:futures",
@@ -29,6 +34,18 @@ rustc_library("rust") {
   ]
 
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
+}
+
+rustc_staticlib("rust_ffi") {
+  testonly = true
+  edition = "2024"
+  visibility = [
+    ":*",
+    "//src/lib/diagnostics/fake-log-sink/cpp:*",
+  ]
+  public = [ "fake_log_sink.h" ]
+  sources = _sources
+  deps = _deps
 }
 
 fuchsia_unittest_package("fake-log-sink-tests") {

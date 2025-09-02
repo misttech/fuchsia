@@ -15,7 +15,7 @@ use futures::{StreamExt, try_join};
 use logger::{LogWriter, OutputLevel, SyslogWriter};
 use namespace::Namespace;
 use std::sync::Arc;
-use {fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use {fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio};
 
 pub enum MockServiceRequest {
     LogSink(LogSinkRequestStream),
@@ -67,17 +67,14 @@ async fn write_to_syslog_or_panic(
 async fn read_message_from_syslog(
     mut dir: MockServiceFs<'static>,
 ) -> Result<Option<String>, Error> {
-    let (fake_sink, mut rx) = FakeLogSink::new();
+    let mut fake_sink = FakeLogSink::new();
 
-    let _task = fasync::Task::local(async move {
-        while let Some(MockServiceRequest::LogSink(r)) = dir.next().await {
-            fake_sink.serve(
-                Arc::try_unwrap(r.into_inner().0).unwrap().into_channel().into_zx_channel().into(),
-            );
-        }
-    });
+    let MockServiceRequest::LogSink(r) = dir.next().await.unwrap();
 
-    Ok(Some(rx.next().await.unwrap()))
+    fake_sink
+        .serve(Arc::try_unwrap(r.into_inner().0).unwrap().into_channel().into_zx_channel().into());
+
+    Ok(Some(fake_sink.read_message().await))
 }
 
 /// Create a new local fs and install a mock LogSink service into.

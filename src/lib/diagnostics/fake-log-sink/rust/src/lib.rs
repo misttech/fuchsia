@@ -4,63 +4,285 @@
 
 use diagnostics_message::MonikerWithUrl;
 use fidl::endpoints::{RequestStream, ServerEnd};
-use fidl_fuchsia_logger::{LogSinkMarker, LogSinkOnInitRequest};
-use fuchsia_async as fasync;
-use futures::channel::mpsc;
+use fidl_fuchsia_diagnostics_types::{Interest, Severity};
+use fidl_fuchsia_logger::{
+    LogSinkMarker, LogSinkOnInitRequest, LogSinkRequest, LogSinkWaitForInterestChangeResponder,
+};
+use fuchsia_async::{self as fasync, EHandle};
+use futures::StreamExt;
+use futures::future::{AbortHandle, Abortable};
 use ring_buffer::RingBuffer;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 
 /// FakeLogSink serves LogSink connections and forward any messages logged to it.
 pub struct FakeLogSink {
-    ring_buffer: Arc<RingBuffer>,
-    _task: fasync::Task<()>,
+    ring_buffer: ring_buffer::Reader,
+    min_severity: Arc<Mutex<MinSeverity>>,
+    ehandle: EHandle,
+    // This must be dropped after the ring buffer to avoid the executor complaining about
+    // receivers outliving their executor.
+    _abort_handle: DropAbortHandle,
+}
+
+struct DropAbortHandle(AbortHandle);
+
+impl Drop for DropAbortHandle {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+struct MinSeverity {
+    severity: Severity,
+    updates: MinSeverityUpdates,
+}
+
+#[derive(Default)]
+enum MinSeverityUpdates {
+    #[default]
+    None,
+    Pending,
+    Listeners(Vec<LogSinkWaitForInterestChangeResponder>),
+}
+
+impl Default for FakeLogSink {
+    fn default() -> Self {
+        FakeLogSink::new()
+    }
 }
 
 impl FakeLogSink {
     /// Returns a new FakeLogSink and receiver that will have messages delivered to it.
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<String>) {
-        let mut reader = RingBuffer::create(ring_buffer::MAX_MESSAGE_SIZE);
-        let (tx, rx) = mpsc::unbounded();
+    pub fn new() -> Self {
+        Self::new_impl(false)
+    }
 
-        (
-            Self {
-                ring_buffer: reader.clone(),
-                _task: fasync::Task::spawn(async move {
-                    while let Ok((_tag, bytes)) = reader.read_message().await {
-                        if tx
-                            .unbounded_send(
-                                diagnostics_message::from_structured(
-                                    MonikerWithUrl {
-                                        url: "".into(),
-                                        moniker: "fake-log-sink".try_into().unwrap(),
-                                    },
-                                    &bytes,
-                                )
-                                .unwrap()
-                                .msg()
-                                .unwrap()
-                                .into(),
-                            )
-                            .is_err()
-                        {
-                            return;
-                        }
-                    }
-                }),
-            },
-            rx,
+    fn new_impl(sync: bool) -> Self {
+        let (abort_handle, abort_registration) = AbortHandle::new_pair();
+        let (ehandle, ring_buffer) = if sync {
+            let ehandle_and_ring_buffer = Arc::new((Mutex::new(None), Condvar::new()));
+            let eh_and_rb = ehandle_and_ring_buffer.clone();
+            std::thread::spawn(|| {
+                let _ = fasync::LocalExecutor::new().run_singlethreaded(Abortable::new(
+                    async move {
+                        let reader = RingBuffer::create(ring_buffer::MAX_MESSAGE_SIZE);
+                        *eh_and_rb.0.lock().unwrap() = Some((EHandle::local(), reader));
+                        eh_and_rb.1.notify_all();
+                        let () = std::future::pending().await;
+                    },
+                    abort_registration,
+                ));
+            });
+            let (ehandle, reader) = ehandle_and_ring_buffer
+                .1
+                .wait_while(ehandle_and_ring_buffer.0.lock().unwrap(), |rb| rb.is_none())
+                .unwrap()
+                .take()
+                .unwrap();
+            (ehandle, reader)
+        } else {
+            let reader = RingBuffer::create(ring_buffer::MAX_MESSAGE_SIZE);
+            fasync::Task::spawn(async {
+                let _ = Abortable::new(std::future::pending::<()>(), abort_registration).await;
+            })
+            .detach();
+            (EHandle::local(), reader)
+        };
+
+        Self {
+            ring_buffer,
+            min_severity: Arc::new(Mutex::new(MinSeverity {
+                severity: Severity::Info,
+                updates: MinSeverityUpdates::default(),
+            })),
+            ehandle,
+            _abort_handle: DropAbortHandle(abort_handle),
+        }
+    }
+
+    /// Returns a message sent to the sink.
+    pub async fn read_message(&mut self) -> String {
+        let (_tag, bytes) = self.ring_buffer.read_message().await.unwrap();
+        diagnostics_message::from_structured(
+            MonikerWithUrl { url: "".into(), moniker: "fake-log-sink".try_into().unwrap() },
+            &bytes,
         )
+        .unwrap()
+        .msg()
+        .unwrap()
+        .into()
     }
 
     /// Handles the server end of the LogSink connection.
-    pub fn serve(&self, server: ServerEnd<LogSinkMarker>) {
+    pub fn serve(&self, server_end: ServerEnd<LogSinkMarker>) {
         let (iob, _) = self.ring_buffer.new_iob_writer(1).unwrap();
+        let min_severity = self.min_severity.clone();
+        self.ehandle.spawn_detached(async move {
+            let mut requests = server_end.into_stream();
+            {
+                let mut min_severity = min_severity.lock().unwrap();
+                requests
+                    .control_handle()
+                    .send_on_init(LogSinkOnInitRequest {
+                        buffer: Some(iob),
+                        interest: Some(Interest {
+                            min_severity: Some(min_severity.severity),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    })
+                    .unwrap();
+                min_severity.updates = MinSeverityUpdates::None;
+            }
 
-        server
-            .into_stream()
-            .control_handle()
-            .send_on_init(LogSinkOnInitRequest { buffer: Some(iob), ..Default::default() })
-            .unwrap();
+            while let Some(Ok(request)) = requests.next().await {
+                match request {
+                    LogSinkRequest::WaitForInterestChange { responder } => {
+                        let mut min_severity = min_severity.lock().unwrap();
+                        match &mut min_severity.updates {
+                            MinSeverityUpdates::None => {
+                                min_severity.updates =
+                                    MinSeverityUpdates::Listeners(vec![responder]);
+                            }
+                            MinSeverityUpdates::Pending => {
+                                let _ = responder.send(Ok(&Interest {
+                                    min_severity: Some(min_severity.severity),
+                                    ..Default::default()
+                                }));
+                                min_severity.updates = MinSeverityUpdates::None;
+                            }
+                            MinSeverityUpdates::Listeners(l) => l.push(responder),
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        });
+    }
+
+    /// Sets the minimum severity and notifies all listeners.
+    pub fn set_min_severity(&self, severity: Severity) {
+        let mut min_severity = self.min_severity.lock().unwrap();
+        if severity == min_severity.severity {
+            return;
+        }
+        min_severity.severity = severity;
+        match &mut min_severity.updates {
+            MinSeverityUpdates::Listeners(l) => {
+                for responder in l.drain(..) {
+                    let _ = responder
+                        .send(Ok(&Interest { min_severity: Some(severity), ..Default::default() }));
+                }
+                min_severity.updates = MinSeverityUpdates::None;
+            }
+            _ => min_severity.updates = MinSeverityUpdates::Pending,
+        }
+    }
+}
+
+pub mod ffi {
+    use super::FakeLogSink;
+    use fidl::endpoints::ServerEnd;
+    use fidl_fuchsia_diagnostics_types::Severity;
+    use fuchsia_async::TimeoutExt;
+    use futures::executor::block_on;
+
+    /// Creates a new fake log sink.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn fake_log_sink_new() -> *mut FakeLogSink {
+        Box::into_raw(Box::new(super::FakeLogSink::new_impl(true)))
+    }
+
+    /// Deletes a log sink.
+    ///
+    /// # Safety
+    ///
+    /// `fake` must be from `fake_log_sink_new()`.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn fake_log_sink_delete(fake: *mut FakeLogSink) {
+        drop(unsafe { Box::from_raw(fake) });
+    }
+
+    /// Serves a new connection
+    ///
+    /// # Safety
+    ///
+    /// `fake` must be from `fake_log_sink_new()` and `handle` must be valid.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn fake_log_sink_serve(fake: *mut FakeLogSink, handle: u32) {
+        unsafe { &*fake }.serve(ServerEnd::new(unsafe { zx::Handle::from_raw(handle) }.into()));
+    }
+
+    /// Reads a new record.
+    ///
+    ///
+    /// # Safety
+    ///
+    /// `fake` must be from `fake_log_sink_new()` and `dest` and `capacity` must be valid.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn fake_log_sink_read_record(
+        fake: *mut FakeLogSink,
+        dest: *mut u8,
+        capacity: usize,
+    ) -> usize {
+        let fake = unsafe { &mut *fake };
+        let buf = block_on(fake.ring_buffer.read_message()).unwrap().1;
+        assert!(buf.len() <= capacity, "{} {capacity}", buf.len());
+        unsafe {
+            std::slice::from_raw_parts_mut(dest, buf.len()).copy_from_slice(&buf);
+        }
+        buf.len()
+    }
+
+    /// Sets the minimum severity and notifies listeners.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if `severity` is invalid.
+    ///
+    /// # Safety
+    ///
+    /// `fake` must be from `fake_log_sink_new()`.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn fake_log_sink_set_min_severity(fake: *mut FakeLogSink, severity: u8) {
+        unsafe { &*fake }.set_min_severity(Severity::from_primitive(severity).unwrap());
+    }
+
+    /// Waits for a record to be ready and returns its size, or zero if timed out.
+    ///
+    /// # Safety
+    ///
+    /// `fake` must be from `fake_log_sink_new()`.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn fake_log_sink_wait_for_record(
+        fake: *mut FakeLogSink,
+        deadline_nanos: i64,
+    ) -> usize {
+        unsafe fn erase_lifetime(sink: &mut FakeLogSink) -> &'static mut FakeLogSink {
+            unsafe { std::mem::transmute(sink) }
+        }
+
+        let fake = unsafe { &mut *fake };
+
+        let tail = fake.ring_buffer.tail();
+        let scope = fake.ehandle.global_scope().clone();
+
+        {
+            let fake = unsafe { erase_lifetime(fake) };
+            block_on(scope.compute(async move {
+                fake.ring_buffer
+                    .wait(tail)
+                    .on_timeout(zx::MonotonicInstant::from_nanos(deadline_nanos), || 0)
+                    .await
+            }));
+        }
+
+        let head = fake.ring_buffer.head();
+        if head == tail {
+            0
+        } else {
+            unsafe { fake.ring_buffer.first_message_in(tail..head) }.unwrap().1.len()
+        }
     }
 }
 
@@ -78,7 +300,7 @@ mod tests {
     #[fuchsia::test(logging = false)]
     async fn log() {
         let (proxy, server) = create_proxy();
-        let (fake_sink, mut rx) = FakeLogSink::new();
+        let mut fake_sink = FakeLogSink::new();
         fake_sink.serve(server);
 
         // NOTE: This can be changed to use the diagnostics client library when support for the
@@ -107,6 +329,6 @@ mod tests {
         let end = encoder.inner().cursor();
         iob.write(Default::default(), 0, &encoder.inner().get_ref()[..end]).unwrap();
 
-        assert_eq!(rx.next().await.unwrap(), MSG);
+        assert_eq!(fake_sink.read_message().await, MSG);
     }
 }
