@@ -131,14 +131,17 @@ fuchsia_unittest_component("f2fs-component-runner-test") {
 }
 
 resource("test-images") {
-  sources = [ "unit/compatibility/images/simple_io.img.zst" ]
+  sources = [
+    "unit/compatibility/images/directory_test.img.zst",
+    "unit/compatibility/images/simple_io.img.zst",
+  ]
   outputs = [ "data/{{source_file_part}}" ]
 }
 
 test("f2fs_compatibility_test") {
   output_name = "f2fs_compatibility_test"
   sources = [
-    "unit/compatibility/simple_io.cc",
+    "unit/compatibility/compatibility.cc",
     "unit/unit_lib.cc",
     "unit/unit_lib.h",
   ]
