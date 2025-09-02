@@ -21,7 +21,16 @@ class DynamicLoaderStreamBackend : public LocalStreamBackend {
  public:
   DynamicLoaderStreamBackend(debug::MessageLoop* loop) : loop_(loop) {}
 
-  void set_remote_api(RemoteAPI* remote_api) { remote_api_ = remote_api; }
+  void set_remote_api(RemoteAPI* remote_api) {
+    remote_api_ = remote_api;
+
+    // Initialize the given RemoteAPI with the current protocol version.
+    debug_ipc::HelloRequest request;
+    request.version = debug_ipc::kCurrentProtocolVersion;
+
+    debug_ipc::HelloReply reply;
+    remote_api_->OnHello(request, &reply);
+  }
 
   // LocalStreamBackend implementation:
   void HandleNotifyThreadStarting(debug_ipc::NotifyThreadStarting thread) override;

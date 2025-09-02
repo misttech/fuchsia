@@ -98,8 +98,12 @@ class DebugAgent : public RemoteAPI, public Breakpoint::ProcessDelegate, public 
   template <typename NotifyType>
   void SendNotification(const NotifyType& notify) {
     std::vector<char> serialized = debug_ipc::Serialize(notify, ipc_version_);
-    if (is_connected() && !serialized.empty())
+    if (is_connected() && !serialized.empty()) {
+      // This can happen in test environments that are injecting their own RemoteAPI stream, but
+      // forgot to do the initialization "Hello" message.
+      FX_CHECK(ipc_version_ > 0) << "Sending a notification before IPC has been initialized!";
       buffered_stream_->stream().Write(std::move(serialized));
+    }
 
     for (auto& observer : observers_) {
       observer.OnNotification(notify);
