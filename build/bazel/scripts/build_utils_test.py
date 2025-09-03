@@ -13,10 +13,10 @@ from pathlib import Path
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_utils
-from build_utils import BazelCommandResult, BazelLauncher, BazelQueryCache
+from build_utils import BazelLauncher, BazelQueryCache, CommandResult
 
 
-class TestFindFuchsiaDir(unittest.TestCase):
+class FindFuchsiaDirTest(unittest.TestCase):
     def test_find_fuchsia_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             not_fuchsia_dir = Path(tmp_dir) / "this_is_not_fuchsia"
@@ -73,7 +73,7 @@ class TestFindFuchsiaDir(unittest.TestCase):
                 )
 
 
-class TestFindFxBuildDir(unittest.TestCase):
+class FindFxBuildDirTest(unittest.TestCase):
     def test_find_fx_build_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             fuchsia_dir = Path(tmp_dir)
@@ -100,7 +100,7 @@ class TestFindFxBuildDir(unittest.TestCase):
             )
 
 
-class TestFindBazelPaths(unittest.TestCase):
+class FindBazelPathsTest(unittest.TestCase):
     def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
         self.fuchsia_dir = Path(self._td.name)
@@ -149,7 +149,7 @@ class TestFindBazelPaths(unittest.TestCase):
         )
 
 
-class TestFindBazelWorkspacePath(unittest.TestCase):
+class FindBazelWorkspacePathTest(unittest.TestCase):
     def test_find_bazel_workspace_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             fuchsia_dir = Path(tmp_dir)
@@ -173,7 +173,7 @@ class TestFindBazelWorkspacePath(unittest.TestCase):
             )
 
 
-class TestGetBazelRelativeTopDir(unittest.TestCase):
+class GetBazelRelativeTopDirTest(unittest.TestCase):
     def test_get_bazel_relative_topdir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             fuchsia_dir = Path(tmp_dir)
@@ -196,7 +196,7 @@ class TestGetBazelRelativeTopDir(unittest.TestCase):
             self.assertListEqual(list(input_files), [main_config])
 
 
-class TestForceSymlink(unittest.TestCase):
+class ForceSymlinkTest(unittest.TestCase):
     def test_force_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir).resolve()
@@ -264,7 +264,7 @@ class IsLikelyBuildIdPathTest(unittest.TestCase):
             )
 
 
-class IsLikelyContentHashPath(unittest.TestCase):
+class IsLikelyContentHashPathTest(unittest.TestCase):
     def test_one(self) -> None:
         TEST_CASES = [
             ("", False),
@@ -282,16 +282,16 @@ class IsLikelyContentHashPath(unittest.TestCase):
             )
 
 
-class TestCurrentTime(object):
+class MockCurrentTime(object):
     """A mock time.time() implementation used for TimeProfileTest.
 
     Initial time is always 100 seconds, first call is 10 seconds
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._current_time = 100.0
 
-    def reset(self):
+    def reset(self) -> None:
         self._current_time = 100.0
 
     def increment(self, increment: float) -> None:
@@ -303,7 +303,7 @@ class TestCurrentTime(object):
 
 class TimeProfileTest(unittest.TestCase):
     def setUp(self) -> None:
-        self._now = TestCurrentTime()
+        self._now = MockCurrentTime()
 
     def test_empty(self) -> None:
         p = build_utils.TimeProfile(now=self._now)
@@ -377,10 +377,10 @@ class TimeProfileTest(unittest.TestCase):
         )
 
 
-class TestBazelLauncher(BazelLauncher):
+class MockBazelLauncher(BazelLauncher):
     """A BazelLauncher sub-class used to mock subprocess invocation.
 
-    The class manages a FIFO of BazelCommandResult values that is
+    The class manages a FIFO of CommandResult values that is
     filled by calling push_result(), and which is consumed when
     run_command() is called.
     """
@@ -396,7 +396,7 @@ class TestBazelLauncher(BazelLauncher):
 
         super().__init__("/path/to/bazel", log=log, log_err=log_error)
         self.commands: list[list[str]] = []
-        self.result_queue: list[BazelCommandResult] = []
+        self.result_queue: list[CommandResult] = []
         self.logs: list[str] = []
         self.errors: list[str] = []
 
@@ -410,16 +410,23 @@ class TestBazelLauncher(BazelLauncher):
             stdout: Optional process stdout, as a string, default to empty.
             stderr: Optional process stderr, as a string, default to empty.
         """
-        self.result_queue.append(BazelCommandResult(returncode, stdout, stderr))
+        self.result_queue.append(CommandResult(returncode, stdout, stderr))
 
-    def run_command(self, cmd_args: list[str]) -> BazelCommandResult:
+    def run_command_internal(
+        self,
+        cmd_args: list[str],
+        print_stdout: bool = False,
+        print_stderr: bool = False,
+    ) -> CommandResult:
         """Simulate command invocation by popping one value from the FIFO.
 
         Args:
             cmd_args: Command arguments, these are simply saved into
                 self.commands for later inspection.
+            print_stderr: Optional flag, set to True to not capture stdout.
+            print_stderr: Optional flag, set to True to not capture stderr.
         Returns:
-            The BazelCommandResult at the start of the FIFO.
+            The CommandResult at the start of the FIFO.
         Raises:
             AssertionError if there are no results in the FIFO.
         """
@@ -439,7 +446,7 @@ class BazelQueryCacheTest(unittest.TestCase):
         self._td.cleanup()
 
     def test_cache(self) -> None:
-        launcher = TestBazelLauncher()
+        launcher = MockBazelLauncher()
         cache_dir = self._root / "cache"
         cache = BazelQueryCache(cache_dir)
 
@@ -495,7 +502,7 @@ class BazelQueryCacheTest(unittest.TestCase):
         )
 
     def test_cache_with_starlark_file(self) -> None:
-        launcher = TestBazelLauncher()
+        launcher = MockBazelLauncher()
         cache_dir = self._root / "cache"
         cache = BazelQueryCache(cache_dir)
 

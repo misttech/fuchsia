@@ -14,7 +14,6 @@ import os
 import shlex
 import shutil
 import stat
-import subprocess
 import sys
 import typing as T
 
@@ -1182,6 +1181,11 @@ def main() -> int:
         )
         # LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel:gn_targets_dir)
 
+    extract_debug_symbols = any(
+        entry.copy_debug_symbols
+        for entry in args.package_outputs + args.directory_outputs
+    )
+
     bazel_launcher = build_utils.BazelLauncher(
         args.bazel_launcher,
         log_err=lambda msg: (
@@ -1201,7 +1205,14 @@ def main() -> int:
     def run_bazel_query(
         query_cmd: str, query_args: list[str]
     ) -> T.Optional[list[str]]:
-        """Run a Bazel query, return output as list of lines."""
+        """Run a Bazel query, return output as list of lines.
+
+        Args:
+            query_cmd: Query command ("query", "cquery" or "aquery").
+            query_args: Query arguments.
+        Returns:
+            On success, a list of output lines. On failure return None.
+        """
         return query_cache.get_query_output(
             query_cmd,
             query_args,
@@ -1213,18 +1224,19 @@ def main() -> int:
             ),
         )
 
-    configured_args = args.extra_bazel_args
-
-    if any(
-        entry.copy_debug_symbols
-        for entry in args.package_outputs + args.directory_outputs
-    ):
-        # Ensure the build_id directories are produced.
-        configured_args += ["--output_groups=+build_id_dirs"]
-
     def run_starlark_cquery(
         query_targets: list[str], starlark_filename: str
     ) -> list[str]:
+        """Run a Bazel cquery and process its output with a starlark file.
+
+        Args:
+            query_targets: A list of Bazel targets to run the query over.
+            starlark_filename: Name of starlark file from //build/bazel/starlark.
+        Returns:
+            A list of output lines.
+        Raises:
+            AssertionError in case of failure.
+        """
         result = run_bazel_query(
             "cquery",
             [
@@ -1238,6 +1250,12 @@ def main() -> int:
         )
         assert result is not None
         return result
+
+    configured_args = args.extra_bazel_args
+
+    if extract_debug_symbols:
+        # Ensure the build_id directories are produced.
+        configured_args += ["--output_groups=+build_id_dirs"]
 
     time_profile.start(
         "buildfiles_genquery", "Generating buildfiles_genquery/BUILD.bazel"
@@ -1267,7 +1285,7 @@ def main() -> int:
         f"bazel {args.command}", "Invoking Bazel {args.command} command"
     )
 
-    cmd = [args.bazel_launcher, args.command]
+    cmd_args = [args.command]
 
     if args.bazel_build_events_log_json:
         # Create parent directory to avoid Bazel complaining it cannot
@@ -1275,31 +1293,31 @@ def main() -> int:
         os.makedirs(
             os.path.dirname(args.bazel_build_events_log_json), exist_ok=True
         )
-        cmd += [
+        cmd_args += [
             "--build_event_json_file="
             + os.path.abspath(args.bazel_build_events_log_json),
         ]
 
-    cmd += configured_args
-    cmd += ["//buildfiles_genquery:genquery"]
-    cmd += args.bazel_targets
+    cmd_args += configured_args
+    cmd_args += ["//buildfiles_genquery:genquery"]
+    cmd_args += args.bazel_targets
     if _DEBUG or args.verbose_failures:
-        cmd += ["--verbose_failures"]
+        cmd_args += ["--verbose_failures"]
 
     # Add --sandbox_debug if FUCHSIA_DEBUG_BAZEL_SANDBOX=1 is
     # in the environment.
     if os.environ.get(_ENV_DEBUG_SANDBOX, "0") == "1":
-        cmd.append("--sandbox_debug")
+        cmd_args.append("--sandbox_debug")
 
     if jobs:
-        cmd += [f"--jobs={jobs}"]
+        cmd_args += [f"--jobs={jobs}"]
 
     quiet = os.environ.get("FX_BUILD_QUIET") == "1"
     if quiet:
-        cmd += ["--config=quiet"]
+        cmd_args += ["--config=quiet"]
 
     if _DEBUG:
-        debug("BUILD_CMD: " + " ".join(shlex.quote(c) for c in cmd))
+        debug("BUILD_CMD: " + " ".join(shlex.quote(c) for c in cmd_args))
 
     # Save the command.profile.gz data for analysis.
     # Convert '//some/gn:label' into 'obj/some/gn/label.command.profile.gz'
@@ -1308,28 +1326,23 @@ def main() -> int:
         "obj",
         f"{args.gn_target_label[2:].replace(':', '/')}.command.profile.gz",
     )
-    cmd += ["--profile", command_profile_dest]
+    cmd_args += ["--profile", command_profile_dest]
 
     if args.command_file:
         write_file_if_changed(
             args.command_file,
-            " \\\n  ".join(shlex.quote(c) for c in cmd) + "\n",
+            " \\\n  ".join(shlex.quote(c) for c in cmd_args) + "\n",
         )
 
-    if quiet:
-        # Even when using `--config=quiet`, Bazel insists on printing some output when
-        # it runs in an interactive terminal.
-        # Capture the outputs to ensure that does not happen.
-        ret = subprocess.run(
-            cmd,
-            text=False,
-            check=False,
-            capture_output=True,
-        )
-    else:
-        # NOTE: It is important to NOT capture output from this subprocess, to make
-        # sure console output from Bazel are correctly printed out by Ninja.
-        ret = subprocess.run(cmd)
+    # When quiet is set, capture both stdout and stderr to avoid printing anything
+    # to the terminal. Even when using `--config=quiet`, Bazel insists on printing
+    # some output when it runs in an interactive terminal.
+    #
+    # When quiet is not set, print both stdout and stderr to the terminal to make
+    # sure consoule output from Bazel are correctly printed out by Ninja.
+    ret = bazel_launcher.run_bazel_command(
+        cmd_args, print_stdout=not quiet, print_stderr=not quiet
+    )
 
     time_profile.stop()
 
@@ -1364,7 +1377,7 @@ def main() -> int:
         if _DEBUG or args.verbose_failures:
             print(
                 "\nERROR when calling Bazel. To reproduce, run this in the Ninja output directory:\n\n  %s\n"
-                % " ".join(shlex.quote(c) for c in cmd),
+                % " ".join(shlex.quote(c) for c in ret.args),
                 file=sys.stderr,
             )
         return 1
@@ -1374,12 +1387,21 @@ def main() -> int:
             "list_sources", "Query the list of Bazel source files"
         )
 
+        # Get the list of input build files from the output of the genquery
+        # target that was built along the other requested Bazel targets.
+        # Doing this is considerably faster than performing a query here.
         build_files_query_output = os.path.join(
             args.workspace_dir, "bazel-bin", "buildfiles_genquery", "genquery"
         )
         with open(build_files_query_output, "r") as f:
             build_files = f.read().splitlines()
 
+        # Perform a cquery to get all source inputs for the targets, this
+        # returns a list of Bazel labels followed by "(null)" because these
+        # are never configured. E.g.:
+        #
+        #  //build/bazel/examples/hello_world:hello_world (null)
+        #
         bazel_source_files = run_bazel_query(
             "cquery",
             [
@@ -1588,12 +1610,6 @@ def main() -> int:
 
     if args.depfile:
         time_profile.start("depfile", "Write Ninja depfile")
-        # Perform a cquery to get all source inputs for the targets, this
-        # returns a list of Bazel labels followed by "(null)" because these
-        # are never configured. E.g.:
-        #
-        #  //build/bazel/examples/hello_world:hello_world (null)
-        #
         mapper = BazelLabelMapper(args.workspace_dir, current_dir)
 
         all_inputs = [
