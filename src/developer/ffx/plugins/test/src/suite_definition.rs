@@ -36,9 +36,6 @@ struct PilotTestParams {
     #[serde(default)]
     pub min_severity_logs: Option<diagnostics_data::Severity>,
 
-    /// Path to SDK tools directory.
-    pub sdk_tool_path: PathBuf,
-
     /// Realm in which to execute the test in the form <realm path>:<collection>.
     #[serde(default)]
     pub realm: Option<String>,
@@ -353,7 +350,6 @@ mod test {
         "target_test_args": [ "test", "args" ],
         "max_severity_logs": "error",
         "min_severity_logs": "warn",
-        "sdk_tool_path": "test/sdk/tool/path",
         "tags": [ { "key": "test", "value": "tags" } ],
         "target": "test_target",
         "test_case_filter": [ "test", "case", "filters" ],
@@ -373,7 +369,6 @@ mod test {
         "target_test_args": [ "test", "args" ],
         "max_severity_logs": "error",
         "min_severity_logs": "warn",
-        "sdk_tool_path": "test/sdk/tool/path",
         "tags": [ { "key": "test", "value": "tags" } ],
         "target": "test_target",
         "test_case_filter": [ "test", "case", "filters" ],
@@ -476,8 +471,7 @@ mod test {
         "target_test_url": "test_target_test_url",
         "max_severity_logs": "ERROR",
         "min_severity_logs": "WARN",
-        "target": "test_target",
-        "sdk_tool_path": "test/sdk/tool/path"
+        "target": "test_target"
     }
     "#;
 
@@ -487,8 +481,7 @@ mod test {
         "target_test_url": "test_target_test_url",
         "max_severity_logs": "error",
         "min_severity_logs": "warn",
-        "target": "test_target",
-        "sdk_tool_path": "test/sdk/tool/path"
+        "target": "test_target"
     }
     "#;
 
@@ -498,8 +491,7 @@ mod test {
         "target_test_url": "test_target_test_url",
         "max_severity_logs": "Error",
         "min_severity_logs": "Warn",
-        "target": "test_target",
-        "sdk_tool_path": "test/sdk/tool/path"
+        "target": "test_target"
     }
     "#;
 

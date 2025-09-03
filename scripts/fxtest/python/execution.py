@@ -122,13 +122,6 @@ class TestExecution:
 
             extra_args = []
 
-            # TODO(https://fxbug.dev/327640651): For now add ask path as
-            # host-tools till we figure out a better way.
-            extra_args += [
-                "--sdk-tool-path="
-                + os.path.join(self._exec_env.out_dir, "host-tools")
-            ]
-
             if self._device_env is not None:
                 extra_args += ["--target=" + self._device_env.address]
 

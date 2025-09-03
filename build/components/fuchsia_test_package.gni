@@ -200,10 +200,7 @@ template("fuchsia_test_package") {
           "--pilot",
           "{test_config_file}",
         ]
-        require = [
-          "target",
-          "sdk_tool_path",
-        ]
+        require = [ "target" ]
 
         # TODO(https://fxbug.dev/327640651): Add common tags for the test.
         target_test_url = test_url

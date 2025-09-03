@@ -424,7 +424,6 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
         self.assertEquals(
             [
                 "/out/fuchsia/bin/test_component_wrapper.sh",
-                "--sdk-tool-path=/out/fuchsia/host-tools",
                 "--realm=foo_tests",
                 "--max-severity-logs=INFO",
                 "--min-severity-logs=TRACE",
