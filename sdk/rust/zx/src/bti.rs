@@ -4,7 +4,10 @@
 
 //! Type-safe bindings for Zircon bti objects.
 
-use crate::{ok, AsHandleRef, Handle, HandleBased, HandleRef, Iommu, Status};
+use bitflags::bitflags;
+use zx_sys::zx_paddr_t;
+
+use crate::{AsHandleRef, Handle, HandleBased, HandleRef, Iommu, Pmt, Status, Vmo, ok, sys};
 
 /// An object representing a Zircon Bus Transaction Initiator object.
 /// See [BTI Documentation](https://fuchsia.dev/fuchsia-src/reference/kernel_objects/bus_transaction_initiator) for details.
@@ -14,6 +17,19 @@ use crate::{ok, AsHandleRef, Handle, HandleBased, HandleRef, Iommu, Status};
 #[repr(transparent)]
 pub struct Bti(Handle);
 impl_handle_based!(Bti);
+
+bitflags! {
+    /// Options that may be used for [`zx::Bti::pin`].
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct BtiOptions: u32 {
+        const PERM_READ = sys::ZX_BTI_PERM_READ;
+        const PERM_WRITE = sys::ZX_BTI_PERM_WRITE;
+        const PERM_EXECUTE = sys::ZX_BTI_PERM_EXECUTE;
+        const COMPRESS = sys::ZX_BTI_COMPRESS;
+        const CONTIGUOUS = sys::ZX_BTI_CONTIGUOUS;
+    }
+}
 
 impl Bti {
     // Create a Bus Transaction Initiator object.
@@ -30,6 +46,40 @@ impl Bti {
             // SAFETY: The syscall docs claim that upon success, bti_handle will be a valid
             // handle to bti object.
             Ok(Bti::from(Handle::from_raw(bti_handle)))
+        }
+    }
+
+    // Pins pages in a VMO.
+    // Wraps the [`zx_bti_pin`](https://fuchsia.dev/fuchsia-src/reference/syscalls/bti_pin) system
+    // call.
+    pub fn pin(
+        &self,
+        options: BtiOptions,
+        vmo: &Vmo,
+        offset: u64,
+        size: u64,
+        out_paddrs: &mut [zx_paddr_t],
+    ) -> Result<Pmt, Status> {
+        let mut pmt = crate::sys::zx_handle_t::default();
+        let status = unsafe {
+            // SAFETY: zx_bti_pin requires that out_paddrs is valid to write to for its whole
+            // length, which is guaranteed by being a mutable slice reference.
+            crate::sys::zx_bti_pin(
+                self.raw_handle(),
+                options.bits(),
+                vmo.raw_handle(),
+                offset,
+                size,
+                out_paddrs.as_mut_ptr(),
+                out_paddrs.len(),
+                &mut pmt,
+            )
+        };
+        ok(status)?;
+        unsafe {
+            // SAFETY: The syscall docs claim that upon success, pmt will be a valid handle to a
+            // zx_pmt_t.
+            Ok(Pmt::from(Handle::from_raw(pmt)))
         }
     }
 }
@@ -77,5 +127,22 @@ mod tests {
 
         let info = bti.as_handle_ref().basic_info().unwrap();
         assert_eq!(info.object_type, ObjectType::BTI);
+    }
+
+    #[test]
+    fn create_and_pin_from_valid_iommu() {
+        let iommu = create_iommu();
+        let bti = Bti::create(&iommu, 0).unwrap();
+
+        let vmo = Vmo::create_contiguous(&bti, 4096, 0).unwrap();
+        let mut paddr = [0x1]; // Unaligned address, so we know it's invalid
+
+        let pmt = bti.pin(BtiOptions::PERM_READ, &vmo, 0, 4096, &mut paddr[..]).unwrap();
+        assert_ne!(paddr, [0x1]);
+
+        let info = pmt.as_handle_ref().basic_info().unwrap();
+        assert_eq!(info.object_type, ObjectType::PMT);
+
+        pmt.unpin().unwrap();
     }
 }
