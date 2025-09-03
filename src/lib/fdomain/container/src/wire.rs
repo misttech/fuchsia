@@ -177,7 +177,7 @@ impl FDomainCodec {
                     ordinal: header.ordinal,
                     protocol_name:
                         <proto::FDomainMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME,
-                })
+                });
             }
         }
 

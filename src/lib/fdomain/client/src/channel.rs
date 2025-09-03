@@ -4,14 +4,14 @@
 
 use crate::handle::handle_type;
 use crate::responder::Responder;
-use crate::{ordinals, Error, Event, EventPair, Handle, OnFDomainSignals, Socket};
+use crate::{Error, Event, EventPair, Handle, OnFDomainSignals, Socket, ordinals};
 use fidl_fuchsia_fdomain as proto;
 use futures::future::Either;
 use futures::stream::Stream;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 
 /// A channel in a remote FDomain.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -347,8 +347,8 @@ impl ChannelMessageStream {
     /// `Channel::stream`.
     pub fn rejoin(mut self, writer: ChannelWriter) -> Channel {
         assert!(Arc::ptr_eq(&self.0, &writer.0), "Tried to join stream with wrong writer!");
-        if let Some(client) = self.0 .0.client.upgrade() {
-            client.stop_channel_streaming(self.0 .0.proto())
+        if let Some(client) = self.0.0.client.upgrade() {
+            client.stop_channel_streaming(self.0.0.proto())
         }
         std::mem::drop(writer);
         let channel = std::mem::replace(&mut self.0, Arc::new(Channel(Handle::invalid())));
@@ -357,9 +357,9 @@ impl ChannelMessageStream {
 
     /// Whether this stream is closed.
     pub fn is_closed(&self) -> bool {
-        let client = self.0 .0.client();
+        let client = self.0.0.client();
 
-        !client.channel_is_streaming(self.0 .0.proto())
+        !client.channel_is_streaming(self.0.0.proto())
     }
 
     /// Get a reference to the inner channel.
@@ -371,17 +371,17 @@ impl ChannelMessageStream {
 impl Stream for ChannelMessageStream {
     type Item = Result<MessageBuf, Error>;
     fn poll_next(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let client = self.0 .0.client();
+        let client = self.0.0.client();
         client
-            .poll_channel(self.0 .0.proto(), ctx, true)
+            .poll_channel(self.0.0.proto(), ctx, true)
             .map(|x| x.map(|x| x.map(|x| MessageBuf::from_proto(&client, x))))
     }
 }
 
 impl Drop for ChannelMessageStream {
     fn drop(&mut self) {
-        if let Some(client) = self.0 .0.client.upgrade() {
-            client.stop_channel_streaming(self.0 .0.proto());
+        if let Some(client) = self.0.0.client.upgrade() {
+            client.stop_channel_streaming(self.0.0.proto());
         }
     }
 }

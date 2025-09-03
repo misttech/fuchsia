@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::responder::Responder;
-use crate::{ordinals, Client, Error};
+use crate::{Client, Error, ordinals};
 use fidl_fuchsia_fdomain as proto;
 use futures::FutureExt;
 use std::future::Future;

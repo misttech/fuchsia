@@ -4,8 +4,8 @@
 
 use crate::channel::HandleOp;
 use crate::{AnyHandle, Client, Error, FDomainTransport, HandleBased};
-use fdomain_container::wire::FDomainCodec;
 use fdomain_container::FDomain;
+use fdomain_container::wire::FDomainCodec;
 use fidl_fuchsia_fdomain::Error as FDomainError;
 use futures::stream::Stream;
 use futures::{FutureExt, StreamExt};

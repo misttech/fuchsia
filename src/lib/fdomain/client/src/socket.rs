@@ -4,7 +4,7 @@
 
 use crate::handle::handle_type;
 use crate::responder::Responder;
-use crate::{ordinals, Error, Handle};
+use crate::{Error, Handle, ordinals};
 use fidl_fuchsia_fdomain as proto;
 use futures::FutureExt;
 use std::future::Future;
@@ -116,8 +116,8 @@ impl SocketReadStream {
 
 impl Drop for SocketReadStream {
     fn drop(&mut self) {
-        if let Some(client) = self.0 .0.client.upgrade() {
-            client.stop_socket_streaming(self.0 .0.proto());
+        if let Some(client) = self.0.0.client.upgrade() {
+            client.stop_socket_streaming(self.0.0.proto());
         }
     }
 }

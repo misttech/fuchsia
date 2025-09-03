@@ -4,14 +4,14 @@
 
 use anyhow::{Context as _, Error};
 use fdomain_client::FDomainTransport;
-use fdomain_container::wire::FDomainCodec;
 use fdomain_container::FDomain;
+use fdomain_container::wire::FDomainCodec;
 use fidl::endpoints::{ClientEnd, Proxy, RequestStream};
 use fidl_fuchsia_examples as echo;
 use futures::future::Either;
 use futures::stream::Stream;
 use futures::{FutureExt, StreamExt, TryStreamExt};
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use vfs::directory::helper::DirectlyMutable;

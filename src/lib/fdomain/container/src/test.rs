@@ -11,15 +11,17 @@ async fn socket() {
     let hid_socket_write = 0;
     let hid_socket_read = 2;
 
-    assert!(fdomain
-        .create_socket(proto::SocketCreateSocketRequest {
-            options: proto::SocketType::Stream,
-            handles: [
-                proto::NewHandleId { id: hid_socket_write },
-                proto::NewHandleId { id: hid_socket_read },
-            ]
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Stream,
+                handles: [
+                    proto::NewHandleId { id: hid_socket_write },
+                    proto::NewHandleId { id: hid_socket_read },
+                ]
+            })
+            .is_ok()
+    );
 
     let result = fdomain
         .create_socket(proto::SocketCreateSocketRequest {
@@ -172,14 +174,16 @@ async fn channel() {
     let hid_channel_write = 0;
     let hid_channel_read = 2;
 
-    assert!(fdomain
-        .create_channel(proto::ChannelCreateChannelRequest {
-            handles: [
-                proto::NewHandleId { id: hid_channel_write },
-                proto::NewHandleId { id: hid_channel_read },
-            ]
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_channel(proto::ChannelCreateChannelRequest {
+                handles: [
+                    proto::NewHandleId { id: hid_channel_write },
+                    proto::NewHandleId { id: hid_channel_read },
+                ]
+            })
+            .is_ok()
+    );
 
     let result = fdomain
         .create_channel(proto::ChannelCreateChannelRequest {
@@ -202,15 +206,17 @@ async fn channel() {
     let hid_passing_socket_a = 4;
     let hid_passing_socket_b = 6;
 
-    assert!(fdomain
-        .create_socket(proto::SocketCreateSocketRequest {
-            options: proto::SocketType::Stream,
-            handles: [
-                proto::NewHandleId { id: hid_passing_socket_a },
-                proto::NewHandleId { id: hid_passing_socket_b },
-            ]
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Stream,
+                handles: [
+                    proto::NewHandleId { id: hid_passing_socket_a },
+                    proto::NewHandleId { id: hid_passing_socket_b },
+                ]
+            })
+            .is_ok()
+    );
 
     let tid_write = 42.try_into().unwrap();
     let tid_read = 89.try_into().unwrap();
@@ -442,14 +448,16 @@ async fn bad_channel_writes() {
     let garbage_hid = 428;
     let tid = 42.try_into().unwrap();
 
-    assert!(fdomain
-        .create_channel(proto::ChannelCreateChannelRequest {
-            handles: [
-                proto::NewHandleId { id: channel_hid_a },
-                proto::NewHandleId { id: channel_hid_b },
-            ],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_channel(proto::ChannelCreateChannelRequest {
+                handles: [
+                    proto::NewHandleId { id: channel_hid_a },
+                    proto::NewHandleId { id: channel_hid_b },
+                ],
+            })
+            .is_ok()
+    );
 
     fdomain.write_channel(
         tid,
@@ -480,15 +488,17 @@ async fn bad_channel_writes() {
     let socket_hid_c = 8;
     let tid = 43.try_into().unwrap();
 
-    assert!(fdomain
-        .create_socket(proto::SocketCreateSocketRequest {
-            options: proto::SocketType::Stream,
-            handles: [
-                proto::NewHandleId { id: socket_hid_a },
-                proto::NewHandleId { id: socket_hid_b },
-            ],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Stream,
+                handles: [
+                    proto::NewHandleId { id: socket_hid_a },
+                    proto::NewHandleId { id: socket_hid_b },
+                ],
+            })
+            .is_ok()
+    );
 
     let tid_replace = 420.try_into().unwrap();
     fdomain
@@ -566,21 +576,25 @@ async fn event_signal() {
     let event_hid = 0;
     let tid = 42.try_into().unwrap();
 
-    assert!(fdomain
-        .create_event(proto::EventCreateEventRequest {
-            handle: proto::NewHandleId { id: event_hid }
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_event(proto::EventCreateEventRequest {
+                handle: proto::NewHandleId { id: event_hid }
+            })
+            .is_ok()
+    );
 
     let event_hid = proto::HandleId { id: event_hid };
 
-    assert!(fdomain
-        .signal(proto::FDomainSignalRequest {
-            handle: event_hid,
-            set: fidl::Signals::USER_5.bits(),
-            clear: fidl::Signals::empty().bits(),
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .signal(proto::FDomainSignalRequest {
+                handle: event_hid,
+                set: fidl::Signals::USER_5.bits(),
+                clear: fidl::Signals::empty().bits(),
+            })
+            .is_ok()
+    );
 
     fdomain.wait_for_signals(
         tid,
@@ -605,25 +619,29 @@ async fn eventpair_signal() {
     let event_hid_b = 2;
     let tid = 42.try_into().unwrap();
 
-    assert!(fdomain
-        .create_event_pair(proto::EventPairCreateEventPairRequest {
-            handles: [
-                proto::NewHandleId { id: event_hid_a },
-                proto::NewHandleId { id: event_hid_b }
-            ]
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_event_pair(proto::EventPairCreateEventPairRequest {
+                handles: [
+                    proto::NewHandleId { id: event_hid_a },
+                    proto::NewHandleId { id: event_hid_b }
+                ]
+            })
+            .is_ok()
+    );
 
     let event_hid_a = proto::HandleId { id: event_hid_a };
     let event_hid_b = proto::HandleId { id: event_hid_b };
 
-    assert!(fdomain
-        .signal_peer(proto::FDomainSignalPeerRequest {
-            handle: event_hid_a,
-            set: fidl::Signals::USER_5.bits(),
-            clear: fidl::Signals::empty().bits(),
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .signal_peer(proto::FDomainSignalPeerRequest {
+                handle: event_hid_a,
+                set: fidl::Signals::USER_5.bits(),
+                clear: fidl::Signals::empty().bits(),
+            })
+            .is_ok()
+    );
 
     fdomain.wait_for_signals(
         tid,
@@ -668,23 +686,27 @@ async fn duplicate_socket() {
     let hid_b = 2;
     let hid_c = 4;
 
-    assert!(fdomain
-        .create_socket(proto::SocketCreateSocketRequest {
-            options: proto::SocketType::Stream,
-            handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Stream,
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
+            })
+            .is_ok()
+    );
 
     let hid_a = proto::HandleId { id: hid_a };
     let hid_b = proto::HandleId { id: hid_b };
 
-    assert!(fdomain
-        .duplicate(proto::FDomainDuplicateRequest {
-            handle: hid_a,
-            new_handle: proto::NewHandleId { id: hid_c },
-            rights: fidl::Rights::SAME_RIGHTS,
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .duplicate(proto::FDomainDuplicateRequest {
+                handle: hid_a,
+                new_handle: proto::NewHandleId { id: hid_c },
+                rights: fidl::Rights::SAME_RIGHTS,
+            })
+            .is_ok()
+    );
 
     let hid_c = proto::HandleId { id: hid_c };
 
@@ -789,12 +811,14 @@ async fn socket_disposition() {
     let hid_a = 0;
     let hid_b = 2;
 
-    assert!(fdomain
-        .create_socket(proto::SocketCreateSocketRequest {
-            options: proto::SocketType::Stream,
-            handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Stream,
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
+            })
+            .is_ok()
+    );
 
     let hid_a = proto::HandleId { id: hid_a };
 
@@ -858,12 +882,14 @@ async fn socket_disposition_peer() {
     let hid_a = 0;
     let hid_b = 2;
 
-    assert!(fdomain
-        .create_socket(proto::SocketCreateSocketRequest {
-            options: proto::SocketType::Stream,
-            handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Stream,
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
+            })
+            .is_ok()
+    );
 
     let hid_a = proto::HandleId { id: hid_a };
     let hid_b = proto::HandleId { id: hid_b };
@@ -928,12 +954,14 @@ async fn socket_async_read() {
     let hid_a = 0;
     let hid_b = 2;
 
-    assert!(fdomain
-        .create_socket(proto::SocketCreateSocketRequest {
-            options: proto::SocketType::Stream,
-            handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Stream,
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
+            })
+            .is_ok()
+    );
 
     let hid_a = proto::HandleId { id: hid_a };
     let hid_b = proto::HandleId { id: hid_b };
@@ -1015,12 +1043,14 @@ async fn socket_async_read_detect_close() {
     let hid_a = 0;
     let hid_b = 2;
 
-    assert!(fdomain
-        .create_socket(proto::SocketCreateSocketRequest {
-            options: proto::SocketType::Stream,
-            handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Stream,
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
+            })
+            .is_ok()
+    );
 
     let hid_a = proto::HandleId { id: hid_a };
     let hid_b = proto::HandleId { id: hid_b };
@@ -1092,12 +1122,14 @@ async fn socket_async_read_stop() {
     let hid_a = 0;
     let hid_b = 2;
 
-    assert!(fdomain
-        .create_socket(proto::SocketCreateSocketRequest {
-            options: proto::SocketType::Stream,
-            handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Stream,
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
+            })
+            .is_ok()
+    );
 
     let hid_a = proto::HandleId { id: hid_a };
     let hid_b = proto::HandleId { id: hid_b };
@@ -1193,11 +1225,13 @@ async fn channel_async_read() {
     let hid_a = 0;
     let hid_b = 2;
 
-    assert!(fdomain
-        .create_channel(proto::ChannelCreateChannelRequest {
-            handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_channel(proto::ChannelCreateChannelRequest {
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
+            })
+            .is_ok()
+    );
 
     let hid_a = proto::HandleId { id: hid_a };
     let hid_b = proto::HandleId { id: hid_b };
@@ -1279,11 +1313,13 @@ async fn channel_async_read_detect_close() {
     let hid_a = 0;
     let hid_b = 2;
 
-    assert!(fdomain
-        .create_channel(proto::ChannelCreateChannelRequest {
-            handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_channel(proto::ChannelCreateChannelRequest {
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
+            })
+            .is_ok()
+    );
 
     let hid_a = proto::HandleId { id: hid_a };
     let hid_b = proto::HandleId { id: hid_b };
@@ -1355,11 +1391,13 @@ async fn channel_async_read_stop() {
     let hid_a = 0;
     let hid_b = 2;
 
-    assert!(fdomain
-        .create_channel(proto::ChannelCreateChannelRequest {
-            handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_channel(proto::ChannelCreateChannelRequest {
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b },],
+            })
+            .is_ok()
+    );
 
     let hid_a = proto::HandleId { id: hid_a };
     let hid_b = proto::HandleId { id: hid_b };
@@ -1457,15 +1495,17 @@ async fn datagram_socket() {
     let hid_socket_write = 0;
     let hid_socket_read = 2;
 
-    assert!(fdomain
-        .create_socket(proto::SocketCreateSocketRequest {
-            options: proto::SocketType::Datagram,
-            handles: [
-                proto::NewHandleId { id: hid_socket_write },
-                proto::NewHandleId { id: hid_socket_read },
-            ]
-        })
-        .is_ok());
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Datagram,
+                handles: [
+                    proto::NewHandleId { id: hid_socket_write },
+                    proto::NewHandleId { id: hid_socket_read },
+                ]
+            })
+            .is_ok()
+    );
 
     let tid_write = 42.try_into().unwrap();
     let tid_read = 89.try_into().unwrap();

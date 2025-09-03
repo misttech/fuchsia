@@ -3,16 +3,16 @@
 // found in the LICENSE file.
 
 use fidl_message::TransactionHeader;
+use futures::FutureExt;
 use futures::channel::oneshot::Sender as OneshotSender;
 use futures::stream::Stream as StreamTrait;
-use futures::FutureExt;
 use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::pin::Pin;
 use std::sync::{Arc, LazyLock, Mutex};
-use std::task::{ready, Context, Poll, Waker};
+use std::task::{Context, Poll, Waker, ready};
 use {fidl_fuchsia_fdomain as proto, fuchsia_async as _};
 
 mod channel;
@@ -75,13 +75,19 @@ fn write_fdomain_error(error: &FDomainError, f: &mut std::fmt::Formatter<'_>) ->
             write!(f, "No streaming read was in progress")
         }
         FDomainError::NewHandleIdOutOfRange(proto::NewHandleIdOutOfRange { id }) => {
-            write!(f, "Tried to create a handle with id {id}, which is outside the valid range for client handles")
+            write!(
+                f,
+                "Tried to create a handle with id {id}, which is outside the valid range for client handles"
+            )
         }
         FDomainError::NewHandleIdReused(proto::NewHandleIdReused { id, same_call }) => {
             if *same_call {
                 write!(f, "Tried to create two or more new handles with the same id {id}")
             } else {
-                write!(f, "Tried to create a new handle with id {id}, which is already the id of an existing handle")
+                write!(
+                    f,
+                    "Tried to create a new handle with id {id}, which is already the id of an existing handle"
+                )
             }
         }
         FDomainError::WroteToSelf(proto::WroteToSelf {}) => {

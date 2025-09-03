@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use fdomain_client::{Client, FDomainTransport};
-use fdomain_container::wire::FDomainCodec;
 use fdomain_container::FDomain;
+use fdomain_container::wire::FDomainCodec;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_io as fio;
 use futures::stream::Stream;

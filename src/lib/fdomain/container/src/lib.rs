@@ -9,8 +9,8 @@ use replace_with::replace_with;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroU32;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::task::{Context, Poll, Waker};
 use {fidl_fuchsia_fdomain as proto, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -259,11 +259,7 @@ impl ShuttingDownHandle {
             }
         });
 
-        if matches!(self, ShuttingDownHandle::Ready(_)) {
-            Poll::Ready(())
-        } else {
-            Poll::Pending
-        }
+        if matches!(self, ShuttingDownHandle::Ready(_)) { Poll::Ready(()) } else { Poll::Pending }
     }
 }
 
@@ -378,7 +374,7 @@ impl HandleState {
             IsDatagramSocket::Unknown => {
                 return Err(proto::Error::SocketTypeUnknown(proto::SocketTypeUnknown {
                     type_: proto::SocketType::unknown(),
-                }))
+                }));
             }
             other => other.is_datagram(),
         };
@@ -691,7 +687,7 @@ impl HandleState {
                     return Some(FDomainEvent::SocketData(
                         tid,
                         Err(proto::Error::TargetError(e.into_raw())),
-                    ))
+                    ));
                 }
             }
         } else {
@@ -1007,7 +1003,7 @@ impl FDomain {
             proto::SocketType::Stream => fidl::Socket::create_stream(),
             proto::SocketType::Datagram => fidl::Socket::create_datagram(),
             type_ => {
-                return Err(proto::Error::SocketTypeUnknown(proto::SocketTypeUnknown { type_ }))
+                return Err(proto::Error::SocketTypeUnknown(proto::SocketTypeUnknown { type_ }));
             }
         };
 
