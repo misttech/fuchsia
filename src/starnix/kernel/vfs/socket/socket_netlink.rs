@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::security;
+use crate::security::{self, AuditLogger, AuditRequest};
 use crate::vfs::socket::{SockOptValue, SocketDomain};
 use futures::channel::mpsc::{
     UnboundedReceiver, UnboundedSender, {self},
 };
+use linux_uapi::audit_status;
 use netlink::messaging::{Sender, SenderReceiverProvider};
 use netlink::multicast_groups::{
     InvalidLegacyGroupsError, InvalidModernGroupError, LegacyGroups, ModernGroup,
@@ -14,12 +15,15 @@ use netlink::multicast_groups::{
 };
 use netlink::protocol_family::route::NetlinkRouteClient;
 use netlink::{NETLINK_LOG_TAG, NewClientError};
-use netlink_packet_core::{NetlinkMessage, NetlinkSerializable};
+use netlink_packet_core::{
+    ErrorMessage, NETLINK_HEADER_LEN, NLMSG_ERROR, NetlinkHeader, NetlinkMessage, NetlinkPayload,
+    NetlinkSerializable,
+};
 use netlink_packet_route::RouteNetlinkMessage;
 use netlink_packet_utils::{DecodeError, Emitable as _};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use std::marker::PhantomData;
-use std::num::NonZeroU32;
+use std::num::{NonZeroI32, NonZeroU32};
 use std::sync::Arc;
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -35,7 +39,7 @@ use crate::vfs::socket::{
     SocketMessageFlags, SocketOps, SocketPeer, SocketShutdownFlags, SocketType,
 };
 use starnix_logging::{log_debug, log_error, log_warn, track_stub};
-use starnix_uapi::auth::CAP_NET_ADMIN;
+use starnix_uapi::auth::{CAP_AUDIT_CONTROL, CAP_AUDIT_WRITE, CAP_NET_ADMIN};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
@@ -71,10 +75,7 @@ pub fn new_netlink_socket(
         NetlinkFamily::Route => Box::new(RouteNetlinkSocket::new(kernel)?),
         NetlinkFamily::Generic => Box::new(GenericNetlinkSocket::new(kernel)?),
         NetlinkFamily::SockDiag => Box::new(DiagnosticNetlinkSocket::default()),
-        NetlinkFamily::Audit => {
-            track_stub!(TODO("https://fxbug.dev/403540244"), "NETLINK_AUDIT");
-            return error!(EPROTONOSUPPORT);
-        }
+        NetlinkFamily::Audit => Box::new(AuditNetlinkSocket::new(kernel)),
         _ => Box::new(BaseNetlinkSocket::new(family)),
     };
     Ok(ops)
@@ -163,6 +164,7 @@ impl NetlinkFamily {
         match self {
             NetlinkFamily::Route => NETLINK_ROUTE,
             NetlinkFamily::KobjectUevent => NETLINK_KOBJECT_UEVENT,
+            NetlinkFamily::Audit => NETLINK_AUDIT,
             _ => 0,
         }
     }
@@ -1475,6 +1477,340 @@ impl SocketOps for GenericNetlinkSocket {
             }
             _ => self.lock().setsockopt(current_task, level, optname, optval),
         }
+    }
+}
+
+/// Audit client that can be attached to the `AuditLogger`.
+struct AuditNetlinkClient {
+    /// Reference to the `AuditLogger`.
+    audit_logger: Arc<AuditLogger>,
+    /// Optional response from the `AuditLogger`.
+    audit_response: Mutex<Option<NetlinkMessage<GenericMessage>>>,
+}
+
+impl AuditNetlinkClient {
+    fn new(audit_logger: Arc<AuditLogger>) -> Self {
+        Self { audit_logger, audit_response: Mutex::new(None) }
+    }
+
+    fn check_audit_access(
+        &self,
+        current_task: &CurrentTask,
+        request_type: &AuditRequest,
+    ) -> Result<(), Errno> {
+        match request_type {
+            AuditRequest::AuditGet | AuditRequest::AuditSet => {
+                security::check_task_capable(current_task, CAP_AUDIT_CONTROL)
+            }
+            AuditRequest::AuditUser => security::check_task_capable(current_task, CAP_AUDIT_WRITE),
+        }
+    }
+
+    fn process_request(
+        &self,
+        current_task: &CurrentTask,
+        nl_message: NetlinkMessage<GenericMessage>,
+    ) -> Result<NetlinkMessage<GenericMessage>, Errno> {
+        let (nl_header, nl_payload) = nl_message.into_parts();
+        let audit_request_type = AuditRequest::try_from(nl_header.message_type as u32)?;
+        self.check_audit_access(current_task, &audit_request_type)?;
+
+        // If there is no GenericMessage, return an ErrorMessage.
+        let NetlinkPayload::InnerMessage(GenericMessage::Other { payload, .. }) = nl_payload else {
+            return error!(EINVAL);
+        };
+        match audit_request_type {
+            AuditRequest::AuditGet => self.process_get_status(),
+            AuditRequest::AuditSet => self.process_set_status(nl_header, payload),
+            AuditRequest::AuditUser => self.process_user_audit(nl_header, payload),
+        }
+    }
+
+    fn get_nl_response(&self, flags: SocketMessageFlags) -> Option<Vec<u8>> {
+        if flags.contains(SocketMessageFlags::PEEK) {
+            if let Some(message) = self.audit_response.lock().as_ref() {
+                return Some(AuditNetlinkClient::serialize_nlmsg(message.clone()));
+            }
+        } else if let Some(message) = self.audit_response.lock().take() {
+            return Some(AuditNetlinkClient::serialize_nlmsg(message));
+        }
+        None
+    }
+
+    fn read_nlmsg(&self, flags: SocketMessageFlags) -> Result<Vec<u8>, Errno> {
+        // Check if there is a response and send it if present or return EAGAIN.
+        self.get_nl_response(flags).ok_or_else(|| errno!(EAGAIN))
+    }
+
+    fn process_get_status(&self) -> Result<NetlinkMessage<GenericMessage>, Errno> {
+        Ok(AuditNetlinkClient::build_audit_nlmsg(
+            0,
+            self.audit_logger.get_status().as_bytes().to_vec(),
+        ))
+    }
+
+    fn process_set_status(
+        &self,
+        nl_hdr: NetlinkHeader,
+        nl_payload: Vec<u8>,
+    ) -> Result<NetlinkMessage<GenericMessage>, Errno> {
+        if let Some(status) = audit_status::read_from_bytes(nl_payload.as_bytes()).ok() {
+            self.audit_logger.set_status(status)?;
+            Ok(AuditNetlinkClient::build_audit_ack(Ok(()), nl_hdr))
+        } else {
+            error!(EINVAL)
+        }
+    }
+
+    fn process_user_audit(
+        &self,
+        nl_hdr: NetlinkHeader,
+        nl_payload: Vec<u8>,
+    ) -> Result<NetlinkMessage<GenericMessage>, Errno> {
+        let audit_msg = String::from_utf8_lossy(nl_payload.as_bytes());
+        self.audit_logger.audit_log(move || audit_msg);
+        Ok(AuditNetlinkClient::build_audit_ack(Ok(()), nl_hdr))
+    }
+
+    fn query_events(&self) -> FdEvents {
+        if self.audit_response.lock().is_some() {
+            return FdEvents::POLLIN;
+        }
+        FdEvents::empty()
+    }
+
+    fn detach(&self) {
+        self.audit_logger.detach_client();
+    }
+
+    fn build_audit_nlmsg(msg_type: u16, payload: Vec<u8>) -> NetlinkMessage<GenericMessage> {
+        // The family in GenericMessage can be used for message type, not only for the Netlink Family,
+        // because after finalizing the message, the message type is equal to family.
+        let nl_payload =
+            NetlinkPayload::InnerMessage(GenericMessage::Other { family: msg_type, payload });
+        let nl_hdr = NetlinkHeader::default();
+        let mut nl_msg = NetlinkMessage::new(nl_hdr, nl_payload);
+        nl_msg.finalize();
+        nl_msg
+    }
+
+    fn build_audit_ack(
+        error: Result<(), Errno>,
+        req_header: NetlinkHeader,
+    ) -> NetlinkMessage<GenericMessage> {
+        let error = {
+            assert_eq!(req_header.buffer_len(), NETLINK_HEADER_LEN);
+            let mut buffer = vec![0; NETLINK_HEADER_LEN];
+            req_header.emit(&mut buffer);
+
+            let code = match error {
+                Ok(()) => None,
+                Err(e) => Some(
+                    NonZeroI32::new(e.code.error_code() as i32)
+                        .expect("Errno's code must be non-zero"),
+                ),
+            };
+
+            let mut error = ErrorMessage::default();
+            error.code = code;
+            error.header = buffer;
+            error
+        };
+
+        let payload = NetlinkPayload::<GenericMessage>::Error(error);
+        let mut resp_header = NetlinkHeader::default();
+        resp_header.message_type = NLMSG_ERROR;
+        resp_header.sequence_number = req_header.sequence_number;
+        let mut message = NetlinkMessage::new(resp_header, payload);
+        message.finalize();
+        message
+    }
+
+    fn serialize_nlmsg(message: NetlinkMessage<GenericMessage>) -> Vec<u8> {
+        let mut buf = vec![0; message.buffer_len()];
+        message.serialize(&mut buf);
+        buf
+    }
+}
+
+/// Audit Netlink Socket structure.
+pub struct AuditNetlinkSocket {
+    /// Reference to the `AuditNetlinkClient` associated with self.
+    audit_client: Arc<AuditNetlinkClient>,
+}
+
+impl AuditNetlinkSocket {
+    pub fn new(kernel: &Kernel) -> Self {
+        let audit_client = Arc::new(AuditNetlinkClient::new(kernel.audit_logger()));
+        Self { audit_client }
+    }
+}
+
+impl SocketOps for AuditNetlinkSocket {
+    fn read(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+        data: &mut dyn OutputBuffer,
+        flags: SocketMessageFlags,
+    ) -> Result<MessageReadInfo, Errno> {
+        let buf = self.audit_client.read_nlmsg(flags)?;
+
+        let size = data.write_all(buf.as_bytes())?;
+        Ok(MessageReadInfo {
+            bytes_read: size,
+            message_length: size,
+            address: Some(SocketAddress::Netlink(NetlinkAddress::default())),
+            ancillary_data: vec![],
+        })
+    }
+
+    fn write(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+        current_task: &CurrentTask,
+        data: &mut dyn InputBuffer,
+        _dest_address: &mut Option<SocketAddress>,
+        _ancillary_data: &mut Vec<AncillaryData>,
+    ) -> Result<usize, Errno> {
+        match NetlinkMessage::<GenericMessage>::deserialize(&(data.read_all()?)) {
+            Ok(nl_message) => {
+                let header = nl_message.header;
+
+                // Send request to the `AuditNetlinkClient`.
+                let audit_ack = self
+                    .audit_client
+                    .process_request(current_task, nl_message)
+                    .map_err(|e| AuditNetlinkClient::build_audit_ack(Err(e), header))
+                    .unwrap_or_else(|nlerr| nlerr);
+                *self.audit_client.audit_response.lock() = Some(audit_ack);
+                Ok(header.length as usize)
+            }
+            Err(e) => {
+                log_warn!("Failed to process write; data could not be deserialized: {:?}", e);
+                error!(EINVAL)
+            }
+        }
+    }
+
+    fn query_events(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+    ) -> Result<FdEvents, Errno> {
+        Ok(self.audit_client.query_events() & FdEvents::POLLIN)
+    }
+
+    fn close(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _current_task: &CurrentTask,
+        _socket: &Socket,
+    ) {
+        // If the `AuditNetlinkClient` disconnects, detach it.
+        self.audit_client.detach();
+    }
+
+    fn wait_async(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+        _waiter: &Waiter,
+        _events: FdEvents,
+        _handler: EventHandler,
+    ) -> WaitCanceler {
+        WaitCanceler::new_noop()
+    }
+
+    fn shutdown(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+        _how: SocketShutdownFlags,
+    ) -> Result<(), Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn connect(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &SocketHandle,
+        _current_task: &CurrentTask,
+        _peer: SocketPeer,
+    ) -> Result<(), Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn listen(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+        _backlog: i32,
+        _credentials: ucred,
+    ) -> Result<(), Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn accept(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+    ) -> Result<SocketHandle, Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn bind(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+        _socket_address: SocketAddress,
+    ) -> Result<(), Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn getsockname(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+    ) -> Result<SocketAddress, Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn getpeername(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+    ) -> Result<SocketAddress, Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn getsockopt(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+        _level: u32,
+        _optname: u32,
+        _optlen: u32,
+    ) -> Result<Vec<u8>, Errno> {
+        error!(EOPNOTSUPP)
+    }
+
+    fn setsockopt(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _socket: &Socket,
+        _current_task: &CurrentTask,
+        _level: u32,
+        _optname: u32,
+        _optval: SockOptValue,
+    ) -> Result<(), Errno> {
+        error!(EOPNOTSUPP)
     }
 }
 

@@ -736,9 +736,9 @@ impl SeLinuxApiOps for AccessApi {
                     std::panic::Location::caller(),
                 );
                 let audit_message = format!(
-                    "todo_deny {{ ACCESS_API }} scontext={scontext_str:?} tcontext={tcontext_str:?} tclass={tclass_id} requested={requested:?}",
+                    "avc: todo_deny {{ ACCESS_API }} scontext={scontext_str:?} tcontext={tcontext_str:?} tclass={tclass_id} requested={requested:?}",
                 );
-                kernel.audit_logger().audit_log("avc", &audit_message);
+                kernel.audit_logger().audit_log(|| audit_message);
             } else {
                 // All requested permissions were granted. To allow "todo_deny" logs and track-stub
                 // tracking of permissions that would otherwise be denied & audited, remove those

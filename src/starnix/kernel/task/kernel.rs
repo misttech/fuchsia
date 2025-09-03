@@ -662,7 +662,7 @@ impl Kernel {
     ///
     /// This function follows the lazy initialization pattern.
     pub fn audit_logger(&self) -> Arc<AuditLogger> {
-        self.expando.get_or_init(|| AuditLogger::new())
+        self.expando.get_or_init(|| AuditLogger::new(self))
     }
 
     /// Return a reference to the GenericNetlink implementation.

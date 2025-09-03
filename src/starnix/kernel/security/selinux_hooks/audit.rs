@@ -158,20 +158,21 @@ pub(super) fn audit_decision(
     let audit_data =
         if result.todo_bug.is_some() { (&audit_data_with_bug).into() } else { audit_data };
 
-    let tclass = permission.class().name();
-    let permission_name = permission.name();
-
-    // The source and target SIDs are by definition allocated to Security Contexts, so there is no
-    // need to handle `sid_to_security_context()` failure.
-    let security_server = permission_check.security_server();
-    let scontext = security_server.sid_to_security_context(source_sid).unwrap();
-    let scontext = BStr::new(&scontext);
-    let tcontext = security_server.sid_to_security_context(target_sid).unwrap();
-    let tcontext = BStr::new(&tcontext);
-
     audit_fw.audit_log(
-        "avc",
-        &format!("{decision} {{ {permission_name} }} {audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass}")
+        || {
+            let tclass = permission.class().name();
+            let permission_name = permission.name();
+
+            // The source and target SIDs are by definition allocated to Security Contexts, so there is no
+            // need to handle `sid_to_security_context()` failure.
+            let security_server = permission_check.security_server();
+            let scontext = security_server.sid_to_security_context(source_sid).unwrap();
+            let scontext = BStr::new(&scontext);
+            let tcontext = security_server.sid_to_security_context(target_sid).unwrap();
+            let tcontext = BStr::new(&tcontext);
+
+            format!("avc: {decision} {{ {permission_name} }} {audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass}")
+        }
     );
 }
 
