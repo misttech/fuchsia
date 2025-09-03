@@ -1114,7 +1114,7 @@ zx_status_t VmAddressRegion::AllocSpotLocked(size_t size, uint8_t align_pow2, ui
   vaddr_t alloc_spot = 0;
   crypto::Prng* prng = nullptr;
   if (aspace_->is_aslr_enabled()) {
-    prng = &aspace_->AslrPrngLocked();
+    prng = &aspace_->AslrPrng();
   }
 
   zx_status_t status = subregions_.GetAllocSpot(&alloc_spot, align_pow2, entropy, size, base_,

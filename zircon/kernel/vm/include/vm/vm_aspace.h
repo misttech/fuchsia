@@ -236,7 +236,7 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   Lock<CriticalMutex>& lock_ref() const TA_RET_CAP(lock_) { return lock_; }
 
   // Expose the PRNG for ASLR to VmAddressRegion
-  crypto::Prng& AslrPrngLocked() TA_REQ(lock_) {
+  crypto::Prng& AslrPrng() {
     DEBUG_ASSERT(is_aslr_enabled());
     return aslr_prng_;
   }
