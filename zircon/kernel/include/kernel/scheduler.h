@@ -96,6 +96,10 @@ class Scheduler {
   // The minimum fair utilization before period expansion is needed.
   static constexpr SchedUtilization kMinFairUtilization = kMinimumFairCapacity / kDefaultFairPeriod;
 
+  // Reciprocal of the default fair period to minimize runtime divisions in fair
+  // utilization calculations.
+  static constexpr SchedUtilization kReciprocalDefaultFairPeriod = 1 / kDefaultFairPeriod;
+
   // Ensure that the min fair utilization is in the range (0, 1].
   static_assert(0 < kMinimumFairCapacity && kMinimumFairCapacity <= kDefaultFairPeriod);
 #else
@@ -1275,6 +1279,9 @@ class Scheduler {
 
   TA_GUARDED(queue_lock_)
   SchedDuration fair_period_{kDefaultFairPeriod};
+
+  TA_GUARDED(queue_lock_)
+  SchedUtilization reciprocal_fair_period_{kReciprocalDefaultFairPeriod};
 
   // Utilities to streamline affine transformations.
   constexpr SchedTime MonotonicToVariable(SchedTime t) TA_REQ(queue_lock_) {

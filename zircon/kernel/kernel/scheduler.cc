@@ -2637,11 +2637,13 @@ void Scheduler::UpdateFairBandwidthPeriod(SchedTime now) {
     if (fair_affine_transform_.slope() != slope) {
       fair_affine_transform_.ChangeSlopeAtMonotonicTime(now, slope);
       fair_period_ = kDefaultFairPeriod / slope;
+      reciprocal_fair_period_ = 1 / fair_period_;
     }
   } else {
     if (fair_affine_transform_.slope() != Affine::kMaxSlope) {
       fair_affine_transform_.ChangeSlopeAtMonotonicTime(now, Affine::kMaxSlope);
       fair_period_ = kDefaultFairPeriod;
+      reciprocal_fair_period_ = kReciprocalDefaultFairPeriod;
     }
   }
 }
@@ -2660,7 +2662,7 @@ void Scheduler::AdjustFairBandwidth(Thread* thread, SchedTime now) {
   const SchedDuration time_slice_ns = CalculateTimeslice(thread);
 
   const SchedUtilization old_utilization = state.time_slice_ns() / state.effective_period();
-  const SchedUtilization new_utilization = time_slice_ns / fair_period_;
+  const SchedUtilization new_utilization = time_slice_ns * reciprocal_fair_period_;
   const SchedUtilization utilization_delta = new_utilization - old_utilization;
 
   const SchedDuration old_remaining_time_slice_ns = state.remaining_time_slice_ns();

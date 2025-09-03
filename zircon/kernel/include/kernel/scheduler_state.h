@@ -72,9 +72,9 @@ using SchedWeight = ffl::Fixed<int64_t, 10>;
 // period or capacity and relative deadline, depending on which type of
 // utilization is being evaluated.
 //
-// The 30bit fractional component represents the utilization with a precision
-// of ~1ns.
-using SchedUtilization = ffl::Fixed<int64_t, 30>;
+// The 31bit fractional component represents the utilization with a precision
+// of ~0.5ns.
+using SchedUtilization = ffl::Fixed<int64_t, 31>;
 
 #else
 
@@ -104,9 +104,9 @@ using SchedRemainder = ffl::Fixed<int64_t, 20>;
 // period or capacity and relative deadline, depending on which type of
 // utilization is being evaluated.
 //
-// The 20bit fractional component represents the utilization with a precision
-// of ~1us.
-using SchedUtilization = ffl::Fixed<int64_t, 20>;
+// The 31bit fractional component represents the utilization with a precision
+// of ~0.5ns.
+using SchedUtilization = ffl::Fixed<int64_t, 31>;
 
 #endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
 
