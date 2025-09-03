@@ -16,7 +16,6 @@ use crate::agent::{self, AgentCreator, Context, CreationFunc, Lifespan};
 #[cfg(test)]
 use crate::base::UnknownInfo;
 use crate::base::{SettingInfo, SettingType};
-use crate::intl::types::IntlInfo;
 use crate::keyboard::types::KeyboardInfo;
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::message::receptor::Receptor;
@@ -136,7 +135,6 @@ macro_rules! into_storage_info {
 
 #[cfg(test)]
 into_storage_info!(UnknownInfo => SettingInfo);
-into_storage_info!(IntlInfo => SettingInfo);
 into_storage_info!(KeyboardInfo => SettingInfo);
 into_storage_info!(NightModeInfo => SettingInfo);
 into_storage_info!(PrivacyInfo => SettingInfo);
@@ -211,7 +209,7 @@ where
                     SettingType::DoNotDisturb => panic!("DoNotDisturb goes directly to storage"),
                     SettingType::FactoryReset => panic!("FactoryReset goes directly to storage"),
                     SettingType::Input => panic!("Input goes directly to storage"),
-                    SettingType::Intl => self.read::<IntlInfo>(id, responder).await,
+                    SettingType::Intl => panic!("Intl goes directly to storage"),
                     SettingType::Keyboard => self.read::<KeyboardInfo>(id, responder).await,
                     SettingType::Light => panic!("Light goes directly to storage"),
                     SettingType::NightMode => self.read::<NightModeInfo>(id, responder).await,
@@ -233,7 +231,7 @@ where
                     }
                     SettingInfo::FactoryReset(_) => panic!("FactoryReset goes directly to storage"),
                     SettingInfo::Input(_) => panic!("Input goes directly to storage"),
-                    SettingInfo::Intl(info) => self.write(info, responder).await,
+                    SettingInfo::Intl(_) => panic!("Intl goes directly to storage"),
                     SettingInfo::Keyboard(info) => self.write(info, responder).await,
                     SettingInfo::NightMode(info) => self.write(info, responder).await,
                     SettingInfo::Privacy(info) => self.write(info, responder).await,

@@ -811,11 +811,19 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         // Intl
         if components.contains(&SettingType::Intl) {
             device_storage_factory
-                .initialize::<IntlController>()
+                .initialize::<IntlController<T>>()
                 .await
                 .expect("storage should still be initializing");
-            factory_handle
-                .register(SettingType::Intl, Box::new(DataHandler::<IntlController>::spawn));
+            let device_storage_factory = Rc::clone(&device_storage_factory);
+            factory_handle.register(
+                SettingType::Intl,
+                Box::new(move |context| {
+                    DataHandler::<IntlController<T>>::spawn_with_async(
+                        context,
+                        Rc::clone(&device_storage_factory),
+                    )
+                }),
+            );
         }
 
         // Keyboard

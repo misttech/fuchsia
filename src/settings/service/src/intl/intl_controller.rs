@@ -12,8 +12,10 @@ use crate::intl::types::{HourCycle, IntlInfo, LocaleId, TemperatureUnit};
 use async_trait::async_trait;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::fidl_storage::FidlStorageConvertible;
-use settings_storage::storage_factory::{NoneT, StorageAccess};
+use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
 use std::collections::HashSet;
+use std::marker::PhantomData;
+use std::rc::Rc;
 use {fuchsia_trace as ftrace, rust_icu_uenum as uenum, rust_icu_uloc as uloc};
 
 impl DeviceStorageCompatible for IntlInfo {
@@ -54,36 +56,44 @@ impl From<IntlInfo> for SettingInfo {
     }
 }
 
-pub struct IntlController {
-    client: ClientProxy,
-    time_zone_ids: std::collections::HashSet<String>,
+impl From<&IntlInfo> for SettingType {
+    fn from(_: &IntlInfo) -> SettingType {
+        SettingType::Intl
+    }
 }
 
-impl StorageAccess for IntlController {
+pub struct IntlController<F> {
+    client: ClientProxy,
+    store: Rc<DeviceStorage>,
+    time_zone_ids: std::collections::HashSet<String>,
+    _phantom: PhantomData<F>,
+}
+
+impl<F> StorageAccess for IntlController<F> {
     type Storage = DeviceStorage;
     type Data = IntlInfo;
     const STORAGE_KEY: &'static str = <IntlInfo as DeviceStorageCompatible>::KEY;
 }
 
 #[async_trait(?Send)]
-impl data_controller::Create for IntlController {
-    async fn create(client: ClientProxy) -> Result<Self, ControllerError> {
-        let time_zone_ids = IntlController::load_time_zones();
-        Ok(IntlController { client, time_zone_ids })
+impl<F> data_controller::CreateWithAsync for IntlController<F>
+where
+    F: StorageFactory<Storage = DeviceStorage>,
+{
+    type Data = Rc<F>;
+    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
+        let time_zone_ids = Self::load_time_zones();
+        let store = data.get_store().await;
+        Ok(IntlController { client, store, time_zone_ids, _phantom: PhantomData })
     }
 }
 
 #[async_trait(?Send)]
-impl controller::Handle for IntlController {
+impl<F> controller::Handle for IntlController<F> {
     async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
         match request {
             Request::SetIntlInfo(info) => Some(self.set(info).await),
-            Request::Get => Some(
-                self.client
-                    .read_setting_info::<IntlInfo>(ftrace::Id::new())
-                    .await
-                    .into_handler_result(),
-            ),
+            Request::Get => Some(Ok(Some(self.store.get::<IntlInfo>().await.into()))),
             _ => None,
         }
     }
@@ -91,7 +101,7 @@ impl controller::Handle for IntlController {
 
 /// Controller for processing requests surrounding the Intl protocol, backed by a number of
 /// services, including TimeZone.
-impl IntlController {
+impl<F> IntlController<F> {
     /// Loads the set of valid time zones from resources.
     fn load_time_zones() -> std::collections::HashSet<String> {
         let _icu_data_loader = icu_data::Loader::new().expect("icu data loaded");
@@ -111,8 +121,8 @@ impl IntlController {
         self.validate_intl_info(info.clone())?;
 
         let id = ftrace::Id::new();
-        let current = self.client.read_setting::<IntlInfo>(id).await;
-        self.client.write_setting(current.merge(info).into(), id).await.into_handler_result()
+        let current = self.store.get::<IntlInfo>().await;
+        self.client.storage_write(&self.store, current.merge(info), id).await.into_handler_result()
     }
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/42069089)
