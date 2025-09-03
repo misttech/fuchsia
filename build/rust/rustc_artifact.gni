@@ -217,11 +217,6 @@ template("rustc_artifact") {
       # rustdoc should not be data_dep'd for third party crates
       include_rustdoc_first_party = true
 
-      # We should only generate clippy lints for first party crates,
-      # as lints for third party crates aren't actionable
-      enable_clippy_first_party =
-          !defined(invoker.disable_clippy) || !invoker.disable_clippy
-
       if (crate_type == "bin") {
         # search index size, mostly.
         disable_rustdoc_binary = true

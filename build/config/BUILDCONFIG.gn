@@ -4211,7 +4211,6 @@ template("rust_library") {
                              "applicable_licenses",
                              "metadata",
                              "visibility",
-                             "enable_clippy_first_party",
                              "include_rustdoc_first_party",
                              "original_target_name",
                              "no_rust_aux_build_config_dep",

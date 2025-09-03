@@ -139,20 +139,12 @@ template("rust_auxiliary") {
     _rustdoc_out_dir = "$target_gen_dir/$target_name.doc"
   }
 
-  _enable_clippy_first_party = defined(invoker.enable_clippy_first_party) &&
-                               invoker.enable_clippy_first_party
-  if (_enable_clippy_first_party) {
-    _define_clippy = !defined(invoker.disable_clippy) || !invoker.disable_clippy
-  } else {
-    not_needed(invoker, [ "disable_clippy" ])
-    _define_clippy = false
-  }
+  _define_clippy = !defined(invoker.disable_clippy) || !invoker.disable_clippy
 
   if (defined(invoker.original_target_name)) {
     _original_target_name = invoker.original_target_name
   } else {
-    assert(!defined(invoker.enable_clippy_first_party),
-           "clippy targets should have an original name")
+    assert(_define_clippy, "clippy targets should have an original name")
     _original_target_name = target_name
   }
   if (defined(invoker.rustdoc_parts_dir)) {
@@ -517,8 +509,8 @@ template("rust_auxiliary") {
     if (defined(invoker.sources)) {
       _sources = invoker.sources
     } else {
-      assert(!_enable_clippy_first_party,
-             "sources should be defined in first party targets")
+      # TODO(jayzhuang): Check and make sure sources are always defined for
+      # first-party targets.
       _sources = []
     }
 
