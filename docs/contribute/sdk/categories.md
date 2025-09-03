@@ -60,7 +60,7 @@ without requiring adding those APIs to the SDK API surface area.
 A typical SDK Atom begins its lifecycle outside the SDK with no SDK category. It
 may first be added to the SDK in the `host_tool` or `prebuilt` category when a
 host tool or precompiled library, respectively, in the SDK needs to use it. At
-some point, the API Council will promote the SDK Atom right to the `partner` SDK
+some point, the API Council will promote the SDK Atom to the `partner` SDK
 category, often when a partner needs access to an API contained in the Atom.
 
 Please note that this mechanism is complementary to `@available` mechanism for
@@ -93,6 +93,12 @@ Each SDK Atom has an `category` parameter with one of the following values:
 These categories form an ordered list with a monotonically increasing audience.
 For example, an SDK Atom in the `partner` category is necessarily available to
 Compatibility Tests `partner` comes after `compat_test` in this list.
+
+
+For information on promoting an API, library, or existing SDK atom to one of
+these categories, see [Promoting an API][sdk-category-promotion].
+
+[sdk-category-promotion]: /docs/contribute/sdk/README.md#promoting-an-api
 
 ## Commitments
 

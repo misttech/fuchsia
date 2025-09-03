@@ -41,8 +41,22 @@ following:
   see [Membership][membership] in the Fuchsia API Council Charter.
 
 
+## Promoting an API {:#promoting-an-api}
+
+By default, APIs, libraries, etc. are not IDK atoms, not in the IDK/SDK, and not
+in an [SDK category][sdk-category]. In order for an API or library to be used
+in certain ways, including inclusion in the IDK, it must be made an IDK atom and
+assigned an SDK category.
+
+This section describes the process for promoting an atom to the different
+categories. These apply to both adding a new atom to a category and promoting
+an existing atom from one category to another.
+
+In order for an atom to be added to the IDK/SDK, it must be [promoted to the
+`partner` category](#promoting-to-partner).
+
 <a id="promoting-to-host-tool"></a> {#  A second anchor for this section. #}
-## Promoting an API to the `prebuilt` or `host_tool` category {:#promoting-to-prebuilt}
+### Promoting an API to the `prebuilt` or `host_tool` category {:#promoting-to-prebuilt}
 
 For an API to be usable by prebuilt binaries or host tools in the Fuchsia SDK,
 it must be in the `prebuilt` or `host_tool` [SDK category][sdk-category],
@@ -54,23 +68,14 @@ Keep in mind that there are additional considerations when
 [promoting an API to `partner`](#promoting-to-partner), which may reveal
 tradeoff decisions between compatibility and long term usability.
 
-Once the API is ready for review, request an API Calibration by filling out this
-form: [goto.google.com/fuchsia-api-calibration-request][calibration-form]
-indicating that this API is targeting the new category.
+Once the API is ready for review, request an [API calibration][calibration].
 
-If you don't have access to that form, send an email to
-api-council@fuchsia.dev indicating the specific library or libraries you'd
-like to promote, and the API council will follow up with next steps.
+### Promoting an API to the `partner` category {:#promoting-to-partner}
 
-## Promoting an API to the `partner` category {:#promoting-to-partner}
-
-For an API to be included in the Fuchsia SDK in the `partner`, or `public`
-[SDK category][sdk-category], it must clear two hurdles: there must be a ready
-and willing customer, and the API must have gone through
+For an API to be included in the Fuchsia IDK/SDK, it must be in the `partner`
+[SDK category][sdk-category]. This requires clearing two hurdles: there must be
+a ready and willing customer, and the API must have gone through
 [API calibration][calibration].
-
-To request an API Calibration, fill out this form:
-[goto.google.com/fuchsia-api-calibration-request][calibration-form].
 
 <!-- Reference links -->
 
@@ -84,5 +89,4 @@ To request an API Calibration, fill out this form:
 [membership]: /docs/contribute/governance/api_council.md#membership
 [sdk-category]: /docs/contribute/sdk/categories.md
 [calibration]: /docs/contribute/governance/api_council.md#calibration
-[calibration-form]: https://issues.fuchsia.dev/issues/new?component=1454153&template=1892475
 [evolve-gracefully]: /docs/development/api/evolution.md#evolve-gracefully

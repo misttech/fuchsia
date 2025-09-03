@@ -59,13 +59,14 @@ in that file along with a documentation comment describing the library. See
 [the FIDL style guide][fidl-library-style]
 for more information.
 
-Every API in the `"partner"` [SDK category](/docs/contribute/sdk/categories.md)
+Every FIDL API in an [SDK category][sdk-category]
 is opted into static compatibility testing in CI/CQ. These tests fail when
 an API changes in backward incompatible ways. New libraries do not specify an
 SDK category, preventing them from being exposed to partners, excluding them
 from compatibility tests, and allowing the API to change freely. Once the API is
-stable and the library has gone through API calibration, specify the `"partner"`
-category.
+stable and the library has gone through [API calibration][calibration], specify
+the `"partner"` category. See [Promoting an API][sdk-category-promotion] for
+more information.
 
 ### Replacing FIDL APIs {#replacing}
 
@@ -267,6 +268,7 @@ More information:
 It's good for a public API to reuse types and compose protocols if they're
 semantically equivalent, but it's easy to make mistakes.
 
+[calibration]: /docs/contribute/governance/api_council.md#calibration
 [fidl-bool]: /docs/development/api/fidl.md#avoid_booleans_if_more_states_are_possible
 [fidl-enum]: /docs/reference/fidl/language/language.md#strict-vs-flexible
 [fidl-error-enum]: /docs/development/api/fidl.md#prefer-domain-specific-enum-for-errors
@@ -279,4 +281,6 @@ semantically equivalent, but it's easy to make mistakes.
 [fidl-library-style]: /docs/development/languages/fidl/guides/style.md#library-overview
 [fidl-string]: /docs/development/api/fidl.md#specify_bounds_for_vector_and_string
 [fidl-versioning]: /docs/reference/fidl/language/versioning.md
+[sdk-category]: /docs/contribute/sdk/categories.md
+[sdk-category-promotion]: /docs/contribute/sdk/README.md#promoting-an-api
 [version-json]: https://cs.opensource.google/fuchsia/fuchsia/+/main:/sdk/version_history.json
