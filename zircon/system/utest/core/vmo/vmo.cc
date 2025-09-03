@@ -2208,9 +2208,9 @@ TEST(VmoTestCase, UncachedContiguous) {
 
   EXPECT_EQ(contig_vmo.set_cache_policy(ZX_CACHE_POLICY_CACHED), ZX_ERR_BAD_STATE);
 
-  // Unpin and then validate that we cannot move committed pages from uncached->cached
+  // Unpin and then validate that we can now change the cache policy.
   pmt.unpin();
-  EXPECT_EQ(contig_vmo.set_cache_policy(ZX_CACHE_POLICY_CACHED), ZX_ERR_BAD_STATE);
+  EXPECT_OK(contig_vmo.set_cache_policy(ZX_CACHE_POLICY_CACHED));
 }
 
 // Test various pinning operations.  In particular, we would like to test

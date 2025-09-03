@@ -727,9 +727,9 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   void RangeChangeUpdateLocked(VmCowRange range, RangeChangeOp op, DeferredOps* deferred)
       TA_REQ(lock());
 
-  // The VmObjectPaged is changing its mapping policy from cached to uncached. Clean / invalidate
-  // all existing pages and update page queues if required.
-  void FinishTransitionToUncachedLocked() TA_REQ(lock());
+  // The VmObjectPaged is changing its cache mapping policy. Clean / invalidate all existing pages
+  // and update page queues if required.
+  void FinishCachePolicyTransitionLocked() TA_REQ(lock());
 
   // Promote pages in the specified range for reclamation under memory pressure. |offset| will be
   // rounded down to the page boundary, and |len| will be rounded up to the page boundary.

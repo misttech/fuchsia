@@ -1862,25 +1862,10 @@ zx_status_t VmObjectPaged::SetMappingCachePolicy(const uint32_t cache_policy) {
   Guard<CriticalMutex> guard{lock()};
 
   // conditions for allowing the cache policy to be set:
-  // 1) vmo either has no pages committed currently or is transitioning from being cached
-  // 2) vmo has no pinned pages
-  // 3) vmo has no mappings
-  // 4) vmo has no children
-  // 5) vmo is not a child
-  // Counting attributed memory does a sufficient job of checking for committed pages since we also
-  // require no children and no parent, so attribution == precisely our pages.
-  if (cow_pages_locked()->GetAttributedMemoryInRangeLocked(VmCowRange(0, size_locked())) !=
-          AttributionCounts{} &&
-      cache_policy_ != ARCH_MMU_FLAG_CACHED) {
-    // We forbid to transitioning committed pages from any kind of uncached->cached policy as we do
-    // not currently have a story for dealing with the speculative loads that may have happened
-    // against the cached physmap. That is, whilst a page was uncached the cached physmap version
-    // may have been loaded and sitting in cache. If we switch to cached mappings we may then use
-    // stale data out of the cache.
-    // This isn't a problem if going *from* an cached state, as we can safely clean+invalidate.
-    // Similarly it's not a problem if there aren't actually any committed pages.
-    return ZX_ERR_BAD_STATE;
-  }
+  // 1) vmo has no pinned pages
+  // 2) vmo has no mappings
+  // 3) vmo has no children
+  // 4) vmo is not a child
   if (cow_pages_locked()->pinned_page_count_locked() > 0) {
     return ZX_ERR_BAD_STATE;
   }
@@ -1916,22 +1901,28 @@ zx_status_t VmObjectPaged::SetMappingCachePolicy(const uint32_t cache_policy) {
     return ZX_ERR_BAD_STATE;
   }
 
-  // If transitioning from a cached policy we must clean/invalidate all the pages as the kernel may
-  // have written to them on behalf of the user. Change the cache_policy_ before doing that as the
-  // VmCowPages might need to look at the policy to infer what actions to take.
-  const bool transition_to_uncached =
-      cache_policy_ == ARCH_MMU_FLAG_CACHED && cache_policy != ARCH_MMU_FLAG_CACHED;
-  if (transition_to_uncached) {
-    // It does not make sense for a pager-backed or discardable VMO to be uncached.
-    if (is_user_pager_backed() || is_discardable()) {
-      return ZX_ERR_BAD_STATE;
-    }
+  // It does not make sense for a pager-backed or discardable VMO to be uncached.
+  if (is_user_pager_backed() || is_discardable()) {
+    DEBUG_ASSERT(cache_policy_ == ARCH_MMU_FLAG_CACHED);
+    return cache_policy == ARCH_MMU_FLAG_CACHED ? ZX_OK : ZX_ERR_BAD_STATE;
   }
+
+  // Set the cache policy before informing the VmCowPages, as it may make decisions based on the
+  // final cache policy.
   cache_policy_ = cache_policy;
 
-  if (transition_to_uncached) {
-    cow_pages_locked()->FinishTransitionToUncachedLocked();
-  }
+  // Asks the cow pages to perform any internal transitions and, most importantly, clean and
+  // invalidate any committed pages. In the case of going from cached->uncached the clean+invalidate
+  // ensures that any modifications are cleaned back to RAM so that an uncached mapping sees any
+  // modifications made prior to changing the cache policy. When going from uncached->cached due to
+  // the cached physmap there could be cache lines that hold stale data of the pages that were
+  // modified via an uncached mapping. As these cache lines are, by definition, clean, a
+  // clean+invalidate will simply invalidate them and not write them back, ensuring that a future
+  // access via a cached mapping sees the up to date value.
+  // Note that uncached here refers to any of the uncached policies: device, write combining, etc.
+  // Transitioning between different uncached policies does not require a cache operation for
+  // correctness, but it is also harmless and not a case we attempt to optimize for.
+  cow_pages_locked()->FinishCachePolicyTransitionLocked();
 
   return ZX_OK;
 }

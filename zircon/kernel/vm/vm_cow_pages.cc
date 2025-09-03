@@ -6835,7 +6835,7 @@ void VmCowPages::RangeChangeUpdateCowChildren(LockedPtr self, VmCowRange range, 
   }
 }
 
-void VmCowPages::FinishTransitionToUncachedLocked() {
+void VmCowPages::FinishCachePolicyTransitionLocked() {
   // No need to perform clean/invalidate if size is zero because there can be no pages.
   if (size_ == 0) {
     return;
