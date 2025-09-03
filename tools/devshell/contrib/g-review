@@ -12,11 +12,37 @@
 ## Runs in a new headless instance to preserve any gemini-cli context
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-source "$SCRIPT_DIR/../lib/vars.sh" || exit $?
-
+source "${SCRIPT_DIR}/../lib/vars.sh" || exit $?
+source "${SCRIPT_DIR}/../lib/metrics.sh" || exit $?
 fx-config-read
 
+G_REVIEW_CONFIG_DIR="${HOME}/.fuchsia"
+G_REVIEW_CONFIG="${G_REVIEW_CONFIG_DIR}/g-review"
+
+if [[ -f "${G_REVIEW_CONFIG}" ]]; then
+  source "${G_REVIEW_CONFIG}"
+else
+  mkdir -p "${G_REVIEW_CONFIG_DIR}"
+  SALT=$(fx-uuid)
+  echo "SALT=\"${SALT}\"" > "${G_REVIEW_CONFIG}"
+  source "${G_REVIEW_CONFIG}"
+fi
+
 set -euo pipefail
+
+pre_agree=false
+while (( "$#" )); do
+  case "$1" in
+    -y)
+      pre_agree=true
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
 echo -e >&2 "Creating a Gemini Code Review of the current commit at HEAD"
 echo -e >&2 "Staged and uncommited changes are ignored."
 if ! commit_hash=$(git rev-parse --short --verify HEAD); then
@@ -33,6 +59,19 @@ echo -e >&2 "Reviewing changes in: ${commit_hash}"
 git show --pretty="format:" --name-status HEAD >&2
 
 use_tui=$(fx-get-ui-mode "fx-g-review")
+
+gerrit_change_id=$(git show --no-patch --format=%B | grep "Change-Id:" | awk '{print $2}')
+if [[ -z "${gerrit_change_id}" ]]; then
+    echo >&2 "Warning: Could not find Change-Id in commit message. Creating a random ID for analytics"
+    gerrit_change_id=$(fx-uuid)
+fi
+md5_output=$( printf "%s" "$gerrit_change_id$SALT" | md5sum)
+private_identifier=${md5_output%% *}
+
+if ! command -v gemini >/dev/null 2>&1; then
+    echo "Error: 'gemini' command not found in path. Please install Gemini CLI." >&2
+    exit 1
+fi
 
 # Call gemini with the prompt from stdin
 json_response=$( (cat "$PROMPT"; echo; git show HEAD) | gemini -p ) || {
@@ -55,6 +94,8 @@ fi
 
 text=$(echo "$json_data" | jq -r '.response_text')
 diff=$(echo "$json_data" | jq -r '.diff')
+lgtm=$(echo "$json_data" | jq -r '.lgtm')
+num=$(echo "$json_data" | jq -r '.number_of_suggestions')
 
 if [[ "$use_tui" == "tui" ]]; then
     fx gum format "${text}" | fx gum style \
@@ -76,4 +117,51 @@ if [[ -n "$diff" ]]; then
     echo -e >&2 "(diff saved at ${diff_file})"
 fi
 
+confirm() {
+    local prompt="${1:-Are you sure?} [Y/n] " # Default prompt
+    local response
+    while true; do
+        read -p "$prompt" response
+        case "$response" in
+            [yY]*|"") # Matches 'y', 'Y', 'yes', 'YES', etc.
+            return 0 # Success (yes)
+        ;;
+            [nN]*)   # Matches 'n', 'N', 'no', 'NO', etc.
+            return 1 # Failure (no)
+        ;;
+        *)
+            echo "Invalid input. Please enter 'yes' or 'no'." >&2
+        ;;
+        esac
+    done
+}
+echo
+G_REVIEW_LABEL="[g-review]"
+LAST_MESSAGE=$(git log -1 --pretty=%B)
+if [[ "${LAST_MESSAGE}" != *"${G_REVIEW_LABEL}"* ]]; then
+    if [[ "$pre_agree" == "true" ]] || confirm "Can we append '[g-review]' to your git commit message to better track the impact of gemini reviews on CL review time?"; then
+        # Insert the label on a new line before the Change-Id footer.
+        if echo "${LAST_MESSAGE}" | grep -q '^Change-Id:'; then
+            NEW_MESSAGE=$(echo "${LAST_MESSAGE}" | sed "/^Change-Id:/i ${G_REVIEW_LABEL}\n")
+            git commit --amend -m "${NEW_MESSAGE}"
+        fi
+    fi
+fi
+
+echo
+if confirm "Did you find this review helpful?"; then
+    helpful=1
+else
+    helpful=0
+fi
+
+json_string=$(fx jq -n \
+  --arg cl "${private_identifier}" \
+  --arg num "${num}" \
+  --arg lgtm "${lgtm}" \
+  --arg helpful "${helpful}" \
+  '{cl: $cl, num: $num, lgtm: $lgtm, helpful: $helpful}'
+)
+
+(track-subcommand-custom-event "g-review" "review" "${json_string}")
 

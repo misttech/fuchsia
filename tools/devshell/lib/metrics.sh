@@ -21,7 +21,7 @@
 
 # Increase the metrics version by 1 when analytics is updated
 _METRICS_VERSION="3"
-_METRICS_ALLOWS_CUSTOM_REPORTING=( "test" )
+_METRICS_ALLOWS_CUSTOM_REPORTING=( "test" "g-review" )
 # If args match the below, then track capture group 1
 _METRICS_TRACK_REGEX=(
     "^run (fuchsia-pkg:\/\/[[:graph:]]*)"
