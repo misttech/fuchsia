@@ -901,11 +901,19 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         // Privacy
         if components.contains(&SettingType::Privacy) {
             device_storage_factory
-                .initialize::<PrivacyController>()
+                .initialize::<PrivacyController<T>>()
                 .await
                 .expect("storage should still be initializing");
-            factory_handle
-                .register(SettingType::Privacy, Box::new(DataHandler::<PrivacyController>::spawn));
+            let device_storage_factory = Rc::clone(&device_storage_factory);
+            factory_handle.register(
+                SettingType::Privacy,
+                Box::new(move |context| {
+                    DataHandler::<PrivacyController<T>>::spawn_with_async(
+                        context,
+                        Rc::clone(&device_storage_factory),
+                    )
+                }),
+            );
         }
 
         // Setup
