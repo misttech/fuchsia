@@ -179,7 +179,7 @@ async fn main() -> Result<()> {
         let status: CompatibilityState;
         let message = match HISTORY.check_abi_revision_for_runtime(host_overnet_revision) {
             Ok(_) => {
-                log::info!("Host overnet is running supported revision: {host_overnet_revision}");
+                log::debug!("Host overnet is running supported revision: {host_overnet_revision}");
                 status = CompatibilityState::Supported;
                 "Host overnet is running supported revision".to_string()
             }
