@@ -101,7 +101,7 @@ void Service::Wait() {
               << "Error from getnameinfo(.., NI_NUMERICHOST | NI_NUMERICSERV) for peer address: "
               << gai_strerror(res);
         }
-        FX_LOG_KV(INFO, "Accepted connection", FX_KV("remote", peer_name.c_str()));
+        FX_LOG_KV(DEBUG, "Accepted connection", FX_KV("remote", peer_name.c_str()));
 
         Launch(std::move(conn));
         Wait();
