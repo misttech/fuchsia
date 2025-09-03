@@ -793,15 +793,16 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 input_configuration.expect("Input controller requires an input configuration"),
             ));
             device_storage_factory
-                .initialize::<InputController>()
+                .initialize::<InputController<T>>()
                 .await
                 .expect("storage should still be initializing");
+            let device_storage_factory = Rc::clone(&device_storage_factory);
             factory_handle.register(
                 SettingType::Input,
                 Box::new(move |context| {
-                    DataHandler::<InputController>::spawn_with(
+                    DataHandler::<InputController<T>>::spawn_with_async(
                         context,
-                        Rc::clone(&input_configuration),
+                        (Rc::clone(&device_storage_factory), Rc::clone(&input_configuration)),
                     )
                 }),
             );

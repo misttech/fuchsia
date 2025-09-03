@@ -18,13 +18,14 @@ use crate::input::types::{
 use settings_common::config::default_settings::DefaultSetting;
 use settings_media_buttons::MediaButtons;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
-use settings_storage::storage_factory::{NoneT, StorageAccess};
+use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
 
 use anyhow::Error;
 use async_trait::async_trait;
 use fuchsia_trace as ftrace;
 use futures::lock::Mutex;
 use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 pub(crate) const DEFAULT_CAMERA_NAME: &str = "camera";
@@ -82,6 +83,12 @@ impl From<InputInfo> for SettingInfo {
     }
 }
 
+impl From<&InputInfo> for SettingType {
+    fn from(_: &InputInfo) -> SettingType {
+        SettingType::Input
+    }
+}
+
 #[derive(PartialEq, Default, Debug, Clone, Serialize, Deserialize)]
 pub struct InputInfoSourcesV2 {
     hw_microphone: Microphone,
@@ -131,6 +138,9 @@ struct InputControllerInner {
     /// Client to communicate with persistent store and notify on.
     client: ClientProxy,
 
+    /// Persistent storage.
+    store: Rc<DeviceStorage>,
+
     /// Local tracking of the input device states.
     input_device_state: InputState,
 
@@ -144,7 +154,7 @@ impl InputControllerInner {
     // after a migration from a previous InputInfoSources version
     // or on pave.
     async fn get_stored_info(&self) -> InputInfo {
-        let mut input_info = self.client.read_setting::<InputInfo>(ftrace::Id::new()).await;
+        let mut input_info = InputInfo::from(self.store.get::<InputInfo>().await);
         if input_info.input_device_state.is_empty() {
             input_info.input_device_state = self.input_device_config.clone().into();
         }
@@ -197,7 +207,7 @@ impl InputControllerInner {
             if disabled { DeviceState::MUTED } else { DeviceState::AVAILABLE },
         );
         let id = ftrace::Id::new();
-        self.client.write_setting(input_info.into(), id).await.into_handler_result()
+        self.client.storage_write(&self.store, input_info, id).await.into_handler_result()
     }
 
     /// Sets the hardware mic/cam state from the muted states in `media_buttons`.
@@ -256,7 +266,7 @@ impl InputControllerInner {
 
         // Store the newly set value.
         let id = ftrace::Id::new();
-        self.client.write_setting(input_info.into(), id).await.into_handler_result()
+        self.client.storage_write(&self.store, input_info, id).await.into_handler_result()
     }
 
     /// Sets state for the given input devices.
@@ -290,7 +300,7 @@ impl InputControllerInner {
 
         // Store the newly set value.
         let id = ftrace::Id::new();
-        self.client.write_setting(input_info.into(), id).await.into_handler_result()
+        self.client.storage_write(&self.store, input_info, id).await.into_handler_result()
     }
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/42069089)
@@ -347,29 +357,33 @@ impl InputControllerInner {
     }
 }
 
-pub struct InputController {
+pub struct InputController<F> {
     /// Handle so that a lock can be used in the Handle trait implementation.
     inner: InputControllerInnerHandle,
+    _phantom: PhantomData<F>,
 }
 
-impl StorageAccess for InputController {
+impl<F> StorageAccess for InputController<F> {
     type Storage = DeviceStorage;
     type Data = InputInfoSources;
     const STORAGE_KEY: &'static str = InputInfoSources::KEY;
 }
 
-impl InputController {
+impl<F> InputController<F> {
     /// Alternate constructor that allows specifying a configuration.
     pub(crate) fn create_with_config(
         client: ClientProxy,
         input_device_config: InputConfiguration,
+        store: Rc<DeviceStorage>,
     ) -> Result<Self, ControllerError> {
         Ok(Self {
             inner: Rc::new(Mutex::new(InputControllerInner {
                 client,
+                store,
                 input_device_state: InputState::new(),
                 input_device_config,
             })),
+            _phantom: PhantomData,
         })
     }
 
@@ -381,11 +395,16 @@ impl InputController {
     }
 }
 
-impl data_controller::CreateWith for InputController {
-    type Data = Rc<std::sync::Mutex<DefaultSetting<InputConfiguration, &'static str>>>;
-    fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
-        if let Ok(Some(config)) = data.lock().unwrap().load_default_value() {
-            InputController::create_with_config(client, config)
+#[async_trait(?Send)]
+impl<F> data_controller::CreateWithAsync for InputController<F>
+where
+    F: StorageFactory<Storage = DeviceStorage>,
+{
+    type Data = (Rc<F>, Rc<std::sync::Mutex<DefaultSetting<InputConfiguration, &'static str>>>);
+    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
+        if let Ok(Some(config)) = data.1.lock().unwrap().load_default_value() {
+            let store = data.0.get_store().await;
+            InputController::create_with_config(client, config, store)
         } else {
             Err(ControllerError::InitFailure("Invalid default input device config".into()))
         }
@@ -393,7 +412,7 @@ impl data_controller::CreateWith for InputController {
 }
 
 #[async_trait(?Send)]
-impl controller::Handle for InputController {
+impl<F> controller::Handle for InputController<F> {
     async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
         match request {
             Request::Restore => Some(self.inner.lock().await.restore().await.map(|_| None)),
@@ -465,20 +484,17 @@ impl controller::Handle for InputController {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::handler::setting_handler::controller::Handle;
     use crate::handler::setting_handler::ClientImpl;
     use crate::input::input_device_configuration::{InputDeviceConfiguration, SourceState};
+    use crate::service;
     use crate::service_context::ServiceContext;
-    use crate::storage::{Payload as StoragePayload, StorageRequest, StorageResponse};
-    use crate::{service, Address};
-    use settings_common::inspect::config_logger::InspectConfigLogger;
-    use settings_test_common::fakes::service::ServiceRegistry;
-
     use fuchsia_async as fasync;
     use fuchsia_inspect::component;
-    use settings_storage::UpdateState;
-
-    use super::*;
+    use settings_common::inspect::config_logger::InspectConfigLogger;
+    use settings_test_common::fakes::service::ServiceRegistry;
+    use settings_test_common::storage::InMemoryStorageFactory;
 
     #[fuchsia::test]
     fn test_input_migration_v1_to_current() {
@@ -576,46 +592,14 @@ mod tests {
     async fn test_camera_error_on_restore() {
         let message_hub = service::MessageHub::create_hub();
 
-        // Create a fake storage receptor used to receive and respond to storage messages.
-        let (_, mut storage_receptor) = message_hub
-            .create(service::message::MessengerType::Addressable(Address::Storage))
+        let storage_factory = InMemoryStorageFactory::new();
+        storage_factory
+            .initialize::<InputController<InMemoryStorageFactory>>()
             .await
-            .expect("Unable to create agent messenger");
-
-        // Spawn a task that mimics the storage agent by responding to read/write calls.
-        fasync::Task::local(async move {
-            loop {
-                if let Ok((payload, message_client)) = storage_receptor.next_payload().await {
-                    if let Ok(StoragePayload::Request(storage_request)) =
-                        StoragePayload::try_from(payload)
-                    {
-                        match storage_request {
-                            StorageRequest::Read(_, _) => {
-                                // Just respond with the default value as we're not testing storage.
-                                let _ = message_client.reply(service::Payload::Storage(
-                                    StoragePayload::Response(StorageResponse::Read(
-                                        InputInfoSources::default().into(),
-                                    )),
-                                ));
-                            }
-                            StorageRequest::Write(_, _) => {
-                                // Just respond with Unchanged as we're not testing storage.
-                                let _ = message_client.reply(service::Payload::Storage(
-                                    StoragePayload::Response(StorageResponse::Write(Ok(
-                                        UpdateState::Unchanged,
-                                    ))),
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        })
-        .detach();
-
+            .expect("controller should have impls");
+        let store = storage_factory.get_store().await;
         let client_proxy = create_proxy(message_hub).await;
-
-        let controller = InputController::create_with_config(
+        let controller = InputController::<InMemoryStorageFactory>::create_with_config(
             client_proxy,
             InputConfiguration {
                 devices: vec![InputDeviceConfiguration {
@@ -628,6 +612,7 @@ mod tests {
                     mutable_toggle_state: 0,
                 }],
             },
+            store,
         )
         .expect("Should have controller");
 
@@ -649,7 +634,7 @@ mod tests {
 
     #[fasync::run_until_stalled(test)]
     async fn test_controller_creation_with_default_config() {
-        use crate::handler::setting_handler::persist::controller::CreateWith;
+        use crate::handler::setting_handler::persist::controller::CreateWithAsync;
 
         let message_hub = service::MessageHub::create_hub();
         let client_proxy = create_proxy(message_hub).await;
@@ -659,10 +644,17 @@ mod tests {
             "/config/data/input_device_config.json",
             Rc::new(std::sync::Mutex::new(config_logger)),
         );
+
+        let storage_factory = InMemoryStorageFactory::new();
+        storage_factory
+            .initialize::<InputController<InMemoryStorageFactory>>()
+            .await
+            .expect("controller should have impls");
         let _controller = InputController::create_with(
             client_proxy,
-            Rc::new(std::sync::Mutex::new(default_setting)),
+            (Rc::new(storage_factory), Rc::new(std::sync::Mutex::new(default_setting))),
         )
+        .await
         .expect("Should have controller");
     }
 

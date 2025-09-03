@@ -129,19 +129,28 @@ impl TestInputEnvironmentBuilder {
             // create method replaced with our custom constructor from input controller.
             let generate_handler: GenerateHandler = Box::new(move |context: Context| {
                 let config = config.clone();
+                let storage_factory = Rc::clone(&storage_factory);
                 Box::pin(async move {
                     let setting_type = context.setting_type;
                     ClientImpl::create(
                         context,
                         Box::new(move |proxy| {
                             let config = config.clone();
+                            let storage_factory = Rc::clone(&storage_factory);
                             Box::pin(async move {
                                 let proxy = ClientProxy::new(proxy, setting_type).await;
-                                let controller_result =
-                                    InputController::create_with_config(proxy, config.clone());
+                                let store = storage_factory.get_device_storage().await;
+                                let controller_result = InputController::create_with_config(
+                                    proxy,
+                                    config.clone(),
+                                    store,
+                                );
 
-                                controller_result
-                                    .map(|controller| Box::new(controller) as BoxedController)
+                                controller_result.map(
+                                    |controller: InputController<InMemoryStorageFactory>| {
+                                        Box::new(controller) as BoxedController
+                                    },
+                                )
                             })
                         }),
                     )

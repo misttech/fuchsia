@@ -13,7 +13,7 @@ use core::convert::TryFrom;
 use fuchsia_async as fasync;
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
-use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
+use settings_storage::device_storage::DeviceStorage;
 use settings_storage::storage_factory::StorageFactory as StorageFactoryTrait;
 use std::borrow::Cow;
 use std::marker::PhantomData;
@@ -361,14 +361,6 @@ pub mod persist {
             async fn create(handler: ClientProxy) -> Result<Self, ControllerError>;
         }
 
-        pub(crate) trait CreateWith: Sized {
-            type Data;
-
-            /// Creates the controller with additional data.
-            fn create_with(handler: ClientProxy, data: Self::Data)
-                -> Result<Self, ControllerError>;
-        }
-
         #[async_trait(?Send)]
         pub(crate) trait CreateWithAsync: Sized {
             type Data;
@@ -522,7 +514,7 @@ pub mod persist {
             id: ftrace::Id,
         ) -> Result<UpdateState, ControllerError>
         where
-            T: Into<SettingInfo> + DeviceStorageCompatible,
+            T: Into<SettingInfo> + DeviceStorageConvertible,
             for<'a> &'a T: Into<SettingType>,
         {
             let setting_type = (&info).into();
@@ -583,41 +575,6 @@ pub mod persist {
                                 Ok(controller) => Ok(Box::new(controller) as BoxedController),
                             }
                         })
-                    }),
-                )
-                .await
-            })
-        }
-    }
-
-    impl<'a, C, O> Handler<C>
-    where
-        C: controller::CreateWith<Data = O> + super::controller::Handle + 'static,
-        O: Clone + 'static,
-    {
-        pub(crate) fn spawn_with(
-            context: Context,
-            data: O,
-        ) -> LocalBoxFuture<'static, ControllerGenerateResult> {
-            Box::pin(async move {
-                let setting_type = context.setting_type;
-
-                ClientImpl::create(
-                    context,
-                    Box::new({
-                        let data = data.clone();
-                        move |proxy| {
-                            let data = data.clone();
-                            Box::pin(async move {
-                                let proxy = ClientProxy::new(proxy, setting_type).await;
-                                let controller_result = C::create_with(proxy, data);
-
-                                match controller_result {
-                                    Err(err) => Err(err),
-                                    Ok(controller) => Ok(Box::new(controller) as BoxedController),
-                                }
-                            })
-                        }
                     }),
                 )
                 .await
