@@ -23,7 +23,7 @@ if [[ -f "${G_REVIEW_CONFIG}" ]]; then
   source "${G_REVIEW_CONFIG}"
 else
   mkdir -p "${G_REVIEW_CONFIG_DIR}"
-  SALT=$(fx-uuid)
+  SALT="$(fx-uuid)"
   echo "SALT=\"${SALT}\"" > "${G_REVIEW_CONFIG}"
   source "${G_REVIEW_CONFIG}"
 fi
@@ -45,7 +45,7 @@ done
 
 echo -e >&2 "Creating a Gemini Code Review of the current commit at HEAD"
 echo -e >&2 "Staged and uncommited changes are ignored."
-if ! commit_hash=$(git rev-parse --short --verify HEAD); then
+if ! commit_hash="$(git rev-parse --short --verify HEAD)"; then
     fx-error "No commit found. Cannot review."
     exit 1
 fi
@@ -58,14 +58,14 @@ fi
 echo -e >&2 "Reviewing changes in: ${commit_hash}"
 git show --pretty="format:" --name-status HEAD >&2
 
-use_tui=$(fx-get-ui-mode "fx-g-review")
+use_tui="$(fx-get-ui-mode "fx-g-review")"
 
-gerrit_change_id=$(git show --no-patch --format=%B | grep "Change-Id:" | awk '{print $2}')
+gerrit_change_id="$(git show --no-patch --format=%B | grep "Change-Id:" | awk '{print $2}')"
 if [[ -z "${gerrit_change_id}" ]]; then
     echo >&2 "Warning: Could not find Change-Id in commit message. Creating a random ID for analytics"
-    gerrit_change_id=$(fx-uuid)
+    gerrit_change_id="$(fx-uuid)"
 fi
-md5_output=$( printf "%s" "$gerrit_change_id$SALT" | md5sum)
+md5_output="$(printf "%s" "$gerrit_change_id$SALT" | md5sum)"
 private_identifier=${md5_output%% *}
 
 if ! command -v gemini >/dev/null 2>&1; then
@@ -74,7 +74,7 @@ if ! command -v gemini >/dev/null 2>&1; then
 fi
 
 # Call gemini with the prompt from stdin
-json_response=$( (cat "$PROMPT"; echo; git show HEAD) | gemini -p ) || {
+json_response="$( (cat "$PROMPT"; echo; git show HEAD) | gemini -p )" || {
     fx-error "Gemini command failed."
     exit 1
 }
@@ -82,7 +82,7 @@ json_response=$( (cat "$PROMPT"; echo; git show HEAD) | gemini -p ) || {
 # So far Gemini always respects the prompt to create a JSON object for return.
 # The response seems to always come in a markdown block: strip the fences.
 # Following https://github.com/google-gemini/gemini-cli/issues/5021#issue-3268410106
-json_data=$(echo "$json_response" | sed -e 's/^[[:space:]]*```\(json\)\?//' -e 's/```[[:space:]]*$//')
+json_data="$(echo "$json_response" | sed -e 's/^[[:space:]]*```\(json\)\?//' -e 's/```[[:space:]]*$//')"
 
 if ! echo "$json_data" | jq -e . > /dev/null; then
     fx-error "Gemini response was not valid JSON"
@@ -92,10 +92,10 @@ if ! echo "$json_data" | jq -e . > /dev/null; then
 fi
 
 
-text=$(echo "$json_data" | jq -r '.response_text')
-diff=$(echo "$json_data" | jq -r '.diff')
-lgtm=$(echo "$json_data" | jq -r '.lgtm')
-num=$(echo "$json_data" | jq -r '.number_of_suggestions')
+text="$(echo "$json_data" | jq -r '.response_text')"
+diff="$(echo "$json_data" | jq -r '.diff')"
+lgtm="$(echo "$json_data" | jq -r '.lgtm')"
+num="$(echo "$json_data" | jq -r '.number_of_suggestions')"
 
 if [[ "$use_tui" == "tui" ]]; then
     fx gum format "${text}" | fx gum style \
@@ -103,7 +103,7 @@ if [[ "$use_tui" == "tui" ]]; then
                     --margin="1 4" \
                     --padding="1 4" \
                     --align="left" \
-                    --width=$((${COLUMNS:-80} - 10))
+                    --width="$(("${COLUMNS:-80}" - 10))"
 else
     echo "${text}"
 fi
@@ -112,7 +112,7 @@ if [[ -n "$diff" ]]; then
     echo -e >&2 "$diff"
     TMP_DIR="${FUCHSIA_DIR}/tmp/g-review"
     mkdir -p "${TMP_DIR}"
-    diff_file=$(mktemp "${TMP_DIR}/${commit_hash}.XXXXXX.diff")
+    diff_file="$(mktemp "${TMP_DIR}/${commit_hash}.XXXXXX.diff")"
     echo "$diff" > "${diff_file}"
     echo -e >&2 "(diff saved at ${diff_file})"
 fi
@@ -121,7 +121,7 @@ confirm() {
     local prompt="${1:-Are you sure?} [Y/n] " # Default prompt
     local response
     while true; do
-        read -p "$prompt" response
+        read -r -p "$prompt" response
         case "$response" in
             [yY]*|"") # Matches 'y', 'Y', 'yes', 'YES', etc.
             return 0 # Success (yes)
@@ -137,12 +137,12 @@ confirm() {
 }
 echo
 G_REVIEW_LABEL="[g-review]"
-LAST_MESSAGE=$(git log -1 --pretty=%B)
+LAST_MESSAGE="$(git log -1 --pretty=%B)"
 if [[ "${LAST_MESSAGE}" != *"${G_REVIEW_LABEL}"* ]]; then
     if [[ "$pre_agree" == "true" ]] || confirm "Can we append '[g-review]' to your git commit message to better track the impact of gemini reviews on CL review time?"; then
         # Insert the label on a new line before the Change-Id footer.
         if echo "${LAST_MESSAGE}" | grep -q '^Change-Id:'; then
-            NEW_MESSAGE=$(echo "${LAST_MESSAGE}" | sed "/^Change-Id:/i ${G_REVIEW_LABEL}\n")
+            NEW_MESSAGE="$(echo "${LAST_MESSAGE}" | sed "/^Change-Id:/i ${G_REVIEW_LABEL}\n")"
             git commit --amend -m "${NEW_MESSAGE}"
         fi
     fi
@@ -155,13 +155,13 @@ else
     helpful=0
 fi
 
-json_string=$(fx jq -n \
+json_string="$(fx jq -n \
   --arg cl "${private_identifier}" \
   --arg num "${num}" \
   --arg lgtm "${lgtm}" \
   --arg helpful "${helpful}" \
   '{cl: $cl, num: $num, lgtm: $lgtm, helpful: $helpful}'
-)
+)"
 
 (track-subcommand-custom-event "g-review" "review" "${json_string}")
 
