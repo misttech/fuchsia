@@ -30,7 +30,9 @@ use starnix_core::fs::fuchsia::create_remotefs_filesystem;
 use starnix_core::fs::tmpfs::TmpFs;
 use starnix_core::security;
 use starnix_core::task::container_namespace::ContainerNamespace;
-use starnix_core::task::{CurrentTask, ExitStatus, Kernel, RoleOverrides, SchedulerManager};
+use starnix_core::task::{
+    CurrentTask, ExitStatus, Kernel, RoleOverrides, SchedulerManager, parse_cmdline,
+};
 use starnix_core::time::utc::update_utc_clock;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::{FileSystemOptions, FsContext, LookupContext, Namespace, WhatToMount};
@@ -535,41 +537,6 @@ async fn get_bootargs() -> Result<String, Error> {
         .context("Couldn't find bootargs")
 }
 
-fn parse_cmdline(cmdline: &str) -> Vec<String> {
-    let mut args = Vec::new();
-    let mut current_arg = String::new();
-    let mut in_quotes = false;
-    let mut chars = cmdline.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        match c {
-            ' ' if !in_quotes => {
-                if !current_arg.is_empty() {
-                    args.push(current_arg);
-                    current_arg = String::new();
-                }
-            }
-            '"' => {
-                in_quotes = !in_quotes;
-            }
-            '\\' => {
-                if let Some(next_c) = chars.next() {
-                    current_arg.push(next_c);
-                } else {
-                    current_arg.push('\\');
-                }
-            }
-            _ => {
-                current_arg.push(c);
-            }
-        }
-    }
-    if !current_arg.is_empty() {
-        args.push(current_arg);
-    }
-    args
-}
-
 async fn create_container(
     start_info: &mut ContainerStartInfo,
     kernel_extra_features: &[String],
@@ -1056,7 +1023,7 @@ async fn serve_task_provider(mut job_requests: TaskProviderRequestStream) -> Res
 
 #[cfg(test)]
 mod test {
-    use super::{parse_cmdline, wait_for_init_file};
+    use super::wait_for_init_file;
     use fuchsia_async as fasync;
     use futures::{SinkExt, StreamExt};
     use starnix_core::testing::create_kernel_task_and_unlocked;
@@ -1066,21 +1033,6 @@ mod test {
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::signals::SIGCHLD;
     use starnix_uapi::vfs::ResolveFlags;
-
-    #[test]
-    fn test_parse_cmdline() {
-        let cmdline =
-            r#"first second=third "fourth fifth" sixth="seventh eighth" "ninth\" tenth" eleventh"#;
-        let expected = vec![
-            "first",
-            "second=third",
-            "fourth fifth",
-            "sixth=seventh eighth",
-            "ninth\" tenth",
-            "eleventh",
-        ];
-        assert_eq!(parse_cmdline(cmdline), expected);
-    }
 
     #[fuchsia::test]
     async fn test_init_file_already_exists() {

@@ -29,7 +29,7 @@ use crate::vfs::socket::{
     SocketAddress,
 };
 use crate::vfs::{FileHandle, FileOps, FsString, Mounts, NamespaceNode};
-use bstr::BString;
+use bstr::{BString, ByteSlice};
 use expando::Expando;
 use fidl::endpoints::{
     ClientEnd, ControlHandle, DiscoverableProtocolMarker, ProtocolMarker, create_endpoints,
@@ -119,6 +119,12 @@ pub struct KernelFeatures {
 
     /// Whether excessive crash reports should be throttled.
     pub crash_report_throttling: bool,
+}
+
+/// Kernel command line argument structure
+pub struct ArgNameAndValue<'a> {
+    pub name: &'a str,
+    pub value: Option<&'a str>,
 }
 
 /// Contains an fscrypt wrapping key id.
@@ -848,10 +854,71 @@ impl Kernel {
             }
         }
     }
+
+    /// Returns an iterator of the command line arguments.
+    pub fn cmdline_args_iter(&self) -> impl Iterator<Item = ArgNameAndValue<'_>> {
+        parse_cmdline(self.cmdline.to_str().unwrap_or_default()).filter_map(|arg| {
+            arg.split_once('=')
+                .map(|(name, value)| ArgNameAndValue { name: name, value: Some(value) })
+                .or(Some(ArgNameAndValue { name: arg, value: None }))
+        })
+    }
+}
+
+pub fn parse_cmdline(cmdline: &str) -> impl Iterator<Item = &str> {
+    let mut args = Vec::new();
+    let mut arg_start: Option<usize> = None;
+    let mut in_quotes = false;
+    let mut previous_char = ' ';
+
+    for (i, c) in cmdline.char_indices() {
+        if let Some(start) = arg_start {
+            match c {
+                ' ' if !in_quotes => {
+                    args.push(&cmdline[start..i]);
+                    arg_start = None;
+                }
+                '"' if previous_char != '\\' => {
+                    in_quotes = !in_quotes;
+                }
+                _ => {}
+            }
+        } else if c != ' ' {
+            arg_start = Some(i);
+            if c == '"' {
+                in_quotes = true;
+            }
+        }
+        previous_char = c;
+    }
+    if let Some(start) = arg_start {
+        args.push(&cmdline[start..]);
+    }
+    args.into_iter()
 }
 
 impl std::fmt::Debug for Kernel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Kernel").finish()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::parse_cmdline;
+
+    #[test]
+    fn test_parse_cmdline() {
+        let cmdline =
+            r#"first second=third "fourth fifth" sixth="seventh eighth" "ninth\" tenth" eleventh"#;
+        let expected = vec![
+            "first",
+            "second=third",
+            "\"fourth fifth\"",
+            "sixth=\"seventh eighth\"",
+            "\"ninth\\\" tenth\"",
+            "eleventh",
+        ];
+        assert_eq!(parse_cmdline(cmdline).collect::<Vec<_>>(), expected);
     }
 }

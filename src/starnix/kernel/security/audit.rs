@@ -4,7 +4,6 @@
 
 use crate::vfs::socket::AuditNetlinkClient;
 use arc_swap::ArcSwapWeak;
-use bstr::{BString, ByteSlice};
 use linux_uapi::{
     AUDIT_FAIL_PANIC, AUDIT_FAIL_PRINTK, AUDIT_FAIL_SILENT, AUDIT_GET, AUDIT_SET,
     AUDIT_STATUS_BACKLOG_LIMIT, AUDIT_STATUS_ENABLED, AUDIT_STATUS_FAILURE, AUDIT_STATUS_LOST,
@@ -20,7 +19,7 @@ use std::sync::Weak;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, AtomicU32, Ordering};
 use std::u32;
 
-use crate::task::Kernel;
+use crate::task::{ArgNameAndValue, Kernel};
 const DEFAULT_BACKLOG_LIMIT: u32 = 128;
 
 /// Supported requests that manipulate the `AuditLogger`
@@ -71,14 +70,26 @@ impl Default for AuditConfig {
 }
 
 impl AuditConfig {
-    pub fn new(cmdline: &BString) -> Self {
+    pub fn new<'a>(cmdline_iter: impl Iterator<Item = ArgNameAndValue<'a>>) -> Self {
         let config = Self::default();
         // The logger may be disabled by the kernel command line.
-        // TODO: https://fxbug.dev/440087162 - apply all the kernel cmdline options properly.
-        if cmdline.contains_str("audit=0") {
-            config.enabled.store(false, Ordering::Release);
-        }
+        config.apply_kernel_cmdline(cmdline_iter);
         config
+    }
+
+    /// Function to apply the optional kernel command line arguments.
+    fn apply_kernel_cmdline<'a>(&self, cmdline_iter: impl Iterator<Item = ArgNameAndValue<'a>>) {
+        for arg in cmdline_iter {
+            match arg {
+                ArgNameAndValue { name: "audit", value: Some(value) } => {
+                    self.enabled.store(value == "1", Ordering::Release)
+                }
+                ArgNameAndValue { name: "audit_backlog_limit", value: Some(value) } => self
+                    .backlog_limit
+                    .store(value.parse().unwrap_or(DEFAULT_BACKLOG_LIMIT), Ordering::Release),
+                _ => (),
+            }
+        }
     }
 }
 
@@ -96,7 +107,7 @@ pub struct AuditLogger {
 impl AuditLogger {
     pub fn new(kernel: &Kernel) -> Self {
         Self {
-            configuration: AuditConfig::new(&kernel.cmdline),
+            configuration: AuditConfig::new(kernel.cmdline_args_iter()),
             lost_audit_messages: Default::default(),
             audit_queue: Default::default(),
         }
