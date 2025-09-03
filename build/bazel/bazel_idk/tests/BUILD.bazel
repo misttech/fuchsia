@@ -4,9 +4,9 @@
 
 # The following are example uses of the IDK atom rules that can be built and
 # analyzed with cquery.
-load("//build/bazel/bazel_idk:defs.bzl", "idk_atom", "idk_cc_source_library", "idk_molecule")
+load("//build/bazel/bazel_idk:defs.bzl", "create_idk_atom_for_test", "idk_cc_source_library", "idk_molecule")
 
-idk_atom(
+create_idk_atom_for_test(
     name = "test_atom",
     testonly = True,
     api_area = "Developer",

@@ -168,7 +168,7 @@ def _create_idk_atom_impl(ctx):
     ]
 
 _create_idk_atom = rule(
-    doc = """Define an IDK atom. Do not instantiate directly - use `idk_atom()` instead.
+    doc = """Define an IDK atom. Do not instantiate directly - use `_idk_atom()` instead.
 
 Atoms will be checked for category and API area violations when generating the IDK (see `generate_idk`).
 """,
@@ -269,7 +269,7 @@ Possible values, from most restrictive to least restrictive:
 # to Bazel 8. Consider moving all the args descriptions from _create_idk_atom()
 # to here and reference those definitions from _create_idk_atom(). Replace
 # "Required" comments with `mandatory = True`.
-def idk_atom(
+def _idk_atom(
         name,
         type,
         stable,
@@ -348,6 +348,12 @@ Atoms will be checked for category and API area violations when generating the I
         testonly = testonly,
         **kwargs
     )
+
+def create_idk_atom_for_test(name, testonly, **kwargs):
+    """Wrapper to allow creating an atom directly for tests only."""
+    if not testonly:
+        fail("Atom must be `testonly`.")
+    _idk_atom(name = name, testonly = testonly, **kwargs)
 
 def _idk_molecule_impl(ctx):
     all_deps_depset = depset(direct = ctx.files.deps)
@@ -665,7 +671,7 @@ def idk_cc_source_library(
         if "//visibility:private" not in visibility:
             atom_visibility += visibility
 
-    idk_atom(
+    _idk_atom(
         name = name,
         idk_name = idk_name,
         id = "sdk://" + idk_root_path,
