@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::setup_controller::{Request, SetupController};
-use crate::handler::setting_handler::ControllerError;
+use super::setup_controller::{Request, SetupController, SetupError};
 use crate::setup::types::{ConfigurationInterfaceFlags, SetupInfo};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
@@ -116,7 +115,7 @@ enum HandlerError {
     AlreadySubscribed,
     MissingConfig,
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(SetupError),
 }
 
 impl From<&HandlerError> for ResponseType {
@@ -125,7 +124,7 @@ impl From<&HandlerError> for ResponseType {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::MissingConfig => ResponseType::InvalidArgument,
             HandlerError::ControllerStopped => ResponseType::UnexpectedError,
-            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+            HandlerError::Controller(e) => ResponseType::from(e),
         }
     }
 }

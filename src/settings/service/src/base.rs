@@ -24,7 +24,6 @@ use crate::intl::types::IntlInfo;
 use crate::keyboard::types::KeyboardInfo;
 use crate::night_mode::types::NightModeInfo;
 use crate::privacy::types::PrivacyInfo;
-use crate::setup::types::SetupInfo;
 #[cfg(test)]
 use serde::Deserialize;
 use serde::Serialize;
@@ -132,7 +131,6 @@ generate_inspect_with_info! {
         Keyboard(KeyboardInfo),
         NightMode(NightModeInfo),
         Privacy(PrivacyInfo),
-        Setup(SetupInfo),
     }
 }
 
@@ -175,7 +173,6 @@ conversion_impls! {
     Keyboard(KeyboardInfo) => Keyboard,
     NightMode(NightModeInfo) => NightMode,
     Privacy(PrivacyInfo) => Privacy,
-    Setup(SetupInfo) => Setup,
 }
 
 impl From<&SettingInfo> for SettingType {
@@ -193,7 +190,6 @@ impl From<&SettingInfo> for SettingType {
             SettingInfo::Keyboard(_) => SettingType::Keyboard,
             SettingInfo::NightMode(_) => SettingType::NightMode,
             SettingInfo::Privacy(_) => SettingType::Privacy,
-            SettingInfo::Setup(_) => SettingType::Setup,
         }
     }
 }

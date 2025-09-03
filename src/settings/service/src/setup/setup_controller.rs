@@ -4,34 +4,56 @@
 
 use super::setup_fidl_handler::InfoPublisher;
 use super::types::ConfigurationInterfaceFlags;
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::setting_handler::ControllerError;
+use crate::base::SettingType;
 use crate::setup::types::SetupInfo;
+use anyhow::Error;
 use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
 use fuchsia_async as fasync;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
 use futures::StreamExt;
 use settings_common::call_async;
-use settings_common::inspect::event::{ExternalEventPublisher, SettingValuePublisher};
+use settings_common::inspect::event::{
+    ExternalEventPublisher, ResponseType, SettingValuePublisher,
+};
 use settings_common::service_context::ServiceContext;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
 use settings_storage::UpdateState;
+use std::borrow::Cow;
 use std::rc::Rc;
+
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum SetupError {
+    #[error(
+        "Call to an external dependency {0:?} for setting type Setup failed. \
+         Request:{1:?}: Error:{2}"
+    )]
+    ExternalFailure(&'static str, Cow<'static, str>, Cow<'static, str>),
+    #[error("Write failed for Setup: {0:?}")]
+    WriteFailure(Error),
+}
+
+impl From<&SetupError> for ResponseType {
+    fn from(error: &SetupError) -> Self {
+        match error {
+            SetupError::ExternalFailure(..) => ResponseType::ExternalFailure,
+            SetupError::WriteFailure(..) => ResponseType::StorageFailure,
+        }
+    }
+}
 
 async fn reboot(
     service_context: &ServiceContext,
     external_publisher: ExternalEventPublisher,
-) -> Result<(), ControllerError> {
+) -> Result<(), SetupError> {
     let hardware_power_statecontrol_admin = service_context
         .connect_with_publisher::<fidl_fuchsia_hardware_power_statecontrol::AdminMarker, _>(
             external_publisher,
         )
         .await
         .map_err(|e| {
-            ControllerError::ExternalFailure(
-                SettingType::Setup,
+            SetupError::ExternalFailure(
                 "hardware_power_statecontrol_manager".into(),
                 "connect".into(),
                 format!("{e:?}").into(),
@@ -39,8 +61,7 @@ async fn reboot(
         })?;
 
     let reboot_err = |e: String| {
-        ControllerError::ExternalFailure(
-            SettingType::Setup,
+        SetupError::ExternalFailure(
             "hardware_power_statecontrol_manager".into(),
             "reboot".into(),
             e.into(),
@@ -62,12 +83,6 @@ impl DeviceStorageCompatible for SetupInfo {
     const KEY: &'static str = "setup_info";
 }
 
-impl From<SetupInfo> for SettingInfo {
-    fn from(info: SetupInfo) -> SettingInfo {
-        SettingInfo::Setup(info)
-    }
-}
-
 impl From<&SetupInfo> for SettingType {
     fn from(_: &SetupInfo) -> SettingType {
         SettingType::Setup
@@ -75,7 +90,7 @@ impl From<&SetupInfo> for SettingType {
 }
 
 pub(crate) enum Request {
-    Set(ConfigurationInterfaceFlags, bool, Sender<Result<(), ControllerError>>),
+    Set(ConfigurationInterfaceFlags, bool, Sender<Result<(), SetupError>>),
 }
 
 pub struct SetupController {
@@ -143,7 +158,7 @@ impl SetupController {
         &self,
         config_interfaces_flags: ConfigurationInterfaceFlags,
         should_reboot: bool,
-    ) -> Result<Option<SetupInfo>, ControllerError> {
+    ) -> Result<Option<SetupInfo>, SetupError> {
         let mut info = self.store.get::<SetupInfo>().await;
         info.configuration_interfaces = config_interfaces_flags;
 
@@ -153,12 +168,9 @@ impl SetupController {
         if write_setting_result.is_ok() && should_reboot {
             reboot(&self.service_context, self.external_publisher.clone()).await?;
         }
-        write_setting_result.map(|state| (UpdateState::Updated == state).then_some(info)).map_err(
-            |e| {
-                log::error!("Failed to write setup info {e:?}");
-                ControllerError::WriteFailure(SettingType::Setup)
-            },
-        )
+        write_setting_result
+            .map(|state| (UpdateState::Updated == state).then_some(info))
+            .map_err(SetupError::WriteFailure)
     }
 
     pub(super) async fn restore(&self) -> SetupInfo {
