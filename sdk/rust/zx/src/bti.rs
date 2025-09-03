@@ -5,9 +5,13 @@
 //! Type-safe bindings for Zircon bti objects.
 
 use bitflags::bitflags;
+use zerocopy::{FromBytes, Immutable};
 use zx_sys::zx_paddr_t;
 
-use crate::{AsHandleRef, Handle, HandleBased, HandleRef, Iommu, Pmt, Status, Vmo, ok, sys};
+use crate::{
+    AsHandleRef, Handle, HandleBased, HandleRef, Iommu, ObjectQuery, Pmt, Status, Topic, Vmo,
+    object_get_info_single, ok, sys,
+};
 
 /// An object representing a Zircon Bus Transaction Initiator object.
 /// See [BTI Documentation](https://fuchsia.dev/fuchsia-src/reference/kernel_objects/bus_transaction_initiator) for details.
@@ -17,6 +21,36 @@ use crate::{AsHandleRef, Handle, HandleBased, HandleRef, Iommu, Pmt, Status, Vmo
 #[repr(transparent)]
 pub struct Bti(Handle);
 impl_handle_based!(Bti);
+
+static_assert_align!(
+    #[doc="Ergonomic equivalent of [sys::zx_info_bti_t]. Must be ABI-compatible with it."]
+    #[repr(C)]
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, FromBytes, Immutable)]
+    <sys::zx_info_bti_t> pub struct BtiInfo {
+        pub minimum_contiguity: u64,
+        pub aspace_size: u64,
+        pub pmo_count: u64,
+        pub quarantine_count: u64,
+    }
+);
+
+impl Default for BtiInfo {
+    fn default() -> BtiInfo {
+        Self::from(sys::zx_info_bti_t::default())
+    }
+}
+
+impl From<sys::zx_info_bti_t> for BtiInfo {
+    fn from(info: sys::zx_info_bti_t) -> BtiInfo {
+        zerocopy::transmute!(info)
+    }
+}
+
+struct BtiInfoQuery;
+unsafe impl ObjectQuery for BtiInfoQuery {
+    const TOPIC: Topic = Topic::BTI;
+    type InfoTy = sys::zx_info_bti_t;
+}
 
 bitflags! {
     /// Options that may be used for [`zx::Bti::pin`].
@@ -47,6 +81,12 @@ impl Bti {
             // handle to bti object.
             Ok(Bti::from(Handle::from_raw(bti_handle)))
         }
+    }
+
+    /// Wraps the [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
+    /// syscall for the ZX_INFO_BTI topic.
+    pub fn info(&self) -> Result<BtiInfo, Status> {
+        Ok(BtiInfo::from(object_get_info_single::<BtiInfoQuery>(self.as_handle_ref())?))
     }
 
     // Pins pages in a VMO.
@@ -127,6 +167,10 @@ mod tests {
 
         let info = bti.as_handle_ref().basic_info().unwrap();
         assert_eq!(info.object_type, ObjectType::BTI);
+        let bti_info = bti.info().unwrap();
+        // Sanity check one of the info fields.
+        assert!(bti_info.minimum_contiguity >= crate::system_get_page_size() as u64);
+        assert!(bti_info.minimum_contiguity % crate::system_get_page_size() as u64 == 0);
     }
 
     #[test]

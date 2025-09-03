@@ -2195,6 +2195,20 @@ struct_decl_macro! {
     }
 }
 
+struct_decl_macro! {
+    #[repr(C)]
+    #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+    #[derive(zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::Immutable)]
+    pub struct <zx_info_bti_t> {
+        pub minimum_contiguity: u64,
+        pub aspace_size: u64,
+        pub pmo_count: u64,
+        pub quarantine_count: u64,
+    }
+}
+
+zx_info_bti_t!(zx_info_bti_t);
+
 pub type zx_thread_state_t = u32;
 
 multiconst!(zx_thread_state_t, [
