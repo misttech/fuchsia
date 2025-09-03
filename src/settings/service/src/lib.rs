@@ -545,7 +545,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 
         EnvironmentBuilder::register_setting_handlers(
             &settings,
-            Rc::clone(&self.storage_factory),
+            self.storage_factory,
             &flags,
             self.display_configuration.map(DisplayInfoLoader::new),
             self.audio_configuration.map(AudioInfoLoader::new),
@@ -582,7 +582,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             self.event_subscriber_blueprints,
             service_context,
             Rc::new(Mutex::new(handler_factory)),
-            self.storage_factory,
             self.setting_proxy_inspect_info.unwrap_or_else(|| component::inspector().root()),
             listener_logger,
         )
@@ -1004,7 +1003,7 @@ fn create_agent_blueprints(
 /// service (handlers, agents, etc.) and brings up the components necessary to
 /// support the components specified in the components HashSet.
 #[allow(clippy::too_many_arguments)]
-async fn create_environment<'a, T>(
+async fn create_environment<'a>(
     mut service_dir: ServiceFsDir<'_, ServiceObjLocal<'a, ()>>,
     delegate: service::message::Delegate,
     job_seeder: Seeder,
@@ -1014,13 +1013,9 @@ async fn create_environment<'a, T>(
     event_subscriber_blueprints: Vec<event::subscriber::BlueprintHandle>,
     service_context: Rc<ServiceContext>,
     handler_factory: Rc<Mutex<SettingHandlerFactoryImpl>>,
-    device_storage_factory: Rc<T>,
     setting_proxies_node: &fuchsia_inspect::Node,
     listener_logger: Rc<ListenerInspectLogger>,
-) -> Result<HashSet<Entity>, Error>
-where
-    T: StorageFactory<Storage = DeviceStorage> + 'static,
-{
+) -> Result<HashSet<Entity>, Error> {
     for blueprint in event_subscriber_blueprints {
         blueprint.create(delegate.clone()).await;
     }
@@ -1061,11 +1056,6 @@ where
             registrant.register(&job_seeder, &mut service_dir);
         }
     }
-
-    // The service does not work without storage, so ensure it is always included first.
-    agent_authority
-        .register(crate::agent::storage_agent::create_registrar(device_storage_factory))
-        .await;
 
     for blueprint in agent_blueprints {
         agent_authority.register(blueprint).await;

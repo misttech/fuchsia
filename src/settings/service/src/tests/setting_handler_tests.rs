@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::agent::AgentCreator;
-use crate::base::{get_all_setting_types, SettingInfo, SettingType, UnknownInfo};
+use crate::base::{get_all_setting_types, HasSettingType, SettingInfo, SettingType, UnknownInfo};
 use crate::handler::base::{ContextBuilder, Request};
 use crate::handler::setting_handler::persist::{
     controller as data_controller, ClientProxy as DataClientProxy, Handler as DataHandler,
@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use futures::channel::mpsc::{unbounded, UnboundedSender};
 use futures::StreamExt;
 use settings_common::config::AgentType;
-use settings_storage::device_storage::DeviceStorageCompatible;
+use settings_storage::device_storage::{DeviceStorage, DeviceStorageConvertible};
 use settings_storage::UpdateState;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::hash_map::Entry;
@@ -36,8 +36,9 @@ macro_rules! gen_data_controller {
         struct $name;
 
         #[async_trait(?Send)]
-        impl data_controller::Create for $name {
-            async fn create(_: DataClientProxy) -> Result<Self, ControllerError> {
+        impl data_controller::CreateWithAsync for $name {
+            type Data = ();
+            async fn create_with(_: DataClientProxy, _: ()) -> Result<Self, ControllerError> {
                 if $succeed {
                     Ok($name)
                 } else {
@@ -77,9 +78,12 @@ macro_rules! verify_handle {
 #[fuchsia::test(allow_stalls = false)]
 async fn test_spawn() {
     // Exercises successful spawn of a data controller.
-    verify_handle!(DataHandler::<SucceedDataController>::spawn);
+    verify_handle!(move |context| DataHandler::<SucceedDataController>::spawn_with_async(
+        context,
+        ()
+    ));
     // Exercises failed spawn of a data controller.
-    verify_handle!(DataHandler::<FailDataController>::spawn);
+    verify_handle!(move |context| DataHandler::<FailDataController>::spawn_with_async(context, ()));
 }
 
 #[fuchsia::test(allow_stalls = false)]
@@ -94,37 +98,9 @@ async fn test_write_notify() {
         .1
         .get_signature();
 
-    let storage_factory = Rc::new(InMemoryStorageFactory::new());
+    let storage_factory = Rc::new(InMemoryStorageFactory::with_initial_data(&UnknownInfo(false)));
     storage_factory.initialize_storage::<UnknownInfo>().await;
-
-    let (invocation_messenger, _) = delegate.create(MessengerType::Unbound).await.unwrap();
-    let (_, agent_receptor) = delegate.create(MessengerType::Unbound).await.unwrap();
-    let agent_receptor_signature = agent_receptor.get_signature();
-    let agent_context =
-        crate::agent::Context::new(agent_receptor, delegate, [SettingType::Unknown].into()).await;
-
-    let blueprint = crate::agent::storage_agent::create_registrar(Rc::clone(&storage_factory));
-
-    blueprint.create(agent_context).await;
-
-    let mut invocation_receptor = invocation_messenger.message(
-        crate::agent::Payload::Invocation(crate::agent::Invocation {
-            lifespan: crate::agent::Lifespan::Initialization,
-            service_context: Rc::new(crate::service_context::ServiceContext::new(None, None)),
-        })
-        .into(),
-        crate::message::base::Audience::Messenger(agent_receptor_signature),
-    );
-    // Wait for storage to be initialized.
-    while let Ok((payload, _)) = invocation_receptor.next_of::<crate::agent::Payload>().await {
-        if let crate::agent::Payload::Complete(result) = payload {
-            if let Ok(()) = result {
-                break;
-            } else {
-                panic!("Bad result from storage agent invocation: {result:?}");
-            }
-        }
-    }
+    let store = storage_factory.get_device_storage().await;
 
     let context = ContextBuilder::new(
         SettingType::Unknown,
@@ -156,16 +132,17 @@ async fn test_write_notify() {
     // Get the proxy.
     let mut proxy = client_rx.next().await.unwrap();
 
-    verify_write_behavior(&mut proxy, UnknownInfo(false), false).await;
-    verify_write_behavior(&mut proxy, UnknownInfo(true), true).await;
+    verify_write_behavior(&mut proxy, &store, UnknownInfo(false), false).await;
+    verify_write_behavior(&mut proxy, &store, UnknownInfo(true), true).await;
 }
 
-async fn verify_write_behavior<S: DeviceStorageCompatible + Into<SettingInfo>>(
+async fn verify_write_behavior<S: DeviceStorageConvertible + HasSettingType + Into<SettingInfo>>(
     proxy: &mut persist::ClientProxy,
+    store: &DeviceStorage,
     value: S,
     notified: bool,
 ) {
-    let result = proxy.write_setting(value.into(), 0.into()).await;
+    let result = proxy.storage_write(store, value, 0.into()).await;
 
     assert_eq!(
         notified,

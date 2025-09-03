@@ -136,8 +136,6 @@ generate_inspect_with_info! {
     }
 }
 
-// TODO(https://fxbug.dev/42166874) Remove dead code
-#[allow(dead_code)]
 pub(crate) trait HasSettingType {
     const SETTING_TYPE: SettingType;
 }

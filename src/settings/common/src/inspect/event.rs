@@ -10,8 +10,6 @@ use std::cell::Cell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-// TODO(https://fxbug.dev/42166874) Remove allow once used
-#[allow(dead_code)]
 #[derive(Clone)]
 pub enum Direction {
     Request(String),

@@ -6,7 +6,6 @@ use crate::handler::base::{Context, ControllerGenerateResult, Request};
 use crate::message::base::Audience;
 use crate::service::message::{MessageClient, Messenger, Signature};
 use crate::service_context::ServiceContext;
-use crate::storage::StorageInfo;
 use crate::{payload_convert, trace, trace_guard};
 use async_trait::async_trait;
 use core::convert::TryFrom;
@@ -149,8 +148,6 @@ pub(crate) type GenerateController =
 pub(crate) mod controller {
     use super::*;
 
-    // TODO(https://fxbug.dev/42166874) Remove dead code
-    #[allow(dead_code)]
     #[async_trait(?Send)]
     #[cfg(test)]
     pub(crate) trait Create: Sized {
@@ -344,10 +341,8 @@ impl IntoHandlerResult for SettingInfo {
 
 pub mod persist {
     use super::{ClientImpl as BaseProxy, *};
-    use crate::message::base::MessageEvent;
-    use crate::{service, storage, trace};
+    use crate::trace;
     use fuchsia_trace as ftrace;
-    use futures::StreamExt;
     use settings_storage::device_storage::DeviceStorageConvertible;
     use settings_storage::UpdateState;
 
@@ -356,12 +351,6 @@ pub mod persist {
 
     pub(crate) mod controller {
         use super::*;
-
-        #[async_trait(?Send)]
-        pub(crate) trait Create: Sized {
-            /// Creates the controller.
-            async fn create(handler: ClientProxy) -> Result<Self, ControllerError>;
-        }
 
         #[async_trait(?Send)]
         pub(crate) trait CreateWithAsync: Sized {
@@ -397,122 +386,6 @@ pub mod persist {
 
         pub(crate) async fn notify(&self, event: Event) {
             self.base.notify(event).await;
-        }
-
-        // TODO(https://fxbug.dev/42166874) Remove dead code
-        #[allow(dead_code)]
-        pub(crate) async fn read_setting_info<T: HasSettingType>(
-            &self,
-            id: ftrace::Id,
-        ) -> SettingInfo {
-            let guard = trace_guard!(
-                id,
-                c"read_setting_info send",
-                "setting_type" => format!("{:?}", T::SETTING_TYPE).as_str()
-            );
-            let mut receptor = self.base.messenger.message(
-                storage::Payload::Request(storage::StorageRequest::Read(
-                    T::SETTING_TYPE.into(),
-                    id,
-                ))
-                .into(),
-                Audience::Address(service::Address::Storage),
-            );
-            drop(guard);
-
-            trace!(
-                id,
-                c"read_setting_info receive",
-                "setting_type" => format!("{:?}", T::SETTING_TYPE).as_str()
-            );
-            if let Ok((payload, _)) = receptor.next_of::<storage::Payload>().await {
-                if let storage::Payload::Response(storage::StorageResponse::Read(
-                    StorageInfo::SettingInfo(setting_info),
-                )) = payload
-                {
-                    return setting_info;
-                } else {
-                    panic!("Incorrect response received from storage: {payload:?}");
-                }
-            }
-
-            panic!("Did not get a read response");
-        }
-
-        // TODO(https://fxbug.dev/42166874) Remove dead code
-        #[allow(dead_code)]
-        pub(crate) async fn read_setting<T: HasSettingType + TryFrom<SettingInfo>>(
-            &self,
-            id: ftrace::Id,
-        ) -> T {
-            let setting_info = self.read_setting_info::<T>(id).await;
-            if let Ok(info) = setting_info.clone().try_into() {
-                info
-            } else {
-                panic!(
-                    "Mismatching type during read. Expected {:?}, but got {:?}",
-                    T::SETTING_TYPE,
-                    setting_info
-                );
-            }
-        }
-
-        // TODO(https://fxbug.dev/42166874) Remove dead code
-        #[allow(dead_code)]
-        /// The argument `write_through` will block returning until the value has been completely
-        /// written to persistent store, rather than any temporary in-memory caching.
-        pub(crate) async fn write_setting(
-            &self,
-            setting_info: SettingInfo,
-            id: ftrace::Id,
-        ) -> Result<UpdateState, ControllerError> {
-            let setting_type = (&setting_info).into();
-            let fst = format!("{setting_type:?}");
-            let guard = trace_guard!(
-                id,
-                c"write_setting send",
-                "setting_type" => fst.as_str()
-            );
-            let mut receptor = self.base.messenger.message(
-                storage::Payload::Request(storage::StorageRequest::Write(
-                    setting_info.clone().into(),
-                    id,
-                ))
-                .into(),
-                Audience::Address(service::Address::Storage),
-            );
-            drop(guard);
-
-            trace!(
-                id,
-                c"write_setting receive",
-                "setting_type" => fst.as_str()
-            );
-            while let Some(response) = receptor.next().await {
-                if let MessageEvent::Message(
-                    service::Payload::Storage(storage::Payload::Response(
-                        storage::StorageResponse::Write(result),
-                    )),
-                    _,
-                ) = response
-                {
-                    if let Ok(UpdateState::Updated) = result {
-                        trace!(
-                            id,
-                            c"write_setting notify",
-                            "setting_type" => fst.as_str()
-                        );
-                        self.notify(Event::Changed(setting_info)).await;
-                    }
-
-                    return result.map_err(|e| {
-                        log::error!("Failed to write setting: {:?}", e);
-                        ControllerError::WriteFailure(setting_type)
-                    });
-                }
-            }
-
-            panic!("Did not get a write response");
         }
 
         pub(crate) async fn storage_write<T>(
@@ -563,32 +436,6 @@ pub mod persist {
 
     pub(crate) struct Handler<C> {
         _data: PhantomData<C>,
-    }
-
-    // TODO(https://fxbug.dev/42166874) Remove dead code
-    #[allow(dead_code)]
-    impl<C: controller::Create + super::controller::Handle + 'static> Handler<C> {
-        pub(crate) fn spawn(context: Context) -> LocalBoxFuture<'static, ControllerGenerateResult> {
-            Box::pin(async move {
-                let setting_type = context.setting_type;
-
-                ClientImpl::create(
-                    context,
-                    Box::new(move |proxy| {
-                        Box::pin(async move {
-                            let proxy = ClientProxy::new(proxy, setting_type).await;
-                            let controller_result = C::create(proxy).await;
-
-                            match controller_result {
-                                Err(err) => Err(err),
-                                Ok(controller) => Ok(Box::new(controller) as BoxedController),
-                            }
-                        })
-                    }),
-                )
-                .await
-            })
-        }
     }
 
     impl<'a, C, O> Handler<C>

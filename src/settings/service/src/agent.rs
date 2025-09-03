@@ -26,9 +26,6 @@ pub(crate) mod authority;
 /// Agent for rehydrating actions for restore.
 pub(crate) mod restore_agent;
 
-/// Agent for managing access to storage.
-pub(crate) mod storage_agent;
-
 /// Earcons.
 pub(crate) mod earcons;
 
