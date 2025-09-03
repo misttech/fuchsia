@@ -18,7 +18,7 @@ pub use subtool_suite::{Subtool, SubtoolBox};
 pub use fho_env::{EnvironmentInterface, FhoEnvironment};
 pub use from_env::{AvailabilityFlag, CheckEnv};
 
-pub use try_from_env::{deferred, Deferred, TryFromEnv, TryFromEnvWith};
+pub use try_from_env::{Deferred, TryFromEnv, TryFromEnvWith, deferred};
 
 // Used for deriving an FFX tool.
 pub use fho_macro::FfxTool;
@@ -26,8 +26,8 @@ pub use fho_macro::FfxTool;
 // Re-expose the Error, Result, and FfxContext types from ffx_command
 // so you don't have to pull both in all the time.
 pub use ffx_command_error::{
-    bug, exit_with_code, return_bug, return_user_error, user_error, Error, FfxContext,
-    NonFatalError, Result,
+    Error, FfxContext, NonFatalError, Result, bug, exit_with_code, return_bug, return_user_error,
+    user_error,
 };
 
 // FfxCommandLine is being re-exported so that, it can easily be used by the derive macros for
@@ -38,8 +38,8 @@ pub use ffx_command::FfxCommandLine;
 pub mod macro_deps {
     pub use async_trait::async_trait;
     pub use ffx_command::{
-        bug, check_strict_constraints, return_bug, return_user_error, Ffx, ToolRunner,
+        Ffx, ToolRunner, bug, check_strict_constraints, return_bug, return_user_error,
     };
-    pub use ffx_config::{global_env_context, EnvironmentContext};
+    pub use ffx_config::{EnvironmentContext, global_env_context};
     pub use {crate as fho, anyhow, argh, async_lock, futures, serde, writer};
 }

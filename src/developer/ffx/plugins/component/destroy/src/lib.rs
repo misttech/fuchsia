@@ -4,9 +4,9 @@
 
 use async_trait::async_trait;
 use cm_types::{BorrowedLongName, BorrowedName};
-use component_debug::lifecycle::{destroy_instance_in_collection, DestroyError};
+use component_debug::lifecycle::{DestroyError, destroy_instance_in_collection};
 use component_debug::query::get_cml_moniker_from_query;
-use ffx_command_error::{user_error, Error};
+use ffx_command_error::{Error, user_error};
 use ffx_component::rcs::{connect_to_lifecycle_controller, connect_to_realm_query};
 use ffx_component_destroy_args::DestroyComponentCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};

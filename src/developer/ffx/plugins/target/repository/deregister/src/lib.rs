@@ -6,10 +6,10 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_target_repository_deregister_args::DeregisterCommand;
 use ffx_writer::SimpleWriter;
-use fho::{bug, return_bug, user_error, FfxMain, FfxTool, Result};
+use fho::{FfxMain, FfxTool, Result, bug, return_bug, user_error};
 use fidl_fuchsia_pkg::RepositoryManagerProxy;
 use fidl_fuchsia_pkg_rewrite::EngineProxy;
-use fidl_fuchsia_pkg_rewrite_ext::{do_transaction, Rule};
+use fidl_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
 use pkg::{PkgServerInstanceInfo as _, PkgServerInstances};
 use target_holders::moniker;
 use zx_status::Status;
@@ -131,24 +131,24 @@ async fn remove_aliases(repo_url: &str, rewrite_proxy: EngineProxy) -> Result<()
 mod test {
     use super::*;
     use camino::Utf8PathBuf;
-    use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_config::ConfigLevel;
+    use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_writer::TestBuffers;
     use fidl::endpoints::ServerEnd;
     use fidl_fuchsia_pkg_ext::{
         RepositoryConfigBuilder, RepositoryRegistrationAliasConflictMode, RepositoryStorageType,
     };
     use fidl_fuchsia_pkg_rewrite::{EditTransactionRequest, EngineRequest, RuleIteratorRequest};
-    use futures::channel::oneshot::{channel, Receiver};
     use futures::StreamExt;
+    use futures::channel::oneshot::{Receiver, channel};
     use pkg::{PkgServerInfo, ServerMode};
     use std::collections::BTreeSet;
     use std::net::Ipv4Addr;
     use std::process;
     use target_holders::fake_proxy;
 
-    async fn setup_fake_repo_manager_server(
-    ) -> (RepositoryManagerProxy, Receiver<(String, Option<String>)>) {
+    async fn setup_fake_repo_manager_server()
+    -> (RepositoryManagerProxy, Receiver<(String, Option<String>)>) {
         let (_sender, receiver) = channel();
         let repos = fake_proxy(move |req| match req {
             fidl_fuchsia_pkg::RepositoryManagerRequest::Remove { responder, .. } => {

@@ -90,7 +90,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
-    use tempfile::{tempdir, NamedTempFile};
+    use tempfile::{NamedTempFile, tempdir};
 
     fn create_empty_file(root: &Path, filename: &'static str) -> PathBuf {
         let file = root.join(filename);

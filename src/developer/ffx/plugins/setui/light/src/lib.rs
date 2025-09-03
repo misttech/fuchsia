@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use ffx_setui_light_args::LightGroup;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
 use fidl_fuchsia_settings::{LightProxy, LightState};
 use target_holders::moniker;
-use utils::{handle_mixed_result, Either, WatchOrSetResult};
+use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("setui"))]

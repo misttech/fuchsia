@@ -4,7 +4,7 @@
 
 //!  Utilities that prints information in a human-readable format.
 
-use crate::{processes_data, Writer};
+use crate::{Writer, processes_data};
 use anyhow::Result;
 use processes_data::processed;
 use std::io::Write;

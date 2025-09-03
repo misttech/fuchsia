@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::api::ConfigError;
 use crate::api::query::SelectMode;
 use crate::api::value::merge_map;
-use crate::api::ConfigError;
 use crate::environment::Environment;
 use crate::nested::{nested_get, nested_remove, nested_set};
 use crate::{ConfigLevel, EnvironmentContext};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use config_macros::include_default;
 use fuchsia_lockfile::{LockContext, Lockfile};
 use log::error;
@@ -485,11 +485,7 @@ impl Config {
                     .filter_map(|c| nested_get(c, *key_vec.get(0)?, &key_vec[1..]))
                     .cloned()
                     .collect();
-                if result.len() > 0 {
-                    Some(Value::Array(result))
-                } else {
-                    None
-                }
+                if result.len() > 0 { Some(Value::Array(result)) } else { None }
             }
         }
     }

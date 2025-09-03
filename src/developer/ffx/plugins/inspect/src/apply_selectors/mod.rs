@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::HostArchiveReader;
 use crate::apply_selectors::filter::filter_data_to_lines;
 use crate::apply_selectors::screen::{Line, Screen};
 use crate::apply_selectors::terminal::{Terminal, Termion};
-use crate::HostArchiveReader;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use diagnostics_data::{ExtendedMoniker, Inspect, InspectData};
 use errors::ffx_error;
 use ffx_inspect_args::ApplySelectorsCommand;

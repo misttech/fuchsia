@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use futures::prelude::*;
 use futures::task::{Context, Poll};
 use netext::{TokioAsyncReadExt, TokioAsyncWrapper};

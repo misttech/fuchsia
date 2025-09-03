@@ -9,14 +9,15 @@ use super::get_host_tool;
 use crate::qemu_based::QemuBasedEngine;
 use async_trait::async_trait;
 use emulator_instance::{
-    write_to_disk, AccelerationMode, ConsoleType, EmulatorConfiguration, EmulatorInstanceData,
+    AccelerationMode, ConsoleType, EmulatorConfiguration, EmulatorInstanceData,
     EmulatorInstanceInfo, EmulatorInstances, EngineState, EngineType, NetworkingMode,
+    write_to_disk,
 };
 use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::CROSVM_TOOL;
 use ffx_emulator_common::{find_unused_vsock_cid, process};
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
-use fho::{bug, return_bug, Result};
+use fho::{Result, bug, return_bug};
 use std::collections::HashMap;
 use std::process::{Command, Output};
 
@@ -285,8 +286,8 @@ impl QemuBasedEngine for CrosvmEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::qemu_based::tests::make_fake_sdk;
     use crate::EngineBuilder;
+    use crate::qemu_based::tests::make_fake_sdk;
     use std::path::PathBuf;
     use std::{env, fs};
     use tempfile::tempdir;

@@ -6,7 +6,7 @@ use crate::check::PreflightCheckResult::*;
 use crate::check::{PreflightCheck, PreflightCheckResult};
 use crate::command_runner::CommandRunner;
 use crate::config::*;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 
 const LINUX_PACKAGES: &[&str] = &["curl", "git", "unzip"];

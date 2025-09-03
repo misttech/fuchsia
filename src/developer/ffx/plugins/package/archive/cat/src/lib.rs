@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use ffx_package_archive_cat_args::CatCommand;
-use ffx_package_archive_utils::{read_file_entries, FarArchiveReader, FarListReader};
+use ffx_package_archive_utils::{FarArchiveReader, FarListReader, read_file_entries};
 use ffx_writer::SimpleWriter;
-use fho::{bug, return_user_error, FfxMain, FfxTool, Result};
+use fho::{FfxMain, FfxTool, Result, bug, return_user_error};
 
 #[derive(FfxTool)]
 pub struct ArchiveCatTool {
@@ -47,7 +47,7 @@ fn cat_implementation<W: std::io::Write>(
 mod tests {
     use super::*;
     use ffx_package_archive_utils::test_utils::{
-        create_mockreader, test_contents, LIB_RUN_SO_BLOB, LIB_RUN_SO_PATH,
+        LIB_RUN_SO_BLOB, LIB_RUN_SO_PATH, create_mockreader, test_contents,
     };
     use std::path::PathBuf;
 

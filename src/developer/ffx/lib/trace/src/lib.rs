@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use ffx_config::EnvironmentContext;
 use fidl_fuchsia_tracing_controller::{ProviderSpec, TraceConfig};
 use regex::Regex;
@@ -238,15 +238,13 @@ mod tests {
             .level(Some(ffx_config::ConfigLevel::User))
             .set(json!(bees))
             .unwrap();
-        assert!(get_category_group_names(&env.context)
-            .await
-            .unwrap()
-            .contains(&"birds".to_owned()));
+        assert!(
+            get_category_group_names(&env.context).await.unwrap().contains(&"birds".to_owned())
+        );
         assert!(get_category_group_names(&env.context).await.unwrap().contains(&"bees".to_owned()));
-        assert!(get_category_group_names(&env.context)
-            .await
-            .unwrap()
-            .contains(&"*invalid".to_owned()));
+        assert!(
+            get_category_group_names(&env.context).await.unwrap().contains(&"*invalid".to_owned())
+        );
     }
 
     #[fuchsia::test]

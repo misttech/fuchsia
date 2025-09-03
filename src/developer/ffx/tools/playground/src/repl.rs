@@ -3,17 +3,17 @@
 // found in the LICENSE file.
 
 use async_fs::File;
+use crossterm::QueueableCommand;
 use crossterm::cursor::{MoveLeft, MoveRight, MoveUp};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use crossterm::QueueableCommand;
-use futures::future::{poll_fn, select, Either, LocalBoxFuture};
+use futures::FutureExt as _;
+use futures::future::{Either, LocalBoxFuture, poll_fn, select};
 use futures::io::{AsyncReadExt as _, AsyncWrite};
 use futures::task::AtomicWaker;
-use futures::FutureExt as _;
 use std::cell::Cell;
 use std::collections::VecDeque;
 use std::future::Future;
-use std::io::{self, stdin, stdout, Write as _};
+use std::io::{self, Write as _, stdin, stdout};
 use std::os::unix::io::{AsRawFd as _, FromRawFd as _};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};

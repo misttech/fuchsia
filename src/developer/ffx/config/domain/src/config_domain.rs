@@ -20,7 +20,9 @@ const FILE_EXTENSIONS: &[&str] = &[TOML_FILE_EXTENSION, JSON5_FILE_EXTENSION];
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 enum LoadError {
-    #[error("Multiple candidate files were present (also found `{0}`), remove one of them to resolve the ambiguity")]
+    #[error(
+        "Multiple candidate files were present (also found `{0}`), remove one of them to resolve the ambiguity"
+    )]
     MultipleFiles(Utf8PathBuf),
     #[error(transparent)]
     Parsing(#[from] ParseError),

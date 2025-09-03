@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use ffx_core::{downcast_injector_error, FfxInjectorError, Injector};
+use ffx_core::{FfxInjectorError, Injector, downcast_injector_error};
 use ffx_target::TargetProxy;
 use fidl_fuchsia_developer_ffx::{DaemonProxy, VersionInfo};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::storage::{AssertNoEnv, AssertNoEnvError};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 

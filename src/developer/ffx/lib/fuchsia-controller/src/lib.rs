@@ -17,7 +17,7 @@ use fidl::HandleBased;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use {zx_status, zx_types};
 
 mod commands;

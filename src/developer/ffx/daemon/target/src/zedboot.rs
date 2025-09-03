@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use ffx_daemon_core::events;
 use ffx_daemon_events::{DaemonEvent, TryIntoTargetEventInfo, WireTrafficType};
 use ffx_target::Description;
 use fuchsia_async::{Task, Timer};
-use netext::{get_mcast_interfaces, IsLocalAddr};
+use netext::{IsLocalAddr, get_mcast_interfaces};
 use netsvc_proto::netboot::{
-    NetbootPacket, NetbootPacketBuilder, Opcode, ADVERT_PORT, SERVER_PORT,
+    ADVERT_PORT, NetbootPacket, NetbootPacketBuilder, Opcode, SERVER_PORT,
 };
 use packet::{Buf, FragmentedBuffer, InnerPacketBuilder, PacketBuilder, ParseBuffer, Serializer};
 use std::collections::HashSet;

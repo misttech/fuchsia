@@ -10,7 +10,7 @@ use fdomain_client::fidl::{
 };
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use ffx_command_error::{FfxContext as _, Result};
-use ffx_target::fho::{target_interface, FhoConnectionBehavior};
+use ffx_target::fho::{FhoConnectionBehavior, target_interface};
 use fho::{FhoEnvironment, TryFromEnv};
 use std::ops::Deref;
 use std::sync::Arc;

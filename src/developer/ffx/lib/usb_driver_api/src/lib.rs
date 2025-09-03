@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_ffx_usb__common::{
-    self as usb_fidl, control_ordinals, ffx_usb_ordinals, list_devices_ordinals, ConnectionId,
+    self as usb_fidl, ConnectionId, control_ordinals, ffx_usb_ordinals, list_devices_ordinals,
 };
 use fidl_message::{MaybeUnknown, TransactionHeader};
 use fuchsia_async as fasync;
@@ -134,7 +134,9 @@ pub enum ProtocolError {
     Write(std::io::Error),
     #[error("Could not receive request reply from driver: {0}")]
     Read(std::io::Error),
-    #[error("Version mismatch (Driver is version {0} and supports down to {1}, we are version {CURRENT_VERSION})")]
+    #[error(
+        "Version mismatch (Driver is version {0} and supports down to {1}, we are version {CURRENT_VERSION})"
+    )]
     VersionMismatch(u32, u32),
 }
 
@@ -655,7 +657,9 @@ impl Driver {
             return match res {
                 Ok(()) => Ok((stream, conn)),
                 Err(usb_fidl::AcceptError::NoSuchConnection(cid)) => {
-                    log::warn!("Driver didn't recognize an incoming connection ID it previously sent us: {cid:?}");
+                    log::warn!(
+                        "Driver didn't recognize an incoming connection ID it previously sent us: {cid:?}"
+                    );
                     continue;
                 }
                 Err(_) => Err(AcceptError::Failed("undecodable error".into())),
@@ -807,17 +811,19 @@ mod test {
         driver.stop_listening(1234, StopListenQueueBehavior::Reject).await.unwrap();
 
         let (_unused, other_end) = UnixStream::pair().unwrap();
-        assert!(connection
-            .connect(
-                usb_vsock::Address {
-                    device_cid: cid,
-                    device_port: 9091,
-                    host_cid: CID_HOST,
-                    host_port: 1234,
-                },
-                other_end.into()
-            )
-            .await
-            .is_err());
+        assert!(
+            connection
+                .connect(
+                    usb_vsock::Address {
+                        device_cid: cid,
+                        device_port: 9091,
+                        host_cid: CID_HOST,
+                        host_port: 1234,
+                    },
+                    other_end.into()
+                )
+                .await
+                .is_err()
+        );
     }
 }

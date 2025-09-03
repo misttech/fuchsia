@@ -5,7 +5,7 @@
 use anyhow::Context;
 use ffx_package_file_hash_args::FileHashCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{return_user_error, user_error, Error, FfxContext, FfxMain, FfxTool, Result};
+use fho::{Error, FfxContext, FfxMain, FfxTool, Result, return_user_error, user_error};
 use fuchsia_merkle::MerkleTree;
 use rayon::prelude::*;
 use schemars::JsonSchema;
@@ -243,7 +243,12 @@ f5a0dff4578d0150d3dace71b08733d5cd8cbe63a322633445c9ff0d9041b9c4  {0}/third_file
         let (out, err) = buffers.into_strings();
         match res {
             Ok(_) => panic!("Unexpected success"),
-            Err(_) => assert_eq!(out, format!("{{\"user_error\":\"failed to open file {NAME}: No such file or directory (os error 2)\"}}\n"))
+            Err(_) => assert_eq!(
+                out,
+                format!(
+                    "{{\"user_error\":\"failed to open file {NAME}: No such file or directory (os error 2)\"}}\n"
+                )
+            ),
         };
 
         assert_eq!(err, "");

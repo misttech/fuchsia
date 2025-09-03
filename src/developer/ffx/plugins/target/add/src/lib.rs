@@ -8,7 +8,7 @@ use ffx_config::EnvironmentContext;
 use ffx_target::add_manual_target;
 use ffx_target_add_args::AddCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{deferred, Deferred, FfxContext, FfxMain, FfxTool};
+use fho::{Deferred, FfxContext, FfxMain, FfxTool, deferred};
 use fidl_fuchsia_developer_ffx::{TargetCollectionProxy, TargetConnectionError};
 use netext::parse_address_parts;
 use schemars::JsonSchema;
@@ -325,7 +325,9 @@ mod test {
         let writer = VerifiedMachineWriter::new_test(Some(Format::Json), &buffers);
         tool.main(writer).await.expect_err("target add");
 
-        let expected = String::from("{\"UserError\":{\"message\":\"Could not parse 'invalid_address-100'. Invalid address\"}}\n");
+        let expected = String::from(
+            "{\"UserError\":{\"message\":\"Could not parse 'invalid_address-100'. Invalid address\"}}\n",
+        );
         let actual = buffers.into_stdout_str();
         assert_eq!(expected, actual)
     }

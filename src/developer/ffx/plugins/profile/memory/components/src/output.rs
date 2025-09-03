@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use attribution_processing::ZXName;
 use attribution_processing::digest::{self};
 use attribution_processing::fplugin_serde::KernelStatistics;
 use attribution_processing::summary::{
     ComponentSummaryProfileResult, PrincipalSummary, VmoSummary,
 };
-use attribution_processing::ZXName;
 use fidl_fuchsia_memory_attribution_plugin as fplugin;
-use prettytable::{row, table, Table};
+use prettytable::{Table, row, table};
 use std::cmp::Reverse;
 
 pub fn write_summary(

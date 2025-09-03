@@ -11,7 +11,7 @@ use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fidl_fuchsia_dash::LauncherProxy;
 use socket_to_stdio::Stdout;
-use target_holders::{moniker, RemoteControlProxyHolder};
+use target_holders::{RemoteControlProxyHolder, moniker};
 
 #[derive(FfxTool)]
 pub struct ExploreTool {

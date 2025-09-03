@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use futures::channel::mpsc::unbounded;
 use futures::StreamExt;
+use futures::channel::mpsc::unbounded;
 use nix::errno::Errno;
 use nix::sys::socket::sockopt::SocketError;
-use nix::sys::socket::{connect, getsockopt, socket, AddressFamily, SockFlag, SockType, VsockAddr};
+use nix::sys::socket::{AddressFamily, SockFlag, SockType, VsockAddr, connect, getsockopt, socket};
 use nix::unistd::{read, write};
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
@@ -34,7 +34,7 @@ pub async fn spawn_vsock(cid: u32, node: Arc<overnet_core::Router>) {
 
     #[cfg(target_os = "macos")]
     {
-        use nix::fcntl::{fcntl, FcntlArg, OFlag};
+        use nix::fcntl::{FcntlArg, OFlag, fcntl};
 
         if let Err(error) =
             fcntl(socket.as_raw_fd(), FcntlArg::F_SETFL(OFlag::O_NONBLOCK | OFlag::O_CLOEXEC))

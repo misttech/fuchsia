@@ -69,9 +69,9 @@ fn validate_credential(
             "When SecurityType != None, you must provide a CredentialType and Credential"
         ));
     } else if *credential_type != CredentialType::None && *security_type == SecurityType::None {
-        return Err(
-            anyhow::format_err!("When SecurityType == None, you must use CredentialType::None and may must not provide a Credential")
-        );
+        return Err(anyhow::format_err!(
+            "When SecurityType == None, you must use CredentialType::None and may must not provide a Credential"
+        ));
     }
     Ok(())
 }

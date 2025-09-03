@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use fidl_codec::Value as FidlValue;
-use futures::channel::oneshot::channel as oneshot_channel;
-use futures::future::{ready, BoxFuture};
 use futures::FutureExt;
+use futures::channel::oneshot::channel as oneshot_channel;
+use futures::future::{BoxFuture, ready};
 use num::bigint::BigInt;
 use num::rational::BigRational;
 use num::{CheckedDiv, FromPrimitive};
@@ -19,8 +19,8 @@ use crate::frame::{CaptureMapEntry, CaptureSet, Frame};
 use crate::interpreter::{Exception, Interpreter, InterpreterInner};
 use crate::parser::{Mutability, Node, ParameterList, Span, StringElement};
 use crate::value::{
-    playground_semantic_compare, Invocable, PlaygroundValue, RangeCursor, ReplayableIterator,
-    Value, ValueExt,
+    Invocable, PlaygroundValue, RangeCursor, ReplayableIterator, Value, ValueExt,
+    playground_semantic_compare,
 };
 
 impl Exception {
@@ -42,11 +42,7 @@ fn try_numeric_math(
     let a: Option<BigRational> = a.try_big_num().ok();
     let b: Option<BigRational> = b.try_big_num().ok();
 
-    if let (Some(a), Some(b)) = (a, b) {
-        Some(f(a, b))
-    } else {
-        None
-    }
+    if let (Some(a), Some(b)) = (a, b) { Some(f(a, b)) } else { None }
 }
 
 /// Parse an integer.
@@ -1192,11 +1188,7 @@ impl Visitor {
                     ret = statement(&inner, frame).await?;
                 }
 
-                if let Some(trailer) = trailer {
-                    trailer(&inner, frame).await
-                } else {
-                    Ok(ret)
-                }
+                if let Some(trailer) = trailer { trailer(&inner, frame).await } else { Ok(ret) }
             }
             .boxed()
         }

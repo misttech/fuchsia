@@ -7,10 +7,10 @@ use camino::Utf8Path;
 use ffx_config::{ConfigLevel, EnvironmentContext};
 use ffx_sdk_args::{RunCommand, SdkCommand, SetCommand, SetRootCommand, SetSubCommand, SubCommand};
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{bug, exit_with_code, return_user_error, user_error, FfxContext, FfxMain, FfxTool};
+use fho::{FfxContext, FfxMain, FfxTool, bug, exit_with_code, return_user_error, user_error};
 use schemars::JsonSchema;
 use sdk::metadata::ElementType;
-use sdk::{in_tree_sdk_version, Sdk, SdkRoot, SdkVersion};
+use sdk::{Sdk, SdkRoot, SdkVersion, in_tree_sdk_version};
 use serde::Serialize;
 use std::io::{ErrorKind, Write};
 
@@ -76,11 +76,7 @@ async fn exec_run(sdk: Sdk, cmd: &RunCommand) -> fho::Result<()> {
             )
         })?;
 
-    if status.success() {
-        Ok(())
-    } else {
-        exit_with_code!(status.code().unwrap_or(1))
-    }
+    if status.success() { Ok(()) } else { exit_with_code!(status.code().unwrap_or(1)) }
 }
 
 async fn exec_version(sdk: Sdk, mut writer: VerifiedMachineWriter<SdkInfo>) -> Result<()> {
@@ -118,7 +114,9 @@ fn exec_populate_path(
 ) -> fho::Result<()> {
     let inner_bin_path = bin_path.join("fuchsia-sdk");
     let full_fuchsia_sdk_run_path = inner_bin_path.join("fuchsia-sdk-run");
-    log::debug!("Installing host tool stubs to {bin_path:?} (and `fuchsia-sdk-run` to {inner_bin_path:?}) from SDK {sdk_root:?}");
+    log::debug!(
+        "Installing host tool stubs to {bin_path:?} (and `fuchsia-sdk-run` to {inner_bin_path:?}) from SDK {sdk_root:?}"
+    );
 
     let sdk = sdk_root.get_sdk()?;
     let sdk_run_tool = sdk.get_host_tool("fuchsia-sdk-run").user_message("SDK does not contain `fuchsia-sdk-run` host tool. You may need to update your SDK to use this command.")?;

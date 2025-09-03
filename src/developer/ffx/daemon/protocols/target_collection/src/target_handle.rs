@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::reboot;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use ffx_daemon_events::TargetEvent;
 use ffx_daemon_target::target::Target;
 use ffx_daemon_target::target_collection::TargetCollection;
@@ -11,7 +11,7 @@ use ffx_ssh::ssh::SshError;
 use ffx_stream_util::TryStreamUtilExt;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_developer_ffx::{self as ffx};
-use futures::{channel, TryStreamExt};
+use futures::{TryStreamExt, channel};
 use protocols::Context;
 use std::cell::RefCell;
 use std::future::Future;
@@ -160,7 +160,11 @@ impl TargetHandleInner {
             if prev_target.id() != self.target.borrow().id() {
                 {
                     let my_target = self.target.borrow();
-                    log::info!("connection to {:?} reached same target as {:?}. Redirecting further requests", my_target.addrs(), prev_target.addrs());
+                    log::info!(
+                        "connection to {:?} reached same target as {:?}. Redirecting further requests",
+                        my_target.addrs(),
+                        prev_target.addrs()
+                    );
                     prev_target.extend_addrs_from_other(my_target.clone());
                     self.target_collection.remove_target_from_list(my_target.id());
                 }

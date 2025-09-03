@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use auth::{mint_new_access_token, AuthError, AuthFlowChoice};
+use auth::{AuthError, AuthFlowChoice, mint_new_access_token};
 use ffx_writer::SimpleWriter;
 use fho::Result;
 use std::fs::File;
-use std::io::{stderr, stdin, stdout, Write};
+use std::io::{Write, stderr, stdin, stdout};
 use std::os::unix::fs::PermissionsExt;
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]

@@ -9,7 +9,7 @@ use emulator_instance::{
 use ffx_emulator_list_args::ListCommand;
 use ffx_emulator_list_command_output::EmuListItem;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{bug, FfxContext, FfxMain, FfxTool, TryFromEnv, TryFromEnvWith};
+use fho::{FfxContext, FfxMain, FfxTool, TryFromEnv, TryFromEnvWith, bug};
 use std::marker::PhantomData;
 use std::path::PathBuf;
 

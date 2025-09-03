@@ -124,14 +124,14 @@ fn check_virtualization_available() -> anyhow::Result<()> {
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::PermissionDenied => {
                         bail!(
-                                "Emulation acceleration unavailable.\n\n\
+                            "Emulation acceleration unavailable.\n\n\
                                         Caused by: No write permission on {}.\n\n\
                                         To adjust permissions and enable acceleration via KVM:\n\n    \
                                         sudo usermod -a -G kvm $USER\n\n\
                                         You may need to reboot your machine for the permission change \
                                         to take effect.\n",
-                                path
-                            );
+                            path
+                        );
                     }
                     std::io::ErrorKind::NotFound => {
                         bail!(

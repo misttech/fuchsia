@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use ffx_session_add_args::SessionAddCommand;
 use ffx_writer::SimpleWriter;
@@ -11,8 +11,8 @@ use fidl_fuchsia_element::{
     self as felement, Annotation, AnnotationKey, AnnotationValue, ControllerMarker, ManagerProxy,
     Spec,
 };
-use futures::channel::oneshot;
 use futures::FutureExt;
+use futures::channel::oneshot;
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
 use std::future::Future;

@@ -11,8 +11,8 @@ use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnvWith};
 use std::marker::PhantomData;
 
-use crate::from_toolbox::WithToolbox;
 use crate::DEFAULT_PROXY_TIMEOUT;
+use crate::from_toolbox::WithToolbox;
 
 use super::connect_to_rcs;
 

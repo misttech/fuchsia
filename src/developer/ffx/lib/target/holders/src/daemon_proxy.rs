@@ -11,10 +11,10 @@ use fdomain_client::fidl::DiscoverableProtocolMarker;
 use fdomain_fuchsia_developer_remotecontrol::{
     RemoteControlMarker as FRemoteControlMarker, RemoteControlProxy as FRemoteControlProxy,
 };
-use ffx_command_error::{user_error, Error, FfxContext, Result};
+use ffx_command_error::{Error, FfxContext, Result, user_error};
 use ffx_config::EnvironmentContext;
-use ffx_core::{downcast_injector_error, FfxInjectorError, Injector};
-use ffx_daemon::{get_daemon_proxy_single_link, is_daemon_running_at_path, DaemonConfig};
+use ffx_core::{FfxInjectorError, Injector, downcast_injector_error};
+use ffx_daemon::{DaemonConfig, get_daemon_proxy_single_link, is_daemon_running_at_path};
 use ffx_target::fho::target_interface;
 use ffx_target::{get_remote_proxy, open_target_with_fut};
 use fho::{FhoEnvironment, TryFromEnv, TryFromEnvWith};

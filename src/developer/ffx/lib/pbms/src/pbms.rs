@@ -4,16 +4,16 @@
 
 //! Private functionality for pbms lib.
 
-use crate::gcs::fetch_from_gcs;
 use crate::AuthFlowChoice;
+use crate::gcs::fetch_from_gcs;
 use ::gcs::client::{
     Client, DirectoryProgress, FileProgress, ProgressResponse, ProgressResult, Throttle,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use async_fs::File;
 use futures::{AsyncWriteExt as _, TryStreamExt as _};
-use hyper::header::CONTENT_LENGTH;
 use hyper::StatusCode;
+use hyper::header::CONTENT_LENGTH;
 use std::path::{Path, PathBuf};
 
 pub(crate) const GS_SCHEME: &str = "gs";
@@ -26,11 +26,7 @@ pub(crate) const GS_SCHEME: &str = "gs";
 /// - "file:///foo/bar" -> Some("/foo/bar")
 /// - "http://foo/bar" -> None
 pub(crate) fn path_from_file_url(product_url: &url::Url) -> Option<PathBuf> {
-    if product_url.scheme() == "file" {
-        product_url.to_file_path().ok()
-    } else {
-        None
-    }
+    if product_url.scheme() == "file" { product_url.to_file_path().ok() } else { None }
 }
 
 /// Download data from any of the supported schemes listed in RFC-100, Product

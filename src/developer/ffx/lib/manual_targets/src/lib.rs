@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use async_lock::Mutex;
 use async_trait::async_trait;
-use ffx_config::api::ConfigError;
 use ffx_config::ConfigLevel;
-use serde_json::{json, Map, Value};
+use ffx_config::api::ConfigError;
+use serde_json::{Map, Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub mod watcher;

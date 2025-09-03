@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de};
 
 /// Metadata about an FHO-compliant ffx subtool
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Hash)]
@@ -111,18 +111,14 @@ impl FhoToolMetadata {
     /// we can run it at.
     pub fn is_supported(&self) -> Option<FhoDetails> {
         // Currently we only support fho version 0.
-        if self.requires_fho == 0 {
-            Some(FhoDetails::FhoVersion0 { version: Only })
-        } else {
-            None
-        }
+        if self.requires_fho == 0 { Some(FhoDetails::FhoVersion0 { version: Only }) } else { None }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{from_value, json, to_value, Value};
+    use serde_json::{Value, from_value, json, to_value};
     use valico::json_schema;
 
     fn validate_fho_metadata(metadata: &FhoToolMetadata) -> json_schema::ValidationState {

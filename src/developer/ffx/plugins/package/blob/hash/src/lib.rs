@@ -5,7 +5,7 @@
 use anyhow::Context as _;
 use camino::Utf8PathBuf;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{return_user_error, user_error, FfxMain, FfxTool};
+use fho::{FfxMain, FfxTool, return_user_error, user_error};
 use fuchsia_merkle::MerkleTree;
 use rayon::prelude::*;
 use schemars::JsonSchema;
@@ -255,7 +255,9 @@ f5a0dff4578d0150d3dace71b08733d5cd8cbe63a322633445c9ff0d9041b9c4  {0}/third_file
         let (out, err) = buffers.into_strings();
         assert_eq!(
             err,
-            format!("failed to hash blob {NAME}\n\nCaused by:\n    0: open file\n    1: No such file or directory (os error 2)\n")
+            format!(
+                "failed to hash blob {NAME}\n\nCaused by:\n    0: open file\n    1: No such file or directory (os error 2)\n"
+            )
         );
         assert_eq!(out, "");
     }
@@ -273,7 +275,12 @@ f5a0dff4578d0150d3dace71b08733d5cd8cbe63a322633445c9ff0d9041b9c4  {0}/third_file
 
         assert_matches!(BlobHashTool { cmd }.main(writer).await, Err(fho::Error::User(_)));
         let (out, err) = buffers.into_strings();
-        assert_eq!(out, format!("{{\"user_error\":\"failed to hash blob {NAME}\\n\\nCaused by:\\n    0: open file\\n    1: No such file or directory (os error 2)\"}}\n"));
+        assert_eq!(
+            out,
+            format!(
+                "{{\"user_error\":\"failed to hash blob {NAME}\\n\\nCaused by:\\n    0: open file\\n    1: No such file or directory (os error 2)\"}}\n"
+            )
+        );
         assert_eq!(err, "");
     }
 }

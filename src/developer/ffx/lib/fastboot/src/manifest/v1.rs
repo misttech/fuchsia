@@ -4,8 +4,8 @@
 
 use crate::boot::boot;
 use crate::common::{
-    flash_and_reboot, is_locked, Boot, Flash, Partition as PartitionTrait, Product as ProductTrait,
-    Unlock, MISSING_PRODUCT, UNLOCK_ERR,
+    Boot, Flash, MISSING_PRODUCT, Partition as PartitionTrait, Product as ProductTrait, UNLOCK_ERR,
+    Unlock, flash_and_reboot, is_locked,
 };
 use crate::file_resolver::FileResolver;
 use crate::util::Event;
@@ -234,8 +234,8 @@ mod test {
         let v: FlashManifest = from_str(MANIFEST)?;
         let (_, mut proxy) = setup();
         let (client, _server) = mpsc::channel(100);
-        assert!(v
-            .flash(
+        assert!(
+            v.flash(
                 &client,
                 &mut TestResolver::new(),
                 &mut proxy,
@@ -246,7 +246,8 @@ mod test {
                 }
             )
             .await
-            .is_err());
+            .is_err()
+        );
         Ok(())
     }
 

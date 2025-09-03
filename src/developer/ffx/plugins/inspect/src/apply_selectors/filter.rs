@@ -5,7 +5,7 @@
 use crate::apply_selectors::screen::Line;
 use anyhow::Result;
 use diagnostics_data::{ExtendedMoniker, InspectData};
-use diagnostics_hierarchy::{hierarchy, HierarchyMatcher};
+use diagnostics_hierarchy::{HierarchyMatcher, hierarchy};
 use difference::Difference::{Add, Rem, Same};
 use fidl_fuchsia_diagnostics::Selector;
 use selectors::{SelectorExt, VerboseError};

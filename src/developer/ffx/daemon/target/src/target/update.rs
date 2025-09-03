@@ -160,7 +160,7 @@ impl<'a> TargetUpdateBuilder<'a> {
                 // Filter out addresses that are device-local or not unicast.
                 match addr {
                     _ if addr.is_loopback() || addr.is_unspecified() || addr.is_multicast() => {
-                        return None
+                        return None;
                     }
                     _ => {}
                 }

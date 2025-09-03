@@ -240,8 +240,10 @@ mod tests {
     fn test_daemon_error_strings_containing_target_name() {
         fn assert_contains_target_name(err: DaemonError) {
             let name: Option<String> = Some("fuchsia-f00d".to_string());
-            assert!(format!("{}", FfxTargetError::DaemonError { err, target: name.clone() })
-                .contains(name.as_ref().unwrap()));
+            assert!(
+                format!("{}", FfxTargetError::DaemonError { err, target: name.clone() })
+                    .contains(name.as_ref().unwrap())
+            );
         }
 
         assert_contains_target_name(DaemonError::Timeout);
@@ -258,17 +260,25 @@ mod tests {
             )
         }
 
-        assert!(error_message(OpenTargetError::QueryAmbiguous, Some("ambigious-query"))
-            .contains("Target specification \"ambigious-query\" matched multiple targets"));
-        assert!(!Regex::new(r"Target specification .* matched multiple targets")
-            .unwrap()
-            .is_match(error_message(OpenTargetError::QueryAmbiguous, None).as_str()));
+        assert!(
+            error_message(OpenTargetError::QueryAmbiguous, Some("ambigious-query"))
+                .contains("Target specification \"ambigious-query\" matched multiple targets")
+        );
+        assert!(
+            !Regex::new(r"Target specification .* matched multiple targets")
+                .unwrap()
+                .is_match(error_message(OpenTargetError::QueryAmbiguous, None).as_str())
+        );
 
-        assert!(error_message(OpenTargetError::TargetNotFound, Some("nonexistent-target"))
-            .contains("Target specification \"nonexistent-target\" was not found"));
-        assert!(!Regex::new(r"Target specification .* was not found")
-            .unwrap()
-            .is_match(error_message(OpenTargetError::TargetNotFound, None).as_str()));
+        assert!(
+            error_message(OpenTargetError::TargetNotFound, Some("nonexistent-target"))
+                .contains("Target specification \"nonexistent-target\" was not found")
+        );
+        assert!(
+            !Regex::new(r"Target specification .* was not found")
+                .unwrap()
+                .is_match(error_message(OpenTargetError::TargetNotFound, None).as_str())
+        );
     }
 
     #[test]

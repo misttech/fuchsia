@@ -11,7 +11,7 @@ use proc_macro2::{Ident, Span};
 use quote::{quote, quote_spanned};
 use syn::parse::Parser;
 use syn::punctuated::Punctuated;
-use syn::{parse_macro_input, Fields, ItemStruct, Token, TypePath};
+use syn::{Fields, ItemStruct, Token, TypePath, parse_macro_input};
 
 /// Generates a standalone subcommand from a shell subcommand., e.g. `FooSubcommand` from
 /// `FooShellSubcommand`.

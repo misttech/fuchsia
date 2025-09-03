@@ -4,7 +4,7 @@
 
 //! Utilities for Product Bundle Metadata (PBM).
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use emulator_instance::{
     AccelerationMode, ConsoleType, EmulatorConfiguration, EmulatorInstances, GpuType, LogLevel,
     NetworkingMode, OperatingSystem,
@@ -19,8 +19,8 @@ use fho::{bug, user_error};
 use pbms::ProductBundle;
 use regex::Regex;
 use sdk_metadata::{CpuArchitecture, VirtualDeviceManifest};
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::fs::File;
 use std::hash::Hasher;
@@ -607,11 +607,9 @@ mod tests {
         let file = File::create(&file_path).expect("Create temp file");
         let mut perms = file.metadata().expect("Get file metadata").permissions();
 
-        env.context.query(KVM_PATH).level(Some(ConfigLevel::User)).set(json!(file_path
-            .as_path()
-            .to_str()
-            .expect("Couldn't convert file_path to str")
-            .to_string()))?;
+        env.context.query(KVM_PATH).level(Some(ConfigLevel::User)).set(json!(
+            file_path.as_path().to_str().expect("Couldn't convert file_path to str").to_string()
+        ))?;
         let emu_instances = EmulatorInstances::new(temp_path.clone());
 
         // Set up some test data to be applied.

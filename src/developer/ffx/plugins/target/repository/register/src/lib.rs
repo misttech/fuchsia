@@ -8,18 +8,18 @@ use ffx_ssh::parse::HostAddr;
 use ffx_target_repository_register_args::RegisterCommand;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{
-    bug, return_user_error, user_error, Error, FfxContext, FfxMain, FfxTool, FhoEnvironment,
-    Result, TryFromEnv,
+    Error, FfxContext, FfxMain, FfxTool, FhoEnvironment, Result, TryFromEnv, bug,
+    return_user_error, user_error,
 };
 use fidl_fuchsia_pkg::RepositoryManagerProxy;
 use fidl_fuchsia_pkg_ext::RepositoryTarget;
 use fidl_fuchsia_pkg_rewrite::EngineProxy;
-use pkg::repo::{register_target_with_repo_instance, RepoHostAddr};
+use pkg::repo::{RepoHostAddr, register_target_with_repo_instance};
 use pkg::{PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use target_holders::{moniker, HostAddrHolder};
+use target_holders::{HostAddrHolder, moniker};
 
 const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
 
@@ -177,9 +177,9 @@ impl RegisterTool {
 mod test {
     use super::*;
     use camino::Utf8PathBuf;
-    use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_config::ConfigLevel;
-    use ffx_target::fho::{target_interface, FhoConnectionBehavior};
+    use ffx_config::keys::TARGET_DEFAULT_KEY;
+    use ffx_target::fho::{FhoConnectionBehavior, target_interface};
     use ffx_writer::{Format, TestBuffers};
     use fidl_fuchsia_developer_ffx::{
         RemoteControlState,
@@ -204,13 +204,13 @@ mod test {
     use fuchsia_async as fasync;
     use fuchsia_repo::repository::RepositorySpec;
     use fuchsia_url::RepositoryUrl;
-    use futures::channel::oneshot::{channel, Receiver};
     use futures::TryStreamExt;
+    use futures::channel::oneshot::{Receiver, channel};
     use pkg::ServerMode;
     use std::collections::BTreeSet;
     use std::net::{Ipv4Addr, SocketAddr};
     use std::sync::Arc;
-    use target_holders::{fake_proxy, FakeInjector};
+    use target_holders::{FakeInjector, fake_proxy};
 
     const REPO_NAME: &str = "some-name";
     const TARGET_NAME: &str = "some-target";

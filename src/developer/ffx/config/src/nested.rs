@@ -45,20 +45,12 @@ impl RecursiveMap for Value {
                         result.insert(key.clone(), new_value);
                     }
                 }
-                if result.len() == 0 {
-                    None
-                } else {
-                    mapper(Value::Object(result))
-                }
+                if result.len() == 0 { None } else { mapper(Value::Object(result)) }
             }
             Value::Array(arr) => {
                 let result =
                     Vec::from_iter(arr.into_iter().filter_map(|value| value.recursive_map(mapper)));
-                if result.len() == 0 {
-                    None
-                } else {
-                    mapper(Value::Array(result))
-                }
+                if result.len() == 0 { None } else { mapper(Value::Array(result)) }
             }
             other => mapper(other),
         }

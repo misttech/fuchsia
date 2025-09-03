@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::prelude::*;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{copy, Seek, SeekFrom, Write};
+use std::io::{Seek, SeekFrom, Write, copy};
 use std::path::PathBuf;
-use zip::write::{FileOptions, ZipWriter};
 use zip::CompressionMethod;
+use zip::write::{FileOptions, ZipWriter};
 
 const FILE_MAX_BYTES: i64 = 4_000_000; // 4MB
 

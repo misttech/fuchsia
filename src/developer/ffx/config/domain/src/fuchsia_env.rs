@@ -148,7 +148,7 @@ impl FuchsiaEnv {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     pub use super::*;
 

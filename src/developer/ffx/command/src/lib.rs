@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use errors::IntoExitCode;
-use ffx_config::environment::ExecutableKind;
 use ffx_config::EnvironmentContext;
+use ffx_config::environment::ExecutableKind;
 use fuchsia_async::TimeoutExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -26,12 +26,12 @@ pub use args_info::{
     CliArgsInfo, ErrorCodeInfo, FlagInfo, FlagKind, Optionality, PositionalInfo, SubCommandInfo,
 };
 
-pub use ffx::{check_strict_constraints, Ffx, FfxCommandLine, FFX_WRAPPER_INVOKE};
+pub use ffx::{FFX_WRAPPER_INVOKE, Ffx, FfxCommandLine, check_strict_constraints};
 pub use ffx_command_error::{
-    bug, exit_with_code, return_bug, return_user_error, user_error, Error, FfxContext,
-    NonFatalError, Result,
+    Error, FfxContext, NonFatalError, Result, bug, exit_with_code, return_bug, return_user_error,
+    user_error,
 };
-pub use metrics::{analytics_command, send_enhanced_analytics, MetricsSession};
+pub use metrics::{MetricsSession, analytics_command, send_enhanced_analytics};
 pub use subcommand::ExternalSubToolSuite;
 pub use tools::{FfxToolInfo, FfxToolSource, ToolRunner, ToolSuite};
 

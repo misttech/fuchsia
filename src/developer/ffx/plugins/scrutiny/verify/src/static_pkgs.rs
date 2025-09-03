@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use ffx_scrutiny_verify_args::static_pkgs::Command;
 use scrutiny_frontend::Scrutiny;
 use scrutiny_utils::golden::{CompareResult, GoldenFile};
@@ -62,7 +62,10 @@ fn verify_static_pkgs(query: &Query, golden_files: &Vec<PathBuf>) -> Result<Hash
                 println!("{}", error);
             }
             println!("");
-            println!("If you intended to change the static package contents, please acknowledge it by updating {:?} with the added or removed lines.", golden_files[0]);
+            println!(
+                "If you intended to change the static package contents, please acknowledge it by updating {:?} with the added or removed lines.",
+                golden_files[0]
+            );
             println!("{}", SOFT_TRANSITION_MSG);
             Err(anyhow!("static file mismatch"))
         }

@@ -12,7 +12,7 @@
 //! on an emulator launched with `ffx emu`. As we shift other functionality to the consoles
 //! (e.g. status queries, shutdown commands, etc.), this is where that functionality will be
 //! exposed.
-use fho::{bug, return_bug, Result};
+use fho::{Result, bug, return_bug};
 use nix::NixPath;
 use std::env;
 use std::ffi::OsStr;
@@ -20,7 +20,7 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
-use std::thread::{spawn, JoinHandle};
+use std::thread::{JoinHandle, spawn};
 
 /// Maximum path length for Linux. This is used to check the length of the socket addresses, if
 /// needed.

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::OemFile;
 use crate::v1::{FlashManifest as FlashManifestV1, Partition as PartitionV1, Product as ProductV1};
 use crate::v2::FlashManifest as FlashManifestV2;
-use crate::OemFile;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

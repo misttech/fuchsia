@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use futures::channel::oneshot;
-use futures::{ready, FutureExt};
+use futures::{FutureExt, ready};
 use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::future::Future;

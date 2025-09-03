@@ -6,8 +6,8 @@ use crate::options;
 use anyhow::{Context as _, Result};
 use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
 use fuchsia_fuzzctl::{
-    create_artifact_dir, create_corpus_dir, create_dir_at, get_corpus_name, save_artifact,
-    Controller, InputPair, OutputSink, Writer,
+    Controller, InputPair, OutputSink, Writer, create_artifact_dir, create_corpus_dir,
+    create_dir_at, get_corpus_name, save_artifact,
 };
 use std::path::{Path, PathBuf};
 use url::Url;
@@ -387,15 +387,15 @@ fn get_result(result: &FuzzResult) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{get_result, Fuzzer};
+    use super::{Fuzzer, get_result};
     use crate::options;
     use anyhow::Result;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
     use fuchsia_fuzzctl::digest_path;
     use fuchsia_fuzzctl_test::{
-        add_defaults, create_task, serve_controller, verify_saved, BufferSink, FakeController,
-        Test, TEST_URL,
+        BufferSink, FakeController, TEST_URL, Test, add_defaults, create_task, serve_controller,
+        verify_saved,
     };
     use url::Url;
     use {fuchsia_async as fasync, zx_status as zx};

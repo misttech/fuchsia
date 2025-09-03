@@ -117,19 +117,11 @@ impl SocketDetails {
     }
 
     pub fn get_running_pid(&self) -> Option<u32> {
-        if let PidStatus::Running { pid } = self.pid.status {
-            Some(pid)
-        } else {
-            None
-        }
+        if let PidStatus::Running { pid } = self.pid.status { Some(pid) } else { None }
     }
 
     pub fn is_currently_running(&self) -> bool {
-        if let Some(pid) = self.get_running_pid() {
-            check_if_running(pid).is_some()
-        } else {
-            false
-        }
+        if let Some(pid) = self.get_running_pid() { check_if_running(pid).is_some() } else { false }
     }
 }
 

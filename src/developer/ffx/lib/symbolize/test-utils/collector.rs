@@ -134,11 +134,7 @@ fn split_padded(b: &[u8], split_at: usize, align: usize) -> (&[u8], &[u8]) {
 
 fn round_up_to(size: u64, align: u64) -> u64 {
     let remainder = size % align;
-    if remainder == 0 {
-        size
-    } else {
-        size + (align - remainder)
-    }
+    if remainder == 0 { size } else { size + (align - remainder) }
 }
 
 fn round_up_to_page_size(size: u64) -> u64 {

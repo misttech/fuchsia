@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use ffx_session_restart_args::SessionRestartCommand;
 use ffx_writer::SimpleWriter;

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::ledger_view::*;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::io::Write;
 
 const DEFAULT_OUTCOME_VALUE: LedgerOutcome = LedgerOutcome::Success;

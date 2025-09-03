@@ -14,12 +14,12 @@ macro_rules! embedded_plugin {
             env: &$crate::macro_deps::fho::FhoEnvironment,
             cmd: <$tool as $crate::FfxTool>::Command,
         ) -> $crate::Result<()> {
+            use $crate::FfxMain as _;
             #[allow(unused_imports)]
             use $crate::macro_deps::{
                 argh, bug, check_strict_constraints, global_env_context, return_bug,
                 writer::{Format, ToolIO},
             };
-            use $crate::FfxMain as _;
 
             $crate::macro_deps::check_strict_constraints(
                 &env.ffx_command().global,
@@ -94,11 +94,7 @@ pub(crate) mod tests {
     impl CheckEnv for SimpleCheck {
         async fn check_env(self, _env: &FhoEnvironment) -> Result<()> {
             SIMPLE_CHECK_COUNTER.with(|counter| *counter.borrow_mut() += 1);
-            if self.0 {
-                Ok(())
-            } else {
-                Err(anyhow::anyhow!("SimpleCheck was false").into())
-            }
+            if self.0 { Ok(()) } else { Err(anyhow::anyhow!("SimpleCheck was false").into()) }
         }
     }
 

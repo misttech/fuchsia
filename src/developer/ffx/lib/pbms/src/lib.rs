@@ -20,9 +20,9 @@
 //! a product bundle is also the name of the product bundle metadata entry.
 
 use crate::gcs::string_from_gcs;
-use crate::pbms::{path_from_file_url, GS_SCHEME};
+use crate::pbms::{GS_SCHEME, path_from_file_url};
 use ::gcs::client::{Client, FileProgress, ProgressResult};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use camino::{Utf8Path, Utf8PathBuf};
 use errors::ffx_bail;
 use hyper::{Body, Method, Request};
@@ -219,8 +219,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ffx_config::environment::test_env;
     use ffx_config::ConfigLevel;
+    use ffx_config::environment::test_env;
     use std::fs::File;
     use tempfile::TempDir;
 

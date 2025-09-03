@@ -249,7 +249,7 @@ fn dir_parse_path(path: &str) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::dir_parse_path;
-    use tempfile::{tempdir, NamedTempFile};
+    use tempfile::{NamedTempFile, tempdir};
 
     #[test]
     fn test_dir_parse_path() {

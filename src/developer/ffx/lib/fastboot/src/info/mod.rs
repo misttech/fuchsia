@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, Variable};
 use futures::prelude::*;
 use std::io::Write;

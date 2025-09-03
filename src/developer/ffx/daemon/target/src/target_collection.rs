@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::MDNS_MAX_AGE;
 use crate::target::{
     self, DiscoveredTarget, Identity, IdentityCmp, SharedIdentity, Target, TargetUpdate,
     WeakIdentity,
 };
-use crate::MDNS_MAX_AGE;
 use addr::{TargetAddr, TargetIpAddr};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -18,8 +18,8 @@ use ffx_target::TargetInfoQuery;
 use fidl_fuchsia_developer_ffx as ffx;
 use std::borrow::Borrow;
 use std::cell::RefCell;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
 use std::ops::ControlFlow;
@@ -329,7 +329,10 @@ impl TargetCollection {
             log::debug!("TargetCollection: removed target {}", target_id);
             true
         } else {
-            log::debug!("TargetCollection: Requested to remove target {}, but was not found in our collection", target_id);
+            log::debug!(
+                "TargetCollection: Requested to remove target {}, but was not found in our collection",
+                target_id
+            );
             false
         }
     }
@@ -455,11 +458,7 @@ impl TargetCollection {
                 // where the port field in the address should be considered.
                 let address_match = || {
                     target.addrs().iter().any(|addr| {
-                        if let Some(ip) = addr.ip() {
-                            new_ips.contains(&ip)
-                        } else {
-                            false
-                        }
+                        if let Some(ip) = addr.ip() { new_ips.contains(&ip) } else { false }
                     }) && match target.ssh_port() {
                         Some(port) => {
                             if let Some(new) = new_port {
@@ -970,11 +969,7 @@ impl TargetCollection {
             ControlFlow::Continue(())
         });
 
-        if found_multiple {
-            Err(())
-        } else {
-            Ok(selected)
-        }
+        if found_multiple { Err(()) } else { Ok(selected) }
     }
 
     // Filters through targets, returning info for matching targets. Targets must be previously
@@ -1078,11 +1073,7 @@ impl TargetCollection {
     pub fn find_overnet_id(&self, overnet_id: u64) -> Option<Rc<Target>> {
         let targets = self.targets.borrow();
         let mut with_id_iter = targets.iter().filter_map(|(_, t)| {
-            if t.is_enabled() && t.overnet_node_id() == Some(overnet_id) {
-                Some(t)
-            } else {
-                None
-            }
+            if t.is_enabled() && t.overnet_node_id() == Some(overnet_id) { Some(t) } else { None }
         });
         if let Some(id) = with_id_iter.next() {
             if let Some(_) = with_id_iter.next() {
@@ -1675,7 +1666,10 @@ mod tests {
                 // Flushes the NewTarget event here. Should panic if the target is found.
                 match target_wait_fut.poll(cx) {
                     Poll::Ready(target) => {
-                        panic!("Found named target when no nodename was included. This should not happen: {:?}", target);
+                        panic!(
+                            "Found named target when no nodename was included. This should not happen: {:?}",
+                            target
+                        );
                     }
                     Poll::Pending => {
                         // Once the event has been flushed, inserting a new target will queue up
@@ -2115,11 +2109,7 @@ mod tests {
         collection.merge_insert(new_target);
 
         let id = target.host_pipe.borrow().as_ref().and_then(|x| {
-            if let target::RemoteOvernetIdState::Ready(y) = x.remote_overnet_id {
-                y
-            } else {
-                None
-            }
+            if let target::RemoteOvernetIdState::Ready(y) = x.remote_overnet_id { y } else { None }
         });
 
         assert_ne!(Some(42), id);
@@ -2160,11 +2150,7 @@ mod tests {
         collection.merge_insert(new_target);
 
         let id = target.host_pipe.borrow().as_ref().and_then(|x| {
-            if let target::RemoteOvernetIdState::Ready(y) = x.remote_overnet_id {
-                y
-            } else {
-                None
-            }
+            if let target::RemoteOvernetIdState::Ready(y) = x.remote_overnet_id { y } else { None }
         });
 
         assert_eq!(Some(42), id);

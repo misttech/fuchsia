@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::common::crypto::unlock_device;
-use crate::common::{is_locked, MISSING_CREDENTIALS};
+use crate::common::{MISSING_CREDENTIALS, is_locked};
 use crate::file_resolver::FileResolver;
 use crate::util;
 use crate::util::Event;

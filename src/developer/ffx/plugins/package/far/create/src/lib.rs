@@ -5,7 +5,7 @@
 use anyhow::Context;
 use ffx_package_far_create_args::CreateCommand;
 use ffx_writer::{SimpleWriter, ToolIO as _};
-use fho::{bug, user_error, FfxMain, FfxTool, Result};
+use fho::{FfxMain, FfxTool, Result, bug, user_error};
 use fuchsia_archive as far;
 use std::collections::BTreeMap;
 use std::fs::File;

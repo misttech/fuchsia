@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Result};
-use ffx_config::logging::LogDirHandling;
 use ffx_config::EnvironmentContext;
+use ffx_config::logging::LogDirHandling;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};

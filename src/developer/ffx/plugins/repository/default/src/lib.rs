@@ -4,7 +4,7 @@
 
 use ffx_repository_default_args::{RepositoryDefaultCommand, SubCommand};
 use ffx_writer::{SimpleWriter, ToolIO};
-use fho::{bug, FfxMain, FfxTool, Result};
+use fho::{FfxMain, FfxTool, Result, bug};
 
 pub(crate) const CONFIG_KEY_DEFAULT: &str = "repository.default";
 

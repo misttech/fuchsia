@@ -5,7 +5,7 @@
 use crate::bucket::Bucket;
 use crate::plugin_output::ProcessesMemoryUsage;
 use crate::write_human_readable_output::filter_and_order_vmo_groups_names_for_printing;
-use crate::{digest, ProfileMemoryOutput};
+use crate::{ProfileMemoryOutput, digest};
 use anyhow::Result;
 use digest::processed;
 use errors::ffx_bail;
@@ -112,8 +112,8 @@ pub fn write_csv_output<'a, W: Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::processed::{Kernel, RetainedMemory};
     use crate::ProfileMemoryOutput::{CompleteDigest, ProcessDigest};
+    use crate::processed::{Kernel, RetainedMemory};
     use std::collections::{HashMap, HashSet};
 
     fn process_digest_for_test() -> crate::ProfileMemoryOutput {

@@ -50,7 +50,7 @@ fn str_to_device_state(src: &str) -> Result<fidl_fuchsia_settings::DeviceState, 
                         "disabled" | "d" => ToggleStateFlags::DISABLED,
                         "error" | "e" => ToggleStateFlags::ERROR,
                         flag => {
-                            return Err(format!("Unrecognized ToggleStateFlags value {:?}", flag))
+                            return Err(format!("Unrecognized ToggleStateFlags value {:?}", flag));
                         }
                     } | acc)
                 })

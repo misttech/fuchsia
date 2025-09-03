@@ -14,8 +14,8 @@
 //! running tasks for either joining them or drop them.
 
 use fuchsia_async::Task;
-use futures::future::ready;
 use futures::FutureExt;
+use futures::future::ready;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::future::Future;

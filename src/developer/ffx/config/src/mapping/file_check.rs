@@ -21,7 +21,7 @@ pub(crate) fn file_check(value: Value) -> Option<Value> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use anyhow::{bail, Result};
+    use anyhow::{Result, bail};
     use serde_json::json;
     use tempfile::NamedTempFile;
 

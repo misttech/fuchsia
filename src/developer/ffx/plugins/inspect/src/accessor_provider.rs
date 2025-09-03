@@ -9,7 +9,7 @@ use fidl_fuchsia_diagnostics::{Format, Selector, SelectorArgument, StreamParamet
 use fidl_fuchsia_diagnostics_host::{ArchiveAccessorMarker, ArchiveAccessorProxy};
 use fidl_fuchsia_sys2 as fsys2;
 use futures::AsyncReadExt;
-use iquery::commands::{connect_accessor, get_accessor_selectors, DiagnosticsProvider};
+use iquery::commands::{DiagnosticsProvider, connect_accessor, get_accessor_selectors};
 use iquery::types::Error;
 use moniker::Moniker;
 use serde::Deserialize;

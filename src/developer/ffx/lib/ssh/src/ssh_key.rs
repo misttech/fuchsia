@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use base64::display::Base64Display;
-use base64::prelude::{Engine as _, BASE64_STANDARD};
+use base64::prelude::{BASE64_STANDARD, Engine as _};
 use ffx_config::api::ConfigError;
-use ffx_config::{query, ConfigQuery, EnvironmentContext};
+use ffx_config::{ConfigQuery, EnvironmentContext, query};
 use ring::rand::{self, SystemRandom};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde::Serialize;
@@ -324,7 +324,9 @@ impl SshKeyFiles {
                 Err(e) => {
                     // If there was an error, print it, delete the keys,
                     // and recreate.
-                    log::error!("Error repairing SSH keys {e:?}. Please check configuration and/or delete existing key files and retry.");
+                    log::error!(
+                        "Error repairing SSH keys {e:?}. Please check configuration and/or delete existing key files and retry."
+                    );
 
                     return Err(e);
                 }
@@ -351,8 +353,13 @@ impl SshKeyFiles {
             })?;
             let mode = meta.permissions().mode();
             if mode != 0o100600 {
-                return Err(SshKeyError { kind: SshKeyErrorKind::BadFilePermission,
-                    message:format!("Private key {} has the wrong file permissions. SSH requires 0o600, found {mode:#o}",self.private_key.display())});
+                return Err(SshKeyError {
+                    kind: SshKeyErrorKind::BadFilePermission,
+                    message: format!(
+                        "Private key {} has the wrong file permissions. SSH requires 0o600, found {mode:#o}",
+                        self.private_key.display()
+                    ),
+                });
             }
         }
         if !self.authorized_keys.exists() {
@@ -649,7 +656,7 @@ fn read_cstring(buf: &mut dyn Read) -> Result<Vec<u8>, std::io::Error> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ffx_config::{test_init, ConfigLevel};
+    use ffx_config::{ConfigLevel, test_init};
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -911,8 +918,13 @@ mod test {
             SshKeyFiles { authorized_keys: auth_key_path, private_key: other_private_path.clone() };
 
         match mismatched.check_keys(true) {
-            Ok(message) => assert_eq!(message,
-                format!("Keys repaired: KeyMismatch:Could not find matching public key for the private key {}.",other_private_path.to_string_lossy() )),
+            Ok(message) => assert_eq!(
+                message,
+                format!(
+                    "Keys repaired: KeyMismatch:Could not find matching public key for the private key {}.",
+                    other_private_path.to_string_lossy()
+                )
+            ),
             Err(e) => assert_eq!(e.kind, SshKeyErrorKind::KeyMismatch, "{e:?}"),
         };
 

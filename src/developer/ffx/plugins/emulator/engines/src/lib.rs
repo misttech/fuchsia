@@ -12,13 +12,13 @@ mod show_output;
 
 pub use arg_templates::process_flag_template;
 use emulator_instance::{
-    read_from_disk, DeviceConfig, EmulatorConfiguration, EmulatorInstanceData,
-    EmulatorInstanceInfo, EmulatorInstances, EngineOption, EngineState, EngineType, FlagData,
-    GuestConfig, HostConfig, RuntimeConfig,
+    DeviceConfig, EmulatorConfiguration, EmulatorInstanceData, EmulatorInstanceInfo,
+    EmulatorInstances, EngineOption, EngineState, EngineType, FlagData, GuestConfig, HostConfig,
+    RuntimeConfig, read_from_disk,
 };
 use errors::ffx_bail;
 use ffx_emulator_config::EmulatorEngine;
-use fho::{bug, return_bug, return_user_error, Result};
+use fho::{Result, bug, return_bug, return_user_error};
 use port_picker::{is_free_tcp_port, pick_unused_port};
 use qemu_based::crosvm::CrosvmEngine;
 use qemu_based::femu::FemuEngine;

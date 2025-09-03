@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use crate::file_resolver::FileResolver;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
 use flate2::read::GzDecoder;
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::io::copy;
 use std::path::{Path, PathBuf};
 use tar::Archive;
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 use zip::read::ZipArchive;
 
 pub struct EmptyResolver {
@@ -179,8 +179,8 @@ mod test {
     use super::*;
     use std::io::{Read, Write};
     use std::str::FromStr;
-    use zip::write::{FileOptions, ZipWriter};
     use zip::CompressionMethod;
+    use zip::write::{FileOptions, ZipWriter};
 
     ////////////////////////////////////////////////////////////////////////////////
     // ZipArchiveResolver

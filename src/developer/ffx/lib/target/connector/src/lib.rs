@@ -4,16 +4,16 @@
 
 use async_trait::async_trait;
 use errors::FfxError;
-use ffx_command_error::{return_bug, Error, Result};
+use ffx_command_error::{Error, Result, return_bug};
 use ffx_target::fho::{
-    target_interface, DirectConnector, FhoConnectionBehavior, FhoTargetEnvironment,
+    DirectConnector, FhoConnectionBehavior, FhoTargetEnvironment, target_interface,
 };
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx_fidl;
 use std::sync::Arc;
 use std::time::Duration;
-use target_holders::{init_connection_behavior, DaemonProxyHolder};
+use target_holders::{DaemonProxyHolder, init_connection_behavior};
 
 /// A connector lets a tool make multiple attempts to connect to an object. It
 /// retains the environment in the tool body to allow this.
@@ -188,7 +188,7 @@ mod tests {
     use std::marker::PhantomData;
 
     use super::*;
-    use ffx_command_error::{bug, NonFatalError};
+    use ffx_command_error::{NonFatalError, bug};
     use ffx_config::{EnvironmentContext, TryFromEnvContext};
     use ffx_target::connection::testing::FakeOvernet;
     use ffx_target::fho::connector::MockDirectConnector;

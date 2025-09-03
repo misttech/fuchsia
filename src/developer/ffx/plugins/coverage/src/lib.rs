@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use ffx_coverage_args::CoverageCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
@@ -10,7 +10,7 @@ use glob::glob;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use symbol_index::{global_symbol_index_path, SymbolIndex};
+use symbol_index::{SymbolIndex, global_symbol_index_path};
 
 // The line found right above build ID in `llvm-profdata show --binary-ids` output.
 const BINARY_ID_LINE: &str = "Binary IDs:";
@@ -288,7 +288,7 @@ fn glob_profraws(test_out_dir: &Path) -> Result<Vec<PathBuf>> {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use std::fs::{create_dir, set_permissions, Permissions};
+    use std::fs::{Permissions, create_dir, set_permissions};
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     use symbol_index::BuildIdDir;
@@ -327,36 +327,40 @@ mod tests {
         File::create(&test_symbol_index_json).unwrap().write_all(b"{}").unwrap();
 
         // Missing both llvm-profdata and llvm-cov.
-        assert!(coverage(CoverageCommand {
-            test_output_dir: PathBuf::from(&test_dir_path),
-            clang_dir: PathBuf::from(&test_dir_path),
-            symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
-            export_html: None,
-            export_lcov: None,
-            path_remappings: Vec::new(),
-            compilation_dir: None,
-            src_files: Vec::new(),
-        })
-        .await
-        .is_err());
+        assert!(
+            coverage(CoverageCommand {
+                test_output_dir: PathBuf::from(&test_dir_path),
+                clang_dir: PathBuf::from(&test_dir_path),
+                symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
+                export_html: None,
+                export_lcov: None,
+                path_remappings: Vec::new(),
+                compilation_dir: None,
+                src_files: Vec::new(),
+            })
+            .await
+            .is_err()
+        );
 
         // Create empty test binaries for the coverage function to call.
         File::create(test_bin_dir.join("llvm-profdata")).unwrap().write_all(b"#!/bin/sh").unwrap();
         set_permissions(test_bin_dir.join("llvm-profdata"), Permissions::from_mode(0o770)).unwrap();
 
         // Still missing llvm-cov.
-        assert!(coverage(CoverageCommand {
-            test_output_dir: PathBuf::from(&test_dir_path),
-            clang_dir: PathBuf::from(&test_dir_path),
-            symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
-            export_html: None,
-            export_lcov: None,
-            path_remappings: Vec::new(),
-            compilation_dir: None,
-            src_files: Vec::new(),
-        })
-        .await
-        .is_err());
+        assert!(
+            coverage(CoverageCommand {
+                test_output_dir: PathBuf::from(&test_dir_path),
+                clang_dir: PathBuf::from(&test_dir_path),
+                symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
+                export_html: None,
+                export_lcov: None,
+                path_remappings: Vec::new(),
+                compilation_dir: None,
+                src_files: Vec::new(),
+            })
+            .await
+            .is_err()
+        );
 
         File::create(test_bin_dir.join("llvm-cov")).unwrap().write_all(b"#!/bin/sh").unwrap();
         set_permissions(test_bin_dir.join("llvm-cov"), Permissions::from_mode(0o770)).unwrap();
@@ -500,56 +504,62 @@ mod tests {
     #[test]
     fn test_find_binaries_no_matches() {
         let test_dir = TempDir::new().unwrap();
-        assert!(find_binaries(
-            &SymbolIndex {
-                build_id_dirs: vec![BuildIdDir {
-                    path: test_dir.path().to_str().unwrap().to_string(),
-                    build_dir: None,
-                }],
-                includes: Vec::new(),
-                ids_txts: Vec::new(),
-                gcs_flat: Vec::new(),
-                debuginfod: Vec::new(),
-            },
-            &PathBuf::new(),   // llvm_profdata_bin, unused in test
-            &[PathBuf::new()], // profraws, actual values don't matter
-            |_: &Path, _: &Path| Ok("foobar".to_string()),
+        assert!(
+            find_binaries(
+                &SymbolIndex {
+                    build_id_dirs: vec![BuildIdDir {
+                        path: test_dir.path().to_str().unwrap().to_string(),
+                        build_dir: None,
+                    }],
+                    includes: Vec::new(),
+                    ids_txts: Vec::new(),
+                    gcs_flat: Vec::new(),
+                    debuginfod: Vec::new(),
+                },
+                &PathBuf::new(),   // llvm_profdata_bin, unused in test
+                &[PathBuf::new()], // profraws, actual values don't matter
+                |_: &Path, _: &Path| Ok("foobar".to_string()),
+            )
+            .is_err()
         )
-        .is_err())
     }
 
     #[test]
     fn test_find_binaries_show_id_err() {
-        assert!(find_binaries(
-            &SymbolIndex {
-                build_id_dirs: Vec::new(),
-                includes: Vec::new(),
-                ids_txts: Vec::new(),
-                gcs_flat: Vec::new(),
-                debuginfod: Vec::new(),
-            },
-            &PathBuf::new(),   // llvm_profdata_bin, unused in test
-            &[PathBuf::new()], // profraws, actual values don't matter
-            |_: &Path, _: &Path| Err(anyhow!("test err")),
+        assert!(
+            find_binaries(
+                &SymbolIndex {
+                    build_id_dirs: Vec::new(),
+                    includes: Vec::new(),
+                    ids_txts: Vec::new(),
+                    gcs_flat: Vec::new(),
+                    debuginfod: Vec::new(),
+                },
+                &PathBuf::new(),   // llvm_profdata_bin, unused in test
+                &[PathBuf::new()], // profraws, actual values don't matter
+                |_: &Path, _: &Path| Err(anyhow!("test err")),
+            )
+            .is_err()
         )
-        .is_err())
     }
 
     #[test]
     fn test_find_binaries_id_too_short() {
-        assert!(find_binaries(
-            &SymbolIndex {
-                build_id_dirs: Vec::new(),
-                includes: Vec::new(),
-                ids_txts: Vec::new(),
-                gcs_flat: Vec::new(),
-                debuginfod: Vec::new(),
-            },
-            &PathBuf::new(),   // llvm_profdata_bin, unused in test
-            &[PathBuf::new()], // profraws, actual values don't matter
-            |_: &Path, _: &Path| Ok("a".to_string()),
+        assert!(
+            find_binaries(
+                &SymbolIndex {
+                    build_id_dirs: Vec::new(),
+                    includes: Vec::new(),
+                    ids_txts: Vec::new(),
+                    gcs_flat: Vec::new(),
+                    debuginfod: Vec::new(),
+                },
+                &PathBuf::new(),   // llvm_profdata_bin, unused in test
+                &[PathBuf::new()], // profraws, actual values don't matter
+                |_: &Path, _: &Path| Ok("a".to_string()),
+            )
+            .is_err()
         )
-        .is_err())
     }
 
     #[test]

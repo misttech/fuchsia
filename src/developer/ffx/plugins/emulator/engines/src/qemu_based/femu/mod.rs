@@ -15,7 +15,7 @@ use emulator_instance::{
 use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config;
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
-use fho::{bug, return_bug, Result};
+use fho::{Result, bug, return_bug};
 use std::env;
 use std::process::Command;
 
@@ -220,8 +220,8 @@ impl QemuBasedEngine for FemuEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::qemu_based::tests::make_fake_sdk;
     use crate::EngineBuilder;
+    use crate::qemu_based::tests::make_fake_sdk;
     use emulator_instance::NetworkingMode;
     use std::ffi::OsStr;
     use std::fs;

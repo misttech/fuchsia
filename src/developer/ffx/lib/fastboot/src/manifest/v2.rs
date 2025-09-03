@@ -4,8 +4,8 @@
 
 use crate::common::crypto::unlock_device;
 use crate::common::{
-    finish, flash_bootloader, flash_product, is_locked, lock_device, verify_hardware, Boot, Flash,
-    Unlock, MISSING_CREDENTIALS, MISSING_PRODUCT,
+    Boot, Flash, MISSING_CREDENTIALS, MISSING_PRODUCT, Unlock, finish, flash_bootloader,
+    flash_product, is_locked, lock_device, verify_hardware,
 };
 use crate::file_resolver::FileResolver;
 use crate::unlock::unlock;
@@ -14,8 +14,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use errors::ffx_bail;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
-use ffx_flash_manifest::v2::FlashManifest;
 use ffx_flash_manifest::ManifestParams;
+use ffx_flash_manifest::v2::FlashManifest;
 use tokio::sync::mpsc::Sender;
 
 #[async_trait(?Send)]
@@ -211,8 +211,8 @@ mod test {
             state.set_var(REVISION_VAR.to_string(), "test".to_string());
         }
         let (client, _server) = mpsc::channel(100);
-        assert!(v
-            .flash(
+        assert!(
+            v.flash(
                 &client,
                 &mut TestResolver::new(),
                 &mut proxy,
@@ -223,7 +223,8 @@ mod test {
                 }
             )
             .await
-            .is_err());
+            .is_err()
+        );
         Ok(())
     }
 
@@ -240,8 +241,8 @@ mod test {
             state.set_var(LOCKED_VAR.to_string(), "yes".to_string());
         }
         let (client, _server) = mpsc::channel(100);
-        assert!(v
-            .flash(
+        assert!(
+            v.flash(
                 &client,
                 &mut TestResolver::new(),
                 &mut proxy,
@@ -252,7 +253,8 @@ mod test {
                 }
             )
             .await
-            .is_err());
+            .is_err()
+        );
         Ok(())
     }
 

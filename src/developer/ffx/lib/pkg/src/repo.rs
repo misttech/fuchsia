@@ -11,7 +11,7 @@ use fidl_fuchsia_pkg_ext::{
     RepositoryRegistrationAliasConflictMode, RepositoryTarget,
 };
 use fidl_fuchsia_pkg_rewrite::EngineProxy;
-use fidl_fuchsia_pkg_rewrite_ext::{do_transaction, Rule};
+use fidl_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
 use fuchsia_hyper::HttpsClient;
 use fuchsia_repo::repo_client::RepoClient;
 use fuchsia_repo::repository::{

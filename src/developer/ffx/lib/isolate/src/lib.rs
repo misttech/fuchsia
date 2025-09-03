@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _, Result};
-use ffx_config::{global_env_context, EnvironmentContext, SdkRoot};
+use anyhow::{Context as _, Result, anyhow};
+use ffx_config::{EnvironmentContext, SdkRoot, global_env_context};
 use ffx_executor::{CommandOutput, FfxExecutor};
 use sdk::FfxSdkConfig;
 use serde::Serialize;

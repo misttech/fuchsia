@@ -4,7 +4,7 @@
 use argh::{ArgsInfo, FromArgs};
 use async_trait::async_trait;
 use ffx_writer::SimpleWriter;
-use fho::{deferred, FfxMain, FfxTool, Result};
+use fho::{FfxMain, FfxTool, Result, deferred};
 use target_holders::moniker;
 
 mod fxfs;

@@ -5,26 +5,26 @@
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use camino::Utf8Path;
-use chrono::offset::Utc;
 use chrono::DateTime;
+use chrono::offset::Utc;
 use errors::ffx_bail;
-use ffx_config::environment::EnvironmentKind;
 use ffx_config::EnvironmentContext;
+use ffx_config::environment::EnvironmentKind;
 use ffx_repository_packages_args::{
     ExtractArchiveSubCommand, ListSubCommand, PackagesCommand, PackagesSubCommand, ShowSubCommand,
 };
 use ffx_writer::{MachineWriter, ToolIO as _};
-use fho::{bug, FfxMain, FfxTool};
+use fho::{FfxMain, FfxTool, bug};
 use fuchsia_hash::Hash;
 use fuchsia_hyper::new_https_client;
 use fuchsia_pkg::PackageArchiveBuilder;
 use fuchsia_repo::repo_client::{PackageEntry, RepoClient};
 use fuchsia_repo::repository::{PmRepository, RepoProvider, RepositorySpec};
-use humansize::{file_size_opts, FileSize};
+use humansize::{FileSize, file_size_opts};
 use pkg::repo::repo_spec_to_backend;
 use pkg::{PkgServerInstanceInfo as _, PkgServerInstances};
 use prettytable::format::{FormatBuilder, TableFormat};
-use prettytable::{cell, row, Row, Table};
+use prettytable::{Row, Table, cell, row};
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::io::{BufWriter, Cursor, Read};
@@ -268,20 +268,19 @@ fn print_package_table(
                 .unwrap_or_else(String::new)
         );
         if cmd.include_size {
-            row.add_cell(cell!(pkg
-                .size
-                .map(|s| s
-                    .file_size(file_size_opts::CONVENTIONAL)
-                    .unwrap_or_else(|_| format!("{}b", s)))
-                .unwrap_or_else(|| "<unknown>".to_string())));
+            row.add_cell(cell!(
+                pkg.size
+                    .map(|s| s
+                        .file_size(file_size_opts::CONVENTIONAL)
+                        .unwrap_or_else(|_| format!("{}b", s)))
+                    .unwrap_or_else(|| "<unknown>".to_string())
+            ));
         }
         if cmd.include_components {
             if let Some(entries) = pkg.entries {
-                row.add_cell(cell!(entries
-                    .into_iter()
-                    .map(|entry| entry.path)
-                    .collect::<Vec<_>>()
-                    .join("\n")));
+                row.add_cell(cell!(
+                    entries.into_iter().map(|entry| entry.path).collect::<Vec<_>>().join("\n")
+                ));
             }
         }
         rows.push(row);
@@ -298,11 +297,7 @@ fn print_package_table(
 
 fn format_hash(hash_value: &Option<String>, full: bool) -> String {
     if let Some(value) = hash_value {
-        if full {
-            value.to_string()
-        } else {
-            value[..MAX_HASH].to_string()
-        }
+        if full { value.to_string() } else { value[..MAX_HASH].to_string() }
     } else {
         "<unknown>".to_string()
     }
@@ -481,7 +476,7 @@ mod test {
     use super::*;
     use camino::Utf8PathBuf;
     use ffx_config::ConfigLevel;
-    use ffx_package_archive_utils::{read_file_entries, ArchiveEntry, FarArchiveReader};
+    use ffx_package_archive_utils::{ArchiveEntry, FarArchiveReader, read_file_entries};
     use ffx_writer::TestBuffers;
     use fidl_fuchsia_pkg_ext::{
         RepositoryConfigBuilder, RepositoryRegistrationAliasConflictMode, RepositoryStorageType,

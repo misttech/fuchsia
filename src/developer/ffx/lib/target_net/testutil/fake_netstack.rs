@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::collections::{hash_map, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque, hash_map};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::num::NonZeroU16;
 use std::ops::RangeInclusive;

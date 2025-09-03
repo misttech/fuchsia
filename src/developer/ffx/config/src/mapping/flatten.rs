@@ -6,11 +6,7 @@ use serde_json::Value;
 
 /// Pick the first element of Value if it's an array.
 pub(crate) fn flatten(value: Value) -> Option<Value> {
-    if let Value::Array(values) = value {
-        values.into_iter().next()
-    } else {
-        Some(value)
-    }
+    if let Value::Array(values) = value { values.into_iter().next() } else { Some(value) }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

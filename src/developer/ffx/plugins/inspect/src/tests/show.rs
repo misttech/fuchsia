@@ -52,16 +52,18 @@ async fn test_show_unknown_component_search() {
     let inspects = make_inspects();
     let inspect_data =
         inspect_accessor_data(ClientSelectorConfiguration::SelectAll(true), inspects.clone());
-    assert!(run_command(
-        setup_fake_rcs(vec![]),
-        setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-        ShowCommand::from(cmd),
-        &mut writer
-    )
-    .await
-    .unwrap_err()
-    .ffx_error()
-    .is_some());
+    assert!(
+        run_command(
+            setup_fake_rcs(vec![]),
+            setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
+            ShowCommand::from(cmd),
+            &mut writer
+        )
+        .await
+        .unwrap_err()
+        .ffx_error()
+        .is_some()
+    );
 }
 
 #[fuchsia::test]
@@ -81,16 +83,18 @@ async fn test_show_unknown_manifest() {
     let inspects = make_inspects();
     let inspect_data =
         inspect_accessor_data(ClientSelectorConfiguration::SelectAll(true), inspects.clone());
-    assert!(run_command(
-        setup_fake_rcs(vec![]),
-        setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
-        ShowCommand::from(cmd),
-        &mut writer
-    )
-    .await
-    .unwrap_err()
-    .ffx_error()
-    .is_some());
+    assert!(
+        run_command(
+            setup_fake_rcs(vec![]),
+            setup_fake_archive_accessor(vec![lifecycle_data, inspect_data]),
+            ShowCommand::from(cmd),
+            &mut writer
+        )
+        .await
+        .unwrap_err()
+        .ffx_error()
+        .is_some()
+    );
 }
 
 #[fuchsia::test]

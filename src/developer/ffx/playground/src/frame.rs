@@ -160,13 +160,7 @@ impl GlobalVariables {
         let fut =
             self.entries.get(name).map(|slot| FrameValue::get(Arc::clone(&slot.0.lock().unwrap())));
 
-        async move {
-            if let Some(fut) = fut {
-                Some(fut.await)
-            } else {
-                None
-            }
-        }
+        async move { if let Some(fut) = fut { Some(fut.await) } else { None } }
     }
 
     /// Convert this set of global variables to a `Value::Object` where the keys

@@ -8,9 +8,9 @@ use crate::util::Event;
 use anyhow::Result;
 use async_trait::async_trait;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
+use ffx_flash_manifest::ManifestParams;
 use ffx_flash_manifest::v2::FlashManifest as FlashManifestV2;
 use ffx_flash_manifest::v3::FlashManifest;
-use ffx_flash_manifest::ManifestParams;
 use tokio::sync::mpsc::Sender;
 
 #[async_trait(?Send)]

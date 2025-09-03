@@ -4,12 +4,12 @@
 
 use std::ops::Deref;
 
-use crate::{init_connection_behavior, TargetProxyHolder};
+use crate::{TargetProxyHolder, init_connection_behavior};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use ffx_command_error::Result;
 use ffx_ssh::parse::HostAddr;
-use ffx_target::fho::{target_interface, FhoConnectionBehavior};
+use ffx_target::fho::{FhoConnectionBehavior, target_interface};
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
 

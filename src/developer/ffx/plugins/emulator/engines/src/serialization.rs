@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::EngineBuilder;
-use emulator_instance::{read_from_disk, EmulatorInstances, EngineOption};
+use emulator_instance::{EmulatorInstances, EngineOption, read_from_disk};
 use ffx_emulator_config::EmulatorEngine;
-use fho::{return_bug, return_user_error, Result};
+use fho::{Result, return_bug, return_user_error};
 
 pub async fn read_engine_from_disk(
     emu_instances: &EmulatorInstances,
@@ -23,8 +23,8 @@ pub async fn read_engine_from_disk(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::qemu_based::qemu::QemuEngine;
     use crate::FemuEngine;
+    use crate::qemu_based::qemu::QemuEngine;
     use emulator_instance::{EmulatorInstanceData, EngineState, EngineType};
     use std::fs::File;
     use std::io::Write;

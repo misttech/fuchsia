@@ -5,14 +5,14 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use component_debug::query::get_single_instance_from_query;
-use component_debug::realm::{get_runtime, Runtime};
+use component_debug::realm::{Runtime, get_runtime};
 use errors::ffx_error;
 use ffx_component::rcs::connect_to_realm_query;
 use ffx_component_debug_args::ComponentDebugCommand;
 use ffx_writer::SimpleWriter;
 use ffx_zxdb::Debugger;
 use fho::{FfxMain, FfxTool};
-use target_holders::{moniker, RemoteControlProxyHolder};
+use target_holders::{RemoteControlProxyHolder, moniker};
 use zx_types::zx_koid_t;
 
 #[derive(FfxTool)]

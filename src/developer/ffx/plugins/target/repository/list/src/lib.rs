@@ -5,14 +5,14 @@
 use async_trait::async_trait;
 use ffx_target_repository_list_args::ListCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{bug, Error, FfxMain, FfxTool, Result};
+use fho::{Error, FfxMain, FfxTool, Result, bug};
 use fidl_fuchsia_pkg::RepositoryKeyConfig::Ed25519Key;
 use fidl_fuchsia_pkg::{RepositoryConfig, RepositoryManagerProxy};
 use fidl_fuchsia_pkg_ext::RepositoryStorageType;
 use fidl_fuchsia_pkg_rewrite::EngineProxy;
 use fidl_fuchsia_pkg_rewrite_ext::Rule;
 use prettytable::format::FormatBuilder;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use target_holders::moniker;

@@ -8,9 +8,9 @@ use ffx_package_far_list_args::ListCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
 use fuchsia_archive as far;
-use humansize::{file_size_opts, FileSize};
+use humansize::{FileSize, file_size_opts};
 use prettytable::format::FormatBuilder;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
@@ -180,7 +180,10 @@ foo
         let writer = <FarListTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
         cmd_list(cmd, writer).await?;
         let (stdout, stderr) = buffers.into_strings();
-        assert_eq!(stdout, "[{\"path\":\"one\",\"offset\":4096,\"length\":3},{\"path\":\"three\",\"offset\":8192,\"length\":5},{\"path\":\"two\",\"offset\":12288,\"length\":3}]\n");
+        assert_eq!(
+            stdout,
+            "[{\"path\":\"one\",\"offset\":4096,\"length\":3},{\"path\":\"three\",\"offset\":8192,\"length\":5},{\"path\":\"two\",\"offset\":12288,\"length\":3}]\n"
+        );
         assert_eq!(stderr, "");
         Ok(())
     }

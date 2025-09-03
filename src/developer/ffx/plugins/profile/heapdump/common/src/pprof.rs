@@ -6,8 +6,8 @@ use anyhow::{Context, Result};
 use heapdump_snapshot::{ExecutableRegion, Snapshot};
 use itertools::Itertools;
 use prost::Message;
-use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
+use std::collections::hash_map::{Entry, HashMap};
 use std::io::Write;
 
 // Tries to instantiate a symbolizer instance to resolve addresses in the given address space.

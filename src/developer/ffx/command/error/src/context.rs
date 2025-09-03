@@ -158,7 +158,11 @@ mod tests {
             Err(Error::Unexpected(_)),
             "anyhow.bug_context() should be a bugcheck error"
         );
-        assert_matches!(anyhow::Result::<()>::Err(anyhow!(ERR_STR)).bug_context(FfxError::TestingError), Err(Error::Unexpected(_)), "anyhow.bug_context() should create a bugcheck error even if given an ffx error (magic reduction)");
+        assert_matches!(
+            anyhow::Result::<()>::Err(anyhow!(ERR_STR)).bug_context(FfxError::TestingError),
+            Err(Error::Unexpected(_)),
+            "anyhow.bug_context() should create a bugcheck error even if given an ffx error (magic reduction)"
+        );
         assert_matches!(
             anyhow::Result::<()>::Err(anyhow!(ERR_STR)).user_message("boom"),
             Err(Error::User(_)),
@@ -169,7 +173,13 @@ mod tests {
             Err(Error::User(_)),
             "anyhow.with_user_message() should be a user error"
         );
-        assert_matches!(anyhow::Result::<()>::Err(anyhow!(ERR_STR)).with_user_message(|| FfxError::TestingError).ffx_error(), Some(FfxError::TestingError), "anyhow.with_user_message should be a user error that properly extracts to the ffx error.");
+        assert_matches!(
+            anyhow::Result::<()>::Err(anyhow!(ERR_STR))
+                .with_user_message(|| FfxError::TestingError)
+                .ffx_error(),
+            Some(FfxError::TestingError),
+            "anyhow.with_user_message should be a user error that properly extracts to the ffx error."
+        );
     }
 
     #[test]

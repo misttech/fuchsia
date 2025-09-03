@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_tracing::SymbolizationMap;
@@ -160,11 +160,7 @@ pub fn process_trace_file(
         // We can ignore any flows that have steps because the kernel's already taken care of it.
         let mut flow_state: BTreeMap<u64, Option<CallState>> = BTreeMap::from_iter(
             symbolizer.flow_has_steps.iter().filter_map(|(flow_id, has_steps)| {
-                if *has_steps {
-                    None
-                } else {
-                    Some((*flow_id, None))
-                }
+                if *has_steps { None } else { Some((*flow_id, None)) }
             }),
         );
 

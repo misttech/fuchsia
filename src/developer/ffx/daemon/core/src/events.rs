@@ -1,7 +1,7 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use async_lock::Mutex;
 use async_trait::async_trait;
 use ffx_stream_util::TryStreamUtilExt;
@@ -17,7 +17,7 @@ use std::result;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use timeout::timeout;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 pub trait EventTrait: Debug + Sized + Hash + Clone + Eq {}
@@ -94,11 +94,7 @@ impl<T: EventTrait + 'static> Dispatcher<T> {
                 // This is just a complicated way to remap Result<Status> to
                 // Result<()> to preserve the original intended behavior.
                 if let Ok(r) = r {
-                    if r == Status::Done {
-                        Err(Ok(()))
-                    } else {
-                        Ok(())
-                    }
+                    if r == Status::Done { Err(Ok(())) } else { Ok(()) }
                 } else {
                     Err(Err(r.unwrap_err()))
                 }

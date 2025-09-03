@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context as _, Result};
-use ffx_config::logging::{target_levels_log, DisableableFilter, LOGGING_ID};
 use ffx_config::EnvironmentContext;
+use ffx_config::logging::{DisableableFilter, LOGGING_ID, target_levels_log};
 use logging::{FfxLog, FfxLogSink, FormatOpts, LogSinkTrait, TargetsFilter};
-use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex, Once, RwLock};
@@ -178,8 +178,8 @@ impl LogSinkTrait for MultiFileLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ffx_config::environment::ExecutableKind;
     use ffx_config::ConfigMap;
+    use ffx_config::environment::ExecutableKind;
     use tempfile;
 
     struct NothingLogger;

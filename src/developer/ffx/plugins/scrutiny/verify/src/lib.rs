@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use ffx_scrutiny_verify_args::{Command, SubCommand};
 use ffx_writer::SimpleWriter;
-use fho::{bug, return_user_error, FfxMain, FfxTool, Result};
+use fho::{FfxMain, FfxTool, Result, bug, return_user_error};
 use scrutiny_utils::path::relativize_path;
 use std::fs;
 use std::io::Write;

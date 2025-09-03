@@ -6,9 +6,9 @@ use include_str_from_working_dir::include_str_from_working_dir_env;
 use proc_macro::TokenStream;
 use quote::quote;
 use serde_json::Value;
+use syn::Result;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::Result;
 
 const FFX_CONFIG_DEFAULT: &'static str = "ffx_config_default";
 

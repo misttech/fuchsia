@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use emulator_instance::EmulatorConfiguration;
 use ffx_emulator_engines::process_flags_from_str;
 use std::env::{temp_dir, var};

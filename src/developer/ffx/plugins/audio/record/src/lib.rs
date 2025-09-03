@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use blocking::Unblock;
 use ffx_audio_record_args::{AudioCaptureUsageExtended, RecordCommand};
@@ -154,8 +154,9 @@ mod tests {
         )
         .await?;
 
-        let expected_result_output =
-            format!("Successfully recorded 123 bytes of audio. \nPackets processed: 123 \nLate wakeups: Unavailable\n");
+        let expected_result_output = format!(
+            "Successfully recorded 123 bytes of audio. \nPackets processed: 123 \nLate wakeups: Unavailable\n"
+        );
         let stderr = test_buffers.into_stderr_str();
         assert_eq!(stderr, expected_result_output);
 

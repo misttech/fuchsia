@@ -11,7 +11,7 @@ use thiserror::Error;
 use {fidl_fuchsia_developer_ffx_speedtest as fspeedtest, fuchsia_async as fasync};
 
 use crate::throughput::BytesFormatter;
-use crate::{socket, Throughput};
+use crate::{Throughput, socket};
 pub use socket::TransferParams;
 
 pub struct Client {

@@ -6,11 +6,11 @@ use crate::options;
 use anyhow::Result;
 use ffx_fuzz_args::*;
 use fuchsia_fuzzctl::get_fuzzer_urls;
+use rustyline::Helper;
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use rustyline::Helper;
 use std::borrow::Cow::{self, Borrowed};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -332,8 +332,8 @@ mod test_fixtures {
 
 #[cfg(test)]
 mod tests {
-    use super::test_fixtures::{set_state, verify_files, verify_pairs, Replacements};
     use super::FuzzHelper;
+    use super::test_fixtures::{Replacements, set_state, verify_files, verify_pairs};
     use anyhow::Result;
     use ffx_fuzz_args::FuzzerState;
     use fuchsia_fuzzctl_test::Test;

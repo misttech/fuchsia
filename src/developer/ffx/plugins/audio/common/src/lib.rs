@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use blocking::Unblock;
-use fidl::endpoints::Proxy;
 use fidl::Socket;
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_audio_controller as fac;
 use futures::future::Either;
 use futures::{AsyncReadExt, AsyncWrite, FutureExt, TryFutureExt};
@@ -116,7 +116,7 @@ pub fn format_record_result(result: Result<RecordResult, Error>) -> String {
 pub async fn cancel_on_keypress(
     proxy: fac::RecordCancelerProxy,
     input_waiter: impl futures::Future<Output = Result<(), std::io::Error>>
-        + futures::future::FusedFuture,
+    + futures::future::FusedFuture,
 ) -> Result<(), std::io::Error> {
     let closed_fut = async {
         let _ = proxy.on_closed().await;

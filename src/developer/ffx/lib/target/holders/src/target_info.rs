@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use std::ops::Deref;
 
-use ffx_command_error::{user_error, Result};
-use fho::{return_user_error, FfxContext, FhoEnvironment, TryFromEnv};
+use ffx_command_error::{Result, user_error};
+use fho::{FfxContext, FhoEnvironment, TryFromEnv, return_user_error};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
 
 /// Holder struct for TargetInfo. This one is a little different since

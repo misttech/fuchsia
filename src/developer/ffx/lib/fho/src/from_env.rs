@@ -4,7 +4,7 @@
 
 use crate::FhoEnvironment;
 use async_trait::async_trait;
-use ffx_command_error::{return_user_error, Result};
+use ffx_command_error::{Result, return_user_error};
 
 #[async_trait(?Send)]
 pub trait CheckEnv {

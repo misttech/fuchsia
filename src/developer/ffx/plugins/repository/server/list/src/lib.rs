@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use ffx_config::api::ConfigError;
 use ffx_config::EnvironmentContext;
+use ffx_config::api::ConfigError;
 use ffx_repository_server_list_args::ListCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{bug, Error, FfxMain, FfxTool, Result};
+use fho::{Error, FfxMain, FfxTool, Result, bug};
 
 use fidl_fuchsia_pkg_ext::{RepositoryRegistrationAliasConflictMode, RepositoryStorageType};
 use fuchsia_repo::repository::RepositorySpec;

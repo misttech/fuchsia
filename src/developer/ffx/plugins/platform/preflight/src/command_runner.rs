@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::process::Command;
 
 pub static SYSTEM_COMMAND_RUNNER: CommandRunner = system_run_command;

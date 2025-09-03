@@ -4,8 +4,8 @@
 
 use crate::run_command;
 use crate::tests::utils::{
-    inspect_accessor_data, make_inspect_with_length, make_inspects_for_lifecycle,
-    setup_fake_archive_accessor, setup_fake_rcs, FakeAccessorData,
+    FakeAccessorData, inspect_accessor_data, make_inspect_with_length, make_inspects_for_lifecycle,
+    setup_fake_archive_accessor, setup_fake_rcs,
 };
 use errors::ResultExt as _;
 use ffx_writer::{Format, MachineWriter, TestBuffers};
@@ -27,19 +27,21 @@ async fn test_selectors_no_parameters() {
     let test_buffers = TestBuffers::default();
     let mut writer = MachineWriter::new_test(Some(Format::Json), &test_buffers);
     let cmd = SelectorsCommand { data: vec![], selectors: vec![], accessor: None };
-    assert!(run_command(
-        setup_fake_rcs(vec![]),
-        setup_fake_archive_accessor(vec![FakeAccessorData::new(
-            params,
-            expected_responses.clone(),
-        )]),
-        SelectorsCommand::from(cmd),
-        &mut writer
-    )
-    .await
-    .unwrap_err()
-    .ffx_error()
-    .is_some());
+    assert!(
+        run_command(
+            setup_fake_rcs(vec![]),
+            setup_fake_archive_accessor(vec![FakeAccessorData::new(
+                params,
+                expected_responses.clone(),
+            )]),
+            SelectorsCommand::from(cmd),
+            &mut writer
+        )
+        .await
+        .unwrap_err()
+        .ffx_error()
+        .is_some()
+    );
 }
 
 #[fuchsia::test]
@@ -59,19 +61,21 @@ async fn test_selectors_with_unknown_component_search() {
         accessor: None,
         data: vec![],
     };
-    assert!(run_command(
-        setup_fake_rcs(vec![]),
-        setup_fake_archive_accessor(vec![FakeAccessorData::new(
-            params,
-            expected_responses.clone(),
-        )]),
-        SelectorsCommand::from(cmd),
-        &mut writer
-    )
-    .await
-    .unwrap_err()
-    .ffx_error()
-    .is_some());
+    assert!(
+        run_command(
+            setup_fake_rcs(vec![]),
+            setup_fake_archive_accessor(vec![FakeAccessorData::new(
+                params,
+                expected_responses.clone(),
+            )]),
+            SelectorsCommand::from(cmd),
+            &mut writer
+        )
+        .await
+        .unwrap_err()
+        .ffx_error()
+        .is_some()
+    );
 }
 
 #[fuchsia::test]
@@ -91,19 +95,21 @@ async fn test_selectors_with_unknown_manifest() {
         accessor: None,
         data: vec![],
     };
-    assert!(run_command(
-        setup_fake_rcs(vec![]),
-        setup_fake_archive_accessor(vec![FakeAccessorData::new(
-            params,
-            expected_responses.clone(),
-        )]),
-        SelectorsCommand::from(cmd),
-        &mut writer
-    )
-    .await
-    .unwrap_err()
-    .ffx_error()
-    .is_some());
+    assert!(
+        run_command(
+            setup_fake_rcs(vec![]),
+            setup_fake_archive_accessor(vec![FakeAccessorData::new(
+                params,
+                expected_responses.clone(),
+            )]),
+            SelectorsCommand::from(cmd),
+            &mut writer
+        )
+        .await
+        .unwrap_err()
+        .ffx_error()
+        .is_some()
+    );
 }
 
 #[fuchsia::test]

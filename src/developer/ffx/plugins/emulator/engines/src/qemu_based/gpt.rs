@@ -5,11 +5,11 @@
 //! Utilities for preparing GPT full disk images for qemu based emulator runs.
 
 use camino::Utf8PathBuf;
-use ffx_config::environment::ExecutableKind;
 use ffx_config::EnvironmentContext;
-use fho::{return_bug, user_error, Result};
+use ffx_config::environment::ExecutableKind;
+use fho::{Result, return_bug, user_error};
 use make_fuchsia_vol::args::{
-    Arch, TopLevel as MakeFuchsiaVolCmd, ABR_SIZE, EFI_SIZE, SYSTEM_PART_SIZE, VBMETA_SIZE,
+    ABR_SIZE, Arch, EFI_SIZE, SYSTEM_PART_SIZE, TopLevel as MakeFuchsiaVolCmd, VBMETA_SIZE,
 };
 use sdk_metadata::CpuArchitecture;
 use std::path::PathBuf;

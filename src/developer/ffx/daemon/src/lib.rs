@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::constants::DAEMON_LOG_BASENAME;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use daemonize::daemonize;
-use errors::{ffx_error, FfxError};
+use errors::{FfxError, ffx_error};
 use ffx_config::EnvironmentContext;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_developer_ffx::{DaemonMarker, DaemonProxy};

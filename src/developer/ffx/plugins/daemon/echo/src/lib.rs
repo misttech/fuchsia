@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use ffx_echo_args::EchoCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{return_bug, FfxMain, FfxTool, Result};
+use fho::{FfxMain, FfxTool, Result, return_bug};
 use fidl_fuchsia_developer_ffx::EchoProxy;
 use schemars::JsonSchema;
 use serde::Serialize;

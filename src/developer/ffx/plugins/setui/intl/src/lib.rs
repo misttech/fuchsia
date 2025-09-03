@@ -9,7 +9,7 @@ use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
 use fidl_fuchsia_settings::{IntlProxy, IntlSettings};
 use target_holders::moniker;
-use utils::{handle_mixed_result, Either, WatchOrSetResult};
+use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("setui"))]

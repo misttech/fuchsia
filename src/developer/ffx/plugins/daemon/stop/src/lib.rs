@@ -7,7 +7,7 @@ use ffx_config::EnvironmentContext;
 use ffx_daemon::{DaemonConfig, SocketDetails};
 use ffx_daemon_stop_args::StopCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{bug, return_bug, return_user_error, Error, FfxContext, FfxMain, FfxTool, Result};
+use fho::{Error, FfxContext, FfxMain, FfxTool, Result, bug, return_bug, return_user_error};
 use fuchsia_async::{MonotonicInstant, Timer};
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -96,7 +96,9 @@ impl StopTool {
             // TODO(126735) -- eventually change default behavior to Wait or Timeout
             (false, false, None) => WaitBehavior::NoWait(Some("Stopping the daemon now.".into())),
             _ => {
-                return_user_error!("Multiple wait behaviors specified.\nSpecify only one of -w, -t <timeout>, or --no-wait");
+                return_user_error!(
+                    "Multiple wait behaviors specified.\nSpecify only one of -w, -t <timeout>, or --no-wait"
+                );
             }
         };
         Ok(wb)

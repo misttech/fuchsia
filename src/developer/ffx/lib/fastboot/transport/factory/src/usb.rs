@@ -6,16 +6,16 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use fastboot::command::{ClientVariable, Command};
 use fastboot::reply::Reply;
-use fastboot::{send, FastbootContext};
+use fastboot::{FastbootContext, send};
 use ffx_fastboot_interface::interface_factory::{
     InterfaceFactory, InterfaceFactoryBase, InterfaceFactoryError,
 };
 use fuchsia_async::MonotonicDuration;
-use futures::channel::oneshot::{channel, Sender};
+use futures::channel::oneshot::{Sender, channel};
 use usb_fastboot_discovery::{
-    open_interface_with_serial, wait_for_live, DefaultSerialFinder, FastbootEvent,
-    FastbootEventHandler, FastbootUsbLiveTester, FastbootUsbWatcher, Interface as AsyncInterface,
-    UnversionedFastbootUsbTester,
+    DefaultSerialFinder, FastbootEvent, FastbootEventHandler, FastbootUsbLiveTester,
+    FastbootUsbWatcher, Interface as AsyncInterface, UnversionedFastbootUsbTester,
+    open_interface_with_serial, wait_for_live,
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -90,13 +90,15 @@ impl FastbootUsbLiveTester for StrictGetVarFastbootUsbLiveTester {
                 true
             }
             Ok(Reply::Fail(message)) => {
-                log::warn!("Failed to get variable \"version\" with message: \"{message}\". but we communicated over fastboot protocol... continuing");
+                log::warn!(
+                    "Failed to get variable \"version\" with message: \"{message}\". but we communicated over fastboot protocol... continuing"
+                );
                 true
             }
             Err(e) => {
                 log::warn!(
-                "USB serial {serial}: could not communicate over Fastboot protocol. Error: {e:#?}"
-            );
+                    "USB serial {serial}: could not communicate over Fastboot protocol. Error: {e:#?}"
+                );
                 false
             }
             e => {

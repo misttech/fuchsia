@@ -113,25 +113,13 @@ pub async fn run(tests: Vec<TestCase>, timeout: Duration, case_timeout: Duration
 }
 
 fn green(color: bool) -> &'static str {
-    if color {
-        termion::color::Green.fg_str()
-    } else {
-        ""
-    }
+    if color { termion::color::Green.fg_str() } else { "" }
 }
 fn red(color: bool) -> &'static str {
-    if color {
-        termion::color::Red.fg_str()
-    } else {
-        ""
-    }
+    if color { termion::color::Red.fg_str() } else { "" }
 }
 fn nocol(color: bool) -> &'static str {
-    if color {
-        termion::color::Reset.fg_str()
-    } else {
-        ""
-    }
+    if color { termion::color::Reset.fg_str() } else { "" }
 }
 
 #[macro_export]

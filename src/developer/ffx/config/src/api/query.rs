@@ -6,12 +6,12 @@ use crate::api::ConfigResult;
 use crate::mapping::env_var::env_var_strict;
 use crate::nested::RecursiveMap;
 use crate::{ConfigError, ConfigLevel, Environment, EnvironmentContext, ValueStrategy};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
 use std::default::Default;
 
-use super::value::TryConvert;
 use super::ConfigValue;
+use super::value::TryConvert;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SelectMode {
@@ -159,10 +159,13 @@ impl<'a> ConfigQuery<'a> {
                     // home: $CACHE, etc. Since they all look like environment
                     // variables, they will cause the env_var_strict() check
                     // to fail
-                    return Err(ConfigError::BadValue { value: v.clone(), reason: format!(
-                        "The value for {} contains a variable mapping, which is ignored in strict mode",
-                        self.name.unwrap(),
-                    )});
+                    return Err(ConfigError::BadValue {
+                        value: v.clone(),
+                        reason: format!(
+                            "The value for {} contains a variable mapping, which is ignored in strict mode",
+                            self.name.unwrap(),
+                        ),
+                    });
                 }
                 ev_res
             } else {
@@ -208,10 +211,13 @@ impl<'a> ConfigQuery<'a> {
             let cv = if let Some(ref v) = cv.0 {
                 let ev_res = cv.clone().recursive_map(&|val| env_var_strict(val));
                 if ev_res.0.is_none() {
-                    return Err(ConfigError::BadValue{ value: v.clone(), reason: format!(
-                        "The value for {} contains a variable mapping, which is ignored in strict mode",
-                        self.name.unwrap(),
-                    )});
+                    return Err(ConfigError::BadValue {
+                        value: v.clone(),
+                        reason: format!(
+                            "The value for {} contains a variable mapping, which is ignored in strict mode",
+                            self.name.unwrap(),
+                        ),
+                    });
                 }
                 ev_res
             } else {

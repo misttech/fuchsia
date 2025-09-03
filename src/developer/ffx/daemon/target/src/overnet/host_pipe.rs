@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::target::Target;
 use crate::RETRY_DELAY;
+use crate::target::Target;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use compat_info::CompatibilityInfo;
@@ -11,14 +11,14 @@ use ffx_config::EnvironmentContext;
 use ffx_daemon_core::events;
 use ffx_daemon_events::TargetEvent;
 use ffx_ssh::parse::{
-    parse_ssh_output, read_ssh_line, read_ssh_line_with_timeouts, write_ssh_log, HostAddr,
-    ParseSshConnectionError, PipeError,
+    HostAddr, ParseSshConnectionError, PipeError, parse_ssh_output, read_ssh_line,
+    read_ssh_line_with_timeouts, write_ssh_log,
 };
-use ffx_ssh::ssh::{build_ssh_command_with_env, SshError};
-use fuchsia_async::{unblock, Task, TimeoutExt, Timer};
+use ffx_ssh::ssh::{SshError, build_ssh_command_with_env};
+use fuchsia_async::{Task, TimeoutExt, Timer, unblock};
 use nix::errno::Errno;
-use nix::sys::signal::kill;
 use nix::sys::signal::Signal::SIGKILL;
+use nix::sys::signal::kill;
 use nix::sys::wait::waitpid;
 use nix::unistd::Pid;
 use std::cell::RefCell;
@@ -29,7 +29,7 @@ use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{io, sync};
-use tokio::io::{copy_buf, BufReader};
+use tokio::io::{BufReader, copy_buf};
 use tokio::process::Child;
 
 const BUFFER_SIZE: usize = 65536;

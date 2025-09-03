@@ -11,10 +11,10 @@ use ffx_audio_gen_args::{
 };
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use fuchsia_audio::format::SampleType;
 use fuchsia_audio::Format;
-use rand::rngs::ThreadRng;
+use fuchsia_audio::format::SampleType;
 use rand::Rng;
+use rand::rngs::ThreadRng;
 use std::f64::consts::PI;
 use std::io;
 use std::io::Write;

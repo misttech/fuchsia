@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use ffx_repository_create_args::RepoCreateCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{bug, Error, FfxMain, FfxTool, Result};
+use fho::{Error, FfxMain, FfxTool, Result, bug};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;

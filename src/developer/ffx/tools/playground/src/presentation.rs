@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crossterm::style::{style, Attribute, Color, StyledContent};
+use crossterm::style::{Attribute, Color, StyledContent, style};
 use futures::future::{FutureExt, LocalBoxFuture};
 use futures::io::{AsyncWrite, AsyncWriteExt as _};
 use futures::stream::StreamExt;
@@ -462,7 +462,12 @@ mod test {
         let cc = header_style("     cc ", 0);
         let ss = header_style(" ss ", 1);
         let blank2 = header_style("    ", 1);
-        assert_eq!(format!("{aaaa}{qq} rr\n{bb}\n{blank}\n{cc}{qq} rr\n{blank}{ss} tt\n{blank}{blank2} uu\n{blank}{blank2} vv\n"), got);
+        assert_eq!(
+            format!(
+                "{aaaa}{qq} rr\n{bb}\n{blank}\n{cc}{qq} rr\n{blank}{ss} tt\n{blank}{blank2} uu\n{blank}{blank2} vv\n"
+            ),
+            got
+        );
     }
 
     #[fuchsia::test]
@@ -493,7 +498,12 @@ mod test {
         let bb = header_style("     bb ", 0);
         let blank = header_style("        ", 0);
         let cc = header_style("     cc ", 0);
-        assert_eq!(format!("{aaaa}{num_header}\n{bb} 0 │ 1u16 \n{blank} 1 │ 2u16 \n{blank} 2 │ 3u16 \n{cc}{num_header}\n{blank} 0 │ 1u16 \n{blank} 1 │ 2u16 \n{blank} 2 │ 3u16 \n"), got);
+        assert_eq!(
+            format!(
+                "{aaaa}{num_header}\n{bb} 0 │ 1u16 \n{blank} 1 │ 2u16 \n{blank} 2 │ 3u16 \n{cc}{num_header}\n{blank} 0 │ 1u16 \n{blank} 1 │ 2u16 \n{blank} 2 │ 3u16 \n"
+            ),
+            got
+        );
     }
 
     #[fuchsia::test]
@@ -565,6 +575,11 @@ mod test {
         let c_d_2 = header_style(" c      d    ", 1);
         let f = header_style(" f ", 1);
         let g = header_style(" g ", 1);
-        assert_eq!(format!("{a_e}\n{b}\n{c_d_1}  │{f} 11u16  \n 7u16 │ 8u16    │{g} 12u16  \n 9u16 │ 10u16   │           \n                │           \n{c_d_2}   │{f} 5u16   \n 1u16 │ 2u16    │{g} 6u16   \n 3u16 │ 4u16    │           \n"), got);
+        assert_eq!(
+            format!(
+                "{a_e}\n{b}\n{c_d_1}  │{f} 11u16  \n 7u16 │ 8u16    │{g} 12u16  \n 9u16 │ 10u16   │           \n                │           \n{c_d_2}   │{f} 5u16   \n 1u16 │ 2u16    │{g} 6u16   \n 3u16 │ 4u16    │           \n"
+            ),
+            got
+        );
     }
 }

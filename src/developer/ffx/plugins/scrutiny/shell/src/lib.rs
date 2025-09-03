@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use ffx_scrutiny_shell_args::ScrutinyShellCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
@@ -12,7 +12,7 @@ use scrutiny_frontend::{
     ZbiListBootfsController,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 

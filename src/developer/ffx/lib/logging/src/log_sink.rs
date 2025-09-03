@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{format, FormatOpts};
+use crate::{FormatOpts, format};
 use std::io::Write;
 use std::marker::{Send, Sync};
 use std::sync::{Arc, Mutex};

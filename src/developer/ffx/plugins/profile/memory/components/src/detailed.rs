@@ -4,8 +4,8 @@
 
 use anyhow::Result;
 use attribution_processing::{
-    digest, fplugin_serde, AttributionData, InflatedPrincipal, InflatedResource, Principal,
-    ProcessedAttributionData, Resource, ZXName,
+    AttributionData, InflatedPrincipal, InflatedResource, Principal, ProcessedAttributionData,
+    Resource, ZXName, digest, fplugin_serde,
 };
 use fidl_fuchsia_memory_attribution_plugin::{self as fplugin};
 use regex::bytes::Regex;

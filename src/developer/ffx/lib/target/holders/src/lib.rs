@@ -25,12 +25,12 @@ mod target_info_query;
 mod target_proxy;
 mod with_moniker;
 
-pub use daemon_proxy::{daemon_protocol, DaemonProxyHolder};
+pub use daemon_proxy::{DaemonProxyHolder, daemon_protocol};
 pub use fake_injector::FakeInjector;
 use from_toolbox::WithToolbox;
 pub use from_toolbox::{toolbox, toolbox_or};
 pub use host_ssh_addr::HostAddrHolder;
-pub use remote_control_proxy::{fake_async_proxy, fake_proxy, RemoteControlProxyHolder};
+pub use remote_control_proxy::{RemoteControlProxyHolder, fake_async_proxy, fake_proxy};
 pub use target_info::TargetInfoHolder;
 pub use target_info_query::TargetInfoQueryHolder;
 pub use target_proxy::TargetProxyHolder;
@@ -121,8 +121,8 @@ pub(crate) async fn connect_to_rcs(env: &FhoEnvironment) -> Result<RemoteControl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ffx_config::environment::ExecutableKind;
     use ffx_config::ConfigMap;
+    use ffx_config::environment::ExecutableKind;
 
     #[fuchsia::test]
     async fn test_connection_behavior_correct_in_strict() {

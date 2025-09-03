@@ -56,11 +56,7 @@ where
             caps.iter().skip(1).map(|cap| cap.map(|c| replacer(c.as_str()))).fold(
                 String::new(),
                 |acc, v| {
-                    if let Some(Ok(s)) = v {
-                        acc + &s
-                    } else {
-                        acc
-                    }
+                    if let Some(Ok(s)) = v { acc + &s } else { acc }
                 },
             )
         })

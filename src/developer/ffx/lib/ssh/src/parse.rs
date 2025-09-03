@@ -4,8 +4,8 @@
 
 use anyhow::{Context as _, Result};
 use compat_info::{ConnectionInfo, DeviceConnectionInfo};
-use ffx_config::logging::LogDirHandling;
 use ffx_config::EnvironmentContext;
+use ffx_config::logging::LogDirHandling;
 use fuchsia_async::TimeoutExt;
 use std::fmt;
 use std::io::{self, Write};
@@ -249,7 +249,9 @@ pub async fn parse_ssh_output(
     {
         Ok((addr, connection_info)) => {
             if connection_info.as_ref().map(|dci| dci.overnet_id).is_none() {
-                log::info!("Did not receive overnet_id from remote host, presumably it is an old device. Warning: without the overnet_id we cannot determine whether this connection is to an already-known target");
+                log::info!(
+                    "Did not receive overnet_id from remote host, presumably it is an old device. Warning: without the overnet_id we cannot determine whether this connection is to an already-known target"
+                );
             }
             (Some(HostAddr(addr)), connection_info)
         }
@@ -467,7 +469,8 @@ mod test {
     #[fuchsia::test]
     async fn test_compat_works_without_overnet_id() {
         let env = ffx_config::test_init().await.expect("test env init");
-        let line = &"{\"ssh_connection\":\"10.0.2.2 34502 10.0.2.15 22\",\"compatibility\":{\"status\":\"supported\",\"platform_abi\":12345,\"message\":\"foo\"}}\n"[..];
+        let line = &"{\"ssh_connection\":\"10.0.2.2 34502 10.0.2.15 22\",\"compatibility\":{\"status\":\"supported\",\"platform_abi\":12345,\"message\":\"foo\"}}\n"
+            [..];
         let dci = DeviceConnectionInfo {
             status: CompatibilityState::Supported,
             platform_abi: 12345,
@@ -486,7 +489,8 @@ mod test {
     #[fuchsia::test]
     async fn test_compat_works_with_overnet_id() {
         let env = ffx_config::test_init().await.expect("test env init");
-        let line = &"{\"ssh_connection\":\"10.0.2.2 34502 10.0.2.15 22\",\"compatibility\":{\"status\":\"supported\",\"platform_abi\":12345,\"message\":\"foo\", \"overnet_id\": 6789}}\n"[..];
+        let line = &"{\"ssh_connection\":\"10.0.2.2 34502 10.0.2.15 22\",\"compatibility\":{\"status\":\"supported\",\"platform_abi\":12345,\"message\":\"foo\", \"overnet_id\": 6789}}\n"
+            [..];
         let dci = DeviceConnectionInfo {
             status: CompatibilityState::Supported,
             platform_abi: 12345,

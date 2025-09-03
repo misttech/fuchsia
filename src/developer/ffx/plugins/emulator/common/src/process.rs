@@ -4,10 +4,10 @@
 
 //! This module contains utility functions for process control.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use shared_child::SharedChild;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{thread, time};
 
 /// Monitors a shared process for the interrupt signal.

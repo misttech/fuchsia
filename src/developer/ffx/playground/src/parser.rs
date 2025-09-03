@@ -26,10 +26,10 @@ use nom::combinator::{
     all_consuming, cond, eof, flat_map, map, map_parser, not, opt, peek, recognize, rest, verify,
 };
 use nom::multi::{
-    fold_many0, many0, many0_count, many1, many_till, separated_list0, separated_list1,
+    fold_many0, many_till, many0, many0_count, many1, separated_list0, separated_list1,
 };
 use nom::sequence::{delimited, pair, preceded, separated_pair, terminated};
-use nom::{error as nom_error, Input, OutputMode, PResult, Parser};
+use nom::{Input, OutputMode, PResult, Parser, error as nom_error};
 use nom_locate::LocatedSpan;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};

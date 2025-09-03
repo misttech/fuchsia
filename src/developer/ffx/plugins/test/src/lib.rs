@@ -9,16 +9,16 @@ mod suite_definition;
 use crate::connector::RunConnector;
 use crate::pilot::convert_output_for_test_pilot;
 use crate::suite_definition::{
-    combined_params_from_pilot_reader, test_params_from_reader, CombinedParams,
+    CombinedParams, combined_params_from_pilot_reader, test_params_from_reader,
 };
-use anyhow::{format_err, Context, Result};
+use anyhow::{Context, Result, format_err};
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_bail_with_code, ffx_error, ffx_error_with_code};
 use ffx_test_args::{
     EarlyBootProfileCommand, ListCommand, RunCommand, TestCommand, TestSubCommand,
 };
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
-use fho::{return_user_error, FfxContext, FfxMain, FfxTool};
+use fho::{FfxContext, FfxMain, FfxTool, return_user_error};
 use fidl::endpoints::create_proxy;
 use futures::FutureExt;
 use itertools::Itertools;
@@ -28,7 +28,7 @@ use serde::Serialize;
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 use std::fmt::Debug;
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::ops::Deref as _;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -424,7 +424,7 @@ async fn params_from_args(
                 subject to breaking changes. To enable using --test-file, run \
                 'ffx config set test.experimental_json_input true'"
             )
-            .into())
+            .into());
         }
         Some(filename) => {
             if !cmd.test_args.is_empty() {
@@ -582,7 +582,7 @@ async fn get_tests(
 mod test {
     use super::*;
     use ffx_writer::{Format, TestBuffers};
-    use fidl::endpoints::{create_proxy_and_stream, ProtocolMarker, RequestStream, ServerEnd};
+    use fidl::endpoints::{ProtocolMarker, RequestStream, ServerEnd, create_proxy_and_stream};
     use fidl_fuchsia_sys2 as fsys;
     use ftest_manager::{
         DebugData, DebugDataIteratorMarker, EarlyBootProfileMarker, EarlyBootProfileRequestStream,

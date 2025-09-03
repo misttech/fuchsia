@@ -6,11 +6,11 @@ use crate::{FhoEnvironment, TryFromEnv};
 use argh::{ArgsInfo, CommandInfo, FromArgs, SubCommand, SubCommands};
 use async_trait::async_trait;
 use ffx_command::{
-    analytics_command, check_strict_constraints, send_enhanced_analytics, user_error, Error,
-    FfxCommandLine, FfxContext, MetricsSession, Result, ToolRunner, ToolSuite,
+    Error, FfxCommandLine, FfxContext, MetricsSession, Result, ToolRunner, ToolSuite,
+    analytics_command, check_strict_constraints, send_enhanced_analytics, user_error,
 };
-use ffx_config::environment::ExecutableKind;
 use ffx_config::EnvironmentContext;
+use ffx_config::environment::ExecutableKind;
 use fho_metadata::FhoToolMetadata;
 use std::fs::File;
 use std::os::unix::process::ExitStatusExt;
@@ -294,7 +294,7 @@ mod tests {
     use super::*;
     use crate::adapters::tests::SimpleCheck;
     // This keeps the macros from having compiler errors.
-    use crate::adapters::tests::{FakeCommand, FakeTool, TestWriter, SIMPLE_CHECK_COUNTER};
+    use crate::adapters::tests::{FakeCommand, FakeTool, SIMPLE_CHECK_COUNTER, TestWriter};
     use crate::{self as fho};
     use async_trait::async_trait;
     use fho_macro::FfxTool;

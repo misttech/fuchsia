@@ -6,8 +6,8 @@ use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use futures::{AsyncReadExt, AsyncWriteExt, StreamExt, TryStreamExt};
 use netext::{TcpListenerStream, TokioAsyncReadExt};
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 use tokio::net::TcpListener;
 

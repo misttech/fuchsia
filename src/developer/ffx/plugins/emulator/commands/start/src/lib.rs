@@ -8,11 +8,11 @@ use async_trait::async_trait;
 use emulator_instance::{EmulatorConfiguration, EmulatorInstances, EngineType, NetworkingMode};
 use ffx_config::EnvironmentContext;
 use ffx_emulator_config::EmulatorEngine;
-use ffx_emulator_engines::{process_flag_template, EngineBuilder};
+use ffx_emulator_engines::{EngineBuilder, process_flag_template};
 use ffx_emulator_start_args::StartCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{
-    bug, return_bug, return_user_error, Error, FfxContext, FfxMain, FfxTool, Result, TryFromEnv,
+    Error, FfxContext, FfxMain, FfxTool, Result, TryFromEnv, bug, return_bug, return_user_error,
 };
 use pbm::generate_mac_address;
 use pbms::LoadedProductBundle;

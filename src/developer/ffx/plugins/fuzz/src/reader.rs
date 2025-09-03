@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::autocomplete::FuzzHelper;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use argh::FromArgs;
 use async_trait::async_trait;
 use ffx_fuzz_args::{FuzzShellCommand, FuzzerState};
@@ -210,11 +210,11 @@ async fn shell_read_loop(
 
 #[cfg(test)]
 pub mod test_fixtures {
-    use super::{parse, ParsedCommand, Reader};
-    use anyhow::{bail, Result};
+    use super::{ParsedCommand, Reader, parse};
+    use anyhow::{Result, bail};
     use async_trait::async_trait;
     use fuchsia_async as fasync;
-    use fuchsia_fuzzctl::{deadline_after, MonotonicDuration};
+    use fuchsia_fuzzctl::{MonotonicDuration, deadline_after};
     use futures::channel::mpsc;
     use futures::{SinkExt, StreamExt};
     use std::collections::LinkedList;

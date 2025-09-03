@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use proc_macro2::{Span, TokenStream};
-use quote::{quote_spanned, ToTokens};
+use quote::{ToTokens, quote_spanned};
 
 #[derive(Debug)]
 pub enum ParseError {

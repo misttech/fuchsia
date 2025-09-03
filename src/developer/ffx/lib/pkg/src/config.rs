@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use ffx_config::ConfigLevel;
 const CONFIG_KEY_DEFAULT_REPOSITORY: &str = "repository.default";
 const CONFIG_KEY_SERVER_LISTEN: &str = "repository.server.listen";
@@ -90,7 +90,7 @@ pub async fn unset_default_repository() -> Result<()> {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     const CONFIG_KEY_ROOT: &str = "repository";
 

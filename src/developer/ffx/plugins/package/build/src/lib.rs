@@ -4,7 +4,7 @@
 
 pub use ffx_package_build_args::PackageBuildCommand;
 use ffx_writer::SimpleWriter;
-use fho::{user_error, FfxMain, FfxTool, Result};
+use fho::{FfxMain, FfxTool, Result, user_error};
 use package_tool::cmd_package_build;
 
 #[derive(FfxTool)]

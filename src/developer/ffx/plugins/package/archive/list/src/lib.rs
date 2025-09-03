@@ -4,12 +4,12 @@
 
 use anyhow::{Context, Result};
 use ffx_package_archive_list_args::ListCommand;
-use ffx_package_archive_utils::{read_file_entries, ArchiveEntry, FarArchiveReader, FarListReader};
+use ffx_package_archive_utils::{ArchiveEntry, FarArchiveReader, FarListReader, read_file_entries};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
-use humansize::{file_size_opts, FileSize as _};
+use humansize::{FileSize as _, file_size_opts};
 use prettytable::format::FormatBuilder;
-use prettytable::{cell, row, Row, Table};
+use prettytable::{Row, Table, cell, row};
 
 #[derive(FfxTool)]
 pub struct ArchiveListTool {
@@ -80,12 +80,14 @@ fn print_list_table(
 
         if cmd.long_format {
             row.add_cell(cell!(entry.path));
-            row.add_cell(cell!(entry
-                .length
-                .map(|n| n
-                    .file_size(file_size_opts::CONVENTIONAL)
-                    .unwrap_or_else(|_| format!("{}b", n)))
-                .unwrap_or_else(|| "missing from archive".into())));
+            row.add_cell(cell!(
+                entry
+                    .length
+                    .map(|n| n
+                        .file_size(file_size_opts::CONVENTIONAL)
+                        .unwrap_or_else(|_| format!("{}b", n)))
+                    .unwrap_or_else(|| "missing from archive".into())
+            ));
         }
 
         table.add_row(row);
@@ -98,8 +100,8 @@ fn print_list_table(
 #[cfg(test)]
 mod test {
     use super::*;
-    use ffx_package_archive_utils::test_utils::create_mockreader;
     use ffx_package_archive_utils::MockFarListReader;
+    use ffx_package_archive_utils::test_utils::create_mockreader;
     use ffx_writer::{Format, TestBuffers};
     use std::collections::HashMap;
     use std::path::PathBuf;

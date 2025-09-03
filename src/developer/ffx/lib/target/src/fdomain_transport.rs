@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 use tokio::io::{AsyncBufRead, AsyncWrite};
 
 /// Implements a transport for the FDomain client library on top of some async IO readers.

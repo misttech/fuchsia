@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use fuchsia_archive::{Error, Utf8Entry, Utf8Reader};
 use fuchsia_hash::Hash;
-use fuchsia_merkle::{from_read, MerkleTree};
+use fuchsia_merkle::{MerkleTree, from_read};
 use fuchsia_pkg::MetaContents;
 use mockall::automock;
 use serde::Serialize;

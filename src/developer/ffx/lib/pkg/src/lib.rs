@@ -7,5 +7,5 @@ mod instance;
 pub mod repo;
 
 pub use instance::{
-    write_instance_info, PkgServerInfo, PkgServerInstanceInfo, PkgServerInstances, ServerMode,
+    PkgServerInfo, PkgServerInstanceInfo, PkgServerInstances, ServerMode, write_instance_info,
 };

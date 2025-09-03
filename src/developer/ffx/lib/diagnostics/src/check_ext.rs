@@ -147,7 +147,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.0, 5);
-        assert_eq!("First check, looking at input: 2\nSecond check, looking at input: 25\nThird check, looking at input: foobar\n", String::from_utf8(output.output).unwrap());
+        assert_eq!(
+            "First check, looking at input: 2\nSecond check, looking at input: 25\nThird check, looking at input: foobar\n",
+            String::from_utf8(output.output).unwrap()
+        );
     }
 
     struct FailingCheck;
@@ -188,6 +191,9 @@ mod tests {
             .and_then_check(Third)
             .await;
         assert!(res.unwrap_err().to_string().contains("bad things happened"));
-        assert_eq!("First check, looking at input: 2\nSecond check, looking at input: 25\nAbout to do a failing check, looking at input: foobar\n", String::from_utf8(output.output).unwrap());
+        assert_eq!(
+            "First check, looking at input: 2\nSecond check, looking at input: 25\nAbout to do a failing check, looking at input: foobar\n",
+            String::from_utf8(output.output).unwrap()
+        );
     }
 }

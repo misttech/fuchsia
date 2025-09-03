@@ -4,7 +4,7 @@
 
 use crate::storage::Config;
 use crate::{ConfigLevel, ConfigMap};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use fuchsia_lockfile::{Lockfile, LockfileCreateError};
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -337,7 +337,11 @@ impl Environment {
                         log::debug!("Getting build dir config path");
                         let config = self.context.get_default_build_dir_config_path(&b_dir)?;
                         if !config.is_file() {
-                            info!("Build configuration file for '{b_dir}' does not exist yet, will create it by default at '{config}' if a value is set", b_dir=b_dir.display(), config=config.display());
+                            info!(
+                                "Build configuration file for '{b_dir}' does not exist yet, will create it by default at '{config}' if a value is set",
+                                b_dir = b_dir.display(),
+                                config = config.display()
+                            );
                         }
                         log::debug!("Saving build dir config path");
                         build_dirs.insert(b_dir, config);
@@ -473,7 +477,11 @@ mod test {
         {
             match build_configs.get(&build_dir_path) {
                 Some(config) if config == &build_dir_config => (),
-                Some(config) => panic!("Build directory config file was wrong. Expected: {build_dir_config}, got: {config})", build_dir_config=build_dir_config.display(), config=config.display()),
+                Some(config) => panic!(
+                    "Build directory config file was wrong. Expected: {build_dir_config}, got: {config})",
+                    build_dir_config = build_dir_config.display(),
+                    config = config.display()
+                ),
                 None => panic!("No build directory config was set"),
             }
         } else {

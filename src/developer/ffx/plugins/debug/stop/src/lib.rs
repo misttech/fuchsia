@@ -5,7 +5,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use ffx_debug_stop_args::StopCommand;
-use fho::{moniker, FfxMain, FfxTool, SimpleWriter};
+use fho::{FfxMain, FfxTool, SimpleWriter, moniker};
 use fidl_fuchsia_debugger::DebugAgentProxy;
 use zx_status::Status;
 

@@ -5,7 +5,7 @@
 use anyhow::Context as _;
 use camino::{Utf8Path, Utf8PathBuf};
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
-use fho::{return_user_error, user_error, Error, FfxMain, FfxTool, Result};
+use fho::{Error, FfxMain, FfxTool, Result, return_user_error, user_error};
 use rayon::prelude::*;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -344,7 +344,9 @@ mod tests {
         let (out, err) = buffers.into_strings();
         assert_eq!(
             err,
-            format!("failed to compress {NAME} to delivery blob type 1\n\nCaused by:\n    0: read file\n    1: No such file or directory (os error 2)\n")
+            format!(
+                "failed to compress {NAME} to delivery blob type 1\n\nCaused by:\n    0: read file\n    1: No such file or directory (os error 2)\n"
+            )
         );
         assert_eq!(out, "");
     }
@@ -365,7 +367,12 @@ mod tests {
 
         assert_matches!(CompressTool { cmd }.main(writer).await, Err(fho::Error::User(_)));
         let (out, err) = buffers.into_strings();
-        assert_eq!(out, format!("{{\"user_error\":\"failed to compress {NAME} to delivery blob type 1\\n\\nCaused by:\\n    0: read file\\n    1: No such file or directory (os error 2)\"}}\n"));
+        assert_eq!(
+            out,
+            format!(
+                "{{\"user_error\":\"failed to compress {NAME} to delivery blob type 1\\n\\nCaused by:\\n    0: read file\\n    1: No such file or directory (os error 2)\"}}\n"
+            )
+        );
         assert_eq!(err, "");
     }
 }

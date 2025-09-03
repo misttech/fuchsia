@@ -3,18 +3,18 @@
 // found in the LICENSE file.
 use crate::doctor_ledger::*;
 use crate::ledger_view::*;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_lock::Mutex;
 use async_trait::async_trait;
 use doctor_utils::{DaemonManager, DefaultDaemonManager, DoctorCheck, DoctorRecorder, Recorder};
 use errors::{ffx_bail, ffx_error};
 use ffx_build_version::VersionInfo;
 use ffx_command::{ExternalSubToolSuite, FfxCommandLine, ToolSuite};
-use ffx_config::{print_config, EnvironmentContext};
+use ffx_config::{EnvironmentContext, print_config};
 use ffx_daemon::DaemonConfig;
 use ffx_doctor_args::DoctorCommand;
 use ffx_ssh::{SshKeyErrorKind, SshKeyFiles};
-use ffx_target::{get_target_specifier, TargetInfoQuery};
+use ffx_target::{TargetInfoQuery, get_target_specifier};
 use ffx_target_show::ShowTool;
 use ffx_target_show_args::TargetShow;
 use ffx_writer::{SimpleWriter, VerifiedMachineWriter};
@@ -31,7 +31,7 @@ use futures::{StreamExt, TryStreamExt};
 use serde_json::json;
 use std::collections::HashSet;
 use std::fs;
-use std::io::{stdout, BufWriter, Write};
+use std::io::{BufWriter, Write, stdout};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
@@ -302,11 +302,14 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
         Ok(enabled) => {
             let enabled: bool = enabled;
             if !enabled && cmd.record {
-                writeln!(&mut writer,
+                writeln!(
+                    &mut writer,
                     "{}WARNING:{} --record was provided but ffx logs are not enabled. This means your record will only include doctor output.",
-                    color::Fg(color::Red), style::Reset
+                    color::Fg(color::Red),
+                    style::Reset
                 )?;
-                writeln!(&mut writer,
+                writeln!(
+                    &mut writer,
                     "ffx doctor will proceed, but if you want to enable logs, you can do so by running:"
                 )?;
                 writeln!(&mut writer, "  ffx config set log.enabled true")?;
@@ -903,7 +906,9 @@ fn make_ssh_fix_suggestion(ssh_log: &String) -> Option<&'static str> {
     if ssh_log.contains("Connection refused") {
         Some("SSH connection was refused. You may need to (re-)establish a tunnel connection.")
     } else if ssh_log.contains("Permission denied") {
-        Some("SSH connection could not authenticate. You may need to re-provision (pave or flash) your target to ensure SSH keys are appropriately setup.")
+        Some(
+            "SSH connection could not authenticate. You may need to re-provision (pave or flash) your target to ensure SSH keys are appropriately setup.",
+        )
     } else {
         None
     }
@@ -993,42 +998,40 @@ async fn check_lock_files<W: Write>(
         let (outcome, description) = match locked {
             Ok(lockfile) => (
                 LedgerOutcome::Success,
-                format!("{path} locked by {lock}", path=file.display(), lock=lockfile.display()),
+                format!(
+                    "{path} locked by {lock}",
+                    path = file.display(),
+                    lock = lockfile.display()
+                ),
             ),
-            Err(err) => {
-                match *err {
-                    LockfileCreateError {
-                        kind: LockfileCreateErrorKind::TimedOut,
-                        lock_path,
-                        owner,
-                        ..
-                    } => {
-                        let mut msg = format!(
-                            "Lockfile `{lockfile}` was owned by another process that didn't release it in our timeout.",
-                            lockfile=lock_path.display(),
-                        );
+            Err(err) => match *err {
+                LockfileCreateError {
+                    kind: LockfileCreateErrorKind::TimedOut,
+                    lock_path,
+                    owner,
+                    ..
+                } => {
+                    let mut msg = format!(
+                        "Lockfile `{lockfile}` was owned by another process that didn't release it in our timeout.",
+                        lockfile = lock_path.display(),
+                    );
 
-                        if let Some(owner) = owner {
-                            msg = format!("{msg} Check that it's running? Pid {pid}", pid=owner.pid);
-                        }
+                    if let Some(owner) = owner {
+                        msg = format!("{msg} Check that it's running? Pid {pid}", pid = owner.pid);
+                    }
 
-                        (LedgerOutcome::Failure, msg)
-                    }
-                    LockfileCreateError {
-                        kind: LockfileCreateErrorKind::Io(error),
-                        lock_path,
-                        ..
-                    } => {
-                        (
-                            LedgerOutcome::Failure,
-                            format!(
-                                "Could not open lockfile `{lockfile}` due to error: {error:?}. Check permissions on the directory.",
-                                lockfile=lock_path.display(),
-                            ),
-                        )
-                    }
+                    (LedgerOutcome::Failure, msg)
                 }
-            }
+                LockfileCreateError {
+                    kind: LockfileCreateErrorKind::Io(error), lock_path, ..
+                } => (
+                    LedgerOutcome::Failure,
+                    format!(
+                        "Could not open lockfile `{lockfile}` due to error: {error:?}. Check permissions on the directory.",
+                        lockfile = lock_path.display(),
+                    ),
+                ),
+            },
         };
         let node = ledger.add_node(&description, LedgerMode::Automatic)?;
         ledger.set_outcome(node, outcome)?;
@@ -1041,17 +1044,40 @@ async fn check_ssh_keys<W: Write>(ledger: &mut DoctorLedger<W>) -> Result<()> {
     let ssh_node: usize;
     match SshKeyFiles::load(None).await {
         Ok(ssh_files) => {
-            let ( description, outcome) = match ssh_files.check_keys(false) {
-                Ok(_) => ("The public & private Fuchsia keys are consistent".to_string(), LedgerOutcome::Success),
-                Err(e)  => {
-                    match e.kind {
-                        SshKeyErrorKind::BadKeyType => (format!("SSH keys type not supported: {}", e.message), LedgerOutcome::Warning),
-                        SshKeyErrorKind::BadConfiguration => (format!("SSH keys configuration problem: {e}"), LedgerOutcome::Failure),
-                        SshKeyErrorKind::IOError | SshKeyErrorKind::FileNotFound => (format!("{}. Check configuration or run `ffx doctor --repair-keys`", e.message), LedgerOutcome::Failure),
-                        SshKeyErrorKind::KeyMismatch => (format!("{}. Check configuration or run `ffx doctor --repair-keys`", e.message), LedgerOutcome::Failure),
-                        _ => (format!("SSH keys problem: {e}. Check configuration or run `ffx doctor --repair-keys`"), LedgerOutcome::Failure)
+            let (description, outcome) = match ssh_files.check_keys(false) {
+                Ok(_) => (
+                    "The public & private Fuchsia keys are consistent".to_string(),
+                    LedgerOutcome::Success,
+                ),
+                Err(e) => match e.kind {
+                    SshKeyErrorKind::BadKeyType => (
+                        format!("SSH keys type not supported: {}", e.message),
+                        LedgerOutcome::Warning,
+                    ),
+                    SshKeyErrorKind::BadConfiguration => {
+                        (format!("SSH keys configuration problem: {e}"), LedgerOutcome::Failure)
                     }
-                }
+                    SshKeyErrorKind::IOError | SshKeyErrorKind::FileNotFound => (
+                        format!(
+                            "{}. Check configuration or run `ffx doctor --repair-keys`",
+                            e.message
+                        ),
+                        LedgerOutcome::Failure,
+                    ),
+                    SshKeyErrorKind::KeyMismatch => (
+                        format!(
+                            "{}. Check configuration or run `ffx doctor --repair-keys`",
+                            e.message
+                        ),
+                        LedgerOutcome::Failure,
+                    ),
+                    _ => (
+                        format!(
+                            "SSH keys problem: {e}. Check configuration or run `ffx doctor --repair-keys`"
+                        ),
+                        LedgerOutcome::Failure,
+                    ),
+                },
             };
             ssh_node = ledger.add_node(&description, LedgerMode::Automatic)?;
             ledger.set_outcome(ssh_node, outcome)?;
@@ -1255,9 +1281,9 @@ async fn run_google_network_checks<W: Write>(
                             }
                             Err(e) => {
                                 eprintln!(
-                            "Warning: Failed to parse gdoctor output line as DoctorCheck: {}",
-                            e
-                        );
+                                    "Warning: Failed to parse gdoctor output line as DoctorCheck: {}",
+                                    e
+                                );
                             }
                         }
                     }
@@ -1855,8 +1881,8 @@ mod test {
     use async_trait::async_trait;
     use ffx_config::{ConfigLevel, TestEnv};
     use ffx_doctor_test_utils::MockWriter;
-    use fidl::endpoints::{ProtocolMarker, Request, RequestStream, ServerEnd};
     use fidl::Channel;
+    use fidl::endpoints::{ProtocolMarker, Request, RequestStream, ServerEnd};
     use fidl_fuchsia_developer_ffx::{
         DaemonProxy, DaemonRequest, OpenTargetError, RemoteControlState, TargetCollectionRequest,
         TargetCollectionRequestStream, TargetConnectionError, TargetRequest,
@@ -2669,11 +2695,11 @@ mod test {
                    \n[✗] Google Network Checks\
                    \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                    \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -2748,11 +2774,11 @@ mod test {
                    \n[✗] Searching for targets\
                    \n    [✗] No targets found!\
                    \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -2820,11 +2846,11 @@ mod test {
                    \n[✗] Google Network Checks\
                    \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                    \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -2899,11 +2925,11 @@ mod test {
                    \n[✗] Searching for targets\
                    \n    [✗] No targets found!\
                    \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -2978,11 +3004,11 @@ mod test {
             \n[✗] Searching for targets\
             \n    [✗] No targets found!\
             \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -3186,11 +3212,11 @@ mod test {
             \n        [✓] Connecting to RCS\
             \n        [✗] Error while connecting to RCS: <reason omitted>\
             \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -3278,11 +3304,11 @@ mod test {
             \n        [✓] Connecting to RCS\
             \n        [✗] Timeout while communicating with RCS\
             \n[✓] No issues found\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -3315,9 +3341,9 @@ mod test {
                 \n    [✓] Target: {NODENAME}\
                 \n    [✗] Target: {UNRESPONSIVE_NODENAME}\
                 \n[✓] No issues found\n",
-                isolated_root=test_env.isolate_root.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                isolated_root = test_env.isolate_root.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -3402,11 +3428,11 @@ mod test {
             \n        [✓] Connecting to RCS\
             \n        [✓] Communicating with RCS\
             \n[✓] No issues found\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -3485,11 +3511,11 @@ mod test {
             \n[✗] Searching for targets\
             \n    [✗] No targets found!\
             \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -3684,25 +3710,27 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
-        assert!(doctor(
-            &mut handler,
-            &mut ledger,
-            false,
-            &fake,
-            "",
-            1,
-            DEFAULT_RETRY_DELAY,
-            false,
-            frontend_version_info(true),
-            Ok(None),
-            &test_env.context,
-            params,
-            FakeGChecker,
-            None,
-            false,
-        )
-        .await
-        .is_err());
+        assert!(
+            doctor(
+                &mut handler,
+                &mut ledger,
+                false,
+                &fake,
+                "",
+                1,
+                DEFAULT_RETRY_DELAY,
+                false,
+                frontend_version_info(true),
+                Ok(None),
+                &test_env.context,
+                params,
+                FakeGChecker,
+                None,
+                false,
+            )
+            .await
+            .is_err()
+        );
 
         let _ = fake_recorder.lock().await;
         handler
@@ -3858,11 +3886,11 @@ mod test {
                 \n        [✓] Connecting to RCS\
                 \n        [✗] Timeout while communicating with RCS\
                 \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -3896,9 +3924,9 @@ mod test {
                 \n    [✗] Target: {UNRESPONSIVE_NODENAME}\
                 \n[✗] Doctor found issues in one or more categories; \
                 run 'ffx doctor -v' for more details.\n",
-                isolated_root=test_env.isolate_root.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                isolated_root = test_env.isolate_root.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -3975,11 +4003,11 @@ mod test {
             \n[✓] Verifying Targets\
             \n    [✓] Target found in fastboot mode: {SERIAL_NUMBER}\
             \n[✓] No issues found\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -4055,11 +4083,11 @@ mod test {
                    \n[✗] Searching for targets\
                    \n    [✗] No targets found!\
                    \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
             )
         );
     }
@@ -4152,11 +4180,11 @@ mod test {
             \n[✓] Verifying Targets\
             \n    [✓] Target found in fastboot mode: {SERIAL_NUMBER}\
             \n[✓] No issues found\n",
-                ffx_path=ffx_path(),
-                isolated_root=test_env.isolate_root.path().display(),
-                env_file=test_env.env_file.path().display(),
-                user_file=test_env.user_file.path().display(),
-                global_file=test_env.global_file.path().display(),
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
                 priv_key = priv_key.display()
             )
         );

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
 use ffx_profile_memory_sub_command::SubCommand;
@@ -24,7 +24,10 @@ impl FromStr for Backend {
             "default" => Ok(Backend::Default),
             "memory_monitor_1" => Ok(Backend::MemoryMonitor1),
             "memory_monitor_2" => Ok(Backend::MemoryMonitor2),
-            _ => bail!("Unable to parse backend: {}. Value should be one of 'default', 'memory_monitor_1', or 'memory_monitor_2'.", s),
+            _ => bail!(
+                "Unable to parse backend: {}. Value should be one of 'default', 'memory_monitor_1', or 'memory_monitor_2'.",
+                s
+            ),
         }
     }
 }

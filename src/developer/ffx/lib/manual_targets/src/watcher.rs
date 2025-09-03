@@ -4,14 +4,14 @@
 
 use crate::{Config, ManualTargets};
 
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
 use ffx_fastboot_interface::fastboot_interface::Fastboot;
 use ffx_fastboot_interface::fastboot_proxy::FastbootProxy;
 use ffx_fastboot_interface::interface_factory::{
     InterfaceFactory, InterfaceFactoryBase, InterfaceFactoryError,
 };
-use ffx_fastboot_transport_interface::tcp::{open_once, TcpNetworkInterface};
+use ffx_fastboot_transport_interface::tcp::{TcpNetworkInterface, open_once};
 use fuchsia_async::{Task, Timer};
 use netext::TokioAsyncWrapper;
 use std::collections::BTreeSet;
@@ -67,12 +67,18 @@ impl ManualTargetTester for TcpOpenManualTargetTester {
                             log::trace!("SocketAddr: {}. Is in Fastboot TCP", target);
                             ManualTargetState::Fastboot
                         } else {
-                            log::trace!("SocketAddr: {}. Could not get the version varaible. Is Product state.", target);
+                            log::trace!(
+                                "SocketAddr: {}. Could not get the version varaible. Is Product state.",
+                                target
+                            );
                             ManualTargetState::Product
                         }
                     }
                     _ => {
-                        log::trace!("SocketAddr: {}. Could not create TCP Fastboot Proxy. Is Product state.", target);
+                        log::trace!(
+                            "SocketAddr: {}. Could not create TCP Fastboot Proxy. Is Product state.",
+                            target
+                        );
                         ManualTargetState::Product
                     }
                 }
@@ -163,7 +169,9 @@ where
         let (addr, scope, port) = match netext::parse_address_parts(unparsed_addr.as_str()) {
             Ok(res) => res,
             Err(e) => {
-                log::error!("Skipping load of manual target address due to parsing error '{unparsed_addr}': {e}");
+                log::error!(
+                    "Skipping load of manual target address due to parsing error '{unparsed_addr}': {e}"
+                );
                 continue;
             }
         };
@@ -171,7 +179,9 @@ where
             match netext::get_verified_scope_id(scope) {
                 Ok(res) => res,
                 Err(e) => {
-                    log::error!("Scope load of manual address '{unparsed_addr}', which had a scope ID of '{scope}', which was not verifiable: {e}");
+                    log::error!(
+                        "Scope load of manual address '{unparsed_addr}', which had a scope ID of '{scope}', which was not verifiable: {e}"
+                    );
                     continue;
                 }
             }
@@ -214,7 +224,9 @@ where
             // Just because the target is found doesnt mean that the target is ready
             let state = opener.target_state(target.addr).await;
             if state == ManualTargetState::Disconnected {
-                log::debug!("Skipping adding target number: {target} as although it appears to be a product device it is not readily accepting connections");
+                log::debug!(
+                    "Skipping adding target number: {target} as although it appears to be a product device it is not readily accepting connections"
+                );
                 if targets.contains(target) {
                     targets.remove(&target);
                     log::trace!("Sening lost event for target: {}", target);
@@ -325,7 +337,7 @@ mod test {
     use async_trait::async_trait;
     use futures::channel::mpsc::unbounded;
     use pretty_assertions::assert_eq;
-    use serde_json::{json, Map, Value};
+    use serde_json::{Map, Value, json};
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, Ipv6Addr};
     use std::sync::{Arc, Mutex};

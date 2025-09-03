@@ -9,13 +9,13 @@ use crate::waker::handle_notifier_waker;
 use fidl::{
     AsHandleRef, HandleBased, HandleDisposition, HandleOp, ObjectType, Peered, Rights, Status,
 };
-use fuchsia_async::emulated_handle::Koid;
 use fuchsia_async::OnSignalsRef;
+use fuchsia_async::emulated_handle::Koid;
 use std::future::Future;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::task::{Context, Poll};
 use {zx_status, zx_types};
 

@@ -9,11 +9,11 @@ mod statistics;
 
 #[macro_use]
 extern crate prettytable;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use attribution_processing::summary::{ComponentSummaryProfileResult, MemorySummary};
 use attribution_processing::{
-    digest, AttributionData, AttributionDataProvider, Principal, Resource, ResourcesVisitor, ZXName,
+    AttributionData, AttributionDataProvider, Principal, Resource, ResourcesVisitor, ZXName, digest,
 };
 use errors::ffx_error;
 use ffx_profile_memory_components_args::ComponentsCommand;

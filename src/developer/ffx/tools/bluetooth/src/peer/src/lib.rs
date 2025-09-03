@@ -11,7 +11,7 @@ use fidl_fuchsia_bluetooth::PeerId as FidlPeerId;
 use fidl_fuchsia_bluetooth_affordances::PeerControllerProxy;
 use fidl_fuchsia_bluetooth_sys::AccessProxy;
 use fuchsia_bluetooth::types::{Address, Peer, PeerId};
-use prettytable::{cell, format, row, Row, Table};
+use prettytable::{Row, Table, cell, format, row};
 use std::cmp::Ordering;
 use target_holders::toolbox;
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use ffx_scrutiny_verify_args::bootfs::Command;
 use scrutiny_frontend::Scrutiny;
 use scrutiny_utils::golden::{CompareResult, GoldenFile};
@@ -72,7 +72,9 @@ pub async fn verify(cmd: &Command, recovery: bool) -> Result<HashSet<PathBuf>> {
     // absence of a bootfs package index is an error.
     if bootfs_packages.is_none() {
         if non_blob_files.len() != total_bootfs_file_count {
-            return Err(anyhow!("tool.zbi.extract.bootfs.packages returned empty result, but there were blobs in the bootfs."));
+            return Err(anyhow!(
+                "tool.zbi.extract.bootfs.packages returned empty result, but there were blobs in the bootfs."
+            ));
         } else {
             return Ok(deps);
         }

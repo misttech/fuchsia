@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 pub use crate::fho::connector::DirectConnector;
-use ffx_command_error::{return_bug, Result};
+use ffx_command_error::{Result, return_bug};
 use ffx_core::Injector;
 use fho::TryFromEnv;
 use std::fmt;
@@ -84,17 +84,16 @@ impl FhoTargetEnvironment {
                 FhoConnectionBehavior::DaemonConnector(ref dc) => Ok(dc.clone()),
                 _ => {
                     if strict {
-                        Err(
-                        ffx_command_error::user_error!(
+                        Err(ffx_command_error::user_error!(
                             "ffx-strict doesn't support use of the daemon, which is used to allocate '{}'. This command must either be re-written or you should not use it.",
                             std::any::type_name::<T>()
-                        )
-                    )
+                        ))
                     } else {
                         Err(ffx_command_error::user_error!(
-                        "Attempting to use the daemon to allocate '{}', which is not yet supported with {:?}",
-                        std::any::type_name::<T>(), behavior
-                    ))
+                            "Attempting to use the daemon to allocate '{}', which is not yet supported with {:?}",
+                            std::any::type_name::<T>(),
+                            behavior
+                        ))
                     }
                 }
             }

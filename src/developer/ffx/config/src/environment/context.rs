@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use super::{EnvironmentKind, ExecutableKind};
-use crate::api::value::{TryConvert, ValueStrategy};
 use crate::api::ConfigError;
+use crate::api::value::{TryConvert, ValueStrategy};
 use crate::cache::Cache;
 use crate::storage::{AssertNoEnv, Config};
-use crate::{is_analytics_disabled, ConfigMap, ConfigQuery, Environment};
+use crate::{ConfigMap, ConfigQuery, Environment, is_analytics_disabled};
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use errors::ffx_error;

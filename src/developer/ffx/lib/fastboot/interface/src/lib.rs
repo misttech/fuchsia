@@ -10,7 +10,7 @@ pub mod test {
     use super::fastboot_interface::{
         Fastboot, FastbootError, FastbootInterface, RebootEvent, UploadProgress, Variable,
     };
-    use anyhow::{anyhow, Result};
+    use anyhow::{Result, anyhow};
     use async_trait::async_trait;
     use chrono::Duration;
     use std::collections::HashMap;

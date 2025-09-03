@@ -1,10 +1,10 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use ffx_daemon::{
-    find_and_connect, is_daemon_running_at_path, spawn_daemon, try_to_kill_pid, SocketDetails,
+    SocketDetails, find_and_connect, is_daemon_running_at_path, spawn_daemon, try_to_kill_pid,
 };
 use fidl_fuchsia_developer_ffx::DaemonProxy;
 use fuchsia_async::Timer;

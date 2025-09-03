@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{ensure, Context as _};
+use anyhow::{Context as _, ensure};
 use async_stream::stream;
 use diagnostics_data::LogsData;
 use ffx_config::environment::ExecutableKind;

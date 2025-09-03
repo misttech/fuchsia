@@ -7,7 +7,7 @@ use fidl_fuchsia_developer_ffx::{
     TargetAddrInfo, TargetIp, TargetIpAddrInfo, TargetIpPort, TargetVSockCtx, TargetVSockNamespace,
 };
 use fidl_fuchsia_net::{IpAddress, Ipv4Address, Ipv6Address};
-use netext::{scope_id_to_name, IsLocalAddr};
+use netext::{IsLocalAddr, scope_id_to_name};
 use std::cmp::Ordering;
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::str::FromStr;
@@ -369,7 +369,7 @@ impl From<&TargetAddrInfo> for TargetAddr {
                 namespace: TargetVSockNamespace::Vsock,
             }) => return TargetAddr::VSockCtx(*cid),
             TargetAddrInfo::Vsock(TargetVSockCtx { cid, namespace: TargetVSockNamespace::Usb }) => {
-                return TargetAddr::UsbCtx(*cid)
+                return TargetAddr::UsbCtx(*cid);
             } // TODO(https://fxbug.dev/42130068): Add serial numbers.,
         };
 

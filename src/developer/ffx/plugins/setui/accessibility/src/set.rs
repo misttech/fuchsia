@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use ffx_setui_accessibility_args::SetArgs;
 use fidl_fuchsia_settings::{AccessibilityProxy, AccessibilitySettings};
-use utils::{handle_mixed_result, Either, WatchOrSetResult};
+use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 pub async fn set<W: std::io::Write>(
     accessibility_proxy: AccessibilityProxy,

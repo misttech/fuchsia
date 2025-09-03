@@ -7,14 +7,14 @@ use crate::fastboot_interface::{
     UploadProgress, Variable,
 };
 use crate::interface_factory::InterfaceFactory;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::Duration;
 use fastboot::command::{ClientVariable, Command};
 use fastboot::reply::Reply;
 use fastboot::{
-    download, send, send_with_listener, send_with_timeout, upload, upload_with_read_timeout,
-    FastbootContext, SendError, UploadError,
+    FastbootContext, SendError, UploadError, download, send, send_with_listener, send_with_timeout,
+    upload, upload_with_read_timeout,
 };
 use futures::io::{AsyncRead, AsyncWrite};
 use std::fmt::Debug;
@@ -208,13 +208,13 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug> Fastboot for FastbootProxy<T> {
                 return Err(FastbootError::StageError(StageError::UploadFailed {
                     path: path.to_string(),
                     message: s,
-                }))
+                }));
             }
             r @ _ => {
                 return Err(FastbootError::UnexpectedReply {
                     method: Command::Download(size).to_string(),
                     reply: r.to_string(),
-                })
+                });
             }
         };
 
@@ -271,7 +271,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug> Fastboot for FastbootProxy<T> {
                 return Err(FastbootError::ErasePartitionFailed {
                     partition: partition_name.to_string(),
                     message: s,
-                })
+                });
             }
             r @ _ => Err(FastbootError::UnexpectedReply {
                 method: command.to_string(),
@@ -365,7 +365,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug> Fastboot for FastbootProxy<T> {
                 return Err(FastbootError::UnexpectedReply {
                     method: Command::RebootBootLoader.to_string(),
                     reply: r.to_string(),
-                })
+                });
             }
         };
         // Once the target is rebooted, reconnect
@@ -409,7 +409,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug> Fastboot for FastbootProxy<T> {
                 Ok(())
             }
             Reply::Fail(message) => {
-                return Err(FastbootError::DownloadFailed { path: path.to_string(), message })
+                return Err(FastbootError::DownloadFailed { path: path.to_string(), message });
             }
             r @ _ => Err(FastbootError::UnexpectedReply {
                 method: Command::Upload.to_string(),
@@ -446,7 +446,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug> Fastboot for FastbootProxy<T> {
                 return Err(FastbootError::StageError(StageError::UploadFailed {
                     path: path.to_string(),
                     message: s,
-                }))
+                }));
             }
             r @ _ => Err(FastbootError::UnexpectedReply {
                 method: Command::Download(size).to_string(),
@@ -476,7 +476,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug> Fastboot for FastbootProxy<T> {
                 Ok(())
             }
             Reply::Fail(message) => {
-                return Err(FastbootError::SetActiveFailed { slot: slot.to_string(), message })
+                return Err(FastbootError::SetActiveFailed { slot: slot.to_string(), message });
             }
             r @ _ => Err(FastbootError::UnexpectedReply {
                 method: command.to_string(),
@@ -499,7 +499,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug> Fastboot for FastbootProxy<T> {
                 return Err(FastbootError::OemCommandFailed {
                     command: command.to_string(),
                     message,
-                })
+                });
             }
             r @ _ => Err(FastbootError::UnexpectedReply {
                 method: command.to_string(),
@@ -1216,10 +1216,12 @@ mod test {
         let (var_client, mut var_server): (Sender<UploadProgress>, Receiver<UploadProgress>) =
             mpsc::channel(2);
 
-        assert!(fastboot_client
-            .flash("partition1", temp_path.to_str().unwrap(), var_client, Duration::seconds(1))
-            .await
-            .is_err());
+        assert!(
+            fastboot_client
+                .flash("partition1", temp_path.to_str().unwrap(), var_client, Duration::seconds(1))
+                .await
+                .is_err()
+        );
 
         assert!(var_server.recv().await.is_none());
         Ok(())

@@ -239,11 +239,10 @@ mod tests {
         // Duplicated adding should be a noop
         add(AddCommand { build_dir: None, source: build_id_dir.clone() }, &index_path).unwrap();
         // build_dir cannot be supplied for json files
-        assert!(add(
-            AddCommand { build_dir: build_dir, source: package_json.clone() },
-            &index_path
-        )
-        .is_err());
+        assert!(
+            add(AddCommand { build_dir: build_dir, source: package_json.clone() }, &index_path)
+                .is_err()
+        );
         add(AddCommand { build_dir: None, source: package_json.clone() }, &index_path).unwrap();
         // Duplicated adding should be a noop.
         add(AddCommand { build_dir: None, source: package_json }, &index_path).unwrap();
@@ -271,11 +270,13 @@ mod tests {
         // Removing a relative path.
         assert!(remove(RemoveCommand { source: ".".to_owned() }, &index_path).is_ok());
         // Removing a URL.
-        assert!(remove(
-            RemoveCommand { source: "https://debuginfod.debian.net".to_owned() },
-            &index_path
-        )
-        .is_ok());
+        assert!(
+            remove(
+                RemoveCommand { source: "https://debuginfod.debian.net".to_owned() },
+                &index_path
+            )
+            .is_ok()
+        );
         let symbol_index = SymbolIndex::load(&index_path).unwrap();
         assert_eq!(symbol_index.ids_txts.len(), 0);
         assert_eq!(symbol_index.build_id_dirs.len(), 1);

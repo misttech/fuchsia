@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::test::*;
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use ffx_executor::FfxExecutor;
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::io::Write;
 use std::path::Path;
 use std::process::Stdio;

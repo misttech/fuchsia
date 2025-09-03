@@ -5,7 +5,7 @@
 #[cfg(test)]
 mod tests {
     use ffx_command::CliArgsInfo;
-    use ffx_testing::{base_fixture, TestContext};
+    use ffx_testing::{TestContext, base_fixture};
     use fixture::fixture;
     use std::collections::HashSet;
 

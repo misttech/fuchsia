@@ -6,7 +6,7 @@ use crate::{
     Context, DaemonProtocolProvider, FidlProtocol, NameToStreamHandlerMap, ProtocolRegister,
     StreamHandler,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use ffx::DaemonError;
 use ffx_daemon_events::TargetConnectionState;

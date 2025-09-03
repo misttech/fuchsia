@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use ffx_daemon::DaemonConfig;
 use ffx_daemon_start_args::StartCommand;
-use fho::{user_error, FfxContext, FfxMain, FfxTool, FhoEnvironment};
+use fho::{FfxContext, FfxMain, FfxTool, FhoEnvironment, user_error};
 use target_holders::DaemonProxyHolder;
 
 #[derive(FfxTool)]
@@ -75,9 +75,9 @@ impl DaemonStartTool {
 mod test {
     use super::*;
     use ffx_config::EnvironmentContext;
-    use ffx_target::fho::{target_interface, FhoConnectionBehavior};
+    use ffx_target::fho::{FhoConnectionBehavior, target_interface};
     use std::sync::Arc;
-    use target_holders::{fake_proxy, FakeInjector};
+    use target_holders::{FakeInjector, fake_proxy};
 
     fn create_fake_injector_with_result(
         context: &EnvironmentContext,

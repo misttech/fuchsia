@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use component_debug::config::RawConfigEntry;
 use errors::ffx_error;
@@ -11,7 +11,7 @@ use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fidl_fuchsia_session::{LaunchConfiguration, LauncherProxy};
 use moniker::Moniker;
-use target_holders::{moniker, RemoteControlProxyHolder};
+use target_holders::{RemoteControlProxyHolder, moniker};
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_developer_remotecontrol as rc};
 
 const SESSION_MANAGER_MONIKER: &str = "/core/session-manager";

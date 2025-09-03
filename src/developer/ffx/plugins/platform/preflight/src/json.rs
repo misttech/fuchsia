@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 //! Tools to convert preflight results to JSON output.
-use crate::check::{summarize_results, PreflightCheckResult};
+use crate::check::{PreflightCheckResult, summarize_results};
 use serde::Serialize;
 
 #[derive(Serialize, Debug, PartialEq)]

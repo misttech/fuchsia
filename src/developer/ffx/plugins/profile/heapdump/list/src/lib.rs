@@ -13,7 +13,7 @@ use fho::{AvailabilityFlag, FfxMain, FfxTool};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
 use prettytable::format::FormatBuilder;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
 use serde::Serialize;
 use target_holders::RemoteControlProxyHolder;
 

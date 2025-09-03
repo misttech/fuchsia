@@ -6,7 +6,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use ffx_session_drop_power_lease_args::SessionDropPowerLeaseCommand;
 use ffx_writer::SimpleWriter;
-use fho::{user_error, FfxMain, FfxTool};
+use fho::{FfxMain, FfxTool, user_error};
 use fidl_fuchsia_session_power::HandoffProxy;
 use target_holders::moniker;
 

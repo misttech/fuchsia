@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use ffx_scrutiny_verify_args::pre_signing::Command;
 use scrutiny_frontend::Scrutiny;
 use std::collections::HashSet;

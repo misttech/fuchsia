@@ -5,11 +5,11 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use ffx_config::api::ConfigError;
 use ffx_config::EnvironmentContext;
+use ffx_config::api::ConfigError;
 use ffx_repository_server_stop_args::StopCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{bug, return_bug, return_user_error, Error, FfxMain, FfxTool, Result};
+use fho::{Error, FfxMain, FfxTool, Result, bug, return_bug, return_user_error};
 use pkg::{PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -92,13 +92,17 @@ impl RepoStopTool {
             }
         } else {
             match instances.len() {
-            0 => return Ok(Some("no running servers".into())),
-            1 => return {
-                let instance = instances.get(0).unwrap();
-                Self::stop_instance(instance).await
-            },
-            _ => return_user_error!("more than 1 server running. Use --all or specify the name and port (if needed) of the server to stop.")
-        }
+                0 => return Ok(Some("no running servers".into())),
+                1 => {
+                    return {
+                        let instance = instances.get(0).unwrap();
+                        Self::stop_instance(instance).await
+                    };
+                }
+                _ => return_user_error!(
+                    "more than 1 server running. Use --all or specify the name and port (if needed) of the server to stop."
+                ),
+            }
         }
     }
 

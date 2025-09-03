@@ -4,7 +4,7 @@
 
 use crate::target_handle::TargetHandle;
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use discovery::query::target_addr_info_to_socketaddr;
 use emulator_instance::targets as emulator_targets;
@@ -24,9 +24,9 @@ use fidl_fuchsia_developer_remotecontrol as fidl_rcs;
 use fidl_fuchsia_developer_remotecontrol::RemoteControlMarker;
 #[cfg(not(target_os = "macos"))]
 use fuchsia_async::{DurationExt, TimeoutExt};
+use futures::TryStreamExt;
 #[cfg(test)]
 use futures::channel::oneshot::Sender;
-use futures::TryStreamExt;
 #[cfg(not(target_os = "macos"))]
 use futures::{AsyncReadExt, FutureExt, StreamExt};
 use protocols::prelude::*;
@@ -196,7 +196,9 @@ impl TargetCollectionProtocol {
             let (addr, scope, port) = match netext::parse_address_parts(unparsed_addr.as_str()) {
                 Ok(res) => res,
                 Err(e) => {
-                    log::error!("Skipping load of manual target address due to parsing error '{unparsed_addr}': {e}");
+                    log::error!(
+                        "Skipping load of manual target address due to parsing error '{unparsed_addr}': {e}"
+                    );
                     continue;
                 }
             };
@@ -204,7 +206,9 @@ impl TargetCollectionProtocol {
                 match netext::get_verified_scope_id(scope) {
                     Ok(res) => res,
                     Err(e) => {
-                        log::error!("Scope load of manual address '{unparsed_addr}', which had a scope ID of '{scope}', which was not verifiable: {e}");
+                        log::error!(
+                            "Scope load of manual address '{unparsed_addr}', which had a scope ID of '{scope}', which was not verifiable: {e}"
+                        );
                         continue;
                     }
                 }
@@ -360,7 +364,9 @@ impl FidlProtocol for TargetCollectionProtocol {
                                             target_collection.use_target(t, "OpenTarget request")
                                         })
                                 } else {
-                                    log::warn!("OpenTarget(query:?): daemon discovery is turned off, so client should only be sending already-resolved addresses (Addr or Serial)");
+                                    log::warn!(
+                                        "OpenTarget(query:?): daemon discovery is turned off, so client should only be sending already-resolved addresses (Addr or Serial)"
+                                    );
                                     Err(ffx::OpenTargetError::TargetNotFound)
                                 }
                             }
@@ -477,7 +483,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                                         },
                                         ..Default::default()
                                     })
-                                    .map_err(Into::into)
+                                    .map_err(Into::into);
                             }
                         }
                     }
@@ -715,7 +721,7 @@ async fn handle_usb_target_impl(
             x.map_err(|e| anyhow!("Could not identify USB host: {e:?}"))?
         }
         fidl_message::MaybeUnknown::Unknown => {
-            return Err(anyhow!("Got unknown identify host response"))
+            return Err(anyhow!("Got unknown identify host response"));
         }
     };
 
@@ -809,13 +815,11 @@ fn handle_discovered_target(
         .filter_map(|a| TargetIpAddr::try_from(a).ok().map(Into::into))
         .collect::<Vec<_>>();
 
-    let vsock_addr = t.addresses.iter().flatten().find_map(|x| {
-        if let TargetAddrInfo::Vsock(x) = x {
-            Some(*x)
-        } else {
-            None
-        }
-    });
+    let vsock_addr = t
+        .addresses
+        .iter()
+        .flatten()
+        .find_map(|x| if let TargetAddrInfo::Vsock(x) = x { Some(*x) } else { None });
 
     let mut update = TargetUpdateBuilder::new().net_addresses(&addrs);
 
@@ -869,13 +873,13 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use async_channel::{Receiver, Sender};
-    use ffx_config::{query, ConfigLevel};
+    use ffx_config::{ConfigLevel, query};
     use fidl_fuchsia_developer_ffx::TargetQuery;
     use fidl_fuchsia_net::{IpAddress, Ipv6Address};
-    use futures::channel::oneshot::channel;
     use futures::AsyncWriteExt;
+    use futures::channel::oneshot::channel;
     use protocols::testing::FakeDaemonBuilder;
-    use serde_json::{json, Map, Value};
+    use serde_json::{Map, Value, json};
     use std::cell::RefCell;
     use std::path::Path;
     use std::str::FromStr;
@@ -1187,10 +1191,11 @@ mod tests {
 
         handled.await.unwrap();
 
-        assert!(tc
-            .targets(None)
-            .into_iter()
-            .any(|target| { target.nodename == Some(NODE_NAME.into()) }));
+        assert!(
+            tc.targets(None)
+                .into_iter()
+                .any(|target| { target.nodename == Some(NODE_NAME.into()) })
+        );
     }
 
     fn make_target_add_fut(

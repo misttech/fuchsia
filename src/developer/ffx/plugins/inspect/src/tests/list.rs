@@ -4,8 +4,8 @@
 
 use crate::run_command;
 use crate::tests::utils::{
-    make_inspects_for_lifecycle, setup_fake_archive_accessor, setup_fake_rcs, FakeAccessorData,
-    FakeArchiveIteratorResponse,
+    FakeAccessorData, FakeArchiveIteratorResponse, make_inspects_for_lifecycle,
+    setup_fake_archive_accessor, setup_fake_rcs,
 };
 
 use ffx_writer::{Format, MachineWriter, TestBuffers};

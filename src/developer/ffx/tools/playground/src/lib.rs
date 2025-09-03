@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use argh::{ArgsInfo, FromArgs};
 use async_trait::async_trait;
 use crossterm::tty::IsTty;
@@ -11,14 +11,14 @@ use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fidl::endpoints::Proxy;
 use fidl_codec::library as lib;
-use futures::channel::oneshot::channel as oneshot;
-use futures::future::{select, Either, FutureExt};
-use futures::io::AllowStdIo;
 use futures::AsyncReadExt;
+use futures::channel::oneshot::channel as oneshot;
+use futures::future::{Either, FutureExt, select};
+use futures::io::AllowStdIo;
 use playground::interpreter::Interpreter;
 use playground::value::Value;
 use std::fs::File;
-use std::io::{self, stdin, BufRead as _, BufReader};
+use std::io::{self, BufRead as _, BufReader, stdin};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use target_holders::RemoteControlProxyHolder;
@@ -71,11 +71,13 @@ pub async fn exec_playground(
     command: PlaygroundCommand,
 ) -> Result<()> {
     if !stdin().is_tty() {
-        ffx_bail!("Playground must be used from a real TTY.\n\
+        ffx_bail!(
+            "Playground must be used from a real TTY.\n\
                    Playground is not stable enough for automation tasks, \
                      and is not designed to be suitable for them.\n\
                    If you'd like to do extensive scripting, consider Fuchsia Controller instead.\n\
-                   https://fuchsia.dev/fuchsia-src/development/tools/fuchsia-controller/getting-started-in-tree");
+                   https://fuchsia.dev/fuchsia-src/development/tools/fuchsia-controller/getting-started-in-tree"
+        );
     }
 
     let mut lib_namespace = lib::Namespace::new();

@@ -14,8 +14,8 @@ use futures::FutureExt;
 use futures_lite::stream::StreamExt;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// Represents a FIDL-piping connection to a Fuchsia target.
@@ -104,7 +104,9 @@ impl FidlPipe {
                 Err(TargetConnectionError::NonFatal(e)) => e,
             };
 
-            let error = format!("non-fatal error connecting to device. Retrying again after {wait_duration:?}: {error:?}");
+            let error = format!(
+                "non-fatal error connecting to device. Retrying again after {wait_duration:?}: {error:?}"
+            );
             log::debug!("{}", error);
             // TODO(b/421014246): We should have a more effective way to report non-fatal
             // connectivity errors to the user. This currently only affects a small number of tools,

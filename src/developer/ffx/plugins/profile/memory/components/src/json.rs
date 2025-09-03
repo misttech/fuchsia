@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use attribution_processing::fkernel_serde::{MemoryStatsCompressionDef, MemoryStatsDef};
 use attribution_processing::ZXName;
+use attribution_processing::fkernel_serde::{MemoryStatsCompressionDef, MemoryStatsDef};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use zx_types::ZX_MAX_NAME_LEN;
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memory_attribution_plugin as fplugin};
 

@@ -8,9 +8,9 @@ use anyhow::{Context, Result};
 use ffx::{TargetAddrInfo, TargetVSockCtx};
 use fidl_fuchsia_developer_ffx::{self as ffx, TargetVSockNamespace};
 use fidl_fuchsia_net::{IpAddress, Ipv4Address};
+use futures::SinkExt;
 use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::stream::StreamExt;
-use futures::SinkExt;
 use notify::event::EventKind::{Create, Modify, Remove};
 use notify::event::{CreateKind, Event, RemoveKind};
 use notify::{EventKind, RecursiveMode, Watcher};
@@ -125,11 +125,7 @@ impl EmulatorWatcherHandler {
         } else if !relative.to_string_lossy().is_empty() {
             name = (&relative.to_string_lossy()).to_string();
         }
-        if !name.is_empty() {
-            Some(name)
-        } else {
-            None
-        }
+        if !name.is_empty() { Some(name) } else { None }
     }
 }
 impl notify::EventHandler for EmulatorWatcherHandler {
@@ -342,8 +338,8 @@ pub fn get_all_targets(instances: &EmulatorInstances) -> Result<Vec<ffx::TargetI
 mod tests {
     pub(crate) use super::*;
     use crate::EngineState;
-    use notify::event::{EventAttributes, ModifyKind};
     use notify::EventHandler;
+    use notify::event::{EventAttributes, ModifyKind};
     use std::process;
     use tempfile::tempdir;
     #[test]

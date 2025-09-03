@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{logging, LibContext};
+use crate::{LibContext, logging};
 use anyhow::Result;
 use async_lock::Mutex;
 use camino::Utf8PathBuf;
 use discovery::query::TargetInfoQuery;
 use errors::ffx_error;
-use ffx_config::environment::ExecutableKind;
 use ffx_config::EnvironmentContext;
+use ffx_config::environment::ExecutableKind;
 use ffx_target::connection::Connection;
 use ffx_target::ssh_connector::SshConnector;
-use fidl::endpoints::Proxy;
 use fidl::AsHandleRef;
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_device::ControllerMarker;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};

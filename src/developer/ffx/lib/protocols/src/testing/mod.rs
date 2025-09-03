@@ -6,8 +6,8 @@ mod fake_daemon;
 pub use fake_daemon::{FakeDaemon, FakeDaemonBuilder};
 
 use crate::{Context, FidlProtocol};
-use fidl::endpoints::{create_endpoints, ProtocolMarker, Proxy};
 use fidl::AsyncChannel;
+use fidl::endpoints::{ProtocolMarker, Proxy, create_endpoints};
 use fuchsia_async::Task;
 use std::cell::RefCell;
 use std::rc::Rc;

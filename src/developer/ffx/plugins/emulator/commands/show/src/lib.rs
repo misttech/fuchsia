@@ -11,7 +11,7 @@ use ffx_emulator_config::ShowDetail;
 use ffx_emulator_engines::EngineBuilder;
 use ffx_emulator_show_args::ShowCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{bug, FfxMain, FfxTool};
+use fho::{FfxMain, FfxTool, bug};
 use itertools::Itertools;
 use std::path::PathBuf;
 
@@ -79,12 +79,13 @@ impl EmuShowTool {
                 let info = engine.show(which_details(&self.cmd));
 
                 if engine.emu_config().runtime.config_override && self.cmd.net {
-                    writeln!(writer.stderr(),
-                "Configuration was provided manually to the start command using the --config flag.\n\
+                    writeln!(
+                        writer.stderr(),
+                        "Configuration was provided manually to the start command using the --config flag.\n\
                 Network details for this instance cannot be shown with this tool; try\n    \
                     `ffx emu show --config`\n\
                 to review the emulator flags directly."
-            )?;
+                    )?;
                 }
                 writer.machine_or_else(&info, || {
                     info.clone().into_iter().map(|i| i.to_string()).join("\n")
@@ -107,8 +108,8 @@ impl EmuShowTool {
 mod tests {
     use super::*;
     use emulator_instance::{
-        write_to_disk, EmulatorInstanceData, EmulatorInstanceInfo, EngineState, FlagData,
-        NetworkingMode,
+        EmulatorInstanceData, EmulatorInstanceInfo, EngineState, FlagData, NetworkingMode,
+        write_to_disk,
     };
     use ffx_config::ConfigLevel;
     use ffx_emulator_config::VirtualDeviceInfo;

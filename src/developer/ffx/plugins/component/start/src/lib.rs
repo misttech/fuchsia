@@ -12,8 +12,8 @@ use ffx_component::rcs::{connect_to_lifecycle_controller, connect_to_realm_query
 use ffx_component_start_args::ComponentStartCommand;
 use ffx_writer::SimpleWriter;
 use ffx_zxdb::Debugger;
-use fho::{deferred, FfxMain, FfxTool};
-use target_holders::{moniker, RemoteControlProxyHolder};
+use fho::{FfxMain, FfxTool, deferred};
+use target_holders::{RemoteControlProxyHolder, moniker};
 
 #[derive(FfxTool)]
 pub struct StartTool {

@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
 use fidl_fuchsia_pkg_ext::{
     RepositoryConfig, RepositoryRegistrationAliasConflictMode, RepositoryStorageType,
 };
 use fuchsia_repo::repository::RepositorySpec;
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -344,7 +344,11 @@ pub async fn write_instance_info(
     };
     if let Some(existing) = mgr.get_instance(name.into(), Some(info.port()))? {
         if existing.pid != info.pid {
-            bail!("Cannot overrite running server with same name and a different pid: {name} existing pid: {} new pid: {}", existing.pid, info.pid);
+            bail!(
+                "Cannot overrite running server with same name and a different pid: {name} existing pid: {} new pid: {}",
+                existing.pid,
+                info.pid
+            );
         }
         let message = format!("WARNING: Overwriting server info for {name}: {existing:?}");
         log::error!("{message}");
@@ -850,10 +854,9 @@ mod tests {
         mgr.remove_instance(another_instance_name.into(), None).expect("remove OK");
 
         assert!(mgr.get_instance(instance_name.into(), None).expect("get instance").is_some());
-        assert!(mgr
-            .get_instance(another_instance_name.into(), None)
-            .expect("get instance")
-            .is_none());
+        assert!(
+            mgr.get_instance(another_instance_name.into(), None).expect("get instance").is_none()
+        );
     }
     #[fuchsia::test]
     async fn test_terminate() {

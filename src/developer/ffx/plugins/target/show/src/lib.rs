@@ -4,7 +4,7 @@
 
 use crate::show::TargetData;
 use addr::TargetIpAddr;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
 use fdomain_fuchsia_buildinfo::ProviderProxy;
 use fdomain_fuchsia_feedback::{DeviceIdProviderProxy, LastRebootInfoProviderProxy};
@@ -12,7 +12,7 @@ use fdomain_fuchsia_hwinfo::{Architecture, BoardProxy, DeviceProxy, ProductProxy
 use fdomain_fuchsia_update_channelcontrol::ChannelControlProxy;
 use ffx_target::fho::{DirectConnector, FhoConnectionBehavior};
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{deferred, Deferred, FfxMain, FfxTool, FhoEnvironment};
+use fho::{Deferred, FfxMain, FfxTool, FhoEnvironment, deferred};
 use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
 use show::{
     AddressData, BoardData, BuildData, DeviceData, ProductData, TargetShowInfo, UpdateData,
@@ -20,8 +20,8 @@ use show::{
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use target_holders::fdomain::{moniker, RemoteControlProxyHolder};
 use target_holders::TargetProxyHolder;
+use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 use timeout::timeout;
 use {ffx_target, ffx_target_show_args as args};
 

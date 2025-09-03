@@ -4,7 +4,7 @@
 
 use ffx_executor::FfxExecutor;
 use ffx_isolate::Isolate;
-use ffx_testing::{emulator_fixture, Emu, TestContext};
+use ffx_testing::{Emu, TestContext, emulator_fixture};
 use fixture::fixture;
 use fuchsia_async as _;
 use futures::io::{AsyncBufReadExt, AsyncReadExt, BufReader};

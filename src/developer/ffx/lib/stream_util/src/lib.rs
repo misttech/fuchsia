@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
+use futures::Future;
 use futures::future::FusedFuture;
 use futures::stream::{FuturesUnordered, StreamExt, TryStream};
-use futures::Future;
 use pin_project::pin_project;
 use std::mem;
 use std::num::NonZeroUsize;
@@ -189,11 +189,7 @@ mod tests {
         }));
         let res = s
             .try_for_each_concurrent_while_connected(Some(3), |i| async move {
-                if i == 63 {
-                    Err(anyhow!("test error"))
-                } else {
-                    Ok(())
-                }
+                if i == 63 { Err(anyhow!("test error")) } else { Ok(()) }
             })
             .await;
         assert!(res.is_err());

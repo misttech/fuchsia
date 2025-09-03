@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::nested::nested_set;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value};
 use std::fs::File;
 use std::io::BufReader;

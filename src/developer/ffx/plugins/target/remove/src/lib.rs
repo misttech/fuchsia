@@ -7,7 +7,7 @@ use errors::ffx_error;
 use ffx_config::EnvironmentContext;
 use ffx_target_remove_args::RemoveCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{bug, deferred, return_bug, return_user_error, Deferred, FfxMain, FfxTool, Result};
+use fho::{Deferred, FfxMain, FfxTool, Result, bug, deferred, return_bug, return_user_error};
 use fidl_fuchsia_developer_ffx as ffx;
 use manual_targets::{Config, ManualTargets};
 use schemars::JsonSchema;

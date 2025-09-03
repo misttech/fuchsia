@@ -12,10 +12,10 @@ use fho::{FfxMain, FfxTool};
 use fidl_fuchsia_diagnostics::{LogSettingsMarker, LogSettingsProxy, StreamParameters};
 use fidl_fuchsia_diagnostics_host::ArchiveAccessorMarker;
 use fidl_fuchsia_sys2::RealmQueryProxy;
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 use log_command::{
-    dump_logs_from_socket, BootTimeAccessor, DefaultLogFormatter, LogData, LogEntry,
-    LogProcessingResult, LogSubCommand, Symbolize, Timestamp, WatchCommand, WriterContainer,
+    BootTimeAccessor, DefaultLogFormatter, LogData, LogEntry, LogProcessingResult, LogSubCommand,
+    Symbolize, Timestamp, WatchCommand, WriterContainer, dump_logs_from_socket,
 };
 use std::io::Write;
 use target_connector::Connector;
@@ -353,8 +353,8 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::StreamExt;
     use log_command::{
-        parse_seconds_string_as_duration, parse_time, parse_utc_time, DumpCommand, LogData,
-        OneOrMany, SymbolizeMode, TimeFormat, TIMESTAMP_FORMAT,
+        DumpCommand, LogData, OneOrMany, SymbolizeMode, TIMESTAMP_FORMAT, TimeFormat,
+        parse_seconds_string_as_duration, parse_time, parse_utc_time,
     };
     use moniker::Moniker;
     use selectors::parse_log_interest_selector;

@@ -6,7 +6,7 @@
 //! for engines using QEMU as the emulator platform.
 
 use crate::arg_templates::process_flag_template;
-use crate::qemu_based::comms::{spawn_pipe_thread, QemuSocket};
+use crate::qemu_based::comms::{QemuSocket, spawn_pipe_thread};
 use crate::show_output;
 use async_trait::async_trait;
 use emulator_instance::{
@@ -16,15 +16,15 @@ use emulator_instance::{
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::EMU_START_TIMEOUT;
-use ffx_emulator_common::tuntap::{tap_ready, TAP_INTERFACE_NAME};
+use ffx_emulator_common::tuntap::{TAP_INTERFACE_NAME, tap_ready};
 use ffx_emulator_common::{config, dump_log_to_out, host_is_mac, process};
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
 use ffx_ssh::SshKeyFiles;
 use ffx_target::KnockError;
-use fho::{bug, return_bug, return_user_error, user_error, FfxContext, Result};
+use fho::{FfxContext, Result, bug, return_bug, return_user_error, user_error};
 use fidl_fuchsia_developer_ffx as ffx;
 use fuchsia_async::Timer;
-use serde_json::{json, Deserializer, Value};
+use serde_json::{Deserializer, Value, json};
 use shared_child::SharedChild;
 use std::fs::{self, File};
 use std::io::Write;
@@ -32,8 +32,8 @@ use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc::channel;
 use std::sync::Arc;
+use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 use std::{env, str};
 use tempfile::NamedTempFile;
@@ -71,7 +71,9 @@ pub(crate) fn get_host_tool(name: &str) -> Result<PathBuf> {
                 log::info!("Using {tool_path:?} based on {ffx_path:?} directory for tool {name}");
                 Ok(tool_path)
             } else {
-                return_bug!("{error}. Host tool '{name}' not found after checking in `ffx` directory as stopgap.")
+                return_bug!(
+                    "{error}. Host tool '{name}' not found after checking in `ffx` directory as stopgap."
+                )
             }
         }
     }
@@ -974,8 +976,18 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             //Protocol[State]    FD  Source Address  Port   Dest. Address  Port RecvQ SendQ
             //TCP[ESTABLISHED]   63       10.0.2.15 56727  74.125.199.113   443     0     0
             match parts[..] {
-                ["Protocol[State]", "FD", "Source", "Address", "Port", "Dest.", "Address", "Port", "RecvQ", "SendQ"] =>
-                {
+                [
+                    "Protocol[State]",
+                    "FD",
+                    "Source",
+                    "Address",
+                    "Port",
+                    "Dest.",
+                    "Address",
+                    "Port",
+                    "RecvQ",
+                    "SendQ",
+                ] => {
                     saw_heading = true;
                 }
                 [protocol_state, _, _, host_port, _, guest_port, _, _] => {
@@ -1056,7 +1068,7 @@ mod tests {
     use std::io::Read;
     use std::os::unix::net::UnixListener;
     use std::os::unix::prelude::PermissionsExt as _;
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
 
     #[derive(Default, Serialize)]
     struct TestEngine {}
@@ -1289,7 +1301,9 @@ mod tests {
             if let EnvironmentKind::InTree { .. } = env.context.env_kind() {
                 log::debug!("Test running in-tree, DiskImageFormat::Gpt is expected to work.");
             } else {
-                log::debug!("Skipping test for DiskImageFormat::Gpt, mkfs-msdosfs is not guaranteed to be available");
+                log::debug!(
+                    "Skipping test for DiskImageFormat::Gpt, mkfs-msdosfs is not guaranteed to be available"
+                );
                 return Ok(());
             }
         }
@@ -1456,7 +1470,9 @@ mod tests {
             if let EnvironmentKind::InTree { .. } = env.context.env_kind() {
                 log::debug!("Test running in-tree, DiskImageFormat::Gpt is expected to work.");
             } else {
-                log::debug!("Skipping test for DiskImageFormat::Gpt, mkfs-msdosfs is not guaranteed to be available");
+                log::debug!(
+                    "Skipping test for DiskImageFormat::Gpt, mkfs-msdosfs is not guaranteed to be available"
+                );
                 return Ok(());
             }
         }
@@ -1990,23 +2006,36 @@ mod tests {
 
         let testdata: Vec<(&str, Result<Vec<PortPair>>)> = vec![
             ("", Ok(vec![])),
-            ("VLAN -1 (net0):\r\n  Protocol[State]    FD  Source Address  Port   Dest. Address  Port RecvQ SendQ\r\n", Ok(vec![])),
-            (normal_expected, Ok(vec![
-                PortPair{guest:2345, host:43265},
-                PortPair{guest:5353, host:38989},
-                PortPair{guest:22, host:43751}])),
-            (condensed_expected, Ok(vec![
-                    PortPair{guest:2345, host:43265},
-                    PortPair{guest:5353, host:38989},
-                    PortPair{guest:22, host:43751}])),
-            (broken_expected, Ok(vec![
-                        PortPair{guest:2345, host:43265}])),
-            (missing_fd_expected, Ok(vec![
-                            PortPair{guest:2345, host:43265}])),
-            (established_expected, Ok(vec![
-                PortPair{guest:2345, host:43265},
-                PortPair{guest:5353, host:38989},
-                PortPair{guest:22, host:43751}])),
+            (
+                "VLAN -1 (net0):\r\n  Protocol[State]    FD  Source Address  Port   Dest. Address  Port RecvQ SendQ\r\n",
+                Ok(vec![]),
+            ),
+            (
+                normal_expected,
+                Ok(vec![
+                    PortPair { guest: 2345, host: 43265 },
+                    PortPair { guest: 5353, host: 38989 },
+                    PortPair { guest: 22, host: 43751 },
+                ]),
+            ),
+            (
+                condensed_expected,
+                Ok(vec![
+                    PortPair { guest: 2345, host: 43265 },
+                    PortPair { guest: 5353, host: 38989 },
+                    PortPair { guest: 22, host: 43751 },
+                ]),
+            ),
+            (broken_expected, Ok(vec![PortPair { guest: 2345, host: 43265 }])),
+            (missing_fd_expected, Ok(vec![PortPair { guest: 2345, host: 43265 }])),
+            (
+                established_expected,
+                Ok(vec![
+                    PortPair { guest: 2345, host: 43265 },
+                    PortPair { guest: 5353, host: 38989 },
+                    PortPair { guest: 22, host: 43751 },
+                ]),
+            ),
         ];
 
         for (input, result) in testdata {

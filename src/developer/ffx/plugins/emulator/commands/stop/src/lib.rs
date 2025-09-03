@@ -8,7 +8,7 @@ use ffx_emulator_engines::EngineBuilder;
 use ffx_emulator_stop_args::StopCommand;
 use ffx_emulator_stop_command_output::CommandStatus;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{bug, return_user_error, user_error, Error, FfxMain, FfxTool};
+use fho::{Error, FfxMain, FfxTool, bug, return_user_error, user_error};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -128,7 +128,7 @@ impl EmuStopTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use emulator_instance::{write_to_disk, EmulatorInstanceData, EngineState};
+    use emulator_instance::{EmulatorInstanceData, EngineState, write_to_disk};
     use ffx_config::ConfigLevel;
     use serde_json::json;
     use tempfile::tempdir;

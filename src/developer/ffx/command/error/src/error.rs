@@ -190,7 +190,7 @@ mod tests {
     use crate::tests::*;
     use anyhow::anyhow;
     use assert_matches::assert_matches;
-    use errors::{ffx_error, ffx_error_with_code, IntoExitCode};
+    use errors::{IntoExitCode, ffx_error, ffx_error_with_code};
     use std::io::{Cursor, Write};
 
     #[test]

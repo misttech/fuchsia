@@ -4,11 +4,11 @@
 
 //! Utilities that prints information in a human-readable format.
 
-use crate::{digest, ProfileMemoryOutput};
+use crate::{ProfileMemoryOutput, digest};
 use anyhow::Result;
 use digest::processed;
-use humansize::file_size_opts::BINARY;
 use humansize::FileSize;
+use humansize::file_size_opts::BINARY;
 use processed::RetainedMemory;
 use std::cmp::Reverse;
 use std::collections::HashMap;
@@ -207,9 +207,9 @@ pub fn write_human_readable_output<'a, W: Write>(
 mod tests {
 
     use super::*;
+    use crate::ProfileMemoryOutput::{CompleteDigest, ProcessDigest};
     use crate::bucket::Bucket;
     use crate::plugin_output::ProcessesMemoryUsage;
-    use crate::ProfileMemoryOutput::{CompleteDigest, ProcessDigest};
     use std::collections::HashSet;
 
     #[test]

@@ -6,9 +6,9 @@
 //! in this library may not depend on any other code within the plugin, with the exception of "args"
 //! libraries.
 
-use anyhow::{anyhow, Result};
-use nix::sys::socket::{connect, socket, AddressFamily, SockFlag, SockType, VsockAddr};
-use rand::{distr, Rng as _};
+use anyhow::{Result, anyhow};
+use nix::sys::socket::{AddressFamily, SockFlag, SockType, VsockAddr, connect, socket};
+use rand::{Rng as _, distr};
 use std::fs::File;
 use std::io::{BufRead, ErrorKind, Write};
 use std::os::fd::AsRawFd;
@@ -92,7 +92,7 @@ pub fn find_unused_vsock_cid() -> Result<u32> {
                         // ENODEV indicates that the CID is unused.
                         nix::libc::ENODEV => return Ok(cid),
                         nix::libc::EAFNOSUPPORT => {
-                            return Err(anyhow!("host does not support vsock"))
+                            return Err(anyhow!("host does not support vsock"));
                         }
                         _ => {}
                     }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use ffx_e2e_emu::IsolatedEmulator;
 use fuchsia_async::Timer;
 use log::info;

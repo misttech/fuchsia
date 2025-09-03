@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use ffx_setui_display_args::SetArgs;
 use fidl_fuchsia_settings::{DisplayProxy, DisplaySettings};
-use utils::{handle_mixed_result, Either, WatchOrSetResult};
+use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 pub async fn set<W: std::io::Write>(proxy: DisplayProxy, args: SetArgs, w: &mut W) -> Result<()> {
     handle_mixed_result("DisplaySet", command(proxy, DisplaySettings::from(args)).await, w).await

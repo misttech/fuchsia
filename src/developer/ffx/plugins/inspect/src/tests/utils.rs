@@ -6,7 +6,7 @@ use anyhow::Result;
 use diagnostics_data::{
     DiagnosticsHierarchy, InspectData, InspectDataBuilder, InspectHandleName, Property, Timestamp,
 };
-use fidl::endpoints::{create_proxy_and_stream, ServerEnd};
+use fidl::endpoints::{ServerEnd, create_proxy_and_stream};
 use fidl_fuchsia_developer_remotecontrol::{
     RemoteControlMarker, RemoteControlProxy, RemoteControlRequest,
 };

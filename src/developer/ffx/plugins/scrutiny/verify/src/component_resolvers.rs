@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use ffx_scrutiny_verify_args::component_resolvers::Command;
 use scrutiny_frontend::verify::component_resolvers::{
     ComponentResolverRequest, ComponentResolverResponse,
@@ -95,11 +95,7 @@ fn verify_component_resolvers(
         }
     }
 
-    if violations.is_empty() {
-        Ok(Ok(deps))
-    } else {
-        Ok(Err(AllowList(violations)))
-    }
+    if violations.is_empty() { Ok(Ok(deps)) } else { Ok(Err(AllowList(violations))) }
 }
 
 pub async fn verify(cmd: &Command, recovery: bool) -> Result<HashSet<PathBuf>> {

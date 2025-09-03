@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use ffx_scrutiny_verify_args::kernel_cmdline::Command;
 use scrutiny_frontend::Scrutiny;
 use scrutiny_utils::golden::{CompareResult, GoldenFile};

@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use errors::{ffx_bail, ffx_bail_with_code};
 use ffx_config::api::ConfigError;
 use ffx_config::{
-    disable_metrics, enable_basic_metrics, enable_enhanced_metrics, print_config,
-    show_metrics_status, ConfigLevel, EnvironmentContext,
+    ConfigLevel, EnvironmentContext, disable_metrics, enable_basic_metrics,
+    enable_enhanced_metrics, print_config, show_metrics_status,
 };
 use ffx_config_plugin_args::{
     AddCommand, AnalyticsCommand, AnalyticsControlCommand, ConfigCommand, EnvAccessCommand,
@@ -276,7 +276,7 @@ mod test {
 
     use super::*;
     use errors::{FfxError, IntoExitCode};
-    use ffx_config::{test_init, SelectMode};
+    use ffx_config::{SelectMode, test_init};
     use ffx_writer::{Format, TestBuffers};
     use serde_json::json;
 

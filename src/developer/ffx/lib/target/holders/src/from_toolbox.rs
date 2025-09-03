@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{connect_to_rcs, DEFAULT_PROXY_TIMEOUT};
+use crate::{DEFAULT_PROXY_TIMEOUT, connect_to_rcs};
 use async_trait::async_trait;
 use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnvWith};

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use ffx_config::global_env_context;
-use futures::{ready, select, Future, FutureExt, Stream, StreamExt};
+use futures::{Future, FutureExt, Stream, StreamExt, ready, select};
 use log_command::{LogEntry, Symbolize};
 use pin_project::pin_project;
 use std::borrow::Cow;
@@ -14,7 +14,7 @@ use std::fmt::{Debug, Display};
 use std::future::poll_fn;
 use std::mem::swap;
 use std::ops::Deref;
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::process::Stdio;
 use std::task::Poll;
 use symbol_index::ensure_symbol_index_registered;
@@ -615,7 +615,7 @@ mod tests {
     use std::fmt::Write;
     use std::sync::Arc;
     use std::task::{Context, Wake};
-    use tokio::io::{duplex, AsyncWriteExt, DuplexStream};
+    use tokio::io::{AsyncWriteExt, DuplexStream, duplex};
 
     /// Size of duplex buffer
     const DUPLEX_BUFFER_SIZE: usize = 4096;
@@ -694,7 +694,10 @@ mod tests {
         // Escaped view of string
         let unescaped_input = UnescapedMessage::from(input);
 
-        assert_eq!(unescaped_input.clone().sanitize(), "RTXN:0:start\nHello world!\n\n\nTest line 2\nRRTXN:0:nothing\nRTXN-COMMIT:0:COMMIT\nRTXN:1:start");
+        assert_eq!(
+            unescaped_input.clone().sanitize(),
+            "RTXN:0:start\nHello world!\n\n\nTest line 2\nRRTXN:0:nothing\nRTXN-COMMIT:0:COMMIT\nRTXN:1:start"
+        );
         // Roundtrip
         assert_eq!(unescaped_input.sanitize().unescape(), input);
         // No-op

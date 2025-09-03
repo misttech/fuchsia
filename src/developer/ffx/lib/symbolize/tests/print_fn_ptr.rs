@@ -4,8 +4,8 @@
 
 #![warn(unsafe_op_in_unsafe_fn)]
 
-use symbolize_test_utils::collector::collect_modules;
 use symbolize_test_utils::SymbolizationTestOutputs;
+use symbolize_test_utils::collector::collect_modules;
 
 extern "C" {
     // Defined in no_symbol_area.c

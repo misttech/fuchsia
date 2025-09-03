@@ -22,7 +22,7 @@ pub fn ffx_command(input: ItemStruct) -> TokenStream {
 mod test {
     use super::*;
     use syn::parse::{Parse, ParseStream};
-    use syn::{parse2, parse_quote, ItemType};
+    use syn::{ItemType, parse_quote, parse2};
 
     struct WrappedCommand {
         original: ItemStruct,

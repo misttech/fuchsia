@@ -5,14 +5,14 @@
 // Used to interact with the input interface.
 // TODO(https://fxbug.dev/42144965): Support multiple devices.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use ffx_setui_input_args::Input;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
 use fidl_fuchsia_settings::{DeviceType, InputProxy, InputState};
 use target_holders::moniker;
-use utils::{handle_mixed_result, Either, WatchOrSetResult};
+use utils::{Either, WatchOrSetResult, handle_mixed_result};
 
 #[derive(FfxTool)]
 #[check(AvailabilityFlag("setui"))]

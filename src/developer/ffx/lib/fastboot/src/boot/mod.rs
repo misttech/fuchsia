@@ -4,13 +4,13 @@
 
 use crate::common::stage_file;
 use crate::file_resolver::FileResolver;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use byteorder::{ByteOrder, LittleEndian};
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgress};
-use std::fs::{metadata, File};
+use std::fs::{File, metadata};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 use tokio::sync::mpsc::Sender;
 
 const PAGE_SIZE: u32 = 4096;

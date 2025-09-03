@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::config::{OperatingSystem, PreflightConfig};
-use anyhow::{anyhow, Result};
-use check::{summarize_results, PreflightCheck, PreflightCheckResult, RunSummary};
+use anyhow::{Result, anyhow};
+use check::{PreflightCheck, PreflightCheckResult, RunSummary, summarize_results};
 use ffx_preflight_args::PreflightCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
@@ -30,8 +30,7 @@ static SOME_CHECKS_FAILED_RECOVERABLE: &str =
 static SOME_CHECKS_FAILED_FATAL: &str = "Some checks failed :(. Sorry!";
 static EVERYTING_CHECKS_OUT: &str =
     "Everything checks out! Continue at https://fuchsia.dev/fuchsia-src/get-started";
-static EVERYTING_CHECKS_OUT_WITH_WARNINGS: &str =
-    "There were some warnings, but you can still carry on. Continue at https://fuchsia.dev/fuchsia-src/get-started";
+static EVERYTING_CHECKS_OUT_WITH_WARNINGS: &str = "There were some warnings, but you can still carry on. Continue at https://fuchsia.dev/fuchsia-src/get-started";
 
 #[cfg(target_os = "linux")]
 fn get_operating_system() -> Result<OperatingSystem> {

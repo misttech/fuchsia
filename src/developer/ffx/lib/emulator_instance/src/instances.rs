@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::{EmulatorInstanceData, EngineOption, EngineState};
-use anyhow::{anyhow, Context, Result};
-use std::fs::{create_dir_all, File};
+use anyhow::{Context, Result, anyhow};
+use std::fs::{File, create_dir_all};
 use std::path::PathBuf;
 
 /// The root directory for storing instance specific data. Instances

@@ -8,8 +8,8 @@
 //! runtime.
 
 use schemars::JsonSchema;
-use sdk_metadata::display_impl;
 pub use sdk_metadata::CpuArchitecture;
+use sdk_metadata::display_impl;
 use serde::{Deserialize, Serialize};
 
 /// Selector for which type of hardware acceleration will be enabled for the emulator.

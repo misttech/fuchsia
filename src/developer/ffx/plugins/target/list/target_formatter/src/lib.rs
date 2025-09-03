@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use addr::TargetAddr;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result, anyhow};
 use ffx_list_args::{AddressTypes, Format};
 use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_net::IpAddress;

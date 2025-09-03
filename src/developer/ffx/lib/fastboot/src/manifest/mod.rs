@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use crate::common::{Boot, Flash, Unlock};
-use crate::file_resolver::resolvers::Resolver;
 use crate::file_resolver::FileResolver;
+use crate::file_resolver::resolvers::Resolver;
 use crate::manifest::resolvers::{
     ArchiveResolver, FlashManifestResolver, FlashManifestTarResolver, ManifestResolver,
 };
 use crate::util::Event;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
 use camino::Utf8Path;
 use errors::ffx_bail;
@@ -278,8 +278,8 @@ mod test {
     use super::*;
     use assembly_partitions_config::{BootloaderPartition, BootstrapPartition, PartitionsConfig};
     use camino::Utf8PathBuf;
-    use ffx_flash_manifest::v3::{FlashManifest as FlashManifestV3, Partition};
     use ffx_flash_manifest::ManifestFile;
+    use ffx_flash_manifest::v3::{FlashManifest as FlashManifestV3, Partition};
     use product_bundle::ProductBundleV2;
     use serde_json::from_str;
 

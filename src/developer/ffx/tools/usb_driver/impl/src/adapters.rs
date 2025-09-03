@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use std::pin::Pin;
-use std::task::{ready, Poll};
+use std::task::{Poll, ready};
 use tokio::net::UnixStream;
 
 /// Adapter to cope with the difference between Tokio's `AsyncRead/Write` and

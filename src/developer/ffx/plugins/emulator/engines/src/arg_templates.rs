@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use anyhow::{Context as anyhow_context, Result};
 use emulator_instance::{DataUnits, DiskImage, EmulatorConfiguration, FlagData};
 use handlebars::{
-    no_escape, Context, Handlebars, Helper, HelperDef, HelperResult, JsonRender, Output,
-    RenderContext, RenderError,
+    Context, Handlebars, Helper, HelperDef, HelperResult, JsonRender, Output, RenderContext,
+    RenderError, no_escape,
 };
 
 //  Actual path is //src/developer/ffx/plugins/emulator/templates/emulator_flags.json.template

@@ -184,7 +184,10 @@ mod test {
         error.in_func("foo");
         error.in_func("bar");
 
-        assert_eq!("The interpreter was destroyed before the operation completed\n #  0 in foo\n #  1 in bar", format!("{error:#?}"));
+        assert_eq!(
+            "The interpreter was destroyed before the operation completed\n #  0 in foo\n #  1 in bar",
+            format!("{error:#?}")
+        );
     }
 
     #[test]

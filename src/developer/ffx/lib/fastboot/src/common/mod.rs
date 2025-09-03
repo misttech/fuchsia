@@ -6,7 +6,7 @@ use crate::common::vars::{IS_USERSPACE_VAR, LOCKED_VAR, MAX_DOWNLOAD_SIZE_VAR, R
 use crate::file_resolver::FileResolver;
 use crate::manifest::{from_in_tree, from_local_product_bundle, from_path, from_sdk};
 use crate::util::Event;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use errors::ffx_bail;
@@ -23,8 +23,7 @@ use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-pub const MISSING_CREDENTIALS: &str =
-    "The flash manifest is missing the credential files to unlock this device.\n\
+pub const MISSING_CREDENTIALS: &str = "The flash manifest is missing the credential files to unlock this device.\n\
      Please unlock the target and try again.";
 
 pub mod crypto;

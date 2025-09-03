@@ -9,7 +9,7 @@
 
 use emulator_instance::{FlagData, NetworkingMode, PortMapping};
 use schemars::JsonSchema;
-use sdk_metadata::{display_impl, VirtualDeviceV1};
+use sdk_metadata::{VirtualDeviceV1, display_impl};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Display;

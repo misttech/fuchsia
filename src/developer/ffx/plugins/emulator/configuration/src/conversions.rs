@@ -6,7 +6,7 @@
 //! interface types. We perform the conversion here to keep dependencies on the sdk_metadata
 //! to a minimum, while improving our ability to fully test the conversion code.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use assembled_system::Image;
 use emulator_instance::{
     DeviceConfig, DiskImage, EmulatorConfiguration, GuestConfig, PortMapping, VirtualCpu,

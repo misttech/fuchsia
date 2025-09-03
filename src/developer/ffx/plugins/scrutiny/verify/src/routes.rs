@@ -6,8 +6,8 @@ use anyhow::Result;
 use cm_rust::CapabilityTypeName;
 use errors::ffx_bail;
 use ffx_scrutiny_verify_args::routes::Command;
-use scrutiny_frontend::verify::ResultsForCapabilityType;
 use scrutiny_frontend::Scrutiny;
+use scrutiny_frontend::verify::ResultsForCapabilityType;
 use std::collections::HashSet;
 use std::path::PathBuf;
 

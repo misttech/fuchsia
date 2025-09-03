@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use schemars::JsonSchema;
 pub use sdk_metadata::{AudioDevice, DataAmount, DataUnits, PointingDevice, Screen, VsockDevice};
 use serde::{Deserialize, Serialize};
@@ -22,10 +22,10 @@ pub use enumerations::{
 };
 use fletcher64::get_file_hash;
 pub use instances::{
-    read_from_disk, read_from_disk_untyped, write_to_disk, EmulatorInstances, EMU_INSTANCE_ROOT_DIR,
+    EMU_INSTANCE_ROOT_DIR, EmulatorInstances, read_from_disk, read_from_disk_untyped, write_to_disk,
 };
 pub use targets::{
-    get_all_targets, start_emulator_watching, EmulatorTargetAction, EmulatorWatcher,
+    EmulatorTargetAction, EmulatorWatcher, get_all_targets, start_emulator_watching,
 };
 
 /// Holds a single mapping from a host port to the guest.

@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result, anyhow};
 use ffx_scrutiny_verify_args::route_sources::Command;
-use scrutiny_frontend::verify::route_sources::RouteSourceError;
 use scrutiny_frontend::Scrutiny;
+use scrutiny_frontend::verify::route_sources::RouteSourceError;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 

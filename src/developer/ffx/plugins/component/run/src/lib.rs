@@ -73,7 +73,10 @@ async fn cmd_impl(
     // If any of the RouteReport objects indicate an error, output the full report.
     if route_report.iter().any(|r| r.error_summary.is_some()) {
         write!(&mut writer, "\n\n")?;
-        writeln!(&mut writer, "WARNING: your component may not run correctly due to some required capabilities not being available:\n")?;
+        writeln!(
+            &mut writer,
+            "WARNING: your component may not run correctly due to some required capabilities not being available:\n"
+        )?;
         write_result_table(&args.moniker, &route_report, &mut writer)?;
     }
 

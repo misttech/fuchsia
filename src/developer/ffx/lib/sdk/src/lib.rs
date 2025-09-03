@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use errors::{ffx_bail, ffx_error};
 use log::warn;
 use serde::de::DeserializeOwned;
@@ -210,11 +210,7 @@ impl SdkRoot {
             Self::Full { .. } => None,
             Self::Modular { root, module } => {
                 if let Ok(module_path) = module_manifest_path(root, module) {
-                    if module_path.exists() {
-                        Some(module_path)
-                    } else {
-                        None
-                    }
+                    if module_path.exists() { Some(module_path) } else { None }
                 } else {
                     None
                 }
@@ -666,7 +662,7 @@ mod test {
     use regex::Regex;
     use std::fs;
     use std::io::Write;
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
 
     /// Writes the file to $root, with the path $path, from the source tree prefix $prefix
     /// (relative to this source file)
@@ -693,12 +689,14 @@ mod test {
     fn test_manifest_exists() {
         let release_root = sdk_test_data_root();
 
-        assert!(SdkRoot::Full {
-            root: release_root.path().to_owned(),
-            manifest: Some(SDK_MANIFEST_PATH.into())
-        }
-        .manifest_path()
-        .is_some());
+        assert!(
+            SdkRoot::Full {
+                root: release_root.path().to_owned(),
+                manifest: Some(SDK_MANIFEST_PATH.into())
+            }
+            .manifest_path()
+            .is_some()
+        );
     }
 
     #[fuchsia::test]

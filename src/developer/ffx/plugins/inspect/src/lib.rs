@@ -7,14 +7,14 @@ use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
 use ffx_inspect_args::{InspectCommand, InspectSubCommand};
 use ffx_writer::{MachineWriter, ToolIO as _};
-use fho::{deferred, Deferred, FfxMain, FfxTool};
+use fho::{Deferred, FfxMain, FfxTool, deferred};
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_diagnostics_host::ArchiveAccessorProxy;
 use iquery::commands::{Command, ListAccessorsResult, ListResult, SelectorsResult, ShowResult};
 use serde::Serialize;
 use std::fmt;
 use std::io::Write;
-use target_holders::{toolbox_or, RemoteControlProxyHolder};
+use target_holders::{RemoteControlProxyHolder, toolbox_or};
 
 mod accessor_provider;
 mod apply_selectors;

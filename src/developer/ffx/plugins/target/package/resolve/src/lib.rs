@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use ffx_target_package_resolve_args::ResolveCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{user_error, Error, FfxMain, FfxTool, Result};
+use fho::{Error, FfxMain, FfxTool, Result, user_error};
 use fidl::marker::SourceBreaking;
 use fidl_fuchsia_pkg_resolution::{PackageResolverProxy, PackageResolverResolveRequest};
 use schemars::JsonSchema;

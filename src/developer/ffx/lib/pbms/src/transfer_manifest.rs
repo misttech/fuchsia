@@ -6,11 +6,11 @@
 //!
 //! This builds upon the lower level /src/lib/transfer_manifest lib.
 
-use crate::pbms::{fetch_from_url, GS_SCHEME};
-use crate::{string_from_url, AuthFlowChoice};
+use crate::pbms::{GS_SCHEME, fetch_from_url};
+use crate::{AuthFlowChoice, string_from_url};
 use ::gcs::client::{Client, ProgressResult, ProgressState};
 use ::gcs::gs_url::split_gs_url;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use futures::{StreamExt as _, TryStreamExt as _};
 use std::format;
 use std::path::{Component, Path, PathBuf};

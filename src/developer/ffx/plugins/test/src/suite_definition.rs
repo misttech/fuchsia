@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use fidl_fuchsia_diagnostics::{ComponentSelector, LogInterestSelector, StringSelector};
 use fidl_fuchsia_diagnostics_types::Interest;
 use fidl_fuchsia_sys2 as fsys;
@@ -514,24 +514,30 @@ mod test {
         let (lifecycle_controller, _server_end1) =
             create_proxy::<fsys::LifecycleControllerMarker>();
         let (realm_query, _server_end2) = create_proxy::<fsys::RealmQueryMarker>();
-        assert!(combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
-            .await
-            .is_ok());
+        assert!(
+            combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
+                .await
+                .is_ok()
+        );
 
         let reader = PILOT_CONFIG_SEVERITY_LOWER.as_bytes();
         let (lifecycle_controller, _server_end1) =
             create_proxy::<fsys::LifecycleControllerMarker>();
         let (realm_query, _server_end2) = create_proxy::<fsys::RealmQueryMarker>();
-        assert!(combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
-            .await
-            .is_ok());
+        assert!(
+            combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
+                .await
+                .is_ok()
+        );
 
         let reader = PILOT_CONFIG_SEVERITY_PASCAL.as_bytes();
         let (lifecycle_controller, _server_end1) =
             create_proxy::<fsys::LifecycleControllerMarker>();
         let (realm_query, _server_end2) = create_proxy::<fsys::RealmQueryMarker>();
-        assert!(combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
-            .await
-            .is_ok());
+        assert!(
+            combined_params_from_pilot_reader(reader, &lifecycle_controller, &realm_query, 10)
+                .await
+                .is_ok()
+        );
     }
 }

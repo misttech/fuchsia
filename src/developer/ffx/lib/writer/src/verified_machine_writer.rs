@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fmt::Display;
 use std::io::Write;
-use writer::{format_output, Format};
+use writer::{Format, format_output};
 
 /// Structured output writer with schema.
 /// [`VerifiedMachineWriter`] is used to provide

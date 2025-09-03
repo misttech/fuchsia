@@ -106,11 +106,7 @@ where
     where
         T: Display,
     {
-        if self.is_machine() {
-            self.machine(value)
-        } else {
-            self.line(value)
-        }
+        if self.is_machine() { self.machine(value) } else { self.line(value) }
     }
 
     fn stderr(&mut self) -> &mut dyn Write {
@@ -123,19 +119,11 @@ where
     T: Serialize,
 {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if self.is_machine() {
-            Ok(buf.len())
-        } else {
-            self.0.write(buf)
-        }
+        if self.is_machine() { Ok(buf.len()) } else { self.0.write(buf) }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        if self.is_machine() {
-            Ok(())
-        } else {
-            self.0.flush()
-        }
+        if self.is_machine() { Ok(()) } else { self.0.flush() }
     }
 }
 

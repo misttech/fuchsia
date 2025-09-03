@@ -291,11 +291,11 @@ impl InUseHandle {
         let hdl = match &*this {
             HandleObject::Endpoint(Endpoint::Client(ch, _) | Endpoint::Server(ch, _)) => ch,
             HandleObject::Handle(_, _) => {
-                return Poll::Ready(Err(ValueError::RawChannelUnimplemented("reads").into()))
+                return Poll::Ready(Err(ValueError::RawChannelUnimplemented("reads").into()));
             }
             HandleObject::Endpoint(_) => return Poll::Ready(Err(ValueError::NotChannel.into())),
             HandleObject::Undetermined(_) => {
-                return Poll::Ready(Err(ValueError::ChannelTypeUndetermined.into()))
+                return Poll::Ready(Err(ValueError::ChannelTypeUndetermined.into()));
             }
             HandleObject::Defunct => return Poll::Ready(Err(ValueError::ChannelClosed.into())),
         };
@@ -323,7 +323,7 @@ impl InUseHandle {
         let hdl = match &*this {
             HandleObject::Endpoint(Endpoint::Client(ch, _) | Endpoint::Server(ch, _)) => ch,
             HandleObject::Handle(_, _) => {
-                return Err(ValueError::RawChannelUnimplemented("writes").into())
+                return Err(ValueError::RawChannelUnimplemented("writes").into());
             }
             HandleObject::Endpoint(_) => return Err(ValueError::NotChannel.into()),
             HandleObject::Undetermined(_) => return Err(ValueError::ChannelTypeUndetermined.into()),

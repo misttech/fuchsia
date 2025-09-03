@@ -9,19 +9,19 @@ use chrono::{Datelike, Local, Timelike};
 use ffx_config::EnvironmentContext;
 use ffx_snapshot_args::SnapshotCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{bug, return_bug, return_user_error, Error, FfxMain, FfxTool, Result};
+use fho::{Error, FfxMain, FfxTool, Result, bug, return_bug, return_user_error};
 use fidl_fuchsia_feedback::{
     Annotation, DataProviderProxy, GetAnnotationsParameters, GetSnapshotParameters,
 };
 use fidl_fuchsia_io as fio;
 use futures::stream::{FuturesOrdered, StreamExt};
 use gcs::error::GcsError;
-use pbms::{handle_new_access_token, AuthFlowChoice};
+use pbms::{AuthFlowChoice, handle_new_access_token};
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::env::temp_dir;
 use std::fs;
-use std::io::{stderr, stdin, stdout, Write};
+use std::io::{Write, stderr, stdin, stdout};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use target_holders::moniker;

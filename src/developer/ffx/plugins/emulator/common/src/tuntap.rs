@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use cfg_if::cfg_if;
-use fho::{return_bug, return_user_error, Result};
+use fho::{Result, return_bug, return_user_error};
 use mockall::automock;
-use nix::ifaddrs::{getifaddrs, InterfaceAddress, InterfaceAddressIterator};
+use nix::ifaddrs::{InterfaceAddress, InterfaceAddressIterator, getifaddrs};
 use nix::net::if_::InterfaceFlags;
 
 // TODO(https://fxbug.dev/42050691): Make this configurable.
@@ -146,7 +146,9 @@ fn tap_inner(tap: &QemuTunTap, check_for_ready: bool) -> Result<()> {
 
     // Also check for busy-ness.
     if tap.interface_is_in_use(&interface) {
-        return_user_error!("The Tun/Tap interface '{TAP_INTERFACE_NAME}' exists, but it's in use by another process.")
+        return_user_error!(
+            "The Tun/Tap interface '{TAP_INTERFACE_NAME}' exists, but it's in use by another process."
+        )
     }
     Ok(())
 }

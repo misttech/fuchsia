@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_codec::{library as lib, Value as FidlValue};
+use fidl_codec::{Value as FidlValue, library as lib};
 use futures::future::BoxFuture;
+use num::BigInt;
 use num::rational::BigRational;
 use num::traits::ToPrimitive;
-use num::BigInt;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -106,11 +106,7 @@ enum LookupResultOrType<'a> {
 impl<'a> std::fmt::Display for LookupResultOrType<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fn nullable_mark(nullable: &bool) -> &'static str {
-            if *nullable {
-                "?"
-            } else {
-                ""
-            }
+            if *nullable { "?" } else { "" }
         }
 
         match self {
@@ -403,11 +399,7 @@ impl ValueExt for Value {
         match self {
             Value::ClientEnd(c, proto) if ns.inherits(&proto, expected_protocol) => Ok(c),
             Value::OutOfLine(PlaygroundValue::InUseHandle(ref i)) => {
-                if let Ok(c) = i.take_client(Some(expected_protocol)) {
-                    Ok(c)
-                } else {
-                    Err(self)
-                }
+                if let Ok(c) = i.take_client(Some(expected_protocol)) { Ok(c) } else { Err(self) }
             }
             other => Err(other),
         }
@@ -417,11 +409,7 @@ impl ValueExt for Value {
         match self {
             Value::ServerEnd(c, _) => Ok(c),
             Value::OutOfLine(PlaygroundValue::InUseHandle(ref i)) => {
-                if let Ok(c) = i.take_server(None) {
-                    Ok(c)
-                } else {
-                    Err(self)
-                }
+                if let Ok(c) = i.take_server(None) { Ok(c) } else { Err(self) }
             }
             other => Err(other),
         }
@@ -492,7 +480,7 @@ impl ValueExt for Value {
                             format!("{}", Value::Object(a)),
                             format!("{}", LookupResultOrType::LookupResult(other)),
                         )
-                        .into())
+                        .into());
                     }
                 },
                 other => {
@@ -500,7 +488,7 @@ impl ValueExt for Value {
                         format!("{}", Value::Object(a)),
                         format!("{:?}", other),
                     )
-                    .into())
+                    .into());
                 }
             },
             Value::Bits(a, b) => {
@@ -946,59 +934,71 @@ mod test {
         assert!(playground_semantic_compare(&Value::U8(2), &Value::U32(1)).unwrap().is_gt());
         assert!(playground_semantic_compare(&Value::U32(2), &Value::U8(1)).unwrap().is_gt());
         assert!(playground_semantic_compare(&Value::I32(-2), &Value::U8(1)).unwrap().is_lt());
-        assert!(playground_semantic_compare(
-            &Value::Bits("pumpkin".into(), Box::new(Value::U8(2))),
-            &Value::U32(1)
-        )
-        .unwrap()
-        .is_gt());
-        assert!(playground_semantic_compare(
-            &Value::Enum("pumpkin".into(), Box::new(Value::U8(2))),
-            &Value::U32(1)
-        )
-        .unwrap()
-        .is_gt());
-        assert!(playground_semantic_compare(
-            &Value::String("a".into()),
-            &Value::String("a".into())
-        )
-        .unwrap()
-        .is_eq());
-        assert!(playground_semantic_compare(
-            &Value::String("a".into()),
-            &Value::String("b".into())
-        )
-        .unwrap()
-        .is_lt());
-        assert!(playground_semantic_compare(
-            &Value::List(vec![Value::U8(1), Value::U8(2)]),
-            &Value::List(vec![Value::U8(1), Value::U8(2)])
-        )
-        .unwrap()
-        .is_eq());
-        assert!(playground_semantic_compare(
-            &Value::List(vec![Value::U8(1), Value::U8(2)]),
-            &Value::List(vec![Value::U8(1), Value::U8(3)])
-        )
-        .unwrap()
-        .is_lt());
-        assert!(playground_semantic_compare(
-            &Value::List(vec![Value::U8(1), Value::U8(2)]),
-            &Value::List(vec![Value::U8(1), Value::U8(2), Value::U8(0)])
-        )
-        .unwrap()
-        .is_lt());
-        assert!(playground_semantic_compare(
-            &Value::Object(vec![("foo".into(), Value::U8(1)), ("bar".into(), Value::U8(2))]),
-            &Value::Object(vec![("bar".into(), Value::U8(2)), ("foo".into(), Value::U8(1))]),
-        )
-        .unwrap()
-        .is_eq());
-        assert!(playground_semantic_compare(
-            &Value::Object(vec![("foo".into(), Value::U8(1)), ("bar".into(), Value::U8(1))]),
-            &Value::Object(vec![("bar".into(), Value::U8(2)), ("foo".into(), Value::U8(1))]),
-        )
-        .is_none());
+        assert!(
+            playground_semantic_compare(
+                &Value::Bits("pumpkin".into(), Box::new(Value::U8(2))),
+                &Value::U32(1)
+            )
+            .unwrap()
+            .is_gt()
+        );
+        assert!(
+            playground_semantic_compare(
+                &Value::Enum("pumpkin".into(), Box::new(Value::U8(2))),
+                &Value::U32(1)
+            )
+            .unwrap()
+            .is_gt()
+        );
+        assert!(
+            playground_semantic_compare(&Value::String("a".into()), &Value::String("a".into()))
+                .unwrap()
+                .is_eq()
+        );
+        assert!(
+            playground_semantic_compare(&Value::String("a".into()), &Value::String("b".into()))
+                .unwrap()
+                .is_lt()
+        );
+        assert!(
+            playground_semantic_compare(
+                &Value::List(vec![Value::U8(1), Value::U8(2)]),
+                &Value::List(vec![Value::U8(1), Value::U8(2)])
+            )
+            .unwrap()
+            .is_eq()
+        );
+        assert!(
+            playground_semantic_compare(
+                &Value::List(vec![Value::U8(1), Value::U8(2)]),
+                &Value::List(vec![Value::U8(1), Value::U8(3)])
+            )
+            .unwrap()
+            .is_lt()
+        );
+        assert!(
+            playground_semantic_compare(
+                &Value::List(vec![Value::U8(1), Value::U8(2)]),
+                &Value::List(vec![Value::U8(1), Value::U8(2), Value::U8(0)])
+            )
+            .unwrap()
+            .is_lt()
+        );
+        assert!(
+            playground_semantic_compare(
+                &Value::Object(vec![("foo".into(), Value::U8(1)), ("bar".into(), Value::U8(2))]),
+                &Value::Object(vec![("bar".into(), Value::U8(2)), ("foo".into(), Value::U8(1))]),
+            )
+            .unwrap()
+            .is_eq()
+        );
+        assert!(
+            playground_semantic_compare(
+                &Value::Object(vec![("foo".into(), Value::U8(1)), ("bar".into(), Value::U8(1))]),
+                &Value::Object(vec![("bar".into(), Value::U8(2)), ("foo".into(), Value::U8(1))]),
+            )
+            .is_none()
+        );
     }
 
     #[test]

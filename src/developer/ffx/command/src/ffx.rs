@@ -6,7 +6,7 @@ use crate::metrics::analytics_command;
 use crate::{MachineFormat, MetricsSession};
 use argh::{ArgsInfo, FromArgs};
 use camino::Utf8PathBuf;
-use ffx_command_error::{bug, return_user_error, user_error, Error, FfxContext as _, Result};
+use ffx_command_error::{Error, FfxContext as _, Result, bug, return_user_error, user_error};
 use ffx_config::environment::ExecutableKind;
 use ffx_config::logging::LogDestination;
 use ffx_config::{AssertNoEnvError, EnvironmentContext, FfxConfigBacked};
@@ -615,7 +615,7 @@ mod test {
     use assert_matches::assert_matches;
     use ffx_config::environment::EnvironmentKind;
     use std::io::Write;
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
 
     #[test]
     fn test_check_ffx_strict() {

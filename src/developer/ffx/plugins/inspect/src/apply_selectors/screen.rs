@@ -174,7 +174,7 @@ impl<T: Terminal> Screen<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::apply_selectors::test_utils::{get_test_lines, FakeTerminal};
+    use crate::apply_selectors::test_utils::{FakeTerminal, get_test_lines};
 
     #[fuchsia::test]
     fn small_screen_overflow() {

@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use byteorder::{BigEndian, ByteOrder};
+use futures::Future;
 use futures::io::{AsyncRead, AsyncWrite};
 use futures::task::{Context, Poll};
-use futures::Future;
 use std::fmt;
 use std::net::SocketAddr;
 use std::num::Wrapping;
@@ -197,7 +197,7 @@ impl AsyncWrite for UdpNetworkInterface {
                         _ => {
                             return Err(std::io::Error::other(format!(
                                 "Unexpected Response packet"
-                            )))
+                            )));
                         }
                     }
                 }

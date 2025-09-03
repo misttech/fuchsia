@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use ffx_target_package_explore_args::ExploreCommand;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{bug, exit_with_code, user_error, Error, FfxContext as _, FfxMain, FfxTool, Result};
+use fho::{Error, FfxContext as _, FfxMain, FfxTool, Result, bug, exit_with_code, user_error};
 use fidl_fuchsia_dash as fdash;
 use futures::stream::StreamExt as _;
 use schemars::JsonSchema;

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use ffx_command::FfxCommandLine;
-use ffx_command_error::{return_bug, Result};
+use ffx_command_error::{Result, return_bug};
 use ffx_config::EnvironmentContext;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;

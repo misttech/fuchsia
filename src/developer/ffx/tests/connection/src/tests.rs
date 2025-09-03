@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::{setup_and_teardown_fixture, LaunchedComponentConnector};
+use crate::util::{LaunchedComponentConnector, setup_and_teardown_fixture};
 use fixture::fixture;
 use futures::{AsyncReadExt, StreamExt, TryFutureExt};
 

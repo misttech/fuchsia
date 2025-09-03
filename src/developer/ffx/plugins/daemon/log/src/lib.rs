@@ -13,7 +13,7 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Seek};
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 #[derive(FfxTool)]

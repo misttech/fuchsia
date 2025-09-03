@@ -5,12 +5,12 @@
 use argh::{ArgsInfo, FromArgs, SubCommands};
 use errors::ffx_error;
 use ffx_command::{
-    analytics_command, return_bug, return_user_error, send_enhanced_analytics, CliArgsInfo, Error,
-    ExternalSubToolSuite, FfxCommandLine, FfxContext, FfxToolInfo, MetricsSession, Optionality,
-    Result, ToolRunner, ToolSuite,
+    CliArgsInfo, Error, ExternalSubToolSuite, FfxCommandLine, FfxContext, FfxToolInfo,
+    MetricsSession, Optionality, Result, ToolRunner, ToolSuite, analytics_command, return_bug,
+    return_user_error, send_enhanced_analytics,
 };
-use ffx_config::environment::ExecutableKind;
 use ffx_config::EnvironmentContext;
+use ffx_config::environment::ExecutableKind;
 use ffx_lib_args::FfxBuiltIn;
 use ffx_lib_sub_command::SubCommand;
 use fho::FhoEnvironment;
@@ -302,7 +302,9 @@ fn get_mac_deprecation_warning(is_machine: bool) -> Option<&'static str> {
     // Only return the deprecation warning if we  are running on macOS and the user
     // did not pass --machine JSON.
     if !is_machine && cfg!(target_os = "macos") {
-        Some("[WARNING] This tool is deprecated for macOS per go/fuchsia-on-mac and will no longer run on [2025/07/01]: b/418852451")
+        Some(
+            "[WARNING] This tool is deprecated for macOS per go/fuchsia-on-mac and will no longer run on [2025/07/01]: b/418852451",
+        )
     } else {
         None
     }

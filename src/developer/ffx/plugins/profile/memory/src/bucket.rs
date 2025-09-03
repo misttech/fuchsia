@@ -91,7 +91,7 @@ pub fn compute_buckets(
 
 #[cfg(test)]
 mod tests {
-    use crate::bucket::{compute_buckets, Bucket, Process};
+    use crate::bucket::{Bucket, Process, compute_buckets};
     use crate::processed::{ProcessKoid, RetainedMemory, Vmo, VmoKoid};
     use crate::raw::BucketDefinition;
     use std::collections::{HashMap, HashSet};

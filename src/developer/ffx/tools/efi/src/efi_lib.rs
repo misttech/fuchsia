@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use crate::args::{EfiCommand, EfiSubCommand};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use errors::ffx_bail;
 use sdk_metadata::CpuArchitecture;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::prelude::*;
 use std::io::BufReader;
+use std::io::prelude::*;
 use std::path::Path;
 
 #[derive(fho::FfxTool)]

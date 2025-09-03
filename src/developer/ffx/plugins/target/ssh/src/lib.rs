@@ -117,8 +117,8 @@ fn make_ssh_command(cmd: SshCommand, addr: TargetIpAddr) -> Result<Command> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ffx_config::environment::test_init;
     use ffx_config::ConfigLevel;
+    use ffx_config::environment::test_init;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use serde_json::json;

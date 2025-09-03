@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use ffx_audio_device::device_list_untagged;
-use ffx_audio_device::list::{get_devices, ListResult};
+use ffx_audio_device::list::{ListResult, get_devices};
 use ffx_audio_listdevices_args::ListDevicesCommand;
 use ffx_optional_moniker::{exposed_dir, optional_moniker};
 use ffx_writer::MachineWriter;
