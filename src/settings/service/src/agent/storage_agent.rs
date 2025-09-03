@@ -16,7 +16,6 @@ use crate::agent::{self, AgentCreator, Context, CreationFunc, Lifespan};
 #[cfg(test)]
 use crate::base::UnknownInfo;
 use crate::base::{SettingInfo, SettingType};
-use crate::keyboard::types::KeyboardInfo;
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::message::receptor::Receptor;
 use crate::night_mode::types::NightModeInfo;
@@ -135,7 +134,6 @@ macro_rules! into_storage_info {
 
 #[cfg(test)]
 into_storage_info!(UnknownInfo => SettingInfo);
-into_storage_info!(KeyboardInfo => SettingInfo);
 into_storage_info!(NightModeInfo => SettingInfo);
 into_storage_info!(PrivacyInfo => SettingInfo);
 into_storage_info!(SetupInfo => SettingInfo);
@@ -210,7 +208,7 @@ where
                     SettingType::FactoryReset => panic!("FactoryReset goes directly to storage"),
                     SettingType::Input => panic!("Input goes directly to storage"),
                     SettingType::Intl => panic!("Intl goes directly to storage"),
-                    SettingType::Keyboard => self.read::<KeyboardInfo>(id, responder).await,
+                    SettingType::Keyboard => panic!("Keyboard goes directly to storage"),
                     SettingType::Light => panic!("Light goes directly to storage"),
                     SettingType::NightMode => self.read::<NightModeInfo>(id, responder).await,
                     SettingType::Privacy => self.read::<PrivacyInfo>(id, responder).await,
@@ -232,7 +230,7 @@ where
                     SettingInfo::FactoryReset(_) => panic!("FactoryReset goes directly to storage"),
                     SettingInfo::Input(_) => panic!("Input goes directly to storage"),
                     SettingInfo::Intl(_) => panic!("Intl goes directly to storage"),
-                    SettingInfo::Keyboard(info) => self.write(info, responder).await,
+                    SettingInfo::Keyboard(_) => panic!("Keyboard goes directly to storage"),
                     SettingInfo::NightMode(info) => self.write(info, responder).await,
                     SettingInfo::Privacy(info) => self.write(info, responder).await,
                     SettingInfo::Setup(info) => self.write(info, responder).await,

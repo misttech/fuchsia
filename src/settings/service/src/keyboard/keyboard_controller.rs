@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::marker::PhantomData;
+use std::rc::Rc;
+
 use crate::base::{SettingInfo, SettingType};
 use crate::handler::base::Request;
 use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
@@ -11,7 +14,7 @@ use crate::handler::setting_handler::{
 use crate::keyboard::types::{KeyboardInfo, KeymapId};
 use crate::trace;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
-use settings_storage::storage_factory::{NoneT, StorageAccess};
+use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
 
 use async_trait::async_trait;
 
@@ -33,31 +36,44 @@ impl From<KeyboardInfo> for SettingInfo {
     }
 }
 
-pub struct KeyboardController {
-    client: ClientProxy,
+impl From<&KeyboardInfo> for SettingType {
+    fn from(_: &KeyboardInfo) -> SettingType {
+        SettingType::Keyboard
+    }
 }
 
-impl StorageAccess for KeyboardController {
+pub struct KeyboardController<F> {
+    client: ClientProxy,
+    store: Rc<DeviceStorage>,
+    _phantom: PhantomData<F>,
+}
+
+impl<F> StorageAccess for KeyboardController<F> {
     type Storage = DeviceStorage;
     type Data = KeyboardInfo;
     const STORAGE_KEY: &'static str = KeyboardInfo::KEY;
 }
 
 #[async_trait(?Send)]
-impl data_controller::Create for KeyboardController {
-    async fn create(client: ClientProxy) -> Result<Self, ControllerError> {
-        Ok(KeyboardController { client })
+impl<F> data_controller::CreateWithAsync for KeyboardController<F>
+where
+    F: StorageFactory<Storage = DeviceStorage>,
+{
+    type Data = Rc<F>;
+    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
+        let store = data.get_store().await;
+        Ok(KeyboardController { client, store, _phantom: PhantomData })
     }
 }
 
 #[async_trait(?Send)]
-impl controller::Handle for KeyboardController {
+impl<F> controller::Handle for KeyboardController<F> {
     async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
         match request {
             Request::SetKeyboardInfo(keyboard_info) => {
                 let id = fuchsia_trace::Id::new();
                 trace!(id, c"set keyboard");
-                let mut current = self.client.read_setting::<KeyboardInfo>(id).await;
+                let mut current = self.store.get::<KeyboardInfo>().await;
                 if !keyboard_info.is_valid() {
                     return Some(Err(ControllerError::InvalidArgument(
                         SettingType::Keyboard,
@@ -76,12 +92,14 @@ impl controller::Handle for KeyboardController {
                             Some(value)
                         }
                     });
-                Some(self.client.write_setting(current.into(), id).await.into_handler_result())
+                Some(
+                    self.client.storage_write(&self.store, current, id).await.into_handler_result(),
+                )
             }
             Request::Get => {
                 let id = fuchsia_trace::Id::new();
                 trace!(id, c"get keyboard");
-                Some(self.client.read_setting_info::<KeyboardInfo>(id).await.into_handler_result())
+                Some(Ok(Some(self.store.get::<KeyboardInfo>().await.into())))
             }
             _ => None,
         }

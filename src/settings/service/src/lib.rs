@@ -829,12 +829,18 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         // Keyboard
         if components.contains(&SettingType::Keyboard) {
             device_storage_factory
-                .initialize::<KeyboardController>()
+                .initialize::<KeyboardController<T>>()
                 .await
                 .expect("storage should still be initializing");
+            let device_storage_factory = Rc::clone(&device_storage_factory);
             factory_handle.register(
                 SettingType::Keyboard,
-                Box::new(DataHandler::<KeyboardController>::spawn),
+                Box::new(move |context| {
+                    DataHandler::<KeyboardController<T>>::spawn_with_async(
+                        context,
+                        Rc::clone(&device_storage_factory),
+                    )
+                }),
             );
         }
 
