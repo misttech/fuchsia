@@ -45,7 +45,7 @@ void Dwc3::Ep0QueueSetup() {
 }
 
 void Dwc3::Ep0StartEndpoints() {
-  FDF_LOG(DEBUG, "Dwc3::Ep0StartEndpoints");
+  fdf::debug("Dwc3::Ep0StartEndpoints");
 
   ep0_.in.type = USB_ENDPOINT_CONTROL;
   ep0_.in.interval = 0;
@@ -74,9 +74,9 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
 
       memcpy(&ep0_.cur_setup, ep0_.buffer->virt(), sizeof(ep0_.cur_setup));
 
-      FDF_LOG(DEBUG, "got setup: type: 0x%02X req: %d value: %d index: %d length: %d",
-              ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
-              ep0_.cur_setup.w_index, ep0_.cur_setup.w_length);
+      fdf::debug("got setup: type: 0x{:02x} req: {} value: {} index: {} length: {}",
+                 ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
+                 ep0_.cur_setup.w_index, ep0_.cur_setup.w_length);
 
       const bool is_three_stage = ep0_.cur_setup.w_length > 0;
       const bool is_out = ((ep0_.cur_setup.bm_request_type & USB_DIR_MASK) == USB_DIR_OUT);
@@ -114,7 +114,7 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
 
 void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
   // TODO(https://fxbug.dev/433971550): Reduce to DEBUG once we're done investigating.
-  FDF_LOG(INFO, "Dwc3::HandleEp0TransferNotReadyEvent state %u stage %u", ep0_.state, stage);
+  fdf::info("Dwc3::HandleEp0TransferNotReadyEvent state {} stage {}", ep0_.state, stage);
 
   ZX_ASSERT(is_ep0_num(ep_num));
 
@@ -164,7 +164,7 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
       break;
     case Ep0::State::Status:
     default:
-      FDF_LOG(ERROR, "ready unhandled state %u", static_cast<uint32_t>(ep0_.state));
+      fdf::error("ready unhandled state {}", ep0_.state);
       break;
   }
 }
@@ -207,12 +207,12 @@ void Dwc3::HandleEp0Setup(size_t length) {
           [this, is_out, fail, length](
               fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::Control>& result) {
             if (!result.ok()) {
-              FDF_LOG(ERROR, "(framework) Control(): %s", result.status_string());
+              fdf::error("(framework) Control(): {}", result.status_string());
               fail();
               return;
             }
             if (result->is_error()) {
-              FDF_LOG(ERROR, "Control(): %s", zx_status_get_string(result->error_value()));
+              fdf::error("Control(): {}", zx_status_get_string(result->error_value()));
               fail();
               return;
             }
@@ -230,7 +230,7 @@ void Dwc3::HandleEp0Setup(size_t length) {
                 std::memcpy(ep0_.buffer->virt(), read_data.data(), read_data.size_bytes());
               }
 
-              FDF_LOG(DEBUG, "HandleSetup success: actual %zu", read_data.size_bytes());
+              fdf::debug("HandleSetup success: actual {}", read_data.size_bytes());
               // queue a write for the data phase
               CacheFlush(ep0_.buffer.get(), 0, read_data.size_bytes());
               EpStartTransfer(ep0_.in, ep0_.shared_fifo, TRB_TRBCTL_CONTROL_DATA,

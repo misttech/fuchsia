@@ -26,8 +26,10 @@
 
 #include <cstdint>
 #include <deque>
+#include <format>
 #include <memory>
 #include <mutex>
+#include <string>
 
 #include <usb-endpoint/sdk/usb-endpoint-server.h>
 #include <usb/descriptors.h>
@@ -55,7 +57,7 @@ class Dwc3 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
 
   Dwc3(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
       : fdf::DriverBase{"dwc3", std::move(start_args), std::move(dispatcher)} {}
-  ~Dwc3() { FDF_LOG(INFO, "~Dwc3()"); }
+  ~Dwc3() { fdf::info("~Dwc3()"); }
 
   zx::result<> Start() override;
   void Stop() override;
@@ -240,6 +242,8 @@ class Dwc3 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
     bool transfer_in_progress_ = false;
   };
 
+  friend struct std::formatter<Ep0::State>;
+
   constexpr bool is_ep0_num(uint8_t ep_num) { return ((ep_num == kEp0Out) || (ep_num == kEp0In)); }
 
   UserEndpoint* get_user_endpoint(uint8_t ep_num) {
@@ -348,5 +352,39 @@ class Dwc3 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
 };
 
 }  // namespace dwc3
+
+template <>
+struct std::formatter<dwc3::Dwc3::Ep0::State> : std::formatter<std::string> {
+  auto format(const dwc3::Dwc3::Ep0::State state, format_context& ctx) const {
+    std::string fmt;
+    switch (state) {
+      case dwc3::Dwc3::Ep0::State::None:
+        fmt = "NONE";
+        break;
+      case dwc3::Dwc3::Ep0::State::Setup:
+        fmt = "SETUP";
+        break;
+      case dwc3::Dwc3::Ep0::State::DataOut:
+        fmt = "DATA_OUT";
+        break;
+      case dwc3::Dwc3::Ep0::State::DataIn:
+        fmt = "DATA_IN";
+        break;
+      case dwc3::Dwc3::Ep0::State::WaitNrdyOut:
+        fmt = "WAIT_NREDY_OUT";
+        break;
+      case dwc3::Dwc3::Ep0::State::WaitNrdyIn:
+        fmt = "WAIT_NREDY_IN";
+        break;
+      case dwc3::Dwc3::Ep0::State::Status:
+        fmt = "STATUS";
+        break;
+      default:
+        fmt = "<unknown>";
+        break;
+    }
+    return std::formatter<std::string>::format(fmt, ctx);
+  }
+};
 
 #endif  // SRC_DEVICES_USB_DRIVERS_DWC3_DWC3_H_

@@ -18,30 +18,30 @@ void Dwc3::HandleEpEvent(uint32_t event) {
 
   switch (type) {
     case DEPEVT_XFER_COMPLETE:
-      FDF_LOG(DEBUG, "ep[%u] DEPEVT_XFER_COMPLETE", ep_num);
+      fdf::debug("ep[{}] DEPEVT_XFER_COMPLETE", ep_num);
       HandleEpTransferCompleteEvent(ep_num);
       break;
     case DEPEVT_XFER_IN_PROGRESS:
-      FDF_LOG(DEBUG, "ep[%u] DEPEVT_XFER_IN_PROGRESS: status %u", ep_num, status);
+      fdf::debug("ep[{}] DEPEVT_XFER_IN_PROGRESS: status {}", ep_num, status);
       break;
     case DEPEVT_XFER_NOT_READY:
-      FDF_LOG(DEBUG, "ep[%u] DEPEVT_XFER_NOT_READY", ep_num);
+      fdf::debug("ep[{}] DEPEVT_XFER_NOT_READY", ep_num);
       HandleEpTransferNotReadyEvent(ep_num, DEPEVT_XFER_NOT_READY_STAGE(event));
       break;
     case DEPEVT_STREAM_EVT:
-      FDF_LOG(DEBUG, "ep[%u] DEPEVT_STREAM_EVT ep_num: status %u", ep_num, status);
+      fdf::debug("ep[{}] DEPEVT_STREAM_EVT ep_num: status %u", ep_num, status);
       break;
     case DEPEVT_CMD_CMPLT: {
       uint32_t cmd_type = DEPEVT_CMD_CMPLT_CMD_TYPE(event);
       uint32_t rsrc_id = DEPEVT_CMD_CMPLT_RSRC_ID(event);
-      FDF_LOG(DEBUG, "ep[%u] DEPEVT_CMD_COMPLETE: type %u rsrc_id %u", ep_num, cmd_type, rsrc_id);
+      fdf::debug("ep[{}] DEPEVT_CMD_COMPLETE: type {} rsrc_id {}", ep_num, cmd_type, rsrc_id);
       if (cmd_type == DEPCMD::DEPSTRTXFER) {
         HandleEpTransferStartedEvent(ep_num, rsrc_id);
       }
       break;
     }
     default:
-      FDF_LOG(ERROR, "dwc3_handle_ep_event: unknown event type %u", type);
+      fdf::error("dwc3_handle_ep_event: unknown event type {}", type);
       break;
   }
 }
@@ -57,121 +57,121 @@ void Dwc3::HandleEvent(uint32_t event) {
 
   switch (type) {
     case DEVT_DISCONNECT:
-      FDF_LOG(DEBUG, "DEVT_DISCONNECT");
+      fdf::debug("DEVT_DISCONNECT");
       break;
     case DEVT_USB_RESET:
-      FDF_LOG(DEBUG, "DEVT_USB_RESET");
+      fdf::debug("DEVT_USB_RESET");
       HandleResetEvent();
       break;
     case DEVT_CONNECTION_DONE:
-      FDF_LOG(DEBUG, "DEVT_CONNECTION_DONE");
+      fdf::debug("DEVT_CONNECTION_DONE");
       HandleConnectionDoneEvent();
       break;
     case DEVT_LINK_STATE_CHANGE:
-      FDF_LOG(DEBUG, "DEVT_LINK_STATE_CHANGE: ");
+      fdf::debug("DEVT_LINK_STATE_CHANGE: ");
       switch (info) {
         case DSTS::USBLNKST_U0 | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS::USBLNKST_U0");
+          fdf::debug("DSTS::USBLNKST_U0");
           break;
         case DSTS::USBLNKST_U1 | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_U1");
+          fdf::debug("DSTS_USBLNKST_U1");
           break;
         case DSTS::USBLNKST_U2 | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_U2");
+          fdf::debug("DSTS_USBLNKST_U2");
           break;
         case DSTS::USBLNKST_U3 | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_U3");
+          fdf::debug("DSTS_USBLNKST_U3");
           break;
         case DSTS::USBLNKST_ESS_DIS | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_ESS_DIS");
+          fdf::debug("DSTS_USBLNKST_ESS_DIS");
           break;
         case DSTS::USBLNKST_RX_DET | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_RX_DET");
+          fdf::debug("DSTS_USBLNKST_RX_DET");
           break;
         case DSTS::USBLNKST_ESS_INACT | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_ESS_INACT");
+          fdf::debug("DSTS_USBLNKST_ESS_INACT");
           break;
         case DSTS::USBLNKST_POLL | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_POLL");
+          fdf::debug("DSTS_USBLNKST_POLL");
           break;
         case DSTS::USBLNKST_RECOV | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_RECOV");
+          fdf::debug("DSTS_USBLNKST_RECOV");
           break;
         case DSTS::USBLNKST_HRESET | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_HRESET");
+          fdf::debug("DSTS_USBLNKST_HRESET");
           break;
         case DSTS::USBLNKST_CMPLY | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_CMPLY");
+          fdf::debug("DSTS_USBLNKST_CMPLY");
           break;
         case DSTS::USBLNKST_LPBK | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_LPBK");
+          fdf::debug("DSTS_USBLNKST_LPBK");
           break;
         case DSTS::USBLNKST_RESUME_RESET | DEVT_LINK_STATE_CHANGE_SS:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_RESUME_RESET");
+          fdf::debug("DSTS_USBLNKST_RESUME_RESET");
           break;
         case DSTS::USBLNKST_ON:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_ON");
+          fdf::debug("DSTS_USBLNKST_ON");
           break;
         case DSTS::USBLNKST_SLEEP:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_SLEEP");
+          fdf::debug("DSTS_USBLNKST_SLEEP");
           break;
         case DSTS::USBLNKST_SUSPEND:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_SUSPEND");
+          fdf::debug("DSTS_USBLNKST_SUSPEND");
           break;
         case DSTS::USBLNKST_DISCONNECTED:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_DISCONNECTED");
+          fdf::debug("DSTS_USBLNKST_DISCONNECTED");
           break;
         case DSTS::USBLNKST_EARLY_SUSPEND:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_EARLY_SUSPEND");
+          fdf::debug("DSTS_USBLNKST_EARLY_SUSPEND");
           break;
         case DSTS::USBLNKST_RESET:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_RESET");
+          fdf::debug("DSTS_USBLNKST_RESET");
           break;
         case DSTS::USBLNKST_RESUME:
-          FDF_LOG(DEBUG, "DSTS_USBLNKST_RESUME");
+          fdf::debug("DSTS_USBLNKST_RESUME");
           break;
         default:
-          FDF_LOG(ERROR, "unknown state %d", info);
+          fdf::error("unknown state {}", info);
           break;
       }
       break;
     case DEVT_REMOTE_WAKEUP:
-      FDF_LOG(DEBUG, "DEVT_REMOTE_WAKEUP");
+      fdf::debug("DEVT_REMOTE_WAKEUP");
       break;
     case DEVT_HIBERNATE_REQUEST:
-      FDF_LOG(DEBUG, "DEVT_HIBERNATE_REQUEST");
+      fdf::debug("DEVT_HIBERNATE_REQUEST");
       break;
     case DEVT_SUSPEND_ENTRY:
-      FDF_LOG(DEBUG, "DEVT_SUSPEND_ENTRY");
+      fdf::debug("DEVT_SUSPEND_ENTRY");
       // TODO(voydanoff) is this the best way to detect disconnect?
       HandleDisconnectedEvent();
       break;
     case DEVT_SOF:
-      FDF_LOG(DEBUG, "DEVT_SOF");
+      fdf::debug("DEVT_SOF");
       break;
     case DEVT_ERRATIC_ERROR:
-      FDF_LOG(DEBUG, "DEVT_ERRATIC_ERROR");
+      fdf::debug("DEVT_ERRATIC_ERROR");
       break;
     case DEVT_COMMAND_COMPLETE:
-      FDF_LOG(DEBUG, "DEVT_COMMAND_COMPLETE");
+      fdf::debug("DEVT_COMMAND_COMPLETE");
       break;
     case DEVT_EVENT_BUF_OVERFLOW:
-      FDF_LOG(DEBUG, "DEVT_EVENT_BUF_OVERFLOW");
+      fdf::debug("DEVT_EVENT_BUF_OVERFLOW");
       break;
     case DEVT_VENDOR_TEST_LMP:
-      FDF_LOG(DEBUG, "DEVT_VENDOR_TEST_LMP");
+      fdf::debug("DEVT_VENDOR_TEST_LMP");
       break;
     case DEVT_STOPPED_DISCONNECT:
-      FDF_LOG(DEBUG, "DEVT_STOPPED_DISCONNECT");
+      fdf::debug("DEVT_STOPPED_DISCONNECT");
       break;
     case DEVT_L1_RESUME_DETECT:
-      FDF_LOG(DEBUG, "DEVT_L1_RESUME_DETECT");
+      fdf::debug("DEVT_L1_RESUME_DETECT");
       break;
     case DEVT_LDM_RESPONSE:
-      FDF_LOG(DEBUG, "DEVT_LDM_RESPONSE");
+      fdf::debug("DEVT_LDM_RESPONSE");
       break;
     default:
-      FDF_LOG(ERROR, "dwc3_handle_event: unknown event type %u", type);
+      fdf::error("dwc3_handle_event: unknown event type {}", type);
       break;
   }
 }
@@ -198,7 +198,7 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
 void Dwc3::StartEvents() {
   zx::result result = event_fifo_.Init(bti_);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to init event fifo %s", result.status_string());
+    fdf::error("Failed to init event fifo {}", result);
     return;
   }
   irq_handler_.set_object(irq_.get());

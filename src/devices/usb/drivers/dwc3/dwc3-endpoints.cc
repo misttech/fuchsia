@@ -22,7 +22,7 @@ void Dwc3::EpEnable(Endpoint& ep, bool enable) {
 }
 
 void Dwc3::EpSetConfig(Endpoint& ep, bool enable) {
-  FDF_LOG(DEBUG, "Dwc3::EpSetConfig %u", ep.ep_num);
+  fdf::debug("Dwc3::EpSetConfig {}", ep.ep_num);
 
   if (enable) {
     CmdEpSetConfig(ep, false);
@@ -50,7 +50,7 @@ zx_status_t Dwc3::EpSetStall(Endpoint& ep, bool stall) {
 
 void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_t buffer,
                            size_t length) {
-  FDF_LOG(DEBUG, "Dwc3::EpStartTransfer ep %u type %u length %zu", ep.ep_num, type, length);
+  fdf::debug("Dwc3::EpStartTransfer ep {} type %u length {}", ep.ep_num, type, length);
 
   dwc3_trb_t* trb = fifo.AdvanceWrite();
   trb->ptr_low = static_cast<uint32_t>(buffer);
@@ -64,8 +64,8 @@ void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_
 
 void Dwc3::EpServer::CancelAll(zx_status_t reason) {
   // TODO(https://fxbug.dev/433971550): Reduce to DEBUG once we're done investigating.
-  FDF_LOG(INFO, "Dwc3::EpServer::CancelAll ep %u reason %s", uep_->ep.ep_num,
-          zx_status_get_string(reason));
+  fdf::info("Dwc3::EpServer::CancelAll ep {} reason {}", uep_->ep.ep_num,
+            zx_status_get_string(reason));
 
   if (current_req.has_value()) {
     dwc3_->CmdEpEndTransfer(uep_->ep);
@@ -107,13 +107,13 @@ void Dwc3::HandleEpTransferCompleteEvent(uint8_t ep_num) {
   UserEndpoint* const uep = get_user_endpoint(ep_num);
   ZX_ASSERT(uep != nullptr);
   if (!uep->server->current_req.has_value()) {
-    FDF_LOG(ERROR, "no usb request found to complete!");
+    fdf::error("no usb request found to complete!");
     return;
   }
   dwc3_trb_t trb = uep->fifo.Read();
 
   if (trb.control & TRB_HWO) {
-    FDF_LOG(ERROR, "TRB_HWO still set in dwc3_ep_xfer_complete %d", uep->ep.ep_num);
+    fdf::error("TRB_HWO still set in dwc3_ep_xfer_complete {}", uep->ep.ep_num);
     return;
   }
   uep->server->RequestComplete(

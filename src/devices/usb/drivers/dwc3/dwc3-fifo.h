@@ -27,7 +27,7 @@ class Fifo {
       zx_status_t status =
           dma_buffer::CreateBufferFactory()->CreateContiguous(bti, kBufferSize, 12, true, &buffer_);
       if (status != ZX_OK) {
-        FDF_LOG(ERROR, "dma_buffer init fails: %s", zx_status_get_string(status));
+        fdf::error("dma_buffer init fails: {}", zx_status_get_string(status));
         return zx::error(status);
       }
 

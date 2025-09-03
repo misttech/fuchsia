@@ -293,13 +293,13 @@ zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t 
 
 zx::result<> Dwc3::Start() {
   if (zx_status_t status = AcquirePDevResources(); status != ZX_OK) {
-    FDF_LOG(ERROR, "AcquirePDevResources: %s", zx_status_get_string(status));
+    fdf::error("AcquirePDevResources: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
   if (std::unique_ptr extension = QualcommExtension::Create(this); extension) {
     if (zx::result result = extension->Start(); result.is_error()) {
-      FDF_LOG(ERROR, "Failed platform extension start: %s", result.status_string());
+      fdf::error("Failed platform extension start: {}", result);
       return result.take_error();
     }
     platform_extension_ = std::move(extension);
@@ -317,7 +317,7 @@ zx::result<> Dwc3::Start() {
       }));
 
   if (serve_result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add service: %s", serve_result.status_string());
+    fdf::error("Failed to add service: {}", serve_result);
     return serve_result.take_error();
   }
 
@@ -337,7 +337,7 @@ zx::result<> Dwc3::Start() {
 
   auto child = AddChild(name(), props, offers);
   if (child.is_error()) {
-    FDF_LOG(ERROR, "AddChild(): %s", child.status_string());
+    fdf::error("AddChild(): {}", child);
     return child.take_error();
   }
   child_.Bind(std::move(*child));
@@ -348,7 +348,7 @@ zx::result<> Dwc3::Start() {
 zx_status_t Dwc3::AcquirePDevResources() {
   auto pdev_client_end = incoming()->Connect<fpdev::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
-    FDF_LOG(ERROR, "fidl::CreateEndpoints<fpdev::Service>(): %s", pdev_client_end.status_string());
+    fdf::error("fidl::CreateEndpoints<fpdev::Service>(): {}", pdev_client_end);
     return pdev_client_end.error_value();
   }
   pdev_ = fdf::PDev{std::move(pdev_client_end.value())};
@@ -356,24 +356,24 @@ zx_status_t Dwc3::AcquirePDevResources() {
   // Initialize usb-phy metadata server.
   if (zx::result result = usb_phy_metadata_server_.SetMetadataFromPDevIfExists(pdev_);
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to forward usb-phy metadata: %s", result.status_string());
+    fdf::error("Failed to forward usb-phy metadata: {}", result);
     return result.status_value();
   }
   if (zx::result result = usb_phy_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve usb-phy address metadata: %s", result.status_string());
+    fdf::error("Failed to serve usb-phy address metadata: {}", result);
     return result.status_value();
   }
 
   // Initialize mac address metadata server.
   if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to forward mac address metadata: %s", result.status_string());
+    fdf::error("Failed to forward mac address metadata: {}", result);
     return result.status_value();
   }
   if (zx::result result = mac_address_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve mac address metadata: %s", result.status_string());
+    fdf::error("Failed to serve mac address metadata: {}", result);
     return result.status_value();
   }
 
@@ -381,32 +381,32 @@ zx_status_t Dwc3::AcquirePDevResources() {
   if (zx::result result =
           serial_number_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to forward serial number metadata: %s", result.status_string());
+    fdf::error("Failed to forward serial number metadata: {}", result);
     return result.status_value();
   }
   if (zx::result result = serial_number_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
-    FDF_LOG(ERROR, "Failed to serve serial number metadata: %s", result.status_string());
+    fdf::error("Failed to serve serial number metadata: {}", result);
     return result.status_value();
   }
 
   auto mmio = pdev_.MapMmio(0);
   if (mmio.is_error()) {
-    FDF_LOG(ERROR, "MapMmio failed: %s", mmio.status_string());
+    fdf::error("MapMmio failed: {}", mmio);
     return mmio.error_value();
   }
   mmio_ = std::move(*mmio);
 
   auto bti = pdev_.GetBti(0);
   if (bti.is_error()) {
-    FDF_LOG(ERROR, "GetBti failed: %s", bti.status_string());
+    fdf::error("GetBti failed: {}", bti);
     return bti.error_value();
   }
   bti_ = std::move(*bti);
 
   auto irq = pdev_.GetInterrupt(0);
   if (irq.is_error()) {
-    FDF_LOG(ERROR, "GetInterrupt failed: %s", irq.status_string());
+    fdf::error("GetInterrupt failed: {}", irq);
     return irq.error_value();
   }
   irq_ = std::move(*irq);
@@ -421,14 +421,14 @@ zx_status_t Dwc3::Init() {
   // Now that we have our registers, check to make sure that we are running on
   // a version of the hardware that we support.
   if (zx_status_t status = CheckHwVersion(); status != ZX_OK) {
-    FDF_LOG(ERROR, "CheckHwVersion failed: %s", zx_status_get_string(status));
+    fdf::error("CheckHwVersion failed: {}", zx_status_get_string(status));
     return status;
   }
 
   // Now that we have our registers, reset the hardware.  This will ensure that
   // we are starting from a known state moving forward.
   if (zx_status_t status = ResetHw(); status != ZX_OK) {
-    FDF_LOG(ERROR, "HW Reset Failed: %s", zx_status_get_string(status));
+    fdf::error("HW Reset Failed: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -436,8 +436,8 @@ zx_status_t Dwc3::Init() {
   // controller supports.
   uint32_t ep_count = GHWPARAMS3::Get().ReadFrom(get_mmio()).DWC_USB31_NUM_EPS();
   if (ep_count < (kUserEndpointStartNum + 1)) {
-    FDF_LOG(ERROR, "HW supports only %u physical endpoints, but at least %u are needed to operate.",
-            ep_count, (kUserEndpointStartNum + 1));
+    fdf::error("HW supports only {} physical endpoints, but at least {} are needed to operate.",
+               ep_count, (kUserEndpointStartNum + 1));
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -448,7 +448,7 @@ zx_status_t Dwc3::Init() {
   // release the quarantine on any pages which may have been previously pinned
   // by this BTI.
   if (zx_status_t status = bti_.release_quarantine(); status != ZX_OK) {
-    FDF_LOG(ERROR, "Release quarantine failed: %s", zx_status_get_string(status));
+    fdf::error("Release quarantine failed: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -458,7 +458,7 @@ zx_status_t Dwc3::Init() {
 
   zx::result result = event_fifo_.Init(bti_);
   if (result.is_error()) {
-    FDF_LOG(ERROR, "Event FIFO init failed: %s", result.status_string());
+    fdf::error("Event FIFO init failed: {}", result);
     return result.error_value();
   }
 
@@ -470,12 +470,12 @@ zx_status_t Dwc3::Init() {
   zx_status_t status = dma_buffer::CreateBufferFactory()->CreateContiguous(bti_, kEp0BufferSize, 12,
                                                                            true, &ep0_.buffer);
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "ep0_buffer init failed: %s", zx_status_get_string(status));
+    fdf::error("ep0_buffer init failed: {}", zx_status_get_string(status));
     return status;
   }
 
   if (zx_status_t status = Ep0Init(); status != ZX_OK) {
-    FDF_LOG(ERROR, "Ep0Init init failed: %s", zx_status_get_string(status));
+    fdf::error("Ep0Init init failed: {}", zx_status_get_string(status));
     return status;
   }
 
@@ -497,10 +497,10 @@ void Dwc3::ReleaseResources() {
       // pinned pages are quarantined instead of being returned to the page
       // pool.
       if (has_pinned_memory_) {
-        FDF_LOG(ERROR,
-                "Failed to place HW into reset during shutdown (%s), self-terminating in order to "
-                "ensure quarantine",
-                zx_status_get_string(status));
+        fdf::error(
+            "Failed to place HW into reset during shutdown ({}), self-terminating in order "
+            "to ensure quarantine",
+            zx_status_get_string(status));
         ZX_ASSERT(false);
       }
     }
@@ -542,7 +542,7 @@ zx_status_t Dwc3::CheckHwVersion() {
   // Format defined by section 1.3.44 of the DWC3 Programming Guide
   if (!is_ascii_digit(c1) || !is_ascii_digit(c2) || !is_ascii_digit(c3) ||
       (!is_ascii_letter(c4) && (c4 != '*'))) {
-    FDF_LOG(ERROR, "Unrecognized USB IP Version 0x%08x", ip_version);
+    fdf::error("Unrecognized USB IP Version 0x{:08x}", ip_version);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -550,11 +550,11 @@ zx_status_t Dwc3::CheckHwVersion() {
   const int minor = ((c2 - '0') * 10) + (c3 - '0');
 
   if (major != 1) {
-    FDF_LOG(ERROR, "Unsupported USB IP Version %d.%02d%c", major, minor, c4);
+    fdf::error("Unsupported USB IP Version {}.{:02}{:c}", major, minor, c4);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  FDF_LOG(INFO, "Detected DWC3 IP version %d.%02d%c", major, minor, c4);
+  fdf::info("Detected DWC3 IP version {}.{:02}{:c}", major, minor, c4);
   return ZX_OK;
 }
 
@@ -635,16 +635,16 @@ void Dwc3::ResetConfiguration() {
         [](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
                result) {
           if (!result.ok()) {
-            FDF_LOG(ERROR, "(framework) SetConnected(): %s", result.status_string());
+            fdf::error("(framework) SetConnected(): {}", result.status_string());
           } else if (result->is_error()) {
-            FDF_LOG(ERROR, "SetConnected(): %s", zx_status_get_string(result->error_value()));
+            fdf::error("SetConnected(): {}", zx_status_get_string(result->error_value()));
           }
         });
   }
 }
 
 void Dwc3::HandleResetEvent() {
-  FDF_LOG(INFO, "Dwc3::HandleResetEvent");
+  fdf::info("Dwc3::HandleResetEvent");
 
   ResetEndpoints();
   SetDeviceAddress(0);
@@ -656,9 +656,9 @@ void Dwc3::HandleResetEvent() {
         [](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
                result) {
           if (!result.ok()) {
-            FDF_LOG(ERROR, "(framework) SetConnected(): %s", result.status_string());
+            fdf::error("(framework) SetConnected(): {}", result.status_string());
           } else if (result->is_error()) {
-            FDF_LOG(ERROR, "SetConnected(): %s", zx_status_get_string(result->error_value()));
+            fdf::error("SetConnected(): {}", zx_status_get_string(result->error_value()));
           }
         });
   }
@@ -690,7 +690,7 @@ void Dwc3::HandleConnectionDoneEvent() {
       ep0_max_packet = 512;
       break;
     default:
-      FDF_LOG(ERROR, "unsupported speed %u", speed);
+      fdf::error("unsupported speed {}", speed);
       break;
   }
 
@@ -710,16 +710,16 @@ void Dwc3::HandleConnectionDoneEvent() {
     dci_intf_.buffer(arena)->SetSpeed(new_speed).Then(
         [](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetSpeed>& result) {
           if (!result.ok()) {
-            FDF_LOG(ERROR, "(framework) SetSpeed(): %s", result.status_string());
+            fdf::error("(framework) SetSpeed(): {}", result.status_string());
           } else if (result->is_error()) {
-            FDF_LOG(ERROR, "SetSpeed(): %s", zx_status_get_string(result->error_value()));
+            fdf::error("SetSpeed(): {}", zx_status_get_string(result->error_value()));
           }
         });
   }
 }
 
 void Dwc3::HandleDisconnectedEvent() {
-  FDF_LOG(INFO, "Dwc3::HandleDisconnectedEvent");
+  fdf::info("Dwc3::HandleDisconnectedEvent");
 
   if (dci_intf_.is_valid()) {
     fidl::Arena arena;
@@ -727,9 +727,9 @@ void Dwc3::HandleDisconnectedEvent() {
         [](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
                result) {
           if (!result.ok()) {
-            FDF_LOG(ERROR, "(framework) SetConnected(): %s", result.status_string());
+            fdf::error("(framework) SetConnected(): {}", result.status_string());
           } else if (result->is_error()) {
-            FDF_LOG(ERROR, "SetConnected(): %s", zx_status_get_string(result->error_value()));
+            fdf::error("SetConnected(): {}", zx_status_get_string(result->error_value()));
           }
         });
   }
@@ -738,7 +738,7 @@ void Dwc3::HandleDisconnectedEvent() {
 }
 
 void Dwc3::Stop() {
-  FDF_LOG(INFO, "Stop()");
+  fdf::info("Stop()");
   irq_handler_.Cancel();
   ReleaseResources();
 }
@@ -757,13 +757,13 @@ void Dwc3::ConnectToEndpoint(ConnectToEndpointRequest& request,
 
 void Dwc3::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) {
   if (!request.interface().is_valid()) {
-    zxlogf(ERROR, "Interface should be valid");
+    fdf::error("Interface should be valid");
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
 
   if (dci_intf_.is_valid()) {
-    FDF_LOG(ERROR, "%s: DCI Interface already set", __func__);
+    fdf::error("{}: DCI Interface already set", __func__);
     completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
@@ -784,7 +784,7 @@ void Dwc3::StopController(StopControllerCompleter::Sync& completer) {
 
   zx_status_t status = ResetHw();
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to reset hardware %s", zx_status_get_string(status));
+    fdf::error("Failed to reset hardware {}", zx_status_get_string(status));
     completer.Reply(zx::error(status));
     return;
   }
@@ -805,20 +805,20 @@ void Dwc3::ConfigureEndpoint(ConfigureEndpointRequest& request,
   uint8_t ep_type = usb_ep_type2(request.ep_descriptor());
 
   if (ep_type == USB_ENDPOINT_ISOCHRONOUS) {
-    FDF_LOG(ERROR, "isochronous endpoints are not supported");
+    fdf::error("isochronous endpoints are not supported");
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
 
   if (uep->ep.enabled) {
     // Endpoint already configured, nothing to do.
-    FDF_LOG(ERROR, "Endpoint(%d) already configured!", uep->ep.ep_num);
+    fdf::error("Endpoint({}) already configured!", uep->ep.ep_num);
     completer.Reply(zx::ok());
     return;
   }
 
   if (zx::result result = uep->fifo.Init(bti_); result.is_error()) {
-    FDF_LOG(ERROR, "fifo init failed %s", result.status_string());
+    fdf::error("fifo init failed {}", result);
     completer.Reply(result.take_error());
     return;
   }
@@ -918,7 +918,7 @@ void Dwc3::EpServer::GetInfo(GetInfoCompleter::Sync& completer) {
       break;
     default:
       // In theory, this should never happen unless a new EP type is added to the spec.
-      FDF_LOG(ERROR, "unknown usb endpoint type: 0x%xd", uep_->ep.type);
+      fdf::error("unknown usb endpoint type: 0x{:x}", uep_->ep.type);
       completer.Reply(zx::error(ZX_ERR_BAD_STATE));
   }
 
@@ -931,13 +931,13 @@ void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
     usb::FidlRequest freq{std::move(req)};
 
     if (!uep_->ep.enabled) {
-      FDF_LOG(ERROR, "Dwc3: ep(%u) not enabled!", uep_->ep.ep_num);
+      fdf::error("Dwc3: ep({}) not enabled!", uep_->ep.ep_num);
       RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(freq));
       continue;
     }
 
     if (freq->data()->size() != 1) {
-      FDF_LOG(ERROR, "scatter-gather not implemented");
+      fdf::error("scatter-gather not implemented");
       RequestComplete(ZX_ERR_INVALID_ARGS, 0, std::move(freq));
       continue;
     }
@@ -947,8 +947,8 @@ void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
       size_t length = freq->data()->at(0).size().value();
 
       if (length == 0 || (length % uep_->ep.max_packet_size) != 0) {
-        FDF_LOG(ERROR, "Dwc3: OUT transfers must be multiple of max packet size (len %ld mps %hu)",
-                length, uep_->ep.max_packet_size);
+        fdf::error("Dwc3: OUT transfers must be multiple of max packet size (len {} mps {})",
+                   length, uep_->ep.max_packet_size);
         RequestComplete(ZX_ERR_INVALID_ARGS, 0, std::move(freq));
         continue;
       }

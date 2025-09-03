@@ -16,7 +16,7 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
     bool needs_init = !buffer_;
     auto result = Fifo::Init(bti);
     if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to init FIFO %s", result.status_string());
+      fdf::error("Failed to init FIFO {}", result);
       return result.take_error();
     }
 
@@ -41,7 +41,7 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
   dwc3_trb_t* AdvanceWrite() { return Fifo::Advance(write_); }
   void AdvanceRead() {
     if (read_ == write_) {
-      FDF_LOG(ERROR, "Advancing read_ past write_. Invalid!");
+      fdf::error("Advancing read_ past write_. Invalid!");
       return;
     }
     Fifo::Advance(read_);
