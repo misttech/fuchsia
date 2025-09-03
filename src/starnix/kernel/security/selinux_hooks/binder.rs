@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::TODO_DENY;
-use crate::security::selinux_hooks::{
-    check_self_permission, current_task_state, todo_check_permission,
-};
+use crate::security::selinux_hooks::{check_permission, check_self_permission, current_task_state};
 use crate::task::CurrentTask;
 use selinux::{BinderPermission, SecurityServer};
 use starnix_core::task::Task;
@@ -37,8 +34,7 @@ pub fn binder_transaction(
     let audit_context = current_task.into();
     let source_sid = current_task_state(current_task).lock().current_sid;
     let target_sid = target_task.security_state.lock().current_sid;
-    todo_check_permission(
-        TODO_DENY!("https://fxbug.dev/427888888", "Enforce call check."),
+    check_permission(
         &security_server.as_permission_check(),
         current_task,
         source_sid,
