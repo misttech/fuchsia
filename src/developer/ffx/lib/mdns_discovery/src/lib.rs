@@ -543,9 +543,10 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
                         addr.ip(),
                         Task::local(query_recv_loop(
                             Rc::new(sock.unwrap()),
+                            addr,
                             mdns_protocol.clone(),
                             query_interval,
-                            socket_tasks.clone(),
+                            Rc::downgrade(&socket_tasks),
                             checker.clone(),
                             mdns_port,
                         )),
@@ -561,7 +562,6 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
                 tasks.remove(&ip);
             }
         }
-
         Timer::new(discovery_interval).await;
     }
 }
@@ -834,35 +834,35 @@ async fn query_loop(sock: Rc<UdpSocket>, interval: Duration, mdns_port: u16) {
 // mdns query to discover Fuchsia devices every interval.
 async fn query_recv_loop(
     sock: Rc<UdpSocket>,
+    addr: SocketAddr,
     mdns_protocol: Weak<MdnsProtocol>,
     interval: Duration,
-    tasks: Rc<Mutex<HashMap<IpAddr, Task<()>>>>,
+    tasks: Weak<Mutex<HashMap<IpAddr, Task<()>>>>,
     checker: Weak<impl MdnsEnabledChecker>,
     mdns_port: u16,
 ) {
     let mut recv = recv_loop(sock.clone(), mdns_protocol, checker).boxed_local().fuse();
     let mut query = query_loop(sock.clone(), interval, mdns_port).boxed_local().fuse();
 
-    let addr = match sock.local_addr() {
-        Ok(addr) => addr,
-        Err(err) => {
-            log::error!("mdns: failed to shutdown: {:?}", err);
-            return;
-        }
-    };
-
     log::debug!("mdns: started query socket {}", &addr);
 
     futures::select!(
-        _ = recv => {},
-        _ = query => {},
+        _ = recv => {
+            log::trace!("query_recv_loop finished recv for addr: {}", addr);
+        },
+        _ = query => {
+            log::trace!("query_recv_loop finished query loop for addr: {}", addr);
+        },
     );
 
     drop(recv);
     drop(query);
 
-    if let Some(a) = tasks.lock().await.remove(&addr.ip()) {
-        drop(a)
+    if let Some(tasks) = tasks.upgrade() {
+        let mut guard = tasks.lock().await;
+        if let Some(a) = guard.remove(&addr.ip()) {
+            drop(a)
+        }
     }
     log::debug!("mdns: shut down query socket {}", &addr);
 }
