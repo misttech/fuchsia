@@ -8,5 +8,6 @@ group("tests") {
   deps = [
     "biotime:tests",
     "sdio:tests",
+    "ufsutil:tests",
   ]
 }

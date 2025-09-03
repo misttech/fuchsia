@@ -674,6 +674,12 @@ assembly_input_bundle("lspci") {
   bootfs_files_labels = [ "//src/devices/pci/bin:bootfs" ]
 }
 
+# ufsutil shell utility. Used in products that use UFS and have shell commands enabled.
+#
+assembly_input_bundle("ufsutil") {
+  bootfs_files_labels = [ "//src/devices/block/bin/ufsutil:bootfs" ]
+}
+
 # The kernel_debug_broker AIB is included by all eng and userdebug products.
 #
 assembly_input_bundle("kernel_debug_broker_userdebug") {

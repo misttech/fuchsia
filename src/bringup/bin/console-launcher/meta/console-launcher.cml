@@ -192,6 +192,10 @@
             availability: "optional",
         },
         {
+            service: "fuchsia.hardware.ufs.Service",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.hardware.nfc.Service",
             availability: "optional",
         },

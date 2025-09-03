@@ -171,6 +171,9 @@ bootstrap_eng_platform_aib_names = [
 
   # Platform drivers.
   "ufs_driver",
+
+  # UFS device user-space utility.
+  "ufsutil",
 ]
 
 # The names of all of the platform's 'testonly=false' Assembly Input Bundles

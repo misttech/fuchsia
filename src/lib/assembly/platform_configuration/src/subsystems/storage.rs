@@ -309,6 +309,11 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         // Include UFS driver through a platform AIB.
         if context.board_config.provides_feature("fuchsia::ufs") {
             builder.platform_bundle("ufs_driver");
+            // In engineering builds, include the ufsutil CLI tool when UFS device
+            // support is enabled.
+            if context.build_type == &BuildType::Eng {
+                builder.platform_bundle("ufsutil");
+            }
         }
 
         Ok(())

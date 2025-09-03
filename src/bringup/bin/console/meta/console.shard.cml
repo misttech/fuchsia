@@ -271,6 +271,11 @@
             to: "#console-launcher",
         },
         {
+            service: "fuchsia.hardware.ufs.Service",
+            from: "#boot-drivers",
+            to: "#console-launcher",
+        },
+        {
             service: "fuchsia.hardware.nfc.Service",
             from: "#boot-drivers",
             to: "#console-launcher",
