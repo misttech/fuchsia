@@ -39,7 +39,34 @@ class UfsUtilTest : public zxtest::Test,
     std::ranges::copy(request->data, data_.begin());
     completer.ReplySuccess();
   }
+  void ReadFlag(fuchsia_hardware_ufs::wire::UfsReadFlagRequest* request,
+                ReadFlagCompleter::Sync& completer) override {
+    completer.ReplySuccess(0);
+  }
+  void SetFlag(fuchsia_hardware_ufs::wire::UfsSetFlagRequest* request,
+               SetFlagCompleter::Sync& completer) override {
+    completer.ReplySuccess(0);
+  }
 
+  void ClearFlag(::fuchsia_hardware_ufs::wire::UfsClearFlagRequest* request,
+                 ClearFlagCompleter::Sync& completer) override {
+    completer.ReplySuccess(0);
+  }
+
+  void ToggleFlag(::fuchsia_hardware_ufs::wire::UfsToggleFlagRequest* request,
+                  ToggleFlagCompleter::Sync& completer) override {
+    completer.ReplySuccess(0);
+  }
+
+  void ReadAttribute(::fuchsia_hardware_ufs::wire::UfsReadAttributeRequest* request,
+                     ReadAttributeCompleter::Sync& completer) override {
+    completer.ReplySuccess(0);
+  }
+
+  void WriteAttribute(::fuchsia_hardware_ufs::wire::UfsWriteAttributeRequest* request,
+                      WriteAttributeCompleter::Sync& completer) override {
+    completer.ReplySuccess();
+  }
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override { FAIL(); }
 
   fidl::ClientEnd<fuchsia_hardware_ufs::Ufs> client_;
@@ -146,6 +173,84 @@ TEST_F(UfsUtilTest, WriteDescriptorMissingRequiredArgs) {
 
 TEST_F(UfsUtilTest, WriteDescriptorNotWritable) {
   const char* argv[] = {"ufsutil", "<device>", "write-desc", "-t", "0"};
+  EXPECT_EQ(EXIT_FAILURE,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, SetFlag) {
+  const char* argv[] = {"ufsutil", "<device>", "set-flag", "-t", "1"};
+  EXPECT_EQ(EXIT_SUCCESS,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, SetFlagReadOnly) {
+  const char* argv[] = {"ufsutil", "<device>", "set-flag", "-t", "9"};
+  EXPECT_EQ(EXIT_FAILURE,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, SetFlagUnsupportedType) {
+  const char* argv[] = {"ufsutil", "<device>", "set-flag", "-t", "99"};
+  EXPECT_EQ(EXIT_FAILURE,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, ReadFlag) {
+  const char* argv[] = {"ufsutil", "<device>", "read-flag", "-t", "1"};
+  EXPECT_EQ(EXIT_SUCCESS,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, ReadFlagWriteOnly) {
+  const char* argv[] = {"ufsutil", "<device>", "read-flag", "-t", "6"};
+  EXPECT_EQ(EXIT_FAILURE,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, ToggleFlag) {
+  const char* argv[] = {"ufsutil", "<device>", "toggle-flag", "-t", "1"};
+  EXPECT_EQ(EXIT_SUCCESS,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, ClearFlag) {
+  const char* argv[] = {"ufsutil", "<device>", "clear-flag", "-t", "1"};
+  EXPECT_EQ(EXIT_SUCCESS,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, ReadAttribute) {
+  const char* argv[] = {"ufsutil", "<device>", "read-attr", "-t", "3"};
+  EXPECT_EQ(EXIT_SUCCESS,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, ReadAttributeWriteOnly) {
+  const char* argv[] = {"ufsutil", "<device>", "read-attr", "-t", "0xf"};
+  EXPECT_EQ(EXIT_FAILURE,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, ReadAttributeUnsupportedType) {
+  const char* argv[] = {"ufsutil", "<device>", "read-attr", "-t", "99"};
+  EXPECT_EQ(EXIT_FAILURE,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, WriteAttribute) {
+  const char* argv[] = {"ufsutil", "<device>", "write-attr", "-t", "0", "-v", "0x01"};
+  EXPECT_EQ(EXIT_SUCCESS,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, WriteAttributeReadOnly) {
+  const char* argv[] = {"ufsutil", "<device>", "write-attr", "-t", "5", "-v", "0x01"};
+  EXPECT_EQ(EXIT_FAILURE,
+            RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
+}
+
+TEST_F(UfsUtilTest, WriteAttributeMissingValue) {
+  const char* argv[] = {"ufsutil", "<device>", "write-attr", "-t", "5"};
   EXPECT_EQ(EXIT_FAILURE,
             RunUfsUtils(UfsClient(std::move(client_)), std::size(argv), const_cast<char**>(argv)));
 }

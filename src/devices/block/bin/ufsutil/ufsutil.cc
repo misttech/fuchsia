@@ -14,25 +14,26 @@
 
 namespace ufsutil {
 namespace {
-#define QUERY_REQUEST_COMMAND_USAGE_MESSAGE(command)                    \
+#define QUERY_REQUEST_COMMAND_USAGE_MESSAGE(command, extra_options)     \
   "Usage: ufsutil <device> " command                                    \
   " [options]\n"                                                        \
   "options:\n"                                                          \
   "  [--type=<NUM>, -t <NUM>]        Descriptor type idn. (required)\n" \
   "  [--index=<NUM>, -i <NUM>]       (default = 0)\n"                   \
-  "  [--selector=<NUM>, -s <NUM>]    (default = 0)\n"
+  "  [--selector=<NUM>, -s <NUM>]    (default = 0)\n" extra_options
 
-constexpr char kReadDescUsageMessage[] = QUERY_REQUEST_COMMAND_USAGE_MESSAGE("read-desc");
-
-constexpr char kWriteDescUsageMessage[] = R"""(
-Usage: ufsutil <device> write-desc [options]
-options:
-  [--type=<NUM>, -t <NUM>]        Descriptor type idn.
-  [--index=<NUM>, -i <NUM>]       (default = 0)
-  [--selector=<NUM>, -s <NUM>]    (default = 0)
-  [--value=<NUM>, -v <NUM>]
-  [--file=<FILE_PATH>, -f <FILE_PATH>]  (required by the configuration descriptor)
-)""";
+constexpr char kReadDescUsageMessage[] = QUERY_REQUEST_COMMAND_USAGE_MESSAGE("read-desc", "");
+constexpr char kSetFlagUsageMessage[] = QUERY_REQUEST_COMMAND_USAGE_MESSAGE("set-flag", "");
+constexpr char kReadFlagUsageMessage[] = QUERY_REQUEST_COMMAND_USAGE_MESSAGE("read-flag", "");
+constexpr char kToggleFlagUsageMessage[] = QUERY_REQUEST_COMMAND_USAGE_MESSAGE("toggle-flag", "");
+constexpr char kClearFlagUsageMessage[] = QUERY_REQUEST_COMMAND_USAGE_MESSAGE("clear-flag", "");
+constexpr char kReadAttributeUsageMessage[] = QUERY_REQUEST_COMMAND_USAGE_MESSAGE("read-attr", "");
+constexpr char kWriteDescUsageMessage[] = QUERY_REQUEST_COMMAND_USAGE_MESSAGE(
+    "write-desc",
+    "  [--value=<NUM>, -v <NUM>]\n"
+    "  [--file=<FILE_PATH>, -f <FILE_PATH>]  (required by the configuration descriptor)\n");
+constexpr char kWriteAttributeUsageMessage[] =
+    QUERY_REQUEST_COMMAND_USAGE_MESSAGE("write-attr", "  [--value=<NUM>, -v <NUM>]\n");
 
 using CommandHandler = std::function<int(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>&,
                                          const std::unordered_map<uint32_t, OptionValue>&)>;
@@ -43,6 +44,16 @@ const struct option kQueryRequestOptions[] = {
     {.name = "type", .has_arg = required_argument, .flag = nullptr, .val = 't'},
     {.name = "index", .has_arg = required_argument, .flag = nullptr, .val = 'i'},
     {.name = "selector", .has_arg = required_argument, .flag = nullptr, .val = 's'},
+    {.name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0},
+};
+
+const char* kWriteAttributeShortOptions = "ht:i:s:v:";
+const struct option kWriteAttributeOptions[] = {
+    {.name = "help", .has_arg = no_argument, .flag = nullptr, .val = 'h'},
+    {.name = "type", .has_arg = required_argument, .flag = nullptr, .val = 't'},
+    {.name = "index", .has_arg = required_argument, .flag = nullptr, .val = 'i'},
+    {.name = "selector", .has_arg = required_argument, .flag = nullptr, .val = 's'},
+    {.name = "value", .has_arg = required_argument, .flag = nullptr, .val = 'v'},
     {.name = nullptr, .has_arg = 0, .flag = nullptr, .val = 0},
 };
 
@@ -140,6 +151,13 @@ std::unique_ptr<ParsedCommand> ParseCommand(int argc, char** argv) {
       case 'v': {
         if (cmd->second.command_type == UfsCommand::WRITE_DESC) {
           result->options[opt] = optarg;
+        } else if (cmd->second.command_type == UfsCommand::WRITE_ATTR) {
+          auto val = ParseStrToUint32(optarg);
+          if (!val) {
+            fprintf(stderr, "error: invalid argument for -%c\n", opt);
+            return nullptr;
+          }
+          result->options[opt] = *val;
         }
       } break;
       default:
@@ -172,6 +190,48 @@ void Initialize() {
                    .short_opts = kWriteDescriptorShortOptions,
                    .handler = HandleWriteDescriptor,
                    .helpMessage = kWriteDescUsageMessage});
+  registerCommand("set-flag",
+                  {.command_type = UfsCommand::SET_FLAG,
+                   .description = "Enable flags to activate device features or modes.\n",
+                   .long_opts = kQueryRequestOptions,
+                   .short_opts = kQueryRequestShortOptions,
+                   .handler = HandleSetFlag,
+                   .helpMessage = kSetFlagUsageMessage});
+  registerCommand("read-flag",
+                  {.command_type = UfsCommand::READ_FLAG,
+                   .description = "Retrieve flags to check which features or modes are enabled.\n",
+                   .long_opts = kQueryRequestOptions,
+                   .short_opts = kQueryRequestShortOptions,
+                   .handler = HandleReadFlag,
+                   .helpMessage = kReadFlagUsageMessage});
+  registerCommand("toggle-flag",
+                  {.command_type = UfsCommand::TOGGLE_FLAG,
+                   .description = "Toggle flags to control device features or modes.\n",
+                   .long_opts = kQueryRequestOptions,
+                   .short_opts = kQueryRequestShortOptions,
+                   .handler = HandleToggleFlag,
+                   .helpMessage = kToggleFlagUsageMessage});
+  registerCommand("clear-flag",
+                  {.command_type = UfsCommand::CLEAR_FLAG,
+                   .description = "Clear flags to disable device functions or modes. \n",
+                   .long_opts = kQueryRequestOptions,
+                   .short_opts = kQueryRequestShortOptions,
+                   .handler = HandleClearFlag,
+                   .helpMessage = kClearFlagUsageMessage});
+  registerCommand("read-attr",
+                  {.command_type = UfsCommand::READ_ATTR,
+                   .description = "Retrieve attributes that represent numeric ranges.\n",
+                   .long_opts = kQueryRequestOptions,
+                   .short_opts = kQueryRequestShortOptions,
+                   .handler = HandleReadAttribute,
+                   .helpMessage = kReadAttributeUsageMessage});
+  registerCommand("write-attr",
+                  {.command_type = UfsCommand::WRITE_ATTR,
+                   .description = "Configure attributes that represent numeric ranges.\n",
+                   .long_opts = kWriteAttributeOptions,
+                   .short_opts = kWriteAttributeShortOptions,
+                   .handler = HandleWriteAttribute,
+                   .helpMessage = kWriteAttributeUsageMessage});
 }
 
 void PrintUsage() {

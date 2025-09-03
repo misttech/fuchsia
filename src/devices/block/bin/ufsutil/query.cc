@@ -261,6 +261,101 @@ const struct DescriptorField device_health_desc[] = {
     {.name = "dRefreshProgress", .offset = 0x29, .size = 4},
 };
 
+enum AccessProperties {
+  READ = (1 << 0),
+  WRITE_ONLY = (1 << 1),
+  READ_ONLY = (1 << 2),
+  WRITE_ONCE = (1 << 3),
+  PERSISTENT = (1 << 4),
+  VOLATILE = (1 << 5),
+  SET_ONLY = (1 << 6),
+  POWER_ON_RESET = (1 << 7),
+  INVALID = 0,
+};
+
+struct FlagField {
+  std::string name;
+  uint32_t access_property;
+};
+
+const struct FlagField kFlags[] = {
+    {.name = "Reserved", .access_property = INVALID},
+    {.name = "fDeviceInit", .access_property = (READ | SET_ONLY)},
+    {.name = "fPermanentWPEn", .access_property = (READ | WRITE_ONCE)},
+    {.name = "fPowerOnWPEn", .access_property = (READ | POWER_ON_RESET)},
+    {.name = "fBackgroundOpsEn", .access_property = (READ | VOLATILE)},
+    {.name = "fDeviceLifeSpanModeEn", .access_property = (READ | VOLATILE)},
+    {.name = "fPurgeEnable", .access_property = (WRITE_ONLY | VOLATILE)},
+    {.name = "fRefreshEnable", .access_property = (WRITE_ONLY | VOLATILE)},
+    {.name = "fPhyResourceRemoval", .access_property = (READ | PERSISTENT)},
+    {.name = "fBusyRTC", .access_property = READ_ONLY},
+    {.name = "Reserved", .access_property = INVALID},
+    {.name = "Reserved", .access_property = INVALID},
+    {.name = "Reserved", .access_property = INVALID},
+    {.name = "Reserved", .access_property = INVALID},
+    {.name = "fWriteBoosterEn", .access_property = (READ | VOLATILE)},
+    {.name = "fWBBufferFlushEn", .access_property = (READ | VOLATILE)},
+    {.name = "fWBBufferFlushDuringHibernate", .access_property = (READ | VOLATILE)},
+    {.name = "Reserved", .access_property = INVALID},
+};
+
+struct AttributeField {
+  std::string name;
+  uint32_t access_property;
+  uint32_t size;
+};
+
+const struct AttributeField kAttrs[] = {
+    {.name = "bBootLunEn", .access_property = (READ | PERSISTENT), .size = 1},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "bCurrentPowerMode", .access_property = READ_ONLY, .size = 1},
+    {.name = "bActiveICCLevel", .access_property = (READ | VOLATILE), .size = 1},
+    {.name = "bOutOfOrderDataEn", .access_property = (READ | WRITE_ONCE), .size = 1},
+    {.name = "bBackgroundOpStatus", .access_property = READ_ONLY, .size = 1},
+    {.name = "bPurgeStatus", .access_property = READ_ONLY, .size = 1},
+    {.name = "bMaxDataInSize", .access_property = (READ | PERSISTENT), .size = 1},
+    {.name = "bMaxDataOutSize", .access_property = (READ | PERSISTENT), .size = 1},
+    {.name = "dDynCapNeeded", .access_property = READ_ONLY, .size = 4},
+    {.name = "bRefClkFreq", .access_property = (READ | PERSISTENT), .size = 1},
+    {.name = "bConfigDescrLock", .access_property = (READ | WRITE_ONCE), .size = 1},
+    {.name = "bMaxNumOfRTT", .access_property = (READ | PERSISTENT), .size = 1},
+    {.name = "wExceptionEventControl", .access_property = (READ | VOLATILE), .size = 2},
+    {.name = "wExceptionEventStatus", .access_property = READ_ONLY, .size = 2},
+    {.name = "dSecondsPassed", .access_property = (WRITE_ONLY | VOLATILE), .size = 4},
+    {.name = "wContextConf", .access_property = (READ | VOLATILE), .size = 2},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "bDeviceFFUStatus", .access_property = READ_ONLY, .size = 1},
+    {.name = "bPSAState", .access_property = (READ | PERSISTENT), .size = 1},
+    {.name = "dPSADataSize", .access_property = (READ | PERSISTENT), .size = 4},
+    {.name = "bRefClkGatingWaitTime", .access_property = READ_ONLY, .size = 1},
+    {.name = "bDeviceCaseRoughTemperaure", .access_property = READ_ONLY, .size = 1},
+    {.name = "bDeviceTooHighTempBoundary", .access_property = READ_ONLY, .size = 1},
+    {.name = "bDeviceTooLowTempBoundary", .access_property = READ_ONLY, .size = 1},
+    {.name = "bThrottlingStatus", .access_property = READ_ONLY, .size = 1},
+    {.name = "bWriteBoosterBufferFlushStatus", .access_property = READ_ONLY, .size = 1},
+    {.name = "bAvailableWriteBoosterBufferSize", .access_property = READ_ONLY, .size = 1},
+    {.name = "bWriteBoosterBufferLifeTimeEst", .access_property = READ_ONLY, .size = 1},
+    {.name = "dCurrentWriteBoosterBufferSize", .access_property = READ_ONLY, .size = 4},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "Reserved", .access_property = INVALID, .size = 0},
+    {.name = "bRefreshStatus", .access_property = READ_ONLY, .size = 1},
+    {.name = "bRefreshFreq", .access_property = (READ | PERSISTENT), .size = 1},
+    {.name = "bRefreshUnit", .access_property = (READ | PERSISTENT), .size = 1},
+    {.name = "bRefreshMethod", .access_property = (READ | PERSISTENT), .size = 1},
+};
+
 void PrintDescriptorField(cpp20::span<uint8_t> data_buffer,
                           cpp20::span<const DescriptorField> fields) {
   printf("%-55s   %-8s  %-8s\n", "[Name]", "[Offset]", "[Value]");
@@ -443,6 +538,22 @@ int ExecuteOperation(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& clie
     }
     auto desc = fufs::Descriptor::Builder(arena).type(desc_type).identifier(id.Build()).Build();
     return handler(client, desc, options);
+  } else if constexpr (std::is_same_v<T, fufs::Flag>) {
+    fufs::FlagType flag_type(type_value);
+    if (flag_type.IsUnknown()) {
+      fprintf(stderr, "error: invalid type idn.\n");
+      return EXIT_FAILURE;
+    }
+    auto flag = fufs::Flag::Builder(arena).type(flag_type).identifier(id.Build()).Build();
+    return handler(client, flag, options);
+  } else if constexpr (std::is_same_v<T, fufs::Attribute>) {
+    fufs::AttributeType attr_type(type_value);
+    if (attr_type.IsUnknown()) {
+      fprintf(stderr, "error: invalid type idn.\n");
+      return EXIT_FAILURE;
+    }
+    auto attr = fufs::Attribute::Builder(arena).type(attr_type).identifier(id.Build()).Build();
+    return handler(client, attr, options);
   }
 
   return EXIT_FAILURE;
@@ -581,6 +692,136 @@ int HandleWriteDescriptor(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>&
             client->WriteDescriptor(desc, fidl::VectorView<uint8_t>::FromExternal(write_desc));
 
         if (HandleFidlResult(result, "error: failed to read descriptor.") != EXIT_SUCCESS) {
+          return EXIT_FAILURE;
+        }
+
+        return EXIT_SUCCESS;
+      });
+}
+
+int HandleReadFlag(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                   const std::unordered_map<uint32_t, OptionValue>& options) {
+  return ExecuteOperation<fufs::Flag>(client, options, [](auto& client, auto flag, auto& options) {
+    uint8_t type_id = static_cast<uint8_t>(flag.type());
+    if (kFlags[type_id].access_property & WRITE_ONLY) {
+      fprintf(stderr, "The flag is write only.\n");
+      return EXIT_FAILURE;
+    }
+
+    const fidl::WireResult result = client->ReadFlag(flag);
+    if (HandleFidlResult(result, "error: failed to read flag.") != EXIT_SUCCESS) {
+      return EXIT_FAILURE;
+    }
+
+    const fit::result response = result.value();
+    printf("%s : %d\n", kFlags[type_id].name.c_str(), response->value);
+
+    return EXIT_SUCCESS;
+  });
+}
+
+int HandleSetFlag(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                  const std::unordered_map<uint32_t, OptionValue>& options) {
+  return ExecuteOperation<fufs::Flag>(client, options, [](auto& client, auto flag, auto& options) {
+    uint8_t type_id = static_cast<uint8_t>(flag.type());
+    if (kFlags[type_id].access_property & READ_ONLY) {
+      fprintf(stderr, "The flag is read only.\n");
+      return EXIT_FAILURE;
+    }
+
+    const fidl::WireResult result = client->SetFlag(flag);
+    if (HandleFidlResult(result, "error: failed to set flag.") != EXIT_SUCCESS) {
+      return EXIT_FAILURE;
+    }
+
+    const fit::result response = result.value();
+    printf("%s : %d\n", kFlags[type_id].name.c_str(), response->value);
+
+    return EXIT_SUCCESS;
+  });
+}
+
+int HandleClearFlag(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                    const std::unordered_map<uint32_t, OptionValue>& options) {
+  return ExecuteOperation<fufs::Flag>(client, options, [](auto& client, auto flag, auto& options) {
+    uint8_t type_id = static_cast<uint8_t>(flag.type());
+    if (kFlags[type_id].access_property & READ_ONLY) {
+      fprintf(stderr, "The flag is read only.\n");
+      return EXIT_FAILURE;
+    }
+
+    const fidl::WireResult result = client->ClearFlag(flag);
+    if (HandleFidlResult(result, "error: failed to clear flag.") != EXIT_SUCCESS) {
+      return EXIT_FAILURE;
+    }
+
+    const fit::result response = result.value();
+    printf("%s : %d\n", kFlags[type_id].name.c_str(), response->value);
+
+    return EXIT_SUCCESS;
+  });
+}
+
+int HandleToggleFlag(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                     const std::unordered_map<uint32_t, OptionValue>& options) {
+  return ExecuteOperation<fufs::Flag>(client, options, [](auto& client, auto flag, auto& options) {
+    uint8_t type_id = static_cast<uint8_t>(flag.type());
+    if (kFlags[type_id].access_property & READ_ONLY) {
+      fprintf(stderr, "The flag is read only.\n");
+      return EXIT_FAILURE;
+    }
+
+    const fidl::WireResult result = client->ToggleFlag(flag);
+    if (HandleFidlResult(result, "error: failed to toogle flag.") != EXIT_SUCCESS) {
+      return EXIT_FAILURE;
+    }
+
+    const fit::result response = result.value();
+    printf("%s : %d\n", kFlags[type_id].name.c_str(), response->value);
+
+    return EXIT_SUCCESS;
+  });
+}
+
+int HandleReadAttribute(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                        const std::unordered_map<uint32_t, OptionValue>& options) {
+  return ExecuteOperation<fufs::Attribute>(
+      client, options, [](auto& client, auto attr, auto& options) {
+        uint8_t type_id = static_cast<uint8_t>(attr.type());
+        if (kAttrs[type_id].access_property & WRITE_ONLY) {
+          fprintf(stderr, "The attribute is write only.\n");
+          return EXIT_FAILURE;
+        }
+
+        const fidl::WireResult result = client->ReadAttribute(attr);
+        if (HandleFidlResult(result, "error: failed to read attribute.") != EXIT_SUCCESS) {
+          return EXIT_FAILURE;
+        }
+        const fit::result response = result.value();
+        printf("value : 0x%04x\n", response->value);
+
+        return EXIT_SUCCESS;
+      });
+}
+
+int HandleWriteAttribute(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                         const std::unordered_map<uint32_t, OptionValue>& options) {
+  return ExecuteOperation<fufs::Attribute>(
+      client, options, [](auto& client, auto attr, auto& options) {
+        uint8_t type_id = static_cast<uint8_t>(attr.type());
+        if (kAttrs[type_id].access_property & READ_ONLY) {
+          fprintf(stderr, "The attribute is read only.\n");
+          return EXIT_FAILURE;
+        }
+
+        if (!options.contains('v')) {
+          fprintf(stderr, "error: The value is missing for the write attribute.\n");
+          return EXIT_FAILURE;
+        }
+
+        uint32_t attr_value = std::get<uint32_t>(options.at('v'));
+        const fidl::WireResult result = client->WriteAttribute(attr, attr_value);
+        if (HandleFidlResult(result, "error: failed to wrtie attribute.") != EXIT_SUCCESS) {
           return EXIT_FAILURE;
         }
 

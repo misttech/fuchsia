@@ -18,4 +18,22 @@ int HandleReadDescriptor(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& 
 int HandleWriteDescriptor(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
                           const std::unordered_map<uint32_t, OptionValue>& options);
 
+int HandleSetFlag(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                  const std::unordered_map<uint32_t, OptionValue>& options);
+
+int HandleReadFlag(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                   const std::unordered_map<uint32_t, OptionValue>& options);
+
+int HandleToggleFlag(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                     const std::unordered_map<uint32_t, OptionValue>& options);
+
+int HandleClearFlag(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                    const std::unordered_map<uint32_t, OptionValue>& options);
+
+int HandleReadAttribute(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                        const std::unordered_map<uint32_t, OptionValue>& options);
+
+int HandleWriteAttribute(const fidl::WireSyncClient<fuchsia_hardware_ufs::Ufs>& client,
+                         const std::unordered_map<uint32_t, OptionValue>& options);
+
 #endif  // SRC_DEVICES_BLOCK_BIN_UFSUTIL_QUERY_H_
