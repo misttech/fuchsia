@@ -214,7 +214,7 @@ mod tests {
     use anyhow::Result;
     use assert_matches::assert_matches;
     use fidl::Peered;
-    use fidl::endpoints::{self, Proxy, ServerEnd};
+    use fidl::endpoints::{self, Proxy};
     use fuchsia_fs::directory::DirEntry;
     use futures::channel::mpsc;
     use futures::{StreamExt, TryStreamExt};
@@ -513,16 +513,6 @@ mod tests {
             }
         }
         impl RemoteLike for MockDir {
-            fn deprecated_open(
-                self: Arc<Self>,
-                _scope: ExecutionScope,
-                _flags: fio::OpenFlags,
-                _relative_path: path::Path,
-                _server_end: ServerEnd<fio::NodeMarker>,
-            ) {
-                panic!("fuchsia.io/Directory.DeprecatedOpen should not be called from these tests")
-            }
-
             fn open(
                 self: Arc<Self>,
                 _scope: ExecutionScope,
@@ -580,16 +570,6 @@ mod tests {
             }
         }
         impl RemoteLike for MockDir {
-            fn deprecated_open(
-                self: Arc<Self>,
-                _scope: ExecutionScope,
-                _flags: fio::OpenFlags,
-                _relative_path: path::Path,
-                _server_end: ServerEnd<fio::NodeMarker>,
-            ) {
-                panic!("fuchsia.io/Directory.DeprecatedOpen should not be called from these tests")
-            }
-
             fn open(
                 self: Arc<Self>,
                 _scope: ExecutionScope,

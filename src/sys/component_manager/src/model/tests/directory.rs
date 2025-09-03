@@ -7,7 +7,6 @@ use std::sync::Arc;
 use assert_matches::assert_matches;
 use cm_rust::*;
 use cm_rust_testing::*;
-use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use futures::channel::mpsc;
 use std::sync::LazyLock;
@@ -132,16 +131,6 @@ async fn open_requests_go_to_the_same_directory_connection() {
         }
     }
     impl RemoteLike for MockDir {
-        fn deprecated_open(
-            self: Arc<Self>,
-            _scope: ExecutionScope,
-            _flags: fio::OpenFlags,
-            _relative_path: vfs::path::Path,
-            _server_end: ServerEnd<fio::NodeMarker>,
-        ) {
-            panic!("fuchsia.io/Directory.DeprecatedOpen should never be called in these tests.");
-        }
-
         fn open(
             self: Arc<Self>,
             _scope: ExecutionScope,

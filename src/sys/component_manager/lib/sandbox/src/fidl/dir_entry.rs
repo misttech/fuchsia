@@ -7,9 +7,9 @@ use crate::fidl::registry;
 use crate::{Connector, ConversionError, DirEntry, RemotableCapability};
 use fidl::handle::Status;
 use std::sync::Arc;
+use vfs::ToObjectRequest;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::execution_scope::ExecutionScope;
-use vfs::ToObjectRequest;
 use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio};
 
 impl RemotableCapability for DirEntry {
@@ -92,7 +92,7 @@ impl From<Connector> for DirEntry {
 mod tests {
     use super::*;
     use crate::Capability;
-    use fidl::endpoints::{self, ServerEnd};
+    use fidl::endpoints;
     use fidl_fuchsia_io as fio;
     use test_util::Counter;
     use vfs::directory::entry::{EntryInfo, GetEntryInfo, OpenRequest};
@@ -113,16 +113,6 @@ mod tests {
         }
     }
     impl RemoteLike for MockDir {
-        fn deprecated_open(
-            self: Arc<Self>,
-            _scope: ExecutionScope,
-            _flags: fio::OpenFlags,
-            _relative_path: Path,
-            _server_end: ServerEnd<fio::NodeMarker>,
-        ) {
-            self.0.inc();
-        }
-
         fn open(
             self: Arc<Self>,
             _scope: ExecutionScope,

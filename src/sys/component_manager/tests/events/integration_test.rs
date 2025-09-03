@@ -298,10 +298,7 @@ async fn receive_protocol_through_outgoing_dir_when_outside_filter() {
 
     let what_happened = events_receiver.next().await.unwrap();
     match what_happened {
-        EventOrDirRequest::DirRequest(
-            fio::DirectoryRequest::Open { path, .. }
-            | fio::DirectoryRequest::DeprecatedOpen { path, .. },
-        ) => {
+        EventOrDirRequest::DirRequest(fio::DirectoryRequest::Open { path, .. }) => {
             assert_eq!(path, "svc/example-name");
         }
         something_else => panic!("something unexpected happened: {something_else:?}"),

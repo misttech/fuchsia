@@ -190,7 +190,7 @@ mod tests {
     };
     use crate::{Data, Dict, DirEntry, Handle, Unit, serve_capability_store};
     use assert_matches::assert_matches;
-    use fidl::endpoints::{Proxy, ServerEnd, create_proxy, create_proxy_and_stream};
+    use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream};
     use fidl::handle::{Channel, HandleBased, Status};
     use fuchsia_fs::directory;
     use futures::StreamExt;
@@ -1189,17 +1189,6 @@ mod tests {
         }
     }
     impl RemoteLike for MockDir {
-        fn deprecated_open(
-            self: Arc<Self>,
-            _scope: ExecutionScope,
-            _flags: fio::OpenFlags,
-            relative_path: Path,
-            _server_end: ServerEnd<fio::NodeMarker>,
-        ) {
-            assert_eq!(relative_path.as_ref(), "bar");
-            self.0.inc();
-        }
-
         fn open(
             self: Arc<Self>,
             _scope: ExecutionScope,
