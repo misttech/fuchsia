@@ -35,6 +35,16 @@ pub(crate) async fn create_test_env_with_failures(
         .unwrap()
 }
 
+pub(crate) async fn create_empty_test_env(
+    storage_factory: Rc<InMemoryStorageFactory>,
+    env_name: &'static str,
+) -> fuchsia_component::server::ProtocolConnector {
+    EnvironmentBuilder::new(storage_factory)
+        .spawn_and_get_protocol_connector(env_name)
+        .await
+        .unwrap()
+}
+
 pub(crate) async fn create_test_env_with_failures_and_config(
     storage_factory: Rc<InMemoryStorageFactory>,
     env_name: &'static str,

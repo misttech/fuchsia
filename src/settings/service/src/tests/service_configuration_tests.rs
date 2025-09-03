@@ -20,7 +20,7 @@ use std::sync::Mutex;
 const ENV_NAME: &str = "settings_service_configuration_test_environment";
 
 fn get_test_interface_specs() -> HashSet<InterfaceSpec> {
-    [InterfaceSpec::Accessibility, InterfaceSpec::Privacy].into()
+    [InterfaceSpec::Accessibility].into()
 }
 
 #[fuchsia::test(allow_stalls = false)]

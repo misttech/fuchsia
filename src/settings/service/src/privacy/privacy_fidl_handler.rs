@@ -2,139 +2,139 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::Request;
-use crate::ingress::{request, watch, Scoped};
-use crate::job::source::{Error as JobError, ErrorResponder};
-use crate::job::Job;
-use fidl::prelude::*;
+use crate::handler::setting_handler::ControllerError;
+
+use super::privacy_controller::{PrivacyController, Request};
+use super::types::PrivacyInfo;
+use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
-    PrivacyRequest, PrivacySetResponder, PrivacySetResult, PrivacySettings, PrivacyWatchResponder,
+    Error as SettingsError, PrivacyRequest, PrivacyRequestStream, PrivacySettings,
+    PrivacyWatchResponder,
+};
+use fuchsia_async as fasync;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::channel::oneshot;
+use futures::StreamExt;
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
 };
 
-impl ErrorResponder for PrivacySetResponder {
-    fn id(&self) -> &'static str {
-        "Privacy_Set"
-    }
-
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.send(Err(error))
-    }
-}
-
-impl request::Responder<Scoped<PrivacySetResult>> for PrivacySetResponder {
-    fn respond(self, Scoped(response): Scoped<PrivacySetResult>) {
-        let _ = self.send(response);
-    }
-}
-
-impl watch::Responder<PrivacySettings, zx::Status> for PrivacyWatchResponder {
-    fn respond(self, response: Result<PrivacySettings, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings);
-            }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
-            }
-        }
-    }
-}
-
-impl TryFrom<PrivacyRequest> for Job {
-    type Error = JobError;
-
-    fn try_from(item: PrivacyRequest) -> Result<Self, Self::Error> {
-        #[allow(unreachable_patterns)]
-        match item {
-            PrivacyRequest::Set { settings, responder } => {
-                Ok(request::Work::new(SettingType::Privacy, to_request(settings), responder).into())
-            }
-            PrivacyRequest::Watch { responder } => {
-                Ok(watch::Work::new_job(SettingType::Privacy, responder))
-            }
-            _ => {
-                log::warn!("Received a call to an unsupported API: {:?}", item);
-                Err(JobError::Unsupported)
-            }
-        }
-    }
-}
-
-impl From<SettingInfo> for PrivacySettings {
-    fn from(response: SettingInfo) -> Self {
-        if let SettingInfo::Privacy(info) = response {
-            return PrivacySettings {
-                user_data_sharing_consent: info.user_data_sharing_consent,
-                ..Default::default()
-            };
-        }
-
-        panic!("incorrect value sent to privacy");
-    }
-}
-
-fn to_request(settings: PrivacySettings) -> Request {
-    Request::SetUserDataSharingConsent(settings.user_data_sharing_consent)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::job::{execution, work};
-    use assert_matches::assert_matches;
-    use fidl_fuchsia_settings::{PrivacyMarker, PrivacyRequestStream};
-    use futures::StreamExt;
-
-    #[fuchsia::test]
-    fn test_request_from_settings_empty() {
-        let request = to_request(PrivacySettings::default());
-
-        assert_eq!(request, Request::SetUserDataSharingConsent(None));
-    }
-
-    #[fuchsia::test]
-    fn test_request_from_settings() {
-        const USER_DATA_SHARING_CONSENT: bool = true;
-
-        let request = to_request(PrivacySettings {
-            user_data_sharing_consent: Some(USER_DATA_SHARING_CONSENT),
+impl From<PrivacyInfo> for PrivacySettings {
+    fn from(info: PrivacyInfo) -> Self {
+        PrivacySettings {
+            user_data_sharing_consent: info.user_data_sharing_consent,
             ..Default::default()
-        });
+        }
+    }
+}
 
-        assert_eq!(request, Request::SetUserDataSharingConsent(Some(USER_DATA_SHARING_CONSENT)));
+pub(super) type SubscriberObject = (UsageResponsePublisher<PrivacyInfo>, PrivacyWatchResponder);
+type HangingFn = fn(&PrivacyInfo, SubscriberObject) -> bool;
+pub(super) type HangingGet = server::HangingGet<PrivacyInfo, SubscriberObject, HangingFn>;
+pub(super) type Publisher = server::Publisher<PrivacyInfo, SubscriberObject, HangingFn>;
+pub(super) type Subscriber = server::Subscriber<PrivacyInfo, SubscriberObject, HangingFn>;
+
+pub struct PrivacyFidlHandler {
+    hanging_get: HangingGet,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<PrivacyInfo>,
+}
+
+impl PrivacyFidlHandler {
+    pub(crate) fn new(
+        privacy_controller: &mut PrivacyController,
+        usage_publisher: UsagePublisher<PrivacyInfo>,
+        initial_value: PrivacyInfo,
+    ) -> (Self, UnboundedReceiver<Request>) {
+        let hanging_get = HangingGet::new(initial_value, PrivacyFidlHandler::hanging_get);
+        privacy_controller.register_publisher(hanging_get.new_publisher());
+        let (controller_tx, request_rx) = mpsc::unbounded();
+        (Self { hanging_get, controller_tx, usage_publisher }, request_rx)
     }
 
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_set_converts_supplied_params() {
-        let (proxy, server) = fidl::endpoints::create_proxy::<PrivacyMarker>();
-        let _fut = proxy
-            .set(&PrivacySettings { user_data_sharing_consent: Some(true), ..Default::default() });
-        let mut request_stream: PrivacyRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
-            .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        let job = job.as_ref();
-        assert_matches!(job.map(|j| j.workload()), Ok(work::Load::Independent(_)));
-        assert_matches!(job.map(|j| j.execution_type()), Ok(execution::Type::Independent));
+    fn hanging_get(info: &PrivacyInfo, (usage_responder, responder): SubscriberObject) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&PrivacySettings::from(*info)) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
+        }
+        true
     }
 
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_watch_converts_supplied_params() {
-        let (proxy, server) = fidl::endpoints::create_proxy::<PrivacyMarker>();
-        let _fut = proxy.watch();
-        let mut request_stream: PrivacyRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
+    pub fn handle_stream(&mut self, mut stream: PrivacyRequestStream) {
+        let request_handler = RequestHandler {
+            subscriber: self.hanging_get.new_subscriber(),
+            controller_tx: self.controller_tx.clone(),
+            usage_publisher: self.usage_publisher.clone(),
+        };
+        fasync::Task::local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                request_handler.handle_request(request).await;
+            }
+        })
+        .detach();
+    }
+}
+
+#[derive(Debug)]
+enum HandlerError {
+    AlreadySubscribed,
+    ControllerStopped,
+    Controller(ControllerError),
+}
+
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
+        match error {
+            HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
+            HandlerError::ControllerStopped => ResponseType::UnexpectedError,
+            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+        }
+    }
+}
+
+struct RequestHandler {
+    subscriber: Subscriber,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<PrivacyInfo>,
+}
+
+impl RequestHandler {
+    async fn handle_request(&self, request: PrivacyRequest) {
+        match request {
+            PrivacyRequest::Watch { responder } => {
+                let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
+                }
+            }
+            PrivacyRequest::Set { settings, responder } => {
+                let usage_res = self
+                    .usage_publisher
+                    .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
+                if let Err(e) = self.set(settings).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
+            }
+        }
+    }
+
+    async fn set(&self, settings: PrivacySettings) -> Result<(), HandlerError> {
+        let (set_tx, set_rx) = oneshot::channel();
+        self.controller_tx
+            .unbounded_send(Request::Set(settings.user_data_sharing_consent, set_tx))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
             .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        let job = job.as_ref();
-        assert_matches!(job.map(|j| j.workload()), Ok(work::Load::Sequential(_, _)));
-        assert_matches!(job.map(|j| j.execution_type()), Ok(execution::Type::Sequential(_)));
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
     }
 }

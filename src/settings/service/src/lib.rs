@@ -13,7 +13,7 @@ use audio::types::AudioInfo;
 use audio::AudioInfoLoader;
 use display::display_controller::DisplayInfoLoader;
 use fidl_fuchsia_io::DirectoryProxy;
-use fidl_fuchsia_settings::{LightRequestStream, SetupRequestStream};
+use fidl_fuchsia_settings::{LightRequestStream, PrivacyRequestStream, SetupRequestStream};
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
 #[cfg(test)]
@@ -662,6 +662,13 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 .expect("storage should still be initializing");
         }
 
+        if components.contains(&SettingType::Privacy) {
+            device_storage_factory
+                .initialize::<PrivacyController>()
+                .await
+                .expect("storage should still be initializing");
+        }
+
         if components.contains(&SettingType::Setup) {
             device_storage_factory
                 .initialize::<SetupController>()
@@ -719,6 +726,20 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                     log::error!("Failed to setup light api: {e:?}");
                 }
             }
+        }
+
+        if components.contains(&SettingType::Privacy) {
+            let privacy::SetupResult { mut privacy_fidl_handler, task } =
+                privacy::setup_privacy_api(
+                    Rc::clone(&device_storage_factory),
+                    SettingValuePublisher::new(setting_value_tx.clone()),
+                    UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                )
+                .await;
+            tasks.push(task);
+            let _ = service_dir.add_fidl_service(move |stream: PrivacyRequestStream| {
+                privacy_fidl_handler.handle_stream(stream)
+            });
         }
 
         if components.contains(&SettingType::Setup) {
@@ -926,24 +947,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 SettingType::NightMode,
                 Box::new(move |context| {
                     DataHandler::<NightModeController<T>>::spawn_with_async(
-                        context,
-                        Rc::clone(&device_storage_factory),
-                    )
-                }),
-            );
-        }
-
-        // Privacy
-        if components.contains(&SettingType::Privacy) {
-            device_storage_factory
-                .initialize::<PrivacyController<T>>()
-                .await
-                .expect("storage should still be initializing");
-            let device_storage_factory = Rc::clone(&device_storage_factory);
-            factory_handle.register(
-                SettingType::Privacy,
-                Box::new(move |context| {
-                    DataHandler::<PrivacyController<T>>::spawn_with_async(
                         context,
                         Rc::clone(&device_storage_factory),
                     )

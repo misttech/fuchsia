@@ -9,7 +9,7 @@ use crate::job::source::Seeder;
 use fidl_fuchsia_settings::{
     AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream,
     DoNotDisturbRequestStream, FactoryResetRequestStream, InputRequestStream, IntlRequestStream,
-    KeyboardRequestStream, NightModeRequestStream, PrivacyRequestStream,
+    KeyboardRequestStream, NightModeRequestStream,
 };
 use fuchsia_component::server::{ServiceFsDir, ServiceObjLocal};
 use serde::Deserialize;
@@ -238,14 +238,8 @@ impl Interface {
                                 seeder.seed(stream);
                             });
                     }
-                    Interface::Privacy => {
-                        let seeder = seeder.clone();
-                        let _ =
-                            service_dir.add_fidl_service(move |stream: PrivacyRequestStream| {
-                                seeder.seed(stream);
-                            });
-                    }
-                    Interface::Setup => {} // Handled in lib.rs
+                    Interface::Privacy => {} // Handled in lib.rs
+                    Interface::Setup => {}   // Handled in lib.rs
                 }
             },
         )
@@ -265,7 +259,7 @@ impl Interface {
 
 #[cfg(test)]
 mod tests {
-    use fidl_fuchsia_settings::PrivacyMarker;
+    use fidl_fuchsia_settings::AccessibilityMarker;
     use fuchsia_async as fasync;
     use fuchsia_component::server::ServiceFs;
     use futures::StreamExt;
@@ -290,9 +284,9 @@ mod tests {
         let job_seeder = Seeder::new(&delegate, job_manager_signature).await;
 
         // Using privacy since it uses a seeder for its fidl registration.
-        let setting_type = SettingType::Privacy;
+        let setting_type = SettingType::Accessibility;
 
-        let registrant: Registrant = Interface::Privacy.registrant();
+        let registrant: Registrant = Interface::Accessibility.registrant();
 
         // Verify dependencies properly derived from the interface.
         assert!(registrant
@@ -313,9 +307,10 @@ mod tests {
         let connector = fs.create_protocol_connector().expect("should create connector");
         fasync::Task::local(fs.collect()).detach();
 
-        // Connect to the Privacy interface and request watching.
-        let privacy_proxy =
-            connector.connect_to_protocol::<PrivacyMarker>().expect("should connect to protocol");
+        // Connect to the Accessibility interface and request watching.
+        let privacy_proxy = connector
+            .connect_to_protocol::<AccessibilityMarker>()
+            .expect("should connect to protocol");
         fasync::Task::local(async move {
             let _ = privacy_proxy.watch().await;
         })
