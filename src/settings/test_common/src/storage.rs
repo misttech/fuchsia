@@ -426,7 +426,7 @@ mod tests {
         assert!(store_1.write(&data).await.is_ok());
 
         // Ensure it is read in from second store.
-        let retrieved_struct = store_2.get().await;
+        let retrieved_struct = store_2.get::<TestStruct>().await;
         assert_eq!(data, retrieved_struct);
     }
 }

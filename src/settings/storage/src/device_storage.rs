@@ -359,17 +359,18 @@ impl DeviceStorage {
     /// Write `new_value` to storage. The write will be persisted to disk at a set interval.
     pub async fn write<T>(&self, new_value: &T) -> Result<UpdateState, Error>
     where
-        T: DeviceStorageCompatible,
+        T: DeviceStorageConvertible,
     {
+        let storable = new_value.get_storable();
         self.inner_write(
-            T::KEY,
-            new_value.serialize_to(),
-            Box::new(new_value.clone()) as Box<TypeErasedData>,
+            T::Storable::KEY,
+            storable.serialize_to(),
+            Box::new(storable.into_owned()) as Box<TypeErasedData>,
             Box::new(|any: &dyn Any| {
                 // Attempt to downcast the `dyn Any` to its original type. If `T` was not its
                 // original type, then we want to panic because there's a compile-time issue
                 // with overlapping keys.
-                let value = any.downcast_ref::<T>().expect(
+                let value = any.downcast_ref::<T::Storable>().expect(
                     "Type mismatch even though keys match. Two different\
                                         types have the same key value",
                 );
@@ -425,25 +426,25 @@ impl DeviceStorage {
 
     /// Gets the latest value cached locally, or loads the value from storage.
     /// Doesn't support multiple concurrent callers of the same struct.
-    pub async fn get<T>(&self) -> T
+    pub async fn get<T>(&self) -> T::Storable
     where
-        T: DeviceStorageCompatible,
+        T: DeviceStorageConvertible,
     {
-        let (mut cached_storage, update) = self.get_inner(T::KEY).await;
+        let (mut cached_storage, update) = self.get_inner(T::Storable::KEY).await;
         if let Some(update) = update {
             cached_storage.current_data = Some(update.and_then(|string_value| {
-                T::try_deserialize_from(&string_value).map(|val| Box::new(val) as Box<TypeErasedData>).map_err(|e| log::error!(
+                T::Storable::try_deserialize_from(&string_value).map(|val| Box::new(val) as Box<TypeErasedData>).map_err(|e| log::error!(
                     "Using default. Failed to deserialize type {}: {e:?}\nSource data: {string_value:?}",
-                    T::KEY
+                    T::Storable::KEY
                 )).ok()
-            }).unwrap_or_else(|| Box::new(<T::Loader as DefaultDispatcher<T>>::get_default(self)) as Box<TypeErasedData>));
+            }).unwrap_or_else(|| Box::new(<<T::Storable as DeviceStorageCompatible>::Loader as DefaultDispatcher<T::Storable>>::get_default(self)) as Box<TypeErasedData>));
         };
 
         cached_storage
             .current_data
             .as_ref()
             .expect("should always have a value")
-            .downcast_ref::<T>()
+            .downcast_ref::<T::Storable>()
             .expect(
                 "Type mismatch even though keys match. Two different types have the same key\
                      value",
