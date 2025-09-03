@@ -13,7 +13,7 @@ use audio::types::AudioInfo;
 use audio::AudioInfoLoader;
 use display::display_controller::DisplayInfoLoader;
 use fidl_fuchsia_io::DirectoryProxy;
-use fidl_fuchsia_settings::LightRequestStream;
+use fidl_fuchsia_settings::{LightRequestStream, SetupRequestStream};
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
 #[cfg(test)]
@@ -518,6 +518,19 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             context_id_counter.clone(),
         );
 
+        Self::initialize_storage(&settings, &*fidl_storage_factory, &*self.storage_factory).await;
+
+        EnvironmentBuilder::register_setting_handlers(
+            &settings,
+            Rc::clone(&self.storage_factory),
+            &flags,
+            self.display_configuration.map(DisplayInfoLoader::new),
+            self.audio_configuration.map(AudioInfoLoader::new),
+            self.input_configuration,
+            &mut handler_factory,
+        )
+        .await;
+
         let listener_logger = self
             .active_listener_inspect_logger
             .unwrap_or_else(|| Rc::new(ListenerInspectLogger::new()));
@@ -532,6 +545,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             &settings,
             Rc::clone(&common_service_context),
             fidl_storage_factory,
+            self.storage_factory,
             self.light_configuration,
             &mut service_dir,
             Rc::clone(&listener_logger),
@@ -542,17 +556,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         }
 
         self.media_buttons_event_txs.extend(media_buttons_event_txs);
-
-        EnvironmentBuilder::register_setting_handlers(
-            &settings,
-            self.storage_factory,
-            &flags,
-            self.display_configuration.map(DisplayInfoLoader::new),
-            self.audio_configuration.map(AudioInfoLoader::new),
-            self.input_configuration,
-            &mut handler_factory,
-        )
-        .await;
 
         // Override the configuration handlers with any custom handlers specified
         // in the environment.
@@ -644,24 +647,14 @@ struct RegistrationResult {
 }
 
 impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<'a, T> {
-    async fn register_controllers<F>(
+    async fn initialize_storage<F, D>(
         components: &HashSet<SettingType>,
-        service_context: Rc<CommonServiceContext>,
-        fidl_storage_factory: Rc<F>,
-        light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
-        service_dir: &mut ServiceFsDir<'_, ServiceObjLocal<'_, ()>>,
-        listener_logger: Rc<ListenerInspectLogger>,
-    ) -> RegistrationResult
-    where
+        fidl_storage_factory: &F,
+        device_storage_factory: &D,
+    ) where
         F: StorageFactory<Storage = FidlStorage>,
+        D: StorageFactory<Storage = DeviceStorage>,
     {
-        let (setting_value_tx, setting_value_rx) = mpsc::unbounded();
-        let (external_event_tx, external_event_rx) = mpsc::unbounded();
-        let (usage_event_tx, usage_event_rx) = mpsc::unbounded();
-        let external_publisher = ExternalEventPublisher::new(external_event_tx);
-        let mut media_buttons_event_txs = vec![];
-        let mut tasks = vec![];
-        // Initialize storage for all components.
         if components.contains(&SettingType::Light) {
             fidl_storage_factory
                 .initialize::<LightController>()
@@ -669,17 +662,45 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 .expect("storage should still be initializing");
         }
 
+        if components.contains(&SettingType::Setup) {
+            device_storage_factory
+                .initialize::<SetupController>()
+                .await
+                .expect("storage should still be initializing");
+        }
+    }
+
+    async fn register_controllers<F, D>(
+        components: &HashSet<SettingType>,
+        service_context: Rc<CommonServiceContext>,
+        fidl_storage_factory: Rc<F>,
+        device_storage_factory: Rc<D>,
+        light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
+        service_dir: &mut ServiceFsDir<'_, ServiceObjLocal<'_, ()>>,
+        listener_logger: Rc<ListenerInspectLogger>,
+    ) -> RegistrationResult
+    where
+        F: StorageFactory<Storage = FidlStorage>,
+        D: StorageFactory<Storage = DeviceStorage>,
+    {
+        let (setting_value_tx, setting_value_rx) = mpsc::unbounded();
+        let (external_event_tx, external_event_rx) = mpsc::unbounded();
+        let (usage_event_tx, usage_event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(external_event_tx);
+        let mut media_buttons_event_txs = vec![];
+        let mut tasks = vec![];
+
         // Start handlers for all components.
         if components.contains(&SettingType::Light) {
             let mut light_configuration =
                 light_configuration.expect("Light controller requires a light configuration");
             match settings_light::setup_light_api(
-                service_context,
+                Rc::clone(&service_context),
                 &mut light_configuration,
                 fidl_storage_factory,
-                SettingValuePublisher::new(setting_value_tx),
-                UsagePublisher::new(usage_event_tx, listener_logger),
-                external_publisher,
+                SettingValuePublisher::new(setting_value_tx.clone()),
+                UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                external_publisher.clone(),
             )
             .await
             {
@@ -698,6 +719,21 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                     log::error!("Failed to setup light api: {e:?}");
                 }
             }
+        }
+
+        if components.contains(&SettingType::Setup) {
+            let setup::SetupResult { mut setup_fidl_handler, task } = setup::setup_setup_api(
+                service_context,
+                device_storage_factory,
+                SettingValuePublisher::new(setting_value_tx),
+                UsagePublisher::new(usage_event_tx, listener_logger),
+                external_publisher,
+            )
+            .await;
+            tasks.push(task);
+            let _ = service_dir.add_fidl_service(move |stream: SetupRequestStream| {
+                setup_fidl_handler.handle_stream(stream)
+            });
         }
 
         RegistrationResult {
@@ -908,24 +944,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 SettingType::Privacy,
                 Box::new(move |context| {
                     DataHandler::<PrivacyController<T>>::spawn_with_async(
-                        context,
-                        Rc::clone(&device_storage_factory),
-                    )
-                }),
-            );
-        }
-
-        // Setup
-        if components.contains(&SettingType::Setup) {
-            device_storage_factory
-                .initialize::<SetupController<T>>()
-                .await
-                .expect("storage should still be initializing");
-            let device_storage_factory = Rc::clone(&device_storage_factory);
-            factory_handle.register(
-                SettingType::Setup,
-                Box::new(move |context| {
-                    DataHandler::<SetupController<T>>::spawn_with_async(
                         context,
                         Rc::clone(&device_storage_factory),
                     )

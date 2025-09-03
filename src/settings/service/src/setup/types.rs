@@ -4,10 +4,15 @@
 
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
+use settings_common::inspect::event::Nameable;
 
 #[derive(PartialEq, Default, Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct SetupInfo {
     pub configuration_interfaces: ConfigurationInterfaceFlags,
+}
+
+impl Nameable for SetupInfo {
+    const NAME: &'static str = "setup";
 }
 
 bitflags! {

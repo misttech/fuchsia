@@ -2,37 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::Request;
-use crate::ingress::{request, watch, Scoped};
-use crate::job::source::{Error as JobError, ErrorResponder};
-use crate::job::Job;
-use crate::setup::types::{
-    ConfigurationInterfaceFlags, SetConfigurationInterfacesParams, SetupInfo,
-};
-use fidl::prelude::*;
+use super::setup_controller::{Request, SetupController};
+use crate::handler::setting_handler::ControllerError;
+use crate::setup::types::{ConfigurationInterfaceFlags, SetupInfo};
+use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
-    SetupRequest, SetupSetResponder, SetupSetResult, SetupSettings, SetupWatchResponder,
+    Error as SettingsError, SetupRequest, SetupRequestStream, SetupSettings, SetupWatchResponder,
 };
-
-impl ErrorResponder for SetupSetResponder {
-    fn id(&self) -> &'static str {
-        "Setup_Set"
-    }
-
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.send(Err(error))
-    }
-}
-
-impl From<SettingInfo> for SetupSettings {
-    fn from(response: SettingInfo) -> Self {
-        if let SettingInfo::Setup(info) = response {
-            return SetupSettings::from(info);
-        }
-        panic!("incorrect value sent");
-    }
-}
+use fuchsia_async as fasync;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::channel::oneshot;
+use futures::StreamExt;
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
+};
 
 impl From<fidl_fuchsia_settings::ConfigurationInterfaces> for ConfigurationInterfaceFlags {
     fn from(interfaces: fidl_fuchsia_settings::ConfigurationInterfaces) -> Self {
@@ -80,131 +63,123 @@ impl From<SetupInfo> for SetupSettings {
     }
 }
 
-impl request::Responder<Scoped<SetupSetResult>> for SetupSetResponder {
-    fn respond(self, Scoped(response): Scoped<SetupSetResult>) {
-        let _ = self.send(response).ok();
+pub(super) type SubscriberObject = (UsageResponsePublisher<SetupInfo>, SetupWatchResponder);
+type InfoHangingFn = fn(&SetupInfo, SubscriberObject) -> bool;
+pub(super) type InfoHangingGet = server::HangingGet<SetupInfo, SubscriberObject, InfoHangingFn>;
+pub(super) type InfoPublisher = server::Publisher<SetupInfo, SubscriberObject, InfoHangingFn>;
+pub(super) type InfoSubscriber = server::Subscriber<SetupInfo, SubscriberObject, InfoHangingFn>;
+
+pub struct SetupFidlHandler {
+    info_hanging_get: InfoHangingGet,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<SetupInfo>,
+}
+
+impl SetupFidlHandler {
+    pub(super) fn new(
+        setup_controller: &mut SetupController,
+        usage_publisher: UsagePublisher<SetupInfo>,
+        initial_value: SetupInfo,
+    ) -> (Self, UnboundedReceiver<Request>) {
+        let info_hanging_get = InfoHangingGet::new(initial_value, Self::hanging_get);
+        setup_controller.register_publisher(info_hanging_get.new_publisher());
+        let (controller_tx, controller_rx) = mpsc::unbounded();
+        (Self { info_hanging_get, controller_tx, usage_publisher }, controller_rx)
+    }
+
+    fn hanging_get(info: &SetupInfo, (usage_responder, responder): SubscriberObject) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&SetupSettings::from(*info)) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
+        }
+        true
+    }
+
+    pub fn handle_stream(&mut self, mut stream: SetupRequestStream) {
+        let request_handler = RequestHandler {
+            subscriber: self.info_hanging_get.new_subscriber(),
+            controller_tx: self.controller_tx.clone(),
+            usage_publisher: self.usage_publisher.clone(),
+        };
+        fasync::Task::local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                request_handler.handle_request(request).await;
+            }
+        })
+        .detach();
     }
 }
 
-impl watch::Responder<SetupSettings, zx::Status> for SetupWatchResponder {
-    fn respond(self, response: Result<SetupSettings, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings);
-            }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
-            }
+#[derive(Debug)]
+enum HandlerError {
+    AlreadySubscribed,
+    MissingConfig,
+    ControllerStopped,
+    Controller(ControllerError),
+}
+
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
+        match error {
+            HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
+            HandlerError::MissingConfig => ResponseType::InvalidArgument,
+            HandlerError::ControllerStopped => ResponseType::UnexpectedError,
+            HandlerError::Controller(e) => ResponseType::from(e.clone()),
         }
     }
 }
 
-impl TryFrom<SetupRequest> for Job {
-    type Error = JobError;
-    fn try_from(item: SetupRequest) -> Result<Self, Self::Error> {
-        #[allow(unreachable_patterns)]
-        match item {
-            SetupRequest::Set { settings, reboot_device, responder } => {
-                match to_request(settings, reboot_device) {
-                    Some(request) => {
-                        Ok(request::Work::new(SettingType::Setup, request, responder).into())
-                    }
-                    None => Err(JobError::InvalidInput(Box::new(responder))),
+struct RequestHandler {
+    subscriber: InfoSubscriber,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<SetupInfo>,
+}
+
+impl RequestHandler {
+    async fn handle_request(&self, request: SetupRequest) {
+        match request {
+            SetupRequest::Watch { responder } => {
+                let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
                 }
             }
-            SetupRequest::Watch { responder } => {
-                Ok(watch::Work::new_job(SettingType::Setup, responder))
-            }
-            _ => {
-                log::warn!("Received a call to an unsupported API: {:?}", item);
-                Err(JobError::Unsupported)
+            SetupRequest::Set { settings, reboot_device, responder } => {
+                let usage_res = self.usage_publisher.request(
+                    format!("Set{{settings:{settings:?},reboot_device:{reboot_device:?}}}"),
+                    RequestType::Set,
+                );
+                if let Err(e) = self.set(settings, reboot_device).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
             }
         }
     }
-}
 
-fn to_request(settings: SetupSettings, should_reboot: bool) -> Option<Request> {
-    if let Some(configuration_interfaces) = settings.enabled_configuration_interfaces {
-        return Some(Request::SetConfigurationInterfaces(SetConfigurationInterfacesParams {
-            config_interfaces_flags: ConfigurationInterfaceFlags::from(configuration_interfaces),
-            should_reboot,
-        }));
-    }
-
-    None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::job::{execution, work};
-    use assert_matches::assert_matches;
-    use fidl_fuchsia_settings::{SetupMarker, SetupRequestStream};
-    use futures::StreamExt;
-
-    #[fuchsia::test]
-    fn test_request_from_settings() {
-        const CONFIGURATION_INTERFACES: Option<fidl_fuchsia_settings::ConfigurationInterfaces> =
-            Some(fidl_fuchsia_settings::ConfigurationInterfaces::ETHERNET);
-        const CONFIGURATION_INTERFACE_FLAG: ConfigurationInterfaceFlags =
-            ConfigurationInterfaceFlags::ETHERNET;
-        const SHOULD_REBOOT: bool = true;
-
-        let setup_settings = SetupSettings {
-            enabled_configuration_interfaces: CONFIGURATION_INTERFACES,
-            ..Default::default()
+    async fn set(&self, settings: SetupSettings, reboot_device: bool) -> Result<(), HandlerError> {
+        let Some(enabled_config_interfaces) = settings.enabled_configuration_interfaces else {
+            return Err(HandlerError::MissingConfig);
         };
-
-        let request = to_request(setup_settings, SHOULD_REBOOT);
-
-        assert_eq!(
-            request,
-            Some(Request::SetConfigurationInterfaces(SetConfigurationInterfacesParams {
-                config_interfaces_flags: CONFIGURATION_INTERFACE_FLAG,
-                should_reboot: SHOULD_REBOOT,
-            }))
-        );
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_set_converts_supplied_params() {
-        const CONFIGURATION_INTERFACES: Option<fidl_fuchsia_settings::ConfigurationInterfaces> =
-            Some(fidl_fuchsia_settings::ConfigurationInterfaces::ETHERNET);
-        const SHOULD_REBOOT: bool = true;
-
-        let (proxy, server) = fidl::endpoints::create_proxy::<SetupMarker>();
-        let _fut = proxy.set(
-            &SetupSettings {
-                enabled_configuration_interfaces: CONFIGURATION_INTERFACES,
-                ..Default::default()
-            },
-            SHOULD_REBOOT,
-        );
-        let mut request_stream: SetupRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
+        let (set_tx, set_rx) = oneshot::channel();
+        self.controller_tx
+            .unbounded_send(Request::Set(
+                ConfigurationInterfaceFlags::from(enabled_config_interfaces),
+                reboot_device,
+                set_tx,
+            ))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
             .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        let job = job.as_ref();
-        assert_matches!(job.map(|j| j.workload()), Ok(work::Load::Independent(_)));
-        assert_matches!(job.map(|j| j.execution_type()), Ok(execution::Type::Independent));
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_watch_converts_supplied_params() {
-        let (proxy, server) = fidl::endpoints::create_proxy::<SetupMarker>();
-        let _fut = proxy.watch();
-        let mut request_stream: SetupRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
-            .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        let job = job.as_ref();
-        assert_matches!(job.map(|j| j.workload()), Ok(work::Load::Sequential(_, _)));
-        assert_matches!(job.map(|j| j.execution_type()), Ok(execution::Type::Sequential(_)));
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
     }
 }

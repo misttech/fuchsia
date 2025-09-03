@@ -211,7 +211,10 @@ impl SettingValuesInspectAgent {
                 .available_components
                 .iter()
                 // Filter out settings that submit via new channel.
-                .filter(|t| **t != SettingType::Light)
+                .filter(|t| match t {
+                    SettingType::Light | SettingType::Setup => false,
+                    _ => true,
+                })
                 .copied()
                 .collect(),
             _setting_types_inspect_info: setting_types_inspect_info,

@@ -40,7 +40,7 @@ async fn create_event_environment() -> Rc<Mutex<Option<Receptor>>> {
     let _env = EnvironmentBuilder::new(Rc::new(InMemoryStorageFactory::new()))
         .service(ServiceRegistry::serve(ServiceRegistry::create()))
         .event_subscribers(&[Blueprint::create(create_subscriber)])
-        .fidl_interfaces(&[Interface::Setup])
+        .fidl_interfaces(&[Interface::Accessibility])
         .agents(vec![AgentCreator::from_type(AgentType::Restore).unwrap()])
         .spawn_and_get_protocol_connector(ENV_NAME)
         .await
@@ -119,7 +119,7 @@ async fn test_restore() {
 // Verifies the no-op event was properly passed through and matches.
 #[fuchsia::test(allow_stalls = false)]
 async fn test_unimplemented() {
-    // The environment uses SettingType::Setup, whose controller, setup_controller, does not
+    // The environment uses SettingType::Accessibility, whose controller, accessibility_controller, does not
     // implement Restore.
     let receptor = create_event_environment().await;
     let mut event_receptor = receptor.lock().await.take().expect("Should have captured receptor");
@@ -127,7 +127,7 @@ async fn test_unimplemented() {
     loop {
         let payload = event_receptor.next_of_type::<event::Payload>().await;
         if let Ok((
-            event::Payload::Event(Event::Restore(restore::Event::NoOp(SettingType::Setup))),
+            event::Payload::Event(Event::Restore(restore::Event::NoOp(SettingType::Accessibility))),
             _,
         )) = payload
         {
