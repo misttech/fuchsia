@@ -33,6 +33,9 @@ use {
     fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fuchsia_async as fasync, zx_status,
 };
 
+#[cfg(fuchsia_api_level_less_than = "HEAD")]
+use {fuchsia_sync as _, rand as _};
+
 mod builtin;
 mod resolver;
 mod runner;
@@ -640,6 +643,22 @@ impl Realm {
                         }
                     }
                 }
+                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                ftest::RealmRequest::AddStorage { name, to, storage_admin, responder } => {
+                    if self.realm_has_been_built.load(Ordering::Relaxed) {
+                        responder.send(Err(ftest::RealmBuilderError::BuildAlreadyCalled))?;
+                        continue;
+                    }
+                    match self.add_storage(name, to, storage_admin).await {
+                        Ok(()) => {
+                            responder.send(Ok(()))?;
+                        }
+                        Err(err) => {
+                            warn!(method = "Realm.Storage", message:% = err; "");
+                            responder.send(Err(err.into()))?;
+                        }
+                    }
+                }
                 ftest::RealmRequest::InitMutableConfigFromPackage { name, responder } => {
                     if self.realm_has_been_built.load(Ordering::Relaxed) {
                         responder.send(Err(ftest::RealmBuilderError::BuildAlreadyCalled))?;
@@ -990,7 +1009,7 @@ impl Realm {
         let directory_contents = Arc::new(directory_contents);
         let local_component_id = self
             .runner
-            .register_builtin_component(move |outgoing_dir| {
+            .register_builtin_component(move |_namespace, outgoing_dir| {
                 builtin::read_only_directory(
                     dir_name.clone(),
                     directory_contents.clone(),
@@ -1031,6 +1050,147 @@ impl Realm {
                 to,
             )
             .await
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    async fn add_storage(
+        &self,
+        storage_name: String,
+        to: Vec<fcdecl::Ref>,
+        storage_admin: Option<ServerEnd<fcomponent::StorageAdminMarker>>,
+    ) -> Result<(), RealmBuilderError> {
+        let name = storage_name.clone();
+        let storage_admin = fuchsia_sync::Mutex::new(storage_admin);
+        let local_component_id = self
+            .runner
+            .register_builtin_component(move |namespace, outgoing_dir| {
+                builtin::storage(name.clone(), namespace, outgoing_dir, storage_admin.lock().take())
+                    .boxed()
+            })
+            .await;
+        self.realm_contents.lock().await.add_local_component_id(local_component_id.clone());
+        let string_id: String = local_component_id.clone().into();
+        let child_name: LongName =
+            format!("storage-{}", string_id).parse().expect("should be valid name");
+
+        let child_realm_node = RealmNode2::new_from_decl(
+            new_decl_with_program_entries(vec![(
+                runner::LOCAL_COMPONENT_ID_KEY.to_string(),
+                local_component_id.into(),
+            )]),
+            true,
+        );
+        self.realm_node
+            .add_child(
+                child_name.clone(),
+                ftest::ChildOptions {
+                    startup: Some(fcdecl::StartupMode::Eager),
+                    ..Default::default()
+                },
+                child_realm_node,
+            )
+            .await?;
+
+        let child_node = self.realm_node.get_sub_realm(child_name.as_str()).await?;
+        let mut child_decl = child_node.get_decl().await.native_into_fidl();
+        child_decl.uses.get_or_insert(vec![]).push(fcdecl::Use::Protocol(fcdecl::UseProtocol {
+            source: Some(fcdecl::Ref::Parent(fcdecl::ParentRef {})),
+            source_name: Some("fuchsia.component.StorageAdmin".to_string()),
+            target_path: Some("/svc/fuchsia.component.StorageAdmin".to_string()),
+            dependency_type: Some(fcdecl::DependencyType::Strong),
+            availability: Some(fcdecl::Availability::Required),
+            ..Default::default()
+        }));
+        child_decl.capabilities.get_or_insert(vec![]).push(fcdecl::Capability::Directory(
+            fcdecl::Directory {
+                name: Some(storage_name.clone()),
+                source_path: Some(format!("/{}", storage_name)),
+                rights: Some(fio::RW_STAR_DIR),
+                ..Default::default()
+            },
+        ));
+        child_decl.exposes.get_or_insert(vec![]).push(fcdecl::Expose::Directory(
+            fcdecl::ExposeDirectory {
+                source: Some(fcdecl::Ref::Self_(fcdecl::SelfRef {})),
+                source_name: Some(storage_name.clone()),
+                target: Some(fcdecl::Ref::Parent(fcdecl::ParentRef {})),
+                target_name: Some(storage_name.clone()),
+                availability: Some(fcdecl::Availability::Required),
+                ..Default::default()
+            },
+        ));
+        child_node.replace_decl_with_untrusted(child_decl).await?;
+
+        let mut realm_decl = self.realm_node.get_decl().await.native_into_fidl();
+        realm_decl.capabilities.get_or_insert(vec![]).push(fcdecl::Capability::Storage(
+            fcdecl::Storage {
+                name: Some(storage_name.clone()),
+                source: Some(fcdecl::Ref::Child(fcdecl::ChildRef {
+                    name: child_name.clone().into(),
+                    collection: None,
+                })),
+                backing_dir: Some(storage_name.clone()),
+                subdir: None,
+                storage_id: Some(fcdecl::StorageId::StaticInstanceIdOrMoniker),
+                ..Default::default()
+            },
+        ));
+        realm_decl.offers.get_or_insert(vec![]).push(fcdecl::Offer::Protocol(
+            fcdecl::OfferProtocol {
+                source_name: Some("fuchsia.component.StorageAdmin".to_string()),
+                source: Some(fcdecl::Ref::Capability(fcdecl::CapabilityRef {
+                    name: storage_name.clone().into(),
+                })),
+                target: Some(fcdecl::Ref::Child(fcdecl::ChildRef {
+                    name: child_name.clone().into(),
+                    collection: None,
+                })),
+                target_name: Some("fuchsia.component.StorageAdmin".to_string()),
+                availability: Some(fcdecl::Availability::Required),
+                dependency_type: Some(fcdecl::DependencyType::Weak),
+                ..Default::default()
+            },
+        ));
+        realm_decl.offers.get_or_insert(vec![]).push(fcdecl::Offer::Storage(
+            fcdecl::OfferStorage {
+                source_name: Some("data".to_string()),
+                source: Some(fcdecl::Ref::Parent(fcdecl::ParentRef {})),
+                target: Some(fcdecl::Ref::Child(fcdecl::ChildRef {
+                    name: child_name.clone().into(),
+                    collection: None,
+                })),
+                target_name: Some("data".to_string()),
+                availability: Some(fcdecl::Availability::Required),
+                ..Default::default()
+            },
+        ));
+        for target in to {
+            realm_decl.offers.get_or_insert(vec![]).push(fcdecl::Offer::Storage(
+                fcdecl::OfferStorage {
+                    source_name: Some(storage_name.clone()),
+                    source: Some(fcdecl::Ref::Self_(fcdecl::SelfRef {})),
+                    target: Some(target.clone()),
+                    target_name: Some(storage_name.clone()),
+                    availability: Some(fcdecl::Availability::Required),
+                    ..Default::default()
+                },
+            ));
+            add_use_decl_if_needed(
+                self.realm_node.state.lock().await.deref_mut(),
+                target,
+                ftest::Capability::Storage(ftest::Storage {
+                    name: Some(storage_name.clone()),
+                    as_: Some(storage_name.clone()),
+                    path: Some(format!("/{}", &storage_name)),
+                    availability: Some(fcdecl::Availability::Required),
+                    ..Default::default()
+                }),
+            )
+            .await?;
+        }
+        self.realm_node.replace_decl_with_untrusted(realm_decl).await?;
+
+        Ok(())
     }
 }
 

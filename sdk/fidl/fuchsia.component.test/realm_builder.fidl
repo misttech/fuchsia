@@ -787,6 +787,23 @@ closed protocol Realm {
         directory_contents DirectoryContents;
     }) -> () error RealmBuilderError;
 
+
+    /// Creates and routes a new storage capability to the provided targets.
+    /// Optionally can connect the provided channel the the
+    /// `fuchsia.sys2.StorageAdmin` protocol for this storage capability.
+    @available(added=HEAD)
+    strict AddStorage(resource struct {
+        /// The name of the storage capability.
+        name fuchsia.component.name;
+
+        /// The target that this storage capability will be offered to.
+        to vector<fuchsia.component.decl.Ref>:MAX;
+
+        /// The server end to connect to this storage capability's
+        /// `fuchsia.sys2.StorageAdmin` protocol.
+        storage_admin server_end:<fuchsia.component.StorageAdmin, optional>;
+    }) -> () error RealmBuilderError;
+
     /// Load any packaged configuration for `name` before using values provided to
     /// the builder.
     ///

@@ -1397,6 +1397,19 @@ impl RealmBuilder {
         self.root_realm.read_only_directory(directory_name, to, directory_contents).await
     }
 
+    /// Creates and routes a new storage capability to the provided targets. Optionally can connect
+    /// the provided channel to the `fuchsia.component.StorageAdmin` protocol for this storage
+    /// capability.
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub async fn add_storage(
+        &self,
+        storage_name: impl Into<String>,
+        to: Vec<impl Into<Ref>>,
+        storage_admin: Option<ServerEnd<fcomponent::StorageAdminMarker>>,
+    ) -> Result<(), Error> {
+        self.root_realm.add_storage(storage_name, to, storage_admin).await
+    }
+
     /// Adds a Capability to the root realm.
     pub async fn add_capability(&self, capability: cm_rust::CapabilityDecl) -> Result<(), Error> {
         self.root_realm.add_capability(capability).await
@@ -1696,6 +1709,31 @@ impl SubRealmBuilder {
             &to,
             directory_contents.into(),
         );
+        fut.await??;
+        Ok(())
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "HEAD")]
+    pub async fn add_storage(
+        &self,
+        storage_name: impl Into<String>,
+        to: Vec<impl Into<Ref>>,
+        storage_admin: Option<ServerEnd<fcomponent::StorageAdminMarker>>,
+    ) -> Result<(), Error> {
+        let to: Vec<Ref> = to.into_iter().map(Into::into).collect();
+        for target in &to {
+            target.check_scope(&self.realm_path)?;
+        }
+        let to = to
+            .into_iter()
+            .map(|to| {
+                let (to, path) = to.into_fidl(RefContext::Target);
+                assert_matches!(path, None);
+                to
+            })
+            .collect::<Vec<_>>();
+
+        let fut = self.realm_proxy.add_storage(&storage_name.into(), &to, storage_admin);
         fut.await??;
         Ok(())
     }
@@ -2814,6 +2852,10 @@ mod tests {
             name: String,
             to: Vec<fdecl::Ref>,
         },
+        AddStorage {
+            name: String,
+            to: Vec<fdecl::Ref>,
+        },
         InitMutableConfigFromPackage {
             name: String,
         },
@@ -3004,6 +3046,10 @@ mod tests {
                             .send(ServerRequest::ReadOnlyDirectory { name, to })
                             .await
                             .unwrap();
+                        responder.send(Ok(())).unwrap();
+                    }
+                    ftest::RealmRequest::AddStorage { responder, name, to, .. } => {
+                        report_requests.send(ServerRequest::AddStorage { name, to }).await.unwrap();
                         responder.send(Ok(())).unwrap();
                     }
                     ftest::RealmRequest::InitMutableConfigFromPackage { name, responder } => {
@@ -3779,6 +3825,25 @@ mod tests {
                 if &name == "a" && &url == "test://a" && options == ChildOptions::new().into()
         );
         assert_read_only_directory(&mut receive_server_requests, "config", vec![&child_a]);
+    }
+
+    #[fuchsia::test]
+    async fn storage() {
+        let (builder, _server_task, mut receive_server_requests) =
+            new_realm_builder_and_server_task();
+        let child_a = builder.add_child("a", "test://a", ChildOptions::new()).await.unwrap();
+        builder.add_storage("data", vec![&child_a], None).await.unwrap();
+
+        assert_matches!(
+            receive_server_requests.next().await,
+            Some(ServerRequest::AddChild { name, url, options })
+                if &name == "a" && &url == "test://a" && options == ChildOptions::new().into()
+        );
+        assert_matches!(
+            receive_server_requests.next().await,
+            Some(ServerRequest::AddStorage { name, to })
+                if &name == "data" && &to == &vec![fdecl::Ref::Child(fdecl::ChildRef { name: "a".to_string(), collection: None })]
+        );
     }
 
     #[test]

@@ -38,6 +38,7 @@ rustc_binary("realm_builder_server_bin") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
+    "//src/lib/fuchsia-sync",
     "//src/lib/versioning/version-history/rust",
     "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/lib/cm_fidl_validator",
@@ -49,6 +50,7 @@ rustc_binary("realm_builder_server_bin") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:rand",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:url",
   ]

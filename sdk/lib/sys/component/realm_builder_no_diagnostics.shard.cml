@@ -31,5 +31,10 @@
             as: "fuchsia.component.resolver.RealmBuilder",
             to: [ "#realm_builder" ],
         },
+        {
+            storage: "data",
+            from: "parent",
+            to: "#realm_builder_server",
+        },
     ],
 }

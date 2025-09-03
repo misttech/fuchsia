@@ -14,6 +14,12 @@ use vfs::file::vmo::VmoFile;
 use zx::{self as zx, HandleBased};
 use {fidl_fuchsia_component_test as ftest, fidl_fuchsia_io as fio};
 
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+use {
+    fidl::endpoints::DiscoverableProtocolMarker, fidl_fuchsia_component as fcomponent,
+    fidl_fuchsia_component_runner as fcrunner,
+};
+
 enum DirectoryOrFile {
     Directory(HashMap<String, DirectoryOrFile>),
     File(Arc<zx::Vmo>),
@@ -45,7 +51,7 @@ pub async fn read_only_directory(
     }
 }
 
-pub async fn read_only_directory_helper(
+async fn read_only_directory_helper(
     directory_name: String,
     directory_contents: Arc<ftest::DirectoryContents>,
     outgoing_dir: ServerEnd<fio::DirectoryMarker>,
@@ -121,6 +127,92 @@ fn build_directory(
         }
     }
     Ok(directory)
+}
+
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+pub async fn storage(
+    storage_name: String,
+    namespace: Vec<fcrunner::ComponentNamespaceEntry>,
+    outgoing_dir: ServerEnd<fio::DirectoryMarker>,
+    storage_admin: Option<ServerEnd<fcomponent::StorageAdminMarker>>,
+) {
+    if let Err(e) = storage_helper(storage_name, namespace, outgoing_dir, storage_admin).await {
+        error!("unable to provide storage: {:?}", e);
+    }
+}
+
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+async fn storage_helper(
+    storage_name: String,
+    namespace: Vec<fcrunner::ComponentNamespaceEntry>,
+    outgoing_dir: ServerEnd<fio::DirectoryMarker>,
+    storage_admin: Option<ServerEnd<fcomponent::StorageAdminMarker>>,
+) -> Result<(), anyhow::Error> {
+    let dir_id: u64 = rand::random();
+    let dir_path = format!("/data/storage-dir-{:x}", dir_id);
+
+    struct DeleteOnDrop {
+        path: String,
+    }
+    impl Drop for DeleteOnDrop {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir(&self.path);
+        }
+    }
+    let _delete_on_drop = DeleteOnDrop { path: dir_path.clone() };
+
+    let storage_dir_proxy = fuchsia_fs::directory::open_in_namespace(
+        &dir_path,
+        fio::PERM_READABLE
+            | fio::PERM_WRITABLE
+            | fio::Flags::FLAG_MUST_CREATE
+            | fio::Flags::PROTOCOL_DIRECTORY,
+    )
+    .context("failed to open temporary storage")?;
+    let directory = simpledir::simple();
+    directory
+        .clone()
+        .add_entry(storage_name, vfs::remote::remote_dir(storage_dir_proxy))
+        .context("failed to add storage dir proxy to outgoing directory VFS")?;
+
+    let execution_scope_dropper = ExecutionScopeDropper { execution_scope: ExecutionScope::new() };
+    vfs::directory::serve_on(
+        directory,
+        fio::PERM_READABLE | fio::PERM_WRITABLE,
+        execution_scope_dropper.execution_scope.clone(),
+        outgoing_dir,
+    );
+
+    if let Some(storage_admin) = storage_admin {
+        let svc_dir_entry = namespace
+            .into_iter()
+            .find(|entry| entry.path == Some("/svc".to_string()))
+            .context("missing svc dir")?;
+        let svc_dir_client_end = svc_dir_entry.directory.context("malformed namespace entry")?;
+        let svc_dir_proxy = svc_dir_client_end.into_proxy();
+        let flags = fio::Flags::PROTOCOL_SERVICE;
+        #[cfg(fuchsia_api_level_at_least = "27")]
+        let () = svc_dir_proxy
+            .open(
+                fcomponent::StorageAdminMarker::PROTOCOL_NAME,
+                flags,
+                &fio::Options::default(),
+                storage_admin.into_channel(),
+            )
+            .map_err(fuchsia_fs::node::OpenError::SendOpenRequest)?;
+        #[cfg(not(fuchsia_api_level_at_least = "27"))]
+        let () = svc_dir_proxy
+            .open3(
+                fcomponent::StorageAdminMarker::PROTOCOL_NAME,
+                flags,
+                &fio::Options::default(),
+                storage_admin.into_channel(),
+            )
+            .map_err(fuchsia_fs::node::OpenError::SendOpenReques)?;
+    }
+
+    execution_scope_dropper.execution_scope.wait().await;
+    Ok(())
 }
 
 #[cfg(test)]

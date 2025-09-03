@@ -33,7 +33,10 @@ pub enum ComponentImplementer {
     RunnerProxy(Arc<Mutex<Option<fcrunner::ComponentRunnerProxy>>>),
     Builtin(
         Arc<
-            dyn Fn(ServerEnd<fio::DirectoryMarker>) -> BoxFuture<'static, ()>
+            dyn Fn(
+                    Vec<fcrunner::ComponentNamespaceEntry>,
+                    ServerEnd<fio::DirectoryMarker>,
+                ) -> BoxFuture<'static, ()>
                 + Sync
                 + Send
                 + 'static,
@@ -83,7 +86,13 @@ impl Runner {
         implementation: M,
     ) -> LocalComponentId
     where
-        M: Fn(ServerEnd<fio::DirectoryMarker>) -> BoxFuture<'static, ()> + Sync + Send + 'static,
+        M: Fn(
+                Vec<fcrunner::ComponentNamespaceEntry>,
+                ServerEnd<fio::DirectoryMarker>,
+            ) -> BoxFuture<'static, ()>
+            + Sync
+            + Send
+            + 'static,
     {
         let mut next_local_component_id_guard = self.next_local_component_id.lock().await;
         let mut local_component_proxies_guard = self.local_component_proxies.lock().await;
@@ -179,7 +188,10 @@ impl Runner {
             ComponentImplementer::Builtin(implementation) => {
                 self.execution_scope.spawn(run_builtin_controller(
                     controller.into_stream(),
-                    fasync::Task::local((*implementation)(start_info.outgoing_dir.unwrap())),
+                    fasync::Task::local((*implementation)(
+                        start_info.ns.unwrap(),
+                        start_info.outgoing_dir.unwrap(),
+                    )),
                 ));
             }
         };
@@ -330,7 +342,7 @@ mod tests {
         let (sender, mut receiver) = mpsc::channel(1);
 
         let LocalComponentId(local_component_id) = runner
-            .register_builtin_component(move |_outgoing_dir| {
+            .register_builtin_component(move |_namespace, _outgoing_dir| {
                 let mut sender = sender.clone();
                 async move {
                     sender.send(()).await.expect("failed to send that builtin was invoked");

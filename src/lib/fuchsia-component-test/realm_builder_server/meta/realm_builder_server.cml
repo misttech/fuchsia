@@ -25,6 +25,12 @@
             ],
         },
     ],
+    use: [
+        {
+            storage: "data",
+            path: "/data",
+        },
+    ],
     expose: [
         {
             resolver: "realm_builder_resolver",

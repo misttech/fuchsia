@@ -1948,6 +1948,54 @@ async fn from_fragment_invalid_manifest() -> Result<(), Error> {
     Ok(())
 }
 
+#[fuchsia::test]
+async fn add_storage_to_realm() -> Result<(), Error> {
+    let builder = RealmBuilder::new().await?;
+    let (write_complete_sender, mut write_complete_receiver) = mpsc::unbounded();
+    let storage_user = builder
+        .add_local_child(
+            "storage_user",
+            move |h| {
+                let mut write_complete_sender = write_complete_sender.clone();
+                async move {
+                    let data_dir = h.clone_from_namespace("data")?;
+                    let file = fuchsia_fs::directory::open_file(
+                        &data_dir,
+                        "example_file",
+                        fio::PERM_WRITABLE | fio::Flags::FLAG_MUST_CREATE,
+                    )
+                    .await?;
+                    fuchsia_fs::file::write(&file, "Hello, World!").await?;
+                    file.close().await.unwrap().unwrap();
+                    write_complete_sender.send(()).await.unwrap();
+                    Ok(())
+                }
+                .boxed()
+            },
+            ChildOptions::new().eager(),
+        )
+        .await
+        .unwrap();
+
+    let (storage_admin_proxy, server_end) = fidl::endpoints::create_proxy();
+    builder.add_storage("data", vec![&storage_user], Some(server_end)).await?;
+
+    let _instance = builder.build_in_nested_component_manager("#meta/component_manager.cm").await?;
+
+    let (client, server) = fidl::endpoints::create_endpoints::<fio::NodeMarker>();
+    storage_admin_proxy.open_storage("storage_user", server).await.unwrap().unwrap();
+    let storage_proxy = ClientEnd::<fio::DirectoryMarker>::new(client.into_channel()).into_proxy();
+
+    write_complete_receiver.next().await.unwrap();
+
+    let file_proxy =
+        fuchsia_fs::directory::open_file(&storage_proxy, "example_file", fio::PERM_READABLE)
+            .await?;
+    let file_contents = fuchsia_fs::file::read_to_string(&file_proxy).await?;
+    assert_eq!(&file_contents, "Hello, World!");
+    Ok(())
+}
+
 // [START echo_server_mock]
 // A mock echo server implementation, that will crash if it doesn't receive anything other than the
 // contents of `expected_echo_str`. It takes and sends a message over `send_echo_server_called`
