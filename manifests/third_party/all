@@ -182,7 +182,7 @@
     <project name="third_party/github.com/ARM-software/HWCPipe"
              path="third_party/github.com/ARM-software/HWCPipe"
              remote="https://fuchsia.googlesource.com/third_party/github.com/ARM-software/HWCPipe"
-             revision="5d434e8a45ead48fa9f750c5ecb3e82f057271b4"/>
+             revision="94b0784edae07fc80d03567bb2c5addde397e184"/>
     <project name="external/github.com/g-truc/glm"
              path="third_party/glm"
              remote="https://chromium.googlesource.com/external/github.com/g-truc/glm"
