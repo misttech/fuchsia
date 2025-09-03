@@ -43,7 +43,7 @@ use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::{SELINUX_MAGIC, errno, error, statfs};
+use starnix_uapi::{AUDIT_AVC, SELINUX_MAGIC, errno, error, statfs};
 use std::borrow::Cow;
 use std::num::NonZeroU32;
 use std::ops::Deref;
@@ -738,7 +738,7 @@ impl SeLinuxApiOps for AccessApi {
                 let audit_message = format!(
                     "avc: todo_deny {{ ACCESS_API }} scontext={scontext_str:?} tcontext={tcontext_str:?} tclass={tclass_id} requested={requested:?}",
                 );
-                kernel.audit_logger().audit_log(|| audit_message);
+                kernel.audit_logger().audit_log(AUDIT_AVC as u16, || audit_message);
             } else {
                 // All requested permissions were granted. To allow "todo_deny" logs and track-stub
                 // tracking of permissions that would otherwise be denied & audited, remove those

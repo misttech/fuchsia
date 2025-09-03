@@ -393,6 +393,7 @@ rustc_library("starnix_core") {
     "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:aes-gcm-siv",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:arc-swap",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:bit-vec",

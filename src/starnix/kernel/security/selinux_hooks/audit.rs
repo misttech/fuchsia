@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use bstr::BStr;
+use linux_uapi::AUDIT_AVC;
 use selinux::permission_check::{PermissionCheck, PermissionCheckResult};
 use selinux::{ClassPermission, KernelPermission, SecurityId};
 use starnix_core::task::{CurrentTask, Task};
@@ -159,6 +160,7 @@ pub(super) fn audit_decision(
         if result.todo_bug.is_some() { (&audit_data_with_bug).into() } else { audit_data };
 
     audit_fw.audit_log(
+        AUDIT_AVC as u16,
         || {
             let tclass = permission.class().name();
             let permission_name = permission.name();
