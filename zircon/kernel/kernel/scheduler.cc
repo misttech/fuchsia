@@ -35,8 +35,9 @@
 #include <kernel/lockdep.h>
 #include <kernel/mp.h>
 #include <kernel/percpu.h>
-#include <kernel/scheduler_internal.h>
+#include <kernel/scheduler_inline.h>
 #include <kernel/scheduler_state.h>
+#include <kernel/scheduler_tracing.h>
 #include <kernel/thread.h>
 #include <ktl/algorithm.h>
 #include <ktl/forward.h>

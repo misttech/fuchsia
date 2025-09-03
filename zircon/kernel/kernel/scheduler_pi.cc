@@ -8,8 +8,9 @@
 
 #include <kernel/owned_wait_queue.h>
 #include <kernel/scheduler.h>
-#include <kernel/scheduler_internal.h>
+#include <kernel/scheduler_inline.h>
 #include <kernel/scheduler_state.h>
+#include <kernel/scheduler_tracing.h>
 #include <ktl/algorithm.h>
 #include <ktl/type_traits.h>
 
