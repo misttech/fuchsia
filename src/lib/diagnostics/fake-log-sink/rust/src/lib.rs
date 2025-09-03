@@ -180,7 +180,13 @@ impl FakeLogSink {
     }
 }
 
+#[cfg(feature = "ffi")]
 pub mod ffi {
+    // NOTE: It isn't currently possible to link to more than one rustc_staticlib; it results in
+    // duplicate definition linker errors on LTO builds. To workaround this, we import
+    // log_decoder_c_bindings here so that it gets pulled in as part of this static library.
+    use log_decoder_c_bindings as _;
+
     use super::FakeLogSink;
     use fidl::endpoints::ServerEnd;
     use fidl_fuchsia_diagnostics_types::Severity;

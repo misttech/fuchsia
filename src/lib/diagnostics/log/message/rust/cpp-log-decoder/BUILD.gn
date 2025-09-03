@@ -11,7 +11,7 @@ cc_test_executable("cpp-log-decoder-unittest") {
   testonly = true
   sources = [ "test.cc" ]
   deps = [
-    ":lib",
+    ":staticlib",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
@@ -20,17 +20,40 @@ cc_test_executable("cpp-log-decoder-unittest") {
   ]
 }
 
-rustc_staticlib("lib") {
+_sources = [ "src/lib.rs" ]
+_deps = [
+  "//src/lib/diagnostics/log/message/rust",
+  "//third_party/rust_crates:bumpalo",
+  "//third_party/rust_crates:serde_json",
+]
+
+# NOTE: It isn't currently possible to link to more than one rustc_staticlib; it results in
+# duplicate definition linker errors on LTO builds. To workaround this, log_decoder_c_bindings is
+# included in the fake-log-sink rustc static library, which is then used by the C++ fake-log-sink
+# library.
+rustc_library("lib") {
+  visibility = [ "//src/lib/diagnostics/fake-log-sink/rust:*" ]
   name = "log_decoder_c_bindings"
   with_unit_tests = true
   edition = "2021"
-  sources = [ "src/lib.rs" ]
+  sources = _sources
+  deps = _deps
+}
+
+# Use this target if you need both fake-log-sink and cpp-log-decoder (see comment above).
+source_set("headers") {
+  testonly = true
+  sources = [ "log_decoder.h" ]
+  deps = [ "//src/lib/diagnostics/fake-log-sink/rust:rust_ffi" ]
+}
+
+rustc_staticlib("staticlib") {
+  name = "log_decoder_c_bindings"
+  with_unit_tests = true
+  edition = "2021"
+  sources = _sources
   public = [ "log_decoder.h" ]
-  deps = [
-    "//src/lib/diagnostics/log/message/rust",
-    "//third_party/rust_crates:bumpalo",
-    "//third_party/rust_crates:serde_json",
-  ]
+  deps = _deps
   test_deps = [
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//third_party/rust_crates:serde",

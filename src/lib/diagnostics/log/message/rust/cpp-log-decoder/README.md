@@ -44,13 +44,13 @@ cargo install --version 0.26.0 --force cbindgen
 Generate a Cargo.toml by following [the instructions on
 fuchsia.dev](https://fuchsia.dev/fuchsia-src/development/languages/rust/cargo)
 for the build target
-`//src/lib/diagnostics/log/message/rust/cpp-log-decoder:lib`.
+`//src/lib/diagnostics/log/message/rust/cpp-log-decoder:staticlib`.
 
 As of this writing, this is done in the following way.
 
 1. Using `fx args`, add `//build/rust:cargo_toml_gen` to `host_labels`.
 
-2. Using `fx args`, add `//src/lib/diagnostics/log/message/rust/cpp-log-decoder:lib`
+2. Using `fx args`, add `//src/lib/diagnostics/log/message/rust/cpp-log-decoder:staticlib`
    to `build_only_labels`.
 
 3. Build the `cargo_toml_gen` target and generate the `Cargo.toml`
@@ -58,7 +58,7 @@ As of this writing, this is done in the following way.
 
 ```
 fx args # then append "//build/rust:cargo_toml_gen" to `host_labels`
-fx args # then append "//src/diagnostics/lib/cpp-log-decoder:lib"
+fx args # then append "//src/diagnostics/lib/cpp-log-decoder:staticlib"
         # to `build_only_labels`
 
 fx build //build/rust:cargo_toml_gen
