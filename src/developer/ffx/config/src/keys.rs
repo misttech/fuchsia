@@ -15,6 +15,9 @@ pub const PROXY_TIMEOUT: &'static str = "proxy.timeout_secs";
 /// The timeout used before giving up on uploading metrics in fractional seconds.
 pub const METRICS_UPLOAD_TIMEOUT_KEY: &'static str = "metrics.upload_timeout";
 
+/// The timeout, in milliseconds, when using the local discovery lib to locate a device.
+pub const LOCAL_DISCOVERY_TIMEOUT: &str = "discovery.timeout";
+
 /// This is a bit of a special case: the upload default timeout could potentially
 /// be inaccessible due to not being able to initialize an `EnvironmentContext` correctly, so there
 /// _needs_ to be a reasonable backup somewhere if that is the case. See `ffx_command::report_bug()`

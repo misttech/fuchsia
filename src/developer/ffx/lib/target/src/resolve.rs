@@ -9,6 +9,7 @@ use discovery::{
     TargetHandle, TargetState,
 };
 use ffx_command_error::{NonFatalError, user_error};
+use ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT;
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
 use fidl_fuchsia_developer_ffx::{self as ffx};
 use fidl_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
@@ -30,7 +31,6 @@ use crate::ssh_connector::SshConnector;
 use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
-const CONFIG_LOCAL_DISCOVERY_TIMEOUT: &str = "discovery.timeout";
 const TARGET_DEFAULT_PORT: u16 = 22;
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
 
@@ -286,8 +286,9 @@ pub async fn resolve_target_query(
 // Return a Stream of TargetHandles that come from the specified sources,
 // and match the query. We close the stream early if a result "perfectly"
 // matches the query (e.g. an mDNS response with the exact name requested).
-// Otherwise, we wait for CONFIG_LOCAL_DISCOVERY_TIMEOUT before closing the
-// stream.
+// Otherwise, we wait for [ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT] before
+// closing the stream.
+//
 // Note that we implement the check for a perfect match here, because all
 // callers (e.g. resolve_target_query(), `ffx target list`'s get_handle_stream())
 // all benefit from this behavior. If we end up with a caller that wants to provide
@@ -304,7 +305,7 @@ fn get_discovery_stream_with_sources(
     // default config option is not overridden.
     let emu_instance_root = ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR).ok();
     let fastboot_file_path = ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
-    let discovery_delay = ctx.get(CONFIG_LOCAL_DISCOVERY_TIMEOUT).unwrap_or(2000);
+    let discovery_delay = ctx.get(LOCAL_DISCOVERY_TIMEOUT).unwrap_or(2000);
     let delay = Duration::from_millis(discovery_delay);
     let discovery = DiscoveryBuilder::default()
         .set_source(sources)
