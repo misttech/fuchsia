@@ -8,9 +8,25 @@ load("//build/tools/bazel2gn/bazel_rules:rustc_library.bzl", _rustc_library = "r
 rustc_binary = _rustc_binary
 rustc_library = _rustc_library
 
-# sdk_host_tool does nothing in Bazel right now. It exists to facilitate target
+# idk_host_tool does nothing in Bazel right now. It exists to facilitate target
 # syncing between GN and Bazel.
-def sdk_host_tool(**kwargs):
+# TODO(https://fxbug.dev/442025401): Add a proper implementation
+#
+# `target_compatible_with = HOST_CONSTRAINTS` must be specified for bazel2gn to
+# generate the correct condition statement.
+# TODO(https://fxbug.dev/442025401): Consider implementing this within bazel2gn
+# rather than requiring it at each call site.
+def idk_host_tool(
+        # GN note: Unlike the GN template, this should not include "_sdk"/"_idk".
+        # TODO(https://fxbug.dev/442025401): `idk_atom()` will append "_idk" to it.
+        name,
+        category,
+        # TODO(https://fxbug.dev/442025401): Consider whether
+        # `implementation_deps` would be more appropriate for the tool
+        # dependency. Use `deps` for IDK atom dependencies if needed.
+        deps,
+        target_compatible_with,
+        output_name = None):
     pass
 
 # install_host_tools does nothing in Bazel right now. It exists to facilitate

@@ -42,10 +42,10 @@ var bazelRuleToGNTemplate = map[string]string{
 	// C++
 	"cc_library": "source_set",
 
-	// IDK & SDK
+	// IDK
 	"idk_cc_source_library":    "sdk_source_set",
 	"idk_cc_source_library_zx": "zx_library", // With `sdk="source`.
-	"sdk_host_tool":            "sdk_host_tool",
+	"idk_host_tool":            "sdk_host_tool",
 
 	// Other
 	"install_host_tools": "install_host_tools",

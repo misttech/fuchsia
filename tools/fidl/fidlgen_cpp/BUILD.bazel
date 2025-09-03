@@ -4,7 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools", "sdk_host_tool")
+load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "idk_host_tool", "install_host_tools")
 
 go_binary(
     name = "fidlgen_cpp",
@@ -16,8 +16,8 @@ go_binary(
     ],
 )
 
-sdk_host_tool(
-    name = "fidlgen_cpp_sdk",
+idk_host_tool(
+    name = "fidlgen_cpp",
     category = "partner",
     output_name = "fidlgen_cpp",
     target_compatible_with = HOST_CONSTRAINTS,

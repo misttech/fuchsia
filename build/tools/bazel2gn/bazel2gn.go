@@ -214,6 +214,19 @@ func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 				return nil, fmt.Errorf("converting target name: %v", err)
 			}
 			name = strings.Join(lines, "\n")
+
+			// Handle differences in naming conventions.
+			if bazelRule == "idk_host_tool" {
+				// In GN, the template did not automatically append "_sdk" to
+				// the name of the atom target and it was included in the name
+				// passed to the template. In Bazel, the macro is consistent
+				// with other IDK atom macros. Handle this by appending "_sdk".
+				if !(len(name) > 1 && name[len(name)-1] == '"') {
+					return nil, fmt.Errorf("expected a quoted string for name, but got %s", name)
+				}
+				name = name[:len(name)-1] + "_sdk\""
+			}
+
 			continue
 		}
 		if ident.Name == "target_compatible_with" {
