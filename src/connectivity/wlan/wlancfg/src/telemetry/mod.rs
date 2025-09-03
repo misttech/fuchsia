@@ -1838,6 +1838,26 @@ async fn diff_and_log_connection_stats(
     current: &fidl_fuchsia_wlan_stats::ConnectionStats,
     duration: zx::MonotonicDuration,
 ) {
+    // Early return if the counters have dropped. This indicates that the counters have reset
+    // due to reasons like PHY reset. Counters being reset due to re-connection is already
+    // handled outside this function.
+    match (current.rx_unicast_total, prev.rx_unicast_total) {
+        (Some(current), Some(prev)) if current < prev => return,
+        _ => (),
+    }
+    match (current.rx_unicast_drop, prev.rx_unicast_drop) {
+        (Some(current), Some(prev)) if current < prev => return,
+        _ => (),
+    }
+    match (current.tx_total, prev.tx_total) {
+        (Some(current), Some(prev)) if current < prev => return,
+        _ => (),
+    }
+    match (current.tx_drop, prev.tx_drop) {
+        (Some(current), Some(prev)) if current < prev => return,
+        _ => (),
+    }
+
     diff_and_log_rx_counters(stats_logger, prev, current, duration).await;
     diff_and_log_tx_counters(stats_logger, prev, current, duration).await;
 }
@@ -1859,8 +1879,14 @@ async fn diff_and_log_rx_counters(
             _ => return,
         };
 
-    let rx_total = current_rx_unicast_total - prev_rx_unicast_total;
-    let rx_drop = current_rx_unicast_drop - prev_rx_unicast_drop;
+    let rx_total: u64 = match current_rx_unicast_total.checked_sub(prev_rx_unicast_total) {
+        Some(diff) => diff,
+        _ => return,
+    };
+    let rx_drop = match current_rx_unicast_drop.checked_sub(prev_rx_unicast_drop) {
+        Some(diff) => diff,
+        _ => return,
+    };
     let rx_drop_rate = if rx_total > 0 { rx_drop as f64 / rx_total as f64 } else { 0f64 };
 
     stats_logger
@@ -1896,8 +1922,14 @@ async fn diff_and_log_tx_counters(
         _ => return,
     };
 
-    let tx_total = current_tx_total - prev_tx_total;
-    let tx_drop = current_tx_drop - prev_tx_drop;
+    let tx_total = match current_tx_total.checked_sub(prev_tx_total) {
+        Some(diff) => diff,
+        _ => return,
+    };
+    let tx_drop = match current_tx_drop.checked_sub(prev_tx_drop) {
+        Some(diff) => diff,
+        _ => return,
+    };
     let tx_drop_rate = if tx_total > 0 { tx_drop as f64 / tx_total as f64 } else { 0f64 };
 
     stats_logger.log_stat(StatOp::AddTxPacketCounters { tx_total, tx_drop }).await;
@@ -6150,6 +6182,54 @@ mod tests {
                 "7d_counters": contains {
                     rx_high_packet_drop_duration: (zx::MonotonicDuration::from_hours(1) - TELEMETRY_QUERY_INTERVAL).into_nanos(),
                     tx_high_packet_drop_duration: (zx::MonotonicDuration::from_hours(1) - TELEMETRY_QUERY_INTERVAL).into_nanos(),
+                    rx_very_high_packet_drop_duration: 0i64,
+                    tx_very_high_packet_drop_duration: 0i64,
+                    no_rx_duration: 0i64,
+                },
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    fn test_rx_tx_reset() {
+        let (mut test_helper, mut test_fut) = setup_test();
+        test_helper.set_iface_stats_resp(Box::new(|| {
+            let seed = (fasync::MonotonicInstant::now() - fasync::MonotonicInstant::from_nanos(0))
+                .into_seconds() as u64;
+            Ok(fidl_fuchsia_wlan_stats::IfaceStats {
+                connection_stats: Some(fidl_fuchsia_wlan_stats::ConnectionStats {
+                    rx_unicast_total: Some(999999 - seed),
+                    rx_unicast_drop: Some(999999 - seed),
+                    tx_total: Some(999999 - seed),
+                    tx_drop: Some(999999 - seed),
+                    ..fake_connection_stats(seed)
+                }),
+                ..Default::default()
+            })
+        }));
+
+        test_helper.send_connected_event(random_bss_description!(Wpa2));
+        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        // Verify there's no crash
+        test_helper.advance_by(zx::MonotonicDuration::from_hours(1), test_fut.as_mut());
+        // Verify that counters are not incremented
+        assert_data_tree_with_respond_blocking_req!(test_helper, test_fut, root: contains {
+            stats: contains {
+                get_iface_stats_fail_count: 0u64,
+                "1d_counters": contains {
+                    // Deduct 15 seconds because there isn't packet counter to diff against in
+                    // the first interval of telemetry
+                    rx_high_packet_drop_duration: 0i64,
+                    tx_high_packet_drop_duration: 0i64,
+                    // Very high drop rate counters should still be 0
+                    rx_very_high_packet_drop_duration: 0i64,
+                    tx_very_high_packet_drop_duration: 0i64,
+                    no_rx_duration: 0i64,
+                },
+                "7d_counters": contains {
+                    rx_high_packet_drop_duration: 0i64,
+                    tx_high_packet_drop_duration: 0i64,
                     rx_very_high_packet_drop_duration: 0i64,
                     tx_very_high_packet_drop_duration: 0i64,
                     no_rx_duration: 0i64,
