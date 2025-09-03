@@ -63,7 +63,7 @@ impl NumericProperty<'_> for IntProperty {
 mod tests {
     use super::*;
     use crate::assert_update_is_atomic;
-    use crate::writer::testing_utils::{get_state, GetBlockExt};
+    use crate::writer::testing_utils::{GetBlockExt, get_state};
     use crate::writer::{Inspector, Node};
     use inspect_format::{BlockType, Int};
 

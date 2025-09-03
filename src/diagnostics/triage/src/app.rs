@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::config::{self, OutputFormat, ProgramStateHolder};
 use crate::Options;
-use anyhow::{bail, Context as _, Error};
+use crate::config::{self, OutputFormat, ProgramStateHolder};
+use anyhow::{Context as _, Error, bail};
 use fuchsia_triage::{
-    analyze, analyze_structured, analyze_verbose, ActionResultFormatter, ActionResults,
-    DiagnosticData, ParseResult, TriageOutput,
+    ActionResultFormatter, ActionResults, DiagnosticData, ParseResult, TriageOutput, analyze,
+    analyze_structured, analyze_verbose,
 };
 
 /// The entry point for the CLI app.

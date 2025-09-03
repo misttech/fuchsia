@@ -92,8 +92,8 @@ pub struct ProfileDuration {
 
 impl ProfileDuration {
     /// Function to be passed to `fuchsia_inspect::Node::record_lazy_child` to record profiling data.
-    pub fn lazy_node_callback(
-    ) -> Pin<Box<dyn Future<Output = Result<Inspector, anyhow::Error>> + Send + 'static>> {
+    pub fn lazy_node_callback()
+    -> Pin<Box<dyn Future<Output = Result<Inspector, anyhow::Error>> + Send + 'static>> {
         Box::pin(async move {
             let inspector = Inspector::default();
             ROOT_PROFILE_DURATION.report(inspector.root());

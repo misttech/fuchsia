@@ -150,15 +150,15 @@ mod tests {
     use crate::pipeline::StaticHierarchyAllowlist;
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_json_diff;
-    use fidl::endpoints::{create_proxy_and_stream, ClientEnd};
+    use fidl::endpoints::{ClientEnd, create_proxy_and_stream};
     use fidl_fuchsia_inspect::{
         InspectSinkMarker, InspectSinkProxy, InspectSinkPublishRequest, TreeMarker,
     };
-    use fuchsia_inspect::reader::read;
     use fuchsia_inspect::Inspector;
+    use fuchsia_inspect::reader::read;
     use futures::Future;
-    use inspect_runtime::service::spawn_tree_server;
     use inspect_runtime::TreeServerSendPreference;
+    use inspect_runtime::service::spawn_tree_server;
     use selectors::VerboseError;
     use std::sync::Arc;
     use zx::{self as zx, AsHandleRef};
@@ -286,8 +286,10 @@ mod tests {
         {
             self.repo.wait_for_artifact(identity).await;
             let containers = self.repo.fetch_inspect_data(
-                &Some(vec![selectors::parse_selector::<VerboseError>(&format!("{identity}:root"))
-                    .expect("parse selector")]),
+                &Some(vec![
+                    selectors::parse_selector::<VerboseError>(&format!("{identity}:root"))
+                        .expect("parse selector"),
+                ]),
                 StaticHierarchyAllowlist::new_disabled(),
             );
             assert_eq!(containers.len(), 1);

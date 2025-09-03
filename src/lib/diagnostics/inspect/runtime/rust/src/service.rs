@@ -12,8 +12,8 @@ use fidl_fuchsia_inspect::{
 };
 use fidl_fuchsia_mem::Buffer;
 use fuchsia_async as fasync;
-use fuchsia_inspect::reader::ReadableTree;
 use fuchsia_inspect::Inspector;
+use fuchsia_inspect::reader::ReadableTree;
 use futures::{FutureExt, TryFutureExt, TryStreamExt};
 use log::warn;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
@@ -184,7 +184,7 @@ mod tests {
     use diagnostics_assertions::{assert_data_tree, assert_json_diff};
     use fidl_fuchsia_inspect::{TreeNameIteratorMarker, TreeNameIteratorProxy, TreeProxy};
     use fuchsia_async::DurationExt;
-    use fuchsia_inspect::reader::{read_with_timeout, DiagnosticsHierarchy, PartialNodeHierarchy};
+    use fuchsia_inspect::reader::{DiagnosticsHierarchy, PartialNodeHierarchy, read_with_timeout};
     use std::sync::Arc;
 
     use futures::FutureExt;

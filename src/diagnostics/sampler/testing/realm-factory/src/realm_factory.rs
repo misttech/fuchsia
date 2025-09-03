@@ -10,9 +10,9 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
 };
+use futures::StreamExt;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use futures::StreamExt;
 use sampler_config::assembly::{ComponentIdInfoList, ProjectTemplate};
 use std::sync::Arc;
 use {

@@ -3,22 +3,22 @@
 // found in the LICENSE file.
 
 use archivist_lib::identity::ComponentIdentity;
-use archivist_lib::logs::shared_buffer::{create_ring_buffer, LazyItem, SharedBuffer};
+use archivist_lib::logs::shared_buffer::{LazyItem, SharedBuffer, create_ring_buffer};
 use archivist_lib::logs::stored_message::StoredMessage;
 use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
 use diagnostics_log_encoding::{Argument, Record};
 use diagnostics_log_types::Severity;
 use fidl_fuchsia_diagnostics::StreamMode;
 use fuchsia_async::SendExecutorBuilder;
-use fuchsia_criterion::criterion::{self, Criterion};
 use fuchsia_criterion::FuchsiaCriterion;
+use fuchsia_criterion::criterion::{self, Criterion};
 use futures::StreamExt;
 use std::convert::{TryFrom, TryInto};
 use std::io::Cursor;
 use std::mem;
 use std::pin::pin;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 const RING_BUFFER_SIZE: usize = 65536;

@@ -28,7 +28,7 @@ pub trait NumericProperty<'t>: Property<'t> {
 
     /// Subtract the given |value| from the property current value.
     fn subtract(&self, value: <Self as Property<'t>>::Type)
-        -> Option<<Self as Property<'t>>::Type>;
+    -> Option<<Self as Property<'t>>::Type>;
 }
 
 /// Get the usable length of a type.

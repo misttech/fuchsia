@@ -5,7 +5,7 @@
 use diagnostics_log::{Publisher, PublisherOptions};
 use fidl::endpoints::RequestStream;
 use fidl_fuchsia_logger::{LogSinkMarker, LogSinkOnInitRequest};
-use fuchsia_criterion::{criterion, FuchsiaCriterion};
+use fuchsia_criterion::{FuchsiaCriterion, criterion};
 use ring_buffer::RingBuffer;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;

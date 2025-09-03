@@ -257,7 +257,7 @@ impl StaticHierarchyAllowlist {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use selectors::{parse_selector, VerboseError};
+    use selectors::{VerboseError, parse_selector};
 
     fn make_selectors(s: &[Selector]) -> impl Iterator<Item = Result<&Selector, anyhow::Error>> {
         s.iter().map(Ok)

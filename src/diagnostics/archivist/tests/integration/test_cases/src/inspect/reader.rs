@@ -4,7 +4,7 @@
 
 use crate::{test_topology, utils};
 use anyhow::Error;
-use diagnostics_assertions::{assert_data_tree, assert_json_diff, AnyProperty};
+use diagnostics_assertions::{AnyProperty, assert_data_tree, assert_json_diff};
 use diagnostics_data::InspectError;
 use diagnostics_reader::ArchiveReader;
 use difference::assert_diff;

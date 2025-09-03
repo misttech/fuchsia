@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
 
     for mut report in reports {
         for rollup in &options.add_rollup {
-            if let Some((title, prefixes))=rollup.split_once('=') {
+            if let Some((title, prefixes)) = rollup.split_once('=') {
                 report.add_rollup(title, prefixes.split(','));
             }
         }

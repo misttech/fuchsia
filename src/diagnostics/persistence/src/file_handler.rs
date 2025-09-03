@@ -96,7 +96,9 @@ impl Serialize for ErrorHelper<'_> {
 // occurs, this function will move /cache/current to /cache/previous then copy
 // tags with persist_across_boot back into /cache/current.
 pub fn forget_old_data(config: &Config) {
-    info!("Forgetting persisted inspect data from two boots ago, except for tags with persist_across_boot enabled");
+    info!(
+        "Forgetting persisted inspect data from two boots ago, except for tags with persist_across_boot enabled"
+    );
 
     // These may fail if /cache was wiped. This is WAI and should not signal an error.
     fs::remove_dir_all(PREVIOUS_PATH)

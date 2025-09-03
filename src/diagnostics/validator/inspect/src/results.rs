@@ -340,8 +340,11 @@ mod tests {
         metrics.record(&sample, metrics::BlockStatus::Used);
         results.remember_metrics(metrics, "FooTrial", 42, "BarStep");
         let json = results.to_json();
-        assert!(json
-            .contains("\"metrics\":[{\"step_index\":42,\"trial_name\":\"FooTrial\",\"metrics\":"));
+        assert!(
+            json.contains(
+                "\"metrics\":[{\"step_index\":42,\"trial_name\":\"FooTrial\",\"metrics\":"
+            )
+        );
         assert!(json.contains("\"step_name\":\"BarStep\""));
         assert!(json.contains(
             "\"MyBlock(UNUSED)\":{\"count\":1,\"header_bytes\":8,\"data_bytes\":0,\"total_bytes\":16,\"data_percent\":0}"), "{}", json);

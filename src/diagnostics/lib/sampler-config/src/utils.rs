@@ -4,7 +4,7 @@
 
 use fidl_fuchsia_diagnostics::{Selector, StringSelector, TreeNames};
 use selectors::FastError;
-use serde::{de, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de};
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::LazyLock;

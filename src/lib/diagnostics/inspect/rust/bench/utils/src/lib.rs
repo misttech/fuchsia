@@ -4,12 +4,12 @@
 
 use fidl_fuchsia_inspect::{TreeMarker, TreeProxy};
 use fuchsia_async::{Scope, Task};
-use fuchsia_criterion::{criterion, FuchsiaCriterion};
-use fuchsia_inspect::hierarchy::{DiagnosticsHierarchy, DiagnosticsHierarchyGetter};
+use fuchsia_criterion::{FuchsiaCriterion, criterion};
 use fuchsia_inspect::Inspector;
-use futures::{future, FutureExt};
-use inspect_runtime::service::handle_request_stream;
+use fuchsia_inspect::hierarchy::{DiagnosticsHierarchy, DiagnosticsHierarchyGetter};
+use futures::{FutureExt, future};
 use inspect_runtime::TreeServerSendPreference;
+use inspect_runtime::service::handle_request_stream;
 use rand::distr::Uniform;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};

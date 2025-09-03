@@ -5,9 +5,9 @@
 use anyhow::Error;
 use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_diagnostics_system as ftarget;
-use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use futures::channel::oneshot;
 use futures::StreamExt;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use futures::channel::oneshot;
 use log::warn;
 
 #[derive(Clone)]

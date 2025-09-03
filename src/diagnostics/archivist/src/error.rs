@@ -20,7 +20,9 @@ pub enum Error {
     #[error(transparent)]
     Inspect(#[from] fuchsia_inspect::Error),
 
-    #[error("Encountered a diagnostics data repository node with more than one artifact container. {0:?}")]
+    #[error(
+        "Encountered a diagnostics data repository node with more than one artifact container. {0:?}"
+    )]
     MultipleArtifactContainers(Vec<String>),
 
     #[error(transparent)]

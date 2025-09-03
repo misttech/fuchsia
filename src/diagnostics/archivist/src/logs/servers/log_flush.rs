@@ -6,9 +6,9 @@ use crate::logs::error::LogsError;
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker};
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fuchsia_async::Scope;
+use futures::StreamExt;
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
-use futures::StreamExt;
 use log::warn;
 
 pub struct LogFlushServer {
@@ -75,8 +75,8 @@ impl LogFlushServer {
 mod tests {
     use super::*;
     use fidl::endpoints::create_proxy;
-    use futures::channel::mpsc::unbounded;
     use futures::FutureExt;
+    use futures::channel::mpsc::unbounded;
     use std::pin::pin;
 
     #[fuchsia::test]

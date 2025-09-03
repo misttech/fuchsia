@@ -41,7 +41,7 @@ pub type LogsArchiveReader = ArchiveReader<Logs>;
 pub type InspectArchiveReader = ArchiveReader<Inspect>;
 
 pub use diagnostics_data::{Data, Inspect, Logs, Severity};
-pub use diagnostics_hierarchy::{hierarchy, DiagnosticsHierarchy, Property};
+pub use diagnostics_hierarchy::{DiagnosticsHierarchy, Property, hierarchy};
 
 const RETRY_DELAY_MS: i64 = 300;
 

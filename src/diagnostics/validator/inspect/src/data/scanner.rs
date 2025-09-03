@@ -4,7 +4,7 @@
 
 use super::{Data, LazyNode, Metrics, Node, Payload, Property, ROOT_NAME};
 use crate::metrics::{BlockMetrics, BlockStatus};
-use anyhow::{bail, format_err, Context, Error};
+use anyhow::{Context, Error, bail, format_err};
 use fuchsia_inspect::reader as ireader;
 use fuchsia_inspect::reader::snapshot::ScannedBlock;
 use inspect_format::constants::MIN_ORDER_SIZE;
@@ -784,8 +784,8 @@ mod tests {
     use fidl_diagnostics_validate::*;
     use fuchsia_inspect::reader::snapshot::BackingBuffer;
     use inspect_format::{
-        constants, Block, BlockAccessorExt, BlockAccessorMutExt, HeaderFields, PayloadFields,
-        ReadBytes,
+        Block, BlockAccessorExt, BlockAccessorMutExt, HeaderFields, PayloadFields, ReadBytes,
+        constants,
     };
     use num_traits::ToPrimitive;
 

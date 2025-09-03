@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use argh::{ArgsInfo, FromArgs};
 use diagnostics_data::{InspectData, InspectDataBuilder, Timestamp};
 use fuchsia_inspect::hierarchy::{ArrayContent, DiagnosticsHierarchy, Property};
@@ -31,13 +31,15 @@ pub fn main() -> Result<(), Error> {
     } else {
         let h: DiagnosticsHierarchy =
             serde_json5::from_str(&buffer).map_err(|e| anyhow!("parsing JSON failed: {e:?}"))?;
-        vec![InspectDataBuilder::new(
-            "unknown-moniker".try_into().unwrap(),
-            "unknown-url",
-            Timestamp::from_nanos(0),
-        )
-        .with_hierarchy(h)
-        .build()]
+        vec![
+            InspectDataBuilder::new(
+                "unknown-moniker".try_into().unwrap(),
+                "unknown-url",
+                Timestamp::from_nanos(0),
+            )
+            .with_hierarchy(h)
+            .build(),
+        ]
     };
 
     let mut results = vec![];

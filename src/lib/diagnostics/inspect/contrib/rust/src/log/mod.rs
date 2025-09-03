@@ -209,7 +209,7 @@ macro_rules! make_inspect_loggable {
 mod tests {
     use super::*;
     use crate::nodes::BoundedListNode;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect::{DiagnosticsHierarchyGetter, Inspector};
     use fuchsia_sync::Mutex;
     use test_util::assert_lt;

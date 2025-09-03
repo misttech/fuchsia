@@ -15,7 +15,7 @@ use diagnostics_data::{
 };
 use futures_util::future::Either;
 use futures_util::stream::FuturesUnordered;
-use futures_util::{select, StreamExt};
+use futures_util::{StreamExt, select};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::io::Write;

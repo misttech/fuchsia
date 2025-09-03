@@ -11,7 +11,7 @@ use fidl::prelude::*;
 use fidl_fuchsia_boot::ReadOnlyLogMarker;
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
-use futures::stream::{unfold, Stream};
+use futures::stream::{Stream, unfold};
 use moniker::ExtendedMoniker;
 use std::future::Future;
 use std::sync::{Arc, LazyLock};
@@ -129,17 +129,19 @@ mod tests {
                 .into_iter()
                 .map(|m| m.parse(&KERNEL_IDENTITY).unwrap())
                 .collect::<Vec<_>>(),
-            vec![LogsDataBuilder::new(BuilderArgs {
-                timestamp: klog.record.timestamp,
-                component_url: Some(KERNEL_IDENTITY.url.clone()),
-                moniker: KERNEL_IDENTITY.moniker.clone(),
-                severity: Severity::Info,
-            })
-            .set_pid(klog.record.pid.raw_koid())
-            .set_tid(klog.record.tid.raw_koid())
-            .add_tag("klog")
-            .set_message("test log".to_string())
-            .build()]
+            vec![
+                LogsDataBuilder::new(BuilderArgs {
+                    timestamp: klog.record.timestamp,
+                    component_url: Some(KERNEL_IDENTITY.url.clone()),
+                    moniker: KERNEL_IDENTITY.moniker.clone(),
+                    severity: Severity::Info,
+                })
+                .set_pid(klog.record.pid.raw_koid())
+                .set_tid(klog.record.tid.raw_koid())
+                .add_tag("klog")
+                .set_message("test log".to_string())
+                .build()
+            ]
         );
 
         // Unprocessable logs should be skipped.

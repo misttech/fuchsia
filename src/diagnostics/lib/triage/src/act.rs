@@ -10,9 +10,9 @@ use super::metrics::metric_value::{MetricValue, Problem};
 use super::metrics::{
     ExpressionContext, ExpressionTree, Function, Metric, MetricState, Metrics, ValueSource,
 };
-use super::plugins::{register_plugins, Plugin};
+use super::plugins::{Plugin, register_plugins};
 use crate::{inspect_logger, metric_value_to_int};
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use fidl_fuchsia_feedback::MAX_CRASH_SIGNATURE_LENGTH;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -654,10 +654,11 @@ mod test {
     fn action_context_errors() {
         let metrics = Metrics::new();
         let actions = Actions::new();
-        let data = vec![DiagnosticData::new(
-            "inspect.json".to_string(),
-            Source::Inspect,
-            r#"
+        let data = vec![
+            DiagnosticData::new(
+                "inspect.json".to_string(),
+                Source::Inspect,
+                r#"
             [
                 {
                     "moniker": "abcd",
@@ -676,9 +677,10 @@ mod test {
                 }
             ]
             "#
-            .to_string(),
-        )
-        .expect("create data")];
+                .to_string(),
+            )
+            .expect("create data"),
+        ];
         let action_context = ActionContext::new(&metrics, &actions, &data, None);
         // Caution - test footgun! This error will show up without calling process() but
         // most get_warnings() results will not.

@@ -5,16 +5,16 @@
 use crate::metrics::context::ParsingContext;
 use crate::metrics::variable::VariableName;
 use crate::metrics::{ExpressionTree, Function, MathFunction, MetricValue};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
+use nom::Err::{self, Incomplete};
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, take_while, take_while_m_n};
 use nom::character::complete::{char, none_of, one_of};
 use nom::combinator::{all_consuming, map, opt, peek, recognize};
 use nom::multi::{fold_many0, many0, separated_list0};
 use nom::sequence::{delimited, pair, preceded, separated_pair, terminated};
-use nom::Err::{self, Incomplete};
 use nom::{AsChar, IResult, Input, Parser};
-use nom_language::error::{convert_error, VerboseError};
+use nom_language::error::{VerboseError, convert_error};
 
 pub type ParsingResult<'a, O> = IResult<ParsingContext<'a>, O, VerboseError<ParsingContext<'a>>>;
 

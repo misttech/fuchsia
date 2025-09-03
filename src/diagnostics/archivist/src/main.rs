@@ -22,7 +22,7 @@ use fuchsia_component::server::{MissingStartupHandle, ServiceFs};
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_runtime as rt;
-use log::{debug, LevelFilter};
+use log::{LevelFilter, debug};
 use moniker::Moniker;
 use std::fmt;
 use std::io::Cursor;

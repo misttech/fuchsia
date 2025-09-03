@@ -4,7 +4,7 @@
 
 use crate::file_handler;
 use log::*;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 
 // Make sure extremely deep-tree data doesn't overflow a stack.
 const MAX_TREE_DEPTH: u32 = 128;

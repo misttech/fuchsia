@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_inspect_deprecated::{InspectProxy, MetricValue, PropertyValue};
 use fuchsia_async as fasync;
 use fuchsia_inspect::reader::{DiagnosticsHierarchy, Property};

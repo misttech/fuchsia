@@ -589,9 +589,7 @@ where
 /// Errors that can happen in this library.
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error(
-        "Missing elements for {histogram_type:?} histogram. Expected {expected}, got {actual}"
-    )]
+    #[error("Missing elements for {histogram_type:?} histogram. Expected {expected}, got {actual}")]
     MissingHistogramElements { histogram_type: ArrayFormat, expected: usize, actual: usize },
 
     #[error("TreeSelector only supports property and subtree selection.")]

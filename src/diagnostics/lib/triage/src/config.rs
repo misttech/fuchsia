@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::act::{validate_action, Actions, ActionsSchema, Severity};
+use crate::Action;
+use crate::act::{Actions, ActionsSchema, Severity, validate_action};
 use crate::metrics::fetch::{InspectFetcher, KeyValueFetcher, SelectorString, TextFetcher};
 use crate::metrics::{Metric, Metrics, ValueSource};
-use crate::validate::{validate, Trials, TrialsSchema};
-use crate::Action;
-use anyhow::{bail, format_err, Context, Error};
+use crate::validate::{Trials, TrialsSchema, validate};
+use anyhow::{Context, Error, bail, format_err};
 use num_derive::FromPrimitive;
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
@@ -580,8 +580,10 @@ mod test {
         "#
             .to_string(),
         );
-        assert!(format!("{}", config_result.expect_err("parsing should fail"))
-            .contains("expected a string"));
+        assert!(
+            format!("{}", config_result.expect_err("parsing should fail"))
+                .contains("expected a string")
+        );
 
         let config_result = ConfigFileSchema::try_from(
             r#"
@@ -593,8 +595,10 @@ mod test {
         "#
             .to_string(),
         );
-        assert!(format!("{}", config_result.expect_err("parsing should fail"))
-            .contains("expected at least one selector"));
+        assert!(
+            format!("{}", config_result.expect_err("parsing should fail"))
+                .contains("expected at least one selector")
+        );
     }
 
     #[fuchsia::test]

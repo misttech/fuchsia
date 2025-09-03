@@ -5,7 +5,7 @@
 //! Parse diagnostic records from streams, returning FIDL-generated structs that match expected
 //! diagnostic service APIs.
 
-use crate::{constants, ArgType, Argument, Header, RawSeverity, Record, Value};
+use crate::{ArgType, Argument, Header, RawSeverity, Record, Value, constants};
 use std::borrow::Cow;
 use thiserror::Error;
 use zerocopy::FromBytes;
@@ -118,7 +118,7 @@ fn parse_argument_internal<'a>(
         }
         ArgType::Bool => (Value::Boolean(header.bool_val()), after_name),
         ArgType::Pointer | ArgType::Koid | ArgType::I32 | ArgType::U32 => {
-            return Err(ParseError::Unsupported)
+            return Err(ParseError::Unsupported);
         }
     };
     if matches!(state, ParseState::InMessage) {

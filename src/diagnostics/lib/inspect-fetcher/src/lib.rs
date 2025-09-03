@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use diagnostics_reader::{ArchiveReader, InspectArchiveReader, RetryConfig};
 use log::warn;
 

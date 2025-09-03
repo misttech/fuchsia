@@ -14,7 +14,7 @@ use crate::inspect::repository::InspectRepository;
 use crate::inspect::servers::*;
 use crate::logs::debuglog::KernelDebugLog;
 use crate::logs::repository::{ComponentInitialInterest, LogsRepository};
-use crate::logs::serial::{launch_serial, SerialSink};
+use crate::logs::serial::{SerialSink, launch_serial};
 use crate::logs::servers::*;
 use crate::pipeline::PipelineManager;
 use archivist_config::Config;

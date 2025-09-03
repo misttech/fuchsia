@@ -272,8 +272,8 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
-    use fidl::endpoints::Proxy;
     use fidl::AsHandleRef;
+    use fidl::endpoints::Proxy;
     use fidl_fuchsia_inspect as finspect;
     use fuchsia_inspect::{Inspector, InspectorConfig};
     use moniker::ExtendedMoniker;
@@ -394,7 +394,7 @@ mod tests {
         );
 
         let selectors = Some(vec![
-            selectors::parse_selector::<FastError>("a/b/foo:root").expect("parse selector")
+            selectors::parse_selector::<FastError>("a/b/foo:root").expect("parse selector"),
         ]);
         assert_eq!(
             1,
@@ -406,7 +406,7 @@ mod tests {
         );
 
         let selectors = Some(vec![
-            selectors::parse_selector::<FastError>("a/b/f*:root").expect("parse selector")
+            selectors::parse_selector::<FastError>("a/b/f*:root").expect("parse selector"),
         ]);
         assert_eq!(
             2,

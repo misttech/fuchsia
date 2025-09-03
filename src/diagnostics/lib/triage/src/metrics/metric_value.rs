@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{unhandled_type, Lambda};
+use super::{Lambda, unhandled_type};
 use diagnostics_hierarchy::{ArrayContent, Property as DiagnosticProperty};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -203,7 +203,7 @@ pub(crate) mod test {
     use super::*;
     use crate::assert_problem;
     use diagnostics_hierarchy::ArrayFormat;
-    use serde_json::{json, Number as JsonNumber};
+    use serde_json::{Number as JsonNumber, json};
 
     #[fuchsia::test]
     fn test_equality() {

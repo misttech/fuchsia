@@ -1,7 +1,7 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use glob::glob;
 use regex::Regex;
 use serde_derive::Deserialize;

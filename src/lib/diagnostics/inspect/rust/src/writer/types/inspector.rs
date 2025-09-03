@@ -6,7 +6,7 @@ use crate::writer::private::InspectTypeInternal;
 use crate::writer::state::Stats;
 use crate::writer::{Error, Heap, Node, State};
 use diagnostics_hierarchy::{DiagnosticsHierarchy, DiagnosticsHierarchyGetter};
-use inspect_format::{constants, BlockContainer, Container};
+use inspect_format::{BlockContainer, Container, constants};
 use log::error;
 use std::borrow::Cow;
 use std::cmp::max;

@@ -492,7 +492,7 @@ impl PartialOrd for Interest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logs::shared_buffer::{create_ring_buffer, SharedBuffer};
+    use crate::logs::shared_buffer::{SharedBuffer, create_ring_buffer};
     use fidl_fuchsia_diagnostics::{ComponentSelector, StringSelector};
     use fidl_fuchsia_diagnostics_types::Severity;
     use fidl_fuchsia_logger::{LogSinkMarker, LogSinkProxy};

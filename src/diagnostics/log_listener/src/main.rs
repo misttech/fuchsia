@@ -15,8 +15,8 @@ use fidl_fuchsia_sys2::RealmQueryMarker;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use log_command as log_utils;
 use log_command::{
-    dump_logs_from_socket as read_logs_from_socket, DefaultLogFormatter, LogEntry, Symbolize,
-    Timestamp, WriterContainer,
+    DefaultLogFormatter, LogEntry, Symbolize, Timestamp, WriterContainer,
+    dump_logs_from_socket as read_logs_from_socket,
 };
 use log_utils::{BootTimeAccessor, LogCommand, LogSubCommand};
 use std::future::pending;

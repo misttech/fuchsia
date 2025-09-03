@@ -88,7 +88,7 @@
 
 use crate::config::SamplerConfig;
 use crate::diagnostics::*;
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use diagnostics_data::{Data, InspectHandleName};
 use diagnostics_hierarchy::{
     ArrayContent, DiagnosticsHierarchy, ExponentialHistogram, LinearHistogram, Property,
@@ -106,15 +106,15 @@ use fuchsia_inspect_derive::WithInspect;
 use futures::channel::oneshot;
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use log::{info, warn};
 use moniker::ExtendedMoniker;
 use sampler_config::runtime::{MetricConfig, ProjectConfig};
 use sampler_config::{MetricType, ProjectId};
 use selectors::SelectorExt;
 use std::cell::{Ref, RefCell, RefMut};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 
 /// An event to be logged to the cobalt logger. Events are generated first,
@@ -1476,10 +1476,12 @@ mod tests {
         }
 
         let moniker: ExtendedMoniker = "my_component".try_into().unwrap();
-        assert!(sampler
-            .filter_metrics_by_moniker_and_tree_name(&moniker, DEFAULT_TREE_NAME)
-            .collect::<Vec<_>>()
-            .is_empty());
+        assert!(
+            sampler
+                .filter_metrics_by_moniker_and_tree_name(&moniker, DEFAULT_TREE_NAME)
+                .collect::<Vec<_>>()
+                .is_empty()
+        );
     }
 
     struct EventCountTesterParams {
@@ -2062,38 +2064,46 @@ mod tests {
         });
         sampler.rebuild_selector_data_structures();
 
-        let data1_value4 = vec![InspectDataBuilder::new(
-            "my/component".try_into().unwrap(),
-            "component-url",
-            Timestamp::from_nanos(0),
-        )
-        .with_hierarchy(hierarchy! { root: {branch: {leaf: 4i32}}})
-        .with_name(InspectHandleName::name("name1"))
-        .build()];
-        let data2_value3 = vec![InspectDataBuilder::new(
-            "my/component".try_into().unwrap(),
-            "component-url",
-            Timestamp::from_nanos(0),
-        )
-        .with_hierarchy(hierarchy! { root: {branch: {leaf: 3i32}}})
-        .with_name(InspectHandleName::name("name2"))
-        .build()];
-        let data1_value6 = vec![InspectDataBuilder::new(
-            "my/component".try_into().unwrap(),
-            "component-url",
-            Timestamp::from_nanos(0),
-        )
-        .with_hierarchy(hierarchy! { root: {branch: {leaf: 6i32}}})
-        .with_name(InspectHandleName::name("name1"))
-        .build()];
-        let data2_value8 = vec![InspectDataBuilder::new(
-            "my/component".try_into().unwrap(),
-            "component-url",
-            Timestamp::from_nanos(0),
-        )
-        .with_hierarchy(hierarchy! { root: {branch: {leaf: 8i32}}})
-        .with_name(InspectHandleName::name("name2"))
-        .build()];
+        let data1_value4 = vec![
+            InspectDataBuilder::new(
+                "my/component".try_into().unwrap(),
+                "component-url",
+                Timestamp::from_nanos(0),
+            )
+            .with_hierarchy(hierarchy! { root: {branch: {leaf: 4i32}}})
+            .with_name(InspectHandleName::name("name1"))
+            .build(),
+        ];
+        let data2_value3 = vec![
+            InspectDataBuilder::new(
+                "my/component".try_into().unwrap(),
+                "component-url",
+                Timestamp::from_nanos(0),
+            )
+            .with_hierarchy(hierarchy! { root: {branch: {leaf: 3i32}}})
+            .with_name(InspectHandleName::name("name2"))
+            .build(),
+        ];
+        let data1_value6 = vec![
+            InspectDataBuilder::new(
+                "my/component".try_into().unwrap(),
+                "component-url",
+                Timestamp::from_nanos(0),
+            )
+            .with_hierarchy(hierarchy! { root: {branch: {leaf: 6i32}}})
+            .with_name(InspectHandleName::name("name1"))
+            .build(),
+        ];
+        let data2_value8 = vec![
+            InspectDataBuilder::new(
+                "my/component".try_into().unwrap(),
+                "component-url",
+                Timestamp::from_nanos(0),
+            )
+            .with_hierarchy(hierarchy! { root: {branch: {leaf: 8i32}}})
+            .with_name(InspectHandleName::name("name2"))
+            .build(),
+        ];
 
         fn expect_one_metric_event_value(
             events: Result<Vec<EventToLog>, Error>,
@@ -2147,14 +2157,16 @@ mod tests {
         });
         sampler.rebuild_selector_data_structures();
 
-        let value = vec![InspectDataBuilder::new(
-            "my/component".try_into().unwrap(),
-            "component-url",
-            Timestamp::from_nanos(0),
-        )
-        .with_hierarchy(hierarchy! { root: {branch: {leaf: 4i32}}})
-        .with_name(InspectHandleName::name("name1"))
-        .build()];
+        let value = vec![
+            InspectDataBuilder::new(
+                "my/component".try_into().unwrap(),
+                "component-url",
+                Timestamp::from_nanos(0),
+            )
+            .with_hierarchy(hierarchy! { root: {branch: {leaf: 4i32}}})
+            .with_name(InspectHandleName::name("name1"))
+            .build(),
+        ];
 
         let events = sampler.process_snapshot(value).await.expect("processed snapshot");
         assert_eq!(events.len(), 1);

@@ -7,10 +7,10 @@ use crate::logs::stats::LogStreamStats;
 use anyhow::Result;
 use bstr::{BStr, ByteSlice};
 use diagnostics_data::{LogsData, Severity};
+use diagnostics_log_encoding::Argument;
 use diagnostics_log_encoding::encode::{
     Encoder, EncoderOpts, EncodingError, MutableBuffer, RecordEvent, WriteEventParams,
 };
-use diagnostics_log_encoding::Argument;
 use fidl_fuchsia_diagnostics_types as fdiagnostics;
 use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
 use std::fmt::Debug;

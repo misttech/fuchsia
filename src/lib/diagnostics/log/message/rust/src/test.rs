@@ -10,8 +10,8 @@
 use super::*;
 use assert_matches::assert_matches;
 use diagnostics_data::*;
-use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
 use diagnostics_log_encoding::Record;
+use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
 use fidl_fuchsia_diagnostics::Severity as StreamSeverity;
 use fidl_fuchsia_logger::{LogLevelFilter, LogMessage};
 use std::io::Cursor;

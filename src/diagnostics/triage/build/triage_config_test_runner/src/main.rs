@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use fuchsia_triage::ActionTagDirective;
 use structopt::StructOpt;
 use triage_app_lib::file_io::config_from_files;

@@ -7,9 +7,9 @@ mod archivist_server;
 
 use {
     anyhow::{
-        bail,
         //format_err,
         Error,
+        bail,
     },
     archivist_accessor::ArchiveAccessor,
     async_trait::async_trait,
@@ -19,8 +19,8 @@ use {
     log::*,
     std::collections::BTreeSet,
     std::sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 

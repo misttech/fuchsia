@@ -60,7 +60,7 @@ pub async fn populate_data_map(inspect_handles: &[Weak<InspectHandle>]) -> Inspe
         };
         match handle.as_ref() {
             InspectHandle::Directory { proxy: ref dir } => {
-                return populate_data_map_from_dir(dir).await
+                return populate_data_map_from_dir(dir).await;
             }
             InspectHandle::Tree { proxy, name } => {
                 data_map.push_back((
@@ -85,15 +85,17 @@ pub async fn populate_data_map(inspect_handles: &[Weak<InspectHandle>]) -> Inspe
 async fn populate_data_map_from_dir(inspect_proxy: &fio::DirectoryProxy) -> InspectHandleDeque {
     // TODO(https://fxbug.dev/42112326): Use a streaming and bounded readdir API when available to avoid
     // being hung.
-    let mut entries =
-        pin!(fuchsia_fs::directory::readdir_recursive(inspect_proxy, /* timeout= */ None)
-            .filter_map(|result| {
+    let mut entries = pin!(
+        fuchsia_fs::directory::readdir_recursive(inspect_proxy, /* timeout= */ None).filter_map(
+            |result| {
                 async move {
                     // TODO(https://fxbug.dev/42126094): decide how to show directories that we
                     // failed to read.
                     result.ok()
                 }
-            }));
+            }
+        )
+    );
     let mut data_map = InspectHandleDeque::new();
     // TODO(https://fxbug.dev/42138410) convert this async loop to a stream so we can carry backpressure
     while let Some(entry) = entries.next().await {
@@ -180,9 +182,9 @@ mod tests {
     use fidl::endpoints::create_request_stream;
     use fuchsia_async as fasync;
     use fuchsia_component::server::ServiceFs;
-    use fuchsia_inspect::{reader, Inspector};
-    use inspect_runtime::service::spawn_tree_server_with_stream;
+    use fuchsia_inspect::{Inspector, reader};
     use inspect_runtime::TreeServerSendPreference;
+    use inspect_runtime::service::spawn_tree_server_with_stream;
     use zx::Peered;
 
     fn get_vmo(text: &[u8]) -> zx::Vmo {

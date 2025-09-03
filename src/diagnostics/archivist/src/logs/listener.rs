@@ -212,7 +212,7 @@ pub enum ListenerError {
 mod tests {
     use super::*;
     use crate::identity::ComponentIdentity;
-    use diagnostics_message::{fx_log_packet_t, LoggerMessage, METADATA_SIZE};
+    use diagnostics_message::{LoggerMessage, METADATA_SIZE, fx_log_packet_t};
     use fidl::endpoints::ServerEnd;
     use fidl_fuchsia_logger::{LogLevelFilter, LogListenerSafeRequest};
     use fuchsia_async as fasync;

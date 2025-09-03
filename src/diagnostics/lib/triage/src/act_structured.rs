@@ -6,7 +6,7 @@ use super::config::DiagnosticData;
 use super::metrics::fetch::{Fetcher, FileDataFetcher};
 use super::metrics::metric_value::{MetricValue, Problem};
 use super::metrics::{MetricState, Metrics, ValueSource};
-use super::plugins::{register_plugins, Plugin};
+use super::plugins::{Plugin, register_plugins};
 use crate::act::{Action, Actions, Alert, Gauge, Snapshot};
 use crate::inspect_logger;
 use serde::Serialize;

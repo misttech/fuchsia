@@ -5,7 +5,7 @@
 #![cfg(test)]
 
 use crate::tests::utils::{
-    new_test, AssertionOption, AssertionParameters, IqueryCommand, TestComponent,
+    AssertionOption, AssertionParameters, IqueryCommand, TestComponent, new_test,
 };
 use assert_matches::assert_matches;
 use iquery::types::Error;

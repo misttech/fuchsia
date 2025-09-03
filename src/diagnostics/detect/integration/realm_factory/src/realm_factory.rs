@@ -9,15 +9,15 @@ use anyhow::*;
 use component_events::events::{EventStream, Stopped};
 use component_events::matcher::EventMatcher;
 use fake_archive_accessor::FakeArchiveAccessor;
-use fidl::endpoints::{create_endpoints, ClientEnd};
+use fidl::endpoints::{ClientEnd, create_endpoints};
 use fidl_fuchsia_io::R_STAR_DIR;
 use fidl_server::*;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
 };
-use futures::lock::Mutex;
 use futures::StreamExt;
+use futures::lock::Mutex;
 use log::{error, info};
 use std::sync::Arc;
 use {

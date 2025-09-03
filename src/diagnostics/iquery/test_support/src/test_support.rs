@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use byteorder::{LittleEndian, WriteBytesExt};
-use fdomain_client::fidl::{RequestStream as FRequestStream, ServerEnd as FServerEnd};
 use fdomain_client::AsHandleRef;
-use fidl::endpoints::{create_endpoints, create_proxy, ServerEnd};
+use fdomain_client::fidl::{RequestStream as FRequestStream, ServerEnd as FServerEnd};
+use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy};
 use fidl_fuchsia_component_decl::{
     Capability, Component, Dictionary, Expose, ExposeDictionary, ExposeProtocol, ParentRef,
     Protocol, Ref, SelfRef,

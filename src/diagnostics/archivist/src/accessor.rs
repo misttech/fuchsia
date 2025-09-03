@@ -6,10 +6,10 @@ use crate::constants::FORMATTED_CONTENT_CHUNK_SIZE_TARGET;
 use crate::diagnostics::{BatchIteratorConnectionStats, TRACE_CATEGORY};
 use crate::error::AccessorError;
 use crate::formatter::{
-    new_batcher, FXTPacketSerializer, FormattedStream, JsonPacketSerializer, SerializedVmo,
+    FXTPacketSerializer, FormattedStream, JsonPacketSerializer, SerializedVmo, new_batcher,
 };
-use crate::inspect::repository::InspectRepository;
 use crate::inspect::ReaderServer;
+use crate::inspect::repository::InspectRepository;
 use crate::logs::container::CursorItem;
 use crate::logs::repository::LogsRepository;
 use crate::pipeline::Pipeline;
@@ -24,10 +24,10 @@ use fidl_fuchsia_diagnostics::{
 use fidl_fuchsia_mem::Buffer;
 use fuchsia_inspect::NumericProperty;
 use fuchsia_sync::Mutex;
-use futures::future::{select, Either};
+use futures::future::{Either, select};
 use futures::prelude::*;
 use futures::stream::Peekable;
-use futures::{pin_mut, StreamExt};
+use futures::{StreamExt, pin_mut};
 use log::warn;
 use selectors::FastError;
 use serde::Serialize;
@@ -51,11 +51,7 @@ impl BatchRetrievalTimeout {
     }
 
     pub fn seconds(&self) -> i64 {
-        if self.0 > 0 {
-            self.0
-        } else {
-            i64::MAX
-        }
+        if self.0 > 0 { self.0 } else { i64::MAX }
     }
 }
 
@@ -514,7 +510,7 @@ impl ArchiveAccessorTranslator for ArchiveAccessorRequestStream {
                     return Some(ArchiveIteratorRequest {
                         iterator: result_stream.into_stream().peekable(),
                         parameters: stream_parameters,
-                    })
+                    });
                 }
                 Some(Ok(ArchiveAccessorRequest::WaitForReady { responder })) => {
                     let _ = responder.send();
@@ -876,20 +872,24 @@ mod tests {
 
         // A selector of the form `component:node/path:property` is rejected.
         let (batch_iterator, server_end) = fidl::endpoints::create_proxy::<BatchIteratorMarker>();
-        assert!(accessor
-            .r#stream_diagnostics(
-                &StreamParameters {
-                    data_type: Some(DataType::Logs),
-                    stream_mode: Some(StreamMode::SnapshotThenSubscribe),
-                    format: Some(Format::Json),
-                    client_selector_configuration: Some(ClientSelectorConfiguration::Selectors(
-                        vec![SelectorArgument::RawSelector("foo:root/bar:baz".to_string()),]
-                    )),
-                    ..Default::default()
-                },
-                server_end
-            )
-            .is_ok());
+        assert!(
+            accessor
+                .r#stream_diagnostics(
+                    &StreamParameters {
+                        data_type: Some(DataType::Logs),
+                        stream_mode: Some(StreamMode::SnapshotThenSubscribe),
+                        format: Some(Format::Json),
+                        client_selector_configuration: Some(
+                            ClientSelectorConfiguration::Selectors(vec![
+                                SelectorArgument::RawSelector("foo:root/bar:baz".to_string()),
+                            ])
+                        ),
+                        ..Default::default()
+                    },
+                    server_end
+                )
+                .is_ok()
+        );
         assert_matches!(
             batch_iterator.get_next().await,
             Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::INVALID_ARGS, .. })
@@ -897,20 +897,24 @@ mod tests {
 
         // A selector of the form `component:root` is accepted.
         let (batch_iterator, server_end) = fidl::endpoints::create_proxy::<BatchIteratorMarker>();
-        assert!(accessor
-            .r#stream_diagnostics(
-                &StreamParameters {
-                    data_type: Some(DataType::Logs),
-                    stream_mode: Some(StreamMode::Snapshot),
-                    format: Some(Format::Json),
-                    client_selector_configuration: Some(ClientSelectorConfiguration::Selectors(
-                        vec![SelectorArgument::RawSelector("foo:root".to_string()),]
-                    )),
-                    ..Default::default()
-                },
-                server_end
-            )
-            .is_ok());
+        assert!(
+            accessor
+                .r#stream_diagnostics(
+                    &StreamParameters {
+                        data_type: Some(DataType::Logs),
+                        stream_mode: Some(StreamMode::Snapshot),
+                        format: Some(Format::Json),
+                        client_selector_configuration: Some(
+                            ClientSelectorConfiguration::Selectors(vec![
+                                SelectorArgument::RawSelector("foo:root".to_string()),
+                            ])
+                        ),
+                        ..Default::default()
+                    },
+                    server_end
+                )
+                .is_ok()
+        );
 
         assert!(batch_iterator.get_next().await.is_ok());
     }
@@ -942,23 +946,25 @@ mod tests {
         // A selector of the form `component:node/path:property` is rejected.
         let (batch_iterator, server_end) = fidl::endpoints::create_proxy::<BatchIteratorMarker>();
 
-        assert!(accessor
-            .r#stream_diagnostics(
-                &StreamParameters {
-                    data_type: Some(DataType::Inspect),
-                    stream_mode: Some(StreamMode::Snapshot),
-                    format: Some(Format::Json),
-                    client_selector_configuration: Some(ClientSelectorConfiguration::Selectors(
-                        vec![
-                            SelectorArgument::RawSelector("invalid".to_string()),
-                            SelectorArgument::RawSelector("valid:root".to_string()),
-                        ]
-                    )),
-                    ..Default::default()
-                },
-                server_end
-            )
-            .is_ok());
+        assert!(
+            accessor
+                .r#stream_diagnostics(
+                    &StreamParameters {
+                        data_type: Some(DataType::Inspect),
+                        stream_mode: Some(StreamMode::Snapshot),
+                        format: Some(Format::Json),
+                        client_selector_configuration: Some(
+                            ClientSelectorConfiguration::Selectors(vec![
+                                SelectorArgument::RawSelector("invalid".to_string()),
+                                SelectorArgument::RawSelector("valid:root".to_string()),
+                            ])
+                        ),
+                        ..Default::default()
+                    },
+                    server_end
+                )
+                .is_ok()
+        );
 
         // The batch iterator proxy should remain valid and providing responses regardless of the
         // invalid selectors that were given.
@@ -1088,20 +1094,22 @@ mod tests {
 
         // A selector of the form `component:node/path:property` is rejected.
         let (batch_iterator, server_end) = fidl::endpoints::create_proxy::<BatchIteratorMarker>();
-        assert!(accessor
-            .r#stream_diagnostics(
-                &StreamParameters {
-                    data_type: Some(DataType::Logs),
-                    stream_mode: Some(StreamMode::Subscribe),
-                    format: Some(Format::Json),
-                    client_selector_configuration: Some(ClientSelectorConfiguration::SelectAll(
-                        true
-                    )),
-                    ..Default::default()
-                },
-                server_end
-            )
-            .is_ok());
+        assert!(
+            accessor
+                .r#stream_diagnostics(
+                    &StreamParameters {
+                        data_type: Some(DataType::Logs),
+                        stream_mode: Some(StreamMode::Subscribe),
+                        format: Some(Format::Json),
+                        client_selector_configuration: Some(
+                            ClientSelectorConfiguration::SelectAll(true)
+                        ),
+                        ..Default::default()
+                    },
+                    server_end
+                )
+                .is_ok()
+        );
 
         // We receive a response for WaitForReady
         assert!(batch_iterator.wait_for_ready().await.is_ok());

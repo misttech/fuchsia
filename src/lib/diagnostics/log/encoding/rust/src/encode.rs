@@ -5,7 +5,7 @@
 //! Encoding diagnostic records using the Fuchsia Tracing format.
 
 use crate::{
-    constants, ArgType, Argument, Header, Metatag, RawSeverity, Record, Value, MAX_SIZE_WORDS,
+    ArgType, Argument, Header, MAX_SIZE_WORDS, Metatag, RawSeverity, Record, Value, constants,
 };
 use std::array::TryFromSliceError;
 use std::borrow::{Borrow, Cow};

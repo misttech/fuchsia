@@ -4,9 +4,9 @@
 
 use crate::metrics::Metrics;
 use crate::puppet::DiffType;
-use anyhow::{bail, format_err, Error};
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use anyhow::{Error, bail, format_err};
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use diagnostics_hierarchy::{
     ArrayContent, DiagnosticsHierarchy, ExponentialHistogram, LinearHistogram,
     Property as iProperty,
@@ -524,7 +524,7 @@ impl Data {
                         return Err(format_err!(
                             "Bad types in CreateLinearHistogram: {:?}",
                             unexpected
-                        ))
+                        ));
                     }
                 },
             ),
@@ -580,7 +580,7 @@ impl Data {
                         return Err(format_err!(
                             "Bad types in CreateExponentialHistogram: {:?}",
                             unexpected
-                        ))
+                        ));
                     }
                 },
             ),
@@ -872,7 +872,7 @@ impl Data {
                     property.payload = Payload::Double((op.double)(*old, *value));
                 }
                 unexpected => {
-                    return Err(format_err!("Bad types {:?} trying to set number", unexpected))
+                    return Err(format_err!("Bad types {:?} trying to set number", unexpected));
                 }
             }
         } else {
@@ -906,7 +906,7 @@ impl Data {
                     return Err(format_err!(
                         "Bad types {:?} trying to set number of elements",
                         unexpected
-                    ))
+                    ));
                 }
             };
             if index >= array_len {
@@ -929,7 +929,7 @@ impl Data {
                     values[index] = (op.string)(values[index].clone(), value.clone());
                 }
                 unexpected => {
-                    return Err(format_err!("Type mismatch {:?} trying to set value", unexpected))
+                    return Err(format_err!("Type mismatch {:?} trying to set value", unexpected));
                 }
             }
         } else {
@@ -945,7 +945,7 @@ impl Data {
                     property.payload = Payload::String(value.to_owned())
                 }
                 unexpected => {
-                    return Err(format_err!("Bad type {:?} trying to set string", unexpected))
+                    return Err(format_err!("Bad type {:?} trying to set string", unexpected));
                 }
             }
         } else {
@@ -961,7 +961,7 @@ impl Data {
                     property.payload = Payload::Bytes(value.to_owned())
                 }
                 unexpected => {
-                    return Err(format_err!("Bad type {:?} trying to set bytes", unexpected))
+                    return Err(format_err!("Bad type {:?} trying to set bytes", unexpected));
                 }
             }
         } else {
@@ -977,7 +977,7 @@ impl Data {
                     property.payload = Payload::Bool(value)
                 }
                 unexpected => {
-                    return Err(format_err!("Bad type {:?} trying to set bool", unexpected))
+                    return Err(format_err!("Bad type {:?} trying to set bool", unexpected));
                 }
             }
         } else {
@@ -1261,7 +1261,7 @@ impl From<DiagnosticsHierarchy> for Data {
 mod tests {
     use super::*;
     use crate::*;
-    use fidl_diagnostics_validate::{ValueType, ROOT_ID};
+    use fidl_diagnostics_validate::{ROOT_ID, ValueType};
     use fuchsia_inspect::reader::ArrayContent as iArrayContent;
     use inspect_format::BlockType;
     use num_derive::{FromPrimitive, ToPrimitive};
@@ -1442,35 +1442,38 @@ mod tests {
 
         info.apply(&create_linear_histogram!(parent: ROOT_ID, id: 11, name: "ILhist", floor: 12,
             step_size: 3, buckets: 2, type: IntT))?;
-        assert!(info
-            .to_string()
-            .contains("ILhist: IntArray([12, 3, 0, 0, 0, 0], LinearHistogram)"));
+        assert!(
+            info.to_string().contains("ILhist: IntArray([12, 3, 0, 0, 0, 0], LinearHistogram)")
+        );
 
         info.apply(&create_linear_histogram!(parent: ROOT_ID, id: 12, name: "ULhist", floor: 34,
             step_size: 5, buckets: 2, type: UintT))?;
-        assert!(info
-            .to_string()
-            .contains("ULhist: UintArray([34, 5, 0, 0, 0, 0], LinearHistogram)"));
+        assert!(
+            info.to_string().contains("ULhist: UintArray([34, 5, 0, 0, 0, 0], LinearHistogram)")
+        );
 
         info.apply(
             &create_linear_histogram!(parent: ROOT_ID, id: 13, name: "DLhist", floor: 56.0,
             step_size: 7.0, buckets: 2, type: DoubleT),
         )?;
-        assert!(info
-            .to_string()
-            .contains("DLhist: DoubleArray([56.0, 7.0, 0.0, 0.0, 0.0, 0.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("DLhist: DoubleArray([56.0, 7.0, 0.0, 0.0, 0.0, 0.0], LinearHistogram)")
+        );
 
         info.apply(&create_exponential_histogram!(parent: ROOT_ID, id: 14, name: "IEhist",
             floor: 12, initial_step: 3, step_multiplier: 5, buckets: 2, type: IntT))?;
-        assert!(info
-            .to_string()
-            .contains("IEhist: IntArray([12, 3, 5, 0, 0, 0, 0], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("IEhist: IntArray([12, 3, 5, 0, 0, 0, 0], ExponentialHistogram)")
+        );
 
         info.apply(&create_exponential_histogram!(parent: ROOT_ID, id: 15, name: "UEhist",
             floor: 34, initial_step: 9, step_multiplier: 6, buckets: 2, type: UintT))?;
-        assert!(info
-            .to_string()
-            .contains("UEhist: UintArray([34, 9, 6, 0, 0, 0, 0], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("UEhist: UintArray([34, 9, 6, 0, 0, 0, 0], ExponentialHistogram)")
+        );
 
         info.apply(&create_exponential_histogram!(parent: ROOT_ID, id: 16, name: "DEhist",
             floor: 56.0, initial_step: 27.0, step_multiplier: 7.0, buckets: 2, type: DoubleT))?;
@@ -1553,14 +1556,15 @@ mod tests {
         assert!(info.to_string().contains(r#"value: StringArray(["", "", ""]"#));
         assert!(info.apply(&array_subtract!(id: 3, index: 2, value: Value::IntT(5))).is_err());
         assert!(info.apply(&array_subtract!(id: 3, index: 2, value: Value::UintT(5))).is_err());
-        assert!(info
-            .apply(&array_subtract!(id: 3, index: 2,
+        assert!(
+            info.apply(&array_subtract!(id: 3, index: 2,
                                             value: Value::DoubleT(5.0)))
-            .is_err());
+                .is_err()
+        );
         assert!(info.to_string().contains(r#"value: StringArray(["", "", ""])"#));
-        assert!(info
-            .apply(&array_set!(id: 3, index: 1, value: Value::StringT("data".into())))
-            .is_ok());
+        assert!(
+            info.apply(&array_set!(id: 3, index: 1, value: Value::StringT("data".into()))).is_ok()
+        );
         assert!(info.to_string().contains(r#"value: StringArray(["", "data", ""])"#));
         assert!(info.apply(&array_set!(id: 3, index: 1, value: Value::UintT(23))).is_err());
         assert!(info.apply(&array_set!(id: 3, index: 1, value: Value::DoubleT(24.0))).is_err());
@@ -1585,10 +1589,11 @@ mod tests {
         assert!(info.apply(&array_subtract!(id: 3, index: 2, value: Value::IntT(5))).is_ok());
         assert!(info.to_string().contains("value: IntArray([0, 3, -5], Default)"));
         assert!(info.apply(&array_subtract!(id: 3, index: 2, value: Value::UintT(5))).is_err());
-        assert!(info
-            .apply(&array_subtract!(id: 3, index: 2,
+        assert!(
+            info.apply(&array_subtract!(id: 3, index: 2,
                                             value: Value::DoubleT(5.0)))
-            .is_err());
+                .is_err()
+        );
         assert!(info.to_string().contains("value: IntArray([0, 3, -5], Default)"));
         assert!(info.apply(&array_set!(id: 3, index: 1, value: Value::IntT(22))).is_ok());
         assert!(info.to_string().contains("value: IntArray([0, 22, -5], Default)"));
@@ -1634,47 +1639,57 @@ mod tests {
         info.apply(&create_exponential_histogram!(parent: ROOT_ID, id: 3, name: "value",
                     floor: 5, initial_step: 2,
                     step_multiplier: 4, buckets: 2, type: IntT))?;
-        assert!(info
-            .to_string()
-            .contains("value: IntArray([5, 2, 4, 0, 0, 0, 0], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: IntArray([5, 2, 4, 0, 0, 0, 0], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::IntT(5))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: IntArray([5, 2, 4, 0, 1, 0, 0], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: IntArray([5, 2, 4, 0, 1, 0, 0], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::IntT(6))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: IntArray([5, 2, 4, 0, 2, 0, 0], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: IntArray([5, 2, 4, 0, 2, 0, 0], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::IntT(7))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: IntArray([5, 2, 4, 0, 2, 1, 0], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: IntArray([5, 2, 4, 0, 2, 1, 0], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::IntT(13))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: IntArray([5, 2, 4, 0, 2, 1, 1], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: IntArray([5, 2, 4, 0, 2, 1, 1], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::IntT(i64::MAX))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: IntArray([5, 2, 4, 0, 2, 1, 2], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: IntArray([5, 2, 4, 0, 2, 1, 2], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::IntT(0))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: IntArray([5, 2, 4, 1, 2, 1, 2], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: IntArray([5, 2, 4, 1, 2, 1, 2], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::IntT(i64::MIN))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: IntArray([5, 2, 4, 2, 2, 1, 2], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: IntArray([5, 2, 4, 2, 2, 1, 2], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::UintT(0))).is_err());
         assert!(info.apply(&insert!(id: 3, value: Value::DoubleT(0.0))).is_err());
         assert!(info.apply(&array_set!(id: 3, index: 1, value: Value::IntT(222))).is_err());
-        assert!(info
-            .to_string()
-            .contains("value: IntArray([5, 2, 4, 2, 2, 1, 2], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: IntArray([5, 2, 4, 2, 2, 1, 2], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert_multiple!(id: 3, value: Value::IntT(12), count: 4)).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: IntArray([5, 2, 4, 2, 2, 5, 2], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: IntArray([5, 2, 4, 2, 2, 5, 2], ExponentialHistogram)")
+        );
         Ok(())
     }
 
@@ -1773,43 +1788,52 @@ mod tests {
         info.apply(&create_exponential_histogram!(parent: ROOT_ID, id: 3, name: "value",
                     floor: 5, initial_step: 2,
                     step_multiplier: 4, buckets: 2, type: UintT))?;
-        assert!(info
-            .to_string()
-            .contains("value: UintArray([5, 2, 4, 0, 0, 0, 0], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: UintArray([5, 2, 4, 0, 0, 0, 0], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::UintT(5))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: UintArray([5, 2, 4, 0, 1, 0, 0], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: UintArray([5, 2, 4, 0, 1, 0, 0], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::UintT(6))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: UintArray([5, 2, 4, 0, 2, 0, 0], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: UintArray([5, 2, 4, 0, 2, 0, 0], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::UintT(7))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: UintArray([5, 2, 4, 0, 2, 1, 0], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: UintArray([5, 2, 4, 0, 2, 1, 0], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::UintT(13))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: UintArray([5, 2, 4, 0, 2, 1, 1], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: UintArray([5, 2, 4, 0, 2, 1, 1], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::UintT(u64::MAX))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: UintArray([5, 2, 4, 0, 2, 1, 2], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: UintArray([5, 2, 4, 0, 2, 1, 2], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::UintT(0))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: UintArray([5, 2, 4, 1, 2, 1, 2], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: UintArray([5, 2, 4, 1, 2, 1, 2], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::IntT(0))).is_err());
         assert!(info.apply(&insert!(id: 3, value: Value::DoubleT(0.0))).is_err());
         assert!(info.apply(&array_set!(id: 3, index: 1, value: Value::UintT(222))).is_err());
-        assert!(info
-            .to_string()
-            .contains("value: UintArray([5, 2, 4, 1, 2, 1, 2], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: UintArray([5, 2, 4, 1, 2, 1, 2], ExponentialHistogram)")
+        );
         assert!(info.apply(&insert_multiple!(id: 3, value: Value::UintT(12), count: 4)).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: UintArray([5, 2, 4, 1, 2, 5, 2], ExponentialHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: UintArray([5, 2, 4, 1, 2, 5, 2], ExponentialHistogram)")
+        );
         Ok(())
     }
 
@@ -1864,51 +1888,62 @@ mod tests {
         let mut info = Data::new();
         info.apply(&create_linear_histogram!(parent: ROOT_ID, id: 3, name: "value",
                     floor: 4.0, step_size: 0.5, buckets: 2, type: DoubleT))?;
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 0.0, 0.0, 0.0, 0.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 0.0, 0.0, 0.0, 0.0], LinearHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::DoubleT(4.0))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 0.0, 1.0, 0.0, 0.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 0.0, 1.0, 0.0, 0.0], LinearHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::DoubleT(4.25))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 0.0, 2.0, 0.0, 0.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 0.0, 2.0, 0.0, 0.0], LinearHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::DoubleT(4.75))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 0.0, 2.0, 1.0, 0.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 0.0, 2.0, 1.0, 0.0], LinearHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::DoubleT(5.1))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 0.0, 2.0, 1.0, 1.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 0.0, 2.0, 1.0, 1.0], LinearHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::DoubleT(f64::MAX))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 0.0, 2.0, 1.0, 2.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 0.0, 2.0, 1.0, 2.0], LinearHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::DoubleT(f64::MIN_POSITIVE))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 1.0, 2.0, 1.0, 2.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 1.0, 2.0, 1.0, 2.0], LinearHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::DoubleT(f64::MIN))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 2.0, 2.0, 1.0, 2.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 2.0, 2.0, 1.0, 2.0], LinearHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::DoubleT(0.0))).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 3.0, 2.0, 1.0, 2.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 3.0, 2.0, 1.0, 2.0], LinearHistogram)")
+        );
         assert!(info.apply(&insert!(id: 3, value: Value::IntT(0))).is_err());
         assert!(info.apply(&insert!(id: 3, value: Value::UintT(0))).is_err());
         assert!(info.apply(&array_set!(id: 3, index: 1, value: Value::DoubleT(222.0))).is_err());
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 3.0, 2.0, 1.0, 2.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 3.0, 2.0, 1.0, 2.0], LinearHistogram)")
+        );
         assert!(info.apply(&insert_multiple!(id: 3, value: Value::DoubleT(4.5), count: 4)).is_ok());
-        assert!(info
-            .to_string()
-            .contains("value: DoubleArray([4.0, 0.5, 3.0, 2.0, 5.0, 2.0], LinearHistogram)"));
+        assert!(
+            info.to_string()
+                .contains("value: DoubleArray([4.0, 0.5, 3.0, 2.0, 5.0, 2.0], LinearHistogram)")
+        );
         Ok(())
     }
 
@@ -1934,9 +1969,9 @@ mod tests {
         assert!(info.to_string().contains(
             "value: DoubleArray([5.0, 2.0, 4.0, 0.0, 2.0, 1.0, 0.0, 0.0], ExponentialHistogram)"
         ));
-        assert!(info
-            .apply(&insert_multiple!(id: 3, value: Value::DoubleT(12.9), count: 4))
-            .is_ok());
+        assert!(
+            info.apply(&insert_multiple!(id: 3, value: Value::DoubleT(12.9), count: 4)).is_ok()
+        );
         assert!(info.to_string().contains(
             "value: DoubleArray([5.0, 2.0, 4.0, 0.0, 2.0, 5.0, 0.0, 0.0], ExponentialHistogram)"
         ));
@@ -2038,19 +2073,21 @@ mod tests {
     fn test_illegal_property_actions() -> Result<(), Error> {
         let mut info = Data::new();
         // Parent must exist
-        assert!(info
-            .apply(
+        assert!(
+            info.apply(
                 &create_numeric_property!(parent: 42, id: 1, name: "answer", value: Value::IntT(42))
             )
-            .is_err());
+            .is_err()
+        );
         // Can't reuse property IDs
         info = Data::new();
         info.apply(&create_numeric_property!(parent: ROOT_ID, id: 1, name: "answer",
                                     value: Value::IntT(42)))?;
-        assert!(info
-            .apply(&create_numeric_property!(parent: ROOT_ID, id: 1, name: "another_answer",
+        assert!(
+            info.apply(&create_numeric_property!(parent: ROOT_ID, id: 1, name: "another_answer",
                                     value: Value::IntT(7)))
-            .is_err());
+                .is_err()
+        );
         // Can't delete nonexistent property
         info = Data::new();
         assert!(info.apply(&delete_property!(id: 1)).is_err());
@@ -2122,38 +2159,43 @@ mod tests {
         // Can delete, but not double-delete, a tombstoned node.
         let mut data = Data::new();
         assert!(data.apply(&create_node!(parent: 0, id: 1, name: "first")).is_ok());
-        assert!(data
-            .apply(&create_numeric_property!(parent: 1, id: 2,
+        assert!(
+            data.apply(&create_numeric_property!(parent: 1, id: 2,
             name: "answer", value: Value::IntT(42)))
-            .is_ok());
+                .is_ok()
+        );
         assert!(data.apply(&delete_node!(id: 1)).is_ok());
         assert!(data.apply(&delete_property!(id: 2)).is_ok());
         assert!(data.apply(&delete_property!(id: 2)).is_err());
         // Can tombstone, then delete, then create.
         let mut data = Data::new();
         assert!(data.apply(&create_node!(parent: 0, id: 1, name: "first")).is_ok());
-        assert!(data
-            .apply(&create_numeric_property!(parent: 1, id: 2,
+        assert!(
+            data.apply(&create_numeric_property!(parent: 1, id: 2,
             name: "answer", value: Value::IntT(42)))
-            .is_ok());
+                .is_ok()
+        );
         assert!(data.apply(&delete_node!(id: 1)).is_ok());
         assert!(data.apply(&delete_property!(id: 2)).is_ok());
-        assert!(data
-            .apply(&create_numeric_property!(parent: 0, id: 2,
+        assert!(
+            data.apply(&create_numeric_property!(parent: 0, id: 2,
             name: "root_answer", value: Value::IntT(42)))
-            .is_ok());
+                .is_ok()
+        );
         // Cannot tombstone, then create.
         let mut data = Data::new();
         assert!(data.apply(&create_node!(parent: 0, id: 1, name: "first")).is_ok());
-        assert!(data
-            .apply(&create_numeric_property!(parent: 1, id: 2,
+        assert!(
+            data.apply(&create_numeric_property!(parent: 1, id: 2,
             name: "answer", value: Value::IntT(42)))
-            .is_ok());
+                .is_ok()
+        );
         assert!(data.apply(&delete_node!(id: 1)).is_ok());
-        assert!(data
-            .apply(&create_numeric_property!(parent: 0, id: 2,
+        assert!(
+            data.apply(&create_numeric_property!(parent: 0, id: 2,
             name: "root_answer", value: Value::IntT(42)))
-            .is_err());
+                .is_err()
+        );
     }
 
     #[fuchsia::test]

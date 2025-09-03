@@ -34,7 +34,7 @@
 //! ```
 
 use super::stats::InspectorExt;
-use super::{health, Inspector, InspectorConfig};
+use super::{Inspector, InspectorConfig, health};
 use fuchsia_sync::Mutex;
 use inspect_format::constants;
 use std::sync::{Arc, LazyLock};
@@ -110,7 +110,7 @@ pub fn serve_inspect_stats() {
 mod tests {
     use super::*;
     use crate::health::Reporter;
-    use diagnostics_assertions::{assert_data_tree, assert_json_diff, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree, assert_json_diff};
     use futures::FutureExt;
 
     #[fuchsia::test]

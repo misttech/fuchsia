@@ -5,7 +5,7 @@
 /// DelayTracker keeps track of how recently we sent a crash report of each type, and whether we
 /// should mute too-frequent requests.
 use {
-    crate::{Mode, MINIMUM_SIGNATURE_INTERVAL_NANOS},
+    crate::{MINIMUM_SIGNATURE_INTERVAL_NANOS, Mode},
     fuchsia_triage::SnapshotTrigger,
     injectable_time::TimeSource,
     log::warn,

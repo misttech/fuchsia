@@ -282,7 +282,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{reader, Inspector, InspectorConfig};
+    use crate::{Inspector, InspectorConfig, reader};
     use diagnostics_assertions::{assert_data_tree, assert_json_diff};
     use inspect_format::constants;
 

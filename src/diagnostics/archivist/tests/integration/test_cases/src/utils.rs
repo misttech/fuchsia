@@ -9,7 +9,7 @@ use fidl_fuchsia_diagnostics::{self as fdiagnostics, LogSettingsSetComponentInte
 use fidl_fuchsia_diagnostics_host as fdiagnostics_host;
 use fidl_fuchsia_diagnostics_types::{Interest, Severity};
 use realm_proxy_client::RealmProxyClient;
-use selectors::{parse_component_selector, VerboseError};
+use selectors::{VerboseError, parse_component_selector};
 use std::borrow::Cow;
 
 pub const ALL_PIPELINE: &str = "all";

@@ -7,7 +7,7 @@ use crate::utils::OneOrMany;
 use anyhow::bail;
 use component_id_index::InstanceId;
 use moniker::ExtendedMoniker;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::marker::PhantomData;
 use std::str::FromStr;
 
@@ -418,10 +418,10 @@ mod tests {
                 poll_rate_sec: 60,
                 metrics: vec![
                     MetricConfig {
-                        selectors: vec![selectors::parse_selector::<FastError>(
-                            "core/foo42:root/path:leaf"
-                        )
-                        .unwrap()],
+                        selectors: vec![
+                            selectors::parse_selector::<FastError>("core/foo42:root/path:leaf")
+                                .unwrap()
+                        ],
                         metric_id: MetricId(1),
                         metric_type: MetricType::Occurrence,
                         event_codes: vec![EventCode(42), EventCode(1), EventCode(2)],
@@ -429,10 +429,12 @@ mod tests {
                         project_id: None,
                     },
                     MetricConfig {
-                        selectors: vec![selectors::parse_selector::<FastError>(
-                            "bootstrap/hello:root/path:leaf"
-                        )
-                        .unwrap()],
+                        selectors: vec![
+                            selectors::parse_selector::<FastError>(
+                                "bootstrap/hello:root/path:leaf"
+                            )
+                            .unwrap()
+                        ],
                         metric_id: MetricId(1),
                         metric_type: MetricType::Occurrence,
                         event_codes: vec![EventCode(43), EventCode(1), EventCode(2)],
@@ -581,9 +583,9 @@ mod tests {
         );
         assert_eq!(interpolate_template(id_template, &components[0]).unwrap(), None);
         assert_eq!(
-                interpolate_template(id_template, &components[1]).unwrap().unwrap(),
-                "fizz/buzz:root/info/1234123412341234123412341234123412341234123412341234123412341234/data"
-            );
+            interpolate_template(id_template, &components[1]).unwrap().unwrap(),
+            "fizz/buzz:root/info/1234123412341234123412341234123412341234123412341234123412341234/data"
+        );
     }
 
     #[derive(Debug, Deserialize, Eq, PartialEq)]

@@ -79,7 +79,7 @@ impl From<Cow<'_, str>> for StringReference {
 
 #[cfg(test)]
 mod tests {
-    use crate::writer::testing_utils::{get_state, GetBlockExt};
+    use crate::writer::testing_utils::{GetBlockExt, get_state};
     use crate::writer::{Inspector, Node};
     use diagnostics_assertions::assert_data_tree;
 

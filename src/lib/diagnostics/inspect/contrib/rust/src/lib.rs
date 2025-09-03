@@ -20,4 +20,4 @@ pub mod nodes;
 #[macro_use]
 mod self_profile;
 
-pub use self_profile::{start_self_profiling, stop_self_profiling, ProfileDuration};
+pub use self_profile::{ProfileDuration, start_self_profiling, stop_self_profiling};

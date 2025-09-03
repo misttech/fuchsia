@@ -14,7 +14,7 @@ use fidl_fuchsia_diagnostics_types::{Interest, Severity};
 use fidl_fuchsia_inspect::DEFAULT_TREE_NAME;
 use itertools::Itertools;
 use moniker::{
-    BorrowedChildName, ExtendedMoniker, Moniker, EXTENDED_MONIKER_COMPONENT_MANAGER_STR,
+    BorrowedChildName, EXTENDED_MONIKER_COMPONENT_MANAGER_STR, ExtendedMoniker, Moniker,
 };
 use std::borrow::{Borrow, Cow};
 use std::fs;
@@ -142,7 +142,7 @@ pub fn parse_log_interest_selector(selector: &str) -> Result<LogInterestSelector
                 "Invalid component interest selector: '{}'. Error: {}",
                 selector,
                 e
-            ))
+            ));
         }
     };
     let Some(min_severity) = parse_severity(interest.to_uppercase().as_ref()) else {
@@ -518,7 +518,7 @@ pub fn selector_to_string(
                     sanitize_string_for_selectors(s).to_string()
                 }
                 fdiagnostics::StringSelectorUnknown!() => {
-                    return Err(format_err!("uknown StringSelector variant"))
+                    return Err(format_err!("uknown StringSelector variant"));
                 }
             })
         })
@@ -538,7 +538,7 @@ pub fn selector_to_string(
                 sanitize_string_for_selectors(s).to_string()
             }
             fdiagnostics::StringSelectorUnknown!() => {
-                return Err(format_err!("uknown StringSelector variant"))
+                return Err(format_err!("uknown StringSelector variant"));
             }
         });
     }

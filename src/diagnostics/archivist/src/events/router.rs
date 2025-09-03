@@ -373,7 +373,7 @@ pub trait EventProducer {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl::encoding::ProxyChannelBox;
     use fidl::endpoints::RequestStream;
     use fidl_fuchsia_inspect::InspectSinkMarker;

@@ -55,7 +55,7 @@ struct CacheItem<T: Unit> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyNumericProperty};
+    use diagnostics_assertions::{AnyNumericProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
 
     #[fuchsia::test]

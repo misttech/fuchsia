@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fuchsia_inspect::reader::snapshot::ScannedBlock;
 use inspect_format::{Array, BlockType, Buffer, Extent, Name, PropertyFormat, StringRef, Unknown};
 use serde::Serialize;
@@ -194,7 +194,7 @@ mod tests {
     use crate::{data, puppet};
     use anyhow::{bail, format_err};
     use inspect_format::{
-        constants, ArrayFormat, BlockAccessorMutExt, BlockIndex, HeaderFields, PayloadFields,
+        ArrayFormat, BlockAccessorMutExt, BlockIndex, HeaderFields, PayloadFields, constants,
     };
 
     #[fuchsia::test]
@@ -231,7 +231,7 @@ mod tests {
                     "block {} not found in {:?}",
                     description,
                     metrics.block_statistics.keys()
-                ))
+                ));
             }
             Some(statistics) if statistics == &correct_statistics => {}
             Some(unexpected) => bail!(

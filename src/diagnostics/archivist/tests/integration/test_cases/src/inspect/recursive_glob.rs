@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{test_topology, utils};
-use diagnostics_assertions::{assert_data_tree, AnyProperty};
+use diagnostics_assertions::{AnyProperty, assert_data_tree};
 use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_archivist_test as ftest;

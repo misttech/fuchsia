@@ -5,8 +5,8 @@
 use anyhow::Error;
 use argh::{ArgsInfo, FromArgs};
 use sampler_config::assembly::MergedSamplerConfig;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::PathBuf;

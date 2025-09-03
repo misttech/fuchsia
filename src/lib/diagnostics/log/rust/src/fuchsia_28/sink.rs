@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
 use crate::PublishError;
+use diagnostics_log_encoding::Metatag;
 use diagnostics_log_encoding::encode::{
     Encoder, EncoderOpts, EncodingError, LogEvent, MutableBuffer, TestRecord, WriteEventParams,
 };
-use diagnostics_log_encoding::Metatag;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_logger::{LogSinkMarker, LogSinkSynchronousProxy, MAX_DATAGRAM_LEN_BYTES};
 use fuchsia_runtime as rt;
@@ -135,8 +135,8 @@ mod tests {
     use diagnostics_log_types::Severity;
     use fidl::endpoints::create_request_stream;
     use fidl_fuchsia_logger::{LogSinkMarker, LogSinkRequest};
-    use futures::stream::StreamExt;
     use futures::AsyncReadExt;
+    use futures::stream::StreamExt;
     use log::{debug, error, info, trace, warn};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;

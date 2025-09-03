@@ -27,8 +27,8 @@ mod sink;
 use filter::InterestFilter;
 use sink::{BufferedSink, IoBufferSink, Sink, SinkConfig};
 
-pub use diagnostics_log_encoding::encode::{LogEvent, TestRecord};
 pub use diagnostics_log_encoding::Metatag;
+pub use diagnostics_log_encoding::encode::{LogEvent, TestRecord};
 pub use paste::paste;
 
 #[cfg(test)]
@@ -576,7 +576,7 @@ mod tests {
     use diagnostics_reader::ArchiveReader;
     use fidl_fuchsia_diagnostics_crasher::{CrasherMarker, CrasherProxy};
     use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
-    use futures::{future, StreamExt};
+    use futures::{StreamExt, future};
     use log::{debug, info};
     use moniker::ExtendedMoniker;
 
@@ -613,13 +613,15 @@ mod tests {
             result.file_path(),
             Some("src/lib/diagnostics/log/rust/rust-crasher/src/main.rs")
         );
-        assert!(result
-            .payload_keys()
-            .unwrap()
-            .get_property("info")
-            .unwrap()
-            .to_string()
-            .contains("This is a test panic."));
+        assert!(
+            result
+                .payload_keys()
+                .unwrap()
+                .get_property("info")
+                .unwrap()
+                .to_string()
+                .contains("This is a test panic.")
+        );
     }
 
     #[fuchsia::test(logging = false)]

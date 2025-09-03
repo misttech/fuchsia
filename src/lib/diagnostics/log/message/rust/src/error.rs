@@ -1,7 +1,7 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-use crate::{MAX_TAGS, MAX_TAG_LEN, MIN_PACKET_SIZE};
+use crate::{MAX_TAG_LEN, MAX_TAGS, MIN_PACKET_SIZE};
 use diagnostics_log_encoding::parse::ParseError;
 use moniker::MonikerError;
 use thiserror::Error;

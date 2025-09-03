@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use fuchsia_triage::{ActionTagDirective, DiagnosticData, ParseResult, Source};
 use std::collections::HashMap;
 use std::fs;
@@ -71,7 +71,11 @@ pub fn config_from_files<T: AsRef<Path>>(
                                     config_file_map.insert(name.to_string(), content.to_string());
                                 }
                                 _ => {
-                                    bail!("File {} looks like a bundle, but key {} must contain a string.", file_name.display(), name);
+                                    bail!(
+                                        "File {} looks like a bundle, but key {} must contain a string.",
+                                        file_name.display(),
+                                        name
+                                    );
                                 }
                             }
                         }

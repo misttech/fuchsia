@@ -283,7 +283,7 @@ mod tests {
     use diagnostics_log_types::Severity;
     use futures::FutureExt;
     use log::{debug, error, info, trace, warn};
-    use ring_buffer::{self, RingBuffer, RING_BUFFER_MESSAGE_HEADER_SIZE};
+    use ring_buffer::{self, RING_BUFFER_MESSAGE_HEADER_SIZE, RingBuffer};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use test_util::assert_gt;

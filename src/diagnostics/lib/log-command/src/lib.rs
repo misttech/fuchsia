@@ -5,15 +5,15 @@
 use anyhow::format_err;
 use argh::{ArgsInfo, FromArgs, TopLevelCommand};
 use chrono::{DateTime, Local, Utc};
-use chrono_english::{parse_date_string, Dialect};
+use chrono_english::{Dialect, parse_date_string};
 use component_debug::query::get_instances_from_query;
 use diagnostics_data::Severity;
-use errors::{ffx_bail, FfxError};
+use errors::{FfxError, ffx_bail};
 use fidl_fuchsia_diagnostics::{LogInterestSelector, LogSettingsProxy};
 use fidl_fuchsia_sys2::RealmQueryProxy;
 pub use log_socket_stream::OneOrMany;
 use moniker::Moniker;
-use selectors::{sanitize_moniker_for_selectors, SelectorExt};
+use selectors::{SelectorExt, sanitize_moniker_for_selectors};
 use std::borrow::Cow;
 use std::io::Write;
 use std::ops::Deref;
@@ -25,8 +25,8 @@ mod filter;
 mod log_formatter;
 mod log_socket_stream;
 pub use log_formatter::{
-    dump_logs_from_socket, BootTimeAccessor, DefaultLogFormatter, FormatterError, LogData,
-    LogEntry, Symbolize, Timestamp, WriterContainer, TIMESTAMP_FORMAT,
+    BootTimeAccessor, DefaultLogFormatter, FormatterError, LogData, LogEntry, Symbolize,
+    TIMESTAMP_FORMAT, Timestamp, WriterContainer, dump_logs_from_socket,
 };
 pub use log_socket_stream::{JsonDeserializeError, LogsDataStream};
 
@@ -428,9 +428,7 @@ pub enum LogError {
     FormatterError(#[from] FormatterError),
     #[error("Deprecated flag: `{flag}`, use: `{new_flag}`")]
     DeprecatedFlag { flag: &'static str, new_flag: &'static str },
-    #[error(
-        "Fuzzy matching failed due to too many matches, please re-try with one of these:\n{0}"
-    )]
+    #[error("Fuzzy matching failed due to too many matches, please re-try with one of these:\n{0}")]
     FuzzyMatchTooManyMatches(String),
     #[error("No running components were found matching {0}")]
     SearchParameterNotFound(String),
@@ -657,9 +655,9 @@ mod test {
     use async_trait::async_trait;
     use fidl::endpoints::create_proxy;
     use fidl_fuchsia_diagnostics::{LogSettingsMarker, LogSettingsRequest};
+    use futures_util::StreamExt;
     use futures_util::future::Either;
     use futures_util::stream::FuturesUnordered;
-    use futures_util::StreamExt;
     use selectors::parse_log_interest_selector;
 
     #[derive(Default)]
@@ -856,10 +854,12 @@ ffx log --force-set-severity.
             responder.send().unwrap();
             assert_eq!(
                 selectors,
-                vec![parse_log_interest_selector(
-                    "core/something/a:b/elements:main/otherstuff:*#DEBUG"
-                )
-                .unwrap()]
+                vec![
+                    parse_log_interest_selector(
+                        "core/something/a:b/elements:main/otherstuff:*#DEBUG"
+                    )
+                    .unwrap()
+                ]
             );
         }));
         scheduler.map(|_| Ok(())).forward(futures::sink::drain()).await.unwrap();

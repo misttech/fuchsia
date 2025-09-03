@@ -5,7 +5,7 @@
 use anyhow::*;
 use fidl::endpoints::create_endpoints;
 use fuchsia_component::client::connect_to_protocol;
-use realm_client::{extend_namespace, InstalledNamespace};
+use realm_client::{InstalledNamespace, extend_namespace};
 
 pub(crate) const SAMPLER_NAME: &str = "sampler";
 pub(crate) const COUNTER_NAME: &str = "single_counter";

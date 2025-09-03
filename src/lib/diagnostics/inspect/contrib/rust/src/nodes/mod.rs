@@ -118,7 +118,7 @@ impl<T: fmt::Debug + Send + Sync> InspectType for TimeProperty<T> {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty, PropertyAssertion};
+    use diagnostics_assertions::{AnyProperty, PropertyAssertion, assert_data_tree};
     use fuchsia_inspect::{DiagnosticsHierarchyGetter, Inspector};
     use test_util::assert_lt;
 

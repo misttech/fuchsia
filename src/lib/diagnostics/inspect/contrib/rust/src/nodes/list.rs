@@ -79,8 +79,8 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
-    use fuchsia_inspect::reader::{self, ReaderError};
     use fuchsia_inspect::Inspector;
+    use fuchsia_inspect::reader::{self, ReaderError};
     use std::sync::mpsc;
 
     #[fuchsia::test]

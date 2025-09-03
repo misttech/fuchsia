@@ -7,7 +7,7 @@ use crate::logs::container::CursorItem;
 use crate::logs::error::LogsError;
 use crate::logs::repository::LogsRepository;
 use diagnostics_log_encoding::encode::{Encoder, MutableBuffer, ResizableBuffer};
-use diagnostics_log_encoding::{Header, FXT_HEADER_SIZE};
+use diagnostics_log_encoding::{FXT_HEADER_SIZE, Header};
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker};
 use fidl_fuchsia_diagnostics::StreamMode;
 use futures::{AsyncWriteExt, Stream, StreamExt};
@@ -170,9 +170,9 @@ pub fn extend_fxt_record<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use diagnostics_log_encoding::Argument;
     use diagnostics_log_encoding::encode::{EncoderOpts, TestRecord, WriteEventParams};
     use diagnostics_log_encoding::parse::parse_record;
-    use diagnostics_log_encoding::Argument;
     use diagnostics_log_types::Severity;
     use test_case::test_case;
 

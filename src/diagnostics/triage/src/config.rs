@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::file_io::{config_from_files, diagnostics_from_directory};
 use crate::Options;
-use anyhow::{bail, format_err, Error};
+use crate::file_io::{config_from_files, diagnostics_from_directory};
+use anyhow::{Error, bail, format_err};
 use fuchsia_triage::{ActionTagDirective, DiagnosticData, ParseResult};
 use std::path::Path;
 use std::str::FromStr;

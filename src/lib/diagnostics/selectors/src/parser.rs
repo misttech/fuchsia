@@ -47,19 +47,11 @@ where
     E: NomParseError<&'a str>,
 {
     let split = parse_quote_sensitive_separator(input, ']');
-    if split.len() == 1 {
-        Ok((split[0], None))
-    } else {
-        Ok((split[1], Some(&split[0][1..])))
-    }
+    if split.len() == 1 { Ok((split[0], None)) } else { Ok((split[1], Some(&split[0][1..]))) }
 }
 
 fn extract_from_quotes(input: &str) -> &str {
-    if input.starts_with('"') && input.len() > 1 {
-        &input[1..input.len() - 1]
-    } else {
-        input
-    }
+    if input.starts_with('"') && input.len() > 1 { &input[1..input.len() - 1] } else { input }
 }
 
 fn parse_quote_sensitive_separator(input: &str, sep: char) -> Vec<&str> {

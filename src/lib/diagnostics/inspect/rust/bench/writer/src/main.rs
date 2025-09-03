@@ -11,7 +11,7 @@ use fuchsia_inspect::{
 };
 use inspect_format::Container;
 use num::traits::FromPrimitive;
-use num::{pow, One};
+use num::{One, pow};
 use rand::Rng;
 use std::ops::{Add, Mul};
 

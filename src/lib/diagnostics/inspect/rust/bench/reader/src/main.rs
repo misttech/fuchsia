@@ -28,14 +28,16 @@ fn start_inspector_update_thread(inspector: Inspector, changes_per_second: usize
     let child = inspector.root().create_child("test");
     let val = child.create_int("val", 0);
 
-    let thread = std::thread::spawn(move || loop {
-        let sleep_time =
-            std::time::Duration::from_nanos(1_000_000_000u64 / changes_per_second as u64);
-        std::thread::sleep(sleep_time);
-        if let InspectorState::Done = *state.lock().unwrap() {
-            break;
+    let thread = std::thread::spawn(move || {
+        loop {
+            let sleep_time =
+                std::time::Duration::from_nanos(1_000_000_000u64 / changes_per_second as u64);
+            std::thread::sleep(sleep_time);
+            if let InspectorState::Done = *state.lock().unwrap() {
+                break;
+            }
+            val.add(1);
         }
-        val.add(1);
     });
 
     move || {
@@ -68,9 +70,11 @@ fn snapshot_bench(b: &mut criterion::Bencher, size: usize, frequency: usize) {
     let vmo = inspector.duplicate_vmo().expect("failed to duplicate vmo");
     let done_fn = start_inspector_update_thread(inspector, frequency);
 
-    b.iter_with_large_drop(move || loop {
-        if let Ok(snapshot) = Snapshot::try_once_from_vmo(&vmo) {
-            break snapshot;
+    b.iter_with_large_drop(move || {
+        loop {
+            if let Ok(snapshot) = Snapshot::try_once_from_vmo(&vmo) {
+                break snapshot;
+            }
         }
     });
 
@@ -91,9 +95,12 @@ fn snapshot_tree_bench(b: &mut criterion::Bencher, size: usize, frequency: usize
     let done_fn = start_inspector_update_thread(inspector.clone(), frequency);
     add_lazies(inspector, 4);
 
-    b.iter_with_large_drop(|| loop {
-        if let Ok(snapshot) = executor.run_singlethreaded(SnapshotTree::try_from_proxy(&proxy)) {
-            break snapshot;
+    b.iter_with_large_drop(|| {
+        loop {
+            if let Ok(snapshot) = executor.run_singlethreaded(SnapshotTree::try_from_proxy(&proxy))
+            {
+                break snapshot;
+            }
         }
     });
 
@@ -112,9 +119,12 @@ fn uncontended_snapshot_tree_bench(b: &mut criterion::Bencher, size: usize) {
     let (proxy, tree_server_fut) = fuchsia_inspect_bench_utils::spawn_server(inspector).unwrap();
     let task = fasync::Task::local(tree_server_fut);
 
-    b.iter_with_large_drop(|| loop {
-        if let Ok(snapshot) = executor.run_singlethreaded(SnapshotTree::try_from_proxy(&proxy)) {
-            break snapshot;
+    b.iter_with_large_drop(|| {
+        loop {
+            if let Ok(snapshot) = executor.run_singlethreaded(SnapshotTree::try_from_proxy(&proxy))
+            {
+                break snapshot;
+            }
         }
     });
 
@@ -141,9 +151,12 @@ fn reader_snapshot_tree_vmo_bench(b: &mut criterion::Bencher, size: usize, fille
         }
     }
 
-    b.iter_with_large_drop(|| loop {
-        if let Ok(snapshot) = executor.run_singlethreaded(SnapshotTree::try_from_proxy(&proxy)) {
-            break snapshot;
+    b.iter_with_large_drop(|| {
+        loop {
+            if let Ok(snapshot) = executor.run_singlethreaded(SnapshotTree::try_from_proxy(&proxy))
+            {
+                break snapshot;
+            }
         }
     });
 

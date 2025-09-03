@@ -7,8 +7,8 @@ use fidl_fuchsia_diagnostics_test::{
     DetectControllerRequest, DetectControllerRequestStream, TestCaseControllerRequest,
     TestCaseControllerRequestStream,
 };
-use futures::lock::Mutex;
 use futures::StreamExt;
+use futures::lock::Mutex;
 use std::sync::Arc;
 
 /// This file serves the fuchsia.diagnostics.test.DetectController protocol,

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{missing, syntax_error, MetricValue};
+use super::{MetricValue, missing, syntax_error};
 use crate::config::{DataFetcher, DiagnosticData, Source};
-use anyhow::{anyhow, bail, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow, bail};
 use diagnostics_hierarchy::{DiagnosticsHierarchy, SelectResult};
 use fidl_fuchsia_diagnostics::Selector;
 use fidl_fuchsia_inspect::DEFAULT_TREE_NAME;
@@ -13,8 +13,8 @@ use regex::Regex;
 use selectors::{SelectorExt, VerboseError};
 use serde::Serialize;
 use serde_derive::Deserialize;
-use serde_json::map::Map as JsonMap;
 use serde_json::Value as JsonValue;
+use serde_json::map::Map as JsonMap;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -826,8 +826,10 @@ mod test {
                     assert_problem!(&error[0], $error);
                 };
             }
-            assert_wrong!("INSPET:*/foo/*:root:dataInt",
-                "SyntaxError: Bad selector INSPET:*/foo/*:root:dataInt: Invalid selector type \'INSPET\' - must be INSPECT");
+            assert_wrong!(
+                "INSPET:*/foo/*:root:dataInt",
+                "SyntaxError: Bad selector INSPET:*/foo/*:root:dataInt: Invalid selector type \'INSPET\' - must be INSPECT"
+            );
             assert_eq!(
                 inspect.fetch_str("INSPECT:*/foo/*:root:dataInt"),
                 vec![MetricValue::Int(5)]
@@ -920,7 +922,9 @@ mod test {
         assert_eq!(
             format!(
                 "{:?}",
-            SelectorString::try_from("INSPECT:*/foo/*:root:data:Int".to_string()).err().unwrap()
+                SelectorString::try_from("INSPECT:*/foo/*:root:data:Int".to_string())
+                    .err()
+                    .unwrap()
             ),
             "Failed to parse the input. Error: 0: at line 1, in Eof:\n*/foo/*:root:data:Int\n                 ^\n\n"
         );

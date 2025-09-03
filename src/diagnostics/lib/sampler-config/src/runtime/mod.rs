@@ -138,10 +138,10 @@ mod test {
                 poll_rate_sec: 3,
                 customer_id: CustomerId(1),
                 metrics: vec![MetricConfig {
-                    selectors: vec![selectors::parse_verbose(
-                        "single_counter_test_component:root:counter"
-                    )
-                    .unwrap(),],
+                    selectors: vec![
+                        selectors::parse_verbose("single_counter_test_component:root:counter")
+                            .unwrap(),
+                    ],
                     metric_id: MetricId(1),
                     metric_type: MetricType::Occurrence,
                     upload_once: false,
@@ -293,10 +293,10 @@ mod test {
                 poll_rate_sec: 3,
                 customer_id: CustomerId(6),
                 metrics: vec![MetricConfig {
-                    selectors: vec![selectors::parse_verbose(
-                        "single_counter_test_component:root:counter"
-                    )
-                    .unwrap(),],
+                    selectors: vec![
+                        selectors::parse_verbose("single_counter_test_component:root:counter")
+                            .unwrap(),
+                    ],
                     metric_id: MetricId(1),
                     metric_type: MetricType::Occurrence,
                     upload_once: false,

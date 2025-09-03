@@ -4,9 +4,9 @@
 
 use crate::act::ActionContext;
 use crate::act_structured::StructuredActionContext;
-use crate::metrics::metric_value::MetricValue;
 use crate::metrics::MetricState;
-use anyhow::{bail, Error};
+use crate::metrics::metric_value::MetricValue;
+use anyhow::{Error, bail};
 use injectable_time::{MonotonicInstant, TimeSource};
 use regex::Regex;
 

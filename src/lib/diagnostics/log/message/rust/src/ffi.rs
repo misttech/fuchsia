@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::error::MessageError;
 use crate::MonikerWithUrl;
-use bumpalo::collections::{String as BumpaloString, Vec as BumpaloVec};
+use crate::error::MessageError;
 use bumpalo::Bump;
+use bumpalo::collections::{String as BumpaloString, Vec as BumpaloVec};
 use diagnostics_data::{ExtendedMoniker, Severity};
 use diagnostics_log_encoding::{Argument, Record, Value};
 use flyweights::FlyStr;

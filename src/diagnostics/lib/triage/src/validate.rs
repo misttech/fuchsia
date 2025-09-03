@@ -4,10 +4,10 @@
 
 use super::act::{Action, Actions};
 use super::config::ParseResult;
+use super::metrics::MetricState;
 use super::metrics::fetch::{Fetcher, KeyValueFetcher, TextFetcher, TrialDataFetcher};
 use super::metrics::metric_value::MetricValue;
-use super::metrics::MetricState;
-use anyhow::{bail, format_err, Error};
+use anyhow::{Error, bail, format_err};
 use serde::Deserialize;
 use serde_json as json;
 use std::collections::HashMap;
@@ -108,11 +108,7 @@ pub fn validate(parse_result: &ParseResult) -> Result<(), Error> {
             }
         }
     }
-    if failed {
-        Err(format_err!("Config validation test failed"))
-    } else {
-        Ok(())
-    }
+    if failed { Err(format_err!("Config validation test failed")) } else { Ok(()) }
 }
 
 // Returns true iff the trial did NOT get the expected result.
@@ -233,12 +229,14 @@ mod test {
             annotations: None,
             now: None,
         };
-        assert!(validate(&create_parse_result!(
-            metrics: metrics,
-            actions: actions,
-            tests: build_map!(("foo", build_map!(("good", good_trial))))
-        ))
-        .is_ok());
+        assert!(
+            validate(&create_parse_result!(
+                metrics: metrics,
+                actions: actions,
+                tests: build_map!(("foo", build_map!(("good", good_trial))))
+            ))
+            .is_ok()
+        );
         // Make sure it objects if a trial that should fire doesn't.
         // Also, make sure it signals failure if there's both a good and a bad trial.
         let bad_trial = Trial {
@@ -261,12 +259,14 @@ mod test {
             annotations: None,
             now: None,
         };
-        assert!(validate(&create_parse_result!(
-            metrics: metrics,
-            actions: actions,
-            tests: build_map!(("foo", build_map!(("good", good_trial), ("bad", bad_trial))))
-        ))
-        .is_err());
+        assert!(
+            validate(&create_parse_result!(
+                metrics: metrics,
+                actions: actions,
+                tests: build_map!(("foo", build_map!(("good", good_trial), ("bad", bad_trial))))
+            ))
+            .is_err()
+        );
         // Make sure it objects if a trial fires when it shouldn't.
         let bad_trial = Trial {
             yes: Some(vec![]), // Test that empty vec works right
@@ -278,12 +278,14 @@ mod test {
             annotations: None,
             now: None,
         };
-        assert!(validate(&create_parse_result!(
-            metrics: metrics,
-            actions: actions,
-            tests: build_map!(("foo", build_map!(("bad", bad_trial))))
-        ))
-        .is_err());
+        assert!(
+            validate(&create_parse_result!(
+                metrics: metrics,
+                actions: actions,
+                tests: build_map!(("foo", build_map!(("bad", bad_trial))))
+            ))
+            .is_err()
+        );
         Ok(())
     }
 
@@ -331,12 +333,14 @@ mod test {
             annotations: None,
             now: Some("Seconds(0.25)".to_string()),
         };
-        assert!(validate(&create_parse_result!(
-            metrics: metrics,
-            actions: actions,
-            tests: build_map!(("foo", build_map!(("good", time_trial))))
-        ))
-        .is_ok());
+        assert!(
+            validate(&create_parse_result!(
+                metrics: metrics,
+                actions: actions,
+                tests: build_map!(("foo", build_map!(("good", time_trial))))
+            ))
+            .is_ok()
+        );
         let missing_trial = Trial {
             yes: Some(vec!["time_missing".to_string()]),
             no: Some(vec![]),
@@ -347,12 +351,14 @@ mod test {
             annotations: None,
             now: None,
         };
-        assert!(validate(&create_parse_result!(
-            metrics: metrics,
-            actions: actions,
-            tests: build_map!(("foo", build_map!(("good", missing_trial))))
-        ))
-        .is_ok());
+        assert!(
+            validate(&create_parse_result!(
+                metrics: metrics,
+                actions: actions,
+                tests: build_map!(("foo", build_map!(("good", missing_trial))))
+            ))
+            .is_ok()
+        );
         let bad_trial = Trial {
             yes: Some(vec!["time_missing".to_string()]),
             no: Some(vec![]),
@@ -363,12 +369,14 @@ mod test {
             annotations: None,
             now: Some("this won't parse".to_string()),
         };
-        assert!(validate(&create_parse_result!(
-            metrics: metrics,
-            actions: actions,
-            tests: build_map!(("foo", build_map!(("good", bad_trial))))
-        ))
-        .is_err());
+        assert!(
+            validate(&create_parse_result!(
+                metrics: metrics,
+                actions: actions,
+                tests: build_map!(("foo", build_map!(("good", bad_trial))))
+            ))
+            .is_err()
+        );
         Ok(())
     }
 }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_inspect::{TreeMarker, TreeNameIteratorMarker, TreeProxy};
 use std::collections::HashMap;

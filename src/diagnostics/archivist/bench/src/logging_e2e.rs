@@ -8,9 +8,9 @@ use fidl_fuchsia_diagnostics::{ArchiveAccessorMarker, Format};
 use fidl_fuchsia_logger::LogSinkMarker;
 use fuchsia_async as fasync;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, Ref, Route};
-use fuchsia_criterion::criterion::{self, Criterion};
 use fuchsia_criterion::FuchsiaCriterion;
-use futures::{future, StreamExt};
+use fuchsia_criterion::criterion::{self, Criterion};
+use futures::{StreamExt, future};
 use log::{Level, Log, Record};
 use std::time::Duration;
 

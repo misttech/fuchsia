@@ -8,8 +8,8 @@
 
 use crate::writer::Error;
 use inspect_format::{
-    constants, utils, Block, BlockAccessorExt, BlockAccessorMutExt, BlockIndex, BlockType, Free,
-    ReadBytes, Reserved, WriteBytes,
+    Block, BlockAccessorExt, BlockAccessorMutExt, BlockIndex, BlockType, Free, ReadBytes, Reserved,
+    WriteBytes, constants, utils,
 };
 use std::cmp::min;
 
@@ -252,7 +252,7 @@ fn buddy(index: BlockIndex, order: u8) -> BlockIndex {
 mod tests {
     use super::*;
     use crate::reader::snapshot::{BackingBuffer, BlockIterator};
-    use inspect_format::{block_testing, BlockType, Container, Header};
+    use inspect_format::{BlockType, Container, Header, block_testing};
 
     #[derive(Debug)]
     struct BlockDebug {
@@ -375,11 +375,13 @@ mod tests {
         validate(&expected, &heap);
         assert!(heap.free_head_per_order.iter().enumerate().skip(2).all(|(i, &j)| (1 << i) == *j));
         let buffer = BackingBuffer::from(heap.bytes());
-        assert!(BlockIterator::from(&buffer).skip(2).all(|b| *b
-            .cast::<Free>()
-            .unwrap()
-            .free_next_index()
-            == 0));
+        assert!(
+            BlockIterator::from(&buffer).skip(2).all(|b| *b
+                .cast::<Free>()
+                .unwrap()
+                .free_next_index()
+                == 0)
+        );
 
         // Ensure a large block takes the first free large one.
         assert!(heap.free_block(BlockIndex::from(0)).is_ok());
@@ -489,11 +491,13 @@ mod tests {
         validate(&expected, &heap);
         assert!(heap.free_head_per_order.iter().enumerate().skip(3).all(|(i, &j)| (1 << i) == *j));
         let buffer = BackingBuffer::from(heap.bytes());
-        assert!(BlockIterator::from(&buffer).skip(3).all(|b| *b
-            .cast::<Free>()
-            .unwrap()
-            .free_next_index()
-            == 0));
+        assert!(
+            BlockIterator::from(&buffer).skip(3).all(|b| *b
+                .cast::<Free>()
+                .unwrap()
+                .free_next_index()
+                == 0)
+        );
         assert_eq!(*heap.free_head_per_order[1], 0);
         assert_eq!(*heap.free_head_per_order[0], 2);
         assert_eq!(*heap.container.block_at_unchecked::<Free>(0.into()).free_next_index(), 0);

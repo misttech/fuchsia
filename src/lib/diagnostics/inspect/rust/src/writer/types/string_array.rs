@@ -90,9 +90,9 @@ impl Drop for StringArrayProperty {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::writer::testing_utils::GetBlockExt;
     use crate::writer::Length;
-    use crate::{assert_update_is_atomic, Inspector};
+    use crate::writer::testing_utils::GetBlockExt;
+    use crate::{Inspector, assert_update_is_atomic};
     use diagnostics_assertions::assert_json_diff;
 
     impl StringArrayProperty {

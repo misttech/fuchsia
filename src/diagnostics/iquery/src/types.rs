@@ -81,9 +81,7 @@ pub enum Error {
     #[error(transparent)]
     FuzzyMatchRealmQuery(anyhow::Error),
 
-    #[error(
-        "Fuzzy matching failed due to too many matches, please re-try with one of these:\n{0}"
-    )]
+    #[error("Fuzzy matching failed due to too many matches, please re-try with one of these:\n{0}")]
     FuzzyMatchTooManyMatches(FuzzyMatchErrorWrapper),
 
     #[error(

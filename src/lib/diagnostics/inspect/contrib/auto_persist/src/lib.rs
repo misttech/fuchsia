@@ -8,8 +8,8 @@ use futures::{Future, StreamExt};
 use injectable_time::{MonotonicInstant, TimeSource};
 use log::{error, info};
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub type PersistenceReqSender = mpsc::Sender<String>;
 
@@ -79,7 +79,9 @@ impl<T> Drop for AutoPersistGuard<'_, T> {
                 .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
             {
-                error!("PersistenceReqSender dropped a persistence request: either buffer is full or no receiver is waiting");
+                error!(
+                    "PersistenceReqSender dropped a persistence request: either buffer is full or no receiver is waiting"
+                );
             }
         } else {
             // If sender has been blocked before, set bool to false and log message

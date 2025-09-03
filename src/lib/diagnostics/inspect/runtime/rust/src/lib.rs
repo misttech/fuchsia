@@ -5,14 +5,14 @@
 //!
 //! This library contains the necessary functions to serve inspect from a component.
 
-use fidl::endpoints::ClientEnd;
 use fidl::AsHandleRef;
+use fidl::endpoints::ClientEnd;
 use fuchsia_component_client::connect_to_protocol;
 use fuchsia_inspect::Inspector;
 use log::error;
 use pin_project::pin_project;
 use std::future::Future;
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::task::{Context, Poll};
 use {fidl_fuchsia_inspect as finspect, fuchsia_async as fasync};
 
@@ -267,9 +267,9 @@ mod tests {
     use fidl::endpoints::RequestStream;
     use fidl_fuchsia_inspect::{InspectSinkRequest, InspectSinkRequestStream};
     use fuchsia_component_test::ScopedInstance;
-    use fuchsia_inspect::reader::snapshot::Snapshot;
-    use fuchsia_inspect::reader::{read, PartialNodeHierarchy};
     use fuchsia_inspect::InspectorConfig;
+    use fuchsia_inspect::reader::snapshot::Snapshot;
+    use fuchsia_inspect::reader::{PartialNodeHierarchy, read};
 
     use futures::{FutureExt, StreamExt};
 

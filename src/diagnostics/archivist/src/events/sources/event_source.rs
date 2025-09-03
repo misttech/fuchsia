@@ -61,8 +61,8 @@ pub mod tests {
     use crate::events::types::*;
     use crate::identity::ComponentIdentity;
     use fuchsia_async as fasync;
-    use futures::channel::mpsc::UnboundedSender;
     use futures::StreamExt;
+    use futures::channel::mpsc::UnboundedSender;
     use moniker::ExtendedMoniker;
     use std::collections::BTreeSet;
 
@@ -145,8 +145,8 @@ pub mod tests {
         }
     }
 
-    fn spawn_fake_event_stream(
-    ) -> (fcomponent::EventStreamProxy, fasync::Task<()>, UnboundedSender<fcomponent::Event>) {
+    fn spawn_fake_event_stream()
+    -> (fcomponent::EventStreamProxy, fasync::Task<()>, UnboundedSender<fcomponent::Event>) {
         let (sender, mut receiver) = futures::channel::mpsc::unbounded::<fcomponent::Event>();
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fcomponent::EventStreamMarker>();
         let task = fasync::Task::spawn(async move {

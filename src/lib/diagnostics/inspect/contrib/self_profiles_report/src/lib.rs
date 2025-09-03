@@ -451,7 +451,9 @@ pub enum ComparisonError {
     #[error("Can't compare profiles from two different sources `{lhs}` and `{rhs}`.")]
     MismatchedNames { lhs: String, rhs: String },
 
-    #[error("Can't compare profiles which disagree on the source location for a duration: `{lhs}` vs `{rhs}`")]
+    #[error(
+        "Can't compare profiles which disagree on the source location for a duration: `{lhs}` vs `{rhs}`"
+    )]
     MismatchedLocations { lhs: String, rhs: String },
 }
 

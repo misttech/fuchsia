@@ -687,7 +687,7 @@ impl<'a> MetricState<'a> {
             _ => {
                 return Err(syntax_error(format!(
                     "{function_name} needs a function in its first argument",
-                )))
+                )));
             }
         };
         let arguments =

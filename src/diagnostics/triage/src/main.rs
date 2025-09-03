@@ -5,8 +5,8 @@
 use anyhow::Error;
 use log::*;
 use structopt::StructOpt;
-use triage_app_lib::app::App;
 use triage_app_lib::Options;
+use triage_app_lib::app::App;
 
 /// Reports an [Error] to stdout and logs at "error" level.
 fn report_failure(e: Error) {

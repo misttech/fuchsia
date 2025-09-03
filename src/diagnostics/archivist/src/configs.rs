@@ -4,7 +4,7 @@
 
 use fidl_fuchsia_diagnostics::Selector;
 use fuchsia_inspect as inspect;
-use selectors::{contains_recursive_glob, parse_selector_file, FastError};
+use selectors::{FastError, contains_recursive_glob, parse_selector_file};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -144,7 +144,7 @@ fn validate_static_selector(static_selector: &Selector) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use std::fs;
 
     #[fuchsia::test]

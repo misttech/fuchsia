@@ -356,8 +356,8 @@ mod tests {
     use crate::inspect::repository::InspectRepository;
     use crate::inspect::servers::InspectSinkServer;
     use crate::pipeline::Pipeline;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
-    use fidl::endpoints::{create_proxy_and_stream, ClientEnd};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
+    use fidl::endpoints::{ClientEnd, create_proxy_and_stream};
     use fidl_fuchsia_diagnostics::{BatchIteratorMarker, BatchIteratorProxy, Format, StreamMode};
     use fidl_fuchsia_inspect::{
         InspectSinkMarker, InspectSinkPublishRequest, TreeMarker, TreeProxy,
@@ -366,7 +366,7 @@ mod tests {
     use fuchsia_inspect::{Inspector, InspectorConfig};
 
     use futures::StreamExt;
-    use inspect_runtime::{service, TreeServerSendPreference};
+    use inspect_runtime::{TreeServerSendPreference, service};
     use moniker::ExtendedMoniker;
     use selectors::VerboseError;
     use serde_json::json;

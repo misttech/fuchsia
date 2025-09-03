@@ -4,7 +4,7 @@
 
 use crate::file_handler::{self, PersistData, PersistPayload, PersistSchema, Timestamps};
 use crate::scheduler::TagState;
-use anyhow::{bail, Context, Error};
+use anyhow::{Context, Error, bail};
 use diagnostics_data::{Data, DiagnosticsHierarchy, ExtendedMoniker, Inspect};
 use diagnostics_reader::{ArchiveReader, RetryConfig};
 use fidl_fuchsia_diagnostics as fdiagnostics;
@@ -13,8 +13,8 @@ use persistence_config::{ServiceName, Tag};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 // The capability name for the Inspect reader
 const INSPECT_SERVICE_PATH: &str = "/svc/fuchsia.diagnostics.ArchiveAccessor.feedback";

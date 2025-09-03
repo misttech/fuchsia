@@ -6,7 +6,7 @@ use fidl_inspect_selfprofile_test::{PuppetRequest, PuppetRequestStream};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component::inspector;
 use fuchsia_inspect_contrib::{
-    profile_duration, start_self_profiling, stop_self_profiling, ProfileDuration,
+    ProfileDuration, profile_duration, start_self_profiling, stop_self_profiling,
 };
 use futures::StreamExt;
 

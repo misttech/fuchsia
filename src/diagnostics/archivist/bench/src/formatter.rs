@@ -9,9 +9,9 @@ use diagnostics_data::{
 use diagnostics_hierarchy::{DiagnosticsHierarchy, Property};
 use fidl_fuchsia_diagnostics::{DataType, Format};
 use fuchsia_async as fasync;
-use fuchsia_criterion::criterion::{self, Criterion};
 use fuchsia_criterion::FuchsiaCriterion;
-use futures::{stream, StreamExt};
+use fuchsia_criterion::criterion::{self, Criterion};
+use futures::{StreamExt, stream};
 
 use archivist_lib::constants::FORMATTED_CONTENT_CHUNK_SIZE_TARGET;
 use archivist_lib::formatter::{JsonPacketSerializer, SerializedVmo};

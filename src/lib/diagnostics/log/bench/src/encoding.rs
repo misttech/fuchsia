@@ -7,7 +7,7 @@ use diagnostics_log_encoding::encode::{
     Encoder, EncoderOpts, WriteArgumentValue, WriteEventParams,
 };
 use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
-use fuchsia_criterion::{criterion, FuchsiaCriterion};
+use fuchsia_criterion::{FuchsiaCriterion, criterion};
 use log::kv::ToValue;
 use std::fmt;
 use std::io::Cursor;

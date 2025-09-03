@@ -6,8 +6,8 @@ use fuchsia_async::{self as fasync};
 use futures::task::AtomicWaker;
 use std::future::poll_fn;
 use std::ops::{Deref, Range};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::task::Poll;
 use thiserror::Error;
 use zx::AsHandleRef;
@@ -258,11 +258,7 @@ impl Reader {
             }
             // Check again in case there was a race.
             let head = self.head();
-            if head > index {
-                Poll::Ready(head)
-            } else {
-                Poll::Pending
-            }
+            if head > index { Poll::Ready(head) } else { Poll::Pending }
         })
         .await
     }
@@ -303,7 +299,7 @@ pub fn ring_buffer_record_len(message_len: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, RingBuffer, MAX_MESSAGE_SIZE, RING_BUFFER_MESSAGE_HEADER_SIZE};
+    use super::{Error, MAX_MESSAGE_SIZE, RING_BUFFER_MESSAGE_HEADER_SIZE, RingBuffer};
     use futures::stream::FuturesUnordered;
     use futures::{FutureExt, StreamExt};
     use std::sync::atomic::{AtomicU64, Ordering};

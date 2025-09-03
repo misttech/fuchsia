@@ -5,7 +5,7 @@
 mod diagnostics;
 mod metrics;
 
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use diagnostics::RequestId;
 use diagnostics_reader::{ArchiveReader, RetryConfig};
 use fasync::MonotonicDuration;

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, format_err, Error};
+use anyhow::{Error, anyhow, format_err};
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
@@ -169,7 +169,9 @@ impl CrashReportHandler {
                     "Failed to file crash report"
                 );
             }
-            error!("Crash reporter task ended. Crash reports will no longer be filed. This should not happen.")
+            error!(
+                "Crash reporter task ended. Crash reports will no longer be filed. This should not happen."
+            )
         })
     }
 

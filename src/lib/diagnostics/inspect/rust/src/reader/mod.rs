@@ -431,7 +431,7 @@ mod tests {
     use anyhow::Error;
     use diagnostics_assertions::{assert_data_tree, assert_json_diff};
     use futures::prelude::*;
-    use inspect_format::{constants, BlockContainer, CopyBytes, PayloadFields};
+    use inspect_format::{BlockContainer, CopyBytes, PayloadFields, constants};
 
     #[fuchsia::test]
     async fn test_load_string_reference() {

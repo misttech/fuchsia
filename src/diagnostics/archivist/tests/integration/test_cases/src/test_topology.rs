@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use fidl::endpoints::{create_endpoints, DiscoverableProtocolMarker, ProtocolMarker};
+use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, create_endpoints};
 use fuchsia_component::client::connect_to_protocol;
 use realm_proxy_client::RealmProxyClient;
 use {fidl_fuchsia_archivist_test as ftest, fidl_fuchsia_testing_harness as fharness};

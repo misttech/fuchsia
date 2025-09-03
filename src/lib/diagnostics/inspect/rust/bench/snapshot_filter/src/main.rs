@@ -5,7 +5,7 @@
 use fidl_fuchsia_diagnostics::Selector;
 use fuchsia_async as fasync;
 use fuchsia_criterion::criterion;
-use fuchsia_inspect::hierarchy::{filter_hierarchy, DiagnosticsHierarchyGetter, HierarchyMatcher};
+use fuchsia_inspect::hierarchy::{DiagnosticsHierarchyGetter, HierarchyMatcher, filter_hierarchy};
 use selectors::VerboseError;
 use std::sync::{Arc, LazyLock};
 

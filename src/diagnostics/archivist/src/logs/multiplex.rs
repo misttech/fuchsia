@@ -14,8 +14,8 @@ use log::trace;
 use selectors::SelectorExt;
 use std::cmp::Ordering;
 use std::pin::Pin;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::task::{Context, Poll};
 
 pub type PinStream<I> = Pin<Box<dyn Stream<Item = I> + Send + 'static>>;

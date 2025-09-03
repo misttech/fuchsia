@@ -5,7 +5,7 @@
 use fidl::endpoints::RequestStream;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
 use fuchsia_async as fasync;
-use fuchsia_runtime::{take_startup_handle, HandleInfo, HandleType};
+use fuchsia_runtime::{HandleInfo, HandleType, take_startup_handle};
 use futures::{Future, StreamExt};
 use log::{debug, warn};
 

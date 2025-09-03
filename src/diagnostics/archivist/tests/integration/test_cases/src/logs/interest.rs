@@ -10,7 +10,7 @@ use diagnostics_data::ExtendedMoniker;
 use fidl_fuchsia_archivist_test as ftest;
 use fidl_fuchsia_diagnostics::LogSettingsMarker;
 use fidl_fuchsia_diagnostics_types::Severity;
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 use std::pin::pin;
 use std::sync::LazyLock;
 

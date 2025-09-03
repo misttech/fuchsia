@@ -40,8 +40,8 @@ crate::impl_inspect_type_internal!(StringProperty);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::writer::testing_utils::{get_state, GetBlockExt};
     use crate::writer::Node;
+    use crate::writer::testing_utils::{GetBlockExt, get_state};
     use inspect_format::{BlockType, Buffer, PropertyFormat};
 
     impl StringProperty {

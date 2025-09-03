@@ -34,19 +34,19 @@ pub fn calculate(function: &MathFunction, operands: &[MetricValue]) -> MetricVal
             MathFunction::Sub => operands[0] - operands[1],
             MathFunction::Mul => operands[0] * operands[1],
             MathFunction::FloatDiv | MathFunction::IntDiv if operands[1] == 0.0 => {
-                return super::value_error("Division by zero")
+                return super::value_error("Division by zero");
             }
             MathFunction::FloatDivChecked | MathFunction::IntDivChecked if operands[1] == 0.0 => {
                 return MetricValue::Problem(Problem::Ignore(vec![Problem::ValueError(
                     "Division by zero".to_string(),
-                )]))
+                )]));
             }
             MathFunction::FloatDiv | MathFunction::FloatDivChecked => operands[0] / operands[1],
             MathFunction::IntDiv | MathFunction::IntDivChecked => {
                 return match super::safe_float_to_int(operands[0] / operands[1]) {
                     Some(int) => MetricValue::Int(int),
                     None => super::value_error("Non-numeric division result"),
-                }
+                };
             }
             MathFunction::Greater => return MetricValue::Bool(operands[0] > operands[1]),
             MathFunction::Less => return MetricValue::Bool(operands[0] < operands[1]),
@@ -61,15 +61,15 @@ pub fn calculate(function: &MathFunction, operands: &[MetricValue]) -> MetricVal
             MathFunction::Sub => operands[0] - operands[1],
             MathFunction::Mul => operands[0] * operands[1],
             MathFunction::FloatDiv | MathFunction::IntDiv if operands[1] == 0 => {
-                return super::value_error("Division by zero")
+                return super::value_error("Division by zero");
             }
             MathFunction::FloatDivChecked | MathFunction::IntDivChecked if operands[1] == 0 => {
                 return MetricValue::Problem(Problem::Ignore(vec![Problem::ValueError(
                     "Division by zero".to_string(),
-                )]))
+                )]));
             }
             MathFunction::FloatDiv | MathFunction::FloatDivChecked => {
-                return MetricValue::Float(operands[0] as f64 / operands[1] as f64)
+                return MetricValue::Float(operands[0] as f64 / operands[1] as f64);
             }
             MathFunction::IntDiv | MathFunction::IntDivChecked => operands[0] / operands[1],
             MathFunction::Greater => return MetricValue::Bool(operands[0] > operands[1]),

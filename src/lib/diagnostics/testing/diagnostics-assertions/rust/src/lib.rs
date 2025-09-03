@@ -7,11 +7,11 @@
 //! Pretty much the useful [`assert_data_tree`][assert_data_tree] macro
 //! plus some utilities for it.
 
-use anyhow::{bail, format_err, Error};
+use anyhow::{Error, bail, format_err};
 use diagnostics_hierarchy::{
-    ArrayContent, ArrayFormat, ExponentialHistogram, ExponentialHistogramParams, LinearHistogram,
-    LinearHistogramParams, Property, EXPONENTIAL_HISTOGRAM_EXTRA_SLOTS,
-    LINEAR_HISTOGRAM_EXTRA_SLOTS,
+    ArrayContent, ArrayFormat, EXPONENTIAL_HISTOGRAM_EXTRA_SLOTS, ExponentialHistogram,
+    ExponentialHistogramParams, LINEAR_HISTOGRAM_EXTRA_SLOTS, LinearHistogram,
+    LinearHistogramParams, Property,
 };
 use difference::{Changeset, Difference};
 use num_traits::One;
@@ -20,7 +20,7 @@ use std::collections::BTreeSet;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::ops::{Add, AddAssign, MulAssign};
 
-pub use diagnostics_hierarchy::{hierarchy, DiagnosticsHierarchy, DiagnosticsHierarchyGetter};
+pub use diagnostics_hierarchy::{DiagnosticsHierarchy, DiagnosticsHierarchyGetter, hierarchy};
 pub use std::sync::Arc;
 
 pub trait JsonGetter<K: Clone + AsRef<str>>: DiagnosticsHierarchyGetter<K> {

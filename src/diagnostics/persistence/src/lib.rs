@@ -11,7 +11,7 @@ mod inspect_server;
 mod persist_server;
 mod scheduler;
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use argh::FromArgs;
 use fidl::endpoints;
 use fuchsia_component::client;

@@ -20,7 +20,7 @@ pub mod testing;
 mod tests {
     use crate::identity::ComponentIdentity;
     use crate::logs::testing::*;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use diagnostics_log_encoding::{Argument, Record};
     use diagnostics_log_types::Severity;
     use fidl_fuchsia_logger::{LogFilterOptions, LogLevelFilter, LogMessage};

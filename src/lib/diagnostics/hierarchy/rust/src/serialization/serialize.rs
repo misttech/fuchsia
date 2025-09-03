@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{ArrayContent, DiagnosticsHierarchy, ExponentialHistogram, LinearHistogram, Property};
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 
 impl<Key> Serialize for DiagnosticsHierarchy<Key>
@@ -169,7 +169,7 @@ impl_serialize_for_array_value![i64, u64, f64,];
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{hierarchy, ArrayFormat};
+    use crate::{ArrayFormat, hierarchy};
 
     #[fuchsia::test]
     fn serialize_json() {

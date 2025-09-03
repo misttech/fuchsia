@@ -8,7 +8,7 @@ use crate::puppet::PuppetProxyExt;
 use crate::test_topology;
 use diagnostics_log_encoding::parse::parse_record;
 use diagnostics_log_encoding::{Argument, Record, Value};
-use futures::{future, StreamExt};
+use futures::{StreamExt, future};
 use {
     fidl_fuchsia_archivist_test as ftest, fidl_fuchsia_diagnostics as fdiagnostics,
     fidl_fuchsia_diagnostics_types as fdiagnostics_types,

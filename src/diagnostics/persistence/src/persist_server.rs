@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::scheduler;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints;
 use fidl_fuchsia_diagnostics_persist::{
     DataPersistenceMarker, DataPersistenceRequest, DataPersistenceRequestStream, PersistResult,

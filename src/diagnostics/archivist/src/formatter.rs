@@ -4,9 +4,9 @@
 use crate::diagnostics::BatchIteratorConnectionStats;
 use crate::error::AccessorError;
 use crate::logs::container::CursorItem;
-use crate::logs::servers::{extend_fxt_record, ExtendRecordOpts};
+use crate::logs::servers::{ExtendRecordOpts, extend_fxt_record};
 use fidl_fuchsia_diagnostics::{
-    DataType, Format, FormattedContent, StreamMode, MAXIMUM_ENTRIES_PER_BATCH,
+    DataType, Format, FormattedContent, MAXIMUM_ENTRIES_PER_BATCH, StreamMode,
 };
 use fuchsia_sync::Mutex;
 

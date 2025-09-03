@@ -11,7 +11,7 @@ use fidl_fuchsia_logger::{
     LogMessage, LogProxy,
 };
 use fuchsia_async as fasync;
-use futures::channel::mpsc::{channel, Receiver, Sender};
+use futures::channel::mpsc::{Receiver, Sender, channel};
 use futures::sink::SinkExt;
 use futures::stream::StreamExt;
 

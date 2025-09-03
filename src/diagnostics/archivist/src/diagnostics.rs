@@ -402,9 +402,9 @@ impl Drop for BatchIteratorConnectionStats {
 #[cfg(test)]
 mod test {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect::health::Reporter;
-    use fuchsia_inspect::{component, Inspector};
+    use fuchsia_inspect::{Inspector, component};
 
     #[fuchsia::test]
     async fn health() {

@@ -10,7 +10,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned};
 use std::cmp;
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, DeriveInput, Error};
+use syn::{DeriveInput, Error, parse_macro_input};
 
 struct UnitField {
     /// Name of the original and the inspect data field.
@@ -417,7 +417,7 @@ fn derive_inspect_inner(ast: DeriveInput) -> Result<TokenStream, Error> {
     let forward_count = inspect_fields.iter().filter(|f| f.attr_args.forward).count();
     match forward_count.cmp(&1) {
         cmp::Ordering::Greater => {
-            return Err(Error::new_spanned(&ast, "only one inspect(forward) is allowed"))
+            return Err(Error::new_spanned(&ast, "only one inspect(forward) is allowed"));
         }
         cmp::Ordering::Equal => {
             // If any other fields have arguments, throw a preventative error.
