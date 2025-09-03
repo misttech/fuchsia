@@ -160,25 +160,27 @@ mod tests {
     use inspect_runtime::TreeServerSendPreference;
     use inspect_runtime::service::spawn_tree_server;
     use selectors::VerboseError;
+    use std::collections::HashMap;
     use std::sync::Arc;
     use zx::{self as zx, AsHandleRef};
 
     struct TestHarness {
-        /// Associates a faux component via ComponentIdentity with an InspectSinkProxy
-        proxy_pairs: Vec<(Arc<ComponentIdentity>, Option<InspectSinkProxy>)>,
-
         /// The underlying repository.
         repo: Arc<InspectRepository>,
+
+        /// Component-specific state.
+        components: HashMap<Arc<ComponentIdentity>, TestComponent>,
 
         /// The server that would be held by the Archivist.
         _server: Arc<InspectSinkServer>,
 
-        /// The koids of the published TreeProxies in the order they were published.
-        koids: Vec<zx::Koid>,
+        /// Scope running InspectSinkServer.
+        scope: Option<fasync::Scope>,
+    }
 
-        /// The servers for each component's Tree protocol
-        tree_pairs: Vec<(Arc<ComponentIdentity>, Option<fasync::Scope>)>,
-
+    struct TestComponent {
+        proxy: Option<InspectSinkProxy>,
+        /// Scope running Tree server(s).
         scope: Option<fasync::Scope>,
     }
 
@@ -186,87 +188,62 @@ mod tests {
         /// Construct an InspectSinkServer with a ComponentIdentity/InspectSinkProxy pair
         /// for each input ComponentIdentity.
         fn new(identity: Vec<Arc<ComponentIdentity>>) -> Self {
-            let mut proxy_pairs = vec![];
             let repo = Arc::new(InspectRepository::new(vec![], fasync::Scope::new()));
             let scope = fasync::Scope::new();
             let server = Arc::new(InspectSinkServer::new(Arc::clone(&repo), scope.new_child()));
-            for id in identity.into_iter() {
-                let (proxy, request_stream) = create_proxy_and_stream::<InspectSinkMarker>();
 
-                Arc::clone(&server).handle(Event {
-                    timestamp: zx::BootInstant::get(),
-                    payload: EventPayload::InspectSinkRequested(InspectSinkRequestedPayload {
-                        component: Arc::clone(&id),
-                        request_stream,
-                    }),
-                });
+            let components = identity
+                .into_iter()
+                .map(|id| {
+                    let (proxy, request_stream) = create_proxy_and_stream::<InspectSinkMarker>();
 
-                proxy_pairs.push((id, Some(proxy)));
-            }
+                    Arc::clone(&server).handle(Event {
+                        timestamp: zx::BootInstant::get(),
+                        payload: EventPayload::InspectSinkRequested(InspectSinkRequestedPayload {
+                            component: Arc::clone(&id),
+                            request_stream,
+                        }),
+                    });
 
-            Self {
-                proxy_pairs,
-                repo,
-                _server: server,
-                koids: vec![],
-                tree_pairs: vec![],
-                scope: Some(scope),
-            }
+                    (id, TestComponent { proxy: Some(proxy), scope: Some(fasync::Scope::new()) })
+                })
+                .collect();
+
+            Self { repo, _server: server, scope: Some(scope), components }
         }
 
         /// Publish `tree` via the proxy associated with `component`.
-        fn publish(&mut self, component: &Arc<ComponentIdentity>, tree: ClientEnd<TreeMarker>) {
-            for (id, proxy) in &self.proxy_pairs {
-                if id != component {
-                    continue;
-                }
-
-                if let Some(proxy) = &proxy {
-                    self.koids.push(tree.as_handle_ref().get_koid().unwrap());
-                    proxy
-                        .publish(InspectSinkPublishRequest {
-                            tree: Some(tree),
-                            ..Default::default()
-                        })
-                        .unwrap();
-                    return;
-                } else {
-                    panic!("cannot publish on stopped server/proxy pair");
-                }
-            }
+        fn publish(
+            &mut self,
+            id: &Arc<ComponentIdentity>,
+            tree: ClientEnd<TreeMarker>,
+        ) -> zx::Koid {
+            let koid = tree.as_handle_ref().get_koid().unwrap();
+            let component = self.components.get(id).expect("unknown component");
+            let proxy = component.proxy.as_ref().expect("InspectSink proxy stopped");
+            proxy
+                .publish(InspectSinkPublishRequest { tree: Some(tree), ..Default::default() })
+                .unwrap();
+            koid
         }
 
         /// Start a TreeProxy server and return the proxy.
         fn serve(
             &mut self,
-            component: Arc<ComponentIdentity>,
+            component: &Arc<ComponentIdentity>,
             inspector: Inspector,
             settings: TreeServerSendPreference,
         ) -> ClientEnd<TreeMarker> {
-            let child = fasync::Scope::new();
-            let tree = spawn_tree_server(inspector, settings, &child);
-            self.tree_pairs.push((component, Some(child)));
-            tree
+            let component = self.components.get_mut(component).expect("unknown component");
+            let scope = component.scope.as_ref().expect("already dropped tree server");
+            spawn_tree_server(inspector, settings, scope)
         }
 
         /// Drop the server(s) associated with `component`, as initialized by `serve`.
         async fn drop_tree_servers(&mut self, component: &Arc<ComponentIdentity>) {
-            for (id, ref mut scope) in &mut self.tree_pairs {
-                if id != component {
-                    continue;
-                }
-
-                if scope.is_none() {
-                    continue;
-                }
-
-                scope.take().unwrap().cancel().await;
-            }
-        }
-
-        /// The published koids, with 0 referring to the first published tree.
-        fn published_koids(&self) -> &[zx::Koid] {
-            &self.koids
+            let component = self.components.get_mut(component).expect("unknown component");
+            let scope = component.scope.take().expect("tree server(s) already dropped");
+            scope.cancel().await;
         }
 
         /// Execute closure `assertions` on the `InspectArtifactsContainer` associated with
@@ -311,17 +288,12 @@ mod tests {
             .await;
         }
 
-        /// Drops all published proxies, stops the server, and waits for it to complete.
+        /// Drops all published proxies, stops the InspectSink server, and waits for it to complete.
         async fn stop_all(&mut self) {
-            for (_, ref mut proxy) in &mut self.proxy_pairs {
-                proxy.take();
+            for (_, component) in self.components.iter_mut() {
+                component.proxy = None;
             }
-
             self.scope.take().unwrap().close().await;
-        }
-
-        async fn wait_until_gone(&self, component: &Arc<ComponentIdentity>) {
-            self.repo.wait_until_gone(component).await;
         }
     }
 
@@ -333,10 +305,8 @@ mod tests {
 
         let insp = Inspector::default();
         insp.root().record_int("int", 0);
-        let tree = test.serve(Arc::clone(&identity), insp, TreeServerSendPreference::default());
-        test.publish(&identity, tree);
-
-        let koid = test.published_koids()[0];
+        let tree = test.serve(&identity, insp, TreeServerSendPreference::default());
+        let koid = test.publish(&identity, tree);
 
         test.assert(&identity, [koid], |handles| async move {
             assert_matches!(
@@ -359,18 +329,14 @@ mod tests {
 
         let insp = Inspector::default();
         insp.root().record_int("int", 0);
-        let tree = test.serve(Arc::clone(&identity), insp, TreeServerSendPreference::default());
+        let tree = test.serve(&identity, insp, TreeServerSendPreference::default());
 
         let other_insp = Inspector::default();
         other_insp.root().record_double("double", 1.24);
-        let other_tree =
-            test.serve(Arc::clone(&identity), other_insp, TreeServerSendPreference::default());
+        let other_tree = test.serve(&identity, other_insp, TreeServerSendPreference::default());
 
-        test.publish(&identity, tree);
-        test.publish(&identity, other_tree);
-
-        let koid0 = test.published_koids()[0];
-        let koid1 = test.published_koids()[1];
+        let koid0 = test.publish(&identity, tree);
+        let koid1 = test.publish(&identity, other_tree);
 
         test.assert(&identity, [koid0, koid1], |handles| async move {
             assert_matches!(
@@ -402,10 +368,8 @@ mod tests {
 
         let insp = Inspector::default();
         insp.root().record_int("int", 0);
-        let tree = test.serve(Arc::clone(&identity), insp, TreeServerSendPreference::default());
-        test.publish(&identity, tree);
-
-        let koid = test.published_koids()[0];
+        let tree = test.serve(&identity, insp, TreeServerSendPreference::default());
+        let koid = test.publish(&identity, tree);
 
         test.assert(&identity, [koid], |handles| async move {
             assert_matches!(
@@ -446,19 +410,14 @@ mod tests {
 
         let insp = Inspector::default();
         insp.root().record_int("int", 0);
-        let tree =
-            test.serve(Arc::clone(&identities[0]), insp, TreeServerSendPreference::default());
+        let tree = test.serve(&identities[0], insp, TreeServerSendPreference::default());
 
         let insp2 = Inspector::default();
         insp2.root().record_bool("is_insp2", true);
-        let tree2 =
-            test.serve(Arc::clone(&identities[1]), insp2, TreeServerSendPreference::default());
+        let tree2 = test.serve(&identities[1], insp2, TreeServerSendPreference::default());
 
-        test.publish(&identities[0], tree);
-        test.publish(&identities[1], tree2);
-
-        let koid_component_0 = test.published_koids()[0];
-        let koid_component_1 = test.published_koids()[1];
+        let koid_component_0 = test.publish(&identities[0], tree);
+        let koid_component_1 = test.publish(&identities[1], tree2);
 
         test.assert(&identities[0], [koid_component_0], |handles| async move {
             assert_matches!(
@@ -491,17 +450,13 @@ mod tests {
 
         let mut test = TestHarness::new(vec![Arc::clone(&identity)]);
 
-        let tree = test.serve(
-            Arc::clone(&identity),
-            Inspector::default(),
-            TreeServerSendPreference::default(),
-        );
-        test.publish(&identity, tree);
+        let tree = test.serve(&identity, Inspector::default(), TreeServerSendPreference::default());
+        let koid = test.publish(&identity, tree);
 
         test.stop_all().await;
 
         // this executing to completion means the identity was present
-        test.assert(&identity, [test.published_koids()[0]], |handles: [_; 1]| {
+        test.assert(&identity, [koid], |handles: [_; 1]| {
             assert_eq!(handles.len(), 1);
             async {}
         })
@@ -511,6 +466,6 @@ mod tests {
 
         // this executing to completion means the identity is not there anymore; we know
         // it previously was present
-        test.wait_until_gone(&identity).await;
+        test.repo.wait_until_gone(&identity).await;
     }
 }
