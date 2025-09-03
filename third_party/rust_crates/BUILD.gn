@@ -1733,6 +1733,7 @@ rustc_library("arc-swap-v1_7_1") {
     "--cap-lints=allow",
     "-Cmetadata=83263ba41bfa4bf8",
     "-Cextra-filename=-83263ba41bfa4bf8",
+    "--cfg=feature=\"weak\"",
   ]
 
   visibility = [ ":*" ]
