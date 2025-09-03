@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{driver_register, Driver, DriverContext, Node};
+use fdf_component::{Driver, DriverContext, Node, driver_register};
 use fidl::endpoints::create_endpoints;
 use fuchsia_async::scope::ScopeStream;
 use fuchsia_async::{Scope, Socket, TimeoutExt};
 use fuchsia_component::server::ServiceFs;
 use futures::channel::{mpsc, oneshot};
-use futures::future::{select, Either};
+use futures::future::{Either, select};
 use futures::io::{ReadHalf, WriteHalf};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, StreamExt, TryStreamExt};
 use log::{debug, error, info, warn};
@@ -17,8 +17,8 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 use usb_vsock::{
-    Connection, ConnectionRequest, Header, Packet, PacketType, ProtocolVersion, UsbPacketBuilder,
-    VsockPacketIterator, CID_HOST,
+    CID_HOST, Connection, ConnectionRequest, Header, Packet, PacketType, ProtocolVersion,
+    UsbPacketBuilder, VsockPacketIterator,
 };
 use zx::{SocketOpts, Status};
 use {fidl_fuchsia_hardware_overnet as overnet, fidl_fuchsia_hardware_vsock as vsock};
@@ -104,14 +104,19 @@ impl UsbConnection {
                         payload,
                     }) => {
                         if payload == found_magic {
-                            debug!("host replied to echo packet and it was received, continuing synchronization");
+                            debug!(
+                                "host replied to echo packet and it was received, continuing synchronization"
+                            );
                             return Some(());
                         } else {
                             warn!("Got echo reply with incorrect payload, ignoring.")
                         }
                     }
                     Ok(packet) => {
-                        warn!("Got unexpected packet of type {:?} and length {} while waiting for sync packet. Ignoring.", packet.header.packet_type, packet.header.payload_len);
+                        warn!(
+                            "Got unexpected packet of type {:?} and length {} while waiting for sync packet. Ignoring.",
+                            packet.header.packet_type, packet.header.payload_len
+                        );
                     }
                     Err(err) => {
                         warn!("Got invalid vsock packet while waiting for sync packet: {err:?}");
@@ -156,7 +161,10 @@ impl UsbConnection {
                         found_magic = Some(payload.to_owned());
                     }
                     Ok(packet) => {
-                        warn!("Got unexpected packet of type {:?} and length {} while waiting for sync packet. Ignoring.", packet.header.packet_type, packet.header.payload_len);
+                        warn!(
+                            "Got unexpected packet of type {:?} and length {} while waiting for sync packet. Ignoring.",
+                            packet.header.packet_type, packet.header.payload_len
+                        );
                     }
                     Err(err) => {
                         warn!("Got invalid vsock packet while waiting for sync packet: {err:?}");
@@ -177,7 +185,10 @@ impl UsbConnection {
         let outgoing_version = if let Some(incoming_version) = incoming_version {
             let Some(outgoing_version) = ProtocolVersion::LATEST.negotiate(&incoming_version)
             else {
-                error!("Could not negotiate protocol version: driver has {}, host wants {incoming_version}", ProtocolVersion::LATEST);
+                error!(
+                    "Could not negotiate protocol version: driver has {}, host wants {incoming_version}",
+                    ProtocolVersion::LATEST
+                );
                 return None;
             };
 
@@ -228,13 +239,18 @@ impl UsbConnection {
                         payload,
                     }) => {
                         if payload != outgoing_magic {
-                            error!("Host gave unsupported protocol version string {payload:?}. Giving up.");
+                            error!(
+                                "Host gave unsupported protocol version string {payload:?}. Giving up."
+                            );
                             return None;
                         }
                         return Some((outgoing_version, device_cid.get()));
                     }
                     Ok(packet) => {
-                        warn!("Got unexpected packet of type {:?} and length {} while waiting for sync packet. Ignoring.", packet.header.packet_type, packet.header.payload_len);
+                        warn!(
+                            "Got unexpected packet of type {:?} and length {} while waiting for sync packet. Ignoring.",
+                            packet.header.packet_type, packet.header.payload_len
+                        );
                     }
                     Err(err) => {
                         warn!("Got invalid vsock packet while waiting for sync packet: {err:?}");
@@ -339,7 +355,9 @@ async fn usb_socket_reader<const MTU: usize>(
                 }
                 Ok(packet) => connection.handle_vsock_packet(packet).await?,
                 Err(err) => {
-                    error!("Failed to parse vsock packet, going back to waiting for sync packet: {err:?}");
+                    error!(
+                        "Failed to parse vsock packet, going back to waiting for sync packet: {err:?}"
+                    );
                     break;
                 }
             }

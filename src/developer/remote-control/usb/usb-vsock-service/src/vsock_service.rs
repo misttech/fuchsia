@@ -174,7 +174,7 @@ impl<B: PacketBuffer> VsockService<B> {
                 start @ Start { .. } => {
                     return Err(Error::other(format!(
                         "unexpected start message after one was already sent {start:?}"
-                    )))
+                    )));
                 }
                 SendRequest { addr, data, responder } => responder
                     .send(self.send_request(addr, data).await.map_err(Status::into_raw))

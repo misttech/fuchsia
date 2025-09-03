@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdomain_container::wire::FDomainCodec;
 use fdomain_container::FDomain;
-use futures::channel::mpsc::{unbounded, UnboundedSender};
+use fdomain_container::wire::FDomainCodec;
 use futures::StreamExt;
+use futures::channel::mpsc::{UnboundedSender, unbounded};
 use log::{debug, error};
 use std::collections::VecDeque;
 use std::future::Future;

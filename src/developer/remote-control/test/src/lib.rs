@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdomain_client::fidl::{ProtocolMarker, Proxy};
 use fdomain_client::Client;
+use fdomain_client::fidl::{ProtocolMarker, Proxy};
 use fidl_fuchsia_developer_remotecontrol_connector::ConnectorMarker;
 use fuchsia_component::client::connect_to_protocol;
 use futures::stream::Stream;
 use std::io;
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 use {fdomain_fuchsia_developer_remotecontrol as rcs, fdomain_fuchsia_io as fio};
 
 /// An FDomain client transport that works over a Fuchsia socket. Uses 32-bit

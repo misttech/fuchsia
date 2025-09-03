@@ -12,7 +12,7 @@ use std::io::{self, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::io::AsRawFd;
 use std::pin::pin;
-use std::task::{ready, Poll};
+use std::task::{Poll, ready};
 
 const BUFFER_SIZE: usize = 65536;
 
@@ -78,34 +78,36 @@ where
 {
     let mut from = pin!(BufReader::with_capacity(BUFFER_SIZE, &mut from));
     let mut to = pin!(to);
-    poll_fn(move |cx| loop {
-        let buffer = match ready!(from.as_mut().poll_fill_buf(cx)) {
-            Ok(x) => x,
-            Err(e) => {
-                dir.log_read_fail(e);
+    poll_fn(move |cx| {
+        loop {
+            let buffer = match ready!(from.as_mut().poll_fill_buf(cx)) {
+                Ok(x) => x,
+                Err(e) => {
+                    dir.log_read_fail(e);
+                    return Poll::Ready(());
+                }
+            };
+            if buffer.is_empty() {
+                if let Err(e) = ready!(to.as_mut().poll_flush(cx)) {
+                    dir.log_flush_error(e)
+                }
+                dir.log_closed();
                 return Poll::Ready(());
             }
-        };
-        if buffer.is_empty() {
-            if let Err(e) = ready!(to.as_mut().poll_flush(cx)) {
-                dir.log_flush_error(e)
-            }
-            dir.log_closed();
-            return Poll::Ready(());
-        }
 
-        let i = match ready!(to.as_mut().poll_write(cx, buffer)) {
-            Ok(x) => x,
-            Err(e) => {
-                dir.log_write_fail(e);
+            let i = match ready!(to.as_mut().poll_write(cx, buffer)) {
+                Ok(x) => x,
+                Err(e) => {
+                    dir.log_write_fail(e);
+                    return Poll::Ready(());
+                }
+            };
+            if i == 0 {
+                dir.log_write_zero();
                 return Poll::Ready(());
             }
-        };
-        if i == 0 {
-            dir.log_write_zero();
-            return Poll::Ready(());
+            from.as_mut().consume(i);
         }
-        from.as_mut().consume(i);
     })
     .await
 }
