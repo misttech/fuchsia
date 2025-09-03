@@ -10,6 +10,7 @@ create_idk_atom_for_test(
     name = "test_atom",
     testonly = True,
     api_area = "Developer",
+    atom_build_deps = [],
     category = "partner",
     id = "sdk://pkg/test",
     idk_name = "test_atom",

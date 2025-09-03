@@ -84,6 +84,25 @@ def _get_idk_label(label_str):
 def _get_idk_deps(underlying_deps):
     return [_get_idk_label(dep) for dep in underlying_deps]
 
+def _get_allowlist_target(type, category, stable):
+    """Returns the allowlist target for the combination of parameters.
+
+    All atoms must be in an allowlist.
+    """
+    if type == "cc_source_library":
+        if category == "partner":
+            if stable:
+                return "//build/bazel/bazel_idk:partner_idk_cc_source_library_allowlist"
+            else:
+                return "//build/bazel/bazel_idk:partner_idk_unstable_cc_source_library_allowlist"
+    elif type == "data":
+        if category == "partner" and stable:
+            return "//build/bazel/bazel_idk:partner_idk_data_allowlist"
+    else:
+        fail("Unhandled atom type: %s" % type)
+
+    fail("Create a separate allowlist when adding support for other categories or stability.")
+
 def _compute_atom_api_impl(ctx):
     args = ctx.actions.args()
     args.add("--output", ctx.outputs.generated_api_file.path)
@@ -272,11 +291,12 @@ Possible values, from most restrictive to least restrictive:
 def _idk_atom(
         name,
         type,
+        category,
         stable,
         testonly,
+        atom_build_deps,
         api_file_path = None,
         api_contents_map = None,
-        atom_build_deps = [],
         **kwargs):
     """Generate an IDK atom and ensure proper validation of it.
 
@@ -285,11 +305,12 @@ Atoms will be checked for category and API area violations when generating the I
     Args:
         name: The name of the IDK atom target. Required.
         type: See _create_idk_atom(). Required.
+        category:  See _create_idk_atom(). Required.
         stable:  See _create_idk_atom(). Required.
         testonly: Standard definition. Required.
+        atom_build_deps:  See _create_idk_atom(). Required.
         api_file_path: See _create_idk_atom().
         api_contents_map:  See _create_idk_atom().
-        atom_build_deps:  See _create_idk_atom().
         **kwargs: Additional arguments for the underlying atom.  See _create_idk_atom().
     """
 
@@ -302,6 +323,9 @@ Atoms will be checked for category and API area violations when generating the I
     is_type_not_requiring_compatibility = type in _TYPES_NOT_REQUIRING_COMPATIBILITY
     if stable and not api_file_path and not is_type_not_requiring_compatibility:
         fail("All atoms with types ('%s') requiring compatibility must specify an `api_file_path` unless explicitly unstable." % type)
+
+    # Ensure the atom is in the appropriate allowlist.
+    atom_build_deps.append(_get_allowlist_target(type, category, stable))
 
     _verify_api = api_file_path != None
     if _verify_api:
@@ -341,6 +365,7 @@ Atoms will be checked for category and API area violations when generating the I
     _create_idk_atom(
         name = name + "_idk",
         type = type,
+        category = category,
         stable = stable,
         api_file_path = api_file_path,
         api_contents_map = api_contents_map,
@@ -502,6 +527,7 @@ def idk_cc_source_library(
         public_configs: Unused in Bazel, for GN conversion only.
         **kwargs: Additional arguments for the underlying library.
     """
+    atom_type = "cc_source_library"
 
     # TODO(https://fxbug.dev/417305295): Replace this with `allow_empty = False`
     # when converting this macro to a symbolic macro.
@@ -514,13 +540,6 @@ def idk_cc_source_library(
         fail("Category '%s' is not supported." % category)
     if api_file_path and not stable:
         fail("Unstable targets do not require/support modification acknowledgement.")
-
-    if category != "partner":
-        fail("Create a separate allowlist when adding support for other categories.")
-    if stable:
-        allowlist_deps = ["//build/bazel/bazel_idk:partner_idk_source_sets_allowlist"]
-    else:
-        allowlist_deps = ["//build/bazel/bazel_idk:partner_idk_unstable_source_sets_allowlist"]
 
     # Group the source files for various uses.
     # Per https://bazel.build/versions/6.2.0/reference/be/c-cpp#cc_library.hdrs,
@@ -560,7 +579,9 @@ def idk_cc_source_library(
     cc_library(
         name = name,
         srcs = srcs_for_bazel_library,
-        data = allowlist_deps,
+        # Add a deps on the allowlist to catch cases where the macro is used but
+        # there is no dependency on the atom target.
+        data = [_get_allowlist_target(atom_type, category, stable)],
         hdrs = hdrs_for_bazel_library,
         deps = deps + select({
             "@platforms//os:fuchsia": fuchsia_deps,
@@ -676,7 +697,7 @@ def idk_cc_source_library(
         idk_name = idk_name,
         id = "sdk://" + idk_root_path,
         meta_dest = idk_root_path + "/meta.json",
-        type = "cc_source_library",
+        type = atom_type,
         category = category,
         stable = stable,
         api_area = api_area,

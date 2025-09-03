@@ -12,7 +12,7 @@
 # is specify which directories can define IDK atoms.
 
 filegroup(
-    name = "partner_idk_source_sets_allowlist",
+    name = "partner_idk_cc_source_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/lib/fit:__pkg__",
@@ -25,9 +25,16 @@ filegroup(
 )
 
 filegroup(
-    name = "partner_idk_unstable_source_sets_allowlist",
+    name = "partner_idk_unstable_cc_source_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
         "//sdk/lib/memory_barriers:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "partner_idk_data_allowlist",
+    visibility = [
+        "//build/bazel/bazel_idk/tests:__pkg__",
     ],
 )
