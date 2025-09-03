@@ -975,8 +975,7 @@ pub(in crate::security) fn check_fs_node_getattr_access(
     fs_node: &FsNode,
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).lock().current_sid;
-    todo_has_fs_node_permissions(
-        TODO_DENY!("https://fxbug.dev/383284672", "Enable permission checks in getattr."),
+    has_fs_node_permissions(
         &security_server.as_permission_check(),
         current_task,
         current_sid,
