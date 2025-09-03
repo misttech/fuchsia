@@ -25,9 +25,11 @@ namespace fake_bti {
 zx::result<zx::bti> CreateFakeBti();
 
 // Create a fake BTI object with the fake physical addresses from |paddrs| in its zx_bti_pin.
-// The physical addresses in |paddrs| must remain valid until the last call to zx_bti_pin
-// is made.
 zx::result<zx::bti> CreateFakeBtiWithPaddrs(cpp20::span<const zx_paddr_t> paddrs);
+
+// Updates the pinned paddrs for `bti` (which must have been previously created via
+// [`CreateFakeBti`] or its siblings).
+zx::result<> SetPaddrs(zx::unowned_bti bti, cpp20::span<const zx_paddr_t> paddrs);
 
 // Contains the information for a pinned VMO in a fake BTI object.
 struct FakeBtiPinnedVmoInfo {

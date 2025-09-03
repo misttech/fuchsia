@@ -237,7 +237,13 @@ class FakeSdhci : public fdf::WireServer<fuchsia_hardware_sdhci::Device> {
     });
   }
 
-  void set_dma_paddrs(std::vector<zx_paddr_t> dma_paddrs) { dma_paddrs_ = std::move(dma_paddrs); }
+  void set_dma_paddrs(std::vector<zx_paddr_t> dma_paddrs) {
+    if (unowned_bti_->is_valid()) {
+      ZX_ASSERT(fake_bti::SetPaddrs(zx::unowned_bti(unowned_bti_), dma_paddrs).is_ok());
+    } else {
+      dma_paddrs_ = std::move(dma_paddrs);
+    }
+  }
   zx::unowned_bti& unowned_bti() { return unowned_bti_; }
   void set_base_clock(uint32_t base_clock) { base_clock_ = base_clock; }
   void set_quirks(fuchsia_hardware_sdhci::Quirk quirks) { quirks_ = quirks; }

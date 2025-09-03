@@ -379,14 +379,13 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
   }
 
   void StartDriver(bool create_fake_bti_with_paddrs = false, bool supply_power_framework = false) {
-    memset(bti_paddrs_, 0, sizeof(bti_paddrs_));
     // This is used by AmlSdmmc::Init() to create the descriptor buffer -- can be any nonzero paddr.
-    bti_paddrs_[0] = zx_system_get_page_size();
-
-    zx::result result = create_fake_bti_with_paddrs ? fake_bti::CreateFakeBtiWithPaddrs(bti_paddrs_)
+    const zx_paddr_t paddrs[] = {zx_system_get_page_size()};
+    zx::result result = create_fake_bti_with_paddrs ? fake_bti::CreateFakeBtiWithPaddrs(paddrs)
                                                     : fake_bti::CreateFakeBti();
     ASSERT_TRUE(result.is_ok());
     zx::bti bti = std::move(result.value());
+    bti_ = bti.borrow();
 
     // Initialize driver test environment.
     fuchsia_driver_framework::DriverStartArgs start_args;
@@ -535,24 +534,27 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
   }
 
   void InitializeContiguousPaddrs(const size_t vmos) {
-    // Start at 1 because one paddr has already been read to create the DMA descriptor buffer.
+    std::vector<zx_paddr_t> paddrs;
     for (size_t i = 0; i < vmos; i++) {
-      bti_paddrs_[i + 1] = (i << 24) | zx_system_get_page_size();
+      paddrs.push_back((i << 24) | zx_system_get_page_size());
     }
+    ASSERT_OK(fake_bti::SetPaddrs(zx::unowned_bti(bti_), paddrs));
   }
 
   void InitializeSingleVmoPaddrs(const size_t pages) {
-    // Start at 1 (see comment above).
+    std::vector<zx_paddr_t> paddrs;
     for (size_t i = 0; i < pages; i++) {
-      bti_paddrs_[i + 1] = zx_system_get_page_size() * (i + 1);
+      paddrs.push_back(zx_system_get_page_size() * (i + 1));
     }
+    ASSERT_OK(fake_bti::SetPaddrs(zx::unowned_bti(bti_), paddrs));
   }
 
   void InitializeNonContiguousPaddrs(const size_t vmos) {
-    // Start at 1 (see comment above).
+    std::vector<zx_paddr_t> paddrs;
     for (size_t i = 0; i < vmos; i++) {
-      bti_paddrs_[i + 1] = zx_system_get_page_size() * (i + 1) * 2;
+      paddrs.push_back(zx_system_get_page_size() * (i + 1) * 2);
     }
+    ASSERT_OK(fake_bti::SetPaddrs(zx::unowned_bti(bti_), paddrs));
   }
 
   fuchsia_hardware_power::PowerElementConfiguration GetHardwarePowerConfig() {
@@ -586,7 +588,7 @@ class AmlSdmmcWithBanjoTest : public zxtest::Test {
 
   aml_sdmmc_desc_t* descriptors() const { return reinterpret_cast<aml_sdmmc_desc_t*>(descs_); }
 
-  zx_paddr_t bti_paddrs_[64] = {};
+  zx::unowned_bti bti_;
 
   std::optional<fdf::MmioView> mmio_;
   fdf_testing::DriverRuntime runtime_;
@@ -2064,10 +2066,12 @@ TEST_F(AmlSdmmcWithBanjoTest, ResetCmdInfoBits) {
 
   ASSERT_OK(dut_->Init(TestAmlSdmmcWithBanjo::kInstance));
 
-  // Start at 1 because one paddr has already been read to create the DMA descriptor buffer.
-  bti_paddrs_[1] = 0x1897'7000;
-  bti_paddrs_[2] = 0x1997'8000;
-  bti_paddrs_[3] = 0x1997'e000;
+  const std::array<zx_paddr_t, 3> paddrs = {
+      0x1897'7000,
+      0x1997'8000,
+      0x1997'e000,
+  };
+  ASSERT_OK(fake_bti::SetPaddrs(zx::unowned_bti(bti_), paddrs));
 
   // Make sure the appropriate cmd_info bits get cleared.
   descriptors()[0].cmd_info = 0xffff'ffff;

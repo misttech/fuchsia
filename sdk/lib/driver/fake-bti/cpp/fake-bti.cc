@@ -23,8 +23,9 @@ namespace {
 class FakeBti final : public fake_object::FakeObject {
  public:
   FakeBti() : FakeObject(ZX_OBJ_TYPE_BTI) {}
-  explicit FakeBti(cpp20::span<const zx_paddr_t> paddrs)
-      : FakeObject(ZX_OBJ_TYPE_BTI), paddrs_(paddrs) {}
+  explicit FakeBti(cpp20::span<const zx_paddr_t> paddrs) : FakeObject(ZX_OBJ_TYPE_BTI) {
+    set_paddrs(paddrs);
+  }
   ~FakeBti() final = default;
 
   static zx_status_t Create(cpp20::span<const zx_paddr_t> paddrs,
@@ -37,6 +38,11 @@ class FakeBti final : public fake_object::FakeObject {
                        size_t* actual_count, size_t* avail_count) override;
 
   uint64_t& pmo_count() { return pmo_count_; }
+
+  void set_paddrs(cpp20::span<const zx_paddr_t> paddrs) {
+    paddrs_.assign(paddrs.begin(), paddrs.end());
+    paddrs_index_ = 0;
+  }
 
   bool PopulatePaddrs(zx_paddr_t* paddrs, size_t paddrs_count) {
     for (size_t i = 0; i < paddrs_count; i++) {
@@ -105,7 +111,7 @@ class FakeBti final : public fake_object::FakeObject {
 
   std::mutex lock_;
   std::vector<PinnedVmoInfo> pinned_vmos_ __TA_GUARDED(lock_);
-  cpp20::span<const zx_paddr_t> paddrs_;
+  std::vector<zx_paddr_t> paddrs_;
   size_t paddrs_index_ = 0;
   uint64_t pmo_count_ = 0;
 };
@@ -197,6 +203,19 @@ zx::result<zx::bti> CreateFakeBtiWithPaddrs(cpp20::span<const zx_paddr_t> paddrs
   }
 
   return fake_object::FakeHandleTable().Add(std::move(new_bti));
+}
+
+zx::result<> SetPaddrs(zx::unowned_bti bti, cpp20::span<const zx_paddr_t> paddrs) {
+  // Make sure this is a valid fake bti:
+  zx::result result = fake_object::FakeHandleTable().Get(bti->get());
+  ZX_ASSERT_MSG(result.is_ok() && result.value()->type() == ZX_OBJ_TYPE_BTI,
+                "fake_bti::SetPaddrs: Bad handle %u\n", bti->get());
+  if (result.is_error()) {
+    return result.take_error();
+  }
+  std::shared_ptr<FakeBti> bti_obj = std::static_pointer_cast<FakeBti>(result.value());
+  bti_obj->set_paddrs(paddrs);
+  return zx::ok();
 }
 
 zx::result<std::vector<FakeBtiPinnedVmoInfo>> GetPinnedVmo(zx::unowned_bti bti) {
