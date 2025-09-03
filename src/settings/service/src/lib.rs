@@ -883,12 +883,18 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         // Night mode
         if components.contains(&SettingType::NightMode) {
             device_storage_factory
-                .initialize::<NightModeController>()
+                .initialize::<NightModeController<T>>()
                 .await
                 .expect("storage should still be initializing");
+            let device_storage_factory = Rc::clone(&device_storage_factory);
             factory_handle.register(
                 SettingType::NightMode,
-                Box::new(DataHandler::<NightModeController>::spawn),
+                Box::new(move |context| {
+                    DataHandler::<NightModeController<T>>::spawn_with_async(
+                        context,
+                        Rc::clone(&device_storage_factory),
+                    )
+                }),
             );
         }
 

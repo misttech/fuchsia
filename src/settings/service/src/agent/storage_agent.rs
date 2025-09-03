@@ -18,7 +18,6 @@ use crate::base::UnknownInfo;
 use crate::base::{SettingInfo, SettingType};
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::message::receptor::Receptor;
-use crate::night_mode::types::NightModeInfo;
 use crate::privacy::types::PrivacyInfo;
 use crate::service::{self, Address};
 use crate::setup::types::SetupInfo;
@@ -134,7 +133,6 @@ macro_rules! into_storage_info {
 
 #[cfg(test)]
 into_storage_info!(UnknownInfo => SettingInfo);
-into_storage_info!(NightModeInfo => SettingInfo);
 into_storage_info!(PrivacyInfo => SettingInfo);
 into_storage_info!(SetupInfo => SettingInfo);
 
@@ -210,7 +208,7 @@ where
                     SettingType::Intl => panic!("Intl goes directly to storage"),
                     SettingType::Keyboard => panic!("Keyboard goes directly to storage"),
                     SettingType::Light => panic!("Light goes directly to storage"),
-                    SettingType::NightMode => self.read::<NightModeInfo>(id, responder).await,
+                    SettingType::NightMode => panic!("NightMode goes directly to storage"),
                     SettingType::Privacy => self.read::<PrivacyInfo>(id, responder).await,
                     SettingType::Setup => self.read::<SetupInfo>(id, responder).await,
                 }
@@ -231,7 +229,7 @@ where
                     SettingInfo::Input(_) => panic!("Input goes directly to storage"),
                     SettingInfo::Intl(_) => panic!("Intl goes directly to storage"),
                     SettingInfo::Keyboard(_) => panic!("Keyboard goes directly to storage"),
-                    SettingInfo::NightMode(info) => self.write(info, responder).await,
+                    SettingInfo::NightMode(_) => panic!("NightMode goes directly to storage"),
                     SettingInfo::Privacy(info) => self.write(info, responder).await,
                     SettingInfo::Setup(info) => self.write(info, responder).await,
                 }
