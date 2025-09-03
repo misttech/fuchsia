@@ -39,6 +39,23 @@ rust_toolchain(
     stdlib_linkflags = ["-lpthread", "-ldl"] if host_os == "linux" else [],
     exec_triple = host_triple,  # e.g. "x86_64-unknown-linux-gnu",
     target_triple = host_triple,  # e.g. "x86_64-unknown-linux-gnu",
+
+    # Ensure debug symbols are preserved even with --compilation_mode is
+    # set to 'fastbuild' or 'opt', as there are no separate actions to produce
+    # stripped and unstripped binaries in rules_rust.
+    #
+    # debug_info controls whether debug info is generated during compilation,
+    # and strip_level controls whether they are removed during linking.
+    debug_info = {
+        "dbg": "2",
+        "fastbuild": "1",  # default "0", i.e. no symbols.
+        "opt": "1",  # default "0", i.e. no symbols.
+    },
+    strip_level = {
+        "dbg": "none",
+        "fastbuild": "none",
+        "opt": "none",
+    },
 )
 
 toolchain(
