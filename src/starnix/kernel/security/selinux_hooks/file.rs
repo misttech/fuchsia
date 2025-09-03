@@ -325,16 +325,29 @@ pub fn mmap_file(
     mapping_options: MappingOptions,
 ) -> Result<(), Errno> {
     if let Some(file) = file {
-        let current_sid = current_task_state(current_task).lock().current_sid;
-        todo_has_file_permissions(
-            TODO_DENY!("https://fxbug.dev/405381460", "Check permissions when mapping."),
-            &security_server.as_permission_check(),
-            current_task,
-            current_sid,
-            file,
-            &[CommonFsNodePermission::Map],
-            current_task.into(),
-        )?;
+        // The `map` permission shouldn't be checked for BPF handles.
+        if let Some(bpf_handle) = file.downcast_file::<BpfHandle>() {
+            match *bpf_handle {
+                BpfHandle::Map(ref map) => check_bpf_map_access(
+                    security_server,
+                    current_task,
+                    map,
+                    PermissionFlags::READ | PermissionFlags::WRITE,
+                )?,
+                _ => {}
+            }
+        } else {
+            let current_sid = current_task_state(current_task).lock().current_sid;
+            todo_has_file_permissions(
+                TODO_DENY!("https://fxbug.dev/405381460", "Check permissions when mapping."),
+                &security_server.as_permission_check(),
+                &current_task,
+                current_sid,
+                file,
+                &[CommonFsNodePermission::Map],
+                current_task.into(),
+            )?;
+        }
     }
     let fs_node: Option<&FsNodeHandle> = file.map(|f| f.node());
     file_map_prot_check(security_server, current_task, fs_node, protection_flags, mapping_options)

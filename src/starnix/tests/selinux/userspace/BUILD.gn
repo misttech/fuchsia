@@ -101,6 +101,7 @@ test_names = [
   # keep-sorted start
   "anon_inode",
   "binder",
+  "bpf",
   "inherit",
   "ioctl",
   "load_policy",
@@ -140,6 +141,7 @@ resource("policies") {
   sources = [
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/anon_inode_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/binder.pp",
+    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bpf_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/file_transition_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/inherit_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/ioctl_policy.pp",
