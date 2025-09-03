@@ -24,7 +24,7 @@
          TODO(mcgrathr): repo/bot link about provenance
     -->
     <package name="fuchsia/third_party/clang/${platform}"
-             version="git_revision:5325f2b93065ed2981d51a266bea54c0f5ebd632"
+             version="git_revision:49f39b349db181ca516eb0253462105ff0e2c634"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64,windows-amd64"
              path="prebuilt/third_party/clang/{{.OS}}-{{.Arch}}"/>
     <!-- The linux-arm64 version is needed for running on arm64 bots, but the build
@@ -32,7 +32,7 @@
          from `fx roll-compiler` first.
     -->
     <package name="fuchsia/third_party/clang/linux-arm64"
-             version="git_revision:5325f2b93065ed2981d51a266bea54c0f5ebd632"
+             version="git_revision:49f39b349db181ca516eb0253462105ff0e2c634"
              platforms="linux-amd64"
              attributes="clang-arm64"
              path="prebuilt/third_party/clang/linux-arm64"/>
@@ -74,7 +74,7 @@
          From Rust on Fuchsia team
     -->
     <package name="fuchsia/third_party/rust/host/${platform}"
-             version="git_revisions:0f353363965ebf05e0757f7679c800b39c51a07e,5325f2b93065ed2981d51a266bea54c0f5ebd632"
+             version="git_revisions:1bc901e0cab0f150e3bcdb9e7cf99ab085682b3e,49f39b349db181ca516eb0253462105ff0e2c634"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64,windows-amd64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
 
@@ -82,19 +82,19 @@
          From Rust on Fuchsia team
     -->
     <package name="fuchsia/third_party/rust/target/fuchsia"
-             version="git_revisions:0f353363965ebf05e0757f7679c800b39c51a07e,5325f2b93065ed2981d51a266bea54c0f5ebd632"
+             version="git_revisions:1bc901e0cab0f150e3bcdb9e7cf99ab085682b3e,49f39b349db181ca516eb0253462105ff0e2c634"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <package name="fuchsia/third_party/rust/target/aarch64-apple-darwin"
-             version="git_revisions:0f353363965ebf05e0757f7679c800b39c51a07e,5325f2b93065ed2981d51a266bea54c0f5ebd632"
+             version="git_revisions:1bc901e0cab0f150e3bcdb9e7cf99ab085682b3e,49f39b349db181ca516eb0253462105ff0e2c634"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <package name="fuchsia/third_party/rust/target/aarch64-unknown-linux-gnu"
-             version="git_revisions:0f353363965ebf05e0757f7679c800b39c51a07e,5325f2b93065ed2981d51a266bea54c0f5ebd632"
+             version="git_revisions:1bc901e0cab0f150e3bcdb9e7cf99ab085682b3e,49f39b349db181ca516eb0253462105ff0e2c634"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <package name="fuchsia/third_party/rust/target/riscv64gc-unknown-linux-gnu"
-             version="git_revisions:0f353363965ebf05e0757f7679c800b39c51a07e,5325f2b93065ed2981d51a266bea54c0f5ebd632"
+             version="git_revisions:1bc901e0cab0f150e3bcdb9e7cf99ab085682b3e,49f39b349db181ca516eb0253462105ff0e2c634"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <package name="fuchsia/third_party/rust/target/wasm32-unknown-unknown"
@@ -102,11 +102,11 @@
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <package name="fuchsia/third_party/rust/target/x86_64-apple-darwin"
-             version="git_revisions:0f353363965ebf05e0757f7679c800b39c51a07e,5325f2b93065ed2981d51a266bea54c0f5ebd632"
+             version="git_revisions:1bc901e0cab0f150e3bcdb9e7cf99ab085682b3e,49f39b349db181ca516eb0253462105ff0e2c634"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
     <package name="fuchsia/third_party/rust/target/x86_64-unknown-linux-gnu"
-             version="git_revisions:0f353363965ebf05e0757f7679c800b39c51a07e,5325f2b93065ed2981d51a266bea54c0f5ebd632"
+             version="git_revisions:1bc901e0cab0f150e3bcdb9e7cf99ab085682b3e,49f39b349db181ca516eb0253462105ff0e2c634"
              platforms="linux-amd64,linux-arm64,mac-amd64,mac-arm64"
              path="prebuilt/third_party/rust/{{.OS}}-{{.Arch}}"/>
 
