@@ -850,12 +850,18 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         // Factory Reset
         if components.contains(&SettingType::FactoryReset) {
             device_storage_factory
-                .initialize::<FactoryResetController>()
+                .initialize::<FactoryResetController<T>>()
                 .await
                 .expect("storage should still be initializing");
+            let device_storage_factory = Rc::clone(&device_storage_factory);
             factory_handle.register(
                 SettingType::FactoryReset,
-                Box::new(DataHandler::<FactoryResetController>::spawn),
+                Box::new(move |context| {
+                    DataHandler::<FactoryResetController<T>>::spawn_with_async(
+                        context,
+                        Rc::clone(&device_storage_factory),
+                    )
+                }),
             );
         }
 

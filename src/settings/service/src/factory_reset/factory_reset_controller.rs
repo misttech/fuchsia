@@ -16,7 +16,8 @@ use fidl_fuchsia_recovery_policy::{DeviceMarker, DeviceProxy};
 use futures::lock::Mutex;
 use settings_common::call;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
-use settings_storage::storage_factory::{NoneT, StorageAccess};
+use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 impl DeviceStorageCompatible for FactoryResetInfo {
@@ -36,6 +37,12 @@ impl From<FactoryResetInfo> for SettingInfo {
     }
 }
 
+impl From<&FactoryResetInfo> for SettingType {
+    fn from(_: &FactoryResetInfo) -> SettingType {
+        SettingType::FactoryReset
+    }
+}
+
 type FactoryResetHandle = Rc<Mutex<FactoryResetManager>>;
 
 /// Handles the mapping between [`Request`]s/[`State`] changes and the
@@ -44,11 +51,12 @@ type FactoryResetHandle = Rc<Mutex<FactoryResetManager>>;
 ///
 /// [`Request`]: crate::handler::base::Request
 /// [`State`]: crate::handler::setting_handler::State
-pub struct FactoryResetController {
+pub struct FactoryResetController<F> {
     handle: FactoryResetHandle,
+    _phantom: PhantomData<F>,
 }
 
-impl StorageAccess for FactoryResetController {
+impl<F> StorageAccess for FactoryResetController<F> {
     type Storage = DeviceStorage;
     type Data = FactoryResetInfo;
     const STORAGE_KEY: &'static str = FactoryResetInfo::KEY;
@@ -58,12 +66,16 @@ impl StorageAccess for FactoryResetController {
 /// disk and notifying the fuchsia.recovery.policy.Device fidl interface of any changes.
 pub struct FactoryResetManager {
     client: ClientProxy,
+    store: Rc<DeviceStorage>,
     is_local_reset_allowed: bool,
     factory_reset_policy_service: ExternalServiceProxy<DeviceProxy>,
 }
 
 impl FactoryResetManager {
-    async fn from_client(client: ClientProxy) -> Result<FactoryResetHandle, ControllerError> {
+    async fn from_client(
+        client: ClientProxy,
+        store: Rc<DeviceStorage>,
+    ) -> Result<FactoryResetHandle, ControllerError> {
         client
             .get_service_context()
             .connect::<DeviceMarker>()
@@ -71,6 +83,7 @@ impl FactoryResetManager {
             .map(|factory_reset_policy_service| {
                 Rc::new(Mutex::new(Self {
                     client,
+                    store,
                     is_local_reset_allowed: true,
                     factory_reset_policy_service,
                 }))
@@ -85,7 +98,7 @@ impl FactoryResetManager {
     }
 
     async fn restore_reset_state(&mut self, send_event: bool) -> ControllerStateResult {
-        let info = self.client.read_setting::<FactoryResetInfo>(fuchsia_trace::Id::new()).await;
+        let info = self.store.get::<FactoryResetInfo>().await;
         self.is_local_reset_allowed = info.is_local_reset_allowed;
         if send_event {
             call!(self.factory_reset_policy_service =>
@@ -114,7 +127,7 @@ impl FactoryResetManager {
         is_local_reset_allowed: bool,
     ) -> SettingHandlerResult {
         let id = fuchsia_trace::Id::new();
-        let mut info = self.client.read_setting::<FactoryResetInfo>(id).await;
+        let mut info = self.store.get::<FactoryResetInfo>().await;
         self.is_local_reset_allowed = is_local_reset_allowed;
         info.is_local_reset_allowed = is_local_reset_allowed;
         call!(self.factory_reset_policy_service =>
@@ -128,19 +141,27 @@ impl FactoryResetManager {
                 format!("{e:?}").into(),
             )
         })?;
-        self.client.write_setting(info.into(), id).await.map(|_| None)
+        self.client.storage_write(&self.store, info, id).await.map(|_| None)
     }
 }
 
 #[async_trait(?Send)]
-impl controller::Create for FactoryResetController {
-    async fn create(client: ClientProxy) -> Result<Self, ControllerError> {
-        Ok(Self { handle: FactoryResetManager::from_client(client).await? })
+impl<F> controller::CreateWithAsync for FactoryResetController<F>
+where
+    F: StorageFactory<Storage = DeviceStorage>,
+{
+    type Data = Rc<F>;
+    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
+        let store = data.get_store().await;
+        Ok(Self {
+            handle: FactoryResetManager::from_client(client, store).await?,
+            _phantom: PhantomData,
+        })
     }
 }
 
 #[async_trait(?Send)]
-impl Handle for FactoryResetController {
+impl<F> Handle for FactoryResetController<F> {
     async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
         match request {
             Request::Restore => Some(self.handle.lock().await.restore().await),

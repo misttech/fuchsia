@@ -16,7 +16,6 @@ use crate::agent::{self, AgentCreator, Context, CreationFunc, Lifespan};
 #[cfg(test)]
 use crate::base::UnknownInfo;
 use crate::base::{SettingInfo, SettingType};
-use crate::factory_reset::types::FactoryResetInfo;
 use crate::input::types::InputInfoSources;
 use crate::intl::types::IntlInfo;
 use crate::keyboard::types::KeyboardInfo;
@@ -138,7 +137,6 @@ macro_rules! into_storage_info {
 
 #[cfg(test)]
 into_storage_info!(UnknownInfo => SettingInfo);
-into_storage_info!(FactoryResetInfo => SettingInfo);
 into_storage_info!(InputInfoSources => SettingInfo);
 into_storage_info!(IntlInfo => SettingInfo);
 into_storage_info!(KeyboardInfo => SettingInfo);
@@ -213,7 +211,7 @@ where
                     SettingType::Audio => panic!("Audio goes directly to storage"),
                     SettingType::Display => panic!("Display goes directly to storage"),
                     SettingType::DoNotDisturb => panic!("DoNotDisturb goes directly to storage"),
-                    SettingType::FactoryReset => self.read::<FactoryResetInfo>(id, responder).await,
+                    SettingType::FactoryReset => panic!("FactoryReset goes directly to storage"),
                     SettingType::Input => self.read::<InputInfoSources>(id, responder).await,
                     SettingType::Intl => self.read::<IntlInfo>(id, responder).await,
                     SettingType::Keyboard => self.read::<KeyboardInfo>(id, responder).await,
@@ -235,7 +233,7 @@ where
                     SettingInfo::DoNotDisturb(_) => {
                         panic!("DoNotDisturb goes directly to storage")
                     }
-                    SettingInfo::FactoryReset(info) => self.write(info, responder).await,
+                    SettingInfo::FactoryReset(_) => panic!("FactoryReset goes directly to storage"),
                     SettingInfo::Input(info) => self.write(info, responder).await,
                     SettingInfo::Intl(info) => self.write(info, responder).await,
                     SettingInfo::Keyboard(info) => self.write(info, responder).await,
