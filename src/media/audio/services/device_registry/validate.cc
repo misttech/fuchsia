@@ -1722,8 +1722,19 @@ bool ValidateTopology(const fhasp::Topology& topology,
     return false;
   }
 
-  // An EdgePair cannot refer to an unknown ElementId, nor describe a single-element loop.
+  std::unordered_map<ElementId, uint64_t> edge_source_id_counts, edge_dest_id_counts;
   for (const auto& edge_pair : edge_pairs) {
+    // Only succeeds if the ElementId is not yet present in the map.
+    edge_source_id_counts.insert({edge_pair.processing_element_id_from(), 0});
+    edge_dest_id_counts.insert({edge_pair.processing_element_id_to(), 0});
+
+    // Always succeeds.
+    edge_source_id_counts[edge_pair.processing_element_id_from()] += 1;
+    edge_dest_id_counts[edge_pair.processing_element_id_to()] += 1;
+  }
+
+  for (const auto& edge_pair : edge_pairs) {
+    // An EdgePair cannot refer to an unknown ElementId.
     if (!element_map.contains(edge_pair.processing_element_id_from())) {
       FX_LOGS(WARNING) << "Element_id_from " << edge_pair.processing_element_id_from()
                        << " not found in element list";
@@ -1735,10 +1746,25 @@ bool ValidateTopology(const fhasp::Topology& topology,
       return false;
     }
 
+    // If an EdgePair refers to itself...
     if (edge_pair.processing_element_id_from() == edge_pair.processing_element_id_to()) {
-      FX_LOGS(WARNING) << "Edge_pair connects element_id " << edge_pair.processing_element_id_to()
-                       << " to itself";
-      return false;
+      // ...then that ElementId cannot be mentioned in other EdgePairs.
+      if (edge_source_id_counts[edge_pair.processing_element_id_from()] != 1 ||
+          edge_dest_id_counts[edge_pair.processing_element_id_to()] != 1) {
+        FX_LOGS(WARNING) << "Edge_pair connects element_id " << edge_pair.processing_element_id_to()
+                         << " to itself, as well as OTHER elements";
+        return false;
+      }
+
+      // ...and that Element must be of type DAI_INTERCONNECT.
+      const ElementRecord& record = element_map.at(edge_pair.processing_element_id_from());
+      if (*record.element.type() !=
+          fuchsia_hardware_audio_signalprocessing::ElementType::kDaiInterconnect) {
+        FX_LOGS(WARNING) << "Edge_pair connects element_id " << edge_pair.processing_element_id_to()
+                         << " to itself, but it is not DAI_INTERCONNECT (is "
+                         << record.element.type() << ")";
+        return false;
+      }
     }
   }
 

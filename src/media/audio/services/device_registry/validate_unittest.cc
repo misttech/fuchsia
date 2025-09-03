@@ -472,12 +472,14 @@ TEST(ValidateTest, ValidateCodecFormatInfo) {
 // signalprocessing functions
 TEST(ValidateTest, ValidateTopologies) {
   EXPECT_TRUE(ValidateTopologies(kTopologies, MapElements(kElements)));
+  EXPECT_TRUE(ValidateTopologies(kTopologiesWithLoop, MapElements(kElementsWithLoopDai)));
 }
 
 TEST(ValidateTest, ValidateTopology) {
   EXPECT_TRUE(ValidateTopology(kTopologyDaiAgcDynRb, MapElements(kElements)));
   EXPECT_TRUE(ValidateTopology(kTopologyDaiRb, MapElements(kElements)));
   EXPECT_TRUE(ValidateTopology(kTopologyRbDai, MapElements(kElements)));
+  EXPECT_TRUE(ValidateTopology(kTopologyDaiAgcDynRbAndLoop, MapElements(kElementsWithLoopDai)));
 }
 
 TEST(ValidateTest, ValidateElements) { EXPECT_TRUE(ValidateElements(kElements)); }

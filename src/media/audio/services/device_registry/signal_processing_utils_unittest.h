@@ -19,6 +19,7 @@ namespace fhasp = fuchsia_hardware_audio_signalprocessing;
 // Element ids
 constexpr ElementId kAgcElementId = 2;
 constexpr ElementId kDaiInterconnectElementId = 1;
+constexpr ElementId kOtherDaiInterconnectElementId = 111;
 constexpr ElementId kRingBufferElementId = 0;
 constexpr ElementId kDynamicsElementId = 42;
 constexpr ElementId kEqualizerElementId = 55;
@@ -27,6 +28,8 @@ constexpr ElementId kVendorSpecificElementId = 10164;
 constexpr ElementId kBadElementId = 68;
 
 // Elements
+//
+// Compliant elements
 const fhasp::Element kAgcElement{{
     .id = kAgcElementId,
     .type = fhasp::ElementType::kAutomaticGainControl,
@@ -118,6 +121,18 @@ const fhasp::Element kVendorSpecificElement{{
     .can_stop = true,
     .can_bypass = true,
 }};
+const fhasp::Element kOtherDaiInterconnectElement{{
+    .id = kOtherDaiInterconnectElementId,
+    .type = fhasp::ElementType::kDaiInterconnect,
+    .type_specific = fhasp::TypeSpecificElement::WithDaiInterconnect({{
+        .plug_detect_capabilities = fhasp::PlugDetectCapabilities::kHardwired,
+    }}),
+    .description = "Standalone DAI (with edgepair loop)",
+    .can_stop = false,
+    .can_bypass = false,
+}};
+
+// Non-compliant elements
 const fhasp::Element kElementNoId{{
     .type = fhasp::ElementType::kAutomaticGainControl,
 }};
@@ -152,8 +167,15 @@ const fhasp::Element kElementCannotBypass{{
 }};
 
 // Collections of Elements
+//
+// Compliant collections of elements
 const std::vector<fhasp::Element> kElements{kDaiInterconnectElement, kAgcElement, kDynamicsElement,
                                             kRingBufferElement};
+const std::vector<fhasp::Element> kElementsWithLoopDai{kDaiInterconnectElement, kAgcElement,
+                                                       kDynamicsElement, kRingBufferElement,
+                                                       kOtherDaiInterconnectElement};
+
+// Non-compliant collections of elements
 const std::vector<fhasp::Element> kEmptyElements{};
 const std::vector<fhasp::Element> kElementsDuplicateId{kDaiInterconnectElement,
                                                        kDaiInterconnectElement};
@@ -397,11 +419,13 @@ const fhasp::SettableElementState kSettableElementStateBypassed{{
     .started = true,
     .bypassed = true,
 }};
-const fhasp::ElementState kElementStateEmpty{
-    // .started (required) is unspecified
-};
 const fhasp::SettableElementState kSettableElementStateEmpty{
     // .started is not required, so this is compliant
+};
+
+// Non-compliant ElementStates
+const fhasp::ElementState kElementStateEmpty{
+    // .started (required) is unspecified
 };
 
 // Topology ids
@@ -409,17 +433,38 @@ constexpr TopologyId kTopologyDaiAgcDynRbId = 0;
 constexpr TopologyId kTopologyDaiRbId = 10;
 constexpr TopologyId kTopologyRbDaiId = 7;
 constexpr TopologyId kBadTopologyId = 42;
+constexpr TopologyId kTopologyDaiAgcDynRbAndLoopId = 123;
 
 // EdgePairs
-const fhasp::EdgePair kEdgeDaiAgc{{kDaiInterconnectElementId, kAgcElementId}};
-const fhasp::EdgePair kEdgeAgcDyn{{kAgcElementId, kDynamicsElementId}};
-const fhasp::EdgePair kEdgeDynRb{{kDynamicsElementId, kRingBufferElementId}};
-const fhasp::EdgePair kEdgeDaiRb{{kDaiInterconnectElementId, kRingBufferElementId}};
-const fhasp::EdgePair kEdgeRbDai{{kRingBufferElementId, kDaiInterconnectElementId}};
-const fhasp::EdgePair kEdgeToSelf{{kRingBufferElementId, kRingBufferElementId}};
-const fhasp::EdgePair kEdgeUnknownId{{kRingBufferElementId, kBadElementId}};
+//
+// Compliant edge pairs
+const fhasp::EdgePair kEdgeDaiAgc{{.processing_element_id_from = kDaiInterconnectElementId,
+                                   .processing_element_id_to = kAgcElementId}};
+const fhasp::EdgePair kEdgeAgcDyn{
+    {.processing_element_id_from = kAgcElementId, .processing_element_id_to = kDynamicsElementId}};
+const fhasp::EdgePair kEdgeDynRb{{.processing_element_id_from = kDynamicsElementId,
+                                  .processing_element_id_to = kRingBufferElementId}};
+const fhasp::EdgePair kEdgeDaiRb{{.processing_element_id_from = kDaiInterconnectElementId,
+                                  .processing_element_id_to = kRingBufferElementId}};
+const fhasp::EdgePair kEdgeRbDai{{.processing_element_id_from = kRingBufferElementId,
+                                  .processing_element_id_to = kDaiInterconnectElementId}};
+const fhasp::EdgePair kEdgeToSelfAllowed{
+    {.processing_element_id_from = kOtherDaiInterconnectElementId,
+     .processing_element_id_to = kOtherDaiInterconnectElementId}};
+
+// Non-compliant edge pairs (or ones that will be used in non-compliant ways)
+const fhasp::EdgePair kEdgeToSelfWrongType{{.processing_element_id_from = kRingBufferElementId,
+                                            .processing_element_id_to = kRingBufferElementId}};
+// Other edges will refer to this self-referential element, which is not permitted.
+const fhasp::EdgePair kEdgeToSelfMentionedElsewhere{
+    {.processing_element_id_from = kDaiInterconnectElementId,
+     .processing_element_id_to = kDaiInterconnectElementId}};
+const fhasp::EdgePair kEdgeUnknownId{{.processing_element_id_from = kRingBufferElementId,
+                                      .processing_element_id_to = kBadElementId}};
 
 // Topologies
+//
+// Compliant topologies
 const fhasp::Topology kTopologyDaiAgcDynRb{{
     .id = kTopologyDaiAgcDynRbId,
     .processing_elements_edge_pairs = {{kEdgeDaiAgc, kEdgeAgcDyn, kEdgeDynRb}},
@@ -432,6 +477,12 @@ const fhasp::Topology kTopologyRbDai{{
     .id = kTopologyRbDaiId,
     .processing_elements_edge_pairs = {{kEdgeRbDai}},
 }};
+const fhasp::Topology kTopologyDaiAgcDynRbAndLoop{{
+    .id = kTopologyDaiAgcDynRbAndLoopId,
+    .processing_elements_edge_pairs = {{kEdgeDaiAgc, kEdgeAgcDyn, kEdgeDynRb, kEdgeToSelfAllowed}},
+}};
+
+// Non-compliant topologies
 const fhasp::Topology kTopologyMissingId{{
     .processing_elements_edge_pairs = {{kEdgeDaiRb}},
 }};
@@ -446,9 +497,14 @@ const fhasp::Topology kTopologyUnknownElementId{{
     .id = kBadTopologyId,
     .processing_elements_edge_pairs = {{kEdgeDaiAgc, kEdgeAgcDyn, kEdgeDynRb, kEdgeUnknownId}},
 }};
-const fhasp::Topology kTopologyEdgePairLoop{{
+const fhasp::Topology kTopologyEdgePairLoopWrongElementType{{
     .id = kBadTopologyId,
-    .processing_elements_edge_pairs = {{kEdgeDaiAgc, kEdgeAgcDyn, kEdgeDynRb, kEdgeToSelf}},
+    .processing_elements_edge_pairs = {{kEdgeToSelfWrongType}},
+}};
+const fhasp::Topology kTopologyEdgePairLoopNotExclusive{{
+    .id = kBadTopologyId,
+    .processing_elements_edge_pairs = {{kEdgeDaiAgc, kEdgeAgcDyn, kEdgeDynRb,
+                                        kEdgeToSelfMentionedElsewhere}},
 }};
 const fhasp::Topology kTopologyTerminalNotEndpoint{{
     .id = kBadTopologyId,
@@ -456,8 +512,14 @@ const fhasp::Topology kTopologyTerminalNotEndpoint{{
 }};
 
 // Collections of topologies
+//
+// Compliant collections
 const std::vector<fhasp::Topology> kTopologies{kTopologyDaiAgcDynRb, kTopologyDaiRb,
                                                kTopologyRbDai};
+const std::vector<fhasp::Topology> kTopologiesWithLoop{kTopologyDaiAgcDynRb, kTopologyDaiRb,
+                                                       kTopologyRbDai, kTopologyDaiAgcDynRbAndLoop};
+
+// Non-compliant collections
 const std::vector<fhasp::Topology> kEmptyTopologies{};
 const std::vector<fhasp::Topology> kTopologiesWithDuplicateId{kTopologyDaiAgcDynRb,
                                                               kTopologyDaiAgcDynRb};
@@ -470,7 +532,10 @@ const std::vector<fhasp::Topology> kTopologiesWithEmptyEdgePairs{kTopologyDaiAgc
                                                                  kTopologyEmptyEdgePairs};
 const std::vector<fhasp::Topology> kTopologiesWithUnknownElementId{kTopologyDaiAgcDynRb,
                                                                    kTopologyUnknownElementId};
-const std::vector<fhasp::Topology> kTopologiesWithLoop{kTopologyDaiAgcDynRb, kTopologyEdgePairLoop};
+const std::vector<fhasp::Topology> kTopologiesWithLoopWrongType{
+    kTopologyDaiAgcDynRb, kTopologyEdgePairLoopWrongElementType};
+const std::vector<fhasp::Topology> kTopologiesWithLoopNonExclusive{
+    kTopologyDaiAgcDynRb, kTopologyEdgePairLoopNotExclusive};
 const std::vector<fhasp::Topology> kTopologiesWithTerminalNotEndpoint{kTopologyDaiAgcDynRb,
                                                                       kTopologyTerminalNotEndpoint};
 

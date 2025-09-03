@@ -288,8 +288,7 @@ type SettableElementState = table {
 };
 
 /// Edge pairs between processing elements, used to specify how audio flows sequentially through
-/// a collection of processing elements
-/// arrangements.
+/// a collection of processing element arrangements.
 type EdgePair = struct {
     processing_element_id_from ElementId;
     processing_element_id_to ElementId;
@@ -319,10 +318,16 @@ type Topology = table {
     /// of type DAI_INTERCONNECT or RING_BUFFER, and must end with an element of type
     /// DAI_INTERCONNECT or RING_BUFFER.
     ///
-    /// An DAI_INTERCONNECT element is permitted to be the endpoint for an element sequence, but a
-    /// RING_BUFFER is required to be one. If a certain RING_BUFFER element is listed in an EdgeList
-    /// entry as a `processing_element_id_from`, then within that Topology it must not be listed in
-    /// any EdgeList entry as a `processing_element_id_to` (and vice versa).
+    /// An DAI_INTERCONNECT element is _permitted_ to be the endpoint for an element sequence, but a
+    /// RING_BUFFER is _required_ to be one. If a certain RING_BUFFER element is listed in an
+    /// EdgeList entry as a `processing_element_id_from`, then within that Topology this same
+    /// element must NOT be listed in another EdgeList entry as a `processing_element_id_to` (and
+    /// vice versa).
+    ///
+    /// As a special case, a DAI_INTERCONNECT element can refer to itself; i.e. an EdgePair may
+    /// contain `processing_element_id_from` and `processing_element_id_to` values that are equal.
+    /// However, this element must not _also_ connect to _other_ elements within the Topology (this
+    /// EdgePair must be the only one in `processing_elements_edge_pairs` to mention that element).
     ///
     /// Required. Must contain at least one entry.
     2: processing_elements_edge_pairs vector<EdgePair>:MAX_COUNT_PROCESSING_ELEMENTS_EDGE_PAIRS;

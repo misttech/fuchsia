@@ -1146,8 +1146,18 @@ void AdminTest::ValidateElementTopologyClosure() {
 
   ASSERT_FALSE(topologies().empty());
   for (const auto& topology : topologies()) {
-    std::unordered_set<fhasp::ElementId> edge_source_ids;
-    std::unordered_set<fhasp::ElementId> edge_dest_ids;
+    std::unordered_map<fhasp::ElementId, uint64_t> edge_source_id_counts, edge_dest_id_counts;
+    ASSERT_FALSE(topology.processing_elements_edge_pairs().empty());
+    for (const auto& edge_pair : topology.processing_elements_edge_pairs()) {
+      // Only succeeds if the ElementId is not yet found in the map.
+      edge_source_id_counts.insert({edge_pair.processing_element_id_from, 0});
+      edge_dest_id_counts.insert({edge_pair.processing_element_id_to, 0});
+
+      // Always succeeds.
+      edge_source_id_counts[edge_pair.processing_element_id_from] += 1;
+      edge_dest_id_counts[edge_pair.processing_element_id_to] += 1;
+    }
+
     for (const auto& edge_pair : topology.processing_elements_edge_pairs()) {
       ASSERT_TRUE(all_element_ids.contains(edge_pair.processing_element_id_from))
           << "Topology " << topology.id() << " contains unknown element ID "
@@ -1157,17 +1167,32 @@ void AdminTest::ValidateElementTopologyClosure() {
           << edge_pair.processing_element_id_to;
       unused_element_ids.erase(edge_pair.processing_element_id_from);
       unused_element_ids.erase(edge_pair.processing_element_id_to);
-      edge_source_ids.insert(edge_pair.processing_element_id_from);
-      edge_dest_ids.insert(edge_pair.processing_element_id_to);
+
+      // An element can be topologically self-referential (have a 'to' edge and 'from' edge which
+      // both point back to itself), but only if this is the only edgepair in the topology that
+      // references the element, and only if this self-referencing element is a DAI_INTERCONNECT.
+      if (edge_pair.processing_element_id_from == edge_pair.processing_element_id_to) {
+        ASSERT_EQ(edge_source_id_counts[edge_pair.processing_element_id_from], 1u)
+            << "Element in a self-referential edgepair must not also connect to another element";
+        ASSERT_EQ(edge_dest_id_counts[edge_pair.processing_element_id_to], 1u)
+            << "No other element may also connect to the element in a self-referential edgepair";
+
+        for (const auto& element : elements()) {
+          if (element.id() == edge_pair.processing_element_id_from) {
+            ASSERT_EQ(element.type(), fhasp::ElementType::DAI_INTERCONNECT)
+                << "Self-referential elements must be DAI_INTERCONNECT";
+          }
+        }
+      }
     }
-    for (const auto& source_id : edge_source_ids) {
+    for (const auto& [source_id, _count] : edge_source_id_counts) {
       fhasp::ElementType source_element_type;
       for (const auto& element : elements()) {
         if (element.id() == source_id) {
           source_element_type = element.type();
         }
       }
-      if (edge_dest_ids.contains(source_id)) {
+      if (edge_dest_id_counts.contains(source_id)) {
         if constexpr (!kTolerateNonTerminalDaiEndpoints) {
           ASSERT_NE(source_element_type, fhasp::ElementType::DAI_INTERCONNECT)
               << "Element " << source_id << " is not an endpoint in topology " << topology.id()
@@ -1176,7 +1201,10 @@ void AdminTest::ValidateElementTopologyClosure() {
         ASSERT_NE(source_element_type, fhasp::ElementType::RING_BUFFER)
             << "Element " << source_id << " is not an endpoint in topology " << topology.id()
             << ", but is RING_BUFFER";
-        edge_dest_ids.erase(source_id);
+        edge_dest_id_counts[source_id] -= 1;
+        if (edge_dest_id_counts[source_id] == 0) {
+          edge_dest_id_counts.erase(source_id);
+        }
       } else {
         ASSERT_TRUE(source_element_type == fhasp::ElementType::DAI_INTERCONNECT ||
                     source_element_type == fhasp::ElementType::RING_BUFFER)
@@ -1184,7 +1212,7 @@ void AdminTest::ValidateElementTopologyClosure() {
             << topology.id() << ", but is neither DAI_INTERCONNECT nor RING_BUFFER";
       }
     }
-    for (const auto& dest_id : edge_dest_ids) {
+    for (const auto& [dest_id, _count] : edge_dest_id_counts) {
       fhasp::ElementType dest_element_type;
       for (const auto& element : elements()) {
         if (element.id() == dest_id) {

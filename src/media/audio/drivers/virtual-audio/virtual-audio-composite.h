@@ -43,16 +43,20 @@ class VirtualAudioComposite
   zx::result<> Init(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent);
 
  private:
-  static constexpr size_t kNumberOfElements = 3;
+  static constexpr size_t kNumberOfElements = 4;
   static constexpr fuchsia_hardware_audio_signalprocessing::ElementId kRingBufferId = 123;
   static constexpr fuchsia_hardware_audio_signalprocessing::ElementId kGainId = 321;
   static constexpr fuchsia_hardware_audio_signalprocessing::ElementId kDaiId = 456;
+  static constexpr fuchsia_hardware_audio_signalprocessing::ElementId kSingleDaiId = 555;
 
-  static constexpr size_t kNumberOfTopologies = 2;
+  static constexpr size_t kNumberOfTopologies = 3;
   // This topology is RingBuffer (123) -> Gain (321) -> Dai        (456)
   static constexpr fuchsia_hardware_audio_signalprocessing::TopologyId kPlaybackTopologyId = 789;
   // This topology is Dai        (456) -> Gain (321) -> RingBuffer (123)
   static constexpr fuchsia_hardware_audio_signalprocessing::TopologyId kCaptureTopologyId = 987;
+  // This topology is Dai        (555) -> Dai (555)
+  static constexpr fuchsia_hardware_audio_signalprocessing::TopologyId kSingleElementTopologyId =
+      55;
 
   // virtualaudio.Device implementation.
   void GetFormat(GetFormatCompleter::Sync& completer) override;

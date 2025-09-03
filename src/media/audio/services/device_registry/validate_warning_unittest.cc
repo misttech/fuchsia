@@ -900,14 +900,20 @@ TEST(ValidateWarningTest, TopologyListInvalid) {
 
   // There are elements that are not mentioned in at least one of the topologies.
   EXPECT_FALSE(ValidateTopologies(kTopologiesWithoutAllElements, MapElements(kElements)));
+  EXPECT_FALSE(ValidateTopologies(kTopologies, MapElements(kElementsWithLoopDai)));
 
   // Topology list with a bad Topology: all the ValidateTopology negative cases
   EXPECT_FALSE(ValidateTopologies(kTopologiesWithMissingId, MapElements(kElements)));
   EXPECT_FALSE(ValidateTopologies(kTopologiesWithMissingEdgePairs, MapElements(kElements)));
   EXPECT_FALSE(ValidateTopologies(kTopologiesWithEmptyEdgePairs, MapElements(kElements)));
-  EXPECT_FALSE(ValidateTopologies(kTopologiesWithUnknownElementId, MapElements(kElements)));
+
+  // This contains a topology with non-compliant edgepairs.
   EXPECT_FALSE(ValidateTopologies(kTopologiesWithLoop, MapElements(kElements)));
   EXPECT_FALSE(ValidateTopologies(kTopologiesWithTerminalNotEndpoint, MapElements(kElements)));
+
+  // This contains a topology that references an ElementId not found in the elements list.
+  EXPECT_FALSE(ValidateTopologies(kTopologiesWithUnknownElementId, MapElements(kElements)));
+  EXPECT_FALSE(ValidateTopologies(kTopologiesWithLoop, MapElements(kElements)));
 
   // empty element_map
   EXPECT_FALSE(ValidateTopologies(kTopologies, kEmptyElementMap));
@@ -925,9 +931,13 @@ TEST(ValidateWarningTest, TopologyInvalid) {
 
   // This topology references an element_id that is not included in the element_map.
   EXPECT_FALSE(ValidateTopology(kTopologyUnknownElementId, MapElements(kElements)));
+  EXPECT_FALSE(ValidateTopology(kTopologyDaiAgcDynRbAndLoop, MapElements(kElements)));
 
-  // This topology includes an edge that connects one element_id to itself.
-  EXPECT_FALSE(ValidateTopology(kTopologyEdgePairLoop, MapElements(kElements)));
+  // This topology includes a non-DaiInterconnect edge that connects one element_id to itself.
+  EXPECT_FALSE(ValidateTopology(kTopologyEdgePairLoopWrongElementType, MapElements(kElements)));
+
+  // This topology includes a DaiInterconnect that connects to itself, but also to other elements.
+  EXPECT_FALSE(ValidateTopology(kTopologyEdgePairLoopNotExclusive, MapElements(kElements)));
 
   // This topology's terminal (source/destination) elements are not DaiInterconnect or RingBuffer.
   EXPECT_FALSE(ValidateTopology(kTopologyTerminalNotEndpoint, MapElements(kElements)));

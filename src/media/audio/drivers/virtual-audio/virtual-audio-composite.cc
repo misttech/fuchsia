@@ -57,30 +57,36 @@ fuchsia_virtualaudio::Configuration VirtualAudioComposite::GetDefaultConfig() {
   composite_ring_buffers.push_back(std::move(composite_ring_buffer));
   composite.ring_buffers(std::move(composite_ring_buffers));
 
-  // Composite DAI interconnect.
-  fuchsia_virtualaudio::CompositeDaiInterconnect composite_dai_interconnect = {};
+  fuchsia_hardware_audio::DaiSupportedFormats format_set = {};
+  format_set.number_of_channels(std::vector<uint32_t>{2});
+  format_set.sample_formats(std::vector{fuchsia_hardware_audio::DaiSampleFormat::kPcmSigned});
+  format_set.frame_formats(
+      std::vector{fuchsia_hardware_audio::DaiFrameFormat::WithFrameFormatStandard(
+          fuchsia_hardware_audio::DaiFrameFormatStandard::kI2S)});
+  format_set.frame_rates(std::vector<uint32_t>{48'000});
+  format_set.bits_per_slot(std::vector<uint8_t>{32});
+  format_set.bits_per_sample(std::vector<uint8_t>{16});
 
-  // DAI interconnect.
+  std::vector<fuchsia_virtualaudio::CompositeDaiInterconnect> composite_dai_interconnects = {};
+  fuchsia_virtualaudio::CompositeDaiInterconnect composite_dai_interconnect = {};
+  fuchsia_virtualaudio::CompositeDaiInterconnect composite_single_dai_interconnect = {};
   fuchsia_virtualaudio::DaiInterconnect dai_interconnect = {};
+  fuchsia_virtualaudio::DaiInterconnect single_dai_interconnect = {};
 
   // By default we expose one DAI format: 48kHz I2S (stereo 16-in-32, 8 bytes/frame total).
-  fuchsia_hardware_audio::DaiSupportedFormats item = {};
-  item.number_of_channels(std::vector<uint32_t>{2});
-  item.sample_formats(std::vector{fuchsia_hardware_audio::DaiSampleFormat::kPcmSigned});
-  item.frame_formats(std::vector{fuchsia_hardware_audio::DaiFrameFormat::WithFrameFormatStandard(
-      fuchsia_hardware_audio::DaiFrameFormatStandard::kI2S)});
-  item.frame_rates(std::vector<uint32_t>{48'000});
-  item.bits_per_slot(std::vector<uint8_t>{32});
-  item.bits_per_sample(std::vector<uint8_t>{16});
-
   dai_interconnect.dai_supported_formats(
       std::optional<std::vector<fuchsia_hardware_audio::DaiSupportedFormats>>{std::in_place,
-                                                                              {item}});
-
-  composite_dai_interconnect.id(kDefaultDaiId);
+                                                                              {format_set}});
+  composite_dai_interconnect.id(kDaiId);
   composite_dai_interconnect.dai_interconnect(std::move(dai_interconnect));
-  std::vector<fuchsia_virtualaudio::CompositeDaiInterconnect> composite_dai_interconnects = {};
   composite_dai_interconnects.push_back(std::move(composite_dai_interconnect));
+
+  single_dai_interconnect.dai_supported_formats(
+      std::optional<std::vector<fuchsia_hardware_audio::DaiSupportedFormats>>{std::in_place,
+                                                                              {format_set}});
+  composite_single_dai_interconnect.id(kSingleDaiId);
+  composite_single_dai_interconnect.dai_interconnect(std::move(single_dai_interconnect));
+  composite_dai_interconnects.push_back(std::move(composite_single_dai_interconnect));
   composite.dai_interconnects(std::move(composite_dai_interconnects));
 
   // Topology with one ring buffer into one DAI interconnect.
@@ -230,27 +236,37 @@ void VirtualAudioComposite::GetProperties(
 
 void VirtualAudioComposite::GetDaiFormats(GetDaiFormatsRequest& request,
                                           GetDaiFormatsCompleter::Sync& completer) {
-  // This driver is limited to a single DAI interconnect.
-  // TODO(https://fxbug.dev/42075676): Add support for more DAI interconnects, enabling
+  // TODO(https://fxbug.dev/42075676): Add better support for more DAI interconnects, enabling
   // configuration and observability in the virtual_audio FIDL API.
-  if (request.processing_element_id() != kDaiId) {
+  if (request.processing_element_id() != kDaiId &&
+      request.processing_element_id() != kSingleDaiId) {
     fdf::error("GetDaiFormats({}) bad element_id", request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
   }
-  auto& dai_interconnects = composite_config().dai_interconnects().value();
-  ZX_ASSERT(dai_interconnects.size() == 1);  // Supports only one and only one DAI interconnect.
+  ZX_ASSERT(composite_config().dai_interconnects().has_value());
+  auto& dai_interconnects = *composite_config().dai_interconnects();
+  ZX_ASSERT(dai_interconnects.size() == 2);  // Supports two DAI interconnects.
   ZX_ASSERT(dai_interconnects[0].dai_interconnect().has_value());
   ZX_ASSERT(dai_interconnects[0].dai_interconnect()->dai_supported_formats().has_value());
-  completer.Reply(zx::ok(dai_interconnects[0].dai_interconnect()->dai_supported_formats().value()));
+  ZX_ASSERT(dai_interconnects[1].dai_interconnect().has_value());
+  ZX_ASSERT(dai_interconnects[1].dai_interconnect()->dai_supported_formats().has_value());
+
+  if (request.processing_element_id() == dai_interconnects[0].id()) {
+    completer.Reply(
+        zx::ok(dai_interconnects[0].dai_interconnect()->dai_supported_formats().value()));
+  } else {
+    completer.Reply(
+        zx::ok(dai_interconnects[1].dai_interconnect()->dai_supported_formats().value()));
+  }
 }
 
 void VirtualAudioComposite::SetDaiFormat(SetDaiFormatRequest& request,
                                          SetDaiFormatCompleter::Sync& completer) {
-  // This driver is limited to a single DAI interconnect.
-  // TODO(https://fxbug.dev/42075676): Add support for more DAI interconnects, enabling
+  // TODO(https://fxbug.dev/42075676): Add better support for more DAI interconnects, enabling
   // configuration and observability in the virtual_audio FIDL API.
-  if (request.processing_element_id() != kDaiId) {
+  if (request.processing_element_id() != kDaiId &&
+      request.processing_element_id() != kSingleDaiId) {
     fdf::error("SetDaiFormat({}) bad element_id", request.processing_element_id());
     completer.Reply(zx::error(fuchsia_hardware_audio::DriverError::kInvalidArgs));
     return;
@@ -263,10 +279,19 @@ void VirtualAudioComposite::SetDaiFormat(SetDaiFormatRequest& request,
     return;
   }
 
+  ZX_ASSERT(composite_config().dai_interconnects().has_value());
+  ZX_ASSERT(composite_config().dai_interconnects()->size() == 2);
+
+  fuchsia_virtualaudio::CompositeDaiInterconnect& dai_interconnect =
+      (composite_config().dai_interconnects()->at(0).id() == request.processing_element_id())
+          ? composite_config().dai_interconnects()->at(0)
+          : composite_config().dai_interconnects()->at(1);
+
   std::vector<fuchsia_hardware_audio::DaiSupportedFormats> supported_formats{};
-  if (composite_config().dai_interconnects() && !composite_config().dai_interconnects()->empty() &&
-      composite_config().dai_interconnects()->at(0).dai_interconnect() &&
-      composite_config().dai_interconnects()->at(0).dai_interconnect()->dai_supported_formats()) {
+  if (dai_interconnect.dai_interconnect().has_value() &&
+      dai_interconnect.dai_interconnect()->dai_supported_formats().has_value()) {
+    // TODO(https://fxbug.dev/441351908): set the format for the specified DAI_INTERCONNECT element,
+    // not exclusively the first DAI element in our collection.
     supported_formats = composite_config()
                             .dai_interconnects()
                             ->at(0)
@@ -325,6 +350,8 @@ void VirtualAudioComposite::SetDaiFormat(SetDaiFormatRequest& request,
     if (number_of_channels.has_value() && channels_to_use_bitmask.has_value() &&
         sample_format.has_value() && frame_format.has_value() && frame_rate.has_value() &&
         bits_per_slot.has_value() && bits_per_sample.has_value()) {
+      // TODO(https://fxbug.dev/441351908): save the actual DaiFormat.
+      fdf::info("SetDaiFormat for element %u", request.processing_element_id());
       completer.Reply(zx::ok());
       return;
     }
@@ -682,7 +709,20 @@ void VirtualAudioComposite::SetupSignalProcessingElements() {
       .type_specific(fuchsia_hardware_audio_signalprocessing::TypeSpecificElement::WithGain(
           gain_type_specific));
 
-  elements_ = {{ring_buffer, dai, gain}};
+  fuchsia_hardware_audio_signalprocessing::Element single_dai;
+  fuchsia_hardware_audio_signalprocessing::DaiInterconnect single_dai_interconnect;
+  single_dai_interconnect.plug_detect_capabilities(
+      fuchsia_hardware_audio_signalprocessing::PlugDetectCapabilities::kHardwired);
+  single_dai.id(kSingleDaiId)
+      .type(fuchsia_hardware_audio_signalprocessing::ElementType::kDaiInterconnect)
+      .type_specific(
+          fuchsia_hardware_audio_signalprocessing::TypeSpecificElement::WithDaiInterconnect(
+              std::move(single_dai_interconnect)))
+      .description("Single-element DAI")
+      .can_stop(false)
+      .can_bypass(false);
+
+  elements_ = {{ring_buffer, dai, gain, single_dai}};
   for (auto& el : elements_) {
     element_map_.insert({*el.id(), &el});
   }
@@ -700,7 +740,7 @@ void VirtualAudioComposite::GetElements(GetElementsCompleter::Sync& completer) {
 // virtual_audio FIDL API.
 void VirtualAudioComposite::SetupSignalProcessingTopologies() {
   topologies_.clear();
-  fuchsia_hardware_audio_signalprocessing::Topology topology1, topology2;
+  fuchsia_hardware_audio_signalprocessing::Topology topology1, topology2, topology3;
   fuchsia_hardware_audio_signalprocessing::EdgePair edge1, edge2;
 
   topology1.id(kPlaybackTopologyId);
@@ -713,11 +753,16 @@ void VirtualAudioComposite::SetupSignalProcessingTopologies() {
   edge2.processing_element_id_from(kGainId).processing_element_id_to(kRingBufferId);
   topology2.processing_elements_edge_pairs(std::vector({std::move(edge1), std::move(edge2)}));
 
+  topology3.id(kSingleElementTopologyId);
+  edge1.processing_element_id_from(kSingleDaiId).processing_element_id_to(kSingleDaiId);
+  topology3.processing_elements_edge_pairs(std::vector({std::move(edge1)}));
+
   // By default (in the topology of kPlaybackTopologyId), our ring buffer will be an outgoing one.
   ring_buffer_is_outgoing_ = true;
   current_topology_id_ = kPlaybackTopologyId;
   topologies_.emplace_back(std::move(topology1));
   topologies_.emplace_back(std::move(topology2));
+  topologies_.emplace_back(std::move(topology3));
 }
 
 void VirtualAudioComposite::GetTopologies(GetTopologiesCompleter::Sync& completer) {
@@ -726,7 +771,8 @@ void VirtualAudioComposite::GetTopologies(GetTopologiesCompleter::Sync& complete
 
 void VirtualAudioComposite::SetTopology(SetTopologyRequest& request,
                                         SetTopologyCompleter::Sync& completer) {
-  if (request.topology_id() != kPlaybackTopologyId && request.topology_id() != kCaptureTopologyId) {
+  if (request.topology_id() != kPlaybackTopologyId && request.topology_id() != kCaptureTopologyId &&
+      request.topology_id() != kSingleElementTopologyId) {
     fdf::error("SetTopology({}) unknown topology_id", request.topology_id());
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
@@ -798,6 +844,18 @@ void VirtualAudioComposite::SetupSignalProcessingElementStates() {
   gain_snapshot.last_notified.reset();
   gain_snapshot.completer.reset();
   element_states_.insert({kGainId, std::move(gain_snapshot)});
+
+  fuchsia_hardware_audio_signalprocessing::DaiInterconnectElementState single_dai_state;
+  fuchsia_hardware_audio_signalprocessing::PlugState single_dai_plug_state;
+  single_dai_plug_state.plugged(true).plug_state_time(0);
+  single_dai_state.plug_state(std::move(single_dai_plug_state));
+  ElementSnapshot single_dai_snapshot;
+  single_dai_snapshot.current.started(true).bypassed(false).type_specific(
+      fuchsia_hardware_audio_signalprocessing::TypeSpecificElementState::WithDaiInterconnect(
+          std::move(single_dai_state)));
+  single_dai_snapshot.last_notified.reset();
+  single_dai_snapshot.completer.reset();
+  element_states_.insert({kSingleDaiId, std::move(single_dai_snapshot)});
 }
 
 // Note that the range of type-specific state for an element is greater than the range of
@@ -815,12 +873,13 @@ void VirtualAudioComposite::SetupSignalProcessingElementStates() {
 void VirtualAudioComposite::SetElementState(SetElementStateRequest& request,
                                             SetElementStateCompleter::Sync& completer) {
   fuchsia_hardware_audio::ElementId element_id = request.processing_element_id();
+  fdf::info("SetElementState({})", element_id);
 
   // Reject all error cases BEFORE changing any state variables.
 
   // Error: unknown element_id
   if (!element_map_.contains(element_id)) {
-    fdf::error("SetElementState({}) unknown element_id", element_id);
+    fdf::error("SetElementState({}): unknown element_id", element_id);
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
@@ -829,14 +888,14 @@ void VirtualAudioComposite::SetElementState(SetElementStateRequest& request,
   // Error: this element cannot Stop as requested.
   if (request.state().started().has_value() && !(*request.state().started()) &&
       !ele->can_stop().value_or(false)) {
-    fdf::error("SetElementState: element cannot be stopped");
+    fdf::error("SetElementState({}): element cannot be stopped", element_id);
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
   // Error: this element cannot Bypass as requested.
   if (request.state().bypassed().has_value() && *request.state().bypassed() &&
       !ele->can_bypass().value_or(false)) {
-    fdf::error("SetElementState: element cannot be bypassed");
+    fdf::error("SetElementState({}): element cannot be bypassed", element_id);
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
@@ -846,11 +905,13 @@ void VirtualAudioComposite::SetElementState(SetElementStateRequest& request,
       // TypeSpecificElementState contains no variant for the RING_BUFFER type.
       __FALLTHROUGH;
     case kDaiId:
+    case kSingleDaiId:
       // DAI_INTERCONNECT elements can specify type-specific state, but clients cannot CHANGE it.
       // TypeSpecificElementState defines a DAI variant; SettableTypeSpecificElementState does not.
       if (request.state().type_specific().has_value()) {
         // Error: type_specific state in this request does not match this element type.
-        fdf::error("SetElementState: TypeSpecificElementState does not match this element type");
+        fdf::error("SetElementState({}): TypeSpecificElementState does not match this element type",
+                   element_id);
         completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
         return;
       }
@@ -860,14 +921,16 @@ void VirtualAudioComposite::SetElementState(SetElementStateRequest& request,
         // For this element, clients can specify type-specific state but it must be gain-specific.
         if (!request.state().type_specific()->gain().has_value()) {
           // Error: type_specific state in this request does not match this element type.
-          fdf::error("SetElementState: TypeSpecificElementState does not match this element type");
+          fdf::error(
+              "SetElementState({}): TypeSpecificElementState does not match this element type",
+              element_id);
           completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
           return;
         }
         // Error: SetElementState value is missing or non-finite.
         if (!request.state().type_specific()->gain()->gain().has_value() ||
             !std::isfinite(*request.state().type_specific()->gain()->gain())) {
-          fdf::error("SetElementState: Gain requires a finite gain");
+          fdf::error("SetElementState({}): Gain requires a finite gain", element_id);
           completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
           return;
         }
@@ -876,8 +939,8 @@ void VirtualAudioComposite::SetElementState(SetElementStateRequest& request,
                 *element_map_[element_id]->type_specific()->gain()->min_gain() ||
             *request.state().type_specific()->gain()->gain() >
                 *element_map_[element_id]->type_specific()->gain()->max_gain()) {
-          fdf::error("SetElementState: Gain {} is outside the allowed range [{}, {}]",
-                     *request.state().type_specific()->gain()->gain(),
+          fdf::error("SetElementState({}): Gain {} is outside the allowed range [{}, {}]",
+                     element_id, *request.state().type_specific()->gain()->gain(),
                      *element_map_[element_id]->type_specific()->gain()->min_gain(),
                      *element_map_[element_id]->type_specific()->gain()->max_gain());
           completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
