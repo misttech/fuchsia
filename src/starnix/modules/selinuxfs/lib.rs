@@ -45,7 +45,7 @@ use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{SELINUX_MAGIC, errno, error, statfs};
 use std::borrow::Cow;
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock, Weak};
@@ -719,12 +719,7 @@ impl SeLinuxApiOps for AccessApi {
         let Some(kernel) = self.kernel.upgrade() else {
             return error!(EINVAL);
         };
-        let todo_bug = decision.todo_bug.or_else(|| {
-            // TODO: https://fxbug.dev/422929151 - Remove this default "todo_deny" behaviour, which
-            // is currently disabled via the `selinux_test_suite` feature.
-            (!kernel.features.selinux_test_suite).then(|| NonZeroU64::new(422929151).unwrap())
-        });
-        if let Some(todo_bug) = todo_bug {
+        if let Some(todo_bug) = decision.todo_bug {
             let denied = AccessVector::ALL - decision.allow;
             let audited_denied = denied & decision.auditdeny;
 
