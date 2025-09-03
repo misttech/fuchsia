@@ -341,11 +341,11 @@ pub fn adapt_to_take_test_run_number<R>(f: impl Fn() -> R) -> impl Fn(usize) -> 
 // are targeting is lsan (LeakSanitizer), which is enabled as part of the asan variant.
 
 #[doc(hidden)]
-#[cfg(not(feature = "variant_asan"))]
+#[cfg(not(any(feature = "variant_asan", feature = "variant_hwasan")))]
 pub fn disable_lsan_for_should_panic() {}
 
 #[doc(hidden)]
-#[cfg(feature = "variant_asan")]
+#[cfg(any(feature = "variant_asan", feature = "variant_hwasan"))]
 pub fn disable_lsan_for_should_panic() {
     extern "C" {
         fn __lsan_disable();
@@ -355,10 +355,10 @@ pub fn disable_lsan_for_should_panic() {
     }
 }
 
-#[cfg(not(feature = "variant_asan"))]
+#[cfg(not(any(feature = "variant_asan", feature = "variant_hwasan")))]
 fn install_lsan_hook() {}
 
-#[cfg(feature = "variant_asan")]
+#[cfg(any(feature = "variant_asan", feature = "variant_hwasan"))]
 fn install_lsan_hook() {
     extern "C" {
         fn __lsan_do_leak_check();

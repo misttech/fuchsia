@@ -263,6 +263,7 @@ mod task_tests {
     #[should_panic]
     // TODO(https://fxbug.dev/42169733): delete the below
     #[cfg_attr(feature = "variant_asan", ignore)]
+    #[cfg_attr(feature = "variant_hwasan", ignore)]
     fn unblock_fn_panics() {
         run(async move {
             unblock(|| panic!("bad")).await;
