@@ -919,11 +919,19 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         // Setup
         if components.contains(&SettingType::Setup) {
             device_storage_factory
-                .initialize::<SetupController>()
+                .initialize::<SetupController<T>>()
                 .await
                 .expect("storage should still be initializing");
-            factory_handle
-                .register(SettingType::Setup, Box::new(DataHandler::<SetupController>::spawn));
+            let device_storage_factory = Rc::clone(&device_storage_factory);
+            factory_handle.register(
+                SettingType::Setup,
+                Box::new(move |context| {
+                    DataHandler::<SetupController<T>>::spawn_with_async(
+                        context,
+                        Rc::clone(&device_storage_factory),
+                    )
+                }),
+            );
         }
     }
 }

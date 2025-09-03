@@ -19,7 +19,6 @@ use crate::base::{SettingInfo, SettingType};
 use crate::message::base::{MessageEvent, MessengerType};
 use crate::message::receptor::Receptor;
 use crate::service::{self, Address};
-use crate::setup::types::SetupInfo;
 use crate::storage::{Error, Payload, StorageInfo, StorageRequest, StorageResponse, StorageType};
 use crate::{payload_convert, trace, trace_guard};
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageConvertible};
@@ -119,6 +118,8 @@ where
     }
 }
 
+// TODO(https://fxbug.dev/42166874) Remove dead code
+#[allow(unused_macros)]
 macro_rules! into_storage_info {
     ($ty:ty => $intermediate_ty:ty) => {
         impl From<$ty> for StorageInfo {
@@ -132,8 +133,9 @@ macro_rules! into_storage_info {
 
 #[cfg(test)]
 into_storage_info!(UnknownInfo => SettingInfo);
-into_storage_info!(SetupInfo => SettingInfo);
 
+// TODO(https://fxbug.dev/42166874) Remove dead code
+#[allow(dead_code)]
 struct StorageManagement<T>
 where
     T: StorageFactory<Storage = DeviceStorage>,
@@ -145,6 +147,8 @@ impl<T> StorageManagement<T>
 where
     T: StorageFactory<Storage = DeviceStorage>,
 {
+    // TODO(https://fxbug.dev/42166874) Remove dead code
+    #[allow(dead_code)]
     async fn read<S>(&self, id: ftrace::Id, responder: service::message::MessageClient)
     where
         S: DeviceStorageConvertible + Into<StorageInfo>,
@@ -163,6 +167,8 @@ where
         drop(guard);
     }
 
+    // TODO(https://fxbug.dev/42166874) Remove dead code
+    #[allow(dead_code)]
     async fn write<S>(&self, data: S, responder: service::message::MessageClient)
     where
         S: DeviceStorageConvertible,
@@ -190,31 +196,30 @@ where
     async fn handle_request(
         &self,
         storage_request: StorageRequest,
-        responder: service::message::MessageClient,
+        _responder: service::message::MessageClient,
     ) {
         match storage_request {
-            StorageRequest::Read(StorageType::SettingType(setting_type), id) => {
-                match setting_type {
-                    #[cfg(test)]
-                    SettingType::Unknown => self.read::<UnknownInfo>(id, responder).await,
-                    SettingType::Accessibility => panic!("Accessibility goes directly to storage"),
-                    SettingType::Audio => panic!("Audio goes directly to storage"),
-                    SettingType::Display => panic!("Display goes directly to storage"),
-                    SettingType::DoNotDisturb => panic!("DoNotDisturb goes directly to storage"),
-                    SettingType::FactoryReset => panic!("FactoryReset goes directly to storage"),
-                    SettingType::Input => panic!("Input goes directly to storage"),
-                    SettingType::Intl => panic!("Intl goes directly to storage"),
-                    SettingType::Keyboard => panic!("Keyboard goes directly to storage"),
-                    SettingType::Light => panic!("Light goes directly to storage"),
-                    SettingType::NightMode => panic!("NightMode goes directly to storage"),
-                    SettingType::Privacy => panic!("Privacy goes directly to storage"),
-                    SettingType::Setup => self.read::<SetupInfo>(id, responder).await,
-                }
-            }
+            StorageRequest::Read(StorageType::SettingType(setting_type), _id) => match setting_type
+            {
+                #[cfg(test)]
+                SettingType::Unknown => self.read::<UnknownInfo>(_id, _responder).await,
+                SettingType::Accessibility => panic!("Accessibility goes directly to storage"),
+                SettingType::Audio => panic!("Audio goes directly to storage"),
+                SettingType::Display => panic!("Display goes directly to storage"),
+                SettingType::DoNotDisturb => panic!("DoNotDisturb goes directly to storage"),
+                SettingType::FactoryReset => panic!("FactoryReset goes directly to storage"),
+                SettingType::Input => panic!("Input goes directly to storage"),
+                SettingType::Intl => panic!("Intl goes directly to storage"),
+                SettingType::Keyboard => panic!("Keyboard goes directly to storage"),
+                SettingType::Light => panic!("Light goes directly to storage"),
+                SettingType::NightMode => panic!("NightMode goes directly to storage"),
+                SettingType::Privacy => panic!("Privacy goes directly to storage"),
+                SettingType::Setup => panic!("Setup goes directly to storage"),
+            },
             StorageRequest::Write(StorageInfo::SettingInfo(setting_info), _) => {
                 match setting_info {
                     #[cfg(test)]
-                    SettingInfo::Unknown(info) => self.write(info, responder).await,
+                    SettingInfo::Unknown(info) => self.write(info, _responder).await,
                     SettingInfo::Accessibility(_) => {
                         panic!("Accessibility goes directly to storage")
                     }
@@ -229,7 +234,7 @@ where
                     SettingInfo::Keyboard(_) => panic!("Keyboard goes directly to storage"),
                     SettingInfo::NightMode(_) => panic!("NightMode goes directly to storage"),
                     SettingInfo::Privacy(_) => panic!("Privacy goes directly to storage"),
-                    SettingInfo::Setup(info) => self.write(info, responder).await,
+                    SettingInfo::Setup(_) => panic!("Setup goes directly to storage"),
                 }
             }
         }

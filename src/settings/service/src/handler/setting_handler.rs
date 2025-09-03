@@ -149,6 +149,8 @@ pub(crate) type GenerateController =
 pub(crate) mod controller {
     use super::*;
 
+    // TODO(https://fxbug.dev/42166874) Remove dead code
+    #[allow(dead_code)]
     #[async_trait(?Send)]
     #[cfg(test)]
     pub(crate) trait Create: Sized {
@@ -397,6 +399,8 @@ pub mod persist {
             self.base.notify(event).await;
         }
 
+        // TODO(https://fxbug.dev/42166874) Remove dead code
+        #[allow(dead_code)]
         pub(crate) async fn read_setting_info<T: HasSettingType>(
             &self,
             id: ftrace::Id,
@@ -435,6 +439,8 @@ pub mod persist {
             panic!("Did not get a read response");
         }
 
+        // TODO(https://fxbug.dev/42166874) Remove dead code
+        #[allow(dead_code)]
         pub(crate) async fn read_setting<T: HasSettingType + TryFrom<SettingInfo>>(
             &self,
             id: ftrace::Id,
@@ -451,6 +457,8 @@ pub mod persist {
             }
         }
 
+        // TODO(https://fxbug.dev/42166874) Remove dead code
+        #[allow(dead_code)]
         /// The argument `write_through` will block returning until the value has been completely
         /// written to persistent store, rather than any temporary in-memory caching.
         pub(crate) async fn write_setting(
@@ -514,10 +522,9 @@ pub mod persist {
             id: ftrace::Id,
         ) -> Result<UpdateState, ControllerError>
         where
-            T: Into<SettingInfo> + DeviceStorageConvertible,
-            for<'a> &'a T: Into<SettingType>,
+            T: Into<SettingInfo> + HasSettingType + DeviceStorageConvertible,
         {
-            let setting_type = (&info).into();
+            let setting_type = T::SETTING_TYPE;
             let fst = format!("{setting_type:?}");
             let guard = trace_guard!(
                 id,
@@ -558,6 +565,8 @@ pub mod persist {
         _data: PhantomData<C>,
     }
 
+    // TODO(https://fxbug.dev/42166874) Remove dead code
+    #[allow(dead_code)]
     impl<C: controller::Create + super::controller::Handle + 'static> Handler<C> {
         pub(crate) fn spawn(context: Context) -> LocalBoxFuture<'static, ControllerGenerateResult> {
             Box::pin(async move {

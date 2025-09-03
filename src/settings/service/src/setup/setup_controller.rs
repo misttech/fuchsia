@@ -12,10 +12,12 @@ use crate::service_context::ServiceContext;
 use crate::setup::types::SetupInfo;
 use async_trait::async_trait;
 use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
+use std::marker::PhantomData;
+use std::rc::Rc;
 
 use settings_common::call_async;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
-use settings_storage::storage_factory::{NoneT, StorageAccess};
+use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
 
 async fn reboot(service_context_handle: &ServiceContext) -> Result<(), ControllerError> {
     let hardware_power_statecontrol_admin = service_context_handle
@@ -60,34 +62,47 @@ impl From<SetupInfo> for SettingInfo {
     }
 }
 
-pub struct SetupController {
-    client: ClientProxy,
+impl From<&SetupInfo> for SettingType {
+    fn from(_: &SetupInfo) -> SettingType {
+        SettingType::Setup
+    }
 }
 
-impl StorageAccess for SetupController {
+pub struct SetupController<F> {
+    client: ClientProxy,
+    store: Rc<DeviceStorage>,
+    _phantom: PhantomData<F>,
+}
+
+impl<F> StorageAccess for SetupController<F> {
     type Storage = DeviceStorage;
     type Data = SetupInfo;
     const STORAGE_KEY: &'static str = SetupInfo::KEY;
 }
 
 #[async_trait(?Send)]
-impl data_controller::Create for SetupController {
-    async fn create(client: ClientProxy) -> Result<Self, ControllerError> {
-        Ok(Self { client })
+impl<F> data_controller::CreateWithAsync for SetupController<F>
+where
+    F: StorageFactory<Storage = DeviceStorage>,
+{
+    type Data = Rc<F>;
+    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
+        let store = data.get_store().await;
+        Ok(Self { client, store, _phantom: PhantomData })
     }
 }
 
 #[async_trait(?Send)]
-impl controller::Handle for SetupController {
+impl<F> controller::Handle for SetupController<F> {
     async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
         match request {
             Request::SetConfigurationInterfaces(params) => {
                 let id = fuchsia_trace::Id::new();
-                let mut info = self.client.read_setting::<SetupInfo>(id).await;
+                let mut info = self.store.get::<SetupInfo>().await;
                 info.configuration_interfaces = params.config_interfaces_flags;
 
                 let write_setting_result =
-                    self.client.write_setting(info.into(), id).await.into_handler_result();
+                    self.client.storage_write(&self.store, info, id).await.into_handler_result();
 
                 // If the write succeeded, reboot if necessary.
                 if write_setting_result.is_ok() && params.should_reboot {
@@ -100,12 +115,7 @@ impl controller::Handle for SetupController {
                 }
                 Some(write_setting_result)
             }
-            Request::Get => Some(
-                self.client
-                    .read_setting_info::<SetupInfo>(fuchsia_trace::Id::new())
-                    .await
-                    .into_handler_result(),
-            ),
+            Request::Get => Some(Ok(Some(self.store.get::<SetupInfo>().await.into()))),
             _ => None,
         }
     }
