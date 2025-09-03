@@ -11,7 +11,6 @@
 
 #include "aml-spifc.h"
 #include "flash-chips.h"
-#include "src/devices/lib/mmio/include/lib/mmio/mmio.h"
 
 namespace amlspinand {
 

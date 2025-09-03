@@ -7,6 +7,7 @@
 #include <fuchsia/hardware/nand/cpp/banjo.h>
 #include <lib/device-protocol/pci.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/mmio/mmio.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/result.h>
 
@@ -15,7 +16,6 @@
 
 #include <ddktl/device.h>
 
-#include "src/devices/lib/mmio/include/lib/mmio/mmio.h"
 #include "src/devices/nand/drivers/intel-spi-flash/flash-chips.h"
 #include "src/devices/nand/drivers/intel-spi-flash/registers.h"
 

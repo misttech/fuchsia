@@ -5,26 +5,31 @@
 import("//build/components.gni")
 import("//build/cpp/sdk_source_set.gni")
 import("//build/test.gni")
-import("//build/zircon/zx_library.gni")
 
 group("tests") {
   testonly = true
   deps = [ ":mmio-unittest-package" ]
 }
 
-zx_library("mmio") {
-  sdk = "source"
-  sdk_publishable = "partner"
+config("headers.config") {
+  include_dirs = [ "include" ]
+}
+
+sdk_source_set("mmio") {
+  api = "//sdk/lib/mmio/mmio.api"
+  category = "partner"
+  sdk_name = "mmio"
   stable = true
-  sdk_headers = [
-    "lib/mmio/mmio.h",
-    "lib/mmio/mmio-buffer.h",
-    "lib/mmio/mmio-internal.h",
-    "lib/mmio/mmio-ops.h",
-    "lib/mmio/mmio-pinned-buffer.h",
-    "lib/mmio/mmio-view.h",
+  public = [
+    "include/lib/mmio/mmio-buffer.h",
+    "include/lib/mmio/mmio-internal.h",
+    "include/lib/mmio/mmio-ops.h",
+    "include/lib/mmio/mmio-pinned-buffer.h",
+    "include/lib/mmio/mmio-view.h",
+    "include/lib/mmio/mmio.h",
   ]
-  sources = [ "mmio-buffer.cc" ]
+  sdk_headers_for_internal_use = [ "include/lib/mmio/mmio-internal.h" ]
+  public_configs = [ ":headers.config" ]
   public_deps = [
     # <lib/mmio/mmio.h> has #include <lib/mmio-ptr/mmio-ptr.h>.
     "//zircon/system/ulib/mmio-ptr",
@@ -35,6 +40,7 @@ zx_library("mmio") {
     # <lib/mmio/mmio-buffer.h> has #include <lib/zx/result.h>.
     "//zircon/system/ulib/zx",
   ]
+  sources = [ "mmio-buffer.cc" ]
 }
 
 sdk_source_set("test_helper") {
