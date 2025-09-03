@@ -170,14 +170,17 @@ struct SchedDeadlineParams {
 
   constexpr SchedDeadlineParams() = default;
   constexpr SchedDeadlineParams(SchedDuration capacity_ns, SchedDuration deadline_ns)
-      : capacity_ns{capacity_ns},
-        deadline_ns{deadline_ns},
-        utilization{capacity_ns / deadline_ns} {}
+      : capacity_ns{capacity_ns}, deadline_ns{deadline_ns}, utilization{capacity_ns / deadline_ns} {
+    DEBUG_ASSERT(0 < capacity_ns);
+    DEBUG_ASSERT(capacity_ns <= deadline_ns);
+  }
 
   constexpr SchedDeadlineParams(SchedUtilization utilization, SchedDuration deadline_ns)
-      : capacity_ns{deadline_ns * utilization},
-        deadline_ns{deadline_ns},
-        utilization{utilization} {}
+      : capacity_ns{deadline_ns * utilization}, deadline_ns{deadline_ns}, utilization{utilization} {
+    DEBUG_ASSERT(0 < deadline_ns);
+    DEBUG_ASSERT(0 < utilization);
+    DEBUG_ASSERT(utilization <= 1);
+  }
 
   constexpr SchedDeadlineParams(const SchedDeadlineParams&) = default;
   constexpr SchedDeadlineParams& operator=(const SchedDeadlineParams&) = default;
@@ -185,7 +188,10 @@ struct SchedDeadlineParams {
   constexpr SchedDeadlineParams(const zx_sched_deadline_params_t& params)
       : capacity_ns{params.capacity},
         deadline_ns{params.relative_deadline},
-        utilization{capacity_ns / deadline_ns} {}
+        utilization{capacity_ns / deadline_ns} {
+    DEBUG_ASSERT(0 < capacity_ns);
+    DEBUG_ASSERT(capacity_ns <= deadline_ns);
+  }
   constexpr SchedDeadlineParams& operator=(const zx_sched_deadline_params_t& params) {
     *this = SchedDeadlineParams{params};
     return *this;
