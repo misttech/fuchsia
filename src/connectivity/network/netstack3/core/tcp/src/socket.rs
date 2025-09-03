@@ -55,7 +55,7 @@ use netstack3_base::{
     CoreTxMetadataContext, CtxPair, DataNotifierTypes, DeferredResourceRemovalContext,
     DeviceIdContext, EitherDeviceId, ExistsError, HandleableTimer, IcmpErrorCode, Inspector,
     InspectorDeviceExt, InspectorExt, InstantBindingsTypes, IpDeviceAddr, IpExt, LocalAddressError,
-    Mark, MarkDomain, Mss, OwnedOrRefsBidirectionalConverter, PayloadLen as _, PortAllocImpl,
+    Mark, MarkDomain, Mss, OwnedOrRefsBidirectionalConverter, PortAllocImpl,
     ReferenceNotifiersExt as _, RemoveResourceResult, ResourceCounterContext as _, RngContext,
     Segment, SeqNum, SettingsContext, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
     TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
@@ -3073,19 +3073,16 @@ where
                                 socket_options,
                             ) {
                                 Err(CloseError::NoConnection) => NewlyClosed::No,
-                                Err(CloseError::Closing) | Ok(NewlyClosed::No) => {
-                                    let limit = None;
-                                    do_send_inner(
-                                        &id,
-                                        socket_options,
-                                        conn,
-                                        limit,
-                                        &addr,
-                                        timer,
-                                        core_ctx,
-                                        bindings_ctx,
-                                    )
-                                }
+                                Err(CloseError::Closing) | Ok(NewlyClosed::No) => do_send_inner(
+                                    &id,
+                                    socket_options,
+                                    conn,
+                                    DoSendLimit::MultipleSegments,
+                                    &addr,
+                                    timer,
+                                    core_ctx,
+                                    bindings_ctx,
+                                ),
                                 Ok(NewlyClosed::Yes) => NewlyClosed::Yes,
                             };
                             // The connection transitions to closed because of
@@ -3241,14 +3238,13 @@ where
                                 socket_options,
                             ) {
                                 Ok(newly_closed) => {
-                                    let limit = None;
                                     let newly_closed = match newly_closed {
                                         NewlyClosed::Yes => NewlyClosed::Yes,
                                         NewlyClosed::No => do_send_inner(
                                             id,
                                             socket_options,
                                             conn,
-                                            limit,
+                                            DoSendLimit::MultipleSegments,
                                             addr,
                                             timer,
                                             core_ctx,
@@ -3746,7 +3742,6 @@ where
                     conn, sharing: _, timer
                 }) => (conn, timer)
             );
-            let limit = None;
             match core_ctx {
                 MaybeDualStack::NotDualStack((core_ctx, converter)) => {
                     let (conn, addr) = converter.convert(conn);
@@ -3755,7 +3750,7 @@ where
                         &I::into_demux_socket_id(conn_id.clone()),
                         socket_options,
                         conn,
-                        limit,
+                        DoSendLimit::MultipleSegments,
                         addr,
                         timer,
                         core_ctx,
@@ -3769,7 +3764,7 @@ where
                             &I::into_demux_socket_id(conn_id.clone()),
                             socket_options,
                             conn,
-                            limit,
+                            DoSendLimit::MultipleSegments,
                             addr,
                             timer,
                             core_ctx,
@@ -3783,7 +3778,7 @@ where
                             &other_demux_id,
                             socket_options,
                             conn,
-                            limit,
+                            DoSendLimit::MultipleSegments,
                             addr,
                             timer,
                             core_ctx,
@@ -3844,12 +3839,11 @@ where
                         + TcpSocketContext<SockI, CC::WeakDeviceId, BC>,
                 {
                     let time_wait = matches!(conn.state, State::TimeWait(_));
-                    let limit = None;
                     let newly_closed = do_send_inner(
                         id,
                         socket_options,
                         conn,
-                        limit,
+                        DoSendLimit::MultipleSegments,
                         addr,
                         timer,
                         core_ctx,
@@ -4164,12 +4158,12 @@ where
 
                     match should_send {
                         ShouldRetransmit::No => {}
-                        ShouldRetransmit::Yes(mss) => do_send_inner_and_then_handle_newly_closed(
+                        ShouldRetransmit::Yes => do_send_inner_and_then_handle_newly_closed(
                             &id,
                             &demux_id,
                             socket_options,
                             conn,
-                            Some(mss.into()),
+                            DoSendLimit::OneSegment,
                             addr,
                             timer,
                             core_ctx,
@@ -4196,13 +4190,13 @@ where
 
                             match should_send {
                                 ShouldRetransmit::No => {}
-                                ShouldRetransmit::Yes(mss) => {
+                                ShouldRetransmit::Yes => {
                                     do_send_inner_and_then_handle_newly_closed(
                                         &id,
                                         &demux_id,
                                         socket_options,
                                         conn,
-                                        Some(mss.into()),
+                                        DoSendLimit::OneSegment,
                                         addr,
                                         timer,
                                         core_ctx,
@@ -4227,13 +4221,13 @@ where
 
                             match should_send {
                                 ShouldRetransmit::No => {}
-                                ShouldRetransmit::Yes(mss) => {
+                                ShouldRetransmit::Yes => {
                                     do_send_inner_and_then_handle_newly_closed(
                                         &id,
                                         &demux_id,
                                         socket_options,
                                         conn,
-                                        Some(mss.into()),
+                                        DoSendLimit::OneSegment,
                                         addr,
                                         timer,
                                         core_ctx,
@@ -4789,13 +4783,19 @@ fn close_pending_socket<WireI, SockI, DC, BC>(
     }
 }
 
+// How many segments to send as part of the "do_send" routine.
+pub(crate) enum DoSendLimit {
+    OneSegment,
+    MultipleSegments,
+}
+
 // Calls `do_send_inner` and handle the result.
 fn do_send_inner_and_then_handle_newly_closed<SockI, WireI, CC, BC>(
     conn_id: &TcpSocketId<SockI, CC::WeakDeviceId, BC>,
     demux_id: &WireI::DemuxSocketId<CC::WeakDeviceId, BC>,
     socket_options: &SocketOptions,
     conn: &mut Connection<SockI, WireI, CC::WeakDeviceId, BC>,
-    limit: Option<u32>,
+    limit: DoSendLimit,
     addr: &ConnAddr<ConnIpAddr<WireI::Addr, NonZeroU16, NonZeroU16>, CC::WeakDeviceId>,
     timer: &mut BC::Timer,
     core_ctx: &mut CC,
@@ -4839,7 +4839,7 @@ fn do_send_inner<SockI, WireI, CC, BC>(
     conn_id: &TcpSocketId<SockI, CC::WeakDeviceId, BC>,
     socket_options: &SocketOptions,
     conn: &mut Connection<SockI, WireI, CC::WeakDeviceId, BC>,
-    mut limit: Option<u32>,
+    limit: DoSendLimit,
     addr: &ConnAddr<ConnIpAddr<WireI::Addr, NonZeroU16, NonZeroU16>, CC::WeakDeviceId>,
     timer: &mut BC::Timer,
     core_ctx: &mut CC,
@@ -4855,12 +4855,10 @@ where
         match conn.state.poll_send(
             &conn_id.either(),
             &TcpCountersRefs::from_ctx(core_ctx, conn_id),
-            limit.unwrap_or(u32::MAX),
             bindings_ctx.now(),
             socket_options,
         ) {
             Ok(seg) => {
-                let sent = u32::try_from(seg.data().len()).unwrap();
                 send_tcp_segment(
                     core_ctx,
                     bindings_ctx,
@@ -4870,12 +4868,9 @@ where
                     seg,
                     &socket_options.ip_options,
                 );
-
-                if let Some(limit) = limit.as_mut() {
-                    let Some(remaining) = limit.checked_sub(sent) else {
-                        break NewlyClosed::No;
-                    };
-                    *limit = remaining;
+                match limit {
+                    DoSendLimit::OneSegment => break NewlyClosed::No,
+                    DoSendLimit::MultipleSegments => {}
                 }
             }
             Err(newly_closed) => break newly_closed,

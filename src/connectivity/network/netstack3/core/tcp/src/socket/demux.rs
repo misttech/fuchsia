@@ -48,11 +48,11 @@ use crate::internal::counters::{
 use crate::internal::socket::isn::IsnGenerator;
 use crate::internal::socket::{
     self, AsThisStack as _, BoundSocketState, Connection, CoreTxMetadataContext, DemuxState,
-    DeviceIpSocketHandler, DualStackDemuxIdConverter as _, DualStackIpExt, EitherStack,
-    HandshakeStatus, Listener, ListenerAddrState, ListenerSharingState, MaybeDualStack,
-    MaybeListener, PrimaryRc, TcpApi, TcpBindingsContext, TcpBindingsTypes, TcpContext,
-    TcpDemuxContext, TcpDualStackContext, TcpIpTransportContext, TcpPortSpec, TcpSocketId,
-    TcpSocketSetEntry, TcpSocketState, TcpSocketStateInner, TcpSocketTxMetadata,
+    DeviceIpSocketHandler, DoSendLimit, DualStackDemuxIdConverter as _, DualStackIpExt,
+    EitherStack, HandshakeStatus, Listener, ListenerAddrState, ListenerSharingState,
+    MaybeDualStack, MaybeListener, PrimaryRc, TcpApi, TcpBindingsContext, TcpBindingsTypes,
+    TcpContext, TcpDemuxContext, TcpDualStackContext, TcpIpTransportContext, TcpPortSpec,
+    TcpSocketId, TcpSocketSetEntry, TcpSocketState, TcpSocketStateInner, TcpSocketTxMetadata,
 };
 use crate::internal::state::{
     BufferProvider, Closed, DataAcked, Initial, NewlyClosed, State, TimeWait,
@@ -775,13 +775,12 @@ where
     }
 
     // Send any enqueued data, if there is any.
-    let limit = None;
     socket::do_send_inner_and_then_handle_newly_closed(
         conn_id,
         &demux_id,
         socket_options,
         conn,
-        limit,
+        DoSendLimit::MultipleSegments,
         &conn_addr,
         timer,
         core_ctx,
