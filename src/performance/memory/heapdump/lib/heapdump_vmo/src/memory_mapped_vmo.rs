@@ -117,7 +117,7 @@ impl MemoryMappedVmo {
     ///
     /// This method validates the alignment and the bounds against the VMO size.
     pub fn get_object_mut<'a, T: MemoryMappable>(
-        &mut self,
+        &'a mut self,
         byte_offset: usize,
     ) -> Result<&'a mut T, crate::Error> {
         let ptr = self.validate_and_get_mut_ptr(byte_offset, 1)?;
