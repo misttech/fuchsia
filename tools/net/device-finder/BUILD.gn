@@ -69,14 +69,15 @@ if (is_host) {
 }
 if (is_host) {
   sdk_host_tool("device-finder_sdk") {
+    sdk_area = "Developer"
     category = "partner"
-    output_name = "device-finder"
+    sdk_name = "device-finder"
     deps = [ ":device-finder" ]
   }
 }
 if (is_host) {
   install_host_tools("host") {
-    outputs = [ "device-finder" ]
     deps = [ ":device-finder" ]
+    outputs = [ "device-finder" ]
   }
 }

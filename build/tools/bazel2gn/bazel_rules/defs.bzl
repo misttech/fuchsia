@@ -20,16 +20,32 @@ def idk_host_tool(
         # GN note: Unlike the GN template, this should not include "_sdk"/"_idk".
         # TODO(https://fxbug.dev/442025401): `idk_atom()` will append "_idk" to it.
         name,
+        idk_name,
         category,
+        api_area,
         # TODO(https://fxbug.dev/442025401): Consider whether
         # `implementation_deps` would be more appropriate for the tool
         # dependency. Use `deps` for IDK atom dependencies if needed.
-        deps,
+        implementation_deps,  # GN equivalent: `deps`
         target_compatible_with,
-        output_name = None):
+        output_name = None,  # GN note: Defaults to `idk_name` instead of the other way around.
+        visibility = ["//visibility:private"]):
+    if not output_name:
+        output_name = idk_name
+
     pass
 
 # install_host_tools does nothing in Bazel right now. It exists to facilitate
 # target syncing between GN and Bazel.
-def install_host_tools(**kwargs):
+#
+# `target_compatible_with = HOST_CONSTRAINTS` must be specified for bazel2gn to
+# generate the correct condition statement.
+# TODO(https://fxbug.dev/442025401): Consider implementing this within bazel2gn
+# rather than requiring it at each call site.
+def install_host_tools(
+        name,
+        tool_output_names,  # GN equivalent: `outputs`
+        implementation_deps,  # GN equivalent: `deps`
+        target_compatible_with,
+        visibility = ["//visibility:private"]):
     pass

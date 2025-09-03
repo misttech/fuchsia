@@ -19,15 +19,16 @@ go_binary(
 
 idk_host_tool(
     name = "fidlgen_hlcpp",
+    api_area = "FIDL",
     category = "partner",
-    output_name = "fidlgen_hlcpp",
+    idk_name = "fidlgen_hlcpp",
+    implementation_deps = [":fidlgen_hlcpp"],
     target_compatible_with = HOST_CONSTRAINTS,
-    deps = [":fidlgen_hlcpp"],
 )
 
 install_host_tools(
     name = "host",
-    outputs = ["fidlgen_hlcpp"],
+    implementation_deps = [":fidlgen_hlcpp"],
     target_compatible_with = HOST_CONSTRAINTS,
-    deps = [":fidlgen_hlcpp"],
+    tool_output_names = ["fidlgen_hlcpp"],
 )

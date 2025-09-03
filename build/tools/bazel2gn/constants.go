@@ -109,11 +109,20 @@ var zxAttrMap = map[string]string{
 	"category": "sdk_publishable",
 }
 
+// hostToolAttrMap maps from attribute name in Bazel host tool rules to GN parameter names.
+var hostToolAttrMap = map[string]string{
+	"implementation_deps": "deps",
+	"tool_output_names":   "outputs",
+}
+
 // idkAttrMap maps from attribute name in Bazel IDK C++ rules to GN parameter names.
 var idkCcAttrMap = mustMergeMaps(idkAttrMap, ccAttrMap)
 
 // idkAttrMap maps from attribute name in Bazel IDK C++ ZX rules to GN parameter names.
 var idkZxAttrMap = mustMergeMaps(idkCcAttrMap, zxAttrMap)
+
+// idkHostToolAttrMap maps from attribute name in Bazel IDK host tool rules to GN parameter names.
+var idkHostToolAttrMap = mustMergeMaps(idkAttrMap, hostToolAttrMap)
 
 // A mapping from Bazel rule names to attribute mappings.
 // Attribute mappings map from Bazel rule attributes that use different names in GN.
@@ -131,6 +140,10 @@ var attrMapsByRules = map[string]map[string]string{
 	// IDK
 	"idk_cc_source_library":    idkCcAttrMap,
 	"idk_cc_source_library_zx": idkZxAttrMap,
+	"idk_host_tool":            idkHostToolAttrMap,
+
+	// Tools
+	"install_host_tools": hostToolAttrMap,
 }
 
 // These identifiers with the same meanings are represented differently in Bazel

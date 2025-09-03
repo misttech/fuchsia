@@ -18,15 +18,16 @@ go_binary(
 
 idk_host_tool(
     name = "fidlgen_rust",
+    api_area = "FIDL",
     category = "partner",
-    output_name = "fidlgen_rust",
+    idk_name = "fidlgen_rust",
+    implementation_deps = [":fidlgen_rust"],
     target_compatible_with = HOST_CONSTRAINTS,
-    deps = [":fidlgen_rust"],
 )
 
 install_host_tools(
     name = "host",
-    outputs = ["fidlgen_rust"],
+    implementation_deps = [":fidlgen_rust"],
     target_compatible_with = HOST_CONSTRAINTS,
-    deps = [":fidlgen_rust"],
+    tool_output_names = ["fidlgen_rust"],
 )

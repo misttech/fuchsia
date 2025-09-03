@@ -210,14 +210,15 @@ if (is_host) {
 }
 if (is_host) {
   sdk_host_tool("fidlgen_cpp_sdk") {
+    sdk_area = "FIDL"
     category = "partner"
-    output_name = "fidlgen_cpp"
+    sdk_name = "fidlgen_cpp"
     deps = [ ":fidlgen_cpp" ]
   }
 }
 if (is_host) {
   install_host_tools("host") {
-    outputs = [ "fidlgen_cpp" ]
     deps = [ ":fidlgen_cpp" ]
+    outputs = [ "fidlgen_cpp" ]
   }
 }

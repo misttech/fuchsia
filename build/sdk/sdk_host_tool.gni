@@ -16,13 +16,13 @@ import("//build/sdk/sdk_atom.gni")
 #     See //build/sdk/sdk_atom.gni.
 #
 #   sdk_name (optional)
-#     Name of the library in the SDK.
+#     Name of the library in the SDK. Defaults to `output_name`.
 #
 #   binary (optional)
 #     Path to the tool binary. Defaults to "$root_out_dir/$output_name".
 #
 #   output_name (optional)
-#     The tool's name. Inferred from target_name by default.
+#     The tool's name. Defaults to `sdk_name` if specified or target_name.
 #
 #   sdk_deps (optional)
 #     List of labels representing elements that should be added to SDKs
@@ -40,9 +40,18 @@ template("sdk_host_tool") {
     output_name = invoker.output_name
   }
 
-  sdk_name = output_name
   if (defined(invoker.sdk_name)) {
     sdk_name = invoker.sdk_name
+
+    # In the bazel macro, `output_name` is set to `sdk_name`, so when bazel2gn
+    # is used, the latter may be set while the former is not. Behave as if this
+    # value was specified as `output_name` instead, in which case they would
+    # be identical (via the else block below).
+    if (!defined(invoker.output_name)) {
+      output_name = sdk_name
+    }
+  } else {
+    sdk_name = output_name
   }
 
   binary = "$root_out_dir/$output_name"

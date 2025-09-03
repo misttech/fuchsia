@@ -114,14 +114,15 @@ if (is_host) {
 }
 if (is_host) {
   sdk_host_tool("fidlgen_hlcpp_sdk") {
+    sdk_area = "FIDL"
     category = "partner"
-    output_name = "fidlgen_hlcpp"
+    sdk_name = "fidlgen_hlcpp"
     deps = [ ":fidlgen_hlcpp" ]
   }
 }
 if (is_host) {
   install_host_tools("host") {
-    outputs = [ "fidlgen_hlcpp" ]
     deps = [ ":fidlgen_hlcpp" ]
+    outputs = [ "fidlgen_hlcpp" ]
   }
 }

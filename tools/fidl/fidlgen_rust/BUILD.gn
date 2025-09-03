@@ -121,14 +121,15 @@ if (is_host) {
 }
 if (is_host) {
   sdk_host_tool("fidlgen_rust_sdk") {
+    sdk_area = "FIDL"
     category = "partner"
-    output_name = "fidlgen_rust"
+    sdk_name = "fidlgen_rust"
     deps = [ ":fidlgen_rust" ]
   }
 }
 if (is_host) {
   install_host_tools("host") {
-    outputs = [ "fidlgen_rust" ]
     deps = [ ":fidlgen_rust" ]
+    outputs = [ "fidlgen_rust" ]
   }
 }

@@ -52,15 +52,16 @@ go_test(
 
 idk_host_tool(
     name = "device-finder",
+    api_area = "Developer",
     category = "partner",
-    output_name = "device-finder",
+    idk_name = "device-finder",
+    implementation_deps = [":device-finder"],
     target_compatible_with = HOST_CONSTRAINTS,
-    deps = [":device-finder"],
 )
 
 install_host_tools(
     name = "host",
-    outputs = ["device-finder"],
+    implementation_deps = [":device-finder"],
     target_compatible_with = HOST_CONSTRAINTS,
-    deps = [":device-finder"],
+    tool_output_names = ["device-finder"],
 )

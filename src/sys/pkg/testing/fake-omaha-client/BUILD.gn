@@ -59,8 +59,9 @@ if (is_host) {
 }
 if (is_host) {
   sdk_host_tool("bin_sdk") {
+    sdk_area = "Testing"
     category = "partner"
-    output_name = "fake-omaha-client"
+    sdk_name = "fake-omaha-client"
     deps = [ ":fake-omaha-client" ]
   }
 }
