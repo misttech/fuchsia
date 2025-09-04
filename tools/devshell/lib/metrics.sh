@@ -20,7 +20,7 @@
 # depends on FUCHSIA_DIR being defined correctly.
 
 # Increase the metrics version by 1 when analytics is updated
-_METRICS_VERSION="3"
+_METRICS_VERSION="4"
 _METRICS_ALLOWS_CUSTOM_REPORTING=( "test" "g-review" )
 # If args match the below, then track capture group 1
 _METRICS_TRACK_REGEX=(
@@ -937,7 +937,8 @@ function __send-analytics-batch {
   \"other_uuid\":{\"value\":\"${OTHER_TOOLS_ANALYTICS_UUID}\"},\
   \"internal\":{\"value\":${internal}},\
   \"metrics_level\":{\"value\":${METRICS_LEVEL}},\
-  \"metrics_version\":{\"value\":${_METRICS_VERSION}}\
+  \"metrics_version\":{\"value\":${_METRICS_VERSION}},\
+  \"nproc\":{\"value\":$(_get_nproc)}\
   }"
   local events_json=$(fx-command-run jq -n -c '$ARGS.positional' \
     --jsonargs "${events[@]}")
@@ -1071,6 +1072,14 @@ function _app_version {
     echo "${ZSH_VERSION}"
   else
     echo "Unknown"
+  fi
+}
+
+function _get_nproc {
+  if [[ "${METRICS_LEVEL}" -eq 2 ]]; then
+    nproc
+  else
+    echo "-1"
   fi
 }
 
