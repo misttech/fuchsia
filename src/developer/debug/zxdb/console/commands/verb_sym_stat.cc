@@ -74,11 +74,11 @@ Example
 )";
 
 void SummarizeProcessSymbolStatus(ConsoleContext* context, Process* process, OutputBuffer* out) {
-  // Get modules sorted by name.
+  // Get modules sorted by load address.
   std::vector<ModuleSymbolStatus> modules = process->GetSymbols()->GetStatus();
   std::sort(
       modules.begin(), modules.end(),
-      [](const ModuleSymbolStatus& a, const ModuleSymbolStatus& b) { return a.name < b.name; });
+      [](const ModuleSymbolStatus& a, const ModuleSymbolStatus& b) { return a.base < b.base; });
 
   out->Append(Syntax::kHeading, fxl::StringPrintf("\nProcess %d symbol status\n\n",
                                                   context->IdForTarget(process->GetTarget())));

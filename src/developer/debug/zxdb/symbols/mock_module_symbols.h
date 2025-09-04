@@ -84,6 +84,7 @@ class MockModuleSymbols : public ModuleSymbols {
   FRIEND_REF_COUNTED_THREAD_SAFE(MockModuleSymbols);
 
   explicit MockModuleSymbols(const std::string& local_file_name);
+  MockModuleSymbols(const std::string& local_file_name, const std::string& build_id, bool loaded);
   ~MockModuleSymbols() override;
 
  private:
@@ -95,6 +96,13 @@ class MockModuleSymbols : public ModuleSymbols {
   std::size_t modification_time_ = 0;
   uint64_t mapped_length_ = 0;
   std::string build_dir_;
+  std::string build_id_;
+
+  // In the typical non-test implementation of this interface, the existence of the implementation
+  // implies that the symbols have been loaded. For this mock implementation, there are some tests
+  // that want to create this class but explicitly not be loaded. The default is to be loaded since
+  // most tests will want to interact with the symbols in some way.
+  bool loaded_ = true;
 
   // Maps manually-added symbols to their locations.
   std::map<Identifier, std::vector<Location>> named_symbols_;

@@ -4,6 +4,8 @@
 
 #include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
 
+#include <algorithm>
+
 #include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/input_location.h"
@@ -16,6 +18,9 @@ namespace zxdb {
 
 MockModuleSymbols::MockModuleSymbols(const std::string& local_file_name)
     : local_file_name_(local_file_name) {}
+MockModuleSymbols::MockModuleSymbols(const std::string& local_file_name,
+                                     const std::string& build_id, bool loaded)
+    : local_file_name_(local_file_name), build_id_(build_id), loaded_(loaded) {}
 MockModuleSymbols::~MockModuleSymbols() = default;
 
 void MockModuleSymbols::AddSymbolLocations(const Identifier& name, std::vector<Location> locs) {
@@ -48,7 +53,8 @@ ModuleSymbolStatus MockModuleSymbols::GetStatus() const {
   ModuleSymbolStatus status;
   status.name = local_file_name_;
   status.functions_indexed = named_symbols_.size();
-  status.symbols_loaded = true;
+  status.symbols_loaded = loaded_;
+  status.build_id = build_id_;
   return status;
 }
 
@@ -58,6 +64,9 @@ std::vector<Location> MockModuleSymbols::ResolveInputLocation(const SymbolContex
   std::vector<Location> result;
   switch (input_location.type) {
     case InputLocation::Type::kAddress:
+      std::ignore = std::upper_bound(
+          addr_symbols_.begin(), addr_symbols_.end(), input_location.address,
+          [](uint64_t addr, const auto& sym) mutable { return addr < sym.first; });
       if (auto found = addr_symbols_.find(input_location.address); found != addr_symbols_.end()) {
         result = found->second;
       } else {

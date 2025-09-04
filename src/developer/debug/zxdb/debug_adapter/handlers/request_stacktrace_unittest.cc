@@ -9,10 +9,13 @@
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
+#include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/common/scoped_temp_file.h"
 #include "src/developer/debug/zxdb/debug_adapter/context_test.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
+#include "src/developer/debug/zxdb/symbols/loaded_module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
+#include "src/developer/debug/zxdb/symbols/process_symbols.h"
 
 namespace zxdb {
 
@@ -96,10 +99,14 @@ TEST_F(RequestStackTraceTest, SyncFramesRequired) {
   constexpr size_t kStackSize = 3;
 
   // Set up symbol resolution for stack frames.
-  auto mock_module = InjectMockModule(process);
   ScopedTempFile temp_file;
-  std::vector<fxl::RefPtr<Function>> function;
-  std::vector<Location> location;
+  auto mock_module = InjectMockModule(process, 0x10000);
+  auto mock_module2 = InjectMockModule(process, 0x8000);
+  std::vector<fxl::RefPtr<Function>> functions;
+  std::vector<Location> locations;
+
+  auto loaded_module1 = process->GetSymbols()->GetLoadedForModuleSymbols(mock_module.get());
+  ASSERT_NE(loaded_module1, nullptr);
 
   for (size_t i = 0; i < kStackSize; i++) {
     // For stack frames that did not recover an exact PC value, the address lookup will actually be
@@ -111,13 +118,17 @@ TEST_F(RequestStackTraceTest, SyncFramesRequired) {
     if (i > 0)
       lookup_address--;
 
-    function.push_back(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
-    function[i]->set_assigned_name(std::string("test_func_") + std::to_string(i));
-    function[i]->set_code_ranges(
+    functions.push_back(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
+    functions[i]->set_assigned_name(std::string("test_func_") + std::to_string(i));
+    functions[i]->set_code_ranges(
         AddressRanges(AddressRange(kAddress[i] - 0x10, kAddress[i] + 0x10)));
-    location.push_back(Location(lookup_address, FileLine(temp_file.name(), 23 + i), 10 + i,
-                                SymbolContext::ForRelativeAddresses(), function[i]));
-    mock_module->AddSymbolLocations(lookup_address, {location[i]});
+    locations.push_back(Location(lookup_address, FileLine(temp_file.name(), 23 + i), 10 + i,
+                                 SymbolContext::ForRelativeAddresses(), functions[i]));
+    if (kAddress[i] >= loaded_module1->load_address()) {
+      mock_module->AddSymbolLocations(lookup_address, {locations.back()});
+    } else {
+      mock_module2->AddSymbolLocations(lookup_address, {locations.back()});
+    }
   }
 
   // Notify of thread stop and push expected stack frames.
@@ -125,22 +136,17 @@ TEST_F(RequestStackTraceTest, SyncFramesRequired) {
   break_notification.type = debug_ipc::ExceptionType::kSoftwareBreakpoint;
   break_notification.thread.id = {.process = kProcessKoid, .thread = kThreadKoid};
   break_notification.thread.state = debug_ipc::ThreadRecord::State::kBlocked;
-  InjectException(break_notification);
-
-  debug_ipc::ThreadStatusReply expected_reply;
-  expected_reply.record = break_notification.thread;
-  expected_reply.record.stack_amount = debug_ipc::ThreadRecord::StackAmount::kFull;
+  break_notification.thread.stack_amount = debug_ipc::ThreadRecord::StackAmount::kFull;
   for (size_t i = 0; i < kStackSize; i++) {
     debug_ipc::StackFrame frame(kAddress[i], kStack[i]);
     if (i > 0) {
-      // For this test the rest of the frames after the first will be simulating return addresses.
       frame.pc_is_return_address = debug_ipc::StackFrame::AddressType::kReturn;
     }
-    expected_reply.record.frames.push_back(frame);
+    break_notification.thread.frames.push_back(frame);
   }
-  mock_remote_api()->set_thread_status_reply(expected_reply);
+  InjectException(break_notification);
 
-  // Receive thread stopped event in client.
+  // Receive exception event in client.
   RunClient();
 
   // Send request from the client.
@@ -158,10 +164,10 @@ TEST_F(RequestStackTraceTest, SyncFramesRequired) {
   EXPECT_FALSE(got.error);
   EXPECT_EQ(static_cast<size_t>(got.response.totalFrames.value()), kStackSize);
   for (size_t i = 0; i < kStackSize; i++) {
-    EXPECT_EQ(got.response.stackFrames[i].column, location[i].column());
-    EXPECT_EQ(got.response.stackFrames[i].line, location[i].file_line().line());
-    EXPECT_EQ(got.response.stackFrames[i].name, function[i]->GetAssignedName());
     EXPECT_EQ(got.response.stackFrames[i].source.value().path.value(), temp_file.name());
+    EXPECT_EQ(got.response.stackFrames[i].column, locations[i].column());
+    EXPECT_EQ(got.response.stackFrames[i].line, locations[i].file_line().line());
+    EXPECT_EQ(got.response.stackFrames[i].name, functions[i]->GetAssignedName());
   }
 }
 

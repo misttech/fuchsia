@@ -56,8 +56,11 @@ class RemoteAPITest : public TestWithLoop {
                     uint64_t load_address, const std::string& build_id);
 
   // Creates a MockModuleSymbols with a random name and build ID and reports it as loaded at the
-  // given address. If the load address is 0, an arbitrary one will be generated.
-  fxl::RefPtr<MockModuleSymbols> InjectMockModule(Process* process, uint64_t load_address = 0);
+  // given address. If the load address is 0, an arbitrary one will be generated. Similarly, a
+  // build_id string may be given, an arbitrary one will be generated if not provided.
+  fxl::RefPtr<MockModuleSymbols> InjectMockModule(Process* process, uint64_t load_address = 0,
+                                                  const std::string& build_id = "",
+                                                  bool loaded = true);
 
   // Makes the target have a fake running process with the given KOID. The process has a
   // deterministic name, "process-" followed by the given koid in hex.

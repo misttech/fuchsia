@@ -11,11 +11,11 @@
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/process_impl.h"
 #include "src/developer/debug/zxdb/client/session.h"
-#include "src/developer/debug/zxdb/client/setting_schema_definition.h"
 #include "src/developer/debug/zxdb/client/system.h"
 #include "src/developer/debug/zxdb/client/target_impl.h"
 #include "src/developer/debug/zxdb/client/thread_impl.h"
 #include "src/developer/debug/zxdb/common/string_util.h"
+#include "src/developer/debug/zxdb/symbols/loaded_module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -30,30 +30,45 @@ void RemoteAPITest::TearDown() { session_.reset(); }
 void RemoteAPITest::InjectModule(Process* process, fxl::RefPtr<ModuleSymbols> mod_sym,
                                  const std::string& name, uint64_t load_address,
                                  const std::string& build_id) {
+  // This injects the mock module to the system symbols, which the real ProcessImpl will query
+  // during symbol loading routines invoked from |OnModules| below.
   session().system().GetSymbols()->InjectModuleForTesting(build_id, mod_sym.get());
 
   std::vector<debug_ipc::Module> modules;
-  debug_ipc::Module load;
-  load.name = name;
-  load.base = load_address;
-  load.build_id = build_id;
-  modules.push_back(load);
+  // Make sure we don't completely overwrite the module list, since everything's local we can just
+  // ask the process what it already thinks it has loaded.
+  for (const auto& loaded : process->GetSymbols()->GetLoadedModuleSymbols()) {
+    auto& load = modules.emplace_back();
+    load.base = loaded->load_address();
+    load.build_id = loaded->build_id();
+    load.name = loaded->module_symbols()->GetStatus().name;
+  }
 
-  // Need to convert to an actual ProcessImpl.
+  // And now add in our new module.
+  debug_ipc::Module new_remote_module;
+  new_remote_module.name = name;
+  new_remote_module.base = load_address;
+  new_remote_module.build_id = build_id;
+  modules.push_back(new_remote_module);
+
+  // TODO(https://fxbug.dev/441982241): This should probably use a MockProcess instead of a
+  // ProcessImpl.
   ProcessImpl* process_impl = session().system().ProcessImplFromKoid(process->GetKoid());
   FX_CHECK(process_impl);
   process_impl->OnModules(modules);
 }
 
 fxl::RefPtr<MockModuleSymbols> RemoteAPITest::InjectMockModule(Process* process,
-                                                               uint64_t load_address) {
+                                                               uint64_t load_address,
+                                                               const std::string& build_id,
+                                                               bool loaded) {
   // Index to generate unique names for each mock module created. Must start > 0 because this is
   // used to generate a load address that can't be null.
   static int next_mock_module_id = 0;
   next_mock_module_id++;
 
   // Generate a load address if necessary.
-  int effective_load_address;
+  uint64_t effective_load_address;
   if (load_address) {
     effective_load_address = load_address;
   } else {
@@ -61,15 +76,25 @@ fxl::RefPtr<MockModuleSymbols> RemoteAPITest::InjectMockModule(Process* process,
     effective_load_address = static_cast<uint64_t>(next_mock_module_id) << 32;
   }
 
-  std::string build_id = "mock_build_id_" + std::to_string(next_mock_module_id);
+  std::string effective_build_id;
+  if (build_id.empty()) {
+    effective_build_id = "mock_build_id_" + std::to_string(next_mock_module_id);
+  } else {
+    effective_build_id = build_id;
+  }
 
-  auto module = fxl::MakeRefCounted<MockModuleSymbols>("mock_modules.so");
-  InjectModule(process, module, "mock_module", effective_load_address, build_id);
+  auto module =
+      fxl::MakeRefCounted<MockModuleSymbols>("mock_modules.so", effective_build_id, loaded);
+
+  InjectModule(process, module, "mock_module", effective_load_address, effective_build_id);
 
   return module;
 }
 
 Process* RemoteAPITest::InjectProcess(uint64_t process_koid) {
+  // TODO(https://fxbug.dev/441982241): This should not be using a TargetImpl to create ProcessImpl
+  // here, instead we should be using the respective mocks which can better cope with some of the
+  // broken abstraction boundaries that are created in test environments.
   auto target = session().system().GetNextTargetForTesting();
   target->CreateProcessForTesting(
       process_koid, fxl::StringPrintf("process-%s", to_hex_string(process_koid).c_str()));
