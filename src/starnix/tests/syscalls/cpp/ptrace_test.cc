@@ -575,6 +575,54 @@ void DetectForkAndContinue(pid_t child_pid, bool is_seized, bool child_stops_on_
 }
 }  // namespace
 
+// After a successful `PTRACE_ATTACH`, the traced process should receive SIGSTOP.
+TEST(PtraceTest, PtraceAttachSendSigstop) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    pid_t pid;
+    ASSERT_TRUE((pid = fork()) >= 0);
+    if (pid == 0) {
+      ASSERT_THAT(raise(SIGSTOP), SyscallSucceeds());
+    } else {
+      int wstatus;
+      // Wait for the child to stop itself, then attach.
+      ASSERT_THAT(waitpid(pid, &wstatus, WUNTRACED), SyscallSucceeds());
+      ASSERT_TRUE(WIFSTOPPED(wstatus));
+      ASSERT_THAT(ptrace(PTRACE_ATTACH, pid, nullptr, nullptr), SyscallSucceeds());
+
+      // Expect that the child has received SIGSTOP since the last wait.
+      // In theory we can't expect the signal to be delivered by any specific deadline,
+      // but let's give up if it hasn't arrived within 5 seconds.
+      int wait_result = 0;
+      ASSERT_GE((wait_result = waitpid(pid, &wstatus, WNOHANG)), 0);
+      int retry_seconds = 0;
+      while (wait_result == 0 && retry_seconds < 5) {
+        sleep(1);
+        retry_seconds++;
+        ASSERT_GE((wait_result = waitpid(pid, &wstatus, WNOHANG)), 0);
+      }
+      EXPECT_EQ(wait_result, pid);
+      EXPECT_TRUE(WIFSTOPPED(wstatus));
+      EXPECT_EQ(WSTOPSIG(wstatus), SIGSTOP);
+
+      // Clean up: resume the child from the SIGSTOP sent by `ptrace`, then from
+      // the self-signaled SIGSTOP.
+      ASSERT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
+      ASSERT_THAT(waitpid(pid, &wstatus, 0), SyscallSucceedsWithValue(pid));
+      ASSERT_TRUE(WIFSTOPPED(wstatus));
+      ASSERT_EQ(WSTOPSIG(wstatus), SIGSTOP);
+
+      ASSERT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
+      ASSERT_THAT(waitpid(pid, &wstatus, 0), SyscallSucceeds());
+      ASSERT_TRUE(WIFEXITED(wstatus));
+      ASSERT_EQ(WEXITSTATUS(wstatus), 0);
+    }
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 TEST(PtraceTest, PtraceEventStopWithFork) {
   // TODO(https://fxbug.dev/317285180) don't skip on baseline
   if (!test_helper::IsStarnix()) {

@@ -138,6 +138,11 @@
 
                 // TODO(https://fxbug.dev/398654361)
                 "BinderWithoutSEStarnix/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
+
+                // TODO(https://fxbug.dev/439799293)
+                // Before marking this as passing, remove the timeout from the test and let the overall
+                // test timeout catch any future failures.
+                "PtraceTest.PtraceAttachSendSigstop",
             ],
         },
     ],
