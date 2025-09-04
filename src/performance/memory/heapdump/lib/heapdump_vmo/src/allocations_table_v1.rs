@@ -5,6 +5,7 @@
 use static_assertions::const_assert;
 use std::collections::HashSet;
 use std::mem::{align_of, size_of};
+use std::ops::Deref;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::{Relaxed, SeqCst};
 
@@ -12,7 +13,6 @@ use crate::memory_mapped_vmo::{MemoryMappable, MemoryMappedVmo};
 pub use crate::resources_table_v1::ResourceKey;
 
 type NodeIndex = u32;
-type AtomicNodeIndex = AtomicU32;
 type BucketHeads = [AtomicNodeIndex; NUM_BUCKETS];
 const NUM_BUCKETS: usize = 1 << 16;
 const NODE_INVALID: NodeIndex = NodeIndex::MAX;
@@ -20,6 +20,28 @@ const NODE_INVALID: NodeIndex = NodeIndex::MAX;
 /// Minimum memory alignment of an allocation table.
 pub const MIN_ALIGNMENT: usize = align_of::<Node>();
 const_assert!(MIN_ALIGNMENT % align_of::<BucketHeads>() == 0);
+
+// Define AtomicNodeIndex as a newtype so we can implement traits on it.
+#[repr(transparent)]
+#[derive(Debug)]
+struct AtomicNodeIndex(AtomicU32);
+
+impl AtomicNodeIndex {
+    const fn new(value: u32) -> AtomicNodeIndex {
+        AtomicNodeIndex(AtomicU32::new(value))
+    }
+}
+
+impl Deref for AtomicNodeIndex {
+    type Target = AtomicU32;
+
+    fn deref(&self) -> &AtomicU32 {
+        &self.0
+    }
+}
+
+// SAFETY: Our accessor functions never access this type's memory non-atomically.
+unsafe impl MemoryMappable for AtomicNodeIndex {}
 
 #[repr(C)]
 #[derive(Debug)]
@@ -32,8 +54,6 @@ pub struct Node {
     pub stack_trace_key: ResourceKey,
 }
 
-// SAFETY: Our accessor functions never access this type's memory non-atomically.
-unsafe impl MemoryMappable for AtomicNodeIndex {}
 unsafe impl MemoryMappable for Node {}
 
 /// Computes the capacity (number of nodes) of a memory region given its size (bytes).
@@ -82,8 +102,8 @@ impl AllocationsTableWriter {
     ///
     /// # Safety
     /// The caller must guarantee that the `vmo` is not accessed by others while the returned
-    /// instance is alive.
-    pub fn new(vmo: &zx::Vmo) -> Result<AllocationsTableWriter, crate::Error> {
+    /// instance is alive. However, it always safe to take a snapshot and read that instead.
+    pub unsafe fn new(vmo: &zx::Vmo) -> Result<AllocationsTableWriter, crate::Error> {
         let storage = MemoryMappedVmo::new_readwrite(vmo)?;
         let max_num_nodes = compute_nodes_count(storage.vmo_size())?;
 
@@ -325,7 +345,11 @@ pub struct AllocationsTableReader {
 }
 
 impl AllocationsTableReader {
-    pub fn new(vmo: &zx::Vmo) -> Result<AllocationsTableReader, crate::Error> {
+    /// # Safety
+    /// The caller must guarantee that the `vmo` is not accessed by others while the returned
+    /// instance is alive, usually by taking a snapshot of the VMO that AllocationsTableWriter
+    /// operates on and then reading the snapshot instead.
+    pub unsafe fn new(vmo: &zx::Vmo) -> Result<AllocationsTableReader, crate::Error> {
         let storage = MemoryMappedVmo::new_readonly(vmo)?;
         let max_num_nodes = compute_nodes_count(storage.vmo_size())?;
 
@@ -390,28 +414,37 @@ mod tests {
     }
 
     impl TestStorage {
-        pub fn new(num_nodes: usize) -> TestStorage {
+        pub fn new(num_nodes: usize) -> (TestStorage, AllocationsTableWriter) {
             let nodes_layout = Layout::array::<Node>(num_nodes).unwrap();
             let (layout, nodes_offset) = Layout::new::<BucketHeads>().extend(nodes_layout).unwrap();
             assert_eq!(nodes_offset, size_of::<BucketHeads>());
 
             let vmo = zx::Vmo::create(layout.size() as u64).unwrap();
-            TestStorage { vmo }
-        }
 
-        fn create_writer(&self) -> AllocationsTableWriter {
-            AllocationsTableWriter::new(&self.vmo).unwrap()
+            // SAFETY: only one AllocationsTableWriter can ever be created.
+            let writer = unsafe { AllocationsTableWriter::new(&vmo) }.unwrap();
+
+            (TestStorage { vmo }, writer)
         }
 
         fn create_reader(&self) -> AllocationsTableReader {
-            AllocationsTableReader::new(&self.vmo).unwrap()
+            let snapshot = self
+                .vmo
+                .create_child(
+                    zx::VmoChildOptions::SNAPSHOT | zx::VmoChildOptions::NO_WRITE,
+                    0,
+                    self.vmo.get_size().unwrap(),
+                )
+                .unwrap();
+
+            // SAFETY: Readers operate on the read-only VMO snapshot we just created.
+            unsafe { AllocationsTableReader::new(&snapshot) }.unwrap()
         }
     }
 
     #[test]
     fn test_cannot_insert_twice() {
-        let storage = TestStorage::new(NUM_NODES);
-        let mut writer = storage.create_writer();
+        let (_storage, mut writer) = TestStorage::new(NUM_NODES);
 
         let result = writer.insert_allocation(
             0x1234,
@@ -434,8 +467,7 @@ mod tests {
 
     #[test]
     fn test_cannot_erase_twice() {
-        let storage = TestStorage::new(NUM_NODES);
-        let mut writer = storage.create_writer();
+        let (_storage, mut writer) = TestStorage::new(NUM_NODES);
 
         let result = writer.insert_allocation(
             0x1234,
@@ -455,8 +487,7 @@ mod tests {
 
     #[test]
     fn test_out_of_space() {
-        let storage = TestStorage::new(NUM_NODES);
-        let mut writer = storage.create_writer();
+        let (_storage, mut writer) = TestStorage::new(NUM_NODES);
 
         // Test that inserting up to `NUM_NODES` works.
         for i in 0..NUM_NODES {
@@ -495,8 +526,7 @@ mod tests {
 
     #[test]
     fn test_loop_insert_then_erase() {
-        let storage = TestStorage::new(NUM_NODES);
-        let mut writer = storage.create_writer();
+        let (_storage, mut writer) = TestStorage::new(NUM_NODES);
 
         for i in 0..NUM_ITERATIONS {
             let result = writer.insert_allocation(
@@ -515,8 +545,7 @@ mod tests {
 
     #[test]
     fn test_bulk_insert_then_erase_same_order() {
-        let storage = TestStorage::new(NUM_NODES);
-        let mut writer = storage.create_writer();
+        let (_storage, mut writer) = TestStorage::new(NUM_NODES);
 
         for i in 0..NUM_ITERATIONS {
             let result = writer.insert_allocation(
@@ -536,8 +565,7 @@ mod tests {
 
     #[test]
     fn test_bulk_insert_then_erase_reverse_order() {
-        let storage = TestStorage::new(NUM_NODES);
-        let mut writer = storage.create_writer();
+        let (_storage, mut writer) = TestStorage::new(NUM_NODES);
 
         for i in 0..NUM_ITERATIONS {
             let result = writer.insert_allocation(
@@ -557,22 +585,18 @@ mod tests {
 
     #[test]
     fn test_read_empty() {
-        let storage = TestStorage::new(NUM_NODES);
+        let (storage, _writer) = TestStorage::new(NUM_NODES);
 
-        // Initialize the hash table.
-        storage.create_writer();
-
-        // Read it back and verify that it is empty.
+        // Verify that it is empty.
         let reader = storage.create_reader();
         assert_eq!(reader.iter().count(), 0);
     }
 
     #[test]
     fn test_read_populated() {
-        let storage = TestStorage::new(NUM_NODES);
+        let (storage, mut writer) = TestStorage::new(NUM_NODES);
 
         // Fill the hash table.
-        let mut writer = storage.create_writer();
         let mut expected_map = HashMap::new();
         for i in 0..NUM_ITERATIONS as u64 {
             let thread_info_key =
@@ -608,10 +632,9 @@ mod tests {
 
     #[test]
     fn test_read_bad_bucket_head() {
-        let storage = TestStorage::new(NUM_NODES);
+        let (storage, mut writer) = TestStorage::new(NUM_NODES);
 
         // Initialize the hash table and corrupt one of the heads.
-        let mut writer = storage.create_writer();
         writer.bucket_head_at(NUM_BUCKETS / 2).store(NODE_INVALID - 1, SeqCst);
 
         // Try to read it back and verify that the iterator returns an error.
@@ -623,10 +646,9 @@ mod tests {
 
     #[test]
     fn test_read_bad_node_next() {
-        let storage = TestStorage::new(NUM_NODES);
+        let (storage, mut writer) = TestStorage::new(NUM_NODES);
 
         // Initialize the hash table and insert a node with a bad next pointer.
-        let mut writer = storage.create_writer();
         writer.bucket_head_at(NUM_BUCKETS / 2).store(0, SeqCst);
         *writer.node_at(0) = Node {
             next: AtomicNodeIndex::new(NODE_INVALID - 1),
@@ -646,8 +668,7 @@ mod tests {
 
     #[test]
     fn test_replace() {
-        let storage = TestStorage::new(NUM_NODES);
-        let mut writer = storage.create_writer();
+        let (storage, mut writer) = TestStorage::new(NUM_NODES);
 
         let result = writer.insert_allocation(
             0x1234,
@@ -693,8 +714,7 @@ mod tests {
 
     #[test]
     fn test_cannot_replace_nonexisting() {
-        let storage = TestStorage::new(NUM_NODES);
-        let mut writer = storage.create_writer();
+        let (_storage, mut writer) = TestStorage::new(NUM_NODES);
 
         let result = writer.replace_allocation(
             0x1234,

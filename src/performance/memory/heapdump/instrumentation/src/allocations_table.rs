@@ -22,7 +22,10 @@ impl Default for AllocationsTable {
         let vmo = zx::Vmo::create(VMO_SIZE as u64).expect("failed to create allocations VMO");
         vmo.set_name(&VMO_NAME).expect("failed to set VMO name");
 
-        let writer = AllocationsTableWriter::new(&vmo).expect("failed to create writer");
+        // SAFETY: Nobody else will directly access this VMO. Even when we share it with the
+        // collector, it will always take a snapshot first and then read the snapshot instead of the
+        // original one.
+        let writer = unsafe { AllocationsTableWriter::new(&vmo).expect("failed to create writer") };
         AllocationsTable { vmo, writer }
     }
 }

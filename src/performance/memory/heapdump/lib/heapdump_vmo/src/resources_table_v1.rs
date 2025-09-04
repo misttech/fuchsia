@@ -76,9 +76,12 @@ pub struct ResourcesTableWriter {
 impl ResourcesTableWriter {
     /// Initializes a VMO as an empty table and creates an AllocationsTableWriter to write into it.
     ///
-    /// The caller must guarantee that the `vmo` is not accessed by others (unless they use
-    /// ResourcesTableReader instances) while the returned instance is alive.
-    pub fn new(vmo: &zx::Vmo) -> Result<ResourcesTableWriter, crate::Error> {
+    /// # Safety
+    /// The caller must guarantee that data accesses to the `vmo` do not generate data conflicts,
+    /// i.e. 1) only one ResourcesTableWriter can exist for this VMO 2) as this an append-only data
+    /// structure, readers should only read through the ResourceKeys we create, that are guaranteed
+    /// to point to VMO sections that have already been populated.
+    pub unsafe fn new(vmo: &zx::Vmo) -> Result<ResourcesTableWriter, crate::Error> {
         let storage = MemoryMappedVmo::new_readwrite(vmo)?;
         if storage.vmo_size() < size_of::<StackBucketHeads>() {
             return Err(crate::Error::BufferTooSmall);
@@ -231,7 +234,11 @@ pub struct ResourcesTableReader {
 }
 
 impl ResourcesTableReader {
-    pub fn new(vmo: &zx::Vmo) -> Result<ResourcesTableReader, crate::Error> {
+    /// # Safety
+    /// The caller must guarantee that data in the `vmo` is not concurrently written by others.
+    /// Only using ResourceKeys received from the corresponding ResourcesTableWriter satisfies
+    /// this requirement.
+    pub unsafe fn new(vmo: &zx::Vmo) -> Result<ResourcesTableReader, crate::Error> {
         let storage = MemoryMappedVmo::new_readonly(vmo)?;
         Ok(ResourcesTableReader { storage })
     }
@@ -295,24 +302,24 @@ mod tests {
     }
 
     impl TestStorage {
-        pub fn new(vmo_size: usize) -> TestStorage {
+        pub fn new(vmo_size: usize) -> (TestStorage, ResourcesTableWriter) {
             let vmo = zx::Vmo::create(vmo_size as u64).unwrap();
-            TestStorage { vmo }
-        }
 
-        fn create_writer(&self) -> ResourcesTableWriter {
-            ResourcesTableWriter::new(&self.vmo).unwrap()
+            // SAFETY: only one ResourcesTableWriter can ever be created.
+            let writer = unsafe { ResourcesTableWriter::new(&vmo) }.unwrap();
+
+            (TestStorage { vmo }, writer)
         }
 
         fn create_reader(&self) -> ResourcesTableReader {
-            ResourcesTableReader::new(&self.vmo).unwrap()
+            // SAFETY: Tests only use ResourceKeys created by the writer to access it.
+            unsafe { ResourcesTableReader::new(&self.vmo) }.unwrap()
         }
     }
 
     #[test]
     fn test_stack_trace_deduplication() {
-        let storage = TestStorage::new(VMO_SIZE);
-        let mut writer = storage.create_writer();
+        let (storage, mut writer) = TestStorage::new(VMO_SIZE);
 
         // Insert different distinct stack traces and store the corresponding resource keys.
         // The number of stack traces is chosen so that at least one bucket contains at least three
@@ -348,8 +355,7 @@ mod tests {
 
     #[test]
     fn test_empty_stack_trace() {
-        let storage = TestStorage::new(VMO_SIZE);
-        let mut writer = storage.create_writer();
+        let (storage, mut writer) = TestStorage::new(VMO_SIZE);
 
         // It must be possible to insert the empty stack trace.
         let (resource_key, inserted) = writer.intern_compressed_stack_trace(&[]).unwrap();
@@ -363,8 +369,7 @@ mod tests {
 
     #[test]
     fn test_long_stack_traces() {
-        let storage = TestStorage::new(VMO_SIZE);
-        let mut writer = storage.create_writer();
+        let (storage, mut writer) = TestStorage::new(VMO_SIZE);
 
         // Inserting a stack trace whose length cannot be represented in the length field (u16).
         // should fail.
@@ -384,8 +389,7 @@ mod tests {
 
     #[test]
     fn test_write_until_out_of_space() {
-        let storage = TestStorage::new(VMO_SIZE);
-        let mut writer = storage.create_writer();
+        let (_storage, mut writer) = TestStorage::new(VMO_SIZE);
 
         // Insert many distinct stack traces and verify that, at some point, we get an OutOfSpace
         // error. Instead of estimating exactly how many stack traces can fit, we just use VMO_SIZE
@@ -407,8 +411,7 @@ mod tests {
 
     #[test]
     fn test_thread_info() {
-        let storage = TestStorage::new(VMO_SIZE);
-        let mut writer = storage.create_writer();
+        let (storage, mut writer) = TestStorage::new(VMO_SIZE);
 
         // Insert a thread info struct with placeholder values (the name must be padded to the
         // expected length).

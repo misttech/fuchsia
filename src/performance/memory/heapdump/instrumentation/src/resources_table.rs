@@ -4,8 +4,8 @@
 
 pub use heapdump_vmo::resources_table_v1::ResourceKey;
 use heapdump_vmo::resources_table_v1::ResourcesTableWriter;
-use std::sync::atomic::fence;
 use std::sync::atomic::Ordering::Release;
+use std::sync::atomic::fence;
 use zx::{self as zx, AsHandleRef, HandleBased};
 
 /// We cap the size of our backing VMO at 2 GiB, then preallocate it and map it entirely.
@@ -25,7 +25,9 @@ impl Default for ResourcesTable {
         let vmo = zx::Vmo::create(VMO_SIZE as u64).expect("failed to create resources VMO");
         vmo.set_name(&VMO_NAME).expect("failed to set VMO name");
 
-        let writer = ResourcesTableWriter::new(&vmo).expect("failed to create writer");
+        // SAFETY: When we share this VMO with the collector, it will only be read through
+        // ResourcesTableReader and the ResourceKeys we give it.
+        let writer = unsafe { ResourcesTableWriter::new(&vmo).expect("failed to create writer") };
         ResourcesTable { vmo, writer }
     }
 }

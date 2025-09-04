@@ -15,16 +15,27 @@ impl MemoryMappedVmo {
     /// Maps a VMO in read-only mode.
     ///
     /// Attempting to call methods on the returned object that return mutable references will panic.
-    pub fn new_readonly(vmo: &zx::Vmo) -> Result<MemoryMappedVmo, zx::Status> {
+    ///
+    /// # Safety
+    /// The caller must either guarantee that the `vmo` is not modified by others while the returned
+    /// instance is alive or that accesses are synchronized in application-specific ways.
+    pub unsafe fn new_readonly(vmo: &zx::Vmo) -> Result<MemoryMappedVmo, zx::Status> {
         Self::new_impl(vmo, false)
     }
 
     /// Maps a VMO in read-write mode.
-    pub fn new_readwrite(vmo: &zx::Vmo) -> Result<MemoryMappedVmo, zx::Status> {
+    ///
+    /// # Safety
+    /// The caller must either guarantee that the `vmo` is not modified by others while the returned
+    /// instance is alive or that accesses are synchronized in application-specific ways.
+    pub unsafe fn new_readwrite(vmo: &zx::Vmo) -> Result<MemoryMappedVmo, zx::Status> {
         Self::new_impl(vmo, true)
     }
 
-    fn new_impl(vmo: &zx::Vmo, writable: bool) -> Result<MemoryMappedVmo, zx::Status> {
+    /// # Safety
+    /// The caller must either guarantee that the `vmo` is not modified by others while the returned
+    /// instance is alive or that accesses are synchronized in application-specific ways.
+    unsafe fn new_impl(vmo: &zx::Vmo, writable: bool) -> Result<MemoryMappedVmo, zx::Status> {
         let vmo_size = vmo.get_content_size()? as usize;
 
         let mut flags = zx::VmarFlags::PERM_READ
@@ -168,7 +179,7 @@ mod tests {
     #[test]
     fn test_vmo_size() {
         let vmo = zx::Vmo::create(TEST_DATA_SIZE as u64).unwrap();
-        let m = MemoryMappedVmo::new_readwrite(&vmo).unwrap();
+        let m = unsafe { MemoryMappedVmo::new_readwrite(&vmo) }.unwrap();
 
         assert_eq!(m.vmo_size(), TEST_DATA_SIZE);
     }
@@ -179,7 +190,7 @@ mod tests {
 
         // Fill VMO with test data as individual objects.
         {
-            let mut m = MemoryMappedVmo::new_readwrite(&vmo).unwrap();
+            let mut m = unsafe { MemoryMappedVmo::new_readwrite(&vmo) }.unwrap();
             for (i, val) in TEST_DATA.iter().enumerate() {
                 *m.get_object_mut(size_of::<u64>() * i).unwrap() = *val;
             }
@@ -187,7 +198,7 @@ mod tests {
 
         // Verify that we can read them back correctly as a slice.
         {
-            let m = MemoryMappedVmo::new_readonly(&vmo).unwrap();
+            let m = unsafe { MemoryMappedVmo::new_readonly(&vmo) }.unwrap();
             assert_eq!(*m.get_slice::<u64>(0, 4).unwrap(), TEST_DATA);
         }
     }
@@ -198,13 +209,13 @@ mod tests {
 
         // Fill VMO with test data as a slice.
         {
-            let mut m = MemoryMappedVmo::new_readwrite(&vmo).unwrap();
+            let mut m = unsafe { MemoryMappedVmo::new_readwrite(&vmo) }.unwrap();
             m.get_slice_mut(0, 4).unwrap().copy_from_slice(&TEST_DATA);
         }
 
         // Verify that we can read it back correctly as individual objects.
         {
-            let m = MemoryMappedVmo::new_readonly(&vmo).unwrap();
+            let m = unsafe { MemoryMappedVmo::new_readonly(&vmo) }.unwrap();
             for (i, expected_val) in TEST_DATA.iter().enumerate() {
                 let actual_val: &u64 = m.get_object(size_of::<u64>() * i).unwrap();
                 assert_eq!(*actual_val, *expected_val, "value mismatch at i={}", i);
@@ -218,7 +229,7 @@ mod tests {
         let vmo = zx::Vmo::create((size_of::<u64>() * COUNT) as u64).unwrap();
 
         // Fill VMO with test data.
-        let mut m = MemoryMappedVmo::new_readwrite(&vmo).unwrap();
+        let mut m = unsafe { MemoryMappedVmo::new_readwrite(&vmo) }.unwrap();
         m.get_slice_mut::<u64>(0, COUNT).unwrap().copy_from_slice(&[11, 22, 33, 44]);
 
         // Verify that we can read subslices correctly.
@@ -233,7 +244,7 @@ mod tests {
     fn test_uninitialized_is_zero() {
         const COUNT: usize = 4;
         let vmo = zx::Vmo::create((size_of::<u64>() * COUNT) as u64).unwrap();
-        let m = MemoryMappedVmo::new_readonly(&vmo).unwrap();
+        let m = unsafe { MemoryMappedVmo::new_readonly(&vmo) }.unwrap();
 
         // Verify that the value of uninitialized data is zero.
         assert_eq!(*m.get_slice::<u64>(0, COUNT).unwrap(), [0; COUNT]);
@@ -243,7 +254,7 @@ mod tests {
     fn test_range_errors() {
         const COUNT: usize = 4;
         let vmo = zx::Vmo::create((size_of::<u64>() * COUNT) as u64).unwrap();
-        let m = MemoryMappedVmo::new_readonly(&vmo).unwrap();
+        let m = unsafe { MemoryMappedVmo::new_readonly(&vmo) }.unwrap();
 
         // Reading at a misaligned offset should fail.
         const MISALIGNED_OFFSET: usize = size_of::<u64>() - 1;
@@ -261,7 +272,7 @@ mod tests {
     #[should_panic(expected = "MemoryMappedVmo is not writable")]
     fn test_cannot_get_mutable_slice_from_readonly_vmo() {
         let vmo = zx::Vmo::create(TEST_DATA_SIZE as u64).unwrap();
-        let mut m = MemoryMappedVmo::new_readonly(&vmo).unwrap();
+        let mut m = unsafe { MemoryMappedVmo::new_readonly(&vmo) }.unwrap();
 
         // This should panic:
         let _ = m.get_slice_mut::<u64>(0, 1);
@@ -271,7 +282,7 @@ mod tests {
     #[should_panic(expected = "MemoryMappedVmo is not writable")]
     fn test_cannot_get_mutable_object_from_readonly_vmo() {
         let vmo = zx::Vmo::create(TEST_DATA_SIZE as u64).unwrap();
-        let mut m = MemoryMappedVmo::new_readonly(&vmo).unwrap();
+        let mut m = unsafe { MemoryMappedVmo::new_readonly(&vmo) }.unwrap();
 
         // This should panic:
         let _ = m.get_object_mut::<u64>(0);

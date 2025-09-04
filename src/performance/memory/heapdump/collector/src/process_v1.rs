@@ -129,11 +129,16 @@ impl Process for ProcessV1 {
 
     fn take_live_snapshot(&self, with_contents: bool) -> Result<Box<dyn Snapshot>, anyhow::Error> {
         let size = self.allocations_vmo.get_size()?;
-        let snapshot = self.allocations_vmo.create_child(zx::VmoChildOptions::SNAPSHOT, 0, size)?;
+        let snapshot = self.allocations_vmo.create_child(
+            zx::VmoChildOptions::SNAPSHOT | zx::VmoChildOptions::NO_WRITE,
+            0,
+            size,
+        )?;
 
         let mut block_contents = HashMap::new();
         if with_contents {
-            let allocations_table = AllocationsTableReader::new(&snapshot)?;
+            // SAFETY: The snapshot VMO is immutable. Besides, nobody else has access to it.
+            let allocations_table = unsafe { AllocationsTableReader::new(&snapshot) }?;
             for block in allocations_table.iter() {
                 let block = block?;
                 match read_process_memory(&self.process, block.address, block.size) {
@@ -185,8 +190,13 @@ impl Snapshot for SnapshotV1 {
         dest: fheapdump_client::SnapshotReceiverProxy,
     ) -> Result<(), anyhow::Error> {
         let mut streamer = heapdump_snapshot::Streamer::new(dest);
-        let allocations_table = AllocationsTableReader::new(&self.allocations_vmo)?;
-        let resources_table = ResourcesTableReader::new(&self.resources_vmo)?;
+
+        // SAFETY: The allocations_vmo is immutable.
+        let allocations_table = unsafe { AllocationsTableReader::new(&self.allocations_vmo) }?;
+
+        // SAFETY: We will only access resources_vmo through ResourceKeys created by the
+        // corresponding AllocationsTableWriter running inside the instrumented process.
+        let resources_table = unsafe { ResourcesTableReader::new(&self.resources_vmo) }?;
 
         let mut thread_info_keys = HashSet::new();
         let mut stack_trace_keys = HashSet::new();
@@ -312,9 +322,14 @@ mod tests {
         // Create and initialize the VMOs.
         const VMO_SIZE: u64 = 1 << 31;
         let allocations_vmo = zx::Vmo::create(VMO_SIZE).unwrap();
-        let allocations_writer = AllocationsTableWriter::new(&allocations_vmo).unwrap();
         let resources_vmo = zx::Vmo::create(VMO_SIZE).unwrap();
-        let resources_writer = ResourcesTableWriter::new(&resources_vmo).unwrap();
+
+        // SAFETY: Nobody else will directly access the allocations_vmo. Readers will always take a
+        // snapshot first and read that instead.
+        let allocations_writer = unsafe { AllocationsTableWriter::new(&allocations_vmo) }.unwrap();
+
+        // SAFETY: All readers of this VMO will synchronize by means of the ResourceKeys.
+        let resources_writer = unsafe { ResourcesTableWriter::new(&resources_vmo) }.unwrap();
 
         let process = fuchsia_runtime::process_self().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
         let koid = process.get_koid().unwrap();
