@@ -27,7 +27,7 @@ below is not complete: as Fuchsia evolves, more rubrics will be added.
  * [API Documentation](documentation.md)
  * CLI and GUI tools
    * [Developer tool guidelines](tools.md)
-   * [Command-line tools rubric](cli.md))
+   * [Command-line tools rubric](cli.md)
    * [CLI tool help requirements](cli_help.md)
  * Languages
    * [C API Readability](c.md)

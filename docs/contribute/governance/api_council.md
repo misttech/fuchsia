@@ -240,9 +240,9 @@ in the agenda for an upcoming API calibration session (see the next section).
 The API reviewer should work with the API designer to improve the API RFC to the
 point where the API reviewer feels comfortable approving the document. An
 approved document serves as the plan of record for the API in question. However,
-individual CLs that modify the API surface still need to review API-Review+1
+individual CLs that modify the API surface still need to receive API-Review+1
 before being merged. API designers should expect that CLs that follow the plan
-laid out in an approved API RFC should review API-Review+1 quite easily, even
+laid out in an approved API RFC should receive API-Review+1 quite easily, even
 from other council members.
 
 API designers or reviewers can refer an API RFC to the full council by asking
