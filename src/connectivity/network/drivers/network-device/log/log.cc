@@ -4,17 +4,13 @@
 
 #include "src/connectivity/network/drivers/network-device/log/log.h"
 
-#include <cstdarg>
+namespace network::internal {
 
-namespace network {
-
-void Logf(fuchsia_logging::LogSeverity severity, const char* tag, const char* file, int line,
-          const char* format, ...) {
-  va_list args;
-  va_start(args, format);
+void LogfImpl(fuchsia_logging::LogSeverity severity, const char* tag, const char* file, int line,
+              const char* format, va_list args) {
   char buffer[1024];
   vsnprintf(buffer, sizeof(buffer), format, args);
   fuchsia_logging::LogMessage(severity, file, line, nullptr, tag).stream() << buffer;
 }
 
-}  // namespace network
+}  // namespace network::internal
