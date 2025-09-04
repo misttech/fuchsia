@@ -11,27 +11,7 @@
         binary: "bin/mali_vulkan_test",
     },
     use: [
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-gpu",
-            rights: [ "r*" ],
-            path: "/dev/class/gpu",
-        },
-        {
-            // This service replaces the directory capability above.
-            service: "fuchsia.gpu.magma.Service",
-        },
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-gpu-performance-counters",
-            rights: [ "r*" ],
-            path: "/dev/class/gpu-performance-counters",
-        },
-        {
-            // This service replaces the directory capability above.
-            service: "fuchsia.gpu.magma.PerformanceCounterService",
-        },
+        { service: "fuchsia.gpu.magma.Service" },
+        { service: "fuchsia.gpu.magma.PerformanceCounterService" },
     ],
 }
