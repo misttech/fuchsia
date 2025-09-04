@@ -672,6 +672,9 @@ template("bazel_action") {
 
     inputs = [
                "//build/bazel/toplevel.MODULE.bazel",
+               "//build/bazel/templates/template.platform_mappings",
+               "//build/bazel/templates/template.bazel.sh",
+               "//build/bazel/templates/template.bazelrc",
 
                # Imported by bazel_action.py
                "//build/bazel/scripts/build_utils.py",

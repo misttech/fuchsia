@@ -681,6 +681,7 @@ job_count: $concurrency
   fi
 
   if [[ "${FX_BUILD_MODE}" == "bazel" ]]; then
+      fx-update-bazel-workspace
       # Invoke Bazel through fx-run-bazel to ensure a consistent environment and RBE wrapper
       # script, compared with the case where Bazel is called from Ninja.
       local bazel_build_args=(
