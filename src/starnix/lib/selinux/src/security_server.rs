@@ -10,7 +10,7 @@ use crate::policy::parser::PolicyData;
 
 use crate::policy::{
     AccessDecision, AccessVector, AccessVectorComputer, ClassId, ClassPermissionId,
-    FsUseLabelAndType, FsUseType, IoctlAccessDecision, Policy, parse_policy_by_value,
+    FsUseLabelAndType, FsUseType, Policy, XpermsAccessDecision, XpermsKind, parse_policy_by_value,
 };
 use crate::sid_table::SidTable;
 use crate::sync::RwLock;
@@ -567,19 +567,20 @@ impl Query for SecurityServerBackend {
         target_sid: SecurityId,
         target_class: ObjectClass,
         ioctl_prefix: u8,
-    ) -> IoctlAccessDecision {
+    ) -> XpermsAccessDecision {
         let locked_state = self.state.read();
 
         let active_policy = match &locked_state.active_policy {
             Some(active_policy) => active_policy,
             // All permissions are allowed when no policy is loaded, regardless of enforcing state.
-            None => return IoctlAccessDecision::ALLOW_ALL,
+            None => return XpermsAccessDecision::ALLOW_ALL,
         };
 
         let source_context = active_policy.sid_table.sid_to_security_context(source_sid);
         let target_context = active_policy.sid_table.sid_to_security_context(target_sid);
 
-        active_policy.parsed.compute_ioctl_access_decision(
+        active_policy.parsed.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
             &source_context,
             &target_context,
             target_class,

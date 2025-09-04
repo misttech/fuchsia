@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fifo_cache::FifoCache;
-use crate::policy::{AccessDecision, IoctlAccessDecision};
+use crate::policy::{AccessDecision, XpermsAccessDecision};
 use crate::security_server::SecurityServerBackend;
 use crate::sync::Mutex;
 use crate::{FsNodeClass, KernelClass, NullessByteStr, ObjectClass, SecurityId};
@@ -19,7 +19,7 @@ pub use crate::fifo_cache::CacheStats;
 /// calculations, and the caller-facing permission-check interface.
 pub(super) trait Query {
     /// Computes the [`AccessDecision`] permitted to `source_sid` for accessing `target_sid`, an
-    /// object of of type `target_class`.
+    /// object of type `target_class`.
     fn compute_access_decision(
         &self,
         source_sid: SecurityId,
@@ -50,15 +50,15 @@ pub(super) trait Query {
         fs_node_name: NullessByteStr<'_>,
     ) -> Option<SecurityId>;
 
-    /// Computes the [`IoctlAccessDecision`] permitted to `source_sid` for accessing `target_sid`,
-    /// an object of of type `target_class`, for ioctls with high byte `ioctl_prefix`.
+    /// Computes the [`XpermsAccessDecision`] permitted to `source_sid` for accessing `target_sid`,
+    /// an object of type `target_class`, for ioctls with high byte `ioctl_prefix`.
     fn compute_ioctl_access_decision(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
         target_class: ObjectClass,
         ioctl_prefix: u8,
-    ) -> IoctlAccessDecision;
+    ) -> XpermsAccessDecision;
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -85,7 +85,7 @@ struct IoctlAccessQueryArgs {
 /// Thread-hostile associative cache with capacity defined at construction and FIFO eviction.
 pub(super) struct FifoQueryCache {
     access_cache: FifoCache<AccessQueryArgs, AccessQueryResult>,
-    ioctl_access_cache: FifoCache<IoctlAccessQueryArgs, IoctlAccessDecision>,
+    ioctl_access_cache: FifoCache<IoctlAccessQueryArgs, XpermsAccessDecision>,
 }
 
 impl FifoQueryCache {
@@ -203,7 +203,7 @@ impl FifoQueryCache {
         target_sid: SecurityId,
         target_class: ObjectClass,
         ioctl_prefix: u8,
-    ) -> IoctlAccessDecision {
+    ) -> XpermsAccessDecision {
         let query_args = IoctlAccessQueryArgs {
             source_sid,
             target_sid,
@@ -321,7 +321,7 @@ impl Query for AccessVectorCache {
         target_sid: SecurityId,
         target_class: ObjectClass,
         ioctl_prefix: u8,
-    ) -> IoctlAccessDecision {
+    ) -> XpermsAccessDecision {
         self.cache.lock().compute_ioctl_access_decision(
             self.backend.as_ref(),
             source_sid,
@@ -416,9 +416,9 @@ mod tests {
             _target_sid: SecurityId,
             _target_class: ObjectClass,
             _ioctl_prefix: u8,
-        ) -> IoctlAccessDecision {
+        ) -> XpermsAccessDecision {
             self.query_count.fetch_add(1, Ordering::Relaxed);
-            IoctlAccessDecision::ALLOW_ALL
+            XpermsAccessDecision::ALLOW_ALL
         }
     }
 

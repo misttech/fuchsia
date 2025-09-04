@@ -205,23 +205,26 @@ impl std::ops::Sub for AccessVector {
     }
 }
 
-/// Encapsulates the result of an ioctl extended permissions calculation, between source & target
-/// domains, for a specific class, and for a specific ioctl prefix byte. Decisions describe which
-/// 16-bit ioctls are allowed, and whether ioctl permissions should be audit-logged when allowed,
-/// and when denied.
-///
-/// In the language of
-/// https://www.kernel.org/doc/html/latest/userspace-api/ioctl/ioctl-decoding.html, an
-/// `IoctlAccessDecision` provides allow, audit-allow, and audit-deny decisions for the 256 possible
-/// function codes for a particular driver code.
+/// A kind of extended permission, corresponding to the base permission that should trigger a check
+/// of an extended permission.
+#[derive(Debug, Clone, Hash, PartialEq)]
+pub enum XpermsKind {
+    Ioctl,
+    Nlmsg,
+}
+
+/// Encapsulates the result of an extended permissions calculation, between source & target
+/// domains, for a specific class, a specific kind of extended permissions, and for a specific
+/// xperm prefix byte. Decisions describe which 16-bit xperms are allowed, and whether xperms
+/// should be audit-logged when allowed, and when denied.
 #[derive(Debug, Clone, PartialEq)]
-pub struct IoctlAccessDecision {
+pub struct XpermsAccessDecision {
     pub allow: XpermsBitmap,
     pub auditallow: XpermsBitmap,
     pub auditdeny: XpermsBitmap,
 }
 
-impl IoctlAccessDecision {
+impl XpermsAccessDecision {
     pub const DENY_ALL: Self = Self {
         allow: XpermsBitmap::NONE,
         auditallow: XpermsBitmap::NONE,
@@ -459,25 +462,27 @@ impl Policy {
         }
     }
 
-    /// Computes the ioctl extended permissions that should be allowed, audited when allowed, and
-    /// audited when denied, for a given source context, target context, target class, and ioctl
-    /// prefix byte.
-    pub fn compute_ioctl_access_decision(
+    /// Computes the extended permissions that should be allowed, audited when allowed, and audited
+    /// when denied, for a given kind of extended permissions (`ioctl` or `nlmsg`), source context,
+    /// target context, target class, and xperms prefix byte.
+    pub fn compute_xperms_access_decision(
         &self,
+        xperms_kind: XpermsKind,
         source_context: &SecurityContext,
         target_context: &SecurityContext,
         object_class: impl Into<sc::ObjectClass>,
-        ioctl_prefix: u8,
-    ) -> IoctlAccessDecision {
+        xperms_prefix: u8,
+    ) -> XpermsAccessDecision {
         if let Some(target_class) = self.0.class(object_class.into()) {
-            self.0.parsed_policy().compute_ioctl_access_decision(
+            self.0.parsed_policy().compute_xperms_access_decision(
+                xperms_kind,
                 source_context,
                 target_context,
                 target_class,
-                ioctl_prefix,
+                xperms_prefix,
             )
         } else {
-            IoctlAccessDecision::DENY_ALL
+            XpermsAccessDecision::DENY_ALL
         }
     }
 
@@ -1190,7 +1195,8 @@ pub(super) mod tests {
         // dontauditxperm type0 self:file ioctl { 0xabcd };
         // dontauditxperm type0 self:file ioctl { 0xabef };
         // dontauditxperm type0 self:file ioctl { 0x1000 - 0x10ff };
-        let decision_single = policy.compute_ioctl_access_decision(
+        let decision_single = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
             &source_context,
             &target_context_matched,
             KernelClass::File,
@@ -1201,20 +1207,21 @@ pub(super) mod tests {
             xperms_bitmap_from_elements((0x0..=0xff).collect::<Vec<_>>().as_slice());
         expected_auditdeny -= &xperms_bitmap_from_elements(&[0xcd, 0xef]);
 
-        let expected_decision_single = IoctlAccessDecision {
+        let expected_decision_single = XpermsAccessDecision {
             allow: xperms_bitmap_from_elements(&[0xcd, 0xef]),
             auditallow: xperms_bitmap_from_elements(&[0xcd, 0xef]),
             auditdeny: expected_auditdeny,
         };
         assert_eq!(decision_single, expected_decision_single);
 
-        let decision_range = policy.compute_ioctl_access_decision(
+        let decision_range = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
             &source_context,
             &target_context_matched,
             KernelClass::File,
             0x10,
         );
-        let expected_decision_range = IoctlAccessDecision {
+        let expected_decision_range = XpermsAccessDecision {
             allow: XpermsBitmap::ALL,
             auditallow: XpermsBitmap::ALL,
             auditdeny: XpermsBitmap::NONE,
@@ -1224,8 +1231,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_access_decision_unmatched() {
-        let policy_bytes =
-            include_bytes!("../../testdata/micro_policies/allow_with_constraints_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1239,13 +1245,103 @@ pub(super) mod tests {
             .expect("create source security context");
 
         for prefix in 0x0..=0xff {
-            let decision = policy.compute_ioctl_access_decision(
+            let decision = policy.compute_xperms_access_decision(
+                XpermsKind::Ioctl,
                 &source_context,
                 &target_context_unmatched,
                 KernelClass::File,
                 prefix,
             );
-            assert_eq!(decision, IoctlAccessDecision::ALLOW_ALL);
+            assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        }
+    }
+
+    #[test]
+    fn compute_nlmsg_access_decision_explicitly_allowed() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate policy");
+
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `netlink_route_socket` class:
+        //
+        // `allowxperm type0 self:netlink_route_socket nlmsg { 0xabcd };`
+        // `allowxperm type0 self:netlink_route_socket nlmsg { 0xabef };`
+        // `allowxperm type0 self:netlink_route_socket nlmsg { 0x1000 - 0x10ff };`
+        //
+        // `auditallowxperm` rules for the `netlink_route_socket` class:
+        //
+        // auditallowxperm type0 self:netlink_route_socket nlmsg { 0xabcd };
+        // auditallowxperm type0 self:netlink_route_socket nlmsg { 0xabef };
+        // auditallowxperm type0 self:netlink_route_socket nlmsg { 0x1000 - 0x10ff };
+        //
+        // `dontauditxperm` rules for the `netlink_route_socket` class:
+        //
+        // dontauditxperm type0 self:netlink_route_socket nlmsg { 0xabcd };
+        // dontauditxperm type0 self:netlink_route_socket nlmsg { 0xabef };
+        // dontauditxperm type0 self:netlink_route_socket nlmsg { 0x1000 - 0x10ff };
+        let decision_single = policy.compute_xperms_access_decision(
+            XpermsKind::Nlmsg,
+            &source_context,
+            &target_context_matched,
+            KernelClass::NetlinkRouteSocket,
+            0xab,
+        );
+
+        let mut expected_auditdeny =
+            xperms_bitmap_from_elements((0x0..=0xff).collect::<Vec<_>>().as_slice());
+        expected_auditdeny -= &xperms_bitmap_from_elements(&[0xcd, 0xef]);
+
+        let expected_decision_single = XpermsAccessDecision {
+            allow: xperms_bitmap_from_elements(&[0xcd, 0xef]),
+            auditallow: xperms_bitmap_from_elements(&[0xcd, 0xef]),
+            auditdeny: expected_auditdeny,
+        };
+        assert_eq!(decision_single, expected_decision_single);
+
+        let decision_range = policy.compute_xperms_access_decision(
+            XpermsKind::Nlmsg,
+            &source_context,
+            &target_context_matched,
+            KernelClass::NetlinkRouteSocket,
+            0x10,
+        );
+        let expected_decision_range = XpermsAccessDecision {
+            allow: XpermsBitmap::ALL,
+            auditallow: XpermsBitmap::ALL,
+            auditdeny: XpermsBitmap::NONE,
+        };
+        assert_eq!(decision_range, expected_decision_range);
+    }
+
+    #[test]
+    fn compute_nlmsg_access_decision_unmatched() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let policy = policy.validate().expect("validate policy");
+
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+
+        // No matching nlmsg xperm-related statements for this target's type
+        let target_context_unmatched: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type1:s0-s0".into())
+            .expect("create source security context");
+
+        for prefix in 0x0..=0xff {
+            let decision = policy.compute_xperms_access_decision(
+                XpermsKind::Nlmsg,
+                &source_context,
+                &target_context_unmatched,
+                KernelClass::NetlinkRouteSocket,
+                prefix,
+            );
+            assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
         }
     }
 

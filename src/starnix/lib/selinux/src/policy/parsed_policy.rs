@@ -6,11 +6,11 @@ use crate::NullessByteStr;
 
 use super::arrays::{
     AccessVectorRule, AccessVectorRules, ConditionalNodes, Context, DeprecatedFilenameTransitions,
-    FilenameTransitionList, FilenameTransitions, FsUses, GenericFsContexts, IPv6Nodes,
-    InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSids,
+    ExtendedPermissions, FilenameTransitionList, FilenameTransitions, FsUses, GenericFsContexts,
+    IPv6Nodes, InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSids,
     MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPairs, Nodes, Ports,
     RangeTransitions, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
-    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES,
+    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
 };
 use super::error::{ParseError, ValidateError};
 use super::extensible_bitmap::ExtensibleBitmap;
@@ -22,9 +22,9 @@ use super::symbols::{
     Sensitivity, SymbolList, Type, User,
 };
 use super::{
-    AccessDecision, AccessVector, CategoryId, ClassId, IoctlAccessDecision, Parse,
-    PolicyValidationContext, RoleId, SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId,
-    Validate, XpermsBitmap,
+    AccessDecision, AccessVector, CategoryId, ClassId, Parse, PolicyValidationContext, RoleId,
+    SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate, XpermsAccessDecision,
+    XpermsBitmap, XpermsKind,
 };
 
 use anyhow::Context as _;
@@ -239,27 +239,48 @@ impl ParsedPolicy {
         denied
     }
 
-    /// Computes the ioctl extended permissions that should be allowed, audited when allowed, and
-    /// audited when denied, for a given source context, target context, target class, and ioctl
-    /// prefix byte.
-    ///
-    /// If there is an `allowxperm` rule for a particular source, target, and class, then only the
-    /// named xperms should be allowed for that tuple. If there is no such `allowxperm` rule, then
-    /// all xperms should be allowed for that tuple. (In both cases, the allow is conditional on the
-    /// `ioctl` permission being allowed, but that should be checked separately before calling this
-    /// function.)
-    pub(super) fn compute_ioctl_access_decision(
+    /// Computes the access decision for set of extended permissions of a given kind and with a
+    /// given prefix byte, for a particular source and target context and target class.
+    pub(super) fn compute_xperms_access_decision(
         &self,
+        xperms_kind: XpermsKind,
         source_context: &SecurityContext,
         target_context: &SecurityContext,
         target_class: &Class,
-        ioctl_prefix: u8,
-    ) -> IoctlAccessDecision {
+        xperms_prefix: u8,
+    ) -> XpermsAccessDecision {
         let target_class_id = target_class.id();
 
         let mut explicit_allow: Option<XpermsBitmap> = None;
         let mut auditallow = XpermsBitmap::NONE;
         let mut auditdeny = XpermsBitmap::ALL;
+
+        let xperms_types = match xperms_kind {
+            XpermsKind::Ioctl => {
+                [XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES].as_slice()
+            }
+            XpermsKind::Nlmsg => [XPERMS_TYPE_NLMSG].as_slice(),
+        };
+        let bitmap_if_prefix_matches =
+            |xperms_kind: &XpermsKind, xperms_prefix: u8, xperms: &ExtendedPermissions| {
+                match xperms_kind {
+                    XpermsKind::Ioctl => match xperms.xperms_type {
+                        XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES => (xperms.xperms_optional_prefix
+                            == xperms_prefix)
+                            .then_some(xperms.xperms_bitmap),
+                        XPERMS_TYPE_IOCTL_PREFIXES => xperms
+                            .xperms_bitmap
+                            .contains(xperms_prefix)
+                            .then_some(XpermsBitmap::ALL),
+                        _ => None,
+                    },
+                    XpermsKind::Nlmsg => match xperms.xperms_type {
+                        XPERMS_TYPE_NLMSG => (xperms.xperms_optional_prefix == xperms_prefix)
+                            .then_some(xperms.xperms_bitmap),
+                        _ => None,
+                    },
+                }
+            };
 
         for access_vector_rule in self.access_vector_rules() {
             let metadata = &access_vector_rule.metadata;
@@ -285,24 +306,15 @@ impl ParsedPolicy {
             }
 
             if let Some(xperms) = access_vector_rule.extended_permissions() {
-                // Only filter ioctls if there is at least one `allowxperm` rule for any ioctl
-                // prefix.
-                if metadata.is_allowxperm() {
+                // Only filter xperms if there is at least one `allowxperm` rule for the relevant
+                // kind of extended permission. If this condition is not satisfied by any
+                // access vector rule, then all xperms of the relevant type are allowed.
+                if metadata.is_allowxperm() && xperms_types.contains(&xperms.xperms_type) {
                     explicit_allow.get_or_insert(XpermsBitmap::NONE);
                 }
-                // If the rule applies to ioctls with prefix `ioctl_prefix`, get a bitmap
-                // of the ioctl postfixes named in the rule.
-                let bitmap_if_prefix_matches = match xperms.xperms_type {
-                    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES => (xperms.xperms_optional_prefix
-                        == ioctl_prefix)
-                        .then_some(&xperms.xperms_bitmap),
-                    XPERMS_TYPE_IOCTL_PREFIXES => {
-                        xperms.xperms_bitmap.contains(ioctl_prefix).then_some(&XpermsBitmap::ALL)
-                    }
-                    // TODO("https://fxbug.dev/440068604") - handle nlmsg xperms type.
-                    _ => None,
-                };
-                let Some(xperms_bitmap) = bitmap_if_prefix_matches else {
+                let Some(ref xperms_bitmap) =
+                    bitmap_if_prefix_matches(&xperms_kind, xperms_prefix, xperms)
+                else {
                     continue;
                 };
                 if metadata.is_allowxperm() {
@@ -317,7 +329,7 @@ impl ParsedPolicy {
             }
         }
         let allow = explicit_allow.unwrap_or(XpermsBitmap::ALL);
-        IoctlAccessDecision { allow, auditallow, auditdeny }
+        XpermsAccessDecision { allow, auditallow, auditdeny }
     }
 
     /// Returns the policy entry for the specified initial Security Context.

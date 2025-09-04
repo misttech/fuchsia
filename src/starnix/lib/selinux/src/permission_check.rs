@@ -254,7 +254,7 @@ fn has_ioctl_permission<P: ClassPermission + Into<KernelPermission> + Clone + 's
 mod tests {
     use super::*;
     use crate::policy::testing::{ACCESS_VECTOR_0001, ACCESS_VECTOR_0010};
-    use crate::policy::{AccessDecision, AccessVector, IoctlAccessDecision};
+    use crate::policy::{AccessDecision, AccessVector, XpermsAccessDecision};
     use crate::{
         CommonFilePermission, CommonFsNodePermission, FileClass, FilePermission, ForClass,
         ObjectClass, ProcessPermission,
@@ -339,8 +339,8 @@ mod tests {
             _target_sid: SecurityId,
             _target_class: ObjectClass,
             _ioctl_prefix: u8,
-        ) -> IoctlAccessDecision {
-            IoctlAccessDecision::DENY_ALL
+        ) -> XpermsAccessDecision {
+            XpermsAccessDecision::DENY_ALL
         }
     }
 
@@ -394,8 +394,8 @@ mod tests {
             _target_sid: SecurityId,
             _target_class: ObjectClass,
             _ioctl_prefix: u8,
-        ) -> IoctlAccessDecision {
-            IoctlAccessDecision::ALLOW_ALL
+        ) -> XpermsAccessDecision {
+            XpermsAccessDecision::ALLOW_ALL
         }
     }
 
@@ -449,8 +449,8 @@ mod tests {
             _target_sid: SecurityId,
             _target_class: ObjectClass,
             _ioctl_prefix: u8,
-        ) -> IoctlAccessDecision {
-            IoctlAccessDecision::ALLOW_ALL
+        ) -> XpermsAccessDecision {
+            XpermsAccessDecision::ALLOW_ALL
         }
     }
 
@@ -504,8 +504,8 @@ mod tests {
             _target_sid: SecurityId,
             _target_class: ObjectClass,
             _ioctl_prefix: u8,
-        ) -> IoctlAccessDecision {
-            IoctlAccessDecision::DENY_ALL
+        ) -> XpermsAccessDecision {
+            XpermsAccessDecision::DENY_ALL
         }
     }
 
