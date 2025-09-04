@@ -196,3 +196,16 @@ const BOOT_TIME string = "boot_time_ns";
 /// suspend, in nanoseconds.
 /// Formula: mono_time_ns = boot_time_ns - boot_monotonic_difference_ns
 const BOOT_MONO_DIFF string = "boot_monotonic_difference_ns";
+
+/// The boot timestamp in nanoseconds at which the wake reason report was
+/// generated.
+const WAKE_REASON_REPORT_TIME string = "wake_reason_last_report_time_ns";
+
+/// The last reported number of potential wake sources for the last successful
+/// wake.
+const WAKE_REASON_WAKE_SOURCES_COUNT string = "wake_reason_last_wake_sources_count";
+
+/// The last number of UNreported potential wake sources for the last successful
+/// wake.
+const WAKE_REASON_WAKE_SOURCES_UNREPORTED_COUNT string
+        = "wake_reason_last_wake_sources_unreported_count";

@@ -9,6 +9,12 @@ using zx;
 /// Maximum number of suspend states supported by the system.
 const MAX_SUSPEND_STATES uint32 = 256;
 
+/// Specifies the interpretation of `WakeReason.wake_vectors`.
+type WakeVectorType = flexible enum {
+    /// Each element of `WakeReason.wake_vectors` is a koid.
+    KOID = 1;
+};
+
 type SuspendState = table {
     /// The amount of time taken for the system to resume from this
     /// suspend state.
@@ -19,11 +25,20 @@ type WakeReason = table {
     /// A list of platform defined integers, each of which corresponds to
     /// a physical interrupt vector on the system. The simplest such mapping
     /// would be to map each interrupt number to a wake vector.
+    ///
+    /// The interpretation of this list of numbers is encoded by
+    /// `wake_vectors_type`.
     1: wake_vectors vector<uint64>:MAX;
 
     /// A list of platform defined integers, each of which corresponds to
     /// a wake vector that is *not* backed by a hardware interrupt.
     2: soft_wake_vectors vector<uint64>:MAX;
+
+    /// If set, clarifies the interpretation of `wake_vectors`.
+    3: wake_vectors_type WakeVectorType;
+
+    /// If set, we reported fewer than the actual number of wake vectors.
+    4: wake_vectors_overflow bool;
 };
 
 open protocol Suspender {
@@ -53,7 +68,8 @@ open protocol Suspender {
         1: state_index uint64;
     }) -> (table {
         /// The `WakeReason` that caused the system to resume.
-        /// See `type WakeReason` above for more details about wake reasons.
+        ///
+        /// See type `WakeReason` above for more details about wake reasons.
         1: reason WakeReason;
 
         /// The amount of time the system spent suspended. If the system is
