@@ -51,6 +51,5 @@ TEST_F(KgslUnitTest, GetDeviceInfo) {
   kgsl_device_getproperty args{.type = KGSL_PROP_DEVICE_INFO, .value = &devinfo};
   int result = ioctl(fd_, IOCTL_KGSL_DEVICE_GETPROPERTY, &args);
   EXPECT_EQ(result, 0) << ErrStr();
-  constexpr uint32_t kPlaceholderDeviceId = 42;
-  EXPECT_EQ(devinfo.device_id, kPlaceholderDeviceId);
+  EXPECT_NE(devinfo.device_id, 0u);
 }

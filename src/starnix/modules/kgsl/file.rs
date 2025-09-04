@@ -5,7 +5,7 @@
 use fdio::service_connect;
 use kgsl_libmagma::{Device, initialize_logging};
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
-use magma::MAGMA_QUERY_VENDOR_ID;
+use magma::{MAGMA_QUERY_DEVICE_ID, MAGMA_QUERY_VENDOR_ID};
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileObject, FileOps, FsNode};
@@ -24,7 +24,7 @@ use starnix_uapi::{
 use std::sync::Once;
 
 pub struct KgslFile {
-    _device: Device,
+    device: Device,
 }
 
 impl KgslFile {
@@ -67,7 +67,7 @@ impl KgslFile {
             .filter_map(|entry| entry.path().join("device").into_os_string().into_string().ok())
             .filter_map(|path| Self::import_device(&path).ok());
         let device = devices.next().ok_or_else(|| errno!(ENXIO))?;
-        Ok(Box::new(Self { _device: device }))
+        Ok(Box::new(Self { device }))
     }
 
     fn kgsl_device_getproperty(
@@ -80,9 +80,10 @@ impl KgslFile {
 
         match params.type_ {
             KGSL_PROP_DEVICE_INFO => {
-                const PLACEHOLDER_DEVICE_ID: u32 = 42;
+                let device_id =
+                    self.device.query_value(MAGMA_QUERY_DEVICE_ID).map_err(|_| errno!(ENOTTY))?;
                 let devinfo =
-                    kgsl_devinfo { device_id: PLACEHOLDER_DEVICE_ID, ..Default::default() };
+                    kgsl_devinfo { device_id: device_id.try_into().unwrap(), ..Default::default() };
                 current_task.write_object(result, &devinfo)?;
                 Ok(SUCCESS)
             }
