@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::utils::{connect_to_device, connect_to_device_channel};
+use super::utils::connect_to_device_channel;
 use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use futures_util::StreamExt;
 use starnix_core::mm::MemoryAccessorExt;
@@ -88,7 +88,8 @@ fn spawn_qbg_device_tasks(device_state: Arc<QbgDeviceState>, current_task: &Curr
     current_task.kernel().kthreads.spawn_future(async move {
         // Connect to the device on the main thread. The thread from which the task is being
         // spawned does not yet have an executor, so it cannot make an async FIDL connection.
-        let channel = connect_to_device_channel().expect("Could not connect to hvdcpopti service");
+        let channel =
+            connect_to_device_channel("device").expect("Could not connect to hvdcpopti service");
         // Wake message_counter starts on 1 because set_processed_fifo_data gets called in response
         // to initial data, which is not passed through this event stream.
         let (proxy_channel, message_counter) =
@@ -113,7 +114,10 @@ impl QbgDeviceFile {
         let state = Arc::new(QbgDeviceState::new());
         spawn_qbg_device_tasks(state.clone(), current_task);
         Self {
-            hvdcpopti: connect_to_device().expect("Could not connect to hvdcpopti service"),
+            hvdcpopti: fhvdcpopti::DeviceSynchronousProxy::new(
+                connect_to_device_channel("device")
+                    .expect("Could not connect to hvdcpopti service"),
+            ),
             state,
         }
     }

@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 pub fn build_iio0_directory(
     device: &Device,
-    proxy: &Arc<fhvdcpopti::DeviceSynchronousProxy>,
+    proxy: &Arc<fhvdcpopti::IioSynchronousProxy>,
     dir: &SimpleDirectoryMutator,
 ) {
     build_device_directory(device, dir);
@@ -54,7 +54,7 @@ pub fn build_iio0_directory(
 
 pub fn build_iio1_directory(
     device: &Device,
-    proxy: &Arc<fhvdcpopti::DeviceSynchronousProxy>,
+    proxy: &Arc<fhvdcpopti::IioSynchronousProxy>,
     dir: &SimpleDirectoryMutator,
 ) {
     build_device_directory(device, dir);
@@ -88,7 +88,7 @@ pub fn build_iio1_directory(
 
 pub fn build_usb_power_supply_directory(
     device: &Device,
-    proxy: &Arc<fhvdcpopti::DeviceSynchronousProxy>,
+    proxy: &Arc<fhvdcpopti::IioSynchronousProxy>,
     dir: &SimpleDirectoryMutator,
 ) {
     build_device_directory(device, dir);
@@ -99,7 +99,7 @@ pub fn build_usb_power_supply_directory(
 
 pub fn build_battery_power_supply_directory(
     device: &Device,
-    proxy: &Arc<fhvdcpopti::DeviceSynchronousProxy>,
+    proxy: &Arc<fhvdcpopti::IioSynchronousProxy>,
     dir: &SimpleDirectoryMutator,
 ) {
     build_device_directory(device, dir);
@@ -112,13 +112,13 @@ pub fn build_battery_power_supply_directory(
 }
 
 struct IioFile {
-    proxy: Arc<fhvdcpopti::DeviceSynchronousProxy>,
+    proxy: Arc<fhvdcpopti::IioSynchronousProxy>,
     label: &'static str,
 }
 
 impl IioFile {
     fn new_node(
-        proxy: Arc<fhvdcpopti::DeviceSynchronousProxy>,
+        proxy: Arc<fhvdcpopti::IioSynchronousProxy>,
         label: &'static str,
     ) -> impl FsNodeOps {
         BytesFile::new_node(IioFile { proxy, label })

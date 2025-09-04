@@ -8,7 +8,8 @@ use super::iio_file::{
 };
 use super::qbg_battery_file::create_battery_profile_device;
 use super::qbg_file::create_qbg_device;
-use super::utils::{ReadWriteBytesFile, connect_to_device};
+use super::utils::{ReadWriteBytesFile, connect_to_device_channel};
+use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use starnix_core::device::DeviceMode;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::fs::sysfs::build_device_directory;
@@ -24,8 +25,8 @@ pub fn hvdcp_opti_init<L>(locked: &mut Locked<L>, current_task: &CurrentTask) ->
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    let proxy = match connect_to_device() {
-        Ok(proxy) => Arc::new(proxy),
+    let proxy = match connect_to_device_channel("iio") {
+        Ok(chan) => Arc::new(fhvdcpopti::IioSynchronousProxy::new(chan)),
         Err(e) => {
             // hvdcp_opti only supported on Sorrel. Let it fail.
             log_warn!(

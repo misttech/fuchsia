@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::utils::connect_to_device;
+use super::utils::connect_to_device_channel;
 use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::CurrentTask;
@@ -34,12 +34,17 @@ pub fn create_battery_profile_device(
 }
 
 struct BatteryProfileFile {
-    hvdcpopti: fhvdcpopti::DeviceSynchronousProxy,
+    hvdcpopti: fhvdcpopti::BatterySynchronousProxy,
 }
 
 impl BatteryProfileFile {
     pub fn new() -> Self {
-        Self { hvdcpopti: connect_to_device().expect("Could not connect to hvdcpopti service") }
+        Self {
+            hvdcpopti: fhvdcpopti::BatterySynchronousProxy::new(
+                connect_to_device_channel("battery")
+                    .expect("Could not connect to hvdcpopti service"),
+            ),
+        }
     }
 }
 

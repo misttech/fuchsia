@@ -62,7 +62,10 @@ closed protocol Device {
     strict GetStepAndJeitaParams() -> (struct {
         params StepAndJeitaParams;
     });
+};
 
+@discoverable
+closed protocol Battery {
     strict GetBatteryConfig() -> (struct {
         config BatteryConfig;
     });
@@ -72,7 +75,10 @@ closed protocol Device {
     }) -> (struct {
         profile BatteryProfile;
     }) error zx.Status;
+};
 
+@discoverable
+closed protocol Iio {
     /// Gets Industrial I/O (IIO) reading value. Values available depend on what the server
     /// supports. May overlap with other configs in fuchsia.power.battery, but will be cleaned
     /// up with sysfs cleanup.
@@ -85,4 +91,6 @@ closed protocol Device {
 
 service Service {
     device client_end:Device;
+    battery client_end:Battery;
+    iio client_end:Iio;
 };

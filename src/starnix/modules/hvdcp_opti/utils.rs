@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, SimpleFileNode};
 use starnix_core::vfs::{
@@ -18,21 +17,17 @@ const HVDCP_OPTI_DIRECTORY: &str = "/svc/fuchsia.hardware.qcom.hvdcpopti.Service
 // TODO(b/415333931): Change the connection logic to not eagerly connect upon module initialization
 // or panic if the server is not available.
 
-pub fn connect_to_device_channel() -> Result<zx::Channel, Errno> {
+pub fn connect_to_device_channel(name: &str) -> Result<zx::Channel, Errno> {
     let mut dir = std::fs::read_dir(HVDCP_OPTI_DIRECTORY).map_err(|_| errno!(EINVAL))?;
     let Some(Ok(entry)) = dir.next() else {
         return error!(EBUSY);
     };
     let path =
-        entry.path().join("device").into_os_string().into_string().map_err(|_| errno!(EINVAL))?;
+        entry.path().join(name).into_os_string().into_string().map_err(|_| errno!(EINVAL))?;
 
     let (client_channel, server_channel) = zx::Channel::create();
     fdio::service_connect(&path, server_channel).map_err(|_| errno!(EINVAL))?;
     Ok(client_channel)
-}
-
-pub fn connect_to_device() -> Result<fhvdcpopti::DeviceSynchronousProxy, Errno> {
-    Ok(fhvdcpopti::DeviceSynchronousProxy::new(connect_to_device_channel()?))
 }
 
 // Current QBG context dump size is 2448 bytes (612 u32 members).
