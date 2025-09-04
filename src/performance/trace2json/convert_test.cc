@@ -65,13 +65,7 @@ void ConvertAndCompare(ConvertSettings settings, std::string expected_output_fil
       << "Files " << settings.output_file_name << " and " << expected_output_file << " differ.";
 }
 
-// TODO(https://fxbug.dev/42078677): Temporarily disable this test to facilitate a roll of
-// rapidjson. The latest roll contains changes to rapidjson's internal `dtoa`
-// implementation, which ever so slightly changes the string representation of
-// certain doubles. Once the roll goes through, we should come back, change the
-// *_expected.json files with the new slightly updated double values, and
-// re-enable these tests.
-TEST(ConvertTest, DISABLED_SimpleTrace) {
+TEST(ConvertTest, SimpleTrace) {
   // simple_trace.fxt is a small hand-written trace file that exercises a few
   // basic event types (currently slice begin, slice end, slice complete, async
   // begin, and async end), and includes both inline and table referenced
@@ -83,13 +77,7 @@ TEST(ConvertTest, DISABLED_SimpleTrace) {
   ConvertAndCompare(settings, test_data_path + "simple_trace_expected.json");
 }
 
-// TODO(https://fxbug.dev/42078677): Temporarily disable this test to facilitate a roll of
-// rapidjson. The latest roll contains changes to rapidjson's internal `dtoa`
-// implementation, which ever so slightly changes the string representation of
-// certain doubles. Once the roll goes through, we should come back, change the
-// *_expected.json files with the new slightly updated double values, and
-// re-enable these tests.
-TEST(ConvertTest, DISABLED_ExampleBenchmark) {
+TEST(ConvertTest, ExampleBenchmark) {
   // example_benchmark.fxt is the trace written by the program in
   // garnet/examples/benchmark, in this case run on qemu. To collect the trace,
   // include //src/examples/benchmark in your build and then run:
