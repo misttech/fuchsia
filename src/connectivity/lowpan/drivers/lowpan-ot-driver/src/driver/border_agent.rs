@@ -268,7 +268,7 @@ async fn publish_border_agent_service(
         {
             Ok(()) => return Ok(()),
             Err(PublishServiceFailure::PublishInstanceRequestFailure) => {
-                return Err(anyhow::format_err!("Failed to publish border agent service."))
+                return Err(anyhow::format_err!("Failed to publish border agent service."));
             }
             Err(PublishServiceFailure::PublishInstanceFailure)
             | Err(PublishServiceFailure::ResponderFailure) => {
@@ -310,7 +310,7 @@ async fn publish_epskc_service(
         {
             Ok(()) => return Ok(()),
             Err(PublishServiceFailure::PublishInstanceRequestFailure) => {
-                return Err(anyhow::format_err!("Failed to publish ePSKc service."))
+                return Err(anyhow::format_err!("Failed to publish ePSKc service."));
             }
             Err(PublishServiceFailure::PublishInstanceFailure)
             | Err(PublishServiceFailure::ResponderFailure) => {
@@ -392,9 +392,7 @@ impl<OT: ot::InstanceInterface, NI, BI> OtDriver<OT, NI, BI> {
             let driver_state = self.driver_state.lock();
             let ot_instance = &driver_state.ot_instance;
             for (key, value) in calc_meshcop_service_txt(ot_instance, &vendor, &product) {
-                if let Some(entry) = txt.iter_mut().find(|(k, _)| k == &key) {
-                    entry.1 = value;
-                } else {
+                if !txt.iter().any(|(k, _)| k == &key) {
                     txt.push((key, value));
                 }
             }
@@ -518,7 +516,7 @@ impl<OT: ot::InstanceInterface, NI, BI> OtDriver<OT, NI, BI> {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, Proxy};
+    use fidl::endpoints::{Proxy, create_proxy};
     use fuchsia_async::TestExecutor;
     use lazy_static::lazy_static;
     use std::task::Poll;
