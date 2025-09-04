@@ -3,11 +3,9 @@
 // found in the LICENSE file.
 
 use fdio::service_connect;
+use kgsl_libmagma::{Device, initialize_logging};
 use kgsl_strings::{ioctl_kgsl, kgsl_prop};
-use magma::{
-    MAGMA_QUERY_VENDOR_ID, MAGMA_STATUS_OK, magma_device_import, magma_device_query,
-    magma_device_release, magma_device_t, magma_handle_t, magma_initialize_logging,
-};
+use magma::MAGMA_QUERY_VENDOR_ID;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{FileObject, FileOps, FsNode};
@@ -24,10 +22,9 @@ use starnix_uapi::{
     kgsl_devinfo,
 };
 use std::sync::Once;
-use zx::{Channel, HandleBased};
 
 pub struct KgslFile {
-    magma_device: magma_device_t,
+    _device: Device,
 }
 
 impl KgslFile {
@@ -39,35 +36,19 @@ impl KgslFile {
     }
 
     fn init_magma_logging() -> Result<(), ()> {
-        let (client, server) = Channel::create();
+        let (client, server) = zx::Channel::create();
         service_connect("/svc/fuchsia.logger.LogSink", server).map_err(|_| ())?;
-        let result = unsafe { magma_initialize_logging(client.into_raw()) };
-        if result == MAGMA_STATUS_OK { Ok(()) } else { Err(()) }
+        return initialize_logging(client);
     }
 
-    fn import_device(path: &str) -> Result<magma_device_t, zx::Status> {
-        let (client, server) = Channel::create();
+    fn import_device(path: &str) -> Result<Device, zx::Status> {
+        let (client, server) = zx::Channel::create();
         service_connect(&path, server)?;
-        let mut magma_device: magma_device_t = 0;
-        let result = unsafe { magma_device_import(client.into_raw(), &mut magma_device) };
-        if result != MAGMA_STATUS_OK {
-            return Err(zx::Status::INTERNAL);
-        }
-        let mut result_out: u64 = 0;
-        let mut result_buffer_out: magma_handle_t = 0;
-        let result = unsafe {
-            magma_device_query(
-                magma_device,
-                MAGMA_QUERY_VENDOR_ID,
-                &mut result_buffer_out,
-                &mut result_out,
-            )
-        };
-        if result != MAGMA_STATUS_OK {
-            return Err(zx::Status::INTERNAL);
-        }
-        log_info!("kgsl: magma device at {} is vendor {:#04x}", path, result_out);
-        Ok(magma_device)
+        let device = Device::from_channel(client).map_err(|_| zx::Status::INTERNAL)?;
+        let vendor_id =
+            device.query_value(MAGMA_QUERY_VENDOR_ID).map_err(|_| zx::Status::INTERNAL)?;
+        log_info!("kgsl: magma device at {} is vendor {:#04x}", path, vendor_id);
+        Ok(device)
     }
 
     pub fn new_file(
@@ -80,20 +61,41 @@ impl KgslFile {
         INIT.call_once(|| {
             Self::init();
         });
-        let mut magma_devices = std::fs::read_dir("/svc/fuchsia.gpu.magma.Service")
+        let mut devices = std::fs::read_dir("/svc/fuchsia.gpu.magma.Service")
             .map_err(|_| errno!(ENXIO))?
             .filter_map(|x| x.ok())
             .filter_map(|entry| entry.path().join("device").into_os_string().into_string().ok())
             .filter_map(|path| Self::import_device(&path).ok());
-        let magma_device = magma_devices.next().ok_or_else(|| errno!(ENXIO))?;
-        Ok(Box::new(Self { magma_device }))
+        let device = devices.next().ok_or_else(|| errno!(ENXIO))?;
+        Ok(Box::new(Self { _device: device }))
+    }
+
+    fn kgsl_device_getproperty(
+        &self,
+        current_task: &CurrentTask,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let params = current_task.read_object(UserRef::<kgsl_device_getproperty>::from(arg))?;
+        let result = UserRef::from(UserAddress::from(params.value));
+
+        match params.type_ {
+            KGSL_PROP_DEVICE_INFO => {
+                const PLACEHOLDER_DEVICE_ID: u32 = 42;
+                let devinfo =
+                    kgsl_devinfo { device_id: PLACEHOLDER_DEVICE_ID, ..Default::default() };
+                current_task.write_object(result, &devinfo)?;
+                Ok(SUCCESS)
+            }
+            _ => {
+                log_error!("kgsl: unimplemented GetProperty type {}", kgsl_prop(params.type_));
+                error!(ENOTSUP)
+            }
+        }
     }
 }
 
 impl Drop for KgslFile {
-    fn drop(&mut self) {
-        unsafe { magma_device_release(self.magma_device) };
-    }
+    fn drop(&mut self) {}
 }
 
 impl FileOps for KgslFile {
@@ -120,28 +122,7 @@ impl FileOps for KgslFile {
             return Ok(SUCCESS);
         }
         match request {
-            IOCTL_KGSL_DEVICE_GETPROPERTY => {
-                let user_params = UserRef::<kgsl_device_getproperty>::from(arg);
-                let params = current_task.read_object(user_params)?;
-                match params.type_ {
-                    KGSL_PROP_DEVICE_INFO => {
-                        const PLACEHOLDER_DEVICE_ID: u32 = 42;
-                        let info =
-                            kgsl_devinfo { device_id: PLACEHOLDER_DEVICE_ID, ..Default::default() };
-                        let result_address = UserAddress::from(params.value);
-                        let user_result = UserRef::<kgsl_devinfo>::from(result_address);
-                        current_task.write_object(user_result, &info)?;
-                        Ok(SUCCESS)
-                    }
-                    _ => {
-                        log_error!(
-                            "kgsl: unimplemented GetProperty type {}",
-                            kgsl_prop(params.type_)
-                        );
-                        error!(ENOTSUP)
-                    }
-                }
-            }
+            IOCTL_KGSL_DEVICE_GETPROPERTY => self.kgsl_device_getproperty(current_task, arg),
             _ => {
                 log_error!("kgsl: unimplemented ioctl {}", ioctl_kgsl(request));
                 error!(ENOTSUP)

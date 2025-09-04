@@ -38,6 +38,7 @@ rustc_library("kgsl") {
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_uapi",
+    "//src/starnix/modules/kgsl/libmagma",
     "//src/starnix/modules/kgsl/strings",
   ]
 }
