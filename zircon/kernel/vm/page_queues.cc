@@ -34,6 +34,7 @@ KCOUNTER(pq_lru_pages_discarded, "pq.lru.pages_discarded")
 KCOUNTER(pq_accessed_normal, "pq.accessed.normal")
 KCOUNTER(pq_accessed_normal_same_queue, "pq.accessed.normal_same_queue")
 KCOUNTER(pq_accessed_isolate, "pq.accessed.isolate")
+KCOUNTER(pq_accessed_not_reclaim, "pq.accessed.not_reclaim")
 
 // Helper class for building an isolate list for deferred processing when acting on the LRU queues.
 // Pages are added while the page queues lock is held, and processed once the lock is dropped.
@@ -909,6 +910,7 @@ void PageQueues::MarkAccessedMaybeIsolate(vm_page_t* page) {
     // With the lock held check if the page is in a reclaim queue. Although it can move between
     // different reclaim queues, it cannot go from reclaim->non-reclaim without the lock.
     if (!queue_is_reclaim(static_cast<PageQueue>(old_gen))) {
+      pq_accessed_not_reclaim.Add(1);
       return;
     }
     MoveToQueueLockedList(page, mru_gen_to_queue());
@@ -930,6 +932,7 @@ void PageQueues::MarkAccessed(vm_page_t* page) {
     // either been racily removed from, or was never in, the reclaim queue. In which case we
     // can return as there's nothing to be marked accessed.
     if (!queue_is_reclaim(static_cast<PageQueue>(old_gen))) {
+      pq_accessed_not_reclaim.Add(1);
       return;
     }
     // The Isolate queue is a reclaim queue, but we cannot just change the queue in the vm_page_t
