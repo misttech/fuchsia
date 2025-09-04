@@ -499,7 +499,3 @@ async fn create_chain(
         assert_eq!(observed_resource, &expected_resource);
     }
 }
-
-// TODO(https://fxbug.dev/307908515): observe and append rules to built-in chains.
-
-// TODO(https://fxbug.dev/307908515): test ip6tables once it is supported in starnix.
