@@ -916,7 +916,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                                     if v.host != Some(pair.host) {
                                         v.host = Some(pair.host);
                                         modified = true;
-                                        log::info!("port mapped {pair:?}");
+                                        log::debug!("port mapped {pair:?}");
                                     }
                                 }
                             }

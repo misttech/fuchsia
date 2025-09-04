@@ -600,13 +600,13 @@ fn collect_log_files(root_dir: PathBuf) -> Result<Vec<PathBuf>> {
             if let Ok(d) = entry {
                 Some(d.path())
             } else {
-                log::info!("Skipping read dir was an error: {entry:?}");
+                log::debug!("Skipping read dir was an error: {entry:?}");
                 None
             }
         })
         .filter_map(|p| {
             if p.is_dir() {
-                log::info!("Skipping dir {:?}", p);
+                log::debug!("Skipping dir {:?}", p);
                 None
             } else {
                 Some(p)
@@ -616,7 +616,7 @@ fn collect_log_files(root_dir: PathBuf) -> Result<Vec<PathBuf>> {
             if p.extension().unwrap_or_default() == "log" {
                 true
             } else {
-                log::info!("Skipping non .log extension {:?}", p);
+                log::debug!("Skipping non .log extension {:?}", p);
                 false
             }
         })
@@ -639,7 +639,7 @@ fn collect_log_files(root_dir: PathBuf) -> Result<Vec<PathBuf>> {
                 if age < MAX_AGE {
                     Some(p)
                 } else {
-                    log::info!("Skipping {p:?} too  old {}", age.as_secs());
+                    log::debug!("Skipping {p:?} too  old {}", age.as_secs());
                     None
                 }
             }
