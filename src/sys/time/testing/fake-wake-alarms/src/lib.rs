@@ -24,11 +24,11 @@
 //! use fake_wake_alarms::*; // Or use items by name.
 //! ```
 
-use fidl_fuchsia_time_alarms as fta;
 use futures::stream::StreamExt;
 use scopeguard::defer;
 use std::collections::HashMap;
 use zx::{self as zx, HandleBased};
+use {fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync, fuchsia_runtime as fxr};
 
 /// Configure the response of [serve_fake_wake_alarms].
 #[derive(Debug, Copy, Clone)]
@@ -45,15 +45,23 @@ pub enum Response {
 pub const MAGIC_EXPIRE_DEADLINE: i64 = 424242;
 
 /// Makes sure that a dropped responder is properly responded to.
+#[derive(Debug)]
 pub struct ResponderCleanup {
     alarm_id: String,
     responder: Option<fta::WakeAlarmsSetAndWaitResponder>,
+    responder_utc: Option<fta::WakeAlarmsSetAndWaitUtcResponder>,
     notifier: Option<fidl::endpoints::ClientEnd<fta::NotifierMarker>>,
 }
 
 impl Drop for ResponderCleanup {
     fn drop(&mut self) {
         if let Some(responder) = self.responder.take() {
+            log::debug!("dropping responder: {responder:?}");
+            responder
+                .send(Err(fta::WakeAlarmsError::Dropped))
+                .expect("should be able to respond to a FIDL message")
+        }
+        if let Some(responder) = self.responder_utc.take() {
             log::debug!("dropping responder: {responder:?}");
             responder
                 .send(Err(fta::WakeAlarmsError::Dropped))
@@ -80,11 +88,32 @@ fn signal_handle<H: HandleBased>(
     })
 }
 
+/// A representation of deadlines with different reference points.
+#[derive(Debug, Clone, Copy)]
+enum Deadline {
+    Boot(fasync::BootInstant),
+    Utc(fxr::UtcInstant),
+}
+
+impl Deadline {
+    /// Converts to boot instant.  The results are faked for UTC timestamps.
+    fn into_boot(self) -> fasync::BootInstant {
+        match self {
+            Deadline::Boot(deadline) => deadline,
+            // This is wrong, but good enough for tests.
+            Deadline::Utc(deadline) => fasync::BootInstant::from_nanos(deadline.into_nanos()),
+        }
+    }
+}
+
 // Describes specific handler variants. Variants are only slightly different, which makes it
 // sensible to unify.
 enum HandlerVariant {
     SetAndWait {
         responder: fta::WakeAlarmsSetAndWaitResponder,
+    },
+    SetAndWaitUtc {
+        responder: fta::WakeAlarmsSetAndWaitUtcResponder,
     },
     Set {
         responder: fta::WakeAlarmsSetResponder,
@@ -96,7 +125,7 @@ async fn handle_set_like_method(
     method_name: &str,
     message_counter: &zx::Counter,
     responders: &mut HashMap<String, ResponderCleanup>,
-    deadline: zx::BootInstant,
+    deadline: Deadline,
     mode: fta::SetMode,
     alarm_id: String,
     response_type: &Response,
@@ -118,7 +147,7 @@ async fn handle_set_like_method(
         // Two possibilities: a "magic" expire deadline, which expires right away, or
         // a "never" expiring deadline, regardless of the actual specified deadline.
         Response::Delayed => {
-            if deadline.into_nanos() == MAGIC_EXPIRE_DEADLINE {
+            if deadline.into_boot().into_nanos() == MAGIC_EXPIRE_DEADLINE {
                 log::debug!(
                     "serve_fake_wake_alarms: {method_name}: responding immediately to magic deadline"
                 );
@@ -139,6 +168,9 @@ async fn handle_set_like_method(
                     HandlerVariant::SetAndWait { responder } => {
                         responder.send(Ok(peer)).expect("send FIDL response");
                     }
+                    HandlerVariant::SetAndWaitUtc { responder } => {
+                        responder.send(Ok(peer)).expect("send FIDL response");
+                    }
                     HandlerVariant::Set { responder, notifier } => {
                         responder.send(Ok(())).unwrap();
                         notifier
@@ -152,7 +184,21 @@ async fn handle_set_like_method(
                 let removed = match handler_variant {
                     HandlerVariant::SetAndWait { responder } => responders.insert(
                         alarm_id.clone(),
-                        ResponderCleanup { alarm_id, responder: Some(responder), notifier: None },
+                        ResponderCleanup {
+                            alarm_id,
+                            responder: Some(responder),
+                            responder_utc: None,
+                            notifier: None,
+                        },
+                    ),
+                    HandlerVariant::SetAndWaitUtc { responder } => responders.insert(
+                        alarm_id.clone(),
+                        ResponderCleanup {
+                            alarm_id,
+                            notifier: None,
+                            responder: None,
+                            responder_utc: Some(responder),
+                        },
                     ),
                     HandlerVariant::Set { responder, notifier } => {
                         responder.send(Ok(())).unwrap();
@@ -160,8 +206,9 @@ async fn handle_set_like_method(
                             alarm_id.clone(),
                             ResponderCleanup {
                                 alarm_id,
-                                responder: None,
                                 notifier: Some(notifier),
+                                responder_utc: None,
+                                responder: None,
                             },
                         )
                     }
@@ -183,6 +230,9 @@ async fn handle_set_like_method(
                 HandlerVariant::SetAndWait { responder } => {
                     responder.send(Ok(fake_lease)).expect("infallible");
                 }
+                HandlerVariant::SetAndWaitUtc { responder } => {
+                    responder.send(Ok(fake_lease)).expect("infallible");
+                }
                 HandlerVariant::Set { responder, notifier } => {
                     responder.send(Ok(())).expect("send FIDL response");
                     notifier
@@ -197,6 +247,9 @@ async fn handle_set_like_method(
             message_counter.add(1).unwrap();
             match handler_variant {
                 HandlerVariant::SetAndWait { responder } => {
+                    responder.send(Err(fta::WakeAlarmsError::Unspecified)).expect("infallible");
+                }
+                HandlerVariant::SetAndWaitUtc { responder } => {
                     responder.send(Err(fta::WakeAlarmsError::Unspecified)).expect("infallible");
                 }
                 HandlerVariant::Set { responder, notifier } => {
@@ -246,12 +299,30 @@ pub async fn serve_fake_wake_alarms(
                 );
 
                 match request {
+                    fta::WakeAlarmsRequest::SetAndWaitUtc {
+                        mode,
+                        responder,
+                        alarm_id,
+                        deadline,
+                    } => {
+                        handle_set_like_method(
+                            "set_and_wait",
+                            &message_counter,
+                            &mut responders,
+                            Deadline::Utc(fxr::UtcInstant::from_nanos(deadline.timestamp_utc)),
+                            mode,
+                            alarm_id,
+                            &response_type,
+                            HandlerVariant::SetAndWaitUtc { responder },
+                        )
+                        .await;
+                    }
                     fta::WakeAlarmsRequest::SetAndWait { mode, responder, alarm_id, deadline } => {
                         handle_set_like_method(
                             "set_and_wait",
                             &message_counter,
                             &mut responders,
-                            deadline,
+                            Deadline::Boot(deadline.into()),
                             mode,
                             alarm_id,
                             &response_type,
@@ -270,9 +341,9 @@ pub async fn serve_fake_wake_alarms(
                             "set",
                             &message_counter,
                             &mut responders,
-                            deadline,
+                            Deadline::Boot(deadline.into()),
                             mode,
-                            alarm_id,
+                            alarm_id.clone(),
                             &response_type,
                             HandlerVariant::Set { responder, notifier },
                         )
@@ -289,9 +360,6 @@ pub async fn serve_fake_wake_alarms(
                         log::debug!("serve_fake_wake_alarms: Cancel: {}", alarm_id);
                     }
                     fta::WakeAlarmsRequest::SetUtc { .. } => {
-                        panic!("Not implemented: b/437984687");
-                    }
-                    fta::WakeAlarmsRequest::SetAndWaitUtc { .. } => {
                         panic!("Not implemented: b/437984687");
                     }
                     fta::WakeAlarmsRequest::_UnknownMethod { .. } => unreachable!(),

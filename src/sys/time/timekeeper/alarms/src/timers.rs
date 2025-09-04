@@ -59,6 +59,16 @@ impl Responder for RefCell<Option<fidl::endpoints::ClientEnd<fta::NotifierMarker
     }
 }
 
+impl Responder for RefCell<Option<fta::WakeAlarmsSetAndWaitUtcResponder>> {
+    fn send(
+        &self,
+        _alarm_id: &str,
+        result: Result<fidl::EventPair, fta::WakeAlarmsError>,
+    ) -> Option<Result<(), fidl::Error>> {
+        self.borrow_mut().take().map(|responder| responder.send(result))
+    }
+}
+
 // Converts a UTC instant into a boot instant using `transform`, using the approach that never
 // panics.
 fn safe_utc_to_boot(

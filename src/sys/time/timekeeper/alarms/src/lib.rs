@@ -436,7 +436,6 @@ async fn handle_request(
     request: fta::WakeAlarmsRequest,
 ) {
     match request {
-        fta::WakeAlarmsRequest::SetAndWaitUtc { .. } => todo!(),
         fta::WakeAlarmsRequest::SetAndWait { deadline, mode, alarm_id, responder } => {
             // Since responder is consumed by the happy path and the error path, but not both,
             // and because the responder does not implement Default, this is a way to
@@ -458,6 +457,34 @@ async fn handle_request(
             );
             // Expected to return quickly.
             let deadline = timers::Deadline::Boot(deadline.into());
+            if let Err(e) = log_long_op!(cmd.send(Cmd::Start {
+                conn_id,
+                deadline,
+                mode: Some(mode),
+                alarm_id: alarm_id.clone(),
+                responder: responder.clone(),
+            })) {
+                warn!("handle_request: error while trying to schedule `{}`: {:?}", alarm_id, e);
+                responder
+                    .borrow_mut()
+                    .take()
+                    .expect("always present if call fails")
+                    .send(Err(fta::WakeAlarmsError::Internal))
+                    .unwrap();
+            }
+        }
+        fta::WakeAlarmsRequest::SetAndWaitUtc { deadline, mode, alarm_id, responder } => {
+            // Quickly get rid of the custom wake alarms deadline type.
+            let deadline =
+                timers::Deadline::Utc(fxr::UtcInstant::from_nanos(deadline.timestamp_utc));
+
+            // The rest of this match branch is the same as for `SetAndWait`. However, the handling
+            // is for now simple enough that we don't need to explore factoring common actions out.
+            let responder = Rc::new(RefCell::new(Some(responder)));
+            debug!(
+                "handle_request: scheduling alarm_id UTC: \"{alarm_id}\"\n\tconn_id: {conn_id:?}\n\tdeadline: {deadline}",
+            );
+
             if let Err(e) = log_long_op!(cmd.send(Cmd::Start {
                 conn_id,
                 deadline,
@@ -2504,5 +2531,47 @@ mod tests {
             TestExecutor::poll_until_stalled(next_task).await,
             Poll::Ready(Some(Ok(fta::NotifierRequest::Notify { alarm_id, .. }))) if alarm_id == ALARM_ID
         );
+    }
+
+    // Similar to above, but uses `set_and_wait_utc`.
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_set_and_wait_utc() {
+        const ALARM_ID: &str = "Hello_set_and_wait_utc";
+        let ctx = TestContext::new().await;
+
+        let now_boot = fasync::BootInstant::now();
+        ctx.utc_clock
+            .update(
+                zx::ClockUpdate::builder()
+                    .absolute_value(now_boot.into(), ctx.utc_backstop)
+                    .build(),
+            )
+            .unwrap();
+
+        let timestamp_utc = ctx.utc_backstop + fxr::UtcDuration::from_nanos(2);
+        let mut wake_fut = ctx.wake_proxy.set_and_wait_utc(
+            &fta::InstantUtc { timestamp_utc: timestamp_utc.into_nanos() },
+            fta::SetMode::KeepAlive(fake_wake_lease()),
+            ALARM_ID,
+        );
+
+        // Timer is not expired yet.
+        assert_matches!(TestExecutor::poll_until_stalled(&mut wake_fut).await, Poll::Pending);
+
+        // Move the UTC timeline.
+        ctx.utc_clock
+            .update(
+                zx::ClockUpdate::builder()
+                    .absolute_value(
+                        now_boot.into(),
+                        ctx.utc_backstop + fxr::UtcDuration::from_nanos(100),
+                    )
+                    .build(),
+            )
+            .unwrap();
+
+        // See similar code in the test above.
+        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(1)).await;
+        assert_matches!(TestExecutor::poll_until_stalled(wake_fut).await, Poll::Ready(_));
     }
 }
