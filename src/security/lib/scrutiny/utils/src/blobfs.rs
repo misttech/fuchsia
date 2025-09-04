@@ -5,7 +5,7 @@
 use crate::fs::TemporaryDirectory;
 use crate::io::{ReadSeek, TryClone, WrappedReaderSeeker};
 use crate::zstd;
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow};
 use byteorder::{LittleEndian, ReadBytesExt};
 use log::warn;
 use serde::Serialize;
@@ -22,6 +22,7 @@ const BLOBFS_MAGIC_0: u64 = 0xac2153479e694d21;
 const BLOBFS_MAGIC_1: u64 = 0x985000d4d4d3d314;
 const BLOBFS_VERSION_8: u32 = 8;
 const BLOBFS_VERSION_9: u32 = 9;
+const BLOBFS_VERSION_10: u32 = 10;
 const BLOBFS_BLOCK_SIZE: u64 = 8192;
 const BLOBFS_MERKLE_SIZE: u64 = 32;
 const BLOBFS_BLOCK_BITS: u64 = BLOBFS_BLOCK_SIZE * 8;
@@ -35,6 +36,7 @@ const BLOBFS_FLAG_EXTENT_CONTAINER: u16 = 1 << 2;
 const BLOBFS_FLAG_ZSTD_COMPRESSED: u16 = 1 << 3;
 const BLOBFS_FLAG_ZSTD_SEEK_COMPRESSED: u16 = 1 << 4;
 const BLOBFS_FLAG_CHUNK_COMPRESSED: u16 = 1 << 5;
+const BLOBFS_FLAG_DEPRECATED_PADDED_MERKLE_TREE_FORMAT: u16 = 1 << 5;
 const BLOBFS_FLAG_MASK_ANY_COMPRESSION: u16 = BLOBFS_FLAG_LZ4_COMPRESSED
     | BLOBFS_FLAG_ZSTD_COMPRESSED
     | BLOBFS_FLAG_ZSTD_SEEK_COMPRESSED
@@ -72,6 +74,11 @@ pub struct BlobFsHeader {
     journal_slices: u32,
 }
 
+enum MerkleLayout {
+    Compact,
+    Padded,
+}
+
 impl BlobFsHeader {
     pub fn parse<RS: Read + Seek>(reader: &mut RS) -> Result<Self> {
         let starting_pos: i64 = reader.stream_position()?.try_into()?;
@@ -88,7 +95,10 @@ impl BlobFsHeader {
         // BlobFS version 9 removes support fo ZSTD_Seekable.
         // Scrutiny only supports ZSTD_CHUNK. So both versions are suitable
         // for use with the tool.
-        if version != BLOBFS_VERSION_8 && version != BLOBFS_VERSION_9 {
+        if version != BLOBFS_VERSION_8
+            && version != BLOBFS_VERSION_9
+            && version != BLOBFS_VERSION_10
+        {
             return Err(Error::new(BlobFsError::UnsupportedVersion));
         }
 
@@ -144,11 +154,7 @@ impl BlobFsHeader {
 
     /// Returns the block index where the block map starts.
     pub fn block_map_start_block(&self) -> u64 {
-        if self.is_fvm() {
-            self.slice_size / BLOBFS_BLOCK_SIZE
-        } else {
-            BLOBFS_BLOCK_MAP_START
-        }
+        if self.is_fvm() { self.slice_size / BLOBFS_BLOCK_SIZE } else { BLOBFS_BLOCK_MAP_START }
     }
 
     /// Returns the number of blocks in the block map.
@@ -300,6 +306,20 @@ impl NodePrelude {
     pub fn is_compressed(&self) -> bool {
         self.flags & BLOBFS_FLAG_MASK_ANY_COMPRESSION != 0
     }
+
+    fn merkle_layout(&self, version: &BlobFsVersion) -> MerkleLayout {
+        match version {
+            BlobFsVersion::Version8 => MerkleLayout::Padded,
+            BlobFsVersion::Version9 => MerkleLayout::Compact,
+            BlobFsVersion::Version10 => {
+                if self.flags & BLOBFS_FLAG_DEPRECATED_PADDED_MERKLE_TREE_FORMAT > 0 {
+                    MerkleLayout::Padded
+                } else {
+                    MerkleLayout::Compact
+                }
+            }
+        }
+    }
 }
 
 /// An Extent is simply an a 2-tuple of (DataBlockIndex, DataBlockLength) paired
@@ -405,6 +425,7 @@ pub enum BlobFsError {
 pub enum BlobFsVersion {
     Version8,
     Version9,
+    Version10,
 }
 
 /// A builder pattern implementation for`BlobFsReader`. Incremental builder
@@ -454,6 +475,7 @@ impl<TCRS: TryClone + Read + Seek + Send + Sync> BlobFsReaderBuilder<TCRS> {
         let blobfs_version = match header.version {
             BLOBFS_VERSION_8 => BlobFsVersion::Version8,
             BLOBFS_VERSION_9 => BlobFsVersion::Version9,
+            BLOBFS_VERSION_10 => BlobFsVersion::Version10,
             _ => {
                 return Err(anyhow!("Unsupported blobfs version: {}", header.version));
             }
@@ -498,8 +520,8 @@ impl<TCRS: TryClone + Read + Seek + Send + Sync> BlobFsReaderBuilder<TCRS> {
                 let blob_data_offset = data_offset.checked_add(extent_offset)
                     .ok_or_else(|| anyhow!("Blobfs data + inode inline extent start overflowed: data_offset={} + extent_offset={}", data_offset, extent_offset))?;
 
-                let (data_start, merkle_tree_size) = match blobfs_version {
-                    BlobFsVersion::Version8 => {
+                let (data_start, merkle_tree_size) = match prelude.merkle_layout(&blobfs_version) {
+                    MerkleLayout::Padded => {
                         // Data begins with merkle tree. Skip passed merkle tree.
                         let merkle_tree_block_count = merkle_tree_block_count(&inode);
                         let merkle_tree_size = merkle_tree_block_count.checked_mul(BLOBFS_BLOCK_SIZE)
@@ -507,7 +529,7 @@ impl<TCRS: TryClone + Read + Seek + Send + Sync> BlobFsReaderBuilder<TCRS> {
                         let data_start = blob_data_offset.checked_add(merkle_tree_size).ok_or_else(|| anyhow!("Malformed blobfs archive offset: data_offset={} + merkle_tree_size={}", blob_data_offset, merkle_tree_size))?;
                         (data_start, merkle_tree_size)
                     }
-                    BlobFsVersion::Version9 => {
+                    MerkleLayout::Compact => {
                         // Merkle tree appears at the end of data; no need to add more to offset.
                         let data_start = blob_data_offset;
                         let merkle_tree_size = merkle_tree_byte_size(&inode, true);
@@ -601,13 +623,13 @@ impl<TCRS: 'static + TryClone + Read + Seek> BlobFsReader<TCRS> {
 #[cfg(test)]
 mod tests {
     use super::{
-        calculate_hash_list_size, merkle_tree_block_count, round_up, BlobFsError, BlobFsHeader,
-        BlobFsReaderBuilder, Extent, Inode, NodePrelude, BLOBFS_FLAG_ALLOCATED, BLOBFS_MAGIC_0,
-        BLOBFS_MAGIC_1, BLOBFS_VERSION_8, BLOBFS_VERSION_9,
+        BLOBFS_FLAG_ALLOCATED, BLOBFS_MAGIC_0, BLOBFS_MAGIC_1, BLOBFS_VERSION_8, BLOBFS_VERSION_9,
+        BLOBFS_VERSION_10, BlobFsError, BlobFsHeader, BlobFsReaderBuilder, Extent, Inode,
+        NodePrelude, calculate_hash_list_size, merkle_tree_block_count, round_up,
     };
     use crate::fs::TemporaryDirectory;
     use crate::io::{TryClonableBufReaderFile, TryClone};
-    use std::fs::{write, File};
+    use std::fs::{File, write};
     use std::io::{BufReader, Cursor, Read, Seek};
     use std::sync::Arc;
     use tempfile::tempdir;
@@ -616,7 +638,7 @@ mod tests {
         BlobFsHeader {
             magic_0: BLOBFS_MAGIC_0,
             magic_1: BLOBFS_MAGIC_1,
-            version: BLOBFS_VERSION_9,
+            version: BLOBFS_VERSION_10,
             flags: 0,
             block_size: 8192,
             reserved_1: 0,
@@ -842,9 +864,23 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_blobfs_old_compat_version() {
+    fn test_blobfs_old_compat_version_8() {
         let mut header = fake_blobfs_header();
         header.version = BLOBFS_VERSION_8;
+        let mut blobfs_bytes = bincode::serialize(&header).unwrap();
+        let mut empty_data = vec![0u8; 8192 * 20];
+        blobfs_bytes.append(&mut empty_data);
+        file_and_buffer_test_from_buffer(
+            blobfs_bytes,
+            blobfs_reader_builder_build_ok_num_blobs::<TryClonableBufReaderFile>(0),
+            blobfs_reader_builder_build_ok_num_blobs::<Cursor<Vec<u8>>>(0),
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_blobfs_old_compat_version_9() {
+        let mut header = fake_blobfs_header();
+        header.version = BLOBFS_VERSION_9;
         let mut blobfs_bytes = bincode::serialize(&header).unwrap();
         let mut empty_data = vec![0u8; 8192 * 20];
         blobfs_bytes.append(&mut empty_data);
