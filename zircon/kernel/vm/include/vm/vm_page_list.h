@@ -501,7 +501,7 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<ktl::unique_ptr<VmP
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmPageListNode);
 
-  static const size_t kPageFanOut = 16;
+  static constexpr size_t kPageFanOut = 16;
 
   // accessors
   uint64_t offset() const { return obj_offset_; }
