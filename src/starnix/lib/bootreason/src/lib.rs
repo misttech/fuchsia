@@ -20,7 +20,7 @@ pub fn get_android_bootreason() -> Result<&'static str, Error> {
     match reboot_info.reason {
         Some(RebootReason::Unknown) => return Ok("reboot,unknown"),
         Some(RebootReason::Cold) => return Ok("reboot,cold"),
-        Some(RebootReason::BriefPowerLoss) => return Ok("reboot,powerloss"),
+        Some(RebootReason::BriefPowerLoss) => return Ok("reboot,hard_reset"),
         Some(RebootReason::Brownout) => return Ok("reboot,undervoltage"),
         Some(RebootReason::KernelPanic) => return Ok("kernel_panic"),
         Some(RebootReason::SystemOutOfMemory) => return Ok("kernel_panic,oom"),
