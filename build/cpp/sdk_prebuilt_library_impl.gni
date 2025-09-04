@@ -167,9 +167,6 @@ template("sdk_prebuilt_library_impl") {
           valid_categories || is_internal,
       "'${target_name}' has unsupported SDK category '${invoker.category}'. Must be one of ${valid_categories}.")
 
-  # TODO(https://fxbug.dev/342032854): Remove after updating Vulkan-Loader.
-  not_needed(invoker, [ "symbols_api" ])
-
   output_name = target_name
   if (defined(invoker.output_name)) {
     assert(
