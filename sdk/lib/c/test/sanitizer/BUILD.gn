@@ -194,7 +194,15 @@ if (toolchain_variant.tags + [ "lsan" ] - [ "lsan" ] !=
 } else {
   # Neither replaces-allocator nor lsan is in tags.  We can just add the lsan
   # config and build the test normally.
-  lsan_configs += [ "//build/config/sanitizers:lsan" ]
+  #
+  # TODO(https://fxbug.dev/437346226): See the comment in the top of lsan-test.cc
+  # for more details. We can't set lsan_configs to false here because it will
+  # still cause lsan-test to not be built for asan/hwasan builds. Even though
+  # the test is wrapped with a sanitizer macro check, we still need to explicitly
+  # remove the lsan config here to prevent the lsan checks from running after
+  # exiting main even though we ran zero lsan tests.
+  # lsan_configs += [ "//build/config/sanitizers:lsan" ]
+  lsan_configs = []
 }
 
 if (lsan_configs != false) {

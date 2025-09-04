@@ -2,6 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(https://fxbug.dev/437346226): Fuchsia's implementation of the LSan
+// runtime assumes shadow is set up via __sanitizer_shadow_bounds which is
+// how we determine the max user virtual address. The only sanitizers ported
+// to Fuchsia which setup shadow are ASan and HWASan, but standalone lsan
+// doesn't have shadow. While we wait for the upstream fix to land, temporarily
+// disable running LSan tests on any configuration that doesn't have the LSan
+// tag. Once the fix is landed and rolled in, remove this wrapping check.
+//
+// We suppress it this way because there isn't an easy way to indicate purely
+// from the build that we only want this to run on asan and hwasan builds while
+// excluding it from everywhere else. Furthermore, gating the creation of the
+// lsan-test target on the toolchain_variant.tags containing either ASan or
+// HWASan still causes this target to not be built on ASan or HWASan builds.
+//
+// This method allows this target to be built unconditionally but will
+// effectively only run these tests if it's part of an ASan/HWASan build.
+#if __has_feature(address_sanitizer) || __has_feature(hwaddress_sanitizer)
+
 #include <lib/fdio/spawn.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/process.h>
@@ -463,3 +481,5 @@ TEST_F(LeakSanitizerTest, DISABLED_LeakedThreadFix) {
 }
 
 }  // namespace
+
+#endif
