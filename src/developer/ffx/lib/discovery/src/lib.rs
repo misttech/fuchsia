@@ -10,8 +10,8 @@ pub use crate::events::{
 use crate::fastboot_file_watcher::FastbootWatcher;
 use crate::query::TargetInfoQuery;
 use bitflags::bitflags;
-use futures::Stream;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
+use futures::{FutureExt, Stream, StreamExt};
 use manual_targets::watcher::{
     ManualTargetEvent, ManualTargetEventHandler, ManualTargetWatcher,
     recommended_watcher as manual_recommended_watcher,
@@ -19,7 +19,9 @@ use manual_targets::watcher::{
 use mdns_discovery::{MdnsEventHandler, MdnsWatcher, recommended_watcher};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::task::{Context, Poll, ready};
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
+use std::time::Duration;
 use usb_fastboot_discovery::{
     FastbootEvent, FastbootEventHandler, FastbootUsbWatcher,
     recommended_watcher as fastboot_watcher,
@@ -34,14 +36,14 @@ mod emulator_watcher;
 pub mod error;
 pub mod events;
 mod fastboot_file_watcher;
+mod merge;
 pub mod query;
+
+const DEFAULT_TIMEOUT_MSECS: Duration = Duration::from_secs(2);
 
 #[allow(dead_code)]
 /// A stream of new devices as they appear on the bus. See [`wait_for_devices`].
 pub struct TargetStream {
-    /// The query for filtering which target to select.
-    query: TargetInfoQuery,
-
     /// Watches mdns events
     mdns_watcher: Option<MdnsWatcher>,
 
@@ -59,12 +61,6 @@ pub struct TargetStream {
 
     /// This is where results from the various watchers are published.
     queue: UnboundedReceiver<TargetEvent>,
-
-    /// Whether we want to get Added events.
-    notify_added: bool,
-
-    /// Whether we want to get Removed events.
-    notify_removed: bool,
 }
 
 pub struct TargetStreamConfig<Mdns, Fusb, Man>
@@ -73,10 +69,6 @@ where
     Fusb: FastbootEventHandler,
     Man: ManualTargetEventHandler,
 {
-    /// The filter for the target stream. If constructing the stream and this is set to `None`,
-    /// this will default to `TargetInfoQuery::First`.
-    pub query: Option<TargetInfoQuery>,
-
     /// MDNS event handler.
     pub mdns_event_handler: Option<Mdns>,
 
@@ -91,12 +83,6 @@ where
 
     /// Fastboot file watcher.
     pub fastboot_file_watcher: Option<FastbootWatcher>,
-
-    /// Should we notify when adding an item.
-    pub notify_added: bool,
-
-    /// Should we notify when removing an item.
-    pub notify_removed: bool,
 }
 
 impl<Mdns, Fusb, Man> TargetStreamConfig<Mdns, Fusb, Man>
@@ -108,19 +94,12 @@ where
     pub fn new() -> Self {
         // The type constraints make doing a derive of Default not doable.
         Self {
-            query: None,
             mdns_event_handler: None,
             fastboot_event_handler: None,
             manual_targets_event_handler: None,
             emulator_watcher: None,
             fastboot_file_watcher: None,
-            notify_added: false,
-            notify_removed: false,
         }
-    }
-
-    pub fn set_query(&mut self, q: TargetInfoQuery) {
-        self.query = Some(q)
     }
 
     pub fn set_mdns_event_handler(&mut self, e: Mdns) {
@@ -142,14 +121,6 @@ where
     pub fn set_fastboot_file_watcher(&mut self, f: FastbootWatcher) {
         self.fastboot_file_watcher = Some(f)
     }
-
-    pub fn set_notify_removed(&mut self, n: bool) {
-        self.notify_removed = n;
-    }
-
-    pub fn set_notify_added(&mut self, n: bool) {
-        self.notify_added = n;
-    }
 }
 
 impl TargetStream {
@@ -165,9 +136,6 @@ impl TargetStream {
         Man: ManualTargetEventHandler,
     {
         Self {
-            query: config.query.unwrap_or(TargetInfoQuery::First),
-            notify_added: config.notify_added,
-            notify_removed: config.notify_removed,
             mdns_watcher: config.mdns_event_handler.map(|e| recommended_watcher(e)),
             fastboot_usb_watcher: config.fastboot_event_handler.map(|e| fastboot_watcher(e)),
             manual_targets_watcher: config
@@ -180,20 +148,11 @@ impl TargetStream {
     }
 }
 
-pub trait TargetEventStream: Stream<Item = TargetEvent> + std::marker::Unpin {}
-
-impl TargetEventStream for TargetStream {}
-
-pub trait TargetDiscovery {
-    fn discover_devices(&self, query: TargetInfoQuery) -> Result<impl TargetEventStream>;
-}
-
 pub struct DiscoveryBuilder {
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
-    notify_added: bool,
-    notify_removed: bool,
     sources: DiscoverySources,
+    timeout: Option<Duration>,
 }
 
 impl DiscoveryBuilder {
@@ -227,13 +186,8 @@ impl DiscoveryBuilder {
         self
     }
 
-    pub fn notify_added(mut self, notify_added: bool) -> Self {
-        self.notify_added = notify_added;
-        self
-    }
-
-    pub fn notify_removed(mut self, notify_removed: bool) -> Self {
-        self.notify_removed = notify_removed;
+    pub fn timeout_msecs(mut self, timeout_msecs: Option<u64>) -> Self {
+        self.timeout = timeout_msecs.map(Duration::from_millis);
         self
     }
 
@@ -241,9 +195,9 @@ impl DiscoveryBuilder {
         Discovery {
             emulator_instance_root: self.emulator_instance_root,
             fastboot_devices_file_path: self.fastboot_devices_file_path,
-            notify_added: self.notify_added,
-            notify_removed: self.notify_removed,
             sources: self.sources,
+            timeout: self.timeout,
+            stream: Mutex::new(None),
         }
     }
 }
@@ -253,9 +207,8 @@ impl Default for DiscoveryBuilder {
         Self {
             emulator_instance_root: None,
             fastboot_devices_file_path: None,
-            notify_added: true,
-            notify_removed: true,
             sources: DiscoverySources::default(),
+            timeout: Some(DEFAULT_TIMEOUT_MSECS),
         }
     }
 }
@@ -263,29 +216,93 @@ impl Default for DiscoveryBuilder {
 pub struct Discovery {
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
-    notify_added: bool,
-    notify_removed: bool,
     sources: DiscoverySources,
+    timeout: Option<Duration>,
+    // For testing purposes, we can provide an arbitrary stream.
+    // For example, in the testing module `setup_test()` uses this to store
+    // a `Vec<_>` stream iterator.
+    stream: Mutex<Option<Box<dyn Stream<Item = TargetEvent> + Unpin>>>,
 }
 
 impl Discovery {
-    pub fn builder() -> DiscoveryBuilder {
-        DiscoveryBuilder::default()
-    }
-}
-
-impl TargetDiscovery for Discovery {
-    #[allow(refining_impl_trait)]
-    fn discover_devices(&self, query: TargetInfoQuery) -> Result<TargetStream> {
+    // Discover devices via mDNS broadcast, etc, with a time limit
+    fn create_raw_stream(&self) -> Result<Pin<Box<dyn Stream<Item = TargetEvent>>>> {
+        if let Some(stream) = self.stream.lock().unwrap().take() {
+            // In tests, we'll just use the provided stream
+            return Ok(Box::pin(stream));
+        }
         let stream = wait_for_devices(
-            query,
             self.emulator_instance_root.clone(),
             self.fastboot_devices_file_path.clone(),
-            self.notify_added,
-            self.notify_removed,
             self.sources,
         )?;
-        Ok(stream)
+        if let Some(timeout) = self.timeout {
+            let timer = fuchsia_async::Timer::new(timeout);
+            Ok(Box::pin(stream.take_until(timer)))
+        } else {
+            Ok(Box::pin(stream))
+        }
+    }
+
+    // Create a raw stream of TargetEvents.
+    fn create_stream(&self) -> Result<Pin<Box<dyn Stream<Item = TargetEvent>>>> {
+        Ok(Box::pin(self.create_raw_stream()?))
+    }
+
+    // Create a stream that is limited by a timer, and will short-circuit query matches:
+    // If the match is not "First", then close the stream on the first match. Otherwise,
+    // close the stream when the timer runs out.
+    pub fn discovery_stream(
+        &self,
+        query: TargetInfoQuery,
+    ) -> Result<impl Stream<Item = TargetEvent> + use<>> {
+        let stream = self.create_stream()?;
+        // The logic here is tricky. We want to close the stream as _soon_
+        // as we see a matching query, rather than, say, using scan()
+        // to close it on the _next_ event. (Because we may only see the
+        // one discovery event, before the timer.) So we'll use a oneshot
+        // to create a future that we'll use with stream.take_until().
+        //
+        // Getting the oneshot tx into the closure is also tricky,
+        // due to move semantics, etc. We have to make sure it doesn't
+        // get Dropped early, so we wrap it in an Arc<Mutex<>>.
+        let (single_target_tx, single_target_rx) = futures::channel::oneshot::channel();
+        let single_target_tx = Arc::new(Mutex::new(Some(single_target_tx)));
+        Ok(stream
+            .filter_map(move |ev| {
+                let query = query.clone();
+                let sender = Arc::clone(&single_target_tx);
+                async move {
+                    let th = ev.target_handle();
+                    // Only match against the query
+                    if query.match_handle(th) {
+                        // When we add a handle that matches our (non-First)
+                        // query, fire the oneshot
+                        if matches!(ev, TargetEvent::Added(_))
+                            && !matches!(query, TargetInfoQuery::First)
+                        {
+                            // We'll only need the oneshot once
+                            if let Some(s) = sender.lock().unwrap().take() {
+                                let _ = s.send(());
+                            }
+                        }
+                        Some(ev)
+                    } else {
+                        None
+                    }
+                }
+                .boxed()
+            })
+            .take_until(single_target_rx))
+    }
+
+    pub async fn discover_devices(&self, query: TargetInfoQuery) -> Result<Vec<TargetHandle>> {
+        let mut stream = self.discovery_stream(query)?;
+        let mut target_set = merge::TargetSet::new();
+        while let Some(ev) = stream.next().await {
+            target_set.process_event(ev);
+        }
+        Ok(target_set.into_targets())
     }
 }
 
@@ -307,17 +324,11 @@ impl Default for DiscoverySources {
 }
 
 fn wait_for_devices(
-    query: TargetInfoQuery,
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
-    notify_added: bool,
-    notify_removed: bool,
     sources: DiscoverySources,
 ) -> Result<TargetStream> {
     let mut config = TargetStreamConfig::new();
-    config.set_query(query);
-    config.set_notify_added(notify_added);
-    config.set_notify_removed(notify_removed);
     let (sender, queue) = unbounded();
     if sources.contains(DiscoverySources::MDNS) {
         let mdns_sender = sender.clone();
@@ -370,133 +381,36 @@ impl Stream for TargetStream {
     type Item = TargetEvent;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let Some(event) = ready!(Pin::new(&mut self.queue).poll_next(cx)) else {
-            return Poll::Ready(None);
-        };
-
-        let should_notify_matches = self.query.match_handle(event.as_handle());
-        let should_notify_added = event.is_added() && self.notify_added;
-        let should_notify_removed = event.is_removed() && self.notify_removed;
-        let should_notify = should_notify_matches && (should_notify_added || should_notify_removed);
-        if should_notify {
-            return Poll::Ready(Some(event));
-        }
-        // Important: must schedule the future for this to be woken up again.
-        cx.waker().wake_by_ref();
-        return Poll::Pending;
+        Pin::new(&mut self.queue).poll_next(cx)
     }
 }
 
 #[cfg(test)]
 pub mod test {
     use super::*;
+    use crate::{TargetHandle, TargetInfoQuery, TargetState};
     use addr::TargetAddr;
-    use futures::StreamExt;
     use pretty_assertions::assert_eq;
-    use std::cell::RefCell;
-    use std::collections::VecDeque;
     use std::fs::File;
     use std::io::Write;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use std::rc::Rc;
     use std::str::FromStr;
 
-    /// Used for testing functions that take a TargetDiscovery
-    ///
-    /// In discover_devices the `query` parameter is explicitly not used.
-    /// Test authors are expected to pass the VecDeque with the events "pre filtered"
-    /// You should have separate tests for your queries
-    pub struct TestDiscovery {
-        events: Rc<RefCell<VecDeque<TargetEvent>>>,
-    }
-
-    impl TargetDiscovery for TestDiscovery {
-        #[allow(refining_impl_trait)]
-
-        fn discover_devices(
-            &self,
-            _query: TargetInfoQuery,
-        ) -> crate::error::Result<TestTargetStream> {
-            Ok(TestTargetStream { events: self.events.clone() })
-        }
-    }
-
-    pub struct TestTargetStream {
-        events: Rc<RefCell<VecDeque<TargetEvent>>>,
-    }
-
-    impl TargetEventStream for TestTargetStream {}
-
-    impl Stream for TestTargetStream {
-        type Item = TargetEvent;
-
-        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            let event = self.events.borrow_mut().pop_front();
-            Poll::Ready(event)
-        }
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-    // Example TestDiscovery Usage
-    ///////////////////////////////////////////////////////////////////////////
-
-    fn write_target_event<W: Write>(writer: &mut W, event: TargetEvent) -> std::io::Result<()> {
-        let symbol = match event {
-            TargetEvent::Added(_) => "+",
-            TargetEvent::Removed(_) => "-",
+    fn setup_test() -> (Discovery, TargetHandle, TargetHandle) {
+        let handle1 = TargetHandle {
+            node_name: Some("test-target-1".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
         };
-
-        let handle = event.as_handle();
-        let node_name = handle.node_name.as_ref().map_or(target_errors::UNKNOWN_TARGET_NAME, |v| v);
-        let state = &handle.state;
-
-        writeln!(writer, "{symbol}  {node_name}  {state}")?;
-        Ok(())
-    }
-
-    /// Writes the events in a target event stream to the given writer
-    async fn write_event_stream(writer: &mut impl Write, mut stream: impl TargetEventStream) {
-        while let Some(event) = stream.next().await {
-            let _ = write_target_event(writer, event);
-        }
-    }
-
-    #[fuchsia::test]
-    async fn test_write_event_stream() -> anyhow::Result<()> {
-        let mut writer = vec![];
-        let disco = TestDiscovery {
-            events: Rc::new(RefCell::new(VecDeque::from([
-                TargetEvent::Added(TargetHandle {
-                    node_name: Some("magnus".to_string()),
-                    state: TargetState::Unknown,
-                    manual: false,
-                }),
-                TargetEvent::Added(TargetHandle {
-                    node_name: Some("abagail".to_string()),
-                    state: TargetState::Unknown,
-                    manual: false,
-                }),
-                TargetEvent::Removed(TargetHandle {
-                    node_name: Some("abagail".to_string()),
-                    state: TargetState::Unknown,
-                    manual: false,
-                }),
-            ]))),
+        let handle2 = TargetHandle {
+            node_name: Some("test-target-2".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
         };
-
-        let stream = disco.discover_devices(TargetInfoQuery::First)?;
-
-        write_event_stream(&mut writer, stream).await;
-
-        assert_eq!(
-            String::from_utf8(writer).expect("we write uft8"),
-            r#"+  magnus  Unknown
-+  abagail  Unknown
--  abagail  Unknown
-"#
-        );
-
-        Ok(())
+        let events = vec![TargetEvent::Added(handle1.clone()), TargetEvent::Added(handle2.clone())];
+        let stream = Box::new(futures::stream::iter(events));
+        let discovery = DiscoveryBuilder::default().build();
+        *discovery.stream.lock().unwrap() = Some(stream);
+        (discovery, handle1, handle2)
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -504,49 +418,38 @@ pub mod test {
     ///////////////////////////////////////////////////////////////////////////
 
     #[test]
-    fn test_discovery_builder_default() -> anyhow::Result<()> {
-        let discovery = Discovery::builder().build();
-        assert_eq!(discovery.notify_added, true);
-        assert_eq!(discovery.notify_removed, true);
+    fn test_discovery_builder_default() {
+        let discovery = DiscoveryBuilder::default().build();
         assert_eq!(discovery.sources, DiscoverySources::all());
         assert!(discovery.emulator_instance_root.is_none());
-        Ok(())
     }
 
     #[test]
-    fn test_discovery_builder_changes() -> anyhow::Result<()> {
-        let discovery = Discovery::builder()
-            .notify_added(false)
-            .notify_removed(false)
+    fn test_discovery_builder_changes() {
+        let discovery = DiscoveryBuilder::default()
             .set_source(DiscoverySources::MANUAL)
             .with_source(DiscoverySources::EMULATOR)
             .set_source(DiscoverySources::MDNS)
             .with_source(DiscoverySources::USB_FASTBOOT)
             .build();
-        assert_eq!(discovery.notify_added, false);
-        assert_eq!(discovery.notify_removed, false);
         assert_eq!(discovery.sources, DiscoverySources::USB_FASTBOOT | DiscoverySources::MDNS);
         assert!(discovery.emulator_instance_root.is_none());
-        Ok(())
     }
 
     #[test]
-    fn test_discovery_builder_with_root() -> anyhow::Result<()> {
-        let discovery = Discovery::builder()
+    fn test_discovery_builder_with_root() {
+        let discovery = DiscoveryBuilder::default()
             .set_source(DiscoverySources::MANUAL)
             .with_emulator_instance_root(Some(
                 PathBuf::from_str("/tmp").expect("tmp is a valid path"),
             ))
             .build();
 
-        assert_eq!(discovery.notify_added, true);
-        assert_eq!(discovery.notify_removed, true);
         assert_eq!(discovery.sources, DiscoverySources::MANUAL | DiscoverySources::EMULATOR);
         assert_eq!(
             discovery.emulator_instance_root,
             Some(PathBuf::from_str("/tmp").expect("tmp is a valid path"))
         );
-        Ok(())
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -554,19 +457,16 @@ pub mod test {
     ///////////////////////////////////////////////////////////////////////////
 
     #[fuchsia::test]
-    async fn test_target_stream() -> anyhow::Result<()> {
+    async fn test_target_stream() {
         let (sender, queue) = unbounded();
 
         let mut stream = TargetStream {
-            query: TargetInfoQuery::First,
             mdns_watcher: None,
             fastboot_usb_watcher: None,
             manual_targets_watcher: None,
             emulator_watcher: None,
             fastboot_file_watcher: None,
             queue,
-            notify_added: true,
-            notify_removed: true,
         };
 
         // Send a few events
@@ -603,146 +503,45 @@ pub mod test {
                 manual: false,
             })
         );
-
-        Ok(())
     }
 
     #[fuchsia::test]
-    async fn test_target_stream_ignores_added() -> anyhow::Result<()> {
-        let (sender, queue) = unbounded();
-
-        let mut stream = TargetStream {
-            query: TargetInfoQuery::First,
-            mdns_watcher: None,
-            fastboot_usb_watcher: None,
-            manual_targets_watcher: None,
-            emulator_watcher: None,
-            fastboot_file_watcher: None,
-            queue,
-            notify_added: false,
-            notify_removed: true,
+    async fn test_discover_devices() {
+        let handle = TargetHandle {
+            node_name: Some("test-target".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
         };
-
-        // Send a few events
-        sender
-            .unbounded_send(TargetEvent::Added(TargetHandle {
-                node_name: Some("Vin".to_string()),
-                state: TargetState::Zedboot,
-                manual: false,
-            }))
-            .unwrap();
-
-        sender
-            .unbounded_send(TargetEvent::Removed(TargetHandle {
-                node_name: Some("Vin".to_string()),
-                state: TargetState::Zedboot,
-                manual: false,
-            }))
-            .unwrap();
-
-        assert_eq!(
-            stream.next().await.unwrap(),
-            TargetEvent::Removed(TargetHandle {
-                node_name: Some("Vin".to_string()),
-                state: TargetState::Zedboot,
-                manual: false,
-            })
-        );
-
-        Ok(())
+        let events = vec![TargetEvent::Added(handle.clone())];
+        let stream = Box::new(futures::stream::iter(events));
+        let discovery = DiscoveryBuilder::default().build();
+        *discovery.stream.lock().unwrap() = Some(stream);
+        let targets = discovery.discover_devices(TargetInfoQuery::First).await.unwrap();
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0], handle);
     }
 
     #[fuchsia::test]
-    async fn test_target_stream_ignores_removed() -> anyhow::Result<()> {
-        let (sender, queue) = unbounded();
-
-        let mut stream = TargetStream {
-            query: TargetInfoQuery::First,
-            mdns_watcher: None,
-            fastboot_usb_watcher: None,
-            manual_targets_watcher: None,
-            emulator_watcher: None,
-            fastboot_file_watcher: None,
-            queue,
-            notify_added: true,
-            notify_removed: false,
-        };
-
-        // Send a few events
-        sender
-            .unbounded_send(TargetEvent::Removed(TargetHandle {
-                node_name: Some("Vin".to_string()),
-                state: TargetState::Zedboot,
-                manual: false,
-            }))
+    async fn test_devices_filtered_short_circuits() {
+        let (discovery, handle1, _) = setup_test();
+        let mut stream = discovery
+            .discovery_stream(TargetInfoQuery::NodenameOrSerial("test-target-1".to_string()))
             .unwrap();
 
-        sender
-            .unbounded_send(TargetEvent::Added(TargetHandle {
-                node_name: Some("Vin".to_string()),
-                state: TargetState::Zedboot,
-                manual: false,
-            }))
-            .unwrap();
-
-        assert_eq!(
-            stream.next().await.unwrap(),
-            TargetEvent::Added(TargetHandle {
-                node_name: Some("Vin".to_string()),
-                state: TargetState::Zedboot,
-                manual: false,
-            })
-        );
-
-        Ok(())
+        // We should get the first handle, and then the stream should be closed.
+        assert_eq!(stream.next().await.unwrap().target_handle(), &handle1);
+        assert!(stream.next().await.is_none());
     }
 
     #[fuchsia::test]
-    async fn test_target_stream_filtered() -> anyhow::Result<()> {
-        let (sender, queue) = unbounded();
+    async fn test_devices_filtered_first_query() {
+        let (discovery, handle1, handle2) = setup_test();
+        let mut stream = discovery.discovery_stream(TargetInfoQuery::First).unwrap();
 
-        let mut stream = TargetStream {
-            query: TargetInfoQuery::NodenameOrSerial("Vin".to_string()),
-            mdns_watcher: None,
-            fastboot_usb_watcher: None,
-            manual_targets_watcher: None,
-            emulator_watcher: None,
-            fastboot_file_watcher: None,
-            queue,
-            notify_added: true,
-            notify_removed: true,
-        };
-
-        // Send a few events
-        let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
-        let addr = TargetAddr::from(socket);
-        // This should not come into the queue since the target is not in zedboot
-        sender
-            .unbounded_send(TargetEvent::Added(TargetHandle {
-                node_name: Some("Kelsier".to_string()),
-                state: TargetState::Product { addrs: vec![addr], serial: None },
-                manual: false,
-            }))
-            .unwrap();
-
-        sender
-            .unbounded_send(TargetEvent::Added(TargetHandle {
-                node_name: Some("Vin".to_string()),
-                state: TargetState::Zedboot,
-                manual: false,
-            }))
-            .unwrap();
-
-        assert_eq!(
-            stream.next().await.unwrap(),
-            TargetEvent::Added(TargetHandle {
-                node_name: Some("Vin".to_string()),
-                state: TargetState::Zedboot,
-                manual: false,
-            })
-        );
-
-        Ok(())
+        // We should get both handles.
+        assert_eq!(stream.next().await.unwrap().target_handle(), &handle1);
+        assert_eq!(stream.next().await.unwrap().target_handle(), &handle2);
+        assert!(stream.next().await.is_none());
     }
 
     fn build_instance_file(dir: &PathBuf, name: &str) -> std::io::Result<File> {
@@ -779,7 +578,7 @@ pub mod test {
     // Normally, emulators are extended events, not just a fast creation of a single file.
     #[ignore]
     #[fuchsia::test]
-    async fn test_target_stream_produces_emulator() -> anyhow::Result<()> {
+    async fn test_target_stream_produces_emulator() {
         use tempfile::tempdir;
 
         let _env = ffx_config::test_init().await.expect("Failed to initialize test env");
@@ -790,7 +589,7 @@ pub mod test {
         let emu_instances = emulator_instance::EmulatorInstances::new(instance_dir.clone());
 
         // Add a new emulator
-        let config_file = build_instance_file(&instance_dir, "emu-data-instance")?;
+        let config_file = build_instance_file(&instance_dir, "emu-data-instance").unwrap();
 
         // Before waiting on devices, let's make sure we're actually getting the
         // emulator. (This shouldn't be necessary, but I've seen this test flake
@@ -799,15 +598,8 @@ pub mod test {
         assert_eq!(existing.len(), 1);
 
         // Start watching the directory
-        let mut stream = wait_for_devices(
-            TargetInfoQuery::First,
-            Some(instance_dir.clone()),
-            None,
-            true,
-            false,
-            DiscoverySources::EMULATOR,
-        )
-        .unwrap();
+        let mut stream =
+            wait_for_devices(Some(instance_dir.clone()), None, DiscoverySources::EMULATOR).unwrap();
 
         // Assert that the existing emulator is discovered
         let next =
@@ -828,7 +620,7 @@ pub mod test {
         );
 
         // Add a new (different) emulator
-        let config_file2 = build_instance_file(&instance_dir, "emu-data-instance2")?;
+        let config_file2 = build_instance_file(&instance_dir, "emu-data-instance2").unwrap();
         std::thread::sleep(std::time::Duration::from_secs(1));
         // let existing = emulator_instance::get_all_targets().await?;
         // assert_eq!(existing.len(), 2);
@@ -853,7 +645,7 @@ pub mod test {
 
         drop(config_file);
         drop(config_file2);
-        std::fs::remove_dir_all(&instance_dir)?;
+        std::fs::remove_dir_all(&instance_dir).unwrap();
         // TODO(325325761) -- re-enable when emulator Remove events are generated
         // correctly.
         // let next = stream
@@ -871,7 +663,5 @@ pub mod test {
         //         state: TargetState::Product(TargetAddr::from_str("127.0.0.1:33881")?),
         //     })
         // );
-
-        Ok(())
     }
 }

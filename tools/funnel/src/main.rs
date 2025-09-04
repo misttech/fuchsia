@@ -15,8 +15,7 @@ use camino::Utf8PathBuf;
 use chrono::Local;
 use discovery::query::TargetInfoQuery;
 use discovery::{
-    DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetDiscovery, TargetEvent,
-    TargetState,
+    DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetEvent, TargetState,
 };
 use futures::{Stream, StreamExt};
 use log::LevelFilter;
@@ -210,12 +209,11 @@ async fn update_main(_args: SubCommandUpdate) -> Result<(), FunnelError> {
 async fn list_targets_main(args: SubCommandListTargets) -> Result<(), FunnelError> {
     // Only want added events
     let discovery = DiscoveryBuilder::default()
-        .notify_added(true)
-        .notify_removed(true)
         .set_source(DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT)
+        .timeout_msecs(None)
         .build();
     let mut device_stream =
-        discovery.discover_devices(TargetInfoQuery::First).map_err(anyhow::Error::from)?;
+        discovery.discovery_stream(TargetInfoQuery::First).map_err(anyhow::Error::from)?;
 
     let mut stdout = io::stdout().lock();
 
@@ -242,12 +240,10 @@ async fn funnel_main(args: SubCommandHost) -> Result<(), FunnelError> {
 
     // Only want added events
     let discovery = DiscoveryBuilder::default()
-        .notify_added(true)
-        .notify_removed(false)
         .set_source(DiscoverySources::MDNS | DiscoverySources::USB_FASTBOOT)
         .build();
     let device_stream =
-        discovery.discover_devices(TargetInfoQuery::First).map_err(anyhow::Error::from)?;
+        discovery.discovery_stream(TargetInfoQuery::First).map_err(anyhow::Error::from)?;
 
     let mut stdout = io::stdout().lock();
     let targets = discover_target_events(&mut stdout, device_stream, wait_duration).await?;
