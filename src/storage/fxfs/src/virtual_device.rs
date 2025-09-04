@@ -19,7 +19,7 @@ pub struct ReadOnlyDevice<H: ReadObjectHandle> {
 }
 
 impl<H: ReadObjectHandle> ReadOnlyDevice<H> {
-    pub async fn new(handle: H) -> Result<Self, Error> {
+    pub fn new(handle: H) -> Result<Self, Error> {
         let device = Self { handle };
         // Prevent division by zero when calculating the block count.
         if device.block_size() == 0 {
@@ -145,7 +145,7 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(512, BLOCK_SIZE as u32));
         let fs = FxFilesystem::new_empty(device).await.unwrap();
         let handle = create_test_file(&fs, TEST_FILE_BLOCK_COUNT).await;
-        let handle_as_device = ReadOnlyDevice::new(handle).await.unwrap();
+        let handle_as_device = ReadOnlyDevice::new(handle).unwrap();
         assert_eq!(handle_as_device.block_size(), BLOCK_SIZE as u32);
         assert_eq!(handle_as_device.block_count(), TEST_FILE_BLOCK_COUNT as u64);
 

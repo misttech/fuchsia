@@ -15,7 +15,7 @@ use crate::object_store::object_record::{ObjectKey, ObjectValue};
 use crate::object_store::transaction::{AssociatedObject, LockKey, Mutation, lock_keys};
 use crate::object_store::{
     AssocObj, DirectWriter, EncryptedMutations, HandleOptions, LockState,
-    MAX_ENCRYPTED_MUTATIONS_SIZE, ObjectStore, Options, StoreInfo, Transaction,
+    MAX_ENCRYPTED_MUTATIONS_SIZE, ObjectStore, Options, StoreInfo,
     layer_size_from_encrypted_mutations_size, tree,
 };
 use crate::serialized_types::{LATEST_VERSION, Version, VersionedLatest};
@@ -486,19 +486,6 @@ impl ObjectStore {
         end_transaction.commit().await?;
 
         Ok(())
-    }
-
-    async fn write_store_info<'a>(
-        &'a self,
-        transaction: &mut Transaction<'a>,
-        new_store_info: &StoreInfo,
-    ) -> Result<(), Error> {
-        let mut serialized_info = Vec::new();
-        new_store_info.serialize_with_version(&mut serialized_info)?;
-        let mut buf = self.device.allocate_buffer(serialized_info.len()).await;
-        buf.as_mut_slice().copy_from_slice(&serialized_info[..]);
-
-        self.store_info_handle.get().unwrap().txn_write(transaction, 0u64, buf.as_ref()).await
     }
 }
 

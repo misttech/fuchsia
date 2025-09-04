@@ -1562,8 +1562,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         Ok(buf.as_slice().into())
     }
 
-    /// Returns the set of file_offset->extent mappings for this file.
-    /// This operation is potentially expensive and should generally be avoided.
+    /// Returns the set of file_offset->extent mappings for this file. The extents will be sorted by
+    /// their logical offset within the file.
+    ///
+    /// *NOTE*: This operation is potentially expensive and should generally be avoided.
     pub async fn device_extents(&self) -> Result<Vec<FileExtent>, Error> {
         let mut extents = Vec::new();
         let tree = &self.store().tree;

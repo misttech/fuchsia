@@ -10,6 +10,7 @@ mod extent_mapping_iterator;
 mod extent_record;
 mod flush;
 pub mod graveyard;
+mod install;
 pub mod journal;
 mod key_manager;
 pub(crate) mod merge;
@@ -1846,7 +1847,7 @@ impl ObjectStore {
     }
 
     // Returns INVALID_OBJECT_ID if the object ID cipher needs to be created or rolled.
-    fn maybe_get_next_object_id(&self) -> u64 {
+    pub(super) fn maybe_get_next_object_id(&self) -> u64 {
         let mut last_object_id = self.last_object_id.lock();
         if last_object_id.should_create_cipher() {
             INVALID_OBJECT_ID
@@ -2225,6 +2226,18 @@ impl ObjectStore {
             props.access_time = now;
         }
         Ok(())
+    }
+
+    async fn write_store_info<'a>(
+        &'a self,
+        transaction: &mut Transaction<'a>,
+        info: &StoreInfo,
+    ) -> Result<(), Error> {
+        let mut serialized_info = Vec::new();
+        info.serialize_with_version(&mut serialized_info)?;
+        let mut buf = self.device.allocate_buffer(serialized_info.len()).await;
+        buf.as_mut_slice().copy_from_slice(&serialized_info[..]);
+        self.store_info_handle.get().unwrap().txn_write(transaction, 0u64, buf.as_ref()).await
     }
 }
 

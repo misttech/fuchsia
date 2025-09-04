@@ -67,11 +67,23 @@ enum MappingState {
 }
 
 impl<I: LayerIterator<ObjectKey, ObjectValue>> ExtentMappingIterator<I> {
-    #[allow(dead_code)] // TODO(https://fxbug.dev/397515768): Remove when used in production.
     pub fn new(inner_iterator: I, backing_extents: Vec<FileExtent>) -> Result<Self, Error> {
+        Self::validate_extents(&backing_extents)?;
+        let mut this = Self { inner_iterator, backing_extents, state: MappingState::Passthrough };
+        this.process_item()?;
+        Ok(this)
+    }
+
+    /// Validates that there is at least one backing extent, that all backing extents are
+    /// logically contiguous, and that the first extent starts from offset zero.
+    fn validate_extents(backing_extents: &Vec<FileExtent>) -> Result<(), Error> {
         // We expect the inner volume to be backed by at least one extent.
         if backing_extents.is_empty() {
             return Err(FxfsError::Inconsistent).context("backing extents are empty");
+        }
+        if backing_extents[0].logical_offset() != 0 {
+            return Err(FxfsError::Inconsistent)
+                .context("first extents should start from offset 0");
         }
         // The backing extents should be logically contiguous (i.e. there should be no holes).
         for extent_pair in backing_extents.windows(2) {
@@ -80,9 +92,7 @@ impl<I: LayerIterator<ObjectKey, ObjectValue>> ExtentMappingIterator<I> {
                 return Err(FxfsError::Inconsistent).context("backing extents must be contiguous");
             }
         }
-        let mut this = Self { inner_iterator, backing_extents, state: MappingState::Passthrough };
-        this.process_item()?;
-        Ok(this)
+        Ok(())
     }
 
     /// Finds the backing extent for a given logical offset within the file.
@@ -145,7 +155,7 @@ impl<I: LayerIterator<ObjectKey, ObjectValue>> ExtentMappingIterator<I> {
             MappingState::Split { key, value, next_extent_idx }
         };
         self.state = state;
-        return Ok(());
+        Ok(())
     }
 
     fn update_split(&mut self) -> Result<(), Error> {
@@ -203,7 +213,6 @@ impl<I: LayerIterator<ObjectKey, ObjectValue>> LayerIterator<ObjectKey, ObjectVa
 }
 
 /// Extension trait to more concisely obtain a reference to the range of an extent key.
-#[allow(dead_code)] // TODO(https://fxbug.dev/397515768): Remove when used in production.
 trait ExtentKeyExt {
     /// Reference to the logical range for this extent. Will panic if key is not an extent.
     fn extent_range(&self) -> &Range<u64>;
@@ -237,7 +246,6 @@ impl ExtentKeyExt for ObjectKey {
 }
 
 /// Extension trait to more concisely obtain a reference to the device offset of an extent value.
-#[allow(dead_code)] // TODO(https://fxbug.dev/397515768): Remove when used in production.
 trait ExtentValueExt {
     /// Reference to the device offset for this extent. Will panic if not an extent.
     fn device_offset(&self) -> &u64;
