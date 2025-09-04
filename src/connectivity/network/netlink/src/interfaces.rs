@@ -1267,6 +1267,10 @@ fn port_class_to_link_type(port_class: fnet_interfaces_ext::PortClass) -> u16 {
 //
 // Per https://www.kernel.org/doc/html/latest/networking/operstates.html#querying-from-userspace,
 //
+//   Administrative state is the result of "ip link set dev <dev> up or down" and
+//   reflects whether the administrator wants to use the device for traffic. [...]
+//   Operational state shows the ability of an interface to transmit this user data.
+//
 //   Both admin and operational state can be queried via the netlink operation
 //   RTM_GETLINK. It is also possible to subscribe to RTNLGRP_LINK to be
 //   notified of updates while the interface is admin up. This is important for
@@ -1327,6 +1331,14 @@ fn interface_properties_to_link_message(
     if link_header.link_layer_type == LinkLayerType::Loopback {
         flags |= net_device_flags_IFF_LOOPBACK;
     };
+    if *port_class == fnet_interfaces_ext::PortClass::WlanClient {
+        // Upstream consumers expect WLAN interfaces to be "administratively up" even when
+        // they're disconnected. Since we don't currently distinguish between device-layer
+        // (adminitstrative) enablement and IP-layer enablement, we'll unconditionally
+        // mark all WLAN interfaces as IFF_UP (administratively up).
+        // TODO(b/290372180): Determine the actual device enablement status.
+        flags |= net_device_flags_IFF_UP;
+    }
 
     // SAFETY: This and the following .unwrap() are safe as LinkFlags
     // can hold any valid u32.
@@ -1918,7 +1930,7 @@ mod tests {
 
     #[test_case(ETHERNET, false, 0, ARPHRD_ETHER)]
     #[test_case(ETHERNET, true, ONLINE_IF_FLAGS, ARPHRD_ETHER)]
-    #[test_case(WLAN_CLIENT, false, 0, ARPHRD_ETHER)]
+    #[test_case(WLAN_CLIENT, false, net_device_flags_IFF_UP, ARPHRD_ETHER)]
     #[test_case(WLAN_CLIENT, true, ONLINE_IF_FLAGS, ARPHRD_ETHER)]
     #[test_case(WLAN_AP, false, 0, ARPHRD_ETHER)]
     #[test_case(WLAN_AP, true, ONLINE_IF_FLAGS, ARPHRD_ETHER)]
@@ -2206,7 +2218,7 @@ mod tests {
             create_netlink_link_message(
                 WLAN_INTERFACE_ID,
                 arphrd_ether_u16,
-                0,
+                net_device_flags_IFF_UP, // For now, WLAN interfaces are always "IFF_UP"
                 create_nlas(WLAN_NAME.to_string(), arphrd_ether_u16, false, &WLAN_MAC),
             )
             .into_rtnl_new_link(UNSPECIFIED_SEQUENCE_NUMBER, false),
