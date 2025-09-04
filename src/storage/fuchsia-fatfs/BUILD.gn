@@ -69,6 +69,10 @@ rustc_fuzzer("fat-fuzzer") {
            "//src/lib/fuzzing/rust:fuzz",
            "//third_party/rust_crates:futures",
          ]
+
+  # TODO(https://fxbug.dev/436923423): Re-enable this for lsan once the issue
+  # regarding leak checking is fixed.
+  exclude_toolchain_tags = [ "lsan" ]
 }
 
 fuchsia_fuzzer_component("fat-fuzzer-component") {
