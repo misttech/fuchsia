@@ -373,12 +373,18 @@ impl std::fmt::Display for Cmd {
     }
 }
 
-/// Extracts a KOID from the underlying channel of the provided [stream].
+/// Extracts a KOID from the underlying channel of the provided stream.
+///
+/// This function deconstructs the provided stream to access the underlying
+/// channel and extract its KOID. It then reconstructs the stream and returns
+/// it to the caller along with the KOID.
+///
+/// # Args
+/// - `stream`: The `fta::WakeAlarmsRequestStream` to extract the KOID from.
 ///
 /// # Returns
-/// - zx::Koid: the KOID you wanted.
-/// - fta::WakeAlarmsRequestStream: the stream; we had to deconstruct it briefly,
-///   so this gives it back to you.
+/// A tuple containing the `zx::Koid` of the stream's channel and the
+/// reconstructed `fta::WakeAlarmsRequestStream`.
 pub fn get_stream_koid(
     stream: fta::WakeAlarmsRequestStream,
 ) -> (zx::Koid, fta::WakeAlarmsRequestStream) {
@@ -389,6 +395,14 @@ pub fn get_stream_koid(
 }
 
 /// Serves a single Wake API client.
+///
+/// This function processes incoming requests from a `fta::WakeAlarmsRequestStream`,
+/// handling each request by calling `handle_request`. It continues to process
+/// requests until the stream is exhausted.
+///
+/// # Args
+/// - `timer_loop`: A reference-counted pointer to the `Loop` that manages timers.
+/// - `requests`: The stream of incoming `fta::WakeAlarmsRequest` from a client.
 pub async fn serve(timer_loop: Rc<Loop>, requests: fta::WakeAlarmsRequestStream) {
     let timer_loop = timer_loop.clone();
     let timer_loop_send = || timer_loop.get_sender();
@@ -555,7 +569,10 @@ async fn handle_request(
 
 /// Represents a single alarm event processing loop.
 ///
-/// One instance is created per each alarm-capable low-level device.
+/// One instance is created per each alarm-capable low-level device. The `Loop`
+/// is responsible for managing the lifecycle of wake alarms, including their
+/// creation, scheduling, and cancellation. It interacts with the underlying
+/// hardware timer through a `TimerOps` trait object.
 pub struct Loop {
     // Given to any clients that need to send messages to `_task`
     // via [get_sender].
@@ -563,9 +580,20 @@ pub struct Loop {
 }
 
 impl Loop {
-    /// Creates a new instance of [Loop].
+    /// Creates a new instance of `Loop`.
     ///
-    /// `device_proxy` is a connection to a low-level timer device.
+    /// This function initializes a new `Loop` with a connection to a low-level
+    /// hardware timer device. It spawns two background tasks: one for the main
+    /// timer event loop and another for monitoring UTC clock changes.
+    ///
+    /// # Args
+    /// - `scope`: The `fasync::ScopeHandle` to spawn background tasks in.
+    /// - `device_proxy`: A `ffhh::DeviceProxy` for communicating with the hardware timer.
+    /// - `inspect`: A `finspect::Node` for recording diagnostics.
+    /// - `utc_clock`: A `fxr::UtcClock` for tracking UTC time.
+    ///
+    /// # Returns
+    /// A new instance of `Loop`.
     pub fn new(
         scope: fasync::ScopeHandle,
         device_proxy: ffhh::DeviceProxy,
@@ -576,7 +604,19 @@ impl Loop {
         Loop::new_internal(scope, hw_device_timer_ops, inspect, utc_clock)
     }
 
-    // Creates a new instance of [Loop] with emulated wake alarms.
+    /// Creates a new instance of `Loop` with emulated wake alarms.
+    ///
+    /// This function is similar to `new`, but it uses an emulated timer instead
+    /// of a real hardware timer. This is useful for testing environments where
+    /// a hardware timer may not be available.
+    ///
+    /// # Args
+    /// - `scope`: The `fasync::ScopeHandle` to spawn background tasks in.
+    /// - `inspect`: A `finspect::Node` for recording diagnostics.
+    /// - `utc_clock`: A `fxr::UtcClock` for tracking UTC time.
+    ///
+    /// # Returns
+    /// A new instance of `Loop` with an emulated timer.
     pub fn new_emulated(
         scope: fasync::ScopeHandle,
         inspect: finspect::Node,
@@ -639,7 +679,17 @@ async fn monitor_utc_clock_changes(utc_clock: fxr::UtcClock, mut cmd: mpsc::Send
     }
 }
 
-/// Clone a handle infallibly with `zx::Rights::SAME_RIGHTS`.
+/// Clones a handle infallibly with `zx::Rights::SAME_RIGHTS`.
+///
+/// This function duplicates a handle, preserving its rights. It will panic if
+/// the handle duplication fails, which is not expected to happen under normal
+/// circumstances.
+///
+/// # Args
+/// - `handle`: A reference to a handle-based object to be cloned.
+///
+/// # Returns
+/// A new handle with the same rights as the original.
 pub fn clone_handle<H: HandleBased>(handle: &H) -> H {
     handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("infallible")
 }
@@ -1536,6 +1586,13 @@ fn notify_all(
 const HRTIMER_DIRECTORY: &str = "/dev/class/hrtimer";
 
 /// Connects to the high resolution timer device driver.
+///
+/// This function watches the hrtimer device directory and connects to the first
+/// available hrtimer device.
+///
+/// # Returns
+/// A `Result` containing a `ffhh::DeviceProxy` on success, or an error if
+/// the connection fails.
 pub async fn connect_to_hrtimer_async() -> Result<ffhh::DeviceProxy> {
     debug!("connect_to_hrtimer: trying directory: {}", HRTIMER_DIRECTORY);
     let dir =
