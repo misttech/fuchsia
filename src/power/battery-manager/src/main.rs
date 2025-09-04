@@ -4,65 +4,43 @@
 
 mod battery_manager;
 mod battery_simulator;
+mod power;
 
 use crate::battery_manager::{BatteryManager, BatterySimulationStateObserver};
 use crate::battery_simulator::SimulatedBatteryInfoSource;
-use anyhow::{Context, Error};
+use anyhow::Error;
 use fidl_fuchsia_power_battery::BatteryManagerRequestStream;
-use fuchsia_component::client as fclient;
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 use log::{error, info};
 use std::sync::{Arc, Weak};
-use {
-    fidl_fuchsia_power_battery as fpower, fidl_fuchsia_power_battery_test as spower,
-    fuchsia_async as fasync,
-};
+use {fidl_fuchsia_power_battery_test as spower, fuchsia_async as fasync};
 
 enum IncomingService {
     BatteryManager(BatteryManagerRequestStream),
     BatterySimulator(spower::BatterySimulatorRequestStream),
 }
 
-async fn get_battery_info_provider_proxy() -> Result<fpower::BatteryInfoProviderProxy, Error> {
-    let device = fclient::Service::open(fpower::InfoServiceMarker)
-        .context("Failed to open service")?
-        .watch_for_any()
-        .await
-        .context("Failed to find instance")?
-        .connect_to_device()
-        .context("Failed to connect to device protocol")?;
-    return Ok(device);
-}
-
 #[fuchsia::main(logging_tags = ["battery_manager"])]
 async fn main() -> Result<(), Error> {
     info!("starting up");
 
+    let mut fs = ServiceFs::new();
+
     let battery_manager = Arc::new(BatteryManager::new());
     let battery_manager_clone = battery_manager.clone();
 
-    fasync::Task::local(async move {
-        let proxy = match get_battery_info_provider_proxy().await {
-            Ok(p) => p,
-            Err(e) => {
-                error!("Error getting battery info provider: {e:?}");
-                return; // Exit the task on error
-            }
-        };
-
-        if let Err(e) = battery_manager_clone.start_watching_battery_info(proxy).await {
-            error!("Error when watching battery info: {e:?}");
-        }
-    })
-    .detach();
-
+    let f = power::watch_power_device(battery_manager_clone);
     let battery_simulator = Arc::new(SimulatedBatteryInfoSource::new(
         battery_manager.get_battery_info_copy(),
         Arc::downgrade(&battery_manager) as Weak<dyn BatterySimulationStateObserver>,
     ));
 
-    let mut fs = ServiceFs::new();
+    fasync::Task::spawn(f.unwrap_or_else(|e| {
+        error!("watch_power_device failed {:?}", e);
+    }))
+    .detach();
+
     fs.dir("svc")
         .add_fidl_service(IncomingService::BatteryManager)
         .add_fidl_service(IncomingService::BatterySimulator);

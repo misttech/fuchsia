@@ -11,13 +11,16 @@ rustc_binary("bin") {
   edition = "2021"
 
   deps = [
+    "//sdk/fidl/fuchsia.hardware.powersource:fuchsia.hardware.powersource_rust",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//sdk/fidl/fuchsia.power.battery.test:fuchsia.power.battery.test_rust",
+    "//sdk/lib/device-watcher/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
@@ -28,6 +31,7 @@ rustc_binary("bin") {
     "src/battery_manager.rs",
     "src/battery_simulator.rs",
     "src/main.rs",
+    "src/power.rs",
   ]
 }
 

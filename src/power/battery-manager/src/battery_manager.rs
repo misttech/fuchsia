@@ -3,13 +3,21 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use fidl::HandleBased;
 use fidl::endpoints::Proxy;
-use futures::TryStreamExt;
 use futures::lock::Mutex;
+use futures::TryStreamExt;
 use log::{debug, error};
 use std::sync::{Arc, RwLock};
-use {fidl_fuchsia_power_battery as fpower, fuchsia_async as fasync};
+use {
+    fidl_fuchsia_hardware_powersource as hpower, fidl_fuchsia_power_battery as fpower,
+    fuchsia_async as fasync,
+};
+
+#[derive(Debug, PartialEq)]
+enum StatusUpdateResult {
+    Notify,
+    DoNotNotify,
+}
 
 pub(crate) trait BatterySimulationStateObserver {
     fn update_simulation(&self, new_state: bool);
@@ -22,14 +30,14 @@ impl BatterySimulationStateObserver for BatteryManager {
         *sim_state = is_simulating;
         drop(sim_state);
         if !is_simulating {
-            self.update_watchers(None);
+            self.update_watchers();
         }
     }
     fn update_simulated_battery_info(&self, battery_info: fpower::BatteryInfo) {
         let mut simulated_battery_info = self.simulated_battery_info.write().unwrap();
         *simulated_battery_info = battery_info;
         drop(simulated_battery_info);
-        self.update_watchers_conditionally(true, None);
+        self.update_watchers();
     }
 }
 
@@ -89,22 +97,34 @@ impl BatteryManager {
         watchers.push(watcher)
     }
 
-    // Call update_watchers if expecting_simulating == simulation_state.
-    // This behavior avoids unnecessary updates.
-    fn update_watchers_conditionally(
+    // Updates the status
+    pub fn update_status(
         &self,
-        expect_simulating: bool,
-        wake_lease: Option<zx::EventPair>,
-    ) {
-        if self.is_simulating() == expect_simulating {
-            self.update_watchers(wake_lease);
+        power_info: hpower::SourceInfo,
+        battery_info: Option<hpower::BatteryInfo>,
+    ) -> Result<(), anyhow::Error> {
+        debug!(power_info:?, battery_info:?; "update_status",);
+
+        match self.update_battery_info(power_info, battery_info) {
+            Ok(StatusUpdateResult::Notify) => {
+                debug!("::manager:: update status changed - NOTIFY");
+                let info = self.get_battery_info_copy();
+                let watchers = self.watchers.clone();
+                debug!("::manager:: run watchers {:?} with info {:?}", &watchers, &info);
+                BatteryManager::run_watchers(watchers, info);
+            }
+            Ok(StatusUpdateResult::DoNotNotify) => {
+                debug!("::manager:: update status unchanged - skipping NOTIFY");
+            }
+            Err(e) => return Err(e),
         }
+
+        Ok(())
     }
 
     pub fn run_watchers(
         watchers: Arc<Mutex<Vec<fpower::BatteryInfoWatcherProxy>>>,
         info: fpower::BatteryInfo,
-        wake_lease: Option<zx::EventPair>,
     ) {
         debug!("::manager:: run watchers...");
         fasync::Task::spawn(async move {
@@ -115,9 +135,7 @@ impl BatteryManager {
             };
             debug!("::manager:: run watchers [{:?}]", &watchers.len());
             for w in &watchers {
-                let wake_lease_dup = Self::duplicate_wake_lease(&wake_lease);
-                if let Err(e) = w.on_change_battery_info(&info.clone().into(), wake_lease_dup).await
-                {
+                if let Err(e) = w.on_change_battery_info(&info.clone().into(), None).await {
                     error!("failed to send battery info to watcher {:?}", e);
                 }
             }
@@ -125,11 +143,147 @@ impl BatteryManager {
         .detach()
     }
 
-    fn update_battery_info(&self, info: fpower::BatteryInfo) {
-        let mut new_battery_info = self.battery_info.write().unwrap();
-        *new_battery_info = info;
+    fn update_battery_info(
+        &self,
+        power_info: hpower::SourceInfo,
+        battery_info: Option<hpower::BatteryInfo>,
+    ) -> Result<StatusUpdateResult, anyhow::Error> {
         let now = get_current_time();
-        new_battery_info.timestamp = Some(now);
+        let old_battery_info = self.get_battery_info_copy();
+        debug!("::battery_manager:: old battery info: {:?}", &old_battery_info);
+
+        let mut new_battery_info = self.battery_info.write().unwrap();
+
+        // info from AC power source
+        if power_info.type_ == hpower::PowerType::Ac {
+            // charge status/source
+            if power_info.state & hpower::POWER_STATE_CHARGING != 0 {
+                new_battery_info.charge_status = Some(fpower::ChargeStatus::Charging);
+                if power_info.type_ == hpower::PowerType::Ac {
+                    new_battery_info.charge_source = Some(fpower::ChargeSource::AcAdapter);
+                } else {
+                    //TODO: how to detect USB/Wireless
+                    new_battery_info.charge_source = Some(fpower::ChargeSource::Unknown);
+                }
+            }
+        }
+
+        // info from battery power source will include battery info
+        if let Some(bi) = battery_info {
+            assert!(
+                power_info.type_ == hpower::PowerType::Battery,
+                "updating battery info with non-battery power source"
+            );
+
+            debug!(power_info:?, bi:?; "::battery_manager:: update with hpower info");
+
+            // check battery online and update accordingly
+            if power_info.state & hpower::POWER_STATE_ONLINE != 0 {
+                new_battery_info.status = Some(fpower::BatteryStatus::Ok);
+
+                // charge status/source
+                if power_info.state & hpower::POWER_STATE_CHARGING != 0 {
+                    new_battery_info.charge_status = Some(fpower::ChargeStatus::Charging);
+                }
+
+                if bi.remaining_capacity == bi.last_full_capacity {
+                    new_battery_info.charge_status = Some(fpower::ChargeStatus::Full);
+                }
+
+                // level percent
+                new_battery_info.level_percent = Some(
+                    (bi.remaining_capacity.saturating_mul(100)) as f32
+                        / bi.last_full_capacity as f32,
+                );
+
+                new_battery_info.present_voltage_mv = Some(bi.present_voltage);
+
+                let battery_spec = fpower::BatterySpec {
+                    max_charging_current_ua: bi.battery_spec.max_charging_current_ua,
+                    max_charging_voltage_uv: bi.battery_spec.max_charging_voltage_uv,
+                    design_capacity_uah: bi.battery_spec.design_capacity_uah,
+                    ..Default::default()
+                };
+                new_battery_info.battery_spec = Some(battery_spec);
+
+                match bi.unit {
+                    hpower::BatteryUnit::Ma => {
+                        new_battery_info.remaining_capacity_uah =
+                            Some(bi.remaining_capacity * 1000);
+                    }
+                    hpower::BatteryUnit::Mw => {
+                        let uah =
+                            bi.remaining_capacity as f64 * 1000000.0 / bi.present_voltage as f64;
+                        new_battery_info.remaining_capacity_uah = Some(uah as u32);
+                    }
+                }
+
+                // level_status
+                if power_info.state & hpower::POWER_STATE_CRITICAL != 0 {
+                    new_battery_info.level_status = Some(fpower::LevelStatus::Critical);
+                } else if bi.remaining_capacity <= bi.capacity_low {
+                    new_battery_info.level_status = Some(fpower::LevelStatus::Low);
+                } else if bi.remaining_capacity <= bi.capacity_warning {
+                    new_battery_info.level_status = Some(fpower::LevelStatus::Warning);
+                } else {
+                    new_battery_info.level_status = Some(fpower::LevelStatus::Ok);
+                }
+
+                // time remaining, provided by hardware as hours
+                let nanos_in_one_hour = zx::MonotonicDuration::from_hours(1);
+
+                if bi.present_rate < 0 {
+                    // discharging
+                    let remaining_hours =
+                        bi.remaining_capacity as f32 / (bi.present_rate.saturating_mul(-1)) as f32;
+                    new_battery_info.time_remaining = Some(fpower::TimeRemaining::BatteryLife(
+                        (remaining_hours as i64).saturating_mul(nanos_in_one_hour.into_nanos()),
+                    ));
+                } else {
+                    // charging
+                    let remaining_hours = (bi.last_full_capacity as f32
+                        - bi.remaining_capacity as f32)
+                        / (bi.present_rate) as f32;
+                    new_battery_info.time_remaining = Some(fpower::TimeRemaining::FullCharge(
+                        (remaining_hours as i64).saturating_mul(nanos_in_one_hour.into_nanos()),
+                    ));
+                }
+
+                // TODO: determine actual battery health
+                new_battery_info.health = Some(fpower::HealthStatus::Unknown);
+            } else {
+                // battery offline/not present
+                new_battery_info.status = Some(fpower::BatteryStatus::NotPresent);
+            }
+        }
+
+        if power_info.state & hpower::POWER_STATE_DISCHARGING != 0 {
+            new_battery_info.charge_status = Some(fpower::ChargeStatus::Discharging);
+        }
+
+        if (power_info.state & hpower::POWER_STATE_DISCHARGING == 0)
+            && (power_info.state & hpower::POWER_STATE_CHARGING == 0)
+        {
+            new_battery_info.charge_status = Some(fpower::ChargeStatus::NotCharging);
+        }
+
+        if new_battery_info.charge_status != Some(fpower::ChargeStatus::Charging)
+            && new_battery_info.charge_status != Some(fpower::ChargeStatus::Full)
+        {
+            new_battery_info.charge_source = Some(fpower::ChargeSource::None);
+        }
+
+        if *self.simulation_state.read().unwrap() {
+            return Ok(StatusUpdateResult::DoNotNotify);
+        }
+
+        match old_battery_info == (*new_battery_info) {
+            true => Ok(StatusUpdateResult::DoNotNotify),
+            false => {
+                new_battery_info.timestamp = Some(now);
+                Ok(StatusUpdateResult::Notify)
+            }
+        }
     }
 
     pub fn get_battery_info_copy(&self) -> fpower::BatteryInfo {
@@ -142,10 +296,10 @@ impl BatteryManager {
         }
     }
 
-    fn update_watchers(&self, wake_lease: Option<zx::EventPair>) {
+    fn update_watchers(&self) {
         let info = self.get_battery_info_copy();
         let watchers = self.watchers.clone();
-        BatteryManager::run_watchers(watchers, info, wake_lease);
+        BatteryManager::run_watchers(watchers, info);
     }
 
     pub fn is_simulating(&self) -> bool {
@@ -173,9 +327,9 @@ impl BatteryManager {
                             debug!("::battery_manager_request:: handle Watch request");
                             self.add_watcher(watcher.clone()).await;
 
-                            // Make sure watcher has current battery info.
-                            // But there is no copy of the wake lease.
+                            // make sure watcher has current battery info
                             let info = self.get_battery_info_copy();
+
                             debug!(info:?; "::battery_manager_request:: callback on new watcher");
                             watcher.on_change_battery_info(&info, None).await?;
                         }
@@ -187,74 +341,73 @@ impl BatteryManager {
 
         Ok(())
     }
-
-    // Called by start_watching_battery_info to process the OnChangeBatteryInfo Call
-    async fn wait_on_updates(
-        &self,
-        watcher: fidl::endpoints::ServerEnd<fpower::BatteryInfoWatcherMarker>,
-    ) -> Result<(), Error> {
-        let mut stream = watcher.into_stream();
-        while let Some(event) = stream.try_next().await? {
-            match event {
-                fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
-                    info,
-                    wake_lease,
-                    responder,
-                } => {
-                    self.update_battery_info(info);
-                    self.update_watchers_conditionally(false, wake_lease);
-                    responder.send()?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    // Main should explicitly call this, so Battery Manager starts to watch the battery info from
-    // battery driver, and conditionally dispatches to clients according to simulating state.
-    pub(crate) async fn start_watching_battery_info(
-        &self,
-        proxy: fpower::BatteryInfoProviderProxy,
-    ) -> Result<(), Error> {
-        let (client_end, server_end) =
-            fidl::endpoints::create_endpoints::<fpower::BatteryInfoWatcherMarker>();
-        proxy.watch(client_end)?;
-        self.wait_on_updates(server_end).await
-    }
-
-    // This function takes a reference to an Option<zx::EventPair>
-    // and returns a new Option containing a duplicated handle, or None.
-    fn duplicate_wake_lease(wake_lease_ref: &Option<zx::EventPair>) -> Option<zx::EventPair> {
-        if let Some(handle_ref) = wake_lease_ref.as_ref() {
-            handle_ref.duplicate_handle(zx::Rights::SAME_RIGHTS).ok()
-        } else {
-            None
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::AsHandleRef;
     use fidl::endpoints::create_request_stream;
-    use futures::channel::oneshot;
     use futures::future::*;
-    use log::info;
 
-    #[allow(unused_macros)]
     macro_rules! cmp_fields {
         ($got:ident, $want:ident, [$($field:ident,)*], $test_no:expr) => { $(
             assert_eq!($got.$field, $want.$field, "test no: {}", $test_no);
         )* }
     }
 
-    #[fuchsia::test]
-    async fn test_run_watcher() {
-        info!("Starting");
-        // To guarantee the code in the fake_watcher gets executed to the end.
-        let (tx_signal, rx_signal) = oneshot::channel();
+    fn check_status(
+        got: &fpower::BatteryInfo,
+        want: &fpower::BatteryInfo,
+        updated: bool,
+        test_no: u32,
+    ) {
+        if updated {
+            cmp_fields!(
+                want,
+                got,
+                [
+                    status,
+                    charge_status,
+                    charge_source,
+                    level_percent,
+                    present_voltage_mv,
+                    remaining_capacity_uah,
+                    level_status,
+                    health,
+                    time_remaining,
+                ],
+                test_no
+            );
+        } else {
+            assert_eq!(want, got, "test: {}", test_no);
+        }
+    }
 
+    fn get_default_battery_info() -> hpower::BatteryInfo {
+        let battery_info = hpower::BatteryInfo {
+            unit: hpower::BatteryUnit::Ma,
+            design_capacity: 5000,
+            last_full_capacity: 5000,
+            design_voltage: 7000,
+            capacity_warning: 700,
+            capacity_low: 500,
+            capacity_granularity_low_warning: 1,
+            capacity_granularity_warning_full: 1,
+            present_rate: -500,
+            remaining_capacity: 3000,
+            present_voltage: 7000,
+            battery_spec: hpower::BatterySpec {
+                max_charging_current_ua: Some(500000),
+                max_charging_voltage_uv: Some(5000000),
+                design_capacity_uah: Some(380000),
+                ..Default::default()
+            },
+        };
+        return battery_info;
+    }
+
+    #[fuchsia_async::run_until_stalled(test)]
+    async fn test_run_watcher() {
         let battery_manager = BatteryManager::new();
         let mut battery_info: fpower::BatteryInfo = battery_manager.get_battery_info_copy();
         battery_info.level_percent = Some(50.0);
@@ -265,42 +418,26 @@ mod tests {
 
         let watchers = Arc::new(Mutex::new(vec![watcher]));
 
-        // Create a zx::EventPair for the test
-        let (tx, rx) = zx::EventPair::create();
-        let token_info = tx.basic_info().unwrap();
-        let tx_id = token_info.koid;
-        let wake_lease = Some(rx); // The rx handle is what we'll pass to the server
-
         let serve_fut = async move {
-            info!("Try_nest");
             let request = stream.try_next().await.unwrap();
             if let Some(fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
                 info,
-                wake_lease: Some(received_lease),
+                wake_lease: None,
                 responder,
             }) = request
             {
                 let level = info.level_percent.unwrap().round() as u8;
                 assert_eq!(level, 50);
-
-                let token_info = received_lease.basic_info().unwrap();
-                let related_id = token_info.related_koid;
-                assert_eq!(related_id, tx_id);
-                info!("fake watcher ends checking lease");
-
                 responder.send().unwrap();
-                let _ = tx_signal.send(());
             } else {
                 panic!("Unexpected message received");
             };
         };
         let request_fut = async move {
-            info!("Running watchers");
-            BatteryManager::run_watchers(watchers, battery_info, wake_lease);
+            BatteryManager::run_watchers(watchers, battery_info);
         };
 
         join(serve_fut, request_fut).await;
-        rx_signal.await.unwrap();
     }
 
     #[fuchsia::test]
@@ -375,178 +512,172 @@ mod tests {
         };
 
         let request_fut = async move {
-            BatteryManager::run_watchers(watchers.clone(), battery_info.clone(), None);
+            BatteryManager::run_watchers(watchers.clone(), battery_info.clone());
             battery_info.level_percent = Some(60.0);
-            BatteryManager::run_watchers(watchers, battery_info, None);
+            BatteryManager::run_watchers(watchers, battery_info);
         };
 
         join3(serve1_fut, serve2_fut, request_fut).await;
     }
 
-    // This function acts as a fake watcher, processing FIDL messages
-    fn fake_watcher(
-        info_checker: impl Fn(fpower::BatteryInfo) + 'static,
-        lease_checker: impl FnOnce(Option<zx::EventPair>) + 'static,
-    ) -> fpower::BatteryInfoWatcherProxy {
-        let (proxy, mut stream) =
-            fidl::endpoints::create_proxy_and_stream::<fpower::BatteryInfoWatcherMarker>();
-        fasync::Task::local(async move {
-            if let Ok(req) = stream.try_next().await {
-                match req {
-                    Some(fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
-                        info,
-                        wake_lease,
-                        responder,
-                    }) => {
-                        info_checker(info);
-                        lease_checker(wake_lease);
-                        let _ = responder.send();
-                    }
-                    e => panic!("Unexpected request: {:?}", e),
-                }
-            }
-        })
-        .detach();
-
-        proxy
-    }
-
     #[fuchsia::test]
-    async fn test_wait_on_updates() {
-        // To guarantee the code in the fake_watcher gets executed to the end.
-        let (tx_signal, rx_signal) = oneshot::channel();
+    async fn update_battery_info() {
+        let nanos_in_one_hour = zx::MonotonicDuration::from_hours(1);
 
-        // Prepare the wake_lease. For the tx, we need to obtain its koid.
-        let (tx, rx) = zx::EventPair::create();
-        let token_info = tx.basic_info().unwrap();
-        let tx_id = token_info.koid;
-        let wake_lease = Some(rx);
+        let battery_manager = BatteryManager::new();
+        let mut power_info = hpower::SourceInfo { type_: hpower::PowerType::Ac, state: 1 };
 
-        let battery_manager = Arc::new(BatteryManager::new());
+        // state: ac powered, with no battery info to update
+        let mut want = battery_manager.get_battery_info_copy();
+        want.status = Some(fpower::BatteryStatus::NotAvailable);
+        want.charge_source = Some(fpower::ChargeSource::None);
+        want.charge_status = Some(fpower::ChargeStatus::NotCharging);
+        want.level_percent = None;
+        let _ = battery_manager.update_battery_info(power_info.clone(), None);
+        check_status(&battery_manager.get_battery_info_copy(), &want, true, 1);
 
-        // Create a client and server pair for the FIDL call to be used by the pair of
-        // wait_on_updates(business logic) and on_change_battery_info(test)
-        let (proxy, server_end) =
-            fidl::endpoints::create_proxy::<fpower::BatteryInfoWatcherMarker>();
+        // state: unchanged
+        let want = battery_manager.get_battery_info_copy();
+        let result = battery_manager.update_battery_info(power_info.clone(), None);
+        assert_eq!(result.unwrap(), StatusUpdateResult::DoNotNotify);
+        check_status(&battery_manager.get_battery_info_copy(), &want, false, 2);
 
-        // Set some battery info, and add a fake watcher.
-        let mut updated_info = battery_manager.get_battery_info_copy();
-        updated_info.level_percent = Some(60.0);
-        updated_info.status = Some(fpower::BatteryStatus::Ok);
-        battery_manager
-            .add_watcher(fake_watcher(
-                move |info| {
-                    assert_eq!(info.level_percent, Some(60.0));
-                    assert_eq!(info.status, Some(fpower::BatteryStatus::Ok));
-                },
-                move |lease| {
-                    let lease = lease.expect("Should not be None");
-                    let token_info = lease.basic_info().unwrap();
-                    let related_id = token_info.related_koid;
-                    assert_eq!(related_id, tx_id);
-                    info!("fake watcher ends checking lease");
-                    let _ = tx_signal.send(());
-                },
-            ))
-            .await;
+        // state: battery powered, discharging
+        power_info.type_ = hpower::PowerType::Battery;
+        power_info.state = 0x3; // ONLINE | DISCHARGING
+        let mut want = battery_manager.get_battery_info_copy();
+        want.status = Some(fpower::BatteryStatus::Ok);
+        want.charge_status = Some(fpower::ChargeStatus::Discharging);
+        want.charge_source = Some(fpower::ChargeSource::None);
+        want.level_status = Some(fpower::LevelStatus::Ok);
+        want.level_percent = Some((3000.0 * 100.0) / 5000.0);
+        want.present_voltage_mv = Some(7000);
+        want.remaining_capacity_uah = Some(3000 * 1000);
+        want.time_remaining =
+            Some(fpower::TimeRemaining::BatteryLife(6 * nanos_in_one_hour.into_nanos()));
+        let mut battery_info = get_default_battery_info();
+        let result =
+            battery_manager.update_battery_info(power_info.clone(), Some(battery_info.clone()));
+        assert_eq!(result.unwrap(), StatusUpdateResult::Notify);
+        check_status(&battery_manager.get_battery_info_copy(), &want, true, 3);
 
-        // The 'server' task: run wait_on_updates in the background
-        let battery_clone = battery_manager.clone();
-        let server_task =
-            fasync::Task::spawn(
-                async move { battery_clone.clone().wait_on_updates(server_end).await },
-            );
+        // state: battery powered, discharging/warning
+        power_info.state = 0x3; // ONLINE | DISCHARGING
+        battery_info.remaining_capacity = 700;
+        let mut want = battery_manager.get_battery_info_copy();
+        want.status = Some(fpower::BatteryStatus::Ok);
+        want.charge_status = Some(fpower::ChargeStatus::Discharging);
+        want.charge_source = Some(fpower::ChargeSource::None);
+        want.level_status = Some(fpower::LevelStatus::Warning);
+        want.level_percent = Some((700.0 * 100.0) / 5000.0);
+        want.remaining_capacity_uah = Some(700 * 1000);
+        want.time_remaining =
+            Some(fpower::TimeRemaining::BatteryLife(nanos_in_one_hour.into_nanos()));
+        let _ = battery_manager.update_battery_info(power_info.clone(), Some(battery_info.clone()));
+        check_status(&battery_manager.get_battery_info_copy(), &want, true, 4);
 
-        let client_fut = async move {
-            proxy.on_change_battery_info(&updated_info, wake_lease).await.unwrap();
-        };
+        // state: battery powered, discharging/low
+        power_info.state = 0x3; // ONLINE | DISCHARGING
+        battery_info.remaining_capacity = 500;
+        let mut want = battery_manager.get_battery_info_copy();
+        want.status = Some(fpower::BatteryStatus::Ok);
+        want.charge_status = Some(fpower::ChargeStatus::Discharging);
+        want.charge_source = Some(fpower::ChargeSource::None);
+        want.level_status = Some(fpower::LevelStatus::Low);
+        want.level_percent = Some((500.0 * 100.0) / 5000.0);
+        want.remaining_capacity_uah = Some(500 * 1000);
+        want.time_remaining =
+            Some(fpower::TimeRemaining::BatteryLife(nanos_in_one_hour.into_nanos()));
+        let _ = battery_manager.update_battery_info(power_info.clone(), Some(battery_info.clone()));
+        check_status(&battery_manager.get_battery_info_copy(), &want, true, 5);
 
-        // Run both the server task and client future concurrently
-        let _ = join(server_task, client_fut).await;
+        // state: battery powered, discharging/critical
+        power_info.state = 0xB; // ONLINE | DISCHARGING | CRITICAL
+        let mut want = battery_manager.get_battery_info_copy();
+        want.status = Some(fpower::BatteryStatus::Ok);
+        want.charge_status = Some(fpower::ChargeStatus::Discharging);
+        want.charge_source = Some(fpower::ChargeSource::None);
+        want.level_status = Some(fpower::LevelStatus::Critical);
+        let _ = battery_manager.update_battery_info(power_info.clone(), Some(battery_info.clone()));
+        check_status(&battery_manager.get_battery_info_copy(), &want, true, 6);
 
-        // After the futures complete, check the state of the BatteryManager
-        let final_info = battery_manager.get_battery_info_copy();
+        // state: battery charging via AC
+        power_info.type_ = hpower::PowerType::Ac;
+        power_info.state = 0x5; // ONLINE | CHARGING
+        let _ = battery_manager.update_battery_info(power_info.clone(), None);
+        power_info.type_ = hpower::PowerType::Battery;
+        power_info.state = 0x5; // ONLINE | CHARGING
+        battery_info.present_rate = 1000;
+        battery_info.remaining_capacity = 3000;
+        let mut want = battery_manager.get_battery_info_copy();
+        want.status = Some(fpower::BatteryStatus::Ok);
+        want.charge_status = Some(fpower::ChargeStatus::Charging);
+        want.charge_source = Some(fpower::ChargeSource::AcAdapter);
+        want.level_status = Some(fpower::LevelStatus::Ok);
+        want.level_percent = Some((3000.0 * 100.0) / 5000.0);
+        want.remaining_capacity_uah = Some(3000 * 1000);
+        want.time_remaining =
+            Some(fpower::TimeRemaining::FullCharge(2 * nanos_in_one_hour.into_nanos()));
+        let _ = battery_manager.update_battery_info(power_info.clone(), Some(battery_info.clone()));
+        check_status(&battery_manager.get_battery_info_copy(), &want, true, 7);
 
-        // Assert that the state was updated
-        assert_eq!(final_info.level_percent, Some(60.0));
-        assert_eq!(final_info.status, Some(fpower::BatteryStatus::Ok));
+        // state: battery charging via AC/level critical
+        power_info.type_ = hpower::PowerType::Ac;
+        power_info.state = 0xD; // ONLINE | CHARGING | CRITICAL
+        let _ = battery_manager.update_battery_info(power_info.clone(), None);
+        power_info.type_ = hpower::PowerType::Battery;
+        power_info.state = 0xD; // ONLINE | CHARGING | CRITICAL
+        let mut want = battery_manager.get_battery_info_copy();
+        want.status = Some(fpower::BatteryStatus::Ok);
+        want.charge_status = Some(fpower::ChargeStatus::Charging);
+        want.charge_source = Some(fpower::ChargeSource::AcAdapter);
+        want.level_status = Some(fpower::LevelStatus::Critical);
+        let _ = battery_manager.update_battery_info(power_info.clone(), Some(battery_info.clone()));
+        check_status(&battery_manager.get_battery_info_copy(), &want, true, 8);
 
-        rx_signal.await.unwrap();
-    }
+        // state: battery charging via AC/level full
+        power_info.state = 0x5; // ONLINE | CHARGING
+        battery_info.remaining_capacity = 5000;
+        let mut want = battery_manager.get_battery_info_copy();
+        want.status = Some(fpower::BatteryStatus::Ok);
+        want.charge_status = Some(fpower::ChargeStatus::Full);
+        want.charge_source = Some(fpower::ChargeSource::AcAdapter);
+        want.level_status = Some(fpower::LevelStatus::Ok);
+        want.level_percent = Some(100.0);
+        want.remaining_capacity_uah = Some(5000 * 1000);
+        want.time_remaining = Some(fpower::TimeRemaining::FullCharge(0));
+        let _ = battery_manager.update_battery_info(power_info.clone(), Some(battery_info.clone()));
+        check_status(&battery_manager.get_battery_info_copy(), &want, true, 9);
 
-    // This function acts as a fake watcher, processing FIDL messages
-    fn fake_driver(
-        info: fpower::BatteryInfo,
-        lease: Option<zx::EventPair>,
-    ) -> fpower::BatteryInfoProviderProxy {
-        let (proxy, mut stream) =
-            fidl::endpoints::create_proxy_and_stream::<fpower::BatteryInfoProviderMarker>();
-        fasync::Task::local(async move {
-            while let Ok(req) = stream.try_next().await {
-                match req {
-                    Some(fpower::BatteryInfoProviderRequest::Watch { watcher, .. }) => {
-                        let watcher = watcher.into_proxy();
-                        let duplicated_lease = BatteryManager::duplicate_wake_lease(&lease);
-                        assert!(
-                            watcher.on_change_battery_info(&info, duplicated_lease).await.is_ok()
-                        );
-                    }
-                    e => panic!("Unexpected request: {:?}", e),
-                }
-            }
-        })
-        .detach();
+        // state: battery charging via AC/level full, unit set to mW
+        power_info.state = 0x5; // ONLINE | CHARGING
+        battery_info.remaining_capacity = 5000;
+        battery_info.unit = hpower::BatteryUnit::Mw;
+        let mut want = battery_manager.get_battery_info_copy();
+        want.status = Some(fpower::BatteryStatus::Ok);
+        want.charge_status = Some(fpower::ChargeStatus::Full);
+        want.charge_source = Some(fpower::ChargeSource::AcAdapter);
+        want.level_status = Some(fpower::LevelStatus::Ok);
+        want.level_percent = Some(100.0);
+        want.remaining_capacity_uah = Some(5000 * 1000 / 7);
+        want.time_remaining = Some(fpower::TimeRemaining::FullCharge(0));
+        let _ = battery_manager.update_battery_info(power_info.clone(), Some(battery_info.clone()));
+        check_status(&battery_manager.get_battery_info_copy(), &want, true, 10);
 
-        proxy
-    }
-
-    #[fuchsia::test]
-    async fn test_start_watching_battery_info() -> Result<(), Error> {
-        // To guarantee the code in the fake_watcher gets executed to the end.
-        let (tx_signal, rx_signal) = oneshot::channel();
-
-        // Prepare the wake_lease. For the tx, we need to obtain its koid.
-        let (tx, rx) = zx::EventPair::create();
-        let token_info = tx.basic_info()?;
-        let tx_id = token_info.koid;
-        let wake_lease = Some(rx);
-
-        // Set some battery info, and add a fake watcher.
-        let battery_manager = Arc::new(BatteryManager::new());
-        let mut updated_info = battery_manager.get_battery_info_copy();
-        updated_info.level_percent = Some(60.0);
-        updated_info.status = Some(fpower::BatteryStatus::Ok);
-        battery_manager
-            .add_watcher(fake_watcher(
-                move |info| {
-                    assert_eq!(info.level_percent, Some(60.0));
-                    assert_eq!(info.status, Some(fpower::BatteryStatus::Ok));
-                },
-                move |lease| {
-                    let lease = lease.expect("Should not be None");
-                    let token_info = lease.basic_info().unwrap();
-                    let related_id = token_info.related_koid;
-                    assert_eq!(related_id, tx_id);
-                    info!("fake watcher ends checking lease");
-                    let _ = tx_signal.send(());
-                },
-            ))
-            .await;
-
-        // test start_watching_battery_info
-        let _ = battery_manager
-            .clone()
-            .start_watching_battery_info(fake_driver(updated_info, wake_lease))
-            .await;
-
-        // After the futures complete, check the state of the BatteryManager
-        let final_info = battery_manager.get_battery_info_copy();
-
-        // Assert that the state was updated
-        assert_eq!(final_info.level_percent, Some(60.0));
-        assert_eq!(final_info.status, Some(fpower::BatteryStatus::Ok));
-
-        rx_signal.await.unwrap();
-        Ok(())
+        // state: battery charging via AC/extreme values (check overflow)
+        power_info.state = 0x5; // ONLINE | CHARGING
+        battery_info.last_full_capacity = u32::max_value();
+        battery_info.remaining_capacity = u32::min_value();
+        battery_info.present_rate = 1;
+        let mut want = battery_manager.get_battery_info_copy();
+        want.status = Some(fpower::BatteryStatus::Ok);
+        want.charge_status = Some(fpower::ChargeStatus::Charging);
+        want.charge_source = Some(fpower::ChargeSource::AcAdapter);
+        want.level_status = Some(fpower::LevelStatus::Low);
+        want.level_percent = Some(0.0);
+        want.remaining_capacity_uah = Some(0);
+        want.time_remaining = Some(fpower::TimeRemaining::FullCharge(i64::max_value()));
+        let _ = battery_manager.update_battery_info(power_info.clone(), Some(battery_info.clone()));
+        check_status(&battery_manager.get_battery_info_copy(), &want, true, 11);
     }
 }

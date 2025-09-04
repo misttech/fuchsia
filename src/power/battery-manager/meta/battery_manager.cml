@@ -19,7 +19,17 @@
         },
     ],
     use: [
-        { service: "fuchsia.power.battery.InfoService" },
+        {
+            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
+            // been migrated to services. The service capability has been added below.
+            directory: "dev-power",
+            rights: [ "r*" ],
+            path: "/dev/class/power",
+        },
+        {
+            // This service replaces the directory capability above.
+            service: "fuchsia.hardware.powersource.Service",
+        },
     ],
     expose: [
         {
