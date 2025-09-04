@@ -22,7 +22,6 @@ use crate::ingress::fidl;
 use crate::input::types::InputInfo;
 use crate::intl::types::IntlInfo;
 use crate::keyboard::types::KeyboardInfo;
-use crate::night_mode::types::NightModeInfo;
 #[cfg(test)]
 use serde::Deserialize;
 use serde::Serialize;
@@ -128,7 +127,6 @@ generate_inspect_with_info! {
         Input(InputInfo),
         Intl(IntlInfo),
         Keyboard(KeyboardInfo),
-        NightMode(NightModeInfo),
     }
 }
 
@@ -169,7 +167,6 @@ conversion_impls! {
     Input(InputInfo) => Input,
     Intl(IntlInfo) => Intl,
     Keyboard(KeyboardInfo) => Keyboard,
-    NightMode(NightModeInfo) => NightMode,
 }
 
 impl From<&SettingInfo> for SettingType {
@@ -185,7 +182,6 @@ impl From<&SettingInfo> for SettingType {
             SettingInfo::Input(_) => SettingType::Input,
             SettingInfo::Intl(_) => SettingType::Intl,
             SettingInfo::Keyboard(_) => SettingType::Keyboard,
-            SettingInfo::NightMode(_) => SettingType::NightMode,
         }
     }
 }

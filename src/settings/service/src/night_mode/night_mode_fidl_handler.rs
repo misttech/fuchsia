@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::night_mode_controller::{NightModeController, Request};
-use crate::handler::setting_handler::ControllerError;
+use super::night_mode_controller::{NightModeController, NightModeError, Request};
 use crate::night_mode::types::NightModeInfo;
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
@@ -76,7 +75,7 @@ impl NightModeFidlHandler {
 enum HandlerError {
     AlreadySubscribed,
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(NightModeError),
 }
 
 impl From<&HandlerError> for ResponseType {
@@ -84,7 +83,7 @@ impl From<&HandlerError> for ResponseType {
         match error {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::ControllerStopped => ResponseType::UnexpectedError,
-            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+            HandlerError::Controller(e) => ResponseType::from(e),
         }
     }
 }

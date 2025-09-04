@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use super::night_mode_fidl_handler::Publisher;
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::setting_handler::ControllerError;
 use crate::night_mode::types::NightModeInfo;
+use anyhow::Error;
 use fuchsia_async as fasync;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
 use futures::StreamExt;
-use settings_common::inspect::event::SettingValuePublisher;
+use settings_common::inspect::event::{ResponseType, SettingValuePublisher};
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
 use settings_storage::UpdateState;
@@ -21,26 +20,28 @@ impl DeviceStorageCompatible for NightModeInfo {
     const KEY: &'static str = "night_mode_info";
 }
 
-impl From<NightModeInfo> for SettingInfo {
-    fn from(info: NightModeInfo) -> SettingInfo {
-        SettingInfo::NightMode(info)
-    }
-}
-
-impl From<&NightModeInfo> for SettingType {
-    fn from(_: &NightModeInfo) -> SettingType {
-        SettingType::NightMode
-    }
-}
-
 impl StorageAccess for NightModeController {
     type Storage = DeviceStorage;
     type Data = NightModeInfo;
     const STORAGE_KEY: &'static str = NightModeInfo::KEY;
 }
 
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum NightModeError {
+    #[error("Write failed for NightMode: {0:?}")]
+    WriteFailure(Error),
+}
+
+impl From<&NightModeError> for ResponseType {
+    fn from(error: &NightModeError) -> Self {
+        match error {
+            NightModeError::WriteFailure(..) => ResponseType::StorageFailure,
+        }
+    }
+}
+
 pub(crate) enum Request {
-    Set(Option<bool>, Sender<Result<(), ControllerError>>),
+    Set(Option<bool>, Sender<Result<(), NightModeError>>),
 }
 
 pub struct NightModeController {
@@ -95,7 +96,7 @@ impl NightModeController {
     async fn set(
         &self,
         night_mode_enabled: Option<bool>,
-    ) -> Result<Option<NightModeInfo>, ControllerError> {
+    ) -> Result<Option<NightModeInfo>, NightModeError> {
         let mut info = self.store.get::<NightModeInfo>().await;
         info.night_mode_enabled = night_mode_enabled;
 
@@ -103,10 +104,7 @@ impl NightModeController {
             .write(&info)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(info))
-            .map_err(|e| {
-                log::error!("Failed to write night mode info: {e:?}");
-                ControllerError::WriteFailure(SettingType::NightMode)
-            })
+            .map_err(NightModeError::WriteFailure)
     }
 
     pub(super) async fn restore(&self) -> NightModeInfo {
