@@ -230,6 +230,8 @@ fvm_deps = [
   "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
   "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
   "//sdk/rust/zx",
+  "//src/lib/diagnostics/inspect/runtime/rust",
+  "//src/lib/diagnostics/inspect/rust",
   "//src/lib/fidl/rust/fidl",
   "//src/lib/fuchsia",
   "//src/lib/fuchsia-async",

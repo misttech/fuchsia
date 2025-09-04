@@ -27,6 +27,7 @@ use fidl_fuchsia_hardware_block::BlockMarker;
 use fs_management::filesystem::{BlockConnector, Filesystem};
 use fs_management::format::{DiskFormat, detect_disk_format};
 use fs_management::{ComponentType, FSConfig, Options};
+use fuchsia_inspect::Property as _;
 use fuchsia_runtime::HandleType;
 use fuchsia_sync::Mutex;
 use futures::future::BoxFuture;
@@ -66,6 +67,8 @@ const BLOCK_SIZE: u64 = 8192;
 // though the format seems like it would support more than this, the legacy driver had this as the
 // max so we will continue to as well.
 const MAX_SLICE_COUNT: u64 = 1u64 << 31;
+
+const MAX_PARTITIONS: u64 = 1024;
 
 #[repr(C)]
 #[derive(Clone, Copy, KnownLayout, FromBytes, IntoBytes, Immutable)]
@@ -180,6 +183,9 @@ struct Fvm {
     // async code) so that no other mutations can race.  When performing regular I/O, we can iterate
     // through mappings and perform async I/O without having to drop the lock.
     inner: async_lock::RwLock<Inner>,
+
+    _fvm_inspect: fuchsia_inspect::Node,
+    per_partition_inspect: fuchsia_inspect::Node,
 }
 
 struct Inner {
@@ -211,10 +217,37 @@ impl Inner {
     }
 }
 
-#[derive(Default)]
+struct PartitionInspect {
+    _root: fuchsia_inspect::Node,
+    total_slices_reserved: fuchsia_inspect::UintProperty,
+    max_bytes: fuchsia_inspect::UintProperty,
+}
+
+impl PartitionInspect {
+    fn new<'a>(
+        per_partition_inspect: &fuchsia_inspect::Node,
+        name: impl Into<Cow<'a, str>>,
+        num_slices: u64,
+    ) -> Self {
+        let root = per_partition_inspect.create_child(name);
+        let total_slices_reserved = root.create_uint("total_slices_reserved", num_slices);
+        let max_bytes = root.create_uint("max_bytes", 0);
+        PartitionInspect { _root: root, total_slices_reserved, max_bytes }
+    }
+
+    fn update_total_slices(&self, num_slices: u64) {
+        self.total_slices_reserved.set(num_slices);
+    }
+
+    fn update_max_bytes(&self, max_bytes: u64) {
+        self.max_bytes.set(max_bytes);
+    }
+}
+
 struct PartitionState {
     mappings: Vec<Mapping>,
     slice_limit: u64,
+    partition_inspect: PartitionInspect,
 }
 
 #[derive(Clone)]
@@ -431,8 +464,26 @@ impl Fvm {
             }
         }
 
+        let fvm_inspect = fuchsia_inspect::component::inspector().root().create_child("fvm");
+        let per_partition_inspect =
+            fuchsia_inspect::component::inspector().root().create_child("partitions");
+
         // Build the mappings.
         let metadata = &inner.metadata;
+        for (idx, partition) in metadata.partitions.iter() {
+            inner.partition_state.insert(
+                *idx,
+                PartitionState {
+                    mappings: Vec::new(),
+                    slice_limit: 0,
+                    partition_inspect: PartitionInspect::new(
+                        &per_partition_inspect,
+                        partition.name(),
+                        partition.slices as u64,
+                    ),
+                },
+            );
+        }
         for (physical_slice, allocation) in metadata.allocations.iter().enumerate() {
             let partition_index = allocation.partition_index();
             let slice = allocation.logical_slice();
@@ -445,7 +496,9 @@ impl Fvm {
                 continue;
             };
             inner.assigned_slice_count += 1;
-            let mappings = &mut inner.partition_state.entry(partition_index).or_default().mappings;
+            // unwrap safety: map is made from metadata.partitions right before this and we make
+            // sure the key exists in that map.
+            let mappings = &mut inner.partition_state.get_mut(&partition_index).unwrap().mappings;
             let mut bad_mapping = false;
             match mappings.binary_search_by(|m: &Mapping| m.from.start.cmp(&slice)) {
                 Ok(_) => bad_mapping = true,
@@ -492,11 +545,37 @@ impl Fvm {
             info!("  {idx}: {partition:?}");
         }
 
+        // Record the mount-time inspect metrics
+        fvm_inspect.record_child("mount_time", |mount_time| {
+            mount_time.record_uint("major_version", metadata.header.major_version);
+            mount_time.record_uint("oldest_minor_version", metadata.header.oldest_minor_version);
+            mount_time.record_string(
+                "version_combo",
+                format!(
+                    "{}/{}",
+                    metadata.header.major_version, metadata.header.oldest_minor_version
+                ),
+            );
+            mount_time.record_uint("slice_size", metadata.header.slice_size);
+            mount_time.record_uint("num_slices", metadata.header.pslice_count);
+            mount_time.record_uint("partition_table_entries", MAX_PARTITIONS - 1);
+            mount_time.record_uint("partition_table_reserved_entries", MAX_PARTITIONS - 1);
+            mount_time.record_uint("allocation_table_entries", metadata.header.pslice_count);
+            mount_time.record_uint(
+                "allocation_table_reserved_entries",
+                metadata.header.max_allocation_table_entries(),
+            );
+            mount_time.record_uint("num_partitions", metadata.partitions.len() as u64);
+            mount_time.record_uint("num_reserved_slices", 0);
+        });
+
         let slice_blocks = metadata.header.slice_size / client.block_size() as u64;
         Ok(Self {
             device: Arc::new(Device::new(client).await?),
             slice_blocks,
             inner: async_lock::RwLock::new(inner),
+            _fvm_inspect: fvm_inspect,
+            per_partition_inspect,
         })
     }
 
@@ -614,7 +693,6 @@ impl Fvm {
             proposed = next;
         }
 
-        const MAX_PARTITIONS: u64 = 1024;
         let max_partitions = std::cmp::min(
             inner.metadata.header.vpartition_table_size
                 / std::mem::size_of::<PartitionEntry>() as u64,
@@ -640,7 +718,11 @@ impl Fvm {
             .context("Failed to write metadata")?;
 
         inner.assigned_slice_count = inner.assigned_slice_count.checked_add(slices).unwrap();
-        inner.partition_state.insert(proposed, PartitionState { mappings, slice_limit: 0 });
+        let partition_inspect =
+            PartitionInspect::new(&self.per_partition_inspect, name_str, slices as u64);
+        inner
+            .partition_state
+            .insert(proposed, PartitionState { mappings, slice_limit: 0, partition_inspect });
 
         Ok(proposed)
     }
@@ -950,6 +1032,7 @@ struct Component {
     fvm: Mutex<Option<Arc<Fvm>>>,
     mounted: Mutex<HashMap<u16, MountedVolume>>,
     volumes_directory: Arc<vfs::directory::immutable::Simple>,
+    inspect_server_task: Mutex<Option<inspect_runtime::PublishedInspectController>>,
 }
 
 impl Component {
@@ -960,6 +1043,7 @@ impl Component {
             fvm: Mutex::default(),
             mounted: Mutex::default(),
             volumes_directory: vfs::directory::immutable::simple(),
+            inspect_server_task: Mutex::default(),
         }
     }
 
@@ -967,6 +1051,11 @@ impl Component {
     pub async fn serve(self: &Arc<Self>, outgoing_dir: zx::Channel) -> Result<(), Error> {
         let svc_dir = vfs::directory::immutable::simple();
         self.export_dir.add_entry("svc", svc_dir.clone()).expect("Unable to create svc dir");
+
+        *self.inspect_server_task.lock() = inspect_runtime::publish(
+            fuchsia_inspect::component::inspector(),
+            inspect_runtime::PublishOptions::default(),
+        );
 
         let weak = Arc::downgrade(self);
         svc_dir.add_entry(
@@ -1104,7 +1193,7 @@ impl Component {
                     create_options,
                     mount_options,
                 } => {
-                    log::info!(name:?; "Create volume");
+                    log::info!(name:?, create_options:?; "Create volume");
                     responder.send(
                         self.handle_create_volume(
                             &name,
@@ -1165,12 +1254,12 @@ impl Component {
                         }),
                 )?,
                 VolumeRequest::SetLimit { responder, bytes } => {
-                    let fvm = self.fvm();
-                    let mut inner = fvm.inner.write().await;
-                    // slice_size cannot be zero since we check it when we first mount.
-                    inner.partition_state.get_mut(&partition_index).unwrap().slice_limit =
-                        bytes / inner.metadata.header.slice_size;
-                    responder.send(Ok(()))?;
+                    responder.send(self.handle_set_limit(partition_index, bytes).await.map_err(
+                        |error| {
+                            error!(error:?, partition_index; "Failed to set partition byte limit");
+                            zx::Status::INTERNAL.into_raw()
+                        },
+                    ))?;
                 }
                 VolumeRequest::GetLimit { responder } => {
                     let fvm = self.fvm();
@@ -1180,6 +1269,17 @@ impl Component {
                 }
             }
         }
+        Ok(())
+    }
+
+    async fn handle_set_limit(&self, partition_index: u16, max_bytes: u64) -> Result<(), Error> {
+        let fvm = self.fvm();
+        let mut inner = fvm.inner.write().await;
+        // slice_size cannot be zero since we check it when we first mount.
+        let slice_size = inner.metadata.header.slice_size;
+        let partition_state = inner.partition_state.get_mut(&partition_index).unwrap();
+        partition_state.slice_limit = max_bytes / slice_size;
+        partition_state.partition_inspect.update_max_bytes(max_bytes);
         Ok(())
     }
 
@@ -1207,8 +1307,10 @@ impl Component {
         let key = if let Some(crypt) = crypt {
             let crypt_proxy = crypt.into_proxy();
             Some(if key_for_formatting {
+                info!(partition_index:?; "formatting zxcrypt on device");
                 zxcrypt::Key::format(&fvm, partition_index, &crypt_proxy).await.unwrap()
             } else {
+                info!(partition_index:?; "unsealing zxcrypt on device");
                 zxcrypt::Key::unseal(&fvm, partition_index, &crypt_proxy).await?
             })
         } else {
@@ -1843,12 +1945,10 @@ impl Interface for PartitionInterface {
 
         inner.assigned_slice_count = inner.assigned_slice_count.checked_add(slice_count).unwrap();
 
-        inner
-            .partition_state
-            .get_mut(&self.partition_index)
-            .unwrap()
-            .mappings
-            .insert_contiguous_mappings(new_mappings);
+        let total_slices = inner.metadata.partitions[&self.partition_index].slices as u64;
+        let partition_state = inner.partition_state.get_mut(&self.partition_index).unwrap();
+        partition_state.mappings.insert_contiguous_mappings(new_mappings);
+        partition_state.partition_inspect.update_total_slices(total_slices);
 
         Ok(())
     }
@@ -1904,7 +2004,10 @@ impl Interface for PartitionInterface {
             inner.assigned_slice_count.checked_sub(deallocated_count).unwrap();
 
         // Update the in-memory mappings.
-        let mappings = &mut inner.partition_state.get_mut(&self.partition_index).unwrap().mappings;
+        let total_slices = inner.metadata.partitions[&self.partition_index].slices as u64;
+        let partition_state = inner.partition_state.get_mut(&self.partition_index).unwrap();
+        partition_state.partition_inspect.update_total_slices(total_slices);
+        let mappings = &mut partition_state.mappings;
 
         // Find the range of mappings that overlap with the shrink range.
         let start_idx = mappings.partition_point(|m| m.from.end <= start_slice);
