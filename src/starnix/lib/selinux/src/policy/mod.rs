@@ -207,7 +207,7 @@ impl std::ops::Sub for AccessVector {
 
 /// A kind of extended permission, corresponding to the base permission that should trigger a check
 /// of an extended permission.
-#[derive(Debug, Clone, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum XpermsKind {
     Ioctl,
     Nlmsg,

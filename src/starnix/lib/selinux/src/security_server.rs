@@ -561,12 +561,13 @@ impl Query for SecurityServerBackend {
         active_policy.sid_table.security_context_to_sid(&new_file_context).ok()
     }
 
-    fn compute_ioctl_access_decision(
+    fn compute_xperms_access_decision(
         &self,
+        xperms_kind: XpermsKind,
         source_sid: SecurityId,
         target_sid: SecurityId,
         target_class: ObjectClass,
-        ioctl_prefix: u8,
+        xperms_prefix: u8,
     ) -> XpermsAccessDecision {
         let locked_state = self.state.read();
 
@@ -580,11 +581,11 @@ impl Query for SecurityServerBackend {
         let target_context = active_policy.sid_table.sid_to_security_context(target_sid);
 
         active_policy.parsed.compute_xperms_access_decision(
-            XpermsKind::Ioctl,
+            xperms_kind,
             &source_context,
             &target_context,
             target_class,
-            ioctl_prefix,
+            xperms_prefix,
         )
     }
 }

@@ -4,7 +4,7 @@
 
 use crate::access_vector_cache::{AccessVectorCache, Query};
 use crate::policy::{
-    AccessDecision, AccessVector, AccessVectorComputer, SELINUX_AVD_FLAGS_PERMISSIVE,
+    AccessDecision, AccessVector, AccessVectorComputer, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsKind,
 };
 use crate::security_server::SecurityServer;
 use crate::{
@@ -209,7 +209,8 @@ fn has_ioctl_permission<P: ClassPermission + Into<KernelPermission> + Clone + 's
         query.compute_access_decision(source_sid, target_sid, target_class.into());
 
     let [ioctl_postfix, ioctl_prefix] = ioctl.to_le_bytes();
-    let xperm_decision = query.compute_ioctl_access_decision(
+    let xperm_decision = query.compute_xperms_access_decision(
+        XpermsKind::Ioctl,
         source_sid,
         target_sid,
         target_class.into(),
@@ -333,12 +334,13 @@ mod tests {
             unreachable!();
         }
 
-        fn compute_ioctl_access_decision(
+        fn compute_xperms_access_decision(
             &self,
+            _xperms_kind: XpermsKind,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
             _target_class: ObjectClass,
-            _ioctl_prefix: u8,
+            _xperms_prefix: u8,
         ) -> XpermsAccessDecision {
             XpermsAccessDecision::DENY_ALL
         }
@@ -388,12 +390,13 @@ mod tests {
             unreachable!();
         }
 
-        fn compute_ioctl_access_decision(
+        fn compute_xperms_access_decision(
             &self,
+            _xperms_kind: XpermsKind,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
             _target_class: ObjectClass,
-            _ioctl_prefix: u8,
+            _xperms_prefix: u8,
         ) -> XpermsAccessDecision {
             XpermsAccessDecision::ALLOW_ALL
         }
@@ -410,7 +413,7 @@ mod tests {
         }
     }
 
-    /// A [`Query`] that denies all [`AccessVectors`] and allows all ioctl extended permissions.
+    /// A [`Query`] that denies all [`AccessVectors`] and allows all extended permissions.
     #[derive(Default)]
     struct DenyPermissionsAllowXperms;
 
@@ -443,12 +446,13 @@ mod tests {
             unreachable!();
         }
 
-        fn compute_ioctl_access_decision(
+        fn compute_xperms_access_decision(
             &self,
+            _xperms_kind: XpermsKind,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
             _target_class: ObjectClass,
-            _ioctl_prefix: u8,
+            _xperms_prefix: u8,
         ) -> XpermsAccessDecision {
             XpermsAccessDecision::ALLOW_ALL
         }
@@ -465,7 +469,7 @@ mod tests {
         }
     }
 
-    /// A [`Query`] that allows all [`AccessVectors`] and denies all ioctl extended permissions.
+    /// A [`Query`] that allows all [`AccessVectors`] and denies all extended permissions.
     #[derive(Default)]
     struct AllowPermissionsDenyXperms;
 
@@ -498,12 +502,13 @@ mod tests {
             unreachable!();
         }
 
-        fn compute_ioctl_access_decision(
+        fn compute_xperms_access_decision(
             &self,
+            _xperms_kind: XpermsKind,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
             _target_class: ObjectClass,
-            _ioctl_prefix: u8,
+            _xperms_prefix: u8,
         ) -> XpermsAccessDecision {
             XpermsAccessDecision::DENY_ALL
         }

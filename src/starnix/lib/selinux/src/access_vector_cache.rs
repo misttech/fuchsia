@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fifo_cache::FifoCache;
-use crate::policy::{AccessDecision, XpermsAccessDecision};
+use crate::policy::{AccessDecision, XpermsAccessDecision, XpermsKind};
 use crate::security_server::SecurityServerBackend;
 use crate::sync::Mutex;
 use crate::{FsNodeClass, KernelClass, NullessByteStr, ObjectClass, SecurityId};
@@ -51,13 +51,15 @@ pub(super) trait Query {
     ) -> Option<SecurityId>;
 
     /// Computes the [`XpermsAccessDecision`] permitted to `source_sid` for accessing `target_sid`,
-    /// an object of type `target_class`, for ioctls with high byte `ioctl_prefix`.
-    fn compute_ioctl_access_decision(
+    /// an object of type `target_class`, for xperms of kind `xperms_kind` with high byte
+    /// `xperms_prefix`.
+    fn compute_xperms_access_decision(
         &self,
+        xperms_kind: XpermsKind,
         source_sid: SecurityId,
         target_sid: SecurityId,
         target_class: ObjectClass,
-        ioctl_prefix: u8,
+        xperms_prefix: u8,
     ) -> XpermsAccessDecision;
 }
 
@@ -75,22 +77,23 @@ struct AccessQueryResult {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-struct IoctlAccessQueryArgs {
+struct XpermsAccessQueryArgs {
+    xperms_kind: XpermsKind,
     source_sid: SecurityId,
     target_sid: SecurityId,
     target_class: ObjectClass,
-    ioctl_prefix: u8,
+    xperms_prefix: u8,
 }
 
 /// Thread-hostile associative cache with capacity defined at construction and FIFO eviction.
 pub(super) struct FifoQueryCache {
     access_cache: FifoCache<AccessQueryArgs, AccessQueryResult>,
-    ioctl_access_cache: FifoCache<IoctlAccessQueryArgs, XpermsAccessDecision>,
+    xperms_access_cache: FifoCache<XpermsAccessQueryArgs, XpermsAccessDecision>,
 }
 
 impl FifoQueryCache {
-    // The multiplier used to compute the ioctl access cache capacity from the main cache capacity.
-    const IOCTL_CAPACITY_MULTIPLIER: f32 = 0.25;
+    // The multiplier used to compute the xperms access cache capacity from the main cache capacity.
+    const XPERMS_CAPACITY_MULTIPLIER: f32 = 0.25;
 
     /// Constructs a fixed-size access vector cache.
     ///
@@ -99,23 +102,23 @@ impl FifoQueryCache {
     /// This will panic if called with a `capacity` of zero.
     pub fn new(capacity: usize) -> Self {
         assert!(capacity > 0, "cannot instantiate fixed access vector cache of size 0");
-        let ioctl_access_cache_capacity =
-            (Self::IOCTL_CAPACITY_MULTIPLIER * (capacity as f32)) as usize;
+        let xperms_access_cache_capacity =
+            (Self::XPERMS_CAPACITY_MULTIPLIER * (capacity as f32)) as usize;
         assert!(
-            ioctl_access_cache_capacity > 0,
-            "cannot instantiate ioctl cache partition of size 0"
+            xperms_access_cache_capacity > 0,
+            "cannot instantiate xperms cache partition of size 0"
         );
 
         Self {
             // Request `capacity` plus one element working-space for insertions that trigger
             // an eviction.
             access_cache: FifoCache::with_capacity(capacity),
-            ioctl_access_cache: FifoCache::with_capacity(ioctl_access_cache_capacity),
+            xperms_access_cache: FifoCache::with_capacity(xperms_access_cache_capacity),
         }
     }
 
     pub fn cache_stats(&self) -> CacheStats {
-        &self.access_cache.cache_stats() + &self.ioctl_access_cache.cache_stats()
+        &self.access_cache.cache_stats() + &self.xperms_access_cache.cache_stats()
     }
 
     pub fn compute_access_decision(
@@ -196,39 +199,42 @@ impl FifoQueryCache {
         )
     }
 
-    pub fn compute_ioctl_access_decision(
+    pub fn compute_xperms_access_decision(
         &mut self,
         delegate: &impl Query,
+        xperms_kind: XpermsKind,
         source_sid: SecurityId,
         target_sid: SecurityId,
         target_class: ObjectClass,
-        ioctl_prefix: u8,
+        xperms_prefix: u8,
     ) -> XpermsAccessDecision {
-        let query_args = IoctlAccessQueryArgs {
+        let query_args = XpermsAccessQueryArgs {
+            xperms_kind: xperms_kind.clone(),
             source_sid,
             target_sid,
             target_class: target_class.clone(),
-            ioctl_prefix,
+            xperms_prefix,
         };
-        if let Some(result) = self.ioctl_access_cache.get(&query_args) {
+        if let Some(result) = self.xperms_access_cache.get(&query_args) {
             return result.clone();
         }
 
-        let ioctl_access_decision = delegate.compute_ioctl_access_decision(
+        let xperms_access_decision = delegate.compute_xperms_access_decision(
+            xperms_kind,
             source_sid,
             target_sid,
             target_class,
-            ioctl_prefix,
+            xperms_prefix,
         );
 
-        self.ioctl_access_cache.insert(query_args, ioctl_access_decision.clone());
+        self.xperms_access_cache.insert(query_args, xperms_access_decision.clone());
 
-        ioctl_access_decision
+        xperms_access_decision
     }
 
     pub fn reset(&mut self) -> bool {
         self.access_cache = FifoCache::with_capacity(self.access_cache.capacity());
-        self.ioctl_access_cache = FifoCache::with_capacity(self.ioctl_access_cache.capacity());
+        self.xperms_access_cache = FifoCache::with_capacity(self.xperms_access_cache.capacity());
         true
     }
 
@@ -238,10 +244,10 @@ impl FifoQueryCache {
         self.access_cache.is_full()
     }
 
-    /// Returns true if the ioctl access decision cache has reached capacity.
+    /// Returns true if the xperms access decision cache has reached capacity.
     #[cfg(test)]
-    fn ioctl_access_cache_is_full(&self) -> bool {
-        self.ioctl_access_cache.is_full()
+    fn xperms_access_cache_is_full(&self) -> bool {
+        self.xperms_access_cache.is_full()
     }
 }
 
@@ -315,19 +321,21 @@ impl Query for AccessVectorCache {
         )
     }
 
-    fn compute_ioctl_access_decision(
+    fn compute_xperms_access_decision(
         &self,
+        xperms_kind: XpermsKind,
         source_sid: SecurityId,
         target_sid: SecurityId,
         target_class: ObjectClass,
-        ioctl_prefix: u8,
+        xperms_prefix: u8,
     ) -> XpermsAccessDecision {
-        self.cache.lock().compute_ioctl_access_decision(
+        self.cache.lock().compute_xperms_access_decision(
             self.backend.as_ref(),
+            xperms_kind,
             source_sid,
             target_sid,
             target_class,
-            ioctl_prefix,
+            xperms_prefix,
         )
     }
 }
@@ -410,12 +418,13 @@ mod tests {
             unreachable!()
         }
 
-        fn compute_ioctl_access_decision(
+        fn compute_xperms_access_decision(
             &self,
+            _xperms_kind: XpermsKind,
             _source_sid: SecurityId,
             _target_sid: SecurityId,
             _target_class: ObjectClass,
-            _ioctl_prefix: u8,
+            _xperms_prefix: u8,
         ) -> XpermsAccessDecision {
             self.query_count.fetch_add(1, Ordering::Relaxed);
             XpermsAccessDecision::ALLOW_ALL
@@ -582,8 +591,9 @@ mod tests {
         assert_eq!(0, delegate.query_count());
         assert_eq!(
             XpermsBitmap::ALL,
-            avc.compute_ioctl_access_decision(
+            avc.compute_xperms_access_decision(
                 &delegate,
+                XpermsKind::Ioctl,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
                 KernelClass::Process.into(),
@@ -595,8 +605,9 @@ mod tests {
         // The second request for the same key is a cache hit.
         assert_eq!(
             XpermsBitmap::ALL,
-            avc.compute_ioctl_access_decision(
+            avc.compute_xperms_access_decision(
                 &delegate,
+                XpermsKind::Ioctl,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
                 KernelClass::Process.into(),
@@ -613,21 +624,23 @@ mod tests {
         let mut avc = FifoQueryCache::new(TEST_CAPACITY);
 
         // Make the test query, which will trivially miss.
-        avc.compute_ioctl_access_decision(
+        avc.compute_xperms_access_decision(
             &delegate,
+            XpermsKind::Ioctl,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
             KernelClass::Process.into(),
             0x0,
         );
 
-        // Fill the ioctl cache with new queries, which should evict the test query.
-        for ioctl_prefix in 0x1..(1 + avc.ioctl_access_cache.capacity())
+        // Fill the xperms cache with new queries, which should evict the test query.
+        for ioctl_prefix in 0x1..(1 + avc.xperms_access_cache.capacity())
             .try_into()
-            .expect("assumed that test ioctl cache capacity was < 255")
+            .expect("assumed that test xperms cache capacity was < 255")
         {
-            avc.compute_ioctl_access_decision(
+            avc.compute_xperms_access_decision(
                 &delegate,
+                XpermsKind::Ioctl,
                 A_TEST_SID.clone(),
                 A_TEST_SID.clone(),
                 KernelClass::Process.into(),
@@ -637,17 +650,128 @@ mod tests {
         // Make sure that we've fulfilled at least one new cache miss since the original test query,
         // and that the cache is now full.
         assert!(delegate.query_count() > 1);
-        assert!(avc.ioctl_access_cache_is_full());
+        assert!(avc.xperms_access_cache_is_full());
         let delegate_query_count = delegate.query_count();
 
         // Making the original test query again should result in another miss.
-        avc.compute_ioctl_access_decision(
+        avc.compute_xperms_access_decision(
             &delegate,
+            XpermsKind::Ioctl,
             A_TEST_SID.clone(),
             A_TEST_SID.clone(),
             KernelClass::Process.into(),
             0x0,
         );
         assert_eq!(delegate_query_count + 1, delegate.query_count());
+    }
+
+    #[test]
+    fn access_vector_cache_nlmsg_hit() {
+        let delegate = TestDelegate::default();
+        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+        assert_eq!(0, delegate.query_count());
+        assert_eq!(
+            XpermsBitmap::ALL,
+            avc.compute_xperms_access_decision(
+                &delegate,
+                XpermsKind::Nlmsg,
+                A_TEST_SID.clone(),
+                A_TEST_SID.clone(),
+                KernelClass::Process.into(),
+                0x0,
+            )
+            .allow
+        );
+        assert_eq!(1, delegate.query_count());
+        // The second request for the same key is a cache hit.
+        assert_eq!(
+            XpermsBitmap::ALL,
+            avc.compute_xperms_access_decision(
+                &delegate,
+                XpermsKind::Nlmsg,
+                A_TEST_SID.clone(),
+                A_TEST_SID.clone(),
+                KernelClass::Process.into(),
+                0x0
+            )
+            .allow
+        );
+        assert_eq!(1, delegate.query_count());
+    }
+
+    #[test]
+    fn access_vector_cache_nlmsg_miss() {
+        let delegate = TestDelegate::default();
+        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+
+        // Make the test query, which will trivially miss.
+        avc.compute_xperms_access_decision(
+            &delegate,
+            XpermsKind::Nlmsg,
+            A_TEST_SID.clone(),
+            A_TEST_SID.clone(),
+            KernelClass::Process.into(),
+            0x0,
+        );
+
+        // Fill the xperms cache with new queries, which should evict the test query.
+        for nlmsg_prefix in 0x1..(1 + avc.xperms_access_cache.capacity())
+            .try_into()
+            .expect("assumed that test xperms cache capacity was < 255")
+        {
+            avc.compute_xperms_access_decision(
+                &delegate,
+                XpermsKind::Nlmsg,
+                A_TEST_SID.clone(),
+                A_TEST_SID.clone(),
+                KernelClass::Process.into(),
+                nlmsg_prefix,
+            );
+        }
+        // Make sure that we've fulfilled at least one new cache miss since the original test query,
+        // and that the cache is now full.
+        assert!(delegate.query_count() > 1);
+        assert!(avc.xperms_access_cache_is_full());
+        let delegate_query_count = delegate.query_count();
+
+        // Making the original test query again should result in another miss.
+        avc.compute_xperms_access_decision(
+            &delegate,
+            XpermsKind::Nlmsg,
+            A_TEST_SID.clone(),
+            A_TEST_SID.clone(),
+            KernelClass::Process.into(),
+            0x0,
+        );
+        assert_eq!(delegate_query_count + 1, delegate.query_count());
+    }
+
+    #[test]
+    fn access_vector_cache_nlmsg_and_ioctl() {
+        let delegate = TestDelegate::default();
+        let mut avc = FifoQueryCache::new(TEST_CAPACITY);
+
+        // Query for an `ioctl` extended permission.
+        avc.compute_xperms_access_decision(
+            &delegate,
+            XpermsKind::Ioctl,
+            A_TEST_SID.clone(),
+            A_TEST_SID.clone(),
+            KernelClass::Process.into(),
+            0x0,
+        );
+        assert_eq!(avc.cache_stats().allocs, 1);
+
+        // Query for an `nlmsg` extended permission for the same source, target, class,
+        // and prefix. This should cause a new allocation.
+        avc.compute_xperms_access_decision(
+            &delegate,
+            XpermsKind::Nlmsg,
+            A_TEST_SID.clone(),
+            A_TEST_SID.clone(),
+            KernelClass::Process.into(),
+            0x0,
+        );
+        assert_eq!(avc.cache_stats().allocs, 2);
     }
 }
