@@ -8,9 +8,7 @@
 
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
-#include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/process.h"
-#include "src/developer/debug/zxdb/common/scoped_temp_file.h"
 #include "src/developer/debug/zxdb/debug_adapter/context_test.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/loaded_module_symbols.h"
@@ -37,18 +35,17 @@ TEST_F(RequestStackTraceTest, FullFrameAvailable) {
 
   // Insert mock frames
   // Top frame has a valid source location
-  ScopedTempFile temp_file;
   fxl::RefPtr<Function> function1(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
   function1->set_assigned_name("test_func1");
   function1->set_code_ranges(AddressRanges(AddressRange(0x10000, 0x10020)));
-  auto location1 = Location(0x10010, FileLine(temp_file.name(), 23), 10,
+  auto location1 = Location(0x10010, FileLine("file.rs", 23), 10,
                             SymbolContext::ForRelativeAddresses(), function1);
 
   // The source of this frame cannot be found and will not be reported in response.
   fxl::RefPtr<Function> function2(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
   function2->set_assigned_name("test_func2");
   function2->set_code_ranges(AddressRanges(AddressRange(0x10024, 0x10060)));
-  auto location2 = Location(0x10040, FileLine("not_found.cc", 55), 12,
+  auto location2 = Location(0x10040, FileLine("", 0), 0,
                             SymbolContext::ForRelativeAddresses(), function2);
 
   std::vector<std::unique_ptr<Frame>> frames;
@@ -76,12 +73,12 @@ TEST_F(RequestStackTraceTest, FullFrameAvailable) {
   EXPECT_EQ(got.response.totalFrames.value(), 2);
   EXPECT_EQ(got.response.stackFrames[0].column, location1.column());
   EXPECT_EQ(got.response.stackFrames[0].line, location1.file_line().line());
+  EXPECT_EQ(got.response.stackFrames[0].source.value().path.value(), "file.rs");
   EXPECT_EQ(got.response.stackFrames[0].name, function1->GetAssignedName());
-  EXPECT_EQ(got.response.stackFrames[0].source.value().path.value(), temp_file.name());
-  EXPECT_EQ(got.response.stackFrames[1].column, location2.column());
-  EXPECT_EQ(got.response.stackFrames[1].line, location2.file_line().line());
+  EXPECT_EQ(got.response.stackFrames[1].column, 0);
+  EXPECT_EQ(got.response.stackFrames[1].line, 0);
+  EXPECT_FALSE(got.response.stackFrames[1].source.has_value());
   EXPECT_EQ(got.response.stackFrames[1].name, function2->GetAssignedName());
-  EXPECT_FALSE(got.response.stackFrames[1].source);
 }
 
 TEST_F(RequestStackTraceTest, SyncFramesRequired) {
@@ -98,8 +95,8 @@ TEST_F(RequestStackTraceTest, SyncFramesRequired) {
   constexpr uint64_t kStack[] = {0x3000, 0x3020, 0x3050};
   constexpr size_t kStackSize = 3;
 
-  // Set up symbol resolution for stack frames.
-  ScopedTempFile temp_file;
+  // Set up symbol resolution for stack frames. The last frame should be symbolized by the second
+  // module.
   auto mock_module = InjectMockModule(process, 0x10000);
   auto mock_module2 = InjectMockModule(process, 0x8000);
   std::vector<fxl::RefPtr<Function>> functions;
@@ -122,7 +119,7 @@ TEST_F(RequestStackTraceTest, SyncFramesRequired) {
     functions[i]->set_assigned_name(std::string("test_func_") + std::to_string(i));
     functions[i]->set_code_ranges(
         AddressRanges(AddressRange(kAddress[i] - 0x10, kAddress[i] + 0x10)));
-    locations.push_back(Location(lookup_address, FileLine(temp_file.name(), 23 + i), 10 + i,
+    locations.push_back(Location(lookup_address, FileLine("file.rs", 23 + i), 10 + i,
                                  SymbolContext::ForRelativeAddresses(), functions[i]));
     if (kAddress[i] >= loaded_module1->load_address()) {
       mock_module->AddSymbolLocations(lookup_address, {locations.back()});
@@ -164,10 +161,10 @@ TEST_F(RequestStackTraceTest, SyncFramesRequired) {
   EXPECT_FALSE(got.error);
   EXPECT_EQ(static_cast<size_t>(got.response.totalFrames.value()), kStackSize);
   for (size_t i = 0; i < kStackSize; i++) {
-    EXPECT_EQ(got.response.stackFrames[i].source.value().path.value(), temp_file.name());
     EXPECT_EQ(got.response.stackFrames[i].column, locations[i].column());
     EXPECT_EQ(got.response.stackFrames[i].line, locations[i].file_line().line());
     EXPECT_EQ(got.response.stackFrames[i].name, functions[i]->GetAssignedName());
+    EXPECT_EQ(got.response.stackFrames[i].source.value().path.value(), "file.rs");
   }
 }
 
