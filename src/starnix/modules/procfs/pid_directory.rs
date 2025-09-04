@@ -911,16 +911,27 @@ impl DynamicFileSource for LimitsFile {
 }
 
 /// `MemFile` implements `proc/<pid>/mem` file.
-pub struct MemFile(Weak<MemoryManager>);
+pub struct MemFile {
+    mm: Weak<MemoryManager>,
+
+    // TODO: https://fxbug.dev/442459337 - Tear-down MemoryManager internals on process exit, to
+    // avoid extension of the MM lifetime prolonging access to memory via "/proc/pid/mem", etc
+    // beyond that of the actual process/address-space.
+    task: WeakRef<Task>,
+}
 
 impl MemFile {
     pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
-        let get_mm = move || {
-            let task = task.upgrade()?;
-            let mm = task.mm().ok()?;
-            Some(Arc::downgrade(&mm))
-        };
-        SimpleFileNode::new(move || Ok(Self(get_mm().unwrap_or_default())))
+        SimpleFileNode::new(move || {
+            let task = task.clone();
+            let mm = task
+                .upgrade()
+                .and_then(|t| t.mm().ok())
+                .as_ref()
+                .map(Arc::downgrade)
+                .unwrap_or_default();
+            Ok(Self { mm, task })
+        })
     }
 }
 
@@ -950,7 +961,10 @@ impl FileOps for MemFile {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        let Some(mm) = self.0.upgrade() else {
+        let Some(_task) = self.task.upgrade() else {
+            return Ok(0);
+        };
+        let Some(mm) = self.mm.upgrade() else {
             return Ok(0);
         };
         let mut addr = UserAddress::from(offset as u64);
@@ -975,7 +989,10 @@ impl FileOps for MemFile {
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        let Some(mm) = self.0.upgrade() else {
+        let Some(_task) = self.task.upgrade() else {
+            return Ok(0);
+        };
+        let Some(mm) = self.mm.upgrade() else {
             return Ok(0);
         };
         let addr = UserAddress::from(offset as u64);
