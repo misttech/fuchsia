@@ -4563,8 +4563,8 @@ impl StatCounters {
     }
 
     fn policy_roam_success_rate_by_roam_reason(&self, reason: &RoamReason) -> f64 {
-        self.policy_roam_attempts_count_by_roam_reason.get(reason).copied().unwrap_or(0) as f64
-            / self.policy_roam_successful_count_by_roam_reason.get(reason).copied().unwrap_or(0)
+        self.policy_roam_successful_count_by_roam_reason.get(reason).copied().unwrap_or(0) as f64
+            / self.policy_roam_attempts_count_by_roam_reason.get(reason).copied().unwrap_or(0)
                 as f64
     }
 }
@@ -8474,6 +8474,136 @@ mod tests {
         assert_eq!(
             metrics[1].event_codes,
             vec![convert::convert_roam_reason_dimension(RoamReason::SnrBelowThreshold) as u32]
+        );
+    }
+
+    /// Helper function for policy roam success rate tests
+    fn log_policy_roam_attempt_and_result(
+        test_helper: &mut TestHelper,
+        is_success: bool,
+        reasons: Vec<RoamReason>,
+    ) {
+        let status_code = if is_success {
+            fidl_ieee80211::StatusCode::Success
+        } else {
+            fidl_ieee80211::StatusCode::RefusedReasonUnspecified
+        };
+
+        // Log roam attempt
+        let request = PolicyRoamRequest { candidate: generate_random_scanned_candidate(), reasons };
+        let event = TelemetryEvent::PolicyRoamAttempt {
+            request: request.clone(),
+            connected_duration: zx::MonotonicDuration::from_hours(1),
+        };
+        test_helper.telemetry_sender.send(event);
+
+        // Log roam result with status code
+        let result = fidl_sme::RoamResult {
+            bssid: [1, 1, 1, 1, 1, 1],
+            status_code,
+            original_association_maintained: false,
+            bss_description: Some(Box::new(random_fidl_bss_description!())),
+            disconnect_info: None,
+            is_credential_rejected: false,
+        };
+
+        let event = TelemetryEvent::PolicyInitiatedRoamResult {
+            iface_id: IFACE_ID,
+            result,
+            ap_state: random_bss_description!().into(),
+            origin_channel: generate_random_channel(),
+            request: request.clone(),
+            request_time: fasync::MonotonicInstant::now(),
+            result_time: fasync::MonotonicInstant::now(),
+        };
+        test_helper.telemetry_sender.send(event);
+    }
+
+    #[fuchsia::test]
+    fn test_log_policy_roam_success_rate_cobalt_metrics() {
+        let (mut test_helper, mut test_fut) = setup_test();
+        test_helper.send_connected_event(random_bss_description!(Wpa1));
+
+        // Log two roam successes
+        log_policy_roam_attempt_and_result(
+            &mut test_helper,
+            true,
+            vec![RoamReason::RssiBelowThreshold],
+        );
+        log_policy_roam_attempt_and_result(
+            &mut test_helper,
+            true,
+            vec![RoamReason::RssiBelowThreshold],
+        );
+
+        // Log one roam failure
+        log_policy_roam_attempt_and_result(
+            &mut test_helper,
+            false,
+            vec![RoamReason::RssiBelowThreshold],
+        );
+
+        test_helper.advance_by(zx::MonotonicDuration::from_hours(24), test_fut.as_mut());
+
+        let metrics = test_helper.get_logged_metrics(metrics::POLICY_ROAM_SUCCESS_RATE_METRIC_ID);
+        assert_eq!(metrics.len(), 1);
+        assert_eq_cobalt_events(
+            metrics,
+            vec![MetricEvent {
+                metric_id: metrics::POLICY_ROAM_SUCCESS_RATE_METRIC_ID,
+                event_codes: vec![],
+                payload: MetricEventPayload::IntegerValue(6666), // 66.66% success rate
+            }],
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_log_policy_roam_success_rate_by_roam_reason_cobalt_metrics() {
+        let (mut test_helper, mut test_fut) = setup_test();
+        test_helper.send_connected_event(random_bss_description!(Wpa1));
+
+        // Log two roam successes with different reason event code vectors
+        log_policy_roam_attempt_and_result(
+            &mut test_helper,
+            true,
+            vec![RoamReason::RssiBelowThreshold],
+        );
+        log_policy_roam_attempt_and_result(
+            &mut test_helper,
+            true,
+            vec![RoamReason::RssiBelowThreshold, RoamReason::SnrBelowThreshold],
+        );
+
+        // Log one roam failure
+        log_policy_roam_attempt_and_result(
+            &mut test_helper,
+            false,
+            vec![RoamReason::RssiBelowThreshold],
+        );
+
+        test_helper.advance_by(zx::MonotonicDuration::from_hours(24), test_fut.as_mut());
+
+        let metrics = test_helper
+            .get_logged_metrics(metrics::POLICY_ROAM_SUCCESS_RATE_BY_ROAM_REASON_METRIC_ID);
+        assert_eq!(metrics.len(), 2);
+        assert_eq_cobalt_events(
+            metrics,
+            vec![
+                MetricEvent {
+                    metric_id: metrics::POLICY_ROAM_SUCCESS_RATE_BY_ROAM_REASON_METRIC_ID,
+                    event_codes: vec![convert::convert_roam_reason_dimension(
+                        RoamReason::RssiBelowThreshold,
+                    ) as u32],
+                    payload: MetricEventPayload::IntegerValue(6666), // 66.66% success for RssiBelowThreshold
+                },
+                MetricEvent {
+                    metric_id: metrics::POLICY_ROAM_SUCCESS_RATE_BY_ROAM_REASON_METRIC_ID,
+                    event_codes: vec![convert::convert_roam_reason_dimension(
+                        RoamReason::SnrBelowThreshold,
+                    ) as u32],
+                    payload: MetricEventPayload::IntegerValue(10000), // 100% success for SnrBelowThreshold
+                },
+            ],
         );
     }
 
