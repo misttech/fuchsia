@@ -5,9 +5,10 @@
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/client/source_file_provider_impl.h"
 #include "src/developer/debug/zxdb/client/stack.h"
 #include "src/developer/debug/zxdb/client/thread.h"
-#include "src/developer/debug/zxdb/debug_adapter/context.h"
+#include "src/developer/debug/zxdb/debug_adapter/handlers/request_threads.h"
 
 namespace zxdb {
 
@@ -28,18 +29,21 @@ dap::StackTraceResponse PopulateStackTraceResponse(DebugAdapterContext* ctx, Thr
     total_frames = req.levels.value();
   }
 
+  auto file_provider = SourceFileProviderImpl(thread->GetProcess()->GetTarget()->settings());
   for (auto i = start_frame; i < (start_frame + total_frames); i++) {
     dap::StackFrame frame;
     auto location = stack[i]->GetLocation();
 
-    if (location.file_line().is_valid()) {
+    // Try to get the source path.
+    auto data_or =
+        file_provider.GetFileData(location.file_line().file(), location.file_line().comp_dir());
+    if (!data_or.has_error()) {
       dap::Source source;
-      source.path = location.file_line().file();
+      source.path = data_or.value().full_path;
       frame.source = source;
-
-      frame.line = location.file_line().line();
     }
 
+    frame.line = location.file_line().line();
     frame.column = location.column();
     frame.name = location.symbol().Get()->GetFullName();
     frame.id = ctx->IdForFrame(thread->GetKoid(), i);
