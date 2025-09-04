@@ -15,9 +15,9 @@ use bt_common::packet_encoding::Decodable;
 use bt_gatt::client::CharacteristicNotification;
 use bt_gatt::types::Error as BtGattError;
 
+use crate::client::KnownBroadcastSources;
 use crate::client::error::Error;
 use crate::client::error::ServiceError;
-use crate::client::KnownBroadcastSources;
 use crate::types::*;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -150,7 +150,7 @@ impl Stream for EventStream {
                 }
                 Poll::Ready(Some(Ok(notification))) => {
                     let char_handle = notification.handle;
-                    let Ok((new_state, _)) =
+                    let (Ok(new_state), _) =
                         BroadcastReceiveState::decode(notification.value.as_slice())
                     else {
                         self.event_queue.push_back(Ok(Event::UnknownPacket));
@@ -190,7 +190,7 @@ impl Stream for EventStream {
                                 receive_state.big_encryption,
                             )));
                         } else {
-                            let other_events = Event::from_broadcast_receive_state(receive_state);
+                            let other_events = Event::from_broadcast_receive_state(&receive_state);
                             for e in other_events.into_iter() {
                                 multi_events.push_back(Ok(e));
                             }

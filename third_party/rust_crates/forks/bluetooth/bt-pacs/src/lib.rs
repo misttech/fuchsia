@@ -2,16 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_common::core::ltv::LtValue;
+use bt_common::Uuid;
 use bt_common::core::CodecId;
+use bt_common::core::ltv::LtValue;
 use bt_common::generic_audio::codec_capabilities::CodecCapability;
 use bt_common::generic_audio::metadata_ltv::Metadata;
 use bt_common::generic_audio::{AudioLocation, ContextType};
-use bt_common::packet_encoding::Decodable;
-use bt_common::Uuid;
-use bt_gatt::{client::FromCharacteristic, Characteristic};
+use bt_common::packet_encoding::{Decodable, Encodable};
+use bt_gatt::{Characteristic, client::FromCharacteristic};
+
+use std::collections::HashSet;
 
 pub mod debug;
+pub mod server;
+
+pub use server::types::AudioContexts;
 
 /// UUID from Assigned Numbers section 3.4.
 pub const PACS_UUID: Uuid = Uuid::from_u16(0x1850);
@@ -26,26 +31,30 @@ pub const PACS_UUID: Uuid = Uuid::from_u16(0x1850);
 pub struct PacRecord {
     pub codec_id: CodecId,
     pub codec_specific_capabilities: Vec<CodecCapability>,
-    // TODO: Actually parse the metadata once Metadata
     pub metadata: Vec<Metadata>,
 }
 
-impl bt_common::packet_encoding::Decodable for PacRecord {
+impl Decodable for PacRecord {
     type Error = bt_common::packet_encoding::Error;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         let mut idx = 0;
-        let (codec_id, consumed) = CodecId::decode(&buf[idx..])?;
-        idx += consumed;
+        let codec_id = match CodecId::decode(&buf[idx..]) {
+            (Ok(codec_id), consumed) => {
+                idx += consumed;
+                codec_id
+            }
+            (Err(e), _) => return (Err(e), buf.len()),
+        };
         let codec_specific_capabilites_length = buf[idx] as usize;
         idx += 1;
         if idx + codec_specific_capabilites_length > buf.len() {
-            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            return (Err(bt_common::packet_encoding::Error::UnexpectedDataLength), buf.len());
         }
         let (results, consumed) =
             CodecCapability::decode_all(&buf[idx..idx + codec_specific_capabilites_length]);
         if consumed != codec_specific_capabilites_length {
-            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            return (Err(bt_common::packet_encoding::Error::UnexpectedDataLength), buf.len());
         }
         let codec_specific_capabilities = results.into_iter().filter_map(Result::ok).collect();
         idx += consumed;
@@ -53,27 +62,61 @@ impl bt_common::packet_encoding::Decodable for PacRecord {
         let metadata_length = buf[idx] as usize;
         idx += 1;
         if idx + metadata_length > buf.len() {
-            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            return (Err(bt_common::packet_encoding::Error::UnexpectedDataLength), buf.len());
         }
         let (results, consumed) = Metadata::decode_all(&buf[idx..idx + metadata_length]);
         if consumed != metadata_length {
-            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            return (Err(bt_common::packet_encoding::Error::UnexpectedDataLength), buf.len());
         }
         let metadata = results.into_iter().filter_map(Result::ok).collect();
         idx += consumed;
 
-        Ok((Self { codec_id, codec_specific_capabilities, metadata }, idx))
+        (Ok(Self { codec_id, codec_specific_capabilities, metadata }), idx)
     }
 }
 
-/// One Sink Published Audio Capability Characteristic, or Sink PAC, exposed on
-/// a service. More than one Sink PAC can exist on a given PACS service.  If
-/// multiple are exposed, they are returned separately and can be notified by
-/// the server separately.
-#[derive(Debug, PartialEq, Clone)]
-pub struct SinkPac {
-    pub handle: bt_gatt::types::Handle,
-    pub capabilities: Vec<PacRecord>,
+impl Encodable for PacRecord {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn encoded_len(&self) -> core::primitive::usize {
+        5usize
+            + self.codec_specific_capabilities.iter().fold(0, |a, x| a + x.encoded_len())
+            + self.metadata.iter().fold(0, |a, x| a + x.encoded_len())
+            + 2
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < self.encoded_len() {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        self.codec_id.encode(&mut buf[0..]).unwrap();
+        let codec_capabilities_len =
+            self.codec_specific_capabilities.iter().fold(0, |a, x| a + x.encoded_len());
+        buf[5] = codec_capabilities_len as u8;
+        LtValue::encode_all(self.codec_specific_capabilities.clone().into_iter(), &mut buf[6..])?;
+        let metadata_len = self.metadata.iter().fold(0, |a, x| a + x.encoded_len());
+        buf[6 + codec_capabilities_len] = metadata_len as u8;
+        if metadata_len != 0 {
+            LtValue::encode_all(
+                self.metadata.clone().into_iter(),
+                &mut buf[6 + codec_capabilities_len + 1..],
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn pac_records_into_char_value(records: &Vec<PacRecord>) -> Vec<u8> {
+    let mut val = Vec::new();
+    val.push(records.len() as u8);
+    let mut idx = 1;
+    for record in records {
+        let record_len = record.encoded_len();
+        val.resize(val.len() + record_len, 0);
+        record.encode(&mut val[idx..]).unwrap();
+        idx += record_len;
+    }
+    val
 }
 
 fn pac_records_from_bytes(
@@ -86,11 +129,21 @@ fn pac_records_from_bytes(
     let mut next_idx = 1;
     let mut capabilities = Vec::with_capacity(num_of_pac_records);
     for _ in 0..num_of_pac_records {
-        let (cap, consumed) = PacRecord::decode(&value[next_idx..])?;
-        capabilities.push(cap);
+        let (cap, consumed) = PacRecord::decode(&value[next_idx..]);
+        capabilities.push(cap?);
         next_idx += consumed;
     }
     Ok(capabilities)
+}
+
+/// One Sink Published Audio Capability Characteristic, or Sink PAC, exposed on
+/// a service. More than one Sink PAC can exist on a given PACS service.  If
+/// multiple are exposed, they are returned separately and can be notified by
+/// the server separately.
+#[derive(Debug, PartialEq, Clone)]
+pub struct SinkPac {
+    pub handle: bt_gatt::types::Handle,
+    pub capabilities: Vec<PacRecord>,
 }
 
 impl FromCharacteristic for SinkPac {
@@ -141,22 +194,39 @@ impl FromCharacteristic for SourcePac {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct AudioLocations {
-    pub locations: std::collections::HashSet<AudioLocation>,
+    pub locations: HashSet<AudioLocation>,
 }
 
-impl bt_common::packet_encoding::Decodable for AudioLocations {
+impl Decodable for AudioLocations {
     type Error = bt_common::packet_encoding::Error;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() != 4 {
-            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            return (Err(bt_common::packet_encoding::Error::UnexpectedDataLength), buf.len());
         }
         let locations =
             AudioLocation::from_bits(u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]))
                 .collect();
-        Ok((AudioLocations { locations }, 4))
+        (Ok(AudioLocations { locations }), 4)
+    }
+}
+
+impl Encodable for AudioLocations {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn encoded_len(&self) -> core::primitive::usize {
+        4
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < 4 {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        [buf[0], buf[1], buf[2], buf[3]] =
+            AudioLocation::to_bits(self.locations.iter()).to_le_bytes();
+        Ok(())
     }
 }
 
@@ -166,10 +236,13 @@ pub struct SourceAudioLocations {
     pub locations: AudioLocations,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct SinkAudioLocations {
-    pub handle: bt_gatt::types::Handle,
-    pub locations: AudioLocations,
+impl SourceAudioLocations {
+    fn into_char_value(&self) -> Vec<u8> {
+        let mut val = Vec::with_capacity(self.locations.encoded_len());
+        val.resize(self.locations.encoded_len(), 0);
+        self.locations.encode(&mut val[..]).unwrap();
+        val
+    }
 }
 
 impl FromCharacteristic for SourceAudioLocations {
@@ -181,13 +254,28 @@ impl FromCharacteristic for SourceAudioLocations {
         value: &[u8],
     ) -> Result<Self, bt_common::packet_encoding::Error> {
         let handle = characteristic.handle;
-        let (locations, _) = AudioLocations::decode(value)?;
+        let locations = AudioLocations::decode(value).0?;
         Ok(Self { handle, locations })
     }
 
     fn update(&mut self, new_value: &[u8]) -> Result<&mut Self, bt_common::packet_encoding::Error> {
-        self.locations = AudioLocations::decode(new_value)?.0;
+        self.locations = AudioLocations::decode(new_value).0?;
         Ok(self)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SinkAudioLocations {
+    pub handle: bt_gatt::types::Handle,
+    pub locations: AudioLocations,
+}
+
+impl SinkAudioLocations {
+    fn into_char_value(&self) -> Vec<u8> {
+        let mut val = Vec::with_capacity(self.locations.encoded_len());
+        val.resize(self.locations.encoded_len(), 0);
+        self.locations.encode(&mut val[..]).unwrap();
+        val
     }
 }
 
@@ -199,12 +287,12 @@ impl FromCharacteristic for SinkAudioLocations {
         value: &[u8],
     ) -> Result<Self, bt_common::packet_encoding::Error> {
         let handle = characteristic.handle;
-        let (locations, _) = AudioLocations::decode(value)?;
+        let locations = AudioLocations::decode(value).0?;
         Ok(Self { handle, locations })
     }
 
     fn update(&mut self, new_value: &[u8]) -> Result<&mut Self, bt_common::packet_encoding::Error> {
-        self.locations = AudioLocations::decode(new_value)?.0;
+        self.locations = AudioLocations::decode(new_value).0?;
         Ok(self)
     }
 }
@@ -212,22 +300,52 @@ impl FromCharacteristic for SinkAudioLocations {
 #[derive(Debug, PartialEq, Clone)]
 pub enum AvailableContexts {
     NotAvailable,
-    Available(std::collections::HashSet<ContextType>),
+    Available(HashSet<ContextType>),
 }
 
-impl bt_common::packet_encoding::Decodable for AvailableContexts {
+impl Decodable for AvailableContexts {
     type Error = bt_common::packet_encoding::Error;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < 2 {
-            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            return (Err(bt_common::packet_encoding::Error::UnexpectedDataLength), 2);
         }
         let encoded = u16::from_le_bytes([buf[0], buf[1]]);
         if encoded == 0 {
-            Ok((Self::NotAvailable, 2))
+            (Ok(Self::NotAvailable), 2)
         } else {
-            Ok((Self::Available(ContextType::from_bits(encoded).collect()), 2))
+            (Ok(Self::Available(ContextType::from_bits(encoded).collect())), 2)
         }
+    }
+}
+
+impl Encodable for AvailableContexts {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn encoded_len(&self) -> core::primitive::usize {
+        2
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < 2 {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        match self {
+            AvailableContexts::NotAvailable => [buf[0], buf[1]] = [0x00, 0x00],
+            AvailableContexts::Available(set) => {
+                [buf[0], buf[1]] = ContextType::to_bits(set.iter()).to_le_bytes()
+            }
+        }
+        Ok(())
+    }
+}
+
+impl From<&HashSet<ContextType>> for AvailableContexts {
+    fn from(value: &HashSet<ContextType>) -> Self {
+        if value.is_empty() {
+            return AvailableContexts::NotAvailable;
+        }
+        AvailableContexts::Available(value.clone())
     }
 }
 
@@ -236,6 +354,16 @@ pub struct AvailableAudioContexts {
     pub handle: bt_gatt::types::Handle,
     pub sink: AvailableContexts,
     pub source: AvailableContexts,
+}
+
+impl AvailableAudioContexts {
+    fn into_char_value(&self) -> Vec<u8> {
+        let mut val = Vec::with_capacity(self.sink.encoded_len() + self.source.encoded_len());
+        val.resize(self.sink.encoded_len() + self.source.encoded_len(), 0);
+        self.sink.encode(&mut val[0..]).unwrap();
+        self.source.encode(&mut val[2..]).unwrap();
+        val
+    }
 }
 
 impl FromCharacteristic for AvailableAudioContexts {
@@ -250,8 +378,8 @@ impl FromCharacteristic for AvailableAudioContexts {
         if value.len() < 4 {
             return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
         }
-        let sink = AvailableContexts::decode(&value[0..2])?.0;
-        let source = AvailableContexts::decode(&value[2..4])?.0;
+        let sink = AvailableContexts::decode(&value[0..2]).0?;
+        let source = AvailableContexts::decode(&value[2..4]).0?;
         Ok(Self { handle, sink, source })
     }
 
@@ -262,8 +390,8 @@ impl FromCharacteristic for AvailableAudioContexts {
         if new_value.len() != 4 {
             return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
         }
-        let sink = AvailableContexts::decode(&new_value[0..2])?.0;
-        let source = AvailableContexts::decode(&new_value[2..4])?.0;
+        let sink = AvailableContexts::decode(&new_value[0..2]).0?;
+        let source = AvailableContexts::decode(&new_value[2..4]).0?;
         self.sink = sink;
         self.source = source;
         Ok(self)
@@ -273,8 +401,34 @@ impl FromCharacteristic for AvailableAudioContexts {
 #[derive(Debug, Clone)]
 pub struct SupportedAudioContexts {
     pub handle: bt_gatt::types::Handle,
-    pub sink: std::collections::HashSet<ContextType>,
-    pub source: std::collections::HashSet<ContextType>,
+    pub sink: HashSet<ContextType>,
+    pub source: HashSet<ContextType>,
+}
+
+impl SupportedAudioContexts {
+    fn into_char_value(&self) -> Vec<u8> {
+        let mut val = Vec::with_capacity(self.encoded_len());
+        val.resize(self.encoded_len(), 0);
+        self.encode(&mut val[0..]).unwrap();
+        val
+    }
+}
+
+impl Encodable for SupportedAudioContexts {
+    type Error = bt_common::packet_encoding::Error;
+
+    fn encoded_len(&self) -> core::primitive::usize {
+        4
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < 4 {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        [buf[0], buf[1]] = ContextType::to_bits(self.sink.iter()).to_le_bytes();
+        [buf[2], buf[3]] = ContextType::to_bits(self.source.iter()).to_le_bytes();
+        Ok(())
+    }
 }
 
 impl FromCharacteristic for SupportedAudioContexts {
@@ -313,12 +467,12 @@ mod tests {
     use super::*;
 
     use bt_common::{
-        generic_audio::codec_capabilities::{CodecCapabilityType, SamplingFrequency},
         Uuid,
+        generic_audio::codec_capabilities::{CodecCapabilityType, SamplingFrequency},
     };
     use bt_gatt::{
-        types::{AttributePermissions, Handle},
         Characteristic,
+        types::{AttributePermissions, Handle},
     };
 
     use pretty_assertions::assert_eq;

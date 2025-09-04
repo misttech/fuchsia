@@ -20,7 +20,7 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "bt-gatt",
+    package_name = "bt-bap",
     package_url = "",
     package_version = "0.0.1",
 )
@@ -32,7 +32,7 @@ license(
 )
 
 rust_library(
-    name = "bt_gatt",
+    name = "bt_bap",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -49,10 +49,6 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
-    crate_features = [
-        "default",
-        "test-utils",
-    ],
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [
@@ -60,7 +56,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=bt-gatt",
+        "crate-name=bt-bap",
         "manual",
         "noclippy",
         "norustfmt",
@@ -76,8 +72,5 @@ rust_library(
     version = "0.0.1",
     deps = [
         "//third_party/rust_crates/forks/bluetooth/bt-common:bt_common",
-        "//third_party/rust_crates/vendor/futures-0.3.31:futures",
-        "//third_party/rust_crates/vendor/parking_lot-0.12.4:parking_lot",
-        "//third_party/rust_crates/vendor/thiserror-2.0.12:thiserror",
     ],
 )

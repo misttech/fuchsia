@@ -9,32 +9,41 @@ use thiserror::Error;
 pub trait Decodable: ::core::marker::Sized {
     type Error;
 
-    /// Decodes into a new object with the number of bytes that were decoded, or
-    /// returns an error.
-    fn decode(buf: &[u8]) -> ::core::result::Result<(Self, usize), Self::Error>;
+    /// Decodes into a new object or an error, and the number of bytes that
+    /// the decoding consumed.  Should attempt to consume the entire item from
+    /// the buffer in the case of an error.  If the item end cannot be determined,
+    /// return an error and consume the entirety of the bufer (`buf.len()`)
+    fn decode(buf: &[u8]) -> (::core::result::Result<Self, Self::Error>, usize);
 
-    /// Tries to decode a collection of a decodable item from a buffer.
-    /// If any item fails to decode, fails with an Error and the previously
-    /// decoded items.
-    /// Will only decode up to max items. If None, will decode the entire
-    /// buffer.
+    /// Tries to decode a collection of this object concatenated in a buffer.
+    /// Returns a vector of items (or errors) and the number of bytes consumed to
+    /// decode them.
+    /// Continues to decode items until the buffer is consumed or the max items.
+    /// If None, will decode the entire buffer.
     fn decode_multiple(
         buf: &[u8],
         max: Option<usize>,
-    ) -> ::core::result::Result<(Vec<Self>, usize), (Vec<Self>, usize, Self::Error)> {
+    ) -> (Vec<::core::result::Result<Self, Self::Error>>, usize) {
         let mut idx = 0;
         let mut result = Vec::new();
         while idx < buf.len() && Some(result.len()) != max {
-            match Self::decode(&buf[idx..]) {
-                Err(e) => return Err((result, idx, e)),
-                Ok((item, consumed)) => {
-                    result.push(item);
-                    idx += consumed;
-                }
-            }
+            let (one_result, consumed) = Self::decode(&buf[idx..]);
+            result.push(one_result);
+            idx += consumed;
         }
-        Ok((result, idx))
+        (result, idx)
     }
+}
+
+/// A decodable type that has an exact size in bytes.
+pub trait FixedSizeDecodable: ::core::marker::Sized {
+    type Error;
+    const WRONG_SIZE_ERROR: Self::Error;
+    const BYTE_SIZE: usize;
+
+    /// Decodes the value.  This function assumes that buf is of at least
+    /// BYTE_SIZE, and assumes that BYTE_SIZE bytes are consumed to decode.
+    fn decode_checked(buf: &[u8]) -> core::result::Result<Self, Self::Error>;
 }
 
 /// An encodable type can write itself into a byte buffer.

@@ -12,6 +12,9 @@ bt-common = { path = "../bt-common" }
 
 ### Others
 futures = "=0.3.31"
+pin-project = "1.0.11"
+thiserror = "2.0.12"
 
 [dev-dependencies]
+bt-gatt = { path = "../bt-gatt", features = ["test-utils"] }
 pretty_assertions = "1.2.1"

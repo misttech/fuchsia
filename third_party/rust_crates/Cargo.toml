@@ -49,6 +49,9 @@ bitfield = "0.14.0"
 bitflags = { version = "2.8.0", features = ["serde"] }
 blocking = "1.3"
 bstr = { version = "1.5.0", default-features = false, features = [ "std" ] }
+bt-bap = "0.0.1"
+bt-bass = { version = "0.0.1", features = ["test-utils"] }
+bt-broadcast-assistant = { version = "0.0.1", features = ["debug"] }
 bt-common = "0.0.1"
 bt-gatt = "0.0.1"
 bt-pacs = "0.0.1"
@@ -417,6 +420,9 @@ windows-targets-0_52_6 = { package = "windows-targets", path = "empty/windows-ta
 
 ### Forks: vendored crates whose code doesn't match the upstream version
 # keep-sorted start
+bt-bap = { path = "forks/bluetooth/bt-bap" }
+bt-bass = { path = "forks/bluetooth/bt-bass" }
+bt-broadcast-assistant = { path = "forks/bluetooth/bt-broadcast-assistant" }
 bt-common = { path = "forks/bluetooth/bt-common" }
 bt-gatt = { path = "forks/bluetooth/bt-gatt" }
 bt-pacs = { path = "forks/bluetooth/bt-pacs" }

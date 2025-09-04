@@ -6,6 +6,7 @@ group("core") {
   deps = [
     "bt-bredr-profile",
     "bt-cli",
+    "bt-le-broadcast-assistant",
     "bt-le-central",
     "bt-le-peripheral",
     "bt-pairing-tool",
@@ -60,6 +61,7 @@ group("tests") {
     "bt-cli:tests",
     "bt-fct-hci:tests",
     "bt-hfp-hf-tool:tests",
+    "bt-le-broadcast-assistant:tests",
     "bt-le-central:tests",
     "bt-le-peripheral:tests",
     "bt-map-mce-tool:tests",

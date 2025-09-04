@@ -11,15 +11,16 @@ use thiserror::Error;
 use bt_bap::types::BroadcastId;
 use bt_bass::client::error::Error as BassClientError;
 use bt_bass::client::event::Event as BassEvent;
-use bt_bass::client::{BigToBisSync, BroadcastAudioScanServiceClient};
+use bt_bass::client::BroadcastAudioScanServiceClient;
 #[cfg(any(test, feature = "debug"))]
 use bt_bass::types::BroadcastReceiveState;
-use bt_bass::types::PaSync;
+use bt_bass::types::{BisSync, PaSync};
 use bt_common::core::PaInterval;
 use bt_common::packet_encoding::Error as PacketError;
 use bt_common::PeerId;
 #[cfg(any(test, feature = "debug"))]
 use bt_gatt::types::Handle;
+use std::collections::HashMap;
 
 use crate::assistant::DiscoveredBroadcastSources;
 
@@ -104,7 +105,7 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
         source_peer_id: PeerId,
         address_lookup: &impl GetPeerAddr,
         pa_sync: PaSync,
-        bis_sync: BigToBisSync,
+        bis_sync: HashMap<u8, BisSync>,
     ) -> Result<(), Error> {
         let mut broadcast_source = self
             .broadcast_sources
@@ -148,7 +149,7 @@ impl<T: bt_gatt::GattTypes> Peer<T> {
         &self,
         broadcast_id: BroadcastId,
         pa_sync: PaSync,
-        bis_sync: BigToBisSync,
+        bis_sync: HashMap<u8, BisSync>,
     ) -> Result<(), Error> {
         let pa_interval = self
             .broadcast_sources
@@ -199,7 +200,7 @@ pub(crate) mod tests {
     use assert_matches::assert_matches;
     use bt_gatt::pii::StaticPeerAddr;
     use futures::{pin_mut, FutureExt};
-    use std::collections::HashSet;
+    use std::collections::HashMap;
     use std::task::Poll;
 
     use bt_common::core::{AddressType, AdvertisingSetId};
@@ -285,7 +286,7 @@ pub(crate) mod tests {
                 PeerId(1001),
                 &FakeGetPeerAddr,
                 PaSync::SyncPastUnavailable,
-                HashSet::new(),
+                HashMap::new(),
             );
             pin_mut!(fut);
             let polled = fut.poll_unpin(&mut noop_cx);
@@ -307,7 +308,7 @@ pub(crate) mod tests {
                 PeerId(1001),
                 &address_lookup,
                 PaSync::SyncPastUnavailable,
-                HashSet::new(),
+                HashMap::new(),
             );
             pin_mut!(fut);
             let polled = fut.poll_unpin(&mut noop_cx);
@@ -322,7 +323,7 @@ pub(crate) mod tests {
                 PeerId(1001),
                 &address_lookup,
                 PaSync::SyncPastUnavailable,
-                HashSet::new(),
+                HashMap::new(),
             );
             pin_mut!(fut);
             let polled = fut.poll_unpin(&mut noop_cx);

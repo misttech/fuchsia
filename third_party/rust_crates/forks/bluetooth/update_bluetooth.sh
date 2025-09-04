@@ -145,7 +145,7 @@ if [ ${#mismatched_crates[@]} -ne 0 ]; then
   echo -e "\033[0;33m" # Yellow color for warning
   echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
   echo "WARNING: Bluetooth crate dependency versions are out of sync with Fuchsia."
-  echo "Please update the versions in the bluetooth repository's rust/Cargo.toml to match."
+  echo -e "\033[90mPlease update the versions in the bluetooth repository's rust/Cargo.toml to match.\033[0m"
   echo ""
   echo "The following crates have mismatched versions:"
   for crate_name in "${!mismatched_crates[@]}"; do
@@ -161,6 +161,6 @@ if [ ${#mismatched_crates[@]} -ne 0 ]; then
 fi
 
 echo ""
-echo -e "\033[0;32mRun \`fx update-rustc-third-party\` to complete crate update.\033[0m"
+echo -e "\033[0;32mRun \`fx update-rustc-third-party\` to complete crate update. If it fails, try commenting out the targets that use the bluetooth crates and rerun the command again.\033[0m"
 echo ""
 echo "Done"

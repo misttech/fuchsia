@@ -483,6 +483,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "bt-bap"
+version = "0.0.1"
+dependencies = [
+ "bt-common",
+]
+
+[[package]]
+name = "bt-bass"
+version = "0.0.1"
+dependencies = [
+ "bt-bap",
+ "bt-common",
+ "bt-gatt",
+ "futures",
+ "log",
+ "parking_lot 0.12.4",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "bt-broadcast-assistant"
+version = "0.0.1"
+dependencies = [
+ "bt-bap",
+ "bt-bass",
+ "bt-common",
+ "bt-gatt",
+ "futures",
+ "num",
+ "parking_lot 0.12.4",
+ "thiserror 2.0.12",
+]
+
+[[package]]
 name = "bt-common"
 version = "0.0.1"
 dependencies = [
@@ -509,6 +543,8 @@ dependencies = [
  "bt-common",
  "bt-gatt",
  "futures",
+ "pin-project",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -1522,6 +1558,9 @@ dependencies = [
  "bitflags 2.9.1",
  "blocking",
  "bstr",
+ "bt-bap",
+ "bt-bass",
+ "bt-broadcast-assistant",
  "bt-common",
  "bt-gatt",
  "bt-pacs",

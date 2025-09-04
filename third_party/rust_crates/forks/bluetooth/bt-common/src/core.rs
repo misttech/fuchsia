@@ -6,6 +6,7 @@
 pub mod ltv;
 
 use crate::packet_encoding::{Encodable, Error as PacketError};
+use std::str::FromStr;
 
 /// Bluetooth Device Address that uniquely identifies the device
 /// to another Bluetooth device.
@@ -32,6 +33,18 @@ impl TryFrom<u8> for AddressType {
             0x00 => Ok(Self::Public),
             0x01 => Ok(Self::Random),
             _ => Err(PacketError::OutOfRange),
+        }
+    }
+}
+
+impl FromStr for AddressType {
+    type Err = PacketError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Public" => Ok(AddressType::Public),
+            "Random" => Ok(AddressType::Random),
+            _ => Err(PacketError::InvalidParameter(format!("invalid address type: {s}"))),
         }
     }
 }
@@ -162,18 +175,44 @@ impl CodecId {
 impl crate::packet_encoding::Decodable for CodecId {
     type Error = crate::packet_encoding::Error;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < 5 {
-            return Err(crate::packet_encoding::Error::UnexpectedDataLength);
+            return (Err(crate::packet_encoding::Error::UnexpectedDataLength), buf.len());
         }
         let format = buf[0].into();
         if format != CodingFormat::VendorSpecific {
             // Maybe don't ignore the company and vendor id, and check if they are wrong.
-            return Ok((Self::Assigned(format), 5));
+            return (Ok(Self::Assigned(format)), 5);
         }
         let company_id = u16::from_le_bytes([buf[1], buf[2]]).into();
         let vendor_specific_codec_id = u16::from_le_bytes([buf[3], buf[4]]);
-        Ok((Self::VendorSpecific { company_id, vendor_specific_codec_id }, 5))
+        (Ok(Self::VendorSpecific { company_id, vendor_specific_codec_id }), 5)
+    }
+}
+
+impl Encodable for CodecId {
+    type Error = PacketError;
+
+    fn encoded_len(&self) -> core::primitive::usize {
+        Self::BYTE_SIZE
+    }
+
+    fn encode(&self, buf: &mut [u8]) -> core::result::Result<(), Self::Error> {
+        if buf.len() < Self::BYTE_SIZE {
+            return Err(Self::Error::BufferTooSmall);
+        }
+        match self {
+            CodecId::Assigned(format) => {
+                buf[0] = (*format).into();
+                buf[1..5].fill(0);
+            }
+            CodecId::VendorSpecific { company_id, vendor_specific_codec_id } => {
+                buf[0] = 0xFF;
+                [buf[1], buf[2]] = u16::from(*company_id).to_le_bytes();
+                [buf[3], buf[4]] = vendor_specific_codec_id.to_le_bytes();
+            }
+        }
+        Ok(())
     }
 }
 
@@ -192,6 +231,16 @@ mod tests {
     use crate::packet_encoding::Decodable;
 
     use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn address_type_from_str() {
+        let addr_type = AddressType::from_str("Public").expect("should succeed");
+        assert_eq!(addr_type, AddressType::Public);
+        let addr_type = AddressType::from_str("Random").expect("should succeed");
+        assert_eq!(addr_type, AddressType::Random);
+        AddressType::from_str("invalid").expect_err("should fail");
+    }
 
     #[test]
     fn encode_pa_interval() {
@@ -213,17 +262,34 @@ mod tests {
     #[test]
     fn decode_codec_id() {
         let assigned = [0x01, 0x00, 0x00, 0x00, 0x00];
-        let (codec_id, _) = CodecId::decode(&assigned[..]).expect("should succeed");
-        assert_eq!(codec_id, CodecId::Assigned(CodingFormat::ALawLog));
+        let (codec_id, _) = CodecId::decode(&assigned[..]);
+        assert_eq!(codec_id, Ok(CodecId::Assigned(CodingFormat::ALawLog)));
 
         let vendor_specific = [0xFF, 0x36, 0xFD, 0x11, 0x22];
-        let (codec_id, _) = CodecId::decode(&vendor_specific[..]).expect("should succeed");
+        let (codec_id, _) = CodecId::decode(&vendor_specific[..]);
         assert_eq!(
             codec_id,
-            CodecId::VendorSpecific {
+            Ok(CodecId::VendorSpecific {
                 company_id: (0xFD36 as u16).into(),
                 vendor_specific_codec_id: 0x2211
-            }
+            })
+        );
+    }
+
+    #[test]
+    fn encode_codec_id() {
+        let assigned = [0x01, 0x00, 0x00, 0x00, 0x00];
+        let (codec_id, _) = CodecId::decode(&assigned[..]);
+        assert_eq!(codec_id, Ok(CodecId::Assigned(CodingFormat::ALawLog)));
+
+        let vendor_specific = [0xFF, 0x36, 0xFD, 0x11, 0x22];
+        let (codec_id, _) = CodecId::decode(&vendor_specific[..]);
+        assert_eq!(
+            codec_id,
+            Ok(CodecId::VendorSpecific {
+                company_id: (0xFD36 as u16).into(),
+                vendor_specific_codec_id: 0x2211
+            })
         );
     }
 }

@@ -4,6 +4,7 @@
 
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -101,7 +102,7 @@ impl DiscoveredBroadcastSources {
 pub struct BroadcastAssistant<T: bt_gatt::GattTypes> {
     central: T::Central,
     broadcast_sources: Arc<DiscoveredBroadcastSources>,
-    scan_stream: Option<T::ScanResultStream>,
+    broadcast_source_scan_started: Arc<AtomicBool>,
 }
 
 impl<T: bt_gatt::GattTypes + 'static> BroadcastAssistant<T> {
@@ -109,11 +110,10 @@ impl<T: bt_gatt::GattTypes + 'static> BroadcastAssistant<T> {
     // for broadcast source scanning. Clients must use the `start`
     // method to poll the event stream for scan results.
     pub fn new(central: T::Central) -> Self {
-        let scan_result_stream = central.scan(&Self::scan_filters());
         Self {
             central,
             broadcast_sources: DiscoveredBroadcastSources::new(),
-            scan_stream: Some(scan_result_stream),
+            broadcast_source_scan_started: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -130,17 +130,33 @@ impl<T: bt_gatt::GattTypes + 'static> BroadcastAssistant<T> {
     /// poll. Upper layer can call methods on BroadcastAssistant based on the
     /// events it sees.
     pub fn start(&mut self) -> Result<EventStream<T>, Error> {
-        if self.scan_stream.is_none() {
+        if self.is_started() {
             return Err(Error::AlreadyStarted);
         }
-        Ok(EventStream::<T>::new(self.scan_stream.take().unwrap(), self.broadcast_sources.clone()))
+        let scan_result_stream = self.central.scan(&Self::scan_filters());
+        self.broadcast_source_scan_started.store(true, Ordering::Relaxed);
+        Ok(EventStream::<T>::new(
+            scan_result_stream,
+            self.broadcast_sources.clone(),
+            self.broadcast_source_scan_started.clone(),
+        ))
     }
 
-    pub fn scan_for_scan_delegators(&mut self) -> T::ScanResultStream {
+    /// Returns whether or not Broadcast Assistant has started.
+    fn is_started(&self) -> bool {
+        self.broadcast_source_scan_started.load(Ordering::Relaxed)
+    }
+
+    pub fn scan_for_scan_delegators(&mut self) -> Result<T::ScanResultStream, Error> {
+        if self.is_started() {
+            return Err(Error::Generic(format!(
+                "Cannot scan for scan delegators while scanning for broadcast sources"
+            )));
+        }
         // Scan for service data with Broadcast Audio Scan Service UUID to look
         // for Broadcast Sink collocated with the Scan Delegator (see BAP spec v1.0.1
         // Section 3.9.2 for details).
-        self.central.scan(&vec![Filter::HasServiceData(BROADCAST_AUDIO_SCAN_SERVICE).into()])
+        Ok(self.central.scan(&vec![Filter::HasServiceData(BROADCAST_AUDIO_SCAN_SERVICE).into()]))
     }
 
     pub async fn connect_to_scan_delegator(&self, peer_id: PeerId) -> Result<Peer<T>, Error>
@@ -172,17 +188,13 @@ impl<T: bt_gatt::GattTypes + 'static> BroadcastAssistant<T> {
         &self,
         peer_id: PeerId,
         address: [u8; 6],
-        raw_address_type: u8,
-        raw_advertising_sid: u8,
+        address_type: bt_common::core::AddressType,
+        advertising_sid: bt_common::core::AdvertisingSetId,
     ) -> Result<BroadcastSource, Error> {
-        use bt_common::core::{AddressType, AdvertisingSetId};
         let broadcast_source = BroadcastSource {
             address: Some(address),
-            address_type: Some(
-                AddressType::try_from(raw_address_type)
-                    .map_err(|e| Error::Generic(e.to_string()))?,
-            ),
-            advertising_sid: Some(AdvertisingSetId(raw_advertising_sid)),
+            address_type: Some(address_type),
+            advertising_sid: Some(advertising_sid),
             broadcast_id: None,
             pa_interval: None,
             endpoint: None,
@@ -196,27 +208,13 @@ impl<T: bt_gatt::GattTypes + 'static> BroadcastAssistant<T> {
     pub fn force_discover_broadcast_source_metadata(
         &self,
         peer_id: PeerId,
-        raw_metadata: Vec<Vec<u8>>,
+        big_metadata: Vec<Vec<bt_common::generic_audio::metadata_ltv::Metadata>>,
     ) -> Result<BroadcastSource, Error> {
         use bt_bap::types::{BroadcastAudioSourceEndpoint, BroadcastIsochronousGroup};
-        use bt_common::core::ltv::LtValue;
         use bt_common::core::CodecId;
-        use bt_common::generic_audio::metadata_ltv::Metadata;
 
         let mut big = Vec::new();
-        for bytes in raw_metadata {
-            let metadata = {
-                if bytes.len() > 0 {
-                    let (decoded_metadata, consumed_len) = Metadata::decode_all(bytes.as_slice());
-                    if consumed_len != bytes.len() {
-                        return Err(Error::Generic("Metadata length is not valid".to_string()));
-                    }
-                    decoded_metadata.into_iter().filter_map(Result::ok).collect()
-                } else {
-                    vec![]
-                }
-            };
-
+        for metadata in big_metadata {
             let group = BroadcastIsochronousGroup {
                 codec_id: CodecId::Assigned(bt_common::core::CodingFormat::ALawLog), // mock.
                 codec_specific_configs: vec![],
@@ -261,6 +259,7 @@ mod tests {
 
     use bt_bap::types::*;
     use bt_common::core::{AddressType, AdvertisingSetId};
+    use bt_common::generic_audio::metadata_ltv::Metadata;
     use bt_gatt::test_utils::{FakeCentral, FakeClient, FakeTypes};
 
     use crate::assistant::peer::tests::fake_bass_service;
@@ -324,10 +323,16 @@ mod tests {
     #[test]
     fn start_stream() {
         let mut assistant = BroadcastAssistant::<FakeTypes>::new(FakeCentral::new());
-        let _ = assistant.start().expect("can start stream");
+        let stream = assistant.start().expect("can start stream");
 
         // Stream can only be started once.
+        assert!(assistant.is_started());
         assert!(assistant.start().is_err());
+
+        // After the stream is dropped, it can be started again.
+        drop(stream);
+        assert!(!assistant.is_started());
+        assert!(assistant.start().is_ok());
     }
 
     #[test]
@@ -348,5 +353,35 @@ mod tests {
             panic!("should be ready");
         };
         let _ = res.expect("should be ok");
+    }
+
+    #[test]
+    fn force_discover_broadcast_source_test() {
+        let assistant = BroadcastAssistant::<FakeTypes>::new(FakeCentral::new());
+        let peer_id = PeerId(1);
+        let address = [1, 2, 3, 4, 5, 6];
+        let address_type = AddressType::Public;
+        let sid = AdvertisingSetId(1);
+
+        let source =
+            assistant.force_discover_broadcast_source(peer_id, address, address_type, sid).unwrap();
+
+        assert_eq!(source.address, Some(address));
+        assert_eq!(source.address_type, Some(address_type));
+        assert_eq!(source.advertising_sid, Some(sid));
+    }
+
+    #[test]
+    fn force_discover_broadcast_source_metadata_test() {
+        let assistant = BroadcastAssistant::<FakeTypes>::new(FakeCentral::new());
+        let peer_id = PeerId(1);
+        let metadata = vec![vec![Metadata::BroadcastAudioImmediateRenderingFlag]];
+
+        let source =
+            assistant.force_discover_broadcast_source_metadata(peer_id, metadata.clone()).unwrap();
+
+        let endpoint = source.endpoint.unwrap();
+        assert_eq!(endpoint.big.len(), 1);
+        assert_eq!(endpoint.big[0].metadata, metadata[0]);
     }
 }

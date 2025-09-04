@@ -8,6 +8,7 @@ use bt_common::core::{AddressType, AdvertisingSetId, PaInterval};
 use bt_common::generic_audio::metadata_ltv::*;
 use bt_common::packet_encoding::{Decodable, Encodable, Error as PacketError};
 use bt_common::{decodable_enum, Uuid};
+use std::str::FromStr;
 
 pub const ADDRESS_BYTE_SIZE: usize = 6;
 const NUM_SUBGROUPS_BYTE_SIZE: usize = 1;
@@ -20,6 +21,10 @@ pub const BROADCAST_AUDIO_SCAN_CONTROL_POINT_UUID: Uuid = Uuid::from_u16(0x2BC7)
 pub const BROADCAST_RECEIVE_STATE_UUID: Uuid = Uuid::from_u16(0x2BC8);
 
 pub type SourceId = u8;
+
+/// Index into the vector of BIG subgroups. Valid value range is [0 to len of
+/// BIG vector).
+pub type SubgroupIndex = u8;
 
 /// BIS index value of a particular BIS. Valid value range is [1 to len of BIS]
 pub type BisIndex = u8;
@@ -78,12 +83,12 @@ impl ControlPointOperation for RemoteScanStoppedOperation {
 impl Decodable for RemoteScanStoppedOperation {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
-        if buf.len() < ControlPointOpcode::BYTE_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
+        const BYTE_SIZE: usize = ControlPointOpcode::BYTE_SIZE;
+        if buf.len() < BYTE_SIZE {
+            return (Err(PacketError::BufferTooSmall), buf.len());
         }
-        let _ = Self::check_opcode(buf[0])?;
-        Ok((RemoteScanStoppedOperation, ControlPointOpcode::BYTE_SIZE))
+        (Self::check_opcode(buf[0]).map(|_| RemoteScanStoppedOperation), BYTE_SIZE)
     }
 }
 
@@ -116,12 +121,12 @@ impl ControlPointOperation for RemoteScanStartedOperation {
 impl Decodable for RemoteScanStartedOperation {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
-        if buf.len() < ControlPointOpcode::BYTE_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
+        const BYTE_SIZE: usize = ControlPointOpcode::BYTE_SIZE;
+        if buf.len() < BYTE_SIZE {
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
-        let _ = Self::check_opcode(buf[0])?;
-        Ok((RemoteScanStartedOperation, ControlPointOpcode::BYTE_SIZE))
+        (Self::check_opcode(buf[0]).map(|_| RemoteScanStartedOperation), BYTE_SIZE)
     }
 }
 
@@ -194,43 +199,50 @@ impl ControlPointOperation for AddSourceOperation {
 impl Decodable for AddSourceOperation {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < Self::MIN_PACKET_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
 
-        let _ = Self::check_opcode(buf[0])?;
-        let advertiser_address_type = AddressType::try_from(buf[1])?;
-        let mut advertiser_address = [0; ADDRESS_BYTE_SIZE];
-        advertiser_address.clone_from_slice(&buf[2..8]);
-        let advertising_sid = AdvertisingSetId(buf[8]);
-        let broadcast_id = BroadcastId::decode(&buf[9..12])?.0;
-        let pa_sync = PaSync::try_from(buf[12])?;
-        let pa_interval = PaInterval(u16::from_le_bytes(buf[13..15].try_into().unwrap()));
-        let num_subgroups = buf[15] as usize;
-        let mut subgroups = Vec::new();
+        let decode_fn = || {
+            let _ = Self::check_opcode(buf[0])?;
+            let advertiser_address_type = AddressType::try_from(buf[1])?;
+            let mut advertiser_address = [0; ADDRESS_BYTE_SIZE];
+            advertiser_address.clone_from_slice(&buf[2..8]);
+            let advertising_sid = AdvertisingSetId(buf[8]);
+            let broadcast_id = BroadcastId::decode(&buf[9..12]).0?;
+            let pa_sync = PaSync::try_from(buf[12])?;
+            let pa_interval = PaInterval(u16::from_le_bytes(buf[13..15].try_into().unwrap()));
+            let num_subgroups = buf[15] as usize;
+            let mut subgroups = Vec::new();
 
-        let mut idx: usize = 16;
-        for _i in 0..num_subgroups {
-            if buf.len() <= idx {
-                return Err(PacketError::UnexpectedDataLength);
+            let mut idx: usize = 16;
+            for _i in 0..num_subgroups {
+                if buf.len() <= idx {
+                    return Err(PacketError::UnexpectedDataLength);
+                }
+                let (decoded, consumed) = BigSubgroup::decode(&buf[idx..]);
+                subgroups.push(decoded?);
+                idx += consumed;
             }
-            let decoded = BigSubgroup::decode(&buf[idx..])?;
-            subgroups.push(decoded.0);
-            idx += decoded.1;
+            Ok((
+                Self {
+                    advertiser_address_type,
+                    advertiser_address,
+                    advertising_sid,
+                    broadcast_id,
+                    pa_sync,
+                    pa_interval,
+                    subgroups,
+                },
+                idx,
+            ))
+        };
+
+        match decode_fn() {
+            Ok((result, consumed)) => (Ok(result), consumed),
+            Err(e) => (Err(e), buf.len()),
         }
-        Ok((
-            Self {
-                advertiser_address_type,
-                advertiser_address,
-                advertising_sid,
-                broadcast_id,
-                pa_sync,
-                pa_interval,
-                subgroups,
-            },
-            idx,
-        ))
     }
 }
 
@@ -303,27 +315,34 @@ impl Decodable for ModifySourceOperation {
     type Error = PacketError;
 
     // Min size includes Source_ID, PA_Sync, PA_Interval, and Num_Subgroups params.
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < Self::MIN_PACKET_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
-        let _ = Self::check_opcode(buf[0])?;
-        let source_id = buf[1];
-        let pa_sync = PaSync::try_from(buf[2])?;
-        let pa_interval = PaInterval(u16::from_le_bytes(buf[3..5].try_into().unwrap()));
-        let num_subgroups = buf[5] as usize;
-        let mut subgroups = Vec::new();
+        let decode_fn = || {
+            let _ = Self::check_opcode(buf[0])?;
+            let source_id = buf[1];
+            let pa_sync = PaSync::try_from(buf[2])?;
+            let pa_interval = PaInterval(u16::from_le_bytes(buf[3..5].try_into().unwrap()));
+            let num_subgroups = buf[5] as usize;
+            let mut subgroups = Vec::new();
 
-        let mut idx = 6;
-        for _i in 0..num_subgroups {
-            if buf.len() < idx + BigSubgroup::MIN_PACKET_SIZE {
-                return Err(PacketError::UnexpectedDataLength);
+            let mut idx = 6;
+            for _i in 0..num_subgroups {
+                if buf.len() < idx + BigSubgroup::MIN_PACKET_SIZE {
+                    return Err(PacketError::UnexpectedDataLength);
+                }
+                let decoded = BigSubgroup::decode(&buf[idx..]);
+                subgroups.push(decoded.0?);
+                idx += decoded.1;
             }
-            let decoded = BigSubgroup::decode(&buf[idx..])?;
-            subgroups.push(decoded.0);
-            idx += decoded.1;
+            Ok((Self { source_id, pa_sync, pa_interval, subgroups }, idx))
+        };
+
+        match decode_fn() {
+            Ok((obj, consumed)) => (Ok(obj), consumed),
+            Err(e) => (Err(e), buf.len()),
         }
-        Ok((Self { source_id, pa_sync, pa_interval, subgroups }, idx))
     }
 }
 
@@ -384,15 +403,22 @@ impl Decodable for SetBroadcastCodeOperation {
     type Error = PacketError;
 
     // Min size includes Source_ID, PA_Sync, PA_Interval, and Num_Subgroups params.
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < Self::PACKET_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
-        let _ = Self::check_opcode(buf[0])?;
-        let source_id = buf[1];
-        let mut broadcast_code = [0; Self::BROADCAST_CODE_LEN];
-        broadcast_code.copy_from_slice(&buf[2..2 + Self::BROADCAST_CODE_LEN]);
-        Ok((Self { source_id, broadcast_code }, Self::PACKET_SIZE))
+        let decode_fn = || {
+            let _ = Self::check_opcode(buf[0])?;
+            let source_id = buf[1];
+            let mut broadcast_code = [0; Self::BROADCAST_CODE_LEN];
+            broadcast_code.copy_from_slice(&buf[2..2 + Self::BROADCAST_CODE_LEN]);
+            Ok((Self { source_id, broadcast_code }, Self::PACKET_SIZE))
+        };
+
+        match decode_fn() {
+            Ok((obj, consumed)) => (Ok(obj), consumed),
+            Err(e) => (Err(e), buf.len()),
+        }
     }
 }
 
@@ -437,13 +463,19 @@ impl Decodable for RemoveSourceOperation {
     type Error = PacketError;
 
     // Min size includes Source_ID, PA_Sync, PA_Interval, and Num_Subgroups params.
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < Self::PACKET_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
-        let _ = Self::check_opcode(buf[0])?;
-        let source_id = buf[1];
-        Ok((RemoveSourceOperation(source_id), Self::PACKET_SIZE))
+        let decode_fn = || {
+            let _ = Self::check_opcode(buf[0])?;
+            let source_id = buf[1];
+            Ok((RemoveSourceOperation(source_id), Self::PACKET_SIZE))
+        };
+        match decode_fn() {
+            Ok((obj, consumed)) => (Ok(obj), consumed),
+            Err(e) => (Err(e), buf.len()),
+        }
     }
 }
 
@@ -473,29 +505,46 @@ decodable_enum! {
     }
 }
 
+impl FromStr for PaSync {
+    type Err = PacketError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "PaSyncOff" => Ok(PaSync::DoNotSync),
+            "PaSyncPast" => Ok(PaSync::SyncPastAvailable),
+            "PaSyncNoPast" => Ok(PaSync::SyncPastUnavailable),
+            _ => Err(PacketError::InvalidParameter(format!("invalid pa_sync: {s}"))),
+        }
+    }
+}
+
 /// 4-octet bitfield. Bit 0-30 = BIS_index[1-31]
 /// 0x00000000: 0b0 = Do not synchronize to BIS_index[x]
 /// 0xxxxxxxxx: 0b1 = Synchronize to BIS_index[x]
 /// 0xFFFFFFFF: means No preference if used in BroadcastAudioScanControlPoint,
 ///             Failed to sync if used in ReceiveState.
 #[derive(Clone, Debug, PartialEq)]
-pub struct BisSync(pub u32);
+pub struct BisSync(u32);
 
 impl BisSync {
     const BYTE_SIZE: usize = 4;
     const NO_PREFERENCE: u32 = 0xFFFFFFFF;
 
-    /// Updates whether or not a particular BIS should be set to synchronize or
-    /// not synchronize.
+    /// Creates a new BisSync that doens't synchronzie to any BISes.
+    pub fn no_sync() -> BisSync {
+        BisSync(0)
+    }
+
+    /// Updates the specified BIS index to be synchronized.
+    /// Doesn't touch the synchronize value of other BIS indices.
     ///
     /// # Arguments
     ///
     /// * `bis_index` - BIS index as defined in the spec. Range should be [1,
-    ///   31]
-    /// * `should_sync` - Whether or not to synchronize
-    fn set_sync_for_index(&mut self, bis_index: BisIndex) -> Result<(), PacketError> {
+    ///   31]. The specified BIS index will be set to synchronized (0b1).
+    pub fn synchronize_to_index(&mut self, bis_index: BisIndex) -> Result<(), PacketError> {
         if bis_index < 1 || bis_index > 31 {
-            return Err(PacketError::InvalidParameter(format!("Invalid BIS index ({bis_index})")));
+            return Err(PacketError::OutOfRange);
         }
         let bit_mask = 0b1 << (bis_index - 1);
 
@@ -505,30 +554,30 @@ impl BisSync {
         Ok(())
     }
 
-    /// Clears previous BIS_Sync params and synchronizes to specified BIS
-    /// indices. If the BIS index list is empty, no preference value is
-    /// used.
+    /// Creates a BisSync value with the specified BIS indices set to be
+    /// synchronized.
     ///
     /// # Arguments
     ///
-    /// * `sync_map` - Map of BIS index to whether or not it should be
-    ///   synchronized
-    pub fn set_sync(&mut self, bis_indices: &Vec<BisIndex>) -> Result<(), PacketError> {
-        if bis_indices.is_empty() {
-            self.0 = Self::NO_PREFERENCE;
-            return Ok(());
-        }
-        self.0 = 0;
+    /// * `bis_indices` - A vector of BIS indices to synchronize to.
+    pub fn sync(bis_indices: Vec<BisIndex>) -> Result<Self, PacketError> {
+        let mut new_sync = Self::no_sync();
         for bis_index in bis_indices {
-            self.set_sync_for_index(*bis_index)?;
+            new_sync.synchronize_to_index(bis_index)?;
         }
-        Ok(())
+        Ok(new_sync)
     }
 }
 
 impl Default for BisSync {
     fn default() -> Self {
         Self(Self::NO_PREFERENCE)
+    }
+}
+
+impl From<BisSync> for u32 {
+    fn from(bis_sync: BisSync) -> u32 {
+        bis_sync.0
     }
 }
 
@@ -555,27 +604,33 @@ impl BigSubgroup {
 impl Decodable for BigSubgroup {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < BigSubgroup::MIN_PACKET_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
-        let bis_sync = u32::from_le_bytes(buf[0..4].try_into().unwrap());
-        let metadata_len = buf[4] as usize;
+        let decode_fn = || {
+            let bis_sync = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+            let metadata_len = buf[4] as usize;
 
-        let mut start_idx = 5;
-        if buf.len() < start_idx + metadata_len {
-            return Err(PacketError::UnexpectedDataLength);
-        }
+            let mut start_idx = 5;
+            if buf.len() < start_idx + metadata_len {
+                return Err(PacketError::UnexpectedDataLength);
+            }
 
-        let (results_metadata, consumed_len) =
-            Metadata::decode_all(&buf[start_idx..start_idx + metadata_len]);
-        start_idx += consumed_len;
-        if start_idx != 5 + metadata_len {
-            return Err(PacketError::UnexpectedDataLength);
+            let (results_metadata, consumed_len) =
+                Metadata::decode_all(&buf[start_idx..start_idx + metadata_len]);
+            start_idx += consumed_len;
+            if start_idx != 5 + metadata_len {
+                return Err(PacketError::UnexpectedDataLength);
+            }
+            // Ignore any undecodable metadata types
+            let metadata = results_metadata.into_iter().filter_map(Result::ok).collect();
+            Ok((BigSubgroup { bis_sync: BisSync(bis_sync), metadata }, start_idx))
+        };
+        match decode_fn() {
+            Ok((obj, consumed)) => (Ok(obj), consumed),
+            Err(e) => (Err(e), buf.len()),
         }
-        // Ignore any undecodable metadata types
-        let metadata = results_metadata.into_iter().filter_map(Result::ok).collect();
-        Ok((BigSubgroup { bis_sync: BisSync(bis_sync), metadata }, start_idx))
     }
 }
 
@@ -587,7 +642,7 @@ impl Encodable for BigSubgroup {
             return Err(PacketError::BufferTooSmall);
         }
 
-        buf[0..4].copy_from_slice(&self.bis_sync.0.to_le_bytes());
+        buf[0..4].copy_from_slice(&u32::from(self.bis_sync.clone()).to_le_bytes());
         let metadata_len = self
             .metadata
             .iter()
@@ -647,12 +702,14 @@ impl BroadcastReceiveState {
 impl Decodable for BroadcastReceiveState {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() == 0 {
-            return Ok((Self::Empty, 0));
+            return (Ok(Self::Empty), 0);
         }
-        let res = ReceiveState::decode(&buf[..])?;
-        Ok((Self::NonEmpty(res.0), res.1))
+        match ReceiveState::decode(&buf[..]) {
+            (Ok(state), consumed) => (Ok(Self::NonEmpty(state)), consumed),
+            (Err(e), consumed) => (Err(e), consumed),
+        }
     }
 }
 
@@ -741,49 +798,63 @@ impl ReceiveState {
 impl Decodable for ReceiveState {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < Self::MIN_PACKET_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
 
-        let source_id = buf[0];
-        let source_address_type = AddressType::try_from(buf[1])?;
-        let mut source_address = [0; ADDRESS_BYTE_SIZE];
-        source_address.clone_from_slice(&buf[2..8]);
-        let source_adv_sid = AdvertisingSetId(buf[8]);
-        let broadcast_id = BroadcastId::decode(&buf[9..12])?.0;
-        let pa_sync_state = PaSyncState::try_from(buf[12])?;
+        let decode_fn = || {
+            let source_id = buf[0];
+            let source_address_type = AddressType::try_from(buf[1])?;
+            let mut source_address = [0; ADDRESS_BYTE_SIZE];
+            source_address.clone_from_slice(&buf[2..8]);
+            let source_adv_sid = AdvertisingSetId(buf[8]);
+            let broadcast_id = BroadcastId::decode(&buf[9..12]).0?;
+            let pa_sync_state = PaSyncState::try_from(buf[12])?;
 
-        let decoded = EncryptionStatus::decode(&buf[13..])?;
-        let big_encryption = decoded.0;
-        let mut idx = 13 + decoded.1;
-        if buf.len() <= idx {
-            return Err(PacketError::UnexpectedDataLength);
-        }
-        let num_subgroups = buf[idx] as usize;
-        let mut subgroups = Vec::new();
-        idx += 1;
-        for _i in 0..num_subgroups {
+            let big_encryption;
+            let mut idx = 13;
+            match EncryptionStatus::decode(&buf[13..]) {
+                (Ok(encryption), consumed) => {
+                    big_encryption = encryption;
+                    idx += consumed;
+                }
+                (Err(e), _) => {
+                    return Err(e);
+                }
+            }
             if buf.len() <= idx {
                 return Err(PacketError::UnexpectedDataLength);
             }
-            let (subgroup, consumed) = BigSubgroup::decode(&buf[idx..])?;
-            subgroups.push(subgroup);
-            idx += consumed;
+            let num_subgroups = buf[idx] as usize;
+            let mut subgroups = Vec::new();
+            idx += 1;
+            for _i in 0..num_subgroups {
+                if buf.len() <= idx {
+                    return Err(PacketError::UnexpectedDataLength);
+                }
+                let (subgroup, consumed) = BigSubgroup::decode(&buf[idx..]);
+                subgroups.push(subgroup?);
+                idx += consumed;
+            }
+            Ok((
+                ReceiveState {
+                    source_id,
+                    source_address_type,
+                    source_address,
+                    source_adv_sid,
+                    broadcast_id,
+                    pa_sync_state,
+                    big_encryption,
+                    subgroups,
+                },
+                idx,
+            ))
+        };
+        match decode_fn() {
+            Ok((obj, consumed)) => (Ok(obj), consumed),
+            Err(e) => (Err(e), buf.len()),
         }
-        Ok((
-            ReceiveState {
-                source_id,
-                source_address_type,
-                source_address,
-                source_adv_sid,
-                broadcast_id,
-                pa_sync_state,
-                big_encryption,
-                subgroups,
-            },
-            idx,
-        ))
     }
 }
 
@@ -871,21 +942,21 @@ impl EncryptionStatus {
 impl Decodable for EncryptionStatus {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < 1 {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
         match buf[0] {
-            0x00 => Ok((Self::NotEncrypted, 1)),
-            0x01 => Ok((Self::BroadcastCodeRequired, 1)),
-            0x02 => Ok((Self::Decrypting, 1)),
+            0x00 => (Ok(Self::NotEncrypted), 1),
+            0x01 => (Ok(Self::BroadcastCodeRequired), 1),
+            0x02 => (Ok(Self::Decrypting), 1),
             0x03 => {
                 if buf.len() < 17 {
-                    return Err(PacketError::UnexpectedDataLength);
+                    return (Err(PacketError::UnexpectedDataLength), buf.len());
                 }
-                Ok((Self::BadCode(buf[1..17].try_into().unwrap()), 17))
+                (Ok(Self::BadCode(buf[1..17].try_into().unwrap())), 17)
             }
-            _ => Err(PacketError::OutOfRange),
+            _ => (Err(PacketError::OutOfRange), buf.len()),
         }
     }
 }
@@ -950,9 +1021,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding not encrypted.
-        let decoded = EncryptionStatus::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, not_encrypted);
-        assert_eq!(decoded.1, 1);
+        let (decoded, len) = EncryptionStatus::decode(&bytes);
+        assert_eq!(decoded, Ok(not_encrypted));
+        assert_eq!(len, 1);
 
         // Encoding bad code status with code.
         let bad_code = EncryptionStatus::BadCode([
@@ -969,10 +1040,10 @@ mod tests {
         ];
         assert_eq!(buf, bytes);
 
-        // Deocoding bad code statsu with code.
-        let decoded = EncryptionStatus::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, bad_code);
-        assert_eq!(decoded.1, 17);
+        // Decoding bad code statsu with code.
+        let (decoded, len) = EncryptionStatus::decode(&bytes);
+        assert_eq!(decoded, Ok(bad_code));
+        assert_eq!(len, 17);
     }
 
     #[test]
@@ -992,32 +1063,52 @@ mod tests {
 
         // Cannot decode empty buffer.
         let buf = vec![];
-        let _ = EncryptionStatus::decode(&buf).expect_err("should fail");
+        let _ = EncryptionStatus::decode(&buf).0.expect_err("should fail");
 
         // Bad code status with no code.
         let buf = vec![0x03];
-        let _ = EncryptionStatus::decode(&buf).expect_err("should fail");
+        let _ = EncryptionStatus::decode(&buf).0.expect_err("should fail");
     }
 
     #[test]
-    fn bis_sync() {
-        let mut bis_sync = BisSync::default();
-        assert_eq!(bis_sync, BisSync(BisSync::NO_PREFERENCE));
+    fn bis_sync_sync() {
+        let bis_sync = BisSync::sync(vec![1, 6, 31]).expect("should succeed");
+        assert_eq!(u32::from(bis_sync), 0x40000021);
 
-        bis_sync.set_sync(&vec![1, 6, 31]).expect("should succeed");
-        assert_eq!(bis_sync, BisSync(0x40000021));
-
-        bis_sync.set_sync(&vec![]).expect("should succeed");
-        assert_eq!(bis_sync, BisSync::default());
+        let bis_sync_empty = BisSync::sync(vec![]).expect("should succeed");
+        assert_eq!(u32::from(bis_sync_empty), 0);
     }
 
     #[test]
     fn invalid_bis_sync() {
-        let mut bis_sync = BisSync::default();
+        BisSync::sync(vec![0]).expect_err("should fail");
+        BisSync::sync(vec![32]).expect_err("should fail");
+    }
 
-        bis_sync.set_sync(&vec![0]).expect_err("should fail");
+    #[test]
+    fn synchronize_to_index() {
+        let mut bis_sync = BisSync::no_sync();
+        assert_eq!(u32::from(bis_sync.clone()), 0);
 
-        bis_sync.set_sync(&vec![32]).expect_err("should fail");
+        bis_sync.synchronize_to_index(1).expect("should succeed");
+        assert_eq!(u32::from(bis_sync.clone()), 0x1);
+
+        bis_sync.synchronize_to_index(31).expect("should succeed");
+        assert_eq!(u32::from(bis_sync.clone()), 0x40000001);
+
+        bis_sync.synchronize_to_index(0).expect_err("should fail");
+        bis_sync.synchronize_to_index(32).expect_err("should fail");
+    }
+
+    #[test]
+    fn pa_sync_from_str() {
+        let sync = PaSync::from_str("PaSyncOff").expect("should succeed");
+        assert_eq!(sync, PaSync::DoNotSync);
+        let sync = PaSync::from_str("PaSyncPast").expect("should succeed");
+        assert_eq!(sync, PaSync::SyncPastAvailable);
+        let sync = PaSync::from_str("PaSyncNoPast").expect("should succeed");
+        assert_eq!(sync, PaSync::SyncPastUnavailable);
+        PaSync::from_str("invalid").expect_err("should fail");
     }
 
     #[test]
@@ -1032,9 +1123,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding remote scan stopped.
-        let decoded = RemoteScanStoppedOperation::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, stopped);
-        assert_eq!(decoded.1, 1);
+        let (decoded, len) = RemoteScanStoppedOperation::decode(&bytes);
+        assert_eq!(decoded, Ok(stopped));
+        assert_eq!(len, 1);
     }
 
     #[test]
@@ -1049,9 +1140,9 @@ mod tests {
         assert_eq!(buf, vec![0x01]);
 
         // Decoding remote scan started.
-        let decoded = RemoteScanStartedOperation::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, started);
-        assert_eq!(decoded.1, 1);
+        let (decoded, len) = RemoteScanStartedOperation::decode(&bytes);
+        assert_eq!(decoded, Ok(started));
+        assert_eq!(len, 1);
     }
 
     #[test]
@@ -1077,9 +1168,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding operation with no subgroups.
-        let decoded = AddSourceOperation::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, op);
-        assert_eq!(decoded.1, 16);
+        let (decoded, len) = AddSourceOperation::decode(&bytes);
+        assert_eq!(decoded, Ok(op));
+        assert_eq!(len, 16);
     }
 
     #[test]
@@ -1111,9 +1202,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding operation with subgroups.
-        let decoded = AddSourceOperation::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, op);
-        assert_eq!(decoded.1, 31);
+        let (decoded, len) = AddSourceOperation::decode(&bytes);
+        assert_eq!(decoded, Ok(op));
+        assert_eq!(len, 31);
     }
 
     #[test]
@@ -1129,9 +1220,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding operation with no subgroups.
-        let decoded = ModifySourceOperation::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, op);
-        assert_eq!(decoded.1, 6);
+        let (decoded, len) = ModifySourceOperation::decode(&bytes);
+        assert_eq!(decoded, Ok(op));
+        assert_eq!(len, 6);
     }
 
     #[test]
@@ -1156,9 +1247,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding operation with subgroups.
-        let decoded = ModifySourceOperation::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, op);
-        assert_eq!(decoded.1, 21);
+        let (decoded, len) = ModifySourceOperation::decode(&bytes);
+        assert_eq!(decoded, Ok(op));
+        assert_eq!(len, 21);
     }
 
     #[test]
@@ -1182,9 +1273,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = SetBroadcastCodeOperation::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, op);
-        assert_eq!(decoded.1, 18);
+        let (decoded, len) = SetBroadcastCodeOperation::decode(&bytes);
+        assert_eq!(decoded, Ok(op));
+        assert_eq!(len, 18);
     }
 
     #[test]
@@ -1199,9 +1290,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = RemoveSourceOperation::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, op);
-        assert_eq!(decoded.1, 2);
+        let (decoded, len) = RemoveSourceOperation::decode(&bytes);
+        assert_eq!(decoded, Ok(op));
+        assert_eq!(len, 2);
     }
 
     #[test]
@@ -1233,9 +1324,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = BroadcastReceiveState::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, state);
-        assert_eq!(decoded.1, 31);
+        let (decoded, len) = BroadcastReceiveState::decode(&bytes);
+        assert_eq!(decoded, Ok(state));
+        assert_eq!(len, 31);
     }
 
     #[test]
@@ -1266,8 +1357,8 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = BroadcastReceiveState::decode(&bytes).expect("should succeed");
-        assert_eq!(decoded.0, state);
-        assert_eq!(decoded.1, 23);
+        let (decoded, len) = BroadcastReceiveState::decode(&bytes);
+        assert_eq!(decoded, Ok(state));
+        assert_eq!(len, 23);
     }
 }

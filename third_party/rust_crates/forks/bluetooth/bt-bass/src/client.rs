@@ -5,7 +5,7 @@
 pub mod error;
 pub mod event;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures::stream::{BoxStream, FusedStream, SelectAll, Stream, StreamExt};
@@ -25,22 +25,6 @@ use crate::client::event::*;
 use crate::types::*;
 
 const READ_CHARACTERISTIC_BUFFER_SIZE: usize = 255;
-
-/// Index into the vector of BIG subgroups. Valid value range is [0 to len of
-/// BIG vector).
-pub type SubgroupIndex = u8;
-
-/// Synchronization information for BIG groups to tell which
-/// BISes it should sync to.
-pub type BigToBisSync = HashSet<(SubgroupIndex, BisIndex)>;
-
-pub fn big_to_bis_sync_indices(info: &BigToBisSync) -> HashMap<SubgroupIndex, Vec<BisIndex>> {
-    let mut sync_map = HashMap::new();
-    for (ith_group, bis_index) in info.iter() {
-        sync_map.entry(*ith_group).or_insert(Vec::new()).push(*bis_index);
-    }
-    sync_map
-}
 
 /// Keeps track of Source_ID and Broadcast_ID that are associated together.
 /// Source_ID is assigned by the BASS server to a Broadcast Receive State
@@ -177,8 +161,8 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
             // record.
             let mut buf = vec![0; READ_CHARACTERISTIC_BUFFER_SIZE];
             match c.read(&mut buf[..]).await {
-                Ok(read_bytes) => match BroadcastReceiveState::decode(&buf[0..read_bytes]) {
-                    Ok((decoded, _decoded_bytes)) => {
+                Ok(read_bytes) => match BroadcastReceiveState::decode(&buf[0..read_bytes]).0 {
+                    Ok(decoded) => {
                         brs_map.insert(*c.handle(), decoded);
                         continue;
                     }
@@ -321,7 +305,7 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
         broadcast_id: BroadcastId,
         pa_sync: PaSync,
         pa_interval: Option<PaInterval>,
-        bis_sync: Option<BigToBisSync>,
+        bis_sync: Option<HashMap<SubgroupIndex, BisSync>>,
         metadata_map: Option<HashMap<SubgroupIndex, Vec<Metadata>>>,
     ) -> Result<(), Error> {
         let op = {
@@ -330,12 +314,10 @@ impl<T: bt_gatt::GattTypes> BroadcastAudioScanServiceClient<T> {
                 .ok_or(Error::UnknownBroadcastSource(broadcast_id))?;
 
             // Update BIS_Sync param for BIGs if applicable.
-            if let Some(m) = bis_sync {
-                let sync_map = big_to_bis_sync_indices(&m);
-
+            if let Some(sync_map) = bis_sync {
                 for (big_index, group) in state.subgroups.iter_mut().enumerate() {
-                    if let Some(bis_indices) = sync_map.get(&(big_index as u8)) {
-                        group.bis_sync.set_sync(bis_indices).map_err(|e| Error::Packet(e))?;
+                    if let Some(bis_sync) = sync_map.get(&(big_index as u8)) {
+                        group.bis_sync = bis_sync.clone();
                     }
                 }
             }
@@ -833,7 +815,7 @@ mod tests {
             vec![
                 0x03, 0x11, 0x00,                    // opcode, source id, pa sync
                 0xFF, 0xFF, 0x02,                    // pa sync, pa interval, num of subgroups
-                0x17, 0x00, 0x00, 0x00,              // bis sync (0th subgroup)
+                0x15, 0x00, 0x00, 0x00,              // bis sync (0th subgroup)
                 0x02, 0x01, 0x09,                    // metadata len, metadata
                 0xFF, 0xFF, 0xFF, 0xFF,              // bis sync (1th subgroup)
                 0x05, 0x04, 0x04, 0x65, 0x6E, 0x67,  // metadata len, metadata
@@ -845,7 +827,7 @@ mod tests {
             BroadcastId::try_from(0x11).unwrap(),
             PaSync::DoNotSync,
             None,
-            Some(HashSet::from([(0, 1), (0, 2), (0, 3), (0, 5)])),
+            Some(HashMap::from([(0, BisSync::sync(vec![1, 3, 5]).unwrap())])),
             Some(HashMap::from([
                 (0, vec![Metadata::BroadcastAudioImmediateRenderingFlag]),
                 (1, vec![Metadata::Language("eng".to_string())]),

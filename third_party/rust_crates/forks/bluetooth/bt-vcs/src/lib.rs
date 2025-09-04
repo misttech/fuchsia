@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_common::Uuid;
 use bt_common::packet_encoding::Encodable;
+use bt_common::Uuid;
 use bt_gatt::{
-    Characteristic, Client,
     client::{FromCharacteristic, PeerService, PeerServiceHandle},
     types::WriteMode,
+    Characteristic, Client,
 };
 
 use futures::TryFutureExt;
@@ -314,9 +314,10 @@ impl<T: bt_gatt::GattTypes> VolumeControlClient<T> {
             .map_err(Into::into)
     }
 
-    /// Relative volume up.  Should increase the volume by a static step size unless the volume is
-    /// at max.
-    /// If `unmute` is true, also unmute, otherwise it does not affect the mute value.
+    /// Relative volume up.  Should increase the volume by a static step size
+    /// unless the volume is at max.
+    /// If `unmute` is true, also unmute, otherwise it does not affect the mute
+    /// value.
     pub async fn volume_up(&self, unmute: bool) -> Result<(), Error> {
         let procedure = if unmute {
             VcpProcedure::UnmuteRelativeVolumeUp
@@ -326,9 +327,10 @@ impl<T: bt_gatt::GattTypes> VolumeControlClient<T> {
         self.send_control_pt(procedure).await
     }
 
-    /// Relative volume down.  Should decrease the volume by a static step size unless the volume is
-    /// at zero.
-    /// If `unmute` is true, also unmute, otherwise it does not affect the mute value.
+    /// Relative volume down.  Should decrease the volume by a static step size
+    /// unless the volume is at zero.
+    /// If `unmute` is true, also unmute, otherwise it does not affect the mute
+    /// value.
     pub async fn volume_down(&self, unmute: bool) -> Result<(), Error> {
         let procedure = if unmute {
             VcpProcedure::UnmuteRelativeVolumeDown
@@ -451,8 +453,8 @@ mod tests {
 
         let mut service = FakePeerService::new();
 
-        // No services, error (check between adding each one, should be an error until all chars
-        // are added.
+        // No services, error (check between adding each one, should be an error until
+        // all chars are added.
         assert!(try_from_service(service.clone()).is_err());
         service.add_characteristic(state_chr(), vec![1, 0, 1]);
         assert!(try_from_service(service.clone()).is_err());
@@ -489,7 +491,7 @@ mod tests {
 
     #[test]
     fn build_from_service() {
-        use futures::{FutureExt, task::Poll};
+        use futures::{task::Poll, FutureExt};
 
         let mut service = build_fake_service();
         let client = try_from_service(service.clone()).unwrap();

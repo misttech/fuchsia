@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use bt_bap::types::*;
-use bt_bass::client::BigToBisSync;
 use bt_bass::types::{BigSubgroup, BisSync};
 use bt_common::core::{Address, AddressType};
 use bt_common::core::{AdvertisingSetId, PaInterval};
 use bt_common::packet_encoding::Error as PacketError;
+use std::collections::HashMap;
 
 /// Broadcast source data as advertised through Basic Audio Announcement
 /// PA and Broadcast Audio Announcement.
@@ -27,12 +27,10 @@ impl BroadcastSource {
     /// Returns whether or not this BroadcastSource has enough information
     /// to be added by the Broadcast Assistant.
     pub(crate) fn into_add_source(&self) -> bool {
-        // PA interval is not necessary since default value can be used.
-        self.address.is_some()
-            && self.address_type.is_some()
-            && self.advertising_sid.is_some()
-            && self.broadcast_id.is_some()
-            && self.endpoint.is_some()
+        // Address and PA interval information are not necessary since
+        // default value can be used for PA interval and Address is looked up
+        // when the add source operation is triggered.
+        self.advertising_sid.is_some() && self.broadcast_id.is_some() && self.endpoint.is_some()
     }
 
     pub fn with_address(&mut self, address: [u8; 6]) -> &mut Self {
@@ -95,7 +93,7 @@ impl BroadcastSource {
     ///   preference value is used for all the BIGs
     pub(crate) fn endpoint_to_big_subgroups(
         &self,
-        bis_sync: BigToBisSync,
+        bis_sync: HashMap<u8, BisSync>,
     ) -> Result<Vec<BigSubgroup>, PacketError> {
         if self.endpoint.is_none() {
             return Err(PacketError::InvalidParameter(
@@ -104,17 +102,9 @@ impl BroadcastSource {
             ));
         }
         let mut subgroups = Vec::new();
-        let sync_map = bt_bass::client::big_to_bis_sync_indices(&bis_sync);
 
         for (big_index, group) in self.endpoint.as_ref().unwrap().big.iter().enumerate() {
-            let bis_sync = match sync_map.get(&(big_index as u8)) {
-                Some(bis_indices) => {
-                    let mut bis_sync: BisSync = BisSync(0);
-                    bis_sync.set_sync(bis_indices)?;
-                    bis_sync
-                }
-                _ => BisSync::default(),
-            };
+            let bis_sync = bis_sync.get(&(big_index as u8)).cloned().unwrap_or_default();
             subgroups.push(BigSubgroup::new(Some(bis_sync)).with_metadata(group.metadata.clone()));
         }
         Ok(subgroups)
@@ -125,7 +115,7 @@ impl BroadcastSource {
 mod tests {
     use super::*;
 
-    use std::collections::HashSet;
+    use std::collections::HashMap;
 
     use bt_common::core::CodecId;
     use bt_common::generic_audio::metadata_ltv::Metadata;
@@ -135,19 +125,16 @@ mod tests {
         let mut b = BroadcastSource::default();
         assert!(!b.into_add_source());
 
-        b.merge(
-            &BroadcastSource::default()
-                .with_address([0x1, 0x2, 0x3, 0x4, 0x5, 0x6])
-                .with_address_type(AddressType::Public)
-                .with_advertising_sid(AdvertisingSetId(0x1))
-                .with_broadcast_id(BroadcastId::try_from(0x010203).unwrap()),
-        );
-
+        b.with_advertising_sid(AdvertisingSetId(0x1));
         assert!(!b.into_add_source());
-        b.endpoint_to_big_subgroups(HashSet::from([(0, 1)]))
+
+        b.with_broadcast_id(BroadcastId::try_from(0x010203).unwrap());
+        assert!(!b.into_add_source());
+
+        b.endpoint_to_big_subgroups(HashMap::from([(0, BisSync::sync(vec![1]).unwrap())]))
             .expect_err("should fail no endpoint data");
 
-        b.merge(&BroadcastSource::default().with_endpoint(BroadcastAudioSourceEndpoint {
+        b.with_endpoint(BroadcastAudioSourceEndpoint {
             presentation_delay_ms: 0x010203,
             big: vec![BroadcastIsochronousGroup {
                 codec_id: CodecId::Assigned(bt_common::core::CodingFormat::Cvsd),
@@ -158,15 +145,19 @@ mod tests {
                     codec_specific_config: vec![],
                 }],
             }],
-        }));
+        });
 
         assert!(b.into_add_source());
-        let subgroups =
-            b.endpoint_to_big_subgroups(HashSet::from([(0, 1), (1, 1)])).expect("should succeed");
+        let subgroups = b
+            .endpoint_to_big_subgroups(HashMap::from([
+                (0, BisSync::sync(vec![1]).unwrap()),
+                (1, BisSync::sync(vec![1]).unwrap()),
+            ]))
+            .expect("should succeed");
         assert_eq!(subgroups.len(), 1);
         assert_eq!(
             subgroups[0],
-            BigSubgroup::new(Some(BisSync(0x00000001)))
+            BigSubgroup::new(Some(BisSync::sync(vec![1]).unwrap()))
                 .with_metadata(vec![Metadata::BroadcastAudioImmediateRenderingFlag])
         );
     }

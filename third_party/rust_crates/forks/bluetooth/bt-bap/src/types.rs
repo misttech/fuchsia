@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_common::core::ltv::LtValue;
 use bt_common::core::CodecId;
+use bt_common::core::ltv::LtValue;
 use bt_common::generic_audio::codec_configuration::CodecConfiguration;
 use bt_common::generic_audio::metadata_ltv::Metadata;
 use bt_common::packet_encoding::{Decodable, Encodable, Error as PacketError};
@@ -51,13 +51,13 @@ impl TryFrom<u32> for BroadcastId {
 impl Decodable for BroadcastId {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() != Self::BYTE_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
 
         let padded_bytes = [buf[0], buf[1], buf[2], 0x00];
-        Ok((BroadcastId(u32::from_le_bytes(padded_bytes)), Self::BYTE_SIZE))
+        (Ok(BroadcastId(u32::from_le_bytes(padded_bytes))), Self::BYTE_SIZE)
     }
 }
 
@@ -96,17 +96,21 @@ impl BroadcastAudioAnnouncement {
 impl Decodable for BroadcastAudioAnnouncement {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < Self::PACKET_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
 
-        let (broadcast_id, _) = BroadcastId::decode(&buf[0..3])?;
-        // According to the spec, broadcast audio announcement service data inlcudes
-        // broadcast id and any additional service data. We don't store any
-        // additional parameters, so for now we just "consume" all of data buffer
-        // without doing anything.
-        Ok((Self { broadcast_id }, buf.len()))
+        match BroadcastId::decode(&buf[0..3]) {
+            (Ok(broadcast_id), _) => {
+                // According to the spec, broadcast audio announcement service data inlcudes
+                // broadcast id and any additional service data. We don't store any
+                // additional parameters, so for now we just "consume" all of data buffer
+                // without doing anything.
+                (Ok(Self { broadcast_id }), buf.len())
+            }
+            (Err(e), _) => (Err(e), buf.len()),
+        }
     }
 }
 
@@ -128,9 +132,9 @@ impl BroadcastAudioSourceEndpoint {
 impl Decodable for BroadcastAudioSourceEndpoint {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < Self::MIN_PACKET_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
 
         let mut idx = 0 as usize;
@@ -140,20 +144,27 @@ impl Decodable for BroadcastAudioSourceEndpoint {
         let num_big: usize = buf[idx] as usize;
         idx += 1;
         if num_big < 1 {
-            return Err(PacketError::InvalidParameter(format!(
-                "num of subgroups shall be at least 1 got {num_big}"
-            )));
+            return (
+                Err(PacketError::InvalidParameter(format!(
+                    "num of subgroups shall be at least 1 got {num_big}"
+                ))),
+                buf.len(),
+            );
         }
-
         let mut big = Vec::new();
         while big.len() < num_big {
-            let (group, len) = BroadcastIsochronousGroup::decode(&buf[idx..])
-                .map_err(|e| PacketError::InvalidParameter(format!("{e}")))?;
-            big.push(group);
-            idx += len;
+            match BroadcastIsochronousGroup::decode(&buf[idx..]) {
+                (Ok(group), consumed) => {
+                    big.push(group);
+                    idx += consumed;
+                }
+                (Err(e), _) => {
+                    return (Err(PacketError::InvalidParameter(e.to_string())), buf.len());
+                }
+            };
         }
 
-        Ok((Self { presentation_delay_ms: presentation_delay, big }, idx))
+        (Ok(Self { presentation_delay_ms: presentation_delay, big }), idx)
     }
 }
 
@@ -178,59 +189,83 @@ impl BroadcastIsochronousGroup {
 impl Decodable for BroadcastIsochronousGroup {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < BroadcastIsochronousGroup::MIN_PACKET_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
 
         let mut idx = 0;
         let num_bis = buf[idx] as usize;
         idx += 1;
         if num_bis < 1 {
-            return Err(PacketError::InvalidParameter(format!(
-                "num of BIS shall be at least 1 got {num_bis}"
-            )));
+            return (
+                Err(PacketError::InvalidParameter(format!(
+                    "num of BIS shall be at least 1 got {num_bis}"
+                ))),
+                buf.len(),
+            );
         }
 
-        let (codec_id, read_bytes) = CodecId::decode(&buf[idx..])?;
-        idx += read_bytes;
+        let mut decode_fn = || {
+            let codec_id;
+            match CodecId::decode(&buf[idx..]) {
+                (Ok(id), consumed) => {
+                    codec_id = id;
+                    idx += consumed;
+                }
+                (Err(e), _) => {
+                    return Err(e);
+                }
+            };
 
-        let codec_config_len = buf[idx] as usize;
-        idx += 1;
-        if idx + codec_config_len > buf.len() {
-            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            let codec_config_len = buf[idx] as usize;
+            idx += 1;
+            if idx + codec_config_len > buf.len() {
+                return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            }
+            let (results, consumed) =
+                CodecConfiguration::decode_all(&buf[idx..idx + codec_config_len]);
+            if consumed != codec_config_len {
+                return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            }
+
+            let codec_specific_configs = results.into_iter().filter_map(Result::ok).collect();
+            idx += codec_config_len;
+
+            let metadata_len = buf[idx] as usize;
+            idx += 1;
+            if idx + metadata_len > buf.len() {
+                return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            }
+
+            let (results_metadata, consumed_len) =
+                Metadata::decode_all(&buf[idx..idx + metadata_len]);
+            if consumed_len != metadata_len {
+                return Err(PacketError::UnexpectedDataLength);
+            }
+            // Ignore any undecodable metadata types
+            let metadata = results_metadata.into_iter().filter_map(Result::ok).collect();
+            idx += consumed_len;
+
+            let mut bis = Vec::new();
+            while bis.len() < num_bis {
+                match BroadcastIsochronousStream::decode(&buf[idx..]) {
+                    (Ok(stream), consumed) => {
+                        bis.push(stream);
+                        idx += consumed;
+                    }
+                    (Err(e), _consumed) => {
+                        return Err(PacketError::InvalidParameter(e.to_string()));
+                    }
+                }
+            }
+
+            Ok((BroadcastIsochronousGroup { codec_id, codec_specific_configs, metadata, bis }, idx))
+        };
+        match decode_fn() {
+            Ok((obj, consumed)) => (Ok(obj), consumed),
+            Err(e) => (Err(e), buf.len()),
         }
-        let (results, consumed) = CodecConfiguration::decode_all(&buf[idx..idx + codec_config_len]);
-        if consumed != codec_config_len {
-            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
-        }
-
-        let codec_specific_configs = results.into_iter().filter_map(Result::ok).collect();
-        idx += codec_config_len;
-
-        let metadata_len = buf[idx] as usize;
-        idx += 1;
-        if idx + metadata_len > buf.len() {
-            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
-        }
-
-        let (results_metadata, consumed_len) = Metadata::decode_all(&buf[idx..idx + metadata_len]);
-        if consumed_len != metadata_len {
-            return Err(PacketError::UnexpectedDataLength);
-        }
-        // Ignore any undecodable metadata types
-        let metadata = results_metadata.into_iter().filter_map(Result::ok).collect();
-        idx += consumed_len;
-
-        let mut bis = Vec::new();
-        while bis.len() < num_bis {
-            let (stream, len) = BroadcastIsochronousStream::decode(&buf[idx..])
-                .map_err(|e| PacketError::InvalidParameter(format!("{e}")))?;
-            bis.push(stream);
-            idx += len;
-        }
-
-        Ok((BroadcastIsochronousGroup { codec_id, codec_specific_configs, metadata, bis }, idx))
     }
 }
 
@@ -247,9 +282,9 @@ impl BroadcastIsochronousStream {
 impl Decodable for BroadcastIsochronousStream {
     type Error = PacketError;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < BroadcastIsochronousStream::MIN_PACKET_SIZE {
-            return Err(PacketError::UnexpectedDataLength);
+            return (Err(PacketError::UnexpectedDataLength), buf.len());
         }
 
         let mut idx = 0;
@@ -262,15 +297,18 @@ impl Decodable for BroadcastIsochronousStream {
 
         let (results, consumed) = CodecConfiguration::decode_all(&buf[idx..idx + codec_config_len]);
         if consumed != codec_config_len {
-            return Err(bt_common::packet_encoding::Error::UnexpectedDataLength);
+            return (Err(bt_common::packet_encoding::Error::UnexpectedDataLength), buf.len());
         }
         let codec_specific_configs = results.into_iter().filter_map(Result::ok).collect();
         idx += codec_config_len;
 
-        Ok((
-            BroadcastIsochronousStream { bis_index, codec_specific_config: codec_specific_configs },
+        (
+            Ok(BroadcastIsochronousStream {
+                bis_index,
+                codec_specific_config: codec_specific_configs,
+            }),
             idx,
-        ))
+        )
     }
 }
 
@@ -280,8 +318,8 @@ mod tests {
 
     use std::collections::HashSet;
 
-    use bt_common::generic_audio::codec_configuration::{FrameDuration, SamplingFrequency};
     use bt_common::generic_audio::AudioLocation;
+    use bt_common::generic_audio::codec_configuration::{FrameDuration, SamplingFrequency};
 
     #[test]
     fn broadcast_id() {
@@ -297,8 +335,8 @@ mod tests {
         let bytes = vec![0x0C, 0x0B, 0x0A];
         assert_eq!(buf, bytes);
 
-        let (got, bytes) = BroadcastId::decode(&bytes).expect("should succeed");
-        assert_eq!(got, id);
+        let (got, bytes) = BroadcastId::decode(&bytes);
+        assert_eq!(got, Ok(id));
         assert_eq!(bytes, BroadcastId::BYTE_SIZE);
         let got = BroadcastId::try_from(u32::from_le_bytes([0x0C, 0x0B, 0x0A, 0x00]))
             .expect("should succeed");
@@ -310,15 +348,15 @@ mod tests {
         let bytes = vec![0x0C, 0x0B, 0x0A];
         let broadcast_id = BroadcastId::try_from(0x000A0B0C).unwrap();
 
-        let (got, consumed) = BroadcastAudioAnnouncement::decode(&bytes).expect("should succeed");
-        assert_eq!(got, BroadcastAudioAnnouncement { broadcast_id });
+        let (got, consumed) = BroadcastAudioAnnouncement::decode(&bytes);
+        assert_eq!(got, Ok(BroadcastAudioAnnouncement { broadcast_id }));
         assert_eq!(consumed, 3);
 
         let bytes = vec![
             0x0C, 0x0B, 0x0A, 0x01, 0x02, 0x03, 0x04, 0x05, /* some other additional data */
         ];
-        let (got, consumed) = BroadcastAudioAnnouncement::decode(&bytes).expect("should succeed");
-        assert_eq!(got, BroadcastAudioAnnouncement { broadcast_id });
+        let (got, consumed) = BroadcastAudioAnnouncement::decode(&bytes);
+        assert_eq!(got, Ok(BroadcastAudioAnnouncement { broadcast_id }));
         assert_eq!(consumed, 8);
     }
 
@@ -331,11 +369,10 @@ mod tests {
             0x05, 0x03, 0x03, 0x00, 0x00, 0x0C,  // audio location LTV
         ];
 
-        let (bis, _read_bytes) =
-            BroadcastIsochronousStream::decode(&buf[..]).expect("should not fail");
+        let (bis, _read_bytes) = BroadcastIsochronousStream::decode(&buf[..]);
         assert_eq!(
             bis,
-            BroadcastIsochronousStream {
+            Ok(BroadcastIsochronousStream {
                 bis_index: 0x01,
                 codec_specific_config: vec![
                     CodecConfiguration::SamplingFrequency(SamplingFrequency::F32000Hz),
@@ -346,7 +383,7 @@ mod tests {
                         AudioLocation::RightSurround
                     ])),
                 ],
-            }
+            })
         );
     }
 
@@ -361,8 +398,7 @@ mod tests {
             0x02, 0x03, 0x02, 0x02, 0x01,         // bis index, codec specific config len, frame duration LTV (bis #2)
         ];
 
-        let (big, _read_bytes) =
-            BroadcastIsochronousGroup::decode(&buf[..]).expect("should not fail");
+        let big = BroadcastIsochronousGroup::decode(&buf[..]).0.expect("should not fail");
         assert_eq!(
             big,
             BroadcastIsochronousGroup {
@@ -397,8 +433,7 @@ mod tests {
             0x01, 0x03, 0x02, 0x05, 0x08,         // bis index, codec specific config len, codec frame blocks LTV (big #2 / bis #2)
         ];
 
-        let (base, _read_bytes) =
-            BroadcastAudioSourceEndpoint::decode(&buf[..]).expect("should not fail");
+        let base = BroadcastAudioSourceEndpoint::decode(&buf[..]).0.expect("should not fail");
         assert_eq!(base.presentation_delay_ms, 0x00302010);
         assert_eq!(base.big.len(), 2);
         assert_eq!(
@@ -449,8 +484,8 @@ mod tests {
             0x06,  // codec_specific_configuration_length of the 2nd BIS
             0x05, 0x03, 0x02, 0x00, 0x00, 0x00,  // front right audio channel
         ];
-        let (base, read_bytes) =
-            BroadcastAudioSourceEndpoint::decode(&buf[..]).expect("should not fail");
+        let (base, read_bytes) = BroadcastAudioSourceEndpoint::decode(&buf[..]);
+        let base = base.expect("should not fail");
         assert_eq!(read_bytes, buf.len());
         assert_eq!(base.presentation_delay_ms, 20000);
         assert_eq!(base.big.len(), 1);
@@ -473,8 +508,8 @@ mod tests {
             0x03,  // codec_specific_configuration_length of the 1st BIS
             0x02, 0x01, 0x05,  // sampling frequency 24 kHz
         ];
-        let (base, read_bytes) =
-            BroadcastAudioSourceEndpoint::decode(&buf[..]).expect("should not fail");
+        let (base, read_bytes) = BroadcastAudioSourceEndpoint::decode(&buf[..]);
+        let base = base.expect("should not fail");
         assert_eq!(read_bytes, buf.len());
         assert_eq!(base.presentation_delay_ms, 20000);
         assert_eq!(base.big.len(), 1);

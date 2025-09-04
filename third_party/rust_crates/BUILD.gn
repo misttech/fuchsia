@@ -127,6 +127,18 @@ group("bstr") {
   public_deps = [ ":bstr-v1_5_0" ]
 }
 
+group("bt-bap") {
+  public_deps = [ ":bt-bap-v0_0_1" ]
+}
+
+group("bt-bass") {
+  public_deps = [ ":bt-bass-v0_0_1" ]
+}
+
+group("bt-broadcast-assistant") {
+  public_deps = [ ":bt-broadcast-assistant-v0_0_1" ]
+}
+
 group("bt-common") {
   public_deps = [ ":bt-common-v0_0_1" ]
 }
@@ -3132,6 +3144,116 @@ rustc_library("bstr-v1_5_0") {
   applicable_licenses = [ ":bstr-v1_5_0.license" ]
 }
 
+license("bt-bap-v0_0_1.license") {
+  public_package_name = "bt_bap"
+  license_files = [ "//third_party/rust_crates/forks/bluetooth/bt-bap/LICENSE" ]
+}
+
+rustc_library("bt-bap-v0_0_1") {
+  crate_name = "bt_bap"
+  source_root = "//third_party/rust_crates/forks/bluetooth/bt-bap/src/lib.rs"
+  output_name = "bt_bap-46980e5854de5c7e"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":bt-common-v0_0_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=46980e5854de5c7e",
+    "-Cextra-filename=-46980e5854de5c7e",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":bt-bap-v0_0_1.license" ]
+}
+
+license("bt-bass-v0_0_1.license") {
+  public_package_name = "bt_bass"
+  license_files =
+      [ "//third_party/rust_crates/forks/bluetooth/bt-bass/LICENSE" ]
+}
+
+rustc_library("bt-bass-v0_0_1") {
+  crate_name = "bt_bass"
+  source_root = "//third_party/rust_crates/forks/bluetooth/bt-bass/src/lib.rs"
+  output_name = "bt_bass-33851d730b4a29e9"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":bt-bap-v0_0_1" ]
+  deps += [ ":bt-common-v0_0_1" ]
+  deps += [ ":bt-gatt-v0_0_1" ]
+  deps += [ ":futures-v0_3_31" ]
+  deps += [ ":log-v0_4_27" ]
+  deps += [ ":parking_lot-v0_12_4" ]
+  deps += [ ":thiserror-v2_0_12" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=33851d730b4a29e9",
+    "-Cextra-filename=-33851d730b4a29e9",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"test-utils\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":bt-bass-v0_0_1.license" ]
+}
+
+license("bt-broadcast-assistant-v0_0_1.license") {
+  public_package_name = "bt_broadcast_assistant"
+  license_files = [
+    "//third_party/rust_crates/forks/bluetooth/bt-broadcast-assistant/LICENSE",
+  ]
+}
+
+rustc_library("bt-broadcast-assistant-v0_0_1") {
+  crate_name = "bt_broadcast_assistant"
+  source_root = "//third_party/rust_crates/forks/bluetooth/bt-broadcast-assistant/src/lib.rs"
+  output_name = "bt_broadcast_assistant-e9a9556275641351"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":bt-bap-v0_0_1" ]
+  deps += [ ":bt-bass-v0_0_1" ]
+  deps += [ ":bt-common-v0_0_1" ]
+  deps += [ ":bt-gatt-v0_0_1" ]
+  deps += [ ":futures-v0_3_31" ]
+  deps += [ ":num-v0_4_3" ]
+  deps += [ ":parking_lot-v0_12_4" ]
+  deps += [ ":thiserror-v2_0_12" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=e9a9556275641351",
+    "-Cextra-filename=-e9a9556275641351",
+    "--cfg=feature=\"debug\"",
+    "--cfg=feature=\"default\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":bt-broadcast-assistant-v0_0_1.license" ]
+}
+
 license("bt-common-v0_0_1.license") {
   public_package_name = "bt_common"
   license_files =
@@ -3194,6 +3316,7 @@ rustc_library("bt-gatt-v0_0_1") {
     "-Cmetadata=fc064e97b0828fb3",
     "-Cextra-filename=-fc064e97b0828fb3",
     "--cfg=feature=\"default\"",
+    "--cfg=feature=\"test-utils\"",
   ]
 
   visibility = [ ":*" ]
@@ -3220,6 +3343,8 @@ rustc_library("bt-pacs-v0_0_1") {
   deps += [ ":bt-common-v0_0_1" ]
   deps += [ ":bt-gatt-v0_0_1" ]
   deps += [ ":futures-v0_3_31" ]
+  deps += [ ":pin-project-v1_0_11" ]
+  deps += [ ":thiserror-v2_0_12" ]
 
   rustenv = []
 

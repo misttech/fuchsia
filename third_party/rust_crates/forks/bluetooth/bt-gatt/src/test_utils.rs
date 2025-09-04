@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use bt_common::core::{Address, AddressType};
-use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use futures::future::{ready, Ready};
 use futures::Stream;
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
+use futures::future::{Ready, ready};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use crate::client::CharacteristicNotification;
 use crate::periodic_advertising::{PeriodicAdvertising, SyncReport};
 use crate::pii::GetPeerAddr;
 use crate::server::{self, LocalService, ReadResponder, ServiceDefinition, WriteResponder};
-use crate::{types::*, GattTypes, ServerTypes};
+use crate::{GattTypes, ServerTypes, types::*};
 
 #[derive(Default)]
 struct FakePeerServiceInner {
@@ -362,6 +362,7 @@ impl crate::Central<FakeTypes> for FakeCentral {
     }
 }
 
+#[derive(Debug)]
 pub enum FakeServerEvent {
     ReadResponded {
         service_id: server::ServiceId,
@@ -403,7 +404,7 @@ struct FakeServerInner {
     sender: UnboundedSender<FakeServerEvent>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FakeServer {
     inner: Arc<Mutex<FakeServerInner>>,
 }

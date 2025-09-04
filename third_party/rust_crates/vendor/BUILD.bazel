@@ -367,6 +367,42 @@ alias(
 )
 
 alias(
+    name = "bt-bap-0.0.1",
+    actual = "//third_party/rust_crates/vendor/bt-bap-0.0.1:bt_bap",
+    tags = ["manual"],
+)
+
+alias(
+    name = "bt-bap",
+    actual = "//third_party/rust_crates/vendor/bt-bap-0.0.1:bt_bap",
+    tags = ["manual"],
+)
+
+alias(
+    name = "bt-bass-0.0.1",
+    actual = "//third_party/rust_crates/vendor/bt-bass-0.0.1:bt_bass",
+    tags = ["manual"],
+)
+
+alias(
+    name = "bt-bass",
+    actual = "//third_party/rust_crates/vendor/bt-bass-0.0.1:bt_bass",
+    tags = ["manual"],
+)
+
+alias(
+    name = "bt-broadcast-assistant-0.0.1",
+    actual = "//third_party/rust_crates/vendor/bt-broadcast-assistant-0.0.1:bt_broadcast_assistant",
+    tags = ["manual"],
+)
+
+alias(
+    name = "bt-broadcast-assistant",
+    actual = "//third_party/rust_crates/vendor/bt-broadcast-assistant-0.0.1:bt_broadcast_assistant",
+    tags = ["manual"],
+)
+
+alias(
     name = "bt-common-0.0.1",
     actual = "//third_party/rust_crates/vendor/bt-common-0.0.1:bt_common",
     tags = ["manual"],

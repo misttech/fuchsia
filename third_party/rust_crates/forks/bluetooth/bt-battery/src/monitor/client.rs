@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use bt_common::packet_encoding::Decodable;
+use bt_gatt::GattTypes;
 use bt_gatt::client::{CharacteristicNotification, PeerService, ServiceCharacteristic};
 use bt_gatt::types::{CharacteristicProperty, Error as GattLibraryError, Handle};
-use bt_gatt::GattTypes;
 use futures::stream::{BoxStream, FusedStream, SelectAll, Stream, StreamExt};
 use std::task::Poll;
 
 use crate::error::{Error, ServiceError};
-use crate::types::{BatteryLevel, BATTERY_LEVEL_UUID, READ_CHARACTERISTIC_BUFFER_SIZE};
+use crate::types::{BATTERY_LEVEL_UUID, BatteryLevel, READ_CHARACTERISTIC_BUFFER_SIZE};
 
 /// Represents the termination status of a Stream.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -70,9 +70,8 @@ impl Stream for BatteryMonitorEventStream {
         let result = futures::ready!(self.notification_streams.poll_next_unpin(cx));
         match result {
             Some(Ok(notification)) => {
-                let battery_level_result =
-                    BatteryLevel::decode(&notification.value[..]).map(|r| r.0).map_err(Into::into);
-                Poll::Ready(Some(battery_level_result))
+                let battery_level_result = BatteryLevel::decode(&notification.value[..]).0?;
+                Poll::Ready(Some(Ok(battery_level_result)))
             }
             Some(Err(e)) => {
                 // GATT Errors are not fatal and will be relayed to the stream.
@@ -151,8 +150,9 @@ impl<T: GattTypes> BatteryMonitorClient<T> {
         let (battery_level, _decoded_bytes) = {
             let mut buf = vec![0; READ_CHARACTERISTIC_BUFFER_SIZE];
             let read_bytes = primary_battery_level_characteristic.read(&mut buf[..]).await?;
-            BatteryLevel::decode(&buf[0..read_bytes])?
+            BatteryLevel::decode(&buf[0..read_bytes])
         };
+        let battery_level = battery_level?;
 
         // Subscribe to notifications on the battery level characteristic if it
         // is supported.
@@ -199,13 +199,13 @@ impl<T: GattTypes> BatteryMonitorClient<T> {
 pub(crate) mod tests {
     use super::*;
 
-    use bt_common::packet_encoding::Error as PacketError;
     use bt_common::Uuid;
+    use bt_common::packet_encoding::Error as PacketError;
     use bt_gatt::test_utils::{FakeClient, FakePeerService, FakeTypes};
     use bt_gatt::types::{
         AttributePermissions, Characteristic, CharacteristicProperties, GattError,
     };
-    use futures::{pin_mut, FutureExt};
+    use futures::{FutureExt, pin_mut};
 
     pub(crate) const BATTERY_LEVEL_HANDLE: Handle = Handle(0x1);
     pub(crate) fn fake_battery_service(battery_level: u8) -> FakePeerService {

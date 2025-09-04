@@ -260,6 +260,21 @@ impl std::ops::BitOr<CharacteristicProperty> for CharacteristicProperties {
     }
 }
 
+impl CharacteristicProperties {
+    pub fn is_disjoint(&self, other: &Self) -> bool {
+        for property in self.0.iter() {
+            if other.0.contains(&property) {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn contains(&self, property: CharacteristicProperty) -> bool {
+        self.0.contains(&property)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SecurityLevels {
     /// Encryption is required / provided
@@ -276,6 +291,10 @@ impl SecurityLevels {
             && (!self.authentication || provided.authentication)
             && (!self.authorization || provided.encryption)
     }
+
+    pub const fn encryption_required() -> Self {
+        Self { encryption: true, authentication: false, authorization: false }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -289,6 +308,17 @@ pub struct AttributePermissions {
     /// If None, then this cannot be updated. Otherwise the SecurityLevels given
     /// are required to update.
     pub update: Option<SecurityLevels>,
+}
+
+impl AttributePermissions {
+    pub fn with_levels(properties: &CharacteristicProperties, levels: &SecurityLevels) -> Self {
+        let notify_properties = CharacteristicProperty::Notify | CharacteristicProperty::Indicate;
+        Self {
+            read: properties.contains(CharacteristicProperty::Read).then_some(levels.clone()),
+            write: properties.contains(CharacteristicProperty::Write).then_some(levels.clone()),
+            update: (!properties.is_disjoint(&notify_properties)).then_some(levels.clone()),
+        }
+    }
 }
 
 /// The different types of well-known Descriptors are defined here and should be

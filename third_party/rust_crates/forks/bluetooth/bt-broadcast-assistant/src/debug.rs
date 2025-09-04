@@ -5,20 +5,26 @@
 use bt_bap::types::BroadcastId;
 use bt_bass::client::error::Error as BassClientError;
 use bt_bass::client::event::Event as BassEvent;
-use bt_bass::client::BigToBisSync;
-use bt_bass::types::PaSync;
+use bt_bass::types::{BisSync, PaSync, SubgroupIndex};
+
+#[cfg(any(test, feature = "debug"))]
+use bt_common::core::ltv::LtValue;
+#[cfg(any(test, feature = "debug"))]
+use bt_common::core::{AddressType, AdvertisingSetId};
 use bt_common::debug_command::CommandRunner;
 use bt_common::debug_command::CommandSet;
 use bt_common::gen_commandset;
+#[cfg(any(test, feature = "debug"))]
+use bt_common::generic_audio::metadata_ltv::Metadata;
 use bt_common::PeerId;
 use bt_gatt::pii::GetPeerAddr;
+use std::collections::HashMap;
 
 use futures::stream::FusedStream;
 use futures::Future;
 use futures::Stream;
 use num::Num;
 use parking_lot::Mutex;
-use std::collections::HashSet;
 use std::num::ParseIntError;
 use std::sync::Arc;
 
@@ -33,13 +39,13 @@ gen_commandset! {
         Connect = ("connect", [], ["peer_id"], "Attempt connection to scan delegator"),
         Disconnect = ("disconnect", [], [], "Disconnect from connected scan delegator"),
         SendBroadcastCode = ("set-broadcast-code", [], ["broadcast_id", "broadcast_code"], "Attempt to send decryption key for a particular broadcast source to the scan delegator"),
-        AddBroadcastSource = ("add-broadcast-source", [], ["broadcast_source_pid", "pa_sync", "[bis_sync]"], "Attempt to add a particular broadcast source to the scan delegator"),
-        UpdatePaSync = ("update-pa-sync", [], ["broadcast_id", "pa_sync", "[bis_sync]"], "Attempt to update the scan delegator's desired pa sync to a particular broadcast source"),
+        AddBroadcastSource = ("add-broadcast-source", [], ["broadcast_source_pid", "PaSyncOff|PaSyncPast|PaSyncNoPast", "[bis_sync]"], "Attempt to add a particular broadcast source to the scan delegator"),
+        UpdatePaSync = ("update-pa-sync", [], ["broadcast_id", "PaSyncOff|PaSyncPast|PaSyncNoPast", "[bis_sync]"], "Attempt to update the scan delegator's desired pa sync to a particular broadcast source"),
         RemoveBroadcastSource = ("remove-broadcast-source", [], ["broadcast_id"], "Attempt to remove a particular broadcast source to the scan delegator"),
         RemoteScanStarted = ("inform-scan-started", [], [], "Inform the scan delegator that we have started scanning on behalf of it"),
         RemoteScanStopped = ("inform-scan-stopped", [], [], "Inform the scan delegator that we have stopped scanning on behalf of it"),
         // TODO(http://b/433285146): Once PA scanning is implemented, remove bottom 3 commands.
-        ForceDiscoverBroadcastSource = ("force-discover-broadcast-source", [], ["broadcast_source_pid", "address", "address_type", "advertising_sid"], "Force the broadcast assistant to become aware of the provided broadcast source"),
+        ForceDiscoverBroadcastSource = ("force-discover-broadcast-source", [], ["broadcast_source_pid", "address", "Public|Random", "advertising_sid"], "Force the broadcast assistant to become aware of the provided broadcast source"),
         ForceDiscoverSourceMetadata = ("force-discover-source-metadata", [], ["broadcast_source_pid", "comma_separated_raw_metadata"], "Force the broadcast assistant to become aware of the provided metadata, each BIG's metadata is comma separated"),
         ForceDiscoverEmptySourceMetadata = ("force-discover-empty-source-metadata", [], ["broadcast_source_pid", "num_big"], "Force the broadcast assistant to become aware of the provided empty metadata, as many as # BIGs specified"),
     }
@@ -48,7 +54,6 @@ gen_commandset! {
 pub struct AssistantDebug<T: bt_gatt::GattTypes, R: GetPeerAddr> {
     assistant: BroadcastAssistant<T>,
     connected_peer: Mutex<Option<Arc<Peer<T>>>>,
-    started: bool,
     peer_addr_getter: R,
 }
 
@@ -60,18 +65,16 @@ impl<T: bt_gatt::GattTypes + 'static, R: GetPeerAddr> AssistantDebug<T, R> {
         Self {
             assistant: BroadcastAssistant::<T>::new(central),
             connected_peer: Mutex::new(None),
-            started: false,
             peer_addr_getter,
         }
     }
 
     pub fn start(&mut self) -> Result<EventStream<T>, Error> {
         let event_stream = self.assistant.start()?;
-        self.started = true;
         Ok(event_stream)
     }
 
-    pub fn look_for_scan_delegators(&mut self) -> T::ScanResultStream {
+    pub fn look_for_scan_delegators(&mut self) -> Result<T::ScanResultStream, Error> {
         self.assistant.scan_for_scan_delegators()
     }
 
@@ -118,7 +121,7 @@ where
     }
 }
 
-fn parse_peer_id(input: &str) -> Result<PeerId, String> {
+pub fn parse_peer_id(input: &str) -> Result<PeerId, String> {
     let raw_id = match parse_int(input) {
         Err(_) => return Err(format!("falied to parse int from {input}")),
         Ok(i) => i,
@@ -128,12 +131,14 @@ fn parse_peer_id(input: &str) -> Result<PeerId, String> {
 }
 
 #[cfg(any(test, feature = "debug"))]
-fn parse_bd_addr(input: &str) -> Result<[u8; 6], String> {
-    let tokens: Vec<u8> =
+/// Returns the bd address in little endian ordering.
+pub fn parse_bd_addr(input: &str) -> Result<[u8; 6], String> {
+    let mut tokens: Vec<u8> =
         input.split(':').map(|t| u8::from_str_radix(t, 16)).filter_map(Result::ok).collect();
     if tokens.len() != 6 {
         return Err(format!("failed to parse bd address from {input}"));
     }
+    tokens.reverse();
     tokens.try_into().map_err(|e| format!("{e:?}"))
 }
 
@@ -145,17 +150,30 @@ fn parse_broadcast_id(input: &str) -> Result<BroadcastId, String> {
     raw_id.try_into().map_err(|e| format!("{e:?}"))
 }
 
-fn parse_bis_sync(input: &str) -> BigToBisSync {
-    input.split(',').filter_map(|t| {
+fn parse_bis_sync(input: &str) -> HashMap<SubgroupIndex, BisSync> {
+    let mut map = HashMap::new();
+    for t in input.split(',') {
         let parts: Vec<_> = t.split('-').collect();
         if parts.len() != 2 {
-            eprintln!("invalid big-bis sync info {t}. should be in <Ith_BIG>-<BIS_INDEX> format, will be ignored");
-            return None;
+            eprintln!(
+                "invalid big-bis sync info {t}. should be in <Ith_BIG>-<BIS_INDEX> format, will be ignored"
+            );
+            continue;
         }
-        let ith_big = parse_int(parts[0]).ok()?;
-        let bis_index = parse_int(parts[1]).ok()?;
-        Some((ith_big, bis_index))
-    }).collect()
+        let Ok(ith_big) = parse_int(parts[0]) else {
+            eprintln!("Failed to parse big index from '{}', ignoring.", parts[0]);
+            continue;
+        };
+        let Ok(bis_index) = parse_int::<u8>(parts[1]) else {
+            eprintln!("Failed to parse bis index from '{}', ignoring.", parts[1]);
+            continue;
+        };
+        let entry = map.entry(ith_big).or_insert(BisSync::no_sync());
+        if let Err(e) = entry.synchronize_to_index(bis_index) {
+            eprintln!("Invalid BIS index: {e:?}");
+        }
+    }
+    map
 }
 
 impl<T: bt_gatt::GattTypes + 'static, R: GetPeerAddr> CommandRunner for AssistantDebug<T, R>
@@ -249,18 +267,16 @@ where
                         return Ok(());
                     };
 
-                    let pa_sync = match parse_int::<u8>(&args[1]) {
-                        Ok(raw_val) if PaSync::try_from(raw_val).is_ok() => {
-                            PaSync::try_from(raw_val).unwrap()
-                        }
-                        _ => {
-                            eprintln!("invalid pa_sync: {}", args[1]);
+                    let pa_sync: PaSync = match args[1].parse() {
+                        Ok(sync) => sync,
+                        Err(e) => {
+                            eprintln!("invalid pa_sync: {e:?}");
                             return Ok(());
                         }
                     };
 
                     let bis_sync =
-                        if args.len() == 3 { parse_bis_sync(&args[2]) } else { HashSet::new() };
+                        if args.len() == 3 { parse_bis_sync(&args[2]) } else { HashMap::new() };
 
                     self.with_peer(|peer| async move {
                         peer.add_broadcast_source(
@@ -284,18 +300,16 @@ where
                         return Ok(());
                     };
 
-                    let pa_sync = match parse_int::<u8>(&args[1]) {
-                        Ok(raw_val) if PaSync::try_from(raw_val).is_ok() => {
-                            PaSync::try_from(raw_val).unwrap()
-                        }
-                        _ => {
-                            eprintln!("invalid pa_sync: {}", args[1]);
+                    let pa_sync: PaSync = match args[1].parse() {
+                        Ok(sync) => sync,
+                        Err(e) => {
+                            eprintln!("invalid pa_sync: {e:?}");
                             return Ok(());
                         }
                     };
 
                     let bis_sync =
-                        if args.len() == 3 { parse_bis_sync(&args[2]) } else { HashSet::new() };
+                        if args.len() == 3 { parse_bis_sync(&args[2]) } else { HashMap::new() };
 
                     self.with_peer(|peer| async move {
                         peer.update_broadcast_source_sync(broadcast_id, pa_sync, bis_sync).await
@@ -319,8 +333,10 @@ where
                     .await;
                 }
                 AssistantCmd::RemoteScanStarted => {
-                    self.with_peer(|peer| async move { peer.inform_remote_scan_started().await })
-                        .await;
+                    self.with_peer(|peer: Arc<Peer<T>>| async move {
+                        peer.inform_remote_scan_started().await
+                    })
+                    .await;
                 }
                 AssistantCmd::RemoteScanStopped => {
                     self.with_peer(|peer| async move { peer.inform_remote_scan_stopped().await })
@@ -346,21 +362,25 @@ where
                         return Ok(());
                     };
 
-                    let Ok(raw_addr_type) = parse_int::<u8>(&args[2]) else {
-                        eprintln!("invalid address type: {}", args[2]);
-                        return Ok(());
+                    let address_type: AddressType = match args[2].parse() {
+                        Ok(t) => t,
+                        Err(e) => {
+                            eprintln!("invalid address type: {e:?}");
+                            return Ok(());
+                        }
                     };
 
                     let Ok(raw_ad_sid) = parse_int::<u8>(&args[3]) else {
                         eprintln!("invalid advertising sid: {}", args[3]);
                         return Ok(());
                     };
+                    let advertising_sid = AdvertisingSetId(raw_ad_sid);
 
                     match self.assistant.force_discover_broadcast_source(
                         peer_id,
                         address,
-                        raw_addr_type,
-                        raw_ad_sid,
+                        address_type,
+                        advertising_sid,
                     ) {
                         Ok(source) => {
                             eprintln!("broadcast source after additional info: {source:?}")
@@ -385,19 +405,32 @@ where
                         return Ok(());
                     };
 
-                    let mut raw_metadata = Vec::new();
+                    let mut all_big_metadata = Vec::new();
                     for i in 1..args.len() {
-                        let ith_metadata: Vec<u8> = args[i]
+                        let raw_metadata: Vec<u8> = args[i]
                             .split(',')
                             .map(|t| parse_int(t))
                             .filter_map(Result::ok)
                             .collect();
-                        raw_metadata.push(ith_metadata);
+
+                        if raw_metadata.len() > 0 {
+                            let (decoded_metadata, consumed_len) =
+                                Metadata::decode_all(raw_metadata.as_slice());
+                            if consumed_len != raw_metadata.len() {
+                                eprintln!("Metadata length is not valid");
+                                return Ok(());
+                            }
+                            all_big_metadata.push(
+                                decoded_metadata.into_iter().filter_map(Result::ok).collect(),
+                            );
+                        } else {
+                            all_big_metadata.push(vec![]);
+                        }
                     }
 
                     match self
                         .assistant
-                        .force_discover_broadcast_source_metadata(peer_id, raw_metadata)
+                        .force_discover_broadcast_source_metadata(peer_id, all_big_metadata)
                     {
                         Ok(source) => eprintln!("broadcast source with metadata: {source:?}"),
                         Err(e) => eprintln!("failed to enter in broadcast source metadata: {e:?}"),
@@ -423,14 +456,14 @@ where
                         return Ok(());
                     };
 
-                    let mut raw_metadata = Vec::new();
+                    let mut all_big_metadata = Vec::new();
                     for _i in 0..num_big {
-                        raw_metadata.push(vec![]);
+                        all_big_metadata.push(vec![]);
                     }
 
                     match self
                         .assistant
-                        .force_discover_broadcast_source_metadata(peer_id, raw_metadata)
+                        .force_discover_broadcast_source_metadata(peer_id, all_big_metadata)
                     {
                         Ok(source) => eprintln!("broadcast source with metadata: {source:?}"),
                         Err(e) => {
@@ -465,7 +498,7 @@ mod tests {
     fn test_parse_bd_addr() {
         assert_eq!(
             parse_bd_addr("3c:80:f1:ed:32:2c").expect("should be ok"),
-            [0x3c, 0x80, 0xf1, 0xed, 0x32, 0x2c]
+            [0x2c, 0x32, 0xed, 0xf1, 0x80, 0x3c]
         );
         // Address with 5 parts is invalid.
         let _ = parse_bd_addr("3c:80:f1:ed:32").expect_err("should fail");
@@ -492,16 +525,14 @@ mod tests {
     #[test]
     fn test_parse_bis_sync() {
         let bis_sync = parse_bis_sync("0-1,0-2,1-1");
-        assert_eq!(bis_sync.len(), 3);
-        bis_sync.contains(&(0, 1));
-        bis_sync.contains(&(0, 2));
-        bis_sync.contains(&(1, 1));
+        assert_eq!(bis_sync.len(), 2);
+        assert_eq!(bis_sync.get(&0), Some(&BisSync::sync(vec![1, 2]).unwrap()));
+        assert_eq!(bis_sync.get(&1), Some(&BisSync::sync(vec![1]).unwrap()));
 
         // Will ignore invalid values.
         let bis_sync = parse_bis_sync("0-1,0-2,1:1,1-1-1,");
-        assert_eq!(bis_sync.len(), 2);
-        bis_sync.contains(&(0, 1));
-        bis_sync.contains(&(0, 2));
+        assert_eq!(bis_sync.len(), 1);
+        assert_eq!(bis_sync.get(&0), Some(&BisSync::sync(vec![1, 2]).unwrap()));
 
         let bis_sync = parse_bis_sync("hellothisistoallynotvalid");
         assert_eq!(bis_sync.len(), 0);

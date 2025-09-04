@@ -54,21 +54,15 @@ pub trait LtValue: Sized {
                 return (results, std::cmp::min(buf.len(), total_consumed));
             }
             let indicated_len = buf[total_consumed] as usize;
-            match Self::decode(&buf[total_consumed..=total_consumed + indicated_len]) {
-                Ok((item, consumed)) => {
+            let range_end = std::cmp::min(buf.len() - 1, total_consumed + indicated_len);
+            match Self::decode(&buf[total_consumed..=range_end]) {
+                (Ok(item), consumed) => {
                     results.push(Ok(item));
                     total_consumed += consumed;
                 }
-                // If we are missing the type / length completely, or missing some of the data, we
-                // can't continue
-                Err(e @ Error::MissingType) | Err(e @ Error::MissingData(_)) => {
+                (Err(e), consumed) => {
                     results.push(Err(e));
-                    return (results, total_consumed);
-                }
-                Err(e) => {
-                    results.push(Err(e));
-                    // Consume the bytes
-                    total_consumed += indicated_len + 1;
+                    total_consumed += consumed;
                 }
             }
         }
@@ -134,28 +128,36 @@ impl<T: LtValue> Encodable for T {
     }
 }
 
-impl<T: LtValue> Decodable for T {
+impl<T> Decodable for T
+where
+    T: LtValue,
+{
     type Error = Error<T::Type>;
 
-    fn decode(buf: &[u8]) -> core::result::Result<(Self, usize), Self::Error> {
+    fn decode(buf: &[u8]) -> (core::result::Result<Self, Self::Error>, usize) {
         if buf.len() < 2 {
-            return Err(Error::MissingType);
+            return (Err(Error::MissingType), buf.len());
         }
         let indicated_len = buf[0] as usize;
+        let too_short = buf.len() < indicated_len + 1;
+
         let Some(ty) = Self::type_from_octet(buf[1]) else {
-            return Err(Error::UnrecognizedType(Self::NAME.to_owned(), buf[1]));
+            return (
+                Err(Error::UnrecognizedType(Self::NAME.to_owned(), buf[1])),
+                if too_short { buf.len() } else { indicated_len + 1 },
+            );
         };
-        if buf.len() < indicated_len + 1 {
-            return Err(Error::MissingData(ty));
+        if too_short {
+            return (Err(Error::MissingData(ty)), buf.len());
         }
         let size_range = Self::length_range_from_type(ty);
         let remaining_len = (buf.len() - 1) as u8;
         if !size_range.contains(&remaining_len) {
-            return Err(Error::LengthOutOfRange(remaining_len, ty, size_range));
+            return (Err(Error::LengthOutOfRange(remaining_len, ty, size_range)), buf.len());
         }
         match Self::decode_value(&ty, &buf[2..=indicated_len]) {
-            Err(e) => Err(Error::TypeFailedToDecode(ty, e)),
-            Ok(s) => Ok((s, indicated_len + 1)),
+            Err(e) => (Err(Error::TypeFailedToDecode(ty, e)), indicated_len + 1),
+            Ok(s) => (Ok(s), indicated_len + 1),
         }
     }
 }
@@ -301,6 +303,15 @@ mod tests {
         assert_eq!(consumed, encoded.len());
         assert_eq!(decoded[0], Ok(TestValues::TwoBytes(4097)));
         assert_eq!(decoded[1], Err(Error::UnrecognizedType("TestValues".to_owned(), 6)));
+    }
+
+    #[test]
+    fn decode_wronglength() {
+        let encoded = [0x03, 0x02, 0x10, 0x01, 0x04, 0x03, 0x10, 0x01];
+        let (decoded, consumed) = TestValues::decode_all(&encoded);
+        assert_eq!(consumed, encoded.len());
+        assert_eq!(decoded[0], Ok(TestValues::TwoBytes(4097)));
+        assert_eq!(decoded[1], Err(Error::MissingData(TestType::TwoBytesLittleEndian)));
     }
 
     #[test]

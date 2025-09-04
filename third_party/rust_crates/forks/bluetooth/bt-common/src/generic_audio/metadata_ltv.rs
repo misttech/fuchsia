@@ -4,7 +4,7 @@
 
 use crate::core::ltv::LtValue;
 use crate::packet_encoding::Error as PacketError;
-use crate::{decodable_enum, CompanyId};
+use crate::{CompanyId, decodable_enum};
 
 use crate::generic_audio::ContextType;
 
@@ -286,9 +286,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = Metadata::decode(&buf).expect("should succeed");
-        assert_eq!(decoded.0, test);
-        assert_eq!(decoded.1, 4);
+        let (decoded, len) = Metadata::decode(&buf);
+        assert_eq!(decoded, Ok(test));
+        assert_eq!(len, 4);
     }
 
     #[test]
@@ -304,9 +304,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = Metadata::decode(&buf).expect("should succeed");
-        assert_eq!(decoded.0, test);
-        assert_eq!(decoded.1, 4);
+        let (decoded, len) = Metadata::decode(&buf);
+        assert_eq!(decoded, Ok(test));
+        assert_eq!(len, 4);
     }
 
     #[test]
@@ -321,9 +321,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = Metadata::decode(&buf).expect("should succeed");
-        assert_eq!(decoded.0, test);
-        assert_eq!(decoded.1, 3);
+        let (decoded, len) = Metadata::decode(&buf);
+        assert_eq!(decoded, Ok(test));
+        assert_eq!(len, 3);
     }
 
     #[test]
@@ -338,9 +338,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = Metadata::decode(&buf).expect("should succeed");
-        assert_eq!(decoded.0, test);
-        assert_eq!(decoded.1, 5);
+        let (decoded, len) = Metadata::decode(&buf);
+        assert_eq!(decoded, Ok(test));
+        assert_eq!(len, 5);
     }
 
     #[test]
@@ -355,9 +355,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = Metadata::decode(&buf).expect("should succeed");
-        assert_eq!(decoded.0, test);
-        assert_eq!(decoded.1, 4);
+        let (decoded, len) = Metadata::decode(&buf);
+        assert_eq!(decoded, Ok(test));
+        assert_eq!(len, 4);
     }
 
     #[test]
@@ -372,9 +372,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = Metadata::decode(&buf).expect("should succeed");
-        assert_eq!(decoded.0, test);
-        assert_eq!(decoded.1, 3);
+        let (decoded, len) = Metadata::decode(&buf);
+        assert_eq!(decoded, Ok(test));
+        assert_eq!(len, 3);
     }
 
     #[test]
@@ -389,9 +389,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = Metadata::decode(&buf).expect("should succeed");
-        assert_eq!(decoded.0, test);
-        assert_eq!(decoded.1, 6);
+        let (decoded, len) = Metadata::decode(&buf);
+        assert_eq!(decoded, Ok(test));
+        assert_eq!(len, 6);
     }
 
     #[test]
@@ -406,9 +406,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = Metadata::decode(&buf).expect("should succeed");
-        assert_eq!(decoded.0, test);
-        assert_eq!(decoded.1, 3);
+        let (decoded, len) = Metadata::decode(&buf);
+        assert_eq!(decoded, Ok(test));
+        assert_eq!(len, 3);
     }
 
     #[test]
@@ -423,9 +423,9 @@ mod tests {
         assert_eq!(buf, bytes);
 
         // Decoding.
-        let decoded = Metadata::decode(&buf).expect("should succeed");
-        assert_eq!(decoded.0, test);
-        assert_eq!(decoded.1, 2);
+        let (decoded, len) = Metadata::decode(&buf);
+        assert_eq!(decoded, Ok(test));
+        assert_eq!(len, 2);
     }
 
     #[test]
@@ -437,15 +437,15 @@ mod tests {
 
         // Not enough length for Length and Type for decoding.
         let buf = vec![0x03];
-        let _ = Metadata::decode(&buf).expect_err("should fail");
+        let _ = Metadata::decode(&buf).0.expect_err("should fail");
 
         // Not enough length for Value field for decoding.
         let buf = vec![0x02, 0x01, 0x02];
-        let _ = Metadata::decode(&buf).expect_err("should fail");
+        let _ = Metadata::decode(&buf).0.expect_err("should fail");
 
         // Buffer length does not match Length value for decoding.
         let buf = vec![0x03, 0x03, 0x61];
-        let _ = Metadata::decode(&buf).expect_err("should fail");
+        let _ = Metadata::decode(&buf).0.expect_err("should fail");
     }
 
     #[test]

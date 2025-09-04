@@ -4,10 +4,12 @@
 
 use core::pin::Pin;
 use futures::stream::{FusedStream, Stream, StreamExt};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 
 use bt_bap::types::{BroadcastAudioSourceEndpoint, BroadcastId};
+use bt_common::core::AdvertisingSetId;
 use bt_common::packet_encoding::Decodable;
 use bt_common::packet_encoding::Error as PacketError;
 use bt_common::PeerId;
@@ -33,17 +35,20 @@ pub struct EventStream<T: bt_gatt::GattTypes> {
     terminated: bool,
 
     broadcast_sources: Arc<DiscoveredBroadcastSources>,
+    broadcast_source_scan_started: Arc<AtomicBool>,
 }
 
 impl<T: bt_gatt::GattTypes> EventStream<T> {
     pub(crate) fn new(
         scan_result_stream: T::ScanResultStream,
         broadcast_sources: Arc<DiscoveredBroadcastSources>,
+        broadcast_source_scan_started: Arc<AtomicBool>,
     ) -> Self {
         Self {
             scan_result_stream: Box::pin(scan_result_stream),
             terminated: false,
             broadcast_sources,
+            broadcast_source_scan_started,
         }
     }
 
@@ -59,15 +64,24 @@ impl<T: bt_gatt::GattTypes> EventStream<T> {
                 continue;
             };
             if *uuid == BROADCAST_AUDIO_ANNOUNCEMENT_SERVICE {
-                let (bid, _) = BroadcastId::decode(data.as_slice())?;
+                let bid = BroadcastId::decode(data.as_slice()).0?;
                 source.get_or_insert(BroadcastSource::default()).with_broadcast_id(bid);
             } else if *uuid == BASIC_AUDIO_ANNOUNCEMENT_SERVICE {
                 // TODO(dayeonglee): revisit when we implement periodic advertisement.
-                let (base, _) = BroadcastAudioSourceEndpoint::decode(data.as_slice())?;
+                let base = BroadcastAudioSourceEndpoint::decode(data.as_slice()).0?;
                 source.get_or_insert(BroadcastSource::default()).with_endpoint(base);
             }
         }
+        if let Some(src) = &mut source {
+            src.advertising_sid = Some(AdvertisingSetId(scan_result.advertising_sid));
+        }
         Ok(source)
+    }
+}
+
+impl<T: bt_gatt::GattTypes> Drop for EventStream<T> {
+    fn drop(&mut self) {
+        self.broadcast_source_scan_started.store(false, Ordering::Relaxed);
     }
 }
 
@@ -122,6 +136,7 @@ impl<T: bt_gatt::GattTypes> Stream for EventStream<T> {
             }
             None | Some(Err(_)) => {
                 self.terminated = true;
+                self.broadcast_source_scan_started.store(false, Ordering::Relaxed);
                 Poll::Ready(Some(Err(Error::CentralScanTerminated)))
             }
         }
@@ -143,9 +158,14 @@ mod tests {
     fn setup_stream() -> (EventStream<FakeTypes>, ScannedResultStream) {
         let fake_scan_result_stream = ScannedResultStream::new();
         let broadcast_sources = DiscoveredBroadcastSources::new();
+        let broadcast_source_scan_started = Arc::new(AtomicBool::new(false));
 
         (
-            EventStream::<FakeTypes>::new(fake_scan_result_stream.clone(), broadcast_sources),
+            EventStream::<FakeTypes>::new(
+                fake_scan_result_stream.clone(),
+                broadcast_sources,
+                broadcast_source_scan_started,
+            ),
             fake_scan_result_stream,
         )
     }
@@ -210,7 +230,7 @@ mod tests {
                 BASIC_AUDIO_ANNOUNCEMENT_SERVICE,
                 base_data.clone(),
             )],
-            advertising_sid: 0,
+            advertising_sid: 1,
         }));
 
         // Expect the stream to send out broadcast source found event since information
@@ -218,8 +238,9 @@ mod tests {
         let Poll::Ready(Some(Ok(event))) = stream.poll_next_unpin(&mut noop_cx) else {
             panic!("should have received event");
         };
-        assert_matches!(event, Event::FoundBroadcastSource{peer, ..} => {
-            assert_eq!(peer, broadcast_source_pid)
+        assert_matches!(event, Event::FoundBroadcastSource{peer, source} => {
+            assert_eq!(peer, broadcast_source_pid);
+            assert_eq!(source.advertising_sid, Some(AdvertisingSetId(1)));
         });
 
         assert!(stream.poll_next_unpin(&mut noop_cx).is_pending());
@@ -233,7 +254,7 @@ mod tests {
                 BASIC_AUDIO_ANNOUNCEMENT_SERVICE,
                 base_data.clone(),
             )],
-            advertising_sid: 0,
+            advertising_sid: 1,
         }));
 
         // Shouldn't have gotten the event again since the information remained the
