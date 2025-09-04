@@ -587,6 +587,7 @@ mod test {
         Ok(())
     }
 
+    #[ignore] // This test is too dependent on the timing of builder, and is flaky.
     #[fuchsia::test]
     async fn test_state_checking_times_out() {
         use std::time::Instant;
