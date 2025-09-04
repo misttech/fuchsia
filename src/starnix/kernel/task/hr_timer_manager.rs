@@ -630,11 +630,22 @@ impl HrTimerManager {
                     // Make a request here. Move it into the closure after. Current FIDL semantics
                     // ensure that even though we do not `.await` on this future, a request to
                     // schedule a wake alarm based on this timer will be sent.
-                    let request_fut = device_async_proxy.set_and_wait(
-                        new_timer_node.deadline.estimate_boot().unwrap(),
-                        fta::SetMode::NotifySetupDone(duplicate_handle(&setup_event)?),
-                        &wake_alarm_id,
-                    );
+                    let request_fut = match deadline {
+                        TargetTime::Monotonic(_) => {
+                            // If we hit this, it's a Starnix bug.
+                            panic!("can not schedule wake alarm on monotonic timeline")
+                        }
+                        TargetTime::BootInstant(boot_instant) => device_async_proxy.set_and_wait(
+                            boot_instant,
+                            fta::SetMode::NotifySetupDone(duplicate_handle(&setup_event)?),
+                            &wake_alarm_id,
+                        ),
+                        TargetTime::RealTime(utc_instant) => device_async_proxy.set_and_wait_utc(
+                            &fta::InstantUtc { timestamp_utc: utc_instant.into_nanos() },
+                            fta::SetMode::NotifySetupDone(duplicate_handle(&setup_event)?),
+                            &wake_alarm_id,
+                        ),
+                    };
                     let mut done_sender = self.get_sender();
                     let prev_len = self.lock().get_pending_timers_count();
 
@@ -928,9 +939,7 @@ impl TimerOps for HrTimerHandle {
         current_task.kernel().hrtimer_manager.add_timer(
             source,
             self,
-            TargetTime::BootInstant(deadline.estimate_boot().ok_or_else(|| errno!(EINVAL))?),
-            // TODO: b/437984687 - implement:
-            //deadline.into_resolved_utc_deadline(),
+            deadline.into_resolved_utc_deadline(),
         )?;
         Ok(())
     }
@@ -980,6 +989,7 @@ mod tests {
     use crate::task::HrTimer;
     use crate::testing::{AutoReleasableTask, create_kernel_and_task};
     use fake_wake_alarms::{MAGIC_EXPIRE_DEADLINE, Response, serve_fake_wake_alarms};
+    use fuchsia_runtime::UtcInstant;
     use std::thread;
     use {fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync};
 
@@ -1049,6 +1059,29 @@ mod tests {
         hrtimer_manager.add_timer(None, &timer1, zx::BootInstant::from_nanos(1).into()).unwrap();
         hrtimer_manager.add_timer(None, &timer2, zx::BootInstant::from_nanos(2).into()).unwrap();
         hrtimer_manager.add_timer(None, &timer3, zx::BootInstant::from_nanos(3).into()).unwrap();
+
+        wait_signaled(&timer1.event()).await.unwrap();
+        wait_signaled(&timer2.event()).await.unwrap();
+        wait_signaled(&timer3.event()).await.unwrap();
+
+        assert_eq!(
+            counter.wait_handle(zx::Signals::COUNTER_NON_POSITIVE, zx::MonotonicInstant::INFINITE),
+            zx::WaitResult::Ok(zx::Signals::COUNTER_NON_POSITIVE)
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_triggering_utc() {
+        let (hrtimer_manager, _starnix_task, counter) =
+            init_hr_timer_manager(Response::Immediate).await;
+        let timer1 = HrTimer::new();
+        let timer2 = HrTimer::new();
+        let timer3 = HrTimer::new();
+
+        // All these are normally already expired as scheduled.
+        hrtimer_manager.add_timer(None, &timer1, UtcInstant::from_nanos(1).into()).unwrap();
+        hrtimer_manager.add_timer(None, &timer2, UtcInstant::from_nanos(2).into()).unwrap();
+        hrtimer_manager.add_timer(None, &timer3, UtcInstant::from_nanos(3).into()).unwrap();
 
         wait_signaled(&timer1.event()).await.unwrap();
         wait_signaled(&timer2.event()).await.unwrap();

@@ -64,6 +64,12 @@ impl From<zx::BootInstant> for TargetTime {
     }
 }
 
+impl From<UtcInstant> for TargetTime {
+    fn from(value: UtcInstant) -> Self {
+        Self::RealTime(value)
+    }
+}
+
 impl TargetTime {
     pub fn is_zero(&self) -> bool {
         0 == match self {
