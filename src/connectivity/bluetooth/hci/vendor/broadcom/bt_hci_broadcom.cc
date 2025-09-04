@@ -419,25 +419,6 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SetDefaultPowerCaps() {
       });
 }
 
-fpromise::promise<> BtHciBroadcom::LogControllerFallbackBdaddr() {
-  return SendCommand(&kReadBdaddrCmd, sizeof(kReadBdaddrCmd))
-      .then([](fpromise::result<std::vector<uint8_t>, zx_status_t>& result) {
-        char fallback_addr[18] = "<unknown>";
-
-        if (result.is_ok() && sizeof(ReadBdaddrCommandComplete) == result.value().size()) {
-          ReadBdaddrCommandComplete event;
-          std::memcpy(&event, result.value().data(), result.value().size());
-          // HCI returns data as little endian. Swap bytes
-          snprintf(fallback_addr, sizeof(fallback_addr), "%02x:%02x:%02x:%02x:%02x:%02x",
-                   event.bdaddr[5], event.bdaddr[4], event.bdaddr[3], event.bdaddr[2],
-                   event.bdaddr[1], event.bdaddr[0]);
-        }
-
-        FDF_LOG(ERROR, "error getting mac address from bootloader: %s. Fallback address: %s.",
-                zx_status_get_string(result.is_ok() ? ZX_OK : result.error()), fallback_addr);
-      });
-}
-
 constexpr auto kOpenFlags = fuchsia_io::Flags::kPermReadBytes | fuchsia_io::Flags::kProtocolFile;
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware() {
@@ -634,10 +615,8 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
         zx::result metadata =
             fdf_metadata::GetMetadata<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
         if (metadata.is_error()) {
-          return LogControllerFallbackBdaddr().then(
-              [](fpromise::result<>&) -> fpromise::result<void, zx_status_t> {
-                return fpromise::ok();
-              });
+          FDF_LOG(ERROR, "Error reading metadata: %s", metadata.status_string());
+          return fpromise::make_error_promise(ZX_ERR_INTERNAL);
         }
 
         if (!metadata.value().mac_address().has_value()) {

@@ -100,8 +100,6 @@ class BtHciBroadcom final
 
   fpromise::promise<void, zx_status_t> DisableLowPowerMode();
 
-  fpromise::promise<> LogControllerFallbackBdaddr();
-
   fpromise::promise<void, zx_status_t> LoadFirmware();
 
   // Used by firmware loading

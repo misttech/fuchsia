@@ -195,6 +195,9 @@ class TestEnvironment : fdf_testing::Environment {
     EXPECT_TRUE(result.is_ok());
 
     result = to_driver_vfs.AddService<fhbt::HciService>(transport_device_.GetHciInstanceHandler());
+    ZX_ASSERT(mac_address_metadata_server_
+                  .Serve(to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher())
+                  .is_ok());
     EXPECT_TRUE(result.is_ok());
     return zx::ok();
   }
@@ -361,8 +364,8 @@ TEST_F(BtHciBroadcomTest, ControllerReturnsEventSmallerThanCommandComplete) {
   ASSERT_FALSE(driver_test().StartDriver().is_ok());
 }
 
-TEST_F(BtHciBroadcomTest, ControllerReturnsBdaddrEventWithoutBdaddrParam) {
-  // Don't set mac address metadata so that a ReadBdaddr command is sent to get fallback address.
+TEST_F(BtHciBroadcomTest, ControllerFailsToInitializeWhenMissingBdAddr) {
+  // Don't set mac address metadata causing an initialization failure on the driver.
   //  Respond to ReadBdaddr command with a command complete (which doesn't include the bdaddr).
   driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
     env.transport_device_.SetCustomizedReply(std::vector<uint8_t>(
@@ -372,8 +375,8 @@ TEST_F(BtHciBroadcomTest, ControllerReturnsBdaddrEventWithoutBdaddrParam) {
   // Ensure loading the firmware succeeds.
   SetFirmware();
 
-  // Initialization should still succeed (an error will be logged, but it's not fatal).
-  ASSERT_TRUE(driver_test().StartDriver().is_ok());
+  // Initialization should fail as missing the MAC address is a fatal error.
+  ASSERT_TRUE(driver_test().StartDriver().is_error());
 }
 
 TEST_F(BtHciBroadcomTest, SendsPowerCapWhenNeeded) {
