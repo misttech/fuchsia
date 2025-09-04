@@ -515,28 +515,6 @@ async fn handle_request(
                     .unwrap();
             }
         }
-        fta::WakeAlarmsRequest::SetUtc { notifier, deadline, alarm_id, responder } => {
-            trace::duration!(c"alarms", c"handle_request::set_utc");
-            let deadline =
-                timers::Deadline::Utc(fxr::UtcInstant::from_nanos(deadline.timestamp_utc));
-            let notifier = Rc::new(RefCell::new(Some(notifier)));
-            debug!(
-                "handle_request: scheduling alarm_id UTC: \"{alarm_id}\"\n\tconn_id: {conn_id:?}\n\tdeadline: {deadline}",
-            );
-            let result = log_long_op!(cmd.send(Cmd::Start {
-                conn_id,
-                deadline,
-                mode: None,
-                alarm_id: alarm_id.clone(),
-                responder: notifier,
-            }));
-            if let Err(err) = result {
-                warn!("handle_request: error while trying to schedule `{alarm_id}`: {err:?}");
-                responder.send(Err(fta::WakeAlarmsError::Internal)).unwrap();
-            } else {
-                responder.send(Ok(())).unwrap();
-            }
-        }
         fta::WakeAlarmsRequest::Cancel { alarm_id, .. } => {
             // TODO: b/383062441 - make this into an async task so that we wait
             // less to schedule the next alarm.
@@ -2481,116 +2459,8 @@ mod tests {
         );
     }
 
-    // The basic test - schedule timer on the UTC timeline, verify that it fires
-    // when time advances.
-    #[fuchsia::test(allow_stalls = false)]
-    async fn test_basic_utc_timer_notify() {
-        const ALARM_ID: &str = "Hello";
-        let ctx = TestContext::new().await;
-
-        // Since the UTC clock is tied to the system clock and not the executor's fake
-        // clock, we need some unusual setup here. Use the "now" and UTC backstop to set up
-        // a clock transform which will not, in fact, be used, as we never call
-        // `UtcClock::now()`.
-        //
-        // Instead, we use the UTC clock transform to map any UTC deadlines to boot timeline
-        // immediately. Then on any change to UTC the clock transform, we recompute the
-        // deadlines of any UTC timers.
-        let now_boot = fasync::BootInstant::now();
-        ctx.utc_clock
-            .update(
-                zx::ClockUpdate::builder()
-                    .absolute_value(now_boot.into(), ctx.utc_backstop)
-                    .build(),
-            )
-            .unwrap();
-
-        let (notifier_client, mut notifier_stream) =
-            fidl::endpoints::create_request_stream::<fta::NotifierMarker>();
-        let timestamp_utc = ctx.utc_backstop + fxr::UtcDuration::from_nanos(2);
-        assert_matches!(
-            ctx.wake_proxy
-                .set_utc(
-                    notifier_client,
-                    &fta::InstantUtc { timestamp_utc: timestamp_utc.into_nanos() },
-                    ALARM_ID,
-                )
-                .await,
-            Ok(Ok(()))
-        );
-
-        let mut next_task = notifier_stream.next();
-        assert_matches!(TestExecutor::poll_until_stalled(&mut next_task).await, Poll::Pending);
-
-        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(1)).await;
-        assert_matches!(TestExecutor::poll_until_stalled(&mut next_task).await, Poll::Pending);
-
-        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(2)).await;
-        assert_matches!(
-            TestExecutor::poll_until_stalled(next_task).await,
-            Poll::Ready(Some(Ok(fta::NotifierRequest::Notify { alarm_id, .. }))) if alarm_id == ALARM_ID
-        );
-    }
-
     // Verify that if a UTC timer is scheduled in the future on the UTC timeline, then the
     // UTC clock is changed to move "now" beyond the timer's deadline, the timer fires.
-    #[fuchsia::test(allow_stalls = false)]
-    async fn test_utc_timeline_change_expires_timer() {
-        const ALARM_ID: &str = "Hello_utc_timeline";
-        let ctx = TestContext::new().await;
-
-        let now_boot = fasync::BootInstant::now();
-        ctx.utc_clock
-            .update(
-                zx::ClockUpdate::builder()
-                    .absolute_value(now_boot.into(), ctx.utc_backstop)
-                    .build(),
-            )
-            .unwrap();
-
-        let (notifier_client, mut notifier_stream) =
-            fidl::endpoints::create_request_stream::<fta::NotifierMarker>();
-        let timestamp_utc = ctx.utc_backstop + fxr::UtcDuration::from_nanos(2);
-        assert_matches!(
-            ctx.wake_proxy
-                .set_utc(
-                    notifier_client,
-                    &fta::InstantUtc { timestamp_utc: timestamp_utc.into_nanos() },
-                    ALARM_ID,
-                )
-                .await,
-            Ok(Ok(()))
-        );
-
-        // Timer is not expired yet.
-        let mut next_task = notifier_stream.next();
-        assert_matches!(TestExecutor::poll_until_stalled(&mut next_task).await, Poll::Pending);
-
-        // Change the clock transform in a way that makes the previously scheduled UTC timer
-        // expire.
-        ctx.utc_clock
-            .update(
-                zx::ClockUpdate::builder()
-                    .absolute_value(
-                        now_boot.into(),
-                        ctx.utc_backstop + fxr::UtcDuration::from_nanos(100),
-                    )
-                    .build(),
-            )
-            .unwrap();
-
-        // Give the fake hrtimer a time slice to run, so it can expire the wake alarm.
-        // In a setup with real underlying clock, this would not be needed.
-        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(1)).await;
-
-        // Verify that the timer is now expired.
-        assert_matches!(
-            TestExecutor::poll_until_stalled(next_task).await,
-            Poll::Ready(Some(Ok(fta::NotifierRequest::Notify { alarm_id, .. }))) if alarm_id == ALARM_ID
-        );
-    }
-
-    // Similar to above, but uses `set_and_wait_utc`.
     #[fuchsia::test(allow_stalls = false)]
     async fn test_set_and_wait_utc() {
         const ALARM_ID: &str = "Hello_set_and_wait_utc";

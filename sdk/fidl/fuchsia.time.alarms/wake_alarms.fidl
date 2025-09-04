@@ -175,61 +175,6 @@ open protocol WakeAlarms {
         alarm_id AlarmId;
     }) -> () error WakeAlarmsError;
 
-    /// Sets a wake alarm with the provided parameters for an alarm tied to
-    /// the UTC timeline.
-    ///
-    /// Similar to [Set] but uses the UTC timeline as a reference. The main
-    /// difference with respect to [Set] is that the UTC timeline is not
-    /// guaranteed to be monotonic or continuous. A scheduled alarm will match
-    /// the system's best estimate of the current UTC time.
-    ///
-    /// The caller may request multiple alarms concurrently. Re-requesting
-    /// an alarm that has the same `alarm_id` as an already scheduled alarm
-    /// causes that scheduled alarm to be canceled before the same alarm
-    /// is scheduled again.
-    ///
-    /// ## Return value
-    ///
-    /// This method will return when the alarm is *scheduled*. The caller must
-    /// serve [Notifier] to get notified about alarm firing or any errors.
-    ///
-    /// ## Protocol Errors
-    ///
-    /// * [UNSPECIFIED] you are observing a new failure mode which has not
-    ///   been assigned an error code yet. Expect this failure mode to be
-    ///   assigned a more specific error code in future versions of this API.
-    ///   This is not a bug, but an indication that you may need to update the
-    ///   API version.
-    /// * [INTERNAL] is a bug: an internal fallible call (which is expected
-    ///   to be unlikely to fail) has failed somehow. Please report this for
-    ///   investigation.
-    /// * [INVALID_ARGS]: a parameter provided by the user is not valid, such
-    ///   as an empty `alarm_id`.
-    @available(added=NEXT)
-    SetUtc(@generated_name("SetUtcArgs") resource struct {
-        /// Notifier to call when the alarm fires. When the server_end to
-        /// this channel is dropped, the alarm will be canceled.
-        notifier client_end:Notifier;
-
-        /// The deadline at which the timer is supposed to fire. This
-        /// corresponds to a time instant on the UTC timeline.
-        /// The actual instant when the timer fires may change to satisfy the
-        /// current system notion of UTC time.
-        ///
-        /// For example, scheduling a `deadline` for "now + 1h" may trigger
-        /// after 15 minutes of wall clock time expires, if the UTC timeline
-        /// is adjusted to advance by 45 minuts after this alarm is scheduled.
-        deadline InstantUtc;
-
-        /// Set to a nonempty value to identify the alarm. A unique value
-        /// of [AlarmId] must be picked per each unique alarm within a
-        /// single FIDL connection's scope.
-        ///
-        /// Supplying an alarm_id for an already scheduled alarm reschedules
-        /// that alarm.
-        alarm_id AlarmId;
-    }) -> () error WakeAlarmsError;
-
     /// Similar to [SetAndWait], except the alarm is scheduled on the UTC
     /// timeline.
     ///
