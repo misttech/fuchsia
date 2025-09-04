@@ -9,7 +9,6 @@
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fuchsia/hardware/usb/bus/cpp/banjo.h>
 #include <fuchsia/hardware/usb/hci/cpp/banjo.h>
-#include <fuchsia/hardware/usb/phy/cpp/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/device-protocol/pci.h>
