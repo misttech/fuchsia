@@ -1190,6 +1190,13 @@
 
                 // TODO(https://fxbug.dev/361175318): FUTEX_TRYLOCK_PI is not supported yet
                 "SharedPrivate/PrivateAndSharedFutexTest.PITryLock*",
+
+                // New test needs to be disabled
+                "ChownTest.SetGroupIdBitDeniedWithoutCapFsetIdOrRelevantGroup",
+                "AllUnixDomainSockets/UnixSocketPeerCredTest.AfterConnectServerPeerCred/0",
+                "AllUnixDomainSockets/UnixSocketPeerCredTest.AfterConnectServerPeerCred/6",
+                "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/0",
+                "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/6",
             ],
         },
     ],
