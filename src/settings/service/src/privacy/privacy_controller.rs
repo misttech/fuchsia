@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::setting_handler::ControllerError;
 use crate::privacy::types::PrivacyInfo;
+use anyhow::Error;
 use fuchsia_async as fasync;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
 use futures::StreamExt;
-use settings_common::inspect::event::SettingValuePublisher;
+use settings_common::inspect::event::{ResponseType, SettingValuePublisher};
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
 use settings_storage::UpdateState;
@@ -22,20 +21,22 @@ impl DeviceStorageCompatible for PrivacyInfo {
     const KEY: &'static str = "privacy_info";
 }
 
-impl From<PrivacyInfo> for SettingInfo {
-    fn from(info: PrivacyInfo) -> SettingInfo {
-        SettingInfo::Privacy(info)
-    }
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum PrivacyError {
+    #[error("Write failed for Setup: {0:?}")]
+    WriteFailure(Error),
 }
 
-impl From<&PrivacyInfo> for SettingType {
-    fn from(_: &PrivacyInfo) -> SettingType {
-        SettingType::Privacy
+impl From<&PrivacyError> for ResponseType {
+    fn from(error: &PrivacyError) -> Self {
+        match error {
+            PrivacyError::WriteFailure(..) => ResponseType::StorageFailure,
+        }
     }
 }
 
 pub(crate) enum Request {
-    Set(Option<bool>, Sender<Result<(), ControllerError>>),
+    Set(Option<bool>, Sender<Result<(), PrivacyError>>),
 }
 
 pub struct PrivacyController {
@@ -90,7 +91,7 @@ impl PrivacyController {
     async fn set(
         &self,
         user_data_sharing_consent: Option<bool>,
-    ) -> Result<Option<PrivacyInfo>, ControllerError> {
+    ) -> Result<Option<PrivacyInfo>, PrivacyError> {
         let mut info = self.store.get::<PrivacyInfo>().await;
         info.user_data_sharing_consent = user_data_sharing_consent;
 
@@ -98,10 +99,7 @@ impl PrivacyController {
             .write(&info)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(info))
-            .map_err(|e| {
-                log::error!("Failed to write privacy info: {e:?}");
-                ControllerError::WriteFailure(SettingType::Privacy)
-            })
+            .map_err(PrivacyError::WriteFailure)
     }
 
     pub(super) async fn restore(&self) -> PrivacyInfo {

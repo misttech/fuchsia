@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::handler::setting_handler::ControllerError;
-
-use super::privacy_controller::{PrivacyController, Request};
+use super::privacy_controller::{PrivacyController, PrivacyError, Request};
 use super::types::PrivacyInfo;
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
@@ -80,7 +78,7 @@ impl PrivacyFidlHandler {
 enum HandlerError {
     AlreadySubscribed,
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(PrivacyError),
 }
 
 impl From<&HandlerError> for ResponseType {
@@ -88,7 +86,7 @@ impl From<&HandlerError> for ResponseType {
         match error {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::ControllerStopped => ResponseType::UnexpectedError,
-            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+            HandlerError::Controller(e) => ResponseType::from(e),
         }
     }
 }
