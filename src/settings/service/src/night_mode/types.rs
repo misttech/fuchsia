@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use serde::{Deserialize, Serialize};
+use settings_common::inspect::event::Nameable;
 
 #[derive(PartialEq, Default, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct NightModeInfo {
     pub night_mode_enabled: Option<bool>,
 }
 
-impl NightModeInfo {
-    pub(super) const fn empty() -> NightModeInfo {
-        NightModeInfo { night_mode_enabled: None }
-    }
+impl Nameable for NightModeInfo {
+    const NAME: &str = "NightMode";
 }

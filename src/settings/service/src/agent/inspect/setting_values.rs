@@ -212,7 +212,10 @@ impl SettingValuesInspectAgent {
                 .iter()
                 // Filter out settings that submit via new channel.
                 .filter(|t| match t {
-                    SettingType::Light | SettingType::Privacy | SettingType::Setup => false,
+                    SettingType::Light
+                    | SettingType::NightMode
+                    | SettingType::Privacy
+                    | SettingType::Setup => false,
                     _ => true,
                 })
                 .copied()

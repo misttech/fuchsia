@@ -2,153 +2,135 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::Request;
-use crate::ingress::{request, watch, Scoped};
-use crate::job::source::{Error as JobError, ErrorResponder};
-use crate::job::Job;
+use super::night_mode_controller::{NightModeController, Request};
+use crate::handler::setting_handler::ControllerError;
 use crate::night_mode::types::NightModeInfo;
-use fidl::prelude::*;
+use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
-    NightModeRequest, NightModeSetResponder, NightModeSetResult, NightModeSettings,
+    Error as SettingsError, NightModeRequest, NightModeRequestStream, NightModeSettings,
     NightModeWatchResponder,
 };
+use fuchsia_async as fasync;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::channel::oneshot;
+use futures::StreamExt;
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
+};
 
-impl ErrorResponder for NightModeSetResponder {
-    fn id(&self) -> &'static str {
-        "NightMode_Set"
-    }
-
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.send(Err(error))
-    }
-}
-
-impl request::Responder<Scoped<NightModeSetResult>> for NightModeSetResponder {
-    fn respond(self, Scoped(response): Scoped<NightModeSetResult>) {
-        let _ = self.send(response);
+impl From<NightModeInfo> for NightModeSettings {
+    fn from(info: NightModeInfo) -> Self {
+        NightModeSettings { night_mode_enabled: info.night_mode_enabled, ..Default::default() }
     }
 }
 
-impl watch::Responder<NightModeSettings, zx::Status> for NightModeWatchResponder {
-    fn respond(self, response: Result<NightModeSettings, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings);
+pub(super) type SubscriberObject = (UsageResponsePublisher<NightModeInfo>, NightModeWatchResponder);
+type HangingGetFn = fn(&NightModeInfo, SubscriberObject) -> bool;
+pub(super) type HangingGet = server::HangingGet<NightModeInfo, SubscriberObject, HangingGetFn>;
+pub(super) type Publisher = server::Publisher<NightModeInfo, SubscriberObject, HangingGetFn>;
+pub(super) type Subscriber = server::Subscriber<NightModeInfo, SubscriberObject, HangingGetFn>;
+
+pub struct NightModeFidlHandler {
+    hanging_get: HangingGet,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<NightModeInfo>,
+}
+
+impl NightModeFidlHandler {
+    pub(crate) fn new(
+        night_mode_controller: &mut NightModeController,
+        usage_publisher: UsagePublisher<NightModeInfo>,
+        initial_value: NightModeInfo,
+    ) -> (Self, UnboundedReceiver<Request>) {
+        let hanging_get = HangingGet::new(initial_value, Self::hanging_get);
+        night_mode_controller.register_publisher(hanging_get.new_publisher());
+        let (controller_tx, controller_rx) = mpsc::unbounded();
+        (Self { hanging_get, controller_tx, usage_publisher }, controller_rx)
+    }
+
+    fn hanging_get(info: &NightModeInfo, (usage_responder, responder): SubscriberObject) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&NightModeSettings::from(*info)) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
+        }
+        true
+    }
+
+    pub fn handle_stream(&mut self, mut stream: NightModeRequestStream) {
+        let request_handler = RequestHandler {
+            subscriber: self.hanging_get.new_subscriber(),
+            controller_tx: self.controller_tx.clone(),
+            usage_publisher: self.usage_publisher.clone(),
+        };
+        fasync::Task::local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                request_handler.handle_request(request).await;
             }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
-            }
+        })
+        .detach();
+    }
+}
+
+#[derive(Debug)]
+enum HandlerError {
+    AlreadySubscribed,
+    ControllerStopped,
+    Controller(ControllerError),
+}
+
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
+        match error {
+            HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
+            HandlerError::ControllerStopped => ResponseType::UnexpectedError,
+            HandlerError::Controller(e) => ResponseType::from(e.clone()),
         }
     }
 }
 
-impl From<SettingInfo> for NightModeSettings {
-    fn from(response: SettingInfo) -> Self {
-        if let SettingInfo::NightMode(info) = response {
-            return NightModeSettings {
-                night_mode_enabled: info.night_mode_enabled,
-                ..Default::default()
-            };
-        }
-
-        panic!("incorrect value sent to night_mode");
-    }
+struct RequestHandler {
+    subscriber: Subscriber,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<NightModeInfo>,
 }
 
-impl From<NightModeSettings> for Request {
-    fn from(settings: NightModeSettings) -> Self {
-        let mut night_mode_info = NightModeInfo::empty();
-        night_mode_info.night_mode_enabled = settings.night_mode_enabled;
-        Request::SetNightModeInfo(night_mode_info)
-    }
-}
-
-impl TryFrom<NightModeRequest> for Job {
-    type Error = JobError;
-
-    fn try_from(item: NightModeRequest) -> Result<Self, Self::Error> {
-        #[allow(unreachable_patterns)]
-        match item {
-            NightModeRequest::Set { settings, responder } => {
-                Ok(request::Work::new(SettingType::NightMode, to_request(settings), responder)
-                    .into())
-            }
+impl RequestHandler {
+    async fn handle_request(&self, request: NightModeRequest) {
+        match request {
             NightModeRequest::Watch { responder } => {
-                Ok(watch::Work::new_job(SettingType::NightMode, responder))
+                let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
+                }
             }
-            _ => {
-                log::warn!("Received a call to an unsupported API: {:?}", item);
-                Err(JobError::Unsupported)
+            NightModeRequest::Set { settings, responder } => {
+                let usage_res = self
+                    .usage_publisher
+                    .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
+                if let Err(e) = self.set(settings).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
             }
         }
     }
-}
 
-fn to_request(settings: NightModeSettings) -> Request {
-    Request::SetNightModeInfo(NightModeInfo { night_mode_enabled: settings.night_mode_enabled })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::job::{execution, work};
-    use assert_matches::assert_matches;
-    use fidl_fuchsia_settings::{NightModeMarker, NightModeRequestStream};
-    use futures::StreamExt;
-
-    #[fuchsia::test]
-    fn test_request_from_settings_empty() {
-        let request = to_request(NightModeSettings::default());
-        let night_mode_info = NightModeInfo::empty();
-        assert_eq!(request, Request::SetNightModeInfo(night_mode_info));
-    }
-
-    #[fuchsia::test]
-    fn test_request_from_settings() {
-        const NIGHT_MODE_ENABLED: bool = true;
-
-        let request = to_request(NightModeSettings {
-            night_mode_enabled: Some(NIGHT_MODE_ENABLED),
-            ..Default::default()
-        });
-
-        let mut night_mode_info = NightModeInfo::empty();
-        night_mode_info.night_mode_enabled = Some(NIGHT_MODE_ENABLED);
-
-        assert_eq!(request, Request::SetNightModeInfo(night_mode_info));
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_set_converts_supplied_params() {
-        let (proxy, server) = fidl::endpoints::create_proxy::<NightModeMarker>();
-        let _fut =
-            proxy.set(&NightModeSettings { night_mode_enabled: Some(true), ..Default::default() });
-        let mut request_stream: NightModeRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
+    async fn set(&self, settings: NightModeSettings) -> Result<(), HandlerError> {
+        let (set_tx, set_rx) = oneshot::channel();
+        self.controller_tx
+            .unbounded_send(Request::Set(settings.night_mode_enabled, set_tx))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
             .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        let job = job.as_ref();
-        assert_matches!(job.map(|j| j.workload()), Ok(work::Load::Independent(_)));
-        assert_matches!(job.map(|j| j.execution_type()), Ok(execution::Type::Independent));
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_watch_converts_supplied_params() {
-        let (proxy, server) = fidl::endpoints::create_proxy::<NightModeMarker>();
-        let _fut = proxy.watch();
-        let mut request_stream: NightModeRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
-            .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        let job = job.as_ref();
-        assert_matches!(job.map(|j| j.workload()), Ok(work::Load::Sequential(_, _)));
-        assert_matches!(job.map(|j| j.execution_type()), Ok(execution::Type::Sequential(_)));
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
     }
 }

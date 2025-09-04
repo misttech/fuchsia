@@ -2,19 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::marker::PhantomData;
-use std::rc::Rc;
-
+use super::night_mode_fidl_handler::Publisher;
 use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::Request;
-use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
-use crate::handler::setting_handler::{
-    controller, ControllerError, IntoHandlerResult, SettingHandlerResult,
-};
+use crate::handler::setting_handler::ControllerError;
 use crate::night_mode::types::NightModeInfo;
-use async_trait::async_trait;
+use fuchsia_async as fasync;
+use futures::channel::mpsc::UnboundedReceiver;
+use futures::channel::oneshot::Sender;
+use futures::StreamExt;
+use settings_common::inspect::event::SettingValuePublisher;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
+use settings_storage::UpdateState;
+use std::rc::Rc;
 
 impl DeviceStorageCompatible for NightModeInfo {
     type Loader = NoneT;
@@ -33,46 +33,83 @@ impl From<&NightModeInfo> for SettingType {
     }
 }
 
-pub struct NightModeController<F> {
-    client: ClientProxy,
-    store: Rc<DeviceStorage>,
-    _phantom: PhantomData<F>,
-}
-
-impl<F> StorageAccess for NightModeController<F> {
+impl StorageAccess for NightModeController {
     type Storage = DeviceStorage;
     type Data = NightModeInfo;
     const STORAGE_KEY: &'static str = NightModeInfo::KEY;
 }
 
-#[async_trait(?Send)]
-impl<F> data_controller::CreateWithAsync for NightModeController<F>
-where
-    F: StorageFactory<Storage = DeviceStorage>,
-{
-    type Data = Rc<F>;
-    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
-        let store = data.get_store().await;
-        Ok(NightModeController { client, store, _phantom: PhantomData })
-    }
+pub(crate) enum Request {
+    Set(Option<bool>, Sender<Result<(), ControllerError>>),
 }
 
-#[async_trait(?Send)]
-impl<F> controller::Handle for NightModeController<F> {
-    async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
-        match request {
-            Request::SetNightModeInfo(night_mode_info) => {
-                let id = fuchsia_trace::Id::new();
-                let mut current = self.store.get::<NightModeInfo>().await;
+pub struct NightModeController {
+    store: Rc<DeviceStorage>,
+    publisher: Option<Publisher>,
+    setting_value_publisher: SettingValuePublisher<NightModeInfo>,
+}
 
-                // Save the value locally.
-                current.night_mode_enabled = night_mode_info.night_mode_enabled;
-                Some(
-                    self.client.storage_write(&self.store, current, id).await.into_handler_result(),
-                )
-            }
-            Request::Get => Some(Ok(Some(self.store.get::<NightModeInfo>().await.into()))),
-            _ => None,
+impl NightModeController {
+    pub(super) async fn new<F>(
+        storage_factory: Rc<F>,
+        setting_value_publisher: SettingValuePublisher<NightModeInfo>,
+    ) -> Self
+    where
+        F: StorageFactory<Storage = DeviceStorage>,
+    {
+        NightModeController {
+            store: storage_factory.get_store().await,
+            publisher: None,
+            setting_value_publisher,
         }
+    }
+
+    pub(super) fn register_publisher(&mut self, publisher: Publisher) {
+        self.publisher = Some(publisher);
+    }
+
+    fn publish(&self, info: NightModeInfo) {
+        let _ = self.setting_value_publisher.publish(&info);
+        if let Some(publisher) = self.publisher.as_ref() {
+            publisher.set(info);
+        }
+    }
+
+    pub(super) async fn handle(
+        self,
+        mut request_rx: UnboundedReceiver<Request>,
+    ) -> fasync::Task<()> {
+        fasync::Task::local(async move {
+            while let Some(request) = request_rx.next().await {
+                let Request::Set(night_mode_enabled, tx) = request;
+                let res = self.set(night_mode_enabled).await.map(|info| {
+                    if let Some(info) = info {
+                        self.publish(info);
+                    }
+                });
+                let _ = tx.send(res);
+            }
+        })
+    }
+
+    async fn set(
+        &self,
+        night_mode_enabled: Option<bool>,
+    ) -> Result<Option<NightModeInfo>, ControllerError> {
+        let mut info = self.store.get::<NightModeInfo>().await;
+        info.night_mode_enabled = night_mode_enabled;
+
+        self.store
+            .write(&info)
+            .await
+            .map(|state| (UpdateState::Updated == state).then_some(info))
+            .map_err(|e| {
+                log::error!("Failed to write night mode info: {e:?}");
+                ControllerError::WriteFailure(SettingType::NightMode)
+            })
+    }
+
+    pub(super) async fn restore(&self) -> NightModeInfo {
+        self.store.get::<NightModeInfo>().await
     }
 }

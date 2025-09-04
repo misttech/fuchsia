@@ -13,7 +13,9 @@ use audio::types::AudioInfo;
 use audio::AudioInfoLoader;
 use display::display_controller::DisplayInfoLoader;
 use fidl_fuchsia_io::DirectoryProxy;
-use fidl_fuchsia_settings::{LightRequestStream, PrivacyRequestStream, SetupRequestStream};
+use fidl_fuchsia_settings::{
+    LightRequestStream, NightModeRequestStream, PrivacyRequestStream, SetupRequestStream,
+};
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
 #[cfg(test)]
@@ -662,6 +664,13 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 .expect("storage should still be initializing");
         }
 
+        if components.contains(&SettingType::NightMode) {
+            device_storage_factory
+                .initialize::<NightModeController>()
+                .await
+                .expect("storage should still be initializing");
+        }
+
         if components.contains(&SettingType::Privacy) {
             device_storage_factory
                 .initialize::<PrivacyController>()
@@ -726,6 +735,20 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                     log::error!("Failed to setup light api: {e:?}");
                 }
             }
+        }
+
+        if components.contains(&SettingType::NightMode) {
+            let night_mode::SetupResult { mut night_mode_fidl_handler, task } =
+                night_mode::setup_night_mode_api(
+                    Rc::clone(&device_storage_factory),
+                    SettingValuePublisher::new(setting_value_tx.clone()),
+                    UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                )
+                .await;
+            tasks.push(task);
+            let _ = service_dir.add_fidl_service(move |stream: NightModeRequestStream| {
+                night_mode_fidl_handler.handle_stream(stream)
+            });
         }
 
         if components.contains(&SettingType::Privacy) {
@@ -929,24 +952,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 SettingType::FactoryReset,
                 Box::new(move |context| {
                     DataHandler::<FactoryResetController<T>>::spawn_with_async(
-                        context,
-                        Rc::clone(&device_storage_factory),
-                    )
-                }),
-            );
-        }
-
-        // Night mode
-        if components.contains(&SettingType::NightMode) {
-            device_storage_factory
-                .initialize::<NightModeController<T>>()
-                .await
-                .expect("storage should still be initializing");
-            let device_storage_factory = Rc::clone(&device_storage_factory);
-            factory_handle.register(
-                SettingType::NightMode,
-                Box::new(move |context| {
-                    DataHandler::<NightModeController<T>>::spawn_with_async(
                         context,
                         Rc::clone(&device_storage_factory),
                     )
