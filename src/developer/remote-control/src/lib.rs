@@ -103,7 +103,7 @@ impl RemoteControlService {
     async fn handle(self: &Rc<Self>, request: rcs::RemoteControlRequest) -> Result<()> {
         match request {
             rcs::RemoteControlRequest::EchoString { value, responder } => {
-                info!("Received echo string {}", value);
+                debug!("Received echo string {}", value);
                 responder.send(&value)?;
                 Ok(())
             }
