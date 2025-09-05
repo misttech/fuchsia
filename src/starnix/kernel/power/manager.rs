@@ -348,7 +348,7 @@ impl SuspendResumeManager {
                 );
             }
             e => {
-                log_warn!(e:?; "Container suspension failed.");
+                let wake_time = zx::BootInstant::get();
                 let wake_lock_names: Option<Vec<String>> = match e {
                     Ok(Err(frunner::SuspendError::WakeLocksExist)) => {
                         let mut names = vec![];
@@ -359,7 +359,6 @@ impl SuspendResumeManager {
                     }
                     _ => None,
                 };
-                let wake_time = zx::BootInstant::get();
                 self.update_suspend_stats(|suspend_stats| {
                     suspend_stats.fail_count += 1;
                     suspend_stats.last_failed_errno = Some(errno!(EINVAL));
@@ -371,6 +370,7 @@ impl SuspendResumeManager {
                 {
                     let mut state = self.lock();
                     let active_epolls_count = state.active_epolls.len();
+                    log_warn!(e:?; "Container suspension failed. wake locks: {:?}, epoll count: {}", wake_lock_names, active_epolls_count);
                     state.suspend_events_node.add_entry(|node| {
                         node.record_int(fobs::SUSPEND_FAILED_AT, wake_time.into_nanos());
                         if let Some(names) = wake_lock_names {
