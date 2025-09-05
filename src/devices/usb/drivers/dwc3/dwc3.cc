@@ -29,6 +29,7 @@
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
 
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
+#include "src/devices/usb/drivers/dwc3/dwc3_config.h"
 
 namespace dwc3 {
 
@@ -63,22 +64,50 @@ class QualcommExtension final : public PlatformExtension {
 
  private:
   zx::result<> VoteCommon(State state, bool on) {
-    zx::result clocks = VoteClocks(on);
-    if (clocks.is_error()) {
-      return clocks.take_error();
+    // The resources manipulation order in suspend cases should be the reverse
+    // of the order in resume cases. Note that the order below was observed to
+    // work empirically, but was not picked based on any documentation that is
+    // available as a reference.
+    if (!on) {
+      zx::result clocks = VoteClocks(on);
+      if (clocks.is_error()) {
+        return clocks.take_error();
+      }
+
+      zx::result voltage = VoteVoltage(on);
+      if (voltage.is_error()) {
+        return voltage.take_error();
+      }
+
+      zx::result bandwidth = VoteBandwidth(state);
+      if (bandwidth.is_error()) {
+        return bandwidth.take_error();
+      }
+    } else {
+      zx::result bandwidth = VoteBandwidth(state);
+      if (bandwidth.is_error()) {
+        return bandwidth.take_error();
+      }
+
+      zx::result voltage = VoteVoltage(on);
+      if (voltage.is_error()) {
+        return voltage.take_error();
+      }
+
+      zx::result clocks = VoteClocks(on);
+      if (clocks.is_error()) {
+        return clocks.take_error();
+      }
     }
 
-    zx::result voltage = VoteVoltage(on);
-    if (voltage.is_error()) {
-      return voltage.take_error();
-    }
-
-    return VoteBandwidth(state);
+    return zx::ok();
   }
 
+  zx::result<> UpdateRegulator(std::string name, uint32_t voltage, bool enable);
   zx::result<> VoteBandwidth(State state);
   zx::result<> VoteVoltage(bool on);
   zx::result<> VoteClocks(bool on);
+  void MakeVoteCall(bool enable, bool for_resume, std::string clock);
 
   State state_ = State::kNone;
   std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients_;
@@ -97,10 +126,9 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent) {
                                                     "xo",       "sleep-clk", "utmi-clk"};
 
   static const std::vector<std::string> kRegulatorNames = {
+      {"regulator-vdd33"},
       {"regulator-core"},
       {"regulator-vdd18"},
-      // TODO(411688327): Manage the VDD33 regulator.
-      // {"regulator-vdd33"},
   };
 
   std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients;
@@ -196,41 +224,80 @@ zx::result<> QualcommExtension::VoteBandwidth(State state) {
   return zx::ok();
 }
 
+zx::result<> QualcommExtension::UpdateRegulator(std::string name, uint32_t voltage, bool enable) {
+  fidl::Result params = fidl::Call(regulator_clients_.at(name))->GetRegulatorParams();
+  if (params.is_error()) {
+    fdf::error("could not get regulator params for {}: {}", name, params.error_value());
+    return zx::error(ZX_ERR_UNAVAILABLE);
+  }
+
+  uint32_t steps = (voltage - params->min_uv()) / params->step_size_uv();
+  if (steps > params->num_steps()) {
+    fdf::warn("{}: requesting out-of-range voltage, ignoring", name);
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
+  fidl::Result set =
+      fidl::Call(regulator_clients_.at(name))->SetState({{.step = steps, .enable = enable}});
+  if (set.is_error()) {
+    fdf::error("failed to enable regulator {}: {}", name, set.error_value());
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  return zx::ok();
+}
+
 zx::result<> QualcommExtension::VoteVoltage(bool on) {
   // clang-format off
   const static std::unordered_map<std::string, uint32_t> kVoltages{
       {"regulator-core", 904000},
       {"regulator-vdd18", 1800000},
-      // TODO(411688327): Manage the VDD33 regulator.
-      // {"regulator-vdd33", 3080000},
+      {"regulator-vdd33", 3080000},
+  };
+
+  // Order matters! Don't change unless you know you should.
+  static const std::vector<std::string> kRegulatorNames = {
+      {"regulator-vdd33"},
+      {"regulator-core"},
+      {"regulator-vdd18"},
   };
   // clang-format on
 
-  if (on) {
-    for (const auto& [name, voltage] : kVoltages) {
-      fidl::Result params = fidl::Call(regulator_clients_.at(name))->GetRegulatorParams();
-      if (params.is_error()) {
-        fdf::error("could not get regulator params for {}: {}", name, params.error_value());
-        continue;
-      }
-
-      uint32_t steps = (voltage - params->min_uv()) / params->step_size_uv();
-      if (steps > params->num_steps()) {
-        fdf::warn("{}: requesting out-of-range voltage, ignoring", name);
-        continue;
-      }
-
-      fidl::Result set =
-          fidl::Call(regulator_clients_.at(name))->SetState({{.step = steps, .enable = true}});
-      if (set.is_error()) {
-        fdf::error("failed to enable regulator {}: {}", name, set.error_value());
-      }
+  // Enable and disable proceed in opposite orders, thus the branch.
+  if (!on) {
+    for (const auto& name : kRegulatorNames) {
+      uint32_t voltage = kVoltages.find(name)->second;
+      [[maybe_unused]]
+      zx::result update_result = UpdateRegulator(name, voltage, on);
+      continue;
     }
-    return zx::ok();
+  } else {
+    for (auto it = kRegulatorNames.rbegin(); it != kRegulatorNames.rend(); ++it) {
+      // Poweron/resume in reverse order of poweroff.
+      const auto& name = *it;
+      uint32_t voltage = kVoltages.find(name)->second;
+      [[maybe_unused]]
+      zx::result update_result = UpdateRegulator(name, voltage, on);
+      continue;
+    }
   }
 
-  // It's possible regulator-disable logic will follow.
   return zx::ok();
+}
+
+void QualcommExtension::MakeVoteCall(bool enable, bool for_resume, std::string clock) {
+  if (enable) {
+    fidl::Result enable = fidl::Call(clock_clients_.at(clock))->Enable();
+    if (enable.is_error()) {
+      fdf::error("could not enable clk {}: {} during {}", clock, enable.error_value(),
+                 for_resume ? "start/resume" : "suspend");
+    }
+  } else {
+    fidl::Result disable = fidl::Call(clock_clients_.at(clock))->Disable();
+    if (disable.is_error()) {
+      fdf::error("could not disable clk {}: {} during {}", clock, disable.error_value(),
+                 for_resume ? "start/resume" : "suspend");
+    }
+  }
 }
 
 zx::result<> QualcommExtension::VoteClocks(bool on) {
@@ -246,25 +313,17 @@ zx::result<> QualcommExtension::VoteClocks(bool on) {
   };
   // clang-format on
 
-  if (on) {
-    for (const auto& [name, action] : kVoteMap) {
-      switch (action) {
-        case ClockAction::kNoVote:
-          break;
-        case ClockAction::kOff: {
-          fidl::Result disable = fidl::Call(clock_clients_.at(name))->Disable();
-          if (disable.is_error()) {
-            fdf::error("could not disable clk {}: {}", name, disable.error_value());
-          }
-          break;
-        }
-        case ClockAction::kEnable: {
-          fidl::Result enable = fidl::Call(clock_clients_.at(name))->Enable();
-          if (enable.is_error()) {
-            fdf::error("could not enable clk {}: {}", name, enable.error_value());
-          }
-          break;
-        }
+  for (const auto& [name, action] : kVoteMap) {
+    switch (action) {
+      case ClockAction::kNoVote:
+        break;
+      case ClockAction::kOff: {
+        MakeVoteCall(!on, on, name);
+        break;
+      }
+      case ClockAction::kEnable: {
+        MakeVoteCall(on, on, name);
+        break;
       }
     }
   }
@@ -344,6 +403,28 @@ zx::result<> Dwc3::Start() {
 
   return zx::ok();
 }
+
+void Dwc3::Suspend(fdf_power::SuspendCompleter completer) {
+  if (platform_extension_) {
+    if (platform_extension_->Suspend().is_error()) {
+      // shrug, not sure there is anything to do, errors are already logged
+      // in this path
+    }
+  }
+  completer();
+}
+
+void Dwc3::Resume(fdf_power::ResumeCompleter completer) {
+  if (platform_extension_) {
+    if (platform_extension_->Resume().is_error()) {
+      // shrug, not sure there is anything to do, errors are already logged
+      // in this path
+    }
+  }
+  completer();
+}
+
+bool Dwc3::SuspendEnabled() { return config_.enable_suspend(); }
 
 zx_status_t Dwc3::AcquirePDevResources() {
   auto pdev_client_end = incoming()->Connect<fpdev::Service::Device>("pdev");

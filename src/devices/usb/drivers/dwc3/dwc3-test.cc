@@ -13,8 +13,12 @@
 #include "lib/driver/fake-platform-device/cpp/fake-pdev.h"
 #include "lib/driver/testing/cpp/driver_test.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
+#include "src/devices/usb/drivers/dwc3/dwc3_config.h"
 
 namespace dwc3 {
+
+// TODO(https://fxbug.dev/443309071) Add tests where we start the driver with suspend enabled and
+// a fake SAG.
 
 namespace fpdev = fuchsia_hardware_platform_device;
 namespace fhi = fuchsia_hardware_interconnect;
@@ -109,7 +113,11 @@ class TestFixture : public testing::Test {
     });
 
     if (manage_lifetime) {
-      EXPECT_EQ(ZX_OK, dut_.StartDriver().status_value());
+      EXPECT_EQ(ZX_OK, dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                             dwc3_config::Config config{{.enable_suspend = false}};
+                             args.config(config.ToVmo());
+                           })
+                           .status_value());
     }
   }
 
@@ -165,7 +173,11 @@ TEST_F(ManagedTestFixture, Dfv2Lifecycle) {
 
 TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
   stuck_reset_test_ = true;
-  EXPECT_EQ(ZX_ERR_TIMED_OUT, dut_.StartDriver().status_value());
+  EXPECT_EQ(ZX_ERR_TIMED_OUT, dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                                    dwc3_config::Config config{{.enable_suspend = false}};
+                                    args.config(config.ToVmo());
+                                  })
+                                  .status_value());
 
   dut_.RunInNodeContext(
       [&](fdf_testing::TestNode& node) { EXPECT_EQ(0UL, node.children().size()); });
