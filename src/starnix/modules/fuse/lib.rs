@@ -127,6 +127,7 @@ impl FileOps for DevFuse {
         _file: &FileObjectState,
         _current_task: &CurrentTask,
     ) {
+        log_error!("DevFuse::close: fuse disconnected due to /dev/fuse close");
         self.connection.lock().disconnect();
     }
 
@@ -353,6 +354,7 @@ impl FileSystemOps for FuseFs {
         "fuse".into()
     }
     fn unmount(&self) {
+        log_error!("FuseFS::unmount: fuse disconnected due to unmount");
         self.connection.lock().disconnect();
     }
 }
@@ -527,6 +529,7 @@ impl FileOps for AbortFile {
     ) -> Result<usize, Errno> {
         let drained = data.drain();
         if drained > 0 {
+            log_error!("AbortFile::write: fuse disconnected due to user abort");
             self.connection.lock().disconnect();
         }
         Ok(drained)
