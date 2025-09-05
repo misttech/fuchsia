@@ -68,33 +68,38 @@ impl<'a> PermissionCheck<'a> {
         )
     }
 
-    /// Returns whether the `source_sid` has both the `ioctl` permission and the specified extended
-    /// permission on `target_sid`, and whether the decision should be audited.
+    /// Returns whether the `source_sid` has both a base permission (i.e. `ioctl` or `nlmsg`) and
+    /// the specified extended permission on `target_sid`, and whether the decision should be
+    /// audited.
     ///
-    /// A request is allowed if the ioctl permission is `allow`ed and either the numeric ioctl
-    /// extended permission is `allowxperm`, or ioctl extended permissions are not filtered for this
-    /// domain.
+    /// A request is allowed if the base permission is `allow`ed and either the numeric extended
+    /// permission of this `xperms_kind` is included in an `allowxperm` statement, or extended
+    /// permissions of this kind are not filtered for this domain.
     ///
-    /// A granted request is audited if the ioctl permission is `auditallow` and the numeric ioctl
-    /// extended permission is `auditallowxperm`.
+    /// A granted request is audited if the base permission is `auditallow` and the extended
+    /// permission is `auditallowxperm`.
     ///
-    /// A denied request is audited if the ioctl permission is `dontaudit` or the numeric ioctl
-    /// extended permission is `dontauditxperm`.
-    pub fn has_ioctl_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
+    /// A denied request is audited if the base permission is `dontaudit` or the extended
+    /// permission is `dontauditxperm`.
+    pub fn has_extended_permission<
+        P: ClassPermission + Into<KernelPermission> + Clone + 'static,
+    >(
         &self,
+        xperms_kind: XpermsKind,
         source_sid: SecurityId,
         target_sid: SecurityId,
         permission: P,
-        ioctl: u16,
+        xperm: u16,
     ) -> PermissionCheckResult {
-        has_ioctl_permission(
+        has_extended_permission(
             self.security_server.is_enforcing(),
             self.access_vector_cache,
             self.security_server,
+            xperms_kind,
             source_sid,
             target_sid,
             permission,
-            ioctl,
+            xperm,
         )
     }
 
@@ -192,29 +197,30 @@ fn has_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>
     result
 }
 
-/// Internal implementation of the `has_ioctl_permission()` API, in terms of the `Query` and
+/// Internal implementation of the `has_extended_permission()` API, in terms of the `Query` and
 /// `AccessVectorComputer` traits.
-fn has_ioctl_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
+fn has_extended_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
     is_enforcing: bool,
     query: &impl Query,
     access_vector_computer: &impl AccessVectorComputer,
+    xperms_kind: XpermsKind,
     source_sid: SecurityId,
     target_sid: SecurityId,
     permission: P,
-    ioctl: u16,
+    xperm: u16,
 ) -> PermissionCheckResult {
     let target_class = permission.class();
 
     let permission_decision =
         query.compute_access_decision(source_sid, target_sid, target_class.into());
 
-    let [ioctl_postfix, ioctl_prefix] = ioctl.to_le_bytes();
-    let xperm_decision = query.compute_xperms_access_decision(
-        XpermsKind::Ioctl,
+    let [xperms_postfix, xperms_prefix] = xperm.to_le_bytes();
+    let xperms_decision = query.compute_xperms_access_decision(
+        xperms_kind,
         source_sid,
         target_sid,
         target_class.into(),
-        ioctl_prefix,
+        xperms_prefix,
     );
 
     let mut result = if let Some(permission_access_vector) =
@@ -222,13 +228,13 @@ fn has_ioctl_permission<P: ClassPermission + Into<KernelPermission> + Clone + 's
     {
         let permit = (permission_access_vector & permission_decision.allow
             == permission_access_vector)
-            && xperm_decision.allow.contains(ioctl_postfix);
+            && xperms_decision.allow.contains(xperms_postfix);
         let audit = if permit {
             (permission_access_vector & permission_decision.auditallow == permission_access_vector)
-                && xperm_decision.auditallow.contains(ioctl_postfix)
+                && xperms_decision.auditallow.contains(xperms_postfix)
         } else {
             (permission_access_vector & permission_decision.auditdeny == permission_access_vector)
-                && xperm_decision.auditdeny.contains(ioctl_postfix)
+                && xperms_decision.auditdeny.contains(xperms_postfix)
         };
         PermissionCheckResult { permit, audit, todo_bug: None }
     } else {
@@ -241,8 +247,8 @@ fn has_ioctl_permission<P: ClassPermission + Into<KernelPermission> + Clone + 's
         } else if permission_decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE != 0 {
             result.permit = true;
         } else if permission_decision.todo_bug.is_some() {
-            // Currently we can make an exception for the overall `ioctl` permission,
-            // but not for specific ioctl xperms.
+            // Currently we can make an exception for the base permission but not for specific
+            // extended permissions.
             result.permit = true;
             result.todo_bug = permission_decision.todo_bug;
         }
@@ -572,10 +578,11 @@ mod tests {
         // DenyAllPermissions denies.
         assert_eq!(
             PermissionCheckResult { permit: false, audit: true, todo_bug: None },
-            has_ioctl_permission(
+            has_extended_permission(
                 /*is_enforcing=*/ true,
                 &deny_all,
                 &deny_all,
+                XpermsKind::Ioctl,
                 *A_TEST_SID,
                 *A_TEST_SID,
                 permission.clone(),
@@ -585,10 +592,11 @@ mod tests {
         // AllowAllPermissions allows.
         assert_eq!(
             PermissionCheckResult { permit: true, audit: false, todo_bug: None },
-            has_ioctl_permission(
+            has_extended_permission(
                 /*is_enforcing=*/ true,
                 &allow_all,
                 &allow_all,
+                XpermsKind::Ioctl,
                 *A_TEST_SID,
                 *A_TEST_SID,
                 permission.clone(),
@@ -598,10 +606,11 @@ mod tests {
         // DenyPermissionsAllowXperms denies.
         assert_eq!(
             PermissionCheckResult { permit: false, audit: true, todo_bug: None },
-            has_ioctl_permission(
+            has_extended_permission(
                 /*is_enforcing=*/ true,
                 &deny_perms_allow_xperms,
                 &deny_perms_allow_xperms,
+                XpermsKind::Ioctl,
                 *A_TEST_SID,
                 *A_TEST_SID,
                 permission.clone(),
@@ -611,10 +620,11 @@ mod tests {
         // AllowPermissionsDenyXperms denies.
         assert_eq!(
             PermissionCheckResult { permit: false, audit: true, todo_bug: None },
-            has_ioctl_permission(
+            has_extended_permission(
                 /*is_enforcing=*/ true,
                 &allow_perms_deny_xperms,
                 &allow_perms_deny_xperms,
+                XpermsKind::Ioctl,
                 *A_TEST_SID,
                 *A_TEST_SID,
                 permission,
@@ -632,10 +642,11 @@ mod tests {
         // is not in enforcing mode. The decision should still be audited.
         assert_eq!(
             PermissionCheckResult { permit: true, audit: true, todo_bug: None },
-            has_ioctl_permission(
+            has_extended_permission(
                 /*is_enforcing=*/ false,
                 &deny_all,
                 &deny_all,
+                XpermsKind::Ioctl,
                 *A_TEST_SID,
                 *A_TEST_SID,
                 permission,

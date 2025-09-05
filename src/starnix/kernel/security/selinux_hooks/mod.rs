@@ -22,7 +22,7 @@ use crate::vfs::{Anon, DirEntry, FileHandle, FileObject, FileSystem, FsNode, Out
 use audit::{Auditable, audit_decision, audit_todo_decision};
 use indexmap::IndexSet;
 use selinux::permission_check::PermissionCheck;
-use selinux::policy::FsUseType;
+use selinux::policy::{FsUseType, XpermsKind};
 use selinux::{
     ClassPermission, CommonFilePermission, CommonFsNodePermission, DirPermission, FdPermission,
     FileClass, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions, ForClass,
@@ -220,7 +220,8 @@ fn check_ioctl_permission(
         return Ok(());
     }
     let ioctl_permission = CommonFsNodePermission::Ioctl.for_class(target_class);
-    let result = permission_check.has_ioctl_permission(
+    let result = permission_check.has_extended_permission(
+        XpermsKind::Ioctl,
         subject_sid,
         target_sid,
         ioctl_permission.clone(),
