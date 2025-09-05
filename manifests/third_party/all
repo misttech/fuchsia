@@ -295,7 +295,7 @@
     <project name="llvm-project/libc"
              path="third_party/llvm-libc/src"
              remote="https://llvm.googlesource.com/llvm-project/libc"
-             revision="0beaf885fdad0eec7a4e4eee3d2bda8b50782bc7"/>
+             revision="c03bb35bfd5a7ffe899c4b443d8e5729482a1248"/>
     <project name="third_party/luci-go"
              path="third_party/luci-go"
              revision="fd977bf9e01d199a529f28af6dc10fe0fa35d9e7"
@@ -470,7 +470,7 @@
     <project name="scudo"
              path="third_party/scudo/src"
              remote="https://llvm.googlesource.com/scudo"
-             revision="936bda383527bf13d26849cdb7ce0939fea1337e"/>
+             revision="a563127de87e3479e1c24afdeb1f139ea75584c3"/>
     <project name="gwp-asan"
              path="third_party/scudo/gwp_asan"
              remote="https://llvm.googlesource.com/gwp-asan"
