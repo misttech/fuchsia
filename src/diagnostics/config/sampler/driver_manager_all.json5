@@ -297,14 +297,18 @@
             project_id: 3676913920,
         },
 
-        // TODO(https://fxbug.dev/42071858): move to fvm.json
+        // TODO(https://fxbug.dev/443076588): delete the driver selector and move these metrics to
+        // fshost.json5 once storage-host is enabled everywhere.
         {
             event_codes: [
                 0,
             ],
             metric_id: 3001,
             metric_type: "Occurrence",
-            selector: "bootstrap/*-drivers\\:*:[name=fvm]root/fvm/partitions/blobfs:total_slices_reserved",
+            selector: [
+                "bootstrap/*-drivers\\:*:[name=fvm]root/fvm/partitions/blobfs:total_slices_reserved",
+                "bootstrap/fshost/fvm2:root/fvm/partitions/blobfs:total_slices_reserved",
+            ],
             project_id: 3676913920,
         },
         {
@@ -313,7 +317,10 @@
             ],
             metric_id: 3001,
             metric_type: "Occurrence",
-            selector: "bootstrap/*-drivers\\:*:[name=fvm]root/fvm/partitions/minfs:total_slices_reserved",
+            selector: [
+                "bootstrap/*-drivers\\:*:[name=fvm]root/fvm/partitions/minfs:total_slices_reserved",
+                "bootstrap/fshost/fvm2:root/fvm/partitions/minfs:total_slices_reserved",
+            ],
             project_id: 3676913920,
         },
         {
@@ -322,7 +329,10 @@
             ],
             metric_id: 61,
             metric_type: "Occurrence",
-            selector: "bootstrap/*-drivers\\:*:[name=fvm]root/fvm/mount_time/version_combo",
+            selector: [
+                "bootstrap/*-drivers\\:*:[name=fvm]root/fvm/mount_time/version_combo",
+                "bootstrap/fshost/fvm2:root/fvm/mount_time/version_combo",
+            ],
             project_id: 3676913920,
         },
 
