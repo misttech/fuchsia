@@ -53,7 +53,7 @@ std::string GetTestDataPath() {
   return path + "test_data/trace2json/";
 }
 
-void ConvertAndCompare(ConvertSettings settings, std::string expected_output_file) {
+void ConvertAndCompare(const ConvertSettings& settings, const std::string& expected_output_file) {
   ASSERT_TRUE(ConvertTrace(settings));
   std::string actual_out, expected_out;
   EXPECT_TRUE(files::ReadFileToString(settings.output_file_name, &actual_out));
@@ -90,6 +90,25 @@ TEST(ConvertTest, ExampleBenchmark) {
   settings.input_file_name = test_data_path + "example_benchmark.fxt";
   settings.output_file_name = test_data_path + "example_benchmark_actual.json";
   ConvertAndCompare(settings, test_data_path + "example_benchmark_expected.json");
+}
+
+TEST(ConvertTest, PatternFiltering) {
+  std::string test_data_path = GetTestDataPath();
+  ConvertSettings settings;
+  settings.input_file_name = test_data_path + "simple_trace.fxt";
+  settings.output_file_name = test_data_path + "simple_trace_filtered_actual.json";
+  settings.patterns.push_back(".*_ref");
+  ConvertAndCompare(settings, test_data_path + "simple_trace_filtered_expected.json");
+}
+
+TEST(ConvertTest, MultiPatternFiltering) {
+  std::string test_data_path = GetTestDataPath();
+  ConvertSettings settings;
+  settings.input_file_name = test_data_path + "simple_trace.fxt";
+  settings.output_file_name = test_data_path + "simple_trace_multi_filtered_actual.json";
+  settings.patterns.push_back("complete.*");
+  settings.patterns.push_back("async");
+  ConvertAndCompare(settings, test_data_path + "simple_trace_multi_filtered_expected.json");
 }
 
 TEST(ConvertTest, MissingMagicNumber) {

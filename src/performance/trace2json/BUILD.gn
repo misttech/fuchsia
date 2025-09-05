@@ -26,7 +26,10 @@ source_set("lib") {
     "trace_parser.h",
   ]
 
-  deps = [ "//src/lib/fxl" ]
+  deps = [
+    "//src/lib/fxl",
+    "//third_party/re2",
+  ]
 
   public_deps = [
     "//sdk/lib/syslog/cpp",
@@ -58,6 +61,8 @@ if (is_host) {
       "test_data/simple_trace.fxt.gz",
       "test_data/simple_trace_expected.json",
       "test_data/simple_trace_expected.json.gz",
+      "test_data/simple_trace_filtered_expected.json",
+      "test_data/simple_trace_multi_filtered_expected.json",
     ]
 
     outputs = [ "$root_out_dir/test_data/trace2json/{{source_file_part}}" ]
@@ -75,6 +80,7 @@ if (is_host) {
       ":lib",
       "//src/lib/fxl/test:gtest_main",
       "//third_party/googletest:gtest",
+      "//third_party/re2",
     ]
 
     data_deps = [ ":test_data" ]

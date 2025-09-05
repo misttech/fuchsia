@@ -35,7 +35,7 @@ bool CompareMagic(const char* magic1, const char* magic2) {
 
 }  // namespace
 
-bool ConvertTrace(ConvertSettings settings) {
+bool ConvertTrace(const ConvertSettings& settings) {
   const uint64_t host_magic = kMagicRecord;
   if (!CompareMagic(reinterpret_cast<const char*>(&host_magic), kLittleEndianMagicRecord)) {
     FX_LOGS(ERROR) << "Detected big endian host. Aborting.";
@@ -63,10 +63,6 @@ bool ConvertTrace(ConvertSettings settings) {
     return false;
   }
 
-  tracing::FuchsiaTraceParser parser(settings.output_file_name);
-  if (!parser.ParseComplete(in_stream)) {
-    return false;
-  }
-
-  return true;
+  tracing::FuchsiaTraceParser parser(settings.output_file_name, settings.patterns);
+  return parser.ParseComplete(in_stream);
 }

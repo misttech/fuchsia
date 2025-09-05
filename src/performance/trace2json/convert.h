@@ -6,12 +6,14 @@
 #define SRC_PERFORMANCE_TRACE2JSON_CONVERT_H_
 
 #include <string>
+#include <vector>
 
 struct ConvertSettings {
   std::string input_file_name;
   std::string output_file_name;
+  std::vector<std::string> patterns;
 };
 
-bool ConvertTrace(ConvertSettings);
+bool ConvertTrace(const ConvertSettings& settings);
 
 #endif  // SRC_PERFORMANCE_TRACE2JSON_CONVERT_H_

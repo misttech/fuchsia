@@ -9,10 +9,11 @@
 #include <stdint.h>
 
 #include <array>
-#include <ostream>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include <re2/re2.h>
 #include <trace-reader/reader.h>
 
 #include "src/performance/lib/trace_converters/chromium_exporter.h"
@@ -21,7 +22,8 @@ namespace tracing {
 
 class FuchsiaTraceParser {
  public:
-  explicit FuchsiaTraceParser(const std::filesystem::path& out);
+  explicit FuchsiaTraceParser(const std::filesystem::path& out,
+                              const std::vector<std::string>& patterns);
   ~FuchsiaTraceParser();
 
   bool ParseComplete(std::istream*);
@@ -29,6 +31,7 @@ class FuchsiaTraceParser {
  private:
   static constexpr size_t kReadBufferSize = trace::RecordFields::kMaxRecordSizeBytes * 4;
   ChromiumExporter exporter_;
+  std::vector<std::unique_ptr<re2::RE2>> patterns_;
   std::array<char, kReadBufferSize> buffer_;
   // The number of bytes of |buffer_| in use.
   size_t buffer_end_ = 0;

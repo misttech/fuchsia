@@ -7,6 +7,7 @@
 #include <iostream>
 #include <map>
 #include <set>
+#include <vector>
 
 #include "src/lib/fxl/command_line.h"
 #include "src/lib/fxl/log_settings_command_line.h"
@@ -17,11 +18,13 @@ namespace {
 const char kHelp[] = "help";
 const char kInputFile[] = "input-file";
 const char kOutputFile[] = "output-file";
+const char kPattern[] = "pattern";
 
 std::set<std::string> kKnownOptions = {
     kHelp,
     kInputFile,
     kOutputFile,
+    kPattern,
 };
 
 void PrintHelpMessage() {
@@ -31,6 +34,9 @@ void PrintHelpMessage() {
       {"output-file=[]",
        "Write the converted trace to the specified file. If no file is "
        "specified, the output is written to stdout."},
+      {"pattern=[]",
+       "A regular expression to match against event names. Events that do not "
+       "match will be dropped. This parameter may be specified multiple times."},
   };
 
   std::cerr
@@ -91,6 +97,8 @@ int main(int argc, char** argv) {
   if (command_line.HasOption(kOutputFile)) {
     command_line.GetOptionValue(kOutputFile, &settings.output_file_name);
   }
+  auto patterns_sv = command_line.GetOptionValues(kPattern);
+  settings.patterns.assign(patterns_sv.begin(), patterns_sv.end());
 
   if (!ConvertTrace(settings)) {
     return 1;

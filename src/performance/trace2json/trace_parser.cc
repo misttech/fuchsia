@@ -7,16 +7,52 @@
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/assert.h>
 
+#include <algorithm>
+#include <memory>
 #include <utility>
 
+#include <re2/re2.h>
+
+#include "lib/trace-engine/types.h"
 #include "src/performance/lib/trace_converters/chromium_exporter.h"
 
 namespace tracing {
+namespace {
+bool ShouldPassthrough(const trace::Record& record) {
+  return record.type() == trace::RecordType::kScheduler ||
+         record.type() == trace::RecordType::kMetadata ||
+         record.type() == trace::RecordType::kInitialization;
+}
 
-FuchsiaTraceParser::FuchsiaTraceParser(const std::filesystem::path& out)
+bool MatchesAny(const std::vector<std::unique_ptr<re2::RE2>>& patterns, std::string_view string) {
+  return std::ranges::any_of(
+      patterns, [&](const auto& pattern) { return re2::RE2::PartialMatch(string, *pattern); });
+}
+}  // namespace
+
+FuchsiaTraceParser::FuchsiaTraceParser(const std::filesystem::path& out,
+                                       const std::vector<std::string>& patterns)
     : exporter_(out),
-      reader_([this](trace::Record record) { exporter_.ExportRecord(record); },
-              [](std::string_view error) { FX_LOGS(ERROR) << error; }) {}
+      reader_(
+          [this](const trace::Record& record) {
+            if (ShouldPassthrough(record) || patterns_.empty()) {
+              exporter_.ExportRecord(record);
+              return;
+            }
+            auto name = record.GetName();
+            if (name && MatchesAny(patterns_, *name)) {
+              exporter_.ExportRecord(record);
+            }
+          },
+          [](std::string_view error) { FX_LOGS(ERROR) << error; }) {
+  for (const auto& pattern : patterns) {
+    auto re = std::make_unique<re2::RE2>(pattern);
+    if (!re->ok()) {
+      FX_LOGS(ERROR) << "Failed to compile pattern '" << pattern << "': " << re->error();
+    }
+    patterns_.push_back(std::move(re));
+  }
+}
 
 FuchsiaTraceParser::~FuchsiaTraceParser() = default;
 
