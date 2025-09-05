@@ -6,11 +6,12 @@
 #define LIB_FIT_INTERNAL_FUNCTION_H_
 
 #include <lib/stdcompat/bit.h>
-#include <stddef.h>
-#include <stdlib.h>
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <memory>
