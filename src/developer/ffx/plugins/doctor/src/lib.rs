@@ -27,7 +27,7 @@ use fidl_fuchsia_developer_ffx::{
 };
 use fidl_fuchsia_developer_remotecontrol::{RemoteControlMarker, RemoteControlProxy};
 use fuchsia_lockfile::{LockfileCreateError, LockfileCreateErrorKind};
-use futures::TryStreamExt;
+use futures::{StreamExt, TryStreamExt};
 use serde_json::json;
 use std::collections::HashSet;
 use std::fs;
@@ -1713,8 +1713,8 @@ async fn find_targets_locally(
     env_context: &EnvironmentContext,
     query: TargetInfoQuery,
 ) -> Result<Vec<TargetInfo>> {
-    let targets = ffx_target::get_discovered_targets(query, true, true, env_context).await?;
-    Ok(targets.into_iter().map(|t| TargetInfo::from(t)).collect::<Vec<TargetInfo>>())
+    let stream = ffx_target::get_discovery_stream(query, true, true, env_context).await?;
+    Ok(stream.map(|t| TargetInfo::from(t)).collect::<Vec<TargetInfo>>().await)
 }
 
 async fn check_targets_via_daemon<W: Write>(

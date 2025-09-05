@@ -6,8 +6,9 @@ use addr::TargetIpAddr;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use discovery::events::TargetEvent;
 use discovery::query::TargetInfoQuery;
-use discovery::{DiscoveryBuilder, FastbootConnectionState, TargetState};
+use discovery::{DiscoveryBuilder, FastbootConnectionState, TargetDiscovery, TargetState};
 use errors::ffx_bail;
 use fastboot_file_discovery::FASTBOOT_FILE_PATH;
 use ffx_bootloader_args::SubCommand::{Boot, Info, Lock, Unlock};
@@ -30,12 +31,15 @@ use fidl::Error;
 use fidl_fuchsia_developer_ffx::TargetState as FidlTargetState;
 use fidl_fuchsia_hardware_power_statecontrol::AdminProxy;
 use fidl_fuchsia_hwinfo::DeviceProxy;
-use futures::try_join;
+use futures::{FutureExt, StreamExt, try_join};
 use schemars::JsonSchema;
 use serde::Serialize;
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::io::{Write, stdin};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::rc::Rc;
 use target_holders::{TargetInfoHolder, moniker};
 use termion::{color, style};
 use tokio::sync::mpsc;
@@ -143,23 +147,68 @@ Reboot the Target to the bootloader and re-run this command."
                     .get(FASTBOOT_FILE_PATH)
                     .map_err(|e| user_error!("Unable to get config value: {:#?}", e))?;
                 let disco = DiscoveryBuilder::default()
+                    .notify_removed(false)
                     .with_emulator_instance_root(Some(emulator_instance_root))
                     .with_fastboot_devices_file_path(Some(fastboot_file_path))
                     .build();
 
+                #[derive(Clone)]
+                struct Criteria {
+                    serial: Option<String>,
+                }
+
+                let criteria = Criteria { serial: info.serial_number.clone() };
+
                 let query = info
                     .serial_number
                     .map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
-                let discovered_devices =
-                    disco.discover_devices(query).await.map_err(anyhow::Error::from)?;
-                let filtered: Vec<_> = discovered_devices
-                    .into_iter()
-                    .filter(|h| matches!(h.state, discovery::TargetState::Fastboot(_)))
-                    .collect();
+                let stream = disco.discover_devices(query).map_err(anyhow::Error::from)?;
+                let timer =
+                    fuchsia_async::Timer::new(std::time::Duration::from_millis(100000)).fuse();
+                let found_target_event = async_utils::event::Event::new();
+                let found_it = found_target_event.wait().fuse();
+                let seen = Rc::new(RefCell::new(HashSet::new()));
+                let discovered_devices_stream = stream
+                    .filter_map(move |ev| {
+                        let c_clone = criteria.clone();
+                        let found_ev = found_target_event.clone();
+                        let seen = seen.clone();
+                        async move {
+                            match ev {
+                                TargetEvent::Added(ref h) => {
+                                    if seen.borrow().contains(h) {
+                                        None
+                                    } else {
+                                        match &h.state {
+                                            discovery::TargetState::Fastboot(fts) => {
+                                                match c_clone.serial {
+                                                    Some(c) if c == fts.serial_number => {
+                                                        log::debug!(
+                                                            "Found the target, firing signal"
+                                                        );
+                                                        found_ev.signal();
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                        seen.borrow_mut().insert(h.clone());
+                                        Some((*h).clone())
+                                    }
+                                }
+                                // We've only asked for Added events
+                                _ => unreachable!(),
+                            }
+                        }
+                    })
+                    .take_until(futures_lite::future::race(timer, found_it));
 
-                assert!(filtered.len() == 1);
-                let device_res = &filtered[0];
-                device_res.state.clone()
+                let mut discovered_devices = discovered_devices_stream.collect::<Vec<_>>().await;
+
+                assert!(discovered_devices.len() == 1);
+                let device_res = discovered_devices.pop().unwrap();
+                device_res.state
             }
             Some(FidlTargetState::Unknown) => {
                 ffx_bail!("Target is in an Unknown state.");

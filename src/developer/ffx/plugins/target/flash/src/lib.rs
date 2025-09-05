@@ -6,8 +6,9 @@ use addr::TargetIpAddr;
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
+use discovery::events::TargetEvent;
 use discovery::query::TargetInfoQuery;
-use discovery::{DiscoveryBuilder, FastbootConnectionState, TargetState};
+use discovery::{DiscoveryBuilder, FastbootConnectionState, TargetDiscovery, TargetState};
 use errors::ffx_bail;
 use fastboot_file_discovery::FASTBOOT_FILE_PATH;
 use ffx_config::EnvironmentContext;
@@ -26,13 +27,16 @@ use fidl::Error;
 use fidl_fuchsia_developer_ffx::TargetState as FidlTargetState;
 use fidl_fuchsia_hardware_power_statecontrol::AdminProxy;
 use fidl_fuchsia_hwinfo::DeviceProxy;
-use futures::try_join;
+use futures::{FutureExt, StreamExt, try_join};
 use schemars::JsonSchema;
 use serde::Serialize;
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::io::{Write, stderr, stdin, stdout};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::rc::Rc;
 use structured_ui::{Interface, TextUi};
 use target_holders::{TargetInfoHolder, moniker};
 use termion::{color, style};
@@ -337,25 +341,65 @@ async fn rediscover_target(
         .get(FASTBOOT_FILE_PATH)
         .map_err(|e| user_error!("Unable to get config value: {:#?}", e))?;
     let disco = DiscoveryBuilder::default()
+        .notify_removed(false)
         .with_emulator_instance_root(Some(emulator_instance_root))
         .with_fastboot_devices_file_path(Some(fastboot_file_path))
         .build();
 
+    #[derive(Clone)]
+    struct Criteria {
+        serial: Option<String>,
+    }
+
+    let criteria = Criteria { serial: serial_number.clone() };
+
     let query = serial_number.map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
+    let stream = disco.discover_devices(query).map_err(anyhow::Error::from)?;
+    let timer = fuchsia_async::Timer::new(std::time::Duration::from_millis(100000)).fuse();
+    let found_target_event = async_utils::event::Event::new();
+    let found_it = found_target_event.wait().fuse();
+    let seen = Rc::new(RefCell::new(HashSet::new()));
+    let discovered_devices_stream = stream
+        .filter_map(move |ev| {
+            let c_clone = criteria.clone();
+            let found_ev = found_target_event.clone();
+            let seen = seen.clone();
+            async move {
+                match ev {
+                    TargetEvent::Added(ref h) => {
+                        if seen.borrow().contains(h) {
+                            None
+                        } else {
+                            match &h.state {
+                                discovery::TargetState::Fastboot(fts) => match c_clone.serial {
+                                    Some(c) if c == fts.serial_number => {
+                                        log::debug!("Found the target, firing signal");
+                                        found_ev.signal();
+                                    }
+                                    _ => {}
+                                },
+                                _ => {}
+                            }
+                            seen.borrow_mut().insert(h.clone());
+                            Some((*h).clone())
+                        }
+                    }
+                    // We've only asked for Added events
+                    _ => unreachable!(),
+                }
+            }
+        })
+        .take_until(futures_lite::future::race(timer, found_it));
 
-    let discovered_devices = disco.discover_devices(query).await.map_err(anyhow::Error::from)?;
-    let filtered: Vec<_> = discovered_devices
-        .into_iter()
-        .filter(|h| matches!(h.state, discovery::TargetState::Fastboot(_)))
-        .collect();
+    let mut discovered_devices = discovered_devices_stream.collect::<Vec<_>>().await;
 
-    match filtered.len() {
+    match discovered_devices.len() {
         0 => {
             return_bug!("Could not rediscover device after rebooting to the bootloader")
         }
         1 => {
-            let device_res = &filtered[0];
-            Ok(device_res.state.clone())
+            let device_res = discovered_devices.pop().unwrap();
+            Ok((device_res).state)
         }
         num @ _ => {
             return_bug!("Expected to rediscover only one device, but found: {}", num)

@@ -120,9 +120,7 @@ where
         event_handler,
         DefaultSerialFinder {},
         UnversionedFastbootUsbTester {},
-        // This interval should be longer than libdiscovery::DEFAULT_TIMEOUT_SECS (2 secs)
-        // so in the normal case, we don't scan for USB devices more than once.
-        Duration::from_secs(3),
+        Duration::from_secs(1),
     )
 }
 

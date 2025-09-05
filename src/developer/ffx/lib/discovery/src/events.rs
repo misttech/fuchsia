@@ -104,9 +104,10 @@ pub enum TargetEvent {
 
 impl TargetEvent {
     /// Returns the inner [TargetHandle] reference with the lifetime of this object.
-    pub fn target_handle(&self) -> &TargetHandle {
+    pub fn as_handle<'a>(&'a self) -> &'a TargetHandle {
         match self {
-            Self::Added(h) | Self::Removed(h) => h,
+            Self::Added(ref h) => h,
+            Self::Removed(ref h) => h,
         }
     }
 

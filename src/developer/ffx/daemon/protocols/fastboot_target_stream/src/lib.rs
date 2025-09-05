@@ -5,14 +5,17 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use discovery::query::TargetInfoQuery;
-use discovery::{DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetState};
+use discovery::{
+    DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetDiscovery, TargetEvent,
+    TargetState,
+};
 use ffx::TargetIpAddrInfo;
 use ffx_config::{get, is_usb_discovery_disabled};
 use ffx_stream_util::TryStreamUtilExt;
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx;
 use fuchsia_async::Task;
-use futures::TryStreamExt;
+use futures::{StreamExt, TryStreamExt};
 use protocols::prelude::*;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -67,11 +70,14 @@ impl FidlProtocol for FastbootTargetStreamProtocol {
                     get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
                 let discovery = DiscoveryBuilder::default()
                     .with_fastboot_devices_file_path(fastboot_file_path)
+                    .notify_added(true)
+                    .notify_removed(true)
                     .set_source(DiscoverySources::USB_FASTBOOT | DiscoverySources::FASTBOOT_FILE)
                     .build();
-                let devices  = discovery.discover_devices(TargetInfoQuery::First).await.map_err(anyhow::Error::from)?;
-                for device in devices {
-                           match device.state {
+                let mut device_stream = discovery.discover_devices(TargetInfoQuery::First).map_err(anyhow::Error::from)?;
+                while let Some(event) = device_stream.next().await {
+                        match event {
+                            TargetEvent::Added(e) => match e.state {
                                 TargetState::Fastboot(fts) => match fts.connection_state {
                                     FastbootConnectionState::Usb => {
                                         if let Some(inner) = inner.upgrade() {
@@ -120,9 +126,13 @@ impl FidlProtocol for FastbootTargetStreamProtocol {
                                 e @ _ => {
                                     log::debug!("We only support Fastboot events in this module... skipping non fastboot event: {:?}", e);
                                 }
+                            },
+                            TargetEvent::Removed(_) => {
+                                log::debug!("Skipping removed event");
                             }
                         }
                 }
+            }
         }));
         Ok(())
     }

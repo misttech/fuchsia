@@ -4,7 +4,7 @@
 pub use crate::fidl_pipe::{FidlPipe, create_overnet_socket};
 pub use crate::resolve::{
     DefaultTargetResolver, Resolution, TargetResolver, get_discovery_stream,
-    maybe_locally_resolve_target_spec, resolve_target_address, resolve_target_query,
+    maybe_locally_resolve_target_spec, mock_stream, resolve_target_address, resolve_target_query,
     resolve_target_query_to_info,
 };
 use crate::{KnockError, TargetInfoQuery};
@@ -113,8 +113,9 @@ pub async fn list_targets(
     connect: bool,
 ) -> Result<Vec<ffx::TargetInfo>> {
     let query = TargetInfoQuery::from(nodename);
-    let stream =
-        get_discovery_stream(query, include_usb, include_mdns, ctx).map_err(anyhow::Error::from)?;
+    let stream = get_discovery_stream(query, include_usb, include_mdns, ctx)
+        .await
+        .map_err(anyhow::Error::from)?;
     let targets = handles_to_infos(stream, ctx, connect).await?;
     Ok(targets)
 }

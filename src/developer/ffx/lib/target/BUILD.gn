@@ -37,6 +37,7 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/ssh:lib",
     "//src/developer/ffx/lib/target_errors:lib",
     "//src/developer/ffx/lib/timeout:lib",
+    "//src/lib/async-utils",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/local",
     "//src/lib/fidl/rust/fidl",

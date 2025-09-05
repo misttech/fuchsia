@@ -3,9 +3,11 @@
 // found in the LICENSE file.
 
 use discovery::{
-    DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetHandle, TargetState,
+    DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetDiscovery, TargetEvent,
+    TargetHandle, TargetState,
 };
 use ffx_fastboot_interface::interface_factory::InterfaceFactoryError;
+use futures::StreamExt;
 use std::path::PathBuf;
 
 pub(crate) async fn rediscover_helper<F, U>(
@@ -19,26 +21,35 @@ where
     U: FnMut(FastbootConnectionState) -> Result<(), InterfaceFactoryError>,
 {
     let discovery = DiscoveryBuilder::default()
+        .notify_added(true)
         .set_source(DiscoverySources::MDNS | DiscoverySources::MANUAL)
         .with_fastboot_devices_file_path(fastboot_file_path.clone())
         .build();
     let query = discovery::query::TargetInfoQuery::NodenameOrSerial(target_name.clone());
-    let targets = discovery.discover_devices(query).await.map_err(anyhow::Error::from)?;
+    let mut device_stream = discovery.discover_devices(query).map_err(anyhow::Error::from)?;
 
-    for handle in targets {
-        if filter(&handle) {
+    while let Some(event) = device_stream.next().await {
+        if filter(event.as_handle()) {
             // This is the first event that matches our name.
             // Mutate our internal understanding of the address
             // the target is at with the new address discovered
-            match handle.state {
-                TargetState::Fastboot(ts) => cb(ts.connection_state)?,
-                state @ _ => {
-                    return Err(InterfaceFactoryError::RediscoverTargetNotInFastboot(
-                        target_name.to_string(),
-                        state.to_string(),
-                    ));
+            match event {
+                TargetEvent::Removed(_) => {
+                    return Err(InterfaceFactoryError::RediscoverTargetError(format!(
+                        "When rediscovering target: {}, expected a target Added event but got a Removed event",
+                        target_name
+                    )));
                 }
-            };
+                TargetEvent::Added(handle) => match handle.state {
+                    TargetState::Fastboot(ts) => cb(ts.connection_state)?,
+                    state @ _ => {
+                        return Err(InterfaceFactoryError::RediscoverTargetNotInFastboot(
+                            target_name.to_string(),
+                            state.to_string(),
+                        ));
+                    }
+                },
+            }
             return Ok(());
         }
     }
