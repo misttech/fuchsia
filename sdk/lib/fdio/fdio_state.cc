@@ -4,6 +4,10 @@
 
 #include "sdk/lib/fdio/fdio_state.h"
 
+#include <array>
+#include <mutex>
+#include <optional>
+
 namespace {
 
 fdio_slot* slot_locked(std::array<fdio_slot, FDIO_MAX_FD>& fdtab, int fd) {

@@ -5,8 +5,10 @@
 #ifndef LIB_STDCOMPAT_BIT_H_
 #define LIB_STDCOMPAT_BIT_H_
 
+#include <cstdint>
 #include <cstring>
 #include <limits>
+#include <type_traits>
 
 #include "internal/bit.h"
 #include "memory.h"

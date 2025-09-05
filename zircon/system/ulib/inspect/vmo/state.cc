@@ -15,11 +15,14 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace inspect {

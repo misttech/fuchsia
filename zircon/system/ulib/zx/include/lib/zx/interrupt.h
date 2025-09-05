@@ -12,6 +12,8 @@
 #include <lib/zx/time.h>
 #include <zircon/availability.h>
 
+#include <cstddef>
+
 namespace zx {
 
 class interrupt final : public object<interrupt> {

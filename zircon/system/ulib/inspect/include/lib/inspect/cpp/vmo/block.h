@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
+#include <optional>
 #include <type_traits>
 
 namespace inspect {
