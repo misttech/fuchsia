@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl_fuchsia_bluetooth::{HostId as FidlHostId, PeerId as FidlPeerId};
 use fidl_fuchsia_bluetooth_sys::{
     AccessMarker, AccessProxy, BondableMode, HostWatcherMarker, HostWatcherProxy,
@@ -11,12 +11,12 @@ use fidl_fuchsia_bluetooth_sys::{
 };
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::io_capabilities::{InputCapability, OutputCapability};
-use fuchsia_bluetooth::types::{addresses_to_custom_string, HostId, HostInfo, Peer, PeerId};
+use fuchsia_bluetooth::types::{HostId, HostInfo, Peer, PeerId, addresses_to_custom_string};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
-use futures::{select, FutureExt, Sink, SinkExt, Stream, StreamExt, TryFutureExt};
-use prettytable::{cell, format, row, Row, Table};
+use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt, TryFutureExt, select};
+use prettytable::{Row, Table, cell, format, row};
 use regex::Regex;
 use rustyline::error::ReadlineError;
 use rustyline::{CompletionType, Config, EditMode, Editor};
@@ -321,7 +321,7 @@ fn parse_pairing_security_level(level: &str) -> Result<PairingSecurityLevel, Str
         _ => {
             return Err(
                 "Unable to pair: security level must be either \"AUTH\" or \"ENC\"".to_string()
-            )
+            );
         }
     }
 }
@@ -339,7 +339,7 @@ fn parse_pairing_transport(transport: &str) -> Result<TechnologyType, String> {
         "BREDR" | "CLASSIC" => Ok(TechnologyType::Classic),
         "LE" => Ok(TechnologyType::LowEnergy),
         _ => {
-            return Err("If present, transport must be \"BREDR\"/\"CLASSIC\" or \"LE\"".to_string())
+            return Err("If present, transport must be \"BREDR\"/\"CLASSIC\" or \"LE\"".to_string());
         }
     }
 }
@@ -427,14 +427,16 @@ async fn allow_pairing(args: &[&str], access_svc: &PairingProxy) -> Result<Strin
     };
     let (delegate_task, mut receiver) = create_pairing_task(input_cap, output_cap, access_svc)?;
 
-    if let Some((paired_id, paired)) = receiver.next().await {
-        // If pairing was completed, exit.
+    // TODO(fxbug.dev/443280885): Make repeated pairing attempts optional or
+    // provide a mechanism for early exit without killing the entire process.
+    while let Some((paired_id, paired)) = receiver.next().await {
+        if !paired {
+            println!("Pairing with {} was unsuccessful.", paired_id);
+            continue;
+        }
+
         let _ = delegate_task.abort();
-        return Ok(format!(
-            "Completed {} pairing with {}.",
-            if paired { "successful" } else { "unsuccessful" },
-            paired_id
-        ));
+        return Ok(format!("Completed successful pairing with {}.", paired_id));
     }
     Err(format_err!("Pairing delegate closed without a pairing"))
 }
