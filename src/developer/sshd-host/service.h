@@ -8,8 +8,11 @@
 #include <fidl/fuchsia.boot/cpp/fidl.h>
 #include <fidl/fuchsia.component/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
+#include <lib/async/wait.h>
+#include <lib/fidl/cpp/wire/unknown_interaction_handler.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/process.h>
+#include <lib/zx/socket.h>
 #include <sys/socket.h>
 
 #include <cstdint>
@@ -20,15 +23,12 @@
 
 #include <fbl/unique_fd.h>
 
-#include "fidl/fuchsia.component/cpp/markers.h"
-#include "lib/fidl/cpp/wire/unknown_interaction_handler.h"
 #include "src/lib/fsl/tasks/fd_waiter.h"
 
 namespace sshd_host {
 
 // Name of the collection that contains sshd shell child components.
 inline constexpr std::string_view kShellCollection = "shell";
-
 class Service;
 
 // Service relies on the default async dispatcher and is not thread safe.
@@ -53,12 +53,9 @@ class Service {
   struct Controller final : public fidl::AsyncEventHandler<fuchsia_component::ExecutionController> {
     Controller(Service* service, uint64_t child_num, std::string child_name,
                fidl::ClientEnd<fuchsia_component::ExecutionController> client_end,
-               async_dispatcher_t* dispatcher, fidl::SyncClient<fuchsia_component::Realm> realm)
-        : service_(service),
-          child_num_(child_num),
-          child_name_(std::move(child_name)),
-          client_(std::move(client_end), dispatcher, this),
-          realm_(std::move(realm)) {}
+               async_dispatcher_t* dispatcher, fidl::SyncClient<fuchsia_component::Realm> realm,
+               zx::socket stderr_socket);
+    ~Controller();
     void OnStop(fidl::Event<fuchsia_component::ExecutionController::OnStop>& event) override {
       service_->OnStop(event.stopped_payload().status().value_or(ZX_OK), this);
     }
@@ -72,6 +69,10 @@ class Service {
                        << metadata.event_ordinal;
     }
 
+    void Wait();
+    void OnStderr(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
+                  const zx_packet_signal_t* signal);
+
     fidl::Client<fuchsia_component::ExecutionController>& operator->() { return client_; }
 
     Service* service_;
@@ -79,6 +80,9 @@ class Service {
     std::string child_name_;
     fidl::Client<fuchsia_component::ExecutionController> client_;
     fidl::SyncClient<fuchsia_component::Realm> realm_;
+    zx::socket stderr_socket_;
+    async::WaitMethod<Controller, &Controller::OnStderr> stderr_waiter_;
+    std::string stderr_buf_;
   };
 
   std::map<uint64_t, Controller> controllers_;

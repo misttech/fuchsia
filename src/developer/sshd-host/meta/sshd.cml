@@ -14,7 +14,10 @@
 
         // stdin and stdout are forwarded to the SSH connection fd.
         forward_stdout_to: "none",
-        forward_stderr_to: "log",
+
+        // stderr is taken by the `sshd-host` component to perform
+        // log filtering and forwarding on its own.
+        forward_stderr_to: "none",
     },
 
     // TODO(https://fxbug.dev/42080863): Remove unused capabilities once shell tools run outside the

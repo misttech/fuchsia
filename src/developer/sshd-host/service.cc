@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <fidl/fuchsia.component/cpp/fidl.h>
 #include <fidl/fuchsia.process/cpp/fidl.h>
+#include <lib/async/cpp/task.h>
 #include <lib/async/dispatcher.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/fd.h>
@@ -25,6 +26,7 @@
 #include <zircon/processargs.h>
 #include <zircon/types.h>
 
+#include <array>
 #include <vector>
 
 #include <fbl/unique_fd.h>
@@ -157,10 +159,19 @@ void Service::Launch(fbl::unique_fd conn) {
     return;
   }
 
-  controllers_.emplace(std::piecewise_construct, std::forward_as_tuple(child_num),
-                       std::forward_as_tuple(this, child_num, std::move(child_name),
-                                             std::move(execution_controller_endpoints->client),
-                                             dispatcher_, std::move(realm)));
+  // Create a socket and pass it to the child as stderr. We read the stderr output and
+  // print it to the logs for debugging purposes.
+  zx::socket stderr_socket, child_stderr;
+  if (zx_status_t status = zx::socket::create(0, &stderr_socket, &child_stderr); status != ZX_OK) {
+    FX_PLOGS(ERROR, status) << "Failed to create stderr socket";
+    return;
+  }
+
+  controllers_.emplace(
+      std::piecewise_construct, std::forward_as_tuple(child_num),
+      std::forward_as_tuple(this, child_num, std::move(child_name),
+                            std::move(execution_controller_endpoints->client), dispatcher_,
+                            std::move(realm), std::move(stderr_socket)));
   auto remove_controller_on_error =
       fit::defer([this, child_num]() { controllers_.erase(child_num); });
 
@@ -176,6 +187,8 @@ void Service::Launch(fbl::unique_fd conn) {
     numbered_handles.push_back(
         fuchsia_process::HandleInfo{{.handle = std::move(conn_handle), .id = PA_HND(PA_FD, fd)}});
   }
+  numbered_handles.push_back(fuchsia_process::HandleInfo{
+      {.handle = std::move(child_stderr), .id = PA_HND(PA_FD, STDERR_FILENO)}});
 
   auto result = controller->Start(
       {{.args = {{
@@ -192,23 +205,130 @@ void Service::Launch(fbl::unique_fd conn) {
   remove_controller_on_error.cancel();
 }
 
+Service::Controller::Controller(Service* service, uint64_t child_num, std::string child_name,
+                                fidl::ClientEnd<fuchsia_component::ExecutionController> client_end,
+                                async_dispatcher_t* dispatcher,
+                                fidl::SyncClient<fuchsia_component::Realm> realm,
+                                zx::socket stderr_socket)
+    : service_(service),
+      child_num_(child_num),
+      child_name_(std::move(child_name)),
+      client_(std::move(client_end), dispatcher, this),
+      realm_(std::move(realm)),
+      stderr_socket_(std::move(stderr_socket)),
+      stderr_waiter_(this, stderr_socket_.get(), ZX_SOCKET_READABLE | ZX_SOCKET_PEER_CLOSED) {
+  Wait();
+}
+
+Service::Controller::~Controller() { stderr_waiter_.Cancel(); }
+
+void Service::Controller::Wait() {
+  zx_status_t status = stderr_waiter_.Begin(service_->dispatcher_);
+  if (status != ZX_OK) {
+    FX_PLOGS(ERROR, status) << "Failed to wait on stderr socket for " << child_name_;
+  }
+}
+
+void Service::Controller::OnStderr(async_dispatcher_t* dispatcher, async::WaitBase* wait,
+                                   zx_status_t status, const zx_packet_signal_t* signal) {
+  if (status != ZX_OK) {
+    FX_PLOGS(ERROR, status) << "Wait on stderr failed for " << child_name_;
+    return;
+  }
+
+  // It's possible for the socket to be both readable and closed in the same signal.
+  if (signal->observed & ZX_SOCKET_READABLE) {
+    constexpr size_t kStderrBufSize = 1024;
+    std::array<char, kStderrBufSize> buf;
+    size_t actual;
+    if (zx_status_t status = stderr_socket_.read(0, buf.data(), buf.size(), &actual);
+        status != ZX_OK) {
+      if (status != ZX_ERR_PEER_CLOSED) {
+        FX_PLOGS(ERROR, status) << "Failed to read from stderr socket for " << child_name_;
+      }
+      return;
+    }
+
+    stderr_buf_.append(buf.data(), actual);
+
+    constexpr size_t kMaxStderrBufSize = 16 * 1024;  // 16 KiB
+    if (stderr_buf_.length() > kMaxStderrBufSize) {
+      FX_LOGS(WARNING) << "sshd stderr buffer for " << child_name_
+                       << " is full, flushing without newline.";
+      FX_LOGS(DEBUG) << "sshd stderr: " << stderr_buf_;
+      stderr_buf_.clear();
+    }
+
+    std::string_view msg_stream(stderr_buf_);
+    while (!msg_stream.empty()) {
+      size_t msg_end = msg_stream.find('\n');
+      // no msg in stream (e.g. line break not found).
+      if (msg_end == std::string_view::npos) {
+        break;
+      }
+      // include '\n'
+      std::string_view msg = msg_stream.substr(0, msg_end + 1);
+      msg_stream.remove_prefix(msg.size());
+      // remove '\n'
+      msg.remove_suffix(1);
+      // remove '\r' if present, '\r' may only be inserted
+      // in certain systems preceding `\n`.
+      if (msg.ends_with('\r')) {
+        msg.remove_suffix(1);
+      }
+      // output msg even if empty
+      FX_LOGS(DEBUG) << "ssh stderr: " << msg;
+    }
+
+    // If the entire buffer was processed, the view will be empty
+    if (msg_stream.empty()) {
+      stderr_buf_.clear();
+    } else if (msg_stream.data() != stderr_buf_.data()) {
+      stderr_buf_ = std::string(msg_stream);
+    }
+  }
+  if (signal->observed & ZX_SOCKET_PEER_CLOSED) {
+    if (!stderr_buf_.empty()) {
+      FX_LOGS(DEBUG) << "sshd stderr: " << stderr_buf_;
+    }
+    // Do not re-arm the wait, the socket is closed.
+    return;
+  }
+  Wait();
+}
+
 void Service::OnStop(zx_status_t status, Controller* ptr) {
   if (status != ZX_OK) {
     FX_PLOGS(INFO, status) << "sshd component stopped with status";
   }
 
-  // Destroy the component.
-  auto result = ptr->realm_->DestroyChild({{.child = {{
-                                                .name = ptr->child_name_,
-                                                .collection = std::string(kShellCollection),
+  // The controller is currently executing on the dispatcher thread. We can't
+  // destroy it here, because that would be a use-after-free. Instead, we
+  // schedule its destruction for the next turn of the event loop.
+  async::PostTask(dispatcher_, [this, child_num = ptr->child_num_]() {
+    auto it = controllers_.find(child_num);
+    if (it == controllers_.end()) {
+      return;
+    }
+    auto& controller = it->second;
 
-                                            }}}});
-  if (result.is_error()) {
-    FX_LOGS(ERROR) << "Failed to destroy sshd child: " << result.error_value().FormatDescription();
-  }
+    // Take ownership of the realm client to ensure it outlives the DestroyChild call.
+    auto realm = std::move(controller.realm_);
 
-  // Remove the controller.
-  controllers_.erase(ptr->child_num_);
+    // Destroy the component.
+    auto result = realm->DestroyChild({{.child = {{
+                                            .name = controller.child_name_,
+                                            .collection = std::string(kShellCollection),
+
+                                        }}}});
+    if (result.is_error()) {
+      FX_LOGS(ERROR) << "Failed to destroy sshd child: "
+                     << result.error_value().FormatDescription();
+    }
+
+    // Remove the controller.
+    controllers_.erase(it);
+  });
 }
 
 }  // namespace sshd_host
