@@ -9,8 +9,8 @@ mod zxcrypt;
 use crate::zxcrypt::Key;
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use block_client::{
-    BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient, VmoId, WriteFlags,
-    WriteOptions,
+    BlockClient, BufferSlice, MutableBufferSlice, ReadOptions, RemoteBlockClient, VmoId,
+    WriteFlags, WriteOptions,
 };
 use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockServer, DeviceInfo, PartitionInfo};
@@ -849,9 +849,10 @@ impl IoTrait for Read<'_> {
         len: u64,
         trace_flow_id: u64,
     ) -> Result<(), zx::Status> {
-        self.ops.push(Box::pin(self.device.read_at_traced(
+        self.ops.push(Box::pin(self.device.read_at_with_opts_traced(
             MutableBufferSlice::new_with_vmo_id(self.vmo_id, self.vmo_offset, len),
             offset,
+            ReadOptions::default(),
             trace_flow_id,
         )));
         self.vmo_offset += len;
@@ -886,7 +887,14 @@ impl IoTrait for ReadToMem<'_> {
         // We don't care about performance, so we issue the operation immediately.
         let (head, tail) = std::mem::take(&mut self.buffer).split_at_mut(len as usize);
         self.buffer = tail;
-        self.device.read_at_traced(MutableBufferSlice::Memory(head), offset, trace_flow_id).await?;
+        self.device
+            .read_at_with_opts_traced(
+                MutableBufferSlice::Memory(head),
+                offset,
+                ReadOptions::default(),
+                trace_flow_id,
+            )
+            .await?;
         Ok(())
     }
 

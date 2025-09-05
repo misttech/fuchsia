@@ -46,6 +46,8 @@ use zerocopy::{AsBytes, FromBytes, FromZeros, NoCell};"
   --with-derive-custom-struct=${ZEROCOPY_SYMS_REGEX}={AsBytes,FromBytes,FromZeros,NoCell} \
   --impl-debug \
   --allowlist-type=${ZEROCOPY_SYMS_REGEX} \
+  --allowlist-var 'SENTINEL_SLOT_VALUE' \
+  --allowlist-var '_SENTINEL_SLOT_VALUE' \
   --output "${target_file}" \
   "${source_file}" \
   -- \

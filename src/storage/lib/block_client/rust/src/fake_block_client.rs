@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use block_client::{BlockClient, BufferSlice, MutableBufferSlice, VmoId, WriteOptions};
+use block_client::{
+    BlockClient, BufferSlice, MutableBufferSlice, ReadOptions, VmoId, WriteOptions,
+};
 use fidl_fuchsia_hardware_block as block;
 use fuchsia_sync::Mutex;
 use std::collections::BTreeMap;
@@ -62,10 +64,11 @@ impl BlockClient for FakeBlockClient {
         if let None = inner.vmo_registry.remove(&id) { Err(zx::Status::NOT_FOUND) } else { Ok(()) }
     }
 
-    async fn read_at_traced(
+    async fn read_at_with_opts_traced(
         &self,
         buffer_slice: MutableBufferSlice<'_>,
         device_offset: u64,
+        _opts: ReadOptions,
         _trace_flow_id: u64,
     ) -> Result<(), zx::Status> {
         if device_offset % self.block_size as u64 != 0 {

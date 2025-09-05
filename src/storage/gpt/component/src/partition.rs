@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use crate::gpt::GptPartition;
 use anyhow::Error;
-use block_client::{VmoId, WriteOptions};
+use block_client::{ReadOptions, VmoId, WriteOptions};
 use block_server::OffsetMap;
 use block_server::async_interface::{PassthroughSession, SessionManager};
 use fidl_fuchsia_hardware_block as fblock;
@@ -75,7 +75,16 @@ impl block_server::async_interface::Interface for PartitionBackend {
     ) -> Result<(), zx::Status> {
         let vmoid = self.get_vmoid(vmo)?;
         self.partition
-            .read(device_block_offset, block_count, vmoid.as_ref(), vmo_offset, trace_flow_id)
+            .read(
+                device_block_offset,
+                block_count,
+                vmoid.as_ref(),
+                vmo_offset,
+                // TODO(https://fxbug.dev/441395652): Plumb InlineCryptoOptions through the
+                // block_server
+                ReadOptions::default(),
+                trace_flow_id,
+            )
             .await
     }
 
@@ -85,12 +94,19 @@ impl block_server::async_interface::Interface for PartitionBackend {
         length: u32,
         vmo: &Arc<zx::Vmo>,
         vmo_offset: u64, // *bytes* not blocks
-        opts: WriteOptions,
+        write_opts: WriteOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
         let vmoid = self.get_vmoid(vmo)?;
         self.partition
-            .write(device_block_offset, length, vmoid.as_ref(), vmo_offset, opts, trace_flow_id)
+            .write(
+                device_block_offset,
+                length,
+                vmoid.as_ref(),
+                vmo_offset,
+                write_opts,
+                trace_flow_id,
+            )
             .await
     }
 

@@ -12,7 +12,9 @@ use aes::cipher::inout::InOut;
 use aes::cipher::typenum::consts::U16;
 use aes::cipher::{BlockBackend, BlockClosure, BlockDecrypt, BlockEncrypt, BlockSizeUser, KeyInit};
 use anyhow::{Error, ensure};
-use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient, WriteOptions};
+use block_client::{
+    BlockClient, BufferSlice, MutableBufferSlice, ReadOptions, RemoteBlockClient, WriteOptions,
+};
 
 use futures::stream::{FuturesUnordered, TryStreamExt};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, little_endian};
@@ -190,13 +192,14 @@ impl IoTrait for EncryptedRead<'_> {
         let mut buf_offset = 0;
         let futures = FuturesUnordered::from_iter(self.ops.drain(..).map(
             |Op { offset, len, trace_flow_id }| {
-                let fut = self.device.read_at_traced(
+                let fut = self.device.read_at_with_opts_traced(
                     MutableBufferSlice::new_with_vmo_id(
                         self.buffer.vmo_id(),
                         self.buffer.vmo_offset() + buf_offset,
                         len,
                     ),
                     offset,
+                    ReadOptions::default(),
                     trace_flow_id,
                 );
                 buf_offset += len;

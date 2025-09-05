@@ -15,6 +15,7 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+pub const _SENTINEL_SLOT_VALUE: u32 = 255;
 pub type zx_status_t = i32;
 pub type reqid_t = u32;
 pub type groupid_t = u16;
@@ -49,9 +50,12 @@ pub struct BlockFifoRequest {
     pub vmo_offset: u64,
     pub dev_offset: u64,
     pub trace_flow_id: u64,
+    pub dun: u32,
+    pub slot: u8,
+    pub padding: [u8; 3usize],
 }
 const _: () = {
-    ["Size of BlockFifoRequest"][::std::mem::size_of::<BlockFifoRequest>() - 48usize];
+    ["Size of BlockFifoRequest"][::std::mem::size_of::<BlockFifoRequest>() - 56usize];
     ["Alignment of BlockFifoRequest"][::std::mem::align_of::<BlockFifoRequest>() - 8usize];
     ["Offset of field: BlockFifoRequest::command"]
         [::std::mem::offset_of!(BlockFifoRequest, command) - 0usize];
@@ -71,6 +75,12 @@ const _: () = {
         [::std::mem::offset_of!(BlockFifoRequest, dev_offset) - 32usize];
     ["Offset of field: BlockFifoRequest::trace_flow_id"]
         [::std::mem::offset_of!(BlockFifoRequest, trace_flow_id) - 40usize];
+    ["Offset of field: BlockFifoRequest::dun"]
+        [::std::mem::offset_of!(BlockFifoRequest, dun) - 48usize];
+    ["Offset of field: BlockFifoRequest::slot"]
+        [::std::mem::offset_of!(BlockFifoRequest, slot) - 52usize];
+    ["Offset of field: BlockFifoRequest::padding"]
+        [::std::mem::offset_of!(BlockFifoRequest, padding) - 53usize];
 };
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, KnownLayout, FromBytes, Immutable)]
@@ -80,10 +90,10 @@ pub struct BlockFifoResponse {
     pub group: groupid_t,
     pub padding_to_satisfy_zerocopy: u16,
     pub count: u32,
-    pub padding_to_match_request_size_and_alignment: [u64; 4usize],
+    pub padding_to_match_request_size_and_alignment: [u64; 5usize],
 }
 const _: () = {
-    ["Size of BlockFifoResponse"][::std::mem::size_of::<BlockFifoResponse>() - 48usize];
+    ["Size of BlockFifoResponse"][::std::mem::size_of::<BlockFifoResponse>() - 56usize];
     ["Alignment of BlockFifoResponse"][::std::mem::align_of::<BlockFifoResponse>() - 8usize];
     ["Offset of field: BlockFifoResponse::status"]
         [::std::mem::offset_of!(BlockFifoResponse, status) - 0usize];

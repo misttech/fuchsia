@@ -51,7 +51,7 @@ impl<T: BlockClient> Device for BlockDevice<T> {
         &self,
         offset: u64,
         buffer: MutableBufferRef<'_>,
-        _read_opts: ReadOptions,
+        read_opts: ReadOptions,
     ) -> Result<(), Error> {
         if buffer.len() == 0 {
             return Ok(());
@@ -62,13 +62,14 @@ impl<T: BlockClient> Device for BlockDevice<T> {
         ensure!(buffer.range().end % (self.block_size() as usize) == 0, Status::INVALID_ARGS);
         Ok(self
             .remote
-            .read_at(
+            .read_at_with_opts(
                 MutableBufferSlice::new_with_vmo_id(
                     &self.vmoid,
                     buffer.range().start as u64,
                     buffer.len() as u64,
                 ),
                 offset,
+                read_opts,
             )
             .await?)
     }
@@ -77,7 +78,7 @@ impl<T: BlockClient> Device for BlockDevice<T> {
         &self,
         offset: u64,
         buffer: BufferRef<'_>,
-        write_opts: WriteOptions,
+        opts: WriteOptions,
     ) -> Result<(), Error> {
         if self.read_only {
             bail!(Status::ACCESS_DENIED);
@@ -98,7 +99,7 @@ impl<T: BlockClient> Device for BlockDevice<T> {
                     buffer.len() as u64,
                 ),
                 offset,
-                write_opts,
+                opts,
             )
             .await?)
     }

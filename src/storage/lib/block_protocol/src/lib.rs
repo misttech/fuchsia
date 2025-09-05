@@ -7,6 +7,7 @@ use bitflags::bitflags;
 mod fifo;
 
 pub use fifo::*;
+pub const SENTINEL_SLOT_VALUE: u8 = fifo::_SENTINEL_SLOT_VALUE as u8;
 
 bitflags! {
     /// Options that may be used for writes.
@@ -41,9 +42,6 @@ pub struct InlineCryptoOptions {
 
 impl Default for InlineCryptoOptions {
     fn default() -> Self {
-        InlineCryptoOptions {
-            dun: 0,
-            slot: 0xff, // Sentinel value for 'slot'
-        }
+        InlineCryptoOptions { dun: 0, slot: SENTINEL_SLOT_VALUE }
     }
 }

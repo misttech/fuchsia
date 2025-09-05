@@ -286,13 +286,23 @@ pub trait BlockClient: Send + Sync {
         buffer_slice: MutableBufferSlice<'_>,
         device_offset: u64,
     ) -> impl Future<Output = Result<(), zx::Status>> + Send {
-        self.read_at_traced(buffer_slice, device_offset, 0)
+        self.read_at_with_opts_traced(buffer_slice, device_offset, ReadOptions::default(), 0)
     }
 
-    fn read_at_traced(
+    fn read_at_with_opts(
         &self,
         buffer_slice: MutableBufferSlice<'_>,
         device_offset: u64,
+        opts: ReadOptions,
+    ) -> impl Future<Output = Result<(), zx::Status>> + Send {
+        self.read_at_with_opts_traced(buffer_slice, device_offset, opts, 0)
+    }
+
+    fn read_at_with_opts_traced(
+        &self,
+        buffer_slice: MutableBufferSlice<'_>,
+        device_offset: u64,
+        opts: ReadOptions,
         trace_flow_id: u64,
     ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
@@ -485,6 +495,7 @@ impl Common {
         &self,
         buffer_slice: MutableBufferSlice<'_>,
         device_offset: u64,
+        opts: ReadOptions,
         trace_flow_id: u64,
     ) -> Result<(), zx::Status> {
         match buffer_slice {
@@ -503,6 +514,8 @@ impl Common {
                     vmo_offset: self.to_blocks(offset)?,
                     dev_offset: self.to_blocks(device_offset)?,
                     trace_flow_id,
+                    dun: opts.inline_crypto_options.dun,
+                    slot: opts.inline_crypto_options.slot,
                     ..Default::default()
                 })
                 .await?
@@ -524,6 +537,8 @@ impl Common {
                         vmo_offset: 0,
                         dev_offset: device_block,
                         trace_flow_id,
+                        dun: opts.inline_crypto_options.dun,
+                        slot: opts.inline_crypto_options.slot,
                         ..Default::default()
                     })
                     .await?;
@@ -572,6 +587,8 @@ impl Common {
                     vmo_offset: self.to_blocks(offset)?,
                     dev_offset: self.to_blocks(device_offset)?,
                     trace_flow_id,
+                    dun: opts.inline_crypto_options.dun,
+                    slot: opts.inline_crypto_options.slot,
                     ..Default::default()
                 })
                 .await?;
@@ -594,6 +611,8 @@ impl Common {
                         vmo_offset: 0,
                         dev_offset: device_block,
                         trace_flow_id,
+                        dun: opts.inline_crypto_options.dun,
+                        slot: opts.inline_crypto_options.slot,
                         ..Default::default()
                     })
                     .await?;
@@ -758,13 +777,14 @@ impl BlockClient for RemoteBlockClient {
         self.common.detach_vmo(vmo_id).await
     }
 
-    async fn read_at_traced(
+    async fn read_at_with_opts_traced(
         &self,
         buffer_slice: MutableBufferSlice<'_>,
         device_offset: u64,
+        opts: ReadOptions,
         trace_flow_id: u64,
     ) -> Result<(), zx::Status> {
-        self.common.read_at(buffer_slice, device_offset, trace_flow_id).await
+        self.common.read_at(buffer_slice, device_offset, opts, trace_flow_id).await
     }
 
     async fn write_at_with_opts_traced(
@@ -881,7 +901,12 @@ impl RemoteBlockClientSync {
         buffer_slice: MutableBufferSlice<'_>,
         device_offset: u64,
     ) -> Result<(), zx::Status> {
-        block_on(self.common.read_at(buffer_slice, device_offset, NO_TRACE_ID))
+        block_on(self.common.read_at(
+            buffer_slice,
+            device_offset,
+            ReadOptions::default(),
+            NO_TRACE_ID,
+        ))
     }
 
     pub fn write_at(
@@ -1346,7 +1371,7 @@ mod tests {
                 _block_count: u32,
                 _vmo: &Arc<zx::Vmo>,
                 _vmo_offset: u64,
-                _opts: WriteOptions,
+                _write_opts: WriteOptions,
                 _trace_flow_id: Option<NonZero<u64>>,
             ) -> Result<(), zx::Status> {
                 unreachable!();

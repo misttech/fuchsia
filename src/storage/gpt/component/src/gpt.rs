@@ -7,7 +7,8 @@ use crate::partition::PartitionBackend;
 use crate::partitions_directory::PartitionsDirectory;
 use anyhow::{Context as _, Error, anyhow};
 use block_client::{
-    BlockClient as _, BufferSlice, MutableBufferSlice, RemoteBlockClient, VmoId, WriteOptions,
+    BlockClient as _, BufferSlice, MutableBufferSlice, ReadOptions, RemoteBlockClient, VmoId,
+    WriteOptions,
 };
 use block_server::BlockServer;
 use block_server::async_interface::SessionManager;
@@ -112,6 +113,7 @@ impl GptPartition {
         block_count: u32,
         vmo_id: &VmoId,
         vmo_offset: u64, // *bytes* not blocks
+        opts: ReadOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
         let dev_offset = self
@@ -122,7 +124,9 @@ impl GptPartition {
             vmo_offset,
             (block_count * self.block_size()) as u64,
         );
-        self.block_client.read_at_traced(buffer, dev_offset, trace_id(trace_flow_id)).await
+        self.block_client
+            .read_at_with_opts_traced(buffer, dev_offset, opts, trace_id(trace_flow_id))
+            .await
     }
 
     pub fn barrier(&self) {
@@ -135,7 +139,7 @@ impl GptPartition {
         block_count: u32,
         vmo_id: &VmoId,
         vmo_offset: u64, // *bytes* not blocks
-        opts: WriteOptions,
+        write_opts: WriteOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
         let dev_offset = self
@@ -147,7 +151,7 @@ impl GptPartition {
             (block_count * self.block_size()) as u64,
         );
         self.block_client
-            .write_at_with_opts_traced(buffer, dev_offset, opts, trace_id(trace_flow_id))
+            .write_at_with_opts_traced(buffer, dev_offset, write_opts, trace_id(trace_flow_id))
             .await
     }
 
