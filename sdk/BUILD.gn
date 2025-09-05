@@ -694,7 +694,6 @@ sdk_molecule("core_bindlib") {
     "//src/devices/bind/fuchsia.test:fuchsia.test_sdk",
     "//src/devices/bind/fuchsia.test.platform:fuchsia.test.platform_sdk",
     "//src/devices/bind/fuchsia.ti.platform:fuchsia.ti.platform_sdk",
-    "//src/devices/bind/fuchsia.usb.phy:fuchsia.usb.phy_sdk",
     "//src/devices/bind/fuchsia.verisilicon.platform:fuchsia.verisilicon.platform_sdk",
   ]
 }

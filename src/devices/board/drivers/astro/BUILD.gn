@@ -113,7 +113,6 @@ fuchsia_cc_driver("astro-driver") {
     "//src/devices/bind/fuchsia.register:fuchsia.register_cpp",
     "//src/devices/bind/fuchsia.sdio:fuchsia.sdio_cpp",
     "//src/devices/bind/fuchsia.ti.platform:fuchsia.ti.platform_cpp",
-    "//src/devices/bind/fuchsia.usb.phy:fuchsia.usb.phy_cpp",
     "//src/devices/lib/amlogic",
     "//src/devices/lib/broadcom",
     "//src/devices/lib/broadcom/fuchsia.wlan.broadcom:fuchsia.wlan.broadcom_cpp",

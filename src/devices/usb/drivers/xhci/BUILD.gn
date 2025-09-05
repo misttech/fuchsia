@@ -20,7 +20,6 @@ driver_bind_rules("usb_xhci_bind") {
     "//src/devices/bind/fuchsia.pci:serial",
     "//src/devices/bind/fuchsia.pci:serial.usb",
     "//src/devices/bind/fuchsia.platform",
-    "//src/devices/bind/fuchsia.usb.phy",
   ]
 }
 
