@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <algorithm>
+
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/process.h"
-#include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/source_file_provider_impl.h"
-#include "src/developer/debug/zxdb/client/stack.h"
+#include "src/developer/debug/zxdb/client/target.h"
 #include "src/developer/debug/zxdb/client/thread.h"
-#include "src/developer/debug/zxdb/debug_adapter/handlers/request_threads.h"
+#include "src/developer/debug/zxdb/debug_adapter/context.h"
 
 namespace zxdb {
 
@@ -16,21 +17,20 @@ dap::StackTraceResponse PopulateStackTraceResponse(DebugAdapterContext* ctx, Thr
                                                    const dap::StackTraceRequest& req) {
   dap::StackTraceResponse response;
   auto& stack = thread->GetStack();
-  int start_frame = 0;
-  int total_frames = stack.size();
+  int64_t total_frames = static_cast<int64_t>(stack.size());
+  int64_t start_frame = req.startFrame.value(0);
 
-  // Return frames starting from requested level if specified
-  if (req.startFrame) {
-    start_frame = req.startFrame.value();
+  // If levels is 0, DAP specifies to return all frames.
+  int64_t frames_to_return = total_frames;
+  if (req.levels && req.levels.value() > 0) {
+    frames_to_return = req.levels.value();
   }
 
-  // Return frames upto requested levels if specified
-  if (req.levels && (total_frames > req.levels.value())) {
-    total_frames = req.levels.value();
-  }
+  // Clamp the end frame to the actual end of the stack.
+  int64_t end_frame = std::min(start_frame + frames_to_return, total_frames);
 
   auto file_provider = SourceFileProviderImpl(thread->GetProcess()->GetTarget()->settings());
-  for (auto i = start_frame; i < (start_frame + total_frames); i++) {
+  for (auto i = start_frame; i < end_frame; i++) {
     dap::StackFrame frame;
     auto location = stack[i]->GetLocation();
 

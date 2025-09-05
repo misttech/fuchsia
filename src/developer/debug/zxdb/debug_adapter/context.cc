@@ -389,7 +389,7 @@ Err DebugAdapterContext::CheckStoppedThread(Thread* thread) {
   return Err();
 }
 
-int64_t DebugAdapterContext::IdForFrame(uint64_t thread_koid, int stack_index) {
+int64_t DebugAdapterContext::IdForFrame(uint64_t thread_koid, int64_t stack_index) {
   FrameRecord record = {};
   record.thread_koid = thread_koid;
   record.stack_index = stack_index;

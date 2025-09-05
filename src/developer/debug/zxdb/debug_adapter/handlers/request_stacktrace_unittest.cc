@@ -48,8 +48,8 @@ TEST_F(RequestStackTraceTest, FullFrameAvailable) {
   fxl::RefPtr<Function> function2(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
   function2->set_assigned_name("test_func2");
   function2->set_code_ranges(AddressRanges(AddressRange(0x10024, 0x10060)));
-  auto location2 = Location(0x10040, FileLine("not_found.cc", 55), 12,
-                            SymbolContext::ForRelativeAddresses(), function2);
+  auto location2 =
+      Location(0x10040, FileLine("", 0), 0, SymbolContext::ForRelativeAddresses(), function2);
 
   std::vector<std::unique_ptr<Frame>> frames;
   frames.push_back(std::make_unique<MockFrame>(&session(), thread, location1, 0x2000));
@@ -169,6 +169,256 @@ TEST_F(RequestStackTraceTest, SyncFramesRequired) {
     EXPECT_EQ(got.response.stackFrames[i].line, locations[i].file_line().line());
     EXPECT_EQ(got.response.stackFrames[i].name, functions[i]->GetAssignedName());
   }
+}
+
+TEST_F(RequestStackTraceTest, Pagination) {
+  InitializeDebugging();
+
+  InjectProcessWithModule(kProcessKoid, 0x1000);
+  // Run client to receive process started event.
+  RunClient();
+  auto thread = InjectThread(kProcessKoid, kThreadKoid);
+  // Run client to receive threads started event.
+  RunClient();
+
+  // Insert mock frames
+  const int kTotalFrames = 10;
+  std::vector<std::unique_ptr<Frame>> frames;
+  std::vector<Location> locations;
+  std::vector<fxl::RefPtr<Function>> functions;
+  std::vector<std::unique_ptr<ScopedTempFile>> temp_files;
+
+  for (int i = 0; i < kTotalFrames; i++) {
+    temp_files.push_back(std::make_unique<ScopedTempFile>());
+    functions.push_back(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
+    functions[i]->set_assigned_name("test_func" + std::to_string(i));
+    functions[i]->set_code_ranges(
+        AddressRanges(AddressRange(0x10000 + i * 0x20, 0x10020 + i * 0x20)));
+    locations.emplace_back(0x10010 + i * 0x20, FileLine(temp_files[i]->name(), 23 + i), 10 + i,
+                           SymbolContext::ForRelativeAddresses(), functions[i]);
+    frames.push_back(
+        std::make_unique<MockFrame>(&session(), thread, locations[i], 0x2000 + i * 0x20));
+  }
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), true);
+
+  // Receive thread stopped event in client.
+  RunClient();
+
+  // Send request from the client for a subset of frames.
+  dap::StackTraceRequest request = {};
+  request.threadId = kThreadKoid;
+  constexpr int kStartFrame = 2;
+  constexpr int kLevels = 3;
+  request.startFrame = kStartFrame;
+  request.levels = kLevels;
+  auto response = client().send(request);
+
+  // Read request and process it in server.
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+
+  // Run client to receive response.
+  RunClient();
+  auto got = response.get();
+  EXPECT_FALSE(got.error);
+  EXPECT_EQ(got.response.totalFrames.value(), kTotalFrames);
+  ASSERT_EQ(got.response.stackFrames.size(), (size_t)kLevels);
+
+  // Check the returned frames.
+  for (int i = 0; i < kLevels; i++) {
+    int frame_index = i + kStartFrame;
+    EXPECT_EQ(got.response.stackFrames[i].column, locations[frame_index].column());
+    EXPECT_EQ(got.response.stackFrames[i].line, locations[frame_index].file_line().line());
+    EXPECT_EQ(got.response.stackFrames[i].name, functions[frame_index]->GetAssignedName());
+    EXPECT_EQ(got.response.stackFrames[i].source.value().path.value(),
+              temp_files[frame_index]->name());
+  }
+}
+
+TEST_F(RequestStackTraceTest, PaginationAllFrames) {
+  InitializeDebugging();
+
+  InjectProcessWithModule(kProcessKoid, 0x1000);
+  // Run client to receive process started event.
+  RunClient();
+  auto thread = InjectThread(kProcessKoid, kThreadKoid);
+  // Run client to receive threads started event.
+  RunClient();
+
+  // Insert mock frames
+  const int kTotalFrames = 5;
+  std::vector<std::unique_ptr<Frame>> frames;
+  std::vector<Location> locations;
+  std::vector<fxl::RefPtr<Function>> functions;
+  std::vector<std::unique_ptr<ScopedTempFile>> temp_files;
+
+  for (int i = 0; i < kTotalFrames; i++) {
+    temp_files.push_back(std::make_unique<ScopedTempFile>());
+    functions.push_back(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
+    functions[i]->set_assigned_name("test_func" + std::to_string(i));
+    functions[i]->set_code_ranges(
+        AddressRanges(AddressRange(0x10000 + i * 0x20, 0x10020 + i * 0x20)));
+    locations.emplace_back(0x10010 + i * 0x20, FileLine(temp_files[i]->name(), 23 + i), 10 + i,
+                           SymbolContext::ForRelativeAddresses(), functions[i]);
+    frames.push_back(
+        std::make_unique<MockFrame>(&session(), thread, locations[i], 0x2000 + i * 0x20));
+  }
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), true);
+
+  // Receive thread stopped event in client.
+  RunClient();
+
+  // Send request from the client for all frames.
+  dap::StackTraceRequest request = {};
+  request.threadId = kThreadKoid;
+  request.startFrame = 0;
+  request.levels = 0;  // 0 means all frames
+  auto response = client().send(request);
+
+  // Read request and process it in server.
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+
+  // Run client to receive response.
+  RunClient();
+  auto got = response.get();
+  EXPECT_FALSE(got.error);
+  EXPECT_EQ(got.response.totalFrames.value(), kTotalFrames);
+  ASSERT_EQ(got.response.stackFrames.size(), (size_t)kTotalFrames);
+
+  // Check the returned frames.
+  for (int i = 0; i < kTotalFrames; i++) {
+    EXPECT_EQ(got.response.stackFrames[i].column, locations[i].column());
+    EXPECT_EQ(got.response.stackFrames[i].line, locations[i].file_line().line());
+    EXPECT_EQ(got.response.stackFrames[i].name, functions[i]->GetAssignedName());
+    EXPECT_EQ(got.response.stackFrames[i].source.value().path.value(), temp_files[i]->name());
+  }
+}
+
+TEST_F(RequestStackTraceTest, PaginationTooManyFramesRequested) {
+  InitializeDebugging();
+
+  InjectProcessWithModule(kProcessKoid, 0x1000);
+  // Run client to receive process started event.
+  RunClient();
+  auto thread = InjectThread(kProcessKoid, kThreadKoid);
+  // Run client to receive threads started event.
+  RunClient();
+
+  // Insert mock frames
+  const int kTotalFrames = 5;
+  std::vector<std::unique_ptr<Frame>> frames;
+  std::vector<Location> locations;
+  std::vector<fxl::RefPtr<Function>> functions;
+  std::vector<std::unique_ptr<ScopedTempFile>> temp_files;
+
+  for (int i = 0; i < kTotalFrames; i++) {
+    temp_files.push_back(std::make_unique<ScopedTempFile>());
+    functions.push_back(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
+    functions[i]->set_assigned_name("test_func" + std::to_string(i));
+    functions[i]->set_code_ranges(
+        AddressRanges(AddressRange(0x10000 + i * 0x20, 0x10020 + i * 0x20)));
+    locations.emplace_back(0x10010 + i * 0x20, FileLine(temp_files[i]->name(), 23 + i), 10 + i,
+                           SymbolContext::ForRelativeAddresses(), functions[i]);
+    frames.push_back(
+        std::make_unique<MockFrame>(&session(), thread, locations[i], 0x2000 + i * 0x20));
+  }
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), true);
+
+  // Receive thread stopped event in client.
+  RunClient();
+
+  // Send request from the client for a subset of frames.
+  constexpr int kStartFrame = 3;
+  constexpr int kRequestedLevels = 5;  // Request more than the amount of frames after `startFrame`.
+
+  dap::StackTraceRequest request = {};
+  request.threadId = kThreadKoid;
+  request.startFrame = kStartFrame;
+  request.levels = kRequestedLevels;
+  auto response = client().send(request);
+
+  // Read request and process it in server.
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+
+  // Run client to receive response.
+  RunClient();
+  auto got = response.get();
+  EXPECT_FALSE(got.error);
+  EXPECT_EQ(got.response.totalFrames.value(), kTotalFrames);
+  size_t expected_frames = kTotalFrames - kStartFrame;
+  ASSERT_EQ(got.response.stackFrames.size(), expected_frames);
+
+  // Check the returned frames.
+  for (size_t i = 0; i < expected_frames; i++) {
+    int frame_index = i + kStartFrame;
+    EXPECT_EQ(got.response.stackFrames[i].column, locations[frame_index].column());
+    EXPECT_EQ(got.response.stackFrames[i].line, locations[frame_index].file_line().line());
+    EXPECT_EQ(got.response.stackFrames[i].name, functions[frame_index]->GetAssignedName());
+    EXPECT_EQ(got.response.stackFrames[i].source.value().path.value(),
+              temp_files[frame_index]->name());
+  }
+}
+
+TEST_F(RequestStackTraceTest, PaginationOutOfBoundsStartIndex) {
+  InitializeDebugging();
+
+  InjectProcessWithModule(kProcessKoid, 0x1000);
+  // Run client to receive process started event.
+  RunClient();
+  auto thread = InjectThread(kProcessKoid, kThreadKoid);
+  // Run client to receive threads started event.
+  RunClient();
+
+  // Insert mock frames
+  const int kTotalFrames = 5;
+  std::vector<std::unique_ptr<Frame>> frames;
+  std::vector<Location> locations;
+  std::vector<fxl::RefPtr<Function>> functions;
+  std::vector<std::unique_ptr<ScopedTempFile>> temp_files;
+
+  for (int i = 0; i < kTotalFrames; i++) {
+    temp_files.push_back(std::make_unique<ScopedTempFile>());
+    functions.push_back(fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram));
+    functions[i]->set_assigned_name("test_func" + std::to_string(i));
+    functions[i]->set_code_ranges(
+        AddressRanges(AddressRange(0x10000 + i * 0x20, 0x10020 + i * 0x20)));
+    locations.emplace_back(0x10010 + i * 0x20, FileLine(temp_files[i]->name(), 23 + i), 10 + i,
+                           SymbolContext::ForRelativeAddresses(), functions[i]);
+    frames.push_back(
+        std::make_unique<MockFrame>(&session(), thread, locations[i], 0x2000 + i * 0x20));
+  }
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), true);
+
+  // Receive thread stopped event in client.
+  RunClient();
+
+  // Send request from the client for a subset of frames.
+  dap::StackTraceRequest request = {};
+  request.threadId = kThreadKoid;
+  request.startFrame = 8;
+  request.levels = 0;  // 0 means all frames
+  auto response = client().send(request);
+
+  // Read request and process it in server.
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+
+  // Run client to receive response.
+  RunClient();
+  auto got = response.get();
+  EXPECT_FALSE(got.error);
+  EXPECT_EQ(got.response.totalFrames.value(), kTotalFrames);
+  ASSERT_EQ(got.response.stackFrames.size(), 0u);
 }
 
 }  // namespace zxdb

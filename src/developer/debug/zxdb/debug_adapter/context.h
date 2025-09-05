@@ -101,7 +101,7 @@ class DebugAdapterContext : public ThreadObserver,
   Err CheckStoppedThread(Thread* thread);
 
   // Helper methods to get/set frame to ID mapping
-  int64_t IdForFrame(uint64_t thread_koid, int stack_index);
+  int64_t IdForFrame(uint64_t thread_koid, int64_t stack_index);
   Frame* FrameforId(int64_t id);
   void DeleteFrameIdsForThread(Thread* thread);
 
@@ -119,8 +119,8 @@ class DebugAdapterContext : public ThreadObserver,
   // Helper methods to get/set breakpoint to ID mapping
   int64_t IdForBreakpoint(Breakpoint* breakpoint);
 
-  // TODO(https://fxbug.dev/42148521): These 2 method deletes all breakpoints added by the debug adapter.
-  // Breakpoints added from console are not deleted.
+  // TODO(https://fxbug.dev/42148521): These 2 method deletes all breakpoints added by the debug
+  // adapter. Breakpoints added from console are not deleted.
   void DeleteBreakpointsForSource(const std::string& source);
   void DeleteAllBreakpoints();
 
@@ -136,7 +136,7 @@ class DebugAdapterContext : public ThreadObserver,
 
   struct FrameRecord {
     uint64_t thread_koid = 0;
-    int stack_index = 0;
+    int64_t stack_index = 0;
   };
   std::map<int64_t, FrameRecord> id_to_frame_;
   int64_t next_frame_id_ = 1;
@@ -155,11 +155,11 @@ class DebugAdapterContext : public ThreadObserver,
   fit::callback<void(dap::ResponseOrError<dap::InitializeResponse>)> send_initialize_response_;
 
   // This mapping is temporarily added to store all breakpoints added by debug adapter client. Once
-  // https://fxbug.dev/42148521 is fixed, this can removed in favor of using System::GetBreakpoints API
-  // i.e. with breakpoint event, debug adapter client can be made aware of additional breakpoints
-  // (from say zxdb console) and hence breakpoint list maintained by system will be identical to
-  // this map in terms of the entries. One could traverse the entire system breakpoint list to get
-  // breakpoints related to a source file instead of having to maintain a separate map.
+  // https://fxbug.dev/42148521 is fixed, this can removed in favor of using System::GetBreakpoints
+  // API i.e. with breakpoint event, debug adapter client can be made aware of additional
+  // breakpoints (from say zxdb console) and hence breakpoint list maintained by system will be
+  // identical to this map in terms of the entries. One could traverse the entire system breakpoint
+  // list to get breakpoints related to a source file instead of having to maintain a separate map.
   std::map<std::string, std::vector<fxl::WeakPtr<Breakpoint>>> source_to_bp_;
 
   void Init();
