@@ -124,6 +124,7 @@ KCOUNTER(vm_mmu_protect_make_execute_pages, "vm.mmu.protect.make_execute_pages")
 KCOUNTER(vm_mmu_page_table_alloc, "vm.mmu.pt.alloc")
 KCOUNTER(vm_mmu_page_table_free, "vm.mmu.pt.free")
 KCOUNTER(vm_mmu_page_table_reclaim, "vm.mmu.pt.reclaim")
+KCOUNTER(vm_mmu_harvest_preempts, "vm.mmu.harvest.preempts")
 
 page_cache::PageCache page_cache;
 
@@ -1745,6 +1746,7 @@ zx_status_t ArmArchVmAspace::HarvestAccessed(vaddr_t vaddr, size_t count,
     // have pended during the critical section.
     Guard<CriticalMutex> guard{&lock_};
     if (pending_access_faults_.load() != 0) {
+      vm_mmu_harvest_preempts.Add(1);
       guard.CallUnlocked([] { arch::Yield(); });
       // There could still be pending_access_faults_, but they do not have the
       // lock and we have no way to block and give them our priority. Instead of
