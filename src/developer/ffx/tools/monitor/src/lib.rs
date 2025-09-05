@@ -14,13 +14,16 @@ use hyper::service::service_fn;
 use hyper::{Body, Request, Response, StatusCode};
 use serde::Serialize;
 use serde::ser::{SerializeStruct, Serializer};
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fs;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
 
 // Default value of this can be found in //src/developer/ffx/data/config.json
@@ -37,11 +40,8 @@ pub struct MonitorTool {
 #[derive(Debug, PartialEq)]
 struct TargetStatus {
     name: Option<String>,
-
     status: Option<TargetState>,
-
     timestamp: DateTime<Utc>,
-
     rcs_state: Option<RemoteControlState>,
 }
 
@@ -59,13 +59,50 @@ impl Serialize for TargetStatus {
     }
 }
 
+type Cache = Arc<Mutex<HashMap<String, serde_json::Value>>>;
+
 async fn start_server(addr: SocketAddr) -> anyhow::Result<()> {
+    let cache = Arc::new(Mutex::new(HashMap::new()));
+
+    let cache_for_task = cache.clone();
+    tokio::spawn(async move {
+        loop {
+            let res = spawn_blocking(|| {
+                let context = ffx_config::global_env_context()
+                    .context("loading global environment context")
+                    .unwrap();
+                fuchsia_async::LocalExecutor::new()
+                    .run_singlethreaded(collect_target_status(&context))
+            })
+            .await;
+
+            match res {
+                Ok(Ok(statuses)) => {
+                    let mut cache_lock = cache_for_task.lock().await;
+                    let json_value = serde_json::to_value(&statuses).unwrap();
+                    cache_lock.insert("targets".to_owned(), json_value);
+                    log::debug!("Successfully updated target status cache {:?}", cache_lock);
+                }
+                Ok(Err(e)) => {
+                    eprintln!("Error collecting target status: {:?}", e);
+                }
+                Err(e) => {
+                    eprintln!("Task panicked while collecting target status: {:?}", e);
+                }
+            }
+        }
+    });
+
     let listener = TcpListener::bind(addr).await.context("binding to address")?;
     loop {
         let (stream, _) = listener.accept().await.context("accepting connection")?;
+        let cache_for_handler = cache.clone();
         tokio::task::spawn(async move {
             if let Err(err) = hyper::server::conn::Http::new()
-                .serve_connection(stream, service_fn(handle_request))
+                .serve_connection(
+                    stream,
+                    service_fn(move |req| handle_request(req, cache_for_handler.clone())),
+                )
                 .await
             {
                 eprintln!("Error serving connection: {:?}", err);
@@ -93,34 +130,21 @@ async fn collect_target_status(context: &EnvironmentContext) -> Result<Vec<Targe
     Ok(infos_to_statuses(infos))
 }
 
-async fn handle_request(req: Request<Body>) -> std::result::Result<Response<Body>, Infallible> {
+async fn handle_request(
+    req: Request<Body>,
+    cache: Cache,
+) -> std::result::Result<Response<Body>, Infallible> {
     let mut response = Response::new("".into());
     match req.uri().path() {
         "/status" => {
-            let res = spawn_blocking(move || {
-                let context = ffx_config::global_env_context()
-                    .context("loading global environment context")
-                    .unwrap();
-                fuchsia_async::LocalExecutor::new()
-                    .run_singlethreaded(collect_target_status(&context))
-            })
-            .await
-            .unwrap();
-
-            match res {
-                Ok(statuses) => match serde_json::to_string(&statuses) {
-                    Ok(body) => {
-                        *response.body_mut() = body.into();
-                        response.headers_mut().insert(
-                            hyper::header::CONTENT_TYPE,
-                            "application/json".parse().unwrap(),
-                        );
-                    }
-                    Err(e) => {
-                        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        *response.body_mut() = format!("Internal Server Error: {}", e).into();
-                    }
-                },
+            let statuses = cache.lock().await;
+            match serde_json::to_string(&*statuses) {
+                Ok(body) => {
+                    *response.body_mut() = body.into();
+                    response
+                        .headers_mut()
+                        .insert(hyper::header::CONTENT_TYPE, "application/json".parse().unwrap());
+                }
                 Err(e) => {
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     *response.body_mut() = format!("Internal Server Error: {}", e).into();
