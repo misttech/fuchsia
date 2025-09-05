@@ -9,9 +9,9 @@ use crate::object_handle::ReadObjectHandle;
 use anyhow::{Error, bail};
 use async_trait::async_trait;
 use std::ops::Range;
-use storage_device::Device;
 use storage_device::buffer::MutableBufferRef;
 use storage_device::buffer_allocator::BufferFuture;
+use storage_device::{Device, ReadOptions};
 
 /// Allows using anything that implements [`ReadObjectHandle`] as a read-only storage [`Device`].
 pub struct ReadOnlyDevice<H: ReadObjectHandle> {
@@ -43,7 +43,12 @@ impl<H: ReadObjectHandle> Device for ReadOnlyDevice<H> {
         self.handle.get_size() / self.handle.block_size()
     }
 
-    async fn read(&self, offset: u64, buffer: MutableBufferRef<'_>) -> Result<(), Error> {
+    async fn read_with_opts(
+        &self,
+        offset: u64,
+        buffer: MutableBufferRef<'_>,
+        _read_opts: ReadOptions,
+    ) -> Result<(), Error> {
         let len = buffer.len();
         let amount = self.handle.read(offset, buffer).await?;
         assert_eq!(amount, len);
@@ -66,7 +71,7 @@ impl<H: ReadObjectHandle> Device for ReadOnlyDevice<H> {
         &self,
         _offset: u64,
         _buffer: storage_device::buffer::BufferRef<'_>,
-        _opts: storage_device::WriteOptions,
+        _write_opts: storage_device::WriteOptions,
     ) -> Result<(), Error> {
         unreachable!()
     }

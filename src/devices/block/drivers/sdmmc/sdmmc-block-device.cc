@@ -1452,7 +1452,7 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
         read_packer.Push(request);
         break;
       case block_server::Operation::Tag::Write:
-        if (request.operation.write.options.is_pre_barrier()) {
+        if (request.operation.write.options.flags.is_pre_barrier()) {
           TRACE_DURATION_BEGIN("sdmmc", "barrier");
 
           if (status = Barrier(); status != ZX_OK) {

@@ -9,7 +9,8 @@ mod zxcrypt;
 use crate::zxcrypt::Key;
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use block_client::{
-    BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient, VmoId, WriteOptions,
+    BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient, VmoId, WriteFlags,
+    WriteOptions,
 };
 use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockServer, DeviceInfo, PartitionInfo};
@@ -951,7 +952,7 @@ impl IoTrait for WriteFromMem<'_> {
             .write_at_with_opts_traced(
                 BufferSlice::Memory(head),
                 offset,
-                WriteOptions::empty(),
+                WriteOptions::default(),
                 trace_flow_id,
             )
             .await?;
@@ -1741,7 +1742,7 @@ impl Interface for PartitionInterface {
             self.partition_index
         );
         // Punting barrier support on the FVM.
-        if options.contains(WriteOptions::PRE_BARRIER) {
+        if options.flags.contains(WriteFlags::PRE_BARRIER) {
             return Err(zx::Status::NOT_SUPPORTED);
         }
         let device = &self.fvm.device;
@@ -2145,7 +2146,7 @@ mod tests {
     use super::{Component, MAX_SLICE_COUNT};
     use assert_matches::assert_matches;
     use block_client::{
-        BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient, WriteOptions,
+        BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient, WriteFlags, WriteOptions,
     };
     use block_server::{BlockInfo, DeviceInfo};
     use fidl::endpoints::RequestStream;
@@ -3210,7 +3211,7 @@ mod tests {
                 opts: WriteOptions,
             ) -> vmo_backed_block_server::WriteAction {
                 assert_eq!(
-                    opts.contains(WriteOptions::FORCE_ACCESS),
+                    opts.flags.contains(WriteFlags::FORCE_ACCESS),
                     self.0.load(Ordering::Relaxed)
                 );
                 vmo_backed_block_server::WriteAction::Write
@@ -3256,7 +3257,11 @@ mod tests {
         expect_force_access.store(true, Ordering::Relaxed);
 
         client
-            .write_at_with_opts(BufferSlice::Memory(&buffer), 0, WriteOptions::FORCE_ACCESS)
+            .write_at_with_opts(
+                BufferSlice::Memory(&buffer),
+                0,
+                WriteOptions { flags: WriteFlags::FORCE_ACCESS, ..Default::default() },
+            )
             .await
             .unwrap();
     }

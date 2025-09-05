@@ -7,7 +7,7 @@ use crate::buffer_allocator::{BufferAllocator, BufferSource};
 use crate::{Device, DeviceHolder};
 use anyhow::{Error, ensure};
 use async_trait::async_trait;
-use block_protocol::WriteOptions;
+use block_protocol::{ReadOptions, WriteOptions};
 use fuchsia_sync::Mutex;
 use rand::Rng;
 use std::ops::Range;
@@ -116,7 +116,12 @@ impl Device for FakeDevice {
         self.inner.lock().data.len() as u64 / self.block_size() as u64
     }
 
-    async fn read(&self, offset: u64, mut buffer: MutableBufferRef<'_>) -> Result<(), Error> {
+    async fn read_with_opts(
+        &self,
+        offset: u64,
+        mut buffer: MutableBufferRef<'_>,
+        _read_opts: ReadOptions,
+    ) -> Result<(), Error> {
         ensure!(!self.closed.load(Ordering::Relaxed));
         (self.operation_closure)(Op::Read)?;
         let offset = offset as usize;
@@ -138,7 +143,7 @@ impl Device for FakeDevice {
         &self,
         offset: u64,
         buffer: BufferRef<'_>,
-        _opts: WriteOptions,
+        _write_opts: WriteOptions,
     ) -> Result<(), Error> {
         ensure!(!self.closed.load(Ordering::Relaxed));
         ensure!(!self.read_only.load(Ordering::Relaxed));
@@ -295,7 +300,7 @@ mod tests {
                         .write_with_opts(
                             i as u64 * TEST_DEVICE_BLOCK_SIZE as u64,
                             buffer.as_ref(),
-                            WriteOptions::empty(),
+                            WriteOptions::default(),
                         )
                         .await
                         .expect("Failed to write to FakeDevice");

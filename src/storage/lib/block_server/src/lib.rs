@@ -649,16 +649,17 @@ impl<SM: SessionManager> SessionHelper<SM> {
                             .ok_or(zx::Status::OUT_OF_RANGE)?,
                     },
                     BlockOpcode::Write => {
-                        let mut options = WriteOptions::empty();
+                        let mut options = WriteOptions::default();
                         if flags.contains(BlockIoFlag::FORCE_ACCESS) {
-                            options |= WriteOptions::FORCE_ACCESS;
+                            options.flags |= WriteFlags::FORCE_ACCESS;
                         }
                         if flags.contains(BlockIoFlag::PRE_BARRIER) {
-                            options |= WriteOptions::PRE_BARRIER;
+                            options.flags |= WriteFlags::PRE_BARRIER;
                         }
                         Operation::Write {
                             device_block_offset: request.dev_offset,
                             block_count: request.length,
+                            _unused: 0,
                             options: options,
                             vmo_offset: request
                                 .vmo_offset
@@ -856,6 +857,7 @@ struct DecodedRequest {
 }
 
 /// cbindgen:no-export
+pub type WriteFlags = block_protocol::WriteFlags;
 pub type WriteOptions = block_protocol::WriteOptions;
 
 #[repr(C)]
@@ -874,8 +876,9 @@ pub enum Operation {
     Write {
         device_block_offset: u64,
         block_count: u32,
-        options: WriteOptions,
+        _unused: u32,
         vmo_offset: u64,
+        options: WriteOptions,
     },
     Flush,
     Trim {
@@ -964,16 +967,22 @@ impl Operation {
                     Operation::Write {
                         device_block_offset: _,
                         block_count: _,
+                        _unused,
                         vmo_offset,
                         options,
                     } => {
                         // Only send the barrier flag once per write request.
-                        let options = *options & !WriteOptions::PRE_BARRIER;
+                        let new_options = WriteOptions {
+                            flags: options.flags & !WriteFlags::PRE_BARRIER,
+                            ..*options
+                        };
+
                         Operation::Write {
                             device_block_offset: orig_offset + max,
                             block_count: rem,
+                            _unused: *_unused,
                             vmo_offset: *vmo_offset + max * block_size as u64,
-                            options,
+                            options: new_options,
                         }
                     }
                     Operation::Trim { device_block_offset: _, block_count: _ } => {
@@ -1013,7 +1022,9 @@ mod tests {
         TraceFlowId,
     };
     use assert_matches::assert_matches;
-    use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse, WriteOptions};
+    use block_protocol::{
+        BlockFifoCommand, BlockFifoRequest, BlockFifoResponse, WriteFlags, WriteOptions,
+    };
     use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
     use fuchsia_sync::Mutex;
     use futures::FutureExt as _;
@@ -2817,7 +2828,8 @@ mod tests {
             Operation::Write {
                 device_block_offset: 10,
                 block_count: 200,
-                options: WriteOptions::PRE_BARRIER,
+                _unused: 0,
+                options: WriteOptions { flags: WriteFlags::PRE_BARRIER, ..Default::default() },
                 vmo_offset: 0,
             },
             None,
@@ -2826,13 +2838,15 @@ mod tests {
                 Operation::Write {
                     device_block_offset: 10,
                     block_count: 120,
-                    options: WriteOptions::PRE_BARRIER,
+                    _unused: 0,
+                    options: WriteOptions { flags: WriteFlags::PRE_BARRIER, ..Default::default() },
                     vmo_offset: 0,
                 },
                 Operation::Write {
                     device_block_offset: 130,
                     block_count: 80,
-                    options: WriteOptions::empty(),
+                    _unused: 0,
+                    options: WriteOptions::default(),
                     vmo_offset: 120 * 512,
                 },
             ],
@@ -2877,7 +2891,8 @@ mod tests {
             Operation::Write {
                 device_block_offset: 10,
                 block_count: 200,
-                options: WriteOptions::PRE_BARRIER,
+                _unused: 0,
+                options: WriteOptions { flags: WriteFlags::PRE_BARRIER, ..Default::default() },
                 vmo_offset: 0,
             },
             Some(BlockOffsetMapping {
@@ -2890,13 +2905,15 @@ mod tests {
                 Operation::Write {
                     device_block_offset: 100,
                     block_count: 120,
-                    options: WriteOptions::PRE_BARRIER,
+                    _unused: 0,
+                    options: WriteOptions { flags: WriteFlags::PRE_BARRIER, ..Default::default() },
                     vmo_offset: 0,
                 },
                 Operation::Write {
                     device_block_offset: 220,
                     block_count: 80,
-                    options: WriteOptions::empty(),
+                    _unused: 0,
+                    options: WriteOptions::default(),
                     vmo_offset: 120 * 512,
                 },
             ],

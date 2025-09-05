@@ -305,7 +305,7 @@ pub trait BlockClient: Send + Sync {
         self.write_at_with_opts_traced(
             buffer_slice,
             device_offset,
-            WriteOptions::empty(),
+            WriteOptions::default(),
             NO_TRACE_ID,
         )
     }
@@ -548,11 +548,11 @@ impl Common {
     ) -> Result<(), zx::Status> {
         let mut flags = BlockIoFlag::empty();
 
-        if opts.contains(WriteOptions::FORCE_ACCESS) {
+        if opts.flags.contains(WriteFlags::FORCE_ACCESS) {
             flags |= BlockIoFlag::FORCE_ACCESS;
         }
 
-        if opts.contains(WriteOptions::PRE_BARRIER) {
+        if opts.flags.contains(WriteFlags::PRE_BARRIER) {
             flags |= BlockIoFlag::PRE_BARRIER;
         }
 
@@ -892,7 +892,7 @@ impl RemoteBlockClientSync {
         block_on(self.common.write_at(
             buffer_slice,
             device_offset,
-            WriteOptions::empty(),
+            WriteOptions::default(),
             NO_TRACE_ID,
         ))
     }

@@ -678,7 +678,9 @@ impl Drop for GptManager {
 #[cfg(test)]
 mod tests {
     use super::GptManager;
-    use block_client::{BlockClient as _, BufferSlice, MutableBufferSlice, RemoteBlockClient};
+    use block_client::{
+        BlockClient as _, BufferSlice, MutableBufferSlice, RemoteBlockClient, WriteFlags,
+    };
     use block_server::{BlockInfo, DeviceInfo, WriteOptions};
     use fidl::HandleBased as _;
     use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
@@ -999,7 +1001,7 @@ mod tests {
                 opts: WriteOptions,
             ) -> vmo_backed_block_server::WriteAction {
                 assert_eq!(
-                    opts.contains(WriteOptions::FORCE_ACCESS),
+                    opts.flags.contains(WriteFlags::FORCE_ACCESS),
                     self.0.load(Ordering::Relaxed)
                 );
                 vmo_backed_block_server::WriteAction::Write
@@ -1043,7 +1045,11 @@ mod tests {
         expect_force_access.store(true, Ordering::Relaxed);
 
         client
-            .write_at_with_opts(BufferSlice::Memory(&buffer), 0, WriteOptions::FORCE_ACCESS)
+            .write_at_with_opts(
+                BufferSlice::Memory(&buffer),
+                0,
+                WriteOptions { flags: WriteFlags::FORCE_ACCESS, ..Default::default() },
+            )
             .await
             .unwrap();
 

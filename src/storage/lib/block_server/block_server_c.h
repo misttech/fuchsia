@@ -31,7 +31,7 @@ namespace block_server::internal {
 
 struct BlockServer;
 
-class WriteOptions {
+class WriteFlags {
  public:
   bool is_force_access() const { return (options_ & 1) != 0; }
   bool is_pre_barrier() const { return (options_ & 2) != 0; }
@@ -59,7 +59,18 @@ struct PartitionInfo {
   uint32_t max_transfer_size;
 };
 
-using RequestId = uint64_t;
+using RequestId = uintptr_t;
+
+/// InlineCryptoOptions only used if `slot` is not equal to its sentinel value (0xff).
+struct InlineCryptoOptions {
+  uint32_t dun;
+  uint8_t slot;
+};
+
+struct WriteOptions {
+  WriteFlags flags;
+  InlineCryptoOptions inline_crypto_options;
+};
 
 struct Operation {
   enum class Tag {
@@ -81,8 +92,9 @@ struct Operation {
   struct Write_Body {
     uint64_t device_block_offset;
     uint32_t block_count;
-    WriteOptions options;
+    uint32_t _unused;
     uint64_t vmo_offset;
+    WriteOptions options;
   };
 
   struct Trim_Body {
@@ -98,10 +110,12 @@ struct Operation {
   };
 };
 
+using TraceFlowId = uint64_t;
+
 struct Request {
   RequestId request_id;
   Operation operation;
-  uint64_t trace_flow_id;
+  TraceFlowId trace_flow_id;
   zx::unowned<zx::vmo> vmo;
 };
 

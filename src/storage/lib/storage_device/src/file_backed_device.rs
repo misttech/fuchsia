@@ -10,7 +10,7 @@ use {
     },
     anyhow::{Error, ensure},
     async_trait::async_trait,
-    block_protocol::WriteOptions,
+    block_protocol::{ReadOptions, WriteOptions},
     // Provides read_exact_at and write_all_at.
     std::{ops::Range, os::unix::fs::FileExt},
 };
@@ -64,7 +64,12 @@ impl Device for FileBackedDevice {
         self.block_count
     }
 
-    async fn read(&self, offset: u64, mut buffer: MutableBufferRef<'_>) -> Result<(), Error> {
+    async fn read_with_opts(
+        &self,
+        offset: u64,
+        mut buffer: MutableBufferRef<'_>,
+        _read_opts: ReadOptions,
+    ) -> Result<(), Error> {
         assert_eq!(offset % self.block_size() as u64, 0);
         assert_eq!(buffer.range().start % self.block_size() as usize, 0);
         assert_eq!(buffer.len() % self.block_size() as usize, 0);
@@ -78,7 +83,7 @@ impl Device for FileBackedDevice {
         &self,
         offset: u64,
         buffer: BufferRef<'_>,
-        _opts: WriteOptions,
+        _write_opts: WriteOptions,
     ) -> Result<(), Error> {
         assert_eq!(offset % self.block_size() as u64, 0);
         assert_eq!(buffer.range().start % self.block_size() as usize, 0);

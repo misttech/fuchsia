@@ -206,7 +206,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
       continue;
     }
     if (request.operation.tag == block_server::Operation::Tag::Write &&
-        request.operation.write.options.is_pre_barrier() && !supports_barriers_) {
+        request.operation.write.options.flags.is_pre_barrier() && !supports_barriers_) {
       zx::result status = FlushSync(request);
       if (status.is_error()) {
         FDF_LOGL(WARNING, logger(), "FlushSync failed: %s", status.status_string());
@@ -642,10 +642,10 @@ zx::result<> BlockDevice::SubmitBlockServerRequest(const block_server::Request& 
       break;
     case block_server::Operation::Tag::Write:
       txn->op.rw.command.opcode = BLOCK_OPCODE_WRITE;
-      if (request.operation.write.options.is_force_access()) {
+      if (request.operation.write.options.flags.is_force_access()) {
         txn->op.rw.command.flags |= BLOCK_IO_FLAG_FORCE_ACCESS;
       }
-      if (request.operation.write.options.is_pre_barrier()) {
+      if (request.operation.write.options.flags.is_pre_barrier()) {
         txn->op.rw.command.flags |= BLOCK_IO_FLAG_PRE_BARRIER;
       }
       txn->op.rw.vmo = request.vmo->get();

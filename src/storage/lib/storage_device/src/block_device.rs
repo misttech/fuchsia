@@ -7,7 +7,9 @@ use crate::buffer::{BufferFuture, BufferRef, MutableBufferRef};
 use crate::buffer_allocator::{BufferAllocator, BufferSource};
 use anyhow::{Error, bail, ensure};
 use async_trait::async_trait;
-use block_client::{BlockClient, BlockFlags, BufferSlice, MutableBufferSlice, VmoId, WriteOptions};
+use block_client::{
+    BlockClient, BlockFlags, BufferSlice, MutableBufferSlice, ReadOptions, VmoId, WriteOptions,
+};
 use std::ops::Range;
 use zx::Status;
 
@@ -45,7 +47,12 @@ impl<T: BlockClient> Device for BlockDevice<T> {
         self.remote.block_count()
     }
 
-    async fn read(&self, offset: u64, buffer: MutableBufferRef<'_>) -> Result<(), Error> {
+    async fn read_with_opts(
+        &self,
+        offset: u64,
+        buffer: MutableBufferRef<'_>,
+        _read_opts: ReadOptions,
+    ) -> Result<(), Error> {
         if buffer.len() == 0 {
             return Ok(());
         }
@@ -70,7 +77,7 @@ impl<T: BlockClient> Device for BlockDevice<T> {
         &self,
         offset: u64,
         buffer: BufferRef<'_>,
-        opts: WriteOptions,
+        write_opts: WriteOptions,
     ) -> Result<(), Error> {
         if self.read_only {
             bail!(Status::ACCESS_DENIED);
@@ -91,7 +98,7 @@ impl<T: BlockClient> Device for BlockDevice<T> {
                     buffer.len() as u64,
                 ),
                 offset,
-                opts,
+                write_opts,
             )
             .await?)
     }

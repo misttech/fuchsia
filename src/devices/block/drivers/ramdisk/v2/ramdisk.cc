@@ -248,7 +248,7 @@ zx_status_t Ramdisk::ReadWrite(const block_server::Request& request, uint64_t re
   zx_status_t status = ZX_OK;
   if (is_write) {
     std::lock_guard<std::mutex> lock(lock_);
-    if (request.operation.write.options.is_pre_barrier()) {
+    if (request.operation.write.options.flags.is_pre_barrier()) {
       blocks_written_since_last_barrier_.clear();
     }
 
@@ -264,7 +264,7 @@ zx_status_t Ramdisk::ReadWrite(const block_server::Request& request, uint64_t re
         } else {
           *pre_sleep_write_block_count_ -= block_count;
         }
-        if (!request.operation.write.options.is_force_access() &&
+        if (!request.operation.write.options.flags.is_force_access() &&
             flags_ & fuchsia_hardware_ramdisk::wire::RamdiskFlag::kDiscardNotFlushedOnWake) {
           std::random_device random;
           std::bernoulli_distribution distribution;

@@ -15,7 +15,7 @@ use crate::buffer::{BufferFuture, BufferRef, MutableBufferRef};
 use anyhow::{Error, bail};
 use async_trait::async_trait;
 // pub so `Device` trait implementations don't need to depend on the `block_protocol` crate
-pub use block_protocol::WriteOptions;
+pub use block_protocol::{ReadOptions, WriteOptions};
 use futures::channel::oneshot::{Sender, channel};
 use std::future::Future;
 use std::mem::ManuallyDrop;
@@ -53,11 +53,21 @@ pub trait Device: Send + Sync {
     }
 
     /// Fills |buffer| with blocks read from |offset|.
-    async fn read(&self, offset: u64, buffer: MutableBufferRef<'_>) -> Result<(), Error>;
+    async fn read(&self, offset: u64, buffer: MutableBufferRef<'_>) -> Result<(), Error> {
+        self.read_with_opts(offset, buffer, ReadOptions::default()).await
+    }
+
+    /// Fills |buffer| with blocks read from |offset|.
+    async fn read_with_opts(
+        &self,
+        offset: u64,
+        buffer: MutableBufferRef<'_>,
+        read_opts: ReadOptions,
+    ) -> Result<(), Error>;
 
     /// Writes the contents of |buffer| to the device at |offset|.
     async fn write(&self, offset: u64, buffer: BufferRef<'_>) -> Result<(), Error> {
-        self.write_with_opts(offset, buffer, WriteOptions::empty()).await
+        self.write_with_opts(offset, buffer, WriteOptions::default()).await
     }
 
     /// Writes the contents of |buffer| to the device at |offset|.
@@ -65,7 +75,7 @@ pub trait Device: Send + Sync {
         &self,
         offset: u64,
         buffer: BufferRef<'_>,
-        opts: WriteOptions,
+        write_opts: WriteOptions,
     ) -> Result<(), Error>;
 
     /// Trims the given device |range|.

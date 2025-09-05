@@ -32,9 +32,10 @@ namespace block_server::internal {
 
 struct BlockServer;
 
-class WriteOptions {
+class WriteFlags {
  public:
   bool is_force_access() const { return (options_ & 1) != 0; }
+  bool is_pre_barrier() const { return (options_ & 2) != 0; }
 
  private:
   uint32_t options_;
@@ -45,6 +46,10 @@ class WriteOptions {
 namespaces = ["block_server", "internal"]
 
 includes = ["lib/zx/vmo.h"]
+
+[parse]
+parse_deps = true
+include = ["block_protocol"]
 
 [export.rename]
 "UnownedVmo" = "zx::unowned<zx::vmo>"

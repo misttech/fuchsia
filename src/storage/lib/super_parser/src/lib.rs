@@ -13,7 +13,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use storage_device::buffer::{BufferRef, MutableBufferRef};
 use storage_device::buffer_allocator::BufferFuture;
-use storage_device::{Device, WriteOptions};
+use storage_device::{Device, ReadOptions, WriteOptions};
 
 /// Struct to help interpret the deserialized "super" image.
 pub struct SuperParser {
@@ -139,7 +139,12 @@ impl Device for SuperPartitionDevice {
         self.partition_size_in_bytes / self.block_size() as u64
     }
 
-    async fn read(&self, offset: u64, mut buffer: MutableBufferRef<'_>) -> Result<(), Error> {
+    async fn read_with_opts(
+        &self,
+        offset: u64,
+        mut buffer: MutableBufferRef<'_>,
+        _read_opts: ReadOptions,
+    ) -> Result<(), Error> {
         let block_size = self.block_size() as u64;
         ensure!(offset % block_size == 0, "misaligned read at offset");
         ensure!(buffer.len() % block_size as usize == 0, "misaligned read for buffer length");
@@ -206,7 +211,7 @@ impl Device for SuperPartitionDevice {
         &self,
         _offset: u64,
         _buffer: BufferRef<'_>,
-        _opts: WriteOptions,
+        _write_opts: WriteOptions,
     ) -> Result<(), Error> {
         Err(anyhow!("read-only partition"))
     }

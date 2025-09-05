@@ -7,7 +7,7 @@ use super::{
     Operation, SessionHelper, TraceFlowId,
 };
 use anyhow::Error;
-use block_protocol::{BlockFifoRequest, BlockFifoResponse, WriteOptions};
+use block_protocol::{BlockFifoRequest, BlockFifoResponse, WriteFlags, WriteOptions};
 use futures::future::{Fuse, FusedFuture};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select_biased};
@@ -380,13 +380,14 @@ impl<I: Interface + ?Sized> Session<I> {
         if let Operation::Write {
             device_block_offset: _,
             block_count: _,
+            _unused,
             mut options,
             vmo_offset: _,
         } = &request.operation
         {
-            if options.contains(WriteOptions::PRE_BARRIER) {
+            if options.flags.contains(WriteFlags::PRE_BARRIER) {
                 self.interface.barrier()?;
-                options &= !WriteOptions::PRE_BARRIER;
+                options.flags &= !WriteFlags::PRE_BARRIER;
             }
         }
         Ok(())
@@ -417,7 +418,7 @@ impl<I: Interface + ?Sized> Session<I> {
                     )
                     .await
             }
-            Operation::Write { device_block_offset, block_count, options, vmo_offset } => {
+            Operation::Write { device_block_offset, block_count, _unused, vmo_offset, options } => {
                 self.interface
                     .write(
                         device_block_offset,
