@@ -106,8 +106,7 @@ impl Container for FvmContainer {
                 .map(|data_volume| Filesystem::ServingVolumeInMultiVolume(None, data_volume))
         };
 
-        if launcher.requires_zxcrypt(launcher.config.data_filesystem_format.as_str().into(), self.1)
-        {
+        if self.data_requires_zxcrypt(launcher) {
             let policy = get_policy().await?;
             with_crypt_service(policy, |crypt| create_volume(Some(crypt))).await
         } else {
@@ -124,6 +123,10 @@ impl Container for FvmContainer {
             .map_err(zx::Status::from_raw)
             .context("shred encrypted volumes returned error")?;
         Ok(())
+    }
+
+    fn data_requires_zxcrypt(&self, launcher: &FilesystemLauncher) -> bool {
+        launcher.requires_zxcrypt(launcher.config.data_filesystem_format.as_str().into(), self.1)
     }
 }
 

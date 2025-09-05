@@ -5,7 +5,9 @@
 mod fvm_container;
 mod fxfs_container;
 mod publisher;
-use fuchsia_component::client::connect::connect_to_named_protocol_at_dir_root;
+use fuchsia_component::client::connect::{
+    connect_to_named_protocol_at_dir_root, connect_to_protocol_at_dir_root,
+};
 pub use fvm_container::FvmContainer;
 pub use fxfs_container::FxfsContainer;
 pub use publisher::{DevicePublisher, SinglePublisher};
@@ -26,7 +28,7 @@ use async_trait::async_trait;
 use crypt_policy::{Policy, get_policy};
 use device_watcher::{recursive_wait, recursive_wait_and_open};
 use fidl::endpoints::{Proxy, ServerEnd, ServiceMarker as _, create_proxy};
-use fidl_fuchsia_fs_startup::MountOptions;
+use fidl_fuchsia_fs_startup::{MountOptions, VolumesProxy};
 use fidl_fuchsia_hardware_block_partition::Guid;
 use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeMarker, VolumeProxy};
 use fs_management::filesystem::{
@@ -313,6 +315,9 @@ pub trait Container: Send + Sync {
 
     /// Called to shred the encryption keys for the data volume.
     async fn shred_data(&mut self) -> Result<(), Error>;
+
+    /// Determine whether the data volume of this container will be encrypted with zxcrypt.
+    fn data_requires_zxcrypt(&self, launcher: &FilesystemLauncher) -> bool;
 }
 
 /// This trait exists to make working with `container` easier below and avoid the
@@ -888,11 +893,30 @@ impl Environment for FshostEnvironment {
 
         let container = self.container.as_mut().ok_or_else(|| anyhow!("Missing container!"))?;
         let mut filesystem = container.serve_data(&self.launcher).await?;
-        if let Err(e) =
-            container.fs().set_byte_limit(DATA_VOLUME_LABEL, self.config.data_max_bytes).await
-        {
-            log::warn!("Failed to set byte limit for the data volume: {:?}", e);
+
+        if self.config.data_max_bytes != 0 {
+            let extra_bytes = if container.data_requires_zxcrypt(&self.launcher) {
+                connect_to_protocol_at_dir_root::<VolumesProxy>(container.fs().exposed_dir())
+                    .context("failed to connect to volumes proxy")?
+                    .get_info()
+                    .await
+                    .context("getting volume info failed (fidl error)")?
+                    .map_err(|s| zx::Status::from_raw(s))
+                    .context("getting volume info failed (returned error)")?
+                    .ok_or_else(|| anyhow!("getting volume info returned nothing"))?
+                    .slice_size
+            } else {
+                0
+            };
+            if let Err(e) = container
+                .fs()
+                .set_byte_limit(DATA_VOLUME_LABEL, self.config.data_max_bytes + extra_bytes)
+                .await
+            {
+                log::warn!("Failed to set byte limit for the data volume: {:?}", e);
+            }
         }
+
         let queue = self.data.queue().unwrap();
         let exposed_dir = filesystem.exposed_dir()?;
         for server in queue.drain(..) {

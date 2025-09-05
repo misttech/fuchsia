@@ -366,6 +366,10 @@ async fn set_volume_limit() {
         data_volume_proxy.get_limit().await.unwrap().map_err(zx::Status::from_raw).unwrap();
     let expected_data_limit = if cfg!(feature = "fxblob") {
         data_max_bytes()
+    } else if data_fs_zxcrypt() {
+        // The fvm component rounds the max bytes down to the nearest slice size, and fshost adds
+        // an additional slice to account for the zxcrypt metadata.
+        round_down(data_max_bytes(), fvm_slice_size()) + fvm_slice_size()
     } else {
         // The fvm component rounds the max bytes down to the nearest slice size.
         round_down(data_max_bytes(), fvm_slice_size())

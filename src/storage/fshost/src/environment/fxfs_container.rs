@@ -86,4 +86,8 @@ impl Container for FxfsContainer {
     async fn shred_data(&mut self) -> Result<(), Error> {
         crypt::fxfs::shred_key_bag(&self.fs).await
     }
+
+    fn data_requires_zxcrypt(&self, _launcher: &FilesystemLauncher) -> bool {
+        false
+    }
 }
