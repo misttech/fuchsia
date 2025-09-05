@@ -14,4 +14,6 @@ fx-config-read
 rbe_wrapper=()
 if fx-rbe-enabled ; then rbe_wrapper=("${RBE_WRAPPER[@]}" --) ; fi
 
-fx-try-locked "${rbe_wrapper[@]}" "${PREBUILT_PYTHON3}" "${FUCHSIA_DIR}/tools/devshell/contrib/lib/rust/$(basename $0).py" "${@:1}" --out-dir=$FUCHSIA_BUILD_DIR
+# Unset FX_BUILD_RBE_STATS before running the clippy script. RBE stats are printed to stdout, which
+# can mess up structured clippy outputs, e.g. `fx clippy --raw`.
+fx-try-locked env --unset=FX_BUILD_RBE_STATS -- "${rbe_wrapper[@]}" "${PREBUILT_PYTHON3}" "${FUCHSIA_DIR}/tools/devshell/contrib/lib/rust/$(basename $0).py" "${@:1}" --out-dir=$FUCHSIA_BUILD_DIR
