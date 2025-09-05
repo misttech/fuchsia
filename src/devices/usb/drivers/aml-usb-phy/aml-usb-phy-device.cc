@@ -276,9 +276,9 @@ zx::result<> AmlUsbPhyDevice::ChildNode::Publish() {
   {
     auto result = parent_->outgoing()->AddService<fuchsia_hardware_usb_phy::Service>(
         fuchsia_hardware_usb_phy::Service::InstanceHandler({
-            .device = parent_->bindings_.CreateHandler(parent_->device_.get(),
-                                                       fdf::Dispatcher::GetCurrent()->get(),
-                                                       fidl::kIgnoreBindingClosure),
+            .device = parent_->bindings_.CreateHandler(
+                parent_->device_.get(), fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                fidl::kIgnoreBindingClosure),
         }),
         name_);
     if (result.is_error()) {

@@ -57,7 +57,7 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
       // 1st parent is pdev. Skip that.
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
           {{fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                                     bind_fuchsia_hardware_usb_phy::SERVICE_DRIVERTRANSPORT),
+                                     bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
             fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
                                      bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
             fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
@@ -68,7 +68,7 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
           {{
               fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                                 bind_fuchsia_hardware_usb_phy::SERVICE_DRIVERTRANSPORT),
+                                 bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                                  bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,

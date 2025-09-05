@@ -6,7 +6,7 @@
 #define SRC_DEVICES_USB_DRIVERS_AML_USB_PHY_AML_USB_PHY_DEVICE_H_
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.usb.phy/cpp/driver/fidl.h>
+#include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -64,7 +64,7 @@ class AmlUsbPhyDevice : public fdf::DriverBase {
 
   std::unique_ptr<AmlUsbPhy> device_;
 
-  fdf::ServerBindingGroup<fuchsia_hardware_usb_phy::UsbPhy> bindings_;
+  fidl::ServerBindingGroup<fuchsia_hardware_usb_phy::UsbPhy> bindings_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
 };

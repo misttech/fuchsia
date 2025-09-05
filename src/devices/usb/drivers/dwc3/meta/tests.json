@@ -75,7 +75,7 @@
         "tests": [
             {
                 "device": {
-                    "fuchsia.hardware.usb.phy.Service": "fuchsia.hardware.usb.phy.Service.DriverTransport",
+                    "fuchsia.hardware.usb.phy.Service": "fuchsia.hardware.usb.phy.Service.ZirconTransport",
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC3",
                     "fuchsia.BIND_PLATFORM_DEV_PID": "fuchsia.platform.BIND_PLATFORM_DEV_PID.GENERIC",
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC"
@@ -85,7 +85,7 @@
             },
             {
                 "device": {
-                    "fuchsia.hardware.usb.phy.Service": "fuchsia.hardware.usb.phy.Service.DriverTransport",
+                    "fuchsia.hardware.usb.phy.Service": "fuchsia.hardware.usb.phy.Service.ZirconTransport",
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC3",
                     "fuchsia.BIND_PLATFORM_DEV_PID": "fuchsia.platform.BIND_PLATFORM_DEV_PID.GENERIC"
                 },
@@ -94,7 +94,7 @@
             },
             {
                 "device": {
-                    "fuchsia.hardware.usb.phy.Service": "fuchsia.hardware.usb.phy.Service.DriverTransport",
+                    "fuchsia.hardware.usb.phy.Service": "fuchsia.hardware.usb.phy.Service.ZirconTransport",
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC3",
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC"
                 },
@@ -103,7 +103,7 @@
             },
             {
                 "device": {
-                    "fuchsia.hardware.usb.phy.Service": "fuchsia.hardware.usb.phy.Service.DriverTransport",
+                    "fuchsia.hardware.usb.phy.Service": "fuchsia.hardware.usb.phy.Service.ZirconTransport",
                     "fuchsia.BIND_PLATFORM_DEV_PID": "fuchsia.platform.BIND_PLATFORM_DEV_PID.GENERIC",
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC"
                 },

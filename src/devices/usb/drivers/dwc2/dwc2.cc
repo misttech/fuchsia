@@ -7,7 +7,7 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.usb.phy/cpp/driver/fidl.h>
+#include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/compat/cpp/metadata.h>
@@ -974,13 +974,11 @@ void Dwc2::SetConnected(bool connected) {
                   result.status_string());  // Never expected to fail.
   }
   if (phy_.is_valid()) {
-    fdf::Arena arena('PHY0');
-    fdf::WireUnownedResult connect = phy_.buffer(arena)->ConnectStatusChanged(connected);
-    if (!connect.ok()) {
-      FDF_LOG(WARNING, "(framework) phy ConnectStatusChanged(): %s", connect.status_string());
-    } else if (connect->is_error()) {
-      FDF_LOG(WARNING, "phy ConnectStatusChanged(): %s",
-              zx_status_get_string(connect->error_value()));
+    auto connect = phy_->ConnectStatusChanged(connected);
+    if (connect.is_error()) {
+      FDF_LOG(WARNING, "Call to ConnectStatusChanged on usb phy failed: %s",
+              connect.error_value().FormatDescription().c_str());
+      // Continue despite failure.
     }
   }
 

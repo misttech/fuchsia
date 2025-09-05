@@ -7,7 +7,6 @@ library fuchsia.hardware.usb.phy;
 using zx;
 
 @discoverable
-@transport("Driver")
 open protocol UsbPhy {
     /// Informs the PHY when peripheral role connect status changed.
     flexible ConnectStatusChanged(struct {

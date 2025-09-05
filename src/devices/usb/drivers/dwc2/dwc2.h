@@ -9,7 +9,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.usb.phy/cpp/driver/fidl.h>
+#include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/dma-buffer/buffer.h>
@@ -35,8 +35,7 @@
 
 namespace dwc2 {
 
-class Dwc2 : public fdf::DriverBase,
-             public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
+class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
  public:
   Dwc2(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
       : DriverBase("dwc2", std::move(start_args), std::move(dispatcher)),
@@ -215,7 +214,7 @@ class Dwc2 : public fdf::DriverBase,
   Ep0State ep0_state_ = Ep0State::DISCONNECTED;
 
   fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDciInterface> dci_intf_;
-  fdf::WireSyncClient<fuchsia_hardware_usb_phy::UsbPhy> phy_;
+  fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy> phy_;
 
   std::optional<fdf::MmioBuffer> mmio_;
 

@@ -235,8 +235,7 @@ TEST_F(AmlUsbPhyTest, ConnectStatusChanged) {
 
   driver_test().runtime().PerformBlockingWork([usb_phy = std::move(result.value())]() {
     fdf::Arena arena('TEST');
-    fdf::WireUnownedResult wire_result =
-        fdf::WireCall(usb_phy).buffer(arena)->ConnectStatusChanged(true);
+    auto wire_result = fidl::WireCall(usb_phy).buffer(arena)->ConnectStatusChanged(true);
     EXPECT_OK(wire_result.status());
     ASSERT_TRUE(wire_result.value().is_ok());
   });

@@ -18,7 +18,7 @@
 
 namespace aml_usb_phy {
 
-class AmlUsbPhy : public fdf::Server<fuchsia_hardware_usb_phy::UsbPhy> {
+class AmlUsbPhy : public fidl::Server<fuchsia_hardware_usb_phy::UsbPhy> {
  public:
   AmlUsbPhy(AmlUsbPhyDevice* controller, fuchsia_hardware_usb_phy::AmlogicPhyType type,
             fidl::ClientEnd<fuchsia_hardware_registers::Device> reset_register,

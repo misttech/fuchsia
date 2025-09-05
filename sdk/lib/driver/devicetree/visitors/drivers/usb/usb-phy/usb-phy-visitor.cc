@@ -83,7 +83,7 @@ zx::result<> UsbPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
                                              std::string_view phy_name) {
   std::vector bind_rules = {
       fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                               bind_fuchsia_hardware_usb_phy::SERVICE_DRIVERTRANSPORT),
+                               bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_VID,
                                bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
       fdf::MakeAcceptBindRule2(bind_fuchsia::PLATFORM_DEV_PID,
@@ -92,7 +92,7 @@ zx::result<> UsbPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
   };
   std::vector bind_properties = {
       fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                         bind_fuchsia_hardware_usb_phy::SERVICE_DRIVERTRANSPORT),
+                         bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                          bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
