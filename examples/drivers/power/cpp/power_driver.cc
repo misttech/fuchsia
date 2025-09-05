@@ -61,6 +61,8 @@ void PowerDriver::Resume(fdf_power::ResumeCompleter completer) {
   completer();
 }
 
+bool PowerDriver::SuspendEnabled() { return true; }
+
 }  // namespace power
 
 FUCHSIA_DRIVER_EXPORT(power::PowerDriver);

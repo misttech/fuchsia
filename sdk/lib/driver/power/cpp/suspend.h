@@ -63,11 +63,18 @@ class Suspendable {
   // Interface to be implemented.
   virtual void Suspend(SuspendCompleter completer) = 0;
   virtual void Resume(ResumeCompleter completer) = 0;
+  virtual bool SuspendEnabled() = 0;
 
   explicit Suspendable() : server_(this) {
     static_cast<Driver*>(this)->RegisterInitMethods(
         fit::bind_member(this, &Suspendable::RegisterSuspendHooks));
   }
+
+  // Returns true if:
+  //   * suspend was enabled and we successfully registered with SAG
+  //   * suspend was not enabled
+  // Returns false if suspend was enabled and we failed to register with SAG.
+  bool SuspendActive() { return binding_.has_value(); }
 
   virtual ~Suspendable() = default;
 
@@ -95,12 +102,19 @@ class Suspendable {
   };
 
   zx::result<> RegisterSuspendHooks(async_dispatcher_t* dispatcher, fdf::Namespace& incoming) {
+    if (!SuspendEnabled()) {
+      return zx::ok();
+    }
+
     zx::result server_end = internal::RegisterSuspendHooks(incoming);
+
     if (server_end.is_error()) {
       return server_end.take_error();
     }
+
     binding_.emplace(dispatcher, std::move(server_end.value()), &server_,
                      fidl::kIgnoreBindingClosure);
+
     return zx::ok();
   }
 

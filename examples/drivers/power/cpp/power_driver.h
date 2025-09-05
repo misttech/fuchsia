@@ -35,6 +35,7 @@ class PowerDriver final : public fdf::DriverBase, public fdf_power::Suspendable<
 
   void Suspend(fdf_power::SuspendCompleter cb) override;
   void Resume(fdf_power::ResumeCompleter cb) override;
+  bool SuspendEnabled() override;
 };
 
 }  // namespace power

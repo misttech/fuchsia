@@ -37,6 +37,8 @@ async fn sag_component(
     Ok(fs.collect::<()>().await)
 }
 
+// TODO(https://fxbug.dev/443308112) Add tests where SAG is not available.
+
 #[fuchsia::test]
 async fn test_power_driver() -> Result<()> {
     let (sender, mut receiver) = mpsc::channel(1);
