@@ -861,6 +861,36 @@ on a single line:
 {% verbatim %}[id]: https://{{example_url}}/  "Optional Title Here"{% endverbatim %}
 ```
 
+### Implicit reference links
+
+Implicit reference links allow you to omit the name of the link, in which
+case the link text itself is used as the name. To use implicit reference links,
+use a set of square brackets. For example, to link the word "Fuchsia" to the
+`fuchsia.dev` website:
+
+```none {:.devsite-disable-click-to-copy}
+[Fuchsia]
+```
+
+And then define the link:
+
+```none {:.devsite-disable-click-to-copy}
+[Fuchsia]: http://fuchsia.dev/
+```
+
+Link names can contain spaces, so this also works for multiple words in the
+link text:
+
+```none {:.devsite-disable-click-to-copy}
+Visit the [Fuchsia developer site] for more information.
+```
+
+And then define the link:
+
+```none {:.devsite-disable-click-to-copy}
+[Fuchsia developer site]: http://fuchsia.dev/
+```
+
 ### External links {#external-links}
 
 You can alert readers that a link will lead to an external site by adding
