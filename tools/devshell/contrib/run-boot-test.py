@@ -274,6 +274,22 @@ def main():
         default=[],
         help="Shorthand for `--cmdline=--gtest_repeat=COUNT`.",
     )
+    parser.add_argument(
+        "--kernel-shell-script",
+        metavar="LINE",
+        action="append",
+        default=[],
+        help="Shorthand for `--cmdline=kernel.shell.script=...` where each"
+        " LINE has whitespace converted to `+`, all concatenated with `;`.",
+    )
+    parser.add_argument(
+        "--kernel-unittest",
+        metavar="TEST",
+        action="append",
+        default=[],
+        help="Shorthand for a --kernel-shell-script sequence of `ut TEST`"
+        " for each switch, plus some boilerplate.",
+    )
     modes.add_argument("--crosvm", action="store_true", help="Run via crosvm")
     parser.add_argument(
         "--crosvm-args",
@@ -320,6 +336,27 @@ def main():
     if args.arch is None:
         print("FUCHSIA_ARCH not set")
         return 1
+
+    if args.kernel_unittest:
+        if args.kernel_shell_script:
+            error(
+                "--kernel-unittest overrides --kernel-shell-script;"
+                "they cannot be used together"
+            )
+            return 1
+        args.kernel_shell_script = [
+            f"ut {test}" for test in args.kernel_unittest
+        ] + [
+            "boot-test-success",
+            "graceful-shutdown",
+        ]
+    if args.kernel_shell_script:
+        args.cmdline.append(
+            "kernel.shell.script="
+            + ";".join(
+                "+".join(line.split()) for line in args.kernel_shell_script
+            )
+        )
 
     # Construct a map of product bundles by name. Boot test metadata points to
     # a product bundle in this way.

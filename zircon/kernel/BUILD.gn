@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/config/zircon/standard.gni")
+import("//build/testing/boot_tests/kernel_zbi_test.gni")
 import("//build/toolchain/variant.gni")
 import("//build/toolchain/zircon/zircon_toolchain_suite.gni")
 import("//build/zbi/zbi.gni")
@@ -709,6 +710,7 @@ if (!is_efi_toolchain) {
   group("boot_tests") {
     testonly = true
     deps = [
+      ":kernel-as-test",
       ":kernel-unittests-boot-test",
       ":kernel-unittests-boot-test-bypass-debuglog",
       "phys:boot_tests",
@@ -719,6 +721,12 @@ if (!is_efi_toolchain) {
         deps += [ ":boot_tests.$cpu" ]
       }
     }
+  }
+
+  # This is just the kernel, so cmdline additions must set kernel.shell.script
+  # or something like that.  It's not run in automation.
+  kernel_zbi_test("kernel-as-test") {
+    disabled = true
   }
 
   template("kernel_unittests_boot_test") {
