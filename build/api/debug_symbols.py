@@ -94,7 +94,7 @@ class DebugSymbolsManifestParser(object):
            parser due to manifest includes or when reading the build-ID values.
     """
 
-    def __init__(self, build_dir: None | Path) -> None:
+    def __init__(self, build_dir: None | Path | str = None) -> None:
         """Create instance.
 
         Args:
@@ -102,7 +102,7 @@ class DebugSymbolsManifestParser(object):
               "manifest" key, the value will be a path relative to this value.
               Default value is the current directory.
         """
-        self._build_dir = build_dir if build_dir else Path(os.getcwd())
+        self._build_dir = Path(build_dir) if build_dir else Path.cwd()
         self._visited_paths: set[Path] = set()
         self._visited_stack: list[Path] = []
         self._entries: list[DebugSymbolEntryType] = []
@@ -387,7 +387,7 @@ class DebugSymbolExporter(object):
 
     def __init__(
         self,
-        build_dir: Path,
+        build_dir: Path | str,
         dump_syms_tool: None | Path | str = None,
         log: None | T.Callable[[str], None] = None,
         log_error: None | T.Callable[[str], None] = None,
@@ -401,7 +401,7 @@ class DebugSymbolExporter(object):
                 If provided, will be used to generate breakpad symbol files
                 from ELF debug symbol ones.
         """
-        self._build_dir = build_dir
+        self._build_dir = Path(build_dir)
 
         # Map destination path, relative to self._output_dir, to target path.
         # Used for debug symbol symlinks, as well as symlinks to existing breakpad symbol files.
@@ -464,9 +464,50 @@ class DebugSymbolExporter(object):
             else:
                 self._breakpad_map[breakpad_dst_path] = entry
 
+    def copy_debug_symbols_to_build_id(self, build_id_dir: Path | str) -> None:
+        """Copy debug symbols to an external .build-id/ directory.
+
+        Unlike export_debug_symbols(), this does not create a new output directory,
+        and copies the file instead of creating symlinks.
+
+        This also doesn't create build-ids.txt, build-ids.json or breakpad files.
+        This should be used only to copy debug symbols to the Ninja build directory,
+        for local debugging / symbolification.
+
+        Args:
+           build_id_dir: Path to the output .build-id directory. Its name must be ".build-id".
+        """
+        build_id_dir = Path(build_id_dir)
+        assert (
+            build_id_dir.name == ".build-id"
+        ), f"Invalid output directory name (.../.build-id expected): {build_id_dir}"
+
+        # dst_path values in the loop below already begin with .build-id/
+        build_id_root = build_id_dir.parent
+
+        log = self._log
+
+        build_id_dir.parent.mkdir(parents=True, exist_ok=True)
+        for dst_path, target_path in self._symlink_map.items():
+            if not dst_path.name.endswith(".debug"):
+                continue  # Ignore breakpad, GSYM or stripped files.
+            output_path = build_id_root / dst_path
+            if output_path.exists():
+                # The {BUILD_DIR}/.build-id/ directory accumulates files over time,
+                # unless the next `fx clean`.
+                #
+                # It is assumed that BuildID values are unique and content-dependent.
+                # Thus if a file already exists in the destination directory, assume
+                # this is a duplicate and ignore it.
+                continue
+            if log:
+                log(f"Copying {dst_path} FROM {target_path}")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(target_path, output_path)
+
     def export_debug_symbols(
         self,
-        output_dir: Path,
+        output_dir: Path | str,
         depth: int = 0,
     ) -> bool:
         """Create a new output directory with symlinks to debug symbol files.
@@ -512,6 +553,8 @@ class DebugSymbolExporter(object):
         """
         log = self._log
         log_error = self._log_error
+
+        output_dir = Path(output_dir)
 
         # Create clean new output directory.
         if output_dir.exists():

@@ -769,6 +769,44 @@ print(args.debug_symbol_file)
             },
         )
 
+    def test_copy_debug_symbols_to_build_id(self) -> None:
+        log_lines: list[str] = []
+
+        def log(msg: str) -> None:
+            nonlocal log_lines
+            log_lines.append(msg)
+
+        err_lines: list[str] = []
+
+        def log_error(msg: str) -> None:
+            nonlocal err_lines
+            err_lines.append(msg)
+
+        exporter = DebugSymbolExporter(
+            build_dir=self._root,
+            dump_syms_tool=None,
+            log=log,
+            log_error=log_error,
+        )
+
+        exporter.parse_debug_symbols(self._manifest_entries)
+
+        output_dir = self._root / "out"
+        with self.assertRaises(AssertionError) as cm:
+            exporter.copy_debug_symbols_to_build_id(output_dir)
+        self.assertEqual(
+            str(cm.exception),
+            f"Invalid output directory name (.../.build-id expected): {output_dir}",
+        )
+
+        build_id_dir = output_dir / ".build-id"
+        exporter.copy_debug_symbols_to_build_id(build_id_dir)
+
+        self.assertTrue(build_id_dir.is_dir())
+        for build_id, symbol_filename in self._debug_symbol_files.items():
+            debug_file = build_id_dir / build_id[0:2] / f"{build_id[2:]}.debug"
+            self.assertTrue(debug_file.is_file())
+
 
 if __name__ == "__main__":
     unittest.main()
