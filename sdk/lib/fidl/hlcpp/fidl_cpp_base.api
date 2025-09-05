@@ -1,9 +1,9 @@
 {
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/clone.h": "4c3eae802cd8b93703cede4b217c9973",
-  "pkg/fidl_cpp_base/include/lib/fidl/cpp/coding_traits.h": "4581ff847fa0a2d77b205881fe4a8c30",
-  "pkg/fidl_cpp_base/include/lib/fidl/cpp/comparison.h": "1bb8e7560be4770def14620029fde174",
+  "pkg/fidl_cpp_base/include/lib/fidl/cpp/coding_traits.h": "af05857b5807f50f7d16f5c28908e0ad",
+  "pkg/fidl_cpp_base/include/lib/fidl/cpp/comparison.h": "a46b3b8b3a6d9299b6468e3aa400f3fa",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/decoder.h": "71e01a273e0d4271fabff948a1fc826e",
-  "pkg/fidl_cpp_base/include/lib/fidl/cpp/encoder.h": "e54b7c777bf999f36b84c16c36160c7f",
+  "pkg/fidl_cpp_base/include/lib/fidl/cpp/encoder.h": "b9c2845763e89b1615556b2aedb1d0da",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/enum.h": "ad164c5cd66ea3db9d5df386b47755a4",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/interface_handle.h": "378ac5094f808749154c0584c6c7ecbb",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/interface_request.h": "e615c49c73e4b8940cddf9d10972d68e",
@@ -16,5 +16,5 @@
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/string.h": "11d9cb4f3e0fde6cf3086ba0148d9075",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/traits.h": "9a662d0b356f8ca126441598fbb7d169",
   "pkg/fidl_cpp_base/include/lib/fidl/cpp/types.h": "56e709911f72250dfe5755dfcc2d1445",
-  "pkg/fidl_cpp_base/include/lib/fidl/cpp/vector.h": "6d4f07e38543ba9d8a27bfa9d76e2b87"
+  "pkg/fidl_cpp_base/include/lib/fidl/cpp/vector.h": "4400d5ae29d905f16e1446548f87efb5"
 }

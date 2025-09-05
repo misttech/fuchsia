@@ -22,6 +22,10 @@
 #include <lib/zx/channel.h>
 #endif  // __Fuchsia__
 
+#include <limits>
+#include <type_traits>
+#include <utility>
+
 // Forward declarations
 
 namespace fidl {

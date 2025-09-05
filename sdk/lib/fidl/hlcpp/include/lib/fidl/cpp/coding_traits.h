@@ -5,8 +5,12 @@
 #ifndef LIB_FIDL_CPP_CODING_TRAITS_H_
 #define LIB_FIDL_CPP_CODING_TRAITS_H_
 
+#include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
+#include <type_traits>
+#include <vector>
 
 #include "lib/fidl/cpp/decoder.h"
 #include "lib/fidl/cpp/encoder.h"

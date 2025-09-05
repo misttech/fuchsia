@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <string>

@@ -12,6 +12,9 @@
 #include <lib/fidl/internal.h>
 #include <zircon/fidl.h>
 
+#include <cstdint>
+#include <type_traits>
+
 namespace fidl::internal {
 
 // The NaturalMessageEncoder produces an |OutgoingMessage|, representing a transactional

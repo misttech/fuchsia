@@ -11,6 +11,8 @@
 #include <lib/fidl/cpp/wire/wire_coding_common.h>
 #include <lib/fit/result.h>
 
+#include <cstdint>
+
 namespace fidl::internal {
 
 class WireEncoder {

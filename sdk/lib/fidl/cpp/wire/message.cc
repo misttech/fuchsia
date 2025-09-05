@@ -8,6 +8,7 @@
 #include <zircon/errors.h>
 
 #include <cstring>
+#include <memory>
 #include <string>
 
 #ifdef __Fuchsia__

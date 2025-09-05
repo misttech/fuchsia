@@ -11,6 +11,8 @@
 #include <lib/fidl/cpp/wire/internal/transport_channel_host.h>
 #endif  // __Fuchsia__
 
+#include <utility>
+
 namespace fidl {
 
 OutgoingMessage::OutgoingMessage(const ::fidl::Status& failure)

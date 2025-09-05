@@ -14,6 +14,7 @@
 #include <zircon/fidl.h>
 #include <zircon/types.h>
 
+#include <utility>
 #include <vector>
 
 namespace fidl::internal {

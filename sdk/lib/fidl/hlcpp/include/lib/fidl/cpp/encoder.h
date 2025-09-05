@@ -16,6 +16,7 @@
 #include <zircon/fidl.h>
 
 #include <atomic>
+#include <utility>
 #include <vector>
 
 namespace fidl {

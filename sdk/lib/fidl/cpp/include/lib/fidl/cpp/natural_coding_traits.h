@@ -16,7 +16,15 @@
 #include <lib/zx/channel.h>
 #endif  // __Fuchsia__
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <limits>
+#include <optional>
 #include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace fidl::internal {
 

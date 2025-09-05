@@ -8,6 +8,7 @@
 #include <lib/fidl/cpp/comparison.h>
 #include <zircon/assert.h>
 
+#include <optional>
 #include <utility>
 #include <vector>
 

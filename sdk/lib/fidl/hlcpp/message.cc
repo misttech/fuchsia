@@ -14,6 +14,8 @@
 #include <zircon/syscalls.h>
 #endif
 
+#include <utility>
+
 namespace {
 
 zx_status_t CheckWireFormatVersion(fidl::internal::WireFormatVersion wire_format,

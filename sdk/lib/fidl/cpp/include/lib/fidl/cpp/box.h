@@ -7,7 +7,9 @@
 
 #include <zircon/assert.h>
 
+#include <cstddef>
 #include <memory>
+#include <utility>
 
 namespace fidl {
 
