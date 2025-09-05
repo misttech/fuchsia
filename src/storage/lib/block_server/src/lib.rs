@@ -331,9 +331,15 @@ impl<SM: SessionManager> BlockServer<SM> {
         mut requests: fvolume::VolumeRequestStream,
     ) -> Result<(), Error> {
         let scope = fasync::Scope::new();
-        while let Some(request) = requests.try_next().await.unwrap() {
-            if let Some(session) = self.handle_request(request).await? {
-                scope.spawn(session.map(|_| ()));
+        loop {
+            match requests.try_next().await {
+                Ok(Some(request)) => {
+                    if let Some(session) = self.handle_request(request).await? {
+                        scope.spawn(session.map(|_| ()));
+                    }
+                }
+                Ok(None) => break,
+                Err(err) => log::warn!(err:?; "Invalid request"),
             }
         }
         scope.await;
