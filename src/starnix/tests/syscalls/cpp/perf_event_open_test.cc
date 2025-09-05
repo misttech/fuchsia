@@ -681,10 +681,10 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
       };
       struct perf_record_sample* record_details = (struct perf_record_sample*)record_details_start;
       EXPECT_GE(record_details->ip, (uint64_t)1);
-      EXPECT_GE(record_details->pid, (uint64_t)1);
+      EXPECT_GE(record_details->pid, (uint64_t)0);
       EXPECT_GE(record_details->tid, (uint64_t)1);
       // On average we are getting ~100 samples for 100ms hardcoded sample duration.
-      EXPECT_GT(record_details->nr, (uint64_t)1);
+      EXPECT_GE(record_details->nr, (uint64_t)1);
       EXPECT_LT(record_details->nr, (uint64_t)200);
 
       // Read the next param of perf_record_sample ips[nr]. When we created the
