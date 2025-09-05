@@ -12,6 +12,7 @@
 #include <zircon/syscalls-next.h>
 #include <zircon/syscalls/port.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <optional>
@@ -64,8 +65,15 @@ class PowerState {
  public:
   PowerState() = default;
 
-  // Domain the PowerState is being modeled after.
-  const fbl::RefPtr<PowerDomain>& domain() const { return domain_; }
+  // Returns true if the power domain is set.
+  bool is_enabled() const { return !!domain(); }
+
+  // Local copy of the full set of power domains in the system.
+  const PowerDomainSet& power_domain_set() const { return power_domain_set_; }
+
+  // Domain the PowerState is being modeled after. Returns nullptr is there is
+  // no power domain configured for processor owning this power state.
+  PowerDomain* domain() const { return domain_; }
 
   // Returns the id of the domain this power state belongs to.
   std::optional<uint32_t> domain_id() const {
@@ -132,37 +140,37 @@ class PowerState {
   }
 
   // Returns the processing rate of the fastest power level in this domain.
-  uint64_t max_processing_rate() const {
+  ProcessingRate max_processing_rate() const {
     if (domain()) {
       return domain()->model().max_processing_rate();
     }
-    return 0;
+    return ProcessingRate{0};
   }
 
   // Returns the processing rate of the current active power level. Returns zero if there is no
   // active power level or no domain is set.
-  uint64_t active_processing_rate() const {
+  ProcessingRate active_processing_rate() const {
     if (domain() && active_power_level_.has_value()) {
       return domain()->model().levels()[*active_power_level_].processing_rate();
     }
-    return 0;
+    return ProcessingRate{0};
   }
 
   // Returns the current utilization of the processor.
-  int64_t normalized_utilization() const { return normalized_utilization_; }
+  Utilization normalized_utilization() const { return normalized_utilization_; }
 
   // Returns the total normalized utilization of the domain this processor belongs to.
-  int64_t total_normalized_utilization() const {
+  Utilization total_normalized_utilization() const {
     if (domain()) {
       return domain()->total_normalized_utilization();
     }
-    return 0;
+    return Utilization{0};
   }
 
-  // Sets the `PowerDomain` and related models that this `PowerState` references. This means,
-  // that any `power_level` or `desired_power_level` is only meaningful for that specific
-  // `PowerDomain`.
-  fbl::RefPtr<PowerDomain> SetOrUpdateDomain(fbl::RefPtr<PowerDomain> domain);
+  // Exchanges the given power domain set with the current power domain set, returning the previous
+  // value. From the new power domain set, updates the specific power domain and related energy
+  // models associated with processor that owns this PowerState.
+  PowerDomainSet UpdatePowerDomainSet(PowerDomainSet power_domain_set, uint32_t cpu_num);
 
   // Posts a request to transition the power domain associated with this power state to a given
   // active power level from the current energy model.
@@ -180,17 +188,22 @@ class PowerState {
   zx::result<> UpdateActivePowerLevel(uint8_t active_power_level);
 
   // Update the utilization of this processor and the total utilization of its domain.
-  int64_t UpdateUtilization(int64_t utilization_delta) {
+  Utilization UpdateUtilization(Utilization utilization_delta) {
     if (domain()) {
-      domain()->total_normalized_utilization_.fetch_add(utilization_delta,
+      domain()->total_normalized_utilization_.fetch_add(utilization_delta.raw_value(),
                                                         std::memory_order_relaxed);
     }
     return normalized_utilization_ += utilization_delta;
   }
 
  private:
-  // The power domain the processor belongs to.
-  fbl::RefPtr<PowerDomain> domain_;
+  // The full set of power domains in the system.
+  PowerDomainSet power_domain_set_;
+
+  // The power domain the processor belongs to. The lifetime of this PowerDomain
+  // instance is managed by the PowerDomainSet. Changes to that set could
+  // invalidate this pointer and must be kept in sync.
+  PowerDomain* domain_{nullptr};
 
   // The power level when the processor is actively running.
   std::optional<uint8_t> active_power_level_;
@@ -199,7 +212,7 @@ class PowerState {
   std::optional<uint8_t> desired_active_power_level_;
 
   // The current normalized utilization of the processor.
-  int64_t normalized_utilization_{0};
+  Utilization normalized_utilization_{0};
 };
 
 }  // namespace power_management

@@ -381,8 +381,10 @@ static int cmd_rppm(int argc, const cmd_args* argv, uint32_t flags) {
       if (domain) {
         printf("  Power domain %u:\n", domain->id());
         for (size_t index = 0; const auto& power_level : domain->model().levels()) {
-          printf("    %3zu. rate=%" PRIu64 " power=%" PRIu64 " nw control=%s\n", index++,
-                 power_level.processing_rate(), power_level.power_coefficient_nw(),
+          printf("    %3zu. rate=%-8s power=%10" PRIu64 " nw cost=%10" PRIu64
+                 " nw/rate control=%s\n",
+                 index++, Format(power_level.processing_rate(), ffl::String::Dec, 6).c_str(),
+                 power_level.power_coefficient_nw(), power_level.power_cost_nw_per_rate(),
                  ToString(power_level.control()));
         }
       } else {

@@ -15,9 +15,9 @@
 #include <zircon/time.h>
 #include <zircon/types.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
-#include <utility>
 
 #include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
@@ -26,12 +26,24 @@
 
 namespace {
 
+using ffl::FromRatio;
 using power_management::ControlInterface;
 using power_management::EnergyModel;
 using power_management::PowerDomain;
 using power_management::PowerDomainRegistry;
+using power_management::PowerDomainSet;
 using power_management::PowerLevel;
 using power_management::PowerLevelTransition;
+using power_management::ProcessingRate;
+using power_management::Utilization;
+
+// Utility to test whether the given ranged object contains the given element.
+template <typename Ranged, typename Element>
+bool InRange(const Ranged& ranged, const Element& element) {
+  return std::ranges::find(ranged, element) != std::cend(ranged);
+}
+
+ProcessingRate ToProcessingRate(uint64_t unscaled) { return FromRatio<uint64_t>(unscaled, 1000); }
 
 TEST(PowerLevelTest, Ctor) {
   constexpr zx_processor_power_level_t kLevel = {
@@ -46,7 +58,7 @@ TEST(PowerLevelTest, Ctor) {
   PowerLevel level(0, kLevel);
 
   EXPECT_EQ(level.level(), 0);
-  EXPECT_EQ(level.processing_rate(), kLevel.processing_rate);
+  EXPECT_EQ(level.processing_rate(), ToProcessingRate(kLevel.processing_rate));
   EXPECT_EQ(level.power_coefficient_nw(), kLevel.power_coefficient_nw);
   EXPECT_EQ(level.control(), static_cast<ControlInterface>(kLevel.control_interface));
   EXPECT_EQ(level.control_argument(), kLevel.control_argument);
@@ -69,7 +81,7 @@ TEST(PowerLevelTest, Ctor2) {
   PowerLevel level(123, kLevel);
 
   EXPECT_EQ(level.level(), 123);
-  EXPECT_EQ(level.processing_rate(), kLevel.processing_rate);
+  EXPECT_EQ(level.processing_rate(), ToProcessingRate(kLevel.processing_rate));
   EXPECT_EQ(level.power_coefficient_nw(), kLevel.power_coefficient_nw);
   EXPECT_EQ(level.control(), static_cast<ControlInterface>(kLevel.control_interface));
   EXPECT_EQ(level.control_argument(), kLevel.control_argument);
@@ -372,236 +384,118 @@ TEST(PowerModelTest, CreateWithEmptyTransitionsIsOk) {
   EXPECT_FALSE(energy_model->FindPowerLevel(static_cast<ControlInterface>(495), 0));
 }
 
-TEST(PowerDomainRegistryTest, RegisterUniquePowerDomains) {
-  PowerDomainRegistry registry;
-  std::map<size_t, fbl::RefPtr<PowerDomain>> registed_domains;
-  registed_domains[0] = MakePowerDomainHelper(0, 1, 2, 3);
-  registed_domains[1] = MakePowerDomainHelper(1, 4, 5, 6);
-  registed_domains[2] = MakePowerDomainHelper(2, 7, 8, 9);
-
-  std::map<size_t, fbl::RefPtr<PowerDomain>> cpu_domains;
-  auto domain_update = [&cpu_domains](size_t num, auto domain) {
-    cpu_domains[num] = std::move(domain);
-  };
-
-  for (auto [domain_id, domain] : registed_domains) {
-    EXPECT_EQ(domain->total_normalized_utilization(), 0u);
-    ASSERT_TRUE(registry.Register(domain, domain_update).is_ok());
-  }
-
-  // Validate the domains currently registered.
-  size_t domains = 0;
-  int cpus = 0;
-  registry.Visit([&cpus, &domains, &registed_domains, &cpu_domains](const PowerDomain& domain) {
-    domains++;
-    auto& expected = registed_domains[domain.id()];
-    EXPECT_EQ(expected.get(), &domain);
-    ForEachCpuIn(domain.cpus(), [&domain, &cpu_domains, &cpus](size_t num_cpu) {
-      EXPECT_EQ(&domain, cpu_domains[num_cpu].get());
-      cpus++;
-    });
-  });
-  EXPECT_EQ(domains, registed_domains.size());
-  EXPECT_EQ(cpu_domains.size(), 9u);
-  EXPECT_EQ(cpus, 9);
-}
-
 TEST(PowerDomainRegistryTest, FindDomain) {
+  std::array domains_to_register{
+      MakePowerDomainHelper(0, 1, 2, 3),
+      MakePowerDomainHelper(1, 4, 5, 6),
+      MakePowerDomainHelper(2, 7, 8, 9),
+  };
+
   PowerDomainRegistry registry;
-  std::map<size_t, fbl::RefPtr<PowerDomain>> registed_domains;
-  registed_domains[0] = MakePowerDomainHelper(0, 1, 2, 3);
-  registed_domains[1] = MakePowerDomainHelper(1, 4, 5, 6);
-  registed_domains[2] = MakePowerDomainHelper(2, 7, 8, 9);
-
-  auto domain_update = [](size_t num, auto domain) {};
-
-  for (auto& [domain_id, domain] : registed_domains) {
-    EXPECT_EQ(domain->total_normalized_utilization(), 0u);
-    ASSERT_TRUE(registry.Register(domain, domain_update).is_ok());
+  for (const auto& domain : domains_to_register) {
+    ASSERT_TRUE(registry.Register(domain).is_ok());
   }
 
-  EXPECT_EQ(registry.Find(0).get(), registed_domains[0].get());
-  EXPECT_EQ(registry.Find(1).get(), registed_domains[1].get());
-  EXPECT_EQ(registry.Find(2).get(), registed_domains[2].get());
-  EXPECT_EQ(registry.Find(112345567).get(), nullptr);
+  for (const auto& domain : domains_to_register) {
+    EXPECT_EQ(registry.Find(domain->id()), domain.get());
+  }
+
+  EXPECT_EQ(registry.Find(112345567), nullptr);
 }
 
-TEST(PowerDomainRegistryTest, UnregisterDomain) {
-  PowerDomainRegistry registry;
-  std::map<size_t, fbl::RefPtr<PowerDomain>> registed_domains;
-  registed_domains[0] = MakePowerDomainHelper(0, 1, 2, 3);
-  registed_domains[1] = MakePowerDomainHelper(1, 4, 5, 6);
-  registed_domains[2] = MakePowerDomainHelper(2, 7, 8, 9);
-
-  std::map<size_t, fbl::RefPtr<PowerDomain>> cpu_domains;
-  auto domain_update = [&cpu_domains](size_t num, auto domain) {
-    cpu_domains[num] = std::move(domain);
+TEST(PowerDomainRegistryTest, RegisterUpdateUnregisterPowerDomains) {
+  std::array unique_domains_to_register = {
+      MakePowerDomainHelper(0, 0, 1, 2),
+      MakePowerDomainHelper(1, 4, 5, 6),
+      MakePowerDomainHelper(2, 8, 9, 10),
   };
 
-  for (auto& [domain_id, domain] : registed_domains) {
-    EXPECT_EQ(domain->total_normalized_utilization(), 0u);
-    ASSERT_TRUE(registry.Register(domain, domain_update).is_ok());
-  }
+  std::array unique_domains_to_update = {
+      MakePowerDomainHelper(0, 0, 1, 2, 3),
+      MakePowerDomainHelper(1, 4, 5, 6, 7),
+      MakePowerDomainHelper(2, 8, 9, 10, 11),
+  };
 
-  auto check_registry = [&](size_t current_domain, size_t current_cpus) {
-    size_t domains = 0;
-    size_t cpus = 0;
-    registry.Visit([&cpus, &domains, &registed_domains, &cpu_domains](const PowerDomain& domain) {
-      domains++;
-      auto& expected = registed_domains[domain.id()];
-      EXPECT_EQ(expected.get(), &domain);
-      ForEachCpuIn(domain.cpus(), [&domain, &cpu_domains, &cpus](size_t num_cpu) {
-        EXPECT_EQ(&domain, cpu_domains[num_cpu].get());
-        cpus++;
-      });
+  std::array conflicting_domains_to_register = {
+      MakePowerDomainHelper(3, 12, 13, 14, 0),
+      MakePowerDomainHelper(4, 16, 17, 18, 1),
+      MakePowerDomainHelper(5, 20, 21, 22, 2),
+  };
+
+  std::array conflicting_domains_to_update = {
+      MakePowerDomainHelper(0, 0, 1, 2, 4),
+      MakePowerDomainHelper(1, 4, 5, 7, 8),
+      MakePowerDomainHelper(2, 8, 9, 10, 0),
+  };
+
+  // Called by the registry after each update to the power domain set maintained
+  // by the registry. On each update, the power domain set must only contain a
+  // subset of the unique power domains that are registered by the test.
+  const auto update_callback = [&](const PowerDomainSet& domain_set) {
+    domain_set.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
+      EXPECT_TRUE(InRange(unique_domains_to_register, domain) ||
+                  InRange(unique_domains_to_update, domain))
+          << "domain " << domain->id();
     });
-    EXPECT_EQ(domains, current_domain);
-    EXPECT_EQ(cpu_domains.size(), current_cpus);
-    EXPECT_EQ(cpus, current_cpus);
   };
 
-  auto clear_domain = [&cpu_domains](size_t num) { cpu_domains.erase(num); };
-
-  EXPECT_EQ(registry.Unregister(12345, clear_domain).status_value(), ZX_ERR_NOT_FOUND);
-  EXPECT_TRUE(registry.Unregister(0, clear_domain).is_ok());
-  check_registry(2, 6);
-  EXPECT_TRUE(registry.Unregister(1, clear_domain).is_ok());
-  check_registry(1, 3);
-  EXPECT_TRUE(registry.Unregister(2, clear_domain).is_ok());
-  check_registry(0, 0);
-}
-
-// The purpose of this test is to demonstrate the process for updating immutable characteristics of
-// an already registered domain.
-TEST(PowerDomainRegistryTest, UpdatingOverlapping) {
-  PowerDomainRegistry registry;
-  std::map<size_t, fbl::RefPtr<PowerDomain>> registed_domains;
-  registed_domains[0] = MakePowerDomainHelper(0, 1, 2, 3);
-  registed_domains[1] = MakePowerDomainHelper(1, 4, 5, 6);
-  registed_domains[2] = MakePowerDomainHelper(2, 7, 8, 9);
-  registed_domains[3] = MakePowerDomainHelper(3, 1, 4, 7, 10);
-
-  std::map<size_t, fbl::RefPtr<PowerDomain>> cpu_domains;
-  auto domain_update = [&cpu_domains](size_t num, auto domain) {
-    if (!domain) {
-      cpu_domains.erase(num);
-    } else {
-      cpu_domains[num] = std::move(domain);
-    }
-  };
-
-  // Succeeds, but as seen below domain 3 will fail due to overlapping with existing domain.
-  for (auto [domain_id, domain] : registed_domains) {
-    if (domain_id != 3) {
-      ASSERT_TRUE(registry.Register(domain, domain_update).is_ok());
-    } else {
-      ASSERT_FALSE(registry.Register(domain, domain_update).is_ok());
-    }
+  PowerDomainRegistry registry{update_callback};
+  for (const fbl::RefPtr<PowerDomain>& domain : unique_domains_to_register) {
+    EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
+    ASSERT_TRUE(registry.Register(domain).is_ok());
   }
 
-  // First we will introduce an updated version of 0-2 that exclude the overlapping cpus.
-  registed_domains[0] = MakePowerDomainHelper(0, 2, 3);
-  registed_domains[1] = MakePowerDomainHelper(1, 5, 6);
-  registed_domains[2] = MakePowerDomainHelper(2, 8, 9);
-  for (size_t domain_id = 0; domain_id <= 3; ++domain_id) {
-    auto& domain = registed_domains[domain_id];
-    ASSERT_TRUE(registry.Register(domain, domain_update).is_ok());
-  }
-
-  // Validate the domains currently registered.
-  size_t domains = 0;
-  int cpus = 0;
-  registry.Visit([&cpus, &domains, &registed_domains, &cpu_domains](const PowerDomain& domain) {
-    domains++;
-    auto& expected = registed_domains[domain.id()];
-    EXPECT_EQ(expected.get(), &domain);
-    ForEachCpuIn(domain.cpus(), [&domain, &cpu_domains, &cpus](size_t num_cpu) {
-      EXPECT_EQ(&domain, cpu_domains[num_cpu].get());
-      cpus++;
-    });
-  });
-  EXPECT_EQ(domains, registed_domains.size());
-  EXPECT_EQ(cpu_domains.size(), 10u);
-  EXPECT_EQ(cpus, 10);
-}
-
-TEST(PowerDomainRegistryTest, OverlappingIsError) {
-  PowerDomainRegistry registry;
-  std::map<size_t, fbl::RefPtr<PowerDomain>> registed_domains;
-  registed_domains[0] = MakePowerDomainHelper(0, 1, 2, 3);
-  registed_domains[1] = MakePowerDomainHelper(1, 4, 5, 6);
-  registed_domains[2] = MakePowerDomainHelper(2, 7, 8, 9);
-  registed_domains[3] = MakePowerDomainHelper(3, 1, 4, 7, 10);
-
-  std::map<size_t, fbl::RefPtr<PowerDomain>> cpu_domains;
-  auto domain_update = [&cpu_domains](size_t num, auto domain) {
-    cpu_domains[num] = std::move(domain);
-  };
-
-  for (auto [domain_id, domain] : registed_domains) {
-    auto res = registry.Register(domain, domain_update);
-    ASSERT_TRUE((domain_id != 3 && res.is_ok()) || (domain_id == 3 && !res.is_ok()));
-  }
-
-  // Validate the domains currently registered.
-  size_t domains = 0;
-  int cpus = 0;
-  registry.Visit([&cpus, &domains, &registed_domains, &cpu_domains](const PowerDomain& domain) {
-    domains++;
-    auto& expected = registed_domains[domain.id()];
-    EXPECT_EQ(expected.get(), &domain);
-    ForEachCpuIn(domain.cpus(), [&domain, &cpu_domains, &cpus](size_t num_cpu) {
-      EXPECT_EQ(&domain, cpu_domains[num_cpu].get());
-      cpus++;
-    });
-  });
-  EXPECT_EQ(domains, registed_domains.size() - 1);
-  EXPECT_EQ(cpu_domains.size(), 9u);
-  EXPECT_EQ(cpus, 9);
-}
-
-TEST(PowerDomainRegistryTest, RegisterWithSameIdIsUpdate) {
-  PowerDomainRegistry registry;
-  std::map<size_t, fbl::RefPtr<PowerDomain>> registed_domains;
-  registed_domains[0] = MakePowerDomainHelper(0, 1, 2, 3);
-  registed_domains[1] = MakePowerDomainHelper(1, 4, 5, 6);
-  registed_domains[2] = MakePowerDomainHelper(2, 7, 8, 9);
-
-  std::map<size_t, fbl::RefPtr<PowerDomain>> cpu_domains;
-  auto domain_update = [&cpu_domains](size_t num, auto domain) {
-    if (!domain) {
-      cpu_domains.erase(num);
-    } else {
-      cpu_domains[num] = std::move(domain);
-    }
-  };
-
-  for (auto [domain_id, domain] : registed_domains) {
-    ASSERT_TRUE(registry.Register(domain, domain_update).is_ok());
-  }
-
-  registed_domains[1] = MakePowerDomainHelper(1, 4, 10);
-  ASSERT_TRUE(registry.Register(registed_domains[1], domain_update).is_ok());
-
-  // Validate the domains currently registered.
-  size_t domains = 0;
-  int cpus = 0;
-  registry.Visit([&cpus, &domains, &registed_domains, &cpu_domains](const PowerDomain& domain) {
-    domains++;
-    auto& expected = registed_domains[domain.id()];
-    EXPECT_EQ(expected.get(), &domain);
-    ForEachCpuIn(domain.cpus(), [&domain, &cpu_domains, &cpus](size_t num_cpu) {
-      EXPECT_EQ(&domain, cpu_domains[num_cpu].get());
-      cpus++;
-    });
+  // All of the domains registered so far should be present in the registry.
+  EXPECT_EQ(registry.power_domain_set().count(), unique_domains_to_register.size());
+  registry.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
+    EXPECT_TRUE(InRange(unique_domains_to_register, domain));
   });
 
-  EXPECT_EQ(domains, registed_domains.size());
-  EXPECT_EQ(cpu_domains.size(), 8u);
-  EXPECT_EQ(cpus, 8);
+  // Update each registered domain.
+  for (const fbl::RefPtr<PowerDomain>& domain : unique_domains_to_update) {
+    EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
+    ASSERT_TRUE(registry.Register(domain).is_ok());
+  }
 
-  EXPECT_EQ(cpu_domains.count(5), 0u);
-  EXPECT_EQ(cpu_domains.count(6), 0u);
+  // All of the updated domains should be present in the registry.
+  EXPECT_EQ(registry.power_domain_set().count(), unique_domains_to_update.size());
+  registry.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
+    EXPECT_TRUE(InRange(unique_domains_to_update, domain));
+  });
+
+  // Attempt and fail to register new domain ids with CPU sets that intersect
+  // with the already registered domains.
+  for (const fbl::RefPtr<PowerDomain>& domain : conflicting_domains_to_register) {
+    EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
+    ASSERT_FALSE(registry.Register(domain).is_ok());
+  }
+
+  // The domain set should remain unchanged from the last successful updates.
+  EXPECT_EQ(registry.power_domain_set().count(), unique_domains_to_update.size());
+  registry.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
+    EXPECT_TRUE(InRange(unique_domains_to_update, domain));
+  });
+
+  // Attempt and fail to update existing domain ids with CPU sets that intersect
+  // with other registered domains.
+  for (const fbl::RefPtr<PowerDomain>& domain : conflicting_domains_to_update) {
+    EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
+    ASSERT_FALSE(registry.Register(domain).is_ok());
+  }
+
+  // The domain set should remain unchanged from the last successful updates.
+  EXPECT_EQ(registry.power_domain_set().count(), unique_domains_to_update.size());
+  registry.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
+    EXPECT_TRUE(InRange(unique_domains_to_update, domain));
+  });
+
+  // Unregister each domain and ensure that the updated domain set reflects the
+  // change.
+  for (const fbl::RefPtr<PowerDomain>& domain : unique_domains_to_update) {
+    EXPECT_TRUE(registry.Unregister(domain->id()).is_ok());
+    EXPECT_EQ(registry.Find(domain->id()), nullptr);
+  }
+  EXPECT_EQ(registry.power_domain_set().count(), 0u);
 }
 
 }  // namespace

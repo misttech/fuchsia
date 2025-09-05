@@ -17,6 +17,7 @@
        : SCHEDULER_TRACING_LEVEL)
 
 // The tracing levels used in this compilation unit.
+#define KERNEL_SCHEDULER_TRACING_LEVEL_STANDARD 0
 #define KERNEL_SCHEDULER_TRACING_LEVEL_COMMON 1
 #define KERNEL_SCHEDULER_TRACING_LEVEL_FLOW 2
 #define KERNEL_SCHEDULER_TRACING_LEVEL_COUNTER 3
@@ -28,6 +29,9 @@
 
 #define LOCAL_KTRACE(level, string, args...) \
   KTRACE_CPU_INSTANT_ENABLE(LOCAL_KTRACE_LEVEL_ENABLED(level), "kernel:probe", string, ##args)
+
+#define LOCAL_KTRACE_INSTANT(level, string, args...) \
+  KTRACE_CPU_INSTANT_ENABLE(LOCAL_KTRACE_LEVEL_ENABLED(level), "kernel:sched", string, ##args)
 
 #define LOCAL_KTRACE_FLOW_BEGIN(level, string, flow_id, args...)                                   \
   KTRACE_CPU_FLOW_BEGIN_ENABLE(LOCAL_KTRACE_LEVEL_ENABLED(level), "kernel:sched", string, flow_id, \

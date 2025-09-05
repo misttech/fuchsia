@@ -15,33 +15,41 @@
 
 namespace power_management {
 
-// Kernel wrapper for referencing the registry and providing external synchronization.
+// Manages a singleton instance of PowerDomainRegistry and the plumbing
+// necessary for the kernel environment.
 class KernelPowerDomainRegistry {
-  // Initialization happens early on, when we register the default power model.
-  DECLARE_SINGLETON_MUTEX(registry_lock_);
+  DECLARE_SINGLETON_MUTEX(Lock);
 
  public:
-  // Acquires proper lock and register `domain` with the underlying `PowerDomainRegistry` and
-  // set the respective CPU's scheduler power state to hold a reference to `domain`.
-  static zx::result<> Register(fbl::RefPtr<PowerDomain> domain) TA_EXCL(registry_lock_::Get());
+  // Registers the given power domain, replacing the power domain with the same
+  // domain id if necessary.
+  static zx::result<> Register(const fbl::RefPtr<PowerDomain>& domain) TA_EXCL(Lock::Get()) {
+    Guard<Mutex> guard(Lock::Get());
+    return registry_.Register(domain);
+  }
 
-  // Unregisters a domain matching `domain_id` and removes any references to the domain from
-  // the associated scheduler's power state.
-  static zx::result<> Unregister(uint32_t domain_id) TA_EXCL(registry_lock_::Get());
+  // Unregisters the power domain with the given domain id.
+  static zx::result<> Unregister(uint32_t domain_id) TA_EXCL(Lock::Get()) {
+    Guard<Mutex> guard(Lock::Get());
+    return registry_.Unregister(domain_id);
+  }
 
-  // Update power level for a power domain.
-  static zx::result<> UpdateDomainPowerLevel(uint32_t domain_id, uint64_t controller_id,
-                                             power_management::ControlInterface interface,
-                                             uint64_t arg);
+  // Updates the power level for the given domain.
+  static zx::result<> UpdatePowerLevel(uint32_t domain_id, uint64_t controller_id,
+                                       power_management::ControlInterface interface, uint64_t arg)
+      TA_EXCL(Lock::Get());
 
   template <typename V>
   static void Visit(V&& v) {
-    Guard<Mutex> guard(registry_lock_::Get());
+    Guard<Mutex> guard(Lock::Get());
     registry_.Visit(ktl::forward<V>(v));
   }
 
  private:
-  static PowerDomainRegistry registry_ TA_GUARDED(registry_lock_::Get());
+  static void UpdateAllCpuPowerDomainSets(const PowerDomainSet& power_domain_set);
+
+  TA_GUARDED(Lock::Get())
+  inline static PowerDomainRegistry registry_{UpdateAllCpuPowerDomainSets};
 };
 
 }  // namespace power_management

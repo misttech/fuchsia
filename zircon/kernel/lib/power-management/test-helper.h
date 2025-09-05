@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include <fbl/ref_ptr.h>
 
@@ -29,12 +30,16 @@ template <typename... Cpus>
 zx_cpu_set_t MakeCpuSet(Cpus... cpus) {
   zx_cpu_set_t set = {};
   auto set_bit = [&set](size_t num_cpu) {
-    set.mask[num_cpu / ZX_CPU_SET_BITS_PER_WORD] |= uint64_t(1)
+    set.mask[num_cpu / ZX_CPU_SET_BITS_PER_WORD] |= uint64_t{1}
                                                     << num_cpu % ZX_CPU_SET_BITS_PER_WORD;
     return true;
   };
   (set_bit(cpus) && ...);
   return set;
+}
+
+inline bool IsSameCpuSet(const zx_cpu_set_t& a, const zx_cpu_set_t& b) {
+  return memcmp(&a, &b, sizeof(zx_cpu_set_t)) == 0;
 }
 
 inline auto MakePowerDomain(uint32_t id, power_management::EnergyModel& model, zx_cpu_set_t cpus) {

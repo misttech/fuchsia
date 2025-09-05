@@ -274,14 +274,15 @@ zx::result<fbl::Array<zx_power_domain_info_t>> GetPowerDomainsInfo(size_t max_co
   // consistent `avail`.
   power_domain_count = 0;
   power_management::KernelPowerDomainRegistry::Visit(
-      [&power_domain_count, &entries, max_copy](const power_management::PowerDomain& domain) {
+      [&power_domain_count, &entries,
+       max_copy](const fbl::RefPtr<power_management::PowerDomain>& domain) {
         if (power_domain_count < max_copy) {
           zx_power_domain_info_t& entry = entries[power_domain_count];
           entry = {
-              .cpus = domain.cpus(),
-              .domain_id = domain.id(),
-              .idle_power_levels = static_cast<uint8_t>(domain.model().idle_levels().size()),
-              .active_power_levels = static_cast<uint8_t>(domain.model().active_levels().size()),
+              .cpus = domain->cpus(),
+              .domain_id = domain->id(),
+              .idle_power_levels = static_cast<uint8_t>(domain->model().idle_levels().size()),
+              .active_power_levels = static_cast<uint8_t>(domain->model().active_levels().size()),
           };
         }
         power_domain_count++;

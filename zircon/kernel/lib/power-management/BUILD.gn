@@ -17,6 +17,7 @@ library_headers("headers") {
 
   public_deps = [
     "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/ffl",
     "//zircon/system/ulib/zx",
   ]
 

@@ -7,6 +7,7 @@
 #define ZIRCON_KERNEL_INCLUDE_KERNEL_SCHEDULER_STATE_H_
 
 #include <lib/fxt/argument.h>
+#include <lib/power-management/energy-model.h>
 #include <lib/sched/time.h>
 #include <lib/zircon-internal/macros.h>
 #include <stddef.h>
@@ -109,6 +110,9 @@ using SchedRemainder = ffl::Fixed<int64_t, 20>;
 using SchedUtilization = ffl::Fixed<int64_t, 31>;
 
 #endif  // EXPERIMENTAL_UNIFIED_SCHEDULER_ENABLED
+
+// Ensure these types stay in sync with lib/power-management.
+static_assert(ktl::is_same_v<SchedUtilization, power_management::Utilization>);
 
 // Fixed-point types wrapping time and duration types to make time expressions
 // cleaner in the scheduler code.

@@ -919,7 +919,7 @@ zx_status_t sys_system_set_processor_power_state(
     return res;
   }
 
-  return power_management::KernelPowerDomainRegistry::UpdateDomainPowerLevel(
+  return power_management::KernelPowerDomainRegistry::UpdatePowerLevel(
              ps.domain_id, port_dispatcher->get_koid(),
              static_cast<power_management::ControlInterface>(ps.control_interface),
              ps.control_argument)

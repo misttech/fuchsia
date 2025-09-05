@@ -17,9 +17,11 @@
 
 namespace power_management {
 
-fbl::RefPtr<PowerDomain> PowerState::SetOrUpdateDomain(fbl::RefPtr<PowerDomain> domain) {
+PowerDomainSet PowerState::UpdatePowerDomainSet(PowerDomainSet power_domain_set, uint32_t cpu_num) {
+  PowerDomain* domain = power_domain_set.FindByCpuNum(cpu_num);
+
   if (domain_) {
-    domain_->total_normalized_utilization_.fetch_sub(normalized_utilization_,
+    domain_->total_normalized_utilization_.fetch_sub(normalized_utilization_.raw_value(),
                                                      std::memory_order_relaxed);
   }
 
@@ -29,12 +31,15 @@ fbl::RefPtr<PowerDomain> PowerState::SetOrUpdateDomain(fbl::RefPtr<PowerDomain> 
   }
 
   if (domain) {
-    domain->total_normalized_utilization_.fetch_add(normalized_utilization_,
+    domain->total_normalized_utilization_.fetch_add(normalized_utilization_.raw_value(),
                                                     std::memory_order_relaxed);
   }
 
-  domain_.swap(domain);
-  return domain;
+  using std::swap;
+  swap(power_domain_set, power_domain_set_);
+  domain_ = domain;
+
+  return power_domain_set;
 }
 
 std::optional<PowerLevelUpdateRequest> PowerState::RequestTransition(uint32_t cpu_num,

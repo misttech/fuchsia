@@ -26,10 +26,10 @@
 #include <string_view>
 #include <utility>
 
-#include <fbl/intrusive_single_list.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 #include <fbl/vector.h>
+#include <ffl/fixed.h>
 
 #include "power-level-controller.h"
 
@@ -84,10 +84,16 @@ constexpr bool IsKernelControlInterface(ControlInterface interface) {
   return interface != ControlInterface::kCpuDriver;
 }
 
+// The normalized processing rate of a CPU, relative to the fastest CPU in the system.
+using ProcessingRate = ffl::Fixed<int64_t, 31>;
+
+// The normalized utilization of a CPU by a task or set of tasks.
+using Utilization = ffl::Fixed<int64_t, 31>;
+
 // Kernel representation of `zx_processor_power_level_t` with useful accessors and option support.
 class PowerLevel {
  public:
-  enum Type {
+  enum Type : bool {
     // Entity is not eligible for active work.
     kIdle,
 
@@ -101,8 +107,13 @@ class PowerLevel {
       : options_(level.options),
         control_(static_cast<ControlInterface>(level.control_interface)),
         control_argument_(level.control_argument),
-        processing_rate_(level.processing_rate),
+        processing_rate_(ffl::FromRatio<uint64_t>(
+            level.processing_rate, 1000)),  // TODO(eieio): Normalize relative to the max processing
+                                            // rate of all power levels.
         power_coefficient_nw_(level.power_coefficient_nw),
+        power_cost_nw_per_rate_(level.processing_rate > 0
+                                    ? level.power_coefficient_nw * 1000 / level.processing_rate
+                                    : 0),
         level_(level_index) {
     memcpy(name_.data(), level.diagnostic_name, name_.size());
     size_t end = std::string_view(name_.data(), name_.size()).find('\0');
@@ -122,12 +133,15 @@ class PowerLevel {
 
   // Processing rate when this power level is active. This is key to determining the available
   // bandwidth of the entity.
-  constexpr uint64_t processing_rate() const { return processing_rate_; }
+  constexpr ProcessingRate processing_rate() const { return processing_rate_; }
 
   // Relative to the system power consumption, determines how much power is being consumed at this
   // level. This allows determining if this power level should be a candidate when operating under
   // a given energy budget.
   constexpr uint64_t power_coefficient_nw() const { return power_coefficient_nw_; }
+
+  // Power cost of this power level, normalized by the rate of this power level.
+  constexpr uint64_t power_cost_nw_per_rate() const { return power_cost_nw_per_rate_; }
 
   // ID of the interface handling transitions for TO this power level.
   constexpr ControlInterface control() const { return control_; }
@@ -161,26 +175,29 @@ class PowerLevel {
 
  private:
   // Options.
-  zx_processor_power_level_options_t options_ = {};
+  zx_processor_power_level_options_t options_{};
 
   // Control interface used to transition to this level.
-  ControlInterface control_ = {};
+  ControlInterface control_{};
 
   // Argument to be provided to the control interface.
-  uint64_t control_argument_ = 0;
+  uint64_t control_argument_{0};
 
   // Processing rate.
-  uint64_t processing_rate_ = 0;
+  ProcessingRate processing_rate_{0};
 
   // Power coefficient in nanowatts.
-  uint64_t power_coefficient_nw_ = 0;
+  uint64_t power_coefficient_nw_{0};
 
-  std::array<char, ZX_MAX_NAME_LEN> name_ = {};
-  size_t name_len_ = 0;
+  // Power cost. Memoized value of power_coefficient_nw_ / processing_rate_;
+  uint64_t power_cost_nw_per_rate_{0};
+
+  std::array<char, ZX_MAX_NAME_LEN> name_{};
+  size_t name_len_{0};
 
   // Level as described in the model shared with user.
-  uint8_t level_ = 0;
-  [[maybe_unused]] std::array<uint8_t, 7> reserved_ = {};
+  uint8_t level_{0};
+  [[maybe_unused]] std::array<uint8_t, 7> reserved_{};
 };
 
 // Represents an entry in a transition matrix, where the position in the matrix denotes
@@ -310,8 +327,8 @@ class EnergyModel {
   }
 
   // Returns the processing rate of the fastest power level.
-  constexpr uint64_t max_processing_rate() const {
-    return levels().size() > 0 ? levels().back().processing_rate() : 0u;
+  constexpr ProcessingRate max_processing_rate() const {
+    return levels().size() > 0 ? levels().back().processing_rate() : ProcessingRate{0};
   }
 
   // Following the same rules as `levels()` but returns only the set of power levels whose type is
@@ -328,6 +345,12 @@ class EnergyModel {
 
   std::optional<uint8_t> FindPowerLevel(ControlInterface interface_id,
                                         uint64_t control_argument) const;
+
+  // Returns the lowest active power level that is compatible with (i.e. has a
+  // processing rate greater or equal to) the given processing rate. However, to
+  // simplify power calculations, the maximum active power level is returned if
+  // the given rate exceeds the maximum processing rate for the power domain.
+  const PowerLevel* FindActivePowerLevelForRate(ProcessingRate processing_rate) const;
 
  private:
   EnergyModel(fbl::Vector<PowerLevel> levels, fbl::Vector<PowerLevelTransition> transitions,
@@ -348,8 +371,7 @@ class EnergyModel {
 // responsible for changing the active power levels for the set of CPUs.
 //
 // Instances of PowerDomain are safe for concurrent use.
-class PowerDomain : public fbl::RefCounted<PowerDomain>,
-                    public fbl::SinglyLinkedListable<fbl::RefPtr<PowerDomain>> {
+class PowerDomain : public fbl::RefCounted<PowerDomain> {
  public:
   PowerDomain(uint32_t id, zx_cpu_set_t cpus, EnergyModel model)
       : PowerDomain(id, cpus, std::move(model), nullptr) {}
@@ -370,8 +392,8 @@ class PowerDomain : public fbl::RefCounted<PowerDomain>,
   //
   // Uses relaxed semantics, since the value does not need to synchronize with other memory accesses
   // and innaccuracy is acceptable.
-  int64_t total_normalized_utilization() const {
-    return total_normalized_utilization_.load(std::memory_order_relaxed);
+  Utilization total_normalized_utilization() const {
+    return Utilization::FromRaw(total_normalized_utilization_.load(std::memory_order_relaxed));
   }
 
   // Handler for transitions where the target level's control interface is not kernel handled.
@@ -404,82 +426,256 @@ class PowerDomain : public fbl::RefCounted<PowerDomain>,
   const uint32_t id_;
   const EnergyModel energy_model_;
 
+  // Although this value is exposed publicly with the Utilization type, it needs to be atomically
+  // updated via fetch_add, which only is only supported for fundamental types.
   std::atomic<int64_t> total_normalized_utilization_{0};
+
   const fbl::RefPtr<PowerLevelController> controller_ = nullptr;
 
   std::atomic<bool> scheduler_control_enabled_ = false;
 };
 
-// `PowerDomainRegistry` provides a starting point for looking at any
-// of the previously registered power domains.
-//
-// This class also provides the mechanism for updating existing `PowerDomain` entries, by means of
-// replacing. For atomic updates external synchronization is required.
-//
-// In practice, there will be a single instance of this object in the kernel.
-class PowerDomainRegistry {
+// Maintains an array of ref pointers to the power domains in the system. This is used for both the
+// power domain registry storage and processor-local caches of the power domain set. Processor-local
+// caches avoid cross-processor and central lock contention when consulting a snapshot of the system
+// power domains during sensitive scheduling operations.
+class PowerDomainSet {
  public:
-  // Register `power_domain` with this registry.
-  //
-  // A `CpuPowerDomainAccessor` must provide the following contract:
-  //
-  //  // `cpu_num` is a valid cpu number that falls within `cpu_set_t` bits.
-  //  // `new_domain` new `PowerDomain` for `cpu_num`. If `nullptr` then
-  //  //  current domain should be cleared.
-  //  //  void operator()(size_t cpu_num, fbl::RefPtr<PowerDomain>& new_domain)
-  //
-  template <typename CpuPowerDomainAccessor>
-  zx::result<> Register(fbl::RefPtr<PowerDomain> power_domain,
-                        CpuPowerDomainAccessor&& update_domain) {
-    return UpdateRegistry(std::move(power_domain), update_domain);
+  static constexpr size_t kMaxPowerDomains = 4;
+
+  using ArrayType = std::array<fbl::RefPtr<PowerDomain>, kMaxPowerDomains>;
+
+  // Empty by default.
+  PowerDomainSet() = default;
+  ~PowerDomainSet() = default;
+
+  // Creates a PowerDomainSet with the given PowerDomain as its only entry for testing.
+  static PowerDomainSet CreateForTest(const fbl::RefPtr<PowerDomain>& domain) {
+    return PowerDomainSet{{domain}};
   }
 
-  // Register `power_domain` with this registry.
-  //
-  // A `CpuPowerDomainAccessor` must provide the following contract:
-  //
-  //  // `cpu_num` is a valid cpu number that falls within `cpu_set_t` bits.
-  //  //  current domain should be cleared.
-  //  //  void operator()(size_t cpu_num)
-  template <typename CpuPowerDomainAccessor>
-  zx::result<> Unregister(uint32_t domain_id, CpuPowerDomainAccessor&& clear_domain) {
-    return RemoveFromRegistry(domain_id, clear_domain);
-  }
-
-  // Returns a reference to a `PowerDomain` whose id matches `domain_id`.
-  // Returns `nullptr` if there is no match.
-  fbl::RefPtr<PowerDomain> Find(uint32_t domain_id) const {
-    for (auto& domain : domains_) {
-      if (domain.id() == domain_id) {
-        return fbl::RefPtr(const_cast<PowerDomain*>(&domain));
+  // Returns a borrowed pointer to the power domain with the given id, or nullptr if there isn't
+  // one. Returns a raw pointer to avoid unnecessary ref count changes in contexts where the set is
+  // guaranteed not to change and maintain the lifetime of its power domain elements.
+  PowerDomain* FindByDomainId(uint32_t domain_id) const {
+    for (const auto& element : domains_) {
+      if (element && element->id() == domain_id) {
+        return element.get();
       }
     }
     return nullptr;
   }
 
-  // Visit each registered `PowerDomain`.
+  // Returns a borrowed pointer to the power domain for the given CPU id, or nullptr is there isn't
+  // one. Returns a raw pointer to avoid unnecessary ref count changes in contexts where the set is
+  // guaranteed not to change and maintain the lifetime of its power domain elements.
+  PowerDomain* FindByCpuNum(uint32_t cpu_num) const {
+    ZX_DEBUG_ASSERT(cpu_num < ZX_CPU_SET_MAX_CPUS);
+    const uint32_t mask_index = cpu_num / ZX_CPU_SET_BITS_PER_WORD;
+    const uint64_t mask_bit = uint64_t{1} << (cpu_num % ZX_CPU_SET_BITS_PER_WORD);
+    for (const auto& element : domains_) {
+      if (element && (element->cpus().mask[mask_index] & mask_bit)) {
+        return element.get();
+      }
+    }
+    return nullptr;
+  }
+
+  // Looks up the active power coefficient for the given CPU operating at the given processing rate.
+  // Returns 0 if there is no power domain for the given CPU or if there is no active power level
+  // that lower bounds the given processing rate.
+  uint64_t LookupActivePowerCoefficient(uint32_t cpu_num, ProcessingRate processing_rate) const {
+    if (const PowerDomain* power_domain = FindByCpuNum(cpu_num)) {
+      if (const PowerLevel* power_level =
+              power_domain->model().FindActivePowerLevelForRate(processing_rate)) {
+        return power_level->power_coefficient_nw();
+      }
+    }
+    return 0u;
+  }
+
+  uint64_t LookupPowerCost(uint32_t cpu_num, ProcessingRate processing_rate) const {
+    if (const PowerDomain* power_domain = FindByCpuNum(cpu_num)) {
+      if (const PowerLevel* power_level =
+              power_domain->model().FindActivePowerLevelForRate(processing_rate)) {
+        return power_level->power_cost_nw_per_rate();
+      }
+    }
+    return 0u;
+  }
+
+  Utilization LookupTotalNormalizedUtilization(uint32_t cpu_num) const {
+    if (const PowerDomain* power_domain = FindByCpuNum(cpu_num)) {
+      return power_domain->total_normalized_utilization();
+    }
+    return Utilization{0};
+  }
+
+  // Visits each non-empty power domain element with the given callable.
   template <typename Visitor>
-  void Visit(Visitor&& visitor) {
-    for (const auto& domain : domains_) {
-      visitor(domain);
+  void Visit(Visitor&& visitor) const {
+    for (const auto& element : domains_) {
+      if (element) {
+        visitor(element);
+      }
     }
   }
 
+  // Swaps the elements of the given power domain sets.
+  friend constexpr void swap(PowerDomainSet& a, PowerDomainSet& b) {
+    std::swap(a.domains_, b.domains_);
+  }
+
+  // Returns a const reference to the underlying power domain array.
+  constexpr const ArrayType& domains() const { return domains_; }
+
+  // Returns the count of non-empty array elements.
+  constexpr size_t count() const {
+    return std::ranges::count_if(domains_.begin(), domains_.end(),
+                                 [](const auto& element) { return bool{element}; });
+  }
+
+  // Returns true if all of the array elements are empty.
+  constexpr bool is_empty() const { return count() == 0u; }
+
  private:
-  static constexpr size_t kBitsPerBucket = ZX_CPU_SET_BITS_PER_WORD;
-  static constexpr size_t kBuckets = ZX_CPU_SET_MAX_CPUS / ZX_CPU_SET_BITS_PER_WORD;
+  // Allow PowerDomainRegistry to add and remove power domains from the set.
+  friend class PowerDomainRegistry;
 
-  // Updates the registry list, by possibly removing a domain registered with the same id.
-  // If a domain is replaced.
-  zx::result<> UpdateRegistry(
-      fbl::RefPtr<PowerDomain> power_domain,
-      fit::inline_function<void(size_t, fbl::RefPtr<PowerDomain>)> update_cpu_power_domain);
+  // Private constructor used by the testing named constructors.
+  explicit PowerDomainSet(ArrayType domains) : domains_{std::move(domains)} {}
 
-  // Dissociates `domain_id` from all the cpus and removes it from the registry.
-  zx::result<> RemoveFromRegistry(uint32_t domain_id,
-                                  fit::inline_function<void(size_t)> clear_domain);
+  zx::result<fbl::RefPtr<PowerDomain>> Update(const fbl::RefPtr<PowerDomain>& power_domain) {
+    // A power domain consists of a domain id, a CPU mask, and a list of power
+    // level descriptions. Each power domain in a power domain set must have
+    // domain id that is unique among the power domains in the set and a CPU
+    // mask that does not intersect with any other power domains in the set.
+    //
+    // The following updates to the set are permitted:
+    // 1. A new power domain is added with a unique domain id and
+    //    CPU set that is non-intersecting with other power domains.
+    // 2. A power domain is replaced by a new power domain with the same id and
+    //    a potentially different CPU set, provided the CPU set is
+    //    non-intersecting with other power domains.
+    // 3. A power domain is replaced by a new power domain with an identical CPU
+    //    set and a potentially different domain id, provide the domain id is
+    //    unique among power domains in the set.
+    //
+    fbl::RefPtr<PowerDomain>* element_to_update = nullptr;
+    fbl::RefPtr<PowerDomain>* first_empty_elemnt = nullptr;
+    for (auto& element : domains_) {
+      if (element) {
+        if (element->id() == power_domain->id() ||
+            HasSameCpuSet(element->cpus().mask, power_domain->cpus().mask)) {
+          // If an element with a matching domain id and/or CPU set was already
+          // found, then this update is attempting to make the power domain set
+          // inconsistent by replicating either the domain id or the CPU set of
+          // a another power domain.
+          if (element_to_update) {
+            return zx::error(ZX_ERR_INVALID_ARGS);
+          }
 
-  fbl::SinglyLinkedList<fbl::RefPtr<PowerDomain>> domains_;
+          // Make note of the element to update with the new power domain, but
+          // continue to check the rest of the power domains for intersection
+          // with the CPU set.
+          element_to_update = &element;
+        } else if (HasOverlappingCpuSet(element->cpus().mask, power_domain->cpus().mask)) {
+          return zx::error(ZX_ERR_INVALID_ARGS);
+        }
+      } else if (first_empty_elemnt == nullptr) {
+        first_empty_elemnt = &element;
+      }
+    }
+
+    // Replace an existing domain if a suitable match is found in the array.
+    if (element_to_update) {
+      fbl::RefPtr<PowerDomain> previous_element = power_domain;
+      element_to_update->swap(previous_element);
+      return zx::ok(std::move(previous_element));
+    }
+
+    // If no existing domain was replaced and there is at least one empty
+    // element, add the new domain first empty element.
+    if (first_empty_elemnt) {
+      *first_empty_elemnt = power_domain;
+      return zx::ok(nullptr);
+    }
+
+    return zx::error(ZX_ERR_NO_SPACE);
+  }
+
+  fbl::RefPtr<PowerDomain> Remove(uint32_t domain_id) {
+    for (auto& element : domains_) {
+      if (element && element->id() == domain_id) {
+        return std::move(element);
+      }
+    }
+    return nullptr;
+  }
+
+  template <size_t N>
+  static constexpr bool HasOverlappingCpuSet(const uint64_t (&a)[N], const uint64_t (&b)[N]) {
+    for (size_t i = 0; i < N; ++i) {
+      if ((a[i] & b[i]) != 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  template <size_t N>
+  static constexpr bool HasSameCpuSet(const uint64_t (&a)[N], const uint64_t (&b)[N]) {
+    for (size_t i = 0; i < N; ++i) {
+      if (a[i] != b[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  ArrayType domains_;
+};
+
+// Tracks the set of configured power domains and provides methods for
+// updating, querying, and visiting the power domain set.
+class PowerDomainRegistry {
+ public:
+  // Callback provided by the host environment to update per-CPU copies of the
+  // power domain set when the main set changes.
+  using UpdateCallback = fit::inline_function<void(const PowerDomainSet&)>;
+
+  // Constructs a power domain registry with the given optional callback. The
+  // given callback may do nothing, but it may not be nullptr.
+  explicit PowerDomainRegistry(UpdateCallback update_callback = [](const auto&) {})
+      : update_callback_{std::move(update_callback)} {
+    ZX_DEBUG_ASSERT(update_callback_);
+  }
+
+  // Registers the given power domain, using the given callback to update each
+  // CPU with a copy of the new power domain set.
+  zx::result<> Register(const fbl::RefPtr<PowerDomain>& power_domain);
+
+  // Unregisters the given power domain, using the given callback to update each
+  // CPU with a copy of the new power domain set.
+  zx::result<> Unregister(uint32_t domain_id);
+
+  // Returns a reference to the power domain with the given domain id, or
+  // nullptr if one does not exist.
+  PowerDomain* Find(uint32_t domain_id) const {
+    return power_domain_set_.FindByDomainId(domain_id);
+  }
+
+  // Visits each registered power domain.
+  template <typename Visitor>
+  void Visit(Visitor&& visitor) const {
+    return power_domain_set_.Visit(std::forward<Visitor>(visitor));
+  }
+
+  const PowerDomainSet& power_domain_set() const { return power_domain_set_; }
+
+ private:
+  PowerDomainSet power_domain_set_;
+  UpdateCallback update_callback_;
 };
 
 }  // namespace power_management

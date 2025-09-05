@@ -48,9 +48,11 @@ struct percpu;
 #define SCHEDULER_QUEUE_TRACING_ENABLED false
 #endif
 
-// Performance scale of a CPU relative to the highest performance CPU in the
-// system.
+// The processing rate of a CPU relative to the fastest CPU in the system.
 using SchedProcessingRate = ffl::Fixed<int64_t, 31>;
+
+// Make sure lib/power-management and the scheduler definition stay in sync.
+static_assert(ktl::is_same_v<power_management::ProcessingRate, SchedProcessingRate>);
 
 // Converts a userspace CPU performance scale to a SchedProcessingRate value.
 constexpr SchedProcessingRate ToSchedProcessingRate(zx_cpu_performance_scale_t value) {
@@ -431,13 +433,20 @@ class Scheduler {
   static bool PeekIsIdle(cpu_num_t cpu) { return (PeekIdleMask() & cpu_num_to_mask(cpu)) != 0; }
 
   using PowerDomain = power_management::PowerDomain;
+  using PowerDomainSet = power_management::PowerDomainSet;
 
-  // Sets the power domain for this scheduler instance, returning the previous domain. Called by
-  // kernel tests and sys_system_set_processor_power_domain.
-  fbl::RefPtr<PowerDomain> ExchangePowerDomain(fbl::RefPtr<PowerDomain> domain)
+  // Sets the power domain set for this scheduler instance, returning the previous domain set.
+  // Called by kernel tests and sys_system_set_processor_power_domain.
+  PowerDomainSet ExchangePowerDomainSet(const PowerDomainSet& power_domain_set)
       TA_EXCL(queue_lock_) {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    return power_level_control_.ExchangePowerDomain(ktl::move(domain));
+    PowerDomainSet previous = power_level_control_.ExchangePowerDomainSet(power_domain_set);
+
+    // Update the cross-processor shadow value of the max processing rate to match the current power
+    // domain value.
+    exported_max_processing_rate_ = power_level_control_.max_processing_rate();
+
+    return previous;
   }
 
   // Updates the current power level for this CPU with the value reported by the power level
@@ -463,7 +472,7 @@ class Scheduler {
   // Returns the current power domain for this scheduler instance.
   fbl::RefPtr<PowerDomain> GetPowerDomainForTesting() TA_EXCL(queue_lock_) {
     Guard<MonitoredSpinLock, IrqSave> guard{&queue_lock_, SOURCE_TAG};
-    return power_level_control_.domain();
+    return fbl::RefPtr{power_level_control_.domain()};
   }
 
   // Returns the current active power coefficient.
@@ -626,7 +635,8 @@ class Scheduler {
   // Typically, users will want to use FindActiveSchedulerForThread instead,
   // which will supply a locked scheduler which is guaranteed to be active.
   //
-  static cpu_num_t FindTargetCpu(Thread* thread) TA_REQ_SHARED(thread->get_lock());
+  static cpu_num_t FindTargetCpu(Thread* thread) TA_REQ_SHARED(thread->get_lock())
+      TA_EXCL(queue_lock_);
 
   // Increment the kcounter which tracks the number of times that an extra
   // attempt to find an active scheduler was needed during
@@ -1372,6 +1382,7 @@ class Scheduler {
   RelaxedAtomic<SchedDuration> exported_queue_time_ns_{SchedNs(0)};
   RelaxedAtomic<SchedUtilization> exported_deadline_utilization_{SchedUtilization{0}};
   RelaxedAtomic<SchedProcessingRate> exported_processing_rate_{SchedProcessingRate{1}};
+  RelaxedAtomic<SchedProcessingRate> exported_max_processing_rate_{SchedProcessingRate{1}};
 
   // The thread which ran just before this thread was scheduled.  Used by
   // Scheduler::LockHandoff to release the previous thread's lock after a
@@ -1390,19 +1401,25 @@ class Scheduler {
    public:
     explicit PowerLevelControl(Scheduler* scheduler) : request_dpc_{DpcHandler, scheduler} {}
 
-    // Sets the power domain associated with this scheduler.
-    fbl::RefPtr<PowerDomain> ExchangePowerDomain(fbl::RefPtr<PowerDomain> domain) {
+    // Sets/resets the power domain and power domain set associated with this scheduler.
+    PowerDomainSet ExchangePowerDomainSet(const PowerDomainSet& power_domain_set) {
+      PowerDomainSet previous = power_state_.UpdatePowerDomainSet(power_domain_set, cpu());
+
       // Clear the request to ensure that a DPC racing with a domain change cannot latch a pending
       // request intended for the previous domain and the new domain ref pointer together.
       pending_update_request_.reset();
 
-      // Set the processing rate back to default. If domain is empty the energy model has been
+      // Set the processing rate back to default. If domain is empty, the energy model has been
       // cleared by userspace and the actual processing rate is unclear. If the domain is being
       // replaced/updated, userspace is expected to send an update to set the active power level,
       // which will also update the processing rate.
       updated_processing_rate_ = default_processing_rate_;
 
-      return power_state_.SetOrUpdateDomain(ktl::move(domain));
+      // Set the max processing rate for admission control comparisons.
+      max_processing_rate_ =
+          domain() ? domain()->model().max_processing_rate() : default_processing_rate_;
+
+      return previous;
     }
 
     // Called by the power level controller server (e.g. the userspace component servicing the
@@ -1411,7 +1428,7 @@ class Scheduler {
     zx::result<> UpdateActivePowerLevel(uint8_t power_level) {
       const zx::result result = power_state_.UpdateActivePowerLevel(power_level);
       if (result.is_ok()) {
-        updated_processing_rate_ = ToProcessingRate(power_state_.active_processing_rate());
+        updated_processing_rate_ = power_state_.active_processing_rate();
       }
       return result;
     }
@@ -1429,6 +1446,7 @@ class Scheduler {
       DEBUG_ASSERT(processing_rate > 0);
       DEBUG_ASSERT(!domain());
       processing_rate_ = processing_rate;
+      max_processing_rate_ = processing_rate;
       default_processing_rate_ = processing_rate;
       updated_processing_rate_ = processing_rate;
       processing_rate_reciprocal_ = 1 / processing_rate;
@@ -1454,7 +1472,7 @@ class Scheduler {
     // for the domain it belongs to with the given delta. Returns the updated utilization for this
     // processor.
     SchedUtilization UpdateNormalizedUtilization(SchedUtilization delta) {
-      return SchedUtilization::FromRaw(power_state_.UpdateUtilization(delta.raw_value()));
+      return power_state_.UpdateUtilization(delta);
     }
 
     // Called by the scheduler to request a power level change for the domain associated with this
@@ -1470,8 +1488,14 @@ class Scheduler {
       }
     }
 
+    // Returns true if power control is enabled.
+    bool is_enabled() const { return power_state_.is_enabled(); }
+
     // Returns the power domain associated with this scheduler.
-    const fbl::RefPtr<PowerDomain>& domain() const { return power_state_.domain(); }
+    PowerDomain* domain() const { return power_state_.domain(); }
+
+    // Returns the system power domain set cache for this processor.
+    const PowerDomainSet& power_domain_set() const { return power_state_.power_domain_set(); }
 
     // Returns the id of the domain associated with this scheduler.
     ktl::optional<uint32_t> domain_id() const { return power_state_.domain_id(); }
@@ -1491,12 +1515,12 @@ class Scheduler {
 
     // Returns the normalized utilization of this processor.
     SchedUtilization normalized_utilization() const {
-      return SchedUtilization::FromRaw(power_state_.normalized_utilization());
+      return power_state_.normalized_utilization();
     }
 
     // Returns the total normalized utilization of the domain this processor belongs to.
     SchedUtilization total_normalized_utilization() const {
-      return SchedUtilization::FromRaw(power_state_.total_normalized_utilization());
+      return power_state_.total_normalized_utilization();
     }
 
     // Returns the normalized processing rate of this processor at its current active power level.
@@ -1511,7 +1535,7 @@ class Scheduler {
 
     // Returns the maximum processing rate of this processor. Initially set from the CPU topology
     // data and updated whenever the energy model is set/updated by userspace.
-    SchedProcessingRate default_processing_rate() const { return default_processing_rate_; }
+    SchedProcessingRate max_processing_rate() const { return max_processing_rate_; }
 
     // Returns true if there is a pending update to the processing rate that has not yet been
     // processed by the scheduler. Checked by RescheduleCommon after accounting has been updated for
@@ -1527,22 +1551,11 @@ class Scheduler {
     static void TimerHandler(Timer* timer, zx_instant_mono_t now, void* arg);
     static void DpcHandler(Dpc* dpc);
 
-    // TODO(eieio): The processing rate in the energy model is ultimately supposed to be defined
-    // relative to the max system processing rate:
-    //
-    //   R = active_power_level.processing_rate() / max_system_power_level.processing_rate()
-    //
-    // However, it is currently inconvenient to determine the maximum system power level. For now,
-    // consider the processing rate to map from [0, 1000] in the energy model representation to
-    // [0.0, 1.0] in the fixed point representation.
-    static SchedProcessingRate ToProcessingRate(uint64_t processing_rate) {
-      return ffl::FromRatio<uint64_t>(processing_rate, 1000);
-    }
-
     SchedProcessingRate processing_rate_{1};
     SchedProcessingRate processing_rate_reciprocal_{1};
     SchedProcessingRate updated_processing_rate_{1};
     SchedProcessingRate default_processing_rate_{1};
+    SchedProcessingRate max_processing_rate_{1};
 
     power_management::PowerState power_state_;
     ktl::optional<power_management::PowerLevelUpdateRequest> pending_update_request_;

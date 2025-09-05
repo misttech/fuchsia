@@ -26,20 +26,6 @@
 
 namespace power_management {
 
-namespace {
-
-template <size_t N>
-static constexpr bool HasOverlappingCpu(const uint64_t (&a)[N], const uint64_t (&b)[N]) {
-  for (size_t i = 0; i < N; ++i) {
-    if ((a[i] & b[i]) != 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-}  // namespace
-
 zx::result<EnergyModel> EnergyModel::Create(
     std::span<const zx_processor_power_level_t> levels,
     std::span<const zx_processor_power_level_transition_t> transitions) {
@@ -164,119 +150,60 @@ zx::result<EnergyModel> EnergyModel::Create(
                             std::move(power_levels_lookup), idle_levels});
 }
 
-zx::result<> PowerDomainRegistry::UpdateRegistry(
-    fbl::RefPtr<PowerDomain> power_domain,
-    fit::inline_function<void(size_t, fbl::RefPtr<PowerDomain>)> update_cpu_power_domain) {
-  std::optional<decltype(domains_)::iterator> old_domain_prev;
-  std::optional<decltype(domains_)::iterator> prev_it = std::nullopt;
-  bool existing_id = false;
-  for (auto it = domains_.begin(); it != domains_.end(); ++it) {
-    auto& entry = *it;
-    if (entry.id() == power_domain->id()) {
-      old_domain_prev = prev_it;
-      existing_id = true;
-    } else if (HasOverlappingCpu(entry.cpus().mask, power_domain->cpus().mask)) {
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-
-    prev_it = it;
+zx::result<> PowerDomainRegistry::Register(const fbl::RefPtr<PowerDomain>& power_domain) {
+  if (const zx::result result = power_domain_set_.Update(power_domain); result.is_error()) {
+    return zx::error(result.error_value());
   }
 
-  fbl::RefPtr<PowerDomain> old_domain = nullptr;
-  // Now remove old_domain from the list, and update the domain's generation number.
-  if (existing_id) {
-    if (!old_domain_prev) {
-      old_domain = domains_.pop_front();
-    } else {
-      old_domain = domains_.erase_next(*old_domain_prev);
-    }
-  }
-
-  // Update every CPU reference from previous power domain to `power_domain`.
-  for (size_t i = 0; i < kBuckets; ++i) {
-    const size_t bucket_offset = i * kBitsPerBucket;
-    if (power_domain->cpus().mask[i] == 0 && (old_domain && old_domain->cpus().mask[i] == 0)) {
-      continue;
-    }
-
-    for (size_t j = 0; j < kBitsPerBucket; ++j) {
-      const uint64_t bit_mask = 1ull << j;
-      const size_t num_cpu = bucket_offset + j;
-      if ((power_domain->cpus().mask[i] & bit_mask) != 0) {
-        // This would be done, for example under the scheduler`s `queue_lock_`, and we want to
-        // keep it as short as possible.
-        update_cpu_power_domain(num_cpu, power_domain);
-      } else if (old_domain && (old_domain->cpus().mask[i] & bit_mask) != 0) {
-        update_cpu_power_domain(num_cpu, nullptr);
-      }
-    }
-  }
-
-  domains_.push_front(std::move(power_domain));
+  update_callback_(power_domain_set_);
   return zx::ok();
 }
 
-zx::result<> PowerDomainRegistry::RemoveFromRegistry(
-    uint32_t domain_id, fit::inline_function<void(size_t)> clear_domain) {
-  std::optional<decltype(domains_)::iterator> power_domain_prev;
-  std::optional<decltype(domains_)::iterator> prev_it = std::nullopt;
-
-  fbl::RefPtr<PowerDomain> power_domain = nullptr;
-  bool existing_id = false;
-  for (auto it = domains_.begin(); it != domains_.end(); ++it) {
-    auto& entry = *it;
-    if (entry.id() == domain_id) {
-      power_domain_prev = prev_it;
-      existing_id = true;
-      break;
-    }
-    prev_it = it;
-  }
-
-  // Now remove power_domain from the list, and update the domain's generation number.
-  if (existing_id) {
-    if (!power_domain_prev) {
-      power_domain = domains_.pop_front();
-    } else {
-      power_domain = domains_.erase_next(*power_domain_prev);
-    }
-  } else {
+zx::result<> PowerDomainRegistry::Unregister(uint32_t domain_id) {
+  if (fbl::RefPtr<PowerDomain> power_domain = power_domain_set_.Remove(domain_id); !power_domain) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
-  for (size_t i = 0; i < kBuckets; ++i) {
-    const size_t bucket_offset = i * kBitsPerBucket;
-    for (size_t j = 0; j < kBitsPerBucket; ++j) {
-      const uint64_t bit_mask = 1ull << j;
-      const size_t num_cpu = bucket_offset + j;
-      if ((power_domain->cpus().mask[i] & bit_mask) != 0) {
-        clear_domain(num_cpu);
-      }
-    }
-  }
-
+  update_callback_(power_domain_set_);
   return zx::ok();
 }
 
 std::optional<uint8_t> EnergyModel::FindPowerLevel(ControlInterface interface_id,
                                                    uint64_t control_argument) const {
-  auto it = std::lower_bound(control_lookup_.begin(), control_lookup_.end(),
-                             zx_processor_power_level_t{
-                                 .control_interface = cpp23::to_underlying(interface_id),
-                                 .control_argument = control_argument,
-                             },
-                             [this](size_t i, const zx_processor_power_level_t& val) {
-                               const auto& a = power_levels_[i];
-                               return cpp23::to_underlying(a.control()) < val.control_interface ||
-                                      (cpp23::to_underlying(a.control()) == val.control_interface &&
-                                       a.control_argument() < val.control_argument);
-                             });
+  const auto compare = [this](size_t i, const zx_processor_power_level_t& b) {
+    const auto& a = power_levels_[i];
+    return cpp23::to_underlying(a.control()) < b.control_interface ||
+           (cpp23::to_underlying(a.control()) == b.control_interface &&
+            a.control_argument() < b.control_argument);
+  };
+
+  const zx_processor_power_level_t power_level{
+      .control_interface = cpp23::to_underlying(interface_id),
+      .control_argument = control_argument,
+  };
+
+  auto it = std::lower_bound(control_lookup_.begin(), control_lookup_.end(), power_level, compare);
   if (it != control_lookup_.end() && power_levels_[*it].control() == interface_id &&
       power_levels_[*it].control_argument() == control_argument) {
     return *it;
   }
 
   return std::nullopt;
+}
+
+const PowerLevel* EnergyModel::FindActivePowerLevelForRate(ProcessingRate processing_rate) const {
+  // Return the maximum power level if the processing rate exceeds the maximum
+  // rate.
+  processing_rate = std::min(processing_rate, max_processing_rate());
+
+  const auto compare = [](const PowerLevel& power_level, ProcessingRate processing_rate) {
+    return power_level.processing_rate() < processing_rate;
+  };
+
+  std::span levels = active_levels();
+  auto iter = std::lower_bound(levels.begin(), levels.end(), processing_rate, compare);
+
+  return iter != levels.end() ? &*iter : nullptr;
 }
 
 }  // namespace power_management

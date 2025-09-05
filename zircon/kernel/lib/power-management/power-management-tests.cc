@@ -43,6 +43,7 @@ using power_management::ControlInterface;
 using power_management::EnergyModel;
 using power_management::PortPowerLevelController;
 using power_management::PowerDomain;
+using power_management::PowerDomainSet;
 using power_management::PowerLevelController;
 using power_management::PowerLevelUpdateRequest;
 
@@ -198,14 +199,17 @@ bool SchedulerFlushesPendingControlRequests() {
       ktl::move(*energy_model), controller);
   ASSERT_TRUE(ac.check());
 
+  PowerDomainSet domain_set = PowerDomainSet::CreateForTest(domain);
+
   // Set the current power domain, saving the previous domain to restore at the end of the test.
   const ktl::optional<uint8_t> restore_power_level = scheduler.GetActivePowerLevel();
-  auto restore_domain = fit::defer([&, previous_domian = scheduler.ExchangePowerDomain(domain)] {
-    scheduler.ExchangePowerDomain(previous_domian);
-    if (restore_power_level.has_value()) {
-      DEBUG_ASSERT(scheduler.UpdateActivePowerLevel(*restore_power_level).is_ok());
-    }
-  });
+  auto restore_domain =
+      fit::defer([&, previous_domian_set = scheduler.ExchangePowerDomainSet(domain_set)] {
+        scheduler.ExchangePowerDomainSet(previous_domian_set);
+        if (restore_power_level.has_value()) {
+          DEBUG_ASSERT(scheduler.UpdateActivePowerLevel(*restore_power_level).is_ok());
+        }
+      });
   ASSERT_EQ(domain.get(), scheduler.GetPowerDomainForTesting().get());
   ASSERT_OK(scheduler.UpdateActivePowerLevel(kMaxPowerLevel).status_value());
 
@@ -259,14 +263,17 @@ bool SchedulerElidesPendingControlRequests() {
       ktl::move(*energy_model), controller);
   ASSERT_TRUE(ac.check());
 
+  PowerDomainSet domain_set = PowerDomainSet::CreateForTest(domain);
+
   // Set the current power domain, saving the previous domain to restore at the end of the test.
   const ktl::optional<uint8_t> restore_power_level = scheduler.GetActivePowerLevel();
-  auto restore_domain = fit::defer([&, previous_domian = scheduler.ExchangePowerDomain(domain)] {
-    scheduler.ExchangePowerDomain(previous_domian);
-    if (restore_power_level.has_value()) {
-      DEBUG_ASSERT(scheduler.UpdateActivePowerLevel(*restore_power_level).is_ok());
-    }
-  });
+  auto restore_domain =
+      fit::defer([&, previous_domian_set = scheduler.ExchangePowerDomainSet(domain_set)] {
+        scheduler.ExchangePowerDomainSet(previous_domian_set);
+        if (restore_power_level.has_value()) {
+          DEBUG_ASSERT(scheduler.UpdateActivePowerLevel(*restore_power_level).is_ok());
+        }
+      });
   ASSERT_EQ(domain.get(), scheduler.GetPowerDomainForTesting().get());
   ASSERT_OK(scheduler.UpdateActivePowerLevel(kMaxPowerLevel).status_value());
 
@@ -306,14 +313,17 @@ bool SchedulerCanPendControlRequestsInIrqContext() {
       ktl::move(*energy_model), controller);
   ASSERT_TRUE(ac.check());
 
+  PowerDomainSet domain_set = PowerDomainSet::CreateForTest(domain);
+
   // Set the current power domain, saving the previous domain to restore at the end of the test.
   const ktl::optional<uint8_t> restore_power_level = scheduler.GetActivePowerLevel();
-  auto restore_domain = fit::defer([&, previous_domian = scheduler.ExchangePowerDomain(domain)] {
-    scheduler.ExchangePowerDomain(previous_domian);
-    if (restore_power_level.has_value()) {
-      DEBUG_ASSERT(scheduler.UpdateActivePowerLevel(*restore_power_level).is_ok());
-    }
-  });
+  auto restore_domain =
+      fit::defer([&, previous_domian_set = scheduler.ExchangePowerDomainSet(domain_set)] {
+        scheduler.ExchangePowerDomainSet(previous_domian_set);
+        if (restore_power_level.has_value()) {
+          DEBUG_ASSERT(scheduler.UpdateActivePowerLevel(*restore_power_level).is_ok());
+        }
+      });
   ASSERT_EQ(domain.get(), scheduler.GetPowerDomainForTesting().get());
   ASSERT_OK(scheduler.UpdateActivePowerLevel(kMaxPowerLevel).status_value());
 
@@ -363,14 +373,17 @@ bool SchedulerCanPendControlRequestsAcrossCpus() {
       ktl::move(*energy_model), controller);
   ASSERT_TRUE(ac.check());
 
+  PowerDomainSet domain_set = PowerDomainSet::CreateForTest(domain);
+
   // Set the current power domain, saving the previous domain to restore at the end of the test.
   const ktl::optional<uint8_t> restore_power_level = scheduler.GetActivePowerLevel();
-  auto restore_domain = fit::defer([&, previous_domian = scheduler.ExchangePowerDomain(domain)] {
-    scheduler.ExchangePowerDomain(previous_domian);
-    if (restore_power_level.has_value()) {
-      DEBUG_ASSERT(scheduler.UpdateActivePowerLevel(*restore_power_level).is_ok());
-    }
-  });
+  auto restore_domain =
+      fit::defer([&, previous_domian_set = scheduler.ExchangePowerDomainSet(domain_set)] {
+        scheduler.ExchangePowerDomainSet(previous_domian_set);
+        if (restore_power_level.has_value()) {
+          DEBUG_ASSERT(scheduler.UpdateActivePowerLevel(*restore_power_level).is_ok());
+        }
+      });
   ASSERT_EQ(domain.get(), scheduler.GetPowerDomainForTesting().get());
   ASSERT_OK(scheduler.UpdateActivePowerLevel(kMaxPowerLevel).status_value());
 

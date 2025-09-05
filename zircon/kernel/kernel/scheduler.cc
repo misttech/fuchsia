@@ -1531,66 +1531,66 @@ void Scheduler::ProcessSaveStateList() {
 void Scheduler::UpdateEstimatedEnergyConsumption(Thread* current_thread,
                                                  SchedMonoTimeAndBootTicks now,
                                                  SchedDuration actual_runtime_ns) {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "update_energy");
-
   // Time in a low-power idle state should only accrue when running the idle
-  // thread.
+  // thread. Always consume the processor idle time, even if an energy model is
+  // not set, to avoid accumulating excessive idle time and triggering the
+  // assert when an energy model is finally set.
   const SchedDuration idle_processor_time_ns{IdlePowerThread::TakeProcessorIdleTime()};
   DEBUG_ASSERT_MSG(
       idle_processor_time_ns <= actual_runtime_ns,
       "idle_processor_time_ns=%" PRId64 " actual_runtime_ns=%" PRId64 " current_thread=%s",
       idle_processor_time_ns.raw_value(), actual_runtime_ns.raw_value(), current_thread->name());
 
-  // Subtract any time the processor spent in the low-power idle state from the
-  // runtime to ensure that active vs. idle power consumption is attributed
-  // correctly. Processors can accumulate both active or idle power consumption,
-  // but threads, including the idle power thread, accumulate only active power
-  // consumption.
-  const SchedDuration active_processor_time_ns = actual_runtime_ns - idle_processor_time_ns;
+  if (power_level_control_.is_enabled()) {
+    ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(DETAILED, "update_energy");
 
-  using FractionalSeconds = ffl::Fixed<uint64_t, 20>;
-  using Energy = ffl::Fixed<uint64_t, 0>;
+    // Subtract any time the processor spent in the low-power idle state from the
+    // runtime to ensure that active vs. idle power consumption is attributed
+    // correctly. Processors can accumulate both active or idle power consumption,
+    // but threads, including the idle power thread, accumulate only active power
+    // consumption.
+    const SchedDuration active_processor_time_ns = actual_runtime_ns - idle_processor_time_ns;
 
-  cpu_stats& stats = percpu::GetCurrent().stats;
+    using FractionalSeconds = ffl::Fixed<uint64_t, 20>;
+    using Energy = ffl::Fixed<uint64_t, 0>;
 
-  // The energy consumption over the active interval is computed as:
-  //
-  // E_active = (P_dyamic + P_leak) * dt_active
-  //
-  // P_dynamic is the power coefficient of the current active power level.
-  // P_leak is the power coefficient of the maximum idle power level, typically
-  // corresponding to clock gating, where only leakage power is significant.
-  if (power_level_control_.active_power_coefficient_nw() > 0) {
+    // This method can be called from another CPU during PI adjustments. Make sure
+    // to update the stats for the CPU the thread is associated with.
+    cpu_stats& stats = percpu::Get(this_cpu()).stats;
+
+    // The energy consumption over the active interval is computed as:
+    //
+    // E_active = P_active * dt_active
+    //
+    // P_active is the power coefficient of the current active power level.
     const FractionalSeconds active_interval_s = active_processor_time_ns / ZX_SEC(1);
-    const uint64_t active_power_nw = power_level_control_.active_power_coefficient_nw() +
-                                     power_level_control_.max_idle_power_coefficient_nw();
+    const uint64_t active_power_nw = power_level_control_.active_power_coefficient_nw();
 
     const Energy active_energy_consumption_nj = active_power_nw * active_interval_s;
 
     stats.active_energy_consumption_nj += active_energy_consumption_nj.raw_value();
     current_thread->scheduler_state().estimated_energy_consumption_nj +=
         active_energy_consumption_nj.raw_value();
+
+    // TODO(https://fxbug.dev/377583571): Select the correct power coefficient
+    // when deeper idle states are implemented. For now the max idle power
+    // coefficient corresponds to the most general arch idle state (e.g. WFI,
+    // halt).
+    if (idle_processor_time_ns > 0) {
+      const FractionalSeconds idle_interval_s = idle_processor_time_ns / ZX_SEC(1);
+      const uint64_t idle_power_nw = power_level_control_.max_idle_power_coefficient_nw();
+
+      const Energy idle_energy_consumption_nj = idle_power_nw * idle_interval_s;
+      stats.idle_energy_consumption_nj += idle_energy_consumption_nj.raw_value();
+    }
+
+    LOCAL_KTRACE_COUNTER_TIMESTAMP(
+        COMMON, "Energy (nJ)", now.boot_ticks, this_cpu(),
+        ("CPU", stats.active_energy_consumption_nj + stats.idle_energy_consumption_nj));
+
+    trace = KTRACE_END_SCOPE(("active_processor_time_ns", active_processor_time_ns),
+                             ("idle_processor_time_ns", idle_processor_time_ns));
   }
-
-  // TODO(https://fxbug.dev/377583571): Select the correct power coefficient
-  // when deeper idle states are implemented. For now the max idle power
-  // coefficient corresponds to the most general arch idle state (e.g. WFI,
-  // halt).
-  if (power_level_control_.max_idle_power_coefficient_nw() > 0 && idle_processor_time_ns > 0) {
-    const FractionalSeconds idle_interval_s = idle_processor_time_ns / ZX_SEC(1);
-    const uint64_t idle_power_nw = power_level_control_.max_idle_power_coefficient_nw();
-
-    const Energy idle_energy_consumption_nj = idle_power_nw * idle_interval_s;
-
-    stats.idle_energy_consumption_nj += idle_energy_consumption_nj.raw_value();
-  }
-
-  LOCAL_KTRACE_COUNTER_TIMESTAMP(
-      COMMON, "Energy (nJ)", now.boot_ticks, this_cpu(),
-      ("CPU", stats.active_energy_consumption_nj + stats.idle_energy_consumption_nj));
-
-  trace = KTRACE_END_SCOPE(("active_processor_time_ns", active_processor_time_ns),
-                           ("idle_processor_time_ns", idle_processor_time_ns));
 }
 
 void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback end_outer_trace) {
@@ -3404,7 +3404,7 @@ void Scheduler::GetDefaultPerformanceScales(zx_cpu_performance_info_t* info, siz
     Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
     info[i].logical_cpu_number = i;
     info[i].performance_scale =
-        ToUserPerformanceScale(scheduler->power_level_control_.default_processing_rate());
+        ToUserPerformanceScale(scheduler->power_level_control_.max_processing_rate());
   }
 }
 
@@ -3625,7 +3625,7 @@ void Scheduler::PowerLevelControl::DpcHandler(Dpc* dpc) {
 
   {
     Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
-    domain = scheduler->power_level_control_.power_state_.domain();
+    domain = fbl::RefPtr{scheduler->power_level_control_.power_state_.domain()};
     request.swap(scheduler->power_level_control_.pending_update_request_);
   }
 
