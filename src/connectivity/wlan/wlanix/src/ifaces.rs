@@ -1,17 +1,16 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 use crate::bss_scorer::BssScorer;
-use crate::security::{get_authenticator, Credential};
-use anyhow::{bail, format_err, Context, Error};
+use crate::security::{Credential, get_authenticator};
+use anyhow::{Context, Error, bail, format_err};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::lock::Mutex as MutexAsync;
-use futures::{select, FutureExt, TryFutureExt, TryStreamExt};
+use futures::{FutureExt, TryFutureExt, TryStreamExt, select};
 use ieee80211::Bssid;
 use log::{error, info, warn};
 use std::collections::HashMap;
@@ -19,15 +18,15 @@ use std::convert::TryFrom;
 use std::pin::pin;
 use std::sync::Arc;
 use strum::IntoEnumIterator;
-use strum_macros::EnumIter;
+use strum_macros::{Display, EnumIter};
 use wlan_common::bss::BssDescription;
 use wlan_common::scan::{Compatibility, CompatibilityExt as _};
 use wlan_telemetry::{TelemetryEvent, TelemetrySender};
 use {
-    fidl_fuchsia_power_broker as fidl_power_broker, fidl_fuchsia_wlan_common as fidl_common,
+    fidl_fuchsia_wlan_common as fidl_common,
     fidl_fuchsia_wlan_device_service as fidl_device_service,
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_sme as fidl_sme, power_broker_client as pbclient,
+    fidl_fuchsia_wlan_sme as fidl_sme, state_recorder as power_observability_state_recorder,
 };
 
 // A long amount of time that a scan should be able to finish within. If a scan takes longer than
@@ -62,7 +61,6 @@ pub(crate) trait IfaceManager: Send + Sync {
 
 pub struct DeviceMonitorIfaceManager {
     monitor_svc: fidl_device_service::DeviceMonitorProxy,
-    pb_topology_svc: Option<fidl_power_broker::TopologyProxy>,
     ifaces: Mutex<HashMap<u16, Arc<SmeClientIface>>>,
     telemetry_sender: TelemetrySender,
 }
@@ -72,13 +70,8 @@ impl DeviceMonitorIfaceManager {
         device_monitor_svc: fidl_device_service::DeviceMonitorProxy,
         telemetry_sender: TelemetrySender,
     ) -> Result<Self, Error> {
-        let pb_topology_svc =
-            fuchsia_component::client::connect_to_protocol::<fidl_power_broker::TopologyMarker>()
-                .inspect_err(|e| warn!("Failed to initialize PB topology: {:?}", e))
-                .ok();
         Ok(Self {
             monitor_svc: device_monitor_svc,
-            pb_topology_svc,
             ifaces: Mutex::new(HashMap::new()),
             telemetry_sender,
         })
@@ -208,10 +201,8 @@ impl IfaceManager for DeviceMonitorIfaceManager {
             iface_id,
             sme_proxy,
             self.monitor_svc.clone(),
-            self.pb_topology_svc.clone(),
             self.telemetry_sender.clone(),
-        )
-        .await;
+        );
         iface.wlanix_provisioned = wlanix_provisioned;
         let _ = self.ifaces.lock().insert(iface_id, Arc::new(iface));
         Ok(iface_id)
@@ -274,27 +265,22 @@ pub(crate) enum ScanEnd {
     Cancelled,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, EnumIter)]
-#[repr(u8)] // Intended to match fidl_power_broker::PowerLevel
+#[derive(Copy, Clone, Debug, Display, Eq, PartialEq, Ord, PartialOrd, Hash, EnumIter)]
+#[repr(u32)] // For use with discrete_states_from_enum.
 enum StaIfacePowerLevel {
     Suspended = 0,
     Normal = 1,
     NoPowerSavings = 2,
 }
 
+static STA_IFACE_POWER_LEVELS: power_observability_state_recorder::DiscreteStates =
+    power_observability_state_recorder::discrete_states_from_enum!(StaIfacePowerLevel);
+
+#[derive(Debug)]
 pub(crate) struct PowerState {
-    power_element_context: Option<pbclient::PowerElementContext>,
     suspend_mode_enabled: bool,
     power_save_enabled: bool,
-}
-// Need to manually implement Debug for this, since pbclient::PowerElementContext is not Debug
-impl std::fmt::Debug for PowerState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PowerState")
-            .field("suspend_mode_enabled", &self.suspend_mode_enabled)
-            .field("power_save_enabled", &self.power_save_enabled)
-            .finish()
-    }
+    recorder: Option<power_observability_state_recorder::StateRecorder>,
 }
 
 #[async_trait]
@@ -348,42 +334,43 @@ pub(crate) struct SmeClientIface {
 }
 
 impl SmeClientIface {
-    async fn new(
+    fn new(
         phy_id: u16,
         iface_id: u16,
         sme_proxy: fidl_sme::ClientSmeProxy,
         monitor_svc: fidl_device_service::DeviceMonitorProxy,
-        pb_topology_svc: Option<fidl_power_broker::TopologyProxy>,
         telemetry_sender: TelemetrySender,
     ) -> Self {
-        // If the power broker is available, initialize our power element
-        let power_element_context = if let Some(topology) = pb_topology_svc {
-            let valid_levels: Vec<u8> = StaIfacePowerLevel::iter().map(|it| it as u8).collect();
-            let element_name = format!("wlanix-sta-iface-{iface_id}-supplicant-power");
+        let element_name = format!("wlanix-sta-iface-{iface_id}-supplicant-power");
+        let state_metadata = power_observability_state_recorder::DiscreteStateMetadata {
+            name: power_observability_state_recorder::lazy_static_cstr(&element_name),
+            trace_category: power_observability_state_recorder::lazy_static_cstr("power"),
+            states: &STA_IFACE_POWER_LEVELS,
+        };
 
-            // We assume the driver starts out with no power savings. The higher level applications
-            // don't rely on this, it's only for reporting to the PB, so even if it's wrong it won't
-            // cause logic errors. So far, this is a safe assumption based on the drivers we have.
-            // TODO(https://fxbug.dev/378878423): Read this from the driver at initialization.
-            let initial_level = StaIfacePowerLevel::NoPowerSavings;
-            match pbclient::PowerElementContext::builder(
-                &topology,
-                element_name.as_str(),
-                &valid_levels,
-            )
-            .initial_current_level(initial_level as u8)
-            .register_dependency_tokens(false) // Prevent other elements from depending in this one.
-            .build()
-            .await
-            {
-                Ok(power_element_context) => Some(power_element_context),
-                Err(e) => {
-                    warn!("Failed to initialize power element context: {:?}", e);
-                    None
-                }
+        // As an initial guess as to an appropriate number, keep up to 100 samples in the circular
+        // buffer for power observability purposes.
+        static NUM_POWER_OBSERVABILITY_SAMPLES_PER_IFACE: usize = 100;
+
+        // We assume the driver starts out with no power savings. The higher level applications
+        // don't rely on this, it's only for reporting here, so even if it's wrong it won't
+        // cause logic errors. So far, this is a safe assumption based on the drivers we have.
+        // TODO(https://fxbug.dev/378878423): Read this from the driver at initialization.
+        let initial_level = StaIfacePowerLevel::NoPowerSavings as u32;
+        let recorder = match power_observability_state_recorder::StateRecorder::new(
+            state_metadata,
+            initial_level,
+            NUM_POWER_OBSERVABILITY_SAMPLES_PER_IFACE,
+        ) {
+            Ok(r) => Some(r),
+            Err(e) => {
+                error!(
+                    "Error constructing state recorder ({:?}); power observability logging will be \
+                    disabled.",
+                    e
+                );
+                None
             }
-        } else {
-            None
         };
 
         SmeClientIface {
@@ -397,9 +384,9 @@ impl SmeClientIface {
             wlanix_provisioned: true,
             bss_scorer: BssScorer::new(),
             power_state: Arc::new(MutexAsync::new(PowerState {
-                power_element_context,
                 suspend_mode_enabled: false,
                 power_save_enabled: false,
+                recorder,
             })),
             telemetry_sender,
         }
@@ -411,30 +398,20 @@ impl SmeClientIface {
     /// empirical measurements show that the chips have virtually no power consumption when no
     /// interfaces exist.
     async fn update_power_level(&self, new_level: StaIfacePowerLevel) -> Result<(), Error> {
-        // If the Power Broker is initialized, report the new state
-        if let Some(pe) = &mut self.power_state.lock().await.power_element_context {
-            match pe.current_level.update(new_level as u8).await {
-                Err(e) => Err(format_err!("Error setting level: {:?}", e)),
-                Ok(Err(e)) => Err(format_err!("Error setting level: {:?}", e)),
-                Ok(Ok(())) => {
-                    self.telemetry_sender.send(TelemetryEvent::IfacePowerLevelChanged {
-                        iface_id: self.iface_id,
-                        iface_power_level: match new_level {
-                            StaIfacePowerLevel::Suspended => {
-                                wlan_telemetry::IfacePowerLevel::SuspendMode
-                            }
-                            StaIfacePowerLevel::Normal => wlan_telemetry::IfacePowerLevel::Normal,
-                            StaIfacePowerLevel::NoPowerSavings => {
-                                wlan_telemetry::IfacePowerLevel::NoPowerSavings
-                            }
-                        },
-                    });
-                    Ok(())
-                }
-            }
-        } else {
-            Err(format_err!("Successfully set hardware state, but can't report it to PB since it is not initialized"))
+        if let Some(recorder) = &mut self.power_state.lock().await.recorder {
+            recorder.record_transition(new_level as u32);
+            self.telemetry_sender.send(TelemetryEvent::IfacePowerLevelChanged {
+                iface_id: self.iface_id,
+                iface_power_level: match new_level {
+                    StaIfacePowerLevel::Suspended => wlan_telemetry::IfacePowerLevel::SuspendMode,
+                    StaIfacePowerLevel::Normal => wlan_telemetry::IfacePowerLevel::Normal,
+                    StaIfacePowerLevel::NoPowerSavings => {
+                        wlan_telemetry::IfacePowerLevel::NoPowerSavings
+                    }
+                },
+            });
         }
+        Ok(())
     }
 }
 
@@ -452,15 +429,16 @@ impl ClientIface for SmeClientIface {
         let scan_request = fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest);
         let (abort_sender, mut abort_receiver) = oneshot::channel();
         self.scan_abort_signal.lock().replace(abort_sender);
-        let mut fut = pin!(self
-            .sme_proxy
-            .scan(&scan_request)
-            .map_err(|e| format_err!("Failed to request scan: {:?}", e))
-            .on_timeout(SCAN_TIMEOUT, || {
-                self.telemetry_sender.send(TelemetryEvent::SmeTimeout);
-                Err(format_err!("Timed out waiting on scan response from SME"))
-            })
-            .fuse());
+        let mut fut = pin!(
+            self.sme_proxy
+                .scan(&scan_request)
+                .map_err(|e| format_err!("Failed to request scan: {:?}", e))
+                .on_timeout(SCAN_TIMEOUT, || {
+                    self.telemetry_sender.send(TelemetryEvent::SmeTimeout);
+                    Err(format_err!("Timed out waiting on scan response from SME"))
+                })
+                .fuse()
+        );
         select! {
             scan_results = fut => {
                 let scan_result_vmo = scan_results?
@@ -550,11 +528,13 @@ impl ClientIface for SmeClientIface {
             None => bail!("Requested network not found"),
         };
 
-        let authenticator =
-            match get_authenticator(bss_description.bssid, compatible, &credential) {
-                Some(authenticator) => authenticator,
-                None => bail!("Failed to create authenticator for requested network. Unsupported security type, channel, or data rate."),
-            };
+        let authenticator = match get_authenticator(bss_description.bssid, compatible, &credential)
+        {
+            Some(authenticator) => authenticator,
+            None => bail!(
+                "Failed to create authenticator for requested network. Unsupported security type, channel, or data rate."
+            ),
+        };
 
         info!("Selected BSS for connection");
         let (connect_txn, remote) = create_proxy();
@@ -710,7 +690,7 @@ async fn wait_for_connect_result(
             .map_err(|e| format_err!("Failed to receive connect result from sme: {:?}", e))?
         {
             Some(fidl_sme::ConnectTransactionEvent::OnConnectResult { result }) => {
-                return Ok(result)
+                return Ok(result);
             }
             Some(other) => {
                 info!(
@@ -961,8 +941,8 @@ pub mod test_utils {
             }
         }
 
-        pub fn new_with_client_and_scan_end_sender(
-        ) -> (Self, oneshot::Sender<Result<ScanEnd, Error>>) {
+        pub fn new_with_client_and_scan_end_sender()
+        -> (Self, oneshot::Sender<Result<ScanEnd, Error>>) {
             let (sender, receiver) = oneshot::channel();
             (
                 Self {
@@ -1025,11 +1005,7 @@ pub mod test_utils {
 
         fn list_ifaces(&self) -> Vec<u16> {
             self.calls.lock().push(IfaceManagerCall::ListIfaces);
-            if self.client_iface.lock().is_some() {
-                vec![*self.iface_id.lock()]
-            } else {
-                vec![]
-            }
+            if self.client_iface.lock().is_some() { vec![*self.iface_id.lock()] } else { vec![] }
         }
 
         async fn get_country(&self, _phy_id: u16) -> Result<[u8; 2], Error> {
@@ -1118,15 +1094,15 @@ mod tests {
     use super::*;
     use crate::security::wep::WepKeys;
     use fidl::endpoints::create_proxy_and_stream;
+    use futures::StreamExt;
     use futures::channel::mpsc;
     use futures::task::Poll;
-    use futures::StreamExt;
     use ieee80211::{MacAddrBytes, Ssid};
     use test_case::test_case;
     use wlan_common::channel::{Cbw, Channel};
     use wlan_common::fake_fidl_bss_description;
-    use wlan_common::test_utils::fake_stas::FakeProtectionCfg;
     use wlan_common::test_utils::ExpectWithin;
+    use wlan_common::test_utils::fake_stas::FakeProtectionCfg;
     #[allow(
         clippy::single_component_path_imports,
         reason = "mass allow for https://fxbug.dev/381896734"
@@ -1153,7 +1129,6 @@ mod tests {
             DeviceMonitorIfaceManager {
                 monitor_svc,
                 ifaces: Mutex::new(HashMap::new()),
-                pb_topology_svc: None,
                 telemetry_sender: TelemetrySender::new(telemetry_sender),
             },
         )
@@ -1175,19 +1150,17 @@ mod tests {
         let manager = DeviceMonitorIfaceManager {
             monitor_svc: monitor_svc.clone(),
             ifaces: Mutex::new(HashMap::new()),
-            pb_topology_svc: None,
             telemetry_sender: TelemetrySender::new(telemetry_sender.clone()),
         };
         let (sme_proxy, sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
         let phy_id = rand::random();
-        let iface = exec.run_singlethreaded(SmeClientIface::new(
+        let iface = SmeClientIface::new(
             phy_id,
             TEST_IFACE_ID,
             sme_proxy,
             monitor_svc,
-            None,
             TelemetrySender::new(telemetry_sender),
-        ));
+        );
         manager.ifaces.lock().insert(TEST_IFACE_ID, Arc::new(iface));
         let mut client_fut = manager.get_client_iface(TEST_IFACE_ID);
         let iface = exec.run_singlethreaded(&mut client_fut).expect("Failed to get client iface");
@@ -1211,7 +1184,6 @@ mod tests {
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let manager = DeviceMonitorIfaceManager {
             monitor_svc: monitor_svc.clone(),
-            pb_topology_svc: None,
             ifaces: Mutex::new(HashMap::new()),
             telemetry_sender: TelemetrySender::new(telemetry_sender.clone()),
         };
@@ -1226,9 +1198,24 @@ mod tests {
             wlanix_provisioned: true,
             bss_scorer: BssScorer::new(),
             power_state: Arc::new(MutexAsync::new(PowerState {
-                power_element_context: None,
                 suspend_mode_enabled: false,
                 power_save_enabled: false,
+                recorder: Some(
+                    power_observability_state_recorder::StateRecorder::new(
+                        power_observability_state_recorder::DiscreteStateMetadata {
+                            name: power_observability_state_recorder::lazy_static_cstr(
+                                "test_state",
+                            ),
+                            trace_category: power_observability_state_recorder::lazy_static_cstr(
+                                "test",
+                            ),
+                            states: &STA_IFACE_POWER_LEVELS,
+                        },
+                        0,
+                        1,
+                    )
+                    .expect("StateRecorder construction failed"),
+                ),
             })),
             telemetry_sender: TelemetrySender::new(telemetry_sender),
         };
@@ -1248,7 +1235,6 @@ mod tests {
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let manager = DeviceMonitorIfaceManager {
             monitor_svc,
-            pb_topology_svc: None,
             ifaces: Mutex::new(HashMap::new()),
             telemetry_sender: TelemetrySender::new(telemetry_sender),
         };
@@ -1288,21 +1274,7 @@ mod tests {
 
     #[test]
     fn test_create_and_serve_client_iface() {
-        // Create the manager here instead of using setup_test_manager(), since we need the
-        // pb_topology_proxy to be present.
-        let mut exec = fasync::TestExecutor::new();
-        let (monitor_svc, mut monitor_stream) =
-            create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
-        let (pb_topology_proxy, mut pb_stream) =
-            create_proxy_and_stream::<fidl_power_broker::TopologyMarker>();
-        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-
-        let manager = DeviceMonitorIfaceManager {
-            monitor_svc,
-            pb_topology_svc: Some(pb_topology_proxy),
-            ifaces: Mutex::new(HashMap::new()),
-            telemetry_sender: TelemetrySender::new(telemetry_sender),
-        };
+        let (mut exec, mut monitor_stream, _telemetry_receiver, manager) = setup_test_manager();
         let mut fut = manager.create_client_iface(0);
 
         // No interfaces to begin.
@@ -1334,14 +1306,6 @@ mod tests {
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::GetClientSme { responder, .. })) => responder);
         responder.send(Ok(())).expect("Failed to send GetClientSme response");
 
-        // Expect power broker initialization
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
-        assert_matches!(
-            exec.run_until_stalled(&mut pb_stream.next()),
-            Poll::Ready(Some(Ok(fidl_power_broker::TopologyRequest::AddElement { payload: _payload, responder }))) => {
-                assert_matches!(responder.send(Ok(())), Ok(()));
-        });
-
         // Creation complete!
         let request_id = exec.run_singlethreaded(&mut fut).expect("Creation completes ok");
         assert_eq!(request_id, FAKE_IFACE_RESPONSE.id);
@@ -1350,13 +1314,10 @@ mod tests {
         assert_eq!(manager.list_ifaces(), vec![FAKE_IFACE_RESPONSE.id]);
 
         // The new iface is ready for use.
-        let iface = assert_matches!(
+        let _iface = assert_matches!(
             exec.run_until_stalled(&mut manager.get_client_iface(FAKE_IFACE_RESPONSE.id)),
             Poll::Ready(Ok(i)) => i
         );
-
-        // The iface has the power broker topology passed in from the manager
-        assert!(iface.power_state.try_lock().unwrap().power_element_context.is_some());
     }
 
     #[test]
@@ -1454,7 +1415,6 @@ mod tests {
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let manager = DeviceMonitorIfaceManager {
             monitor_svc: monitor_svc.clone(),
-            pb_topology_svc: None,
             ifaces: Mutex::new(HashMap::new()),
             telemetry_sender: TelemetrySender::new(telemetry_sender.clone()),
         };
@@ -1469,9 +1429,24 @@ mod tests {
             wlanix_provisioned: false, // set to false for this test
             bss_scorer: BssScorer::new(),
             power_state: Arc::new(MutexAsync::new(PowerState {
-                power_element_context: None,
                 suspend_mode_enabled: false,
                 power_save_enabled: false,
+                recorder: Some(
+                    power_observability_state_recorder::StateRecorder::new(
+                        power_observability_state_recorder::DiscreteStateMetadata {
+                            name: power_observability_state_recorder::lazy_static_cstr(
+                                "test_state",
+                            ),
+                            trace_category: power_observability_state_recorder::lazy_static_cstr(
+                                "test",
+                            ),
+                            states: &STA_IFACE_POWER_LEVELS,
+                        },
+                        0,
+                        1,
+                    )
+                    .expect("State recorder construction failed"),
+                ),
             })),
             telemetry_sender: TelemetrySender::new(telemetry_sender),
         };
@@ -2216,57 +2191,28 @@ mod tests {
         let (monitor_svc, _monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (sme_proxy, _sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
-        let (pb_topology_proxy, mut pb_stream) =
-            create_proxy_and_stream::<fidl_power_broker::TopologyMarker>();
         let phy_id = rand::random();
         let (telemetry_sender, mut _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
 
         // Create the interface with a power broker channel
-        let mut iface_create_fut = pin!(SmeClientIface::new(
+        let iface = SmeClientIface::new(
             phy_id,
             TEST_IFACE_ID,
             sme_proxy,
             monitor_svc,
-            Some(pb_topology_proxy),
             TelemetrySender::new(telemetry_sender),
-        ));
-        assert_matches!(exec.run_until_stalled(&mut iface_create_fut), Poll::Pending);
-        // Expect power broker initialization
-        let mut pb_update_channel = assert_matches!(
-            exec.run_until_stalled(&mut pb_stream.next()),
-            Poll::Ready(Some(Ok(fidl_power_broker::TopologyRequest::AddElement { payload, responder }))) => {
-                assert_eq!(payload.initial_current_level, Some(StaIfacePowerLevel::NoPowerSavings as u8));
-                assert_matches!(responder.send(Ok(())), Ok(()));
-                payload.level_control_channels.unwrap().current.into_stream()
-        });
-        let iface = exec.run_singlethreaded(iface_create_fut);
+        );
 
         // Run each call in the test sequence
-        for (call, expected_driver_val) in sequence {
+        for (call, _expected_driver_val) in sequence {
             // Set the power save mode
-            let mut power_call_fut = match call {
+            let power_call_fut = match call {
                 PowerCall::SetPowerSaveMode(val) => iface.set_power_save_mode(val),
                 PowerCall::SetSuspendMode(val) => iface.set_suspend_mode(val),
             };
-            assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
-
-            // Validate the expected setting is sent to the power broker
-            let expected_pb_val = match expected_driver_val {
-                fidl_common::PowerSaveType::PsModeUltraLowPower => StaIfacePowerLevel::Suspended,
-                fidl_common::PowerSaveType::PsModeLowPower => panic!("Unexpected value"),
-                fidl_common::PowerSaveType::PsModeBalanced => StaIfacePowerLevel::Normal,
-                fidl_common::PowerSaveType::PsModePerformance => StaIfacePowerLevel::NoPowerSavings,
-            };
-            assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
-            assert_matches!(
-                exec.run_until_stalled(&mut pb_update_channel.next()),
-                Poll::Ready(Some(Ok(fidl_power_broker::CurrentLevelRequest::Update { current_level, responder }))) => {
-                    assert_eq!(current_level, expected_pb_val as u8);
-                    assert_matches!(responder.send(Ok(())), Ok(()));
-            });
 
             // Future completes
-            exec.run_singlethreaded(&mut power_call_fut).expect("future finished");
+            exec.run_singlethreaded(power_call_fut).expect("future finished");
         }
     }
 
@@ -2281,48 +2227,25 @@ mod tests {
         let (monitor_svc, _monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (sme_proxy, _sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
-        let (pb_topology_proxy, mut pb_stream) =
-            create_proxy_and_stream::<fidl_power_broker::TopologyMarker>();
         let phy_id = rand::random();
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
 
         // Create the interface with a power broker channel
-        let mut iface_create_fut = pin!(SmeClientIface::new(
+        let iface = SmeClientIface::new(
             phy_id,
             TEST_IFACE_ID,
             sme_proxy,
             monitor_svc,
-            Some(pb_topology_proxy),
             TelemetrySender::new(telemetry_sender),
-        ));
-        assert_matches!(exec.run_until_stalled(&mut iface_create_fut), Poll::Pending);
-        // Expect power broker initialization
-        let mut pb_update_channel = assert_matches!(
-            exec.run_until_stalled(&mut pb_stream.next()),
-            Poll::Ready(Some(Ok(fidl_power_broker::TopologyRequest::AddElement { payload, responder }))) => {
-                assert_eq!(payload.initial_current_level, Some(StaIfacePowerLevel::NoPowerSavings as u8));
-                assert_matches!(responder.send(Ok(())), Ok(()));
-                payload.level_control_channels.unwrap().current.into_stream()
-        });
-        let iface = exec.run_singlethreaded(iface_create_fut);
+        );
 
         // Set the power save mode
-        let mut power_call_fut = match call {
+        let power_call_fut = match call {
             PowerCall::SetPowerSaveMode(val) => iface.set_power_save_mode(val),
             PowerCall::SetSuspendMode(val) => iface.set_suspend_mode(val),
         };
-        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
-
-        // Respond to the call to power broker
-        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
-        assert_matches!(
-            exec.run_until_stalled(&mut pb_update_channel.next()),
-            Poll::Ready(Some(Ok(fidl_power_broker::CurrentLevelRequest::Update { current_level: _, responder }))) => {
-                assert_matches!(responder.send(Ok(())), Ok(()));
-        });
-
         // Future completes
-        exec.run_singlethreaded(&mut power_call_fut).expect("future finished");
+        exec.run_singlethreaded(power_call_fut).expect("future finished");
 
         // Validate telemetry event is sent
         let expected_metric = match expected_driver_val {
@@ -2354,42 +2277,21 @@ mod tests {
         let (monitor_svc, _monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (sme_proxy, _sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
-        let (pb_topology_proxy, mut pb_stream) =
-            create_proxy_and_stream::<fidl_power_broker::TopologyMarker>();
         let phy_id = rand::random();
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
 
         // Create the interface with a power broker channel
-        let mut iface_create_fut = pin!(SmeClientIface::new(
+        let iface = SmeClientIface::new(
             phy_id,
             TEST_IFACE_ID,
             sme_proxy,
             monitor_svc,
-            Some(pb_topology_proxy),
             TelemetrySender::new(telemetry_sender),
-        ));
-        assert_matches!(exec.run_until_stalled(&mut iface_create_fut), Poll::Pending);
-        // Expect power broker initialization
-        let mut pb_update_channel = assert_matches!(
-            exec.run_until_stalled(&mut pb_stream.next()),
-            Poll::Ready(Some(Ok(fidl_power_broker::TopologyRequest::AddElement { payload, responder }))) => {
-                assert_eq!(payload.initial_current_level, Some(StaIfacePowerLevel::NoPowerSavings as u8));
-                assert_matches!(responder.send(Ok(())), Ok(()));
-                payload.level_control_channels.unwrap().current.into_stream()
-        });
-        let iface = exec.run_singlethreaded(iface_create_fut);
+        );
 
         // Set suspend mode on
-        let mut power_call_fut = iface.set_suspend_mode(true);
-        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
-
-        // Respond to the power broker setting
-        assert_matches!(
-            exec.run_until_stalled(&mut pb_update_channel.next()),
-            Poll::Ready(Some(Ok(fidl_power_broker::CurrentLevelRequest::Update { current_level: _, responder }))) => {
-                assert_matches!(responder.send(Ok(())), Ok(()));
-        });
-        exec.run_singlethreaded(&mut power_call_fut).expect("future finished");
+        let power_call_fut = iface.set_suspend_mode(true);
+        exec.run_singlethreaded(power_call_fut).expect("future finished");
 
         let event = assert_matches!(telemetry_receiver.try_next(), Ok(Some(event)) => event);
         assert_matches!(
@@ -2399,21 +2301,13 @@ mod tests {
 
         // Now that we're in suspend mode, any calls to SetPowerSaveMode should generate a metric
         // Set the power save mode
-        let mut power_call_fut = match call {
+        let power_call_fut = match call {
             PowerCall::SetPowerSaveMode(val) => iface.set_power_save_mode(val),
             PowerCall::SetSuspendMode(val) => iface.set_suspend_mode(val),
         };
-        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
-
-        // Respond to the power broker setting
-        assert_matches!(
-            exec.run_until_stalled(&mut pb_update_channel.next()),
-            Poll::Ready(Some(Ok(fidl_power_broker::CurrentLevelRequest::Update { current_level: _, responder }))) => {
-                assert_matches!(responder.send(Ok(())), Ok(()));
-        });
 
         // Future completes
-        exec.run_singlethreaded(&mut power_call_fut).expect("future finished");
+        exec.run_singlethreaded(power_call_fut).expect("future finished");
 
         // Check for the unclear power demand metric
         let event = assert_matches!(telemetry_receiver.try_next(), Ok(Some(event)) => event);

@@ -19,7 +19,7 @@ static CSTR_POOL: LazyLock<Mutex<HashMap<String, &'static CStr>>> =
 // value will only be created once.
 //
 // This function panics if `s` contains null bytes.
-fn lazy_static_cstr(s: &str) -> &'static CStr {
+pub fn lazy_static_cstr(s: &str) -> &'static CStr {
     let mut pool = CSTR_POOL.lock().unwrap();
 
     // If the string is already in our pool, return the existing CStr.
@@ -59,6 +59,33 @@ macro_rules! discrete_states {
                 map.insert($key, $value);
             )*
             map
+        })
+    };
+}
+/// Macro to create a DiscreteStates object from a suitable enum.
+///
+/// The provided enum must:
+///    - Be represented as a type that can convert safely to u32.
+///    - Implement the traits Clone, Copy, Display, and strum_macros::EnumIter.
+/// Additionally, the caller must also have the trait strum::IntoEnumIterator in scope.
+///
+/// Example:
+///
+/// #[derive(Clone, Copy, Display, EnumIter)]
+/// #[repr(u32)]
+/// enum FanSpeed {
+///     Off = 0,
+///     Low = 1,
+///     High = 2,
+/// }
+/// static FAN_SPEED: DiscreteStates = discrete_states_from_enum!(FanSpeed);
+#[macro_export]
+macro_rules! discrete_states_from_enum {
+    ($etype:ty) => {
+        $crate::DiscreteStates::new(|| {
+            <$etype>::iter()
+                .map(|it| (it as u32, $crate::lazy_static_cstr(&it.to_string())))
+                .collect::<$crate::HashMap<u32, &'static $crate::CStr>>()
         })
     };
 }
@@ -118,6 +145,15 @@ pub struct StateRecorder {
     trace_id: ftrace::Id,
     trace_track_name: &'static CStr,
     trace_state_event: Option<ftrace::AsyncScope>,
+}
+
+impl std::fmt::Debug for StateRecorder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StateRecorder")
+            .field("metadata", &self.metadata)
+            .field("transition_history", &self.transition_history)
+            .finish()
+    }
 }
 
 impl StateRecorder {
@@ -259,6 +295,8 @@ mod tests {
     use super::*;
     use diagnostics_assertions::{AnyIntProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
+    use strum::IntoEnumIterator;
+    use strum_macros::{Display, EnumIter};
 
     static OFF_ON: DiscreteStates = discrete_states!(
         0 => c"OFF",
@@ -472,5 +510,24 @@ mod tests {
         // After `recorder` is dropped, its name can be used again.
         drop(recorder);
         assert!(StateRecorder::new_with_parent_node(metadata.clone(), 0, 10, &root_node).is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn test_discrete_states_from_enum() {
+        #[derive(Clone, Copy, Display, EnumIter)]
+        #[repr(u32)]
+        enum FanSpeed {
+            Off = 0,
+            Low = 1,
+            High = 2,
+        }
+        static FAN_SPEED: DiscreteStates = discrete_states_from_enum!(FanSpeed);
+
+        let mut expected = std::collections::HashMap::new();
+        expected.insert(0u32, lazy_static_cstr("Off"));
+        expected.insert(1u32, lazy_static_cstr("Low"));
+        expected.insert(2u32, lazy_static_cstr("High"));
+
+        assert_eq!(*FAN_SPEED, expected);
     }
 }

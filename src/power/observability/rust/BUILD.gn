@@ -23,6 +23,8 @@ rustc_library("state_recorder") {
   test_deps = [
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust",
     "//src/lib/fuchsia",
+    "//third_party/rust_crates:strum",
+    "//third_party/rust_crates:strum_macros",
   ]
 }
 
