@@ -407,6 +407,10 @@ struct HybridBoardArgs {
     #[argh(option)]
     replace_partitions_config: Option<Utf8PathBuf>,
 
+    /// a new devicetree to add to the board.
+    #[argh(option)]
+    replace_devicetree: Option<Utf8PathBuf>,
+
     /// a depfile to write.
     #[argh(option)]
     depfile: Option<Utf8PathBuf>,

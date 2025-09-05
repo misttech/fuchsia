@@ -369,6 +369,13 @@ def _fuchsia_hybrid_board_configuration_impl(ctx):
         ]
         build_id_dirs.extend(bib_set.build_id_dirs)
 
+    if ctx.attr.replacement_devicetree:
+        creation_inputs.append(ctx.file.replacement_devicetree)
+        creation_args += [
+            "--replace-devicetree",
+            ctx.file.replacement_devicetree.path,
+        ]
+
     args = [
         "generate",
         "hybrid-board",
@@ -412,6 +419,10 @@ fuchsia_hybrid_board_configuration = rule(
         "replacement_board_input_bundle_sets": attr.label_list(
             doc = "Board input bundle sets to replace inside the board",
             providers = [FuchsiaBoardInputBundleSetInfo],
+        ),
+        "replacement_devicetree": attr.label(
+            doc = "Devicetree binary (.dtb) file",
+            allow_single_file = True,
         ),
     },
 )

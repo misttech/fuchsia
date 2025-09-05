@@ -119,6 +119,11 @@ pub fn hybrid(args: &HybridBoardArgs) -> Result<()> {
         config.partitions_config = Some(DirectoryPathBuf::new(partitions_config.clone()));
     }
 
+    // Replace the devicetree if specified
+    if let Some(devicetree) = &args.replace_devicetree {
+        config.devicetree = Some(devicetree.clone());
+    }
+
     config.write_to_dir(&args.output, args.depfile.as_ref())?;
     Ok(())
 }
@@ -459,6 +464,11 @@ mod tests {
             PartitionsConfig { partitions: partitions.clone(), ..Default::default() };
         partitions_config.write_to_dir(&partitions_path, None::<Utf8PathBuf>).unwrap();
 
+        // Write a new devicetree.
+        let devicetree_path = tmp_path.join("my_devicetree.dtb");
+        let mut devicetree_file = File::create(&devicetree_path).unwrap();
+        devicetree_file.write_all(b"foobar").unwrap();
+
         // Create a hybrid board and replace the BIB using the set.
         let hybrid_board_path = tmp_path.join("my_hybrid_board");
         let args = HybridBoardArgs {
@@ -467,12 +477,13 @@ mod tests {
             replace_bibs_from_board: None,
             replace_bib_sets: vec![bib_set_path],
             replace_partitions_config: Some(partitions_path),
+            replace_devicetree: Some(devicetree_path.clone()),
             depfile: None,
         };
         hybrid(&args).unwrap();
 
         // Ensure the BIB in the board contains the correct kernel_boot_args.
-        let board = BoardConfig::from_dir(hybrid_board_path).unwrap();
+        let board = BoardConfig::from_dir(hybrid_board_path.clone()).unwrap();
         let expected = vec!["my_bib_set::my_bib".to_string()];
         itertools::assert_equal(expected.iter(), board.input_bundles.keys());
         let bib_path = board.input_bundles.get("my_bib_set::my_bib").unwrap();
@@ -484,5 +495,11 @@ mod tests {
         let new_partitions_path = board.partitions_config.unwrap().as_utf8_path_buf().clone();
         let new_partitions = PartitionsConfig::from_dir(new_partitions_path).unwrap();
         assert_eq!(partitions, new_partitions.partitions);
+
+        // Ensure the board contains the correct devicetree.
+        assert_eq!(
+            hybrid_board_path.join("devicetree").join("my_devicetree.dtb"),
+            board.devicetree.unwrap()
+        );
     }
 }
