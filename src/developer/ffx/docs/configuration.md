@@ -208,6 +208,16 @@ When updating, please add the value in alphabetical order.
     | `ssh.auth-sock`                         | If set, the path to the            |
     |                                         | authorization socket for SSH used  |
     |                                         | by overnet. Defaults to unset      |
+    | `ssh.controlmaster.dir`                 | Directory for control sockets.     |
+    |                                         | Defaults to                        |
+    |                                         | `${XDG_RUNTIME_DIR}/ffx`.          |
+    |                                         | Used in mode=managed               |
+    | `ssh.controlmaster.mode`                | Sets the ControlMaster mode for    |
+    |                                         | ssh. Defaults to `none`.           |
+    |                                         | Valid values are `none`, `managed` |
+    |                                         | and `explicit`                     |
+    | `ssh.controlmaster.path`                | Path to the control socket.        |
+    |                                         | Used in mode=explicit.             |
     | `ssh.keepalive_timeout`                 | Time for an ssh connection to wait |
     |                                         | before timing out.                 |
     |                                         | Defaults to `20` seconds.          |

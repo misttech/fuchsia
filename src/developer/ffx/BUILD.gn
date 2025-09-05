@@ -260,6 +260,9 @@ if (is_host) {
       rebase_path("//src/developer/ffx/lib/pbms/data/config.json"),
     ]
 
+    # Merge the values, not just the top level.
+    deep_merge = true
+
     # Add in the 'dual-mode' config default files if we're doing dual mode
     if (ffx_build_dual_mode_plugins_as_subtools) {
       foreach(config, dual_mode_defaults) {

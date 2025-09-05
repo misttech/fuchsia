@@ -44,5 +44,10 @@
     },
     "monitor": {
         "pid_file": "$SHARED_DATA/monitor/ffx_monitor.pid"
+    },
+    "ssh": {
+        "controlmaster": {
+            "dir": "$XDG_RUNTIME_DIR/ffx"
+        }
     }
 }
