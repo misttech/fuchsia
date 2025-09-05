@@ -106,6 +106,7 @@ _partner_idk_source_sets_list = [
   "//zircon/system/ulib/sync:sync-cpp",
   "//zircon/system/ulib/trace",
   "//zircon/system/ulib/trace-engine:trace-engine-headersonly",
+  "//zircon/system/ulib/trace-reader",
   "//zircon/system/ulib/trace:trace-headersonly",
   "//zircon/system/ulib/trace-vthread",
   "//zircon/system/ulib/trace-vthread:trace-vthread-headersonly",

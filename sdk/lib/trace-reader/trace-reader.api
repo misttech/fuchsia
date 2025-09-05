@@ -1,0 +1,5 @@
+{
+  "pkg/trace-reader/include/trace-reader/file_reader.h": "261bf8625a4205030c4f1b56e4264031",
+  "pkg/trace-reader/include/trace-reader/reader.h": "cce9ea8722dbcfb7d9eebed467cb9caa",
+  "pkg/trace-reader/include/trace-reader/records.h": "fe572b493c5039386fadf6358966fa2e"
+}

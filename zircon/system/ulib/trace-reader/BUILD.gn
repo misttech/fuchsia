@@ -5,7 +5,9 @@
 import("//build/zircon/zx_library.gni")
 
 zx_library("trace-reader") {
+  sdk_publishable = "partner"
   sdk = "source"
+  stable = true
   sdk_headers = [
     "trace-reader/file_reader.h",
     "trace-reader/reader.h",
@@ -23,7 +25,6 @@ zx_library("trace-reader") {
     # <trace-reader/reader.h> has #include <lib/fit/function.h>.
     "//sdk/lib/fit",
   ]
-  deps = [ "//sdk/lib/fit" ]
 }
 
 zx_library("trace-buffer-reader") {
@@ -40,7 +41,6 @@ zx_library("trace-buffer-reader") {
     # <trace-reader/reader_internal.h> has #include <trace-reader/reader.h>.
     ":trace-reader",
   ]
-  deps = [ "//sdk/lib/fit" ]
 }
 
 group("tests") {
