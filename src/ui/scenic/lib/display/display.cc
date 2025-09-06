@@ -15,8 +15,7 @@
 
 namespace display {
 
-Display::Display(fuchsia_hardware_display_types::wire::DisplayId id,
-                 const fuchsia_hardware_display_types::wire::Mode& mode, uint32_t width_in_mm,
+Display::Display(WireDisplayId id, const WireDisplayMode& mode, uint32_t width_in_mm,
                  uint32_t height_in_mm, std::vector<fuchsia_images2::PixelFormat> pixel_formats)
     : vsync_timing_(std::make_shared<scheduling::VsyncTiming>()),
       display_id_(id),
@@ -30,12 +29,10 @@ Display::Display(fuchsia_hardware_display_types::wire::DisplayId id,
   // Most displays will have a longer interval.  If so, `OnVsync()` will adjust.
   vsync_timing_->set_vsync_interval(kMinimumVsyncInterval);
 }
-Display::Display(fuchsia_hardware_display_types::wire::DisplayId id, uint32_t width_in_px,
-                 uint32_t height_in_px)
+Display::Display(WireDisplayId id, uint32_t width_in_px, uint32_t height_in_px)
     : Display(id,
-              fuchsia_hardware_display_types::wire::Mode{
-                  .active_area = {.width = width_in_px, .height = height_in_px},
-                  .refresh_rate_millihertz = 0},
+              WireDisplayMode{.active_area = {.width = width_in_px, .height = height_in_px},
+                              .refresh_rate_millihertz = 0},
               0, 0, {fuchsia_images2::PixelFormat::kB8G8R8A8}) {}
 
 void Display::Claim() {
@@ -48,8 +45,7 @@ void Display::Unclaim() {
   claimed_ = false;
 }
 
-void Display::OnVsync(zx::time_monotonic timestamp,
-                      fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp) {
+void Display::OnVsync(zx::time_monotonic timestamp, WireConfigStamp applied_config_stamp) {
   // Estimate current vsync interval. Need to include a maximum to mitigate any
   // potential issues during long breaks.
   const zx::duration time_since_last_vsync = timestamp - vsync_timing_->last_vsync_time();

@@ -14,6 +14,7 @@
 #include "src/lib/fxl/macros.h"
 #include "src/ui/scenic/lib/display/display.h"
 #include "src/ui/scenic/lib/display/display_coordinator_listener.h"
+#include "src/ui/scenic/lib/display/fidl_typedefs.h"
 #include "src/ui/scenic/lib/utils/range_inclusive.h"
 
 namespace display {
@@ -23,7 +24,7 @@ struct DisplayModeConstraints {
   utils::RangeInclusive<int> height_px_range;
   utils::RangeInclusive<int> refresh_rate_millihertz_range;
 
-  bool ModeSatisfiesConstraints(const fuchsia_hardware_display_types::wire::Mode& mode) const;
+  bool ModeSatisfiesConstraints(const WireDisplayMode& mode) const;
 };
 
 // Discovers and owns the default display coordinator, and waits for and exposes the default
@@ -33,10 +34,10 @@ class DisplayManager {
   // |display_available_cb| is a one-shot callback that is triggered when the first display is
   // observed, and cleared immediately afterward.
   explicit DisplayManager(fit::closure display_available_cb);
-  DisplayManager(
-      std::optional<fuchsia_hardware_display_types::wire::DisplayId> i_can_haz_display_id,
-      std::optional<size_t> display_mode_index_override,
-      DisplayModeConstraints display_mode_constraints, fit::closure display_available_cb);
+  DisplayManager(std::optional<WireDisplayId> i_can_haz_display_id,
+                 std::optional<size_t> display_mode_index_override,
+                 DisplayModeConstraints display_mode_constraints,
+                 fit::closure display_available_cb);
   ~DisplayManager() = default;
 
   void BindDefaultDisplayCoordinator(
@@ -66,13 +67,11 @@ class DisplayManager {
   }
 
  private:
-  void OnDisplaysChanged(fidl::VectorView<fuchsia_hardware_display::wire::Info> added,
-                         fidl::VectorView<fuchsia_hardware_display_types::wire::DisplayId> removed);
+  void OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
+                         fidl::VectorView<WireDisplayId> removed);
   void OnClientOwnershipChange(bool has_ownership);
-  void OnVsync(fuchsia_hardware_display_types::wire::DisplayId display_id,
-               zx::time_monotonic timestamp,
-               fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp,
-               fuchsia_hardware_display::wire::VsyncAckCookie cookie);
+  void OnVsync(WireDisplayId display_id, zx::time_monotonic timestamp,
+               WireConfigStamp applied_config_stamp, WireVsyncAckCookie cookie);
 
   // Must outlive `default_display_coordinator_`.
   std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
@@ -83,7 +82,7 @@ class DisplayManager {
 
   // When new displays are detected, ignore all displays which don't match this ID.
   // TODO(https://fxbug.dev/42156949): Remove this when we have proper multi-display support.
-  const std::optional<fuchsia_hardware_display_types::wire::DisplayId> i_can_haz_display_id_;
+  const std::optional<WireDisplayId> i_can_haz_display_id_;
 
   // When a new display is picked, use display mode with this index.
   // TODO(https://fxbug.dev/42156949): Remove this when we have proper multi-display support.

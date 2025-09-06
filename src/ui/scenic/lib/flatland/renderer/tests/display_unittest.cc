@@ -89,7 +89,7 @@ class DisplayTest : public gtest::RealLoopFixture {
     gtest::RealLoopFixture::TearDown();
   }
 
-  fuchsia_hardware_display::wire::LayerId InitializeDisplayLayer(
+  display::WireLayerId InitializeDisplayLayer(
       const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
       display::Display* display) {
     const auto create_layer_result = display_coordinator.sync()->CreateLayer();
@@ -102,11 +102,10 @@ class DisplayTest : public gtest::RealLoopFixture {
                      << zx_status_get_string(create_layer_result->error_value());
       return {.value = fuchsia_hardware_display_types::kInvalidDispId};
     }
-    fuchsia_hardware_display::wire::LayerId layer_id = (*create_layer_result)->layer_id;
+    display::WireLayerId layer_id = (*create_layer_result)->layer_id;
 
     const auto set_display_layers_result = display_coordinator.sync()->SetDisplayLayers(
-        display->display_id(),
-        fidl::VectorView<fuchsia_hardware_display::wire::LayerId>::FromExternal(&layer_id, 1));
+        display->display_id(), fidl::VectorView<display::WireLayerId>::FromExternal(&layer_id, 1));
     if (!set_display_layers_result.ok()) {
       FX_LOGS(ERROR) << "Failed to call FIDL SetDisplayLayers: "
                      << set_display_layers_result.status_string();
@@ -117,11 +116,10 @@ class DisplayTest : public gtest::RealLoopFixture {
 
   // Wait until a vsync is received with a stamp that is >= `target_stamp`.  Return ZX_ERR_TIMED_OUT
   // if no such vsync is received before `timeout` elapses.
-  zx::result<> WaitForVsync(fuchsia_hardware_display::wire::ConfigStamp target_stamp,
-                            zx::duration timeout) {
-    std::optional<fuchsia_hardware_display::wire::ConfigStamp> received_stamp;
+  zx::result<> WaitForVsync(display::WireConfigStamp target_stamp, zx::duration timeout) {
+    std::optional<display::WireConfigStamp> received_stamp;
     display_manager_->default_display()->SetVsyncCallback(
-        [&](zx::time, fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp) {
+        [&](zx::time, display::WireConfigStamp applied_config_stamp) {
           received_stamp = applied_config_stamp;
         });
 
@@ -171,7 +169,7 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
 
   // Register the collection with the renderer, which sets the vk constraints.
   const auto collection_id = allocation::GenerateUniqueBufferCollectionId();
-  const fuchsia_hardware_display::wire::BufferCollectionId display_collection_id =
+  const display::WireBufferCollectionId display_collection_id =
       display::ToDisplayFidlBufferCollectionId(collection_id);
   auto image_id = allocation::GenerateUniqueImageId();
   auto result = renderer.ImportBufferCollection(
@@ -245,8 +243,8 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   // We should now be able to also import an image to the display coordinator, using the
   // display-specific buffer collection id. If it returns OK, then we know that the renderer
   // did fully set the DC constraints.
-  fuchsia_hardware_display_types::wire::ImageMetadata image_metadata{
-      .dimensions = fuchsia_math::wire::SizeU{.width = kWidth, .height = kHeight},
+  display::WireImageMetadata image_metadata{
+      .dimensions = display::WireSizeU{.width = kWidth, .height = kHeight},
       .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear,
   };
 
@@ -278,8 +276,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   auto display = display_manager_->default_display();
   ASSERT_TRUE(display);
 
-  fuchsia_hardware_display::wire::LayerId layer_id =
-      InitializeDisplayLayer(*display_coordinator, display);
+  display::WireLayerId layer_id = InitializeDisplayLayer(*display_coordinator, display);
   ASSERT_NE(layer_id.value, fuchsia_hardware_display_types::kInvalidDispId);
 
   const uint32_t kWidth = display->width_in_px();
@@ -295,7 +292,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   };
   auto global_collection_id = allocation::GenerateUniqueBufferCollectionId();
   ASSERT_NE(global_collection_id, ZX_KOID_INVALID);
-  const fuchsia_hardware_display::wire::BufferCollectionId display_collection_id =
+  const display::WireBufferCollectionId display_collection_id =
       display::ToDisplayFidlBufferCollectionId(global_collection_id);
 
   fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> dup_token(
@@ -308,8 +305,8 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
       sysmem_allocator_.get(), std::move(tokens.local_token), kNumVmos, kWidth, kHeight);
 
   // Import the images to the display.
-  fuchsia_hardware_display_types::wire::ImageMetadata image_metadata{
-      .dimensions = fuchsia_math::wire::SizeU{.width = kWidth, .height = kHeight},
+  display::WireImageMetadata image_metadata{
+      .dimensions = display::WireSizeU{.width = kWidth, .height = kHeight},
       .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear,
   };
   allocation::GlobalImageId image_ids[kNumVmos];
@@ -337,7 +334,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   EXPECT_EQ(status, ZX_OK);
 
   // Import the above events to the display.
-  display::DisplayEventId display_wait_event_id =
+  display::WireEventId display_wait_event_id =
       display::ImportEvent(*display_coordinator, display_wait_fence);
   EXPECT_NE(display_wait_event_id.value, fuchsia_hardware_display_types::kInvalidDispId);
 
@@ -348,12 +345,11 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
       << "Failed to call FIDL SetLayerPrimaryConfig: "
       << set_layer_primary_config_result.status_string();
 
-  static const display::DisplayEventId kInvalidEventId = {
+  static const display::WireEventId kInvalidEventId = {
       .value = fuchsia_hardware_display_types::kInvalidDispId,
   };
   const fidl::OneWayStatus set_layer_image_result = display_coordinator->sync()->SetLayerImage2(
-      layer_id, display::ToDisplayFidlImageId(image_ids[0]),
-      display::DisplayEventId(kInvalidEventId));
+      layer_id, display::ToDisplayFidlImageId(image_ids[0]), display::WireEventId(kInvalidEventId));
   EXPECT_TRUE(set_layer_image_result.ok())
       << "Failed to call FIDL SetLayerImage2: " << set_layer_image_result.status_string();
 
@@ -362,7 +358,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   EXPECT_TRUE(check_config_result.ok())
       << "Failed to call FIDL CheckConfig: " << check_config_result.status_string();
 
-  const fuchsia_hardware_display::wire::ConfigStamp kFirstConfigStamp(11);
+  const display::WireConfigStamp kFirstConfigStamp(11);
   {
     fidl::Arena arena;
     auto request = fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)
@@ -391,7 +387,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
       << "Failed to call FIDL CheckConfig: " << check_config_result2.status_string();
   EXPECT_EQ(check_config_result2->res, fuchsia_hardware_display_types::ConfigResult::kOk);
 
-  const fuchsia_hardware_display::wire::ConfigStamp kSecondConfigStamp(22);
+  const display::WireConfigStamp kSecondConfigStamp(22);
   {
     fidl::Arena arena;
     auto request = fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)

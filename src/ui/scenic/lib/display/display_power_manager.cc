@@ -52,8 +52,7 @@ void DisplayPowerManager::SetDisplayPower(bool power_on,
   std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>> coordinator =
       display_manager_.default_display_coordinator();
   FX_DCHECK(coordinator);
-  fuchsia_hardware_display_types::wire::DisplayId id =
-      display_manager_.default_display()->display_id();
+  display::WireDisplayId id = display_manager_.default_display()->display_id();
 
   auto set_display_power_result = coordinator->sync()->SetDisplayPower(id, power_on);
   if (!set_display_power_result.ok()) {

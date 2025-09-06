@@ -20,6 +20,7 @@
 #include "src/lib/fxl/synchronization/thread_annotations.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/display/display.h"
+#include "src/ui/scenic/lib/display/fidl_typedefs.h"
 #include "src/ui/scenic/lib/display/util.h"
 #include "src/ui/scenic/lib/flatland/engine/color_conversion_state_machine.h"
 #include "src/ui/scenic/lib/flatland/engine/engine_types.h"
@@ -166,13 +167,13 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   };
 
   struct FrameEventData {
-    display::DisplayEventId wait_id;
+    display::WireEventId wait_id;
     zx::event wait_event;
   };
 
   struct DisplayEngineData {
     // The hardware layers we've created to use on this display.
-    std::vector<fuchsia_hardware_display::wire::LayerId> layers;
+    std::vector<display::WireLayerId> layers;
 
     // The number of vmos we are using in the case of software composition
     // (1 for each render target).
@@ -194,8 +195,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Notifies the compositor that a vsync has occurred, in response to a display configuration
   // applied by the compositor.  It is the compositor's responsibility to signal any release fences
   // corresponding to the frame identified by |frame_number|.
-  void OnVsync(zx::time_monotonic timestamp,
-               fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp);
+  void OnVsync(zx::time_monotonic timestamp, display::WireConfigStamp applied_config_stamp);
 
   std::vector<allocation::ImageMetadata> AllocateDisplayRenderTargets(
       bool use_protected_memory, uint32_t num_render_targets, const fuchsia::math::SizeU& size,
@@ -205,12 +205,12 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Generates a new FrameEventData struct to be used with a render target on a display.
   FrameEventData NewFrameEventData() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-  fuchsia_hardware_display_types::wire::ImageMetadata CreateImageMetadata(
-      const allocation::ImageMetadata& metadata) const FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  display::WireImageMetadata CreateImageMetadata(const allocation::ImageMetadata& metadata) const
+      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Generates a hardware layer for direct compositing on the display. Returns the ID used
   // to reference that layer in the display coordinator API.
-  fuchsia_hardware_display::wire::LayerId CreateDisplayLayer() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  display::WireLayerId CreateDisplayLayer() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Moves a token out of |display_buffer_collection_ptrs_| and returns it.
   fuchsia::sysmem2::BufferCollectionSyncPtr TakeDisplayBufferCollectionPtr(
@@ -234,19 +234,18 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Sets the provided layers onto the display referenced by the given display_id.
-  void SetDisplayLayers(fuchsia_hardware_display_types::wire::DisplayId display_id,
-                        fidl::VectorView<fuchsia_hardware_display::wire::LayerId> layers)
+  void SetDisplayLayers(display::WireDisplayId display_id,
+                        fidl::VectorView<display::WireLayerId> layers)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Takes a solid color rectangle and directly composites it to a hardware layer on the display.
-  void ApplyLayerColor(const fuchsia_hardware_display::wire::LayerId& layer_id,
-                       const ImageRect& rectangle, const allocation::ImageMetadata& image)
-      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  void ApplyLayerColor(const display::WireLayerId& layer_id, const ImageRect& rectangle,
+                       const allocation::ImageMetadata& image) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Takes an image and directly composites it to a hardware layer on the display.
-  void ApplyLayerImage(const fuchsia_hardware_display::wire::LayerId& layer_id,
-                       const ImageRect& rectangle, const allocation::ImageMetadata& image,
-                       const display::DisplayEventId& wait_id) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  void ApplyLayerImage(const display::WireLayerId& layer_id, const ImageRect& rectangle,
+                       const allocation::ImageMetadata& image, const display::WireEventId& wait_id)
+      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Checks if the display coordinator is capable of applying the configuration settings that
   // have been set up until that point.
@@ -333,13 +332,13 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   // Stores information about the last ApplyConfig() call to display.
   struct ApplyConfigInfo {
-    fuchsia_hardware_display::wire::ConfigStamp config_stamp;
+    display::WireConfigStamp config_stamp;
     uint64_t frame_number;
     uint64_t trace_flow_id;
   };
 
   // The next ConfigStamp value used in an ApplyConfig() call.
-  fuchsia_hardware_display::wire::ConfigStamp next_config_stamp_{1};
+  display::WireConfigStamp next_config_stamp_{1};
 
   // A queue storing all display frame configurations that are applied but not yet shown on the
   // display device.
@@ -351,8 +350,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   // Stores the ConfigStamp information of the latest frame shown on the display. If no frame
   // has been presented, its value will be nullopt.
-  std::optional<fuchsia_hardware_display::wire::ConfigStamp> last_presented_config_stamp_ =
-      std::nullopt;
+  std::optional<display::WireConfigStamp> last_presented_config_stamp_ = std::nullopt;
 
   fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator_;
 

@@ -48,7 +48,7 @@ class DisplayManagerMockTest : public gtest::TestLoopFixture {
 };
 
 TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
-  const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
+  const display::WireDisplayId kDisplayId = {.value = 1};
   const uint32_t kDisplayWidth = 1024;
   const uint32_t kDisplayHeight = 768;
   const size_t kTotalVsync = 10;
@@ -69,7 +69,7 @@ TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
   display_manager()->SetDefaultDisplayForTests(
       std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
 
-  MockDisplayCoordinator mock_display_coordinator(fuchsia_hardware_display::wire::Info{});
+  MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client));
   mock_display_coordinator.set_acknowledge_vsync_fn(
       [&cookies_sent, &num_vsync_acknowledgement](uint64_t cookie) {
@@ -78,8 +78,7 @@ TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
       });
 
   display_manager()->default_display()->SetVsyncCallback(
-      [&num_vsync_display_received](zx::time_monotonic timestamp,
-                                    fuchsia_hardware_display::wire::ConfigStamp stamp) {
+      [&num_vsync_display_received](zx::time_monotonic timestamp, WireConfigStamp stamp) {
         ++num_vsync_display_received;
       });
 
@@ -104,7 +103,7 @@ TEST_F(DisplayManagerMockTest, DisplayVsyncCallback) {
 }
 
 TEST_F(DisplayManagerMockTest, OnDisplayAdded) {
-  static const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
+  static const display::WireDisplayId kDisplayId = {.value = 1};
   static constexpr int kDisplayWidth = 1024;
   static constexpr int kDisplayHeight = 768;
   static constexpr int kDisplayRefreshRateHz = 60;
@@ -117,14 +116,14 @@ TEST_F(DisplayManagerMockTest, OnDisplayAdded) {
   display_manager()->BindDefaultDisplayCoordinator(dispatcher(), std::move(coordinator_client),
                                                    std::move(listener_server));
 
-  fuchsia_hardware_display_types::wire::Mode mode = {
+  WireDisplayMode mode = {
       .active_area = {.width = kDisplayWidth, .height = kDisplayHeight},
       .refresh_rate_millihertz = kDisplayRefreshRateHz * 1'000,
   };
   auto pixel_format = fuchsia_images2::PixelFormat::kR8G8B8A8;
-  const fuchsia_hardware_display::wire::Info kDisplayInfo = {
+  const WireDisplayInfo kDisplayInfo = {
       .id = kDisplayId,
-      .modes = fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(&mode, 1),
+      .modes = fidl::VectorView<WireDisplayMode>::FromExternal(&mode, 1),
       .pixel_format =
           fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(&pixel_format, 1),
       .manufacturer_name = "manufacturer",
@@ -150,16 +149,16 @@ TEST_F(DisplayManagerMockTest, OnDisplayAdded) {
 }
 
 TEST_F(DisplayManagerMockTest, SelectPreferredMode) {
-  static const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
-  static const fuchsia_hardware_display_types::wire::Mode kPreferredMode = {
+  static const display::WireDisplayId kDisplayId = {.value = 1};
+  static const WireDisplayMode kPreferredMode = {
       .active_area = {.width = 1024, .height = 768},
       .refresh_rate_millihertz = 60'000,
   };
-  static const fuchsia_hardware_display_types::wire::Mode kNonPreferredMode = {
+  static const WireDisplayMode kNonPreferredMode = {
       .active_area = {.width = 800, .height = 600},
       .refresh_rate_millihertz = 30'000,
   };
-  std::vector<fuchsia_hardware_display_types::wire::Mode> modes = {
+  std::vector<WireDisplayMode> modes = {
       kPreferredMode,
       kNonPreferredMode,
   };
@@ -172,9 +171,9 @@ TEST_F(DisplayManagerMockTest, SelectPreferredMode) {
   display_manager()->BindDefaultDisplayCoordinator(dispatcher(), std::move(coordinator_client),
                                                    std::move(listener_server));
 
-  const fuchsia_hardware_display::wire::Info kDisplayInfo = {
+  const WireDisplayInfo kDisplayInfo = {
       .id = kDisplayId,
-      .modes = fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(modes),
+      .modes = fidl::VectorView<WireDisplayMode>::FromExternal(modes),
       .pixel_format =
           fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(&pixel_format, 1),
       .manufacturer_name = "manufacturer",
@@ -201,17 +200,17 @@ TEST_F(DisplayManagerMockTest, SelectPreferredMode) {
 }
 
 TEST(DisplayManager, ICanHazDisplayMode) {
-  static const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
-  static const fuchsia_hardware_display_types::wire::Mode kPreferredMode = {
+  static const display::WireDisplayId kDisplayId = {.value = 1};
+  static const WireDisplayMode kPreferredMode = {
       .active_area = {.width = 1024, .height = 768},
       .refresh_rate_millihertz = 60'000,
   };
-  static const fuchsia_hardware_display_types::wire::Mode kNonPreferredButSelectedMode = {
+  static const WireDisplayMode kNonPreferredButSelectedMode = {
       .active_area = {.width = 800, .height = 600},
       .refresh_rate_millihertz = 30'000,
   };
 
-  std::vector<fuchsia_hardware_display_types::wire::Mode> modes = {
+  std::vector<WireDisplayMode> modes = {
       kPreferredMode,
       kNonPreferredButSelectedMode,
   };
@@ -220,9 +219,9 @@ TEST(DisplayManager, ICanHazDisplayMode) {
   async::TestLoop loop;
   async_set_default_dispatcher(loop.dispatcher());
 
-  const fuchsia_hardware_display::wire::Info kDisplayInfo = {
+  const WireDisplayInfo kDisplayInfo = {
       .id = kDisplayId,
-      .modes = fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(modes),
+      .modes = fidl::VectorView<WireDisplayMode>::FromExternal(modes),
       .pixel_format =
           fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(&pixel_format, 1),
       .manufacturer_name = "manufacturer",
@@ -265,16 +264,16 @@ TEST(DisplayManager, DisplayModeConstraintsHorizontalResolution) {
       .width_px_range = utils::RangeInclusive(700, 900),
   };
 
-  static const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
-  static const fuchsia_hardware_display_types::wire::Mode kModeNotSatisfyingConstraints = {
+  static const display::WireDisplayId kDisplayId = {.value = 1};
+  static const WireDisplayMode kModeNotSatisfyingConstraints = {
       .active_area = {.width = 1024, .height = 768},
       .refresh_rate_millihertz = 60'000,
   };
-  static const fuchsia_hardware_display_types::wire::Mode kModeSatisfyingConstraints = {
+  static const WireDisplayMode kModeSatisfyingConstraints = {
       .active_area = {.width = 800, .height = 600},
       .refresh_rate_millihertz = 30'000,
   };
-  std::vector<fuchsia_hardware_display_types::wire::Mode> modes = {
+  std::vector<WireDisplayMode> modes = {
       kModeNotSatisfyingConstraints,
       kModeSatisfyingConstraints,
   };
@@ -283,9 +282,9 @@ TEST(DisplayManager, DisplayModeConstraintsHorizontalResolution) {
   async::TestLoop loop;
   async_set_default_dispatcher(loop.dispatcher());
 
-  const fuchsia_hardware_display::wire::Info kDisplayInfo = {
+  const WireDisplayInfo kDisplayInfo = {
       .id = kDisplayId,
-      .modes = fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(modes),
+      .modes = fidl::VectorView<WireDisplayMode>::FromExternal(modes),
       .pixel_format =
           fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(&pixel_format, 1),
       .manufacturer_name = "manufacturer",
@@ -329,16 +328,16 @@ TEST(DisplayManager, DisplayModeConstraintsVerticalResolution) {
       .height_px_range = utils::RangeInclusive(500, 700),
   };
 
-  static const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
-  static const fuchsia_hardware_display_types::wire::Mode kModeNotSatisfyingConstraints = {
+  static const display::WireDisplayId kDisplayId = {.value = 1};
+  static const WireDisplayMode kModeNotSatisfyingConstraints = {
       .active_area = {.width = 1024, .height = 768},
       .refresh_rate_millihertz = 60'000,
   };
-  static const fuchsia_hardware_display_types::wire::Mode kModeSatisfyingConstraints = {
+  static const WireDisplayMode kModeSatisfyingConstraints = {
       .active_area = {.width = 800, .height = 600},
       .refresh_rate_millihertz = 30'000,
   };
-  std::vector<fuchsia_hardware_display_types::wire::Mode> modes = {
+  std::vector<WireDisplayMode> modes = {
       kModeNotSatisfyingConstraints,
       kModeSatisfyingConstraints,
   };
@@ -347,9 +346,9 @@ TEST(DisplayManager, DisplayModeConstraintsVerticalResolution) {
   async::TestLoop loop;
   async_set_default_dispatcher(loop.dispatcher());
 
-  const fuchsia_hardware_display::wire::Info kDisplayInfo = {
+  const WireDisplayInfo kDisplayInfo = {
       .id = kDisplayId,
-      .modes = fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(modes),
+      .modes = fidl::VectorView<WireDisplayMode>::FromExternal(modes),
       .pixel_format =
           fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(&pixel_format, 1),
       .manufacturer_name = "manufacturer",
@@ -393,16 +392,16 @@ TEST(DisplayManager, DisplayModeConstraintsRefreshRateLimit) {
       .refresh_rate_millihertz_range = utils::RangeInclusive(20'000, 50'000),
   };
 
-  static const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
-  static const fuchsia_hardware_display_types::wire::Mode kModeNotSatisfyingConstraints = {
+  static const display::WireDisplayId kDisplayId = {.value = 1};
+  static const WireDisplayMode kModeNotSatisfyingConstraints = {
       .active_area = {.width = 1024, .height = 768},
       .refresh_rate_millihertz = 60'000,
   };
-  static const fuchsia_hardware_display_types::wire::Mode kModeSatisfyingConstraints = {
+  static const WireDisplayMode kModeSatisfyingConstraints = {
       .active_area = {.width = 800, .height = 600},
       .refresh_rate_millihertz = 30'000,
   };
-  std::vector<fuchsia_hardware_display_types::wire::Mode> modes = {
+  std::vector<WireDisplayMode> modes = {
       kModeNotSatisfyingConstraints,
       kModeSatisfyingConstraints,
   };
@@ -411,9 +410,9 @@ TEST(DisplayManager, DisplayModeConstraintsRefreshRateLimit) {
   async::TestLoop loop;
   async_set_default_dispatcher(loop.dispatcher());
 
-  const fuchsia_hardware_display::wire::Info kDisplayInfo = {
+  const WireDisplayInfo kDisplayInfo = {
       .id = kDisplayId,
-      .modes = fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(modes),
+      .modes = fidl::VectorView<WireDisplayMode>::FromExternal(modes),
       .pixel_format =
           fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(&pixel_format, 1),
       .manufacturer_name = "manufacturer",
@@ -457,20 +456,20 @@ TEST(DisplayManager, DisplayModeConstraintsOverriddenByModeIndex) {
       .width_px_range = utils::RangeInclusive(700, 900),
   };
 
-  static const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
-  static const fuchsia_hardware_display_types::wire::Mode kModeNotSatisfyingConstraints = {
+  static const display::WireDisplayId kDisplayId = {.value = 1};
+  static const WireDisplayMode kModeNotSatisfyingConstraints = {
       .active_area = {.width = 1024, .height = 768},
       .refresh_rate_millihertz = 60'000,
   };
-  static const fuchsia_hardware_display_types::wire::Mode kModeSatisfyingConstraints = {
+  static const WireDisplayMode kModeSatisfyingConstraints = {
       .active_area = {.width = 800, .height = 600},
       .refresh_rate_millihertz = 30'000,
   };
-  static const fuchsia_hardware_display_types::wire::Mode kModeOverridden = {
+  static const WireDisplayMode kModeOverridden = {
       .active_area = {.width = 1280, .height = 960},
       .refresh_rate_millihertz = 30'000,
   };
-  std::vector<fuchsia_hardware_display_types::wire::Mode> modes = {
+  std::vector<WireDisplayMode> modes = {
       kModeNotSatisfyingConstraints,
       kModeSatisfyingConstraints,
       kModeOverridden,
@@ -480,9 +479,9 @@ TEST(DisplayManager, DisplayModeConstraintsOverriddenByModeIndex) {
   async::TestLoop loop;
   async_set_default_dispatcher(loop.dispatcher());
 
-  const fuchsia_hardware_display::wire::Info kDisplayInfo = {
+  const WireDisplayInfo kDisplayInfo = {
       .id = kDisplayId,
-      .modes = fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(modes),
+      .modes = fidl::VectorView<WireDisplayMode>::FromExternal(modes),
       .pixel_format =
           fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(&pixel_format, 1),
       .manufacturer_name = "manufacturer",

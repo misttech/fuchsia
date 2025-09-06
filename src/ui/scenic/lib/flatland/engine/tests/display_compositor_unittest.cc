@@ -214,7 +214,7 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
     const_cast<bool&>(display_compositor_->config_.enable_direct_to_display) = !force_renderer_only;
   }
 
-  void SendOnVsyncEvent(fuchsia_hardware_display::wire::ConfigStamp stamp) {
+  void SendOnVsyncEvent(display::WireConfigStamp stamp) {
     display_compositor_->OnVsync(zx::time_monotonic(), stamp);
   }
 
@@ -243,7 +243,7 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
 
   void HardwareFrameCorrectnessWithRotationTester(
       glm::mat3 transform_matrix, ImageFlip image_flip, fuchsia_math::wire::RectU expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation expected_transform);
+      display::WireCoordinateTransformation expected_transform);
 };
 
 // TODO(https://fxbug.dev/324688770): Dispatch all DisplayCompositor methods
@@ -251,7 +251,7 @@ class DisplayCompositorTest : public DisplayCompositorTestBase {
 
 TEST_F(DisplayCompositorTest, ImportAndReleaseBufferCollectionTest) {
   constexpr allocation::GlobalBufferCollectionId kGlobalBufferCollectionId = 15;
-  const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   EXPECT_CALL(*mock_display_coordinator_,
@@ -342,7 +342,7 @@ TEST_F(DisplayCompositorTest,
   ASSERT_EQ(client_collection->SetConstraints(std::move(set_constraints_request)), ZX_OK);
 
   const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
-  const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr display_token;
@@ -468,7 +468,7 @@ TEST_F(DisplayCompositorTest,
   ASSERT_EQ(client_collection->SetConstraints(std::move(set_constraints_request)), ZX_OK);
 
   const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
-  const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr display_token;
@@ -575,7 +575,7 @@ TEST_F(DisplayCompositorTest, SysmemNegotiationTest_InRendererOnlyMode_DisplaySh
   ASSERT_EQ(client_collection->SetConstraints(std::move(set_constraints_request)), ZX_OK);
 
   const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
-  const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
@@ -621,7 +621,7 @@ TEST_F(DisplayCompositorTest, SysmemNegotiationTest_InRendererOnlyMode_DisplaySh
 
 TEST_F(DisplayCompositorTest, ClientDropSysmemToken) {
   const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
-  const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
@@ -666,7 +666,7 @@ TEST_F(DisplayCompositorTest, ClientDropSysmemToken) {
 
 TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
   const auto kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
-  const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   // Import buffer collection.
@@ -729,7 +729,7 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
   display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
 
   // Release buffer collection. Make sure that does not release Image.
-  const fuchsia_hardware_display::wire::ImageId kFidlImageId =
+  const display::WireImageId kFidlImageId =
       display::ToDisplayFidlImageId(image_metadata.identifier);
   EXPECT_CALL(*mock_display_coordinator_,
               ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(kFidlImageId)), _))
@@ -751,12 +751,11 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
 TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
   const allocation::GlobalBufferCollectionId kGlobalBufferCollectionId =
       allocation::GenerateUniqueBufferCollectionId();
-  const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   const allocation::GlobalImageId kImageId = allocation::GenerateUniqueImageId();
-  const fuchsia_hardware_display::wire::ImageId kFidlImageId =
-      display::ToDisplayFidlImageId(kImageId);
+  const display::WireImageId kFidlImageId = display::ToDisplayFidlImageId(kImageId);
   const uint32_t kVmoCount = 2;
   const uint32_t kVmoIdx = 1;
   const uint32_t kMaxWidth = 100;
@@ -922,11 +921,11 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
       .Times(2)
       .WillRepeatedly(
           testing::Invoke([&](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
-            completer.Reply(fuchsia_hardware_display_types::wire::ConfigResult::kOk);
+            completer.Reply(display::WireConfigResult::kOk);
           }));
 
-  static constexpr fuchsia_hardware_display::wire::ConfigStamp kConfigStamp1(1);
-  static constexpr fuchsia_hardware_display::wire::ConfigStamp kConfigStamp2(2);
+  static constexpr display::WireConfigStamp kConfigStamp1(1);
+  static constexpr display::WireConfigStamp kConfigStamp2(2);
   EXPECT_CALL(*mock_display_coordinator_, ApplyConfig3(_, _)).Times(2).WillRepeatedly(Return());
   display_compositor_->RenderFrame(1, zx::time_monotonic(1), {}, {},
                                    [](const scheduling::Timestamps&) {});
@@ -936,7 +935,7 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
   EXPECT_EQ(2u, GetPendingApplyConfigs().size());
 
   // Sending another vsync should be skipped.
-  static constexpr fuchsia_hardware_display::wire::ConfigStamp kConfigStamp3(3);
+  static constexpr display::WireConfigStamp kConfigStamp3(3);
   SendOnVsyncEvent({kConfigStamp3});
   EXPECT_EQ(2u, GetPendingApplyConfigs().size());
 
@@ -954,7 +953,7 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
 // should be added to its own layer on the display.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
-  const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   // Create a parent and child session.
@@ -1022,7 +1021,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   // Submit the UberStruct.
   child_session.PushUberStruct(std::move(child_struct));
 
-  const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
+  const display::WireDisplayId kDisplayId = {.value = 1};
   glm::uvec2 resolution(1024, 768);
 
   // We will end up with 2 source frames, 2 destination frames, and two layers being sent to the
@@ -1073,7 +1072,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
                                               std::nullopt);
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
-  const fuchsia_hardware_display::wire::ImageId fidl_parent_image_id =
+  const display::WireImageId fidl_parent_image_id =
       display::ToDisplayFidlImageId(parent_image_metadata.identifier);
   EXPECT_CALL(*mock_display_coordinator_,
               ImportImage(testing::AllOf(
@@ -1092,7 +1091,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   display_compositor_->ImportBufferImage(parent_image_metadata,
                                          BufferCollectionUsage::kClientImage);
 
-  const fuchsia_hardware_display::wire::ImageId fidl_child_image_id =
+  const display::WireImageId fidl_child_image_id =
       display::ToDisplayFidlImageId(child_image_metadata.identifier);
 
   EXPECT_CALL(
@@ -1127,7 +1126,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
             completer.Reply(fit::ok(&response));
           }));
 
-  std::vector<fuchsia_hardware_display::wire::LayerId> layers = {{.value = 1}, {.value = 2}};
+  std::vector<display::WireLayerId> layers = {{.value = 1}, {.value = 2}};
 
   EXPECT_CALL(*mock_display_coordinator_,
               SetDisplayLayers(
@@ -1139,7 +1138,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
       .WillOnce(Return());
 
   // Make sure each layer has all of its components set properly.
-  fuchsia_hardware_display::wire::ImageId fidl_image_ids[] = {
+  display::WireImageId fidl_image_ids[] = {
       display::ToDisplayFidlImageId(child_image_metadata.identifier),
       display::ToDisplayFidlImageId(parent_image_metadata.identifier)};
   for (uint32_t i = 0; i < 2; i++) {
@@ -1152,11 +1151,9 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
     EXPECT_CALL(
         *mock_display_coordinator_,
         SetLayerPrimaryPosition(
-            testing::AllOf(
-                MatchRequestField(SetLayerPrimaryPosition, layer_id, Eq(layers[i])),
-                MatchRequestField(
-                    SetLayerPrimaryPosition, image_source_transformation,
-                    Eq(fuchsia_hardware_display_types::CoordinateTransformation::kIdentity))),
+            testing::AllOf(MatchRequestField(SetLayerPrimaryPosition, layer_id, Eq(layers[i])),
+                           MatchRequestField(SetLayerPrimaryPosition, image_source_transformation,
+                                             Eq(display::WireCoordinateTransformation::kIdentity))),
             _))
         .Times(1)
         .WillOnce(testing::Invoke(
@@ -1189,7 +1186,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
       .Times(1)
       .WillOnce(testing::Invoke([&](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
-        completer.Reply(fuchsia_hardware_display_types::wire::ConfigResult::kOk);
+        completer.Reply(display::WireConfigResult::kOk);
       }));
 
   EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_));
@@ -1216,9 +1213,9 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
 void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
     glm::mat3 transform_matrix, ImageFlip image_flip, const fuchsia_math::wire::RectU expected_dst,
-    fuchsia_hardware_display_types::CoordinateTransformation expected_transform) {
+    display::WireCoordinateTransformation expected_transform) {
   const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
-  const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   // Create a parent session.
@@ -1253,7 +1250,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   // Submit the UberStruct.
   parent_session.PushUberStruct(std::move(parent_struct));
 
-  const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
+  const display::WireDisplayId kDisplayId = {.value = 1};
   glm::uvec2 resolution(1024, 768);
 
   // We will end up with 1 source frame, 1 destination frame, and one layer being sent to the
@@ -1296,7 +1293,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
                                               std::nullopt);
   SetDisplaySupported(kGlobalBufferCollectionId, true);
 
-  const fuchsia_hardware_display::wire::ImageId fidl_parent_image_id =
+  const display::WireImageId fidl_parent_image_id =
       display::ToDisplayFidlImageId(parent_image_metadata.identifier);
   EXPECT_CALL(*mock_display_coordinator_,
               ImportImage(testing::AllOf(
@@ -1335,7 +1332,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
           }));
 
   // However, we only set one display layer for the image.
-  const std::vector<fuchsia_hardware_display::wire::LayerId> layers = {{.value = 1}};
+  const std::vector<display::WireLayerId> layers = {{.value = 1}};
   EXPECT_CALL(*mock_display_coordinator_,
               SetDisplayLayers(
                   testing::AllOf(MatchRequestField(SetDisplayLayers, display_id, Eq(kDisplayId)),
@@ -1345,7 +1342,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
       .Times(1)
       .WillOnce(Return());
 
-  const fuchsia_hardware_display::wire::ImageId fidl_collection_image_id =
+  const display::WireImageId fidl_collection_image_id =
       display::ToDisplayFidlImageId(parent_image_metadata.identifier);
   EXPECT_CALL(
       *mock_display_coordinator_,
@@ -1386,7 +1383,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
       .Times(1)
       .WillOnce(testing::Invoke([&](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
-        completer.Reply(fuchsia_hardware_display_types::wire::ConfigResult::kOk);
+        completer.Reply(display::WireConfigResult::kOk);
       }));
 
   EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_));
@@ -1406,9 +1403,8 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   for (uint64_t i = 1; i < layer_id_value; ++i) {
     EXPECT_CALL(
         *mock_display_coordinator_,
-        DestroyLayer(MatchRequestField(DestroyLayer, layer_id,
-                                       Eq(fuchsia_hardware_display::wire::LayerId{.value = i})),
-                     _))
+        DestroyLayer(
+            MatchRequestField(DestroyLayer, layer_id, Eq(display::WireLayerId{.value = i})), _))
         .Times(1)
         .WillOnce(Return());
   }
@@ -1425,9 +1421,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith90DegreeRotationTest) 
 
   const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
 
-  HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kNone, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kRotateCcw90);
+  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kNone, expected_dst,
+                                             display::WireCoordinateTransformation::kRotateCcw90);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith180DegreeRotationTest) {
@@ -1439,9 +1434,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith180DegreeRotationTest)
 
   const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
 
-  HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kNone, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kRotateCcw180);
+  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kNone, expected_dst,
+                                             display::WireCoordinateTransformation::kRotateCcw180);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith270DegreeRotationTest) {
@@ -1453,9 +1447,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith270DegreeRotationTest)
 
   const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
 
-  HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kNone, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kRotateCcw270);
+  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kNone, expected_dst,
+                                             display::WireCoordinateTransformation::kRotateCcw270);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlipTest) {
@@ -1463,9 +1456,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlipTest) {
 
   const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
 
-  HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kLeftRight, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kReflectY);
+  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kLeftRight, expected_dst,
+                                             display::WireCoordinateTransformation::kReflectY);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlipTest) {
@@ -1473,9 +1465,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlipTest) {
 
   const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
 
-  HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kUpDown, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kReflectX);
+  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kUpDown, expected_dst,
+                                             display::WireCoordinateTransformation::kReflectX);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip90DegreeRotationTest) {
@@ -1490,7 +1481,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip90DegreeR
   // The expected display coordinator transform performs rotation before reflection.
   HardwareFrameCorrectnessWithRotationTester(
       matrix, ImageFlip::kLeftRight, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kRotateCcw90ReflectX);
+      display::WireCoordinateTransformation::kRotateCcw90ReflectX);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip90DegreeRotationTest) {
@@ -1505,7 +1496,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip90DegreeRota
   // The expected display coordinator transform performs rotation before reflection.
   HardwareFrameCorrectnessWithRotationTester(
       matrix, ImageFlip::kUpDown, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kRotateCcw90ReflectY);
+      display::WireCoordinateTransformation::kRotateCcw90ReflectY);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip180DegreeRotationTest) {
@@ -1518,9 +1509,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip180Degree
   const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
 
   // The expected display coordinator transform performs rotation before reflection.
-  HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kLeftRight, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kReflectX);
+  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kLeftRight, expected_dst,
+                                             display::WireCoordinateTransformation::kReflectX);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip180DegreeRotationTest) {
@@ -1533,9 +1523,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip180DegreeRot
   const fuchsia_math::wire::RectU expected_dst = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
 
   // The expected display coordinator transform performs rotation before reflection.
-  HardwareFrameCorrectnessWithRotationTester(
-      matrix, ImageFlip::kUpDown, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kReflectY);
+  HardwareFrameCorrectnessWithRotationTester(matrix, ImageFlip::kUpDown, expected_dst,
+                                             display::WireCoordinateTransformation::kReflectY);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip270DegreeRotationTest) {
@@ -1550,7 +1539,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip270Degree
   // The expected display coordinator transform performs rotation before reflection.
   HardwareFrameCorrectnessWithRotationTester(
       matrix, ImageFlip::kLeftRight, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kRotateCcw90ReflectY);
+      display::WireCoordinateTransformation::kRotateCcw90ReflectY);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip270DegreeRotationTest) {
@@ -1565,7 +1554,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip270DegreeRot
   // The expected display coordinator transform performs rotation before reflection.
   HardwareFrameCorrectnessWithRotationTester(
       matrix, ImageFlip::kUpDown, expected_dst,
-      fuchsia_hardware_display_types::CoordinateTransformation::kRotateCcw90ReflectX);
+      display::WireCoordinateTransformation::kRotateCcw90ReflectX);
 }
 
 // Tests that RenderOnly mode does not attempt to ImportBufferCollection() to display.
@@ -1573,7 +1562,7 @@ TEST_F(DisplayCompositorTest, RendererOnly_ImportAndReleaseBufferCollectionTest)
   ForceRendererOnlyMode(true);
 
   const allocation::GlobalBufferCollectionId kGlobalBufferCollectionId = 15;
-  const fuchsia_hardware_display::wire::BufferCollectionId kDisplayBufferCollectionId =
+  const display::WireBufferCollectionId kDisplayBufferCollectionId =
       display::ToDisplayFidlBufferCollectionId(kGlobalBufferCollectionId);
 
   EXPECT_CALL(*mock_display_coordinator_,

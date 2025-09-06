@@ -22,7 +22,7 @@ bool ImportBufferCollection(
     const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
     const fuchsia_hardware_display_types::wire::ImageBufferUsage& image_buffer_usage) {
-  const fuchsia_hardware_display::wire::BufferCollectionId display_buffer_collection_id =
+  const WireBufferCollectionId display_buffer_collection_id =
       ToDisplayFidlBufferCollectionId(buffer_collection_id);
 
   auto import_buffer_collection_result = display_coordinator.sync()->ImportBufferCollection(
@@ -63,7 +63,7 @@ bool ImportBufferCollection(
   return true;
 }
 
-DisplayEventId ImportEvent(
+WireEventId ImportEvent(
     const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
     const zx::event& event) {
   static uint64_t id_generator = fuchsia_hardware_display_types::kInvalidDispId + 1;
@@ -76,7 +76,7 @@ DisplayEventId ImportEvent(
 
   // Generate a new display ID after we've determined the event can be duplicated as to not
   // waste an id.
-  DisplayEventId event_id = {.value = id_generator++};
+  WireEventId event_id = {.value = id_generator++};
 
   auto before = zx::clock::get_monotonic();
   fidl::OneWayStatus import_result =
@@ -108,7 +108,7 @@ bool IsCaptureSupported(
 
 zx_status_t ImportImageForCapture(
     const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
-    const fuchsia_hardware_display_types::wire::ImageMetadata& image_metadata,
+    const WireImageMetadata& image_metadata,
     allocation::GlobalBufferCollectionId buffer_collection_id, uint32_t vmo_idx,
     allocation::GlobalImageId image_id) {
   if (buffer_collection_id == 0) {
@@ -121,9 +121,9 @@ zx_status_t ImportImageForCapture(
     return 0;
   }
 
-  const fuchsia_hardware_display::wire::BufferCollectionId display_buffer_collection_id =
+  const WireBufferCollectionId display_buffer_collection_id =
       ToDisplayFidlBufferCollectionId(buffer_collection_id);
-  const fuchsia_hardware_display::wire::ImageId fidl_image_id = ToDisplayFidlImageId(image_id);
+  const WireImageId fidl_image_id = ToDisplayFidlImageId(image_id);
 
   auto import_image_result = display_coordinator.sync()->ImportImage(
       image_metadata, display_buffer_collection_id, vmo_idx, fidl_image_id);

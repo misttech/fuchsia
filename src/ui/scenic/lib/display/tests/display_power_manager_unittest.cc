@@ -68,7 +68,7 @@ class DisplayPowerManagerMockTest : public gtest::RealLoopFixture {
 };
 
 TEST_F(DisplayPowerManagerMockTest, Ok) {
-  const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
+  const display::WireDisplayId kDisplayId = {.value = 1};
   const uint32_t kDisplayWidth = 1024;
   const uint32_t kDisplayHeight = 768;
 
@@ -83,7 +83,7 @@ TEST_F(DisplayPowerManagerMockTest, Ok) {
   display_manager()->SetDefaultDisplayForTests(
       std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
 
-  MockDisplayCoordinator mock_display_coordinator(fuchsia_hardware_display::wire::Info{});
+  MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client),
                                 dispatcher());
   mock_display_coordinator.set_set_display_power_result(ZX_OK);
@@ -141,7 +141,7 @@ TEST_F(DisplayPowerManagerMockTest, NoDisplay) {
 
   display_manager()->SetDefaultDisplayForTests(nullptr);
 
-  MockDisplayCoordinator mock_display_coordinator(fuchsia_hardware_display::wire::Info{});
+  MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client),
                                 dispatcher());
 
@@ -164,7 +164,7 @@ TEST_F(DisplayPowerManagerMockTest, NoDisplay) {
 }
 
 TEST_F(DisplayPowerManagerMockTest, NotSupported) {
-  const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
+  const display::WireDisplayId kDisplayId = {.value = 1};
   const uint32_t kDisplayWidth = 1024;
   const uint32_t kDisplayHeight = 768;
 
@@ -179,7 +179,7 @@ TEST_F(DisplayPowerManagerMockTest, NotSupported) {
   display_manager()->SetDefaultDisplayForTests(
       std::make_shared<Display>(kDisplayId, kDisplayWidth, kDisplayHeight));
 
-  MockDisplayCoordinator mock_display_coordinator(fuchsia_hardware_display::wire::Info{});
+  MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client),
                                 dispatcher());
   mock_display_coordinator.set_set_display_power_result(ZX_ERR_NOT_SUPPORTED);

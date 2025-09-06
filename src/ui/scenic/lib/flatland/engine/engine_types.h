@@ -11,6 +11,7 @@
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
+#include "src/ui/scenic/lib/display/fidl_typedefs.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 
 namespace flatland {
@@ -35,7 +36,7 @@ struct RenderData {
   // TODO(https://fxbug.dev/42149711): should we remove this, and pass to RenderFrame() as a
   // std::map of RenderData keyed by display_id?  That would have the benefit of guaranteeing by
   // construction that each display_id could only appear once.
-  fuchsia_hardware_display_types::wire::DisplayId display_id;
+  display::WireDisplayId display_id;
 };
 
 // Struct to combine the source and destination rectangles used to set a layer's
@@ -58,7 +59,7 @@ struct DisplaySrcDstFrames {
 
 // Converts a flatland |Orientation| and |ImageFlip| value to the appropriate hardware display
 // transform enum.
-fuchsia_hardware_display_types::CoordinateTransformation GetDisplayTransformFromOrientationAndFlip(
+display::WireCoordinateTransformation GetDisplayTransformFromOrientationAndFlip(
     fuchsia::ui::composition::Orientation orientation,
     fuchsia_ui_composition::ImageFlip image_flip);
 

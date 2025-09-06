@@ -11,6 +11,8 @@
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include "src/ui/scenic/lib/display/fidl_typedefs.h"
+
 namespace display::test {
 
 class MockDisplayCoordinator;
@@ -18,26 +20,22 @@ class MockDisplayCoordinator;
 class MockDisplayCoordinator
     : public fidl::testing::WireTestBase<fuchsia_hardware_display::Coordinator> {
  public:
-  using CheckConfigFn = std::function<void(fuchsia_hardware_display_types::wire::ConfigResult*)>;
-  using SetDisplayColorConversionFn =
-      std::function<void(fuchsia_hardware_display_types::wire::DisplayId, fidl::Array<float, 3>,
-                         fidl::Array<float, 9>, fidl::Array<float, 3>)>;
+  using CheckConfigFn = std::function<void(WireConfigResult*)>;
+  using SetDisplayColorConversionFn = std::function<void(
+      display::WireDisplayId, fidl::Array<float, 3>, fidl::Array<float, 9>, fidl::Array<float, 3>)>;
   using SetMinimumRgbFn = std::function<void(uint8_t)>;
-  using ImportEventFn =
-      std::function<void(zx::event event, fuchsia_hardware_display::wire::EventId event_id)>;
+  using ImportEventFn = std::function<void(zx::event event, display::WireEventId event_id)>;
   using AcknowledgeVsyncFn = std::function<void(uint64_t cookie)>;
   using SetDisplayLayersFn =
-      std::function<void(fuchsia_hardware_display_types::wire::DisplayId,
-                         fidl::VectorView<fuchsia_hardware_display::wire::LayerId>)>;
-  using SetLayerPrimaryPositionFn =
-      std::function<void(fuchsia_hardware_display::wire::LayerId,
-                         fuchsia_hardware_display_types::wire::CoordinateTransformation,
-                         fuchsia_math::wire::RectU, fuchsia_math::wire::RectU)>;
+      std::function<void(display::WireDisplayId, fidl::VectorView<display::WireLayerId>)>;
+  using SetLayerPrimaryPositionFn = std::function<void(
+      display::WireLayerId, fuchsia_hardware_display_types::wire::CoordinateTransformation,
+      fuchsia_math::wire::RectU, fuchsia_math::wire::RectU)>;
 
   using SetDisplayModeFn = std::function<void(fuchsia_hardware_display_types::DisplayId,
                                               fuchsia_hardware_display_types::Mode)>;
 
-  explicit MockDisplayCoordinator(fuchsia_hardware_display::wire::Info display_info);
+  explicit MockDisplayCoordinator(WireDisplayInfo display_info);
   ~MockDisplayCoordinator() override;
 
   // `fidl::testing::TestBase<fuchsia_hardware_display::Coordinator>`:
@@ -86,7 +84,7 @@ class MockDisplayCoordinator
     return listener_;
   }
 
-  const fuchsia_hardware_display::wire::Info& display_info() const { return display_info_; }
+  const WireDisplayInfo& display_info() const { return display_info_; }
 
   void set_import_event_fn(ImportEventFn fn) { import_event_fn_ = std::move(fn); }
   void set_display_color_conversion_fn(SetDisplayColorConversionFn fn) {
@@ -137,7 +135,7 @@ class MockDisplayCoordinator
   zx_status_t set_display_power_result_ = ZX_OK;
   bool display_power_on_ = true;
 
-  const fuchsia_hardware_display::wire::Info display_info_;
+  const WireDisplayInfo display_info_;
 
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_display::Coordinator>> binding_;
   fidl::WireSharedClient<fuchsia_hardware_display::CoordinatorListener> listener_;

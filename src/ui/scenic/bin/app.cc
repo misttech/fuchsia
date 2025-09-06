@@ -21,6 +21,7 @@
 #include "src/ui/scenic/lib/display/color_converter.h"
 #include "src/ui/scenic/lib/display/display_manager.h"
 #include "src/ui/scenic/lib/display/display_power_manager.h"
+#include "src/ui/scenic/lib/display/fidl_typedefs.h"
 #include "src/ui/scenic/lib/flatland/engine/engine.h"
 #include "src/ui/scenic/lib/flatland/engine/engine_types.h"
 #include "src/ui/scenic/lib/flatland/renderer/cpu_renderer.h"
@@ -61,12 +62,11 @@ constexpr uint32_t kMaxDisplayLayers = 4;
 constexpr uint8_t VISUAL_DEBUGGING_LEVEL_INFO = 2;
 constexpr uint8_t VISUAL_DEBUGGING_LEVEL_INFO_PLUS = 3;
 
-std::optional<fuchsia_hardware_display_types::wire::DisplayId> GetDisplayId(
-    const scenic_structured_config::Config& values) {
+std::optional<display::WireDisplayId> GetDisplayId(const scenic_structured_config::Config& values) {
   if (values.i_can_haz_display_id() < 0) {
     return std::nullopt;
   }
-  return std::make_optional<fuchsia_hardware_display_types::wire::DisplayId>({
+  return std::make_optional<display::WireDisplayId>({
       .value = static_cast<uint64_t>(values.i_can_haz_display_id()),
   });
 }
@@ -151,7 +151,7 @@ scenic_structured_config::Config GetConfig() {
                 << " display_composition: " << values.display_composition()
                 << " i_can_haz_display_id: "
                 << GetDisplayId(values)
-                       .value_or(fuchsia_hardware_display_types::wire::DisplayId{
+                       .value_or(display::WireDisplayId{
                            .value = fuchsia_hardware_display_types::kInvalidDispId,
                        })
                        .value

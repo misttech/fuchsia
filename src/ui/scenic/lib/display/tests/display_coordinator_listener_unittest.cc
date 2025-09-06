@@ -27,8 +27,7 @@ class DisplayCoordinatorListenerTest : public gtest::TestLoopFixture {
     auto [listener_client, listener_server] =
         fidl::Endpoints<fuchsia_hardware_display::CoordinatorListener>::Create();
 
-    mock_display_coordinator_ =
-        std::make_unique<MockDisplayCoordinator>(fuchsia_hardware_display::wire::Info{});
+    mock_display_coordinator_ = std::make_unique<MockDisplayCoordinator>(WireDisplayInfo{});
     mock_display_coordinator_->Bind(std::move(coordinator_server), std::move(listener_client));
 
     listener_server_end_ = std::move(listener_server);
@@ -69,36 +68,34 @@ TEST_F(DisplayCoordinatorListenerBasicTest, ConstructorArgs) {
 TEST_F(DisplayCoordinatorListenerTest, OnDisplaysChanged) {
   std::vector<fuchsia_hardware_display::Info> displays_added;
   std::vector<fuchsia_hardware_display_types::DisplayId> displays_removed;
-  auto displays_changed_cb =
-      [&displays_added, &displays_removed](
-          fidl::VectorView<fuchsia_hardware_display::wire::Info> added,
-          fidl::VectorView<fuchsia_hardware_display_types::wire::DisplayId> removed) {
-        displays_added = fidl::ToNatural(added).value();
-        displays_removed = fidl::ToNatural(removed).value();
-      };
+  auto displays_changed_cb = [&displays_added, &displays_removed](
+                                 fidl::VectorView<WireDisplayInfo> added,
+                                 fidl::VectorView<display::WireDisplayId> removed) {
+    displays_added = fidl::ToNatural(added).value();
+    displays_removed = fidl::ToNatural(removed).value();
+  };
 
   DisplayCoordinatorListener listener(TakeListenerServerEnd(), std::move(displays_changed_cb),
                                       /*on_vsync=*/nullptr, /*on_client_ownership_change=*/nullptr);
 
-  fuchsia_hardware_display_types::wire::Mode test_mode = {
+  WireDisplayMode test_mode = {
       .active_area = fuchsia_math::wire::SizeU{.width = 1024, .height = 800},
       .refresh_rate_millihertz = 60'000,
   };
   auto pixel_format = fuchsia_images2::wire::PixelFormat::kB8G8R8A8;
-  fuchsia_hardware_display::wire::Info test_display = {
+  WireDisplayInfo test_display = {
       .id = {.value = 1},
-      .modes =
-          fidl::VectorView<fuchsia_hardware_display_types::wire::Mode>::FromExternal(&test_mode, 1),
+      .modes = fidl::VectorView<WireDisplayMode>::FromExternal(&test_mode, 1),
       .pixel_format =
           fidl::VectorView<fuchsia_images2::wire::PixelFormat>::FromExternal(&pixel_format, 1),
       .manufacturer_name = "fake_manufacturer_name",
       .monitor_name = "fake_monitor_name",
       .monitor_serial = "fake_monitor_serial",
   };
-  fuchsia_hardware_display_types::wire::DisplayId removed = {.value = 2};
+  display::WireDisplayId removed = {.value = 2};
   fidl::OneWayError result = mock_display_coordinator()->listener().sync()->OnDisplaysChanged(
-      fidl::VectorView<fuchsia_hardware_display::wire::Info>::FromExternal(&test_display, 1),
-      fidl::VectorView<fuchsia_hardware_display_types::wire::DisplayId>::FromExternal(&removed, 1));
+      fidl::VectorView<WireDisplayInfo>::FromExternal(&test_display, 1),
+      fidl::VectorView<display::WireDisplayId>::FromExternal(&removed, 1));
   ASSERT_TRUE(result.ok());
 
   ASSERT_EQ(0u, displays_added.size());
@@ -135,18 +132,16 @@ TEST_F(DisplayCoordinatorListenerTest, OnClientOwnershipChangeCallback) {
 }
 
 TEST_F(DisplayCoordinatorListenerTest, OnVsyncCallback) {
-  fuchsia_hardware_display_types::wire::DisplayId last_display_id = {
+  display::WireDisplayId last_display_id = {
       .value = fuchsia_hardware_display_types::kInvalidDispId,
   };
   zx::time_monotonic last_timestamp = zx::time_monotonic::infinite_past();
-  fuchsia_hardware_display::wire::ConfigStamp last_config_stamp = {
+  WireConfigStamp last_config_stamp = {
       .value = fuchsia_hardware_display::kInvalidConfigStampValue,
   };
 
-  auto vsync_cb = [&](fuchsia_hardware_display_types::wire::DisplayId display_id,
-                      zx::time_monotonic timestamp,
-                      fuchsia_hardware_display::wire::ConfigStamp stamp,
-                      fuchsia_hardware_display::wire::VsyncAckCookie cookie) {
+  auto vsync_cb = [&](display::WireDisplayId display_id, zx::time_monotonic timestamp,
+                      WireConfigStamp stamp, display::WireVsyncAckCookie cookie) {
     last_display_id = display_id;
     last_timestamp = timestamp;
     last_config_stamp = stamp;
@@ -154,10 +149,10 @@ TEST_F(DisplayCoordinatorListenerTest, OnVsyncCallback) {
   DisplayCoordinatorListener listener(TakeListenerServerEnd(), /*on_displays_changed=*/nullptr,
                                       std::move(vsync_cb), /*on_client_ownership_change=*/nullptr);
 
-  const fuchsia_hardware_display_types::wire::DisplayId kTestDisplayId = {.value = 1};
-  const fuchsia_hardware_display_types::wire::DisplayId kInvalidDisplayId = {.value = 2};
+  const display::WireDisplayId kTestDisplayId = {.value = 1};
+  const display::WireDisplayId kInvalidDisplayId = {.value = 2};
   const zx::time_monotonic kTestTimestamp(111111);
-  const fuchsia_hardware_display::wire::ConfigStamp kConfigStamp = {.value = 2u};
+  const WireConfigStamp kConfigStamp = {.value = 2u};
 
   fidl::OneWayStatus result = mock_display_coordinator()->listener().sync()->OnVsync(
       kTestDisplayId, kTestTimestamp, kConfigStamp, {0});

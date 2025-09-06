@@ -14,7 +14,7 @@
 
 namespace display::test {
 
-MockDisplayCoordinator::MockDisplayCoordinator(fuchsia_hardware_display::wire::Info display_info)
+MockDisplayCoordinator::MockDisplayCoordinator(WireDisplayInfo display_info)
     : display_info_(display_info) {}
 
 MockDisplayCoordinator::~MockDisplayCoordinator() = default;
@@ -146,10 +146,10 @@ void MockDisplayCoordinator::SetDisplayMode(
 
 void MockDisplayCoordinator::SendOnDisplayChangedRequest() {
   FX_CHECK(binding_.has_value());
-  fidl::OneWayStatus result = listener().sync()->OnDisplaysChanged(
-      fidl::VectorView<fuchsia_hardware_display::wire::Info>::FromExternal(
-          const_cast<fuchsia_hardware_display::wire::Info*>(&display_info_), 1),
-      {});
+  fidl::OneWayStatus result =
+      listener().sync()->OnDisplaysChanged(fidl::VectorView<WireDisplayInfo>::FromExternal(
+                                               const_cast<WireDisplayInfo*>(&display_info_), 1),
+                                           {});
   FX_CHECK(result.ok());
 }
 

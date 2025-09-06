@@ -36,7 +36,7 @@ class TrustedFlatlandFactoryTest : public LoggingEventLoop, public ::testing::Te
             [&](zx::time requested_presentation_time, scheduling::SchedulingIdPair id_pair,
                 bool unsquashable, std::vector<zx::event> release_fences, bool schedule_asap) {}));
 
-    const fuchsia_hardware_display_types::wire::DisplayId kDisplayId = {.value = 1};
+    const display::WireDisplayId kDisplayId = {.value = 1};
     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> importers;
     importers.push_back(std::make_shared<allocation::MockBufferCollectionImporter>());
     flatland_manager_ = std::make_shared<FlatlandManager>(

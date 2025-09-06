@@ -402,14 +402,14 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     ASSERT_TRUE(config_stamp_result.ok())
         << "Failed to call FIDL GetLatestAppliedConfigStamp method: "
         << config_stamp_result.status_string();
-    fuchsia_hardware_display::wire::ConfigStamp pending_config_stamp = config_stamp_result->stamp;
+    display::WireConfigStamp pending_config_stamp = config_stamp_result->stamp;
 
     // The callback will switch this bool to |true| if the two configs match. It is initialized
     // to |false| and blocks the main thread below.
     bool configs_are_equal = false;
     display->SetVsyncCallback(
-        [&pending_config_stamp, &configs_are_equal](
-            zx::time timestamp, fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp) {
+        [&pending_config_stamp, &configs_are_equal](zx::time timestamp,
+                                                    display::WireConfigStamp applied_config_stamp) {
           if (pending_config_stamp.value == applied_config_stamp.value &&
               applied_config_stamp.value != fuchsia_hardware_display::kInvalidConfigStampValue) {
             configs_are_equal = true;
@@ -526,7 +526,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
 
     // TODO(https://fxbug.dev/332521780): Display clients will be required to
     // pass the captured display's mode information.
-    fuchsia_hardware_display_types::wire::ImageMetadata image_metadata{
+    display::WireImageMetadata image_metadata{
         .dimensions = {.width = display->width_in_px(), .height = display->height_in_px()},
         .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeCapture,
     };
@@ -574,7 +574,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
   }
 
   void ReleaseCaptureBufferCollection(allocation::GlobalBufferCollectionId collection_id) {
-    const fuchsia_hardware_display::wire::BufferCollectionId display_collection_id =
+    const display::WireBufferCollectionId display_collection_id =
         display::ToDisplayFidlBufferCollectionId(collection_id);
     auto display = display_manager_->default_display();
     std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>>
@@ -602,7 +602,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
 
     // This ID would only be zero if we were running in an environment without capture support.
     EXPECT_NE(capture_image_id, 0U);
-    const fuchsia_hardware_display::wire::ImageId fidl_capture_image_id =
+    const display::WireImageId fidl_capture_image_id =
         display::ToDisplayFidlImageId(capture_image_id);
 
     auto display = display_manager_->default_display();
@@ -613,7 +613,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     auto status = zx::event::create(0, &capture_signal_fence);
     EXPECT_EQ(status, ZX_OK);
 
-    display::DisplayEventId capture_signal_fence_id =
+    display::WireEventId capture_signal_fence_id =
         display::ImportEvent(*display_coordinator, capture_signal_fence);
     const auto start_capture_result =
         display_coordinator->sync()->StartCapture(capture_signal_fence_id, fidl_capture_image_id);
@@ -977,7 +977,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   EXPECT_TRUE(images_are_same);
 
   // Manually clean up the capture since we didn't in CaptureDisplayOutput.
-  const fuchsia_hardware_display::wire::ImageId fidl_capture_image_id =
+  const display::WireImageId fidl_capture_image_id =
       display::ToDisplayFidlImageId(capture_image_id);
   const fidl::OneWayStatus release_result =
       display_coordinator->sync()->ReleaseImage(fidl_capture_image_id);
@@ -1880,7 +1880,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
         EXPECT_TRUE(images_are_same);
 
         // Manually clean up the capture since we didn't in CaptureDisplayOutput.
-        const fuchsia_hardware_display::wire::ImageId fidl_capture_image_id =
+        const display::WireImageId fidl_capture_image_id =
             display::ToDisplayFidlImageId(capture_image_id);
         const fidl::OneWayStatus result =
             display_coordinator->sync()->ReleaseImage(fidl_capture_image_id);
@@ -2377,8 +2377,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   EXPECT_TRUE(images_are_same);
 
   // Cleanup.
-  fuchsia_hardware_display::wire::ImageId image_id =
-      display::ToDisplayFidlImageId(capture_image_id);
+  display::WireImageId image_id = display::ToDisplayFidlImageId(capture_image_id);
   const fidl::OneWayStatus release_image_result =
       display_coordinator->sync()->ReleaseImage(image_id);
   EXPECT_TRUE(release_image_result.ok())

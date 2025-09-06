@@ -17,8 +17,7 @@ namespace display {
 namespace {
 
 std::optional<size_t> PickFirstDisplayModeSatisfyingConstraints(
-    cpp20::span<const fuchsia_hardware_display_types::wire::Mode> modes,
-    const DisplayModeConstraints& constraints) {
+    cpp20::span<const WireDisplayMode> modes, const DisplayModeConstraints& constraints) {
   for (size_t i = 0; i < modes.size(); ++i) {
     if (constraints.ModeSatisfiesConstraints(modes[i])) {
       return std::make_optional(i);
@@ -29,8 +28,7 @@ std::optional<size_t> PickFirstDisplayModeSatisfyingConstraints(
 
 }  // namespace
 
-bool DisplayModeConstraints::ModeSatisfiesConstraints(
-    const fuchsia_hardware_display_types::wire::Mode& mode) const {
+bool DisplayModeConstraints::ModeSatisfiesConstraints(const WireDisplayMode& mode) const {
   if (!width_px_range.Contains(static_cast<int>(mode.active_area.width))) {
     return false;
   }
@@ -47,10 +45,10 @@ DisplayManager::DisplayManager(fit::closure display_available_cb)
     : DisplayManager(std::nullopt, std::nullopt, /*display_mode_constraints=*/{},
                      std::move(display_available_cb)) {}
 
-DisplayManager::DisplayManager(
-    std::optional<fuchsia_hardware_display_types::wire::DisplayId> i_can_haz_display_id,
-    std::optional<size_t> display_mode_index_override,
-    DisplayModeConstraints display_mode_constraints, fit::closure display_available_cb)
+DisplayManager::DisplayManager(std::optional<WireDisplayId> i_can_haz_display_id,
+                               std::optional<size_t> display_mode_index_override,
+                               DisplayModeConstraints display_mode_constraints,
+                               fit::closure display_available_cb)
     : i_can_haz_display_id_(i_can_haz_display_id),
       display_mode_index_override_(display_mode_index_override),
       display_mode_constraints_(std::move(display_mode_constraints)),
@@ -71,10 +69,9 @@ void DisplayManager::BindDefaultDisplayCoordinator(
       fit::bind_member<&DisplayManager::OnClientOwnershipChange>(this));
 }
 
-void DisplayManager::OnDisplaysChanged(
-    fidl::VectorView<fuchsia_hardware_display::wire::Info> added,
-    fidl::VectorView<fuchsia_hardware_display_types::wire::DisplayId> removed) {
-  for (fuchsia_hardware_display::wire::Info& display : added) {
+void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
+                                       fidl::VectorView<WireDisplayId> removed) {
+  for (WireDisplayInfo& display : added) {
     // Ignore display if |i_can_haz_display_id| is set and it doesn't match ID.
     if (i_can_haz_display_id_.has_value() && display.id.value != i_can_haz_display_id_->value) {
       FX_LOGS(INFO) << "Ignoring display with id=" << display.id.value
@@ -112,7 +109,7 @@ void DisplayManager::OnDisplaysChanged(
                                                                  display.modes[mode_index]);
       }
 
-      const fuchsia_hardware_display_types::wire::Mode& mode = display.modes[mode_index];
+      const WireDisplayMode& mode = display.modes[mode_index];
       std::vector<fuchsia_images2::PixelFormat> pixel_formats(display.pixel_format.begin(),
                                                               display.pixel_format.end());
       default_display_ =
@@ -127,7 +124,7 @@ void DisplayManager::OnDisplaysChanged(
     }
   }
 
-  for (const fuchsia_hardware_display_types::wire::DisplayId& id : removed) {
+  for (const WireDisplayId& id : removed) {
     if (default_display_ && default_display_->display_id().value == id.value) {
       // TODO(https://fxbug.dev/42097581): handle this more robustly.
       FX_CHECK(false) << "Display disconnected";
@@ -151,10 +148,8 @@ void DisplayManager::OnClientOwnershipChange(bool has_ownership) {
   }
 }
 
-void DisplayManager::OnVsync(fuchsia_hardware_display_types::wire::DisplayId display_id,
-                             zx::time_monotonic timestamp,
-                             fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp,
-                             fuchsia_hardware_display::wire::VsyncAckCookie cookie) {
+void DisplayManager::OnVsync(WireDisplayId display_id, zx::time_monotonic timestamp,
+                             WireConfigStamp applied_config_stamp, WireVsyncAckCookie cookie) {
   if (cookie.value != fuchsia_hardware_display_types::kInvalidDispId) {
     FLATLAND_VERBOSE_LOG << "DisplayManager::OnVsync(): acknowledging vsync display_id="
                          << display_id.value << "  timestamp=" << timestamp.get()

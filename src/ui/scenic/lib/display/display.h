@@ -12,12 +12,11 @@
 #include <lib/zx/event.h>
 #include <zircon/types.h>
 
-#include <array>
 #include <cstdint>
 #include <vector>
 
 #include "src/lib/fxl/macros.h"
-#include "src/ui/scenic/lib/display/color_transform.h"
+#include "src/ui/scenic/lib/display/fidl_typedefs.h"
 #include "src/ui/scenic/lib/scheduling/vsync_timing.h"
 
 #include <glm/glm.hpp>
@@ -28,16 +27,13 @@ namespace display {
 // resolution, vsync interval, last vsync time, etc.
 class Display {
  public:
-  Display(fuchsia_hardware_display_types::wire::DisplayId id,
-          const fuchsia_hardware_display_types::wire::Mode& mode, uint32_t width_in_mm,
+  Display(WireDisplayId id, const WireDisplayMode& mode, uint32_t width_in_mm,
           uint32_t height_in_mm, std::vector<fuchsia_images2::PixelFormat> pixel_formats);
-  Display(fuchsia_hardware_display_types::wire::DisplayId id, uint32_t width_in_px,
-          uint32_t height_in_px);
+  Display(WireDisplayId id, uint32_t width_in_px, uint32_t height_in_px);
   virtual ~Display() = default;
 
   using VsyncCallback =
-      fit::function<void(zx::time_monotonic timestamp,
-                         fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp)>;
+      fit::function<void(zx::time_monotonic timestamp, WireConfigStamp applied_config_stamp)>;
   void SetVsyncCallback(VsyncCallback callback) { vsync_callback_ = std::move(callback); }
 
   using DPRCallback = fit::function<void(const glm::vec2& dpr)>;
@@ -58,10 +54,11 @@ class Display {
     }
   }
 
-  const fuchsia_hardware_display_types::wire::Mode& Mode() const { return mode_; }
+  const WireDisplayMode& Mode() const { return mode_; }
 
   // The display's ID in the context of the DisplayManager's DisplayController.
-  fuchsia_hardware_display_types::wire::DisplayId display_id() const { return display_id_; }
+  WireDisplayId display_id() const { return display_id_; }
+  const WireDisplayMode& mode() const { return mode_; }
   uint32_t width_in_px() const { return mode_.active_area.width; }
   uint32_t height_in_px() const { return mode_.active_area.height; }
   uint32_t width_in_mm() const { return width_in_mm_; }
@@ -78,8 +75,7 @@ class Display {
   const zx::event& ownership_event() const { return ownership_event_; }
 
   // Called by DisplayManager, other users of Display should probably not call this.  Except tests.
-  void OnVsync(zx::time_monotonic timestamp,
-               fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp);
+  void OnVsync(zx::time_monotonic timestamp, WireConfigStamp applied_config_stamp);
 
  protected:
   std::shared_ptr<scheduling::VsyncTiming> vsync_timing_;
@@ -93,8 +89,8 @@ class Display {
   // 240Hz should be fast enough for anybody.
   static constexpr zx::duration kMinimumVsyncInterval = zx::usec(/*1000000/240=*/4167);
 
-  const fuchsia_hardware_display_types::wire::DisplayId display_id_;
-  const fuchsia_hardware_display_types::wire::Mode mode_;
+  const WireDisplayId display_id_;
+  const WireDisplayMode mode_;
   const uint32_t width_in_mm_;
   const uint32_t height_in_mm_;
   // |device_pixel_ratio_| may be written from FlatlandDisplay thread and read by SingletonDisplay

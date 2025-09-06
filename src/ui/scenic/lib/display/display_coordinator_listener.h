@@ -12,6 +12,8 @@
 #include <lib/zx/channel.h>
 #include <lib/zx/event.h>
 
+#include "src/ui/scenic/lib/display/fidl_typedefs.h"
+
 namespace display {
 
 // Implements a [`fuchsia.hardware.display/CoordinatorListener`] server and
@@ -20,13 +22,11 @@ class DisplayCoordinatorListener final
     : public fidl::WireServer<fuchsia_hardware_display::CoordinatorListener> {
  public:
   using OnDisplaysChangedCallback = std::function<void(
-      fidl::VectorView<fuchsia_hardware_display::wire::Info> added,
-      fidl::VectorView<fuchsia_hardware_display_types::wire::DisplayId> removed)>;
+      fidl::VectorView<WireDisplayInfo> added, fidl::VectorView<display::WireDisplayId> removed)>;
   using OnClientOwnershipChangeCallback = std::function<void(bool has_ownership)>;
-  using OnVsyncCallback = fit::function<void(
-      fuchsia_hardware_display_types::wire::DisplayId display_id, zx::time_monotonic timestamp,
-      fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp,
-      fuchsia_hardware_display::wire::VsyncAckCookie cookie)>;
+  using OnVsyncCallback =
+      fit::function<void(display::WireDisplayId display_id, zx::time_monotonic timestamp,
+                         WireConfigStamp applied_config_stamp, WireVsyncAckCookie cookie)>;
 
   // `coordinator_listener_server` must be valid.
   explicit DisplayCoordinatorListener(

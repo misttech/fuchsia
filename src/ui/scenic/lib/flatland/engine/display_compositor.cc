@@ -39,7 +39,7 @@ namespace {
 // Debugging color used to highlight images that have gone through the GPU rendering path.
 const std::array<float, 4> kGpuRenderingDebugColor = {0.9f, 0.5f, 0.5f, 1.f};
 
-const fuchsia_hardware_display::wire::EventId kInvalidEventId = {
+const display::WireEventId kInvalidEventId = {
     .value = fuchsia_hardware_display_types::kInvalidDispId,
 };
 
@@ -258,7 +258,7 @@ DisplayCompositor::~DisplayCompositor() {
   // Destroy all of the display layers.
   DiscardConfig();
   for (const auto& [_, data] : display_engine_data_map_) {
-    for (const fuchsia_hardware_display::wire::LayerId& layer : data.layers) {
+    for (const display::WireLayerId& layer : data.layers) {
       fidl::OneWayStatus result = display_coordinator_.sync()->DestroyLayer(layer);
       if (!result.ok()) {
         FX_LOGS(ERROR) << "Failed to call FIDL DestroyLayer method: " << result.status_string();
@@ -368,7 +368,7 @@ void DisplayCompositor::ReleaseBufferCollection(
 
   std::scoped_lock lock(lock_);
   FX_DCHECK(display_coordinator_.is_valid());
-  const fuchsia_hardware_display::wire::BufferCollectionId display_collection_id =
+  const display::WireBufferCollectionId display_collection_id =
       display::ToDisplayFidlBufferCollectionId(collection_id);
   const fidl::OneWayStatus result =
       display_coordinator_.sync()->ReleaseBufferCollection(display_collection_id);
@@ -389,7 +389,7 @@ fuchsia::sysmem2::BufferCollectionSyncPtr DisplayCompositor::TakeDisplayBufferCo
   return token;
 }
 
-fuchsia_hardware_display_types::wire::ImageMetadata DisplayCompositor::CreateImageMetadata(
+display::WireImageMetadata DisplayCompositor::CreateImageMetadata(
     const allocation::ImageMetadata& metadata) const {
   // TODO(https://fxbug.dev/42150686): Pixel format should be ignored when using sysmem. We do not
   // want to have to deal with this default image format. Work was in progress to address this, but
@@ -419,7 +419,7 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
   FX_DCHECK(display_coordinator_.is_valid());
 
   const allocation::GlobalBufferCollectionId collection_id = metadata.collection_id;
-  const fuchsia_hardware_display::wire::BufferCollectionId display_collection_id =
+  const display::WireBufferCollectionId display_collection_id =
       display::ToDisplayFidlBufferCollectionId(collection_id);
   const bool display_support_already_set =
       buffer_collection_supports_display_.find(collection_id) !=
@@ -450,10 +450,8 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
     return true;
   }
 
-  const fuchsia_hardware_display_types::wire::ImageMetadata image_metadata =
-      CreateImageMetadata(metadata);
-  const fuchsia_hardware_display::wire::ImageId fidl_image_id =
-      display::ToDisplayFidlImageId(metadata.identifier);
+  const display::WireImageMetadata image_metadata = CreateImageMetadata(metadata);
+  const display::WireImageId fidl_image_id = display::ToDisplayFidlImageId(metadata.identifier);
   const auto import_image_result = display_coordinator_.sync()->ImportImage(
       image_metadata, display_collection_id, metadata.vmo_index, fidl_image_id);
   if (!import_image_result.ok()) {
@@ -477,8 +475,7 @@ void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image
 
   renderer_->ReleaseBufferImage(image_id);
 
-  const fuchsia_hardware_display::wire::ImageId fidl_image_id =
-      display::ToDisplayFidlImageId(image_id);
+  const display::WireImageId fidl_image_id = display::ToDisplayFidlImageId(image_id);
   std::scoped_lock lock(lock_);
 
   if (display_imported_images_.erase(image_id) == 1) {
@@ -491,7 +488,7 @@ void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image
   }
 }
 
-fuchsia_hardware_display::wire::LayerId DisplayCompositor::CreateDisplayLayer() {
+display::WireLayerId DisplayCompositor::CreateDisplayLayer() {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
 
@@ -508,9 +505,8 @@ fuchsia_hardware_display::wire::LayerId DisplayCompositor::CreateDisplayLayer() 
   return (*create_layer_result)->layer_id;
 }
 
-void DisplayCompositor::SetDisplayLayers(
-    const fuchsia_hardware_display_types::wire::DisplayId display_id,
-    fidl::VectorView<fuchsia_hardware_display::wire::LayerId> layers) {
+void DisplayCompositor::SetDisplayLayers(const display::WireDisplayId display_id,
+                                         fidl::VectorView<display::WireLayerId> layers) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::SetDisplayLayers");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
@@ -540,7 +536,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
 
   // Since we map 1 image to 1 layer, if there are more images than layers available for
   // the given display, then they cannot be directly composited to the display in hardware.
-  std::vector<fuchsia_hardware_display::wire::LayerId>& layers =
+  std::vector<display::WireLayerId>& layers =
       display_engine_data_map_.at(data.display_id.value).layers;
   if (layers.size() < num_images) {
     TRACE_INSTANT("gfx", "scenic_d2d_failed: insufficient layers available", TRACE_SCOPE_THREAD);
@@ -550,8 +546,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
 
   // We only set as many layers as needed for the images we have.
   SetDisplayLayers(data.display_id,
-                   fidl::VectorView<fuchsia_hardware_display::wire::LayerId>::FromExternal(
-                       layers.data(), num_images));
+                   fidl::VectorView<display::WireLayerId>::FromExternal(layers.data(), num_images));
 
   for (uint32_t i = 0; i < num_images; i++) {
     const allocation::GlobalImageId image_id = data.images[i].identifier;
@@ -590,7 +585,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   return true;
 }
 
-void DisplayCompositor::ApplyLayerColor(const fuchsia_hardware_display::wire::LayerId& layer_id,
+void DisplayCompositor::ApplyLayerColor(const display::WireLayerId& layer_id,
                                         const ImageRect& rectangle,
                                         const allocation::ImageMetadata& image) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
@@ -636,7 +631,7 @@ void DisplayCompositor::ApplyLayerColor(const fuchsia_hardware_display::wire::La
 
   const auto [src, dst] = DisplaySrcDstFrames::New(rectangle, image);
 
-  const fuchsia_hardware_display_types::CoordinateTransformation transform =
+  const display::WireCoordinateTransformation transform =
       GetDisplayTransformFromOrientationAndFlip(rectangle.orientation, image.flip);
 
   const auto set_layer_position_result =
@@ -655,10 +650,10 @@ void DisplayCompositor::ApplyLayerColor(const fuchsia_hardware_display::wire::La
 #endif
 }
 
-void DisplayCompositor::ApplyLayerImage(const fuchsia_hardware_display::wire::LayerId& layer_id,
+void DisplayCompositor::ApplyLayerImage(const display::WireLayerId& layer_id,
                                         const ImageRect& rectangle,
                                         const allocation::ImageMetadata& image,
-                                        const display::DisplayEventId& wait_id) {
+                                        const display::WireEventId& wait_id) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ApplyLayerImage");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
@@ -666,13 +661,12 @@ void DisplayCompositor::ApplyLayerImage(const fuchsia_hardware_display::wire::La
   const auto [src, dst] = DisplaySrcDstFrames::New(rectangle, image);
   FX_DCHECK(src.width && src.height) << "Source frame cannot be empty.";
   FX_DCHECK(dst.width && dst.height) << "Destination frame cannot be empty.";
-  const fuchsia_hardware_display_types::CoordinateTransformation transform =
+  const display::WireCoordinateTransformation transform =
       GetDisplayTransformFromOrientationAndFlip(rectangle.orientation, image.flip);
   const fuchsia_hardware_display_types::AlphaMode alpha_mode =
       image.blend_mode.ToDisplayAlphaMode();
 
-  const fuchsia_hardware_display_types::wire::ImageMetadata image_metadata =
-      CreateImageMetadata(image);
+  const display::WireImageMetadata image_metadata = CreateImageMetadata(image);
   const fidl::OneWayStatus set_layer_primary_config_result =
       display_coordinator_.sync()->SetLayerPrimaryConfig(layer_id, image_metadata);
   FX_DCHECK(set_layer_primary_config_result.ok())
@@ -694,8 +688,7 @@ void DisplayCompositor::ApplyLayerImage(const fuchsia_hardware_display::wire::La
       << set_layer_primary_alpha_result.status_string();
 
   // Set the imported image on the layer.
-  const fuchsia_hardware_display::wire::ImageId image_id =
-      display::ToDisplayFidlImageId(image.identifier);
+  const display::WireImageId image_id = display::ToDisplayFidlImageId(image.identifier);
   const fidl::OneWayStatus set_layer_image_result =
       display_coordinator_.sync()->SetLayerImage2(layer_id, image_id, wait_id);
   FX_DCHECK(set_layer_image_result.ok())
@@ -726,8 +719,8 @@ void DisplayCompositor::ApplyConfig(uint64_t frame_number, uint64_t trace_flow_i
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
 
-  fuchsia_hardware_display::wire::ConfigStamp config_stamp = next_config_stamp_;
-  next_config_stamp_ = fuchsia_hardware_display::wire::ConfigStamp(next_config_stamp_.value + 1);
+  display::WireConfigStamp config_stamp = next_config_stamp_;
+  next_config_stamp_ = display::WireConfigStamp(next_config_stamp_.value + 1);
 
   FLATLAND_VERBOSE_LOG << "DisplayCompositor::ApplyConfig() config_stamp=" << config_stamp.value;
 
@@ -839,9 +832,9 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
     // Retrieve fence.
     event_data.wait_event = std::move(render_fences[0]);
 
-    const fuchsia_hardware_display::wire::LayerId layer = display_engine_data.layers[0];
-    const auto layers = fidl::VectorView<fuchsia_hardware_display::wire::LayerId>::FromExternal(
-        display_engine_data.layers.data(), 1);
+    const display::WireLayerId layer = display_engine_data.layers[0];
+    const auto layers =
+        fidl::VectorView<display::WireLayerId>::FromExternal(display_engine_data.layers.data(), 1);
     SetDisplayLayers(render_data.display_id, layers);
     ApplyLayerImage(layer, {glm::vec2(0), glm::vec2(render_target.width, render_target.height)},
                     render_target, event_data.wait_id);
@@ -967,7 +960,7 @@ bool DisplayCompositor::TryDirectToDisplay(const std::vector<RenderData>& render
 }
 
 void DisplayCompositor::OnVsync(zx::time_monotonic timestamp,
-                                fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp) {
+                                display::WireConfigStamp applied_config_stamp) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   TRACE_DURATION("gfx", "Flatland::DisplayCompositor::OnVsync");
 
@@ -1038,7 +1031,7 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
   FX_DCHECK(size.width > 0 && size.height > 0)
       << "Invalid display size: " << size.width << "x" << size.height;
 
-  const fuchsia_hardware_display_types::wire::DisplayId display_id = display->display_id();
+  const display::WireDisplayId display_id = display->display_id();
   FX_DCHECK(display_engine_data_map_.find(display_id.value) == display_engine_data_map_.end())
       << "DisplayCompositor::AddDisplay(): display already exists: " << display_id.value;
 
@@ -1058,12 +1051,11 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
 
   // Add vsync callback on display. Note that this will overwrite the existing callback on
   // |display| and other clients won't receive any, i.e. gfx.
-  display->SetVsyncCallback(
-      [weak_ref = weak_from_this()](
-          zx::time timestamp, fuchsia_hardware_display::wire::ConfigStamp applied_config_stamp) {
-        if (auto ref = weak_ref.lock())
-          ref->OnVsync(timestamp, applied_config_stamp);
-      });
+  display->SetVsyncCallback([weak_ref = weak_from_this()](
+                                zx::time timestamp, display::WireConfigStamp applied_config_stamp) {
+    if (auto ref = weak_ref.lock())
+      ref->OnVsync(timestamp, applied_config_stamp);
+  });
 
   // Exit early if there are no vmos to create.
   if (num_render_targets == 0) {
