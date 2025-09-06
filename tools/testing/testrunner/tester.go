@@ -252,6 +252,10 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 					// The fx_script_tests utilize this file.
 					Src: "/usr/share/misc/magic.mgc",
 				},
+				{
+					Src:      "/dev/shm",
+					Writable: true,
+				},
 			},
 			Symlinks: map[string]string{
 				"/proc/self/fd": "/dev/fd",

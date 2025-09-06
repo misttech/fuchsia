@@ -210,6 +210,8 @@ func TestSubprocessTester(t *testing.T) {
 				"/usr/lib:/usr/lib",
 				"--bindmount_ro",
 				"/usr/share/misc/magic.mgc:/usr/share/misc/magic.mgc",
+				"--bindmount",
+				"/dev/shm:/dev/shm",
 				"--bindmount_ro",
 				"/usr/share/tcltk:/usr/share/tcltk",
 				"--bindmount_ro",
