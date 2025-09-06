@@ -2740,16 +2740,6 @@ impl StatsLogger {
             payload: MetricEventPayload::Count(1),
         });
 
-        if disconnect_info.disconnect_source
-            == fidl_sme::DisconnectSource::User(fidl_sme::UserDisconnectReason::FidlConnectRequest)
-        {
-            metric_events.push(MetricEvent {
-                metric_id: metrics::MANUAL_NETWORK_CHANGE_METRIC_ID,
-                event_codes: vec![],
-                payload: MetricEventPayload::Count(1),
-            });
-        }
-
         self.throttled_error_logger.throttle_error(log_cobalt_batch!(
             self.cobalt_proxy,
             &metric_events,
@@ -3037,12 +3027,6 @@ impl StatsLogger {
             payload: MetricEventPayload::Count(1),
         });
 
-        let oui = ap_state.original().bssid.to_oui_uppercase("");
-        metric_events.push(MetricEvent {
-            metric_id: metrics::SUCCESSFUL_CONNECT_PER_OUI_METRIC_ID,
-            event_codes: vec![],
-            payload: MetricEventPayload::StringValue(oui),
-        });
         metric_events
     }
 
@@ -3071,21 +3055,6 @@ impl StatsLogger {
         disconnect_reason: fidl_sme::DisconnectSource,
     ) {
         let mut metric_events = vec![];
-        let reconnect_duration_dim = {
-            use metrics::ConnectivityWlanMetricDimensionReconnectDuration::*;
-            match reconnect_duration {
-                x if x < zx::MonotonicDuration::from_millis(100) => LessThan100Milliseconds,
-                x if x < zx::MonotonicDuration::from_seconds(1) => LessThan1Second,
-                x if x < zx::MonotonicDuration::from_seconds(5) => LessThan5Seconds,
-                x if x < zx::MonotonicDuration::from_seconds(30) => LessThan30Seconds,
-                _ => AtLeast30Seconds,
-            }
-        };
-        metric_events.push(MetricEvent {
-            metric_id: metrics::RECONNECT_BREAKDOWN_BY_DURATION_METRIC_ID,
-            event_codes: vec![reconnect_duration_dim as u32],
-            payload: MetricEventPayload::Count(1),
-        });
 
         // Log the reconnect time for non-roaming, non-user initiated disconnects. Roaming reconnect
         // times are logged in the roam result event, where we have more info.
@@ -7306,10 +7275,6 @@ mod tests {
         assert_eq!(total_connected_duration.len(), 1);
         assert_eq!(total_connected_duration[0].payload, MetricEventPayload::IntegerValue(300));
 
-        let user_network_change_counts =
-            test_helper.get_logged_metrics(metrics::MANUAL_NETWORK_CHANGE_METRIC_ID);
-        assert!(user_network_change_counts.is_empty());
-
         let roam_disconnect_counts =
             test_helper.get_logged_metrics(metrics::POLICY_ROAM_DISCONNECT_COUNT_METRIC_ID);
         assert!(roam_disconnect_counts.is_empty());
@@ -7348,12 +7313,6 @@ mod tests {
             info: Some(info),
         });
         test_helper.drain_cobalt_events(&mut test_fut);
-
-        // Check that a count was logged for a disconnect from a user requested network change.
-        let user_network_change_counts =
-            test_helper.get_logged_metrics(metrics::MANUAL_NETWORK_CHANGE_METRIC_ID);
-        assert_eq!(user_network_change_counts.len(), 1);
-        assert_eq!(user_network_change_counts[0].payload, MetricEventPayload::Count(1));
 
         // Check that nothing was logged for roaming and non-roaming, non-user disconnects.
         let roam_connected_duration = test_helper.get_logged_metrics(
@@ -7570,10 +7529,6 @@ mod tests {
             metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand::Band2Dot4Ghz as u32
         ]);
         assert_eq!(breakdowns_by_channel_band[0].payload, MetricEventPayload::Count(1));
-
-        let per_oui = test_helper.get_logged_metrics(metrics::SUCCESSFUL_CONNECT_PER_OUI_METRIC_ID);
-        assert_eq!(per_oui.len(), 1);
-        assert_eq!(per_oui[0].payload, MetricEventPayload::StringValue("00F620".to_string()));
 
         let fidl_connect_count =
             test_helper.get_logged_metrics(metrics::POLICY_CONNECTION_ATTEMPTS_METRIC_ID);
@@ -8059,17 +8014,6 @@ mod tests {
         // Reconnect
         test_helper.send_connected_event(random_bss_description!(Wpa2));
         test_helper.drain_cobalt_events(&mut test_fut);
-
-        let metrics =
-            test_helper.get_logged_metrics(metrics::RECONNECT_BREAKDOWN_BY_DURATION_METRIC_ID);
-        assert_eq!(metrics.len(), 1);
-        assert_eq!(
-            metrics[0].event_codes,
-            vec![
-                metrics::ConnectivityWlanMetricDimensionReconnectDuration::LessThan5Seconds as u32
-            ]
-        );
-        assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
 
         // Verify the reconnect duration was logged for an unexpected disconnect and not a roam.
         // 3 seconds would be sent as 3,000,000 microseconds.
