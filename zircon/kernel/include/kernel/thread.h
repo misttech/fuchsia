@@ -1172,6 +1172,11 @@ struct Thread : public ChainLockable {
   Thread();
   ~Thread();
 
+  // The default constructor leaves the object in a state equivalent to before
+  // construction, and is only used for special cases that get re-constructed
+  // via placement new using this signature.
+  explicit Thread(ktl::string_view name);
+
   static Thread* CreateIdleThread(cpu_num_t cpu_num);
 
   // Revive the idle/power thread for the given CPU so that it starts fresh after
@@ -1974,14 +1979,6 @@ inline void Thread::DumpTidDuringPanic(zx_koid_t tid, bool full) TA_NO_THREAD_SA
   // Skip grabbing the lock if we are panic'ing
   DumpTidLocked(tid, full);
 }
-
-// TODO(johngro): Remove this when we have addressed https://fxbug.dev/42108673.  Right now, this
-// is used in only one place (x86_bringup_aps in arch/x86/smp.cpp) outside of
-// thread.cpp.
-//
-// Normal users should only ever need to call either Thread::Create, or
-// Thread::CreateEtc.
-void construct_thread(Thread* t, ktl::string_view name);
 
 // Other thread-system bringup functions.
 void thread_init_early();

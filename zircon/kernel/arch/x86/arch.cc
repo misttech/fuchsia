@@ -201,9 +201,6 @@ void arch_enter_uspace(iframe_t* iframe) {
   lk_init_level(LK_INIT_FLAG_SECONDARY_CPUS, LK_INIT_LEVEL_EARLIEST, LK_INIT_LEVEL_THREADING - 1);
 
   thread->SecondaryCpuInitEarly();
-  // The thread stacks and struct are from a single allocation, free it
-  // when we exit into the scheduler.
-  thread->set_free_struct(true);
 
   lk_secondary_cpu_entry();
 

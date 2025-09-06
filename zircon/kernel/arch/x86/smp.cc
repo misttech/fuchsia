@@ -44,13 +44,6 @@ void x86_init_smp(uint32_t* apic_ids, uint32_t num_cpus) {
   lk_init_secondary_cpus(num_cpus - 1);
 }
 
-static void free_thread(Thread* t) {
-  if (t) {
-    t->~Thread();
-    free(t);
-  }
-}
-
 zx_status_t x86_bringup_aps(uint32_t* apic_ids, uint32_t count) {
   ktl::atomic<unsigned int> aps_still_booting = {0};
   zx_status_t status = ZX_ERR_INTERNAL;
@@ -88,14 +81,12 @@ zx_status_t x86_bringup_aps(uint32_t* apic_ids, uint32_t count) {
   memset(&bootstrap_data->per_cpu, 0, sizeof(bootstrap_data->per_cpu));
   // Allocate kstacks and threads for all processors
   for (unsigned int i = 0; i < count; ++i) {
-    // TODO(johngro): Clean this up when we fix https://fxbug.dev/42108673.  Users should not be
-    // directly calloc'ing and initializing thread structures.
-    Thread* thread = static_cast<Thread*>(memalign(alignof(Thread), sizeof(Thread)));
-    if (!thread) {
+    fbl::AllocChecker ac;
+    Thread* thread = new (ac) Thread("");
+    if (!ac.check()) {
       status = ZX_ERR_NO_MEMORY;
       goto cleanup_all;
     }
-    construct_thread(thread, "");
 
     status = thread->stack().Init();
     if (status != ZX_OK) {
@@ -171,7 +162,7 @@ zx_status_t x86_bringup_aps(uint32_t* apic_ids, uint32_t count) {
       mp_set_cpu_online(cpu, false);
 
       // Free the failed AP's thread, it was cancelled before it could use it.
-      free_thread(bootstrap_data->per_cpu[i].thread);
+      delete bootstrap_data->per_cpu[i].thread;
       bootstrap_data->per_cpu[i].thread = nullptr;
 
       failed_aps &= ~mask;
@@ -188,7 +179,7 @@ zx_status_t x86_bringup_aps(uint32_t* apic_ids, uint32_t count) {
 
 cleanup_all:
   for (unsigned int i = 0; i < count; ++i) {
-    free_thread(bootstrap_data->per_cpu[i].thread);
+    delete bootstrap_data->per_cpu[i].thread;
     bootstrap_data->per_cpu[i].thread = nullptr;
   }
 cleanup_bootstrap:

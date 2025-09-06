@@ -156,7 +156,7 @@ class TA_SCOPED_CAP ConstructFirstThreadSecondaryCpu {
 template <class Guards>
 void ConstructFirstThread(Thread* t, ktl::string_view name) {
   DEBUG_ASSERT(arch_ints_disabled());
-  construct_thread(t, name);
+  new (t) Thread(name);
 
   Guards guard{t};
 
@@ -201,12 +201,6 @@ const char* ToString(enum thread_state state) {
   }
 }
 
-static void init_thread_lock_state(Thread* t) {
-#if WITH_LOCK_DEP
-  lockdep::SystemInitThreadLockState(&t->lock_state());
-#endif
-}
-
 void WaitQueueCollection::ThreadState::Block(Thread* const current_thread,
                                              Interruptible interruptible, zx_status_t status) {
   blocked_status_ = status;
@@ -223,7 +217,7 @@ void WaitQueueCollection::ThreadState::Unsleep(Thread* thread, zx_status_t statu
 WaitQueueCollection::ThreadState::~ThreadState() { DEBUG_ASSERT(blocking_wait_queue_ == nullptr); }
 
 // Default constructor/destructor.
-Thread::Thread() {}
+Thread::Thread() = default;
 
 Thread::~Thread() {
   // At this point, the thread must not be on the global thread list or migrate
@@ -243,17 +237,12 @@ void Thread::set_name(ktl::string_view name) {
   memset(name_ + name.size(), 0, ZX_MAX_NAME_LEN - name.size());
 }
 
-void construct_thread(Thread* t, ktl::string_view name) {
-  // Placement new to trigger any special construction requirements of the
-  // Thread structure.
-  //
-  // TODO(johngro): now that we have converted Thread over to C++, consider
-  // switching to using C++ constructors/destructors and new/delete to handle
-  // all of this instead of using construct_thread and free_thread_resources
-  new (t) Thread();
+Thread::Thread(ktl::string_view name) {
+  set_name(name);
 
-  t->set_name(name);
-  init_thread_lock_state(t);
+#if WITH_LOCK_DEP
+  lockdep::SystemInitThreadLockState(&lock_state());
+#endif
 }
 
 void TaskState::Init(thread_start_routine entry, void* arg) {
@@ -283,13 +272,13 @@ bool TaskState::TryWakeJoiners(zx_status_t status) {
 }
 
 static void free_thread_resources(Thread* t) {
-  // free the thread structure itself.  Manually trigger the struct's
-  // destructor so that DEBUG_ASSERTs present in the owned_wait_queues member
-  // get triggered.
-  bool thread_needs_free = t->free_struct();
-  t->~Thread();
-  if (thread_needs_free) {
-    free(t);
+  // Free the thread structure itself unless marked otherwise.  If not freeing
+  // it, manually trigger the Thread destructor so that DEBUG_ASSERTs present
+  // in the owned_wait_queues member get triggered in all cases.
+  if (t->free_struct()) {
+    delete t;
+  } else {
+    t->~Thread();
   }
 }
 
@@ -385,18 +374,18 @@ Thread* Thread::CreateEtc(Thread* t, const char* name, thread_start_routine entr
                           thread_trampoline_routine alt_trampoline) {
   unsigned int flags = 0;
 
-  if (!t) {
-    t = static_cast<Thread*>(memalign(alignof(Thread), sizeof(Thread)));
-    if (!t) {
+  if (t) {
+    // assert that t is at least as aligned as the Thread is supposed to be
+    DEBUG_ASSERT(IS_ROUNDED(t, alignof(Thread)));
+    new (t) Thread(name);
+  } else {
+    flags |= THREAD_FLAG_FREE_STRUCT;
+    fbl::AllocChecker ac;
+    t = new (ac) Thread(name);
+    if (!ac.check()) {
       return nullptr;
     }
-    flags |= THREAD_FLAG_FREE_STRUCT;
   }
-
-  // assert that t is at least as aligned as the Thread is supposed to be
-  DEBUG_ASSERT(IS_ROUNDED(t, alignof(Thread)));
-
-  construct_thread(t, name);
 
   {
     // Do not hold the thread's lock while we initialize it.  We are going to
