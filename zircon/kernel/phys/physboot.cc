@@ -97,6 +97,11 @@ void RelocateElfKernel(ElfImage& kernel) {
 
   RelocateElfKernel(kernel);
 
+  // When verbose, also log the kernel as being another module with the same
+  // segments at their physical addresses too so code that runs at the physical
+  // address (e.g. secondary CPU startup) can also be symbolized.
+  gSymbolize->ModuleContext(kernel, static_cast<unsigned int>(gSymbolize->modules().size()), true);
+
   if (kernel.memory_image().size_bytes() > KERNEL_IMAGE_MAX_SIZE) {
     ZX_PANIC(
         "%s: Attempting to load kernel of size %#zx. Max supported kernel size is %#zx (\"KERNEL_IMAGE_MAX_SIZE\").\n",

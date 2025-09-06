@@ -91,6 +91,11 @@ const uint16_t MMU_RISCV64_KERNEL_ASID = 1;
 const uint16_t MMU_RISCV64_FIRST_USER_ASID = 2;
 const uint16_t MMU_RISCV64_MAX_USER_ASID = (1u << MMU_RISCV64_ASID_BITS) - 1;
 
+// The physical address of an identity-mapping root page table covering the
+// kernel image, stored for loading from secondary CPUs.  The high half is the
+// usual full kernel virtual table.
+extern paddr_t riscv64_kernel_bootstrap_translation_table_phys;
+
 void riscv64_mmu_early_init();
 void riscv64_mmu_early_init_percpu();
 void riscv64_mmu_init();

@@ -91,6 +91,9 @@ class Symbolize {
   // Same, but idempotent: the first call prints and others do nothing.
   void Context();
 
+  // Print one module's context if Context() has already printed.
+  void ModuleContext(const ElfImage& loaded, unsigned int module_id, bool physical = false);
+
   // Adds the new module to the list.  If Context() has run, then emit context
   // for the new module.
   void OnLoad(const ElfImage& loaded);

@@ -211,9 +211,10 @@ class ElfImage {
   // modules in the same address space, i.e. since the last Reset() in the same
   // markup output stream.
   template <class Writer>
-  Writer& SymbolizerContext(Writer& writer, unsigned int id, ktl::string_view prefix = {}) const {
-    return load_info_.SymbolizerContext(writer, id, name(), build_id_->desc, load_address(),
-                                        prefix);
+  Writer& SymbolizerContext(Writer& writer, unsigned int id, ktl::string_view prefix = {},
+                            bool physical = false) const {
+    uintptr_t address = physical ? physical_load_address() : load_address();
+    return load_info_.SymbolizerContext(writer, id, name(), build_id_->desc, address, prefix);
   }
 
   // Publish instrumentation VMOs for this module.  The argument is similar

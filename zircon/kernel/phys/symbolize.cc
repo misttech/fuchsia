@@ -84,10 +84,14 @@ void Symbolize::Context() {
   }
 }
 
-void Symbolize::OnLoad(const ElfImage& loaded) {
+void Symbolize::ModuleContext(const ElfImage& loaded, unsigned int module_id, bool physical) {
   if (context_done_) {
-    loaded.SymbolizerContext(writer_, static_cast<unsigned int>(modules_.size()), name_);
+    loaded.SymbolizerContext(writer_, module_id, name_, physical);
   }
+}
+
+void Symbolize::OnLoad(const ElfImage& loaded) {
+  ModuleContext(loaded, static_cast<unsigned int>(modules_.size()));
   AddModule(&loaded);
 }
 

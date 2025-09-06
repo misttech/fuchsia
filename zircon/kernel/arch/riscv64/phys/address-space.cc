@@ -23,8 +23,11 @@ void ArchSetUpAddressSpace(AddressSpace& aspace) {
 void ArchPrepareAddressSpaceForTrampoline() {}
 
 void AddressSpace::ArchInstall() const {
-  arch::RiscvSatp::Modify([root = root_paddr()](auto& satp) {
-    satp.set_mode(arch::RiscvSatp::Mode::kSv39).set_root_address(root).set_asid(0);
-  });
+  arch::RiscvSatp::Get()
+      .FromValue(0)
+      .set_mode(LowerPaging::kMode)
+      .set_root_address(root_paddr())
+      .set_asid(0)
+      .Write();
   arch::InvalidateLocalTlbs();  // Acts as a barrier as well.
 }

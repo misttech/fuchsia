@@ -117,14 +117,17 @@ struct RiscvPagingTraitsBase {
 
 struct RiscvSv39PagingTraits : public RiscvPagingTraitsBase {
   static constexpr auto kLevels = std::span{kAllLevels}.subspan(2);
+  static constexpr auto kMode = RiscvSatp::Mode::kSv39;
 };
 
 struct RiscvSv48PagingTraits : public RiscvPagingTraitsBase {
   static constexpr auto kLevels = std::span{kAllLevels}.subspan(1);
+  static constexpr auto kMode = RiscvSatp::Mode::kSv48;
 };
 
 struct RiscvSv57PagingTraits : public RiscvPagingTraitsBase {
   static constexpr auto kLevels = std::span{kAllLevels};
+  static constexpr auto kMode = RiscvSatp::Mode::kSv57;
 };
 
 template <RiscvPagingLevel Level>
