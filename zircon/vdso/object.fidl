@@ -2245,6 +2245,8 @@ closed protocol Object {
     ///
     /// If *topic* is `ZX_INFO_MEMORY_STALL`, *handle* must have resource kind `ZX_RSRC_KIND_SYSTEM` with base `ZX_RSRC_SYSTEM_STALL_BASE`.
     ///
+    /// If *topic* is `ZX_INFO_CLOCK_MAPPED_SIZE`, *handle* must be of type `ZX_OBJ_TYPE_CLOCK` and have `ZX_RIGHT_INSPECT`.
+    ///
     /// ## Return value
     ///
     /// `zx_object_get_info()` returns `ZX_OK` on success. In the event of failure, a
