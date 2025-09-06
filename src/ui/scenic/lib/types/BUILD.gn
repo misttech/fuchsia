@@ -7,6 +7,7 @@ source_set("types") {
     "blend_mode.h",
     "extent2.h",
     "extent2_f.h",
+    "id_type.h",
     "point2.h",
     "point2_f.h",
     "rectangle.h",

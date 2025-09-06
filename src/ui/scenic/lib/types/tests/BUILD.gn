@@ -12,6 +12,7 @@ source_set("testing_deps") {
   ]
 }
 
+# fx test scenic_types_unittests
 cc_test_executable("unittests") {
   output_name = "scenic_types_unittests"
 
@@ -19,6 +20,7 @@ cc_test_executable("unittests") {
   sources = [
     "extent2_f_unittest.cc",
     "extent2_unittest.cc",
+    "id_type_unittest.cc",
     "point2_f_unittest.cc",
     "point2_unittest.cc",
     "rectangle_f_unittest.cc",
@@ -26,6 +28,7 @@ cc_test_executable("unittests") {
   ]
   deps = [
     ":testing_deps",
+    "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/ui/scenic/lib/types",
     "//third_party/googletest:gtest",
