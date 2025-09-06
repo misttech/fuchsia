@@ -20,11 +20,16 @@
 #include <arch/riscv64/mmu.h>
 #include <arch/riscv64/sbi.h>
 #include <dev/interrupt.h>
+#include <fbl/alloc_checker.h>
 #include <hwreg/array.h>
+#include <ktl/type_traits.h>
+#include <ktl/unique_ptr.h>
 #include <lk/init.h>
 #include <lk/main.h>
 #include <vm/handoff-end.h>
 #include <vm/vm.h>
+
+#include <ktl/enforce.h>
 
 #define LOCAL_TRACE 0
 
@@ -173,36 +178,6 @@ class PhysicalBootstrap {
   const uint32_t cpu_num_;
 };
 
-// This initializes a KernelStack and then tears it down if not Commit()'d.
-class BootstrapStack {
- public:
-  BootstrapStack() = default;
-  BootstrapStack(const BootstrapStack&) = delete;
-
-  zx_status_t Init(KernelStack& stack) {
-    if (zx_status_t status = stack.Init(); status != ZX_OK) {
-      return status;
-    }
-    stack_ = &stack;
-    return ZX_OK;
-  }
-
-  void Commit() && {
-    ZX_DEBUG_ASSERT(stack_);
-    stack_ = nullptr;
-  }
-
-  ~BootstrapStack() {
-    if (stack_) {
-      [[maybe_unused]] zx_status_t status = stack_->Teardown();
-      ZX_DEBUG_ASSERT(status == ZX_OK);
-    }
-  }
-
- private:
-  KernelStack* stack_ = nullptr;
-};
-
 // The vaddr on a kernel thread stack is in some arbitrary virtual mapping.
 // But that mapping is fully populated and pinned and won't be changing now.
 paddr_t StackPaddr(vaddr_t vaddr) {
@@ -229,9 +204,6 @@ void for_every_hart_in_cpu_mask(cpu_mask_t cmask, Callback callback) {
     }
   }
 }
-
-// one for each secondary CPU, indexed by (cpu_num - 1).
-Thread _init_thread[SMP_MAX_CPUS - 1];
 
 }  // anonymous namespace
 
@@ -418,11 +390,18 @@ zx_status_t riscv64_start_cpu(cpu_num_t cpu_num, uint32_t hart_id) {
 
   DEBUG_ASSERT(cpu_num > 0 && cpu_num < SMP_MAX_CPUS && hart_id != riscv64_boot_hart_id());
 
-  // Allocate the new Thread's stacks.  They'll be reclaimed in all the error
-  // paths before the Commit() call at the end.
-  Thread& thread = _init_thread[cpu_num - 1];
-  BootstrapStack stack;
-  if (zx_status_t status = stack.Init(thread.stack()); status != ZX_OK) {
+  // Allocate the thread and its stack.
+  ktl::unique_ptr<Thread> thread;
+  {
+    char thread_name[ZX_MAX_NAME_LEN];
+    snprintf(thread_name, sizeof(thread_name), "Start CPU %u hart %u", cpu_num, hart_id);
+    fbl::AllocChecker ac;
+    thread = fbl::make_unique_checked<Thread>(ac, thread_name);
+    if (!ac.check()) {
+      return ZX_ERR_NO_MEMORY;
+    }
+  }
+  if (zx_status_t status = thread->stack().Init(); status != ZX_OK) {
     return status;
   }
 
@@ -430,7 +409,7 @@ zx_status_t riscv64_start_cpu(cpu_num_t cpu_num, uint32_t hart_id) {
   // that will become its new stack.  The trampoline code in SbiEntry() and
   // that bit of memory will be used via physical addresses to trampoline into
   // a call to VirtualEntry in a mostly-normal kernel C++ environment.
-  PhysicalBootstrap& bootstrap = PhysicalBootstrap::Create(thread, cpu_num);
+  PhysicalBootstrap& bootstrap = PhysicalBootstrap::Create(*thread, cpu_num);
   const paddr_t entry_paddr = PhysicalBootstrap::SbiEntryPaddr();
   const paddr_t context = StackPaddr(reinterpret_cast<uintptr_t>(&bootstrap));
 
@@ -448,8 +427,8 @@ zx_status_t riscv64_start_cpu(cpu_num_t cpu_num, uint32_t hart_id) {
     return status;
   }
 
-  // The secondary CPU is running and now owns its own KernelStack.
-  ktl::move(stack).Commit();
+  // The secondary CPU is running and now owns its own Thread with stacks.
+  ktl::ignore = thread.release();
 
   return ZX_OK;
 }
