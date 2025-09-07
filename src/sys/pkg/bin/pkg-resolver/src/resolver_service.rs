@@ -243,6 +243,7 @@ impl QueuedResolver {
                 error
             })?;
             info!("resolved {} to {} with base pin", pkg_url, blob);
+            self.inspect.successful_resolve("base", &pkg_url, None, gc_protection, None, &blob);
             return Ok(PackageWithSourceAndBlobId::base(dir, blob));
         }
 
@@ -263,6 +264,14 @@ impl QueuedResolver {
                 })?
             {
                 info!("resolved {} as {} with eager package manager", pkg_url, rewritten_url,);
+                self.inspect.successful_resolve(
+                    "eager package manager",
+                    &pkg_url,
+                    Some(&rewritten_url),
+                    gc_protection,
+                    None,
+                    &hash.into(),
+                );
                 return Ok(PackageWithSourceAndBlobId::eager(dir, hash.into()));
             }
         }
@@ -275,17 +284,31 @@ impl QueuedResolver {
         match queued_fetch.await.expect("expected queue to be open") {
             Ok((hash, dir)) => {
                 info!("resolved {} as {} to {} with TUF", pkg_url, rewritten_url, hash);
+                self.inspect.successful_resolve(
+                    "TUF",
+                    &pkg_url,
+                    Some(&rewritten_url),
+                    gc_protection,
+                    None,
+                    &hash,
+                );
                 Ok(PackageWithSourceAndBlobId::tuf(dir, hash))
             }
             Err(tuf_err) => {
                 match self.handle_cache_fallbacks(&tuf_err, &pkg_url, &rewritten_url).await {
                     Ok(Some((hash, pkg))) => {
+                        let intermediate_error = format!("{:#}", anyhow!(tuf_err));
                         info!(
                             "resolved {} as {} to {} with cache_packages due to {:#}",
-                            pkg_url,
-                            rewritten_url,
-                            hash,
-                            anyhow!(tuf_err)
+                            pkg_url, rewritten_url, hash, intermediate_error
+                        );
+                        self.inspect.successful_resolve(
+                            "cache",
+                            &pkg_url,
+                            Some(&rewritten_url),
+                            gc_protection,
+                            Some(intermediate_error),
+                            &hash,
                         );
                         Ok(PackageWithSourceAndBlobId::cache(pkg, hash))
                     }

@@ -47,6 +47,7 @@ async fn initial_inspect_state() {
                 cache_fallbacks_due_to_not_found: 0u64,
                 active_package_resolves: {},
                 raw_queue: {},
+                successful_resolves: {},
             },
             blob_fetcher: {
                 blob_header_timeout_seconds: 30u64,

@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 use crate::inspect_util;
-use fidl_fuchsia_pkg as fpkg;
 use fuchsia_inspect::Node;
+use fuchsia_sync::Mutex;
 use fuchsia_url::AbsolutePackageUrl;
 use futures::future::BoxFuture;
+use {fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as pkg};
+
+const SUCCESSFUL_RESOLVE_HISTORY: usize = 100;
 
 fn now_monotonic_nanos() -> i64 {
     zx::MonotonicInstant::get().into_nanos()
@@ -20,6 +23,7 @@ pub struct ResolverService {
     /// TODO(https://fxbug.dev/42127880): remove this stat when we remove this cache fallback behavior.
     cache_fallbacks_due_to_not_found: inspect_util::Counter,
     active_package_resolves: Node,
+    successful_resolves: Mutex<fuchsia_inspect_contrib::nodes::BoundedListNode>,
     _node: Node,
 }
 
@@ -32,6 +36,10 @@ impl ResolverService {
                 "cache_fallbacks_due_to_not_found",
             ),
             active_package_resolves: node.create_child("active_package_resolves"),
+            successful_resolves: Mutex::new(fuchsia_inspect_contrib::nodes::BoundedListNode::new(
+                node.create_child("successful_resolves"),
+                SUCCESSFUL_RESOLVE_HISTORY,
+            )),
             _node: node,
         }
     }
@@ -65,6 +73,37 @@ impl ResolverService {
         + 'static,
     ) {
         let () = self._node.record_lazy_child("raw_queue", lazy_callback);
+    }
+
+    /// Record a successful package resolve in the rolling log.
+    pub fn successful_resolve(
+        &self,
+        source: &str,
+        requested_url: &AbsolutePackageUrl,
+        rewritten_url: Option<&AbsolutePackageUrl>,
+        gc_protection: fpkg::GcProtection,
+        intermediate_error: Option<String>,
+        blob: &pkg::BlobId,
+    ) {
+        self.successful_resolves.lock().add_entry(|node| {
+            node.record_string("source", source);
+            node.record_string("requested_url", requested_url.to_string());
+            if let Some(rewritten_url) = rewritten_url {
+                node.record_string("rewritten_url", rewritten_url.to_string());
+            }
+            node.record_string(
+                "gc_protection",
+                match gc_protection {
+                    fpkg::GcProtection::OpenPackageTracking => "open package tracking",
+                    fpkg::GcProtection::Retained => "retained index",
+                },
+            );
+            if let Some(intermediate_error) = intermediate_error {
+                node.record_string("intermediate_error", intermediate_error);
+            }
+            node.record_string("hash", blob.to_string());
+            node.record_int("boot_ns", zx::BootInstant::get().into_nanos());
+        });
     }
 }
 
@@ -195,6 +234,75 @@ mod tests {
             root: {
                 resolver_service: contains {
                     cache_fallbacks_due_to_not_found: 1u64,
+                }
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    async fn successful_resolve() {
+        let inspector = Inspector::default();
+        let resolver_service =
+            ResolverService::from_node(inspector.root().create_child("resolver_service"));
+
+        resolver_service.successful_resolve(
+            "source0",
+            &"fuchsia-pkg://example.org/package0".parse().unwrap(),
+            None,
+            fpkg::GcProtection::OpenPackageTracking,
+            None,
+            &[0; 32].into(),
+        );
+        assert_data_tree!(
+            inspector,
+            root: {
+                resolver_service: contains {
+                    successful_resolves: {
+                        "0": {
+                            "source": "source0",
+                            "requested_url": "fuchsia-pkg://example.org/package0",
+                            "gc_protection": "open package tracking",
+                            "hash":
+                                "0000000000000000000000000000000000000000000000000000000000000000",
+                            "boot_ns": AnyProperty,
+                        }
+                    }
+                }
+            }
+        );
+
+        resolver_service.successful_resolve(
+            "source1",
+            &"fuchsia-pkg://example.org/package1".parse().unwrap(),
+            Some(&"fuchsia-pkg://example.com/package1".parse().unwrap()),
+            fpkg::GcProtection::Retained,
+            Some("i goofed".into()),
+            &[1; 32].into(),
+        );
+        assert_data_tree!(
+            inspector,
+            root: {
+                resolver_service: contains {
+                    successful_resolves: {
+                        "0": {
+                            "source": "source0",
+                            "requested_url": "fuchsia-pkg://example.org/package0",
+                            "gc_protection": "open package tracking",
+                            "hash":
+                                "0000000000000000000000000000000000000000000000000000000000000000",
+                            "boot_ns": AnyProperty,
+                        },
+                        "1": {
+                            "source": "source1",
+                            "requested_url": "fuchsia-pkg://example.org/package1",
+                            "rewritten_url": "fuchsia-pkg://example.com/package1",
+                            "gc_protection": "retained index",
+                            "intermediate_error": "i goofed",
+                            "hash":
+                                "0101010101010101010101010101010101010101010101010101010101010101",
+                            "boot_ns": AnyProperty,
+                        }
+                    }
                 }
             }
         );
