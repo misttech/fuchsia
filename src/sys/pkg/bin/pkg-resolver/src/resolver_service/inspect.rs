@@ -82,7 +82,7 @@ impl ResolverService {
         requested_url: &AbsolutePackageUrl,
         rewritten_url: Option<&AbsolutePackageUrl>,
         gc_protection: fpkg::GcProtection,
-        intermediate_error: Option<String>,
+        intermediate_error: Option<anyhow::Error>,
         blob: &pkg::BlobId,
     ) {
         self.successful_resolves.lock().add_entry(|node| {
@@ -99,7 +99,7 @@ impl ResolverService {
                 },
             );
             if let Some(intermediate_error) = intermediate_error {
-                node.record_string("intermediate_error", intermediate_error);
+                node.record_string("intermediate_error", format!("{intermediate_error:#}"));
             }
             node.record_string("hash", blob.to_string());
             node.record_int("boot_ns", zx::BootInstant::get().into_nanos());
@@ -276,7 +276,7 @@ mod tests {
             &"fuchsia-pkg://example.org/package1".parse().unwrap(),
             Some(&"fuchsia-pkg://example.com/package1".parse().unwrap()),
             fpkg::GcProtection::Retained,
-            Some("i goofed".into()),
+            Some(anyhow::anyhow!("i goofed")),
             &[1; 32].into(),
         );
         assert_data_tree!(
