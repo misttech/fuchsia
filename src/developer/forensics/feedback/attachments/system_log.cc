@@ -24,6 +24,7 @@
 #include "src/developer/forensics/feedback_data/constants.h"
 #include "src/developer/forensics/utils/errors.h"
 #include "src/developer/forensics/utils/log_format.h"
+#include "src/developer/forensics/utils/purge_memory.h"
 #include "src/lib/backoff/exponential_backoff.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -298,6 +299,8 @@ void SystemLog::MakeInactive() {
 
   is_active_ = false;
   source_.Stop();
+
+  PurgeAllMemoryAfter(dispatcher_, zx::sec(0));
 }
 
 }  // namespace forensics::feedback

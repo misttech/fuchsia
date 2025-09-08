@@ -144,6 +144,7 @@ source_set("system_log") {
     "//sdk/lib/fit-promise",
     "//sdk/lib/sys/cpp",
     "//src/developer/forensics/feedback_data:log_source",
+    "//src/developer/forensics/utils:purge_memory",
     "//src/developer/forensics/utils:storage_size",
     "//src/developer/forensics/utils/redact",
     "//src/lib/fxl",
