@@ -527,9 +527,16 @@ pub fn default_page_in<P: PagerBacked>(
             );
         let read_range = read_range.expand(expanded_range_for_readahead);
         for range in read_range.chunks(read_ahead_size) {
-            let recorded_range = range.range.clone();
+            // Record the page in before spawning the task to handle the page-in. This is necessary
+            // so that we don't miss this page-in when replaying and recording a new profile.  The
+            // replay is considered finished once we've responded to the page request, so if we if
+            // we spawn the page request before recording the page-in, it's possible (albeit
+            // unlikely) that the profiler can think the replay has finished, but not know about the
+            // page request and so the next recording to be missing the page request.  With the
+            // order swapped, the `test_profile` test would have a rare flake.
+            this.pager().record_page_in(this.clone(), range.range.clone());
+
             this.pager().spawn(page_in_chunk(this.clone(), range));
-            this.pager().record_page_in(this.clone(), recorded_range);
         }
     }
 }
