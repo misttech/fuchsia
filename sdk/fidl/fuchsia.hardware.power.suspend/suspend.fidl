@@ -37,7 +37,8 @@ type WakeReason = table {
     /// If set, clarifies the interpretation of `wake_vectors`.
     3: wake_vectors_type WakeVectorType;
 
-    /// If set, we reported fewer than the actual number of wake vectors.
+    /// If set to true, we reported fewer than the actual number of wake
+    /// vectors.
     4: wake_vectors_overflow bool;
 };
 
