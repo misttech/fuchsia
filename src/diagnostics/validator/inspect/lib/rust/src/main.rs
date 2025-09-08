@@ -513,10 +513,16 @@ impl Actor {
             }
         }
 
+        let not_send = std::rc::Rc::new(());
         let callback = move || {
+            let x = not_send.clone();
             let _ = &actor;
             let clone = actor.inspector.clone();
-            async move { Ok(clone) }.boxed()
+            async move {
+                let _ = x.clone();
+                Ok(clone)
+            }
+            .boxed_local()
         };
 
         Ok(match disposition {

@@ -12,10 +12,31 @@ use crate::writer::{
     ValueList,
 };
 use diagnostics_hierarchy::{ArrayFormat, ExponentialHistogramParams, LinearHistogramParams};
-use futures::future::BoxFuture;
+use futures::future::{BoxFuture, LocalBoxFuture};
+use futures::task::{Context, Poll};
 use inspect_format::{BlockIndex, LinkNodeDisposition};
 use std::borrow::Cow;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+/// A wrapper for `LocalBoxFuture` that implements `Send`.
+///
+/// This is only safe to use in contexts where the future is guaranteed to be polled
+/// on the same thread it was created on. `fragile::Fragile` will panic if accessed
+/// from a different thread. This is useful for allowing `LocalBoxFuture` within
+/// closures that require `Send + Sync`, such as those used in `create_lazy_child`.
+struct SendFuture {
+    inner: fragile::Fragile<LocalBoxFuture<'static, Result<Inspector, anyhow::Error>>>,
+}
+
+impl futures::Future for SendFuture {
+    type Output = Result<Inspector, anyhow::Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut pinned = std::pin::pin!(self.inner.get_mut());
+        pinned.as_mut().poll(cx)
+    }
+}
 
 /// Inspect Node data type.
 ///
@@ -400,12 +421,12 @@ impl Node {
         callback: F,
     ) -> LazyNode
     where
-        F: Fn() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
+        F: Fn() -> LocalBoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
     {
         let fragile_callback = fragile::Fragile::new(callback);
         self.create_lazy_child(name, move || {
             let cb = fragile_callback.get();
-            cb()
+            Box::pin(SendFuture { inner: fragile::Fragile::new(cb()) })
         })
     }
 
@@ -421,7 +442,7 @@ impl Node {
         name: impl Into<Cow<'a, str>>,
         callback: F,
     ) where
-        F: Fn() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
+        F: Fn() -> LocalBoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
     {
         let property = self.create_lazy_child_with_thread_local(name.into(), callback);
         self.record(property);
@@ -482,12 +503,12 @@ impl Node {
         callback: F,
     ) -> LazyNode
     where
-        F: Fn() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
+        F: Fn() -> LocalBoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
     {
         let fragile_callback = fragile::Fragile::new(callback);
         self.create_lazy_values(name, move || {
             let cb = fragile_callback.get();
-            cb()
+            Box::pin(SendFuture { inner: fragile::Fragile::new(cb()) })
         })
     }
 
@@ -503,7 +524,7 @@ impl Node {
         name: impl Into<Cow<'a, str>>,
         callback: F,
     ) where
-        F: Fn() -> BoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
+        F: Fn() -> LocalBoxFuture<'static, Result<Inspector, anyhow::Error>> + 'static,
     {
         let property = self.create_lazy_values_with_thread_local(name.into(), callback);
         self.record(property);
