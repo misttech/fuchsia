@@ -678,6 +678,7 @@ template("bazel_action") {
 
                # Imported by bazel_action.py
                "//build/bazel/scripts/build_utils.py",
+               "//build/bazel/scripts/thread_pool_helpers.py",
                "//build/bazel/scripts/workspace_utils.py",
              ] + _bazel_build_files
 

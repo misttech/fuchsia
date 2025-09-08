@@ -20,6 +20,7 @@ import typing as T
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_utils
+import thread_pool_helpers
 import workspace_utils
 
 _BUILD_BAZEL_DIR = os.path.dirname(_SCRIPT_DIR)
@@ -349,6 +350,54 @@ def copy_writable(src: str, dst: str) -> None:
     make_writable(dst)
 
 
+def hardlink_or_copy_writable(
+    src_path: str, dst_path: str, bazel_output_base_dir: str
+) -> None:
+    # Use lexists to make sure broken symlinks are removed as well.
+    if os.path.lexists(dst_path):
+        os.remove(dst_path)
+
+    # See https://fxbug.dev/42072059 for context. This logic is kept here
+    # to avoid incremental failures when performing copies across
+    # different revisions of the Fuchsia checkout (e.g. when bisecting
+    # or simply in CQ).
+    #
+    # If the file is writable, and not a directory, try to hard-link it
+    # directly. Otherwise, or if hard-linking fails due to a cross-device
+    # link, do a simple copy.
+    do_copy = True
+    file_mode = os.stat(src_path).st_mode
+    is_src_readonly = file_mode & stat.S_IWUSR == 0
+    if not is_src_readonly:
+        try:
+            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+
+            # Get realpath of src_path to avoid symlink chains, which
+            # os.link does not handle properly even follow_symlinks=True.
+            #
+            # NOTE: it is important to link to the final real file because
+            # intermediate links can be temporary. For example, the
+            # gn_targets repository is repopulated in every bazel_action, so
+            # any links pointing to symlinks in gn_targets can be
+            # invalidated during the build.
+            os.link(os.path.realpath(src_path), dst_path)
+
+            # Update timestamp to avoid Ninja no-op failures that can
+            # happen because Bazel does not maintain consistent timestamps
+            # in the execroot when sandboxing or remote builds are enabled.
+            if os.path.realpath(src_path).startswith(
+                os.path.abspath(bazel_output_base_dir)
+            ):
+                os.utime(dst_path)
+            do_copy = False
+        except OSError as e:
+            if e.errno != errno.EXDEV:
+                raise
+
+    if do_copy:
+        copy_writable(src_path, dst_path)
+
+
 def copy_directory_if_changed(
     src_dir: str, dst_dir: str, tracked_files: list[str]
 ) -> None:
@@ -399,10 +448,17 @@ def copy_directory_if_changed(
             make_writable(os.path.join(root, d))
 
 
-def copy_file_if_changed(
-    src_path: str, dst_path: str, bazel_output_base_dir: str
-) -> None:
-    """Copy file from |src_path| to |dst_path| if they are different."""
+# filecmp uses a tiny buffer for comparisons, forcing it to a larger size will
+# reduce the number of I/O operations and drastically speed it up (as much as 10x)
+setattr(filecmp, "BUFSIZE", 256 * 1024)
+
+
+def check_if_need_to_copy_file(args: tuple[str, str]) -> bool:
+    """Check if the file copy given as a src,dst tuple needs to be performed.
+
+    This compares the files and returns true if they need to be copied.
+    """
+    src_path, dst_path = args
     assert os.path.isfile(
         src_path
     ), "{} is not a file, but copy file is called.".format(src_path)
@@ -412,52 +468,8 @@ def copy_file_if_changed(
     if os.path.exists(dst_path) and filecmp.cmp(
         src_path, dst_path, shallow=False
     ):
-        return
-
-    # Use lexists to make sure broken symlinks are removed as well.
-    if os.path.lexists(dst_path):
-        os.remove(dst_path)
-
-    def is_under_bazel_root(p: str) -> bool:
-        return os.path.realpath(p).startswith(
-            os.path.abspath(bazel_output_base_dir)
-        )
-
-    # See https://fxbug.dev/42072059 for context. This logic is kept here
-    # to avoid incremental failures when performing copies across
-    # different revisions of the Fuchsia checkout (e.g. when bisecting
-    # or simply in CQ).
-    #
-    # If the file is writable, and not a directory, try to hard-link it
-    # directly. Otherwise, or if hard-linking fails due to a cross-device
-    # link, do a simple copy.
-    do_copy = True
-    file_mode = os.stat(src_path).st_mode
-    is_src_readonly = file_mode & stat.S_IWUSR == 0
-    if not is_src_readonly:
-        try:
-            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-            # Get realpath of src_path to avoid symlink chains, which
-            # os.link does not handle properly even follow_symlinks=True.
-            #
-            # NOTE: it is important to link to the final real file because
-            # intermediate links can be temporary. For example, the
-            # gn_targets repository is repopulated in every bazel_action, so
-            # any links pointing to symlinks in gn_targets can be
-            # invalidated during the build.
-            os.link(os.path.realpath(src_path), dst_path)
-            # Update timestamp to avoid Ninja no-op failures that can
-            # happen because Bazel does not maintain consistent timestamps
-            # in the execroot when sandboxing or remote builds are enabled.
-            if is_under_bazel_root(src_path):
-                os.utime(dst_path)
-            do_copy = False
-        except OSError as e:
-            if e.errno != errno.EXDEV:
-                raise
-
-    if do_copy:
-        copy_writable(src_path, dst_path)
+        return False
+    return True
 
 
 def write_file_if_changed(dst_path: str, content: str) -> None:
@@ -493,8 +505,12 @@ def depfile_quote(path: str) -> str:
     return path.replace("\\", "\\\\").replace(" ", "\\ ")
 
 
-def copy_build_id_dir(build_id_dir: str, bazel_output_base_dir: str) -> None:
-    """Copy debug symbols from a source .build-id directory, to the top-level one."""
+def get_build_id_dir_files_to_copy(
+    build_id_dir: str,
+) -> list[tuple[str, str]]:
+    """Returns a list of debug symbol files from a source .build-id directory that need
+    to be copied to the top-level one."""
+    files_to_copy = []
     for path in os.listdir(build_id_dir):
         bid_path = os.path.join(build_id_dir, path)
         if len(path) == 2 and os.path.isdir(bid_path):
@@ -503,7 +519,9 @@ def copy_build_id_dir(build_id_dir: str, bazel_output_base_dir: str) -> None:
                 dst_path = os.path.join(".build-id", path, obj)
                 if _DEBUG_BUILD_ID_COPIES:
                     print(f"BUILD_ID {src_path} --> {dst_path}")
-                copy_file_if_changed(src_path, dst_path, bazel_output_base_dir)
+                files_to_copy.append((src_path, dst_path))
+
+    return files_to_copy
 
 
 def find_bazel_output_base(workspace_dir: str) -> str:
@@ -1423,7 +1441,12 @@ def main() -> int:
         source_files = [l.partition(" (null)")[0] for l in bazel_source_files]
         time_profile.stop()
 
-    file_copies = []
+    time_profile.start(
+        "check_outputs_for_copying",
+        "Validate output files to copy are actually files.",
+    )
+
+    file_copies: list[tuple[str, str]] = []
     unwanted_dirs = []
 
     for file_output in args.file_outputs:
@@ -1503,22 +1526,18 @@ def main() -> int:
                         print(f"  DIR: {debug_symbol_dir}")
 
                 for debug_symbol_dir in bazel_debug_symbol_dirs:
-                    copy_build_id_dir(
-                        os.path.join(bazel_execroot, debug_symbol_dir),
-                        bazel_output_base_dir,
+                    file_copies.extend(
+                        get_build_id_dir_files_to_copy(
+                            os.path.join(bazel_execroot, debug_symbol_dir),
+                        )
                     )
 
         time_profile.stop()
 
     time_profile.start(
-        "copy_files", "Copy Bazel output files to Ninja build directory"
+        "check_output_directories",
+        "Validate that output directories are ready to be copied.",
     )
-    for src_path, dst_path in file_copies:
-        copy_file_if_changed(src_path, dst_path, bazel_output_base_dir)
-
-    for target_path, link_path in final_symlinks:
-        build_utils.force_symlink(link_path, target_path)
-    time_profile.stop()
 
     dir_copies = []
     missing_directories = []
@@ -1556,9 +1575,10 @@ def main() -> int:
                 "FuchsiaDebugSymbolInfo_debug_symbol_dirs.cquery",
             )
             for debug_symbol_dir in debug_symbol_dirs:
-                copy_build_id_dir(
-                    os.path.join(bazel_execroot, debug_symbol_dir),
-                    bazel_output_base_dir,
+                file_copies.extend(
+                    get_build_id_dir_files_to_copy(
+                        os.path.join(bazel_execroot, debug_symbol_dir),
+                    )
                 )
 
     if missing_directories:
@@ -1582,12 +1602,49 @@ def main() -> int:
         )
         return 1
 
-    time_profile.start(
-        "copy_directories",
-        "Copy Bazel output directories to Ninja build directory",
-    )
-    for src_path, dst_path, tracked_files in dir_copies:
-        copy_directory_if_changed(src_path, dst_path, tracked_files)
+    if file_copies:
+        time_profile.start(
+            "check_copy_files",
+            "Check to see if files need to be copied or not.",
+        )
+
+        files_to_copy = [
+            file_copy
+            for file_copy in thread_pool_helpers.filter_threaded(
+                check_if_need_to_copy_file, file_copies
+            )
+            if file_copy
+        ]
+
+        if files_to_copy:
+            time_profile.start(
+                "copy_files", "Copy Bazel output files to Ninja build directory"
+            )
+
+            thread_pool_helpers.starmap_threaded(
+                hardlink_or_copy_writable,
+                [
+                    (src, dst, bazel_output_base_dir)
+                    for src, dst in files_to_copy
+                ],
+            )
+
+    if final_symlinks:
+        time_profile.start("symlink_outputs", "Symlink output files.")
+        # This doesn't need to use a thread pool because as of today there's only ever
+        # one file, in one action, that uses this codepath.
+        for target_path, link_path in final_symlinks:
+            build_utils.force_symlink(link_path, target_path)
+
+    if dir_copies:
+        time_profile.start(
+            "copy_directories",
+            "Copy Bazel output directories to Ninja build directory",
+        )
+        for src_path, dst_path, tracked_files in dir_copies:
+            copy_directory_if_changed(src_path, dst_path, tracked_files)
+
+    time_profile.stop()
 
     # Drop tracked_files from dir_copies so it can be concatenated with
     # file_copies later.
