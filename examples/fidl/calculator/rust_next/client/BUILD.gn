@@ -27,7 +27,6 @@ rustc_binary("bin") {
     "//examples/fidl/calculator/fidl:calculator_rust_next",
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:log",

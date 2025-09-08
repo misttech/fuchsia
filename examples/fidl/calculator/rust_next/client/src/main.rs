@@ -17,10 +17,9 @@ async fn main() -> Result<(), anyhow::Error> {
     // <../BUILD.gn> can rely on
     // `"//examples/fidl/calculator/fidl:calculator_rust_next"` to make this
     // available.
-    let calculator =
-        connect_to_protocol::<Calculator>().expect("Error connecting to Calculator Service.");
-    let sender = calculator.sender().clone();
-    let calculator_handler = fuchsia_async::Task::spawn(calculator.run_sender());
+    let calculator = connect_to_protocol::<Calculator>()
+        .expect("Error connecting to Calculator Service.")
+        .spawn();
 
     // Note the path starts with /pkg/ even though the build rule
     // `resource("input")` uses `data/input.txt`. At runtime, components are
@@ -31,15 +30,12 @@ async fn main() -> Result<(), anyhow::Error> {
     let input = fs::read_to_string("/pkg/data/input.txt")?;
 
     for line in input.lines() {
-        let result = calculator_line(line, &sender).await;
+        let result = calculator_line(line, &calculator).await;
         match result {
             Ok(result) => log::info!("{} = {}", &line, result),
             Err(msg) => log::info!("Error with expression '{}': {}", &line, &msg),
         }
     }
-
-    sender.close();
-    calculator_handler.await.expect("calculator client terminated unexpectedly");
 
     Ok(())
 }

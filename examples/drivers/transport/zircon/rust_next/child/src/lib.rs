@@ -28,10 +28,8 @@ impl Driver for ZirconChildDriver {
         );
         let node = context.take_node()?;
 
-        let device = get_i2c_device(&context).unwrap();
-        let device_sender = device.sender().clone();
-        fuchsia_async::Task::spawn(async { device.run_sender().await.unwrap() }).detach();
-        let device_name = device_sender.get_name().await.unwrap().unwrap().name.to_string();
+        let device = get_i2c_device(&context).unwrap().spawn();
+        let device_name = device.get_name().await.unwrap().unwrap().name.to_string();
         info!("i2c device name: {device_name}");
 
         info!("Adding child node with i2c device name as a property value");
@@ -48,7 +46,7 @@ impl Driver for ZirconChildDriver {
     }
 }
 
-fn get_i2c_device(context: &DriverContext) -> Result<fidl_next::Client<i2c::Device>, Status> {
+fn get_i2c_device(context: &DriverContext) -> Result<fidl_next::ClientEnd<i2c::Device>, Status> {
     let service_proxy: ServiceInstance<i2c::Service> = context.incoming.service().connect_next()?;
 
     let (client_end, server_end) = fidl_next::fuchsia::create_channel();
@@ -58,5 +56,5 @@ fn get_i2c_device(context: &DriverContext) -> Result<fidl_next::Client<i2c::Devi
         Status::INTERNAL
     })?;
 
-    Ok(fidl_next::Client::new(client_end))
+    Ok(client_end)
 }

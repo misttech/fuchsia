@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 use fidl_next::{
-    Client, ClientEnd, ClientSender, Flexible, FlexibleResult, ProtocolError, Request, Responder,
-    Response, Server, ServerEnd, ServerSender, Transport,
+    ClientEnd, ClientSender, Flexible, FlexibleResult, Request, Responder, Response, ServerEnd,
+    ServerSender, Transport,
 };
 use fidl_next_examples_calculator::calculator::prelude::*;
-use fuchsia_async::Task;
 
 struct MyCalculatorClient {
     error: Option<u32>,
@@ -24,8 +23,20 @@ impl<T: Transport> CalculatorClientHandler<T> for MyCalculatorClient {
     }
 }
 
+impl MyCalculatorClient {
+    pub fn new() -> Self {
+        Self { error: None }
+    }
+}
+
 struct MyCalculatorServer {
     last_result: Option<i32>,
+}
+
+impl MyCalculatorServer {
+    pub fn new() -> Self {
+        Self { last_result: None }
+    }
 }
 
 impl<T: Transport + 'static> CalculatorServerHandler<T> for MyCalculatorServer {
@@ -69,45 +80,20 @@ impl<T: Transport + 'static> CalculatorServerHandler<T> for MyCalculatorServer {
 }
 
 #[cfg(not(target_os = "fuchsia"))]
-type Endpoint = fidl_next::protocol::mpsc::Mpsc;
+type Endpoint = fidl_next::fuchsia_async::Mpsc;
 
 #[cfg(target_os = "fuchsia")]
 type Endpoint = zx::Channel;
 
-type EndpointResult<T> = Result<T, ProtocolError<<Endpoint as Transport>::Error>>;
-
-fn make_transport() -> (Endpoint, Endpoint) {
+fn create_endpoints() -> (ClientEnd<Calculator, Endpoint>, ServerEnd<Calculator, Endpoint>) {
     #[cfg(not(target_os = "fuchsia"))]
     {
-        fidl_next::protocol::mpsc::Mpsc::new()
+        fidl_next::fuchsia_async::Mpsc::new()
     }
-
     #[cfg(target_os = "fuchsia")]
     {
-        zx::Channel::create()
+        fidl_next::fuchsia::create_channel()
     }
-}
-
-async fn create_endpoints() -> (
-    ClientSender<Calculator, Endpoint>,
-    Task<EndpointResult<MyCalculatorClient>>,
-    ServerSender<Calculator, Endpoint>,
-    Task<EndpointResult<MyCalculatorServer>>,
-) {
-    let (client_transport, server_transport) = make_transport();
-
-    let client_end = ClientEnd::<Calculator, _>::from_untyped(client_transport);
-    let server_end = ServerEnd::<Calculator, _>::from_untyped(server_transport);
-
-    let client = Client::new(client_end);
-    let client_sender = client.sender().clone();
-    let client_task = Task::spawn(client.run(MyCalculatorClient { error: None }));
-
-    let server = Server::new(server_end);
-    let server_sender = server.sender().clone();
-    let server_task = Task::spawn(server.run(MyCalculatorServer { last_result: None }));
-
-    (client_sender, client_task, server_sender, server_task)
 }
 
 async fn add(client_sender: &ClientSender<Calculator, Endpoint>) {
@@ -142,7 +128,10 @@ async fn on_error(server_sender: &ServerSender<Calculator, Endpoint>) {
 
 #[fuchsia_async::run_singlethreaded]
 async fn main() {
-    let (client_sender, client_task, server_sender, server_task) = create_endpoints().await;
+    let (client_end, server_end) = create_endpoints();
+    let (client_sender, client_task) =
+        client_end.spawn_full_with_handler(MyCalculatorClient::new());
+    let (server_task, server_sender) = server_end.spawn_full(MyCalculatorServer::new());
 
     add(&client_sender).await;
     divide(&client_sender).await;
@@ -159,7 +148,10 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_add() {
-        let (client_sender, client_task, _, server_task) = create_endpoints().await;
+        let (client_end, server_end) = create_endpoints();
+        let (client_sender, client_task) =
+            client_end.spawn_full_with_handler(MyCalculatorClient::new());
+        let server_task = server_end.spawn(MyCalculatorServer::new());
 
         add(&client_sender).await;
 
@@ -171,7 +163,10 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_divide() {
-        let (client_sender, client_task, _, server_task) = create_endpoints().await;
+        let (client_end, server_end) = create_endpoints();
+        let (client_sender, client_task) =
+            client_end.spawn_full_with_handler(MyCalculatorClient::new());
+        let server_task = server_end.spawn(MyCalculatorServer::new());
 
         divide(&client_sender).await;
 
@@ -183,7 +178,10 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_clear() {
-        let (client_sender, client_task, _, server_task) = create_endpoints().await;
+        let (client_end, server_end) = create_endpoints();
+        let (client_sender, client_task) =
+            client_end.spawn_full_with_handler(MyCalculatorClient::new());
+        let server_task = server_end.spawn(MyCalculatorServer::new());
 
         add(&client_sender).await;
         clear(&client_sender).await;
@@ -196,7 +194,10 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_on_error() {
-        let (client_sender, client_task, server_sender, server_task) = create_endpoints().await;
+        let (client_end, server_end) = create_endpoints();
+        let (client_sender, client_task) =
+            client_end.spawn_full_with_handler(MyCalculatorClient::new());
+        let (server_task, server_sender) = server_end.spawn_full(MyCalculatorServer::new());
 
         on_error(&server_sender).await;
 

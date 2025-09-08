@@ -5,7 +5,7 @@
 use fdf_component::{
     Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer, driver_register,
 };
-use fidl_next::{Request, Responder, Server, ServerEnd, ServerSender};
+use fidl_next::{Request, Responder, ServerEnd, ServerSender};
 use fidl_next_fuchsia_hardware_i2c as i2c;
 use fuchsia_async::{Scope, ScopeHandle};
 use fuchsia_component::server::ServiceFs;
@@ -29,7 +29,7 @@ driver_register!(ZirconParentDriver);
 
 struct DeviceServer;
 
-impl i2c::DeviceServerHandler<fidl_next::fuchsia::zx::Channel> for DeviceServer {
+impl i2c::DeviceServerHandler for DeviceServer {
     async fn transfer(
         &mut self,
         sender: &ServerSender<i2c::Device>,
@@ -66,11 +66,9 @@ struct Service {
     scope: ScopeHandle,
 }
 
-impl i2c::ServiceHandler<fidl_next::fuchsia::zx::Channel> for Service {
+impl i2c::ServiceHandler<zx::Channel> for Service {
     fn device(&self, server_end: ServerEnd<i2c::Device>) {
-        self.scope.spawn(async move {
-            Server::new(server_end).run(DeviceServer).await.unwrap();
-        });
+        server_end.spawn_on(DeviceServer, &self.scope).detach_on_drop();
     }
 }
 

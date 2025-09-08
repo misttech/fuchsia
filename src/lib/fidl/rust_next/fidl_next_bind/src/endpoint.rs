@@ -11,6 +11,12 @@ use fidl_next_codec::{
     EncodeOptionRef, EncodeRef, FromWire, FromWireOption, FromWireOptionRef, FromWireRef, Slot,
     Wire, munge,
 };
+use fidl_next_protocol::{ProtocolError, Transport};
+
+use crate::{
+    Client, ClientSender, DispatchClientMessage, DispatchServerMessage, Executor, HasExecutor,
+    Server, ServerSender,
+};
 
 macro_rules! endpoint {
     (
@@ -73,6 +79,14 @@ macro_rules! endpoint {
             /// Returns the underlying transport.
             pub fn into_untyped(self) -> T {
                 self.transport
+            }
+
+            /// Returns the executor for the underlying transport.
+            pub fn executor(&self) -> T::Executor
+            where
+                T: HasExecutor,
+            {
+                self.transport.executor()
             }
         }
 
@@ -246,4 +260,192 @@ endpoint! {
 endpoint! {
     /// The server end of a protocol.
     ServerEnd
+}
+
+/// A client or server handler task.
+pub type HandlerTask<T, H, E = <T as HasExecutor>::Executor> =
+    <E as Executor>::Task<Result<H, ProtocolError<<T as Transport>::Error>>>;
+
+impl<P, T: Transport> ClientEnd<P, T> {
+    /// Spawns a client for the given client end with a handler on an executor.
+    ///
+    /// Returns the client sender and a join handle for the spawned task.
+    pub fn spawn_full_with_handler_on<H, E>(
+        self,
+        handler: H,
+        executor: &E,
+    ) -> (ClientSender<P, T>, HandlerTask<T, H, E>)
+    where
+        P: DispatchClientMessage<H, T>,
+        T: 'static,
+        H: Send + 'static,
+        E: Executor,
+    {
+        let client = Client::new(self);
+        let sender = client.sender().clone();
+        (sender, executor.spawn(client.run(handler)))
+    }
+
+    /// Spawns a client for the given client end with a handler on an executor.
+    ///
+    /// Returns the client sender.
+    pub fn spawn_with_handler_on<H, E>(self, handler: H, executor: &E) -> ClientSender<P, T>
+    where
+        P: DispatchClientMessage<H, T>,
+        T: 'static,
+        H: Send + 'static,
+        E: Executor,
+    {
+        let (sender, task) = Self::spawn_full_with_handler_on(self, handler, executor);
+        executor.detach(task);
+        sender
+    }
+
+    /// Spawns a client for the given client end with a handler on the default
+    /// executor for the transport.
+    ///
+    /// Returns the client sender and a join handle for the spawned task.
+    pub fn spawn_full_with_handler<H>(self, handler: H) -> (ClientSender<P, T>, HandlerTask<T, H>)
+    where
+        P: DispatchClientMessage<H, T>,
+        T: HasExecutor + 'static,
+        H: Send + 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_full_with_handler_on(self, handler, &executor)
+    }
+
+    /// Spawns a client for the given client end with a handler on the default
+    /// executor for the transport.
+    ///
+    /// Returns the client sender.
+    pub fn spawn_with_handler<H>(self, handler: H) -> ClientSender<P, T>
+    where
+        P: DispatchClientMessage<H, T>,
+        T: HasExecutor + 'static,
+        H: Send + 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_with_handler_on(self, handler, &executor)
+    }
+
+    /// Spawns a client for the given client end on an executor.
+    ///
+    /// The spawned client will ignore all incoming events. Returns the client
+    /// sender and a join handle for the spawned task.
+    pub fn spawn_full_on<E>(self, executor: &E) -> (ClientSender<P, T>, HandlerTask<T, (), E>)
+    where
+        P: 'static,
+        T: 'static,
+        E: Executor,
+    {
+        let client = Client::new(self);
+        let sender = client.sender().clone();
+        (sender, executor.spawn(client.run_sender()))
+    }
+
+    /// Spawns a client for the given client end on an executor.
+    ///
+    /// The spawned client will ignore all incoming events. Returns the client
+    /// sender.
+    pub fn spawn_on<E>(self, executor: &E) -> ClientSender<P, T>
+    where
+        P: 'static,
+        T: 'static,
+        E: Executor,
+    {
+        let (sender, task) = Self::spawn_full_on(self, executor);
+        executor.detach(task);
+        sender
+    }
+
+    /// Spawns a client for the given client end on the default executor for the
+    /// transport.
+    ///
+    /// The spawned client will ignore all incoming events. Returns the client
+    /// sender and a join handle for the spawned task.
+    pub fn spawn_full(self) -> (ClientSender<P, T>, HandlerTask<T, ()>)
+    where
+        P: 'static,
+        T: HasExecutor + 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_full_on(self, &executor)
+    }
+
+    /// Spawns a client for the given client end on the default executor for the
+    /// transport.
+    ///
+    /// The spawned client will ignore all incoming events. Returns the client
+    /// sender.
+    pub fn spawn(self) -> ClientSender<P, T>
+    where
+        P: 'static,
+        T: HasExecutor + 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_on(self, &executor)
+    }
+}
+
+impl<P, T: Transport> ServerEnd<P, T> {
+    /// Spawns a server for the given server end with a handler on an executor.
+    ///
+    /// Returns the join handle for the spawned task and the server sender.
+    pub fn spawn_full_on<H, E>(
+        self,
+        handler: H,
+        executor: &E,
+    ) -> (HandlerTask<T, H, E>, ServerSender<P, T>)
+    where
+        P: DispatchServerMessage<H, T>,
+        T: 'static,
+        H: Send + 'static,
+        E: Executor,
+    {
+        let server = Server::new(self);
+        let sender = server.sender().clone();
+        (executor.spawn(server.run(handler)), sender)
+    }
+
+    /// Spawns a server for the given server end with a handler on an executor.
+    ///
+    /// Returns the join handle for the spawned task.
+    pub fn spawn_on<H, E>(self, handler: H, executor: &E) -> HandlerTask<T, H, E>
+    where
+        P: DispatchServerMessage<H, T>,
+        T: 'static,
+        H: Send + 'static,
+        E: Executor,
+    {
+        executor.spawn(Server::new(self).run(handler))
+    }
+
+    /// Spawns a server for the given server end with a handler on the default
+    /// executor for the transport.
+    ///
+    /// Returns the join handle for the spawned task and the server sender.
+    pub fn spawn_full<H>(self, handler: H) -> (HandlerTask<T, H>, ServerSender<P, T>)
+    where
+        P: DispatchServerMessage<H, T>,
+        T: HasExecutor + 'static,
+        H: Send + 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_full_on(self, handler, &executor)
+    }
+
+    /// Spawns a server for the given server end with a handler on the default
+    /// executor for the transport.
+    ///
+    /// Returns the join handle for the spawned task.
+    pub fn spawn<H>(self, handler: H) -> HandlerTask<T, H>
+    where
+        P: DispatchServerMessage<H, T>,
+        T: HasExecutor + 'static,
+        H: Send + 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_on(self, handler, &executor)
+    }
 }

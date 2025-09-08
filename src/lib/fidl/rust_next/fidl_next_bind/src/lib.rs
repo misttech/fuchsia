@@ -30,8 +30,11 @@ mod compat;
 mod decoded;
 mod endpoint;
 mod error;
+mod executor;
 #[cfg(feature = "fuchsia")]
 pub mod fuchsia;
+#[cfg(feature = "fasync")]
+pub mod fuchsia_async;
 mod future;
 mod protocol;
 mod server;
@@ -45,6 +48,7 @@ pub use self::compat::*;
 pub use self::decoded::*;
 pub use self::endpoint::*;
 pub use self::error::*;
+pub use self::executor::*;
 pub use self::future::*;
 pub use self::protocol::*;
 pub use self::server::*;

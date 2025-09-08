@@ -119,101 +119,73 @@ async fn main() -> Result<(), anyhow::Error> {
 
 #[cfg(test)]
 mod tests {
-    use crate::CalculatorServer;
+    use super::CalculatorServer;
 
-    use fidl_next::Server;
-    use fidl_next::fuchsia::{create_channel, spawn_client_sender_detached};
+    use fidl_next::fuchsia::create_channel;
     use fidl_next_fuchsia_examples_calculator::Calculator;
-    use futures::FutureExt;
-    use std::pin::pin;
 
     #[fuchsia::test]
     async fn test_add() {
         let (client_end, server_end) = create_channel::<Calculator>();
-        let sender = spawn_client_sender_detached(client_end);
-        let server_task = pin!(async move { Server::new(server_end).run(CalculatorServer).await });
+        let sender = client_end.spawn();
+        let server = server_end.spawn(CalculatorServer);
 
-        let future = sender.add(4.5, 3.2);
-        futures::select! {
-            actual = future.fuse() => {
-                let actual = actual.expect("Add proxy didn't return value.");
-                assert_eq!(actual.sum, 7.7);
-            },
-            _ = server_task.fuse() => {
-                panic!("server should never complete.")
-            }
-        }
+        let response = sender.add(4.5, 3.2).await.unwrap();
+        assert_eq!(response.sum, 7.7);
+
+        sender.close();
+        server.await.unwrap();
     }
 
     #[fuchsia::test]
     async fn test_subtract() {
         let (client_end, server_end) = create_channel::<Calculator>();
-        let sender = spawn_client_sender_detached(client_end);
-        let server_task = pin!(Server::new(server_end).run(CalculatorServer));
+        let sender = client_end.spawn();
+        let server = server_end.spawn(CalculatorServer);
 
-        let future = sender.subtract(7.7, 3.2);
-        futures::select! {
-            actual = future.fuse() => {
-                let actual = actual.expect("Subtract proxy didn't return value.");
-                assert_eq!(actual.difference, 4.5);
-            },
-            _ = server_task.fuse() => {
-                panic!("server should never complete.")
-            }
-        }
+        let response = sender.subtract(7.7, 3.2).await.unwrap();
+        assert_eq!(response.difference, 4.5);
+
+        sender.close();
+        server.await.unwrap();
     }
 
     #[fuchsia::test]
     async fn test_multiply() {
         let (client_end, server_end) = create_channel::<Calculator>();
-        let sender = spawn_client_sender_detached(client_end);
-        let server_task = pin!(Server::new(server_end).run(CalculatorServer));
+        let sender = client_end.spawn();
+        let server = server_end.spawn(CalculatorServer);
 
-        let future = sender.multiply(1.5, 2.0);
-        futures::select! {
-            actual = future.fuse() => {
-                let actual = actual.expect("Multiply proxy didn't return value.");
-                assert_eq!(actual.product, 3.0);
-            },
-            _ = server_task.fuse() => {
-                panic!("server should never complete.")
-            }
-        }
+        let response = sender.multiply(1.5, 2.0).await.unwrap();
+        assert_eq!(response.product, 3.0);
+
+        sender.close();
+        server.await.unwrap();
     }
 
     #[fuchsia::test]
     async fn test_divide() {
         let (client_end, server_end) = create_channel::<Calculator>();
-        let sender = spawn_client_sender_detached(client_end);
-        let server_task = pin!(Server::new(server_end).run(CalculatorServer));
+        let sender = client_end.spawn();
+        let server = server_end.spawn(CalculatorServer);
 
-        let future = sender.divide(2.0, 4.0);
-        futures::select! {
-            actual = future.fuse() => {
-                let actual = actual.expect("Divide proxy didn't return value.");
-                assert_eq!(actual.quotient, 0.5);
-            },
-            _ = server_task.fuse() => {
-                panic!("server should never complete.")
-            }
-        }
+        let response = sender.divide(2.0, 4.0).await.unwrap();
+        assert_eq!(response.quotient, 0.5);
+
+        sender.close();
+        server.await.unwrap();
     }
 
     #[fuchsia::test]
     async fn test_pow() {
         let (client_end, server_end) = create_channel::<Calculator>();
-        let sender = spawn_client_sender_detached(client_end);
-        let server_task = pin!(Server::new(server_end).run(CalculatorServer));
+        let sender = client_end.spawn();
+        let server = server_end.spawn(CalculatorServer);
 
-        let future = sender.pow(3.0, 4.0);
-        futures::select! {
-            actual = future.fuse() => {
-                let actual = actual.expect("Pow proxy didn't return value.");
-                assert_eq!(actual.power, 81.0);
-            },
-            _ = server_task.fuse() => {
-                panic!("server should never complete.")
-            }
-        }
+        let response = sender.pow(3.0, 4.0).await.unwrap();
+        assert_eq!(response.power, 81.0);
+
+        sender.close();
+        server.await.unwrap();
     }
 }

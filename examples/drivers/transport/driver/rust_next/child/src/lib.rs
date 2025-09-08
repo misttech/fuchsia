@@ -28,10 +28,8 @@ impl Driver for ZirconChildDriver {
         );
         let node = context.take_node()?;
 
-        let device = get_i2cimpl_device(&context).unwrap();
-        let device_sender = device.sender().clone();
-        fuchsia_async::Task::spawn(async { device.run_sender().await.unwrap() }).detach();
-        let transfer_size = device_sender.get_max_transfer_size().await.unwrap().unwrap().size;
+        let device = get_i2cimpl_device(&context).unwrap().spawn();
+        let transfer_size = device.get_max_transfer_size().await.unwrap().unwrap().size;
         info!("i2cimpl max transfer size: {transfer_size}");
 
         info!("Adding child node with i2cimpl max transfer size as a property value");
@@ -40,7 +38,7 @@ impl Driver for ZirconChildDriver {
             .build();
         node.add_child(child_node).await?;
 
-        device_sender.set_bitrate(0x5u32).await.unwrap().unwrap();
+        device.set_bitrate(0x5u32).await.unwrap().unwrap();
 
         Ok(Self { node })
     }
@@ -52,7 +50,7 @@ impl Driver for ZirconChildDriver {
 
 fn get_i2cimpl_device(
     context: &DriverContext,
-) -> Result<fidl_next::Client<i2cimpl::Device, fdf_fidl::DriverChannel>, Status> {
+) -> Result<fidl_next::ClientEnd<i2cimpl::Device, fdf_fidl::DriverChannel>, Status> {
     let service_proxy: ServiceInstance<i2cimpl::Service> =
         context.incoming.service().connect_next()?;
 
@@ -63,5 +61,5 @@ fn get_i2cimpl_device(
         Status::INTERNAL
     })?;
 
-    Ok(fidl_next::Client::new(client_end))
+    Ok(client_end)
 }

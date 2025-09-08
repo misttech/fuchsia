@@ -328,7 +328,7 @@ pub struct Exclusive {
     _phantom: PhantomData<()>,
 }
 
-impl<D: OnDispatcher> fidl_next::protocol::Transport for DriverChannel<D> {
+impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
     type Error = Status;
 
     fn split(self) -> (Self::Shared, Self::Exclusive) {
@@ -428,6 +428,16 @@ impl<D: OnDispatcher> fidl_next::protocol::Transport for DriverChannel<D> {
             }
             Pending => Pending,
         }
+    }
+}
+
+impl<D> fidl_next::RunsTransport<DriverChannel<D>> for fidl_next::fuchsia_async::FuchsiaAsync {}
+
+impl<D> fidl_next::HasExecutor for DriverChannel<D> {
+    type Executor = fidl_next::fuchsia_async::FuchsiaAsync;
+
+    fn executor(&self) -> Self::Executor {
+        fidl_next::fuchsia_async::FuchsiaAsync
     }
 }
 

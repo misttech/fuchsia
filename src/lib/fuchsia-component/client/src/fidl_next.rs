@@ -4,7 +4,7 @@
 
 //! Implementations for new Rust bindings.
 
-use fidl_next::{Client, Discoverable, ServerEnd};
+use fidl_next::{ClientEnd, Discoverable, ServerEnd};
 
 use super::{Error, SVC_DIR, connect_channel_to_protocol_at_path};
 
@@ -19,14 +19,16 @@ pub fn connect_server_end_to_protocol_at<P: Discoverable>(
 }
 
 /// Connect to a FIDL protocol using the provided namespace prefix.
-pub fn connect_to_protocol_at<P: Discoverable>(service_prefix: &str) -> Result<Client<P>, Error> {
+pub fn connect_to_protocol_at<P: Discoverable>(
+    service_prefix: &str,
+) -> Result<ClientEnd<P>, Error> {
     let (client_end, server_end) = fidl_next::fuchsia::create_channel();
     let () = connect_server_end_to_protocol_at(server_end, service_prefix)?;
-    Ok(Client::new(client_end))
+    Ok(client_end)
 }
 
 /// Connect to a FIDL protocol in the `/svc` directory of the application's root
 /// namespace.
-pub fn connect_to_protocol<P: Discoverable>() -> Result<Client<P>, Error> {
+pub fn connect_to_protocol<P: Discoverable>() -> Result<ClientEnd<P>, Error> {
     connect_to_protocol_at(SVC_DIR)
 }
