@@ -185,10 +185,9 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                     maybe_sid.unwrap_or_else(|| {
                         // The node does not have a label, so apply the filesystem's default SID.
                         log_warn!(
-                            "Unlabeled node {:?} in {} ({:?}-labeled) filesystem",
-                            dir_entry,
+                            "Unlabeled node {dir_entry:?} in {}:{:?} ({fs_use_type:?}-labeled) filesystem",
                             fs.name(),
-                            fs_use_type
+                            fs.options.source,
                         );
                         default_sid
                     })
