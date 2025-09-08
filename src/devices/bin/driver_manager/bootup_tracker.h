@@ -32,9 +32,6 @@ class BootupTracker {
   // Called when the ongoing bind state in the bind manager has changed.
   void NotifyBindingChanged();
 
-  // Used to mark boot-up as done for testing purposes only.
-  void BootupDoneForTesting();
-
  protected:
   // Exposed for testing.
   virtual void ResetBootupTimer();

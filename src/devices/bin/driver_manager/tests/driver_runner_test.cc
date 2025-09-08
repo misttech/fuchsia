@@ -375,21 +375,11 @@ TEST_P(DriverRunnerTest, StartSecondDriver_NewDriverHost) {
           },
   });
 
-  std::shared_ptr<CreatedChild> child =
-      root_driver->driver->AddChild(std::move(args), false, false);
-  EXPECT_TRUE(RunLoopUntilIdle());
-
   bool did_bind = false;
-  child->node_controller.value()->WaitForDriver().Then(
-      [&did_bind](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
-        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
-          did_bind = true;
-          return;
-        }
-
-        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
-                      result.error_value().FormatDescription().c_str());
-      });
+  auto on_bind = [&did_bind](std::optional<zx::event>&) { did_bind = true; };
+  std::shared_ptr<CreatedChild> child =
+      root_driver->driver->AddChild(std::move(args), false, false, std::move(on_bind));
+  EXPECT_TRUE(RunLoopUntilIdle());
 
   auto [driver, controller] = StartSecondDriver();
   EXPECT_TRUE(did_bind);
@@ -437,21 +427,11 @@ TEST_P(DriverRunnerTest, StartSecondDriver_SameDriverHost) {
           },
   });
 
-  std::shared_ptr<CreatedChild> child =
-      root_driver->driver->AddChild(std::move(args), false, false);
-  EXPECT_TRUE(RunLoopUntilIdle());
-
   bool did_bind = false;
-  child->node_controller.value()->WaitForDriver().Then(
-      [&did_bind](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
-        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
-          did_bind = true;
-          return;
-        }
-
-        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
-                      result.error_value().FormatDescription().c_str());
-      });
+  auto on_bind = [&did_bind](std::optional<zx::event>&) { did_bind = true; };
+  std::shared_ptr<CreatedChild> child =
+      root_driver->driver->AddChild(std::move(args), false, false, std::move(on_bind));
+  EXPECT_TRUE(RunLoopUntilIdle());
 
   auto second_driver_config = kDefaultSecondDriverPkgConfig;
   std::string binary = std::string(second_driver_config.main_module.open_path);
@@ -541,21 +521,11 @@ TEST_P(DriverRunnerTest, CheckOnBindNode) {
           },
   });
 
-  std::shared_ptr<CreatedChild> child =
-      root_driver->driver->AddChild(std::move(args), false, false);
-  EXPECT_TRUE(RunLoopUntilIdle());
-
   std::optional<zx::event> node_token;
-  child->node_controller.value()->WaitForDriver().Then(
-      [&node_token](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
-        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
-          node_token = std::move(result.value().driver_started_node_token().value());
-          return;
-        }
-
-        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
-                      result.error_value().FormatDescription().c_str());
-      });
+  std::shared_ptr<CreatedChild> child = root_driver->driver->AddChild(
+      std::move(args), false, false,
+      [&node_token](std::optional<zx::event>& token) { node_token = std::move(token); });
+  EXPECT_TRUE(RunLoopUntilIdle());
 
   auto [driver, controller] = StartSecondDriver(true);
 
@@ -577,54 +547,6 @@ TEST_P(DriverRunnerTest, CheckOnBindNode) {
   StopDriverComponent(std::move(root_driver->controller));
   realm().AssertDestroyedChildren(
       {CreateChildRef("dev", "boot-drivers"), CreateChildRef("dev.second", "boot-drivers")});
-}
-
-// Disable the second driver and try to create a Node that would bind to it. The node should fail
-// to match a driver.
-TEST_P(DriverRunnerTest, SecondNodeWithDisabledSecondDriver) {
-  SetupDriverRunner();
-
-  auto root_driver = StartRootDriver();
-  ASSERT_EQ(ZX_OK, root_driver.status_value());
-
-  // Disable the second-driver url, and restart with rematching of the requested.
-  driver_index().disable_driver_url(second_driver_url);
-
-  fidl::Arena arena;
-  auto devfs = fuchsia_driver_framework::wire::DevfsAddArgs::Builder(arena)
-                   .connector_supports(fuchsia_device_fs::ConnectionType::kController)
-                   .class_name("driver_runner_test")
-                   .Build();
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                  .name(arena, "second")
-                  .devfs_args(devfs)
-                  .Build();
-  auto child = root_driver->driver->AddChild(fidl::ToNatural(args), false, false);
-  EXPECT_TRUE(RunLoopUntilIdle());
-
-  EXPECT_EQ(1u, driver_runner().bind_manager().NumOrphanedNodes());
-
-  bool bind_failed = false;
-  child->node_controller.value()->WaitForDriver().Then(
-      [&bind_failed](
-          fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
-        if (result.is_ok() && result.value().match_error().has_value() &&
-            result.value().match_error().value() == ZX_ERR_NOT_FOUND) {
-          bind_failed = true;
-          return;
-        }
-
-        ZX_ASSERT_MSG(false, " WaitForDriver did not get expected error");
-      });
-
-  // Mark the boot-up as complete so the error gets emitted out.
-  driver_runner().BootupDoneForTesting();
-  RunLoopUntilIdle();
-  EXPECT_TRUE(bind_failed);
-
-  StopDriverComponent(std::move(root_driver->controller));
-  // Only the root node was destroyed since the second node never created a component.
-  realm().AssertDestroyedChildren({CreateChildRef("dev", "boot-drivers")});
 }
 
 // Start the second driver, and then disable and rematch it which should make it available for

@@ -34,7 +34,7 @@ class ParentDriver : public fdf::DriverBase {
         fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
                           bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_PBUS_TEST),
         fdf::MakeProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_PARENT_SPEC)};
+                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_DID_COMPOSITE_NODE_SPEC)};
     result = AddChild("node_a", node_a_properties, {});
     if (result.is_error()) {
       return result.take_error();

@@ -44,6 +44,8 @@ const std::string compat_driver_binary = "driver/compat.so";
 using driver_manager::Devfs;
 using driver_manager::DriverRunner;
 
+using OnBindCallback = fit::function<void(std::optional<zx::event>&)>;
+
 static const test_utils::TestPkg::Config kDefaultDriverHostPkgConfig = {
     .main_module = {.test_pkg_path = "/pkg/bin/fake_driver_host_with_bootstrap",
                     .open_path = "bin/driver_host2"},
@@ -227,8 +229,9 @@ class TestDriver : public fidl::testing::TestBase<fdh::Driver> {
   std::shared_ptr<CreatedChild> AddChild(std::string_view child_name, bool owned, bool expect_error,
                                          const std::string& class_name = "driver_runner_test");
 
-  std::shared_ptr<CreatedChild> AddChild(fdfw::NodeAddArgs child_args, bool owned,
-                                         bool expect_error);
+  std::shared_ptr<CreatedChild> AddChild(
+      fdfw::NodeAddArgs child_args, bool owned, bool expect_error,
+      OnBindCallback on_bind = [](std::optional<zx::event>&) {});
 
  private:
   async_dispatcher_t* dispatcher_;

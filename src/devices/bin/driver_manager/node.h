@@ -59,9 +59,6 @@ using AddNodeResultCallback =
 using DestroyDriverComponentCallback =
     fit::callback<void(fidl::WireUnownedResult<fuchsia_component::Realm::DestroyChild>& result)>;
 
-using OnBindWaitCompleter =
-    fit::callback<void(zx::result<fuchsia_driver_framework::wire::DriverResult>)>;
-
 class NodeManager {
  public:
   virtual ~NodeManager() = default;
@@ -108,8 +105,6 @@ class NodeManager {
   virtual std::weak_ptr<std::mt19937> GetShutdownTestRng() const {
     return std::weak_ptr<std::mt19937>();
   }
-
-  virtual void WaitForBootup(fit::callback<void()> callback) { callback(); }
 };
 
 class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
@@ -144,9 +139,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
     return driver_component && driver_component->state != DriverState::kStopped;
   }
 
-  void OnBind();
-  void OnMatchError(zx_status_t status);
-  void OnStartError(zx_status_t status);
+  void OnBind() const;
 
   bool is_bound() const { return std::holds_alternative<DriverComponent>(state_); }
 
@@ -248,7 +241,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   // Invoked when a bind sequence has been completed. It allows us to reply to outstanding bind
   // requests that may have originated from the node.
-  void CompleteBind(zx::result<> result, bool silent = false);
+  void CompleteBind(zx::result<> result);
 
   NodeShutdownCoordinator& GetNodeShutdownCoordinator();
 
@@ -405,7 +398,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // fidl::WireServer<fuchsia_driver_framework::NodeController>
   void Remove(RemoveCompleter::Sync& completer) override;
   void RequestBind(RequestBindRequestView request, RequestBindCompleter::Sync& completer) override;
-  void WaitForDriver(WaitForDriverCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_driver_framework::NodeController> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
@@ -457,7 +449,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       std::string_view name,
       fit::callback<void(fit::result<fuchsia_driver_framework::NodeError>)> callback);
 
-  std::shared_ptr<BindResultTracker> CreateBindResultTracker(bool silent = false);
+  std::shared_ptr<BindResultTracker> CreateBindResultTracker();
 
   fit::result<fuchsia_driver_framework::NodeError, std::shared_ptr<Node>> AddChildHelper(
       fuchsia_driver_framework::NodeAddArgs args,
@@ -490,8 +482,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       std::string_view url,
       fidl::ServerEnd<fuchsia_component_runner::ComponentController> controller,
       fit::callback<void(zx::result<>)> cb);
-
-  zx::result<zx::event> DuplicateNodeToken();
 
   std::string name_;
 
@@ -567,8 +557,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       state_;
 
   std::optional<fidl::ServerBinding<fuchsia_driver_framework::NodeController>> controller_ref_;
-  OnBindWaitCompleter bind_wait_completer_;
-  std::optional<fuchsia_driver_framework::wire::DriverResult> bind_err_;
 
   std::unique_ptr<NodeShutdownCoordinator> node_shutdown_coordinator_;
 

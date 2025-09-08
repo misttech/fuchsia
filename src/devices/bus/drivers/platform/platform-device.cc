@@ -434,34 +434,7 @@ zx::result<> PlatformDevice::CreateNode() {
                          : ZX_ERR_INTERNAL);
   }
 
-  node_controller_.Bind(std::move(client), bus()->dispatcher());
-  node_controller_->WaitForDriver().Then(
-      [this](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
-        if (result.is_error()) {
-          fdf::error("Failed to wait for driver start for {}: {}", name_,
-                     result.error_value().FormatDescription());
-          return;
-        }
-
-        switch (result.value().Which()) {
-          case fuchsia_driver_framework::DriverResult::Tag::kDriverStartedNodeToken: {
-            fdf::debug("platform device {} had driver start.", name_);
-            node_token_ = result.value().driver_started_node_token().take();
-            break;
-          }
-          case fuchsia_driver_framework::DriverResult::Tag::kMatchError: {
-            fdf::info("platform device {} did not match a driver/composite.", name_);
-            break;
-          }
-          case fuchsia_driver_framework::DriverResult::Tag::kStartError: {
-            fdf::warn("platform device {} failed to start.", name_);
-            break;
-          }
-          default: {
-            fdf::error("platform device {} unrecognized driver result type.", name_);
-          }
-        }
-      });
+  node_controller_.Bind(std::move(client), bus()->dispatcher(), this);
 
   return zx::ok();
 }
@@ -791,6 +764,10 @@ void PlatformDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_platform_device::Device> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
   fdf::warn("PlatformDevice received unknown method with ordinal: {}", metadata.method_ordinal);
+}
+
+void PlatformDevice::OnBind(fuchsia_driver_framework::NodeControllerOnBindRequest& request) {
+  node_token_ = std::move(request.node_token());
 }
 
 }  // namespace platform_bus

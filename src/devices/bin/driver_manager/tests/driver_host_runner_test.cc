@@ -217,21 +217,11 @@ TEST_F(DynamicLinkingTest, StartCompatDriver) {
       .name = "compat",
   });
 
-  std::shared_ptr<driver_runner::CreatedChild> child =
-      root_driver->driver->AddChild(std::move(args), false, false);
-  EXPECT_TRUE(RunLoopUntilIdle());
-
   bool did_bind = false;
-  child->node_controller.value()->WaitForDriver().Then(
-      [&did_bind](fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
-        if (result.is_ok() && result.value().driver_started_node_token().has_value()) {
-          did_bind = true;
-          return;
-        }
-
-        ZX_ASSERT_MSG(false, " WaitForDriver failed: %s.",
-                      result.error_value().FormatDescription().c_str());
-      });
+  auto on_bind = [&did_bind](std::optional<zx::event>&) { did_bind = true; };
+  std::shared_ptr<driver_runner::CreatedChild> child =
+      root_driver->driver->AddChild(std::move(args), false, false, std::move(on_bind));
+  EXPECT_TRUE(RunLoopUntilIdle());
 
   auto compat_driver_config = driver_runner::kCompatDriverPkgConfig;
   std::string binary = std::string(compat_driver_config.main_module.open_path);
@@ -285,31 +275,17 @@ TEST_F(DynamicLinkingTest, StartColocatedSecondDriverNoDynamicLinking) {
       .name = "second",
   });
 
+  bool did_bind = false;
+  auto on_bind = [&did_bind](std::optional<zx::event>&) { did_bind = true; };
   std::shared_ptr<driver_runner::CreatedChild> child =
-      root_driver->driver->AddChild(std::move(args), false, false);
+      root_driver->driver->AddChild(std::move(args), false, false, std::move(on_bind));
   EXPECT_TRUE(RunLoopUntilIdle());
-
-  bool bind_failed = false;
-  child->node_controller.value()->WaitForDriver().Then(
-      [&bind_failed](
-          fidl::Result<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
-        if (result.is_ok() && result.value().start_error().has_value()) {
-          bind_failed = true;
-          return;
-        }
-
-        ZX_ASSERT_MSG(false, " WaitForDriver did not get expected error");
-      });
 
   auto [driver, controller] =
       StartSecondDriver(true /* colocate */, false, false, false /* use_dynamic_linker */);
   // Starting the driver should fail, as the driver host is configured to use dynamic linking.
   EXPECT_EQ(nullptr, driver);
-
-  // Mark the boot-up as complete so the error gets emitted out.
-  driver_runner().BootupDoneForTesting();
-  RunLoopUntilIdle();
-  EXPECT_TRUE(bind_failed);
+  EXPECT_FALSE(did_bind);
 
   StopDriverComponent(std::move(root_driver->controller));
   realm().AssertDestroyedChildren({driver_runner::CreateChildRef("dev", "boot-drivers")});
