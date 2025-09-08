@@ -117,6 +117,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         let gpt = context.board_config.filesystems.gpt.enabled();
         let gpt_all = context.board_config.filesystems.gpt_all
             || context.board_config.filesystems.gpt == GptMode::AllowMultiple;
+        let merge_super_and_userdata = context.board_config.filesystems.merge_super_and_userdata;
 
         // Collect the arguments from the product.
         let ramdisk_image = storage_config.filesystems.image_mode == FilesystemImageMode::Ramdisk;
@@ -263,7 +264,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             ("fuchsia.fshost.Gpt", Config::new_bool(gpt)),
             ("fuchsia.fshost.GptAll", Config::new_bool(gpt_all)),
             ("fuchsia.fshost.Mbr", Config::new_bool(false)),
-            ("fuchsia.fshost.MergeSuperAndUserdata", Config::new_bool(false)),
+            ("fuchsia.fshost.MergeSuperAndUserdata", Config::new_bool(merge_super_and_userdata)),
             ("fuchsia.fshost.NoZxcrypt", Config::new_bool(no_zxcrypt)),
             ("fuchsia.fshost.FormatDataOnCorruption", Config::new_bool(format_data_on_corruption)),
             ("fuchsia.fshost.BlobfsInitialInodes", Config::new_uint64(blobfs_initial_inodes)),

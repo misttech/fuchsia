@@ -55,6 +55,12 @@ pub struct BoardFilesystemConfig {
     /// DEPRECATED.  Use GptMode::AllowMultiple.
     #[serde(default)]
     pub gpt_all: bool,
+
+    /// Merges the 'super' and 'userdata' partitions in the GPT into a single logical partition, if
+    /// they exist and are contiguous.  Note that the underlying GPT is not modified and the
+    /// original partitions still exist.
+    #[serde(default)]
+    pub merge_super_and_userdata: bool,
 }
 
 /// How GPT-formatted block devices ought to be handled.
