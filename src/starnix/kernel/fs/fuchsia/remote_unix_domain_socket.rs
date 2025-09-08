@@ -148,7 +148,14 @@ impl SocketOps for RemoteUnixDomainSocket {
                 zx::MonotonicInstant::INFINITE,
             )
             .map_err(|_| errno!(ECONNREFUSED))?
-            .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?;
+            .map_err(|e: i32| {
+                let status = zx::Status::from_raw(e);
+                if status == zx::Status::PEER_CLOSED {
+                    errno!(ECONNRESET)
+                } else {
+                    from_status_like_fdio!(status)
+                }
+            })?;
 
         let written =
             if let Some(received_data) = response.data { data.write(&received_data)? } else { 0 };
@@ -410,6 +417,7 @@ mod tests {
     #[derive(Debug, Default)]
     struct UnixDomainSocketImpl {
         state: Mutex<UnixDomainSocketImplState>,
+        close_on_read: bool,
     }
 
     impl UnixDomainSocketImpl {
@@ -417,6 +425,9 @@ mod tests {
             &self,
             payload: fbinder::UnixDomainSocketReadRequest,
         ) -> Result<fbinder::UnixDomainSocketReadResponse, zx::Status> {
+            if self.close_on_read {
+                return Err(zx::Status::PEER_CLOSED);
+            }
             let Some(count) = payload.count else {
                 return Err(zx::Status::INVALID_ARGS);
             };
@@ -611,6 +622,37 @@ mod tests {
                 )
                 .unwrap_err();
             assert_eq!(err, errno!(EAGAIN));
+        });
+        handle.join().expect("join");
+    }
+
+    #[::fuchsia::test]
+    async fn test_remote_uds_peer_closed() {
+        let (client, server) = zx::Channel::create();
+        let handle = std::thread::spawn(move || {
+            let mut executor = fasync::LocalExecutor::new();
+            executor.run_singlethreaded(async move {
+                let uds_impl = UnixDomainSocketImpl { close_on_read: true, ..Default::default() };
+                Arc::new(uds_impl).serve(server).await;
+            });
+        });
+        spawn_kernel_and_run(move |locked, current_task| {
+            let file = new_remote_file(locked, current_task, client.into(), OpenFlags::RDWR)
+                .expect("new_remote_file");
+            let socket_ops = file.downcast_file::<SocketFile>().unwrap();
+
+            let mut buffer = VecOutputBuffer::new(1024);
+            let err = socket_ops
+                .recvmsg(
+                    locked,
+                    &current_task,
+                    &file,
+                    &mut buffer,
+                    SocketMessageFlags::empty(),
+                    None,
+                )
+                .unwrap_err();
+            assert_eq!(err, errno!(ECONNRESET));
         });
         handle.join().expect("join");
     }
