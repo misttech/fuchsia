@@ -192,8 +192,10 @@ zx_status_t LoaderApp::InitDeviceWatcher() {
             FX_LOGS(ERROR) << "Failed to create MagmaDevice: " << device.status_string();
           }
         },
-        [gpu_watcher_token = std::move(gpu_watcher_token)]() {
+        [gpu_watcher_token = std::move(gpu_watcher_token), app = this]() {
           // Idle callback and gpu_watcher_token will be destroyed on idle.
+          // TODO(b/435953902) - remove this logging
+          FX_LOGS(INFO) << "*** Vulkan loader idle callback with magma device count: " << app->devices_.size();
         },
         dispatcher_);
     if (!gpu_watcher_)
