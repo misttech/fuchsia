@@ -725,7 +725,7 @@ void Dwc3::ResetConfiguration() {
 }
 
 void Dwc3::HandleResetEvent() {
-  fdf::info("Dwc3::HandleResetEvent");
+  fdf::debug("Dwc3::HandleResetEvent");
 
   ResetEndpoints();
   SetDeviceAddress(0);
@@ -800,7 +800,7 @@ void Dwc3::HandleConnectionDoneEvent() {
 }
 
 void Dwc3::HandleDisconnectedEvent() {
-  fdf::info("Dwc3::HandleDisconnectedEvent");
+  fdf::debug("Dwc3::HandleDisconnectedEvent");
 
   if (dci_intf_.is_valid()) {
     fidl::Arena arena;
@@ -819,7 +819,7 @@ void Dwc3::HandleDisconnectedEvent() {
 }
 
 void Dwc3::Stop() {
-  fdf::info("Stop()");
+  fdf::debug("Stop()");
   irq_handler_.Cancel();
   ReleaseResources();
 }

@@ -63,9 +63,8 @@ void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_
 }
 
 void Dwc3::EpServer::CancelAll(zx_status_t reason) {
-  // TODO(https://fxbug.dev/433971550): Reduce to DEBUG once we're done investigating.
-  fdf::info("Dwc3::EpServer::CancelAll ep {} reason {}", uep_->ep.ep_num,
-            zx_status_get_string(reason));
+  fdf::debug("Dwc3::EpServer::CancelAll ep {} reason {}", uep_->ep.ep_num,
+             zx_status_get_string(reason));
 
   if (current_req.has_value()) {
     dwc3_->CmdEpEndTransfer(uep_->ep);

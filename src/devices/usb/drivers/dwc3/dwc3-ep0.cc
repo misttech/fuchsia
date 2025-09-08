@@ -113,8 +113,7 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
 }
 
 void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
-  // TODO(https://fxbug.dev/433971550): Reduce to DEBUG once we're done investigating.
-  fdf::info("Dwc3::HandleEp0TransferNotReadyEvent state {} stage {}", ep0_.state, stage);
+  fdf::debug("Dwc3::HandleEp0TransferNotReadyEvent state {} stage {}", ep0_.state, stage);
 
   ZX_ASSERT(is_ep0_num(ep_num));
 

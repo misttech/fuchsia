@@ -63,7 +63,7 @@ class Dwc3 : public fdf::DriverBase,
   Dwc3(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
       : fdf::DriverBase{"dwc3", std::move(start_args), std::move(dispatcher)},
         config_(take_config<dwc3_config::Config>()) {}
-  ~Dwc3() { fdf::info("~Dwc3()"); }
+  ~Dwc3() { fdf::debug("~Dwc3()"); }
 
   zx::result<> Start() override;
   void Stop() override;
