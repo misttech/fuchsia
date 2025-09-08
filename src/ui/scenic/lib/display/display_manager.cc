@@ -79,7 +79,11 @@ void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
       continue;
     }
 
-    if (!default_display_) {
+    if (default_display_) {
+      FX_LOGS(INFO) << "Default display already exists with id="
+                    << default_display_->display_id().value
+                    << " ... skipping newly added display id=" << display.id.value;
+    } else {
       size_t mode_index = 0;
 
       // Set display mode if requested.

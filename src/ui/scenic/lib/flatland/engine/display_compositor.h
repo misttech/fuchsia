@@ -163,7 +163,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   struct DisplayConfigResponse {
     // Whether or not the config can be successfully applied or not.
-    fuchsia_hardware_display_types::ConfigResult result;
+    display::WireConfigResult result;
   };
 
   struct FrameEventData {
@@ -190,6 +190,9 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
     // Used to synchronize buffer rendering with setting the buffer on the display.
     std::vector<FrameEventData> frame_event_datas;
+
+    // Keeps track of display mode that needs to be set before next `ApplyConfig()`.
+    std::optional<display::WireDisplayMode> updated_display_mode;
   };
 
   // Notifies the compositor that a vsync has occurred, in response to a display configuration
@@ -268,6 +271,15 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
       const fuchsia_hardware_display_types::wire::ImageBufferUsage& image_buffer_usage)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
+  // Works around inconvenient `fuchsia.hardware.display.Coordinator` APIs.  We can't set the
+  // display mode immediately when notified of a new display, because the API doesn't allow a
+  // display config with no layers.  So we stash it and apply it the next time we have a config
+  // to apply.
+  bool MaybeSetPendingDisplayMode(const display::WireDisplayId& display_id)
+      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  void ClearAllPendingDisplayModes(const std::vector<RenderData>& render_data_list)
+      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+
   // This mutex protects access to class members that are accessed on main thread and the Flatland
   // threads. All the methods of this class are run of |main_dispatcher_| except for
   // ImportBufferImage() and ReleaseBufferImage(), where the shared data structures are guarded by
@@ -319,13 +331,11 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Maps a display ID to the the DisplayInfo struct. This is kept separate from the
   // display_DisplayCompositor_data_map_ since this only this data is needed for the
   // render_data_func_.
-  std::unordered_map</*fuchsia_hardware_display_types::DisplayId::value*/ uint64_t, DisplayInfo>
-      display_info_map_;
+  std::unordered_map</*display::WireDisplayId::value*/ uint64_t, DisplayInfo> display_info_map_;
 
   // Maps a display ID to a struct of all the information needed to properly render to
   // that display in both the hardware and software composition paths.
-  std::unordered_map</*fuchsia_hardware_display_types::DisplayId::value*/ uint64_t,
-                     DisplayEngineData>
+  std::unordered_map</*display::WireDisplayId::value*/ uint64_t, DisplayEngineData>
       display_engine_data_map_;
 
   ReleaseFenceManager release_fence_manager_;

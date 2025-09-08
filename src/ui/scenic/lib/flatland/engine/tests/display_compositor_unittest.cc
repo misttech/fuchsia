@@ -1182,6 +1182,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1);
   EXPECT_CALL(*mock_display_coordinator_, SetDisplayColorConversion(_, _)).Times(1);
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1);
 
   EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
       .Times(1)
@@ -1379,6 +1380,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
       .WillOnce(Return());
 
   EXPECT_CALL(*mock_display_coordinator_, SetDisplayColorConversion(_, _)).Times(1);
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(1);
 
   EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
       .Times(1)

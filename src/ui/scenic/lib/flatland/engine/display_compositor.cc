@@ -755,6 +755,7 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
   // every frame.
   zx::event render_finished_fence = utils::CreateEvent();
 
+  bool applied_display_mode = false;
   for (size_t i = 0; i < render_data_list.size(); ++i) {
     const bool is_final_display = i == (render_data_list.size() - 1);
     const auto& render_data = render_data_list[i];
@@ -839,15 +840,24 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
     ApplyLayerImage(layer, {glm::vec2(0), glm::vec2(render_target.width, render_target.height)},
                     render_target, event_data.wait_id);
 
-    // We are being opportunistic and skipping the costly CheckConfig() call at this stage, because
-    // we know that gpu composited layers work and there is no fallback case beyond this. See
-    // https://fxbug.dev/42165041 for more details.
+    applied_display_mode =
+        applied_display_mode || MaybeSetPendingDisplayMode(render_data.display_id);
+  }
+
+  // We are being opportunistic and skipping the costly CheckConfig() call at this stage, because
+  // we know that gpu composited layers work and there is no fallback case beyond this. See
+  // https://fxbug.dev/42165041 for more details.
 #ifndef NDEBUG
-    if (!CheckConfig()) {
-      FX_LOGS(ERROR) << "Both display hardware composition and GPU rendering have failed.";
-      return false;
-    }
+  if (!CheckConfig()) {
+    FX_LOGS(ERROR) << "Both display hardware composition and GPU rendering have failed.";
+    return false;
+  }
 #endif
+
+  if (applied_display_mode) {
+    // We set one or more display modes, and they passed `CheckConfig()` so we won't need to apply
+    // them again.
+    ClearAllPendingDisplayModes(render_data_list);
   }
 
   // See ReleaseFenceManager comments for details.
@@ -928,6 +938,7 @@ bool DisplayCompositor::TryDirectToDisplay(const std::vector<RenderData>& render
   FX_DCHECK(config_.enable_direct_to_display);
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::TryDirectToDisplay");
 
+  bool applied_display_mode = false;
   for (const auto& data : render_data_list) {
     if (!SetRenderDataOnDisplay(data)) {
       // TODO(https://fxbug.dev/42157429): just because setting the data on one display fails (e.g.
@@ -950,11 +961,19 @@ bool DisplayCompositor::TryDirectToDisplay(const std::vector<RenderData>& render
           << "Could not apply hardware color conversion: "
           << set_display_color_conversion_result.status_string();
     }
+
+    applied_display_mode = applied_display_mode || MaybeSetPendingDisplayMode(data.display_id);
   }
 
   if (!CheckConfig()) {
     TRACE_INSTANT("gfx", "scenic_d2d_failed: check config failed.", TRACE_SCOPE_THREAD);
     return false;
+  }
+
+  if (applied_display_mode) {
+    // We set one or more display modes, and they passed `CheckConfig()` so we won't need to apply
+    // them again.
+    ClearAllPendingDisplayModes(render_data_list);
   }
   return true;
 }
@@ -1037,6 +1056,9 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
 
   display_info_map_[display_id.value] = std::move(info);
   DisplayEngineData& display_engine_data = display_engine_data_map_[display_id.value];
+
+  // Used to set mode before the next `ApplyConfig()`.
+  display_engine_data.updated_display_mode.emplace(display->mode());
 
   {
     std::scoped_lock lock(lock_);
@@ -1291,6 +1313,39 @@ bool DisplayCompositor::ImportBufferCollectionToDisplayCoordinator(
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   return display::ImportBufferCollection(identifier, display_coordinator_, std::move(token),
                                          image_buffer_usage);
+}
+
+bool DisplayCompositor::MaybeSetPendingDisplayMode(const display::WireDisplayId& display_id) {
+  auto it = display_engine_data_map_.find(display_id.value);
+  if (it == display_engine_data_map_.end()) {
+    FX_LOGS(WARNING) << "No display engine data found for display_id=" << display_id.value;
+    return false;
+  }
+  auto& maybe_mode = it->second.updated_display_mode;
+  if (!maybe_mode.has_value()) {
+    return false;
+  }
+  const auto result = display_coordinator_.sync()->SetDisplayMode(display_id, maybe_mode.value());
+  if (!result.ok()) {
+    FX_LOGS(ERROR) << "SetDisplayMode transport error: " << result.status_string();
+    // Doesn't really matter what we return, the subsequent `CheckConfig()` will also result in a
+    // transport error and Scenic will crash.  Return false in case this ever becomes recoverable.
+    return false;
+  }
+  return true;
+}
+
+void DisplayCompositor::ClearAllPendingDisplayModes(
+    const std::vector<RenderData>& render_data_list) {
+  for (auto& render_data : render_data_list) {
+    auto it = display_engine_data_map_.find(render_data.display_id.value);
+    if (it == display_engine_data_map_.end()) {
+      FX_LOGS(WARNING) << "No display engine data found for display_id="
+                       << render_data.display_id.value;
+      continue;
+    }
+    it->second.updated_display_mode.reset();
+  }
 }
 
 }  // namespace flatland

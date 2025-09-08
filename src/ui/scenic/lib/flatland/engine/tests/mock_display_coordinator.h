@@ -117,6 +117,11 @@ class MockDisplayCoordinator
                DestroyLayerCompleter::Sync&),
               (override));
 
+  MOCK_METHOD(void, SetDisplayMode,
+              (fuchsia_hardware_display::wire::CoordinatorSetDisplayModeRequest*,
+               SetDisplayModeCompleter::Sync&),
+              (override));
+
   MOCK_METHOD(void, SetDisplayLayers,
               (fuchsia_hardware_display::wire::CoordinatorSetDisplayLayersRequest*,
                SetDisplayLayersCompleter::Sync&),
@@ -129,6 +134,9 @@ class MockDisplayCoordinator
 
  private:
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    FX_LOGS(ERROR) << "MockDisplayCoordinator::NotImplemented_(): " << name
+                   << " is not implemented, closing connection.";
+
     completer.Close(ZX_ERR_NOT_SUPPORTED);
   }
 
