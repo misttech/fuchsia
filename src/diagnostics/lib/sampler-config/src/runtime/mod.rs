@@ -153,6 +153,43 @@ mod test {
     }
 
     #[fuchsia::test]
+    fn parse_valid_sampler_config_multiple_selectors() {
+        let ok_json = r#"{
+          project_id: 5,
+          poll_rate_sec: 3,
+          metrics: [
+            {
+              selector: ["component:root:one", "component:root:two"],
+              metric_id: 1,
+              metric_type: "Occurrence",
+              event_codes: [0, 0]
+            }
+          ]
+        }"#;
+
+        let config: ProjectConfig = serde_json5::from_str(ok_json).expect("parse json");
+        assert_eq!(
+            config,
+            ProjectConfig {
+                project_id: ProjectId(5),
+                poll_rate_sec: 3,
+                customer_id: CustomerId(1),
+                metrics: vec![MetricConfig {
+                    selectors: vec![
+                        selectors::parse_verbose("component:root:one").unwrap(),
+                        selectors::parse_verbose("component:root:two").unwrap(),
+                    ],
+                    metric_id: MetricId(1),
+                    metric_type: MetricType::Occurrence,
+                    upload_once: false,
+                    event_codes: vec![EventCode(0), EventCode(0)],
+                    project_id: None,
+                }]
+            }
+        );
+    }
+
+    #[fuchsia::test]
     fn parse_invalid_config() {
         let invalid_json = r#"{
           "project_id": 5,

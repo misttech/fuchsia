@@ -60,7 +60,7 @@ instrumentation in your component. Please see the
 
 ## Sampler Configuration {#configuration}
 
-We will be using the FVM Integration as an example configuration.
+Consider this configuration:
 
 ```json
 {
@@ -68,13 +68,16 @@ We will be using the FVM Integration as an example configuration.
   "poll_rate_sec": 3600,
   "metrics": [
     {
-      "selector": "bootstrap/driver_manager:root/fvm/partitions/blobfs:total_slices_reserved",
+      "selector": "some/component:root/foo:bar",
       "metric_id": 3000,
       "metric_type": "Integer",
       "event_codes": [0]
     },
     {
-      "selector": "bootstrap/driver_manager:root/fvm/partitions/minfs:total_slices_reserved",
+      "selector": [
+        "some/component:root:my_property",
+        "some/other/component:root:my_property",
+      ],
       "metric_id": 3000,
       "metric_type": "Integer",
       "event_codes": [1]
@@ -89,9 +92,9 @@ It also specifies a top-level poll_rate_seconds, although in Sampler v1.1 this
 poll rate will be migrated on client's behalfs to a per-metric configuration.
 
 Next, the configuration requires a list of metric transformations. In these
-configurations, the client provides the selector identifying the relevant
+configurations, the client provides one or more selectors identifying the relevant
 inspect metric, along with the Cobalt metadata needed to forward the inspect
-on the client's behalf.
+on the client's behalf. The first selector to match data is used at each sample period.
 
 1.  `metric_type` is the type of metric transformation requested.
     *   If your Cobalt metric is of type OCCURRENCE being used to track
@@ -111,6 +114,13 @@ on the client's behalf.
 NOTE: The order of the dimension values in the Sampler configuration must
 align with the order in which the dimensions were declared in the yaml
 definition.
+
+### Soft transitions
+
+The `"selector"` field in the configuration can take a list of selectors, instead of a single
+selector. In that case, the first selector to match any data will be used at each sample period.
+
+This behavior supports transitioning metrics from one selector to another.
 
 [Occurrence]: https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/diagnostics/lib/sampler-config/src/lib.rs#139
 [Integer]: https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/diagnostics/lib/sampler-config/src/lib.rs#141

@@ -2174,4 +2174,52 @@ mod tests {
         let (project_id, MetricEvent { .. }) = event;
         assert_eq!(*project_id, ProjectId(2));
     }
+
+    #[fuchsia::test]
+    async fn first_match_wins() {
+        let mut sampler = ProjectSampler {
+            archive_reader: ArchiveReader::inspect(),
+            metrics: vec![],
+            metric_cache: RefCell::new(HashMap::new()),
+            metric_loggers: HashMap::new(),
+            project_id: ProjectId(1),
+            poll_rate_sec: 3600,
+            project_sampler_stats: Arc::new(ProjectSamplerStats::new()),
+            all_done: true,
+        };
+        let metric_id = MetricId(1);
+        let event_codes = vec![];
+        sampler.push_metric(MetricConfig {
+            project_id: Some(ProjectId(2)),
+            selectors: vec![
+                selectors::parse_verbose("component:root:one").unwrap(),
+                selectors::parse_verbose("component:root:two").unwrap(),
+            ],
+            metric_id,
+            metric_type: MetricType::Integer,
+            event_codes,
+            upload_once: false,
+        });
+
+        let value = vec![
+            InspectDataBuilder::new(
+                "component".try_into().unwrap(),
+                "component-url",
+                Timestamp::from_nanos(0),
+            )
+            .with_hierarchy(hierarchy! { root: {one: 1i32, two: 2i32}})
+            .build(),
+        ];
+        let events = sampler.process_snapshot(value).await.unwrap();
+        assert_eq!(events.len(), 1);
+        let (_, event) = &events[0];
+        assert_eq!(
+            event,
+            &MetricEvent {
+                metric_id: 1,
+                event_codes: vec![],
+                payload: MetricEventPayload::IntegerValue(1)
+            }
+        );
+    }
 }
