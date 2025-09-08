@@ -250,9 +250,14 @@ void ClientBehavior(std::string_view binder_dir, test_helper::Poker completed) {
           break;
         }
         case BR_DEAD_BINDER:
+          FAIL() << "Unimplemented BR_DEAD_BINDER case - maybe we will need this in a future test?";
+          break;
         case BR_FAILED_REPLY:
+          FAIL()
+              << "Unimplemented BR_FAILED_REPLY case - maybe we will need this in a future test?";
+          break;
         case BR_DEAD_REPLY:
-          FAIL() << "Unimplemented - maybe we will need this in a future test?";
+          FAIL() << "Unimplemented BR_DEAD_REPLY case - maybe we will need this in a future test?";
           break;
         case BR_ERROR:
           cursor += sizeof(uint32_t);
