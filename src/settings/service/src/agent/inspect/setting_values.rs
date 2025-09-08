@@ -7,12 +7,12 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use fuchsia_async as fasync;
-use fuchsia_inspect::{self as inspect, component, Property, StringProperty};
+use fuchsia_inspect::{self as inspect, Property, StringProperty, component};
 use fuchsia_inspect_derive::{Inspect, WithInspect};
+use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 #[cfg(test)]
 use futures::channel::mpsc::UnboundedSender;
-use futures::StreamExt;
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 
 use crate::agent::{AgentCreator, Context, CreationFunc, Lifespan, Payload};
@@ -21,8 +21,8 @@ use crate::handler::base::{Payload as SettingPayload, Request};
 use crate::handler::setting_handler::{Event, Payload as HandlerPayload};
 use crate::message::base::{Audience, MessageEvent, MessengerType};
 use crate::message::receptor::Receptor;
-use crate::service::message::Messenger;
 use crate::service::TryFromWithClient;
+use crate::service::message::Messenger;
 use crate::{clock, service};
 
 const INSPECT_NODE_NAME: &str = "setting_values";
@@ -212,7 +212,8 @@ impl SettingValuesInspectAgent {
                 .iter()
                 // Filter out settings that submit via new channel.
                 .filter(|t| match t {
-                    SettingType::Light
+                    SettingType::Keyboard
+                    | SettingType::Light
                     | SettingType::NightMode
                     | SettingType::Privacy
                     | SettingType::Setup => false,

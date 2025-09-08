@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::SettingType;
+use crate::EnvironmentBuilder;
 use crate::ingress::fidl::Interface;
 use crate::keyboard::types::{Autorepeat, KeyboardInfo, KeymapId};
-use crate::tests::test_failure_utils::create_test_env_with_failures;
-use crate::EnvironmentBuilder;
+use crate::tests::test_failure_utils::create_empty_test_env;
 use assert_matches::assert_matches;
 use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_settings::{KeyboardMarker, KeyboardProxy};
@@ -20,15 +19,10 @@ const ENV_NAME: &str = "settings_service_keyboard_test_environment";
 /// Creates an environment that will fail on a get request.
 async fn create_keyboard_test_env_with_failures() -> KeyboardProxy {
     let storage_factory = InMemoryStorageFactory::new();
-    create_test_env_with_failures(
-        Rc::new(storage_factory),
-        ENV_NAME,
-        Interface::Keyboard,
-        SettingType::Keyboard,
-    )
-    .await
-    .connect_to_protocol::<KeyboardMarker>()
-    .unwrap()
+    create_empty_test_env(Rc::new(storage_factory), ENV_NAME)
+        .await
+        .connect_to_protocol::<KeyboardMarker>()
+        .unwrap()
 }
 
 /// Creates an environment for keyboard.
@@ -75,5 +69,5 @@ async fn test_keyboard_storage() {
 async fn test_channel_failure_watch() {
     let keyboard_service = create_keyboard_test_env_with_failures().await;
     let result = keyboard_service.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::UNAVAILABLE, .. }));
+    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
 }

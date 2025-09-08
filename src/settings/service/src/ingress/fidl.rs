@@ -9,7 +9,6 @@ use crate::job::source::Seeder;
 use fidl_fuchsia_settings::{
     AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream,
     DoNotDisturbRequestStream, FactoryResetRequestStream, InputRequestStream, IntlRequestStream,
-    KeyboardRequestStream,
 };
 use fuchsia_component::server::{ServiceFsDir, ServiceObjLocal};
 use serde::Deserialize;
@@ -223,13 +222,7 @@ impl Interface {
                             seeder.seed(stream);
                         });
                     }
-                    Interface::Keyboard => {
-                        let seeder = seeder.clone();
-                        let _ =
-                            service_dir.add_fidl_service(move |stream: KeyboardRequestStream| {
-                                seeder.seed(stream);
-                            });
-                    }
+                    Interface::Keyboard => {}  // Handled in lib.rs
                     Interface::Light => {}     // Handled in lib.rs
                     Interface::NightMode => {} // Handled in lib.rs
                     Interface::Privacy => {}   // Handled in lib.rs
@@ -283,9 +276,11 @@ mod tests {
         let registrant: Registrant = Interface::Accessibility.registrant();
 
         // Verify dependencies properly derived from the interface.
-        assert!(registrant
-            .get_dependencies()
-            .contains(&Dependency::Entity(Entity::Handler(setting_type))));
+        assert!(
+            registrant
+                .get_dependencies()
+                .contains(&Dependency::Entity(Entity::Handler(setting_type)))
+        );
 
         // Create handler to intercept messages.
         let mut rx = delegate

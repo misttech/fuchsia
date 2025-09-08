@@ -9,12 +9,13 @@ use std::sync::atomic::AtomicU64;
 #[cfg(test)]
 use anyhow::format_err;
 use anyhow::{Context, Error};
-use audio::types::AudioInfo;
 use audio::AudioInfoLoader;
+use audio::types::AudioInfo;
 use display::display_controller::DisplayInfoLoader;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
-    LightRequestStream, NightModeRequestStream, PrivacyRequestStream, SetupRequestStream,
+    KeyboardRequestStream, LightRequestStream, NightModeRequestStream, PrivacyRequestStream,
+    SetupRequestStream,
 };
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
@@ -664,6 +665,13 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 .expect("storage should still be initializing");
         }
 
+        if components.contains(&SettingType::Keyboard) {
+            device_storage_factory
+                .initialize::<KeyboardController>()
+                .await
+                .expect("storage should still be initializing");
+        }
+
         if components.contains(&SettingType::NightMode) {
             device_storage_factory
                 .initialize::<NightModeController>()
@@ -735,6 +743,20 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                     log::error!("Failed to setup light api: {e:?}");
                 }
             }
+        }
+
+        if components.contains(&SettingType::Keyboard) {
+            let keyboard::SetupResult { mut keyboard_fidl_handler, task } =
+                keyboard::setup_keyboard_api(
+                    Rc::clone(&device_storage_factory),
+                    SettingValuePublisher::new(setting_value_tx.clone()),
+                    UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                )
+                .await;
+            tasks.push(task);
+            let _ = service_dir.add_fidl_service(move |stream: KeyboardRequestStream| {
+                keyboard_fidl_handler.handle_stream(stream)
+            });
         }
 
         if components.contains(&SettingType::NightMode) {
@@ -898,24 +920,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                 SettingType::Intl,
                 Box::new(move |context| {
                     DataHandler::<IntlController<T>>::spawn_with_async(
-                        context,
-                        Rc::clone(&device_storage_factory),
-                    )
-                }),
-            );
-        }
-
-        // Keyboard
-        if components.contains(&SettingType::Keyboard) {
-            device_storage_factory
-                .initialize::<KeyboardController<T>>()
-                .await
-                .expect("storage should still be initializing");
-            let device_storage_factory = Rc::clone(&device_storage_factory);
-            factory_handle.register(
-                SettingType::Keyboard,
-                Box::new(move |context| {
-                    DataHandler::<KeyboardController<T>>::spawn_with_async(
                         context,
                         Rc::clone(&device_storage_factory),
                     )

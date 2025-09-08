@@ -2,112 +2,164 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::Request;
-use crate::ingress::{request, watch, Scoped};
-use crate::job::source::{Error as JobError, ErrorResponder};
-use crate::job::Job;
+use super::keyboard_controller::{KeyboardController, Request};
+use crate::handler::setting_handler::ControllerError;
 use crate::keyboard::types::{Autorepeat, KeyboardInfo, KeymapId};
-use fidl::prelude::*;
+use anyhow::Error;
+use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
-    KeyboardRequest, KeyboardSetResponder, KeyboardSetSetResult, KeyboardSettings,
+    Error as SettingsError, KeyboardRequest, KeyboardRequestStream, KeyboardSettings,
     KeyboardWatchResponder,
 };
+use fuchsia_async as fasync;
+use futures::StreamExt;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::channel::oneshot;
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
+};
 
-impl ErrorResponder for KeyboardSetResponder {
-    fn id(&self) -> &'static str {
-        "Keyboard_Set"
-    }
-
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.send(Err(error))
-    }
-}
-
-impl request::Responder<Scoped<KeyboardSetSetResult>> for KeyboardSetResponder {
-    fn respond(self, Scoped(response): Scoped<KeyboardSetSetResult>) {
-        let _ = self.send(response);
-    }
-}
-
-impl watch::Responder<KeyboardSettings, zx::Status> for KeyboardWatchResponder {
-    fn respond(self, response: Result<KeyboardSettings, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings);
-            }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
-            }
+impl From<KeyboardInfo> for KeyboardSettings {
+    fn from(info: KeyboardInfo) -> Self {
+        KeyboardSettings {
+            keymap: info.keymap.map(KeymapId::into),
+            autorepeat: info.autorepeat.map(Autorepeat::into),
+            ..Default::default()
         }
     }
 }
 
-impl TryFrom<KeyboardRequest> for Job {
-    type Error = JobError;
-
-    fn try_from(item: KeyboardRequest) -> Result<Self, Self::Error> {
-        #[allow(unreachable_patterns)]
-        match item {
-            KeyboardRequest::Set { settings, responder } => match to_request(settings) {
-                Ok(request) => {
-                    Ok(request::Work::new(SettingType::Keyboard, request, responder).into())
-                }
-                Err(e) => {
-                    log::error!(
-                        "Transferring from KeyboardSettings to a Set request has an error: {:?}",
-                        e
-                    );
-                    Err(JobError::InvalidInput(Box::new(responder)))
-                }
-            },
-            KeyboardRequest::Watch { responder } => {
-                Ok(watch::Work::new_job(SettingType::Keyboard, responder))
-            }
-            _ => {
-                log::warn!("Received a call to an unsupported API: {:?}", item);
-                Err(JobError::Unsupported)
-            }
-        }
-    }
-}
-
-impl From<SettingInfo> for KeyboardSettings {
-    fn from(response: SettingInfo) -> Self {
-        if let SettingInfo::Keyboard(info) = response {
-            return KeyboardSettings {
-                keymap: info.keymap.map(KeymapId::into),
-                autorepeat: info.autorepeat.map(Autorepeat::into),
-                ..Default::default()
-            };
-        }
-
-        panic!("incorrect value sent to keyboard");
-    }
-}
-
-fn to_request(settings: KeyboardSettings) -> Result<Request, String> {
+fn to_request(settings: KeyboardSettings) -> Result<KeyboardInfo, Error> {
     let autorepeat: Option<Autorepeat> = settings.autorepeat.map(|src| src.into());
     let keymap = settings.keymap.map(KeymapId::try_from).transpose()?;
-    Ok(Request::SetKeyboardInfo(KeyboardInfo { keymap, autorepeat }))
+    Ok(KeyboardInfo { keymap, autorepeat })
+}
+
+pub(super) type SubscriberObject = (UsageResponsePublisher<KeyboardInfo>, KeyboardWatchResponder);
+type HangingGetFn = fn(&KeyboardInfo, SubscriberObject) -> bool;
+pub(super) type HangingGet = server::HangingGet<KeyboardInfo, SubscriberObject, HangingGetFn>;
+pub(super) type Publisher = server::Publisher<KeyboardInfo, SubscriberObject, HangingGetFn>;
+pub(super) type Subscriber = server::Subscriber<KeyboardInfo, SubscriberObject, HangingGetFn>;
+
+pub struct KeyboardFidlHandler {
+    hanging_get: HangingGet,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<KeyboardInfo>,
+}
+
+impl KeyboardFidlHandler {
+    pub(crate) fn new(
+        keyboard_controller: &mut KeyboardController,
+        usage_publisher: UsagePublisher<KeyboardInfo>,
+        initial_value: KeyboardInfo,
+    ) -> (Self, UnboundedReceiver<Request>) {
+        let hanging_get = HangingGet::new(initial_value, Self::hanging_get);
+        keyboard_controller.register_publisher(hanging_get.new_publisher());
+        let (controller_tx, controller_rx) = mpsc::unbounded();
+        (Self { hanging_get, controller_tx, usage_publisher }, controller_rx)
+    }
+
+    fn hanging_get(info: &KeyboardInfo, (usage_responder, responder): SubscriberObject) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&KeyboardSettings::from(*info)) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
+        }
+        true
+    }
+
+    pub fn handle_stream(&mut self, mut stream: KeyboardRequestStream) {
+        let request_handler = RequestHandler {
+            subscriber: self.hanging_get.new_subscriber(),
+            controller_tx: self.controller_tx.clone(),
+            usage_publisher: self.usage_publisher.clone(),
+        };
+        fasync::Task::local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                request_handler.handle_request(request).await;
+            }
+        })
+        .detach();
+    }
+}
+
+#[derive(Debug)]
+enum HandlerError {
+    AlreadySubscribed,
+    InvalidArgument(
+        // Error used by Debug impl for inspect logs.
+        #[allow(dead_code)] Error,
+    ),
+    ControllerStopped,
+    Controller(ControllerError),
+}
+
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
+        match error {
+            HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
+            HandlerError::InvalidArgument(_) => ResponseType::InvalidArgument,
+            HandlerError::ControllerStopped => ResponseType::UnexpectedError,
+            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+        }
+    }
+}
+
+struct RequestHandler {
+    subscriber: Subscriber,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<KeyboardInfo>,
+}
+
+impl RequestHandler {
+    async fn handle_request(&self, request: KeyboardRequest) {
+        match request {
+            KeyboardRequest::Watch { responder } => {
+                let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
+                }
+            }
+            KeyboardRequest::Set { settings, responder } => {
+                let usage_res = self
+                    .usage_publisher
+                    .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
+                if let Err(e) = self.set(settings).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
+            }
+        }
+    }
+
+    async fn set(&self, settings: KeyboardSettings) -> Result<(), HandlerError> {
+        let (set_tx, set_rx) = oneshot::channel();
+        let info = to_request(settings).map_err(|e| HandlerError::InvalidArgument(e))?;
+        self.controller_tx
+            .unbounded_send(Request::Set(info, set_tx))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
+            .await
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::job::{execution, work};
-    use assert_matches::assert_matches;
-    use fidl_fuchsia_settings::{KeyboardMarker, KeyboardRequestStream};
-    use futures::StreamExt;
 
     #[fuchsia::test]
     fn test_request_from_settings_empty() {
-        let request = to_request(KeyboardSettings::default()).unwrap();
-
-        assert_eq!(
-            request,
-            Request::SetKeyboardInfo(KeyboardInfo { keymap: None, autorepeat: None })
-        );
+        let info = to_request(KeyboardSettings::default()).unwrap();
+        assert!(matches!(info, KeyboardInfo { keymap: None, autorepeat: None }));
     }
 
     #[fuchsia::test]
@@ -117,8 +169,10 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(format!("{:?}", to_request(keyboard_settings).unwrap_err())
-            .contains("Received an invalid keymap id:"));
+        assert!(
+            format!("{:?}", to_request(keyboard_settings).unwrap_err())
+                .contains("Received an invalid keymap id:")
+        );
     }
 
     #[fuchsia::test]
@@ -137,49 +191,13 @@ mod tests {
             ..Default::default()
         };
 
-        let request = to_request(keyboard_settings).unwrap();
-
-        assert_eq!(
-            request,
-            Request::SetKeyboardInfo(KeyboardInfo {
+        let info = to_request(keyboard_settings).unwrap();
+        assert!(matches!(
+            info,
+            KeyboardInfo {
                 keymap: Some(KeymapId::FrAzerty),
                 autorepeat: Some(Autorepeat { delay: DELAY, period: PERIOD }),
-            })
-        );
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_set_converts_supplied_params() {
-        let (proxy, server) = fidl::endpoints::create_proxy::<KeyboardMarker>();
-        let _fut = proxy.set(&KeyboardSettings {
-            keymap: Some(fidl_fuchsia_input::KeymapId::FrAzerty),
-            ..Default::default()
-        });
-        let mut request_stream: KeyboardRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
-            .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        let job = job.as_ref();
-        assert_matches!(job.map(|j| j.workload()), Ok(work::Load::Independent(_)));
-        assert_matches!(job.map(|j| j.execution_type()), Ok(execution::Type::Independent));
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn try_from_watch_converts_supplied_params() {
-        let (proxy, server) = fidl::endpoints::create_proxy::<KeyboardMarker>();
-        let _fut = proxy.watch();
-        let mut request_stream: KeyboardRequestStream = server.into_stream();
-        let request = request_stream
-            .next()
-            .await
-            .expect("should have on request before stream is closed")
-            .expect("should have gotten a request");
-        let job = Job::try_from(request);
-        let job = job.as_ref();
-        assert_matches!(job.map(|j| j.workload()), Ok(work::Load::Sequential(_, _)));
-        assert_matches!(job.map(|j| j.execution_type()), Ok(execution::Type::Sequential(_)));
+            },
+        ));
     }
 }

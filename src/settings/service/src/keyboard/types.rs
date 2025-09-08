@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::{Error, anyhow};
 use serde::{Deserialize, Serialize};
+use settings_common::inspect::event::Nameable;
 
 #[derive(PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct KeyboardInfo {
@@ -14,6 +16,10 @@ impl KeyboardInfo {
     pub(crate) fn is_valid(&self) -> bool {
         self.autorepeat.map_or(true, |x| x.is_valid())
     }
+}
+
+impl Nameable for KeyboardInfo {
+    const NAME: &str = "Keyboard";
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -33,7 +39,7 @@ pub(crate) enum KeymapId {
 }
 
 impl TryFrom<fidl_fuchsia_input::KeymapId> for KeymapId {
-    type Error = String;
+    type Error = Error;
 
     fn try_from(src: fidl_fuchsia_input::KeymapId) -> Result<Self, Self::Error> {
         match src {
@@ -41,7 +47,7 @@ impl TryFrom<fidl_fuchsia_input::KeymapId> for KeymapId {
             fidl_fuchsia_input::KeymapId::FrAzerty => Ok(KeymapId::FrAzerty),
             fidl_fuchsia_input::KeymapId::UsDvorak => Ok(KeymapId::UsDvorak),
             fidl_fuchsia_input::KeymapId::UsColemak => Ok(KeymapId::UsColemak),
-            _ => Err(format!("Received an invalid keymap id: {src:?}.")),
+            _ => Err(anyhow!("Received an invalid keymap id: {src:?}.")),
         }
     }
 }
