@@ -78,35 +78,31 @@ impl<'a, T: Transport> TwoWayFutureState<'a, T> {
                 self.project_replace(Self::SendingRequest(future));
                 Ok(())
             }
-            TwoWayFutureStateProj::SendingRequest(future) => {
-                match ready!(future.poll(cx)) {
-                    Ok(future) => {
-                        self.project_replace(Self::ReceiveResponse(future));
-                        Ok(())
-                    }
-                    Err(error) => {
-                        self.finish();
-                        Err(Error::Protocol(error))
-                    }
+            TwoWayFutureStateProj::SendingRequest(future) => match ready!(future.poll(cx)) {
+                Ok(future) => {
+                    self.project_replace(Self::ReceiveResponse(future));
+                    Ok(())
                 }
-            }
+                Err(error) => {
+                    self.finish();
+                    Err(Error::Protocol(error))
+                }
+            },
             TwoWayFutureStateProj::ReceiveResponse(_) => {
                 let future = self.as_mut().finish().unwrap_receive_response();
                 self.project_replace(Self::ReceivingResponse(future));
                 Ok(())
             }
-            TwoWayFutureStateProj::ReceivingResponse(future) => {
-                match ready!(future.poll(cx)) {
-                    Ok(buffer) => {
-                        self.project_replace(Self::DecodeBuffer(buffer));
-                        Ok(())
-                    }
-                    Err(error) => {
-                        self.finish();
-                        Err(Error::Protocol(error))
-                    }
+            TwoWayFutureStateProj::ReceivingResponse(future) => match ready!(future.poll(cx)) {
+                Ok(buffer) => {
+                    self.project_replace(Self::DecodeBuffer(buffer));
+                    Ok(())
                 }
-            }
+                Err(error) => {
+                    self.finish();
+                    Err(Error::Protocol(error))
+                }
+            },
             TwoWayFutureStateProj::DecodeBuffer(_) | TwoWayFutureStateProj::Finished => {
                 panic!("TwoWayFutureState polled after completing");
             }

@@ -8,7 +8,8 @@ use fidl_next_codec::{
 use fuchsia_async::Task;
 
 use crate::{
-    Client, ClientHandler, ClientSender, Responder, Server, ServerHandler, ServerSender, Transport,
+    Client, ClientHandler, ClientSender, NonBlockingTransport, Responder, Server, ServerHandler,
+    ServerSender, Transport,
 };
 
 pub fn assert_encoded<T: Encode<Vec<Chunk>>>(value: T, chunks: &[Chunk]) {
@@ -25,7 +26,10 @@ pub fn assert_decoded<T: for<'a> Decode<&'a mut [Chunk]>>(
     f(value)
 }
 
-pub async fn test_close_on_drop<T: Transport + 'static>(client_end: T, server_end: T) {
+pub async fn test_close_on_drop<T>(make_ends: impl FnOnce() -> (T, T))
+where
+    T: Transport + 'static,
+{
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
@@ -52,6 +56,7 @@ pub async fn test_close_on_drop<T: Transport + 'static>(client_end: T, server_en
         }
     }
 
+    let (client_end, server_end) = make_ends();
     let client = Client::new(client_end);
     let client_sender = client.sender().clone();
     let client_task = Task::spawn(client.run_sender());
@@ -75,7 +80,10 @@ pub async fn test_close_on_drop<T: Transport + 'static>(client_end: T, server_en
     server_task.await.expect("server encountered an error");
 }
 
-pub async fn test_one_way<T: Transport + 'static>(client_end: T, server_end: T) {
+pub async fn test_one_way<T>(make_ends: impl FnOnce() -> (T, T))
+where
+    T: Transport + 'static,
+{
     struct TestServer;
 
     impl<T: Transport> ServerHandler<T> for TestServer {
@@ -96,6 +104,7 @@ pub async fn test_one_way<T: Transport + 'static>(client_end: T, server_end: T) 
         }
     }
 
+    let (client_end, server_end) = make_ends();
     let client = Client::new(client_end);
     let client_sender = client.sender().clone();
     let client_task = Task::spawn(client.run_sender());
@@ -113,7 +122,10 @@ pub async fn test_one_way<T: Transport + 'static>(client_end: T, server_end: T) 
     server_task.await.expect("server encountered an error");
 }
 
-pub async fn test_two_way<T: Transport + 'static>(client_end: T, server_end: T) {
+pub async fn test_two_way<T>(make_ends: impl FnOnce() -> (T, T))
+where
+    T: Transport + 'static,
+{
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
@@ -140,6 +152,7 @@ pub async fn test_two_way<T: Transport + 'static>(client_end: T, server_end: T) 
         }
     }
 
+    let (client_end, server_end) = make_ends();
     let client = Client::new(client_end);
     let client_sender = client.sender().clone();
     let client_task = Task::spawn(client.run_sender());
@@ -162,7 +175,10 @@ pub async fn test_two_way<T: Transport + 'static>(client_end: T, server_end: T) 
     server_task.await.expect("server encountered an error");
 }
 
-pub async fn test_multiple_two_way<T: Transport + 'static>(client_end: T, server_end: T) {
+pub async fn test_multiple_two_way<T>(make_ends: impl FnOnce() -> (T, T))
+where
+    T: Transport + 'static,
+{
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
@@ -196,6 +212,7 @@ pub async fn test_multiple_two_way<T: Transport + 'static>(client_end: T, server
         }
     }
 
+    let (client_end, server_end) = make_ends();
     let client = Client::new(client_end);
     let client_sender = client.sender().clone();
     let client_task = Task::spawn(client.run_sender());
@@ -243,7 +260,10 @@ pub async fn test_multiple_two_way<T: Transport + 'static>(client_end: T, server
     server_task.await.expect("server encountered an error");
 }
 
-pub async fn test_event<T: Transport + 'static>(client_end: T, server_end: T) {
+pub async fn test_event<T>(make_ends: impl FnOnce() -> (T, T))
+where
+    T: Transport + 'static,
+{
     struct TestClient;
 
     impl<T: Transport> ClientHandler<T> for TestClient {
@@ -275,6 +295,7 @@ pub async fn test_event<T: Transport + 'static>(client_end: T, server_end: T) {
         }
     }
 
+    let (client_end, server_end) = make_ends();
     let client = Client::new(client_end);
     let client_task = Task::spawn(client.run(TestClient));
     let server = Server::new(server_end);
@@ -286,6 +307,48 @@ pub async fn test_event<T: Transport + 'static>(client_end: T, server_end: T) {
         .expect("server failed to encode response")
         .await
         .expect("server failed to send response");
+
+    client_task.await.expect("client encountered an error");
+    server_task.await.expect("server encountered an error");
+}
+
+pub async fn test_one_way_nonblocking<T>(make_ends: impl FnOnce() -> (T, T))
+where
+    T: NonBlockingTransport + 'static,
+{
+    struct TestServer;
+
+    impl<T: Transport> ServerHandler<T> for TestServer {
+        async fn on_one_way(&mut self, _: &ServerSender<T>, ordinal: u64, buffer: T::RecvBuffer) {
+            assert_eq!(ordinal, 42);
+            let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
+            assert_eq!(&**message, "Hello world");
+        }
+
+        async fn on_two_way(
+            &mut self,
+            _: &ServerSender<T>,
+            _: u64,
+            _: T::RecvBuffer,
+            _: Responder,
+        ) {
+            panic!("unexpected two-way message");
+        }
+    }
+
+    let (client_end, server_end) = make_ends();
+    let client = Client::new(client_end);
+    let client_sender = client.sender().clone();
+    let client_task = Task::spawn(client.run_sender());
+    let server_task = Task::spawn(Server::new(server_end).run(TestServer));
+
+    client_sender
+        .send_one_way(42, "Hello world")
+        .expect("client failed to encode request")
+        .send_immediately()
+        .expect("client failed to send request");
+
+    client_sender.close();
 
     client_task.await.expect("client encountered an error");
     server_task.await.expect("server encountered an error");

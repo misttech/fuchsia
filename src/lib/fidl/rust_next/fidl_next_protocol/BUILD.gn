@@ -7,10 +7,11 @@ import("//build/fidl/fidl.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
 
-rustc_library("fidl_next_protocol") {
+_common = {
   edition = "2021"
   sources = [
     "src/buffer.rs",
+    "src/concurrency.rs",
     "src/endpoints/client.rs",
     "src/endpoints/connection.rs",
     "src/endpoints/lockers.rs",
@@ -32,10 +33,14 @@ rustc_library("fidl_next_protocol") {
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
 
-    # Used for lock-free mpsc channel, but not for any APIs
+    # Used for atomic wakers, but not for any APIs
     "//third_party/rust_crates:futures",
   ]
   features = []
+}
+
+rustc_library("fidl_next_protocol") {
+  forward_variables_from(_common, "*")
 
   if (is_fuchsia) {
     sources += [
@@ -66,9 +71,41 @@ fuchsia_unittest_package("fidl_next_protocol_test_package") {
   deps = [ ":fidl_next_protocol_test" ]
 }
 
+if (is_host) {
+  rustc_library("fidl_next_protocol_loom") {
+    forward_variables_from(_common, "*")
+
+    configs += [ ":loom" ]
+    features = [ "loom" ]
+    deps -= [ "//third_party/rust_crates:futures" ]
+    deps += [ "//third_party/rust_crates:loom" ]
+    testonly = true
+  }
+
+  rustc_test("fidl_next_protocol_loom_tests") {
+    edition = "2021"
+    source_root = "tests/loom.rs"
+    sources = [ "tests/loom.rs" ]
+    deps = [
+      ":fidl_next_protocol_loom",
+      "//src/lib/fidl/rust_next/fidl_next_codec",
+      "//third_party/rust_crates:futures",
+      "//third_party/rust_crates:loom",
+    ]
+  }
+}
+
+config("loom") {
+  # The loom crate documentation recommends compiling with optimizations since
+  # the number of iterations can be large enough to make tests unreasonably slow
+  # otherwise.
+  configs = [ "//build/config:optimize_moderate" ]
+}
+
 group("tests") {
   testonly = true
   deps = [
+    ":fidl_next_protocol_loom_tests($host_toolchain)",
     ":fidl_next_protocol_test($host_toolchain)",
     ":fidl_next_protocol_test_package",
   ]

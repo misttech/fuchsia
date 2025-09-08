@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use core::fmt;
-use core::hint::unreachable_unchecked;
 use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
     Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, FromWire, FromWireRef, Slot,
     Wire, WireI32, munge,
 };
+
+use crate::concurrency::hint::unreachable_unchecked;
 
 /// An internal framework error.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

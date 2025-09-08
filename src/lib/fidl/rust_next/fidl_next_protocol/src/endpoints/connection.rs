@@ -2,17 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::cell::UnsafeCell;
 use core::future::Future;
-use core::hint::unreachable_unchecked;
 use core::mem::{ManuallyDrop, MaybeUninit, replace, take};
 use core::pin::Pin;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::{Context, Poll, Waker};
-use std::sync::Mutex;
 
 use fidl_next_codec::EncodeError;
-use futures::task::AtomicWaker;
+
+use crate::concurrency::cell::UnsafeCell;
+use crate::concurrency::future::AtomicWaker;
+use crate::concurrency::hint::unreachable_unchecked;
+use crate::concurrency::sync::Mutex;
+use crate::concurrency::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{NonBlockingTransport, ProtocolError, Transport, encode_epitaph, encode_header};
 
@@ -86,21 +87,27 @@ unsafe impl<T: Transport> Sync for Connection<T> {}
 
 impl<T: Transport> Drop for Connection<T> {
     fn drop(&mut self) {
-        let state = State(*self.state.get_mut());
+        self.state.with_mut(|state| {
+            let state = State(*state);
 
-        if !state.is_terminated() {
-            // SAFETY: The connection was not terminated before being dropped,
-            // so `shared` has not yet been dropped.
-            unsafe {
-                ManuallyDrop::drop(self.shared.get_mut());
+            if !state.is_terminated() {
+                self.shared.with_mut(|shared| {
+                    // SAFETY: The connection was not terminated before being
+                    // dropped, so `shared` has not yet been dropped.
+                    unsafe {
+                        ManuallyDrop::drop(&mut *shared);
+                    }
+                });
+            } else {
+                self.termination_reason.with_mut(|termination_reason| {
+                    // SAFETY: The connection was terminated before being
+                    // dropped, so `termination_reason` is initialized.
+                    unsafe {
+                        MaybeUninit::assume_init_drop(&mut *termination_reason);
+                    }
+                });
             }
-        } else {
-            // SAFETY: The connection was terminated before being dropped, so
-            // `termination_reason` is initialized.
-            unsafe {
-                self.termination_reason.get_mut().assume_init_drop();
-            }
-        }
+        });
     }
 }
 
@@ -121,15 +128,17 @@ impl<T: Transport> Connection<T> {
     /// This thread must have loaded `state` with at least `Ordering::Acquire`
     /// and observed that `TERMINATED_BIT` was set.
     unsafe fn get_termination_reason_unchecked(&self) -> ProtocolError<T::Error> {
-        // SAFETY: The caller guaranteed that `state` was loaded with at least
-        // `Ordering::Acquire` ordering and observed that `TERMINATED_BIT` was
-        // set.
-        unsafe { (&*self.termination_reason.get()).assume_init_ref().clone() }
+        self.termination_reason.with(|termination_reason| {
+            // SAFETY: The caller guaranteed that `state` was loaded with at
+            // least `Ordering::Acquire` ordering and observed that
+            // `TERMINATED_BIT` was set.
+            unsafe { MaybeUninit::assume_init_ref(&*termination_reason).clone() }
+        })
     }
 
     /// Returns the termination reason for the connection, if any.
     pub fn get_termination_reason(&self) -> Option<ProtocolError<T::Error>> {
-        if self.state.load(Ordering::Acquire) & TERMINATED_BIT != 0 {
+        if State(self.state.load(Ordering::Acquire)).is_terminated() {
             // SAFETY: We loaded the state with `Ordering::Acquire` and observed
             // that `TERMINATED_BIT` was set.
             unsafe { Some(self.get_termination_reason_unchecked()) }
@@ -143,8 +152,10 @@ impl<T: Transport> Connection<T> {
     /// `shared` must not have been dropped. See the documentation on `shared`
     /// for acceptable criteria.
     unsafe fn get_shared_unchecked(&self) -> &T::Shared {
-        // SAFETY: The caller guaranteed that `shared` has not been dropped.
-        unsafe { &*self.shared.get() }
+        self.shared.with(|shared| {
+            // SAFETY: The caller guaranteed that `shared` has not been dropped.
+            unsafe { &*shared }
+        })
     }
 
     fn with_shared<U>(
@@ -180,7 +191,7 @@ impl<T: Transport> Connection<T> {
             success_result = Some(success(shared));
         }
 
-        let pre_decrement = State(self.state.fetch_sub(REFCOUNT, Ordering::Acquire));
+        let pre_decrement = State(self.state.fetch_sub(REFCOUNT, Ordering::AcqRel));
 
         if !pre_decrement.is_stopping() {
             success_result.unwrap()
@@ -190,11 +201,13 @@ impl<T: Transport> Connection<T> {
             // The connection is terminated. If we decremented the refcount to
             // 0, then we need to drop `shared`.
             if pre_decrement.refcount() == 1 {
-                // SAFETY: We decremented the refcount to 0 while
-                // `TERMINATED_BIT` was set.
-                unsafe {
-                    ManuallyDrop::drop(&mut *self.shared.get());
-                }
+                self.shared.with_mut(|shared| {
+                    // SAFETY: We decremented the refcount to 0 while
+                    // `TERMINATED_BIT` was set.
+                    unsafe {
+                        ManuallyDrop::drop(&mut *shared);
+                    }
+                });
             }
 
             // SAFETY: We loaded `state` with `Ordering::Acquire` and observed
@@ -241,7 +254,7 @@ impl<T: Transport> Connection<T> {
         // terminated, and will not be terminated until the returned future is
         // completed or canceled. As long as the connection is not terminated,
         // `shared` will not be dropped.
-        let shared = unsafe { &*self.shared.get() };
+        let shared = unsafe { self.get_shared_unchecked() };
 
         let mut buffer = T::acquire(shared);
         encode_header::<T>(&mut buffer, 0, ORDINAL_EPITAPH).unwrap();
@@ -262,7 +275,7 @@ impl<T: Transport> Connection<T> {
         // terminated, and will not be terminated until the returned future is
         // completed or canceled. As long as the connection is not terminated,
         // `shared` will not be dropped.
-        let shared = unsafe { &*self.shared.get() };
+        let shared = unsafe { self.get_shared_unchecked() };
 
         let future_state = T::begin_recv(shared, exclusive);
         RecvFuture { connection: self, exclusive, future_state }
@@ -295,22 +308,26 @@ impl<T: Transport> Connection<T> {
     /// # Safety
     ///
     /// `terminate` may only be called once per connection.
-    pub unsafe fn terminate(&self, termination_reason: ProtocolError<T::Error>) {
-        // SAFETY: The caller guaranteed that this is the only time `terminate`
-        // is called on this connection.
-        unsafe {
-            self.termination_reason.get().write(MaybeUninit::new(termination_reason));
-        }
+    pub unsafe fn terminate(&self, reason: ProtocolError<T::Error>) {
+        self.termination_reason.with_mut(|termination_reason| {
+            // SAFETY: The caller guaranteed that this is the only time
+            // `terminate` is called on this connection.
+            unsafe {
+                termination_reason.write(MaybeUninit::new(reason));
+            }
+        });
         let pre_terminate =
-            State(self.state.fetch_or(STOPPING_BIT | TERMINATED_BIT, Ordering::Release));
+            State(self.state.fetch_or(STOPPING_BIT | TERMINATED_BIT, Ordering::AcqRel));
 
         // If we set `TERMINATED_BIT` and the refcount was 0, then we need to
         // drop `shared`.
         if !pre_terminate.is_terminated() && pre_terminate.refcount() == 0 {
-            // SAFETY: We set `TERMINATED_BIT` while the refcount was 0.
-            unsafe {
-                ManuallyDrop::drop(&mut *self.shared.get());
-            }
+            self.shared.with_mut(|shared| {
+                // SAFETY: We set `TERMINATED_BIT` while the refcount was 0.
+                unsafe {
+                    ManuallyDrop::drop(&mut *shared);
+                }
+            });
         }
 
         // Wake all of the futures waiting for a termination reason
@@ -458,12 +475,18 @@ impl<T: Transport> Future for SendFuture<'_, T> {
                     |error| Poll::Ready(Err(error)),
                 );
 
-                match result {
+                let result = match result {
                     Poll::Pending => Poll::Pending,
                     Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
                     Poll::Ready(Err(None)) => this.register_termination_waker(cx, None),
                     Poll::Ready(Err(Some(error))) => Poll::Ready(Err(error)),
+                };
+
+                if result.is_ready() {
+                    this.state = SendFutureState::Finished;
                 }
+
+                result
             }
             SendFutureState::Stopping => this.register_termination_waker(cx, None),
             SendFutureState::Terminated { .. } => {
@@ -509,7 +532,7 @@ impl<T: Transport> Future for RecvFuture<'_, T> {
             Poll::Pending => {
                 // Receive didn't complete, register waker before
                 // re-checking state.
-                this.connection.stop_waker.register(cx.waker());
+                this.connection.stop_waker.register_by_ref(cx.waker());
                 let state = State(this.connection.state.load(Ordering::Relaxed));
                 if state.is_stopping() {
                     // The connection is stopping. Return an error that the

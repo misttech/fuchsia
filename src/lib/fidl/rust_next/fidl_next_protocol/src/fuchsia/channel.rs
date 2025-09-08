@@ -320,45 +320,42 @@ mod tests {
     use fidl_next_codec::fuchsia::{HandleDecoder, HandleEncoder, WireHandle};
     use fidl_next_codec::{
         Decode, DecodeError, DecoderExt as _, Encodable, Encode, EncodeError, EncoderExt as _,
-        FromWire, Slot, Wire, WireString, munge,
+        FromWire, Slot, Wire, munge,
     };
     use fuchsia_async as fasync;
     use zx::{AsHandleRef, Channel, Handle, HandleBased as _, Instant, Signals, WaitResult};
 
     use crate::fuchsia::channel::{Buffer, RecvBuffer};
-    use crate::testing::{
-        test_close_on_drop, test_event, test_multiple_two_way, test_one_way, test_two_way,
-    };
-    use crate::{Client, Responder, Server, ServerHandler, ServerSender, Transport};
+    use crate::testing::*;
 
     #[fasync::run_singlethreaded(test)]
     async fn close_on_drop() {
-        let (client_end, server_end) = Channel::create();
-        test_close_on_drop(client_end, server_end).await;
+        test_close_on_drop(Channel::create).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn one_way() {
-        let (client_end, server_end) = Channel::create();
-        test_one_way(client_end, server_end).await;
+        test_one_way(Channel::create).await;
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn one_way_nonblocking() {
+        test_one_way_nonblocking(Channel::create).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn two_way() {
-        let (client_end, server_end) = Channel::create();
-        test_two_way(client_end, server_end).await;
+        test_two_way(Channel::create).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn multiple_two_way() {
-        let (client_end, server_end) = Channel::create();
-        test_multiple_two_way(client_end, server_end).await;
+        test_multiple_two_way(Channel::create).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn event() {
-        let (client_end, server_end) = Channel::create();
-        test_event(client_end, server_end).await;
+        test_event(Channel::create).await;
     }
 
     struct HandleAndBoolean {
@@ -472,50 +469,5 @@ mod tests {
             check_end.wait_handle(Signals::CHANNEL_PEER_CLOSED, Instant::INFINITE_PAST),
             WaitResult::Ok(Signals::CHANNEL_PEER_CLOSED),
         );
-    }
-
-    #[fasync::run_singlethreaded(test)]
-    async fn one_way_nonblocking() {
-        let (client_end, server_end) = Channel::create();
-        struct TestServer;
-
-        impl<T: Transport> ServerHandler<T> for TestServer {
-            async fn on_one_way(
-                &mut self,
-                _: &ServerSender<T>,
-                ordinal: u64,
-                buffer: T::RecvBuffer,
-            ) {
-                assert_eq!(ordinal, 42);
-                let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
-                assert_eq!(&**message, "Hello world");
-            }
-
-            async fn on_two_way(
-                &mut self,
-                _: &ServerSender<T>,
-                _: u64,
-                _: T::RecvBuffer,
-                _: Responder,
-            ) {
-                panic!("unexpected two-way message");
-            }
-        }
-
-        let client = Client::new(client_end);
-        let client_sender = client.sender().clone();
-        let client_task = fasync::Task::spawn(client.run_sender());
-        let server_task = fasync::Task::spawn(Server::new(server_end).run(TestServer));
-
-        client_sender
-            .send_one_way(42, "Hello world")
-            .expect("client failed to encode request")
-            .send_immediately()
-            .expect("client failed to send request");
-
-        client_sender.close();
-
-        client_task.await.expect("client encountered an error");
-        server_task.await.expect("server encountered an error");
     }
 }

@@ -16,11 +16,14 @@ use crate::Error;
 enum SendFutureState<'a, T: Transport> {
     EncodeError(EncodeError),
     SendRequest(#[pin] fidl_next_protocol::SendFuture<'a, T>),
-    Finished
+    Finished,
 }
 
 impl<'a, T: Transport> SendFutureState<'a, T> {
-    fn poll_state(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error<T::Error>>> {
+    fn poll_state(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), Error<T::Error>>> {
         match self.as_mut().project() {
             SendFutureStateProj::EncodeError(_) => {
                 let state = self.project_replace(SendFutureState::Finished);
@@ -29,12 +32,10 @@ impl<'a, T: Transport> SendFutureState<'a, T> {
                 };
                 Poll::Ready(Err(Error::Encode(error)))
             }
-            SendFutureStateProj::SendRequest(future) => {
-                match ready!(future.poll(cx)) {
-                    Ok(()) => Poll::Ready(Ok(())),
-                    Err(error) => Poll::Ready(Err(Error::Protocol(error))),
-                }
-            }
+            SendFutureStateProj::SendRequest(future) => match ready!(future.poll(cx)) {
+                Ok(()) => Poll::Ready(Ok(())),
+                Err(error) => Poll::Ready(Err(Error::Protocol(error))),
+            },
             SendFutureStateProj::Finished => {
                 panic!("SendFutureState polled after completing");
             }

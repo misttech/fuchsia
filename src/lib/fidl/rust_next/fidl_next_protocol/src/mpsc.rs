@@ -10,13 +10,15 @@ use core::mem::{ManuallyDrop, take};
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::task::{Context, Poll};
-use std::sync::{Arc, mpsc};
 
 use fidl_next_codec::decoder::InternalHandleDecoder;
 use fidl_next_codec::{CHUNK_SIZE, Chunk, DecodeError, Decoder};
-use futures::task::AtomicWaker;
 
-use crate::Transport;
+use crate::concurrency::future::AtomicWaker;
+use crate::concurrency::sync::atomic::{AtomicBool, Ordering};
+use crate::concurrency::sync::{Arc, mpsc};
+
+use crate::{NonBlockingTransport, Transport};
 
 /// A paired mpsc transport.
 pub struct Mpsc {
@@ -27,20 +29,19 @@ pub struct Mpsc {
 impl Mpsc {
     /// Creates two mpscs which can communicate with each other.
     pub fn new() -> (Self, Self) {
-        let send_wakers = Arc::new([AtomicWaker::new(), AtomicWaker::new()]);
+        let state = Arc::new(State {
+            send_wakers: [AtomicWaker::new(), AtomicWaker::new()],
+            is_closed: AtomicBool::new(false),
+        });
         let (a_send, a_recv) = mpsc::channel();
         let (b_send, b_recv) = mpsc::channel();
         (
             Mpsc {
-                shared: Shared {
-                    send_wakers: send_wakers.clone(),
-                    end: 0,
-                    sender: ManuallyDrop::new(a_send),
-                },
+                shared: Shared { state: state.clone(), end: 0, sender: ManuallyDrop::new(a_send) },
                 exclusive: Exclusive { receiver: b_recv },
             },
             Mpsc {
-                shared: Shared { send_wakers, end: 1, sender: ManuallyDrop::new(b_send) },
+                shared: Shared { state, end: 1, sender: ManuallyDrop::new(b_send) },
                 exclusive: Exclusive { receiver: a_recv },
             },
         )
@@ -59,9 +60,14 @@ impl fmt::Display for Error {
 
 impl core::error::Error for Error {}
 
+struct State {
+    send_wakers: [AtomicWaker; 2],
+    is_closed: AtomicBool,
+}
+
 /// The shared part of a paired mpsc transport.
 pub struct Shared {
-    send_wakers: Arc<[AtomicWaker; 2]>,
+    state: Arc<State>,
     end: usize,
     sender: ManuallyDrop<mpsc::Sender<Vec<Chunk>>>,
 }
@@ -72,7 +78,8 @@ impl Drop for Shared {
         unsafe {
             ManuallyDrop::drop(&mut self.sender);
         }
-        self.send_wakers[self.end].wake();
+        self.state.is_closed.store(true, Ordering::Relaxed);
+        self.state.send_wakers[self.end].wake();
     }
 }
 
@@ -154,18 +161,11 @@ impl Transport for Mpsc {
     }
 
     fn poll_send(
-        mut future_state: Pin<&mut SendFutureState>,
+        future_state: Pin<&mut SendFutureState>,
         _: &mut Context<'_>,
         shared: &Self::Shared,
     ) -> Poll<Result<(), Option<Error>>> {
-        let chunks = take(&mut future_state.buffer);
-        match shared.sender.send(chunks) {
-            Ok(()) => {
-                shared.send_wakers[shared.end].wake();
-                Poll::Ready(Ok(()))
-            }
-            Err(_) => Poll::Ready(Err(None)),
-        }
+        Poll::Ready(Self::send_immediately(future_state.get_mut(), shared))
     }
 
     type Exclusive = Exclusive;
@@ -182,11 +182,31 @@ impl Transport for Mpsc {
         shared: &Self::Shared,
         exclusive: &mut Self::Exclusive,
     ) -> Poll<Result<Self::RecvBuffer, Option<Self::Error>>> {
-        shared.send_wakers[1 - shared.end].register(cx.waker());
+        shared.state.send_wakers[1 - shared.end].register_by_ref(cx.waker());
+        if shared.state.is_closed.load(Ordering::Relaxed) {
+            return Poll::Ready(Err(None));
+        }
+
         match exclusive.receiver.try_recv() {
             Ok(chunks) => Poll::Ready(Ok(RecvBuffer { chunks, chunks_taken: 0 })),
             Err(mpsc::TryRecvError::Empty) => Poll::Pending,
             Err(mpsc::TryRecvError::Disconnected) => Poll::Ready(Err(None)),
+        }
+    }
+}
+
+impl NonBlockingTransport for Mpsc {
+    fn send_immediately(
+        future_state: &mut Self::SendFutureState,
+        shared: &Self::Shared,
+    ) -> Result<(), Option<Self::Error>> {
+        let chunks = take(&mut future_state.buffer);
+        match shared.sender.send(chunks) {
+            Ok(()) => {
+                shared.state.send_wakers[shared.end].wake();
+                Ok(())
+            }
+            Err(_) => Err(None),
         }
     }
 }
@@ -200,31 +220,31 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn close_on_drop() {
-        let (client_end, server_end) = Mpsc::new();
-        test_close_on_drop(client_end, server_end).await;
+        test_close_on_drop(Mpsc::new).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn one_way() {
-        let (client_end, server_end) = Mpsc::new();
-        test_one_way(client_end, server_end).await;
+        test_one_way(Mpsc::new).await;
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn one_way_nonblocking() {
+        test_one_way_nonblocking(Mpsc::new).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn two_way() {
-        let (client_end, server_end) = Mpsc::new();
-        test_two_way(client_end, server_end).await;
+        test_two_way(Mpsc::new).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn multiple_two_way() {
-        let (client_end, server_end) = Mpsc::new();
-        test_multiple_two_way(client_end, server_end).await;
+        test_multiple_two_way(Mpsc::new).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn event() {
-        let (client_end, server_end) = Mpsc::new();
-        test_event(client_end, server_end).await;
+        test_event(Mpsc::new).await;
     }
 }

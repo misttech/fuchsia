@@ -7,9 +7,10 @@
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll, ready};
-use std::sync::{Arc, Mutex};
 
 use fidl_next_codec::{Encode, EncodeError, EncoderExt};
+
+use crate::concurrency::sync::{Arc, Mutex};
 
 use crate::{ProtocolError, Transport, decode_epitaph, decode_header, encode_header};
 

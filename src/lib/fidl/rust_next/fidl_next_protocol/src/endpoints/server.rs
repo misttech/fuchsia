@@ -6,10 +6,11 @@
 
 use core::future::Future;
 use core::num::NonZeroU32;
-use core::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
 
 use fidl_next_codec::{Encode, EncodeError, EncoderExt as _};
+
+use crate::concurrency::sync::Arc;
+use crate::concurrency::sync::atomic::{AtomicI64, Ordering};
 
 use crate::{ProtocolError, Transport, decode_header, encode_header};
 
