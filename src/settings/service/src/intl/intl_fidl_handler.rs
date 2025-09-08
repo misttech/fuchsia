@@ -2,127 +2,128 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::Request;
-use crate::ingress::{request, watch, Scoped};
-use crate::job::source::{Error as JobError, ErrorResponder};
-use crate::job::Job;
-
-use fidl::endpoints::{ControlHandle, Responder};
+use super::intl_controller::{IntlController, Request};
+use super::types::IntlInfo;
+use crate::handler::setting_handler::ControllerError;
+use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
-    IntlRequest, IntlSetResponder, IntlSetResult, IntlSettings, IntlWatchResponder,
+    Error as SettingsError, IntlRequest, IntlRequestStream, IntlSettings, IntlWatchResponder,
+};
+use fuchsia_async as fasync;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::channel::oneshot;
+use futures::StreamExt;
+use settings_common::inspect::event::{
+    RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
 };
 
-impl From<SettingInfo> for IntlSettings {
-    fn from(response: SettingInfo) -> Self {
-        if let SettingInfo::Intl(info) = response {
-            return info.into();
+pub(super) type SubscriberObject = (UsageResponsePublisher<IntlInfo>, IntlWatchResponder);
+type HangingGetFn = fn(&IntlInfo, SubscriberObject) -> bool;
+pub(super) type HangingGet = server::HangingGet<IntlInfo, SubscriberObject, HangingGetFn>;
+pub(super) type Publisher = server::Publisher<IntlInfo, SubscriberObject, HangingGetFn>;
+pub(super) type Subscriber = server::Subscriber<IntlInfo, SubscriberObject, HangingGetFn>;
+
+pub struct IntlFidlHandler {
+    hanging_get: HangingGet,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<IntlInfo>,
+}
+
+impl IntlFidlHandler {
+    pub(crate) fn new(
+        intl_controller: &mut IntlController,
+        usage_publisher: UsagePublisher<IntlInfo>,
+        initial_value: IntlInfo,
+    ) -> (Self, UnboundedReceiver<Request>) {
+        let hanging_get = HangingGet::new(initial_value, Self::hanging_get);
+        intl_controller.register_publisher(hanging_get.new_publisher());
+        let (controller_tx, controller_rx) = mpsc::unbounded();
+        (Self { hanging_get, controller_tx, usage_publisher }, controller_rx)
+    }
+
+    fn hanging_get(info: &IntlInfo, (usage_responder, responder): SubscriberObject) -> bool {
+        usage_responder.respond(format!("{info:?}"), ResponseType::OkSome);
+        if let Err(e) = responder.send(&IntlSettings::from(info.clone())) {
+            log::warn!("Failed to respond to watch request: {e:?}");
+            return false;
         }
-
-        panic!("incorrect value sent to intl");
-    }
-}
-
-impl From<IntlSettings> for Request {
-    fn from(settings: IntlSettings) -> Self {
-        Request::SetIntlInfo(settings.into())
-    }
-}
-
-impl TryFrom<IntlRequest> for Job {
-    type Error = JobError;
-    fn try_from(item: IntlRequest) -> Result<Self, Self::Error> {
-        #[allow(unreachable_patterns)]
-        match item {
-            IntlRequest::Set { settings, responder } => Ok(request::Work::new(
-                SettingType::Intl,
-                Request::SetIntlInfo(settings.into()),
-                responder,
-            )
-            .into()),
-            IntlRequest::Watch { responder } => {
-                Ok(watch::Work::new_job(SettingType::Intl, responder))
-            }
-            _ => {
-                log::warn!("Received a call to an unsupported API: {:?}", item);
-                Err(JobError::Unsupported)
-            }
-        }
-    }
-}
-
-impl ErrorResponder for IntlSetResponder {
-    fn id(&self) -> &'static str {
-        "Intl_Set"
+        true
     }
 
-    fn respond(self: Box<Self>, error: fidl_fuchsia_settings::Error) -> Result<(), fidl::Error> {
-        self.send(Err(error))
-    }
-}
-
-impl watch::Responder<IntlSettings, zx::Status> for IntlWatchResponder {
-    fn respond(self, response: Result<IntlSettings, zx::Status>) {
-        match response {
-            Ok(settings) => {
-                let _ = self.send(&settings).ok();
-            }
-            Err(error) => {
-                self.control_handle().shutdown_with_epitaph(error);
-            }
-        }
-    }
-}
-
-impl request::Responder<Scoped<IntlSetResult>> for IntlSetResponder {
-    fn respond(self, Scoped(response): Scoped<IntlSetResult>) {
-        let _ = self.send(response).ok();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::intl::types::{HourCycle, IntlInfo, LocaleId, TemperatureUnit};
-
-    use super::*;
-
-    #[fuchsia::test]
-    fn test_request_from_settings_empty() {
-        let request = Request::from(IntlSettings::default());
-
-        assert_eq!(
-            request,
-            Request::SetIntlInfo(IntlInfo {
-                locales: None,
-                temperature_unit: None,
-                time_zone_id: None,
-                hour_cycle: None,
-            })
-        );
-    }
-
-    #[fuchsia::test]
-    fn test_request_from_settings() {
-        const TIME_ZONE_ID: &str = "PDT";
-
-        let intl_settings = IntlSettings {
-            locales: Some(vec![fidl_fuchsia_intl::LocaleId { id: "blah".into() }]),
-            temperature_unit: Some(fidl_fuchsia_intl::TemperatureUnit::Celsius),
-            time_zone_id: Some(fidl_fuchsia_intl::TimeZoneId { id: TIME_ZONE_ID.to_string() }),
-            hour_cycle: Some(fidl_fuchsia_settings::HourCycle::H12),
-            ..Default::default()
+    pub fn handle_stream(&mut self, mut stream: IntlRequestStream) {
+        let request_handler = RequestHandler {
+            subscriber: self.hanging_get.new_subscriber(),
+            controller_tx: self.controller_tx.clone(),
+            usage_publisher: self.usage_publisher.clone(),
         };
+        fasync::Task::local(async move {
+            while let Some(Ok(request)) = stream.next().await {
+                request_handler.handle_request(request).await;
+            }
+        })
+        .detach();
+    }
+}
 
-        let request = Request::from(intl_settings);
+#[derive(Debug)]
+enum HandlerError {
+    AlreadySubscribed,
+    ControllerStopped,
+    Controller(ControllerError),
+}
 
-        assert_eq!(
-            request,
-            Request::SetIntlInfo(IntlInfo {
-                locales: Some(vec![LocaleId { id: "blah".into() }]),
-                temperature_unit: Some(TemperatureUnit::Celsius),
-                time_zone_id: Some(TIME_ZONE_ID.to_string()),
-                hour_cycle: Some(HourCycle::H12),
-            })
-        );
+impl From<&HandlerError> for ResponseType {
+    fn from(error: &HandlerError) -> Self {
+        match error {
+            HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
+            HandlerError::ControllerStopped => ResponseType::UnexpectedError,
+            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+        }
+    }
+}
+
+struct RequestHandler {
+    subscriber: Subscriber,
+    controller_tx: UnboundedSender<Request>,
+    usage_publisher: UsagePublisher<IntlInfo>,
+}
+
+impl RequestHandler {
+    async fn handle_request(&self, request: IntlRequest) {
+        match request {
+            IntlRequest::Watch { responder } => {
+                let usage_res = self.usage_publisher.request("Watch".to_string(), RequestType::Get);
+                if let Err((usage_res, responder)) =
+                    self.subscriber.register2((usage_res, responder))
+                {
+                    let e = HandlerError::AlreadySubscribed;
+                    usage_res.respond(format!("Err({e:?})"), ResponseType::from(&e));
+                    drop(responder);
+                }
+            }
+            IntlRequest::Set { settings, responder } => {
+                let usage_res = self
+                    .usage_publisher
+                    .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
+                if let Err(e) = self.set(settings).await {
+                    usage_res.respond(format!("Err({e:?}"), ResponseType::from(&e));
+                    let _ = responder.send(Err(SettingsError::Failed));
+                } else {
+                    usage_res.respond("Ok(())".to_string(), ResponseType::OkNone);
+                    let _ = responder.send(Ok(()));
+                }
+            }
+        }
+    }
+
+    async fn set(&self, settings: IntlSettings) -> Result<(), HandlerError> {
+        let (set_tx, set_rx) = oneshot::channel();
+        self.controller_tx
+            .unbounded_send(Request::Set(IntlInfo::from(settings), set_tx))
+            .map_err(|_| HandlerError::ControllerStopped)?;
+        set_rx
+            .await
+            .map_err(|_| HandlerError::ControllerStopped)
+            .and_then(|res| res.map_err(HandlerError::Controller))
     }
 }

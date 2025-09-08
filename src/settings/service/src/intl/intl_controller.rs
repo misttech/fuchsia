@@ -2,21 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::intl_fidl_handler::Publisher;
 use crate::base::{Merge, SettingInfo, SettingType};
-use crate::handler::base::Request;
-use crate::handler::setting_handler::persist::{controller as data_controller, ClientProxy};
-use crate::handler::setting_handler::{
-    controller, ControllerError, IntoHandlerResult, SettingHandlerResult,
-};
+use crate::handler::setting_handler::ControllerError;
 use crate::intl::types::{HourCycle, IntlInfo, LocaleId, TemperatureUnit};
-use async_trait::async_trait;
+use futures::channel::mpsc::UnboundedReceiver;
+use futures::channel::oneshot::Sender;
+use futures::StreamExt;
+use settings_common::inspect::event::SettingValuePublisher;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::fidl_storage::FidlStorageConvertible;
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
+use settings_storage::UpdateState;
 use std::collections::HashSet;
-use std::marker::PhantomData;
 use std::rc::Rc;
-use {fuchsia_trace as ftrace, rust_icu_uenum as uenum, rust_icu_uloc as uloc};
+use {fuchsia_async as fasync, rust_icu_uenum as uenum, rust_icu_uloc as uloc};
 
 impl DeviceStorageCompatible for IntlInfo {
     type Loader = NoneT;
@@ -62,46 +62,69 @@ impl From<&IntlInfo> for SettingType {
     }
 }
 
-pub struct IntlController<F> {
-    client: ClientProxy,
-    store: Rc<DeviceStorage>,
-    time_zone_ids: std::collections::HashSet<String>,
-    _phantom: PhantomData<F>,
+pub(crate) enum Request {
+    Set(IntlInfo, Sender<Result<(), ControllerError>>),
 }
 
-impl<F> StorageAccess for IntlController<F> {
+pub struct IntlController {
+    store: Rc<DeviceStorage>,
+    time_zone_ids: std::collections::HashSet<String>,
+    publisher: Option<Publisher>,
+    setting_value_publisher: SettingValuePublisher<IntlInfo>,
+}
+
+impl StorageAccess for IntlController {
     type Storage = DeviceStorage;
     type Data = IntlInfo;
     const STORAGE_KEY: &'static str = <IntlInfo as DeviceStorageCompatible>::KEY;
 }
 
-#[async_trait(?Send)]
-impl<F> data_controller::CreateWithAsync for IntlController<F>
-where
-    F: StorageFactory<Storage = DeviceStorage>,
-{
-    type Data = Rc<F>;
-    async fn create_with(client: ClientProxy, data: Self::Data) -> Result<Self, ControllerError> {
-        let time_zone_ids = Self::load_time_zones();
-        let store = data.get_store().await;
-        Ok(IntlController { client, store, time_zone_ids, _phantom: PhantomData })
-    }
-}
-
-#[async_trait(?Send)]
-impl<F> controller::Handle for IntlController<F> {
-    async fn handle(&self, request: Request) -> Option<SettingHandlerResult> {
-        match request {
-            Request::SetIntlInfo(info) => Some(self.set(info).await),
-            Request::Get => Some(Ok(Some(self.store.get::<IntlInfo>().await.into()))),
-            _ => None,
-        }
-    }
-}
-
 /// Controller for processing requests surrounding the Intl protocol, backed by a number of
 /// services, including TimeZone.
-impl<F> IntlController<F> {
+impl IntlController {
+    pub(super) async fn new<F>(
+        storage_factory: Rc<F>,
+        setting_value_publisher: SettingValuePublisher<IntlInfo>,
+    ) -> Self
+    where
+        F: StorageFactory<Storage = DeviceStorage>,
+    {
+        IntlController {
+            store: storage_factory.get_store().await,
+            time_zone_ids: Self::load_time_zones(),
+            publisher: None,
+            setting_value_publisher,
+        }
+    }
+
+    pub(super) fn register_publisher(&mut self, publisher: Publisher) {
+        self.publisher = Some(publisher);
+    }
+
+    fn publish(&self, info: IntlInfo) {
+        let _ = self.setting_value_publisher.publish(&info);
+        if let Some(publisher) = self.publisher.as_ref() {
+            publisher.set(info);
+        }
+    }
+
+    pub(super) async fn handle(
+        self,
+        mut request_rx: UnboundedReceiver<Request>,
+    ) -> fasync::Task<()> {
+        fasync::Task::local(async move {
+            while let Some(request) = request_rx.next().await {
+                let Request::Set(info, tx) = request;
+                let res = self.set(info).await.map(|info| {
+                    if let Some(info) = info {
+                        self.publish(info);
+                    }
+                });
+                let _ = tx.send(res);
+            }
+        })
+    }
+
     /// Loads the set of valid time zones from resources.
     fn load_time_zones() -> std::collections::HashSet<String> {
         let _icu_data_loader = icu_data::Loader::new().expect("icu data loaded");
@@ -117,12 +140,18 @@ impl<F> IntlController<F> {
         time_zone_list.flatten().collect()
     }
 
-    async fn set(&self, info: IntlInfo) -> SettingHandlerResult {
+    async fn set(&self, info: IntlInfo) -> Result<Option<IntlInfo>, ControllerError> {
         self.validate_intl_info(info.clone())?;
 
-        let id = ftrace::Id::new();
         let current = self.store.get::<IntlInfo>().await;
-        self.client.storage_write(&self.store, current.merge(info), id).await.into_handler_result()
+        self.store
+            .write(&current.merge(info.clone()))
+            .await
+            .map(|state| (UpdateState::Updated == state).then_some(info))
+            .map_err(|e| {
+                log::error!("Failed to write intl info: {e:?}");
+                ControllerError::WriteFailure(SettingType::Intl)
+            })
     }
 
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/42069089)
@@ -168,5 +197,9 @@ impl<F> IntlController<F> {
         }
 
         Ok(())
+    }
+
+    pub(crate) async fn restore(&self) -> IntlInfo {
+        self.store.get::<IntlInfo>().await
     }
 }
