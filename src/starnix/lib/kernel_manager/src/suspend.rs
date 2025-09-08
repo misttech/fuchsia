@@ -85,75 +85,76 @@ pub async fn suspend_container(
     log::info!("Finished suspending all container processes.");
 
     let suspend_start = zx::BootInstant::get();
-
-    if let Some(wake_locks) = payload.wake_locks {
-        match wake_locks
-            .wait_handle(zx::Signals::EVENT_SIGNALED, zx::MonotonicInstant::ZERO)
-            .to_result()
-        {
-            Ok(_) => {
-                // There were wake locks active after suspending all processes, resume
-                // and fail the suspend call.
-                warn!("error suspending container: Linux wake locks exist");
-                fuchsia_trace::instant!(
-                    c"power",
-                    c"starnix-runner:suspend-failed-with-wake-locks",
-                    fuchsia_trace::Scope::Process
-                );
-                return Ok(Err(fstarnixrunner::SuspendError::WakeLocksExist));
-            }
-            Err(_) => {}
-        };
-    }
-
-    {
-        log::info!("Notifying wake watchers of container suspend.");
-        let watchers = suspend_context.wake_watchers.lock();
-        for event in watchers.iter() {
-            let (clear_mask, set_mask) = (AWAKE_SIGNAL, ASLEEP_SIGNAL);
-            event.signal_peer(clear_mask, set_mask)?;
-        }
-    }
-    kernels.drop_wake_lease(&container_job)?;
-
-    let wake_sources = suspend_context.wake_sources.lock();
-    let mut wait_items: Vec<zx::WaitItem<'_>> =
-        wake_sources.iter().map(|(_, w)| w.as_wait_item()).collect();
-
-    // TODO: We will likely have to handle a larger number of wake sources in the
-    // future, at which point we may want to consider a Port-based approach. This
-    // would also allow us to unblock this thread.
-    {
-        fuchsia_trace::duration!(c"power", c"starnix-runner:waiting-on-container-wake");
-        if wait_items.len() > 0 {
-            log::info!("Waiting on container to receive incoming message on wake proxies");
-            match zx::object_wait_many(
-                &mut wait_items,
-                zx::MonotonicInstant::after(zx::Duration::from_seconds(9)),
-            ) {
-                Ok(_) => (),
-                Err(e) => {
-                    warn!("error waiting for wake event {:?}", e);
+    let resume_reason = {
+        // Take locks in a scope that will be closed before awaiting to ensure no deadlock.
+        if let Some(wake_locks) = payload.wake_locks {
+            match wake_locks
+                .wait_handle(zx::Signals::EVENT_SIGNALED, zx::MonotonicInstant::ZERO)
+                .to_result()
+            {
+                Ok(_) => {
+                    // There were wake locks active after suspending all processes, resume
+                    // and fail the suspend call.
+                    warn!("error suspending container: Linux wake locks exist");
+                    fuchsia_trace::instant!(
+                        c"power",
+                        c"starnix-runner:suspend-failed-with-wake-locks",
+                        fuchsia_trace::Scope::Process
+                    );
+                    return Ok(Err(fstarnixrunner::SuspendError::WakeLocksExist));
                 }
+                Err(_) => {}
             };
         }
-    }
-    log::info!("Finished waiting on container wake proxies.");
 
-    let mut resume_reasons: Vec<String> = Vec::new();
-    for wait_item in &wait_items {
-        if (wait_item.pending & wait_item.waitfor) != zx::Signals::NONE {
-            let koid = wait_item.handle.get_koid().unwrap();
-            if let Some(event) = wake_sources.get(&koid) {
-                log::info!("Woke container from sleep for: {}", event.name,);
-                resume_reasons.push(event.name.clone());
+        {
+            log::info!("Notifying wake watchers of container suspend.");
+            let watchers = suspend_context.wake_watchers.lock();
+            for event in watchers.iter() {
+                let (clear_mask, set_mask) = (AWAKE_SIGNAL, ASLEEP_SIGNAL);
+                event.signal_peer(clear_mask, set_mask)?;
             }
         }
-    }
+        kernels.drop_wake_lease(&container_job)?;
 
-    let resume_reason: Option<String> = match resume_reasons.is_empty() {
-        true => Some(resume_reasons.join(",")),
-        false => None,
+        let wake_sources = suspend_context.wake_sources.lock();
+        let mut wait_items: Vec<zx::WaitItem<'_>> =
+            wake_sources.iter().map(|(_, w)| w.as_wait_item()).collect();
+
+        // TODO: We will likely have to handle a larger number of wake sources in the
+        // future, at which point we may want to consider a Port-based approach. This
+        // would also allow us to unblock this thread.
+        {
+            fuchsia_trace::duration!(c"power", c"starnix-runner:waiting-on-container-wake");
+            if wait_items.len() > 0 {
+                log::info!("Waiting on container to receive incoming message on wake proxies");
+                match zx::object_wait_many(
+                    &mut wait_items,
+                    zx::MonotonicInstant::after(zx::Duration::from_seconds(9)),
+                ) {
+                    Ok(_) => (),
+                    Err(e) => {
+                        warn!("error waiting for wake event {:?}", e);
+                    }
+                };
+            }
+        }
+        log::info!("Finished waiting on container wake proxies.");
+
+        let mut resume_reasons: Vec<String> = Vec::new();
+        for wait_item in &wait_items {
+            if (wait_item.pending & wait_item.waitfor) != zx::Signals::NONE {
+                let koid = wait_item.handle.get_koid().unwrap();
+                if let Some(event) = wake_sources.get(&koid) {
+                    log::info!("Woke container from sleep for: {}", event.name,);
+                    resume_reasons.push(event.name.clone());
+                }
+            }
+        }
+
+        let resume_reason =
+            if resume_reasons.is_empty() { None } else { Some(resume_reasons.join(",")) };
+        resume_reason
     };
 
     kernels.acquire_wake_lease(&container_job).await?;
