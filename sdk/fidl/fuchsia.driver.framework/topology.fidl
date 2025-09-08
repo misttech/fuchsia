@@ -227,6 +227,16 @@ type NodeAddArgs = resource table {
     7: bus_info BusInfo;
 };
 
+@available(added=NEXT)
+type DriverResult = flexible resource union {
+    /// The token that belongs to the node that a driver has started successfully on.
+    1: driver_started_node_token zx.Handle:EVENT;
+    /// The node failed to find a matching driver or composite spec.
+    2: match_error zx.Status;
+    /// The driver that bound to the node failed to start successfully.
+    3: start_error zx.Status;
+};
+
 /// Protocol through which a parent node controls one of its children.
 open protocol NodeController {
     /// Removes the node and all of its children.
@@ -250,12 +260,23 @@ open protocol NodeController {
 
 
     /// Event that is triggered when the associated `Node` is bound to a driver.
+    /// Replaced with WaitForDriver.
+    @available(removed=NEXT)
     flexible -> OnBind(resource table {
         /// Provides a token representing this node which can be exchanged with the
         /// driver framework to discern additional information about this node.
         @available(added=28)
         1: node_token zx.Handle:EVENT;
     });
+
+    /// Hanging get style call that returns a terminal state for the associated `Node`,
+    /// or the composite node that is parented by this node.
+    /// For a successfully started driver this returns immediately with the token of the
+    /// node that the driver started on.
+    /// If an error happens we wait until bootup is complete, which is when all drivers that
+    /// can bind and start have done so, before returning the error.
+    @available(added=NEXT)
+    flexible WaitForDriver() -> (DriverResult) error zx.Status;
 };
 
 /// Error codes for the Node protocol.

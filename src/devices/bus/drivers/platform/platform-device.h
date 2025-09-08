@@ -25,8 +25,7 @@ class PlatformBus;
 // Instances of this class are created by PlatformBus at boot time when the board driver
 // calls the platform bus protocol method pbus_device_add().
 
-class PlatformDevice : public fidl::WireServer<fuchsia_hardware_platform_device::Device>,
-                       public fidl::AsyncEventHandler<fuchsia_driver_framework::NodeController> {
+class PlatformDevice : public fidl::WireServer<fuchsia_hardware_platform_device::Device> {
  public:
   // Creates a new PlatformDevice instance.
   // *flags* contains zero or more PDEV_ADD_* flags from the platform bus protocol.
@@ -103,11 +102,6 @@ class PlatformDevice : public fidl::WireServer<fuchsia_hardware_platform_device:
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_platform_device::Device> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
-
-  void OnBind(fuchsia_driver_framework::NodeControllerOnBindRequest& request) override;
-
-  void handle_unknown_event(
-      fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
 
   bool HasInterruptVector(uint32_t vector) const { return interrupt_vectors_.contains(vector); }
   bool HasInterruptKoid(zx_koid_t koid) const { return interrupt_koids_.contains(koid); }

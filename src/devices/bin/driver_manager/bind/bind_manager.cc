@@ -268,6 +268,8 @@ zx::result<CompositeParents> BindManager::BindNodeToSpec(fidl::AnyArena& arena, 
     if (result.error_value() != ZX_ERR_NOT_FOUND) {
       fdf_log::error("Failed to bind node '{}' to any of the matched parent specs.", node.name());
     }
+
+    node.OnMatchError(result.error_value());
     return result.take_error();
   }
 
@@ -278,9 +280,7 @@ zx::result<CompositeParents> BindManager::BindNodeToSpec(fidl::AnyArena& arena, 
     if (start_result.is_error()) {
       fdf_log::error("Failed to start driver '{}': {}", node.name(),
                      zx_status_get_string(start_result.error_value()));
-      continue;
     }
-    composite_node->OnBind();
   }
 
   return zx::ok(result.value().bound_composite_parents);

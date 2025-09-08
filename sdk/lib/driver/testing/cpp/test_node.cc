@@ -176,6 +176,13 @@ void TestNode::RequestBind(RequestBindRequestView request, RequestBindCompleter:
   completer.ReplySuccess();
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+void TestNode::WaitForDriver(WaitForDriverCompleter::Sync& completer) {
+  completer.ReplySuccess(
+      fuchsia_driver_framework::wire::DriverResult::WithMatchError(ZX_ERR_NOT_FOUND));
+}
+#endif
+
 void TestNode::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_driver_framework::NodeController> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {}

@@ -104,6 +104,10 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                            fuchsia_driver_framework::DriverPackageType package_type) override;
 
   // NodeManager interface
+  // Waits for boot to complete before invoking the callback.
+  void WaitForBootup(fit::callback<void()> callback) override;
+
+  // NodeManager interface
   // Shutdown hooks called by the shutdown manager
   void ShutdownAllDrivers(fit::callback<void()> callback) override {
     fdf_log::info("Driver Runner invokes shutdown all drivers");
@@ -163,13 +167,12 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   std::vector<fuchsia_driver_development::wire::CompositeNodeInfo> GetCompositeListInfo(
       fidl::AnyArena& arena) const;
 
-  void WaitForBootup(fit::callback<void()> callback);
-
   fidl::WireClient<fuchsia_driver_index::DriverIndex>& driver_index() { return driver_index_; }
 
   std::shared_ptr<Node> root_node() const { return root_node_; }
 
   // Only exposed for testing.
+  void BootupDoneForTesting() { bootup_tracker_->BootupDoneForTesting(); }
   CompositeNodeSpecManager& composite_node_spec_manager() { return composite_node_spec_manager_; }
   const BindManager& bind_manager() const { return bind_manager_; }
   driver_manager::Runner& runner_for_tests() { return runner_; }
