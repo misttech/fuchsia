@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::keyboard_controller::{KeyboardController, Request};
-use crate::handler::setting_handler::ControllerError;
+use super::keyboard_controller::{KeyboardController, KeyboardError, Request};
 use crate::keyboard::types::{Autorepeat, KeyboardInfo, KeymapId};
 use anyhow::Error;
 use async_utils::hanging_get::server;
@@ -91,7 +90,7 @@ enum HandlerError {
         #[allow(dead_code)] Error,
     ),
     ControllerStopped,
-    Controller(ControllerError),
+    Controller(KeyboardError),
 }
 
 impl From<&HandlerError> for ResponseType {
@@ -100,7 +99,7 @@ impl From<&HandlerError> for ResponseType {
             HandlerError::AlreadySubscribed => ResponseType::AlreadySubscribed,
             HandlerError::InvalidArgument(_) => ResponseType::InvalidArgument,
             HandlerError::ControllerStopped => ResponseType::UnexpectedError,
-            HandlerError::Controller(e) => ResponseType::from(e.clone()),
+            HandlerError::Controller(e) => ResponseType::from(e),
         }
     }
 }

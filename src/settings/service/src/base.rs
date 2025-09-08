@@ -21,7 +21,6 @@ use crate::factory_reset::types::FactoryResetInfo;
 use crate::ingress::fidl;
 use crate::input::types::InputInfo;
 use crate::intl::types::IntlInfo;
-use crate::keyboard::types::KeyboardInfo;
 #[cfg(test)]
 use serde::Deserialize;
 use serde::Serialize;
@@ -126,7 +125,6 @@ generate_inspect_with_info! {
         DoNotDisturb(DoNotDisturbInfo),
         Input(InputInfo),
         Intl(IntlInfo),
-        Keyboard(KeyboardInfo),
     }
 }
 
@@ -166,7 +164,6 @@ conversion_impls! {
     DoNotDisturb(DoNotDisturbInfo) => DoNotDisturb,
     Input(InputInfo) => Input,
     Intl(IntlInfo) => Intl,
-    Keyboard(KeyboardInfo) => Keyboard,
 }
 
 impl From<&SettingInfo> for SettingType {
@@ -181,7 +178,6 @@ impl From<&SettingInfo> for SettingType {
             SettingInfo::FactoryReset(_) => SettingType::FactoryReset,
             SettingInfo::Input(_) => SettingType::Input,
             SettingInfo::Intl(_) => SettingType::Intl,
-            SettingInfo::Keyboard(_) => SettingType::Keyboard,
         }
     }
 }

@@ -3,15 +3,14 @@
 // found in the LICENSE file.
 
 use super::keyboard_fidl_handler::Publisher;
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::setting_handler::ControllerError;
 use crate::keyboard::types::{KeyboardInfo, KeymapId};
 use crate::trace;
+use anyhow::Error;
 use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
-use settings_common::inspect::event::SettingValuePublisher;
+use settings_common::inspect::event::{ResponseType, SettingValuePublisher};
 use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
@@ -29,20 +28,31 @@ impl Default for KeyboardInfo {
     }
 }
 
-impl From<KeyboardInfo> for SettingInfo {
-    fn from(info: KeyboardInfo) -> SettingInfo {
-        SettingInfo::Keyboard(info)
-    }
-}
-
 impl StorageAccess for KeyboardController {
     type Storage = DeviceStorage;
     type Data = KeyboardInfo;
     const STORAGE_KEY: &'static str = KeyboardInfo::KEY;
 }
 
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum KeyboardError {
+    #[error("Invalid argument for keyboard: argument:{0:?} value:{1:?}")]
+    InvalidArgument(&'static str, String),
+    #[error("Write failed for Keyboard: {0:?}")]
+    WriteFailure(Error),
+}
+
+impl From<&KeyboardError> for ResponseType {
+    fn from(error: &KeyboardError) -> Self {
+        match error {
+            KeyboardError::InvalidArgument(..) => ResponseType::InvalidArgument,
+            KeyboardError::WriteFailure(..) => ResponseType::StorageFailure,
+        }
+    }
+}
+
 pub(crate) enum Request {
-    Set(KeyboardInfo, Sender<Result<(), ControllerError>>),
+    Set(KeyboardInfo, Sender<Result<(), KeyboardError>>),
 }
 
 #[cfg(test)]
@@ -105,16 +115,12 @@ impl KeyboardController {
     async fn set(
         &self,
         keyboard_info: KeyboardInfo,
-    ) -> Result<Option<KeyboardInfo>, ControllerError> {
+    ) -> Result<Option<KeyboardInfo>, KeyboardError> {
         let id = fuchsia_trace::Id::new();
         trace!(id, c"set keyboard");
         let mut current = self.store.get::<KeyboardInfo>().await;
         if !keyboard_info.is_valid() {
-            return Err(ControllerError::InvalidArgument(
-                SettingType::Keyboard,
-                "keyboard".into(),
-                format!("{keyboard_info:?}").into(),
-            ));
+            return Err(KeyboardError::InvalidArgument("keyboard", format!("{keyboard_info:?}")));
         }
 
         current.keymap = keyboard_info.keymap.or(current.keymap);
@@ -131,10 +137,7 @@ impl KeyboardController {
             .write(&current)
             .await
             .map(|state| (UpdateState::Updated == state).then_some(current))
-            .map_err(|e| {
-                log::error!("Failed to write keyboard info: {e:?}");
-                ControllerError::WriteFailure(SettingType::Keyboard)
-            })
+            .map_err(KeyboardError::WriteFailure)
     }
 
     pub(super) async fn restore(&self) -> KeyboardInfo {
