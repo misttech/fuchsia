@@ -652,6 +652,10 @@ void UsbXhci::UsbHciRequestQueue(usb_request_t* usb_request,
 }
 
 void UsbXhci::UsbHciSetBusInterface(const usb_bus_interface_protocol_t* bus_intf) {
+  // Value is semi arbitrary. The value only needs to be large enough that it is considered unusual
+  // that the system is halted for any longer
+  static const zx::duration kAbnormalHaltedDuration = zx::sec(12);
+
   // We must be unbinding if the bus is currently valid.
   if (bus_.is_valid()) {
     // Assert that we've started unbinding and are no longer accepting
@@ -669,8 +673,15 @@ void UsbXhci::UsbHciSetBusInterface(const usb_bus_interface_protocol_t* bus_intf
       .set_HSEE(1)
       .set_EWE(0)
       .WriteTo(&mmio_.value());
+  const zx::time start_time = zx::clock::get_monotonic();
+  bool logged = false;
   while (USBSTS::Get(cap_length_).ReadFrom(&mmio_.value()).HCHalted()) {
     zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    const zx::duration delta_time = zx::clock::get_monotonic() - start_time;
+    if (delta_time > kAbnormalHaltedDuration && !logged) {
+      FDF_LOG(INFO, "Still halted after %li seconds", delta_time.to_secs());
+      logged = true;
+    }
   }
 
   sync_completion_signal(&bringup_);
