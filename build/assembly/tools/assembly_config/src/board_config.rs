@@ -4,7 +4,7 @@
 
 use crate::{BoardArgs, HybridBoardArgs, common};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use assembly_config_schema::{BoardConfig, BoardInputBundleSet};
 use assembly_container::{AssemblyContainer, DirectoryPathBuf};
 use assembly_partitions_config::PartitionsConfig;
@@ -13,6 +13,8 @@ use std::collections::BTreeMap;
 
 pub fn new(args: &BoardArgs) -> Result<()> {
     let mut config = BoardConfig::from_config_path(&args.config)?;
+    let release_info_name = config.name.clone();
+
     if let Some(partitions_config) = &args.partitions_config {
         config.partitions_config = Some(DirectoryPathBuf::new(partitions_config.clone()));
 
@@ -21,13 +23,8 @@ pub fn new(args: &BoardArgs) -> Result<()> {
         let partitions = PartitionsConfig::from_dir(partitions_config)
             .context("Validating partitions config")?;
         if partitions.hardware_revision != "" {
-            ensure!(
-                &config.name == &partitions.hardware_revision,
-                format!(
-                    "The board name ({}) does not match the partitions.hardware_revision ({})",
-                    &config.name, &partitions.hardware_revision
-                )
-            );
+            // Explicitly assign partitions.hw_revision to the board.name to ensure they match.
+            config.name = partitions.hardware_revision;
         }
     }
 
@@ -63,13 +60,12 @@ pub fn new(args: &BoardArgs) -> Result<()> {
         }
     }
 
-    let name = config.name.clone();
     let repository = common::get_release_repository(&args.repo, &args.repo_file)?;
     let version = common::get_release_version(&args.version, &args.version_file)?;
 
     config.release_info = BoardReleaseInfo {
         info: ReleaseInfo {
-            name: common::validate_string_for_upstream_versioning(name)?,
+            name: common::validate_string_for_upstream_versioning(release_info_name)?,
             repository: common::validate_string_for_upstream_versioning(repository)?,
             version: common::validate_string_for_upstream_versioning(version)?,
         },
