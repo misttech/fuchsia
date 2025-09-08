@@ -2,24 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "blobfs_creator.h"
+#include "src/storage/blobfs/tools/blobfs_creator.h"
 
+#include <fcntl.h>
 #include <inttypes.h>
-#include <lib/fit/defer.h>
 #include <lib/zx/result.h>
 #include <string.h>
-#include <sys/stat.h>
+#include <sys/types.h>
+#include <zircon/assert.h>
 #include <zircon/errors.h>
-#include <zircon/status.h>
+#include <zircon/types.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <ios>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
-#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -28,12 +31,13 @@
 #include <fbl/unique_fd.h>
 
 #include "src/lib/chunked-compression/multithreaded-chunked-compressor.h"
+#include "src/lib/digest/digest.h"
 #include "src/storage/blobfs/blob_layout.h"
-#include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/fsck_host.h"
 #include "src/storage/blobfs/host.h"
 #include "src/storage/blobfs/iterator/node_populator.h"
+#include "src/storage/lib/host/common.h"
 
 namespace {
 
@@ -43,7 +47,7 @@ void WriteBlobInfoToJson(std::ofstream& file, const blobfs::BlobInfo& blob) {
   std::filesystem::path path =
       std::filesystem::relative(std::filesystem::canonical(blob.GetSrcFilePath()));
   const auto& blob_layout = blob.GetBlobLayout();
-  uint64_t total_size = uint64_t{blob_layout.TotalBlockCount()} * blobfs::kBlobfsBlockSize;
+  uint64_t total_size = blob_layout.TotalBlockCount() * blobfs::kBlobfsBlockSize;
   file << "  {\n";
   file << "    \"source_path\": " << path << ",\n";
   file << "    \"merkle\": \"" << blob.GetDigest().ToString() << "\",\n";

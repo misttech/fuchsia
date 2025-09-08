@@ -13,7 +13,7 @@
 
 namespace blobfs {
 
-// Possible formats for how a blob can be layed out in storage.
+// Possible formats for how a blob can be laid out in storage.
 // This enum is serialized and stored in blobfs's superblock which prevents the enum values from
 // being changed.
 enum class BlobLayoutFormat : uint8_t {
@@ -26,7 +26,7 @@ enum class BlobLayoutFormat : uint8_t {
   // | block 001 | block 002 | block 003 | block 004 | block 005 | ... | block 579 | block 580 |
   // |<-       Padded Merkle Tree      ->|<-                  Data                 ->|
   // This is the layout format that was in use prior to the layout format being added to the
-  // superblock.  The new field was added to a section of the superpblock that was already zero and
+  // superblock.  The new field was added to a section of the superblock that was already zero and
   // to maintain backwards compatibility this enum value has the value zero.
   kDeprecatedPaddedMerkleTreeAtStart = 0,
 
@@ -99,6 +99,11 @@ class BlobLayout {
   virtual BlobLayoutFormat Format() const = 0;
 
   // Initializes a |BlobLayout| from a blob's inode.
+  //
+  // In Blobfs V10Rev4, the format is stored in the inode and V8Rev4, and V9Rev4 should be migrated
+  // to V10Rev4 at mount. If a blobfs V8Rev4 or V9Rev4 image is mounted read-only then the migration
+  // won't happen and the format won't be in the inode requiring the format to still be passed as a
+  // separate argument.
   static zx::result<std::unique_ptr<BlobLayout>> CreateFromInode(BlobLayoutFormat format,
                                                                  const Inode& inode,
                                                                  uint64_t blobfs_block_size);

@@ -25,19 +25,16 @@
 namespace blobfs {
 namespace {
 
-uint32_t GetBlobfsMajorVersionFromOptions(const FilesystemOptions& options) {
-  if (options.blob_layout_format == BlobLayoutFormat::kCompactMerkleTreeAtEnd) {
-    return kBlobfsCompactMerkleTreeVersion;
-  }
-  return 0x8;
-}
-
 bool CheckFilesystemAndDriverCompatibility(uint32_t major_version) {
   if (major_version == kBlobfsCurrentMajorVersion) {
     return true;
   }
   // Driver version 9 is compatible with filesystem version 8.
   if (major_version == 0x8 && kBlobfsCurrentMajorVersion == 0x9) {
+    return true;
+  }
+  // Driver version 10 is compatible with filesystem versions 8 and 9.
+  if ((major_version == 0x8 || major_version == 0x9) && kBlobfsCurrentMajorVersion == 0xA) {
     return true;
   }
   FX_LOGS(ERROR) << "Filesystem and Driver are incompatible. FS Version: " << std::setfill('0')
@@ -209,7 +206,7 @@ void InitializeSuperblockOptions(const FilesystemOptions& options, Superblock* i
   memset(info, 0x00, sizeof(*info));
   info->magic0 = kBlobfsMagic0;
   info->magic1 = kBlobfsMagic1;
-  info->major_version = GetBlobfsMajorVersionFromOptions(options);
+  info->major_version = kBlobfsCurrentMajorVersion;
   info->flags = kBlobFlagClean;
   info->block_size = kBlobfsBlockSize;
   info->alloc_block_count = kStartBlockMinimum;
@@ -220,6 +217,10 @@ void InitializeSuperblockOptions(const FilesystemOptions& options, Superblock* i
 zx_status_t InitializeSuperblock(uint64_t block_count, const FilesystemOptions& options,
                                  Superblock* info) {
   InitializeSuperblockOptions(options, info);
+
+  if (options.blob_layout_format == BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart) {
+    info->flags |= kBlobWriteLegacyMerkle;
+  }
 
   // Round up |inode_count| to use a block-aligned amount.
   info->inode_count = BlocksRequiredForInode(options.num_inodes) * kBlobfsInodesPerBlock;
@@ -244,11 +245,40 @@ zx_status_t InitializeSuperblock(uint64_t block_count, const FilesystemOptions& 
   return ZX_OK;
 }
 
-BlobLayoutFormat GetBlobLayoutFormat(const Superblock& info) {
-  if (info.major_version >= 0x9) {
+BlobLayoutFormat GetBlobLayoutFormat(const Superblock& info, const Inode& inode) {
+  if (info.major_version >= kBlobfsBlobLayoutFormatInInodeVersion) {
+    if (inode.header.flags & kBlobFlagDeprecatedPaddedMerkleTreeFormat) {
+      return BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart;
+    }
+    return BlobLayoutFormat::kCompactMerkleTreeAtEnd;
+  }
+  if (info.major_version == kBlobfsCompactMerkleTreeVersion) {
     return BlobLayoutFormat::kCompactMerkleTreeAtEnd;
   }
   return BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart;
+}
+
+BlobLayoutFormat GetDefaultBlobLayoutFormat(const Superblock& info) {
+  if (info.major_version >= kBlobfsBlobLayoutFormatInInodeVersion) {
+    if (info.flags & kBlobWriteLegacyMerkle) {
+      return BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart;
+    }
+    return BlobLayoutFormat::kCompactMerkleTreeAtEnd;
+  }
+  if (info.major_version == kBlobfsCompactMerkleTreeVersion) {
+    return BlobLayoutFormat::kCompactMerkleTreeAtEnd;
+  }
+  return BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart;
+}
+
+void SetBlobLayoutFormat(Inode* inode, BlobLayoutFormat blob_layout_format) {
+  switch (blob_layout_format) {
+    case BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart:
+      inode->header.flags |= kBlobFlagDeprecatedPaddedMerkleTreeFormat;
+      break;
+    case BlobLayoutFormat::kCompactMerkleTreeAtEnd:
+      inode->header.flags &= ~kBlobFlagDeprecatedPaddedMerkleTreeFormat;
+  }
 }
 
 namespace {

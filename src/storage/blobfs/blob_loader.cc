@@ -122,8 +122,8 @@ zx::result<LoaderInfo> BlobLoader::LoadBlob(uint32_t node_index) {
   TRACE_DURATION("blobfs", "BlobLoader::LoadBlob", "blob_size", inode->blob_size);
 
   // Create and save the layout.
-  auto blob_layout_or = BlobLayout::CreateFromInode(GetBlobLayoutFormat(txn_manager_->Info()),
-                                                    *inode.value(), GetBlockSize());
+  auto blob_layout_or = BlobLayout::CreateFromInode(
+      GetBlobLayoutFormat(txn_manager_->Info(), *inode.value()), *inode.value(), GetBlockSize());
   if (blob_layout_or.is_error()) {
     FX_LOGS(ERROR) << "Failed to create blob layout: "
                    << zx_status_get_string(blob_layout_or.error_value());

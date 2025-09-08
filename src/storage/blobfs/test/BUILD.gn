@@ -17,22 +17,6 @@ group("test") {
   ]
 }
 
-# test_binary.zstd results from building this target under core.x64-release and compressing with
-# zstd.  For now, this is a manual process, which should be fine since it shouldn't need to change
-# very often.
-cc_test_executable("test_binary") {
-  testonly = true
-  sources = [ "test_binary_main.cc" ]
-  visibility = [ ":*" ]
-}
-
-resource("test_binary_resource") {
-  testonly = true
-  sources = [ "test_binary.zstd" ]
-  outputs = [ "data/test_binary.zstd" ]
-  visibility = [ ":*" ]
-}
-
 source_set("test_utils") {
   testonly = true
   sources = [
@@ -47,7 +31,6 @@ source_set("test_utils") {
     "unit/utils.h",
   ]
   deps = [
-    ":test_binary_resource",
     "//sdk/lib/fdio",
     "//sdk/lib/sys/cpp",
     "//src/lib/digest",
@@ -67,6 +50,7 @@ source_set("test_utils") {
     "//src/storage/lib/block_client/cpp:fake_device",
     "//zircon/system/ulib/id_allocator",
   ]
+  data_deps = [ "//src/storage/blobfs/test/testdata:test_binary_resource" ]
 }
 
 test("blobfs_unittest") {
@@ -80,6 +64,7 @@ test("blobfs_unittest") {
     "unit/blob_test.cc",
     "unit/blob_verifier_test.cc",
     "unit/blobfs_checker_test.cc",
+    "unit/blobfs_migration_test.cc",
     "unit/blobfs_revision_test.cc",
     "unit/blobfs_test.cc",
     "unit/common_test.cc",
@@ -105,6 +90,7 @@ test("blobfs_unittest") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/inspect/component/cpp",
     "//src/lib/chunked-compression",
+    "//src/lib/files",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
     "//src/lib/testing/predicates",
@@ -115,12 +101,17 @@ test("blobfs_unittest") {
     "//src/storage/lib/fs_management",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
+    "//third_party/zstd",
+    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/storage/buffer",
     "//zircon/system/ulib/storage/operation",
     "//zircon/system/ulib/sync",
+    "//zircon/system/ulib/sync:sync-cpp",
+    "//zircon/system/ulib/zx",
     "//zircon/third_party/ulib/cksum",
     "//zircon/third_party/ulib/safemath",
   ]
+  data_deps = [ "//src/storage/blobfs/test/testdata:blobfs_images" ]
 
   # TODO(https://fxbug.dev/42176699): This target uses mutable tables which are deprecated,
   # rather than builders.
@@ -129,10 +120,7 @@ test("blobfs_unittest") {
 
 fuchsia_unittest_component("blobfs-unittest") {
   manifest = "meta/blobfs_unittest.cml"
-  deps = [
-    ":blobfs_unittest",
-    ":test_binary_resource",
-  ]
+  deps = [ ":blobfs_unittest" ]
 }
 
 fuchsia_test_package("blobfs-unittest-package") {

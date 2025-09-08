@@ -2,23 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.fxfs/cpp/common_types.h>
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/fidl/cpp/wire/array.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <unistd.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
-#include <zircon/types.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <span>
 #include <utility>
 
 #include <fbl/array.h>
@@ -27,7 +23,6 @@
 #include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/delivery_blob.h"
 #include "src/storage/blobfs/delivery_blob_private.h"
-#include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/integration/blobfs_fixtures.h"
 

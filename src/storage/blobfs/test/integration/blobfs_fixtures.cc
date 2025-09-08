@@ -4,8 +4,10 @@
 
 #include "src/storage/blobfs/test/integration/blobfs_fixtures.h"
 
+#include <cstdint>
+
 #include "src/storage/blobfs/blob_layout.h"
-#include "src/storage/fs_test/fs_test_fixture.h"
+#include "src/storage/fs_test/fs_test.h"
 
 namespace blobfs {
 

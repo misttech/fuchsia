@@ -4,22 +4,33 @@
 
 #include "src/storage/blobfs/delivery_blob.h"
 
+#include <lib/zx/result.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
-#include <zircon/status.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
-#include <gmock/gmock.h>
+#include <fbl/array.h>
+#include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
 
-#include "src/storage/blobfs/blobfs.h"
+#include "src/lib/digest/digest.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mkfs.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/lib/vfs/cpp/vfs_types.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {
 

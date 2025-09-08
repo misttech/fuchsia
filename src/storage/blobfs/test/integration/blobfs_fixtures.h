@@ -5,10 +5,21 @@
 #ifndef SRC_STORAGE_BLOBFS_TEST_INTEGRATION_BLOBFS_FIXTURES_H_
 #define SRC_STORAGE_BLOBFS_TEST_INTEGRATION_BLOBFS_FIXTURES_H_
 
-#include "lib/fdio/directory.h"
-#include "lib/fdio/fd.h"
-#include "src/storage/blobfs/format.h"
-#include "src/storage/blobfs/test/blob_utils.h"
+#include <fcntl.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
+#include <lib/fdio/fd.h>
+#include <lib/fidl/cpp/wire/status.h>
+#include <lib/zx/result.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
+
+#include <cstdint>
+
+#include <fbl/unique_fd.h>
+#include <gtest/gtest.h>
+
+#include "lib/fidl/cpp/wire/channel.h"
+#include "src/storage/fs_test/fs_test.h"
 #include "src/storage/fs_test/fs_test_fixture.h"
 
 namespace blobfs {

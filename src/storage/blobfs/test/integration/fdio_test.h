@@ -6,15 +6,21 @@
 #define SRC_STORAGE_BLOBFS_TEST_INTEGRATION_FDIO_TEST_H_
 
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
 #include <lib/inspect/cpp/hierarchy.h>
+#include <lib/zx/resource.h>
+#include <zircon/types.h>
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
-#include "src/storage/blobfs/blob_layout.h"
-#include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/component_runner.h"
+#include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mount.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 
@@ -57,10 +63,6 @@ class FdioTest : public testing::Test {
                      uint64_t* value);
 
   virtual uint64_t GetOldestMinorVersion() const { return kBlobfsCurrentMinorVersion; }
-
-  virtual BlobLayoutFormat GetBlobLayoutFormat() const {
-    return BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart;
-  }
 
  private:
   block_client::FakeBlockDevice* block_device_ = nullptr;  // Owned by the runner_.

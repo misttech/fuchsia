@@ -6,10 +6,15 @@
 #define SRC_STORAGE_FS_TEST_FS_TEST_H_
 
 #include <fcntl.h>
+#include <fidl/fuchsia.io/cpp/markers.h>
+#include <lib/fidl/cpp/wire/channel.h>
+#include <lib/zx/channel.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
+#include <lib/zx/vmo.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
+#include <zircon/errors.h>
 
 #include <functional>
 #include <iostream>
@@ -17,7 +22,9 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <fbl/unique_fd.h>
@@ -25,9 +32,9 @@
 
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/compression_settings.h"
-#include "src/storage/lib/fs_management/cpp/admin.h"
-#include "src/storage/lib/fs_management/cpp/format.h"
+#include "src/storage/lib/fs_management/cpp/component.h"
 #include "src/storage/lib/fs_management/cpp/mount.h"
+#include "src/storage/lib/fs_management/cpp/options.h"
 #include "src/storage/testing/fvm.h"
 #include "src/storage/testing/ram_disk.h"
 

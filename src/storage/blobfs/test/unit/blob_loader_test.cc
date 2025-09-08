@@ -4,53 +4,68 @@
 
 #include "src/storage/blobfs/blob_loader.h"
 
+#include <fidl/fuchsia.io/cpp/wire_types.h>
 #include <lib/fzl/owned-vmo-mapper.h>
 #include <lib/sync/completion.h>
+#include <lib/syslog/cpp/macros.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
+#include <zircon/types.h>
 
-#include <set>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
+#include <mutex>
 #include <span>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
+#include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
+#include <storage/operation/operation.h>
 
 #include "src/lib/digest/digest.h"
-#include "src/lib/digest/merkle-tree.h"
-#include "src/lib/digest/node-digest.h"
 #include "src/storage/blobfs/blob.h"
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blobfs.h"
+#include "src/storage/blobfs/cache_node.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/format.h"
-#include "src/storage/blobfs/mkfs.h"
+#include "src/storage/blobfs/mount.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
 #include "src/storage/blobfs/test/test_scoped_vnode_open.h"
 #include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 #include "src/storage/blobfs/test/unit/utils.h"
-#include "src/storage/lib/block_client/cpp/fake_block_device.h"
-#include "src/storage/lib/vfs/cpp/paged_vfs.h"
+#include "src/storage/blobfs/transaction.h"
+#include "src/storage/lib/vfs/cpp/vfs_types.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {
 
 namespace {
-
 constexpr uint32_t kTestBlockSize = 512;
 constexpr uint32_t kNumBlocks = 400 * kBlobfsBlockSize / kTestBlockSize;
-
-}  // namespace
 
 using ::testing::Combine;
 using ::testing::TestParamInfo;
 using ::testing::TestWithParam;
-using ::testing::Values;
 using ::testing::ValuesIn;
 
 using TestParamType = std::tuple<CompressionAlgorithm, BlobLayoutFormat>;
 
+}  // namespace
+
+// This class isn't in the anonymous namespace because it needs to be friended by the `Blob` class
+// to access some of the private members.
 class BlobLoaderTest : public TestWithParam<TestParamType> {
  public:
   void SetUp() override {
@@ -168,6 +183,8 @@ class BlobLoaderTest : public TestWithParam<TestParamType> {
   MountOptions options_;
   BlobLayoutFormat blob_layout_format_;
 };
+
+namespace {
 
 TEST_P(BlobLoaderTest, SmallBlob) {
   size_t blob_len = 1024;
@@ -299,19 +316,14 @@ constexpr std::array<CompressionAlgorithm, 2> kCompressionAlgorithms = {
     CompressionAlgorithm::kChunked,
 };
 
-constexpr std::array<CompressionAlgorithm, 2> kPagingCompressionAlgorithms = {
-    CompressionAlgorithm::kUncompressed,
-    CompressionAlgorithm::kChunked,
+constexpr std::array<BlobLayoutFormat, 2> kBlobLayouts = {
+    BlobLayoutFormat::kCompactMerkleTreeAtEnd,
+    BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart,
 };
 
 INSTANTIATE_TEST_SUITE_P(OldFormat, BlobLoaderTest,
-                         Combine(ValuesIn(kCompressionAlgorithms),
-                                 Values(BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart)),
+                         Combine(ValuesIn(kCompressionAlgorithms), ValuesIn(kBlobLayouts)),
                          GetTestParamName);
 
-INSTANTIATE_TEST_SUITE_P(/*no prefix*/, BlobLoaderTest,
-                         Combine(ValuesIn(kPagingCompressionAlgorithms),
-                                 Values(BlobLayoutFormat::kCompactMerkleTreeAtEnd)),
-                         GetTestParamName);
-
+}  // namespace
 }  // namespace blobfs
