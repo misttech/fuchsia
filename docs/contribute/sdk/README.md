@@ -69,13 +69,20 @@ Keep in mind that there are additional considerations when
 tradeoff decisions between compatibility and long term usability.
 
 Once the API is ready for review, request an [API calibration][calibration].
+Note that API calibration is targeted at *stable* API surface. Category
+promotions of libraries only available at `HEAD`, which may occasionally be
+necessary when the library is a dependency of another library, may defer
+calibration until the API is stabilized.
 
 ### Promoting an API to the `partner` category {:#promoting-to-partner}
 
 For an API to be included in the Fuchsia IDK/SDK, it must be in the `partner`
 [SDK category][sdk-category]. This requires clearing two hurdles: there must be
-a ready and willing customer, and the API must have gone through
-[API calibration][calibration].
+a ready and willing customer, and the API must have gone through [API
+calibration][calibration]. Note that API calibration is targeted at *stable*
+API surface. Promotions to `partner` where the library is marked `stable =
+false` do not modify the stable API surface and may defer calibration until the
+API is stabilized.
 
 <!-- Reference links -->
 
