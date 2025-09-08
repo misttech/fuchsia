@@ -14,8 +14,8 @@ use audio::types::AudioInfo;
 use display::display_controller::DisplayInfoLoader;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
-    IntlRequestStream, KeyboardRequestStream, LightRequestStream, NightModeRequestStream,
-    PrivacyRequestStream, SetupRequestStream,
+    KeyboardRequestStream, LightRequestStream, NightModeRequestStream, PrivacyRequestStream,
+    SetupRequestStream,
 };
 use fidl_fuchsia_stash::StoreProxy;
 use fuchsia_component::client::connect_to_protocol;
@@ -658,9 +658,9 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         F: StorageFactory<Storage = FidlStorage>,
         D: StorageFactory<Storage = DeviceStorage>,
     {
-        if components.contains(&SettingType::Intl) {
-            device_storage_factory
-                .initialize::<IntlController>()
+        if components.contains(&SettingType::Light) {
+            fidl_storage_factory
+                .initialize::<LightController>()
                 .await
                 .expect("storage should still be initializing");
         }
@@ -668,13 +668,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         if components.contains(&SettingType::Keyboard) {
             device_storage_factory
                 .initialize::<KeyboardController>()
-                .await
-                .expect("storage should still be initializing");
-        }
-
-        if components.contains(&SettingType::Light) {
-            fidl_storage_factory
-                .initialize::<LightController>()
                 .await
                 .expect("storage should still be initializing");
         }
@@ -750,19 +743,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                     log::error!("Failed to setup light api: {e:?}");
                 }
             }
-        }
-
-        if components.contains(&SettingType::Intl) {
-            let intl::SetupResult { mut intl_fidl_handler, task } = intl::setup_intl_api(
-                Rc::clone(&device_storage_factory),
-                SettingValuePublisher::new(setting_value_tx.clone()),
-                UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
-            )
-            .await;
-            tasks.push(task);
-            let _ = service_dir.add_fidl_service(move |stream: IntlRequestStream| {
-                intl_fidl_handler.handle_stream(stream)
-            });
         }
 
         if components.contains(&SettingType::Keyboard) {
@@ -924,6 +904,24 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
                     DataHandler::<InputController<T>>::spawn_with_async(
                         context,
                         (Rc::clone(&device_storage_factory), Rc::clone(&input_configuration)),
+                    )
+                }),
+            );
+        }
+
+        // Intl
+        if components.contains(&SettingType::Intl) {
+            device_storage_factory
+                .initialize::<IntlController<T>>()
+                .await
+                .expect("storage should still be initializing");
+            let device_storage_factory = Rc::clone(&device_storage_factory);
+            factory_handle.register(
+                SettingType::Intl,
+                Box::new(move |context| {
+                    DataHandler::<IntlController<T>>::spawn_with_async(
+                        context,
+                        Rc::clone(&device_storage_factory),
                     )
                 }),
             );

@@ -5,7 +5,6 @@
 use crate::base::Merge;
 use fidl_fuchsia_settings::IntlSettings;
 use serde::{Deserialize, Serialize};
-use settings_common::inspect::event::Nameable;
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct IntlInfo {
@@ -13,10 +12,6 @@ pub struct IntlInfo {
     pub temperature_unit: Option<TemperatureUnit>,
     pub time_zone_id: Option<String>,
     pub hour_cycle: Option<HourCycle>,
-}
-
-impl Nameable for IntlInfo {
-    const NAME: &str = "Intl";
 }
 
 impl Merge for IntlInfo {
