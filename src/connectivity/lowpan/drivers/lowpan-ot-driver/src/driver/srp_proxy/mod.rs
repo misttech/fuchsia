@@ -5,7 +5,7 @@
 use crate::prelude::*;
 use std::ffi::CStr;
 
-mod advertising_proxy;
+pub mod advertising_proxy;
 pub use advertising_proxy::*;
 
 mod discovery_proxy;

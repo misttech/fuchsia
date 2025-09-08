@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 use super::*;
-use fidl::endpoints::{create_endpoints, Proxy};
+use fidl::endpoints::{Proxy, create_endpoints};
 use fidl_fuchsia_net_mdns::*;
 use fuchsia_async::Task;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
+use futures::channel::mpsc;
+use futures::stream::StreamExt;
 use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::sync::Arc;
@@ -17,6 +19,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct AdvertisingProxy {
     inner: Arc<Mutex<AdvertisingProxyInner>>,
+    mdns_result_receiver: Mutex<Option<mpsc::UnboundedReceiver<MdnsResultMessage>>>,
 }
 
 impl Drop for AdvertisingProxy {
@@ -27,10 +30,26 @@ impl Drop for AdvertisingProxy {
 }
 
 #[derive(Debug)]
+struct OutstandingUpdate {
+    #[allow(dead_code)] // Used as HashMap key
+    update_id: ot::SrpServerServiceUpdateId,
+    host_name: CString,
+    callback_count: u32,
+}
+
+#[derive(Debug)]
+pub(crate) struct MdnsResultMessage {
+    update_id: ot::SrpServerServiceUpdateId,
+    result: Result<(), anyhow::Error>,
+}
+
+#[derive(Debug)]
 struct AdvertisingProxyInner {
     srp_domain: String,
     hosts: HashMap<CString, AdvertisingProxyHost>,
     mdns_proxy_host_publisher: ProxyHostPublisherProxy,
+    outstanding_updates: HashMap<ot::SrpServerServiceUpdateId, OutstandingUpdate>,
+    mdns_result_sender: mpsc::UnboundedSender<MdnsResultMessage>,
 }
 
 #[derive(Debug)]
@@ -123,12 +142,18 @@ impl AdvertisingProxyService {
 
 impl AdvertisingProxy {
     pub fn new(instance: &ot::Instance) -> Result<AdvertisingProxy, anyhow::Error> {
+        let (mdns_result_sender, mdns_result_receiver) = mpsc::unbounded::<MdnsResultMessage>();
         let inner = Arc::new(Mutex::new(AdvertisingProxyInner {
             srp_domain: instance.srp_server_get_domain().to_str()?.to_string(),
             hosts: Default::default(),
             mdns_proxy_host_publisher: connect_to_protocol::<ProxyHostPublisherMarker>()?,
+            outstanding_updates: HashMap::new(),
+            mdns_result_sender,
         }));
-        let ret = AdvertisingProxy { inner: inner.clone() };
+        let ret = AdvertisingProxy {
+            inner: inner.clone(),
+            mdns_result_receiver: Mutex::new(Some(mdns_result_receiver)),
+        };
 
         ret.inner.lock().publish_srp_all(instance)?;
 
@@ -141,24 +166,23 @@ impl AdvertisingProxy {
                     tag = "srp_advertising_proxy";
                     "srp_server_set_service_update: Update for {:?}, timeout: {}", host, timeout
                 );
-                let result = inner.lock().push_srp_host_changes(instance, host);
+                let result = inner.lock().push_srp_host_changes(instance, host, Some(update_id.clone()));
 
                 if let Err(err) = &result {
                     warn!(
                         tag = "srp_advertising_proxy";
-                        "srp_server_set_service_update: Error publishing {:?}: {:?}", host, err
+                        "srp_server_set_service_update: Error setting up update for {:?}: {:?}", host, err
                     );
+                    // Only report error immediately if setup failed
+                    inner.lock().outstanding_updates.remove(&update_id).unwrap();
+                    ot_instance.srp_server_handle_service_update_result(update_id, Err(ot::Error::Failed));
                 } else {
                     debug!(
                         tag = "srp_advertising_proxy";
-                        "srp_server_set_service_update: Finished publishing {:?}", host
+                        "srp_server_set_service_update: Started publishing {:?}", host
                     );
+                    // Succeed - result will be reported later via on_mdns_publish_result
                 }
-
-                ot_instance.srp_server_handle_service_update_result(
-                    update_id,
-                    result.map_err(|_: anyhow::Error| ot::Error::Failed),
-                );
             },
         ));
 
@@ -166,12 +190,131 @@ impl AdvertisingProxy {
 
         Ok(ret)
     }
+
+    /// Processes an mDNS result message received from the channel
+    pub(crate) fn process_mdns_result(&self, instance: &ot::Instance, msg: MdnsResultMessage) {
+        self.inner.lock().on_mdns_publish_result(instance, msg.update_id, msg.result);
+    }
+}
+
+#[derive(Debug)]
+pub struct MdnsResultPoller<'a, T: ?Sized>(&'a T);
+
+impl<'a, T: MdnsResultPollerExt + ?Sized> futures::Future for MdnsResultPoller<'a, T> {
+    type Output = Result<(), anyhow::Error>;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        self.0.mdns_result_poll(cx)
+    }
+}
+
+pub trait MdnsResultPollerExt {
+    fn mdns_result_poll(
+        &self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), anyhow::Error>>;
+
+    fn mdns_result_future(&self) -> MdnsResultPoller<'_, Self> {
+        MdnsResultPoller(self)
+    }
+}
+
+impl<T: AsRef<ot::Instance> + AsRef<Option<AdvertisingProxy>>> MdnsResultPollerExt
+    for fuchsia_sync::Mutex<T>
+{
+    fn mdns_result_poll(
+        &self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), anyhow::Error>> {
+        let guard = self.lock();
+
+        let ot_instance: &ot::Instance = guard.as_ref();
+        let advertising_proxy_option: &Option<AdvertisingProxy> = guard.as_ref();
+
+        if let Some(advertising_proxy) = advertising_proxy_option {
+            // Try to receive messages from the channel
+            let mut receiver_guard = advertising_proxy.mdns_result_receiver.lock();
+            if let Some(receiver) = receiver_guard.as_mut() {
+                // Poll the receiver for new messages
+                loop {
+                    match receiver.poll_next_unpin(cx) {
+                        std::task::Poll::Ready(Some(msg)) => {
+                            // Process the message
+                            advertising_proxy.process_mdns_result(ot_instance, msg)
+                        }
+                        std::task::Poll::Ready(None) => {
+                            // Channel closed
+                            return std::task::Poll::Ready(Err(anyhow::anyhow!(
+                                "mDNS result channel closed"
+                            )));
+                        }
+                        std::task::Poll::Pending => {
+                            // No messages available, keep polling
+                            return std::task::Poll::Pending;
+                        }
+                    }
+                }
+            } else {
+                // No receiver available
+                return std::task::Poll::Ready(Ok(()));
+            }
+        }
+        // No advertising proxy available
+        std::task::Poll::Ready(Ok(()))
+    }
 }
 
 impl AdvertisingProxyInner {
+    /// Handles mDNS publish results and updates outstanding update tracking.
+    #[allow(dead_code)] // Called by process_mdns_result
+    fn on_mdns_publish_result(
+        &mut self,
+        instance: &ot::Instance,
+        update_id: ot::SrpServerServiceUpdateId,
+        error: Result<(), anyhow::Error>,
+    ) {
+        if let Some(update) = self.outstanding_updates.get_mut(&update_id) {
+            update.callback_count -= 1;
+            if error.is_err() || update.callback_count == 0 {
+                // Either we have an error or this is the last callback
+                let ot_error = match error {
+                    Ok(()) => Ok(()),
+                    Err(_) => Err(ot::Error::Failed),
+                };
+
+                // Remove the update before notifying OpenThread
+                let update = self.outstanding_updates.remove(&update_id).unwrap();
+
+                debug!(
+                    tag = "srp_advertising_proxy";
+                    "Completing SRP update {:?} for host {:?} with result {:?}",
+                    update_id, update.host_name, ot_error
+                );
+
+                instance.srp_server_handle_service_update_result(update_id, ot_error);
+            } else {
+                // Still waiting for more callbacks
+                update.callback_count -= 1;
+                debug!(
+                    tag = "srp_advertising_proxy";
+                    "Waiting for {} more mDNS operations for update {:?}",
+                    update.callback_count, update_id
+                );
+            }
+        } else {
+            warn!(
+                tag = "srp_advertising_proxy";
+                "Received mDNS result for unknown update_id {:?}, potentially due to other requests failed", update_id
+            );
+        }
+    }
+
     pub fn publish_srp_all(&mut self, instance: &ot::Instance) -> Result<(), anyhow::Error> {
         for host in instance.srp_server_hosts() {
-            if let Err(err) = self.push_srp_host_changes(instance, host) {
+            if let Err(err) = self.push_srp_host_changes(instance, host, None) {
                 warn!(
                     tag = "srp_advertising_proxy";
                     "Unable to fully publish SRP host {:?} to mDNS: {:?}",
@@ -200,10 +343,12 @@ impl AdvertisingProxyInner {
     }
 
     /// Updates the mDNS service with the host and services from the SrpServerHost.
+    /// If update_id is provided, tracks the operations and defers result reporting.
     pub fn push_srp_host_changes<'a>(
         &mut self,
         instance: &'a ot::Instance,
         mut srp_host: &'a ot::SrpServerHost,
+        update_id: Option<ot::SrpServerServiceUpdateId>,
     ) -> Result<(), anyhow::Error> {
         if srp_host.is_deleted() {
             // Delete the host.
@@ -269,130 +414,172 @@ impl AdvertisingProxyInner {
             return Ok(());
         }
 
-        let host: &mut AdvertisingProxyHost =
-            if let Some(host) = self.hosts.get_mut(srp_host.full_name_cstr()) {
-                // Use the existing host.
-                debug!(
+        if let Some(ref update_id) = update_id {
+            let outstanding_update = OutstandingUpdate {
+                update_id: update_id.clone(),
+                host_name: srp_host.full_name_cstr().to_owned(),
+                callback_count: 0,
+            };
+
+            debug!(
+                tag = "srp_advertising_proxy";
+                "Tracking update {:?} for host {:?}",
+                update_id, srp_host.full_name_cstr()
+            );
+
+            self.outstanding_updates.insert(update_id.clone(), outstanding_update);
+        }
+
+        let host: &mut AdvertisingProxyHost = if let Some(host) =
+            self.hosts.get_mut(srp_host.full_name_cstr())
+        {
+            // Use the existing host.
+            debug!(
+                tag = "srp_advertising_proxy";
+                "Updating advertisement of {:?} on {:?}",
+                srp_host.full_name_cstr(),
+                LOCAL_DOMAIN
+            );
+
+            host
+        } else {
+            // Add the host.
+            let local_name = srp_host
+                .full_name_cstr()
+                .as_ref()
+                .to_str()?
+                .trim_end_matches(&self.srp_domain)
+                .trim_end_matches('.');
+
+            info!(
+                tag = "srp_advertising_proxy";
+                "Advertising host [PII]({:?}) on {:?} as [PII]({:?})",
+                srp_host.full_name_cstr(),
+                LOCAL_DOMAIN,
+                local_name
+            );
+
+            if local_name.len() > MAX_DNSSD_HOST_LEN {
+                bail!("Host {:?} is too long (max {} chars)", local_name, MAX_DNSSD_HOST_LEN);
+            }
+
+            // Warn if the hostname only contains legal characters.
+            if local_name.starts_with('-')
+                || local_name.contains(|ch: char| {
+                    !(ch.is_ascii_alphanumeric() || ch == '-' || !ch.is_ascii())
+                })
+            {
+                warn!(
                     tag = "srp_advertising_proxy";
-                    "Updating advertisement of {:?} on {:?}",
-                    srp_host.full_name_cstr(),
-                    LOCAL_DOMAIN
+                    "Host [PII]({local_name:?}) contains forbidden characters"
                 );
+            }
 
-                host
-            } else {
-                // Add the host.
-                let local_name = srp_host
-                    .full_name_cstr()
-                    .as_ref()
-                    .to_str()?
-                    .trim_end_matches(&self.srp_domain)
-                    .trim_end_matches('.');
+            let (client, server) = create_endpoints::<ServiceInstancePublisherMarker>();
 
-                info!(
-                    tag = "srp_advertising_proxy";
-                    "Advertising host [PII]({:?}) on {:?} as [PII]({:?})",
-                    srp_host.full_name_cstr(),
-                    LOCAL_DOMAIN,
-                    local_name
-                );
+            // This is copied just for use in error messages below.
+            let local_name_copy = local_name.to_string();
 
-                if local_name.len() > MAX_DNSSD_HOST_LEN {
-                    bail!("Host {:?} is too long (max {} chars)", local_name, MAX_DNSSD_HOST_LEN);
-                }
-
-                // Warn if the hostname only contains legal characters.
-                if local_name.starts_with('-')
-                    || local_name.contains(|ch: char| {
-                        !(ch.is_ascii_alphanumeric() || ch == '-' || !ch.is_ascii())
+            // Prepare versions of the addresses for use in FIDL call.
+            let addrs = addresses
+                .iter()
+                .map(|x| {
+                    fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                        addr: x.octets(),
                     })
-                {
-                    warn!(
-                        tag = "srp_advertising_proxy";
-                        "Host [PII]({local_name:?}) contains forbidden characters"
-                    );
+                })
+                .collect::<Vec<_>>();
+
+            // Make sure that the connection to the mDNS component is solid.
+            self.verify_mdns_connection()?;
+
+            // Get sender for callbacks
+            let sender = self.mdns_result_sender.clone();
+            let update_id_to_send = update_id.clone();
+            if let Some(ref update_id) = update_id_to_send {
+                if let Some(update) = self.outstanding_updates.get_mut(update_id) {
+                    update.callback_count += 1;
                 }
-
-                let (client, server) = create_endpoints::<ServiceInstancePublisherMarker>();
-
-                // This is copied just for use in error messages below.
-                let local_name_copy = local_name.to_string();
-
-                // Prepare versions of the addresses for use in FIDL call.
-                let addrs = addresses
-                    .iter()
-                    .map(|x| {
-                        fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
-                            addr: x.octets(),
-                        })
-                    })
-                    .collect::<Vec<_>>();
-
-                // Make sure that the connection to the mDNS component is solid.
-                self.verify_mdns_connection()?;
-
-                let publish_proxy_host_future = self
-                    .mdns_proxy_host_publisher
-                    .publish_proxy_host(
-                        local_name,
-                        &addrs,
-                        &ProxyHostPublicationOptions {
-                            perform_probe: Some(false),
-                            ..Default::default()
-                        },
-                        server,
-                    )
-                    .map(move |x| match x {
+            }
+            let publish_proxy_host_future = self
+                .mdns_proxy_host_publisher
+                .publish_proxy_host(
+                    local_name,
+                    &addrs,
+                    &ProxyHostPublicationOptions {
+                        perform_probe: Some(false),
+                        ..Default::default()
+                    },
+                    server,
+                )
+                .map(move |x| {
+                    let result = match x {
                         Ok(Ok(())) => {
                             debug!(
                                 tag = "srp_advertising_proxy";
                                 "publish_proxy_host: {:?}: Successfully published", local_name_copy
                             );
+                            Ok(())
                         }
                         Ok(Err(err)) => {
                             error!(
                                 tag = "srp_advertising_proxy";
                                 "publish_proxy_host: {:?}: {:?}", err, local_name_copy
                             );
+                            Err(anyhow::anyhow!("mDNS publish error: {:?}", err))
                         }
                         Err(err) => {
                             error!(
                                 tag = "srp_advertising_proxy";
                                 "publish_proxy_host: {:?}: {:?}", err, local_name_copy
                             );
+                            Err(anyhow::anyhow!("FIDL error: {:?}", err))
                         }
-                    });
+                    };
 
-                fuchsia_async::Task::spawn(publish_proxy_host_future).detach();
+                    // Send result via channel if we're tracking this update
+                    if let (sender, Some(update_id)) = (sender, update_id_to_send) {
+                        let result_to_send = match &result {
+                            Ok(()) => Ok(()),
+                            Err(_) => Err(anyhow::anyhow!("service publish error")),
+                        };
+                        let _ = sender.unbounded_send(MdnsResultMessage {
+                            update_id,
+                            result: result_to_send,
+                        });
+                    }
+                });
 
-                self.hosts.insert(
-                    srp_host.full_name_cstr().to_owned(),
-                    AdvertisingProxyHost {
-                        services: Default::default(),
-                        service_publisher: client.into_proxy(),
-                        addresses,
-                    },
-                );
+            fuchsia_async::Task::spawn(publish_proxy_host_future).detach();
 
-                // If there are no services in this update, then grab the "real" `ot::SrpServerHost`,
-                // because this is probably a delta. Since we are perform the initial setup for this
-                // host, we cannot use a delta update.
-                if srp_host.services().count() == 0 {
-                    for real_host in instance.srp_server_hosts() {
-                        if srp_host.full_name_cstr() == real_host.full_name_cstr() {
-                            info!(
-                                tag = "srp_advertising_proxy";
-                                "Using [PII]({:?}) instead of [PII]({:?}).", real_host, srp_host
-                            );
+            self.hosts.insert(
+                srp_host.full_name_cstr().to_owned(),
+                AdvertisingProxyHost {
+                    services: Default::default(),
+                    service_publisher: client.into_proxy(),
+                    addresses,
+                },
+            );
 
-                            srp_host = real_host;
-                            break;
-                        }
+            // If there are no services in this update, then grab the "real" `ot::SrpServerHost`,
+            // because this is probably a delta. Since we are perform the initial setup for this
+            // host, we cannot use a delta update.
+            if srp_host.services().count() == 0 {
+                for real_host in instance.srp_server_hosts() {
+                    if srp_host.full_name_cstr() == real_host.full_name_cstr() {
+                        info!(
+                            tag = "srp_advertising_proxy";
+                            "Using [PII]({:?}) instead of [PII]({:?}).", real_host, srp_host
+                        );
+
+                        srp_host = real_host;
+                        break;
                     }
                 }
+            }
 
-                self.hosts.get_mut(srp_host.full_name_cstr()).unwrap()
-            };
+            self.hosts.get_mut(srp_host.full_name_cstr()).unwrap()
+        };
 
         let services = &mut host.services;
 
@@ -496,6 +683,14 @@ impl AdvertisingProxyInner {
 
             let (client, server) = create_endpoints::<ServiceInstancePublicationResponder_Marker>();
 
+            let sender = self.mdns_result_sender.clone();
+            let update_id_to_send = update_id.clone();
+            if let Some(ref update_id) = update_id_to_send {
+                if let Some(update) = self.outstanding_updates.get_mut(update_id) {
+                    update.callback_count += 1;
+                }
+            }
+
             let publish_init_future = host
                 .service_publisher
                 .publish_service_instance(
@@ -504,25 +699,38 @@ impl AdvertisingProxyInner {
                     &ServiceInstancePublicationOptions::default(),
                     client,
                 )
-                .map(|x| match x {
-                    Ok(Ok(())) => {
-                        debug!(tag = "srp_advertising_proxy"; "publish_service_instance: success");
-                        Ok(())
+                .map(move |x| {
+                    let result = match x {
+                        Ok(Ok(())) => {
+                            debug!(tag = "srp_advertising_proxy"; "publish_service_instance: success");
+                            Ok(())
+                        }
+                        Ok(Err(err)) => {
+                            error!(
+                                tag = "srp_advertising_proxy";
+                                "publish_service_instance: {:?}", err
+                            );
+                            Err(anyhow::anyhow!("publish_service_instance: {:?}", err))
+                        }
+                        Err(err) => {
+                            error!(
+                                tag = "srp_advertising_proxy";
+                                "publish_service_instance: {:?}", err
+                            );
+                            Err(anyhow::anyhow!("publish_service_instance: {:?}", err))
+                        }
+                    };
+
+                    // Send result via channel if we're tracking this update
+                    if let (sender, Some(update_id)) = (sender, update_id_to_send) {
+                        let result_to_send = match &result {
+                            Ok(()) => Ok(()),
+                            Err(_) => Err(anyhow::anyhow!("service publish error")),
+                        };
+                        let _ = sender.unbounded_send(MdnsResultMessage { update_id, result: result_to_send });
                     }
-                    Ok(Err(err)) => {
-                        error!(
-                            tag = "srp_advertising_proxy";
-                            "publish_service_instance: {:?}", err
-                        );
-                        Err(format_err!("publish_service_instance: {:?}", err))
-                    }
-                    Err(err) => {
-                        error!(
-                            tag = "srp_advertising_proxy";
-                            "publish_service_instance: {:?}", err
-                        );
-                        Err(format_err!("publish_service_instance: {:?}", err))
-                    }
+
+                    result
                 });
 
             let service_info = Arc::new(Mutex::new(service_info));

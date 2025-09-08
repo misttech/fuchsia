@@ -280,11 +280,7 @@ impl SrpServerService {
     pub fn subtype_service_name_at(&self, i: u16) -> Option<&CStr> {
         unsafe {
             let ptr = otSrpServerServiceGetSubTypeServiceNameAt(self.as_ot_ptr(), i);
-            if ptr.is_null() {
-                None
-            } else {
-                Some(CStr::from_ptr(ptr))
-            }
+            if ptr.is_null() { None } else { Some(CStr::from_ptr(ptr)) }
         }
     }
 
@@ -353,12 +349,9 @@ pub fn parse_label_from_subtype_service_name(
 
 /// The ID of a SRP service update transaction on the SRP Server.
 ///
-/// This type will panic if dropped without being fed
-/// to [`SrpServer::srp_server_handle_service_update_result`].
-///
 /// Functional equivalent of
 /// [`otsys::otSrpServerServiceUpdateId`](crate::otsys::otSrpServerServiceUpdateId).
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct SrpServerServiceUpdateId(otSrpServerServiceUpdateId);
 
 impl SrpServerServiceUpdateId {
@@ -367,15 +360,7 @@ impl SrpServerServiceUpdateId {
     }
 
     fn take(self) -> otSrpServerServiceUpdateId {
-        let ret = self.0;
-        core::mem::forget(self);
-        ret
-    }
-}
-
-impl Drop for SrpServerServiceUpdateId {
-    fn drop(&mut self) {
-        panic!("SrpServerServiceUpdateId dropped without being passed to SrpServer::srp_server_handle_service_update_result");
+        self.0
     }
 }
 

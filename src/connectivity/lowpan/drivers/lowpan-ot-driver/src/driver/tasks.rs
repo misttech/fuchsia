@@ -10,11 +10,13 @@ use fidl_fuchsia_net_mdns::ServiceInstancePublisherProxy;
 use fuchsia_component::client::connect_to_protocol;
 use futures::never::Never;
 use futures::prelude::*;
+use lowpan_driver_common::FutureExt;
 use lowpan_driver_common::lowpan_fidl::ConnectivityState;
 use lowpan_driver_common::spinel::Canceled;
-use lowpan_driver_common::FutureExt;
 use openthread::ot::InfraInterface;
 use std::ffi::CString;
+
+use crate::driver::srp_proxy::MdnsResultPollerExt;
 
 impl<OT, NI, BI> OtDriver<OT, NI, BI>
 where
@@ -185,6 +187,24 @@ where
                 }
             });
 
+        let advertising_proxy_mdns_result_stream = self
+            .driver_state
+            .mdns_result_future()
+            .into_stream()
+            .map_err(|x| x.context("advertising_proxy_mdns_result_stream"))
+            .filter_map(|x| async {
+                match x {
+                    Ok(x) => Some(Ok(x)),
+                    Err(x) => {
+                        error!(
+                            "advertising proxy mDNS result stream has terminated, reason: {:?}",
+                            x
+                        );
+                        None
+                    }
+                }
+            });
+
         let dhcp_v6_pd_state_changed_stream = self
             .driver_state
             .lock()
@@ -300,6 +320,7 @@ where
         let epskc_service = border_agent::manage_epskc_service_publisher(epskc_receiver, publisher);
 
         init_future.into_stream().chain(futures::stream::select_all([
+            advertising_proxy_mdns_result_stream.boxed(),
             tasklets_stream.boxed(),
             regulatory_region_stream.boxed(),
             state_change_stream.boxed(),
