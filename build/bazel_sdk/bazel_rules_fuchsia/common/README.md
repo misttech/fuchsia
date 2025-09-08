@@ -21,7 +21,7 @@ platform (in-tree) Bazel workspace.
   repositories, using the same top-level `common` directory.
 
   I.e. `@fuchsia_sdk//common`, `@fuchsia_clang//common`
-  or `@fuchsia_intree_build//common` will refer to the same
+  or `@fuchsia_sdk_common//common` (in-tree) will refer to the same
   content.
 
 - These are implementation details of the Fuchsia SDK rules
