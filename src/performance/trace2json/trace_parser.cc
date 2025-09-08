@@ -26,7 +26,7 @@ bool ShouldPassthrough(const trace::Record& record) {
 
 bool MatchesAny(const std::vector<std::unique_ptr<re2::RE2>>& patterns, std::string_view string) {
   return std::ranges::any_of(
-      patterns, [&](const auto& pattern) { return re2::RE2::PartialMatch(string, *pattern); });
+      patterns, [&](const auto& pattern) { return re2::RE2::FullMatch(string, *pattern); });
 }
 }  // namespace
 

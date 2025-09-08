@@ -59,6 +59,7 @@ if (is_host) {
       "test_data/no_magic.fxt",
       "test_data/simple_trace.fxt",
       "test_data/simple_trace.fxt.gz",
+      "test_data/simple_trace_exact_filtered_expected.json",
       "test_data/simple_trace_expected.json",
       "test_data/simple_trace_expected.json.gz",
       "test_data/simple_trace_filtered_expected.json",

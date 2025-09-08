@@ -101,6 +101,15 @@ TEST(ConvertTest, PatternFiltering) {
   ConvertAndCompare(settings, test_data_path + "simple_trace_filtered_expected.json");
 }
 
+TEST(ConvertTest, ExactPatternFiltering) {
+  std::string test_data_path = GetTestDataPath();
+  ConvertSettings settings;
+  settings.input_file_name = test_data_path + "simple_trace.fxt";
+  settings.output_file_name = test_data_path + "simple_trace_exact_filtered_actual.json";
+  settings.patterns.push_back("begin_end_ref");
+  ConvertAndCompare(settings, test_data_path + "simple_trace_exact_filtered_expected.json");
+}
+
 TEST(ConvertTest, MultiPatternFiltering) {
   std::string test_data_path = GetTestDataPath();
   ConvertSettings settings;
