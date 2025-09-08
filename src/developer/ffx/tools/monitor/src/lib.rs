@@ -43,6 +43,11 @@ struct TargetStatus {
     status: Option<TargetState>,
     timestamp: DateTime<Utc>,
     rcs_state: Option<RemoteControlState>,
+    product_config: Option<String>,
+    board_config: Option<String>,
+    serial_number: Option<String>,
+    ssh_address: Option<String>,
+    ssh_host_address: Option<String>,
 }
 
 impl Serialize for TargetStatus {
@@ -50,11 +55,16 @@ impl Serialize for TargetStatus {
     where
         S: Serializer,
     {
-        let mut s = serializer.serialize_struct("TargetStatus", 4)?;
+        let mut s = serializer.serialize_struct("TargetStatus", 9)?;
         s.serialize_field("name", &self.name)?;
         s.serialize_field("status", &self.status.as_ref().map(|val| format!("{:?}", val)))?;
         s.serialize_field("timestamp", &self.timestamp.to_rfc3339())?;
         s.serialize_field("rcs_state", &self.rcs_state.as_ref().map(|val| format!("{:?}", val)))?;
+        s.serialize_field("product_config", &self.product_config)?;
+        s.serialize_field("board_config", &self.board_config)?;
+        s.serialize_field("serial_number", &self.serial_number)?;
+        s.serialize_field("ssh_address", &self.ssh_address)?;
+        s.serialize_field("ssh_host_address", &self.ssh_host_address)?;
         s.end()
     }
 }
@@ -121,6 +131,11 @@ fn infos_to_statuses(infos: Vec<TargetInfo>) -> Vec<TargetStatus> {
             status: info.target_state,
             timestamp: now,
             rcs_state: info.rcs_state,
+            product_config: info.product_config,
+            board_config: info.board_config,
+            serial_number: info.serial_number,
+            ssh_address: info.ssh_address.map(|addr| format!("{:?}", addr)),
+            ssh_host_address: info.ssh_host_address.map(|addr| format!("{:?}", addr)),
         })
         .collect()
 }
@@ -223,12 +238,22 @@ mod test {
                 status: Some(TargetState::Product),
                 timestamp: statuses[0].timestamp,
                 rcs_state: Some(RemoteControlState::Up),
+                product_config: None,
+                board_config: None,
+                serial_number: None,
+                ssh_address: None,
+                ssh_host_address: None,
             },
             TargetStatus {
                 name: Some("fuchsia-two".to_string()),
                 status: Some(TargetState::Fastboot),
                 timestamp: statuses[1].timestamp,
                 rcs_state: Some(RemoteControlState::Down),
+                product_config: None,
+                board_config: None,
+                serial_number: None,
+                ssh_address: None,
+                ssh_host_address: None,
             },
         ];
 
