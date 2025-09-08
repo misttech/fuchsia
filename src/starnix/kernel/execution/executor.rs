@@ -39,14 +39,11 @@ use zx::{
 extern "C" {
     fn restricted_enter_loop(
         options: u32,
-        restricted_return: usize,
         restricted_exit_callback: usize,
         restricted_exit_callback_context: usize,
         restricted_state_addr: usize,
         extended_pstate_addr: usize,
     ) -> zx::sys::zx_status_t;
-
-    fn restricted_return_loop();
 
     /// `zx_restricted_bind_state` system call.
     fn zx_restricted_bind_state(
@@ -198,9 +195,6 @@ fn run_task(
 
     firehose_trace_duration!(CATEGORY_STARNIX, NAME_RUN_TASK);
 
-    // This is the pointer that is passed to `restricted_enter`.
-    let restricted_return_ptr = restricted_return_loop as *const ();
-
     // This tracks the last failing system call for debugging purposes.
     let error_context = None;
 
@@ -234,7 +228,6 @@ fn run_task(
     unsafe {
         restricted_enter_loop(
             RESTRICTED_ENTER_OPTIONS,
-            restricted_return_ptr as usize,
             restricted_exit_callback_c as usize,
             &restricted_enter_context as *const _ as usize,
             restricted_state_addr,

@@ -11,11 +11,10 @@ END_FUNCTION(breakpoint_for_module_changes)
 
 //       fn restricted_enter_loop(
 //  x0    options: u32,
-//  x1    restricted_return: usize,
-//  x2    restricted_exit_callback: usize,
-//  x3    restricted_exit_callback_context: usize,
-//  x4    restricted_state_addr: usize,
-//  x5    extended_pstate_addr: usize,
+//  x1    restricted_exit_callback: usize,
+//  x2    restricted_exit_callback_context: usize,
+//  x3    restricted_state_addr: usize,
+//  x4    extended_pstate_addr: usize,
 //  x0 ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // This function:
@@ -32,25 +31,27 @@ FUNCTION(restricted_enter_loop)
   stp x28, x27, [sp, #-16]!
   stp x30, x29, [sp, #-16]!
 
-  // Save shadow call stack pointer on the stack (along with a zero to keep the stack aligned)
-  stp x18, xzr, [sp, #-16]!   // Will be at [sp], #48
+  // Save shadow call stack pointer and original options
+  stp x0, x18, [sp, #-16]!   // Will be at [sp], #32
 
-  // Save original options and vector table ptr
-  stp  x1,  x0,  [sp, #-16]!  // Will be at [sp], #32
+  // Save restricted exit callback function and context
+  stp x1,  x2, [sp, #-16]!   // Will be at [sp], #16
 
-  // Save address of callback function and callback function context on the stack
-  stp  x3,  x2,  [sp, #-16]!  // Will be at [sp], #16
-
-  // Save address of the restricted and extended processor state mappings on the stack
-  stp  x5,  x4,  [sp, #-16]!  // Will be at [sp], #0
+  // Save address of restricted state and extended processor state mappings
+  stp x3,  x4, [sp, #-16]!   // Will be at [sp], #0
 
   // Restore extended processor state
-  mov x0, x5
+  mov x0, x4
   bl restore_extended_pstate
 
 .restricted_enter_loop_top:
-  // Restore zx_restricted_enter parameters from stack
-  ldp x1, x0, [sp, #32]
+  // Restore zx_restricted_enter options from stack
+  ldr x0, [sp, #32]
+
+  // Load address of restricted exit vector callback.
+  // TODO: Examine cpsr in the restricted mode state and if we are entering aarch32 restricted mode
+  // specify an aarch32-specific return callback.
+  adr x1, restricted_return_loop
 
   // Save stack pointer as context parameter for syscall
   mov x2, sp
@@ -67,8 +68,8 @@ FUNCTION(restricted_enter_loop)
 
 .restricted_enter_loop_ret:
   // Pop temporaries
-  add sp, sp, #(8 * 8)
-  
+  add sp, sp, #(6 * 8)
+
   // Restore callee saved registers
   ldp x30, x29, [sp], #16
   ldp x28, x27, [sp], #16
@@ -99,17 +100,14 @@ FUNCTION(restricted_return_loop)
   mov x19, x1
 
   // Restore shadow call stack
-  ldr x18, [sp, #48]
+  ldr x18, [sp, #40]
 
   // Save extended processor state
-  ldr x0, [sp]
+  ldr x0, [sp, #8]
   bl save_extended_pstate
 
-  // Load callback context and function pointers stack
-  ldp x0, x2, [sp, #16]
-
   // Load the address of the mapped restricted mode register state to x27
-  ldr x27, [sp, #8]
+  ldr x27, [sp]
 
   // Load frame pointer from restricted state to connect Starnix stack to Linux's.
   // This offset matches the offset of x29 in the `zx_restricted_state_t` struct.
@@ -158,9 +156,13 @@ FUNCTION(restricted_return_loop)
   // x1      reason_code: zx::sys::zx_restricted_reason_t,
   // x0    ) -> bool
 
+  // Load callback context and function pointers stack
+  ldp x2, x0, [sp, #16]
+
+  // Restore reason code that we saved in x19 earlier.
   mov x1, x19
   blr x2
-  
+
   // Restore CFI state after callback
   .cfi_restore_state
 
@@ -168,7 +170,7 @@ FUNCTION(restricted_return_loop)
   cbz x0, .restricted_enter_loop_ret
 
   // Restore extended processor state
-  ldr x0, [sp]
+  ldr x0, [sp, #8]
   bl restore_extended_pstate
 
   // Go back to the loop

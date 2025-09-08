@@ -12,11 +12,10 @@ END_FUNCTION(breakpoint_for_module_changes)
 
 //       fn restricted_enter_loop(
 // %rdi    options: u32,
-// %rsi    restricted_return: usize,
-// %rdx    restricted_exit_callback: usize,
-// %rcx    restricted_exit_callback_context: usize,
-// %r8     restricted_state_addr: usize,
-// %r9     extended_pstate_addr: usize,
+// %rsi    restricted_exit_callback: usize,
+// %rdx    restricted_exit_callback_context: usize,
+// %rcx    restricted_state_addr: usize,
+// %r8     extended_pstate_addr: usize,
 // %rax  ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // Save callee saved registers on the stack.
@@ -28,22 +27,25 @@ FUNCTION(restricted_enter_loop)
   push  %r15
   push  %rsp
 
-  // Save original options
-  push %rdi // Will be at rsp+40
-  // Save original vector table ptr
-  push %rsi // Will be at rsp+32
+  sub $(8*6), %rsp // Space for 5 temporaries + 1 for alignment
 
-  // Save address of callback function on the stack.
-  push %rdx // Will be at rsp+24
-  // Save address of callback function context on the stack.
-  push %rcx // Will be at rsp+16
-  // Save address of restricted state mapping on the stack
-  push %r8  // Will be at rsp+8
-  // Save address of the extended processor state object on the stack.
-  push %r9  // Will be at rsp+0
+  // Save original options
+  mov %rdi, 32(%rsp)
+
+  // Save address of callback function
+  mov %rsi, 24(%rsp)
+
+  // Save address of callback function context
+  mov %rdx, 16(%rsp)
+
+  // Save address of restricted state mapping
+  mov %rcx, 8(%rsp)
+
+  // Save address of the extended processor state object
+  mov %r8, (%rsp)
 
   // Restore the extended processor state.
-  mov %r9, %rdi
+  mov %r8, %rdi
   call restore_extended_pstate
 
 .restricted_enter_loop_top:
@@ -54,8 +56,10 @@ FUNCTION(restricted_enter_loop)
   // %rax ) -> zx_status_t
 
   // Restore zx_restricted_enter parameters from stack
-  mov 32(%rsp), %rsi
-  mov 40(%rsp), %rdi
+  mov 32(%rsp), %rdi
+
+  // Move address of restricted_return_loop into rsi
+  leaq restricted_return_loop(%rip), %rsi
 
   // Save pointer to stack as context pointer in the syscall
   mov %rsp,%rdx
@@ -90,7 +94,7 @@ END_FUNCTION(restricted_enter_loop)
 // )
 FUNCTION(restricted_return_loop)
   // Back from restricted mode, rdi holds our context (stack pointer, before call)
-  mov %rdi,%rsp
+  mov %rdi, %rsp
 
   // Save the reason code in a callee-saved register
   mov %rsi, %rbx
@@ -144,6 +148,7 @@ FUNCTION(restricted_return_loop)
 
   // Restore reason code
   mov %rbx, %rsi
+
   // Invoke callback
   callq *%rdx
 

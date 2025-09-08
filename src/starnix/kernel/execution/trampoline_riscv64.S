@@ -12,17 +12,16 @@ END_FUNCTION(breakpoint_for_module_changes)
 
 //      fn restricted_enter_loop(
 //  a0    options: u32,
-//  a1    restricted_return: usize,
-//  a2    restricted_exit_callback: usize,
-//  a3    restricted_exit_callback_context: usize,
-//  a4    restricted_state_addr: usize,
-//  a5    extended_pstate_addr: usize,
+//  a1    restricted_exit_callback: usize,
+//  a2    restricted_exit_callback_context: usize,
+//  a3    restricted_state_addr: usize,
+//  a4    extended_pstate_addr: usize,
 //  a0 ) -> zx::sys::zx_status_t;
 FUNCTION(restricted_enter_loop)
   // Make space for all 12 callee saved registers, return address, thread pointer, shadow call
-  // stack pointer, and 6 parameters on the stack. Since the stack must remain aligned to 16
+  // stack pointer, and 5 parameters on the stack. Since the stack must remain aligned to 16
   // byte boundaries an additional 8 bytes are allocated and not used.
-  addi sp, sp, -(22 * 8)
+  addi sp, sp, -(20 * 8)
 
   // Save all of the callee saved registers
   sd  s0,  0*8(sp)
@@ -50,29 +49,28 @@ FUNCTION(restricted_enter_loop)
   // Save original options
   sd  a0, 15*8(sp)
 
-  // Save original vector table ptr
+  // Save restricted exit callback
   sd  a1, 16*8(sp)
 
-  // Save restricted exit callback
+  // Save restricted exit callback context
   sd  a2, 17*8(sp)
 
-  // Save restricted exit callback context
+  // Save address of restricted state mappings
   sd  a3, 18*8(sp)
 
-  // Save address of restricted state mappings
+  // Save address of extended processor state mapping
   sd  a4, 19*8(sp)
 
-  // Save address of extended processor state mapping
-  sd  a5, 20*8(sp)
-
   // Restore extended processor state
-  mv a0, a5
+  mv a0, a4
   call restore_extended_pstate
 
 .restricted_enter_loop_top:
   // Restore zx_restricted_enter parameters from the stack
   ld  a0, 15*8(sp)
-  ld  a1, 16*8(sp)
+
+  // Store address of restricted_return_loop
+  la a1, restricted_return_loop
 
   // Pass the stack pointer as the context argument to the syscall.
   mv a2, sp
@@ -106,7 +104,7 @@ FUNCTION(restricted_enter_loop)
   ld  ra, 12*8(sp)
 
   // Reset the stack.
-  addi sp, sp, (22 * 8)
+  addi sp, sp, (20 * 8)
   ret
 END_FUNCTION(restricted_enter_loop)
 
@@ -130,7 +128,7 @@ FUNCTION(restricted_return_loop)
   ld gp, 14*8(sp)
 
   // Save extended processor state
-  ld a0, 20*8(sp)
+  ld a0, 19*8(sp)
   call save_extended_pstate
 
   // TODO: emit CFI directives
@@ -141,10 +139,10 @@ FUNCTION(restricted_return_loop)
   // a1      reason_code: zx::sys::zx_restricted_reason_t,
   // a0    ) -> bool
 
-  // Load callback context pointer
-  ld a0, 18*8(sp)
+  // Load callback function and context pointers
+  ld t0, 16*8(sp)
+  ld a0, 17*8(sp)
   mv a1, s1
-  ld t0, 17*8(sp)
   jalr t0
 
   // TODO: restore CFI directives
@@ -153,7 +151,7 @@ FUNCTION(restricted_return_loop)
   beqz a0, .restricted_enter_loop_ret
 
   // Restore extended processor state
-  ld a0, 20*8(sp)
+  ld a0, 19*8(sp)
   call restore_extended_pstate
 
   // Go back to the top
