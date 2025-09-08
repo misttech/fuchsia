@@ -142,15 +142,14 @@ class Recorder final {
   void RecordSocPowerUp(const zx::time& called_at, const zx::time& completed_at);
   void RecordSocPowerDown(const zx::time& called_at, const zx::time& completed_at);
 
-  RingBufferRecorder& CreateRingBufferInstance(size_t ring_buffer_specification_index,
-                                               const zx::time& created_at) {
-    std::string node_name =
-        "instance " +
-        std::to_string(ring_buffer_specs_[ring_buffer_specification_index].instances().size());
+  RingBufferRecorder& CreateRingBufferInstance(uint64_t element_id, const zx::time& created_at) {
+    auto it = ring_buffer_specs_.find(element_id);
+    ZX_ASSERT_MSG(it != ring_buffer_specs_.end(), "No ring buffer with id %lu.", element_id);
+    RingBufferSpecification& ring_buffer_spec = it->second;
 
-    return ring_buffer_specs_[ring_buffer_specification_index].instances().emplace_back(
-        ring_buffer_specs_[ring_buffer_specification_index].node().CreateChild(node_name),
-        created_at);
+    std::string node_name = "instance " + std::to_string(ring_buffer_spec.instances().size());
+    return ring_buffer_spec.instances().emplace_back(ring_buffer_spec.node().CreateChild(node_name),
+                                                     created_at);
   }
 
  private:
@@ -163,7 +162,7 @@ class Recorder final {
   std::vector<PowerTransition> power_transitions_;
 
   inspect::Node ring_buffers_root_node_;
-  std::vector<RingBufferSpecification> ring_buffer_specs_;
+  std::unordered_map<uint64_t, RingBufferSpecification> ring_buffer_specs_;
 
   inspect::Node dai_root_node_;
   std::vector<DaiEntry> dai_entries_;

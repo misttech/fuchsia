@@ -428,7 +428,8 @@ void AudioCompositeServer::CreateRingBuffer(CreateRingBufferRequest& request,
   engines_on_.set(ring_buffer_index, true);
   engine.ring_buffer_format = request.format();
   engine.ring_buffer = RingBufferServer::CreateRingBufferServer(
-      dispatcher(), *this, ring_buffer_index, std::move(request.ring_buffer()));
+      dispatcher(), *this, ring_buffer_index, std::move(request.ring_buffer()),
+      request.processing_element_id());
   completer.Reply(zx::ok());
 }
 
@@ -680,14 +681,15 @@ zx_status_t AudioCompositeServer::StopSocPower() {
 // static
 std::unique_ptr<RingBufferServer> RingBufferServer::CreateRingBufferServer(
     async_dispatcher_t* dispatcher, AudioCompositeServer& owner, size_t engine_index,
-    fidl::ServerEnd<fuchsia_hardware_audio::RingBuffer> ring_buffer) {
-  return std::make_unique<RingBufferServer>(dispatcher, owner, engine_index,
-                                            std::move(ring_buffer));
+    fidl::ServerEnd<fuchsia_hardware_audio::RingBuffer> ring_buffer, uint64_t element_id) {
+  return std::make_unique<RingBufferServer>(dispatcher, owner, engine_index, std::move(ring_buffer),
+                                            element_id);
 }
 
 RingBufferServer::RingBufferServer(async_dispatcher_t* dispatcher, AudioCompositeServer& owner,
                                    size_t engine_index,
-                                   fidl::ServerEnd<fuchsia_hardware_audio::RingBuffer> ring_buffer)
+                                   fidl::ServerEnd<fuchsia_hardware_audio::RingBuffer> ring_buffer,
+                                   uint64_t element_id)
     : engine_(owner.engines_[engine_index]),
       engine_index_(engine_index),
       dispatcher_(dispatcher),
@@ -696,7 +698,7 @@ RingBufferServer::RingBufferServer(async_dispatcher_t* dispatcher, AudioComposit
           dispatcher, std::move(ring_buffer), this,
           std::mem_fn(&RingBufferServer::OnRingBufferClosed))),
       ring_buffer_recorder_(
-          device_inspect()->CreateRingBufferInstance(engine_index_, zx::clock::get_monotonic())) {
+          device_inspect()->CreateRingBufferInstance(element_id, zx::clock::get_monotonic())) {
   ResetRingBuffer();
 }
 

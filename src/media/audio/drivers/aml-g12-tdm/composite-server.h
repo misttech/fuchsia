@@ -44,9 +44,10 @@ class RingBufferServer final : public fidl::Server<fuchsia_hardware_audio::RingB
  public:
   static std::unique_ptr<RingBufferServer> CreateRingBufferServer(
       async_dispatcher_t* dispatcher, AudioCompositeServer& owner, size_t engine_index,
-      fidl::ServerEnd<fuchsia_hardware_audio::RingBuffer> ring_buffer);
+      fidl::ServerEnd<fuchsia_hardware_audio::RingBuffer> ring_buffer, uint64_t element_id);
   RingBufferServer(async_dispatcher_t* dispatcher, AudioCompositeServer& owner, size_t engine_index,
-                   fidl::ServerEnd<fuchsia_hardware_audio::RingBuffer> ring_buffer);
+                   fidl::ServerEnd<fuchsia_hardware_audio::RingBuffer> ring_buffer,
+                   uint64_t element_id);
   void Unbind(zx_status_t status) { binding_.Close(status); }
 
  protected:

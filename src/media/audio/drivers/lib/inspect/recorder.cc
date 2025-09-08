@@ -95,7 +95,7 @@ void Recorder::PopulateRingBuffer(const std::string& name, uint64_t element_id,
   auto ring_buffer_spec_node = ring_buffers_root_node_.CreateChild(name);
   RingBufferSpecification ring_buffer_spec{std::move(ring_buffer_spec_node), element_id,
                                            supports_active_channels, outgoing};
-  ring_buffer_specs_.emplace_back(std::move(ring_buffer_spec));
+  ring_buffer_specs_.emplace(element_id, std::move(ring_buffer_spec));
 }
 
 void Recorder::PopulateDai(const std::string& name, uint64_t element_id) {
