@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/binder/common.h"
 #include "src/starnix/tests/syscalls/cpp/binder/manager_provider_client_test.h"
 #include "src/starnix/tests/syscalls/cpp/binder_helper.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
@@ -26,46 +27,48 @@ namespace {
 // Makes the current process register itself as a binder context manager,
 // and reads in an infinite loop the messages.
 void ContextManagerLoop(std::string_view dir) {
-  fbl::unique_fd binder = OpenBinder(dir);
-  EXPECT_TRUE(binder) << strerror(errno);
-
-  auto mapping = test_helper::ScopedMMap::MMap(nullptr, kBinderMMapSize, PROT_READ, MAP_PRIVATE,
-                                               binder.get(), 0);
-  ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
+  auto fd_and_mapping = OpenBinderAndMap(dir);
 
   // Register itself as the context manager
-  EXPECT_THAT(ioctl(binder.get(), BINDER_SET_CONTEXT_MGR, 0), SyscallSucceeds());
+  ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_SET_CONTEXT_MGR, 0), SyscallSucceeds());
 
   // Enter looper
   {
-    EnterLooperWriteBuffer enter_looper_payload;
-    struct binder_write_read payload = {};
-    payload.write_buffer = (binder_uintptr_t)&enter_looper_payload;
-    payload.write_size = sizeof(enter_looper_payload);
-    payload.write_consumed = 0;
-    EXPECT_THAT(ioctl(binder.get(), BINDER_WRITE_READ, &payload), SyscallSucceeds());
+    EnterLooperWriteBuffer enter_looper_write_buffer = {
+        .command = BC_ENTER_LOOPER,
+    };
+    struct binder_write_read enter_looper_write_read = {
+        .write_size = sizeof(enter_looper_write_buffer),
+        .write_consumed = 0,
+        .write_buffer = (binder_uintptr_t)&enter_looper_write_buffer,
+    };
+    ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &enter_looper_write_read),
+                SyscallSucceeds());
   }
 
   while (true) {
-    struct binder_write_read payload = {};
     std::array<int32_t, 32> read_buffer = {};
-    payload.read_size = sizeof(read_buffer);
-    payload.read_buffer = (binder_uintptr_t)read_buffer.data();
-    payload.read_consumed = 0;
-    EXPECT_THAT(ioctl(binder.get(), BINDER_WRITE_READ, &payload), SyscallSucceeds());
+    struct binder_write_read write_read = {
+        .read_size = sizeof(read_buffer),
+        .read_consumed = 0,
+        .read_buffer = (binder_uintptr_t)read_buffer.data(),
+    };
+    ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &write_read), SyscallSucceeds());
   }
 }
 
 // Starts a context manager process.
 // Returns a value that on destruction kills the process.
 auto ScopedContextManagerProcess(std::string_view dir) {
-  std::unique_ptr<test_helper::ForkHelper> helper = std::make_unique<test_helper::ForkHelper>();
-  pid_t pid = RunInForkedProcessWithLabel(*helper, "test_u:test_r:binder_context_manager_test_t:s0",
-                                          [dir] { ContextManagerLoop(dir); });
-  auto cleanup = fit::defer([pid, helper = std::move(helper)]() {
+  auto fork_helper = std::make_unique<test_helper::ForkHelper>();
+  pid_t pid =
+      RunInForkedProcessWithLabel(*fork_helper, "test_u:test_r:binder_context_manager_test_t:s0",
+                                  [dir] { ContextManagerLoop(dir); });
+  auto cleanup = fit::defer([pid, fork_helper = std::move(fork_helper)]() {
     ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
-    helper->ExpectSignal(SIGKILL);
-    ASSERT_TRUE(helper->WaitForChildren());
+    fork_helper->ExpectSignal(SIGKILL);
+    fork_helper->OnlyWaitForForkedChildren();
+    ASSERT_TRUE(fork_helper->WaitForChildren());
   });
   return cleanup;
 }
@@ -73,10 +76,10 @@ auto ScopedContextManagerProcess(std::string_view dir) {
 class BinderTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    EXPECT_THAT(mount(nullptr, temp_dir_.path().c_str(), "binder", 0, nullptr), SyscallSucceeds());
+    ASSERT_THAT(mount(nullptr, temp_dir_.path().c_str(), "binder", 0, nullptr), SyscallSucceeds());
   }
 
-  void TearDown() override { EXPECT_THAT(umount(temp_dir_.path().c_str()), SyscallSucceeds()); }
+  void TearDown() override { ASSERT_THAT(umount(temp_dir_.path().c_str()), SyscallSucceeds()); }
 
   test_helper::ScopedTempDir temp_dir_;
 };
