@@ -46,7 +46,10 @@ fuchsia_test_component("interactive_debian_guest") {
   testonly = true
   component_name = "interactive_debian_guest"
   manifest = "meta/interactive_debian_guest.cml"
-  deps = [ ":interactive_debian_guest_impl" ]
+  deps = [
+    ":interactive_debian_guest_impl",
+    "//src/virtualization/bundles:debian",
+  ]
 }
 
 fuchsia_package("interactive_debian_guest_pkg") {

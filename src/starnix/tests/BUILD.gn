@@ -61,6 +61,14 @@ group("benchmarks") {
   ]
 }
 
+group("linux_vm_tests") {
+  testonly = true
+  deps = [
+    "syscalls:linux_vm_tests",
+    "//src/virtualization/lib/guest_interaction/interactive_debian_guest:interactive_debian_guest_pkg",
+  ]
+}
+
 # Tests that use starnix_test_runner should depend on one of these.
 expect_includes("starnix_test") {
   includes = [ "starnix_test.shard.cml" ]
