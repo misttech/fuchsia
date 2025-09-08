@@ -6,10 +6,10 @@ use crate::args::{
     FuzzCtlCommand, FuzzCtlSubcommand, ResetSubcommand, ResumeLibFuzzerSubcommand,
     RunLibFuzzerSubcommand,
 };
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use argh::FromArgs;
 use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
-use fuchsia_fuzzctl::{save_artifact, Controller, InputPair, Manager, OutputSink, Writer};
+use fuchsia_fuzzctl::{Controller, InputPair, Manager, OutputSink, Writer, save_artifact};
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -353,10 +353,10 @@ impl<O: OutputSink> LibFuzzerWorkflow<O> {
     // Prints the relative path to the directory where the final corpus will be saved. This path is
     // used by undercoat.
     //
-    // Returns the abolsute path to the first directory, and the accumulated input pairs to be sent.
+    // Returns the absolute path to the first directory, and the accumulated input pairs to be sent.
     //
     fn take_corpora(&mut self) -> Result<Vec<InputPair>> {
-        let first = (!self.dirs.is_empty()).then(|| self.dirs[0].clone());
+        let first = self.dirs.first().cloned();
         let mut input_pairs = Vec::new();
         let dirs: Vec<_> = self.dirs.drain(..).collect();
         for relpath in dirs {
@@ -458,8 +458,8 @@ mod tests {
     use fidl_fuchsia_fuzzer::{self as fuzz, Result_ as FuzzResult};
     use fuchsia_async as fasync;
     use fuchsia_fuzzctl::constants::*;
-    use fuchsia_fuzzctl::{digest_path, OutputSink};
-    use fuchsia_fuzzctl_test::{create_task, serve_manager, BufferSink, Test, TEST_URL};
+    use fuchsia_fuzzctl::{OutputSink, digest_path};
+    use fuchsia_fuzzctl_test::{BufferSink, TEST_URL, Test, create_task, serve_manager};
     use std::path::PathBuf;
     use url::Url;
 
