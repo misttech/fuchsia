@@ -19,9 +19,6 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use zx::{self as zx, AsHandleRef};
 
-/// The maximum number of reports we'll allow to be in-flight to the feedback stack at a time.
-const MAX_REPORTS_IN_FLIGHT: u8 = 10;
-
 /// The maximum number of crashes we allow to happen for a process within the last
 /// CrashReporter.crash_loop_age_out before we consider it to be crash looping. 8 within 8 minutes
 /// was chosen as a balance between "definitely a crash loop" and "still saves system resources."
@@ -45,10 +42,6 @@ pub struct CrashReporter {
     /// Connection to the feedback stack for reporting crashes.
     proxy: Option<CrashReporterProxy>,
 
-    /// Number of reports currently being filed with the feedback stack.
-    /// TODO(https://fxbug.dev/417249552): remove.
-    reports_in_flight: Arc<Mutex<u8>>,
-
     /// The period before a crash is no longer considered for detecting crash loops.
     crash_loop_age_out: zx::MonotonicDuration,
 
@@ -62,8 +55,6 @@ pub struct PendingCrashReport {
 
     /// The crashed process name.
     argv0: String,
-
-    guard: Option<ReportGuard>,
 
     /// How many crashes this report represents. For example, a value of 10 would indicate that
     /// this report will represent 9 other throttled crashes for this process.
@@ -82,7 +73,6 @@ impl CrashReporter {
             throttled_core_dumps: Arc::new(Mutex::new(Default::default())),
             crashes_per_process: Arc::new(Mutex::new(Default::default())),
             proxy,
-            reports_in_flight: Default::default(),
             crash_loop_age_out,
             enable_throttling,
         };
@@ -215,11 +205,6 @@ impl CrashReporter {
                         "Couldn't file crash report due to error on underlying channel."
                     ),
                 };
-
-                if let Some(guard) = pending_crash_report.guard {
-                    // Move the guard into the task so that it stays alive while filing.
-                    drop(guard);
-                };
             });
         } else {
             log_info!(crash_report:?; "no crash reporter available for crash");
@@ -239,7 +224,7 @@ impl CrashReporter {
         runtime: zx::MonotonicInstant,
     ) -> Option<PendingCrashReport> {
         if !self.enable_throttling {
-            return Some(PendingCrashReport { argv, argv0, guard: None, weight: 1 });
+            return Some(PendingCrashReport { argv, argv0, weight: 1 });
         }
 
         // Locally record that the crash occurred.
@@ -264,26 +249,10 @@ impl CrashReporter {
             return None;
         }
 
-        // Check if Starnix as a whole has been filing too many reports.
-        let mut num_in_flight = self.reports_in_flight.lock();
-        if *num_in_flight < MAX_REPORTS_IN_FLIGHT {
-            *num_in_flight += 1;
+        let weight = crash_info.num_crashes_while_throttled;
+        crash_info.num_crashes_while_throttled = 0;
 
-            let weight = crash_info.num_crashes_while_throttled;
-            crash_info.num_crashes_while_throttled = 0;
-
-            Some(PendingCrashReport {
-                argv,
-                argv0,
-                guard: Some(ReportGuard(self.reports_in_flight.clone())),
-                weight,
-            })
-        } else {
-            log_info!(
-                "Skipping sending crash report for process '{argv0}', too many already in-flight for Starnix."
-            );
-            None
-        }
+        Some(PendingCrashReport { argv, argv0, weight })
     }
 
     fn record_throttling_in_inspect(&self, inspect_node: &Node) {
@@ -364,14 +333,6 @@ impl CrashInfo {
         crash_loop_age_out: zx::MonotonicDuration,
     ) {
         self.crash_runtimes.retain(|&x| (runtime - x) < crash_loop_age_out);
-    }
-}
-
-struct ReportGuard(Arc<Mutex<u8>>);
-
-impl Drop for ReportGuard {
-    fn drop(&mut self) {
-        *self.0.lock() -= 1;
     }
 }
 
