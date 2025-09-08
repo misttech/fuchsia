@@ -1006,14 +1006,15 @@ impl RefaultTracker {
 #[cfg(test)]
 mod tests {
     use super::{DIRENT_CACHE_LIMIT, RefaultTracker};
+    use crate::fuchsia::file::FxFile;
     use crate::fuchsia::fxblob::BlobDirectory;
     use crate::fuchsia::fxblob::testing::{self as blob_testing, BlobFixture};
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::pager::PagerBacked;
     use crate::fuchsia::profile::{RECORDED, new_profile_state};
     use crate::fuchsia::testing::{
-        TestFixture, close_dir_checked, close_file_checked, open_dir, open_dir_checked, open_file,
-        open_file_checked,
+        TestFixture, TestFixtureOptions, close_dir_checked, close_file_checked, open_dir,
+        open_dir_checked, open_file, open_file_checked,
     };
     use crate::fuchsia::volume::{
         BASE_READ_AHEAD_SIZE, FxVolume, MemoryPressureConfig, MemoryPressureLevelConfig,
@@ -1030,7 +1031,7 @@ mod tests {
     use fxfs::object_store::directory::replace_child;
     use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
     use fxfs::object_store::volume::root_volume;
-    use fxfs::object_store::{HandleOptions, NO_OWNER, ObjectStore};
+    use fxfs::object_store::{HandleOptions, NO_OWNER, ObjectDescriptor, ObjectStore};
     use fxfs_insecure_crypto::InsecureCrypt;
     use std::sync::atomic::Ordering;
     use std::sync::{Arc, Weak};
@@ -2450,7 +2451,7 @@ mod tests {
     }
 
     #[fuchsia::test(threads = 10)]
-    async fn test_profile() {
+    async fn test_profile_blob() {
         let mut hashes = Vec::new();
         let device = {
             let fixture = blob_testing::new_blob_fixture().await;
@@ -2548,6 +2549,153 @@ mod tests {
                     while blob.vmo().info().unwrap().committed_bytes == 0 {
                         fasync::Timer::new(Duration::from_millis(25)).await;
                     }
+                }
+
+                // Complete the recording.
+                fixture.volume().volume().stop_profile_tasks().await;
+            }
+            device = fixture.close().await;
+        }
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_profile_file() {
+        let mut hashes = Vec::new();
+        let device = {
+            let fixture = TestFixture::new().await;
+            for i in 0..3u64 {
+                let file_proxy = open_file_checked(
+                    fixture.root(),
+                    &i.to_string(),
+                    fio::Flags::FLAG_MUST_CREATE | fio::PERM_WRITABLE,
+                    &Default::default(),
+                )
+                .await;
+                file_proxy.write(i.to_le_bytes().as_slice()).await.unwrap().expect("Writing file");
+                let id = file_proxy
+                    .get_attributes(fio::NodeAttributesQuery::ID)
+                    .await
+                    .unwrap()
+                    .expect("Get id")
+                    .1
+                    .id
+                    .expect("Reading id in response");
+                hashes.push((i, id));
+            }
+            fixture.close().await
+        };
+        device.ensure_unique();
+
+        device.reopen(false);
+        let mut device = {
+            let fixture = TestFixture::open(
+                device,
+                TestFixtureOptions { format: false, ..Default::default() },
+            )
+            .await;
+            fixture
+                .volume()
+                .volume()
+                .record_or_replay_profile(new_profile_state(false), "foo")
+                .await
+                .expect("Recording");
+
+            // Page in the zero offsets only to avoid readahead strangeness.
+            for (i, _) in &hashes {
+                let file_proxy = open_file_checked(
+                    fixture.root(),
+                    &i.to_string(),
+                    fio::PERM_READABLE,
+                    &Default::default(),
+                )
+                .await;
+                file_proxy.read(1).await.unwrap().expect("Reading file");
+            }
+            fixture.volume().volume().stop_profile_tasks().await;
+            fixture.close().await
+        };
+
+        // Do this multiple times to ensure that the re-recording doesn't drop anything.
+        for i in 0..3 {
+            device.ensure_unique();
+            device.reopen(false);
+            let fixture = TestFixture::open(
+                device,
+                TestFixtureOptions { format: false, ..Default::default() },
+            )
+            .await;
+            {
+                // Need to get the root vmo to check committed bytes.
+                let volume = fixture.volume().volume().clone();
+                // Ensure that nothing is paged in right now.
+                for (_, id) in &hashes {
+                    let file = volume
+                        .get_or_load_node(*id, ObjectDescriptor::File, None)
+                        .await
+                        .expect("Opening file internally")
+                        .into_any()
+                        .downcast::<FxFile>()
+                        .expect("Should be file");
+                    assert_eq!(file.vmo().info().unwrap().committed_bytes, 0);
+                }
+
+                fixture
+                    .volume()
+                    .volume()
+                    .record_or_replay_profile(new_profile_state(false), "foo")
+                    .await
+                    .expect("Replaying");
+
+                // Move the file in flight to ensure a new version lands to be used next time.
+                {
+                    let store_id = fixture.volume().volume().store().store_object_id();
+                    let dir = fixture.volume().volume().get_profile_directory().await.unwrap();
+                    let old_file = dir.lookup("foo").await.unwrap().unwrap().0;
+                    let mut transaction = fixture
+                        .fs()
+                        .clone()
+                        .new_transaction(
+                            lock_keys!(
+                                LockKey::object(store_id, dir.object_id()),
+                                LockKey::object(store_id, old_file),
+                            ),
+                            Options::default(),
+                        )
+                        .await
+                        .unwrap();
+                    replace_child(&mut transaction, Some((&dir, "foo")), (&dir, &i.to_string()))
+                        .await
+                        .expect("Replace old profile.");
+                    transaction.commit().await.unwrap();
+                    assert!(
+                        dir.lookup("foo").await.unwrap().is_none(),
+                        "Old profile should be moved"
+                    );
+                }
+
+                // Await all data being played back by checking that things have paged in.
+                for (_, id) in &hashes {
+                    let file = volume
+                        .get_or_load_node(*id, ObjectDescriptor::File, None)
+                        .await
+                        .expect("Opening file internally")
+                        .into_any()
+                        .downcast::<FxFile>()
+                        .expect("Should be file");
+                    while file.vmo().info().unwrap().committed_bytes == 0 {
+                        fasync::Timer::new(Duration::from_millis(25)).await;
+                    }
+                }
+
+                // Open all the files to show that they have been used.
+                for (i, _) in &hashes {
+                    let _file_proxy = open_file_checked(
+                        fixture.root(),
+                        &i.to_string(),
+                        fio::PERM_READABLE,
+                        &Default::default(),
+                    )
+                    .await;
                 }
 
                 // Complete the recording.

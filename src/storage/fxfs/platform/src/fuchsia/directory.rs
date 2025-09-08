@@ -223,6 +223,12 @@ impl FxDirectory {
                     }
                     current_node = child_node;
                     if last_segment {
+                        {
+                            let mut guard = self.volume().pager().recorder();
+                            if let Some(recorder) = &mut (*guard) {
+                                let _ = recorder.record_open(current_node.clone());
+                            }
+                        }
                         // We must make sure to take an open-count whilst we are holding a read
                         // lock.
                         return Ok(OpenedNode::new(current_node));
