@@ -9,6 +9,7 @@ use magma::{
     magma_initialize_logging, magma_priority_t, magma_query_t, magma_status_t,
 };
 use starnix_logging::log_error;
+use std::panic::Location;
 use std::sync::Arc;
 use zx::HandleBased;
 
@@ -16,9 +17,23 @@ fn magma_result(status: magma_status_t) -> Result<(), magma_status_t> {
     if status == MAGMA_STATUS_OK { Ok(()) } else { Err(status) }
 }
 
-#[track_caller]
-fn kgsl_log_error(status: &magma_status_t) {
-    log_error!("kgsl: {}({}): {}", file!(), line!(), status);
+trait KgslErrorLogger {
+    #[track_caller]
+    fn kgsl_log_error(self) -> Self;
+}
+
+impl<T> KgslErrorLogger for Result<T, magma_status_t> {
+    #[track_caller]
+    fn kgsl_log_error(self) -> Self {
+        match self {
+            Ok(v) => Ok(v),
+            Err(status) => {
+                let caller = Location::caller();
+                log_error!("kgsl: {}({}): {}", caller.file(), caller.line(), status);
+                Err(status)
+            }
+        }
+    }
 }
 
 pub fn initialize_logging(channel: zx::Channel) -> Result<(), ()> {
@@ -43,7 +58,7 @@ impl Device {
     pub fn from_channel(channel: zx::Channel) -> Result<Self, magma_status_t> {
         let mut magma_device: magma_device_t = 0;
         let result = unsafe { magma_device_import(channel.into_raw(), &mut magma_device) };
-        magma_result(result).inspect_err(kgsl_log_error)?;
+        magma_result(result).kgsl_log_error()?;
         Ok(Device { inner: Arc::new(DeviceInternal { magma_device }) })
     }
 
@@ -54,7 +69,7 @@ impl Device {
             magma_device_query(self.inner.magma_device, id, &mut result_buffer_out, &mut result_out)
         };
         assert!(result_buffer_out == 0);
-        magma_result(result).inspect_err(kgsl_log_error)?;
+        magma_result(result).kgsl_log_error()?;
         Ok(result_out)
     }
 
@@ -63,7 +78,7 @@ impl Device {
         let result = unsafe {
             magma_device_create_connection(self.inner.magma_device, &mut magma_connection)
         };
-        magma_result(result).inspect_err(kgsl_log_error)?;
+        magma_result(result).kgsl_log_error()?;
         Ok(Connection { inner: Arc::new(ConnectionInternal { magma_connection }) })
     }
 }
@@ -92,7 +107,7 @@ impl Connection {
                 &mut magma_context_id,
             )
         };
-        magma_result(result).inspect_err(kgsl_log_error)?;
+        magma_result(result).kgsl_log_error()?;
         Ok(Context {
             _inner: Arc::new(ContextInternal { connection: self.inner.clone(), magma_context_id }),
         })
