@@ -143,12 +143,18 @@ void GenericSuspend::GetSuspendStates(GetSuspendStatesCompleter::Sync& completer
   completer.ReplySuccess(resp);
 }
 
-zx_status_t GenericSuspend::SystemSuspendEnter() {
+zx::result<WakeSourceReport> GenericSuspend::SystemSuspendEnter() {
   // LINT.IfChange
   TRACE_DURATION("power", "generic-suspend:suspend");
   // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/suspend.py)
-  return zx_system_suspend_enter(cpu_resource_.get(), ZX_TIME_INFINITE, 0, nullptr, nullptr, 0,
-                                 nullptr);
+  WakeSourceReport report;
+  const zx_status_t status = zx_system_suspend_enter(
+      cpu_resource_.get(), ZX_TIME_INFINITE, /*options=*/0, &report.header, report.entries,
+      sizeof(report.entries) / sizeof(report.entries[0]), &report.actual_entry_count);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+  return zx::ok(report);
 }
 
 void GenericSuspend::Suspend(SuspendRequestView request, SuspendCompleter::Sync& completer) {
@@ -168,24 +174,48 @@ void GenericSuspend::Suspend(SuspendRequestView request, SuspendCompleter::Sync&
 
   FDF_LOG(INFO, "on suspend: current monotonic time %ld", zx_clock_get_monotonic());
   auto suspend_start = zx_clock_get_boot();
-  zx_status_t result = SystemSuspendEnter();
+  zx::result<WakeSourceReport> result = SystemSuspendEnter();
   auto suspend_return = zx_clock_get_boot();
   FDF_LOG(INFO, "on resume: current monotonic time %ld", zx_clock_get_monotonic());
 
-  if (result != ZX_OK) {
-    FDF_LOG(ERROR, "zx_system_suspend_enter failed: %s", zx_status_get_string(result));
+  if (result.is_error()) {
+    auto error_value = result.error_value();
+    FDF_LOG(ERROR, "zx_system_suspend_enter failed: %s", zx_status_get_string(error_value));
     inspect_events_.CreateEntry([suspend_return](inspect::Node& n) {
       n.RecordInt(fobs::kSuspendFailedAt, suspend_return);
     });
-    completer.ReplyError(result);
+    completer.ReplyError(error_value);
   } else {
-    inspect_events_.CreateEntry([suspend_return](inspect::Node& n) {
+    const auto& header = result.value().header;
+    inspect_events_.CreateEntry([suspend_return, &header](inspect::Node& n) {
       n.RecordInt(fobs::kSuspendResumedAt, suspend_return);
+      n.RecordInt(fobs::kWakeReasonReportTime, header.report_time);
+      n.RecordInt(fobs::kWakeReasonWakeSourcesCount, header.total_wake_sources);
+      n.RecordInt(fobs::kWakeReasonWakeSourcesUnreportedCount,
+                  header.unreported_wake_report_entries);
     });
+
+    // Copy wake vector results into the response.
+    // TODO(b/343229277): Add support for soft_wake_vectors and other wake reports.
+    const auto& entries = result.value().entries;
+    auto reason_builder =
+        fuchsia_hardware_power_suspend::wire::WakeReason::Builder(arena).wake_vectors_type(
+            fuchsia_hardware_power_suspend::WakeVectorType::kKoid);
+    const auto entry_count = result.value().actual_entry_count;
+    const auto entry_count_clipped = std::min(entry_count, kMaxWakeSourceEntriesCount);
+    fidl::VectorView<uint64_t> koids(arena, entry_count_clipped);
+    for (uint32_t i = 0; i < entry_count_clipped; i++) {
+      koids[i] = entries[i].koid;
+    }
+    reason_builder.wake_vectors(koids).wake_vectors_overflow(entry_count_clipped < entry_count);
+    const auto reason = reason_builder.Build();
+
+    // Convert to a response to suspend data.
     auto resp =
         fuchsia_hardware_power_suspend::wire::SuspenderSuspendResponse::Builder(arena)
             .suspend_duration(suspend_return - suspend_start)
             .suspend_overhead(suspend_start - function_start + zx_clock_get_boot() - suspend_return)
+            .reason(reason)
             .Build();
     completer.ReplySuccess(resp);
   }

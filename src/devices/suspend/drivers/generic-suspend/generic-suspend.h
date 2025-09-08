@@ -10,10 +10,31 @@
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <zircon/syscalls-next.h>
 
 #include "lib/fdf/cpp/dispatcher.h"
 
 namespace suspend {
+
+/// Maximum supported wake source report entries.
+constexpr uint32_t kMaxWakeSourceEntriesCount = 100;
+
+/// Reports the information about wake sources as reported by the kernel upon
+/// call to `zx_system_suspend_enter`.
+struct WakeSourceReport {
+  /// The kernel's wake source report header information, always filled out.
+  zx_wake_source_report_header_t header;
+  /// The number of wake sources available in the kernel to report.  This number
+  /// may be larger than `kMaxWakeSourceEntriesCount`, in which case the overflow
+  /// is simply omitted.
+  uint32_t actual_entry_count;
+  /// The wake source details as reported by the kernel. We forward a maximum
+  /// of `kMaxWakeSourceEntriesCount`, if there are more those are not reported.
+  ///
+  /// However, the specified maximum number of entries should be enough for
+  /// everyone.
+  zx_wake_source_report_entry_t entries[kMaxWakeSourceEntriesCount];
+};
 
 class GenericSuspend : public fdf::DriverBase,
                        public fidl::WireServer<fuchsia_hardware_power_suspend::Suspender> {
@@ -35,7 +56,7 @@ class GenericSuspend : public fdf::DriverBase,
 
  protected:
   virtual zx::result<zx::resource> GetCpuResource();
-  virtual zx_status_t SystemSuspendEnter();
+  virtual zx::result<WakeSourceReport> SystemSuspendEnter();
 
   // Called just at Start(). Used in testing, otherwise a no-op.
   virtual void AtStart() {}

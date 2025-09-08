@@ -39,9 +39,12 @@ class GenericSuspendTest : public GenericSuspend {
     return zx::ok(std::move(result));
   }
 
-  zx_status_t SystemSuspendEnter() override {
+  zx::result<WakeSourceReport> SystemSuspendEnter() override {
     // No-op override for testing.
-    return ZX_OK;
+    WakeSourceReport empty{
+        .actual_entry_count = 0,
+    };
+    return zx::ok(empty);
   }
 
   static DriverRegistration GetDriverRegistration() {
