@@ -17,7 +17,7 @@ namespace fdf_power {
 
 namespace internal {
 zx::result<fidl::ServerEnd<fuchsia_power_system::SuspendBlocker>> RegisterSuspendHooks(
-    fdf::Namespace& incoming);
+    fdf::Namespace& incoming, std::string_view name);
 }
 
 // This class is a wrapper for a callback type that must be called into exactly once
@@ -101,13 +101,13 @@ class Suspendable {
     Suspendable<Driver>* parent_;
   };
 
-  zx::result<> RegisterSuspendHooks(async_dispatcher_t* dispatcher, fdf::Namespace& incoming) {
+  zx::result<> RegisterSuspendHooks(async_dispatcher_t* dispatcher, fdf::Namespace& incoming,
+                                    std::string_view name) {
     if (!SuspendEnabled()) {
       return zx::ok();
     }
 
-    zx::result server_end = internal::RegisterSuspendHooks(incoming);
-
+    zx::result server_end = internal::RegisterSuspendHooks(incoming, name);
     if (server_end.is_error()) {
       return server_end.take_error();
     }

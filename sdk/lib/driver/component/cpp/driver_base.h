@@ -132,7 +132,8 @@ class DriverBase {
   // `FDF_LOGL(INFO, driver->logger(), "...");`
   Logger& logger() { return *logger_; }
 
-  using InitMethodCallback = fit::callback<zx::result<>(async_dispatcher_t*, Namespace&)>;
+  using InitMethodCallback =
+      fit::callback<zx::result<>(async_dispatcher_t*, Namespace&, std::string_view)>;
 
   // Callbacks that are invoked prior to the start hook.
   void RegisterInitMethods(InitMethodCallback cb);

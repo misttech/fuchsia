@@ -70,7 +70,7 @@ void DriverBase::RegisterInitMethods(InitMethodCallback cb) {
 
 zx::result<> DriverBase::RunInitMethods() {
   for (auto& method : init_methods_) {
-    zx::result result = method(dispatcher(), *incoming());
+    zx::result result = method(dispatcher(), *incoming(), name());
     if (result.is_error()) {
       return result.take_error();
     }

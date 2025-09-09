@@ -20,7 +20,8 @@ void Completer::operator()() {
 }
 
 namespace internal {
-zx::result<fidl::ServerEnd<fps::SuspendBlocker>> RegisterSuspendHooks(fdf::Namespace& incoming) {
+zx::result<fidl::ServerEnd<fps::SuspendBlocker>> RegisterSuspendHooks(fdf::Namespace& incoming,
+                                                                      std::string_view name) {
   zx::result sag = incoming.Connect<fps::ActivityGovernor>();
   if (sag.is_error()) {
     return sag.take_error();
@@ -30,7 +31,7 @@ zx::result<fidl::ServerEnd<fps::SuspendBlocker>> RegisterSuspendHooks(fdf::Names
   auto result = fidl::Call(sag.value())
                     ->RegisterSuspendBlocker(fps::ActivityGovernorRegisterSuspendBlockerRequest{{
                         .suspend_blocker = std::move(client_end),
-                        .name = "driver",
+                        .name = std::string(name),
                     }});
   if (result.is_error()) {
     return zx::error(ZX_ERR_NOT_FOUND);
