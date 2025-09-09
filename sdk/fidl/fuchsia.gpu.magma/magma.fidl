@@ -593,7 +593,10 @@ closed protocol DebugUtils {
     /// Set the GPU power state. Returns after the transition is complete.
     strict SetPowerState(struct {
         power_state int64;
-    }) -> () error zx.Status;
+    }) -> (struct {
+        /// The time taken to complete the power state transition, in nanoseconds.
+        time_in_ns uint64;
+    }) error zx.Status;
 };
 
 @available(added=HEAD)

@@ -5,6 +5,7 @@
 import("//build/components.gni")
 
 executable("magma-debug-utils-bin") {
+  testonly = true
   sources = [ "magma_debug_utils.cc" ]
   output_name = "magma-debug-utils"
 
@@ -16,22 +17,13 @@ executable("magma-debug-utils-bin") {
   ]
 }
 
-fuchsia_test_component("magma-debug-utils-cmp") {
-  component_name = "magma-debug-utils"
+# See the README for how to run this.
+fuchsia_package("magma-debug-utils") {
+  testonly = true
   deps = [ ":magma-debug-utils-bin" ]
-  manifest = "meta/magma-debug-utils.cml"
-  test_type = "device"
-}
-
-# This test isn't run by default, but can be used as a command-line utility.
-fuchsia_test_package("magma-debug-utils-test") {
-  test_components = [ ":magma-debug-utils-cmp" ]
-  test_specs = {
-    environments = []
-  }
 }
 
 group("tools") {
   testonly = true
-  deps = [ ":magma-debug-utils-test" ]
+  deps = [ ":magma-debug-utils" ]
 }

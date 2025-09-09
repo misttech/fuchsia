@@ -311,11 +311,15 @@ void MagmaDriverBase::SetPowerState(
     fuchsia_gpu_magma::wire::DebugUtilsSetPowerStateRequest* request,
     fidl::WireServer<::fuchsia_gpu_magma::DebugUtils>::SetPowerStateCompleter::Sync& completer) {
   std::lock_guard lock(magma_mutex());
-
+  auto start_time = std::chrono::steady_clock::now();
   magma_system_device()->SetPowerState(
-      request->power_state, [completer = completer.ToAsync()](magma_status_t status) mutable {
+      request->power_state,
+      [start_time, completer = completer.ToAsync()](magma_status_t status) mutable {
         if (status == MAGMA_STATUS_OK) {
-          completer.ReplySuccess();
+          auto end_time = std::chrono::steady_clock::now();
+          auto milliseconds =
+              std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
+          completer.ReplySuccess(milliseconds);
         } else {
           completer.ReplyError(ZX_ERR_INTERNAL);
         }
