@@ -8,6 +8,7 @@ import("//build/sdk/plasa/config.gni")
 import("//build/sdk/plasa/plasa_fragment_cc.gni")
 import("//build/sdk/sdk_atom.gni")
 
+# LINT.IfChange
 # A source set that can be exported to an SDK.
 #
 # An equivalent to the built-in source_set which adds an SDK atom declaration to
@@ -304,15 +305,14 @@ template("sdk_source_set") {
     not_needed(invoker, [ "sdk_headers_for_internal_use" ])
   }
 
-  # LINT.IfChange
+  # If changing this, also change
+  # //build/sdk/idk_prebuild_manifest.gni:cc_source_library.
   _prebuild_info = {
     include_dir = include_dest
     sources = sdk_metadata_sources
     headers = sdk_metadata_headers
     file_base = sdk_root_path
   }
-
-  # LINT.ThenChange(//build/sdk/idk_prebuild_manifest.gni)
 
   sdk_atom(sdk_target_name) {
     # As described at the top of this file, this atom does NOT build the
@@ -404,3 +404,4 @@ template("sdk_source_set") {
 set_defaults("sdk_source_set") {
   configs = default_common_binary_configs
 }
+# LINT.ThenChange(//build/bazel/bazel_idk/defs.bzl:idk_cc_source_library)

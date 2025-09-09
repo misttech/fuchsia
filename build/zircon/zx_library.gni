@@ -7,6 +7,7 @@ import("//build/cpp/sdk_source_set.gni")
 import("//build/cpp/sdk_static_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
 
+# LINT.IfChange
 # Build a zircon-specific library, possibly in several ways.
 #
 # This template should be used by Zircon build rules exclusively, and follows
@@ -434,3 +435,4 @@ template("zx_library") {
 set_defaults("zx_library") {
   configs = default_common_binary_configs
 }
+# LINT.ThenChange(//build/bazel/bazel_idk/defs.bzl)

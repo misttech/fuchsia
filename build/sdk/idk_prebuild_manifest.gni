@@ -94,7 +94,7 @@ template("idk_prebuild_manifest") {
   #     file_base(string)
   #        The root path for all files in the IDK. The paths above include this.
   #
-  #   LINT.ThenChange(//build/cpp/sdk_source_set.gni)
+  #   LINT.ThenChange(//build/bazel/bazel_idk/defs.bzl:idk_cc_source_library, //build/cpp/sdk_source_set.gni)
   #
   # ----------------------------------------------------------------------------
   #

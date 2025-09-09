@@ -440,6 +440,7 @@ def _get_atom_visibility(target_visibility):
 
     return atom_visibility
 
+# LINT.IfChange(idk_cc_source_library)
 # TODO(https://fxbug.dev/417305295): Make this a symbolic macro after updating
 # to Bazel 8. Replace "Required" comments with `mandatory = True`.
 # TODO(https://fxbug.dev/428229472): When migrating "zbi-format":
@@ -698,6 +699,15 @@ def idk_cc_source_library(
         api_path = None
         api_contents_map = None
 
+    # If changing this, also change
+    # //build/sdk/idk_prebuild_manifest.gni:cc_source_library.
+    additional_prebuild_info_values = {
+        "include_dir": include_dest,
+        "sources": idk_metadata_sources,
+        "headers": idk_metadata_headers,
+        "file_base": idk_root_path,
+    }
+
     _idk_atom(
         name = name,
         idk_name = idk_name,
@@ -712,12 +722,7 @@ def idk_cc_source_library(
         files_map = idk_files_map,
         idk_deps = idk_deps,
         atom_build_deps = atom_build_deps,
-        additional_prebuild_info = _json_encode_dict_values({
-            "include_dir": include_dest,
-            "sources": idk_metadata_sources,
-            "headers": idk_metadata_headers,
-            "file_base": idk_root_path,
-        }),
+        additional_prebuild_info = _json_encode_dict_values(additional_prebuild_info_values),
         testonly = testonly,
         visibility = _get_atom_visibility(visibility),
     )
@@ -725,6 +730,8 @@ def idk_cc_source_library(
     # TODO(https://fxbug.dev/417305295):Implement the //sdk:sdk_source_set_list
     # build API module and merge with the GN data.
     # sdk_source_set_sources = all_source_files
+
+# LINT.ThenChange(//build/cpp/sdk_source_set.gni)
 
 def idk_cc_source_library_zx(
         name,
@@ -751,10 +758,14 @@ def idk_cc_source_library_zx(
         sdk: Must always be "source". Unused in Bazel, for GN conversion only.
         **kwargs: Additional arguments for idk_cc_source_library().
     """
+
+    # LINT.IfChange
     if sdk != "source":
         fail('`sdk` must be "source".')
     if "sdk_headers" in kwargs:
         fail('`sdk_headers` is not supported. Headers for the IDK must be specified in `public`. Note that "include/" must be included in the paths in `public`.')
+
+    # LINT.ThenChange(//build/zircon/zx_library.gni)
 
     idk_cc_source_library(
         name,
