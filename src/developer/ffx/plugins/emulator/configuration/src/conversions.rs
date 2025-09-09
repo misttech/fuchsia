@@ -92,13 +92,13 @@ fn convert_v2_bundle_to_configs(
     });
 
     // Some kernels do not have separate zbi images.
-    let zbi_image: Option<PathBuf> = system.iter().find_map(|i| match i {
+    let zbi: Option<PathBuf> = system.iter().find_map(|i| match i {
         Image::ZBI { path, .. } => Some(path.clone().into()),
         _ => None,
     });
 
     emulator_configuration.guest =
-        GuestConfig { disk_image, kernel_image, zbi_image, ..Default::default() };
+        GuestConfig { disk_image, kernel_image, zbi, ..Default::default() };
 
     Ok(emulator_configuration)
 }
@@ -183,7 +183,7 @@ mod tests {
             DiskImage::Fvm(expected_disk_image_path.into())
         );
         assert_eq!(config.guest.kernel_image, Some(expected_kernel.into()));
-        assert_eq!(config.guest.zbi_image, Some(expected_zbi.into_std_path_buf()));
+        assert_eq!(config.guest.zbi, Some(expected_zbi.into_std_path_buf()));
 
         assert_eq!(config.host.port_map.len(), 0);
 
@@ -241,7 +241,7 @@ mod tests {
             DiskImage::Fxfs(expected_disk_image_path.into())
         );
         assert_eq!(config.guest.kernel_image, Some(expected_kernel.into()));
-        assert_eq!(config.guest.zbi_image, Some(expected_zbi.into_std_path_buf()));
+        assert_eq!(config.guest.zbi, Some(expected_zbi.into_std_path_buf()));
 
         assert_eq!(config.host.port_map.len(), 2);
         assert!(config.host.port_map.contains_key("ssh"));
@@ -334,7 +334,7 @@ mod tests {
             DiskImage::Gpt(expected_disk_image_path.into())
         );
         assert_eq!(config.guest.kernel_image, Some(expected_kernel.into()));
-        assert_eq!(config.guest.zbi_image, Some(expected_zbi.into_std_path_buf()));
+        assert_eq!(config.guest.zbi, Some(expected_zbi.into_std_path_buf()));
 
         assert_eq!(config.host.port_map.len(), 2);
         assert!(config.host.port_map.contains_key("ssh"));
@@ -399,7 +399,7 @@ mod tests {
         assert_eq!(config.device.vsock, Some(device.hardware.vsock));
 
         assert!(config.guest.disk_image.is_none());
-        assert!(config.guest.zbi_image.is_none());
+        assert!(config.guest.zbi.is_none());
 
         assert_eq!(config.guest.kernel_image, Some(expected_kernel.into()));
 
@@ -461,7 +461,7 @@ mod tests {
             config.guest.disk_image,
             Some(DiskImage::Fat("partitions/bootloaders/some-efi-shell.fat".into()))
         );
-        assert!(config.guest.zbi_image.is_none());
+        assert!(config.guest.zbi.is_none());
 
         assert!(config.guest.kernel_image.is_none());
 

@@ -154,10 +154,10 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         }
 
         // If the kernel is an efi image, or has no zbi, skip the zbi processing.
-        let (zbi_path, vbmeta_path) = if let Some(zbi_image_path) = &emu_config.guest.zbi_image {
+        let (zbi_path, vbmeta_path) = if let Some(input_zbi_path) = &emu_config.guest.zbi {
             let mut vbmeta_path = None;
             let zbi_path = instance_root
-                .join(zbi_image_path.file_name().ok_or_else(|| bug!("cannot read zbi file name"))?);
+                .join(input_zbi_path.file_name().ok_or_else(|| bug!("cannot read zbi file name"))?);
 
             if zbi_path.exists() && reuse {
                 log::debug!("Using existing file for {:?}", zbi_path.file_name().unwrap());
@@ -175,12 +175,12 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                 } else {
                     None
                 };
-                Self::embed_boot_data(&env, &zbi_image_path, &zbi_path, kernel_cmdline)
+                Self::embed_boot_data(&env, &input_zbi_path, &zbi_path, kernel_cmdline)
                     .await
                     .map_err(|e| bug!("cannot embed boot data: {e}"))?;
                 log::debug!(
                     "Staging {:?} into {:?} and embedding SSH keys",
-                    zbi_image_path,
+                    input_zbi_path,
                     zbi_path
                 );
                 match (
@@ -306,7 +306,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             updated_guest.disk_image = None;
         }
 
-        updated_guest.zbi_image = zbi_path;
+        updated_guest.zbi = zbi_path;
         if emu_config.guest.is_efi() || emu_config.guest.is_gpt {
             let dest = instance_root.join("OVMF_VARS.fd");
             if !dest.exists() {
@@ -354,14 +354,14 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                     .resize(gpt::DEFAULT_IMAGE_SIZE)
                     .use_fxfs(true)
                     .vbmeta(vbmeta_path)
-                    .zbi(updated_guest.zbi_image);
+                    .zbi(updated_guest.zbi);
                 log::debug!("Building image with {image:#?}");
                 image.build(&env).await?;
             }
             // Since the one multi-partition GPT image is passed to qemu, no kernel and zbi images
             // are required to boot the emulator.
             updated_guest.kernel_image = None;
-            updated_guest.zbi_image = None;
+            updated_guest.zbi = None;
             updated_guest.is_gpt = true;
         }
 
@@ -1230,7 +1230,7 @@ mod tests {
             .set(json!(root.display().to_string()))?;
 
         guest.kernel_image = Some(kernel_path);
-        guest.zbi_image = Some(zbi_path);
+        guest.zbi = Some(zbi_path);
         guest.ovmf_vars = ovmf_path;
         guest.disk_image = Some(disk_image_path);
 
@@ -1325,7 +1325,7 @@ mod tests {
         } else {
             GuestConfig {
                 kernel_image: Some(root.join(instance_name).join("kernel")),
-                zbi_image: Some(root.join(instance_name).join("zbi")),
+                zbi: Some(root.join(instance_name).join("zbi")),
                 disk_image: Some(
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
@@ -1364,7 +1364,7 @@ mod tests {
         } else {
             GuestConfig {
                 kernel_image: Some(root.join(instance_name).join("kernel")),
-                zbi_image: Some(root.join(instance_name).join("zbi")),
+                zbi: Some(root.join(instance_name).join("zbi")),
                 disk_image: Some(
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
@@ -1494,7 +1494,7 @@ mod tests {
         } else {
             GuestConfig {
                 kernel_image: Some(root.join(instance_name).join("kernel")),
-                zbi_image: Some(root.join(instance_name).join("zbi")),
+                zbi: Some(root.join(instance_name).join("zbi")),
                 disk_image: Some(
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
@@ -1534,7 +1534,7 @@ mod tests {
         } else {
             GuestConfig {
                 kernel_image: Some(root.join(instance_name).join("kernel")),
-                zbi_image: Some(root.join(instance_name).join("zbi")),
+                zbi: Some(root.join(instance_name).join("zbi")),
                 disk_image: Some(
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
@@ -1635,7 +1635,7 @@ mod tests {
 
         let expected = GuestConfig {
             kernel_image: Some(root.join(instance_name).join("kernel")),
-            zbi_image: Some(root.join(instance_name).join("zbi")),
+            zbi: Some(root.join(instance_name).join("zbi")),
             disk_image: Some(DiskImage::Fxfs(root.join(instance_name).join("disk"))),
             ovmf_vars: root.join("OVMF_VARS.fd"),
             ..Default::default()
@@ -1665,7 +1665,7 @@ mod tests {
 
         let root = setup(&env.context, &mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
-        let src = emu_config.guest.zbi_image.expect("zbi image path");
+        let src = emu_config.guest.zbi.expect("zbi image path");
         let dest = root.join("dest.zbi");
 
         <TestEngine as QemuBasedEngine>::embed_boot_data(&env.context, &src, &dest, None).await?;
@@ -1682,7 +1682,7 @@ mod tests {
 
         let root = setup(&env.context, &mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
-        let src = emu_config.guest.zbi_image.expect("zbi image path");
+        let src = emu_config.guest.zbi.expect("zbi image path");
         let dest = root.join("dest.zbi");
 
         <TestEngine as QemuBasedEngine>::embed_boot_data(
@@ -1711,7 +1711,7 @@ mod tests {
         std::fs::write(&key_path, VBMETA_TEST_KEY).expect("write test key file");
         std::fs::write(&metadata_path, VBMETA_TEST_KEY_METADATA).expect("write test key metadata");
 
-        let zbi = emu_config.guest.zbi_image.expect("zbi image path");
+        let zbi = emu_config.guest.zbi.expect("zbi image path");
         let dest = root.join("dest.zbi");
 
         <TestEngine as QemuBasedEngine>::generate_vbmeta(&key_path, &metadata_path, &zbi, &dest)

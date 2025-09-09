@@ -18,9 +18,9 @@
     "args": [
         "-kernel",
         "{{guest.kernel_image}}",
-    {{#if guest.zbi_image }}
+    {{#if guest.zbi }}
         "-initrd",
-        "{{guest.zbi_image}}",
+        "{{guest.zbi}}",
     {{/if}}
         "-m",
         "{{device.memory.quantity}}{{ua device.memory.units}}",

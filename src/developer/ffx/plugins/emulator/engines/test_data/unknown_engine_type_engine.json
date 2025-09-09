@@ -106,7 +106,7 @@
         "guest": {
             "disk_image": "/home/developer/.local/share/Fuchsia/ffx/emu/instances/fuchsia-emulator/fvm.blk",
             "kernel_image": "/home/developer/.local/share/Fuchsia/ffx/emu/instances/fuchsia-emulator/multiboot.bin",
-            "zbi_image": "/home/developer/.local/share/Fuchsia/ffx/emu/instances/fuchsia-emulator/fuchsia.zbi"
+            "zbi": "/home/developer/.local/share/Fuchsia/ffx/emu/instances/fuchsia-emulator/fuchsia.zbi"
         },
         "host": {
             "acceleration": "hyper",

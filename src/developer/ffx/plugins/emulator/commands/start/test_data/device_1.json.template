@@ -19,7 +19,7 @@
         "-kernel",
         "{{guest.kernel_image}}",
         "-initrd",
-        "{{guest.zbi_image}}",
+        "{{guest.zbi}}",
         "-m",
         "{{device.memory.quantity}}{{ua device.memory.units}}",
         "-smp",

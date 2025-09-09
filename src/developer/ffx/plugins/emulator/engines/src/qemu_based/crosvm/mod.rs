@@ -97,8 +97,8 @@ impl EmulatorEngine for CrosvmEngine {
             "type=stdout,stdin,hardware=serial,earlycon".to_string(),
             emu_config.guest.kernel_image.clone().unwrap().to_str().unwrap().into(),
         ];
-        if let Some(zbi_image) = &emu_config.guest.zbi_image {
-            args.extend(vec!["--initrd".to_string(), zbi_image.to_str().unwrap().into()]);
+        if let Some(zbi) = &emu_config.guest.zbi {
+            args.extend(vec!["--initrd".to_string(), zbi.to_str().unwrap().into()]);
         }
         if let Some(vsock) = &emu_config.device.vsock {
             if vsock.enabled {

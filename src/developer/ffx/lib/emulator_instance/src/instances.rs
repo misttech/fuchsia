@@ -304,7 +304,7 @@ mod tests {
             "vsock":{"enabled":false,"cid":0},
             "storage":{"quantity":2,"units":"gigabytes"}},"flags":{"args":[],"envs":{},"features":[],
             "kernel_args":[],"options":[]},"guest":{"fvm_image":"/path/to/fvm.blk","kernel_image":
-            "/path/to/multiboot.bin","zbi_image":"/path/to/fuchsia.zbi"},"host":{"acceleration":
+            "/path/to/multiboot.bin","zbi":"/path/to/fuchsia.zbi"},"host":{"acceleration":
             "hyper","architecture":"x64","gpu":"auto","log":"/path/to/emulator.log","networking"
             :"tap","os":"linux","port_map":{}},"runtime":{"console":"none","debugger":false,
             "dry_run":false,"headless":true,"hidpi_scaling":false,"instance_directory":"/some/dir",
@@ -387,7 +387,7 @@ mod tests {
             "pointing_device":"mouse","screen":{"height":800,"width":1280,"units":"pixels"},
             "storage":{"quantity":2,"units":"gigabytes"}},"flags":{"args":[],"envs":{},"features":[],
             "kernel_args":[],"options":[]},"guest":{"fvm_image":"/path/to/fvm.blk","kernel_image":
-            "/path/to/multiboot.bin","zbi_image":"/path/to/fuchsia.zbi"},"host":{"acceleration":
+            "/path/to/multiboot.bin","zbi":"/path/to/fuchsia.zbi"},"host":{"acceleration":
             "hyper","architecture":"x64","gpu":"auto","log":"/path/to/emulator.log","networking"
             :"tap","os":"linux","port_map":{}},"runtime":{"console":"none","debugger":false,
             "dry_run":false,"headless":true,"hidpi_scaling":false,"instance_directory":"/some/dir",

@@ -510,7 +510,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
     ) -> Result<(bool, Box<dyn EmulatorEngine>)> {
         log::debug!(
             "New config image files kernel: {kernel:?} zbi:{zbi:?} disk:{fvm:?}",
-            zbi = new_config.guest.zbi_image,
+            zbi = new_config.guest.zbi,
             fvm = new_config.guest.disk_image,
             kernel = new_config.guest.kernel_image
         );
