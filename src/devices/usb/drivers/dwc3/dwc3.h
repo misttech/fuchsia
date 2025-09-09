@@ -18,6 +18,7 @@
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/driver/power/cpp/suspend.h>
+#include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/mmio/mmio.h>
 #include <lib/sync/cpp/completion.h>
@@ -38,6 +39,7 @@
 #include <usb/sdk/request-fidl.h>
 
 #include "src/devices/usb/drivers/dwc3/dwc3-event-fifo.h"
+#include "src/devices/usb/drivers/dwc3/dwc3-metrics.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-trb-fifo.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-types.h"
 #include "src/devices/usb/drivers/dwc3/dwc3_config.h"
@@ -360,6 +362,15 @@ class Dwc3 : public fdf::DriverBase,
       serial_number_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_usb_phy::Metadata> usb_phy_metadata_server_;
   dwc3_config::Config config_;
+
+  // Inspect and metrics data.
+  // The basic model here is:
+  //   * Record data outside of Inspect structures for better memory efficiency
+  //   * Set up lazy nodes for the Inspect structures to pull data only when needed
+  //   * Package all of this up in a subsystem to minimize its intrusiveness into the main
+  //     driver code.
+  inspect::LazyNode dwc3_root_;
+  Dwc3Metrics metrics_;
 };
 
 }  // namespace dwc3

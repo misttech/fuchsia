@@ -351,6 +351,11 @@ zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t 
 }
 
 zx::result<> Dwc3::Start() {
+  // Set up Inspect data.
+  metrics_.Init();
+  dwc3_root_ = inspector().root().CreateLazyNode(
+      "dwc3", [this] { return fpromise::make_ok_promise(this->metrics_.RecordMetrics()); });
+
   if (zx_status_t status = AcquirePDevResources(); status != ZX_OK) {
     fdf::error("AcquirePDevResources: {}", zx_status_get_string(status));
     return zx::error(status);

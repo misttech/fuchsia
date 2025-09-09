@@ -42,6 +42,8 @@ cc_library(
         "dwc3-event-fifo.h",
         "dwc3-events.cc",
         "dwc3-fifo.h",
+        "dwc3-metrics.cc",
+        "dwc3-metrics.h",
         "dwc3-regs.h",
         "dwc3-trb-fifo.h",
         "dwc3-types.h",

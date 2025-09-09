@@ -5,6 +5,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 
+#include "src/devices/usb/drivers/dwc3/dwc3-metrics.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-types.h"
 #include "src/devices/usb/drivers/dwc3/dwc3.h"
@@ -54,6 +55,8 @@ void Dwc3::HandleEvent(uint32_t event) {
 
   uint32_t type = DEVT_TYPE(event);
   uint32_t info = DEVT_INFO(event);
+
+  metrics_.IncrementEventCount(type);
 
   switch (type) {
     case DEVT_DISCONNECT:
