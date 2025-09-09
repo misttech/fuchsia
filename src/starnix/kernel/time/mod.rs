@@ -2,4 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+///! The time module is responsible for managing the UTC clock of the kernel.
+
 pub mod utc;
