@@ -7,7 +7,7 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fuchsia_build_info//:args.bzl", "warn_on_sdk_changes")
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load(":cpp_verification.bzl", "verify_no_pragma_once")
+load(":cpp_verification.bzl", "create_verify_no_duplicate_files_target", "create_verify_pragma_once_target")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 
 _TYPES_SUPPORTING_UNSTABLE_ATOMS = [
@@ -419,6 +419,27 @@ idk_molecule = rule(
     },
 )
 
+def _get_atom_visibility(target_visibility):
+    """Returns the visibility to use for an atom target.
+
+    The atom's visibility should allow IDK contents/definition rules to depend
+    on the atom in addition to the visibility specified to the macro.
+    The built-in visibility labels cannot be used in combination with other
+    labels so handle them specifically.
+    """
+
+    # TODO(https://fxbug.dev/431287514): Support package `default_visibility`.
+    if "//visibility:public" in target_visibility:
+        return target_visibility
+
+    # All atoms must be visible to the targets defining the IDK.
+    atom_visibility = ["//sdk:__pkg__"]
+
+    if "//visibility:private" not in target_visibility:
+        atom_visibility += target_visibility
+
+    return atom_visibility
+
 # TODO(https://fxbug.dev/417305295): Make this a symbolic macro after updating
 # to Bazel 8. Replace "Required" comments with `mandatory = True`.
 # TODO(https://fxbug.dev/428229472): When migrating "zbi-format":
@@ -450,6 +471,10 @@ def idk_cc_source_library(
         public_configs = [],  # buildifier: disable=unused-variable - For GN conversion only.
         **kwargs):
     """Defines a C++ source library that can be exported to an IDK.
+
+    The IDK atom target ("{name}_idk") does NOT build the underlying library
+    (`name`). To provide build coverage, ensure some other target in the build
+    graph depends on target `name`.
 
     The values of all deps args must be iterable. That means they cannot contain
     `select()` statements. Instead, use `fuchsia_deps` for public dependencies
@@ -542,12 +567,12 @@ def idk_cc_source_library(
         fail("Unstable targets do not require/support modification acknowledgement.")
 
     # Group the source files for various uses.
-    # Per https://bazel.build/versions/6.2.0/reference/be/c-cpp#cc_library.hdrs,
+    # Per https://bazel.build/reference/be/c-cpp#cc_library.hdrs,
     # "Headers not meant to be included by a client of this library should be
     # listed in the srcs attribute instead, even if they are included by a
     # published header." Thus, `hdrs_for_internal_use` is added to `srcs` in the
     # underlying library, not `hdrs`. However, other build systems that use the
-    # IDK may not  work this way, so include `hdrs_for_internal_use` as headers
+    # IDK may not work this way, so include `hdrs_for_internal_use` as headers
     # in the IDK. This is also consistent with prebuilt libraries where the IDK
     # only includes headers.
     all_source_files = hdrs + hdrs_for_internal_use + srcs
@@ -635,31 +660,26 @@ def idk_cc_source_library(
     # TODO(https://fxbug.dev/417307356): When implementing prebuilt
     # libraries, add `[":%s" % name]`. It may also be necessary to return
     # `DefaultInfo` from the underlying library.
-    atom_build_deps = []
+    atom_build_deps = [
+        # All this target really does is provide a clearer error message than if
+        # we relied on combining the lists in the `verify_no_pragma_once()` rule
+        # below.
+        create_verify_no_duplicate_files_target(
+            name = name,
+            hdrs = hdrs,
+            hdrs_for_internal_use = hdrs_for_internal_use,
+            srcs = srcs,
+            testonly = testonly,
+        ),
 
-    # Ensure there are no duplicate files specified by providing all source
-    # files as a single list of labels. Bazel will report an error if the
-    # combined list containes duplicates. All this target really does is provide
-    # a clearer error message than if we relied on combining the lists in the
-    # `verify_no_pragma_once()` rule below.
-    verify_no_duplicate_files_target_name = "%s_verify_no_duplicate_files_in_hdrs_and_srcs" % name
-    native.filegroup(
-        name = verify_no_duplicate_files_target_name,
-        data = all_source_files,
-        testonly = testonly,
-        visibility = ["//visibility:private"],
-    )
-    atom_build_deps.append(":%s" % verify_no_duplicate_files_target_name)
-
-    # For simplicity, check all source files, including non-header files in `srcs`.
-    verify_pragma_once_target_name = "%s_verify_pragma_once" % name
-    verify_no_pragma_once(
-        name = verify_pragma_once_target_name,
-        files = all_source_files,
-        testonly = testonly,
-        visibility = ["//visibility:private"],
-    )
-    atom_build_deps.append(":%s" % verify_pragma_once_target_name)
+        # For simplicity, check all source files, including non-header files in
+        # `srcs`.
+        create_verify_pragma_once_target(
+            name = name,
+            files = all_source_files,
+            testonly = testonly,
+        ),
+    ]
 
     if stable:
         api_path = idk_name + ".api"
@@ -677,20 +697,6 @@ def idk_cc_source_library(
     else:
         api_path = None
         api_contents_map = None
-
-    # The atom's visibility should allow IDK contents/definition rules to depend
-    # on the atom in addition to the visibility of the underlying library.
-    # The built-in visibility labels cannot be used in combination with other
-    # labels so handle them specifically.
-    # TODO(https://fxbug.dev/431287514): Support package `default_visibility`.
-    if "//visibility:public" in visibility:
-        atom_visibility = visibility
-    else:
-        # All atoms must be visible to the targets defining the IDK.
-        atom_visibility = ["//sdk:__pkg__"]
-
-        if "//visibility:private" not in visibility:
-            atom_visibility += visibility
 
     _idk_atom(
         name = name,
@@ -713,7 +719,7 @@ def idk_cc_source_library(
             "file_base": idk_root_path,
         }),
         testonly = testonly,
-        visibility = atom_visibility,
+        visibility = _get_atom_visibility(visibility),
     )
 
     # TODO(https://fxbug.dev/417305295):Implement the //sdk:sdk_source_set_list

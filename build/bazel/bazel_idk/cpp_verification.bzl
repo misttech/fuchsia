@@ -36,3 +36,51 @@ verify_no_pragma_once = rule(
         ),
     },
 )
+
+def create_verify_pragma_once_target(name, files, testonly):
+    """Creates a target that ensures there are no #pragma once directives in `files`.
+
+    Args:
+        name: Name of the target for which the verification is being performed.
+        files: List of files to check.
+        testonly: Standard definition.
+    Returns:
+        The relative label of the target.
+    """
+    target_name = "%s_verify_pragma_once" % name
+    verify_no_pragma_once(
+        name = target_name,
+        files = files,
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+    return ":%s" % target_name
+
+def create_verify_no_duplicate_files_target(
+        name,
+        hdrs,
+        hdrs_for_internal_use,
+        srcs,
+        testonly):
+    """Creates a target that ensures there are no duplicate files specified.
+
+    It works by providing all source files as a single list of labels. Bazel
+    will report an error if the combined list containes duplicates.
+
+    Args:
+        name: Name of the target for which the verification is being performed.
+        hdrs: See idk_cc_source_library().
+        hdrs_for_internal_use: See idk_cc_source_library().
+        srcs: See idk_cc_source_library().
+        testonly: Standard definition.
+    Returns:
+        The relative label of the target.
+    """
+    target_name = "%s_verify_no_duplicate_files" % name
+    native.filegroup(
+        name = target_name,
+        data = hdrs + hdrs_for_internal_use + srcs,
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+    return ":%s" % target_name
