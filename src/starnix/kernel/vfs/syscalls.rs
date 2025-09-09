@@ -3284,7 +3284,8 @@ pub fn sys_io_uring_register(
                 "io_uring_register IORING_REGISTER_IOWQ_MAX_WORKERS",
                 opcode
             );
-            return error!(EINVAL);
+            // The current implementation only ever use 1 worker for read and 1 for write.
+            return Ok(SUCCESS);
         }
         IORING_REGISTER_RING_FDS => {
             track_stub!(
