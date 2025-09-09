@@ -32,30 +32,20 @@ group("tests") {
 
 source_set("firmware-sherlock") {
   sources = [ "ft_firmware_sherlock.cc" ]
-  deps = [ ":common" ]
   cflags_cc = [ "-Wno-newline-eof" ]
 }
 
-source_set("common") {
-  sources = [
-    "ft_device.cc",
-    "ft_device.h",
-    "ft_firmware.cc",
-    "ft_firmware.h",
-  ]
-  deps = [
-    "//sdk/lib/driver/compat/cpp",
-    "//src/lib/ddk:ddk_metadata",
-  ]
+group("common") {
   public_deps = [
     ":focaltech_touch_bind",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
-    "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devfs/cpp",
-    "//sdk/lib/input_report_reader",
-    "//src/devices/i2c/lib/i2c-channel",
+    "//src/devices/i2c/lib/i2c-channel-legacy",
+    "//src/devices/lib/driver",
+    "//src/devices/lib/driver:driver_runtime",
     "//src/devices/lib/focaltech",
+    "//src/lib/ddk",
+    "//src/lib/ddktl",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/inspect",
     "//zircon/system/ulib/sync",
@@ -65,16 +55,18 @@ source_set("common") {
 }
 
 fuchsia_cc_driver("focaltech-driver") {
+  legacy = true
   output_name = "focaltech"
   configs += [
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  sources = [ "ft_firmware_none.cc" ]
-  deps = [
-    ":common",
-    "//src/devices/lib/driver:driver_runtime",
+  sources = [
+    "ft_device.cc",
+    "ft_firmware.cc",
+    "ft_firmware_none.cc",
   ]
+  deps = [ ":common" ]
 }
 
 fuchsia_driver_component("focaltech") {
@@ -91,17 +83,22 @@ fuchsia_driver_package("package") {
 }
 
 fuchsia_cc_driver("focaltech-sherlock-driver") {
+  legacy = true
   output_name = "focaltech-sherlock"
   configs += [
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
+  ]
+  sources = [
+    "ft_device.cc",
+    "ft_firmware.cc",
   ]
   deps = [ ":common" ]
 
   if (internal_access) {
     deps += [ ":firmware-sherlock" ]
   } else {
-    sources = [ "ft_firmware_none.cc" ]
+    sources += [ "ft_firmware_none.cc" ]
   }
 }
 
@@ -121,16 +118,22 @@ fuchsia_driver_package("focaltech-sherlock-package") {
 test("focaltech-test-bin") {
   output_name = "focaltech-test"
   configs += [ "//build/config:all_source" ]
-  sources = [ "ft_device_test.cc" ]
+  sources = [
+    "ft_device.cc",
+    "ft_device_test.cc",
+    "ft_firmware.cc",
+  ]
   deps = [
     ":common",
-    "//sdk/lib/driver/compat/cpp",
-    "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/async-default",
+    "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/async_patterns/testing/cpp",
+    "//sdk/lib/component/outgoing/cpp",
     "//src/devices/gpio/testing/fake-gpio",
     "//src/devices/i2c/testing/fake-i2c",
-    "//src/lib/ddk:ddk_metadata",
-    "//src/lib/fxl/test:gtest_main",
-    "//src/lib/testing/predicates",
+    "//src/devices/testing/mock-ddk",
+    "//third_party/googletest:gtest",
+    "//zircon/system/ulib/zx",
   ]
   defines = [ "FT_TEST" ]
 }

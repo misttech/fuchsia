@@ -8,8 +8,8 @@
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/devfs/cpp/connector.h>
+#include <lib/ddk/debug.h>
+#include <lib/ddk/device.h>
 #include <lib/focaltech/focaltech.h>
 #include <lib/input_report_reader/reader.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -20,9 +20,13 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <atomic>
+
+#include <ddktl/device.h>
+#include <ddktl/protocol/empty-protocol.h>
 #include <fbl/mutex.h>
 
-#include "src/devices/i2c/lib/i2c-channel/i2c-channel.h"
+#include "src/devices/i2c/lib/i2c-channel-legacy/i2c-channel.h"
 
 // clang-format off
 #define FTS_REG_CURPOINT                    0x02
@@ -63,19 +67,21 @@
 
 namespace ft {
 
-class FtDevice : public fdf::DriverBase,
-                 public fidl::WireServer<fuchsia_input_report::InputDevice> {
+class FtDevice;
+using DeviceType = ddk::Device<FtDevice, ddk::Messageable<fuchsia_input_report::InputDevice>::Mixin,
+                               ddk::Unbindable>;
+
+class FtDevice : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_INPUTREPORT> {
  public:
-  static constexpr std::string_view kDriverName = "focaltech_touch";
-  static constexpr std::string_view kChildNodeName = "focaltouch-HidDevice";
+  explicit FtDevice(zx_device_t* device, async_dispatcher_t* dispatcher)
+      : DeviceType(device), dispatcher_(dispatcher) {}
 
-  FtDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  static zx_status_t Create(void* ctx, zx_device_t* device);
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  void DdkRelease();
+  void DdkUnbind(ddk::UnbindTxn txn);
 
-  // fidl::WireServer<fuchsia_input_report::InputDevice> implementation.
+  // fuchsia_input_report::InputDevice required methods
   void GetInputReportsReader(GetInputReportsReaderRequestView request,
                              GetInputReportsReaderCompleter::Sync& completer) override;
   void GetDescriptor(GetDescriptorCompleter::Sync& completer) override;
@@ -97,8 +103,22 @@ class FtDevice : public fdf::DriverBase,
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_input_report::InputDevice> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
-    fdf::warn("Unexpected fidl method invoked: {}", metadata.method_ordinal);
+    zxlogf(WARNING, "Unexpected fidl method invoked: %ld", metadata.method_ordinal);
   }
+
+  // Visible for testing.
+  zx_status_t Init();
+  zx_status_t ShutDown();
+
+#ifdef FT_TEST
+  zx_status_t WaitForNextReader(zx::duration timeout) {
+    zx_status_t status = sync_completion_wait(&next_reader_wait_, timeout.get());
+    if (status == ZX_OK) {
+      sync_completion_reset(&next_reader_wait_);
+    }
+    return status;
+  }
+#endif
 
  private:
   static constexpr size_t kFeatureAndDescriptorBufferSize = 512;
@@ -132,11 +152,11 @@ class FtDevice : public fdf::DriverBase,
         fidl::AnyArena& allocator) const;
   };
 
-  static uint8_t CalculateEcc(std::span<const uint8_t> buffer, uint8_t initial = 0);
+  static uint8_t CalculateEcc(const uint8_t* buffer, size_t size, uint8_t initial = 0);
 
   // Enters romboot and returns true if firmware download is needed, returns false otherwise.
   zx::result<bool> CheckFirmwareAndStartRomboot(uint8_t firmware_version);
-  zx::result<> StartRomboot();
+  zx_status_t StartRomboot();
   zx_status_t WaitForRomboot();
 
   zx::result<uint16_t> GetBootId();
@@ -144,37 +164,36 @@ class FtDevice : public fdf::DriverBase,
   // Returns true if the expected value was read before the timeout, false if not.
   zx::result<bool> WaitForFlashStatus(uint16_t expected_value, int tries, zx::duration retry_sleep);
 
-  zx::result<> EraseFlash(size_t firmware_size);
-  zx::result<> SendFirmware(cpp20::span<const uint8_t> firmware);
-  zx::result<> SendFirmwarePacket(uint32_t address, std::span<const uint8_t> packet);
-  zx::result<> CheckFirmwareEcc(size_t size, uint8_t expected_ecc);
+  zx_status_t EraseFlash(size_t firmware_size);
+  zx_status_t SendFirmware(cpp20::span<const uint8_t> firmware);
+  zx_status_t SendFirmwarePacket(uint32_t address, const uint8_t* buffer, size_t size);
+  zx_status_t CheckFirmwareEcc(size_t size, uint8_t expected_ecc);
 
   zx::result<uint8_t> ReadReg8(uint8_t address);
   zx::result<uint16_t> ReadReg16(uint8_t address);
 
-  zx::result<> Write8(uint8_t value);
-  zx::result<> WriteReg8(uint8_t address, uint8_t value);
-  zx::result<> WriteReg16(uint8_t address, uint16_t value);
+  zx_status_t Write8(uint8_t value);
+  zx_status_t WriteReg8(uint8_t address, uint8_t value);
+  zx_status_t WriteReg16(uint8_t address, uint16_t value);
 
-  zx::result<uint8_t> Read(uint8_t addr);
-  zx::result<> Read(uint8_t addr, std::span<uint8_t> dst);
+  uint8_t Read(uint8_t addr);
+  zx_status_t Read(uint8_t addr, uint8_t* buf, size_t len);
 
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                  const zx_packet_interrupt_t* interrupt);
 
-  static FtInputReport ParseReport(std::span<const uint8_t> buf);
+  static FtInputReport ParseReport(const uint8_t* buf);
 
-  void LogRegisterValue(uint8_t addr, std::string_view name);
+  void LogRegisterValue(uint8_t addr, const char* name);
 
   zx_status_t UpdateFirmwareIfNeeded(const FocaltechMetadata& metadata);
 
-  void DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> server);
-
+  async_dispatcher_t* dispatcher_;
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> int_gpio_;
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> reset_gpio_;
   zx::interrupt irq_;
   async::IrqMethod<FtDevice, &FtDevice::HandleIrq> irq_handler_{this};
-  i2c::I2cChannel i2c_;
+  ddk::I2cChannel i2c_;
 
   inspect::Inspector inspector_;
   inspect::Node node_;
@@ -187,17 +206,16 @@ class FtDevice : public fdf::DriverBase,
   inspect::UintProperty last_event_timestamp_;
 
   uint64_t report_count_ = 0;
-  zx::duration total_latency_;
-  zx::duration max_latency_;
+  zx::duration total_latency_ = {};
+  zx::duration max_latency_ = {};
 
   input_report_reader::InputReportReaderManager<FtInputReport> readers_;
   uint32_t x_max_;
   uint32_t y_max_;
 
-  fidl::ServerBindingGroup<fuchsia_input_report::InputDevice> bindings_;
-  driver_devfs::Connector<fuchsia_input_report::InputDevice> devfs_connector_{
-      fit::bind_member<&FtDevice::DevfsConnect>(this)};
-  fdf::OwnedChildNode child_;
+#ifdef FT_TEST
+  sync_completion_t next_reader_wait_;
+#endif
 };
 }  // namespace ft
 

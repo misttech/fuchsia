@@ -4,9 +4,13 @@
 
 #include "ft_device.h"
 
+#include <lib/ddk/binding_driver.h>
+#include <lib/ddk/debug.h>
+#include <lib/ddk/device.h>
+#include <lib/ddk/hw/arch_ops.h>
 #include <lib/ddk/metadata.h>
-#include <lib/driver/compat/cpp/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/ddk/platform-defs.h>
+#include <lib/ddk/trace/event.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/process.h>
@@ -21,13 +25,12 @@
 #include <zircon/threads.h>
 
 #include <algorithm>
+#include <iterator>
 
 #include <fbl/algorithm.h>
 #include <fbl/auto_lock.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
-
-#include "src/devices/i2c/lib/i2c-channel/i2c-channel.h"
 
 namespace ft {
 
@@ -84,19 +87,18 @@ void FtDevice::FtInputReport::ToFidlInputReport(
   input_report.event_time(event_time.get()).touch(touch_report.Build());
 }
 
-FtDevice::FtInputReport FtDevice::ParseReport(std::span<const uint8_t> buf) {
+FtDevice::FtInputReport FtDevice::ParseReport(const uint8_t* buf) {
   FtInputReport report;
   const uint8_t contact_count = std::min(buf[0], static_cast<uint8_t>(report.contacts.max_size()));
+  buf += 1;
   report.contact_count = 0;
-  for (size_t i = 0; i < contact_count; i++) {
-    const std::span touch_record = buf.subspan(1 + (i * kFingerRptSize), 3);
-    if (((touch_record[0] & kFtTouchEventTypeMask) >> kFtTouchEventTypeShift) !=
-        FtTouchEventType::CONTACT) {
+  for (size_t i = 0; i < contact_count; i++, buf += kFingerRptSize) {
+    if (((buf[0] & kFtTouchEventTypeMask) >> kFtTouchEventTypeShift) != FtTouchEventType::CONTACT) {
       continue;
     }
-    report.contacts[i].x = static_cast<uint16_t>(((touch_record[0] & 0x0f) << 8) + touch_record[1]);
-    report.contacts[i].y = static_cast<uint16_t>(((touch_record[2] & 0x0f) << 8) + touch_record[3]);
-    report.contacts[i].finger_id = static_cast<uint8_t>(touch_record[2] >> 4);
+    report.contacts[i].x = static_cast<uint16_t>(((buf[0] & 0x0f) << 8) + buf[1]);
+    report.contacts[i].y = static_cast<uint16_t>(((buf[2] & 0x0f) << 8) + buf[3]);
+    report.contacts[i].finger_id = static_cast<uint8_t>(buf[2] >> 4);
     report.contact_count++;
   }
   return report;
@@ -105,17 +107,14 @@ FtDevice::FtInputReport FtDevice::ParseReport(std::span<const uint8_t> buf) {
 void FtDevice::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                          const zx_packet_interrupt_t* interrupt) {
   if (status != ZX_OK) {
-    if (status != ZX_ERR_CANCELED) {
-      fdf::error("Interrupt error: {}", zx_status_get_string(status));
-    }
-    return;
+    zxlogf(ERROR, "focaltouch: Interrupt error %d", status);
   }
   TRACE_DURATION("input", "FtDevice Read");
-  std::array<uint8_t, (kMaxPoints * kFingerRptSize) + 1> read_buf;
-  zx::result result = Read(FTS_REG_CURPOINT, read_buf);
-  if (result.is_ok()) {
+  uint8_t i2c_buf[kMaxPoints * kFingerRptSize + 1];
+  status = Read(FTS_REG_CURPOINT, i2c_buf, kMaxPoints * kFingerRptSize + 1);
+  if (status == ZX_OK) {
     auto timestamp = zx::time(interrupt->timestamp);
-    auto report = ParseReport(read_buf);
+    auto report = ParseReport(i2c_buf);
     report.event_time = timestamp;
     readers_.SendReportToAllReaders(report);
 
@@ -130,51 +129,55 @@ void FtDevice::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx
       max_latency_usecs_.Set(max_latency_.to_usecs());
     }
 
-    if (read_buf[0] > 0) {
+    if (i2c_buf[0] > 0) {
       total_report_count_.Add(1);
       last_event_timestamp_.Set(timestamp.get());
     }
   } else {
-    fdf::error("Failed to read i2c: {}", result);
+    zxlogf(ERROR, "focaltouch: i2c read error");
   }
 
   irq_.ack();
 }
 
-zx::result<> FtDevice::Start() {
-  zx::result i2c = i2c::I2cChannel::FromIncoming(*incoming(), "i2c");
-  if (i2c.is_error()) {
-    fdf::error("Failed to connect to i2c: {}", i2c);
-    return i2c.take_error();
+zx_status_t FtDevice::Init() {
+  i2c_ = ddk::I2cChannel(parent(), "i2c");
+  if (!i2c_.is_valid()) {
+    zxlogf(ERROR, "failed to acquire i2c");
+    return ZX_ERR_NO_RESOURCES;
   }
-  i2c_ = std::move(i2c.value());
 
+  const char* kIntGpioFragmentName = "gpio-int";
   zx::result int_gpio_client =
-      incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-int");
+      DdkConnectFragmentFidlProtocol<fuchsia_hardware_gpio::Service::Device>(parent(),
+                                                                             kIntGpioFragmentName);
   if (int_gpio_client.is_error()) {
-    fdf::error("Failed to connect to interrupt gpio: {}", int_gpio_client);
-    return zx::error(ZX_ERR_NO_RESOURCES);
+    zxlogf(ERROR, "Failed to get gpio protocol from fragment %s: %s", kIntGpioFragmentName,
+           int_gpio_client.status_string());
+    return ZX_ERR_NO_RESOURCES;
   }
   int_gpio_.Bind(std::move(int_gpio_client.value()));
 
-  zx::result reset_gpio_client =
-      incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-reset");
+  const char* kResetGpioFragmentName = "gpio-reset";
+  auto reset_gpio_client = DdkConnectFragmentFidlProtocol<fuchsia_hardware_gpio::Service::Device>(
+      parent(), kResetGpioFragmentName);
   if (reset_gpio_client.is_error()) {
-    fdf::error("Failed to connect to reset gpio: {}", reset_gpio_client);
-    return zx::error(ZX_ERR_NO_RESOURCES);
+    zxlogf(ERROR, "Failed to get gpio protocol from fragment %s: %s", kResetGpioFragmentName,
+           reset_gpio_client.status_string());
+    return ZX_ERR_NO_RESOURCES;
   }
   reset_gpio_.Bind(std::move(reset_gpio_client.value()));
 
   {
     fidl::WireResult result = int_gpio_->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kInput);
     if (!result.ok()) {
-      fdf::error("Failed to send SetBufferMode request to int gpio: {}", result.status_string());
-      return zx::error(result.status());
+      zxlogf(ERROR, "Failed to send SetBufferMode request to int gpio: %s", result.status_string());
+      return result.status();
     }
     if (result->is_error()) {
-      fdf::error("Failed to configure int gpio to input: {}",
-                 zx_status_get_string(result->error_value()));
-      return result->take_error();
+      zxlogf(ERROR, "Failed to configure int gpio to input: %s",
+             zx_status_get_string(result->error_value()));
+      return result->error_value();
     }
   }
 
@@ -185,37 +188,44 @@ zx::result<> FtDevice::Start() {
                       .Build();
     fidl::WireResult result = int_gpio_->ConfigureInterrupt(config);
     if (!result.ok()) {
-      fdf::error("Failed to send ConfigureInterrupt request to int gpio: {}",
-                 result.status_string());
-      return zx::error(result.status());
+      zxlogf(ERROR, "Failed to send ConfigureInterrupt request to int gpio: %s",
+             result.status_string());
+      return result.status();
     }
     if (result->is_error()) {
-      fdf::error("Failed to configure int gpio: {}", zx_status_get_string(result->error_value()));
-      return result->take_error();
+      zxlogf(ERROR, "Failed to configure int gpio: %s",
+             zx_status_get_string(result->error_value()));
+      return result->error_value();
     }
   }
 
   fidl::WireResult interrupt = int_gpio_->GetInterrupt({});
   if (!interrupt.ok()) {
-    fdf::error("Failed to send GetInterrupt request to int gpio: {}", interrupt.status_string());
-    return zx::error(interrupt.status());
+    zxlogf(ERROR, "Failed to send GetInterrupt request to int gpio: %s", interrupt.status_string());
+    return interrupt.status();
   }
   if (interrupt->is_error()) {
-    fdf::error("Failed to get interrupt from int gpio: {}",
-               zx_status_get_string(interrupt->error_value()));
-    return interrupt->take_error();
+    zxlogf(ERROR, "Failed to get interrupt from int gpio: %s",
+           zx_status_get_string(interrupt->error_value()));
+    return interrupt->error_value();
   }
   irq_ = std::move(interrupt.value()->interrupt);
   irq_handler_.set_object(irq_.get());
-  irq_handler_.Begin(dispatcher());
+  irq_handler_.Begin(dispatcher_);
 
-  zx::result metadata =
-      compat::GetMetadata<FocaltechMetadata>(incoming(), DEVICE_METADATA_PRIVATE, "pdev");
-  if (metadata.is_error()) {
-    fdf::error("Failed to get metadata: {}", metadata);
-    return metadata.take_error();
+  size_t actual;
+  FocaltechMetadata device_info;
+  zx_status_t status = device_get_metadata(parent(), DEVICE_METADATA_PRIVATE, &device_info,
+                                           sizeof(device_info), &actual);
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to get metadata: %s", zx_status_get_string(status));
+    return status;
   }
-  const FocaltechMetadata& device_info = *metadata.value();
+  if (sizeof(device_info) != actual) {
+    zxlogf(ERROR, "Incorrect metadata size: Expected %lu bytes but actual is %lu bytes",
+           sizeof(device_info), actual);
+    return ZX_ERR_INTERNAL;
+  }
 
   if (device_info.device_id == FOCALTECH_DEVICE_FT3X27) {
     x_max_ = kFt3x27XMax;
@@ -233,8 +243,8 @@ zx::result<> FtDevice::Start() {
     x_max_ = kFt5336XMax;
     y_max_ = kFt5336YMax;
   } else {
-    fdf::error("focaltouch: unknown device ID {}", device_info.device_id);
-    return zx::error(ZX_ERR_INTERNAL);
+    zxlogf(ERROR, "focaltouch: unknown device ID %u", device_info.device_id);
+    return ZX_ERR_INTERNAL;
   }
 
   // Reset the chip -- should be low for at least 1ms, and the chip should take at most 200ms to
@@ -243,13 +253,14 @@ zx::result<> FtDevice::Start() {
     fidl::WireResult result =
         reset_gpio_->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kOutputLow);
     if (!result.ok()) {
-      fdf::error("Failed to send SetBufferMode request to reset gpio: {}", result.status_string());
-      return zx::error(result.status());
+      zxlogf(ERROR, "Failed to send SetBufferMode request to reset gpio: %s",
+             result.status_string());
+      return result.status();
     }
     if (result->is_error()) {
-      fdf::error("Failed to configure reset gpio to output: {}",
-                 zx_status_get_string(result->error_value()));
-      return result->take_error();
+      zxlogf(ERROR, "Failed to configure reset gpio to output: %s",
+             zx_status_get_string(result->error_value()));
+      return result->error_value();
     }
   }
   zx::nanosleep(zx::deadline_after(zx::msec(5)));
@@ -257,20 +268,20 @@ zx::result<> FtDevice::Start() {
     fidl::WireResult result =
         reset_gpio_->SetBufferMode(fuchsia_hardware_gpio::BufferMode::kOutputHigh);
     if (!result.ok()) {
-      fdf::error("Failed to send Write request to reset gpio: {}", result.status_string());
-      return zx::error(result.status());
+      zxlogf(ERROR, "Failed to send Write request to reset gpio: %s", result.status_string());
+      return result.status();
     }
     if (result->is_error()) {
-      fdf::error("Failed to write to reset gpio: {}", zx_status_get_string(result->error_value()));
-      return result->take_error();
+      zxlogf(ERROR, "Failed to write to reset gpio: %s",
+             zx_status_get_string(result->error_value()));
+      return result->error_value();
     }
   }
   zx::nanosleep(zx::deadline_after(zx::msec(200)));
 
-  zx_status_t status = UpdateFirmwareIfNeeded(device_info);
+  status = UpdateFirmwareIfNeeded(device_info);
   if (status != ZX_OK) {
-    fdf::error("Failed to update firmware: {}", zx_status_get_string(status));
-    return zx::error(status);
+    return status;
   }
 
   node_ = inspector_.GetRoot().CreateChild("Chip_info");
@@ -285,13 +296,13 @@ zx::result<> FtDevice::Start() {
   if (device_info.needs_firmware) {
     node_.CreateUint("Display_vendor", device_info.display_vendor, &values_);
     node_.CreateUint("DDIC_version", device_info.ddic_version, &values_);
-    fdf::info("Display vendor: {}", device_info.display_vendor);
-    fdf::info("DDIC version:   {}", device_info.ddic_version);
+    zxlogf(INFO, "Display vendor: %u", device_info.display_vendor);
+    zxlogf(INFO, "DDIC version:   %u", device_info.ddic_version);
   } else {
     node_.CreateString("Display_vendor", "none", &values_);
     node_.CreateString("DDIC_version", "none", &values_);
-    fdf::info("Display vendor: none");
-    fdf::info("DDIC version:   none");
+    zxlogf(INFO, "Display vendor: none");
+    zxlogf(INFO, "DDIC version:   none");
   }
 
   // These names must match the strings in //src/diagnostics/config/sampler/input.json.
@@ -301,32 +312,59 @@ zx::result<> FtDevice::Start() {
   total_report_count_ = metrics_root_.CreateUint("total_report_count", 0);
   last_event_timestamp_ = metrics_root_.CreateUint("last_event_timestamp", 0);
 
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connector: {}", connector);
-    return connector.take_error();
+  return ZX_OK;
+}
+
+zx_status_t FtDevice::Create(void* ctx, zx_device_t* device) {
+  zxlogf(INFO, "focaltouch: driver started...");
+
+  auto ft_dev = std::make_unique<FtDevice>(
+      device, fdf_dispatcher_get_async_dispatcher(fdf_dispatcher_get_current_dispatcher()));
+  zx_status_t status = ft_dev->Init();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "focaltouch: Driver bind failed %d", status);
+    return status;
   }
 
-  fuchsia_driver_framework::DevfsAddArgs devfs({
-      .connector = std::move(connector.value()),
-      .connector_supports = fuchsia_device_fs::ConnectionType::kController,
-  });
+  auto cleanup = fit::defer([&]() { ft_dev->ShutDown(); });
 
-  zx::result child = AddOwnedChild(kChildNodeName, devfs);
-  if (child.is_error()) {
-    fdf::error("Failed to create child: {}", child);
-    return child.take_error();
+  status = ft_dev->DdkAdd(ddk::DeviceAddArgs("focaltouch-HidDevice")
+                              .set_inspect_vmo(ft_dev->inspector_.DuplicateVmo()));
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "focaltouch: Could not create hid device: %d", status);
+    return status;
+  } else {
+    zxlogf(INFO, "focaltouch: Added hid device");
   }
-  child_ = std::move(child.value());
 
-  return zx::ok();
+  cleanup.cancel();
+
+  // device intentionally leaked as it is now held by DevMgr
+  [[maybe_unused]] auto ptr = ft_dev.release();
+
+  return ZX_OK;
+}
+
+void FtDevice::DdkRelease() { delete this; }
+
+void FtDevice::DdkUnbind(ddk::UnbindTxn txn) {
+  ShutDown();
+  txn.Reply();
+}
+
+zx_status_t FtDevice::ShutDown() {
+  irq_handler_.Cancel();
+  irq_.destroy();
+  return ZX_OK;
 }
 
 void FtDevice::GetInputReportsReader(GetInputReportsReaderRequestView request,
                                      GetInputReportsReaderCompleter::Sync& completer) {
-  const zx_status_t status = readers_.CreateReader(dispatcher(), std::move(request->reader));
-  if (status != ZX_OK) {
-    fdf::error("Failed to create reader: {}", zx_status_get_string(status));
+  auto status = readers_.CreateReader(dispatcher_, std::move(request->reader));
+  if (status == ZX_OK) {
+#ifdef FT_TEST
+    sync_completion_signal(&next_reader_wait_);
+#endif
   }
 }
 
@@ -366,54 +404,51 @@ void FtDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
 
 // simple i2c read for reading one register location
 //  intended mostly for debug purposes
-zx::result<uint8_t> FtDevice::Read(uint8_t addr) {
-  std::array<uint8_t, 1> rbuf;
-  zx::result result = i2c_.WriteReadSync(std::array<uint8_t, 1>{addr}, rbuf);
-  if (result.is_error()) {
-    fdf::error("Failed to write and read: {}", result);
-    return result.take_error();
-  }
-  return zx::ok(rbuf[0]);
+uint8_t FtDevice::Read(uint8_t addr) {
+  uint8_t rbuf;
+  i2c_.WriteReadSync(&addr, 1, &rbuf, 1);
+  return rbuf;
 }
 
-zx::result<> FtDevice::Read(uint8_t addr, std::span<uint8_t> dst) {
+zx_status_t FtDevice::Read(uint8_t addr, uint8_t* buf, size_t len) {
   // TODO(bradenkell): Remove this workaround when transfers of more than 8 bytes are supported on
   // the MT8167.
-  size_t offset = 0;
+  while (len > 0) {
+    size_t readlen = std::min(len, kMaxI2cTransferLength);
 
-  while (offset < dst.size()) {
-    const size_t remaining = dst.size() - offset;
-    const size_t transfer_size = std::min(remaining, kMaxI2cTransferLength);
-    const std::array<uint8_t, 1> write_data = {static_cast<uint8_t>(addr + offset)};
-
-    zx::result result = i2c_.WriteReadSync(write_data, dst.subspan(offset, transfer_size));
-    if (result.is_error()) {
-      fdf::error("Failed to read i2c: {}", result);
-      return result.take_error();
+    zx_status_t status = i2c_.WriteReadSync(&addr, 1, buf, readlen);
+    if (status != ZX_OK) {
+      zxlogf(ERROR, "Failed to read i2c - %d", status);
+      return status;
     }
 
-    offset += transfer_size;
+    addr = static_cast<uint8_t>(addr + readlen);
+    buf += readlen;
+    len -= readlen;
   }
 
-  return zx::ok();
+  return ZX_OK;
 }
 
-void FtDevice::LogRegisterValue(uint8_t addr, std::string_view name) {
-  zx::result result = Read(addr);
-  if (result.is_ok()) {
-    uint8_t value = result.value();
+void FtDevice::LogRegisterValue(uint8_t addr, const char* name) {
+  uint8_t value;
+  zx_status_t status = Read(addr, &value, sizeof(value));
+  if (status == ZX_OK) {
     node_.CreateByteVector(name, {&value, sizeof(value)}, &values_);
-    fdf::info("  {:16}: {:#02x}", name, value);
+    zxlogf(INFO, "  %-16s: 0x%02x", name, value);
   } else {
     node_.CreateString(name, "error", &values_);
-    fdf::error("  {:16}: error {}", name, result);
+    zxlogf(ERROR, "  %-16s: error %d", name, status);
   }
 }
 
-void FtDevice::DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> server) {
-  bindings_.AddBinding(dispatcher(), std::move(server), this, fidl::kIgnoreBindingClosure);
-}
+static constexpr zx_driver_ops_t driver_ops = []() {
+  zx_driver_ops_t ops = {};
+  ops.version = DRIVER_OPS_VERSION;
+  ops.bind = FtDevice::Create;
+  return ops;
+}();
 
 }  // namespace ft
 
-FUCHSIA_DRIVER_EXPORT(ft::FtDevice);
+ZIRCON_DRIVER(focaltech_touch, ft::driver_ops, "focaltech-touch", "0.1");
