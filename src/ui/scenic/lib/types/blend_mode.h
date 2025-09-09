@@ -43,9 +43,9 @@ class BlendMode {
     kStraightAlpha,
   };
 
-  // `fidl_mode` must be convertible to a valid Extent2 instance.
+  // `fidl_mode` must be convertible to a valid BlendMode instance.
   //
-  // This is not a constructor to allow designated initializer syntax. Making
+  // This is not a constructor, to allow designated initializer syntax. Making
   // this a constructor would introduce ambiguity when designated initializer
   // syntax is used, because `fuchsia.math/SizeU` has the same field names as
   // our supported designated initializer syntax.

@@ -52,9 +52,9 @@ void DisplayPowerManager::SetDisplayPower(bool power_on,
   std::shared_ptr<fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>> coordinator =
       display_manager_.default_display_coordinator();
   FX_DCHECK(coordinator);
-  display::WireDisplayId id = display_manager_.default_display()->display_id();
+  display::DisplayId id = display_manager_.default_display()->display_id();
 
-  auto set_display_power_result = coordinator->sync()->SetDisplayPower(id, power_on);
+  auto set_display_power_result = coordinator->sync()->SetDisplayPower(id.ToFidl(), power_on);
   if (!set_display_power_result.ok()) {
     FX_LOGS(ERROR) << "Failed to call FIDL SetDisplayPower(): "
                    << set_display_power_result.status_string();

@@ -105,7 +105,8 @@ class DisplayTest : public gtest::RealLoopFixture {
     display::WireLayerId layer_id = (*create_layer_result)->layer_id;
 
     const auto set_display_layers_result = display_coordinator.sync()->SetDisplayLayers(
-        display->display_id(), fidl::VectorView<display::WireLayerId>::FromExternal(&layer_id, 1));
+        display->display_id().ToFidl(),
+        fidl::VectorView<fuchsia_hardware_display::wire::LayerId>::FromExternal(&layer_id, 1));
     if (!set_display_layers_result.ok()) {
       FX_LOGS(ERROR) << "Failed to call FIDL SetDisplayLayers: "
                      << set_display_layers_result.status_string();
@@ -334,9 +335,9 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   EXPECT_EQ(status, ZX_OK);
 
   // Import the above events to the display.
-  display::WireEventId display_wait_event_id =
+  display::EventId display_wait_event_id =
       display::ImportEvent(*display_coordinator, display_wait_fence);
-  EXPECT_NE(display_wait_event_id.value, fuchsia_hardware_display_types::kInvalidDispId);
+  EXPECT_NE(display_wait_event_id, display::kInvalidEventId);
 
   // Set the layer image and apply the config.
   const fidl::OneWayStatus set_layer_primary_config_result =
@@ -349,7 +350,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
       .value = fuchsia_hardware_display_types::kInvalidDispId,
   };
   const fidl::OneWayStatus set_layer_image_result = display_coordinator->sync()->SetLayerImage2(
-      layer_id, display::ToDisplayFidlImageId(image_ids[0]), display::WireEventId(kInvalidEventId));
+      layer_id, display::ToDisplayFidlImageId(image_ids[0]), kInvalidEventId);
   EXPECT_TRUE(set_layer_image_result.ok())
       << "Failed to call FIDL SetLayerImage2: " << set_layer_image_result.status_string();
 
@@ -377,7 +378,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
   // Set the layer image again, to the second image, so that our first call to SetLayerImage2()
   // above will signal.
   const fidl::OneWayStatus set_layer_image_result2 = display_coordinator->sync()->SetLayerImage2(
-      layer_id, display::ToDisplayFidlImageId(image_ids[1]), display_wait_event_id);
+      layer_id, display::ToDisplayFidlImageId(image_ids[1]), display_wait_event_id.ToFidl());
   EXPECT_TRUE(set_layer_image_result2.ok())
       << "Failed to call FIDL SetLayerImage2: " << set_layer_image_result2.status_string();
 

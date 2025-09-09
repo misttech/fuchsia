@@ -39,10 +39,6 @@ namespace {
 // Debugging color used to highlight images that have gone through the GPU rendering path.
 const std::array<float, 4> kGpuRenderingDebugColor = {0.9f, 0.5f, 0.5f, 1.f};
 
-const display::WireEventId kInvalidEventId = {
-    .value = fuchsia_hardware_display_types::kInvalidDispId,
-};
-
 // Returns an image type that describes the tiling format used for buffer with
 // this pixel format. The values are display driver specific and not documented
 // in the display coordinator FIDL API.
@@ -258,17 +254,18 @@ DisplayCompositor::~DisplayCompositor() {
   // Destroy all of the display layers.
   DiscardConfig();
   for (const auto& [_, data] : display_engine_data_map_) {
-    for (const display::WireLayerId& layer : data.layers) {
-      fidl::OneWayStatus result = display_coordinator_.sync()->DestroyLayer(layer);
+    for (const display::LayerId& layer : data.layers) {
+      fidl::OneWayStatus result = display_coordinator_.sync()->DestroyLayer(layer.ToFidl());
       if (!result.ok()) {
         FX_LOGS(ERROR) << "Failed to call FIDL DestroyLayer method: " << result.status_string();
       }
     }
     for (const auto& event_data : data.frame_event_datas) {
-      fidl::OneWayStatus result = display_coordinator_.sync()->ReleaseEvent(event_data.wait_id);
+      fidl::OneWayStatus result =
+          display_coordinator_.sync()->ReleaseEvent(event_data.wait_id.ToFidl());
       if (!result.ok()) {
         FX_LOGS(ERROR) << "Failed to call FIDL ReleaseEvent on wait event ("
-                       << event_data.wait_id.value << "): " << result.status_string();
+                       << event_data.wait_id.value() << "): " << result.status_string();
       }
     }
   }
@@ -422,8 +419,7 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
   const display::WireBufferCollectionId display_collection_id =
       display::ToDisplayFidlBufferCollectionId(collection_id);
   const bool display_support_already_set =
-      buffer_collection_supports_display_.find(collection_id) !=
-      buffer_collection_supports_display_.end();
+      buffer_collection_supports_display_.contains(collection_id);
 
   // When display composition is disabled, the only images that should be imported by the display
   // are the framebuffers, and their display support is already set in AddDisplay() (instead of
@@ -488,39 +484,46 @@ void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image
   }
 }
 
-display::WireLayerId DisplayCompositor::CreateDisplayLayer() {
+display::LayerId DisplayCompositor::CreateDisplayLayer() {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
 
   const auto create_layer_result = display_coordinator_.sync()->CreateLayer();
   if (!create_layer_result.ok()) {
     FX_LOGS(ERROR) << "CreateLayer transport error: " << create_layer_result.status_string();
-    return {.value = fuchsia_hardware_display_types::kInvalidDispId};
+    return display::kInvalidLayerId;
   }
   if (create_layer_result->is_error()) {
     FX_LOGS(ERROR) << "CreateLayer method error: "
                    << zx_status_get_string(create_layer_result->error_value());
-    return {.value = fuchsia_hardware_display_types::kInvalidDispId};
+    return display::kInvalidLayerId;
   }
-  return (*create_layer_result)->layer_id;
+  return display::LayerId((*create_layer_result)->layer_id);
 }
 
-void DisplayCompositor::SetDisplayLayers(const display::WireDisplayId display_id,
-                                         fidl::VectorView<display::WireLayerId> layers) {
+void DisplayCompositor::SetDisplayLayers(const display::DisplayId display_id,
+                                         const std::span<display::LayerId>& layers) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::SetDisplayLayers");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
 
   // Set all of the layers for each of the images on the display.
+
+  // This reinterpret_cast<> stuff is very temporary: soon DisplayCompositor will access the
+  // coordinator via a proxy whose API uses display:: types instead of FIDL types.
+  static_assert(sizeof(display::LayerId) == sizeof(display::WireLayerId));
+  auto fidl_layers = fidl::VectorView<display::WireLayerId>::FromExternal(
+      reinterpret_cast<display::WireLayerId*>(layers.data()), layers.size());
+
   const fidl::OneWayStatus set_display_layers_result =
-      display_coordinator_.sync()->SetDisplayLayers(display_id, layers);
+      display_coordinator_.sync()->SetDisplayLayers(display_id.ToFidl(), fidl_layers);
   FX_DCHECK(set_display_layers_result.ok()) << "Failed to call FIDL SetDisplayLayers method: "
                                             << set_display_layers_result.status_string();
 }
 
 bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::SetRenderDataOnDisplay", "display_id",
-                 data.display_id.value, "rectangle_count", data.rectangles.size());
+                 data.display_id.value(), "rectangle_count", data.rectangles.size());
 
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   // Every rectangle should have an associated image.
@@ -536,8 +539,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
 
   // Since we map 1 image to 1 layer, if there are more images than layers available for
   // the given display, then they cannot be directly composited to the display in hardware.
-  std::vector<display::WireLayerId>& layers =
-      display_engine_data_map_.at(data.display_id.value).layers;
+  std::vector<display::LayerId>& layers = display_engine_data_map_.at(data.display_id).layers;
   if (layers.size() < num_images) {
     TRACE_INSTANT("gfx", "scenic_d2d_failed: insufficient layers available", TRACE_SCOPE_THREAD);
     FLATLAND_VERBOSE_LOG << "SetRenderDataOnDisplay() failed: insufficient layers available.";
@@ -545,15 +547,13 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   }
 
   // We only set as many layers as needed for the images we have.
-  SetDisplayLayers(data.display_id,
-                   fidl::VectorView<display::WireLayerId>::FromExternal(layers.data(), num_images));
+  SetDisplayLayers(data.display_id, std::span{layers.data(), num_images});
 
   for (uint32_t i = 0; i < num_images; i++) {
     const allocation::GlobalImageId image_id = data.images[i].identifier;
     if (image_id != allocation::kInvalidImageId) {
       if (display_imported_images_.count(data.images[i].identifier)) {
-        ApplyLayerImage(layers[i], data.rectangles[i], data.images[i],
-                        /*wait_id*/ kInvalidEventId);
+        ApplyLayerImage(layers[i], data.rectangles[i], data.images[i], display::kInvalidEventId);
       } else {
         TRACE_INSTANT("gfx", "scenic_d2d_failed: image not imported for direct-display.",
                       TRACE_SCOPE_THREAD);
@@ -567,7 +567,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
       // we encounter one of those rects here -- unless it is the backmost layer and fullscreen
       // -- then we abort.
       const auto& rect = data.rectangles[i];
-      const glm::uvec2& display_size = display_info_map_[data.display_id.value].dimensions;
+      const glm::uvec2& display_size = display_info_map_[data.display_id].dimensions;
       if (i == 0 && rect.origin.x == 0 && rect.origin.y == 0 &&
           rect.extent.x == static_cast<float>(display_size.x) &&
           rect.extent.y == static_cast<float>(display_size.y)) {
@@ -585,7 +585,7 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   return true;
 }
 
-void DisplayCompositor::ApplyLayerColor(const display::WireLayerId& layer_id,
+void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id,
                                         const ImageRect& rectangle,
                                         const allocation::ImageMetadata& image) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
@@ -613,7 +613,9 @@ void DisplayCompositor::ApplyLayerColor(const display::WireLayerId& layer_id,
 
   const fidl::OneWayStatus set_layer_color_result =
       display_coordinator_.sync()->SetLayerColorConfig(
-          layer_id, {fuchsia_images2::PixelFormat::kB8G8R8A8, color_bytes}, display_destination);
+          layer_id.ToFidl(),
+          {.format = fuchsia_images2::PixelFormat::kB8G8R8A8, .bytes = color_bytes},
+          display_destination);
   FX_DCHECK(set_layer_color_result.ok()) << "Failed to call FIDL SetLayerColorConfig method: "
                                          << set_layer_color_result.status_string();
 
@@ -650,10 +652,10 @@ void DisplayCompositor::ApplyLayerColor(const display::WireLayerId& layer_id,
 #endif
 }
 
-void DisplayCompositor::ApplyLayerImage(const display::WireLayerId& layer_id,
+void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id,
                                         const ImageRect& rectangle,
                                         const allocation::ImageMetadata& image,
-                                        const display::WireEventId& wait_id) {
+                                        const display::EventId& wait_id) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ApplyLayerImage");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
@@ -668,20 +670,20 @@ void DisplayCompositor::ApplyLayerImage(const display::WireLayerId& layer_id,
 
   const display::WireImageMetadata image_metadata = CreateImageMetadata(image);
   const fidl::OneWayStatus set_layer_primary_config_result =
-      display_coordinator_.sync()->SetLayerPrimaryConfig(layer_id, image_metadata);
+      display_coordinator_.sync()->SetLayerPrimaryConfig(layer_id.ToFidl(), image_metadata);
   FX_DCHECK(set_layer_primary_config_result.ok())
       << "Failed to call FIDL SetLayerPrimaryConfig method: "
       << set_layer_primary_config_result.status_string();
 
   const fidl::OneWayStatus set_layer_primary_position_result =
-      display_coordinator_.sync()->SetLayerPrimaryPosition(layer_id, transform, src, dst);
+      display_coordinator_.sync()->SetLayerPrimaryPosition(layer_id.ToFidl(), transform, src, dst);
 
   FX_DCHECK(set_layer_primary_position_result.ok())
       << "Failed to call FIDL SetLayerPrimaryPosition method: "
       << set_layer_primary_position_result.status_string();
 
   const fidl::OneWayStatus set_layer_primary_alpha_result =
-      display_coordinator_.sync()->SetLayerPrimaryAlpha(layer_id, alpha_mode,
+      display_coordinator_.sync()->SetLayerPrimaryAlpha(layer_id.ToFidl(), alpha_mode,
                                                         image.multiply_color[3]);
   FX_DCHECK(set_layer_primary_alpha_result.ok())
       << "Failed to call FIDL SetLayerPrimaryAlpha method: "
@@ -690,7 +692,7 @@ void DisplayCompositor::ApplyLayerImage(const display::WireLayerId& layer_id,
   // Set the imported image on the layer.
   const display::WireImageId image_id = display::ToDisplayFidlImageId(image.identifier);
   const fidl::OneWayStatus set_layer_image_result =
-      display_coordinator_.sync()->SetLayerImage2(layer_id, image_id, wait_id);
+      display_coordinator_.sync()->SetLayerImage2(layer_id.ToFidl(), image_id, wait_id.ToFidl());
   FX_DCHECK(set_layer_image_result.ok())
       << "Failed to call FIDL SetLayerImage2 method: " << set_layer_image_result.status_string();
 }
@@ -759,7 +761,7 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
   for (size_t i = 0; i < render_data_list.size(); ++i) {
     const bool is_final_display = i == (render_data_list.size() - 1);
     const auto& render_data = render_data_list[i];
-    const auto display_engine_data_it = display_engine_data_map_.find(render_data.display_id.value);
+    const auto display_engine_data_it = display_engine_data_map_.find(render_data.display_id);
     FX_DCHECK(display_engine_data_it != display_engine_data_map_.end());
     auto& display_engine_data = display_engine_data_it->second;
 
@@ -768,7 +770,7 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
       TRACE_DURATION("gfx", "flatland::DisplayCompositor::PerformGpuComposition[cc]");
       const fidl::OneWayStatus set_display_color_conversion_result =
           display_coordinator_.sync()->SetDisplayColorConversion(
-              render_data.display_id, kDefaultColorConversionOffsets,
+              render_data.display_id.ToFidl(), kDefaultColorConversionOffsets,
               kDefaultColorConversionCoefficients, kDefaultColorConversionOffsets);
       FX_CHECK(set_display_color_conversion_result.ok())
           << "Could not apply hardware color conversion: "
@@ -778,7 +780,7 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
 
     if (display_engine_data.vmo_count == 0) {
       FX_LOGS(WARNING) << "No VMOs were created when creating display "
-                       << render_data.display_id.value << ".";
+                       << render_data.display_id.value() << ".";
       return false;
     }
     const uint32_t curr_vmo = display_engine_data.curr_vmo;
@@ -833,10 +835,8 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
     // Retrieve fence.
     event_data.wait_event = std::move(render_fences[0]);
 
-    const display::WireLayerId layer = display_engine_data.layers[0];
-    const auto layers =
-        fidl::VectorView<display::WireLayerId>::FromExternal(display_engine_data.layers.data(), 1);
-    SetDisplayLayers(render_data.display_id, layers);
+    /* const*/ display::LayerId layer = display_engine_data.layers[0];
+    SetDisplayLayers(render_data.display_id, std::span<display::LayerId>{&layer, 1});
     ApplyLayerImage(layer, {glm::vec2(0), glm::vec2(render_target.width, render_target.height)},
                     render_target, event_data.wait_id);
 
@@ -897,7 +897,7 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
     if (TryDirectToDisplay(render_data_list)) {
       for (const auto& data : render_data_list) {
         const int32_t num_render_data = static_cast<int32_t>(data.rectangles.size());
-        const uint64_t display_id = data.display_id.value;
+        const uint64_t display_id = data.display_id.value();
         TRACE_COUNTER("gfx", "Scenic D2D images", display_id, "count", TA_INT32(num_render_data));
         TRACE_COUNTER("gfx", "Scenic GPU images", display_id, "count", TA_INT32(0));
       }
@@ -921,7 +921,7 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
                             std::move(release_fences), std::move(callback))) {
     for (const auto& data : render_data_list) {
       const int32_t num_render_data = static_cast<int32_t>(data.rectangles.size());
-      const uint64_t display_id = data.display_id.value;
+      const uint64_t display_id = data.display_id.value();
       TRACE_COUNTER("gfx", "Scenic D2D images", display_id, "count", TA_INT32(0));
       TRACE_COUNTER("gfx", "Scenic GPU images", display_id, "count", TA_INT32(num_render_data));
     }
@@ -955,7 +955,7 @@ bool DisplayCompositor::TryDirectToDisplay(const std::vector<RenderData>& render
       // Apply direct-to-display color conversion here.
       const fidl::OneWayStatus set_display_color_conversion_result =
           display_coordinator_.sync()->SetDisplayColorConversion(
-              data.display_id, (*cc_data).preoffsets, (*cc_data).coefficients,
+              data.display_id.ToFidl(), (*cc_data).preoffsets, (*cc_data).coefficients,
               (*cc_data).postoffsets);
       FX_CHECK(set_display_color_conversion_result.ok())
           << "Could not apply hardware color conversion: "
@@ -1026,7 +1026,7 @@ DisplayCompositor::FrameEventData DisplayCompositor::NewFrameEventData() {
     FX_DCHECK(status == ZX_OK);
   }
   result.wait_id = display::ImportEvent(display_coordinator_, result.wait_event);
-  FX_DCHECK(result.wait_id.value != fuchsia_hardware_display_types::kInvalidDispId);
+  FX_DCHECK(result.wait_id != display::kInvalidEventId);
   return result;
 }
 
@@ -1038,7 +1038,7 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
   TRACE_DURATION("gfx", "Flatland::DisplayCompositor::AddDisplay");
 
   FLATLAND_VERBOSE_LOG << "DisplayCompositor::AddDisplay(): display_id="
-                       << display->display_id().value << "  size=" << info.dimensions.x << "x"
+                       << display->display_id().value() << "  size=" << info.dimensions.x << "x"
                        << info.dimensions.y << "  num_render_targets=" << num_render_targets;
 
   // Grab the best pixel format that the renderer prefers given the list of available formats on
@@ -1050,12 +1050,12 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
   FX_DCHECK(size.width > 0 && size.height > 0)
       << "Invalid display size: " << size.width << "x" << size.height;
 
-  const display::WireDisplayId display_id = display->display_id();
-  FX_DCHECK(display_engine_data_map_.find(display_id.value) == display_engine_data_map_.end())
-      << "DisplayCompositor::AddDisplay(): display already exists: " << display_id.value;
+  const display::DisplayId& display_id = display->display_id();
+  FX_DCHECK(!display_engine_data_map_.contains(display_id))
+      << "DisplayCompositor::AddDisplay(): display already exists: " << display_id.value();
 
-  display_info_map_[display_id.value] = std::move(info);
-  DisplayEngineData& display_engine_data = display_engine_data_map_[display_id.value];
+  display_info_map_[display_id] = std::move(info);
+  DisplayEngineData& display_engine_data = display_engine_data_map_[display_id];
 
   // Used to set mode before the next `ApplyConfig()`.
   display_engine_data.updated_display_mode.emplace(display->mode());
@@ -1315,17 +1315,18 @@ bool DisplayCompositor::ImportBufferCollectionToDisplayCoordinator(
                                          image_buffer_usage);
 }
 
-bool DisplayCompositor::MaybeSetPendingDisplayMode(const display::WireDisplayId& display_id) {
-  auto it = display_engine_data_map_.find(display_id.value);
+bool DisplayCompositor::MaybeSetPendingDisplayMode(const display::DisplayId& display_id) {
+  auto it = display_engine_data_map_.find(display_id);
   if (it == display_engine_data_map_.end()) {
-    FX_LOGS(WARNING) << "No display engine data found for display_id=" << display_id.value;
+    FX_LOGS(WARNING) << "No display engine data found for display_id=" << display_id.value();
     return false;
   }
   auto& maybe_mode = it->second.updated_display_mode;
   if (!maybe_mode.has_value()) {
     return false;
   }
-  const auto result = display_coordinator_.sync()->SetDisplayMode(display_id, maybe_mode.value());
+  const auto result =
+      display_coordinator_.sync()->SetDisplayMode(display_id.ToFidl(), maybe_mode.value());
   if (!result.ok()) {
     FX_LOGS(ERROR) << "SetDisplayMode transport error: " << result.status_string();
     // Doesn't really matter what we return, the subsequent `CheckConfig()` will also result in a
@@ -1338,10 +1339,10 @@ bool DisplayCompositor::MaybeSetPendingDisplayMode(const display::WireDisplayId&
 void DisplayCompositor::ClearAllPendingDisplayModes(
     const std::vector<RenderData>& render_data_list) {
   for (auto& render_data : render_data_list) {
-    auto it = display_engine_data_map_.find(render_data.display_id.value);
+    auto it = display_engine_data_map_.find(render_data.display_id);
     if (it == display_engine_data_map_.end()) {
       FX_LOGS(WARNING) << "No display engine data found for display_id="
-                       << render_data.display_id.value;
+                       << render_data.display_id.value();
       continue;
     }
     it->second.updated_display_mode.reset();

@@ -12,7 +12,7 @@
 #include <cstdint>
 
 #include "src/ui/scenic/lib/allocation/id.h"
-#include "src/ui/scenic/lib/display/fidl_typedefs.h"
+#include "src/ui/scenic/lib/display/fidl_id_types.h"
 
 namespace display {
 
@@ -27,7 +27,7 @@ bool ImportBufferCollection(
 // Imports a zx::event to the provided display controller. The return value is an ID to
 // reference that event on other display controller functions that take an event as an
 // argument. On failure, the return value will be fuchsia_hardware_display_types::kInvalidDispId.
-WireEventId ImportEvent(
+EventId ImportEvent(
     const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
     const zx::event& event);
 

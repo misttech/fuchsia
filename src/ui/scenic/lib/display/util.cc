@@ -63,30 +63,30 @@ bool ImportBufferCollection(
   return true;
 }
 
-WireEventId ImportEvent(
+EventId ImportEvent(
     const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
     const zx::event& event) {
-  static uint64_t id_generator = fuchsia_hardware_display_types::kInvalidDispId + 1;
+  static EventId id_generator(1);
 
   zx::event dup;
   if (event.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup) != ZX_OK) {
     FX_LOGS(ERROR) << "Failed to duplicate display controller event.";
-    return {.value = fuchsia_hardware_display_types::kInvalidDispId};
+    return kInvalidEventId;
   }
 
   // Generate a new display ID after we've determined the event can be duplicated as to not
   // waste an id.
-  WireEventId event_id = {.value = id_generator++};
+  EventId event_id = id_generator++;
 
   auto before = zx::clock::get_monotonic();
   fidl::OneWayStatus import_result =
-      display_coordinator.sync()->ImportEvent(std::move(dup), event_id);
+      display_coordinator.sync()->ImportEvent(std::move(dup), event_id.ToFidl());
   if (!import_result.ok()) {
     auto after = zx::clock::get_monotonic();
     FX_LOGS(ERROR) << "Failed to import display controller event. Waited "
                    << (after - before).to_msecs()
                    << "msecs. Error code: " << import_result.status_string();
-    return {.value = fuchsia_hardware_display_types::kInvalidDispId};
+    return kInvalidEventId;
   }
   return event_id;
 }

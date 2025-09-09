@@ -613,10 +613,10 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     auto status = zx::event::create(0, &capture_signal_fence);
     EXPECT_EQ(status, ZX_OK);
 
-    display::WireEventId capture_signal_fence_id =
+    display::EventId capture_signal_fence_id =
         display::ImportEvent(*display_coordinator, capture_signal_fence);
-    const auto start_capture_result =
-        display_coordinator->sync()->StartCapture(capture_signal_fence_id, fidl_capture_image_id);
+    const auto start_capture_result = display_coordinator->sync()->StartCapture(
+        capture_signal_fence_id.ToFidl(), fidl_capture_image_id);
     ASSERT_TRUE(start_capture_result.ok())
         << "Failed to call FIDL StartCapture: " << start_capture_result.status_string();
     ASSERT_TRUE(start_capture_result->is_ok())
@@ -950,7 +950,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   display_compositor->RenderFrame(
       1, zx::time(1),
       GenerateDisplayListForTest(
-          {{display->display_id().value, std::make_pair(display_info, root_handle)}}),
+          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
       {}, [](const scheduling::Timestamps&) {});
 
   bool images_are_same = [&]() -> bool {
@@ -1083,7 +1083,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
     display_compositor->RenderFrame(
         1, zx::time(1),
         GenerateDisplayListForTest(
-            {{display->display_id().value, std::make_pair(display_info, root_handle)}}),
+            {{display->display_id(), std::make_pair(display_info, root_handle)}}),
         {}, [](const scheduling::Timestamps&) {});
 
     // Grab the capture vmo data.
@@ -1187,7 +1187,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
   display_compositor->RenderFrame(
       1, zx::time(1),
       GenerateDisplayListForTest(
-          {{display->display_id().value, std::make_pair(display_info, root_handle)}}),
+          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
       {}, [](const scheduling::Timestamps&) {});
 
   // Grab the capture vmo data.
@@ -1309,7 +1309,7 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
   display_compositor->RenderFrame(
       1, zx::time(1),
       GenerateDisplayListForTest(
-          {{display->display_id().value, std::make_pair(display_info, root_handle)}}),
+          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
       {}, [](const scheduling::Timestamps&) {});
 
   // Grab the capture vmo data.
@@ -1839,7 +1839,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
   auto render_frame_result = display_compositor->RenderFrame(
       1, zx::time(1),
       GenerateDisplayListForTest(
-          {{display->display_id().value, std::make_pair(display_info, root_handle)}}),
+          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
       {}, [](const scheduling::Timestamps&) {},
       // NOTE: this is somewhat redundant, since we also pass enable_direct_to_display=false into
       // the DisplayCompositor constructor.  But, no harm is done.
@@ -2089,7 +2089,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
   display_compositor->RenderFrame(
       1, zx::time(1),
       GenerateDisplayListForTest(
-          {{display->display_id().value, std::make_pair(display_info, root_handle)}}),
+          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
       {}, [](const scheduling::Timestamps&) {});
   renderer->WaitIdle();
 
@@ -2286,10 +2286,10 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   };
   push_uberstruct_for_image_into_session(blue_image_metadata);
   auto blue_display_list = GenerateDisplayListForTest(
-      {{display->display_id().value, std::make_pair(display_info, root_handle)}});
+      {{display->display_id(), std::make_pair(display_info, root_handle)}});
   push_uberstruct_for_image_into_session(green_image_metadata);
   auto green_display_list = GenerateDisplayListForTest(
-      {{display->display_id().value, std::make_pair(display_info, root_handle)}});
+      {{display->display_id(), std::make_pair(display_info, root_handle)}});
 
   // FRAME 1, BLUE, GPU-COMPOSITED //////////////////////////////////////////////////////
 

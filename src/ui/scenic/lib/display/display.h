@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "src/lib/fxl/macros.h"
-#include "src/ui/scenic/lib/display/fidl_typedefs.h"
+#include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/scheduling/vsync_timing.h"
 
 #include <glm/glm.hpp>
@@ -57,7 +57,7 @@ class Display {
   const WireDisplayMode& Mode() const { return mode_; }
 
   // The display's ID in the context of the DisplayManager's DisplayController.
-  WireDisplayId display_id() const { return display_id_; }
+  display::DisplayId display_id() const { return display_id_; }
   const WireDisplayMode& mode() const { return mode_; }
   uint32_t width_in_px() const { return mode_.active_area.width; }
   uint32_t height_in_px() const { return mode_.active_area.height; }
@@ -89,7 +89,7 @@ class Display {
   // 240Hz should be fast enough for anybody.
   static constexpr zx::duration kMinimumVsyncInterval = zx::usec(/*1000000/240=*/4167);
 
-  const WireDisplayId display_id_;
+  const display::DisplayId display_id_;
   const WireDisplayMode mode_;
   const uint32_t width_in_mm_;
   const uint32_t height_in_mm_;

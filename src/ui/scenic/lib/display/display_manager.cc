@@ -81,7 +81,7 @@ void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
 
     if (default_display_) {
       FX_LOGS(INFO) << "Default display already exists with id="
-                    << default_display_->display_id().value
+                    << default_display_->display_id().value()
                     << " ... skipping newly added display id=" << display.id.value;
     } else {
       size_t mode_index = 0;
@@ -129,7 +129,7 @@ void DisplayManager::OnDisplaysChanged(fidl::VectorView<WireDisplayInfo> added,
   }
 
   for (const WireDisplayId& id : removed) {
-    if (default_display_ && default_display_->display_id().value == id.value) {
+    if (default_display_ && default_display_->display_id() == display::DisplayId(id)) {
       // TODO(https://fxbug.dev/42097581): handle this more robustly.
       FX_CHECK(false) << "Display disconnected";
       return;
@@ -172,10 +172,10 @@ void DisplayManager::OnVsync(WireDisplayId display_id, zx::time_monotonic timest
     FLATLAND_VERBOSE_LOG << "DisplayManager::OnVsync(): ignoring vsync, no default display";
     return;
   }
-  if (default_display_->display_id().value != display_id.value) {
+  if (default_display_->display_id() != display::DisplayId(display_id)) {
     FLATLAND_VERBOSE_LOG << "DisplayManager::OnVsync(): ignoring vsync, display_id="
                          << display_id.value << "  doesn't match default_display->display_id="
-                         << default_display_->display_id().value;
+                         << default_display_->display_id().value();
     return;
   }
   default_display_->OnVsync(timestamp, applied_config_stamp);

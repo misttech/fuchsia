@@ -5,6 +5,7 @@
 source_set("types") {
   sources = [
     "blend_mode.h",
+    "display_mode.h",
     "extent2.h",
     "extent2_f.h",
     "id_type.h",
@@ -13,6 +14,7 @@ source_set("types") {
     "rectangle.h",
     "rectangle_f.cc",
     "rectangle_f.h",
+    "rotate_flip.h",
     "util/hash_combine.h",
     "util/to_underlying.h",
   ]

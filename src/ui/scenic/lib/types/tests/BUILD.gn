@@ -18,6 +18,7 @@ cc_test_executable("unittests") {
 
   testonly = true
   sources = [
+    "display_mode_unittest.cc",
     "extent2_f_unittest.cc",
     "extent2_unittest.cc",
     "id_type_unittest.cc",
@@ -25,6 +26,7 @@ cc_test_executable("unittests") {
     "point2_unittest.cc",
     "rectangle_f_unittest.cc",
     "rectangle_unittest.cc",
+    "rotate_flip_unittest.cc",
   ]
   deps = [
     ":testing_deps",

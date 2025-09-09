@@ -59,7 +59,7 @@ void Display::OnVsync(zx::time_monotonic timestamp, WireConfigStamp applied_conf
                 "Vsync interval", vsync_timing_->vsync_interval().get());
 
   if (vsync_callback_) {
-    FLATLAND_VERBOSE_LOG << "Display::OnVsync(): display_id=" << display_id_.value
+    FLATLAND_VERBOSE_LOG << "Display::OnVsync(): display_id=" << display_id_.value()
                          << "  timestamp=" << timestamp.get()
                          << "  applied_config_stamp=" << applied_config_stamp.value
                          << "  ... invoking vsync callback";

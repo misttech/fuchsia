@@ -912,7 +912,7 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
 TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
   auto session = CreateSession();
   const TransformHandle root_handle = session.graph().CreateTransform();
-  uint64_t display_id = 1;
+  display::DisplayId display_id(1);
   glm::uvec2 resolution(1024, 768);
   DisplayInfo display_info = {resolution, {kPixelFormat}};
 
@@ -1021,7 +1021,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   // Submit the UberStruct.
   child_session.PushUberStruct(std::move(child_struct));
 
-  const display::WireDisplayId kDisplayId = {.value = 1};
+  const display::DisplayId kDisplayId(1);
   glm::uvec2 resolution(1024, 768);
 
   // We will end up with 2 source frames, 2 destination frames, and two layers being sent to the
@@ -1128,12 +1128,13 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
   std::vector<display::WireLayerId> layers = {{.value = 1}, {.value = 2}};
 
-  EXPECT_CALL(*mock_display_coordinator_,
-              SetDisplayLayers(
-                  testing::AllOf(MatchRequestField(SetDisplayLayers, display_id, Eq(kDisplayId)),
-                                 MatchRequestField(SetDisplayLayers, layer_ids,
-                                                   testing::ElementsAreArray(layers))),
-                  _))
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      SetDisplayLayers(
+          testing::AllOf(
+              MatchRequestField(SetDisplayLayers, display_id, Eq(kDisplayId.ToFidl())),
+              MatchRequestField(SetDisplayLayers, layer_ids, testing::ElementsAreArray(layers))),
+          _))
       .Times(1)
       .WillOnce(Return());
 
@@ -1193,7 +1194,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_));
 
   DisplayInfo display_info = {resolution, {kPixelFormat}};
-  display::Display display({kDisplayId.value}, resolution.x, resolution.y);
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y);
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
@@ -1201,7 +1202,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 
   display_compositor_->RenderFrame(
       1, zx::time_monotonic(1),
-      GenerateDisplayListForTest({{kDisplayId.value, {display_info, parent_root_handle}}}), {},
+      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}}), {},
       [](const scheduling::Timestamps&) {});
 
   for (uint32_t i = 0; i < 2; i++) {
@@ -1251,7 +1252,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   // Submit the UberStruct.
   parent_session.PushUberStruct(std::move(parent_struct));
 
-  const display::WireDisplayId kDisplayId = {.value = 1};
+  const display::DisplayId kDisplayId(1);
   glm::uvec2 resolution(1024, 768);
 
   // We will end up with 1 source frame, 1 destination frame, and one layer being sent to the
@@ -1333,13 +1334,14 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
           }));
 
   // However, we only set one display layer for the image.
-  const std::vector<display::WireLayerId> layers = {{.value = 1}};
-  EXPECT_CALL(*mock_display_coordinator_,
-              SetDisplayLayers(
-                  testing::AllOf(MatchRequestField(SetDisplayLayers, display_id, Eq(kDisplayId)),
-                                 MatchRequestField(SetDisplayLayers, layer_ids,
-                                                   testing::ElementsAreArray(layers))),
-                  _))
+  const std::vector<fuchsia_hardware_display::wire::LayerId> layers = {{.value = 1}};
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      SetDisplayLayers(
+          testing::AllOf(
+              MatchRequestField(SetDisplayLayers, display_id, Eq(kDisplayId.ToFidl())),
+              MatchRequestField(SetDisplayLayers, layer_ids, testing::ElementsAreArray(layers))),
+          _))
       .Times(1)
       .WillOnce(Return());
 
@@ -1391,7 +1393,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   EXPECT_CALL(*renderer_, ChoosePreferredRenderTargetFormat(_));
 
   DisplayInfo display_info = {resolution, {kPixelFormat}};
-  display::Display display({kDisplayId.value}, resolution.x, resolution.y);
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y);
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
@@ -1399,7 +1401,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
 
   display_compositor_->RenderFrame(
       1, zx::time_monotonic(1),
-      GenerateDisplayListForTest({{kDisplayId.value, {display_info, parent_root_handle}}}), {},
+      GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}}), {},
       [](const scheduling::Timestamps&) {});
 
   for (uint64_t i = 1; i < layer_id_value; ++i) {

@@ -16,6 +16,7 @@
 #include <set>
 #include <utility>
 
+#include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/flatland/engine/display_compositor.h"
 #include "src/ui/scenic/lib/flatland/flatland_manager.h"
 #include "src/ui/scenic/lib/flatland/flatland_presenter_impl.h"
@@ -89,8 +90,7 @@ class Engine {
 
   // TODO(https://fxbug.dev/42156567): hack so that we can call DisplayCompositor::AddDisplay() when
   // we first encounter a new display.  Need a more straightforward way to call AddDisplay().
-  std::set</*fuchsia_hardware_display_types::DisplayId::value*/ uint64_t>
-      hack_seen_display_id_values_;
+  std::set<display::DisplayId> hack_seen_display_id_values_;
 
   inspect::Node inspect_node_;
   inspect::LazyNode inspect_scene_dump_;

@@ -20,7 +20,7 @@
 #include "src/lib/fxl/synchronization/thread_annotations.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/display/display.h"
-#include "src/ui/scenic/lib/display/fidl_typedefs.h"
+#include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/display/util.h"
 #include "src/ui/scenic/lib/flatland/engine/color_conversion_state_machine.h"
 #include "src/ui/scenic/lib/flatland/engine/engine_types.h"
@@ -167,13 +167,13 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   };
 
   struct FrameEventData {
-    display::WireEventId wait_id;
+    display::EventId wait_id;
     zx::event wait_event;
   };
 
   struct DisplayEngineData {
     // The hardware layers we've created to use on this display.
-    std::vector<display::WireLayerId> layers;
+    std::vector<display::LayerId> layers;
 
     // The number of vmos we are using in the case of software composition
     // (1 for each render target).
@@ -213,7 +213,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   // Generates a hardware layer for direct compositing on the display. Returns the ID used
   // to reference that layer in the display coordinator API.
-  display::WireLayerId CreateDisplayLayer() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  display::LayerId CreateDisplayLayer() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Moves a token out of |display_buffer_collection_ptrs_| and returns it.
   fuchsia::sysmem2::BufferCollectionSyncPtr TakeDisplayBufferCollectionPtr(
@@ -237,17 +237,16 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Sets the provided layers onto the display referenced by the given display_id.
-  void SetDisplayLayers(display::WireDisplayId display_id,
-                        fidl::VectorView<display::WireLayerId> layers)
+  void SetDisplayLayers(display::DisplayId display_id, const std::span<display::LayerId>& layers)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Takes a solid color rectangle and directly composites it to a hardware layer on the display.
-  void ApplyLayerColor(const display::WireLayerId& layer_id, const ImageRect& rectangle,
+  void ApplyLayerColor(const display::LayerId& layer_id, const ImageRect& rectangle,
                        const allocation::ImageMetadata& image) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Takes an image and directly composites it to a hardware layer on the display.
-  void ApplyLayerImage(const display::WireLayerId& layer_id, const ImageRect& rectangle,
-                       const allocation::ImageMetadata& image, const display::WireEventId& wait_id)
+  void ApplyLayerImage(const display::LayerId& layer_id, const ImageRect& rectangle,
+                       const allocation::ImageMetadata& image, const display::EventId& wait_id)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Checks if the display coordinator is capable of applying the configuration settings that
@@ -275,7 +274,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // display mode immediately when notified of a new display, because the API doesn't allow a
   // display config with no layers.  So we stash it and apply it the next time we have a config
   // to apply.
-  bool MaybeSetPendingDisplayMode(const display::WireDisplayId& display_id)
+  bool MaybeSetPendingDisplayMode(const display::DisplayId& display_id)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
   void ClearAllPendingDisplayModes(const std::vector<RenderData>& render_data_list)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
@@ -331,13 +330,11 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Maps a display ID to the the DisplayInfo struct. This is kept separate from the
   // display_DisplayCompositor_data_map_ since this only this data is needed for the
   // render_data_func_.
-  std::unordered_map</*display::WireDisplayId::value*/ uint64_t, DisplayInfo> display_info_map_;
+  std::unordered_map<display::DisplayId, DisplayInfo> display_info_map_;
 
   // Maps a display ID to a struct of all the information needed to properly render to
   // that display in both the hardware and software composition paths.
-  std::unordered_map</*display::WireDisplayId::value*/ uint64_t, DisplayEngineData>
-      display_engine_data_map_;
-
+  std::unordered_map<display::DisplayId, DisplayEngineData> display_engine_data_map_;
   ReleaseFenceManager release_fence_manager_;
 
   // Stores information about the last ApplyConfig() call to display.
