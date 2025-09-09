@@ -101,14 +101,15 @@ roll the CLs in a single commit.
 
 {% dynamic if user.is_googler %}
 
-### Using `fx atomic-comit`
+### Using `fx atomic-commit`
 
-The `fx atomic-comit` command automates the process of creating circular
+The `fx atomic-commit` command automates the process of creating circular
 dependencies. It ensures the top commits in your `fuchsia.git` and
 `vendor/google` checkouts are amended to depend on each other.
 
 To use the tool:
-1.  Run `fx atomic-change`.
+
+1.  Run `fx atomic-commit`.
 2.  The script displays the commits and ask you to confirm before proceeding.
 3.  After you confirm, the script amends both commits with the appropriate
     `Depends-on` footers and pushes them to create or update the CLs.
