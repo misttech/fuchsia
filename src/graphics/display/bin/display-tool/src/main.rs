@@ -15,6 +15,7 @@ mod draw;
 mod fps;
 mod rgb;
 mod runner;
+mod runner_multilayer;
 
 /// Top-level list of this tool's command-line arguments
 #[derive(FromArgs)]
@@ -81,6 +82,15 @@ struct SquaresArgs {
     id: Option<u64>,
 }
 
+/// Play a multilayer double buffered animation using fence synchronization.
+#[derive(FromArgs)]
+#[argh(subcommand, name = "multilayer-squares")]
+struct MultiLayerSquaresArgs {
+    /// ID of the display to play the animation on
+    #[argh(positional)]
+    id: Option<u64>,
+}
+
 /// Test the display's actual frame rate.
 ///
 /// Before checking the contents shown on the display device, users must make sure that the
@@ -113,6 +123,7 @@ enum SubCommands {
     Vsync(VsyncArgs),
     Color(ColorArgs),
     Squares(SquaresArgs),
+    MultiLayerSquares(MultiLayerSquaresArgs),
     FrameRateTest(FrameRateTestArgs),
 }
 
@@ -139,6 +150,9 @@ async fn main() -> Result<(), Error> {
             }
             SubCommands::Squares(args) => {
                 commands::squares(&coordinator, args.id.map(DisplayId)).await
+            }
+            SubCommands::MultiLayerSquares(args) => {
+                commands::multilayer_squares(&coordinator, args.id.map(DisplayId)).await
             }
             SubCommands::FrameRateTest(args) => {
                 commands::frame_rate_test(

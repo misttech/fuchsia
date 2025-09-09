@@ -36,12 +36,14 @@ rustc_binary("bin") {
     "src/commands/bouncing_squares.rs",
     "src/commands/display_color_layer.rs",
     "src/commands/frame_rate_test.rs",
+    "src/commands/multilayer_squares.rs",
     "src/commands/static_config_vsync_loop.rs",
     "src/draw.rs",
     "src/fps.rs",
     "src/main.rs",
     "src/rgb.rs",
     "src/runner.rs",
+    "src/runner_multilayer.rs",
   ]
 
   test_deps = [ "//src/lib/fuchsia" ]

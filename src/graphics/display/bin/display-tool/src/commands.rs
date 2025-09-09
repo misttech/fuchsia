@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use display_utils::{Coordinator, DisplayId, PixelFormat};
 
 mod bouncing_squares;
 mod display_color_layer;
 mod frame_rate_test;
+mod multilayer_squares;
 mod static_config_vsync_loop;
 
 use crate::rgb::Rgb888;
@@ -122,4 +123,22 @@ pub async fn frame_rate_test(
     };
 
     frame_rate_test::run(coordinator, display, grid_width, grid_height).await
+}
+
+pub async fn multilayer_squares(coordinator: &Coordinator, id: Option<DisplayId>) -> Result<()> {
+    let displays = coordinator.displays();
+    if displays.is_empty() {
+        return Err(format_err!("no displays found"));
+    }
+
+    let display = match id {
+        // Pick the first available display if no ID was specified.
+        None => &displays[0],
+        Some(id) => displays
+            .iter()
+            .find(|d| d.id() == id)
+            .ok_or_else(|| format_err!("display with id '{:?}' not found", id))?,
+    };
+
+    multilayer_squares::run(coordinator, display).await
 }
