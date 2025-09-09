@@ -29,24 +29,28 @@ dap::StackTraceResponse PopulateStackTraceResponse(DebugAdapterContext* ctx, Thr
   // Clamp the end frame to the actual end of the stack.
   int64_t end_frame = std::min(start_frame + frames_to_return, total_frames);
 
+  auto elided_frames = ctx->GetElidedFrames(stack);
   auto file_provider = SourceFileProviderImpl(thread->GetProcess()->GetTarget()->settings());
   for (auto i = start_frame; i < end_frame; i++) {
     dap::StackFrame frame;
     auto location = stack[i]->GetLocation();
+    frame.source = dap::Source{};
 
     // Try to get the source path.
     auto data_or =
         file_provider.GetFileData(location.file_line().file(), location.file_line().comp_dir());
     if (!data_or.has_error()) {
-      dap::Source source;
-      source.path = data_or.value().full_path;
-      frame.source = source;
+      frame.source->path = data_or.value().full_path;
     }
 
     frame.line = location.file_line().line();
     frame.column = location.column();
     frame.name = location.symbol().Get()->GetFullName();
     frame.id = ctx->IdForFrame(thread->GetKoid(), i);
+    if (elided_frames[i]) {
+      frame.presentationHint = "subtle";
+      frame.source->origin = elided_frames[i].description;
+    }
     response.stackFrames.push_back(frame);
   }
   response.totalFrames = total_frames;

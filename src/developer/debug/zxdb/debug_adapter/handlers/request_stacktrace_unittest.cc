@@ -8,7 +8,6 @@
 
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
-#include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/common/scoped_temp_file.h"
 #include "src/developer/debug/zxdb/debug_adapter/context_test.h"
@@ -81,7 +80,7 @@ TEST_F(RequestStackTraceTest, FullFrameAvailable) {
   EXPECT_EQ(got.response.stackFrames[1].column, location2.column());
   EXPECT_EQ(got.response.stackFrames[1].line, location2.file_line().line());
   EXPECT_EQ(got.response.stackFrames[1].name, function2->GetAssignedName());
-  EXPECT_FALSE(got.response.stackFrames[1].source);
+  EXPECT_FALSE(got.response.stackFrames[1].source.value().path.has_value());
 }
 
 TEST_F(RequestStackTraceTest, SyncFramesRequired) {
@@ -419,6 +418,92 @@ TEST_F(RequestStackTraceTest, PaginationOutOfBoundsStartIndex) {
   EXPECT_FALSE(got.error);
   EXPECT_EQ(got.response.totalFrames.value(), kTotalFrames);
   ASSERT_EQ(got.response.stackFrames.size(), 0u);
+}
+
+TEST_F(RequestStackTraceTest, ElideFrames) {
+  InitializeDebugging();
+
+  InjectProcessWithModule(kProcessKoid, 0x1000);
+  // Run client to receive process started event.
+  RunClient();
+  auto thread = InjectThread(kProcessKoid, kThreadKoid);
+  // Run client to receive threads started event.
+  RunClient();
+
+  std::vector<std::unique_ptr<Frame>> frames;
+
+  // Insert mock frames that will be grouped by different matchers.
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x10120, 0x20C0,
+                                               "fpromise::future_impl::operator()",
+                                               FileLine("fit/promise.h", 1174)));
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x10100, 0x20A0,
+                                               "fit::callback_impl::operator()",
+                                               FileLine("fit/function.h", 469)));
+
+  // This frame should not be elided.
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100D0, 0x2080,
+                                               "foo::tests::foo_test", FileLine("foo.rs", 10)));
+
+  // Insert mock frames that will be grouped by the "Rust test startup" matcher.
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x100A0, 0x2060,
+                                               "test::__rust_begin_short_backtrace<FOO_BAR_BAZ>",
+                                               FileLine("unknown.rs", 648)));
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x10070, 0x2040,
+                                               "arbitrary::glob_elided::function",
+                                               FileLine("anything.rs", 1)));
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x10040, 0x2020,
+                                               "__libc_start_main",
+                                               FileLine("__libc_start_main.c", 23)));
+  frames.push_back(std::make_unique<MockFrame>(&session(), thread, 0x10010, 0x2000, "_start",
+                                               FileLine("start.S", 55)));
+
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames), true);
+
+  // Receive thread stopped event in client.
+  RunClient();
+
+  // Send request from the client.
+  dap::StackTraceRequest request = {};
+  request.threadId = kThreadKoid;
+  auto response = client().send(request);
+
+  // Read request and process it in server.
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+
+  // Run client to receive response.
+  RunClient();
+  auto got = response.get();
+  ASSERT_FALSE(got.error);
+  ASSERT_EQ(got.response.totalFrames.value(), 7);
+
+  // `fpromise::promise code` and `fit::function code` frames are elided separately.
+  EXPECT_EQ(got.response.stackFrames[0].name, "fpromise::future_impl::operator()");
+  EXPECT_EQ(got.response.stackFrames[0].presentationHint.value(), "subtle");
+  EXPECT_EQ(got.response.stackFrames[0].source.value().origin.value(), "fpromise::promise code");
+  EXPECT_EQ(got.response.stackFrames[1].name, "fit::callback_impl::operator()");
+  EXPECT_EQ(got.response.stackFrames[1].presentationHint.value(), "subtle");
+  EXPECT_EQ(got.response.stackFrames[1].source.value().origin.value(), "fit::function code");
+
+  // `foo_test` frame is not elided.
+  EXPECT_EQ(got.response.stackFrames[2].name, "foo::tests::foo_test");
+  EXPECT_FALSE(got.response.stackFrames[2].presentationHint.has_value());
+  EXPECT_FALSE(got.response.stackFrames[2].source.value().origin.has_value());
+
+  // `Rust test startup` frames are elided together.
+  EXPECT_EQ(got.response.stackFrames[3].name, "test::__rust_begin_short_backtrace<FOO_BAR_BAZ>");
+  EXPECT_EQ(got.response.stackFrames[3].presentationHint.value(), "subtle");
+  EXPECT_EQ(got.response.stackFrames[3].source.value().origin.value(), "Rust test startup");
+  EXPECT_EQ(got.response.stackFrames[4].name, "arbitrary::glob_elided::function");
+  EXPECT_EQ(got.response.stackFrames[4].presentationHint.value(), "subtle");
+  EXPECT_EQ(got.response.stackFrames[4].source.value().origin.value(), "Rust test startup");
+  EXPECT_EQ(got.response.stackFrames[5].name, "__libc_start_main");
+  EXPECT_EQ(got.response.stackFrames[5].presentationHint.value(), "subtle");
+  EXPECT_EQ(got.response.stackFrames[5].source.value().origin.value(), "Rust test startup");
+  EXPECT_EQ(got.response.stackFrames[6].name, "_start");
+  EXPECT_EQ(got.response.stackFrames[6].presentationHint.value(), "subtle");
+  EXPECT_EQ(got.response.stackFrames[6].source.value().origin.value(), "Rust test startup");
 }
 
 }  // namespace zxdb

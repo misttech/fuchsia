@@ -9,6 +9,7 @@
 
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/zxdb/client/breakpoint.h"
+#include "src/developer/debug/zxdb/client/pretty_stack_manager.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/thread.h"
@@ -387,6 +388,16 @@ Err DebugAdapterContext::CheckStoppedThread(Thread* thread) {
                debug_ipc::ThreadRecord::StateToString(*state_or));
   }
   return Err();
+}
+
+std::vector<PrettyStackManager::Match> DebugAdapterContext::GetElidedFrames(const Stack& stack) {
+  std::vector<PrettyStackManager::Match> result(stack.size());
+  for (const auto& frame : console()->context().pretty_stack_manager()->ProcessStack(stack)) {
+    for (uint64_t i = 0; i < frame.frames.size(); i++) {
+      result.at(frame.begin_index + i) = frame.match;
+    }
+  }
+  return result;
 }
 
 int64_t DebugAdapterContext::IdForFrame(uint64_t thread_koid, int64_t stack_index) {

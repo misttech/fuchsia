@@ -53,7 +53,7 @@ class PrettyStackManager : public fxl::RefCountedThreadSafe<PrettyStackManager> 
 
   // The grouped results of prettifying an entire stack.
   struct FrameEntry {
-    // Index into the stack fo the first frame.
+    // Index of the first frame in the stack.
     size_t begin_index = 0;
 
     // Match if there was one starting at this location.

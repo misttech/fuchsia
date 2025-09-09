@@ -100,6 +100,10 @@ class DebugAdapterContext : public ThreadObserver,
   // `thread` can be nullptr, in which case an error is returned.
   Err CheckStoppedThread(Thread* thread);
 
+  // Returns a vector of elided frame matches against a stack.
+  // The returned vector will have the same `size()` as the `stack`.
+  std::vector<PrettyStackManager::Match> GetElidedFrames(const Stack& stack);
+
   // Helper methods to get/set frame to ID mapping
   int64_t IdForFrame(uint64_t thread_koid, int64_t stack_index);
   Frame* FrameforId(int64_t id);
