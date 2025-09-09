@@ -395,8 +395,8 @@ float scalbf(float, float);
 double significand(double);
 float significandf(float);
 
-double lgamma_r(double, int*);
-float lgammaf_r(float, int*);
+double lgamma_r(double, int*) __NOEXCEPT;
+float lgammaf_r(float, int*) __NOEXCEPT;
 
 float j0f(float);
 float j1f(float);
@@ -408,7 +408,7 @@ float ynf(int, float);
 #endif
 
 #ifdef _GNU_SOURCE
-long double lgammal_r(long double, int*);
+long double lgammal_r(long double, int*) __NOEXCEPT;
 
 void sincos(double, double*, double*);
 void sincosf(float, float*, float*);

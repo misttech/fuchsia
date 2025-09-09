@@ -61,7 +61,7 @@
   "include/llvm-libc-types/size_t.h": "bc1762694548f222612db294a4c60e0f",
   "include/locale.h": "ae56dc9a367dd1eb8a0e1d55b0608c25",
   "include/malloc.h": "4c0c6c02494c5953217709074d641eb4",
-  "include/math.h": "34b731f567085d2b03164dacc6d1f900",
+  "include/math.h": "32096b6557c57415fb3f22f35b3311bd",
   "include/memory.h": "69d15c31527f01f99796d1e1a414e38f",
   "include/monetary.h": "640861c37617fd7df3646e5d1c664664",
   "include/net/ethernet.h": "4060586ef950029b9b414b5ec6ef12c1",
