@@ -38,4 +38,58 @@ pub enum Error {
 
     #[error("target has no addresses")]
     TargetHasNoAddresses,
+
+    #[error("cache error: {0}")]
+    Cache(#[from] CacheError),
+}
+
+#[derive(Debug, Error)]
+pub enum CacheError {
+    #[error("no cache file has been specified")]
+    Unspecified,
+
+    #[error("bad location of cache file at {path:?}")]
+    BadLocation { path: PathBuf },
+
+    #[error("opening cache file at {path:?}")]
+    OpenFile {
+        path: PathBuf,
+        #[source]
+        err: std::io::Error,
+    },
+
+    #[error("creating cache file at {path:?}")]
+    CreateFile {
+        path: PathBuf,
+        #[source]
+        err: std::io::Error,
+    },
+
+    #[error("deserializing cache from {path:?}")]
+    Deserialize {
+        path: PathBuf,
+        #[source]
+        err: serde_json::Error,
+    },
+
+    #[error("serializing cache to {path:?}")]
+    Serialize {
+        path: PathBuf,
+        #[source]
+        err: serde_json::Error,
+    },
+
+    #[error("bad cache version: {0}")]
+    BadVersion(u32),
+
+    #[error("cache expired at {0}")]
+    Expired(chrono::DateTime<chrono::Utc>),
+
+    #[error("could not rename cache file from {from:?} to {to:?}")]
+    Rename {
+        from: PathBuf,
+        to: PathBuf,
+        #[source]
+        err: std::io::Error,
+    },
 }

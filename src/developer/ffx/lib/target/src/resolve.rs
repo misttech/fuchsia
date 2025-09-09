@@ -2,33 +2,35 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use addr::TargetIpAddr;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use discovery::query::TargetInfoQuery;
 use discovery::{
     Discovery, DiscoveryBuilder, DiscoverySources, FastbootConnectionState, TargetEvent,
     TargetHandle, TargetState,
 };
-use ffx_command_error::{NonFatalError, user_error};
+use ffx_command_error::{user_error, NonFatalError};
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
 use fidl_fuchsia_developer_ffx::{self as ffx};
 use fidl_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
 use fuchsia_async::TimeoutExt;
-use futures::future::{LocalBoxFuture, join_all};
-use futures::{FutureExt, Stream, StreamExt, pin_mut};
+use futures::future::{join_all, LocalBoxFuture};
+use futures::{pin_mut, FutureExt, Stream, StreamExt};
 use itertools::Itertools;
 use netext::{IsLocalAddr, ScopedSocketAddr};
 use std::cmp::Ordering;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::time::Duration;
 use target_errors::FfxTargetError;
 
 use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
-use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
+use crate::{get_target_specifier, UNSPECIFIED_TARGET_NAME};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
 const TARGET_DEFAULT_PORT: u16 = 22;
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
+const DISCOVERY_CACHE_DIR_CONFIG: &str = "target.discovery_cache_dir";
 
 #[cfg(test)]
 use {mockall::mock, mockall::predicate::*};
@@ -258,33 +260,52 @@ pub async fn resolve_target_query(
     DefaultTargetResolver::default().resolve_target_query(query, ctx).await
 }
 
-fn build_discovery(sources: DiscoverySources, ctx: EnvironmentContext) -> Discovery {
+fn build_discovery(
+    sources: DiscoverySources,
+    no_cache: bool,
+    ctx: EnvironmentContext,
+) -> Discovery {
     // Note that if there is an error getting these two config options, they
     // will simply be ignored. The alternative is to throw an error, which,
     // e.g. will cause ffx-strict to fail under certain circumstances if either
     // default config option is not overridden.
     let emu_instance_root = ctx.get(emulator_instance::EMU_INSTANCE_ROOT_DIR).ok();
     let fastboot_file_path = ctx.get(fastboot_file_discovery::FASTBOOT_FILE_PATH).ok();
-    let builder = DiscoveryBuilder::default()
+    let mut builder = DiscoveryBuilder::default()
         .set_source(sources)
         .with_fastboot_devices_file_path(fastboot_file_path)
         .with_emulator_instance_root(emu_instance_root)
         .with_timeout_msecs(ctx.get(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT).ok());
+    if !no_cache {
+        builder = builder.with_cache_dir(get_discovery_cache_dir(&ctx));
+    }
     builder.build()
 }
+/// Directory containing the discovery cache file
+pub fn get_discovery_cache_dir(context: &EnvironmentContext) -> Option<PathBuf> {
+    // We can unwrap() because conversion to Option<String> never fails
+    let path_s: Option<String> = context.get(DISCOVERY_CACHE_DIR_CONFIG).unwrap();
+    path_s.map(|s| s.into())
+}
+
 // Return a stream of TargetHandles that come from the specified sources, and
 // match the query. The discovery will return early if a result "perfectly"
 // matches the query (e.g. an mDNS response with the exact name requested).
 fn get_discovery_stream_with_sources(
     query: TargetInfoQuery,
     sources: DiscoverySources,
+    no_cache: bool,
     ctx: EnvironmentContext,
 ) -> Result<impl Stream<Item = TargetHandle>> {
-    let discovery = build_discovery(sources, ctx);
+    let discovery = build_discovery(sources, no_cache, ctx);
     // Just get the new handles
     let stream = discovery.discovery_stream(query).map_err(anyhow::Error::from)?;
     Ok(stream.filter_map(|ev| async move {
-        if let TargetEvent::Added(th) = ev { Some(th) } else { None }
+        if let TargetEvent::Added(th) = ev {
+            Some(th)
+        } else {
+            None
+        }
     }))
 }
 
@@ -296,7 +317,8 @@ async fn get_discovered_targets_with_sources(
     sources: DiscoverySources,
     ctx: EnvironmentContext,
 ) -> Result<Vec<TargetHandle>> {
-    let discovery = build_discovery(sources, ctx);
+    // Currently no callers of this function need to be able to ignore the cache, so we always pass in no_cache=false
+    let discovery = build_discovery(sources, false, ctx);
     discovery.discover_devices(query.clone()).await.map_err(|e| anyhow::anyhow!(e))
 }
 
@@ -466,6 +488,7 @@ pub fn get_discovery_stream(
     query: TargetInfoQuery,
     usb: bool,
     mdns: bool,
+    no_cache: bool,
     ctx: &EnvironmentContext,
 ) -> Result<impl Stream<Item = TargetHandle>> {
     let mut sources =
@@ -476,7 +499,7 @@ pub fn get_discovery_stream(
     if mdns {
         sources = sources | DiscoverySources::MDNS;
     }
-    get_discovery_stream_with_sources(query, sources, ctx.clone())
+    get_discovery_stream_with_sources(query, sources, no_cache, ctx.clone())
 }
 
 /// Return a list of handles matching the query. If a target matches the query
@@ -959,4 +982,18 @@ mod test {
     // * partial matching of names
     // * timing out when no matching targets return
     // * returning early when there is an exact name match
+    #[fuchsia::test]
+    async fn test_get_discovery_cache_dir() {
+        let test_env = ffx_config::test_init().await.unwrap();
+        let cache_dir = "/tmp/cache";
+        test_env
+            .context
+            .query(DISCOVERY_CACHE_DIR_CONFIG)
+            .level(Some(ffx_config::ConfigLevel::User))
+            .set(serde_json::Value::String(cache_dir.to_string()))
+            .unwrap();
+
+        let result = get_discovery_cache_dir(&test_env.context);
+        assert_eq!(result, Some(PathBuf::from(cache_dir)));
+    }
 }

@@ -58,6 +58,7 @@ impl FfxMain for ListTool {
                 !cmd.no_usb,
                 !cmd.no_mdns,
                 !cmd.no_probe,
+                self.context.is_strict(), // Don't cache when in strict mode
             )
             .await?
         } else {

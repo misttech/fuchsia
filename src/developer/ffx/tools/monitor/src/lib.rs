@@ -145,7 +145,7 @@ fn infos_to_statuses(infos: Vec<TargetInfo>) -> Vec<TargetStatus> {
 }
 
 async fn collect_target_status(context: &EnvironmentContext) -> Result<Vec<TargetStatus>> {
-    let infos = ffx_target::list_targets(context, None, true, true, true).await?;
+    let infos = ffx_target::list_targets(context, None, true, true, true, true).await?;
     Ok(infos_to_statuses(infos))
 }
 

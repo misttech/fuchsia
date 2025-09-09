@@ -221,6 +221,8 @@ When updating, please add the value in alphabetical order.
     | `ssh.keepalive_timeout`                 | Time for an ssh connection to wait |
     |                                         | before timing out.                 |
     |                                         | Defaults to `20` seconds.          |
+    | `target.discovery_cache_dir`            | Directory containing the discovery |
+    |                                         | cache. Defaults to "$CACHE".       |
     | `target.host_pipe_ssh_timeout`          | Time the target waits for an       |
     |                                         | initial response from ssh on the   |
     |                                         | target (currently, only in `ffx    |
