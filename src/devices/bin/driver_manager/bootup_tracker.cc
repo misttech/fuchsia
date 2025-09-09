@@ -47,6 +47,14 @@ void BootupTracker::NotifyStartComplete(std::string node_moniker) {
 
 void BootupTracker::NotifyBindingChanged() { UpdateTrackerAndResetTimer(); }
 
+void BootupTracker::BootupDoneForTesting() {
+  for (auto& callback : callbacks_) {
+    callback();
+  }
+  callbacks_.clear();
+  bootup_done_ = true;
+}
+
 void BootupTracker::CheckBootupDone() {
   if (IsUpdateDeadlineExceeded()) {
     fdf_log::warn("Deadline exceeded in the bootup tracker with:");

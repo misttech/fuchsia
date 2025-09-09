@@ -384,6 +384,9 @@ Node::~Node() {
                   GetNodeShutdownCoordinator().NodeStateAsString());
   }
 
+  if (bind_wait_completer_) {
+    bind_wait_completer_(zx::error(ZX_ERR_CANCELED));
+  }
   CloseIfExists(controller_ref_);
   if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
     driver_component->node_ref_.Close(ZX_OK);
@@ -452,22 +455,53 @@ std::string Node::MakeComponentMoniker() const {
   return topo_path;
 }
 
-void Node::OnBind() const {
+void Node::OnBind() {
   if (controller_ref_) {
-    zx::event node_token;
-    zx_status_t status = std::get<DriverComponent>(state_).component_instance.duplicate(
-        ZX_RIGHT_SAME_RIGHTS, &node_token);
-    if (status != ZX_OK) {
-      fdf_log::error("Failed to send OnBind event: {}", zx_status_get_string(status));
+    zx::result<zx::event> node_token = DuplicateNodeToken();
+    if (node_token.is_error()) {
       return;
     }
 
     fit::result result =
-        fidl::SendEvent(*controller_ref_)->OnBind({{.node_token = std::move(node_token)}});
+        fidl::SendEvent(*controller_ref_)->OnBind({{.node_token = std::move(node_token.value())}});
     if (result.is_error()) {
       fdf_log::error("Failed to send OnBind event: {}", result.error_value().FormatDescription());
     }
   }
+
+  // Report on successes immediately without waiting for boot-up to complete.
+  bind_err_ = {};
+
+  if (IsComposite()) {
+    for (auto& parent_ref : parents()) {
+      std::shared_ptr<Node> parent = parent_ref.lock();
+      if (parent && parent->bind_wait_completer_) {
+        zx::result<zx::event> node_token = DuplicateNodeToken();
+        if (node_token.is_error()) {
+          return;
+        }
+
+        parent->bind_wait_completer_(zx::ok(
+            fdf::wire::DriverResult::WithDriverStartedNodeToken(std::move(node_token.value()))));
+      }
+    }
+  } else if (bind_wait_completer_) {
+    zx::result<zx::event> node_token = DuplicateNodeToken();
+    if (node_token.is_error()) {
+      return;
+    }
+    bind_wait_completer_(
+        zx::ok(fdf::wire::DriverResult::WithDriverStartedNodeToken(std::move(node_token.value()))));
+  }
+}
+
+void Node::OnMatchError(zx_status_t status) {
+  // Set a value that we can use in the boot-up callback that we set in WaitForDriver.
+  bind_err_ = fdf::wire::DriverResult::WithMatchError(status);
+}
+void Node::OnStartError(zx_status_t status) {
+  // Set a value that we can use in the boot-up callback that we set in WaitForDriver.
+  bind_err_ = fdf::wire::DriverResult::WithStartError(status);
 }
 
 void Node::handle_unknown_method(
@@ -491,6 +525,7 @@ void Node::CompleteBind(zx::result<> result) {
 
   if (result.is_error()) {
     fdf_log::warn("Bind failed for node '{}'", MakeComponentMoniker());
+
     if (GetNodeState() == NodeState::kRunning && !std::holds_alternative<Unbound>(state_)) {
       fdf_log::debug("Quarantining node '{}'", MakeComponentMoniker());
       QuarantineNode();
@@ -570,6 +605,9 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
     return;
   }
 
+  if (bind_wait_completer_) {
+    bind_wait_completer_(zx::error(ZX_ERR_CANCELED));
+  }
   fdf_log::debug("Node: {} finishing shutdown", name());
   CloseIfExists(controller_ref_);
   if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
@@ -731,10 +769,10 @@ void Node::RemoveCompositeNodeForRebind(fit::callback<void(zx::result<>)> comple
   Remove(RemovalSet::kAll, nullptr);
 }
 
-std::shared_ptr<BindResultTracker> Node::CreateBindResultTracker() {
+std::shared_ptr<BindResultTracker> Node::CreateBindResultTracker(bool silent) {
   return std::make_shared<BindResultTracker>(
-      1, [weak_self = weak_from_this()](
-             fidl::VectorView<fuchsia_driver_development::wire::NodeBindingInfo> info) {
+      1, [weak_self = weak_from_this(),
+          silent](fidl::VectorView<fuchsia_driver_development::wire::NodeBindingInfo> info) {
         std::shared_ptr self = weak_self.lock();
         if (!self) {
           return;
@@ -749,10 +787,16 @@ std::shared_ptr<BindResultTracker> Node::CreateBindResultTracker() {
           // as Quarantined{} in state_ as part of the node quarantining.
           self->state_ = Unbound{};
 
-          self->CompleteBind(zx::error(ZX_ERR_NOT_FOUND));
+          self->OnMatchError(ZX_ERR_NOT_FOUND);
+          if (!silent) {
+            self->CompleteBind(zx::error(ZX_ERR_NOT_FOUND));
+          }
         } else if (info.size() > 1) {
           fdf_log::error("Unexpectedly bound multiple drivers to a single node");
-          self->CompleteBind(zx::error(ZX_ERR_BAD_STATE));
+          self->OnMatchError(ZX_ERR_BAD_STATE);
+          if (!silent) {
+            self->CompleteBind(zx::error(ZX_ERR_BAD_STATE));
+          }
         }
       });
 }
@@ -1017,13 +1061,18 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
 
   if (controller.is_valid()) {
     child->controller_ref_.emplace(dispatcher_, std::move(controller), child.get(),
-                                   fidl::kIgnoreBindingClosure);
+                                   [weak = child->weak_from_this()](fidl::UnbindInfo info) {
+                                     std::shared_ptr self = weak.lock();
+                                     if (self && self->controller_ref_) {
+                                       self->controller_ref_.reset();
+                                     }
+                                   });
   }
   if (node.is_valid()) {
     child->state_.emplace<OwnedByParent>(std::move(node), child.get());
   } else {
-    // We don't care about tracking binds here, sending nullptr is fine.
-    (*node_manager_)->Bind(*child, nullptr);
+    auto tracker = child->CreateBindResultTracker(/*silent=*/true);
+    (*node_manager_)->Bind(*child, std::move(tracker));
   }
 
   child->AddToParents();
@@ -1154,6 +1203,92 @@ void Node::RequestBind(RequestBindRequestView request, RequestBindCompleter::Syn
                  completer.ReplyError(status);
                }
              });
+}
+
+void Node::WaitForDriver(WaitForDriverCompleter::Sync& completer) {
+  fidl::Arena arena;
+
+  // First check if we are a driver component that is already started and running.
+  if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
+    if (driver_component->state == DriverState::kRunning) {
+      zx::result token_res = DuplicateNodeToken();
+      if (token_res.is_ok()) {
+        completer.ReplySuccess(
+            fdf::wire::DriverResult::WithDriverStartedNodeToken(std::move(token_res.value())));
+      } else {
+        completer.ReplyError(token_res.error_value());
+      }
+
+      return;
+    }
+  }
+
+  // Then if we are a composite check if we have a child (completed composite) that is started and
+  // running.
+  if (auto* composite_parent = std::get_if<CompositeParent>(&state_); composite_parent) {
+    if (children().size() > 1) {
+      fdf_log::warn(
+          "Node {} is a composite parent to multiple composites, the WaitForDriver will only report on the first child to be found running.",
+          name());
+    }
+    for (const auto& child : children()) {
+      if (auto* driver_component = std::get_if<DriverComponent>(&child->state_); driver_component) {
+        if (driver_component->state == DriverState::kRunning) {
+          zx::result token_res = child->DuplicateNodeToken();
+          if (token_res.is_ok()) {
+            completer.ReplySuccess(
+                fdf::wire::DriverResult::WithDriverStartedNodeToken(std::move(token_res.value())));
+          } else {
+            completer.ReplyError(token_res.error_value());
+          }
+
+          return;
+        }
+      }
+    }
+  }
+
+  if (bind_wait_completer_) {
+    fdf_log::warn("WaitForDriver for {} is already called.", name());
+    completer.ReplyError(ZX_ERR_ALREADY_EXISTS);
+    return;
+  }
+
+  // Otherwise set our completer, which will be called when OnBind happens or we boot-up without a
+  // successful bind on this node or a child node for the composite case.
+  bind_wait_completer_ =
+      [completer = completer.ToAsync()](zx::result<fdf::wire::DriverResult> result) mutable {
+        if (result.is_error()) {
+          completer.ReplyError(result.error_value());
+        } else {
+          completer.ReplySuccess(std::move(result.value()));
+        }
+      };
+
+  // If boot-up completes without us having reported a success, then failure will be sent here.
+  // Otherwise this will just be a no-op since the bind_err_ is reset on success.
+  // For multiple errors, the last error will be reported since it will be read from the bind_err_.
+  (*node_manager_)->WaitForBootup([weak = weak_from_this()]() {
+    std::shared_ptr<Node> self = weak.lock();
+    if (!self) {
+      return;
+    }
+
+    if (!self->bind_err_) {
+      return;
+    }
+
+    if (self->IsComposite()) {
+      for (auto& parent_ref : self->parents()) {
+        std::shared_ptr<Node> parent = parent_ref.lock();
+        if (parent && parent->bind_wait_completer_) {
+          parent->bind_wait_completer_(zx::ok(*std::move(self->bind_err_)));
+        }
+      }
+    } else if (self->bind_wait_completer_) {
+      self->bind_wait_completer_(zx::ok(*std::move(self->bind_err_)));
+    }
+  });
 }
 
 void Node::BindHelper(bool force_rebind, std::optional<std::string> driver_url_suffix,
@@ -1412,6 +1547,20 @@ void Node::StartDriverWithDynamicLinker(
   driver_host_.value()->StartWithDynamicLinker(std::move(client_end), name_, std::move(load_args),
                                                std::move(start_args), std::move(node_token),
                                                std::move(driver_endpoints.server), std::move(cb));
+}
+
+zx::result<zx::event> Node::DuplicateNodeToken() {
+  ZX_ASSERT(std::holds_alternative<DriverComponent>(state_));
+
+  zx::event node_token;
+  zx_status_t status = std::get<DriverComponent>(state_).component_instance.duplicate(
+      ZX_RIGHT_SAME_RIGHTS, &node_token);
+  if (status != ZX_OK) {
+    fdf_log::error("Failed to DuplicateNodeToken: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  return zx::ok(std::move(node_token));
 }
 
 bool Node::EvaluateRematchFlags(fuchsia_driver_development::RestartRematchFlags rematch_flags,

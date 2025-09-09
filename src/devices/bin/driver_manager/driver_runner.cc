@@ -237,6 +237,7 @@ void CallStartDriverOnRunner(Runner& runner, Node& node, const std::string& moni
         }
 
         if (component.is_error()) {
+          node->OnStartError(component.error_value());
           node->CompleteBind(component.take_error());
           if (auto tracker_ptr = bootup_tracker.lock(); tracker_ptr) {
             tracker_ptr->NotifyStartComplete(moniker);
@@ -249,6 +250,10 @@ void CallStartDriverOnRunner(Runner& runner, Node& node, const std::string& moni
                           std::move(component->controller),
                           [node_weak, moniker, bootup_tracker](zx::result<> result) {
                             if (std::shared_ptr node = node_weak.lock(); node) {
+                              if (result.is_error()) {
+                                node->OnStartError(result.status_value());
+                              }
+
                               node->CompleteBind(result);
                             }
 

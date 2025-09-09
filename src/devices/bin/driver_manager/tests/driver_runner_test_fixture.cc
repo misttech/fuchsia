@@ -689,7 +689,7 @@ std::shared_ptr<CreatedChild> TestDriver::AddChild(std::string_view child_name, 
   return AddChild(fidl::ToNatural(args), owned, expect_error);
 }
 std::shared_ptr<CreatedChild> TestDriver::AddChild(fdfw::NodeAddArgs child_args, bool owned,
-                                                   bool expect_error, OnBindCallback on_bind) {
+                                                   bool expect_error) {
   auto controller_endpoints = fidl::Endpoints<fdfw::NodeController>::Create();
 
   auto child_node_endpoints = fidl::CreateEndpoints<fdfw::Node>();
@@ -726,11 +726,9 @@ std::shared_ptr<CreatedChild> TestDriver::AddChild(fdfw::NodeAddArgs child_args,
 
   class ControllerEventHandler : public fidl::AsyncEventHandler<fdfw::NodeController> {
    public:
-    explicit ControllerEventHandler(std::shared_ptr<CreatedChild> child, OnBindCallback on_bind)
-        : child_(std::move(child)), on_bind_(std::move(on_bind)) {}
-    void OnBind(fdfw::NodeControllerOnBindRequest& request) override {
-      on_bind_(request.node_token());
-    }
+    explicit ControllerEventHandler(std::shared_ptr<CreatedChild> child)
+        : child_(std::move(child)) {}
+    void OnBind(fdfw::NodeControllerOnBindRequest& request) override {}
     void on_fidl_error(::fidl::UnbindInfo error) override {
       child_->node_controller.reset();
       delete this;
@@ -739,12 +737,11 @@ std::shared_ptr<CreatedChild> TestDriver::AddChild(fdfw::NodeAddArgs child_args,
 
    private:
     std::shared_ptr<CreatedChild> child_;
-    OnBindCallback on_bind_;
   };
 
   std::shared_ptr<CreatedChild> child = std::make_shared<CreatedChild>();
   child->node_controller.emplace(std::move(controller_endpoints.client), dispatcher_,
-                                 new ControllerEventHandler(child, std::move(on_bind)));
+                                 new ControllerEventHandler(child));
   if (owned) {
     child->node.emplace(std::move(child_node_endpoints->client), dispatcher_,
                         new NodeEventHandler(child));

@@ -121,6 +121,9 @@ class TestNode final : public fidl::WireServer<fuchsia_driver_framework::NodeCon
 
   void Remove(RemoveCompleter::Sync& completer) override { RemoveFromParent(); }
   void RequestBind(RequestBindRequestView request, RequestBindCompleter::Sync& completer) override;
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  void WaitForDriver(WaitForDriverCompleter::Sync& completer) override;
+#endif
 
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_driver_framework::NodeController> metadata,
