@@ -4,7 +4,7 @@
 
 %YAML 1.2
 ---
-$id: http://devicetree.org/schemas/cpu-power-element.yaml#
+$id: http://devicetree.org/schemas/cpu-power-elements.yaml#
 $schema: http://devicetree.org/meta-schemas/core.yaml#
 
 title: Fuchsia CPU power element configuration
@@ -19,31 +19,26 @@ description: |
   in the devicetree so that other power elements defined in device tree can
   have their configuration depend on the element.
 
+allOf:
+  - $ref: power-elements.yaml#
+
 properties:
   $nodename:
-    const: cpu
+    const: cpu-power-elements
 
-  power-elements:
-    $ref: power-element.yaml#
-
+  cpu-element:
+    $ref: "power-elements.yaml#/patternProperties/^[a-zA-Z0-9-]*-element$"
     properties:
-      cpu-element:
-        $ref: "power-element.yaml#/patternProperties/^[a-zA-Z0-9-]*-element$"
+      power-levels:
+        $ref: "power-elements.yaml#/patternProperties/^[a-zA-Z0-9-]*-element$/properties/power-levels"
         properties:
-          power-levels:
-            $ref: "power-element.yaml#/patternProperties/^[a-zA-Z0-9-]*-element$/properties/power-levels"
-            properties:
-              off-level:
-                $ref: "power-element.yaml#/definitions/power-level"
-              on-level:
-                $ref: "power-element.yaml#/definitions/power-level"
-            additionalProperties: false
-    additionalProperties: false
-    required:
-      - cpu-element
+          off-level:
+            $ref: "power-elements.yaml#/definitions/power-level"
+          on-level:
+            $ref: "power-elements.yaml#/definitions/power-level"
+        additionalProperties: false
 
 required:
-  - power-elements
+  - cpu-element
 
 additionalProperties: false
-

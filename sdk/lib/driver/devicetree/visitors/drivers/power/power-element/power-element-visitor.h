@@ -64,6 +64,7 @@ class PowerElementVisitor : public fdf_devicetree::Visitor {
 
   std::unique_ptr<fdf_devicetree::PropertyParser> level_parser_;
   std::unique_ptr<fdf_devicetree::PropertyParser> transition_parser_;
+  std::unique_ptr<fdf_devicetree::PropertyParser> reference_parser_;
 };
 
 }  // namespace power_element_visitor_dt
