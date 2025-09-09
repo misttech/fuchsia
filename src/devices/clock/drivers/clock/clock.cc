@@ -9,6 +9,7 @@
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/fdf/dispatcher.h>
+#include <lib/fit/defer.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -210,7 +211,7 @@ zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
                               const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
                               const std::optional<std::string>& node_name,
                               std::optional<int32_t> node_id,
-                              fidl::ClientEnd<fuchsia_driver_framework::Node>& parent) {
+                              fidl::ClientEnd<fuchsia_driver_framework::Node>& parent_node) {
   zx::result clock_impl = incoming->Connect<fuchsia_hardware_clockimpl::Service::Device>();
   if (clock_impl.is_error()) {
     FDF_LOG(ERROR, "Failed to connect to the clock-impl FIDL protocol: %s",
@@ -219,15 +220,14 @@ zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
   }
   clock_impl_.Bind(std::move(clock_impl.value()), fdf::Dispatcher::GetCurrent()->get());
 
-  char child_node_name[20];
   if (!node_id.has_value()) {
-    snprintf(child_node_name, sizeof(child_node_name), "clock-%u", id_);
+    name_ = std::format("clock-{}", id_);
   } else {
-    snprintf(child_node_name, sizeof(child_node_name), "clock-%u_%u", id_, node_id.value());
+    name_ = std::format("clock-{}_{}", id_, node_id.value());
   }
 
   auto node_offers = std::vector{
-      fdf::MakeOffer2<fuchsia_hardware_clock::Service>(child_node_name),
+      fdf::MakeOffer2<fuchsia_hardware_clock::Service>(name_),
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty> node_properties{
@@ -238,24 +238,69 @@ zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
         fdf::MakeProperty(bind_fuchsia::CLOCK_NODE_ID, static_cast<uint32_t>(node_id.value())));
   }
 
-  zx::result node = fdf::AddChild(parent, *fdf::Logger::GlobalInstance(), child_node_name,
+  fuchsia_hardware_clock::Service::InstanceHandler instance_handler{
+      {.clock = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                        fidl::kIgnoreBindingClosure)}};
+  zx::result result =
+      outgoing->AddService<fuchsia_hardware_clock::Service>(std::move(instance_handler), name_);
+  if (result.is_error()) {
+    FDF_LOG(ERROR, "Failed to add clock service to outgoing directory: %s", result.status_string());
+    return result.status_value();
+  }
+
+  zx::result node = fdf::AddChild(parent_node, *fdf::Logger::GlobalInstance(), name_,
                                   node_properties, node_offers);
   if (node.is_error()) {
     FDF_LOG(ERROR, "Failed to create child node: %s", node.status_string());
     return node.status_value();
   }
 
-  fuchsia_hardware_clock::Service::InstanceHandler instance_handler{
-      {.clock = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                        fidl::kIgnoreBindingClosure)}};
-  zx::result result = outgoing->AddService<fuchsia_hardware_clock::Service>(
-      std::move(instance_handler), child_node_name);
-  if (result.is_error()) {
-    FDF_LOG(ERROR, "Failed to add clock service to outgoing directory: %s", result.status_string());
-    return result.status_value();
-  }
+  child_node_.Bind(std::move(node.value()), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  child_node_->WaitForDriver().Then(fit::bind_member<&ClockDevice::WaitForDriverCompleted>(this));
 
   return ZX_OK;
+}
+
+bool ClockDevice::pending_driver() const { return pending_driver_; }
+
+std::string_view ClockDevice::name() const { return name_; }
+
+void ClockDevice::WaitForDriverCompleted(
+    fidl::WireUnownedResult<fuchsia_driver_framework::NodeController::WaitForDriver>& result) {
+  // Not much we can do in most of these failure cases, so just set these for all results before
+  // returning.
+  auto deferred = fit::defer([this]() {
+    pending_driver_ = false;
+    parent_->CheckIfReady();
+  });
+
+  if (!result.ok()) {
+    fdf::error("Failed call to WaitForDriver for clock {}", name_);
+    return;
+  }
+
+  if (result->is_error()) {
+    fdf::error("WaitForDriver returned error for clock {}", name_);
+    return;
+  }
+
+  switch (result->value()->Which()) {
+    case fuchsia_driver_framework::wire::DriverResult::Tag::kDriverStartedNodeToken: {
+      fdf::debug("Driver using clock {} has started.", name_);
+      break;
+    }
+    case fuchsia_driver_framework::wire::DriverResult::Tag::kMatchError: {
+      fdf::info("Clock {} did not match a driver/composite.", name_);
+      break;
+    }
+    case fuchsia_driver_framework::wire::DriverResult::Tag::kStartError: {
+      fdf::warn("Driver using clock {} failed to start.", name_);
+      break;
+    }
+    default: {
+      fdf::error("Clock {} unrecognized driver result type.", name_);
+    }
+  }
 }
 
 zx::result<> ClockDriver::Start() {
@@ -305,6 +350,22 @@ zx::result<> ClockDriver::Start() {
   return zx::ok();
 }
 
+void ClockDriver::CheckIfReady() {
+  bool ready = true;
+  for (auto& clock : clock_devices_) {
+    if (clock->pending_driver()) {
+      fdf::debug("clock {} not started yet.", clock->name());
+      ready = false;
+    }
+  }
+
+  if (ready) {
+    // All children are either successfully started completely, or failed to bind to anything.
+    // This is where we can notify the impl driver.
+    fdf::info("Core clock has received all requests from children clocks.");
+  }
+}
+
 zx_status_t ClockDriver::CreateClockDevices() {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   zx::result clock_nodes_metadata =
@@ -328,7 +389,7 @@ zx_status_t ClockDriver::CreateClockDevices() {
 
     // ClockDevice must be dynamically allocated because it has a ServerBindingGroup and compat
     // server property which cannot be moved.
-    auto clock_device = std::make_unique<ClockDevice>(clock_id);
+    auto clock_device = std::make_unique<ClockDevice>(this, clock_id);
     zx_status_t status =
         clock_device->Init(incoming(), outgoing(), node_name(), node.node_id(), this->node());
     if (status != ZX_OK) {

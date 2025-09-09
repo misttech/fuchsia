@@ -17,14 +17,20 @@ class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
       std::string_view, const fuchsia_driver_framework::NodePropertyVector&,
       const std::vector<fuchsia_driver_framework::Offer>&)>;
 
-  explicit ClockDevice(uint32_t id) : id_(id) {}
+  explicit ClockDevice(ClockDriver* parent, uint32_t id) : parent_(parent), id_(id) {}
 
   zx_status_t Init(const std::shared_ptr<fdf::Namespace>& incoming,
                    const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
                    const std::optional<std::string>& node_name, std::optional<int32_t> node_id,
                    fidl::ClientEnd<fuchsia_driver_framework::Node>& parent);
 
+  bool pending_driver() const;
+  std::string_view name() const;
+
  private:
+  void WaitForDriverCompleted(
+      fidl::WireUnownedResult<fuchsia_driver_framework::NodeController::WaitForDriver>& result);
+
   // fuchsia.hardware.clock/Clock protocol implementation
   void Enable(EnableCompleter::Sync& completer) override;
   void Disable(DisableCompleter::Sync& completer) override;
@@ -40,10 +46,13 @@ class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_clock::Clock> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 
+  ClockDriver* parent_;
   fdf::WireClient<fuchsia_hardware_clockimpl::ClockImpl> clock_impl_;
   const uint32_t id_;
-  fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_node_;
+  fidl::WireClient<fuchsia_driver_framework::NodeController> child_node_;
   fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
+  std::string name_;
+  bool pending_driver_ = true;
 };
 
 class ClockDriver : public fdf::DriverBase {
@@ -56,6 +65,8 @@ class ClockDriver : public fdf::DriverBase {
       : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
 
   zx::result<> Start() override;
+
+  void CheckIfReady();
 
  private:
   static zx_status_t ConfigureClocks(
