@@ -2758,9 +2758,15 @@ impl FuseOperation {
                 Ok(len)
             }
             Self::Rmdir { name } | Self::Unlink { name } => Self::write_null_terminated(data, name),
-            Self::Write { write_in, content } => {
+            Self::Write { mut write_in, content } => {
+                let mut write_in_size = write_in.size as usize;
+                assert!(write_in_size == content.len());
+                if write_in_size + write_in.as_bytes().len() > data.available() {
+                    write_in_size = data.available() - write_in.as_bytes().len();
+                    write_in.size = write_in_size as u32;
+                }
                 let mut len = data.write_all(write_in.as_bytes())?;
-                len += data.write_all(content)?;
+                len += data.write_all(&content[..write_in_size])?;
                 Ok(len)
             }
         }

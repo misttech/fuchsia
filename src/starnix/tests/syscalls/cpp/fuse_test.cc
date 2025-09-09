@@ -848,6 +848,19 @@ TEST_F(FuseTest, Write) {
   EXPECT_EQ(write(fd.get(), "hello\n", 6), 6);
 }
 
+TEST_F(FuseTest, HugeWrite) {
+  constexpr ssize_t kSize = 1024 * 1024;
+  ASSERT_TRUE(Mount());
+  std::string filename = GetMountDir() + "/file";
+  fbl::unique_fd fd(open(filename.c_str(), O_WRONLY | O_CREAT));
+  ASSERT_TRUE(fd.is_valid());
+  auto data = std::make_unique<char[]>(kSize);
+  memset(data.get(), 0, kSize);
+  ssize_t write_result = write(fd.get(), data.get(), kSize);
+  ASSERT_GT(write_result, 0);
+  ASSERT_LE(write_result, kSize);
+}
+
 TEST_F(FuseTest, WriteAppend) {
   ASSERT_TRUE(Mount());
   std::string filename = GetMountDir() + "/file";
