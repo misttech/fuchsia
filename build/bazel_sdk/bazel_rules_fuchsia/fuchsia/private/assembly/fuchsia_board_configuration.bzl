@@ -111,7 +111,7 @@ def _fuchsia_board_configuration_impl(ctx):
 
     release_info = {}
     release_info["info"] = {
-        "name": ctx.attr.release_info_board_name or ctx.attr.board_name,
+        "name": ctx.attr.board_name,
         "repository": "intermediate_repository",
         "version": "intermediate_version",
     }
@@ -269,16 +269,13 @@ _fuchsia_board_configuration = rule(
         "repo": attr.string(
             doc = "Name of the release repository. Overrides _release_repository_flag when set.",
         ),
-        "partitions_configuration": attr.label(
-            doc = "The partitions config to include into the board configuration",
-            providers = [FuchsiaPartitionsConfigInfo],
-        ),
         "_release_repository_flag": attr.label(
             doc = "String flag used to set the name of the release repository.",
             default = "@rules_fuchsia//fuchsia/flags:fuchsia_release_repository",
         ),
-        "release_info_board_name": attr.string(
-            doc = "Name of this board. If set, this is used in the 'name' field of the release_info section of the output config.",
+        "partitions_configuration": attr.label(
+            doc = "The partitions config to include into the board configuration",
+            providers = [FuchsiaPartitionsConfigInfo],
         ),
     },
 )
