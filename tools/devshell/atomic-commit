@@ -5,7 +5,7 @@
 
 #### CATEGORY=Other
 ### Create a pair of changes that will be submitted atomically. It will modify
-### the commit in fuchsia.git and vendor/google, and make them depends on each
+### the commit in fuchsia.git and vendor/google, and make them depend on each
 ### other.
 
 ## usage: fx atomic-commit
