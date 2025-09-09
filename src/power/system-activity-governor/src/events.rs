@@ -10,10 +10,10 @@ use futures::FutureExt;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 
-const SUSPEND_EVENT_BUFFER_SIZE: usize = 4096;
+const SUSPEND_EVENT_BUFFER_SIZE: usize = 8192;
 
 static INSPECT_FIELD_EVENT_CAPACITY: &str = "event_capacity";
 static INSPECT_FIELD_HISTORY_DURATION: &str = "history_duration_seconds";

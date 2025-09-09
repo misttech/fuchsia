@@ -3276,14 +3276,14 @@ async fn test_activity_governor_captures_inspect_event_buffer_stats() -> Result<
     // event buffer reaches capacity, at which time we will see the field
     // "at_capacity_history_duration_seconds" appear in the events stats struct.
 
-    let custom_max_loops_count = 70; // Run more times to ensure we fill the event buffer.
+    let custom_max_loops_count = 1000; // Run more times to ensure we fill the event buffer.
     block_until_inspect_matches!(
         custom_max_loops_count,
         activity_governor_moniker,
         root: contains {
             booting: false,
             "suspend_events_stats": {
-                event_capacity: 4096u64,
+                event_capacity: 8192u64,
                 history_duration_seconds: AnyProperty,
                 at_capacity_history_duration_seconds: AnyProperty,
             },

@@ -12,10 +12,10 @@ use crate::events::SagEventLogger;
 use crate::system_activity_governor::SystemActivityGovernor;
 use anyhow::{Context, Result};
 use fuchsia_async::{DurationExt, TimeoutExt};
-use fuchsia_component::client::{connect_to_protocol, Service};
+use fuchsia_component::client::{Service, connect_to_protocol};
 use fuchsia_component::server::ServiceFs;
-use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::BoolProperty as IBool;
+use fuchsia_inspect::health::Reporter;
 use futures::{FutureExt, StreamExt};
 use inspect_format::constants::DEFAULT_VMO_SIZE_BYTES as DEFAULT_INSPECT_VMO;
 use sag_config::Config;
@@ -116,7 +116,7 @@ async fn main() -> Result<()> {
 
     fuchsia_trace_provider::trace_provider_create_with_fdio();
 
-    let inspect_vmo_size = (1.25f32 * DEFAULT_INSPECT_VMO as f32) as usize;
+    let inspect_vmo_size = (2.5f32 * DEFAULT_INSPECT_VMO as f32) as usize;
     let inspector = fuchsia_inspect::component::init_inspector_with_size(inspect_vmo_size);
     let _inspect_server_task =
         inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
