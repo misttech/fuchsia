@@ -36,6 +36,6 @@ pub enum Error {
     #[error("SocketBound events are not supported")]
     SocketBoundUnsupported,
 
-    #[error("Target has no addresses")]
+    #[error("target has no addresses")]
     TargetHasNoAddresses,
 }

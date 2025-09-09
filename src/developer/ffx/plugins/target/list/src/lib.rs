@@ -11,7 +11,7 @@ use ffx_list_args::{AddressTypes, ListCommand};
 use ffx_target::TargetInfoQuery;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool, deferred};
-use fidl_fuchsia_developer_ffx as ffx;
+use fidl_fuchsia_developer_ffx::{self as ffx};
 use futures::TryStreamExt;
 use target_formatter::{JsonTarget, JsonTargetFormatter, TargetFormatter};
 use target_holders::daemon_protocol;

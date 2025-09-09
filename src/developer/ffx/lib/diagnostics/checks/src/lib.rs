@@ -595,7 +595,7 @@ mod test {
     use fdomain_client::fidl::DiscoverableProtocolMarker;
     use fdomain_fuchsia_developer_remotecontrol::RemoteControlMarker;
     use ffx_fastboot_connection_factory::test::setup_connection_factory;
-    use ffx_target::{FDomainConnection, Resolution, mock_stream};
+    use ffx_target::{FDomainConnection, Resolution};
     use fidl_fuchsia_developer_remotecontrol as rcs;
     use fidl_fuchsia_hwinfo::{ProductInfo, ProductMarker, ProductRequest};
     use fuchsia_async::Task;
@@ -613,13 +613,12 @@ mod test {
     struct MockResolver;
 
     impl TargetResolver for MockResolver {
-        #[allow(refining_impl_trait)]
-        fn discovery_stream(
+        async fn discovered_targets(
             &self,
             _query: TargetInfoQuery,
             _ctx: EnvironmentContext,
-        ) -> Result<mock_stream::MockHandleStream> {
-            Ok(mock_stream::MockHandleStream(MOCK_HANDLES.lock().unwrap().clone()))
+        ) -> Result<Vec<TargetHandle>> {
+            Ok(MOCK_HANDLES.lock().unwrap().clone())
         }
 
         async fn resolve_target_query(
