@@ -4,6 +4,7 @@
 
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/resource.h>
 #include <sys/time.h>
 
 #include <fbl/unique_fd.h>
@@ -157,7 +158,7 @@ TEST(InheritTest, NullFileDescriptorIsDuplicated) {
   }));
 }
 
-// Under the parent domain, open a test file such that the child domain does has the `fd { use }`
+// Under the parent domain, open a test file such that the child domain does have the `fd { use }`
 // permission on the file descriptor, but does not have the `read` permission on the file. Then exec
 // into the child domain. The child program checks that the test file descriptor was remapped to the
 // null file.
@@ -465,6 +466,76 @@ TEST(InheritTest, SiginhAllowedIgnoredSignalDispositionsInherited) {
       perror("exec into child domain failed");
       FAIL();
     }
+  }));
+}
+
+// When the `rlimitinh` permission is denied, the parent's soft resource limits are reset during
+// `exec`.
+//
+// Check this for `RLIMIT_FSIZE` as a representative example where there is some leeway to
+// change the limits for testing purposes without interfering with the child program's execution.
+TEST(InheritTest, RlimitinhDeniedSoftRlimitReset) {
+  constexpr char kParentSecurityContext[] = "test_u:test_r:test_inherit_parent_t:s0";
+  constexpr char kChildSecurityContext[] = "test_u:test_r:test_inherit_child_no_rlimitinh_t:s0";
+  constexpr rlim_t kParentSoftRlimitValue = 12345;
+  constexpr rlim_t kParentHardRlimitValue = 67890;
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
+    struct rlimit prev_rlim = {};
+    ASSERT_THAT(getrlimit(RLIMIT_FSIZE, &prev_rlim), SyscallSucceeds());
+    ASSERT_GE(prev_rlim.rlim_max, kParentHardRlimitValue);
+
+    struct rlimit rlim = {.rlim_cur = kParentSoftRlimitValue, .rlim_max = kParentHardRlimitValue};
+    ASSERT_THAT(setrlimit(RLIMIT_FSIZE, &rlim), SyscallSucceeds());
+
+    std::string binary_name = "is_soft_rlimit_reset_bin";
+    std::string path_for_exec = PathForExec(binary_name);
+    std::string expect_soft_limit_reset = std::to_string(int(true));
+    std::string parent_soft_limit = std::to_string(kParentSoftRlimitValue);
+    std::string parent_hard_limit = std::to_string(kParentHardRlimitValue);
+    char* const args[] = {binary_name.data(), expect_soft_limit_reset.data(),
+                          parent_soft_limit.data(), parent_hard_limit.data(), nullptr};
+
+    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
+    ASSERT_TRUE(set_exec_context.is_ok());
+    SAFE_SYSCALL(execv(path_for_exec.data(), args));
+  }));
+}
+
+// When the `rlimitinh` permission is allowed, the parent's resource limits are preserved across
+// `exec`.
+//
+// Check this for `RLIMIT_FSIZE` as a representative example where there is some leeway to
+// change the limits for testing purposes without interfering with the child program's execution.
+TEST(InheritTest, RlimitinhAllowedRlimitsInherited) {
+  constexpr char kParentSecurityContext[] = "test_u:test_r:test_inherit_parent_t:s0";
+  constexpr char kChildSecurityContext[] = "test_u:test_r:test_inherit_child_allow_rlimitinh_t:s0";
+  constexpr rlim_t kParentSoftRlimitValue = 12345;
+  constexpr rlim_t kParentHardRlimitValue = 67890;
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
+    struct rlimit prev_rlim = {};
+    ASSERT_THAT(getrlimit(RLIMIT_FSIZE, &prev_rlim), SyscallSucceeds());
+    ASSERT_GE(prev_rlim.rlim_max, kParentHardRlimitValue);
+
+    struct rlimit rlim = {.rlim_cur = kParentSoftRlimitValue, .rlim_max = kParentHardRlimitValue};
+    ASSERT_THAT(setrlimit(RLIMIT_FSIZE, &rlim), SyscallSucceeds());
+
+    std::string binary_name = "is_soft_rlimit_reset_bin";
+    std::string path_for_exec = PathForExec(binary_name);
+    std::string expect_soft_limit_reset = std::to_string(int(false));
+    std::string parent_soft_limit = std::to_string(kParentSoftRlimitValue);
+    std::string parent_hard_limit = std::to_string(kParentHardRlimitValue);
+    char* const args[] = {binary_name.data(), expect_soft_limit_reset.data(),
+                          parent_soft_limit.data(), parent_hard_limit.data(), nullptr};
+
+    auto set_exec_context = WriteTaskAttr("exec", kChildSecurityContext);
+    ASSERT_TRUE(set_exec_context.is_ok());
+    SAFE_SYSCALL(execv(path_for_exec.data(), args));
   }));
 }
 

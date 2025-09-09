@@ -129,6 +129,7 @@ test_subprogram_names = [
   "is_duplicated_fd",
   "is_itimer_real_reset",
   "is_selinux_null_inode",
+  "is_soft_rlimit_reset",
   "ptrace_traceme",
   "stop",
   "true",
