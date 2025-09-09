@@ -51,6 +51,7 @@ PowerElementVisitor::PowerElementVisitor() {
   level_properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
       kLevelDependencies, 1u, /* required */ false));
   level_parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(level_properties));
+
   fdf_devicetree::Properties transition_properties = {};
   transition_properties.emplace_back(
       std::make_unique<fdf_devicetree::Uint32Property>(kTargetLevel, true));
@@ -58,10 +59,12 @@ PowerElementVisitor::PowerElementVisitor() {
       std::make_unique<fdf_devicetree::Uint32Property>(kLatencyUs, /* required */ false));
   transition_parser_ =
       std::make_unique<fdf_devicetree::PropertyParser>(std::move(transition_properties));
-}
 
-bool PowerElementVisitor::IsMatch(fdf_devicetree::Node& node) {
-  return node.parent() && node.name() == "power-elements";
+  fdf_devicetree::Properties reference_properties = {};
+  reference_properties.emplace_back(
+      std::make_unique<fdf_devicetree::ReferenceProperty>("power-elements", 0u, false));
+  reference_parser_ =
+      std::make_unique<fdf_devicetree::PropertyParser>(std::move(reference_properties));
 }
 
 std::optional<std::string> PowerElementVisitor::GetElementName(const std::string& node_name) {
@@ -75,25 +78,23 @@ std::optional<std::string> PowerElementVisitor::GetElementName(const std::string
 
 zx::result<> PowerElementVisitor::Visit(fdf_devicetree::Node& node,
                                         const devicetree::PropertyDecoder& decoder) {
-  if (!IsMatch(node)) {
+  auto result = reference_parser_->Parse(node);
+  if (result.is_error()) {
     return zx::ok();
   }
-
-  // Do not add System Activity Governor power elements.
-  if (node.parent().name() == "system-activity-governor") {
+  auto refs = result->Get<fdf_devicetree::References>("power-elements");
+  if (!refs) {
     return zx::ok();
   }
-
-  auto device_node = node.parent().GetNode();
-
-  for (auto& child : node.children()) {
+  auto power_elements_node = (*refs)[0].reference_node().GetNode();
+  for (auto& child : power_elements_node->children()) {
     auto element_config = ParsePowerElement(*child.GetNode());
     if (element_config.is_error()) {
       return element_config.take_error();
     }
     FDF_LOG(DEBUG, "Added power element '%s' to node '%s'.",
-            element_config->element()->name()->c_str(), device_node->name().c_str());
-    device_node->AddPowerConfig(*element_config);
+            element_config->element()->name()->c_str(), node.name().c_str());
+    node.AddPowerConfig(*element_config);
   }
 
   return zx::ok();
@@ -147,8 +148,7 @@ std::optional<ParentElement> PowerElementVisitor::GetParentElementFromLevelRef(
   // It's parent will be the power element node.
   if (!level_in_parent.parent() /*power-levels node*/ ||
       !level_in_parent.parent().parent() /*power element x*/ ||
-      !level_in_parent.parent().parent().parent() /*power-elements node*/ ||
-      !level_in_parent.parent().parent().parent().parent() /* device node*/) {
+      !level_in_parent.parent().parent().parent() /*power-elements node*/) {
     FDF_LOG(ERROR, "Power level reference node '%s' should be under a power-element node.",
             level_in_parent.name().c_str());
     return std::nullopt;
@@ -157,11 +157,11 @@ std::optional<ParentElement> PowerElementVisitor::GetParentElementFromLevelRef(
   // |level_in_parent| points to a x-element/power-levels/x-level. Get the pointer to the power
   // element.
   auto power_element = level_in_parent.parent().parent();
-  // |power_element| points to a device-x/power-elements/x-element. Get the pointer to the device
-  // node.
-  auto device_node = power_element.parent().parent();
+  auto power_elements_node = power_element.parent();
 
-  if (device_node.name() == "system-activity-governor") {
+  // Check if the power element is part of a specific device type.
+
+  if (power_elements_node.name() == "sag-power-elements") {
     if (power_element.name() == "execution-state-element") {
       return ParentElement::WithSag(SagElement::kExecutionState);
     }
@@ -173,7 +173,7 @@ std::optional<ParentElement> PowerElementVisitor::GetParentElementFromLevelRef(
     return std::nullopt;
   }
 
-  if (device_node.name() == "cpu") {
+  if (power_elements_node.name() == "cpu-power-elements") {
     if (power_element.name() == "cpu-element") {
       return ParentElement::WithCpuControl(CpuPowerElement::kCpu);
     }

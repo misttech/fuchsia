@@ -11,51 +11,46 @@
 	// sdk/lib/driver/devicetree/visitors/drivers/power/power-element/sag-power-element.yaml and
 	// fuchsia.power.system.PowerElements FIDL. For now this needs to be ensured manually.
 	// Eventually there will be schema validation and visitor generation based on FIDL.
-	system-activity-governor {
-		power-elements {
-			execution-state-element {
-				power-levels {
-					sag_execution_inactive: inactive-level {
-						level = <0>;
-					};
-					sag_execution_suspending: suspending-level {
-						level = <1>;
-					};
-					sag_execution_active: active-level {
-						level = <2>;
-					};
+	sag-power-elements {
+		execution-state-element {
+			power-levels {
+				sag_execution_inactive: inactive-level {
+					level = <0>;
+				};
+				sag_execution_suspending: suspending-level {
+					level = <1>;
+				};
+				sag_execution_active: active-level {
+					level = <2>;
 				};
 			};
-			application-activity-element {
-				power-levels {
-					sag_application_inactive: inactive-level {
-						level = <0>;
-					};
-					sag_application_active: active-level {
-						level = <1>;
-					};
+		};
+		application-activity-element {
+			power-levels {
+				sag_application_inactive: inactive-level {
+					level = <0>;
+				};
+				sag_application_active: active-level {
+					level = <1>;
 				};
 			};
 		};
 	};
-	cpu {
-		power-elements {
-			cpu-element {
-				power-levels {
-					off-level {
-						level = <0>;
-					};
-					cpu_on_level: on-level {
-						level = <1>;
-					};
-				};
-			};
-		};
-	};
-};
 
-&audio {
-	power-elements {
+	cpu-power-elements {
+		cpu-element {
+			power-levels {
+				off-level {
+					level = <0>;
+				};
+				cpu_on_level: on-level {
+					level = <1>;
+				};
+			};
+		};
+	};
+
+	audio_power_elements: audio-power-elements {
 		audio-hw-element {
 			power-levels {
 				off-level {
@@ -68,10 +63,8 @@
 			};
 		};
 	};
-};
 
-&sd_emmc_c {
-	power-elements {
+	sd_emmc_c_power_elements: sd-emmc-c-power-elements {
 		aml-sdmmc-hardware-element {
 			power-levels {
 				off-level {
@@ -105,10 +98,8 @@
 			};
 		};
 	};
-};
 
-&arm_mali {
-	power-elements {
+	arm_mali_power_elements: arm-mali-power-elements {
 		mali-gpu-hardware-element {
 			power-levels {
 				off-level {
@@ -133,4 +124,16 @@
 			};
 		};
 	};
+};
+
+&audio {
+	power-elements = <&audio_power_elements>;
+};
+
+&sd_emmc_c {
+	power-elements = <&sd_emmc_c_power_elements>;
+};
+
+&arm_mali {
+	power-elements = <&arm_mali_power_elements>;
 };
