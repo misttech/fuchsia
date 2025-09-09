@@ -665,6 +665,9 @@ async fn migrate_device(
     device: DeviceHolder,
     crypt: &Arc<dyn Crypt>,
 ) -> Result<DeviceHolder, Error> {
+    // We shouldn't need to touch disk until the end.
+    device.reopen(/*read_only=*/ true);
+
     let mut fxfs = FxFilesystemBuilder::new()
         .format(true)
         .trim_config(None)
@@ -675,6 +678,7 @@ async fn migrate_device(
         .expect("Failed to create fxfs filesystem builder");
 
     {
+
         let f2fs = Box::new(F2fsReader::open_device(fxfs.device()).await.expect("f2fs open ok"));
 
         fxfs.journal().set_filesystem_uuid(&f2fs.superblock.uuid).expect("set uuid");
@@ -727,7 +731,8 @@ async fn migrate_device(
         // Bump last_object_id to avoid an inode collision with data we just added.
         vol.maybe_bump_last_object_id(f2fs.max_ino() as u64).expect("bump last_object_id");
 
-        fxfs.finalize().await.expect("finalize");
+        // multi_write mutates the disk -- reopen rw.
+        fxfs.device().reopen(/*read_only=*/ false);
 
         for object_id in files_to_copy {
             let inode = f2fs.read_inode(object_id as u32).await?;
@@ -791,6 +796,12 @@ async fn migrate_device(
                 }
             }
         }
+
+        // finalize() mutates disk, leave as rw.
+        fxfs.finalize().await.expect("finalize");
+
+        // TODO(b/439971580): Double check that after finalize, we still don't allow any old
+        // extents to be deleted and we must not write to the super block.
 
         fxfs.close().await.expect("close fxfs");
     }
