@@ -226,6 +226,7 @@
                     "/bootstrap",
                     "/bootstrap/console-launcher",
                     "/bootstrap/fshost",
+                    "/core/system-update/system-updater",
                 ],
             },
             {
