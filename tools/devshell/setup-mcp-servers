@@ -13,7 +13,8 @@ show_help() {
 Usage: $0 [options]
 
 Options:
-  --project-only  Apply settings to the project only.
+  --project-only  Apply settings to the project only (~/fuchsia/.gemini/settings.json).
+  --extension     Install as a self-contained extension (in ~/.gemini/extensions/).
   --uninstall     Uninstall the MCP servers.
   --help          Show this help message.
 EOF
@@ -21,6 +22,7 @@ EOF
 
 PROJECT_ONLY=false
 UNINSTALL=false
+EXTENSION_MODE=false
 for arg in "$@"; do
   case "$arg" in
     --project-only)
@@ -31,6 +33,10 @@ for arg in "$@"; do
       UNINSTALL=true
       shift
       ;;
+    --extension)
+      EXTENSION_MODE=true
+      shift
+      ;;
     --help)
       show_help
       exit 0
@@ -38,7 +44,10 @@ for arg in "$@"; do
   esac
 done
 
-if [[ "${PROJECT_ONLY}" == "true" ]]; then
+if [[ "${EXTENSION_MODE}" == "true" ]]; then
+    SETTINGS_PATH="${HOME}/.gemini/extensions/fuchsia/gemini-extension.json"
+    mkdir -p "$(dirname "${SETTINGS_PATH}")"
+elif [[ "${PROJECT_ONLY}" == "true" ]]; then
     SETTINGS_PATH="${FUCHSIA_DIR}/.gemini/settings.json"
     mkdir -p "$(dirname "${SETTINGS_PATH}")"
 else
@@ -51,6 +60,10 @@ PYTHON_ARGS=("${SETTINGS_PATH}" "${FUCHSIA_DIR}")
 
 if [[ "${UNINSTALL}" == "true" ]]; then
     PYTHON_ARGS+=("--uninstall")
+fi
+
+if [[ "${EXTENSION_MODE}" == "true" ]]; then
+    PYTHON_ARGS+=("--extension")
 fi
 
 "${PYTHON_SCRIPT}" "${PYTHON_ARGS[@]}"
