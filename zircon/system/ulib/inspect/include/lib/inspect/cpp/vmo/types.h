@@ -261,7 +261,7 @@ class ExponentialHistogram final {
   // First slots are floor, initial_step, step_multiplier, and underflow.
   static const size_t kBucketOffset = 4;
 
-  // Get the number of buckets, which excludes the two parameter slots and the
+  // Get the number of buckets, which excludes the three parameter slots and the
   // two overflow slots.
   size_t BucketCount() { return array_size_ - 5; }
 
