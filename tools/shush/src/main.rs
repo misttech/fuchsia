@@ -14,7 +14,7 @@ mod owners;
 mod rollout;
 mod span;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use argh::FromArgs;
 use rustfix::Filter;
 
@@ -144,7 +144,7 @@ fn filter_from_str(s: &str) -> Result<Filter, String> {
     match s {
         "everything" => Ok(Filter::Everything),
         "machine-applicable" => Ok(Filter::MachineApplicableOnly),
-        _ => Err(format!("expected `everything` or `machine-applicable`")),
+        _ => Err("expected `everything` or `machine-applicable`".to_string()),
     }
 }
 
@@ -177,7 +177,7 @@ struct Allow {
 
 impl Allow {
     fn load_template(&self) -> Result<Option<String>> {
-        Ok(self.template.as_ref().map(|path| fs::read_to_string(path)).transpose()?)
+        Ok(self.template.as_ref().map(fs::read_to_string).transpose()?)
     }
 
     pub fn rollout_path(&self) -> &Path {
@@ -285,8 +285,7 @@ fn main() -> Result<()> {
                             rollout_path,
                             holding_component_name: allow_args
                                 .holding_component
-                                .as_ref()
-                                .map(String::as_str)
+                                .as_deref()
                                 .unwrap_or(DEFAULT_HOLDING_COMPONENT),
                         }
                     };

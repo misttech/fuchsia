@@ -38,7 +38,7 @@ if (is_host) {
     edition = "2021"
     deps = _deps
     sources = _sources
-    rustenv = [ "RUST_SYSROOT=$out_rustc_prefix" ]
+    configs += [ "//build/config/rust/lints:clippy_warn_all" ]
   }
 
   install_host_tools("install") {

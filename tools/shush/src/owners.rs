@@ -30,7 +30,7 @@ impl Owners {
         }
         let mut users = Vec::new();
         let mut component = None;
-        for line in BufReader::new(File::open(&filename)?).lines() {
+        for line in BufReader::new(File::open(filename)?).lines() {
             let line = line?;
             if let Some(cap) = USER.captures(&line) {
                 users.push(cap.get(1).unwrap().as_str().to_owned());
@@ -78,7 +78,7 @@ impl FileOwnership {
             .into_iter()
             .find(|o| !o.users.is_empty())
             .map(|o| o.users)
-            .unwrap_or_else(|| Vec::new());
+            .unwrap_or_else(Vec::new);
 
         Self { component, owners }
     }

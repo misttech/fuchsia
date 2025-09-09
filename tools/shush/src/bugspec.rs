@@ -47,7 +47,7 @@ impl Api for Bugspec {
     fn update_issue(&mut self, request: UpdateIssue) -> Result<()> {
         Command::new(&self.path)
             .arg("edit")
-            .arg(&format!("{}", request.id))
+            .arg(format!("{}", request.id))
             .run_with(&request.to_bugspec())?;
         Ok(())
     }
@@ -56,7 +56,7 @@ impl Api for Bugspec {
         const FUCHSIA_COMPONENT_ID: &str = "1360843";
 
         let text =
-            Command::new(&self.path).args(&["list-components", FUCHSIA_COMPONENT_ID]).run()?;
+            Command::new(&self.path).args(["list-components", FUCHSIA_COMPONENT_ID]).run()?;
 
         let mut results = Vec::new();
         for line in text.lines() {

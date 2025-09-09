@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use rustfix::{Filter, Suggestion};
 
 use std::collections::{HashMap, HashSet};
@@ -47,7 +47,7 @@ pub fn fix<R: BufRead>(
             1,
         );
         let file = suggestion.solutions[0].replacements[0].snippet.file_name.clone();
-        source_files.entry(file).or_insert_with(Vec::new).push(suggestion);
+        source_files.entry(file).or_default().push(suggestion);
     }
 
     for (source_file, suggestions) in &source_files {

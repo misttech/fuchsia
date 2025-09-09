@@ -13,7 +13,7 @@ pub trait Api {
     fn list_components(&mut self) -> Result<Vec<Component>>;
 }
 
-impl<'a> Api for &'a mut dyn Api {
+impl Api for &mut dyn Api {
     fn create_issue(&mut self, request: CreateIssue) -> Result<IssueId> {
         (*self).create_issue(request)
     }
@@ -85,8 +85,7 @@ impl CreateIssue {
         writeln!(&mut result, "STATUS={}", self.status).unwrap();
         writeln!(&mut result, "COMPONENT={}", self.component).unwrap();
         if !self.blocking_issues.is_empty() {
-            write!(&mut result, "BLOCKED_BY+={}", self.blocking_issues.iter().next().unwrap())
-                .unwrap();
+            write!(&mut result, "BLOCKED_BY+={}", self.blocking_issues.first().unwrap()).unwrap();
             for issue in self.blocking_issues.iter().skip(1) {
                 write!(&mut result, ",{}", issue).unwrap();
             }

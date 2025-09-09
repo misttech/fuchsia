@@ -14,7 +14,7 @@ use std::path::Path;
 
 use crate::api::Api;
 use crate::issues::IssueTemplate;
-use crate::lint::{filter_lints, Lint, LintFile};
+use crate::lint::{Lint, LintFile, filter_lints};
 use crate::owners::FileOwnership;
 use crate::span::Span;
 
@@ -220,7 +220,7 @@ fn apply_insertions(
     for (line, lints) in insertions.into_iter().rev() {
         // lines are 1 indexed in diagnostics
         assert_ne!(line, 0, "Didn't narrow span at all");
-        let to_annotate = lines[line - 1].to_owned();
+        let to_annotate = lines[line - 1].clone();
         // this should copy the exact whitespace from the line after, including tabs
         let indent = &to_annotate
             [0..to_annotate.find(|c: char| !c.is_whitespace()).unwrap_or(to_annotate.len())];

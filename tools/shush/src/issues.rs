@@ -152,7 +152,7 @@ impl<'a> IssueTemplate<'a> {
 
         if let Some(component_name) = &ownership.component {
             write!(title, " in {}", component_name)?;
-            if let Some(c) = component_defs.get(&component_name) {
+            if let Some(c) = component_defs.get(component_name) {
                 component = Some(c);
             } else {
                 eprintln!(
