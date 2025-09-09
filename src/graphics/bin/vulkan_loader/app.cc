@@ -177,14 +177,46 @@ zx_status_t LoaderApp::InitDebugFs() {
   return ZX_OK;
 }
 
+// TODO(b/435953902) - Remove this check
+static void CheckForDirectory(const char* path) {
+  namespace fio = fuchsia_io;
+
+  zx::result dir = component::OpenServiceRoot(path);
+  if (dir.is_error()) {
+    FX_PLOGS(ERROR, dir.error_value()) << "Failed to open " << path;
+    return;
+  }
+
+  zx::result endpoints = fidl::CreateEndpoints<fio::DirectoryWatcher>();
+  if (endpoints.is_error()) {
+    return;
+  }
+
+  auto result = fidl::WireCall(dir.value())->Watch(fio::wire::WatchMask::kAdded | fio::wire::WatchMask::kExisting |
+                  fio::wire::WatchMask::kIdle,
+              0, std::move(endpoints->server));
+  if (!result.ok()) {
+    FX_LOGS(ERROR) << "Calling Watch failed " << zx_status_get_string(result.status());
+    return;
+  }
+  if (result.value().s != ZX_OK) {
+    FX_LOGS(ERROR) << "Watch failed " << zx_status_get_string(result.value().s);
+    return;
+  }
+  FX_LOGS(INFO) << "*** Vulkan Loader Successfully connected to " << path;
+}
+
 zx_status_t LoaderApp::InitDeviceWatcher() {
   FIT_DCHECK_IS_THREAD_VALID(main_thread_);
 
   if (allow_magma_icds_) {
+    CheckForDirectory("/svc/fuchsia.gpu.magma.Service");
     auto gpu_watcher_token = GetPendingActionToken();
     gpu_watcher_ = fsl::DeviceWatcher::CreateWithIdleCallback(
         "/svc/fuchsia.gpu.magma.Service",
         [this](const fidl::ClientEnd<fuchsia_io::Directory>& dir, const std::string& filename) {
+          // TODO(b/435953902) - remove this logging
+          FX_LOGS(INFO) << "*** Vulkan loader found file " << filename;
           zx::result device = MagmaDevice::Create(this, dir, filename + "/device", &devices_node_);
           if (device.is_ok()) {
             devices_.emplace_back(std::move(*device));
