@@ -72,6 +72,7 @@ fuchsia_test_package("factory-reset-handler-test") {
   deps = [
     "//src/cobalt/bin/testing/fake_cobalt:component_v2",
     "//src/graphics/display/testing/fake-display-stack-host:component",
+    "//src/graphics/display/testing/fake-display-stack-host:default-config-values",
     "//src/ui/a11y/testing:fake-a11y-manager",
     "//src/ui/bin/scene_manager:scene_manager_component_for_test",
     "//src/ui/testing/ui_test_realm:scenic_with_config",

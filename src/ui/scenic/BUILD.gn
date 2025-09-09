@@ -123,6 +123,7 @@ fuchsia_unittest_package(
   deps = [
            "lib/flatland/engine/tests/pixeltests:pixeltests_with_fake_display",
            "//src/graphics/display/testing/fake-display-stack-host:component",
+           "//src/graphics/display/testing/fake-display-stack-host:default-config-values",
          ] + scenic_test_deps
   test_specs = {
     log_settings = {
@@ -143,6 +144,7 @@ fuchsia_unittest_package("flatland_display_compositor_smoketests") {
   deps = [
            "lib/flatland/engine/tests/smoketests:smoketests_with_fake_display",
            "//src/graphics/display/testing/fake-display-stack-host:component",
+           "//src/graphics/display/testing/fake-display-stack-host:default-config-values",
          ] + scenic_test_deps
   test_specs = {
     log_settings = {
@@ -197,6 +199,7 @@ fuchsia_unittest_package("flatland_renderer_display_unittests") {
   deps = [
            "lib/flatland/renderer/tests:display_unittests",
            "//src/graphics/display/testing/fake-display-stack-host:component",
+           "//src/graphics/display/testing/fake-display-stack-host:default-config-values",
          ] + scenic_test_deps
   test_specs = {
     log_settings = {

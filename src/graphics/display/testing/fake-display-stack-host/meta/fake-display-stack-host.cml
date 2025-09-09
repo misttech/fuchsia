@@ -26,4 +26,9 @@
             from: "self",
         },
     ],
+    config: {
+        active_width_px: { type: "uint32" },
+        active_height_px: { type: "uint32" },
+        refresh_rate_millihertz: { type: "uint32" },
+    },
 }
