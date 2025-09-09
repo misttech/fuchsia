@@ -35,7 +35,7 @@ use fidl::HandleBased;
 use fidl::encoding::ProxyChannelBox;
 use fidl::endpoints::RequestStream;
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
-use fuchsia_inspect::{HistogramProperty, Property};
+use fuchsia_inspect::{HistogramProperty, NumericProperty, Property};
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
 use futures::{StreamExt, TryStreamExt};
@@ -1024,6 +1024,8 @@ async fn wake_timer_loop(
             buckets: 16,
         },
     );
+    let boot_deadlines_count_prop = inspect.create_uint("boot_deadlines_count", 0);
+    let utc_deadlines_count_prop = inspect.create_uint("utc_deadlines_count", 0);
     // Internals of what was programmed into the wake alarms hardware.
     let hw_node = inspect.create_child("hardware");
     let current_hw_deadline_prop = hw_node.create_string("current_deadline", "");
@@ -1063,7 +1065,14 @@ async fn wake_timer_loop(
                     }
                 }
                 let deadline_boot = deadline.as_boot(&*utc_transform.borrow());
+
+                // Bookkeeping, record the incidence of deadline types.
                 deadline_histogram_prop.insert((deadline_boot - now).into_nanos());
+                match deadline {
+                    timers::Deadline::Boot(_) => boot_deadlines_count_prop.add(1),
+                    timers::Deadline::Utc(_) => utc_deadlines_count_prop.add(1),
+                };
+
                 if timers::Heap::expired(now, deadline_boot) {
                     trace::duration!(c"alarms", c"Cmd::Start:immediate");
                     fuchsia_trace::flow_step!(
@@ -2368,6 +2377,8 @@ mod tests {
                 requested_deadlines_ns: AnyProperty,
                 schedule_delay_ns: AnyProperty,
                 slack_ns: AnyProperty,
+                boot_deadlines_count: AnyProperty,
+                utc_deadlines_count: AnyProperty,
             },
         });
     }
