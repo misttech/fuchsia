@@ -22,6 +22,7 @@ High resolution timers driver control.
 
 Usage:
   hrtimer-ctl [-d|--device <device>] -i|--id <id> -e|--event <timer_seconds>
+  hrtimer-ctl [-d|--device <device>] -i|--id <id> -n|--event_no_wait <timer_seconds>
   hrtimer-ctl [-d|--device <device>] -i|--id <id> -r|--runtime
   hrtimer-ctl [-d|--device <device>] -i|--id <id> -s|--stop
   hrtimer-ctl [-d|--device <device>] -i|--id <id> [-k|--keep_alive <keep_alive_seconds>]
@@ -32,21 +33,24 @@ Usage:
 
 constexpr char kUsageDetails[] = R"""(
 Options:
-  -d, --device      Specifies the device path, either full path specified e.g.
-                    /dev/class/hrtimer/1234abcd, or only the devfs name specified e.g. 1234abcd, or
-                    unspecified (picks the first device in /dev/class/hrtimer).
-                    If specified, must be listed before other options.
-  -e, --event       Starts timer for <timer_seconds> and waits for its expiration via event if
-                    supported.
-  -w, --wait        Starts timer for <timer_seconds> and waits for its expiration if supported.
-  -h, --help        Show list of command-line options
-  -i, --id          Specifies the timer id. Must be listed before --event, --wait, --runtime and
-                    --stop.
-  -k, --keep_alive  Specifies an amount of seconds to hold a keep alive lease returned by --wait.
-                    Optionally listed before --wait.
-  -p, --properties  Retrieves properties of the driver.
-  -r, --runtime     Retrieves a timer runtime in ticks.
-  -s, --stop        Stops a timer. Note it does not cancel an event wait by --event or --wait.
+  -d, --device        Specifies the device path, either full path specified e.g.
+                      /dev/class/hrtimer/1234abcd, or only the devfs name specified e.g. 1234abcd,
+                      or unspecified (picks the first device in /dev/class/hrtimer).
+                      If specified, must be listed before other options.
+  -e, --event         Starts timer for <timer_seconds> and waits for its expiration via event if
+                      supported.
+  -n, --event_no_wait Starts timer for <timer_seconds> with an event but does not wait for its
+                      expiration. Returns immediately.
+  -w, --wait          Starts timer for <timer_seconds> and waits for its expiration using
+                      StartAndWait.
+  -h, --help          Show list of command-line options
+  -i, --id            Specifies the timer id. Must be listed before --event, --wait, --runtime and
+                      --stop.
+  -k, --keep_alive    Specifies an amount of seconds to hold a keep alive lease returned by --wait.
+                      Optionally listed before --wait.
+  -p, --properties    Retrieves properties of the driver.
+  -r, --runtime       Retrieves a timer runtime in ticks.
+  -s, --stop          Stops a timer. Note it does not cancel an event wait by --event or --wait.
 
 Examples:
 
@@ -59,7 +63,7 @@ Waiting on event...
 Event trigged
 $
 
-Start timer id 0 for 5 seconds and waits for its expiration, preventing system suspension
+Start timer id 0 for 5 seconds and waits for its expiration, preventing system suspension:
 $ hrtimer-ctl --id 0 --keep_alive 15 --wait 5
 Executing on device /dev/class/hrtimer/9d14a831
 Starting timer...
@@ -67,7 +71,21 @@ Timer triggered
 Holding keep alive...
 Keep alive released
 $
+
+Start timer id 1 for 5 seconds without wait, this returned immediately:
+$ hrtimer-ctl -i 1 -n 5
+hrtimer-ctExecuting on device /dev/class/hrtimer/2253967
+Setting event...
+Starting timer...
+Timer started
+$
 )""";
+
+enum TimerType {
+  StartAndWait,
+  Event,
+  EventNoWait,
+};
 
 template <typename T>
 std::string ToString(const T& value) {
@@ -107,7 +125,7 @@ fidl::SyncClient<fuchsia_hardware_hrtimer::Device> GetHrtimerClient(std::string 
   return fidl::SyncClient<fuchsia_hardware_hrtimer::Device>(std::move(connector.value()));
 }
 
-int StartTimer(std::string path, std::optional<uint64_t> id, bool is_wait, int64_t timer_seconds,
+int StartTimer(std::string path, std::optional<uint64_t> id, TimerType type, int64_t timer_seconds,
                std::optional<uint64_t> keep_alive_seconds) {
   auto client = GetHrtimerClient(path);
 
@@ -137,7 +155,7 @@ int StartTimer(std::string path, std::optional<uint64_t> id, bool is_wait, int64
   }
 
   zx::event event;
-  if (!is_wait) {
+  if (type == TimerType::Event || type == TimerType::EventNoWait) {
     if (!supports_event) {
       std::cerr << "Events not supported" << std::endl;
       return -1;
@@ -159,7 +177,7 @@ int StartTimer(std::string path, std::optional<uint64_t> id, bool is_wait, int64
   std::cout << "Starting timer..." << std::endl;
   uint64_t ticks = static_cast<uint64_t>(zx::sec(timer_seconds).to_nsecs() / resolution_nsecs);
 
-  if (is_wait) {
+  if (type == TimerType::StartAndWait) {
     if (!supports_wait) {
       std::cerr << "Waiting on timer not supported" << std::endl;
       return -1;
@@ -200,7 +218,7 @@ int StartTimer(std::string path, std::optional<uint64_t> id, bool is_wait, int64
   std::cout << "Timer started" << std::endl;
   // LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/affordances/starnix/system_power_state_controller.py)
 
-  if (!is_wait) {
+  if (type == TimerType::Event) {
     if (supports_event) {
       std::cout << "Waiting on event..." << std::endl;
       zx_signals_t signals;
@@ -222,11 +240,12 @@ int main(int argc, char** argv) {
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},        {"device", required_argument, 0, 'd'},
         {"runtime", no_argument, 0, 'r'},     {"stop", no_argument, 0, 's'},
-        {"event", required_argument, 0, 'e'}, {"wait", required_argument, 0, 'w'},
+        {"event", required_argument, 0, 'e'}, {"event_no_wait", required_argument, 0, 'n'},
+        {"wait", required_argument, 0, 'w'},  // StartAndWait.
         {"id", required_argument, 0, 'i'},    {"keep_alive", required_argument, 0, 'k'},
         {"properties", no_argument, 0, 'p'},  {0, 0, 0, 0}};
 
-    int c = getopt_long(argc, argv, "hd:rse:w:k:i:p", long_options, 0);
+    int c = getopt_long(argc, argv, "hd:rse:n:w:k:i:p", long_options, 0);
     if (c == -1)
       break;
 
@@ -293,6 +312,8 @@ int main(int argc, char** argv) {
 
       case 'e':
         [[fallthrough]];
+      case 'n':
+        [[fallthrough]];
       case 'w': {
         if (!id) {
           break;
@@ -304,7 +325,20 @@ int main(int argc, char** argv) {
           return -1;
         }
 
-        return StartTimer(path, id, c == 'w', timer_seconds, keep_alive_seconds);
+        TimerType type;
+        switch (c) {
+          case 'w':
+            type = TimerType::StartAndWait;
+            break;
+          case 'n':
+            type = TimerType::EventNoWait;
+            break;
+          case 'e':
+            type = TimerType::Event;
+            break;
+        }
+
+        return StartTimer(path, id, type, timer_seconds, keep_alive_seconds);
       }
 
       case 'p': {
