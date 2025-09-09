@@ -114,7 +114,7 @@ impl Scalar {
 }
 
 // All fidl transport errors should be considered as error, and converted to IO error.
-fn fidl_error_to_erno(info: &str, error: fidl::Error) -> starnix_uapi::errors::Errno {
+fn fidl_error_to_errno(info: &str, error: fidl::Error) -> starnix_uapi::errors::Errno {
     log_error!("{}: {:?}", info, error);
     errno!(EIO)
 }
@@ -197,8 +197,8 @@ impl Alloc for SystemHeap {
         let vmo = self
             .device
             .allocate(size, zx::MonotonicInstant::INFINITE)
-            .map_err(|e| fidl_error_to_erno("SystemHeap::alloc allocate call", e))?
-            .map_err(|e| zx_i32_to_errno("SystemHeap::alloc allocate call", e))?;
+            .map_err(|e| fidl_error_to_errno("allocate call", e))?
+            .map_err(|e| zx_i32_to_errno("allocate", e))?;
 
         log_debug!("allocated vmo with koid {:?}", vmo.get_koid());
 
@@ -333,34 +333,51 @@ impl FastRPCFile {
         };
 
         let session = self.get_session(locked)?;
-        session
-            .invoke(
-                current_task.get_tid(),
-                info.handle,
-                scalar.method_id() as u32,
-                payload_buffer_id,
-                payload.input_args,
-                payload.output_args,
-                zx::MonotonicInstant::INFINITE,
-            )
-            .map_err(|e| fidl_error_to_erno("Session Invoke", e))?
-            .map_err(|e| retval_i32_to_errno("Session Invoke", e))?;
+        let invoke_res = session.invoke(
+            current_task.get_tid(),
+            info.handle,
+            scalar.method_id() as u32,
+            payload_buffer_id,
+            payload.input_args,
+            payload.output_args,
+            zx::MonotonicInstant::INFINITE,
+        );
 
-        if let Some(payload_buffer) = &payload.payload_buffer {
-            self.process_out_bufs(
-                current_task,
-                &remote_bufs,
-                &payload_buffer.vmo,
-                &payload.output_info,
-                inbufs,
-            )?;
-        }
+        let buffer_after_invoke = |success: bool| -> Result<(), Errno> {
+            if success {
+                if let Some(buffer) = &payload.payload_buffer {
+                    self.process_out_bufs(
+                        current_task,
+                        &remote_bufs,
+                        &buffer.vmo,
+                        &payload.output_info,
+                        inbufs,
+                    )?;
+                }
+            }
 
-        if let Some(payload_buffer) = payload.payload_buffer {
-            self.inner_state.lock(locked).payload_vmos.push_back(payload_buffer);
+            if let Some(buffer) = payload.payload_buffer {
+                log_debug!("returning payload buffer {}", buffer.id);
+                self.inner_state.lock(locked).payload_vmos.push_back(buffer);
+            };
+
+            Ok(())
         };
 
-        Ok(SUCCESS)
+        match invoke_res {
+            Ok(Ok(())) => {
+                buffer_after_invoke(true)?;
+                Ok(SUCCESS)
+            }
+            Ok(Err(e)) => {
+                buffer_after_invoke(false)?;
+                Err(retval_i32_to_errno("invoke", e))
+            }
+            Err(e) => {
+                buffer_after_invoke(false)?;
+                Err(fidl_error_to_errno("invoke call", e))
+            }
+        }
     }
 
     fn get_session(
@@ -378,8 +395,8 @@ impl FastRPCFile {
         let capabilities = self
             .device
             .get_capabilities(zx::MonotonicInstant::INFINITE)
-            .map_err(|e| fidl_error_to_erno("Session GetCapabilities", e))?
-            .map_err(|e| retval_i32_to_errno("Session GetCapabilities", e))?;
+            .map_err(|e| fidl_error_to_errno("get_capabilities call", e))?
+            .map_err(|e| retval_i32_to_errno("get_capabilities", e))?;
 
         let mut res: [u32; FASTRPC_MAX_DSP_ATTRIBUTES] = [0; FASTRPC_MAX_DSP_ATTRIBUTES];
         let attribute_buffer_length = FASTRPC_MAX_DSP_ATTRIBUTES - 1;
@@ -447,7 +464,7 @@ impl FastRPCFile {
                             .ok_or_else(|| errno!(EBADF))?
                             .duplicate_handle(fidl::Rights::SAME_RIGHTS)
                             .map_err(|e| {
-                                zx_status_to_errno("parse invoke request duplicate vmo", e)
+                                zx_status_to_errno("parse_invoke_request duplicate_handle", e)
                             })?;
 
                         fd_vmos.push(Some(fd_vmo));
@@ -592,9 +609,7 @@ impl FastRPCFile {
             if mm_vmo.get_koid()
                 == fd_vmo
                     .basic_info()
-                    .map_err(|e| {
-                        zx_status_to_errno("get_mapped_memory_and_offset get handle basic info", e)
-                    })?
+                    .map_err(|e| zx_status_to_errno("get_mapped_memory_and_offset basic_info", e))?
                     .koid
             {
                 log_debug!(
@@ -625,6 +640,7 @@ impl FastRPCFile {
         } else {
             let payload_buffer =
                 inner_state.lock(locked).payload_vmos.pop_front().ok_or_else(|| errno!(ENOBUFS))?;
+            log_debug!("selected payload buffer {}", payload_buffer.id);
             Some(payload_buffer)
         };
 
@@ -680,7 +696,7 @@ impl FastRPCFile {
 
                     let vmo = &payload_buffer.as_ref().expect("payload buffer").vmo;
                     vmo.write(buf_data.as_slice(), offset)
-                        .map_err(|e| zx_status_to_errno("get_payload_info write to vmo", e))?;
+                        .map_err(|e| zx_status_to_errno("get_payload_info write", e))?;
                 }
 
                 input_args.push((merged_buffer.buffer_index, entry));
@@ -712,6 +728,13 @@ impl FastRPCFile {
         output_infos: &Vec<OutputArgumentInfo>,
         inbufs: u32,
     ) -> Result<(), Errno> {
+        let max_len = output_infos.iter().filter(|i| !i.mapped).map(|i| i.length).max();
+        let Some(max_len) = max_len else {
+            return Ok(());
+        };
+
+        let mut read_vec = vec![0; max_len as usize];
+
         for (output_index, output_info) in output_infos.iter().enumerate() {
             if output_info.mapped {
                 continue;
@@ -720,13 +743,16 @@ impl FastRPCFile {
                 continue;
             }
 
-            let buf_data =
-                payload_vmo.read_to_vec(output_info.offset, output_info.length).map_err(|e| {
-                    zx_status_to_errno("process_out_bufs read response from the vmo", e)
-                })?;
-
             let buf = &remote_bufs[output_index + inbufs as usize];
-            let _ = current_task.write_memory(buf.pv.into(), buf_data.as_slice())?;
+
+            assert_eq!(buf.len, output_info.length);
+
+            payload_vmo
+                .read(&mut read_vec[0..output_info.length as usize], output_info.offset)
+                .map_err(|e| zx_status_to_errno("process_out_bufs read", e))?;
+
+            let _ = current_task
+                .write_memory(buf.pv.into(), &read_vec[0..output_info.length as usize])?;
         }
         Ok(())
     }
@@ -783,8 +809,8 @@ impl FileOps for FastRPCFile {
                 let device_channel_id = self
                     .device
                     .get_channel_id(zx::MonotonicInstant::INFINITE)
-                    .map_err(|e| fidl_error_to_erno("get_channel_id", e))?
-                    .map_err(|e| zx_i32_to_errno("FASTRPC_IOCTL_GETINFO get_channel_id call", e))?;
+                    .map_err(|e| fidl_error_to_errno("get_channel_id call", e))?
+                    .map_err(|e| zx_i32_to_errno("get_channel_id", e))?;
 
                 if device_channel_id != channel_id {
                     return error!(EPERM);
@@ -855,13 +881,13 @@ impl FileOps for FastRPCFile {
 
                         self.device
                             .attach_root_domain(server, zx::MonotonicInstant::INFINITE)
-                            .map_err(|e| fidl_error_to_erno("attach_root_domain", e))?
+                            .map_err(|e| fidl_error_to_errno("attach_root_domain call", e))?
                             .map_err(|e| retval_i32_to_errno("attach_root_domain", e))?;
 
                         inner.payload_vmos = client
-                            .get_payload_buffer_set(25, zx::MonotonicInstant::INFINITE)
-                            .map_err(|e| fidl_error_to_erno("get_payload_buffer_set", e))?
-                            .map_err(|e| retval_i32_to_errno("get_payload_buffer_set", e))?
+                            .get_payload_buffer_set(3, zx::MonotonicInstant::INFINITE)
+                            .map_err(|e| fidl_error_to_errno("get_payload_buffer_set call", e))?
+                            .map_err(|e| zx_i32_to_errno("get_payload_buffer_set", e))?
                             .into();
 
                         inner.session = Some(Arc::new(client));
@@ -884,13 +910,13 @@ impl FileOps for FastRPCFile {
                                 server,
                                 zx::MonotonicInstant::INFINITE,
                             )
-                            .map_err(|e| fidl_error_to_erno("create_static_domain", e))?
+                            .map_err(|e| fidl_error_to_errno("create_static_domain call", e))?
                             .map_err(|e| retval_i32_to_errno("create_static_domain", e))?;
 
                         inner.payload_vmos = client
-                            .get_payload_buffer_set(25, zx::MonotonicInstant::INFINITE)
-                            .map_err(|e| fidl_error_to_erno("get_payload_buffer_set", e))?
-                            .map_err(|e| retval_i32_to_errno("get_payload_buffer_set", e))?
+                            .get_payload_buffer_set(3, zx::MonotonicInstant::INFINITE)
+                            .map_err(|e| fidl_error_to_errno("get_payload_buffer_set call", e))?
+                            .map_err(|e| zx_i32_to_errno("get_payload_buffer_set", e))?
                             .into();
 
                         inner.session = Some(Arc::new(client));
