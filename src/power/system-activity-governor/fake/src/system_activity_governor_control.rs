@@ -12,7 +12,7 @@ use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::lock::Mutex;
 use futures::prelude::*;
 use log::error;
-use power_broker_client::{basic_update_fn_factory, run_power_element, PowerElementContext};
+use power_broker_client::{PowerElementContext, basic_update_fn_factory};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -79,14 +79,7 @@ impl SystemActivityGovernorControl {
         );
         let aac_context = application_activity_controller.clone();
         fasync::Task::local(async move {
-            run_power_element(
-                &aac_context.name(),
-                &aac_context.required_level,
-                0,    /* initial_level */
-                None, /* inspect_node */
-                basic_update_fn_factory(&aac_context),
-            )
-            .await;
+            aac_context.run(None /* inspect_node */, basic_update_fn_factory(&aac_context)).await;
         })
         .detach();
 

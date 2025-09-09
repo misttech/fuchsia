@@ -4,9 +4,7 @@
 
 use anyhow::{Error, Result};
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
-use power_broker_client::{
-    self as client_lib, run_power_element, PowerElementContext, BINARY_POWER_LEVELS,
-};
+use power_broker_client::{self as client_lib, BINARY_POWER_LEVELS, PowerElementContext};
 use {fidl_fuchsia_power_broker as fpb, fuchsia_async as fasync};
 
 async fn build_power_broker_realm() -> Result<RealmInstance, Error> {
@@ -33,7 +31,7 @@ mod tests {
     use super::*;
     use futures::channel::mpsc;
     use futures::future::FutureExt;
-    use futures::{pin_mut, StreamExt};
+    use futures::{StreamExt, pin_mut};
     use std::sync::Arc;
     use zx::{self as zx, HandleBased};
 
@@ -56,22 +54,20 @@ mod tests {
         let dep_token = provider.assertive_dependency_token().unwrap();
 
         let runner_task = fasync::Task::local(async move {
-            run_power_element(
-                &provider.name(),
-                &provider.required_level,
-                OFF,
-                None,
-                Box::new(move |power_level| {
-                    let current_level_proxy = current_level_proxy.clone();
-                    let provider_level_sender = provider_level_sender.clone();
-                    async move {
-                        current_level_proxy.update(power_level).await.unwrap().unwrap();
-                        provider_level_sender.unbounded_send(power_level).unwrap();
-                    }
-                    .boxed_local()
-                }),
-            )
-            .await;
+            provider
+                .run(
+                    None,
+                    Box::new(move |power_level| {
+                        let current_level_proxy = current_level_proxy.clone();
+                        let provider_level_sender = provider_level_sender.clone();
+                        async move {
+                            current_level_proxy.update(power_level).await.unwrap().unwrap();
+                            provider_level_sender.unbounded_send(power_level).unwrap();
+                        }
+                        .boxed_local()
+                    }),
+                )
+                .await;
         });
 
         Ok((dep_token, provider_level_receiver, runner_task))
@@ -183,22 +179,20 @@ mod tests {
         let dep_token = provider.assertive_dependency_token().unwrap();
 
         fasync::Task::local(async move {
-            run_power_element(
-                &provider.name(),
-                &provider.required_level,
-                OFF,
-                None,
-                Box::new(move |power_level| {
-                    let provider_lock = provider_lock.clone();
-                    let current_level_proxy = current_level_proxy.clone();
-                    async move {
-                        let _ = provider_lock.lock().await;
-                        current_level_proxy.update(power_level).await.unwrap().unwrap();
-                    }
-                    .boxed_local()
-                }),
-            )
-            .await;
+            provider
+                .run(
+                    None,
+                    Box::new(move |power_level| {
+                        let provider_lock = provider_lock.clone();
+                        let current_level_proxy = current_level_proxy.clone();
+                        async move {
+                            let _ = provider_lock.lock().await;
+                            current_level_proxy.update(power_level).await.unwrap().unwrap();
+                        }
+                        .boxed_local()
+                    }),
+                )
+                .await;
         })
         .detach();
 

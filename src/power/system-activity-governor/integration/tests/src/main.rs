@@ -14,7 +14,7 @@ use fidl_test_systemactivitygovernor::RealmOptions;
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
-use power_broker_client::{PowerElementContext, basic_update_fn_factory, run_power_element};
+use power_broker_client::{PowerElementContext, basic_update_fn_factory};
 use realm_proxy_client::RealmProxyClient;
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -111,14 +111,7 @@ async fn create_suspend_topology(realm: &RealmProxyClient) -> Result<Arc<PowerEl
     );
     let sc_context = suspend_controller.clone();
     fasync::Task::local(async move {
-        run_power_element(
-            &sc_context.name(),
-            &sc_context.required_level,
-            0,    /* initial_level */
-            None, /* inspect_node */
-            basic_update_fn_factory(&sc_context),
-        )
-        .await;
+        sc_context.run(None /* inspect_node */, basic_update_fn_factory(&sc_context)).await;
     })
     .detach();
 
@@ -2058,23 +2051,21 @@ async fn create_cpu_driver_topology(
         let update_fn = Arc::new(basic_update_fn_factory(&cpu_driver_context));
         let cpu_driver_power_level = cpu_driver_power_level2.clone();
 
-        run_power_element(
-            &cpu_driver_context.name(),
-            &cpu_driver_context.required_level,
-            0,    /* initial_level */
-            None, /* inspect_node */
-            Box::new(move |new_power_level: fbroker::PowerLevel| {
-                let update_fn = update_fn.clone();
-                let cpu_driver_power_level = cpu_driver_power_level.clone();
+        cpu_driver_context
+            .run(
+                None, /* inspect_node */
+                Box::new(move |new_power_level: fbroker::PowerLevel| {
+                    let update_fn = update_fn.clone();
+                    let cpu_driver_power_level = cpu_driver_power_level.clone();
 
-                async move {
-                    cpu_driver_power_level.set(new_power_level);
-                    update_fn(new_power_level).await;
-                }
-                .boxed_local()
-            }),
-        )
-        .await;
+                    async move {
+                        cpu_driver_power_level.set(new_power_level);
+                        update_fn(new_power_level).await;
+                    }
+                    .boxed_local()
+                }),
+            )
+            .await;
     })
     .detach();
 

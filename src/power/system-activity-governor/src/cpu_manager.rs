@@ -11,13 +11,12 @@ use fuchsia_inspect::Node as INode;
 use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::lock::Mutex;
 use futures::{FutureExt, StreamExt};
-use power_broker_client::{run_power_element, PowerElementContext};
+use power_broker_client::PowerElementContext;
 use std::cell::OnceCell;
 use std::rc::Rc;
 use {
     fidl_fuchsia_hardware_power_suspend as fhsuspend, fidl_fuchsia_power_broker as fbroker,
-    fidl_fuchsia_power_suspend as fsuspend, fidl_fuchsia_power_system as fsystem,
-    fuchsia_async as fasync,
+    fidl_fuchsia_power_suspend as fsuspend, fuchsia_async as fasync,
 };
 
 /// The result of a suspend request.
@@ -253,16 +252,6 @@ impl CpuManager {
         }
     }
 
-    /// Gets a copy of the name of the CPU power element.
-    async fn name(&self) -> String {
-        self.inner.lock().await.cpu.name().to_string()
-    }
-
-    /// Gets a copy of the RequiredLevelProxy of the CPU power element.
-    async fn required_level_proxy(&self) -> fbroker::RequiredLevelProxy {
-        self.inner.lock().await.cpu.required_level.clone()
-    }
-
     pub async fn cpu(&self) -> Rc<PowerElementContext> {
         self.inner.lock().await.cpu.clone()
     }
@@ -373,11 +362,7 @@ impl CpuManager {
         // `inner` going out of scope, other tasks can modify flags and update the power level of
         // CPU power element.
         listener.on_suspend_ended().await;
-        if suspend_failed {
-            SuspendResult::Fail
-        } else {
-            SuspendResult::Success
-        }
+        if suspend_failed { SuspendResult::Fail } else { SuspendResult::Success }
     }
 
     pub fn run(self: &Rc<Self>, power_elements_node: &INode) {
@@ -409,13 +394,9 @@ impl CpuManager {
         let cpu_node = power_elements_node.create_child("cpu");
 
         fasync::Task::local(async move {
-            let element_name = cpu_manager.name().await;
-            let required_level = cpu_manager.required_level_proxy().await;
+            let cpu = cpu_manager.cpu().await;
 
-            run_power_element(
-                &element_name,
-                &required_level,
-                fsystem::CpuLevel::Inactive.into_primitive(),
+            cpu.run(
                 Some(cpu_node),
                 Box::new(move |new_power_level: fbroker::PowerLevel| {
                     let cpu_manager = cpu_manager.clone();

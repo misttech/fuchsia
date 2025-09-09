@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use fidl::endpoints::{ClientEnd, Proxy};
-use power_broker_client::{basic_update_fn_factory, run_power_element, PowerElementContext};
-use rand::distr::Alphanumeric;
+use power_broker_client::{PowerElementContext, basic_update_fn_factory};
 use rand::Rng;
+use rand::distr::Alphanumeric;
 use std::sync::Arc;
 use {
     fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_system as fsystem,
@@ -79,7 +79,7 @@ impl PowerElement {
                 dependent_level: POWER_ON_LEVEL,
                 requires_token: application_activity_token,
                 requires_level_by_preference: vec![
-                    fsystem::ApplicationActivityLevel::Active.into_primitive()
+                    fsystem::ApplicationActivityLevel::Active.into_primitive(),
                 ],
             }])
             .build()
@@ -88,14 +88,7 @@ impl PowerElement {
         );
         let pe_context = power_element_context.clone();
         fasync::Task::local(async move {
-            run_power_element(
-                pe_context.name(),
-                &pe_context.required_level,
-                POWER_ON_LEVEL, /* initial_level */
-                None,           /* inspect_node */
-                basic_update_fn_factory(&pe_context),
-            )
-            .await;
+            pe_context.run(None /* inspect_node */, basic_update_fn_factory(&pe_context)).await;
         })
         .detach();
 

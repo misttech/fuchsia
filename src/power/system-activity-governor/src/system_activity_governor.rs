@@ -23,9 +23,7 @@ use futures::future::FutureExt;
 use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::stream::StreamExt;
-use power_broker_client::{
-    LeaseHelper, PowerElementContext, basic_update_fn_factory, run_power_element,
-};
+use power_broker_client::{LeaseHelper, PowerElementContext, basic_update_fn_factory};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -539,14 +537,7 @@ impl SystemActivityGovernor {
         );
         let bc_context = boot_control.clone();
         fasync::Task::local(async move {
-            run_power_element(
-                &bc_context.name(),
-                &bc_context.required_level,
-                0,    /* initial_level */
-                None, /* inspect_node */
-                basic_update_fn_factory(&bc_context),
-            )
-            .await;
+            bc_context.run(None /* inspect_node */, basic_update_fn_factory(&bc_context)).await;
         })
         .detach();
 
@@ -623,20 +614,18 @@ impl SystemActivityGovernor {
         fasync::Task::local(async move {
             let update_fn = Rc::new(basic_update_fn_factory(&this.application_activity));
 
-            run_power_element(
-                this.application_activity.name(),
-                &this.application_activity.required_level,
-                ApplicationActivityLevel::Inactive.into_primitive(),
-                Some(application_activity_node),
-                Box::new(move |new_power_level: fbroker::PowerLevel| {
-                    let update_fn = update_fn.clone();
-                    async move {
-                        update_fn(new_power_level).await;
-                    }
-                    .boxed_local()
-                }),
-            )
-            .await;
+            this.application_activity
+                .run(
+                    Some(application_activity_node),
+                    Box::new(move |new_power_level: fbroker::PowerLevel| {
+                        let update_fn = update_fn.clone();
+                        async move {
+                            update_fn(new_power_level).await;
+                        }
+                        .boxed_local()
+                    }),
+                )
+                .await;
         })
         .detach();
     }
@@ -651,46 +640,45 @@ impl SystemActivityGovernor {
             let previous_power_level =
                 Rc::new(Cell::new(ExecutionStateLevel::Inactive.into_primitive()));
 
-            run_power_element(
-                &this.execution_state.name(),
-                &this.execution_state.required_level,
-                previous_power_level.get(),
-                Some(execution_state_node),
-                Box::new(move |new_power_level: fbroker::PowerLevel| {
-                    let update_fn = update_fn.clone();
-                    let previous_power_level = previous_power_level.clone();
-                    let this = this_clone.clone();
+            this.execution_state
+                .run(
+                    Some(execution_state_node),
+                    Box::new(move |new_power_level: fbroker::PowerLevel| {
+                        let update_fn = update_fn.clone();
+                        let previous_power_level = previous_power_level.clone();
+                        let this = this_clone.clone();
 
-                    async move {
-                        // Call suspend callback before ExecutionState power level changes.
-                        if new_power_level == ExecutionStateLevel::Inactive.into_primitive() {
-                            this.notify_on_suspend().await;
-                        } else if previous_power_level.get()
-                            == ExecutionStateLevel::Inactive.into_primitive()
-                        {
-                            // If leaving Inactive, we need to notify suspend blockers that we
-                            // exited suspend. This cannot block, as a suspend blocker may need to
-                            // raise Execution State.
-                            let this2 = this.clone();
-                            fasync::Task::local(async move {
-                                this2.notify_on_resume().await;
-                            })
-                            .detach();
+                        async move {
+                            // Call suspend callback before ExecutionState power level changes.
+                            if new_power_level == ExecutionStateLevel::Inactive.into_primitive() {
+                                this.notify_on_suspend().await;
+                            } else if previous_power_level.get()
+                                == ExecutionStateLevel::Inactive.into_primitive()
+                            {
+                                // If leaving Inactive, we need to notify suspend blockers that we
+                                // exited suspend. This cannot block, as a suspend blocker may need to
+                                // raise Execution State.
+                                let this2 = this.clone();
+                                fasync::Task::local(async move {
+                                    this2.notify_on_resume().await;
+                                })
+                                .detach();
+                            }
+
+                            // If entering Active, SAG drops the resume control lease to re-enable
+                            // suspension.
+                            if new_power_level == ExecutionStateLevel::Active.into_primitive() {
+                                let _ =
+                                    this.es_activation_after_resume_signal.borrow().set(()).await;
+                            }
+
+                            update_fn(new_power_level).await;
+                            previous_power_level.set(new_power_level);
                         }
-
-                        // If entering Active, SAG drops the resume control lease to re-enable
-                        // suspension.
-                        if new_power_level == ExecutionStateLevel::Active.into_primitive() {
-                            let _ = this.es_activation_after_resume_signal.borrow().set(()).await;
-                        }
-
-                        update_fn(new_power_level).await;
-                        previous_power_level.set(new_power_level);
-                    }
-                    .boxed_local()
-                }),
-            )
-            .await;
+                        .boxed_local()
+                    }),
+                )
+                .await;
         })
         .detach();
     }
