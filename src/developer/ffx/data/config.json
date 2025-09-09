@@ -43,7 +43,8 @@
         "upload_timeout": 2.0
     },
     "monitor": {
-        "pid_file": "$SHARED_DATA/monitor/ffx_monitor.pid"
+        "pid_file": "$SHARED_DATA/monitor/ffx_monitor.pid",
+        "port": 8080
     },
     "ssh": {
         "controlmaster": {
