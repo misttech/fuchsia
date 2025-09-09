@@ -478,7 +478,6 @@ ktl::optional<vaddr_t> VmAddressRegion::CheckGapLocked(VmAddressRegionOrMapping*
 
   // compute the starting address of the gap
   if (prev != nullptr) {
-    AssertHeld(prev->lock_ref());
     if (add_overflow(prev->base(), prev->size(), &gap_beg) ||
         add_overflow(gap_beg, min_gap, &gap_beg)) {
       return ktl::nullopt;
@@ -489,7 +488,6 @@ ktl::optional<vaddr_t> VmAddressRegion::CheckGapLocked(VmAddressRegionOrMapping*
 
   // compute the ending address of the gap
   if (next != nullptr) {
-    AssertHeld(next->lock_ref());
     if (gap_beg == next->base()) {
       return ktl::nullopt;  // no gap between regions
     }
