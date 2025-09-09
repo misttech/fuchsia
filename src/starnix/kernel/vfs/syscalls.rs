@@ -3256,8 +3256,8 @@ pub fn sys_io_uring_register(
     current_task: &CurrentTask,
     fd: FdNumber,
     opcode: u32,
-    arg: IOVecPtr,
-    nr_args: UserValue<i32>,
+    arg: UserAddress,
+    nr_args: UserValue<u32>,
 ) -> Result<SyscallResult, Errno> {
     if !current_task.kernel().features.io_uring {
         return error!(ENOSYS);
@@ -3267,7 +3267,8 @@ pub fn sys_io_uring_register(
     match opcode {
         IORING_REGISTER_BUFFERS => {
             // TODO(https://fxbug.dev/297431387): Check nr_args for zero and return EINVAL here.
-            let buffers = current_task.read_iovec(arg, nr_args)?;
+            let iovec = IOVecPtr::new(current_task, arg);
+            let buffers = current_task.read_iovec(iovec, nr_args)?;
             io_uring.register_buffers(buffers);
             return Ok(SUCCESS);
         }
