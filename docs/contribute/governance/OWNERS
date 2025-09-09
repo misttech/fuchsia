@@ -7,7 +7,6 @@ include /OWNERS
 # Fuchsia Eng Council
 
 abarth@google.com         # Adam Barth (Chair)
-cpu@google.com            # Carlos Pizano
 davemoore@google.com      # David Moore
 hjfreyer@google.com       # Hunter Freyer
 jamesr@google.com         # James Robinson
