@@ -9,12 +9,13 @@ use core::ops::Range;
 
 use alloc::vec::Vec;
 use core::mem::MaybeUninit;
+use core::num::NonZeroU16;
 use net_types::ip::{Ip, IpVersion};
 use packet::InnerPacketBuilder;
 use static_assertions::const_assert;
 
 use crate::ip::Mms;
-use crate::tcp::segment::{Payload, PayloadLen};
+use crate::tcp::segment::{Payload, PayloadLen, SegmentOptions};
 
 /// Control flags that can alter the state of a TCP control block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,15 +112,100 @@ impl Mss {
     }
 }
 
-impl From<Mss> for u32 {
-    fn from(Mss(mss): Mss) -> Self {
-        u32::from(mss)
+/// Like [`Mss`], but smaller to account for fixed-size TCP Options.
+///
+/// This corresponds to the "effective send MSS" as defined in RFC 9293 section
+/// 3.7.1:
+///   Eff.snd.MSS = min(SendMSS+20, MMS_S) - TCPhdrsize - IPoptionsize
+///   where:
+///     [...]
+///     * TCPhdrsize is the size of the fixed TCP header and any options.
+///
+/// Both [`Mss`] and [`EffectiveMss`] have their place in TCP. For example,
+/// the TCP MSS option has [`Mss`] semantics, while the MSS used to calculate
+/// receive windows & congestion windows has [`EffectiveMss`] semantics. When
+/// implementing a TCP feature, refer to the feature's RFC to determine which
+/// MSS semantics are appropriate to use.
+///
+/// Note: this implementation accounts for all fixed-sized TCP Options that are
+/// part of [`SegmentOptions`]. SACK blocks are ignored, because they are
+/// variable sized. Variable sized options pose a problem when calculating the
+/// [`EffectiveMss`] because they vary from segment to segment, whereas the
+/// [`EffectiveMss`] should be stable throughout the lifetime of the connection.
+/// While, no RFC explicitly states how to account for variable sized options,
+/// we take inspiration from Linux's TCP implementation and choose to ignore
+/// them until it comes time to actually calculate payload sizes for a given
+/// segment.
+// TODO(https://fxbug.dev/441271979): Account for fixed-size IP Options.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct EffectiveMss {
+    mss: Mss,
+    fixed_tcp_options_size: u16,
+}
+
+impl EffectiveMss {
+    /// Per RFC 7323 Section 3.2, the TCP Timestamp option has a length of
+    /// 10 bytes:
+    ///   +-------+-------+---------------------+---------------------+
+    ///   |Kind=8 |  10   |   TS Value (TSval)  |TS Echo Reply (TSecr)|
+    ///   +-------+-------+---------------------+---------------------+
+    ///      1       1              4                     4
+    ///
+    /// However, once aligned, it will occupy 12 bytes.
+    const ALIGNED_TIMESTAMP_OPTION_LENGTH: u16 = 12;
+
+    /// Constructs an [`EffectiveMss`] from an [`Mss`]
+    pub const fn from_mss(mss: Mss, timestamp_option_enabled: bool) -> Self {
+        // NB: When adding additional fixed size options in the future, authors
+        // should take care to account for the alignment only once.
+        let fixed_tcp_options_size =
+            if timestamp_option_enabled { Self::ALIGNED_TIMESTAMP_OPTION_LENGTH } else { 0 };
+        EffectiveMss { mss, fixed_tcp_options_size }
+    }
+
+    /// Computes the amount of payload data to include in a segment.
+    ///
+    /// Accounts for the size of any variable-sized options present in the
+    /// segment.
+    pub fn payload_size(&self, options: &SegmentOptions) -> NonZeroU16 {
+        // NB: Ignore the fixed TCP options size, it will be accounted for by
+        // `options`.
+        let Self { mss, fixed_tcp_options_size: _ } = self;
+        // NB: Safe to unwrap here because TCP options have a fixed maximum
+        // size < u16::MAX.
+        let tcp_options_len =
+            u16::try_from(packet_formats::tcp::aligned_options_length(options.iter())).unwrap();
+        // NB: Safe to unwrap here because MSS has a minimum value large enough
+        // to fit all TCP options.
+        NonZeroU16::new(mss.get() - tcp_options_len).unwrap()
+    }
+
+    /// Returns the original [`Mss`] used to compute this [`EffectiveMss`].
+    pub fn mss(&self) -> &Mss {
+        &self.mss
+    }
+
+    /// Replaces the held [`Mss`] with a new value.
+    pub fn update_mss(&mut self, new: Mss) {
+        self.mss = new
+    }
+
+    /// Gets the numeric value of the MSS.
+    pub const fn get(&self) -> u16 {
+        let Self { mss, fixed_tcp_options_size } = *self;
+        mss.get() - fixed_tcp_options_size
     }
 }
 
-impl From<Mss> for usize {
-    fn from(Mss(mss): Mss) -> Self {
-        usize::from(mss)
+impl From<EffectiveMss> for u32 {
+    fn from(mss: EffectiveMss) -> Self {
+        u32::from(mss.get())
+    }
+}
+
+impl From<EffectiveMss> for usize {
+    fn from(mss: EffectiveMss) -> Self {
+        usize::from(mss.get())
     }
 }
 
@@ -318,6 +404,23 @@ impl<'a, const N: usize> InnerPacketBuilder for FragmentedPayload<'a, N> {
     }
 }
 
+#[cfg(any(test, feature = "testutils"))]
+mod testutil {
+    use super::*;
+
+    impl From<Mss> for u32 {
+        fn from(Mss(mss): Mss) -> Self {
+            u32::from(mss)
+        }
+    }
+
+    impl From<Mss> for usize {
+        fn from(Mss(mss): Mss) -> Self {
+            usize::from(mss)
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -328,6 +431,8 @@ mod test {
     use proptest::{prop_assert_eq, proptest};
     use proptest_support::failed_seeds_no_std;
     use test_case::test_case;
+
+    use crate::{SackBlock, SackBlocks, SeqNum};
 
     const EXAMPLE_DATA: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     #[test_case(FragmentedPayload::new([&EXAMPLE_DATA[..]]); "contiguous")]
@@ -454,5 +559,31 @@ mod test {
                 (0..TEST_BYTES.len()).prop_flat_map(|start| (Just(start), start..TEST_BYTES.len())),
             )
         }
+    }
+
+    #[test_case(true; "timestamp_enabled")]
+    #[test_case(false; "timestamp_disabled")]
+    fn effective_mss_accounts_for_fixed_size_tcp_options(timestamp: bool) {
+        const SIZE: u16 = 1000;
+        let mss = EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), timestamp);
+        if timestamp {
+            assert_eq!(mss.get(), SIZE - EffectiveMss::ALIGNED_TIMESTAMP_OPTION_LENGTH)
+        } else {
+            assert_eq!(mss.get(), SIZE);
+        }
+    }
+
+    // TODO(https://fxbug.dev/360401604): Add tests for timestamp.
+    #[test_case(SegmentOptions {sack_blocks: SackBlocks::EMPTY}; "empty")]
+    #[test_case(SegmentOptions { sack_blocks: SackBlocks::from_iter([
+                    SackBlock::try_new(SeqNum::new(1), SeqNum::new(2)).unwrap(),
+                    SackBlock::try_new(SeqNum::new(4), SeqNum::new(6)).unwrap(),
+                ])}; "sack_blocks")]
+    fn effective_mss_accounts_for_variable_size_tcp_options(options: SegmentOptions) {
+        const SIZE: u16 = 1000;
+        let mss = EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), false);
+        let options_len =
+            u16::try_from(packet_formats::tcp::aligned_options_length(options.iter())).unwrap();
+        assert_eq!(mss.payload_size(&options).get(), SIZE - options_len);
     }
 }

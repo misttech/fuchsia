@@ -21,7 +21,7 @@
 use core::num::NonZeroU32;
 use core::time::Duration;
 
-use netstack3_base::{Instant, Mss};
+use netstack3_base::{EffectiveMss, Instant};
 
 use crate::internal::congestion::CongestionControlParams;
 
@@ -52,7 +52,7 @@ impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
     ///
     /// This function is responsible for the concave/convex regions described
     /// in the RFC.
-    fn cubic_window(&self, t: Duration, mss: Mss) -> u32 {
+    fn cubic_window(&self, t: Duration, mss: EffectiveMss) -> u32 {
         // Per RFC 8312 (https://www.rfc-editor.org/rfc/rfc8312#section-4.1):
         //   W_cubic(t) = C*(t-K)^3 + W_max (Eq. 1)
         let x = t.as_secs_f32() - self.k;
@@ -61,7 +61,7 @@ impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
     }
 
     /// Returns the window size for standard TCP, in bytes.
-    fn standard_tcp_window(&self, t: Duration, rtt: Duration, mss: Mss) -> u32 {
+    fn standard_tcp_window(&self, t: Duration, rtt: Duration, mss: EffectiveMss) -> u32 {
         // Per RFC 8312 (https://www.rfc-editor.org/rfc/rfc8312#section-4.2):
         //   W_est(t) = W_max*beta_cubic +
         //         [3*(1-beta_cubic)/(1+beta_cubic)] * (t/RTT) (Eq. 4)
@@ -235,7 +235,7 @@ impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
         params.cwnd = u32::from(params.mss);
     }
 
-    fn cubic_c(&self, mss: Mss) -> f32 {
+    fn cubic_c(&self, mss: EffectiveMss) -> f32 {
         // Note: cwnd and w_max are in unit of bytes as opposed to segments in
         // RFC, so C should be CUBIC_C * mss for our implementation.
         CUBIC_C * u32::from(mss) as f32
@@ -245,11 +245,12 @@ impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
 #[cfg(test)]
 mod tests {
     use netstack3_base::testutil::FakeInstantCtx;
-    use netstack3_base::{InstantContext as _, Mss};
+    use netstack3_base::{EffectiveMss, InstantContext as _, Mss};
     use test_case::test_case;
 
     use super::*;
 
+    const DEFAULT_MSS: EffectiveMss = EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false);
     impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
         // Helper function in test that takes a u32 instead of a NonZeroU32
         // as we know we never pass 0 in the test and it's a bit clumsy to
@@ -288,7 +289,7 @@ mod tests {
         // The theoretical predictions do not consider fast convergence,
         // disable it.
         let mut cubic = Cubic::<_, false /* FAST_CONVERGENCE */>::default();
-        let mut params = CongestionControlParams::with_mss(Mss::DEFAULT_IPV4);
+        let mut params = CongestionControlParams::with_mss(DEFAULT_MSS);
         // The theoretical value is a prediction for the congestion avoidance
         // only, set ssthresh to 1 so that we skip slow start. Slow start can
         // grow the window size very quickly.
@@ -324,51 +325,51 @@ mod tests {
     fn cubic_example() {
         let mut clock = FakeInstantCtx::default();
         let mut cubic = Cubic::<_, true /* FAST_CONVERGENCE */>::default();
-        let mut params = CongestionControlParams::with_mss(Mss::DEFAULT_IPV4);
+        let mut params = CongestionControlParams::with_mss(DEFAULT_MSS);
         const RTT: Duration = Duration::from_millis(100);
 
         // Assert we have the correct initial window.
-        assert_eq!(params.cwnd, 4 * u32::from(Mss::DEFAULT_IPV4));
+        assert_eq!(params.cwnd, 4 * u32::from(DEFAULT_MSS));
 
         // Slow start.
         clock.sleep(RTT);
-        for _seg in 0..params.cwnd / u32::from(Mss::DEFAULT_IPV4) {
-            cubic.on_ack_u32(&mut params, u32::from(Mss::DEFAULT_IPV4), clock.now(), RTT);
+        for _seg in 0..params.cwnd / u32::from(DEFAULT_MSS) {
+            cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
         }
-        assert_eq!(params.cwnd, 8 * u32::from(Mss::DEFAULT_IPV4));
+        assert_eq!(params.cwnd, 8 * u32::from(DEFAULT_MSS));
 
         clock.sleep(RTT);
         cubic.on_retransmission_timeout(&mut params);
-        assert_eq!(params.cwnd, u32::from(Mss::DEFAULT_IPV4));
+        assert_eq!(params.cwnd, u32::from(DEFAULT_MSS));
 
         // We are now back in slow start.
         clock.sleep(RTT);
-        cubic.on_ack_u32(&mut params, u32::from(Mss::DEFAULT_IPV4), clock.now(), RTT);
-        assert_eq!(params.cwnd, 2 * u32::from(Mss::DEFAULT_IPV4));
+        cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
+        assert_eq!(params.cwnd, 2 * u32::from(DEFAULT_MSS));
 
         clock.sleep(RTT);
         for _ in 0..2 {
-            cubic.on_ack_u32(&mut params, u32::from(Mss::DEFAULT_IPV4), clock.now(), RTT);
+            cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
         }
-        assert_eq!(params.cwnd, 4 * u32::from(Mss::DEFAULT_IPV4));
+        assert_eq!(params.cwnd, 4 * u32::from(DEFAULT_MSS));
 
         // In this roundtrip, we enter a new congestion epoch from slow start,
         // in this round trip, both cubic and tcp equations will have t=0, so
         // the cwnd in this round trip will be ssthresh, which is 3001 bytes,
         // or 5 full sized segments.
         clock.sleep(RTT);
-        for _seg in 0..params.cwnd / u32::from(Mss::DEFAULT_IPV4) {
-            cubic.on_ack_u32(&mut params, u32::from(Mss::DEFAULT_IPV4), clock.now(), RTT);
+        for _seg in 0..params.cwnd / u32::from(DEFAULT_MSS) {
+            cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
         }
-        assert_eq!(params.rounded_cwnd().cwnd(), 5 * u32::from(Mss::DEFAULT_IPV4));
+        assert_eq!(params.rounded_cwnd().cwnd(), 5 * u32::from(DEFAULT_MSS));
 
         // Now we are at `epoch_start+RTT`, the window size should grow by at
-        // least 1 u32::from(Mss::DEFAULT_IPV4) per RTT (standard TCP).
+        // least 1 u32::from(DEFAULT_MSS) per RTT (standard TCP).
         clock.sleep(RTT);
-        for _seg in 0..params.cwnd / u32::from(Mss::DEFAULT_IPV4) {
-            cubic.on_ack_u32(&mut params, u32::from(Mss::DEFAULT_IPV4), clock.now(), RTT);
+        for _seg in 0..params.cwnd / u32::from(DEFAULT_MSS) {
+            cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
         }
-        assert_eq!(params.rounded_cwnd().cwnd(), 6 * u32::from(Mss::DEFAULT_IPV4));
+        assert_eq!(params.rounded_cwnd().cwnd(), 6 * u32::from(DEFAULT_MSS));
     }
 
     // This is a regression test for https://fxbug.dev/327628809.
@@ -377,7 +378,7 @@ mod tests {
     fn repro_overflow_b327628809(cwnd: u32) {
         let clock = FakeInstantCtx::default();
         let mut cubic = Cubic::<_, true /* FAST_CONVERGENCE */>::default();
-        let mut params = CongestionControlParams { ssthresh: 0, cwnd, mss: Mss::DEFAULT_IPV4 };
+        let mut params = CongestionControlParams { ssthresh: 0, cwnd, mss: DEFAULT_MSS };
         const RTT: Duration = Duration::from_millis(100);
 
         cubic.on_ack(&mut params, NonZeroU32::MIN, clock.now(), RTT);
@@ -389,11 +390,8 @@ mod tests {
         let clock = FakeInstantCtx::default();
         let mut cubic = Cubic::<_, true /* FAST_CONVERGENCE */>::default();
         // Setup the params in slow start with `cwnd` close to overflow.
-        let mut params = CongestionControlParams {
-            ssthresh: u32::MAX,
-            cwnd: u32::MAX - 1,
-            mss: Mss::DEFAULT_IPV4,
-        };
+        let mut params =
+            CongestionControlParams { ssthresh: u32::MAX, cwnd: u32::MAX - 1, mss: DEFAULT_MSS };
         const RTT: Duration = Duration::from_millis(100);
         // Ack enough bytes to push cwnd over u32::MAX.
         cubic.on_ack(

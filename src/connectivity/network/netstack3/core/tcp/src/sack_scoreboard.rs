@@ -7,7 +7,7 @@
 //!
 //! [RFC 6675]: https://datatracker.ietf.org/doc/html/rfc6675
 
-use netstack3_base::{Mss, SackBlocks, SeqNum};
+use netstack3_base::{EffectiveMss, SackBlocks, SeqNum};
 
 use crate::internal::congestion::DUP_ACK_THRESHOLD;
 use crate::internal::seq_ranges::{FirstHoleResult, SeqRange, SeqRanges};
@@ -68,7 +68,7 @@ impl SackScoreboard {
         snd_nxt: SeqNum,
         high_rxt: Option<SeqNum>,
         sack_blocks: &SackBlocks,
-        smss: Mss,
+        smss: EffectiveMss,
     ) -> bool {
         let Self { acked_ranges, pipe, is_lost_seqnum_end } = self;
 
@@ -309,7 +309,7 @@ impl SackScoreboard {
         snd_una: SeqNum,
         snd_nxt: SeqNum,
         high_rxt: Option<SeqNum>,
-        mss: Mss,
+        mss: EffectiveMss,
     ) {
         // When MSS updates, we must recalculate so we know what frames are
         // considered lost or not.
@@ -328,20 +328,21 @@ impl SackScoreboard {
 ///
 /// [RFC 6675 section 4]:
 ///     https://datatracker.ietf.org/doc/html/rfc6675#section-4
-fn sacked_bytes_threshold(mss: Mss) -> u32 {
+fn sacked_bytes_threshold(mss: EffectiveMss) -> u32 {
     u32::from(DUP_ACK_THRESHOLD - 1) * u32::from(mss)
 }
 
 #[cfg(test)]
 mod test {
     use core::ops::Range;
+    use netstack3_base::Mss;
     use test_case::test_case;
 
     use super::*;
     use crate::internal::seq_ranges::SeqRange;
     use crate::internal::testutil;
 
-    const TEST_MSS: Mss = Mss::new(256).unwrap();
+    const TEST_MSS: EffectiveMss = EffectiveMss::from_mss(Mss::new(256).unwrap(), false);
 
     fn seq_ranges(iter: impl IntoIterator<Item = Range<u32>>) -> SeqRanges<()> {
         iter.into_iter()

@@ -9566,7 +9566,7 @@ mod tests {
         }
 
         fn mss(&self) -> Mss {
-            Self::established_state(&self.get()).snd.congestion_control().mss()
+            *Self::established_state(&self.get()).snd.congestion_control().mss().mss()
         }
 
         fn cwnd(&self) -> CongestionWindow {

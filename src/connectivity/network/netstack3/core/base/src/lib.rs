@@ -84,7 +84,7 @@ pub use resource_references::{
 };
 pub use rng::RngContext;
 pub use settings::{BufferSizeSettings, SettingsContext};
-pub use tcp::base::{Control, FragmentedPayload, Mss};
+pub use tcp::base::{Control, EffectiveMss, FragmentedPayload, Mss};
 pub use tcp::segment::{
     HandshakeOptions, Options, Payload, PayloadLen, ResetOptions, SackBlock, SackBlocks, Segment,
     SegmentHeader, SegmentOptions, VerifiedTcpSegment,

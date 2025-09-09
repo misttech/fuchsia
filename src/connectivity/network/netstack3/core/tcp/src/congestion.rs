@@ -16,7 +16,7 @@ use core::cmp::Ordering;
 use core::num::{NonZeroU8, NonZeroU32};
 use core::time::Duration;
 
-use netstack3_base::{Instant, Mss, SackBlocks, SeqNum, WindowSize};
+use netstack3_base::{EffectiveMss, Instant, Mss, SackBlocks, SeqNum, WindowSize};
 
 use crate::internal::sack_scoreboard::SackScoreboard;
 
@@ -33,11 +33,11 @@ struct CongestionControlParams {
     /// Congestion control window size, in bytes.
     cwnd: u32,
     /// Sender MSS.
-    mss: Mss,
+    mss: EffectiveMss,
 }
 
 impl CongestionControlParams {
-    fn with_mss(mss: Mss) -> Self {
+    fn with_mss(mss: EffectiveMss) -> Self {
         let mss_u32 = u32::from(mss);
         // Per RFC 5681 (https://www.rfc-editor.org/rfc/rfc5681#page-5):
         //   IW, the initial value of cwnd, MUST be set using the following
@@ -73,11 +73,11 @@ mod cwnd {
     #[cfg_attr(test, derive(Eq, PartialEq))]
     pub(crate) struct CongestionWindow {
         cwnd: u32,
-        mss: Mss,
+        mss: EffectiveMss,
     }
 
     impl CongestionWindow {
-        pub(super) fn new(cwnd: u32, mss: Mss) -> Self {
+        pub(super) fn new(cwnd: u32, mss: EffectiveMss) -> Self {
             let mss_u32 = u32::from(mss);
             Self { cwnd: cwnd / mss_u32 * mss_u32, mss }
         }
@@ -86,7 +86,7 @@ mod cwnd {
             self.cwnd
         }
 
-        pub(crate) fn mss(&self) -> Mss {
+        pub(crate) fn mss(&self) -> EffectiveMss {
             self.mss
         }
     }
@@ -299,7 +299,7 @@ impl<I: Instant> CongestionControl<I> {
         self.params.cwnd += inflation;
     }
 
-    pub(super) fn cubic_with_mss(mss: Mss) -> Self {
+    pub(super) fn cubic_with_mss(mss: EffectiveMss) -> Self {
         Self {
             params: CongestionControlParams::with_mss(mss),
             algorithm: LossBasedAlgorithm::Cubic(Default::default()),
@@ -308,12 +308,15 @@ impl<I: Instant> CongestionControl<I> {
         }
     }
 
-    pub(super) fn mss(&self) -> Mss {
+    pub(super) fn mss(&self) -> EffectiveMss {
         self.params.mss
     }
 
     pub(super) fn update_mss(&mut self, mss: Mss, snd_una: SeqNum, snd_nxt: SeqNum) {
         let Self { params, sack_scoreboard, algorithm: _, loss_recovery } = self;
+        let orig = u32::from(params.mss);
+        params.mss.update_mss(mss);
+
         // From [RFC 5681 section 3.1]:
         //
         //    When initial congestion windows of more than one segment are
@@ -325,10 +328,8 @@ impl<I: Instant> CongestionControl<I> {
         //
         // [RFC 5681 section 3.1]: https://datatracker.ietf.org/doc/html/rfc5681#section-3.1
         if params.ssthresh == u32::MAX {
-            params.cwnd =
-                params.cwnd.saturating_div(u32::from(params.mss)).saturating_mul(u32::from(mss));
+            params.cwnd = params.cwnd.saturating_div(orig).saturating_mul(u32::from(params.mss));
         }
-        params.mss = mss;
 
         // Given we'll retransmit after receiving this, we need to update the
         // SACK scoreboard so pipe is recalculated based on this value of
@@ -337,7 +338,7 @@ impl<I: Instant> CongestionControl<I> {
             LossRecovery::FastRecovery(_) => None,
             LossRecovery::SackRecovery(sack_recovery) => sack_recovery.high_rxt(),
         });
-        sack_scoreboard.on_mss_update(snd_una, snd_nxt, high_rxt, mss);
+        sack_scoreboard.on_mss_update(snd_una, snd_nxt, high_rxt, params.mss);
     }
 
     /// Returns the rounded unmodified by loss recovery window size.
@@ -1066,14 +1067,14 @@ mod test {
 
     use assert_matches::assert_matches;
     use netstack3_base::testutil::FakeInstant;
-    use netstack3_base::{Mss, SackBlock};
+    use netstack3_base::{EffectiveMss, SackBlock};
     use test_case::{test_case, test_matrix};
 
     use super::*;
     use crate::internal::testutil;
 
-    const MSS_1: Mss = Mss::DEFAULT_IPV4;
-    const MSS_2: Mss = Mss::DEFAULT_IPV6;
+    const MSS_1: EffectiveMss = EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false);
+    const MSS_2: EffectiveMss = EffectiveMss::from_mss(Mss::DEFAULT_IPV6, false);
 
     enum StartingAck {
         One,
@@ -1082,7 +1083,7 @@ mod test {
     }
 
     impl StartingAck {
-        fn into_seqnum(self, mss: Mss) -> SeqNum {
+        fn into_seqnum(self, mss: EffectiveMss) -> SeqNum {
             let mss = u32::from(mss);
             match self {
                 StartingAck::One => SeqNum::new(1),
@@ -1106,13 +1107,13 @@ mod test {
         }
     }
 
-    fn nth_segment_from(base: SeqNum, mss: Mss, n: u32) -> Range<SeqNum> {
+    fn nth_segment_from(base: SeqNum, mss: EffectiveMss, n: u32) -> Range<SeqNum> {
         let mss = u32::from(mss);
         let start = base + n * mss;
         Range { start, end: start + mss }
     }
 
-    fn nth_range(base: SeqNum, mss: Mss, range: Range<u32>) -> Range<SeqNum> {
+    fn nth_range(base: SeqNum, mss: EffectiveMss, range: Range<u32>) -> Range<SeqNum> {
         let mss = u32::from(mss);
         let Range { start, end } = range;
         let start = base + start * mss;
@@ -1122,7 +1123,7 @@ mod test {
 
     #[test]
     fn no_recovery_before_reaching_threshold() {
-        let mut congestion_control = CongestionControl::cubic_with_mss(Mss::DEFAULT_IPV4);
+        let mut congestion_control = CongestionControl::cubic_with_mss(MSS_1);
         let old_cwnd = congestion_control.params.cwnd;
         assert_eq!(congestion_control.params.ssthresh, u32::MAX);
         assert_eq!(congestion_control.on_dup_ack(SeqNum::new(0), SeqNum::new(1)), None);
@@ -1142,8 +1143,7 @@ mod test {
     fn preprocess_ack_result() {
         let ack = SeqNum::new(1);
         let snd_nxt = SeqNum::new(100);
-        let mut congestion_control =
-            CongestionControl::<FakeInstant>::cubic_with_mss(Mss::DEFAULT_IPV4);
+        let mut congestion_control = CongestionControl::<FakeInstant>::cubic_with_mss(MSS_1);
         assert_eq!(congestion_control.preprocess_ack(ack, snd_nxt, &SackBlocks::EMPTY), None);
         assert_eq!(
             congestion_control.preprocess_ack(ack, snd_nxt, &testutil::sack_blocks([10..20])),
@@ -1168,7 +1168,7 @@ mod test {
     #[test_case(DUP_ACK_THRESHOLD; "exact threshold")]
     #[test_case(DUP_ACK_THRESHOLD+1; "over threshold")]
     fn sack_recovery_enter_exit_loss_dupacks(dup_acks: u8) {
-        let mut congestion_control = CongestionControl::cubic_with_mss(Mss::DEFAULT_IPV4);
+        let mut congestion_control = CongestionControl::cubic_with_mss(MSS_1);
         let mss = congestion_control.mss();
 
         let ack = SeqNum::new(1);
@@ -1242,8 +1242,7 @@ mod test {
 
     #[test]
     fn sack_recovery_enter_loss_single_dupack() {
-        let mut congestion_control =
-            CongestionControl::<FakeInstant>::cubic_with_mss(Mss::DEFAULT_IPV4);
+        let mut congestion_control = CongestionControl::<FakeInstant>::cubic_with_mss(MSS_1);
 
         // SACK can enter recovery after a *single* duplicate ACK provided
         // enough information is in the scoreboard:
@@ -1275,7 +1274,7 @@ mod test {
     fn sack_recovery_poll_send_not_recovery() {
         let mut scoreboard = SackScoreboard::default();
         let mut recovery = SackRecovery::new();
-        let mss = Mss::DEFAULT_IPV4;
+        let mss = MSS_1;
         let cwnd_mss = 10u32;
         let cwnd = CongestionWindow::new(cwnd_mss * u32::from(mss), mss);
         let snd_una = SeqNum::new(1);
@@ -1339,7 +1338,7 @@ mod test {
         [1, 3, 5],
         [StartingAck::One, StartingAck::Wraparound]
     )]
-    fn sack_recovery_next_seg_rule_1(mss: Mss, lost_segments: u32, snd_una: StartingAck) {
+    fn sack_recovery_next_seg_rule_1(mss: EffectiveMss, lost_segments: u32, snd_una: StartingAck) {
         let mut scoreboard = SackScoreboard::default();
         let mut recovery = SackRecovery::new();
 
@@ -1413,7 +1412,7 @@ mod test {
         [1, 3, 5],
         [StartingAck::One, StartingAck::Wraparound]
     )]
-    fn sack_recovery_next_seg_rule_2(mss: Mss, expect_send: u32, snd_una: StartingAck) {
+    fn sack_recovery_next_seg_rule_2(mss: EffectiveMss, expect_send: u32, snd_una: StartingAck) {
         let mut scoreboard = SackScoreboard::default();
         let mut recovery = SackRecovery::new();
 
@@ -1494,7 +1493,11 @@ mod test {
         [1, 3, 5],
         [StartingAck::One, StartingAck::Wraparound]
     )]
-    fn sack_recovery_next_seg_rule_3(mss: Mss, not_lost_segments: u32, snd_una: StartingAck) {
+    fn sack_recovery_next_seg_rule_3(
+        mss: EffectiveMss,
+        not_lost_segments: u32,
+        snd_una: StartingAck,
+    ) {
         let mut scoreboard = SackScoreboard::default();
         let mut recovery = SackRecovery::new();
 
@@ -1598,7 +1601,11 @@ mod test {
         [0, 1, 3],
         [StartingAck::One, StartingAck::Wraparound]
     )]
-    fn sack_recovery_next_seg_rule_4(mss: Mss, right_edge_segments: u32, snd_una: StartingAck) {
+    fn sack_recovery_next_seg_rule_4(
+        mss: EffectiveMss,
+        right_edge_segments: u32,
+        snd_una: StartingAck,
+    ) {
         let mut scoreboard = SackScoreboard::default();
         let mut recovery = SackRecovery::new();
 
@@ -1731,7 +1738,7 @@ mod test {
             StartingAck::WraparoundAfter(4)
         ]
     )]
-    fn sack_recovery_all_rules(mss: Mss, snd_una: StartingAck) {
+    fn sack_recovery_all_rules(mss: EffectiveMss, snd_una: StartingAck) {
         let snd_una = snd_una.into_seqnum(mss);
 
         // Set up the scoreboard so we have 1 hole considered lost, that is hit
@@ -1863,7 +1870,7 @@ mod test {
 
     #[test]
     fn sack_rto() {
-        let mss = Mss::DEFAULT_IPV4;
+        let mss = MSS_1;
         let mut congestion_control = CongestionControl::<FakeInstant>::cubic_with_mss(mss);
 
         let rto_snd_nxt = SeqNum::new(50);
@@ -1934,7 +1941,7 @@ mod test {
     #[test]
     fn dont_rearm_rto_past_recovery_point() {
         let mut scoreboard = SackScoreboard::default();
-        let mss = Mss::DEFAULT_IPV4;
+        let mss = MSS_1;
         let snd_una = SeqNum::new(1);
 
         let recovery_point = nth_segment_from(snd_una, mss, 100).start;
@@ -2000,7 +2007,7 @@ mod test {
     #[test]
     fn sack_snd_nxt_rewind() {
         let mut scoreboard = SackScoreboard::default();
-        let mss = Mss::DEFAULT_IPV4;
+        let mss = MSS_1;
         let snd_una = SeqNum::new(1);
 
         let recovery_point = nth_segment_from(snd_una, mss, 100).start;
