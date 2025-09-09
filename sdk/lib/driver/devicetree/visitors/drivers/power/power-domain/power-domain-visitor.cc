@@ -78,8 +78,7 @@ zx::result<> PowerDomainVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, u
               fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, domain_id),
           },
   }};
-  FDF_LOG(DEBUG, "Added power domain (id: %d) parent to node '%s'", domain_id,
-          child.name().c_str());
+  FDF_LOG(INFO, "Added power domain (id: %d) parent to node '%s'", domain_id, child.name().c_str());
   child.AddNodeSpec(power_node);
   return zx::ok();
 }
@@ -117,7 +116,7 @@ zx::result<> PowerDomainVisitor::ParseReferenceChild(fdf_devicetree::Node& child
       [&domain](const fuchsia_hardware_power::Domain& entry) { return entry.id() == domain.id(); });
   if (it == controller.domain_info.domains()->end()) {
     controller.domain_info.domains()->push_back(domain);
-    FDF_LOG(DEBUG, "Power domain added (id: %u) added to controller '%s'", cells.domain_id(),
+    FDF_LOG(INFO, "Power domain added (id: %u) added to controller '%s'", cells.domain_id(),
             parent.name().c_str());
   }
 
@@ -143,7 +142,7 @@ zx::result<> PowerDomainVisitor::FinalizeNode(fdf_devicetree::Node& node) {
         .data = persisted_domain_info.value(),
     }};
     node.AddMetadata(std::move(controller_metadata));
-    FDF_LOG(DEBUG, "Power domain metadata added to node '%s'", node.name().c_str());
+    FDF_LOG(INFO, "Power domain metadata added to node '%s'", node.name().c_str());
   }
 
   return zx::ok();
