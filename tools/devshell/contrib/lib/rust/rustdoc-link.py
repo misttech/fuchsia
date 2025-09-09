@@ -201,6 +201,8 @@ def generate_target_action(
     include_parts_dir_args = [
         f"--include-parts-dir={m.rustdoc_parts_dir}" for m in meta
     ]
+    # let's document an empty crate to avoid calling rustdoc with no input crate
+    target_crate_root = "/dev/null"
     flags = [
         f"--out-dir={dst}",
         "--edition=2021",
@@ -208,6 +210,7 @@ def generate_target_action(
         "--merge=finalize",
         *include_parts_dir_args,
         *extra_rustdoc_args,
+        target_crate_root,
     ]
     argfile.write_text("\n".join(flags))
     # Use a trailing slash dot to copy the contents of the doc
