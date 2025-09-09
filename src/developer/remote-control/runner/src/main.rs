@@ -116,12 +116,16 @@ where
     .await
 }
 
-fn print_prelude_info(
+async fn print_prelude_info<W>(
+    writer: &mut W,
     message: String,
     status: CompatibilityState,
     platform_abi: AbiRevision,
     overnet_id: u64,
-) -> Result<()> {
+) -> Result<()>
+where
+    W: AsyncWrite + std::marker::Unpin,
+{
     let ssh_connection = std::env::var("SSH_CONNECTION")?;
     let info = ConnectionInfo {
         ssh_connection,
@@ -133,8 +137,8 @@ fn print_prelude_info(
         },
     };
 
-    let encoded_message = serde_json::to_string(&info)?;
-    println!("{encoded_message}");
+    let encoded_message = format!("{}\n", serde_json::to_string(&info)?);
+    writer.write_all(encoded_message.as_bytes()).await?;
     Ok(())
 }
 
@@ -167,6 +171,27 @@ async fn main() -> Result<()> {
     let rcs_proxy = connect_to_protocol::<ConnectorMarker>()?;
     let (local_socket, remote_socket) = fidl::Socket::create_stream();
 
+    let local_socket = fidl::AsyncSocket::from_socket(local_socket);
+    let (mut rx_socket, mut tx_socket) = futures::AsyncReadExt::split(local_socket);
+
+    let stdin = std::io::stdin().lock();
+    let stdout = std::io::stdout().lock();
+
+    // SAFETY: In order to remove the overhead of FDIO, we want to extract out the underlying
+    // handles of STDIN and STDOUT and forward them to our sockets. That requires us to transfer
+    // the sockets out of fdio, but unfortunately Rust doesn't allow us to take ownership from
+    // `std::io::stdin()` and `std::io::stdout()`. To work around that, we grab the STDIN and
+    // STDOUT locks to prevent any other thread from accessing them while we're streaming traffic.
+    let (stdin_fd, stdout_fd) = unsafe {
+        (OwnedFd::from_raw_fd(stdin.as_raw_fd()), OwnedFd::from_raw_fd(stdout.as_raw_fd()))
+    };
+
+    let stdin = fdio::transfer_fd(stdin_fd)?;
+    let stdout = fdio::transfer_fd(stdout_fd)?;
+
+    let mut stdin = fidl::AsyncSocket::from_socket(fidl::Socket::from(stdin));
+    let mut stdout = fidl::AsyncSocket::from_socket(fidl::Socket::from(stdout));
+
     let overnet_id = if args.circuit {
         rcs_proxy.establish_circuit(args.id.unwrap_or(0), remote_socket).await?
     } else {
@@ -190,34 +215,13 @@ async fn main() -> Result<()> {
                 warning
             }
         };
-        print_prelude_info(message, status, platform_abi, overnet_id)?;
+        print_prelude_info(&mut stdout, message, status, platform_abi, overnet_id).await?;
     } else {
         // This is the legacy caller that does not support compatibility checking. Do not write anything
         // to stdout.
         // messages to stderr will cause the pipe to close as well.
         log::warn!("--abi-revision not present. Compatibility checks are disabled.");
     }
-
-    let local_socket = fidl::AsyncSocket::from_socket(local_socket);
-    let (mut rx_socket, mut tx_socket) = futures::AsyncReadExt::split(local_socket);
-
-    let stdin = std::io::stdin().lock();
-    let stdout = std::io::stdout().lock();
-
-    // SAFETY: In order to remove the overhead of FDIO, we want to extract out the underlying
-    // handles of STDIN and STDOUT and forward them to our sockets. That requires us to transfer
-    // the sockets out of fdio, but unfortunately Rust doesn't allow us to take ownership from
-    // `std::io::stdin()` and `std::io::stdout()`. To work around that, we grab the STDIN and
-    // STDOUT locks to prevent any other thread from accessing them while we're streaming traffic.
-    let (stdin_fd, stdout_fd) = unsafe {
-        (OwnedFd::from_raw_fd(stdin.as_raw_fd()), OwnedFd::from_raw_fd(stdout.as_raw_fd()))
-    };
-
-    let stdin = fdio::transfer_fd(stdin_fd)?;
-    let stdout = fdio::transfer_fd(stdout_fd)?;
-
-    let mut stdin = fidl::AsyncSocket::from_socket(fidl::Socket::from(stdin));
-    let mut stdout = fidl::AsyncSocket::from_socket(fidl::Socket::from(stdout));
 
     let in_fut = buffered_copy(&mut stdin, &mut tx_socket, CopyDirection::StdIn);
     let out_fut = buffered_copy(&mut rx_socket, &mut stdout, CopyDirection::StdOut);
