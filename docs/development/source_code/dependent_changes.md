@@ -89,12 +89,30 @@ Circular dependencies are only allowed between
 
 To use circular dependencies:
 
-1. Upload the two CLs with `Depends-on` footers referencing each other.
-2. Get the necessary approvals on both CLs.
-3. Set **Fuchsia-Auto-Submit +1** on both CLs once you're ready to land them.
+1.  Upload the two CLs with `Depends-on` footers referencing each other.
+2.  Get the necessary approvals on both CLs.
+3.  Set **Fuchsia-Auto-Submit +1** on both CLs once you're ready to land them.
 
 The CL Deps Checker robot will take care of the rest, doing a presubmit dry run
 on both CLs and approving them both simultaneously if the dry runs pass.
 
 Then auto-submit will submit the CLs, and the roller into integration.git will
 roll the CLs in a single commit.
+
+{% dynamic if user.is_googler %}
+
+### Using `fx atomic-comit`
+
+The `fx atomic-comit` command automates the process of creating circular
+dependencies. It ensures the top commits in your `fuchsia.git` and
+`vendor/google` checkouts are amended to depend on each other.
+
+To use the tool:
+1.  Run `fx atomic-change`.
+2.  The script displays the commits and ask you to confirm before proceeding.
+3.  After you confirm, the script amends both commits with the appropriate
+    `Depends-on` footers and pushes them to create or update the CLs.
+4.  Once the CLs are ready, set **Fuchsia-Auto-Submit +1** on both your CLs To
+    land them atomically.
+
+{% dynamic endif %}
