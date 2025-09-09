@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::cache::Cache;
 use crate::emulator_watcher::EmulatorWatcher;
-use crate::error::{CacheError, Result};
+use crate::error::Result;
 pub use crate::events::{
     FastbootConnectionState, FastbootTargetState, TargetEvent, TargetHandle, TargetState,
 };
@@ -32,7 +31,6 @@ use usb_fastboot_discovery::{
 // but rather some other well-defined type
 use fidl_fuchsia_developer_ffx as ffx;
 
-mod cache;
 pub mod desc;
 mod emulator_watcher;
 pub mod error;
@@ -42,7 +40,6 @@ mod merge;
 pub mod query;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
-const CACHE_FILE_NAME: &str = "ffx-discovery.json";
 
 #[allow(dead_code)]
 /// A stream of new devices as they appear on the bus. See [`wait_for_devices`].
@@ -156,7 +153,6 @@ pub struct DiscoveryBuilder {
     fastboot_devices_file_path: Option<PathBuf>,
     sources: DiscoverySources,
     timeout: Option<Duration>,
-    cache_dir: Option<PathBuf>,
 }
 
 impl DiscoveryBuilder {
@@ -198,23 +194,12 @@ impl DiscoveryBuilder {
         self
     }
 
-    pub fn with_cache_dir(mut self, cache_dir: Option<PathBuf>) -> Self {
-        self.cache_dir = cache_dir;
-        self
-    }
-
     pub fn build(self) -> Discovery {
-        let cache_file = self.cache_dir.map(|ref dir| {
-            let mut p = dir.clone();
-            p.push(CACHE_FILE_NAME);
-            p
-        });
         Discovery {
             emulator_instance_root: self.emulator_instance_root,
             fastboot_devices_file_path: self.fastboot_devices_file_path,
             sources: self.sources,
             timeout: self.timeout,
-            cache_file,
             stream: Mutex::new(None),
         }
     }
@@ -227,7 +212,6 @@ impl Default for DiscoveryBuilder {
             fastboot_devices_file_path: None,
             sources: DiscoverySources::default(),
             timeout: Some(DEFAULT_TIMEOUT),
-            cache_dir: None,
         }
     }
 }
@@ -236,7 +220,6 @@ pub struct Discovery {
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
     sources: DiscoverySources,
-    cache_file: Option<PathBuf>,
     timeout: Option<Duration>,
     // For testing purposes, we can provide an arbitrary stream.
     // For example, in the testing module `setup_test()` uses this to store
@@ -266,41 +249,12 @@ impl Discovery {
 
     // Create a raw stream of TargetEvents.
     fn create_stream(&self) -> Result<Pin<Box<dyn Stream<Item = TargetEvent>>>> {
-        if let Some(cache_path) = &self.cache_file {
-            match Cache::load(cache_path) {
-                Ok(cache) => {
-                    // We've got cached results. Let's build a stream
-                    // that just returns those values.
-                    let (sender, queue) = unbounded();
-                    let targets: Vec<TargetEvent> =
-                        cache.targets.into_iter().map(|t| TargetEvent::Added(t)).collect();
-                    for target in targets {
-                        sender.unbounded_send(target)?;
-                    }
-                    return Ok(Box::pin(TargetStream {
-                        queue,
-                        mdns_watcher: None,
-                        fastboot_usb_watcher: None,
-                        manual_targets_watcher: None,
-                        emulator_watcher: None,
-                        fastboot_file_watcher: None,
-                    }));
-                }
-                Err(e) => {
-                    log::trace!("failed to load discovery cache from {cache_path:?}: {e}")
-                }
-            }
-        }
-        // There wasn't a cache, or it had expired, or we couldn't load it. Do discovery now.
         Ok(Box::pin(self.create_raw_stream()?))
     }
 
     // Create a stream that is limited by a timer, and will short-circuit query matches:
     // If the match is not "First", then close the stream on the first match. Otherwise,
     // close the stream when the timer runs out.
-    // Note that this will do extra work if our source stream
-    // was synthesized from the cache, but this way we are sharing
-    // all the remaining logic (the timer and the short-circuiting).
     pub fn discovery_stream(
         &self,
         query: TargetInfoQuery,
@@ -352,19 +306,6 @@ impl Discovery {
             target_set.process_event(ev);
         }
         Ok(target_set.into_targets())
-    }
-
-    pub async fn create_cache(&self) -> Result<()> {
-        let Some(cache_file) = self.cache_file.as_ref() else {
-            return Err(CacheError::Unspecified.into());
-        };
-        let mut stream = self.create_raw_stream()?;
-        let mut target_set = merge::TargetSet::new();
-        while let Some(ev) = stream.next().await {
-            target_set.process_event(ev);
-        }
-        let cache = Cache::new(target_set.into_targets());
-        cache.save(cache_file).map_err(|e| e.into())
     }
 }
 
@@ -452,12 +393,10 @@ pub mod test {
     use super::*;
     use crate::{TargetHandle, TargetInfoQuery, TargetState};
     use addr::TargetAddr;
-    use chrono::Utc;
     use pretty_assertions::assert_eq;
     use std::fs::File;
     use std::io::Write;
     use std::str::FromStr;
-    use tempfile::tempdir;
 
     fn setup_test() -> (Discovery, TargetHandle, TargetHandle) {
         let handle1 = TargetHandle {
@@ -606,93 +545,6 @@ pub mod test {
         assert_eq!(stream.next().await.unwrap().target_handle(), &handle1);
         assert_eq!(stream.next().await.unwrap().target_handle(), &handle2);
         assert!(stream.next().await.is_none());
-    }
-
-    #[fuchsia::test]
-    async fn test_discover_devices_uses_cache() {
-        let dir = tempdir().unwrap();
-        let cache_path = dir.path().to_path_buf();
-        let handle = TargetHandle {
-            node_name: Some("cached-target".to_string()),
-            state: TargetState::Unknown,
-            manual: false,
-        };
-        let cache = Cache::new(vec![handle.clone()]);
-        cache.save(&cache_path.join(CACHE_FILE_NAME)).unwrap();
-
-        // This stream is empty, so if discovery runs, it will find nothing.
-        let stream = Box::new(futures::stream::empty());
-        let discovery = DiscoveryBuilder::default()
-            .with_cache_dir(Some(cache_path.clone()))
-            // Don't use any real discovery sources
-            .set_source(DiscoverySources::empty())
-            .build();
-        *discovery.stream.lock().unwrap() = Some(stream);
-
-        let targets = discovery.discover_devices(TargetInfoQuery::First).await.unwrap();
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0], handle);
-    }
-
-    #[fuchsia::test]
-    async fn test_discover_devices_ignores_expired_cache() {
-        let dir = tempdir().unwrap();
-        let cache_path = dir.path().to_path_buf();
-        let cached_handle = TargetHandle {
-            node_name: Some("cached-target".to_string()),
-            state: TargetState::Unknown,
-            manual: false,
-        };
-        let mut cache = Cache::new(vec![cached_handle]);
-        // Manually expire the cache
-        cache.set_expires(Utc::now() - chrono::Duration::seconds(1));
-        cache.save(&cache_path.join(CACHE_FILE_NAME)).unwrap();
-
-        let discovered_handle = TargetHandle {
-            node_name: Some("discovered-target".to_string()),
-            state: TargetState::Unknown,
-            manual: false,
-        };
-        let events = vec![TargetEvent::Added(discovered_handle.clone())];
-        let stream = Box::new(futures::stream::iter(events));
-        let discovery = DiscoveryBuilder::default()
-            .with_cache_dir(Some(cache_path.clone()))
-            .set_source(DiscoverySources::empty())
-            .build();
-        *discovery.stream.lock().unwrap() = Some(stream);
-
-        let targets = discovery.discover_devices(TargetInfoQuery::First).await.unwrap();
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0], discovered_handle);
-    }
-
-    #[fuchsia::test]
-    async fn test_create_cache() {
-        let dir = tempdir().unwrap();
-        let cache_path = dir.path().join(CACHE_FILE_NAME);
-        let handle = TargetHandle {
-            node_name: Some("target-to-be-cached".to_string()),
-            state: TargetState::Unknown,
-            manual: false,
-        };
-        let events = vec![TargetEvent::Added(handle.clone())];
-        let stream = Box::new(futures::stream::iter(events));
-
-        // The test-only `new` constructor doesn't set a cache file, so we build
-        // a discovery object the long way.
-        let discovery = DiscoveryBuilder::default()
-            .with_cache_dir(Some(dir.path().to_path_buf()))
-            // Don't use any real discovery sources
-            .set_source(DiscoverySources::empty())
-            .build();
-        // We still want to inject our test stream, though.
-        *discovery.stream.lock().unwrap() = Some(stream);
-
-        discovery.create_cache().await.unwrap();
-
-        let loaded_cache = Cache::load(&cache_path).unwrap();
-        assert_eq!(loaded_cache.targets.len(), 1);
-        assert_eq!(loaded_cache.targets[0], handle);
     }
 
     fn build_instance_file(dir: &PathBuf, name: &str) -> std::io::Result<File> {
