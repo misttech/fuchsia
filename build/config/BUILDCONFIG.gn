@@ -3236,6 +3236,7 @@ template("_fuchsia_shared_library") {
           label = _label
           os = current_os
           cpu = current_cpu
+          dest_path = "lib/${toolchain_variant.libprefix}$install_name"
           debug = rebase_path(link_output_file, root_build_dir)
           if (current_os != "mac" && current_os != "win") {
             elf_build_id_file = rebased_output_file + ".build-id.stamp"
@@ -3755,6 +3756,9 @@ template("executable") {
           label = _label
           cpu = current_cpu
           os = current_os
+          if (is_fuchsia) {
+            dest_path = "bin/$output_name"
+          }
           debug = rebased_debug_file
           if (current_os != "mac") {
             elf_build_id_file = _rebased_elf_build_id_file
@@ -3980,6 +3984,9 @@ template("loadable_module") {
           label = _label
           cpu = current_cpu
           os = current_os
+          if (current_os == "fuchsia") {
+            dest_path = "lib/$output_file_name"
+          }
           debug = rebased_link_output_file
           if (current_os != "mac" && current_os != "win") {
             elf_build_id_file = _rebased_elf_build_id_file

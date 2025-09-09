@@ -463,6 +463,9 @@ template("go_build") {
           debug = rebase_path(output_path, root_build_dir)
           os = current_os
           cpu = current_cpu
+          if (is_fuchsia) {
+            dest_path = "bin/$output_name"
+          }
         },
       ]
 
