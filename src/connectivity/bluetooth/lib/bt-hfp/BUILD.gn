@@ -85,6 +85,7 @@ rustc_test("bt_hfp_a2dp_controller_bin") {
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:thiserror",
   ]
 
   sources = [ "src/a2dp.rs" ]

@@ -6,6 +6,15 @@ use fidl_fuchsia_bluetooth_internal_a2dp as a2dp;
 use fuchsia_bluetooth::types::PeerId;
 use futures::{Future, FutureExt, StreamExt};
 use log::warn;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("The suspend future unexpected completed")]
+    UnexpectedCompletion,
+    #[error("FIDL Error: {:?}", .0)]
+    Fidl(#[from] fidl::Error),
+}
 
 /// A client for fuchsia.bluetooth.internal.a2dp.
 
@@ -30,20 +39,17 @@ impl Control {
     pub fn pause(
         &self,
         peer_id: Option<PeerId>,
-    ) -> impl Future<Output = Result<PauseToken, fidl::Error>> {
+    ) -> impl Future<Output = Result<PauseToken, Error>> {
         let proxy = match self.proxy.as_ref() {
             None => return futures::future::ok(None).left_future(),
             Some(proxy) => proxy,
         };
 
-        let res = (|| {
-            let (suspender_proxy, server_end) = fidl::endpoints::create_proxy();
-            let id = peer_id.map(Into::into);
-            Ok((suspender_proxy, proxy.suspend(id.as_ref(), server_end)))
-        })();
+        let (suspender_proxy, server_end) = fidl::endpoints::create_proxy();
+        let id = peer_id.map(Into::into);
+        let suspend_fut = proxy.suspend(id.as_ref(), server_end);
 
         async move {
-            let (suspender_proxy, suspend_fut) = res?;
             match suspender_proxy.take_event_stream().next().await {
                 Some(Ok(a2dp::StreamSuspenderEvent::OnSuspended {})) => Ok(Some(suspender_proxy)),
                 x => {
@@ -56,8 +62,8 @@ impl Control {
                         {
                             Ok(None)
                         }
-                        Err(e) => Err(e),
-                        Ok(()) => Err(fidl::Error::OutOfRange),
+                        Err(e) => Err(e.into()),
+                        Ok(()) => Err(Error::UnexpectedCompletion),
                     }
                 }
             }
