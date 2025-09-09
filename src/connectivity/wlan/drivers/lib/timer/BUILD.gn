@@ -17,4 +17,8 @@ source_set("cpp") {
     "//zircon/system/ulib/zx",
   ]
   sources = [ "cpp/timer.cc" ]
+
+  # TODO(https://fxbug.dev/443783563): Re-enable thread safety checks once
+  # std::unique_lock can participate in the analysis correctly.
+  configs += [ "//build/config:Wno-thread-safety-analysis" ]
 }

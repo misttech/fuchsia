@@ -1519,6 +1519,16 @@ config("thread_safety_annotations") {
   }
 }
 
+# Generally, we don't want to opt out of thread safety annotations, but
+# occasionally, we get false positives, and need to work around them when
+# updating the toolchain.
+config("Wno-thread-safety-analysis") {
+  visibility = [ "//src/connectivity/wlan/drivers/lib/timer:*" ]
+  if (!is_gcc) {
+    cflags = [ "-Wno-thread-safety-analysis" ]
+  }
+}
+
 config("zero-call-used-regs") {
   # TODO(fxrev.dev/710262): Enable on arm64 when there's performance data.
   if (current_cpu == "x64") {
